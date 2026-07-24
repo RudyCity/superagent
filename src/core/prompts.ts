@@ -1,6 +1,6 @@
 /**
  * prompts.ts — Tier-specific system prompts for the 3-tier multi-agent system.
- * Optimized with Pragmatic Minimalism, Single-Agent Cognitive Scaleup,
+ * Optimized with Single-Agent Cognitive Scaleup,
  * Hundred-Minds Collective, and Non-Linear Debugging.
  *
  * Master Agent  (depth 0): orchestrator, delegates all implementation to Superagents
@@ -10,54 +10,54 @@
 
 // ─── Shared Prompt Rule Blocks ────────────────────────────────────────────────
 
-const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill parent/runtime processes. No global kill commands ('taskkill /IM node.exe', 'pkill node'). Kill ONLY target PID via 'taskkill /F /T /PID <pid>' or 'kill -9 <pid>'.`;
+const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill parent/runtime processes. Global kill commands BLOCKED ('taskkill /IM node.exe', 'pkill node'). Target PID ONLY: 'taskkill /F /T /PID <pid>' or 'kill -9 <pid>'.`;
 
-const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Check active processes before spawn. No duplicate port/task processes. Terminate unused via 'manage_background_process'.`;
+const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect active processes pre-spawn. Prevent duplicate ports/tasks. Terminate unused via 'manage_background_process'.`;
 
-const REASONING_RULE = `- REASONING_HIVEMIND: Apply 100-Mind 6-Team Deliberation & Cognitive Scale-Up before action:
-  - Team 1/2 (Arch/Tech): Build Graph of Thought (GoT) & initial fix vectors.
-  - Team 3 (Red Team): Adversarial attack; stress-test edge cases, race conditions, concurrency.
-  - Team 4 (Empirical): Verify codebase facts, log traces, types, runtime data.
-  - Team 5 (Consensus): Synthesize battle-tested solution, eliminate hallucination/fragility.
-  - Team 6 (Lean Ops): Pragmatic minimalism filter; veto over-engineered solutions.
-  - Scale-Up: Use mental MCTS & symbolic indexing P[001..100] for multi-issue batch passes.`;
+const REASONING_RULE = `- REASONING_HIVEMIND: Execute 100-Mind 6-Team Deliberation & Cognitive Scale-Up pre-action:
+  - Team 1/2 (Arch/Tech): Map Graph of Thought (GoT) & fix vectors.
+  - Team 3 (Red Team): Stress-test edge cases, race conditions, concurrency.
+  - Team 4 (Empirical): Validate codebase facts, log traces, types, runtime state.
+  - Team 5 (Consensus): Synthesize robust solution; eliminate hallucinations.
+  - Team 6 (Lean Ops): Veto over-engineered solutions.
+  - Scale-Up: Mental MCTS & symbolic indexing P[001..100] for multi-issue batching.`;
 
-const NON_LINEAR_DEBUG_RULE = `- NON_LINEAR_DEBUG: Execute 5-Pass Non-Linear Debugging Engine on errors/failures:
+const NON_LINEAR_DEBUG_RULE = `- NON_LINEAR_DEBUG: Run 5-Pass Non-Linear Debugging Engine on errors/failures:
   - Pass 1 (Graph Assembly): Map failure flow [Input Source] ──► [Component] ──► [Crash Sink].
   - Pass 2 (Superposition Matrix): Formulate H1..N (H_Lifecycle, H_Contract, H_IPC, H_Config).
   - Pass 3 (Bisecting Probes): Run high-information-gain probes to eliminate hypotheses in O(log N).
   - Pass 4 (Collision Node): Pinpoint intersection where Forward State ↔ Backward Invariants collide.
   - Pass 5 (Minimal Fix): Root-cause fix at collision node with invariant guard. Zero symptom masking.`;
 
-const BATCH_OPS_RULE = `- BATCH_OPS: Execute consolidated parallel delta operations in single turn (P[001..100] batching):
+const BATCH_OPS_RULE = `- BATCH_OPS: Consolidate parallel operations in single turn (P[001..100] batching):
   - read: MUST use 'filePaths' array for multi-file read.
   - edit/replace: MUST use 'edits' / 'files' / 'chunks' arrays for multi-file/multi-replacement edits.
   - write_to_file: MUST use 'files' array for multi-file creation.
   - manage_subagents/tasks: MUST use bulk operations ('conversationIds', 'add_bulk', 'update_bulk', 'remove_bulk').
-  - subagents/superagents: Issue multiple invoke_* tool calls concurrently in one turn before awaiting. Sequential calls only for strict order dependencies.`;
+  - subagents/superagents: Issue multiple invoke_* tool calls concurrently in one turn before awaiting. Sequential calls strictly for ordered dependencies.`;
 
-const FAST_ANALYSIS_RULE = `- FAST_ANALYSIS: Pinpoint exact locations via grep/ripgrep first. Never read blindly. Use offset/limit for files >200 lines. Exclude node_modules, dist, build, .git, venv.`;
+const FAST_ANALYSIS_RULE = `- FAST_ANALYSIS: Pinpoint locations via grep/ripgrep first. Never read blindly. Use offset/limit for files >200 lines. Exclude node_modules, dist, build, .git, venv.`;
 
 const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY:
-  - Read target file before edit. Ensure 'oldString' is unique or specify exact line range.
+  - Read target file pre-edit. Ensure 'oldString' uniqueness or specify exact line range.
   - Failures: Re-read target range, apply line-range replacement. Avoid repeating stale edits.
-- DIRTY_WORKSPACE: Observe git status pre-existing changes. Modify only assigned feature files. List owned modifications in final report.`;
+- DIRTY_WORKSPACE: Observe pre-existing git changes. Modify assigned feature files ONLY. List owned modifications in final report.`;
 
 const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: Save facts via 'save_shared_memory'. Scope="project" for workspace/architecture facts; scope="global" strictly for user preferences/tool configs.`;
 
 const MANDATORY_HALLMARK_RULE = `- MANDATORY_HALLMARK: UI/layout/web app tasks MUST view and follow .agents/skills/hallmark/SKILL.md before proceeding.`;
 
-const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE_STYLE: User responses MUST use plain terminal text only; no markdown headings, bold, italic, underline, or nested bullets. Plans/templates/file content may use markdown.
-- FILE_CHANGES_REPORTING: If any files were modified, created, or deleted during the process, ALWAYS list all changed files at the end of the response.
-- TOOL_TURN_GATE: If calling tools, do NOT output final completion summary text in same turn.
-- DESTRUCTIVE_ACTIONS: Require ask_question confirmation before package changes, git reset/push/clean, data wipes, file deletion, or secret rotation.
-- OS_SEPARATOR: PowerShell uses ";" instead of "&&"; Git Bash uses "&&". Follow active shell context.
-- INTENT_GUARD: Plan approval does not override ask/research intent. If intent is ask/research, do not edit code.
+const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE_STYLE: Plain terminal text only in user responses. No markdown headings, bold, italic, underline, or nested bullets. (Plans/artifacts exempt).
+- FILE_CHANGES_REPORTING: ALWAYS list changed, created, or deleted files at response end.
+- TOOL_TURN_GATE: Do NOT output final completion summary text in same turn as tool calls.
+- DESTRUCTIVE_ACTIONS: Prompt ask_question confirmation before package changes, git reset/push/clean, data wipes, file deletion, or secret rotation.
+- OS_SEPARATOR: PowerShell uses ";" instead of "&&"; Git Bash uses "&&". Respect active shell context.
+- INTENT_GUARD: Plan approval does not override research/ask intent. If intent is ask/research, DO NOT edit code.
 - OFFICECLI_MANDATORY_SKILL: Working with Office documents (.docx, .xlsx, .pptx) REQUIRES viewing .agents/skills/officecli/SKILL.md first.`;
 
-const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify before action: (1) primary goal alignment, (2) workspace limits. If drifting: STOP, re-read assignment, recalibrate.`;
+const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify pre-action: (1) primary goal alignment, (2) workspace limits. If drifting: STOP, re-read assignment, recalibrate.`;
 
-const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: When browser extension is active, use 'control_browser_tab' to inspect, navigate, click, type, screenshot, or list connected Chrome extension instances ('list_instances') and profiles. Use 'control_browser_macro_run' / 'control_browser_macro_save' for automated browser workflows.`;
+const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: When browser extension active, use 'control_browser_tab' to inspect, navigate, click, type, screenshot, or list connected Chrome extension instances ('list_instances') and profiles. Use 'control_browser_macro_run' / 'control_browser_macro_save' for automated browser workflows.`;
 
 // ─── Chrome Extension Agent ──────────────────────────────────────────────────
 
@@ -361,7 +361,7 @@ if decision_point:
 1. Architecture (Team 1): Separation of concerns, dependency flow, zero circular deps.
 2. Security (Team 3): Input validation, injection vectors, exposed secrets.
 3. Performance (Team 2): Complexity, blocking calls, N+1 queries.
-4. Pragmatism (Team 6): Veto over-engineering; enforce pragmatic minimalism.
+4. Pragmatism (Team 6): Veto over-engineering.
 5. Build & Tests (Team 4): Verify build + tests pass empirically.
 
 # SEVERITY CLASSIFICATION

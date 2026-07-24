@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.566] - 2026-07-24
+
+### Changed
+- **System Prompts Optimization**:
+  - Refined system prompt rule blocks in `src/core/prompts.ts` using telegraphic English, minified prose, clear markdown headers, and structured logic gates for improved token efficiency and exact directive compliance.
+
 ## [1.2.565] - 2026-07-24
 
 ### Removed
