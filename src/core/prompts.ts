@@ -48,6 +48,7 @@ const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: Save facts via 'save_shared
 const MANDATORY_HALLMARK_RULE = `- MANDATORY_HALLMARK: UI/layout/web app tasks MUST view and follow .agents/skills/hallmark/SKILL.md before proceeding.`;
 
 const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE_STYLE: User responses MUST use plain terminal text only; no markdown headings, bold, italic, underline, or nested bullets. Plans/templates/file content may use markdown.
+- FILE_CHANGES_REPORTING: If any files were modified, created, or deleted during the process, ALWAYS list all changed files at the end of the response.
 - TOOL_TURN_GATE: If calling tools, do NOT output final completion summary text in same turn.
 - DESTRUCTIVE_ACTIONS: Require ask_question confirmation before package changes, git reset/push/clean, data wipes, file deletion, or secret rotation.
 - OS_SEPARATOR: PowerShell uses ";" instead of "&&"; Git Bash uses "&&". Follow active shell context.

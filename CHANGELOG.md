@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.558] - 2026-07-24
+
+### Added
+- **File Changes Reporting Rule**:
+  - Enforced mandatory display of all modified, created, or deleted files at the end of every Superagent process and AI response report.
+  - Added rule to `.agents/AGENTS.md` and system prompts in `src/core/prompts.ts`.
+
 ## [1.2.557] - 2026-07-24
 
 ### Changed
