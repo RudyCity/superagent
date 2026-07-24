@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.563] - 2026-07-24
+
+### Fixed
+- **Optimized Fuzzy Auto-Location and Match Replacements**:
+  - Enhanced line-by-line matching in `autoLocateTargetContent` with quote style tolerance (ignores differences between single quotes, double quotes, and backticks), trailing semicolon/comma tolerance, and internal empty lines preservation.
+  - Fixed replacement fallback to directly use replacement content when exact matching fails but the block has been successfully auto-located.
+  - Added new fuzzy match unit tests validating these quote/semicolon/empty line tolerances.
+
 ## [1.2.562] - 2026-07-24
 
 ### Fixed

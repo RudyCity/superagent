@@ -162,7 +162,7 @@ export class RequestProcessor {
     if (agent.currentClassification) {
       try {
         const { isHighConfidenceConversation } = await import("../requestClassifier.js");
-        if (isHighConfidenceConversation(agent.currentClassification, agent.tier)) {
+        if (isHighConfidenceConversation(agent.currentClassification, agent.tier, agent.planState)) {
           agent.writeToLogFile("INFO", `Conversation fast-path activated (category=conversation, confidence=high)`);
           const { FastPath } = await import("./FastPath.js");
           await FastPath.runConversationFastPath(agent, userInput);

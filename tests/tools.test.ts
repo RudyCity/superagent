@@ -472,6 +472,36 @@ describe("File tools", () => {
       } catch {}
     }
   });
+
+  it("should auto-locate targetContent when quotes, trailing semicolons, commas, or empty lines vary", async () => {
+    const testFile = path.resolve(process.cwd(), "temp_auto_locate_fuzzy_test.txt");
+    try {
+      await fs.writeFile(
+        testFile,
+        "line 1\nline 2\nconst value = 'hello';\n\nconst another = 'world';\nline 6\n",
+        "utf-8"
+      );
+
+      const replaceTool = getToolByName("replace_file_content");
+      const result = await replaceTool?.execute(
+        {
+          filePath: "temp_auto_locate_fuzzy_test.txt",
+          targetContent: "const value = \"hello\"\n\nconst another = \"world\",",
+          replacementContent: "const value = 'fixed';\n\nconst another = 'fixed';",
+          startLine: 3,
+          endLine: 5,
+        },
+        process.cwd()
+      );
+      expect(result).toContain("File updated successfully");
+      const data = await fs.readFile(testFile, "utf-8");
+      expect(data).toContain("const value = 'fixed';\n\nconst another = 'fixed';");
+    } finally {
+      try {
+        await fs.unlink(testFile);
+      } catch {}
+    }
+  });
 });
 
 describe("Search and Grep tools", () => {

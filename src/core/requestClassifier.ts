@@ -1038,8 +1038,12 @@ export function getCategoryPromptAddendum(category: RequestCategory): string {
  */
 export function isHighConfidenceConversation(
   classification: ClassificationResult,
-  tier: string
+  tier: string,
+  planState?: string
 ): boolean {
+  if (planState && planState !== "IDLE") {
+    return false;
+  }
   return (
     classification.category === "conversation" &&
     classification.confidence === "high" &&

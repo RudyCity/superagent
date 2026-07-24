@@ -103,19 +103,38 @@ export function autoLocateTargetContent(
     }
   }
 
-  // 2. Line-by-line trimmed matching (ignores leading/trailing line whitespace differences)
-  const targetTrimmedLines = targetContent.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  // 2. Line-by-line trimmed and fuzzy matching (ignores quote types, trailing semicolons/commas, and whitespace differences)
+  function normalizeLineForFuzzy(line: string): string {
+    return line
+      .trim()
+      .toLowerCase()
+      .replace(/['"`]/g, '"') // unify quotes
+      .replace(/[;,]$/g, "")   // remove trailing semicolon or comma
+      .replace(/\s+/g, "");    // remove all whitespace
+  }
+
+  const targetTrimmedLines = targetContent.split(/\r?\n/).map(l => l.trim());
+  // Remove leading empty lines
+  while (targetTrimmedLines.length > 0 && targetTrimmedLines[0] === "") {
+    targetTrimmedLines.shift();
+  }
+  // Remove trailing empty lines
+  while (targetTrimmedLines.length > 0 && targetTrimmedLines[targetTrimmedLines.length - 1] === "") {
+    targetTrimmedLines.pop();
+  }
+
   if (targetTrimmedLines.length > 0) {
-    const fileTrimmedLines = lines.map(l => l.trim());
+    const targetFuzzyLines = targetTrimmedLines.map(normalizeLineForFuzzy);
+    const fileFuzzyLines = lines.map(normalizeLineForFuzzy);
     const targetLen = targetTrimmedLines.length;
 
     let bestStartLine = -1;
     let minDiff = Infinity;
 
-    for (let i = 0; i <= fileTrimmedLines.length - targetLen; i++) {
+    for (let i = 0; i <= fileFuzzyLines.length - targetLen; i++) {
       let match = true;
       for (let j = 0; j < targetLen; j++) {
-        if (fileTrimmedLines[i + j] !== targetTrimmedLines[j]) {
+        if (fileFuzzyLines[i + j] !== targetFuzzyLines[j]) {
           match = false;
           break;
         }
@@ -850,7 +869,7 @@ export const replaceFileContentTool: Tool = {
                  const matchOrigEnd = normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1;
 
                  if (matchOrigStart === -1 || matchOrigEnd === -1) {
-                   replacedSlice = sliceText.replace(targetContent, replacementContent);
+                   replacedSlice = replacementContent;
                  } else {
                    replacedSlice = sliceText.slice(0, matchOrigStart) + replacementContent + sliceText.slice(matchOrigEnd);
                  }
@@ -965,7 +984,7 @@ export const replaceFileContentTool: Tool = {
         const matchOrigEnd = normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1;
 
         if (matchOrigStart === -1 || matchOrigEnd === -1) {
-          replacedSlice = sliceText.replace(targetContent, replacementContent);
+          replacedSlice = replacementContent;
         } else {
           replacedSlice = sliceText.slice(0, matchOrigStart) + replacementContent + sliceText.slice(matchOrigEnd);
         }
@@ -1324,7 +1343,7 @@ export const multiReplaceFileContentTool: Tool = {
                 replacedSlice = tempSlice;
               } else {
                 if (matchOrigStart === -1 || matchOrigEnd === -1) {
-                  replacedSlice = minSliceText.replace(targetContent, replacementContent);
+                  replacedSlice = replacementContent;
                 } else {
                   replacedSlice = minSliceText.slice(0, matchOrigStart) + replacementContent + minSliceText.slice(matchOrigEnd);
                 }
@@ -1571,7 +1590,7 @@ export const multiReplaceFileContentTool: Tool = {
           replacedSlice = tempSlice;
         } else {
           if (matchOrigStart === -1 || matchOrigEnd === -1) {
-            replacedSlice = minSliceText.replace(targetContent, replacementContent);
+            replacedSlice = replacementContent;
           } else {
             replacedSlice = minSliceText.slice(0, matchOrigStart) + replacementContent + minSliceText.slice(matchOrigEnd);
           }
