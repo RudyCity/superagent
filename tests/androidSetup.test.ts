@@ -10,7 +10,11 @@ const {
   getLocalRgPath,
   isCurlInstalledGlobally,
   isCurlInstalledLocally,
-  getLocalCurlPath
+  getLocalCurlPath,
+  isUvInstalledGlobally,
+  isUvInstalledLocally,
+  getLocalUvPath,
+  isPythonInstalled
 } = await import("../src/core/androidSetup.js");
 
 describe("androidSetup", () => {
@@ -74,5 +78,26 @@ describe("androidSetup", () => {
   it("should check if curl is installed locally", async () => {
     const installed = await isCurlInstalledLocally();
     expect(typeof installed).toBe("boolean");
+  });
+
+  it("should check if uv is installed globally", async () => {
+    const installed = await isUvInstalledGlobally();
+    expect(installed).toBe(true);
+  });
+
+  it("should construct local uv path correctly", () => {
+    const localPath = getLocalUvPath();
+    expect(localPath).toBeDefined();
+    expect(localPath.toLowerCase()).toContain("uv");
+  });
+
+  it("should check if uv is installed locally", async () => {
+    const installed = await isUvInstalledLocally();
+    expect(typeof installed).toBe("boolean");
+  });
+
+  it("should check if Python is installed", async () => {
+    const installed = await isPythonInstalled();
+    expect(installed).toBe(true);
   });
 });
