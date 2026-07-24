@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.568] - 2026-07-24
+
+### Changed
+- **Test Alignment & Suite Verification**:
+  - Aligned prompt guidance test assertions in `tests/promptToolGuidance.test.ts` to match system prompt wording in `src/core/prompts.ts`.
+  - Verified project build and test suite integrity.
+
 ## [1.2.567] - 2026-07-24
 
 ### Added
