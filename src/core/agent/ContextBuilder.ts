@@ -55,22 +55,7 @@ export class ContextBuilder {
       ? `\n\n🎯 GOAL MODE: "${agent.goalMode}"\nDo NOT stop until goal is FULLY achieved. Self-verify (build+test), fix errors, use subagents aggressively. End with "GOAL_COMPLETE:" or "GOAL_PARTIAL:" summary.\n`
       : "";
 
-    const classifierSkipWsDiscovery = agent.currentClassification
-      ? (await import("../requestClassifier.js")).shouldSkipWorkspaceDiscovery(agent.currentClassification.category)
-      : false;
-    if (!agent.disableWorkspaceDiscovery && agent.tier !== "subagent" && !classifierSkipWsDiscovery) {
-      const shouldScan = !agent.workspaceCache || (agent as any).workspaceCacheNeedsUpdate;
-      if (shouldScan) {
-        try {
-          const { discoverWorkspace } = await import("../workspaceDiscovery.js");
-          const { cache } = await discoverWorkspace(agent.workingDirectory);
-          agent.workspaceCache = cache;
-          (agent as any).workspaceCacheNeedsUpdate = false;
-        } catch (err: any) {
-          agent.writeToLogFile("WARN", `Workspace discovery failed: ${err.message}`);
-        }
-      }
-    }
+
 
     try {
       await (agent as any).prepopulateRmemoryContext();
