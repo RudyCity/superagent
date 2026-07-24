@@ -6,7 +6,7 @@ interface ActiveSubagentsPanelProps {
   agentsScrollOffset: number;
   maxAgentsVisible: number;
   focusArea: string;
-  getLatestSubagentAction: (logs: string[]) => string;
+  getLatestSubagentAction: (logs: string[], prompt?: string) => string;
 }
 
 export const ActiveSubagentsPanel = memo(function ActiveSubagentsPanel({
@@ -37,7 +37,7 @@ export const ActiveSubagentsPanel = memo(function ActiveSubagentsPanel({
       {visibleAgents.map((inst, index) => {
         const isLast = index === visibleAgents.length - 1;
         const branchChar = isLast ? "└──" : "├──";
-        const action = getLatestSubagentAction(inst.logs);
+        const action = getLatestSubagentAction(inst.logs, inst.prompt);
         return (
           <Text key={inst.id} color="yellow">
             │  {branchChar} Action: {inst.id}: <Text italic color="white">{action}</Text> | Role: {inst.role} ({inst.status})

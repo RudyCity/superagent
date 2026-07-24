@@ -67,8 +67,8 @@ interface RegistryPanelProps {
   focusArea: string;
   startIdx: number;
   visibleSessions: AgentSession[];
-  getLatestSuperagentAction: (logs: string[]) => string;
-  getLatestSubagentAction: (logs: string[]) => string;
+  getLatestSuperagentAction: (logs: string[], task?: string) => string;
+  getLatestSubagentAction: (logs: string[], prompt?: string) => string;
   leftTopHeight: number;
 }
 
@@ -161,11 +161,11 @@ export function RegistryPanel({
           if (session.type === "MASTER") {
             label = `master ❯ ${session.task}`;
           } else if (session.type === "SUPERAGENT") {
-            const action = getLatestSuperagentAction(session.logs);
+            const action = getLatestSuperagentAction(session.logs, session.task);
             const role = session.id.split("-")[1] || "superagent";
             label = `${role} ❯ ${action}`;
           } else if (session.type === "SUBAGENT") {
-            const action = getLatestSubagentAction(session.logs);
+            const action = getLatestSubagentAction(session.logs, session.task);
             const name = session.id.split("-")[0];
             label = `${name} ❯ ${action}`;
           } else {

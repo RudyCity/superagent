@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.555] - 2026-07-24
+
+### Changed
+- **Subagent & Superagent UI Visibility**:
+  - Removed length limits from latest subagent and superagent action output in active agent lists and registry panels to display them in full without truncation.
+  - Implemented fallback to the subagent's prompt or superagent's task description when no execution logs are available yet, avoiding the generic "Initializing..." text.
+
 ## [1.2.554] - 2026-07-24
 
 ### Added

@@ -45,8 +45,8 @@ export function getPasteSplit(currentInput: string, prefixLen: number, suffixLen
   return { prefix, inserted, suffix };
 }
 
-export function getLatestSubagentAction(logs: string[]): string {
-  if (!logs || logs.length === 0) return "Initializing...";
+export function getLatestSubagentAction(logs: string[], prompt?: string): string {
+  if (!logs || logs.length === 0) return prompt ? prompt : "Initializing...";
   for (let i = logs.length - 1; i >= 0; i--) {
     const raw = logs[i].replace(/\r/g, "").trim();
     if (raw) {
@@ -58,15 +58,15 @@ export function getLatestSubagentAction(logs: string[]): string {
       clean = clean.replace(/^Description:\s*/i, "");
       clean = clean.replace(/^Args:\s*/i, "");
       if (clean) {
-        return clean.length > 80 ? clean.slice(0, 80) + "..." : clean;
+        return clean;
       }
     }
   }
-  return "Processing...";
+  return prompt ? prompt : "Processing...";
 }
 
-export function getLatestSuperagentAction(logs: string[]): string {
-  if (!logs || logs.length === 0) return "Initializing...";
+export function getLatestSuperagentAction(logs: string[], task?: string): string {
+  if (!logs || logs.length === 0) return task ? task : "Initializing...";
   for (let i = logs.length - 1; i >= 0; i--) {
     const raw = logs[i].replace(/\r/g, "").trim();
     if (raw) {
@@ -79,11 +79,11 @@ export function getLatestSuperagentAction(logs: string[]): string {
         .replace(/^[│┌├└─\s]+/, "")
         .trim();
       if (clean) {
-        return clean.length > 80 ? clean.slice(0, 80) + "..." : clean;
+        return clean;
       }
     }
   }
-  return "Processing...";
+  return task ? task : "Processing...";
 }
 
 export function truncateStreamDisplay(text: string, maxLines: number, width: number): string {

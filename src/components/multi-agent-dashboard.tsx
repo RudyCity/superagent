@@ -1521,8 +1521,8 @@ export function MultiAgentDashboard({
   );
 }
 
-function getLatestSubagentAction(logs: string[]): string {
-  if (!logs || logs.length === 0) return "Initializing...";
+function getLatestSubagentAction(logs: string[], prompt?: string): string {
+  if (!logs || logs.length === 0) return prompt ? prompt : "Initializing...";
   for (let i = logs.length - 1; i >= 0; i--) {
     const raw = logs[i].trim();
     if (raw) {
@@ -1534,15 +1534,15 @@ function getLatestSubagentAction(logs: string[]): string {
       clean = clean.replace(/^Description:\s*/i, "");
       clean = clean.replace(/^Args:\s*/i, "");
       if (clean) {
-        return clean.length > 80 ? clean.slice(0, 80) + "..." : clean;
+        return clean;
       }
     }
   }
-  return "Processing...";
+  return prompt ? prompt : "Processing...";
 }
 
-function getLatestSuperagentAction(logs: string[]): string {
-  if (!logs || logs.length === 0) return "Initializing...";
+function getLatestSuperagentAction(logs: string[], task?: string): string {
+  if (!logs || logs.length === 0) return task ? task : "Initializing...";
   for (let i = logs.length - 1; i >= 0; i--) {
     const raw = logs[i].replace(/\r/g, "").trim();
     if (raw) {
@@ -1555,9 +1555,9 @@ function getLatestSuperagentAction(logs: string[]): string {
         .replace(/^[│┌├└─\s]+/, "")
         .trim();
       if (clean) {
-        return clean.length > 60 ? clean.slice(0, 60) + "..." : clean;
+        return clean;
       }
     }
   }
-  return "Processing...";
+  return task ? task : "Processing...";
 }
