@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.2.546",
+  "version": "1.2.547",
   "description": "Interactive terminal-based AI coding assistant",
   "type": "module",
   "bin": {

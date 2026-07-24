@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.547] - 2026-07-24
+
+### Fixed
+- **ESC Key AI Process Cancellation & Test Reliability**:
+  - Fixed ESC key handler in `useKeyboardHandler.ts` so that when chat is scrolled (`scrollOffset > 0`), pressing ESC resets scroll and still aborts the running AI process instead of being blocked by the `else-if` condition chain.
+  - Added test case in `keyboardAbortInterrupt.test.ts` to verify ESC aborts processing when `scrollOffset > 0`.
+  - Fixed Windows `EBUSY` file locking errors in `agentAbortInterrupt.test.ts` during temporary directory cleanup.
+
 ## [1.2.546] - 2026-07-24
 
 ### Fixed
