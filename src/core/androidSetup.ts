@@ -496,9 +496,15 @@ export async function ensureOfficeCliInstalled(onProgress?: DownloadProgressCall
       const url = "https://d.officecli.ai/install.ps1";
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed to download officecli installer: HTTP ${res.status}`);
-      const text = await res.text();
+      let text = await res.text();
+      
+      // Prepend ProgressPreference to avoid Invoke-WebRequest hangs
+      text = `$ProgressPreference = 'SilentlyContinue';\r\n` + text;
+      // Add Unblock-File to prevent Windows SmartScreen block hangs
+      text = text.replace(/&\s*\$tempFile\s*--version/, "Unblock-File $tempFile; & $tempFile --version");
+      
       await fs.writeFile(tempPs1, text);
-      await execa("powershell.exe", ["-ExecutionPolicy", "ByPass", "-File", tempPs1]);
+      await execa("powershell.exe", ["-ExecutionPolicy", "ByPass", "-File", tempPs1], { timeout: 60000 });
       try {
         await fs.unlink(tempPs1);
       } catch {}
@@ -509,7 +515,7 @@ export async function ensureOfficeCliInstalled(onProgress?: DownloadProgressCall
       if (!res.ok) throw new Error(`Failed to download officecli installer: HTTP ${res.status}`);
       const text = await res.text();
       await fs.writeFile(tempSh, text);
-      await execa("bash", [tempSh]);
+      await execa("bash", [tempSh], { timeout: 60000 });
       try {
         await fs.unlink(tempSh);
       } catch {}
