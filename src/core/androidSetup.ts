@@ -90,7 +90,7 @@ export async function isRgInstalledLocally(): Promise<boolean> {
 
 export async function ensureRgInstalled(): Promise<void> {
   try {
-    if (await isRgInstalledGlobally() || await isRgInstalledLocally()) {
+    if (await isRgInstalledLocally() || await isRgInstalledGlobally()) {
       return;
     }
 
@@ -183,7 +183,7 @@ export async function isCurlInstalledLocally(): Promise<boolean> {
 
 export async function ensureCurlInstalled(): Promise<void> {
   try {
-    if (await isCurlInstalledGlobally() || await isCurlInstalledLocally()) {
+    if (await isCurlInstalledLocally() || await isCurlInstalledGlobally()) {
       return;
     }
 
@@ -229,7 +229,7 @@ export async function ensureAndroidCliInstalled(): Promise<void> {
     await ensureRgInstalled();
 
     // 2. Ensure Android CLI is installed
-    if (await isAndroidCliInstalledGlobally() || await isAndroidCliInstalledLocally()) {
+    if (await isAndroidCliInstalledLocally() || await isAndroidCliInstalledGlobally()) {
       return;
     }
 

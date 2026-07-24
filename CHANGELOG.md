@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.541] - 2026-07-24
+
+### Fixed
+- **Startup Lag & Non-Blocking Initialization**: Optimized initial application boot time by making ripgrep setup, Android CLI setup, MCP server initialization, and Git safe directory verification run non-blocking in the background. Improved tool existence checks in `androidSetup.ts` to check fast local binary paths before spawning `execa` shell commands.
+
 ## [1.2.540] - 2026-07-24
 
 ### Maintenance

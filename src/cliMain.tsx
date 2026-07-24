@@ -151,18 +151,18 @@ export async function runCli() {
 
 
 
-  // Auto-setup ripgrep and Android CLI on startup
+  // Auto-setup ripgrep and Android CLI asynchronously on startup
   const { ensureRgInstalled, ensureAndroidCliInstalled } = await import("./core/androidSetup.js");
-  await ensureRgInstalled().catch(() => {});
-  await ensureAndroidCliInstalled().catch(() => {});
+  ensureRgInstalled().catch(() => {});
+  ensureAndroidCliInstalled().catch(() => {});
 
   // Auto-setup RMemory Gateway if enabled
   const { runRmemorySetup } = await import("./core/rmemorySetup.js");
   runRmemorySetup().catch(() => {});
 
-  // Initialize MCP Servers
+  // Initialize MCP Servers in background
   const { initMcpServers } = await import("./core/mcp/McpManager.js");
-  await initMcpServers().catch((err) => {
+  initMcpServers().catch((err) => {
     console.error("[MCP] Error initializing servers during startup:", err);
   });
 
@@ -195,8 +195,8 @@ export async function runCli() {
 
     const isTrusted = isDirectoryTrusted(currentDir);
     if (isTrusted) {
-      // Already trusted, skip prompt and ensure configured in Git
-      await ensureDirectoryTrusted(currentDir);
+      // Already trusted, skip prompt and ensure configured in Git asynchronously
+      ensureDirectoryTrusted(currentDir).catch(() => {});
     } else {
       const trusted = await confirmTrust(currentDir);
       if (!trusted) {
