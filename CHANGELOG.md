@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.560] - 2026-07-24
+
+### Fixed
+- **Smart Target Auto-Location in File Edit Tools**:
+  - Implemented `autoLocateTargetContent` in `fileEditTools.ts` (`edit`, `replace_file_content`, and `multi_replace_file_content`).
+  - Automatically resolves and adjusts line range (`startLine` / `endLine`) when AI models specify an offset line range or indentation variation.
+  - Prevents repeated line-range mismatch edit failures when replacing code blocks.
+
 ## [1.2.559] - 2026-07-24
 
 ### Added

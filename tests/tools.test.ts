@@ -357,6 +357,31 @@ describe("File tools", () => {
       } catch {}
     }
   });
+
+  it("should auto-locate targetContent in replace_file_content when startLine is slightly offset", async () => {
+    const offsetFile = path.resolve(process.cwd(), "temp_offset_test.txt");
+    try {
+      await fs.writeFile(offsetFile, "line 1\nline 2\n{/* Sidebar Panel */}\n<div className=\"sidebar\">\n  content\n</div>\nline 7\n", "utf-8");
+      const replaceTool = getToolByName("replace_file_content");
+      const result = await replaceTool?.execute(
+        {
+          filePath: "temp_offset_test.txt",
+          targetContent: "{/* Sidebar Panel */}\n<div className=\"sidebar\">",
+          replacementContent: "{/* New Sidebar Panel */}\n<div className=\"new-sidebar\">",
+          startLine: 4,
+          endLine: 6,
+        },
+        process.cwd()
+      );
+      expect(result).toContain("File updated successfully");
+      const data = await fs.readFile(offsetFile, "utf-8");
+      expect(data).toContain("{/* New Sidebar Panel */}\n<div className=\"new-sidebar\">");
+    } finally {
+      try {
+        await fs.unlink(offsetFile);
+      } catch {}
+    }
+  });
 });
 
 describe("Search and Grep tools", () => {

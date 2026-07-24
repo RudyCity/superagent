@@ -52,6 +52,103 @@ function buildNotFoundErrorFull(
   return `Error: ${label} not found in ${filePath}.\nFix: Re-read the file to get the current content, then update the target string to match exactly (including indentation).`;
 }
 
+export function autoLocateTargetContent(
+  targetContent: string,
+  startLine: number,
+  endLine: number,
+  lines: string[],
+  normFullContent: string,
+  normTargetContent: string
+): { actualStartLine: number; actualEndLine: number; sliceText: string; normSliceText: string } | null {
+  if (!normTargetContent || lines.length === 0) return null;
+
+  // 1. Check if normTargetContent exists in normFullContent
+  if (normFullContent.includes(normTargetContent)) {
+    const normLines = normFullContent.split("\n");
+    const targetNormLines = normTargetContent.split("\n");
+    const targetLineCount = targetNormLines.length;
+
+    const candidateStarts: number[] = [];
+    for (let i = 0; i <= normLines.length - targetLineCount; i++) {
+      if (normLines.slice(i, i + targetLineCount).join("\n") === normTargetContent) {
+        candidateStarts.push(i + 1);
+      }
+    }
+
+    if (candidateStarts.length > 0) {
+      let bestStart = candidateStarts[0];
+      let minDiff = Math.abs(bestStart - startLine);
+      for (const cand of candidateStarts) {
+        const diff = Math.abs(cand - startLine);
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestStart = cand;
+        }
+      }
+
+      const newStartLine = bestStart;
+      const newEndLine = Math.min(lines.length, bestStart + targetLineCount - 1);
+      const newSlice = lines.slice(newStartLine - 1, newEndLine);
+      const newSliceText = newSlice.join("\n");
+      const newNormSliceText = normalizeForMatching(newSliceText);
+
+      if (newNormSliceText.includes(normTargetContent)) {
+        return {
+          actualStartLine: newStartLine,
+          actualEndLine: newEndLine,
+          sliceText: newSliceText,
+          normSliceText: newNormSliceText,
+        };
+      }
+    }
+  }
+
+  // 2. Line-by-line trimmed matching (ignores leading/trailing line whitespace differences)
+  const targetTrimmedLines = targetContent.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  if (targetTrimmedLines.length > 0) {
+    const fileTrimmedLines = lines.map(l => l.trim());
+    const targetLen = targetTrimmedLines.length;
+
+    let bestStartLine = -1;
+    let minDiff = Infinity;
+
+    for (let i = 0; i <= fileTrimmedLines.length - targetLen; i++) {
+      let match = true;
+      for (let j = 0; j < targetLen; j++) {
+        if (fileTrimmedLines[i + j] !== targetTrimmedLines[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        const lineNum = i + 1;
+        const diff = Math.abs(lineNum - startLine);
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestStartLine = lineNum;
+        }
+      }
+    }
+
+    if (bestStartLine !== -1) {
+      const newStartLine = bestStartLine;
+      const newEndLine = Math.min(lines.length, bestStartLine + targetLen - 1);
+      const newSlice = lines.slice(newStartLine - 1, newEndLine);
+      const newSliceText = newSlice.join("\n");
+      const newNormSliceText = normalizeForMatching(newSliceText);
+
+      return {
+        actualStartLine: newStartLine,
+        actualEndLine: newEndLine,
+        sliceText: newSliceText,
+        normSliceText: newNormSliceText,
+      };
+    }
+  }
+
+  return null;
+}
+
 function buildEditSummary(before: string, after: string, filePath: string, existedBefore = true): string {
   if (before === after) {
     return `No changes made: ${filePath}`;
@@ -348,12 +445,19 @@ export const editTool: Tool = {
       if (startLine !== undefined || endLine !== undefined) {
         const lines = content.split(/\r?\n/);
         const normLines = normContent.split("\n");
-        const startIdx = startLine !== undefined ? startLine - 1 : 0;
-        const endIdx = endLine !== undefined ? Math.min(lines.length, endLine) : lines.length;
+        let startIdx = startLine !== undefined ? startLine - 1 : 0;
+        let endIdx = endLine !== undefined ? Math.min(lines.length, endLine) : lines.length;
 
-        const targetSubNormContent = normLines.slice(startIdx, endIdx).join("\n");
+        let targetSubNormContent = normLines.slice(startIdx, endIdx).join("\n");
         if (!targetSubNormContent.includes(normOldStr) && !fuzzyMatch(targetSubNormContent, normOldStr)) {
-          return buildNotFoundError("oldString", oldStr, startLine || 1, endLine || lines.length, lines, normContent, normOldStr);
+          const auto = autoLocateTargetContent(oldStr, startLine || 1, endLine || lines.length, lines, normContent, normOldStr);
+          if (auto) {
+            startIdx = auto.actualStartLine - 1;
+            endIdx = auto.actualEndLine;
+            targetSubNormContent = auto.normSliceText;
+          } else {
+            return buildNotFoundError("oldString", oldStr, startLine || 1, endLine || lines.length, lines, normContent, normOldStr);
+          }
         }
         const count = targetSubNormContent.split(normOldStr).length - 1;
         if (count > 1) {
@@ -689,13 +793,20 @@ export const replaceFileContentTool: Tool = {
                  throw new Error(`Invalid line range [${startLine}, ${endLine}]. File has ${lines.length} lines.`);
                }
 
-               const sliceOfLines = lines.slice(startLine - 1, endLine);
-               const sliceText = sliceOfLines.join("\n");
-               const normSliceText = normalizeForMatching(sliceText);
+               let sliceOfLines = lines.slice(startLine - 1, endLine);
+               let sliceText = sliceOfLines.join("\n");
+               let normSliceText = normalizeForMatching(sliceText);
                const normTargetContent = normalizeForMatching(targetContent);
 
                if (!normSliceText.includes(normTargetContent) && !fuzzyMatch(normSliceText, normTargetContent)) {
-                 throw new Error(`targetContent not found in specified line range [${startLine}, ${endLine}] (matching normalized content)`);
+                 const normFull = normalizeForMatching(content);
+                 const auto = autoLocateTargetContent(targetContent, startLine, endLine, lines, normFull, normTargetContent);
+                 if (auto) {
+                   sliceText = auto.sliceText;
+                   normSliceText = auto.normSliceText;
+                 } else {
+                   throw new Error(`targetContent not found in specified line range [${startLine}, ${endLine}] (matching normalized content)`);
+                 }
                }
 
                const occurrences = countOccurrences(normSliceText, normTargetContent);
@@ -795,14 +906,20 @@ export const replaceFileContentTool: Tool = {
         return `Error: Invalid line range [${startLine}, ${endLine}]. File has ${lines.length} lines.`;
       }
 
-      const sliceOfLines = lines.slice(startLine - 1, endLine);
-      const sliceText = sliceOfLines.join("\n");
-      const normSliceText = normalizeForMatching(sliceText);
+      let sliceOfLines = lines.slice(startLine - 1, endLine);
+      let sliceText = sliceOfLines.join("\n");
+      let normSliceText = normalizeForMatching(sliceText);
       const normTargetContent = normalizeForMatching(targetContent);
 
       if (!normSliceText.includes(normTargetContent) && !fuzzyMatch(normSliceText, normTargetContent)) {
         const normFullContent = normalizeForMatching(content);
-        return buildNotFoundError("targetContent", targetContent, startLine, endLine, lines, normFullContent, normTargetContent);
+        const auto = autoLocateTargetContent(targetContent, startLine, endLine, lines, normFullContent, normTargetContent);
+        if (auto) {
+          sliceText = auto.sliceText;
+          normSliceText = auto.normSliceText;
+        } else {
+          return buildNotFoundError("targetContent", targetContent, startLine, endLine, lines, normFullContent, normTargetContent);
+        }
       }
 
       const occurrences = countOccurrences(normSliceText, normTargetContent);
@@ -1067,13 +1184,20 @@ export const multiReplaceFileContentTool: Tool = {
                 throw new Error(`Invalid line range [${startLine}, ${endLine}] in chunk. File has ${lines.length} lines.`);
               }
 
-              const sliceOfLines = lines.slice(startLine - 1, endLine);
-              const sliceText = sliceOfLines.join("\n");
-              const normSliceText = normalizeForMatching(sliceText);
+              let sliceOfLines = lines.slice(startLine - 1, endLine);
+              let sliceText = sliceOfLines.join("\n");
+              let normSliceText = normalizeForMatching(sliceText);
               const normTargetContent = normalizeForMatching(targetContent);
 
-              if (!normSliceText.includes(normTargetContent)) {
-                throw new Error(`targetContent not found in specified line range [${startLine}, ${endLine}] for a chunk.`);
+              if (!normSliceText.includes(normTargetContent) && !fuzzyMatch(normSliceText, normTargetContent)) {
+                const normFullContent = normalizeForMatching(content);
+                const auto = autoLocateTargetContent(targetContent, startLine, endLine, lines, normFullContent, normTargetContent);
+                if (auto) {
+                  sliceText = auto.sliceText;
+                  normSliceText = auto.normSliceText;
+                } else {
+                  throw new Error(`targetContent not found in specified line range [${startLine}, ${endLine}] for a chunk.`);
+                }
               }
 
               const occurrences = countOccurrences(normSliceText, normTargetContent);
@@ -1304,13 +1428,19 @@ export const multiReplaceFileContentTool: Tool = {
           return `Error: Invalid line range [${startLine}, ${endLine}] in chunk. File has ${lines.length} lines.`;
         }
 
-        const sliceOfLines = lines.slice(startLine - 1, endLine);
-        const sliceText = sliceOfLines.join("\n");
-        const normSliceText = normalizeForMatching(sliceText);
+        let sliceOfLines = lines.slice(startLine - 1, endLine);
+        let sliceText = sliceOfLines.join("\n");
+        let normSliceText = normalizeForMatching(sliceText);
         const normTargetContent = normalizeForMatching(targetContent);
 
-        if (!normSliceText.includes(normTargetContent)) {
-          return buildNotFoundError("targetContent", targetContent, startLine, endLine, lines, normFullContent, normTargetContent);
+        if (!normSliceText.includes(normTargetContent) && !fuzzyMatch(normSliceText, normTargetContent)) {
+          const auto = autoLocateTargetContent(targetContent, startLine, endLine, lines, normFullContent, normTargetContent);
+          if (auto) {
+            sliceText = auto.sliceText;
+            normSliceText = auto.normSliceText;
+          } else {
+            return buildNotFoundError("targetContent", targetContent, startLine, endLine, lines, normFullContent, normTargetContent);
+          }
         }
 
         const occurrences = countOccurrences(normSliceText, normTargetContent);
