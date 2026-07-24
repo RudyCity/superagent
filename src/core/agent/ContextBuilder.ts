@@ -63,28 +63,9 @@ export class ContextBuilder {
       if (shouldScan) {
         try {
           const { discoverWorkspace } = await import("../workspaceDiscovery.js");
-          const { isIdentical, cache } = await discoverWorkspace(agent.workingDirectory);
-          const wasFirstRun = !agent.workspaceCache;
+          const { cache } = await discoverWorkspace(agent.workingDirectory);
           agent.workspaceCache = cache;
           (agent as any).workspaceCacheNeedsUpdate = false;
-          if (wasFirstRun) {
-            if (isIdentical) {
-              agent.onEvent({
-                type: "text",
-                content: `\n[SYS] Workspace identical to previous session. Using cached context.\n`,
-              });
-            } else {
-              agent.onEvent({
-                type: "text",
-                content: `\n[SYS] Workspace scanned and cached.\n`,
-              });
-            }
-          } else if (!isIdentical) {
-            agent.onEvent({
-              type: "text",
-              content: `\n[SYS] Workspace changes detected. Updated cache.\n`,
-            });
-          }
         } catch (err: any) {
           agent.writeToLogFile("WARN", `Workspace discovery failed: ${err.message}`);
         }
