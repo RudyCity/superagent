@@ -415,12 +415,46 @@ export class CodebaseIndexer {
   }
 
   /**
-   * Auto background indexing trigger
+   * Get indexing status & stats for workspace
+   */
+  public static async getStatus(workspacePath: string): Promise<{ indexedFiles: number; totalChunks: number; indexDir: string }> {
+    const normWorkspace = path.resolve(workspacePath);
+    const indexDir = getWorkspaceIndexDir(normWorkspace);
+    const storedHashes = this.readHashes(normWorkspace);
+    const indexedFiles = Object.keys(storedHashes).length;
+    let totalChunks = 0;
+    try {
+      const db = await this.getIndexDb(normWorkspace);
+      // @ts-ignore
+      const all = db.db.getAll();
+      totalChunks = all.length;
+    } catch {}
+    return { indexedFiles, totalChunks, indexDir };
+  }
+
+  private static activeWatchers: Map<string, fs.FSWatcher> = new Map();
+
+  /**
+   * Auto background indexing trigger + live debounced file watcher
    */
   public static initAutoIndexing(workspacePath: string): void {
     const normWorkspace = path.resolve(workspacePath);
     setTimeout(() => {
       CodebaseIndexer.indexWorkspace(normWorkspace).catch(() => {});
     }, 1000);
+
+    if (!this.activeWatchers.has(normWorkspace)) {
+      try {
+        let timer: NodeJS.Timeout | null = null;
+        const watcher = fs.watch(normWorkspace, { recursive: true }, (eventType, filename) => {
+          if (!filename || isBinaryOrIgnoredFile(filename)) return;
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(() => {
+            CodebaseIndexer.indexWorkspace(normWorkspace).catch(() => {});
+          }, 2000);
+        });
+        this.activeWatchers.set(normWorkspace, watcher);
+      } catch {}
+    }
   }
 }

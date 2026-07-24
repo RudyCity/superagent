@@ -11,6 +11,16 @@ export const indexCommand: SlashCommand = {
     const sub = (parts[0] || "").toLowerCase();
     const activeWorkspace = process.cwd();
 
+    if (sub === "status" || sub === "info") {
+      const stats = await CodebaseIndexer.getStatus(activeWorkspace);
+      ctx.addLine({
+        type: "system",
+        content: `Codebase Index Status [${path.basename(activeWorkspace)}]:\n- Indexed Files: ${stats.indexedFiles}\n- Stored Vector Chunks: ${stats.totalChunks}\n- Cache Directory: ${stats.indexDir}`,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
     if (sub === "clean" || sub === "reset" || sub === "clear") {
       ctx.addLine({
         type: "system",

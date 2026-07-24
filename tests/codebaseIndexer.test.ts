@@ -88,5 +88,12 @@ export class Calculator {
     it("should clean index directory without throwing", async () => {
       await expect(CodebaseIndexer.clearIndex(tempTestDir)).resolves.toBeUndefined();
     });
+
+    it("should return index status stats", async () => {
+      const stats = await CodebaseIndexer.getStatus(tempTestDir);
+      expect(stats).toHaveProperty("indexedFiles");
+      expect(stats).toHaveProperty("totalChunks");
+      expect(stats).toHaveProperty("indexDir");
+    });
   });
 });
