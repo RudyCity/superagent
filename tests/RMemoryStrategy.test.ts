@@ -6,20 +6,6 @@ const mockSearchAtomic = vi.fn();
 const mockReadCore = vi.fn();
 const mockListScenarios = vi.fn();
 
-vi.mock("../src/core/rmemoryUtil.js", async (importOriginal) => {
-  const original = await importOriginal<any>();
-  return {
-    ...original,
-    getRMemoryClient: () => ({
-      addConversation: mockAddConversation,
-      searchAtomic: mockSearchAtomic,
-      readCore: mockReadCore,
-      listScenarios: mockListScenarios,
-    }),
-    getRMemorySessionKey: () => "test-sess",
-    isRmemoryActive: async () => true,
-  };
-});
 
 vi.mock("../src/core/config.js", async (importOriginal) => {
   const original = await importOriginal<any>();

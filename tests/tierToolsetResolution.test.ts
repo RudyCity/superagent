@@ -21,12 +21,7 @@ vi.mock("ai", () => ({
   jsonSchema: (s: any) => s,
 }));
 
-// Mock rmemoryUtil
-vi.mock("../src/core/rmemoryUtil.js", () => ({
-  getRMemoryClient: vi.fn(),
-  getRMemorySessionKey: vi.fn().mockReturnValue("test-sess"),
-  isRmemoryActive: vi.fn().mockResolvedValue(true),
-}));
+import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
 
 describe("Agent - Tier-Specific Default Toolset Resolution", () => {
   beforeEach(() => {
@@ -35,6 +30,9 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
     }
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    vi.spyOn(rmemoryUtilModule, "getRMemoryClient").mockReturnValue({} as any);
+    vi.spyOn(rmemoryUtilModule, "getRMemorySessionKey").mockReturnValue("test-sess");
+    vi.spyOn(rmemoryUtilModule, "isRmemoryActive").mockResolvedValue(true);
     // Speed up tests by skipping actual countdown delay
     vi.spyOn(Agent.prototype as any, "delayWithCountdown").mockResolvedValue(undefined);
     // Re-apply config spy after restoreAllMocks

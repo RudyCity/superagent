@@ -15,30 +15,9 @@ const mockClient = {
   readScenario: vi.fn(),
 };
 
-if (typeof Bun !== "undefined") {
-  const { mock } = await import("bun:test");
-  mock.module("../src/core/rmemoryUtil.js", () => ({
-    getRMemoryClient: () => mockClient,
-    getRMemorySessionKey: () => "test-sess",
-    isRmemoryActive: vi.fn().mockImplementation(async () => {
-      const { getSettings } = await import("../src/core/config/jsonConfig.js");
-      return !!getSettings().enableRmemory;
-    }),
-  }));
-}
-
+import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
 const { handleSlashCommand } = await import("../src/core/slash-commands.js");
 const { updateSettings, getSettings } = await import("../src/core/config/jsonConfig.js");
-
-if (typeof Bun === "undefined") {
-  vi.mock("../src/core/rmemoryUtil.js", () => ({
-    getRMemoryClient: () => mockClient,
-    getRMemorySessionKey: () => "test-sess",
-    isRmemoryActive: vi.fn().mockImplementation(async () => {
-      return !!getSettings().enableRmemory;
-    }),
-  }));
-}
 
 describe("/memory Command Suite", () => {
   const originalEnv = process.env;
@@ -69,7 +48,10 @@ describe("/memory Command Suite", () => {
 
   beforeEach(() => {
     addedLines = [];
+    vi.restoreAllMocks();
     vi.clearAllMocks();
+    vi.spyOn(rmemoryUtilModule, "getRMemoryClient").mockReturnValue(mockClient as any);
+    vi.spyOn(rmemoryUtilModule, "getRMemorySessionKey").mockReturnValue("test-sess");
     const configPath = path.join(tempConfigDir, "model-config.json");
     if (fs.existsSync(configPath)) {
       try { fs.unlinkSync(configPath); } catch {}

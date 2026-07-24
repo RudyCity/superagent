@@ -105,7 +105,14 @@ class VisionRequestHandler(BaseHTTPRequestHandler):
             
     def do_GET(self):
         if self.path == "/health":
-            self.send_json_response({"status": "healthy"})
+            if detector is not None:
+                self.send_json_response({"status": "healthy"})
+            else:
+                try:
+                    get_detector()
+                    self.send_json_response({"status": "healthy"})
+                except Exception as e:
+                    self.send_error_response(f"Model loading error: {e}")
         else:
             self.send_response(404)
             self.end_headers()
