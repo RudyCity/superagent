@@ -52,6 +52,7 @@ export function resolveWindowsShell(): WindowsShellResult {
 }
 
 export function suggestClosest(value: string, options: readonly string[]): string | undefined {
+  if (!value || typeof value !== "string") return undefined;
   const distance = (a: string, b: string) => {
     const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
     for (let j = 1; j <= b.length; j++) dp[0][j] = j;
@@ -73,11 +74,14 @@ export function formatToolError(problem: string, fix?: string, example?: string)
 }
 
 export function formatUnknownActionError(action: string, validActions: readonly string[], note?: string): string {
-  const suggestion = suggestClosest(action, validActions);
+  const isMissing = !action || typeof action !== "string";
+  const safeAction = isMissing ? "missing" : action;
+  const suggestion = isMissing ? undefined : suggestClosest(safeAction, validActions);
   const fix = suggestion
-    ? `Use action \"${suggestion}\". Valid actions: ${validActions.join(", ")}.`
+    ? `Use action "${suggestion}". Valid actions: ${validActions.join(", ")}.`
     : `Use one of: ${validActions.join(", ")}.`;
-  return formatToolError(`Unknown action \"${action}\".`, note ? `${fix} ${note}` : fix);
+  const errorMsg = isMissing ? "Action parameter is required." : `Unknown action "${safeAction}".`;
+  return formatToolError(errorMsg, note ? `${fix} ${note}` : fix);
 }
 
 export function normalizeWindowsPackageRunner(command: string): string {

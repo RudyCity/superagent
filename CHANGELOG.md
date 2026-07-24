@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.570] - 2026-07-24
+
+### Changed
+- **System Prompt & Context Optimization**:
+  - Streamlined system prompt rule blocks in `src/core/prompts.ts` to reduce token bloat and remove redundant meta-prompting jargon.
+  - Filtered out empty content and blank tool output turns (`[TOOL]: \n\n`) from chat history before LLM summarization in `src/core/agent/HistoryCompactor.ts`.
+  - Compacted pinned knowledge preamble in `src/core/pinnedKnowledge.ts` to reduce prompt token injection footprint.
+
 ## [1.2.569] - 2026-07-24
 
 ### Changed

@@ -722,15 +722,34 @@ export const manageTasksTool: Tool = {
     required: ["action"],
   },
   async execute(args, cwd, signal) {
-    const action = args.action as string;
+    let action = args.action as string | undefined;
     const validActions = ["list", "add", "add_bulk", "update", "remove", "update_bulk", "remove_bulk"];
-    if (!validActions.includes(action)) {
-      return formatUnknownActionError(action, validActions);
+    
+    // Auto-infer action if missing based on provided parameters
+    if (!action || typeof action !== "string") {
+      if (args.status !== undefined && (args.index !== undefined || args.indices !== undefined)) {
+        action = Array.isArray(args.indices) ? "update_bulk" : "update";
+      } else if (args.texts !== undefined && Array.isArray(args.texts)) {
+        action = "add_bulk";
+      } else if (args.text !== undefined && typeof args.text === "string") {
+        action = "add";
+      } else if (args.indices !== undefined && Array.isArray(args.indices)) {
+        action = "remove_bulk";
+      } else if (args.index !== undefined) {
+        action = "remove";
+      }
+    }
+
+    if (!action || !validActions.includes(action)) {
+      return formatUnknownActionError(action as any, validActions);
     }
     const text = args.text as string | undefined;
     const texts = args.texts as string[] | undefined;
-    const index = args.index as number | undefined;
-    const indices = args.indices as number[] | undefined;
+    const index = typeof args.index === "string" ? parseInt(args.index, 10) : (args.index as number | undefined);
+    const rawIndices = args.indices as any[] | undefined;
+    const indices: number[] | undefined = Array.isArray(rawIndices)
+      ? rawIndices.map(i => typeof i === "string" ? parseInt(i, 10) : i).filter(i => typeof i === "number" && !isNaN(i))
+      : undefined;
     const status = args.status as string | undefined;
     const sessionId = args.sessionId as string | undefined;
 

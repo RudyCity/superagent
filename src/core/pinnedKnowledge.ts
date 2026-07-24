@@ -552,21 +552,7 @@ export function formatKnowledgeForPrompt(
 
   const lines: string[] = [];
   lines.push("📌 PINNED KNOWLEDGE FROM PAST SESSIONS:");
-  lines.push("Below are important messages pinned from previous sessions across all projects.");
-  lines.push("You MUST use this knowledge to inform your responses and decisions.");
-  lines.push("");
-  lines.push("TOOLS AVAILABLE FOR PINNED KNOWLEDGE:");
-  lines.push("- search_pinned_knowledge(query): Search the global pinned knowledge base");
-  lines.push("- load_pinned_session(session_path): Load full conversation transcript from a past session");
-  lines.push("- search_history(query, cross_session=true): Search ALL session histories cross-project");
-  lines.push("");
-  lines.push("WHEN TO USE THESE TOOLS (proactively, without being asked):");
-  lines.push("- User mentions past sessions, previous conversations, or 'kemarin', 'sebelumnya', 'dulu'");
-  lines.push("- User says 'baca pin', 'lihat pin', 'cari pin', 'recall', 'ingat', 'remember'");
-  lines.push("- User references a tag like #auth, #database, #architecture — search by that tag");
-  lines.push("- User asks 'pernah bahas X belum?' or 'ada context soal X?'");
-  lines.push("- The current task relates to something in the pinned knowledge below");
-  lines.push("- When you need historical context to make better decisions");
+  lines.push("Use search_pinned_knowledge, load_pinned_session, or search_history when past context is referenced.");
   lines.push("");
 
   const limited = entries.slice(0, maxEntries);

@@ -281,30 +281,36 @@ export const grepTool: Tool = {
 
     try {
       let files: string[] | null = null;
-      try {
-        const cachePath = getWorkspaceCachePath(searchPath);
-        if (fsSync.existsSync(cachePath)) {
-          const cacheContent = fsSync.readFileSync(cachePath, "utf-8");
-          const cache = JSON.parse(cacheContent);
-          if (cache && Array.isArray(cache.fileList)) {
-            const picomatchModule = await import("picomatch") as any;
-            const picomatch = picomatchModule.default;
-            const isMatch = picomatch(`**/${include}`);
-            const matchedFiles = cache.fileList.filter((file: string) => isMatch(file));
-            files = matchedFiles.map((file: string) => path.resolve(searchPath, file));
-          }
-        }
-      } catch (cacheErr) {
-        // Fallback to disk
-      }
 
-      if (files === null) {
-        files = await fg(`**/${include}`, {
-          cwd: searchPath,
-          absolute: true,
-          onlyFiles: true,
-          ignore: ["**/node_modules/**", "**/dist/**", "**/.git/**"],
-        });
+      // Handle single file search path safely
+      if (fsSync.existsSync(searchPath) && fsSync.statSync(searchPath).isFile()) {
+        files = [searchPath];
+      } else {
+        try {
+          const cachePath = getWorkspaceCachePath(searchPath);
+          if (fsSync.existsSync(cachePath)) {
+            const cacheContent = fsSync.readFileSync(cachePath, "utf-8");
+            const cache = JSON.parse(cacheContent);
+            if (cache && Array.isArray(cache.fileList)) {
+              const picomatchModule = await import("picomatch") as any;
+              const picomatch = picomatchModule.default;
+              const isMatch = picomatch(`**/${include}`);
+              const matchedFiles = cache.fileList.filter((file: string) => isMatch(file));
+              files = matchedFiles.map((file: string) => path.resolve(searchPath, file));
+            }
+          }
+        } catch (cacheErr) {
+          // Fallback to disk
+        }
+
+        if (files === null) {
+          files = await fg(`**/${include}`, {
+            cwd: searchPath,
+            absolute: true,
+            onlyFiles: true,
+            ignore: ["**/node_modules/**", "**/dist/**", "**/.git/**"],
+          });
+        }
       }
 
       const results: string[] = [];

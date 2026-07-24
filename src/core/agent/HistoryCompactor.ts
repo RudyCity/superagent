@@ -100,14 +100,19 @@ export class HistoryCompactor {
   }
 
   public static async summarizeMessages(agent: Agent, messages: any[], signal?: AbortSignal): Promise<string> {
-    const formatted = messages.map(m => {
-      const role = m.role.toUpperCase();
-      let details = m.content || "";
-      if (m.toolCalls && m.toolCalls.length > 0) {
-        details += `\n[Tool Calls]: ${m.toolCalls.map((tc: any) => tc.name).join(", ")}`;
-      }
-      return `[${role}]: ${details}`;
-    }).join("\n\n");
+    const formatted = messages
+      .map((m) => {
+        const role = m.role.toUpperCase();
+        let details = typeof m.content === "string" ? m.content.trim() : "";
+        if (m.toolCalls && m.toolCalls.length > 0) {
+          const tcNames = m.toolCalls.map((tc: any) => tc.name).join(", ");
+          details += details ? `\n[Tool Calls]: ${tcNames}` : `[Tool Calls]: ${tcNames}`;
+        }
+        if (!details) return null;
+        return `[${role}]: ${details}`;
+      })
+      .filter(Boolean)
+      .join("\n\n");
 
     const prompt = `You are a helper system node. Summarize the following past coding assistant chat history turns extremely briefly.
 Identify:

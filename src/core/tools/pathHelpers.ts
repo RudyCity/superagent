@@ -26,7 +26,7 @@ export function normalizePath(filePath: string): string {
  * Returns the resolved absolute path, or undefined if no valid path was provided.
  */
 export function resolveFilePathFromArgs(args: Record<string, unknown>, cwd: string): string | undefined {
-  const raw = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile ?? args.targetFile) as string | undefined;
+  const raw = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile ?? args.targetFile ?? args.target_file ?? args.file) as string | undefined;
   if (!raw || typeof raw !== "string" || raw.trim() === "") return undefined;
   const clean = (p: string) => p.split(String.fromCharCode(92)).join('/').toLowerCase().replace(/\/$/, '');
   const resolved = clean(normalizePath(path.resolve(cwd, raw)));

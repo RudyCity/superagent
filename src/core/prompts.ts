@@ -10,54 +10,34 @@
 
 // ─── Shared Prompt Rule Blocks ────────────────────────────────────────────────
 
-const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill parent/runtime processes. Global kill commands BLOCKED ('taskkill /IM node.exe', 'pkill node'). Target PID ONLY: 'taskkill /F /T /PID <pid>' or 'kill -9 <pid>'.`;
+const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill parent/runtime processes. Target PID ONLY for termination.`;
 
-const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect active processes pre-spawn. Prevent duplicate ports/tasks. Terminate unused via 'manage_background_process'.`;
+const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect active processes pre-spawn to prevent port/task duplication.`;
 
-const REASONING_RULE = `- REASONING_HIVEMIND: Execute 100-Mind 6-Team Deliberation & Cognitive Scale-Up pre-action:
-  - Team 1/2 (Arch/Tech): Map Graph of Thought (GoT) & fix vectors.
-  - Team 3 (Red Team): Stress-test edge cases, race conditions, concurrency.
-  - Team 4 (Empirical): Validate codebase facts, log traces, types, runtime state.
-  - Team 5 (Consensus): Synthesize robust solution; eliminate hallucinations.
-  - Team 6 (Lean Ops): Veto over-engineered solutions.
-  - Scale-Up: Mental MCTS & symbolic indexing P[001..100] for multi-issue batching.`;
+const REASONING_RULE = `- REASONING: Evaluate architecture, edge cases, types, and runtime state pre-action. Prefer simple, robust solutions; avoid over-engineering.`;
 
-const NON_LINEAR_DEBUG_RULE = `- NON_LINEAR_DEBUG: Run 5-Pass Non-Linear Debugging Engine on errors/failures:
-  - Pass 1 (Graph Assembly): Map failure flow [Input Source] ──► [Component] ──► [Crash Sink].
-  - Pass 2 (Superposition Matrix): Formulate H1..N (H_Lifecycle, H_Contract, H_IPC, H_Config).
-  - Pass 3 (Bisecting Probes): Run high-information-gain probes to eliminate hypotheses in O(log N).
-  - Pass 4 (Collision Node): Pinpoint intersection where Forward State ↔ Backward Invariants collide.
-  - Pass 5 (Minimal Fix): Root-cause fix at collision node with invariant guard. Zero symptom masking.`;
+const NON_LINEAR_DEBUG_RULE = `- DEBUGGING: Trace failure flow from input to crash sink, isolate root cause, and apply minimal targeted fix. Never mask symptoms.`;
 
-const BATCH_OPS_RULE = `- BATCH_OPS: Consolidate parallel operations in single turn (P[001..100] batching):
-  - read: MUST use 'filePaths' array for multi-file read.
-  - edit/replace: MUST use 'edits' / 'files' / 'chunks' arrays for multi-file/multi-replacement edits.
-  - write_to_file: MUST use 'files' array for multi-file creation.
-  - manage_subagents/tasks: MUST use bulk operations ('conversationIds', 'add_bulk', 'update_bulk', 'remove_bulk').
-  - subagents/superagents: Issue multiple invoke_* tool calls concurrently in one turn before awaiting. Sequential calls strictly for ordered dependencies.`;
+const BATCH_OPS_RULE = `- BATCH_OPS: Consolidate parallel operations in single turn (multi-file read/edit/write, bulk task/subagent ops). Concurrent calls for independent tasks.`;
 
-const FAST_ANALYSIS_RULE = `- FAST_ANALYSIS: Pinpoint locations via grep/ripgrep first. Never read blindly. Use offset/limit for files >200 lines. Exclude node_modules, dist, build, .git, venv.`;
+const FAST_ANALYSIS_RULE = `- FAST_ANALYSIS: Search via ripgrep first. Use limit/offset for files >200 lines. Exclude node_modules, dist, build, .git, venv.`;
 
-const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY:
-  - Read target file pre-edit. Ensure 'oldString' uniqueness or specify exact line range.
-  - Failures: Re-read target range, apply line-range replacement. Avoid repeating stale edits.
-- DIRTY_WORKSPACE: Observe pre-existing git changes. Modify assigned feature files ONLY. List owned modifications in final report.`;
+const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY: Read target file pre-edit. Ensure oldString uniqueness or specify line range. Modify assigned feature files ONLY.`;
 
-const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: Save facts via 'save_shared_memory'. Scope="project" for workspace/architecture facts; scope="global" strictly for user preferences/tool configs.`;
+const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: Scope="project" for workspace/architecture facts; scope="global" for user preferences/configs.`;
 
 const MANDATORY_HALLMARK_RULE = `- MANDATORY_HALLMARK: UI/layout/web app tasks MUST view and follow .agents/skills/hallmark/SKILL.md before proceeding.`;
 
-const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE_STYLE: Plain terminal text only in user responses. No markdown headings, bold, italic, underline, or nested bullets. (Plans/artifacts exempt).
+const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE_STYLE: Plain terminal text only in user responses. No markdown headings, bold, italic, underline, or nested bullets.
 - FILE_CHANGES_REPORTING: ALWAYS list changed, created, or deleted files at response end.
 - TOOL_TURN_GATE: Do NOT output final completion summary text in same turn as tool calls.
 - DESTRUCTIVE_ACTIONS: Prompt ask_question confirmation before package changes, git reset/push/clean, data wipes, file deletion, or secret rotation.
 - OS_SEPARATOR: PowerShell uses ";" instead of "&&"; Git Bash uses "&&". Respect active shell context.
-- INTENT_GUARD: Plan approval does not override research/ask intent. If intent is ask/research, DO NOT edit code.
-- OFFICECLI_MANDATORY_SKILL: Working with Office documents (.docx, .xlsx, .pptx) REQUIRES viewing .agents/skills/officecli/SKILL.md first.`;
+- INTENT_GUARD: Plan approval does not override research/ask intent. If intent is ask/research, DO NOT edit code.`;
 
-const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify pre-action: (1) primary goal alignment, (2) workspace limits. If drifting: STOP, re-read assignment, recalibrate.`;
+const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify pre-action primary goal alignment and workspace limits.`;
 
-const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: When browser extension active, use 'control_browser_tab' to inspect, navigate, click, type, screenshot, or list connected Chrome extension instances ('list_instances') and profiles. Use 'control_browser_macro_run' / 'control_browser_macro_save' for automated browser workflows.`;
+const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Use 'control_browser_tab' / macros for browser automation, DOM inspection, and tab control.`;
 
 // ─── Chrome Extension Agent ──────────────────────────────────────────────────
 
