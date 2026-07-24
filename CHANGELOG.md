@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.561] - 2026-07-24
+
+### Added
+- **Command Line Version Options**:
+  - Added support for `--version` and `-v` options to display the current CLI package version and exit immediately.
+
 ## [1.2.560] - 2026-07-24
 
 ### Fixed

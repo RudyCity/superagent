@@ -20,6 +20,12 @@ if (process.argv[2] === "session") {
   process.exit(0);
 }
 
+if (process.argv.includes("--version") || process.argv.includes("-v")) {
+  const { getSuperAgentVersion } = await import("./core/config/paths.js");
+  console.log(getSuperAgentVersion());
+  process.exit(0);
+}
+
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
   console.log(`
 Usage: superagent [command/options] [prompt]
