@@ -259,14 +259,39 @@ export interface PasteState {
   pasteSuffixLength: number;
 }
 
+let lastChangeTime = 0;
+let fastInputCount = 0;
+let fastInputStartIndex = 0;
+let originalInputLength = 0;
+
+export function resetPasteDetection() {
+  lastChangeTime = 0;
+  fastInputCount = 0;
+  fastInputStartIndex = 0;
+  originalInputLength = 0;
+}
+
 export function updatePasteState(
   input: string,
   sanitizedVal: string,
   currentState: PasteState
 ): PasteState {
   const { isPasted, pastePrefixLength, pasteSuffixLength } = currentState;
+  const now = Date.now();
+  const dt = lastChangeTime ? now - lastChangeTime : Infinity;
+  lastChangeTime = now;
+
   const lengthDiff = sanitizedVal.length - input.length;
   const containsNewline = sanitizedVal.includes("\n");
+
+  if (sanitizedVal.length === 0) {
+    fastInputCount = 0;
+    fastInputStartIndex = 0;
+    originalInputLength = 0;
+  }
+
+  // A time delta of less than 80ms is extremely likely to be terminal paste.
+  const isFast = dt < 80;
 
   if (isPasted) {
     const { inserted: oldInserted } = getPasteSplit(input, pastePrefixLength, pasteSuffixLength);
@@ -276,15 +301,21 @@ export function updatePasteState(
       const newlyInsertedEnd = sanitizedVal.length - pasteSuffixLength;
       const newlyInsertedLength = newlyInsertedEnd - newlyInsertedStart;
       const newlyInsertedText = sanitizedVal.slice(newlyInsertedStart, newlyInsertedEnd);
-      const isContinuation = newlyInsertedLength > 0 && (newlyInsertedLength > 1 || newlyInsertedText.includes("\n"));
+      const isContinuation = newlyInsertedLength > 0 && (newlyInsertedLength > 1 || newlyInsertedText.includes("\n") || isFast);
 
       if (isContinuation) {
+        if (isFast) {
+          fastInputCount++;
+        } else {
+          fastInputCount = 0;
+        }
         return {
           isPasted: true,
           pastePrefixLength: newIdx,
           pasteSuffixLength
         };
       } else {
+        fastInputCount = 0;
         return {
           isPasted: true,
           pastePrefixLength: newIdx,
@@ -292,6 +323,7 @@ export function updatePasteState(
         };
       }
     } else {
+      fastInputCount = 0;
       return {
         isPasted: false,
         pastePrefixLength: 0,
@@ -300,15 +332,43 @@ export function updatePasteState(
     }
   } else {
     if (lengthDiff < 0) {
+      fastInputCount = 0;
       return { isPasted: false, pastePrefixLength: 0, pasteSuffixLength: 0 };
-    } else if (lengthDiff > 15 || containsNewline) {
+    }
+
+    if (lengthDiff > 15 || containsNewline) {
+      fastInputCount = 0;
       const { prefix, suffix } = getInsertion(input, sanitizedVal);
       return {
         isPasted: true,
         pastePrefixLength: prefix.length,
         pasteSuffixLength: suffix.length
       };
-    } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
+    }
+
+    if (isFast) {
+      if (fastInputCount === 0) {
+        const { prefix } = getInsertion(input, sanitizedVal);
+        fastInputStartIndex = prefix.length;
+        originalInputLength = input.length;
+      }
+      fastInputCount++;
+    } else {
+      fastInputCount = 0;
+    }
+
+    // If we have seen a sequence of rapid inputs (e.g. 10 or more)
+    // and the total length is getting large, we can treat it as a paste!
+    if (fastInputCount >= 10 && sanitizedVal.length > 15) {
+      const suffixLen = Math.max(0, originalInputLength - fastInputStartIndex);
+      return {
+        isPasted: true,
+        pastePrefixLength: fastInputStartIndex,
+        pasteSuffixLength: suffixLen
+      };
+    }
+
+    if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
       return { isPasted: false, pastePrefixLength: 0, pasteSuffixLength: 0 };
     } else if (lengthDiff > 0 && lengthDiff <= 15 && !containsNewline) {
       return { isPasted: false, pastePrefixLength: 0, pasteSuffixLength: 0 };
@@ -317,3 +377,4 @@ export function updatePasteState(
 
   return currentState;
 }
+

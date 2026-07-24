@@ -37,7 +37,7 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
     originalEnv = { ...process.env };
     delete process.env.SUPERAGENT_HOME;
     delete process.env.SUPERAGENT_SESSION_ID;
-    delete process.env.SUPERAGENT_CONFIG_DIR;
+    process.env.SUPERAGENT_CONFIG_DIR = tempHomeDir;
     vi.restoreAllMocks();
 
     // Mock child_process and execa via spies

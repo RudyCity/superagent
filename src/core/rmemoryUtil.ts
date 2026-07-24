@@ -243,6 +243,7 @@ export function checkAndPerformDbMigration(targetDir: string, currentModelName: 
     }
   }
 
+  let cleanupSuccess = true;
   if (migrateNeeded) {
     if (fs.existsSync(targetDir)) {
       const entries = fs.readdirSync(targetDir);
@@ -252,19 +253,29 @@ export function checkAndPerformDbMigration(targetDir: string, currentModelName: 
         try {
           fs.rmSync(fullPath, { recursive: true, force: true });
         } catch {
-          // Ignore locking/permission issues during cleanup
+          cleanupSuccess = false;
         }
       }
     }
   }
 
-  try {
-    fs.writeFileSync(metadataPath, JSON.stringify({
-      modelName: currentModelName,
-      dimensions: currentDimensions
-    }), "utf-8");
-  } catch {
-    // Ignore write errors
+  if (cleanupSuccess) {
+    try {
+      fs.writeFileSync(metadataPath, JSON.stringify({
+        modelName: currentModelName,
+        dimensions: currentDimensions
+      }), "utf-8");
+    } catch {
+      // Ignore write errors
+    }
+  } else {
+    try {
+      if (fs.existsSync(metadataPath)) {
+        fs.unlinkSync(metadataPath);
+      }
+    } catch {
+      // Ignore unlink errors
+    }
   }
 }
 
@@ -311,6 +322,13 @@ async function getRMemory(): Promise<any> {
   const currentDimensions = provider.dimensions;
 
   if (rMemoryInstance && (cachedRMemoryModelName !== currentModelName || cachedRMemoryDimensions !== currentDimensions)) {
+    try {
+      if (typeof rMemoryInstance.close === "function") {
+        rMemoryInstance.close();
+      } else if (rMemoryInstance.db && typeof rMemoryInstance.db.close === "function") {
+        rMemoryInstance.db.close();
+      }
+    } catch {}
     rMemoryInstance = null;
   }
 

@@ -21,7 +21,7 @@ import { saveWorkspaceTaskToDb, getWorkspaceTasksFromDb, saveWorkspaceToDb } fro
 
 describe("Background Tasks Persistence & Sync Tests", () => {
   beforeEach(() => {
-    delete process.env.SUPERAGENT_CONFIG_DIR;
+    process.env.SUPERAGENT_CONFIG_DIR = path.join(tempHome, ".superagent-r");
     
     closeHistoryDb();
     resetWorkspaceTasksMigrationFlag();

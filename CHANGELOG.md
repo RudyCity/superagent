@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.552] - 2026-07-24
+
+### Fixed
+- **Terminal Input Paste Detection**:
+  - Enhanced `updatePasteState` in `text.ts` to robustly detect and track fast character-by-character pasting and rapid chunk inputs using timing and count heuristics.
+  - Added `resetPasteDetection` helper function to clear global paste detection tracking variables.
+  - Prevented pasted text inputs from being displayed raw in the terminal input box when pasted via terminal emulators that process inputs rapidly character-by-character.
+
 ## [1.2.551] - 2026-07-24
 
 ### Fixed

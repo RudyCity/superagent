@@ -30,7 +30,7 @@ describe("Provider Credential Resolution Fixes", () => {
   beforeEach(() => {
     vi.spyOn(os, "homedir").mockReturnValue(tempHome);
     originalProcessEnv = { ...process.env };
-    delete process.env.SUPERAGENT_CONFIG_DIR;
+    process.env.SUPERAGENT_CONFIG_DIR = tempHome;
     
     // Bersihkan folder temp
     if (fs.existsSync(tempHome)) {

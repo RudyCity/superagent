@@ -22,6 +22,19 @@ vi.mock("fast-glob", { spy: true });
 vi.mock("child_process", { spy: true });
 vi.mock("node:child_process", { spy: true });
 
+// Globally mock os.homedir() to return the isolated worker home directory
+vi.mock("os", async (importOriginal) => {
+  const original = await importOriginal<typeof import("os")>();
+  return {
+    ...original,
+    homedir: () => {
+      const workerId = process.env.VITEST_WORKER_ID || `bun-${process.pid}`;
+      const path = require("path");
+      return path.join(process.cwd(), "tests", `temp-home-worker-${workerId}`);
+    }
+  };
+});
+
 // Isolate configuration directory per Vitest worker to prevent parallel test lock contention
 const workerId = process.env.VITEST_WORKER_ID || `bun-${process.pid}`;
 const workerHomeDir = path.join(process.cwd(), "tests", `temp-home-worker-${workerId}`);

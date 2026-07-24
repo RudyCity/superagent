@@ -1,61 +1,51 @@
-import { describe, expect, it } from "vitest";
-import { updatePasteState } from "../src/utils/text.js";
+import { describe, expect, it, beforeEach } from "vitest";
+import { updatePasteState, resetPasteDetection } from "../src/utils/text.js";
 
 describe("updatePasteState", () => {
-  it("detects initial paste and transitions to isPasted: true", () => {
+  beforeEach(() => {
+    resetPasteDetection();
+  });
+
+  it("should detect paste when pasting a large string of 300 characters", () => {
     const input = "";
-    const sanitizedVal = "This is a very long text pasted into the console that exceeds fifteen characters.";
+    const pasted = "a".repeat(300);
     const state = { isPasted: false, pastePrefixLength: 0, pasteSuffixLength: 0 };
-
-    const result = updatePasteState(input, sanitizedVal, state);
-    expect(result.isPasted).toBe(true);
-    expect(result.pastePrefixLength).toBe(0);
-    expect(result.pasteSuffixLength).toBe(0);
+    const nextState = updatePasteState(input, pasted, state);
+    expect(nextState.isPasted).toBe(true);
+    expect(nextState.pastePrefixLength).toBe(0);
+    expect(nextState.pasteSuffixLength).toBe(0);
   });
 
-  it("absorbs subsequent paste chunks into the paste block", () => {
-    const input = "CHUNK1";
-    const state = { isPasted: true, pastePrefixLength: 0, pasteSuffixLength: 0 };
-    
-    const sanitizedVal = "CHUNK1CHUNK2";
-    const result = updatePasteState(input, sanitizedVal, state);
-
-    expect(result.isPasted).toBe(true);
-    expect(result.pastePrefixLength).toBe(0);
-    expect(result.pasteSuffixLength).toBe(0);
+  it("should NOT detect paste when typing 1 character", () => {
+    const input = "abc";
+    const nextVal = "abcd";
+    const state = { isPasted: false, pastePrefixLength: 0, pasteSuffixLength: 0 };
+    const nextState = updatePasteState(input, nextVal, state);
+    expect(nextState.isPasted).toBe(false);
   });
 
-  it("handles user typing at the end of the paste block by treating it as suffix", () => {
-    const input = "CHUNK1";
-    const state = { isPasted: true, pastePrefixLength: 0, pasteSuffixLength: 0 };
-    
-    const sanitizedVal = "CHUNK1a";
-    const result = updatePasteState(input, sanitizedVal, state);
+  it("should handle multi-chunk paste continuation", () => {
+    const input1 = "";
+    const chunk1 = "a".repeat(200);
+    const state1 = { isPasted: false, pastePrefixLength: 0, pasteSuffixLength: 0 };
+    const state2 = updatePasteState(input1, chunk1, state1);
+    expect(state2.isPasted).toBe(true);
 
-    expect(result.isPasted).toBe(true);
-    expect(result.pastePrefixLength).toBe(0);
-    expect(result.pasteSuffixLength).toBe(1);
+    const chunk2 = chunk1 + "b".repeat(200);
+    const state3 = updatePasteState(chunk1, chunk2, state2);
+    expect(state3.isPasted).toBe(true);
+    expect(state3.pastePrefixLength).toBe(0);
+    expect(state3.pasteSuffixLength).toBe(0);
   });
 
-  it("keeps paste intact when user typed prefix before the paste block", () => {
-    const input = "CHUNK1";
-    const state = { isPasted: true, pastePrefixLength: 0, pasteSuffixLength: 0 };
-    
-    const sanitizedVal = "aCHUNK1";
-    const result = updatePasteState(input, sanitizedVal, state);
-
-    expect(result.isPasted).toBe(true);
-    expect(result.pastePrefixLength).toBe(1);
-    expect(result.pasteSuffixLength).toBe(0);
-  });
-
-  it("clears paste state if the paste block is modified inside", () => {
-    const input = "CHUNK1";
-    const state = { isPasted: true, pastePrefixLength: 0, pasteSuffixLength: 0 };
-    
-    const sanitizedVal = "CHNK1";
-    const result = updatePasteState(input, sanitizedVal, state);
-
-    expect(result.isPasted).toBe(false);
+  it("should detect paste when pasting 300 characters character-by-character", () => {
+    let input = "";
+    let state = { isPasted: false, pastePrefixLength: 0, pasteSuffixLength: 0 };
+    for (let i = 0; i < 300; i++) {
+      const nextVal = input + "a";
+      state = updatePasteState(input, nextVal, state);
+      input = nextVal;
+    }
+    expect(state.isPasted).toBe(true);
   });
 });
