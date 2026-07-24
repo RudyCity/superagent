@@ -18,6 +18,7 @@ import {
   mapSupraTelemetryToCategory,
   warmUpClassifier,
   clearLocalClassifierCache,
+  isHighConfidenceConversation,
   type RequestCategory,
   type ClassificationResult,
 } from "../src/core/requestClassifier.js";
@@ -669,6 +670,20 @@ describe("optimizations (Jaro-Winkler, Trie, Soundex, TF-IDF)", () => {
     expect(res.category).toBe("research");
     expect(res.confidence).toBe("high");
     expect(res.reason).toContain("Statistical TF-IDF routing");
+  });
+});
+
+describe("isHighConfidenceConversation with planState", () => {
+  it("should return true when planState is IDLE or undefined", () => {
+    const classRes = { category: "conversation" as const, confidence: "high" as const, reason: "", heuristicOnly: true, classificationTokens: 0 };
+    expect(isHighConfidenceConversation(classRes, "single", "IDLE")).toBe(true);
+    expect(isHighConfidenceConversation(classRes, "single")).toBe(true);
+  });
+
+  it("should return false when planState is PLANNING_PENDING or APPROVED", () => {
+    const classRes = { category: "conversation" as const, confidence: "high" as const, reason: "", heuristicOnly: true, classificationTokens: 0 };
+    expect(isHighConfidenceConversation(classRes, "single", "PLANNING_PENDING")).toBe(false);
+    expect(isHighConfidenceConversation(classRes, "single", "APPROVED")).toBe(false);
   });
 });
 

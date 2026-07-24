@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.564] - 2026-07-24
+
+### Fixed
+- **Plan Confirmation Fast-Path Bypass & Auto-Approval**:
+  - Fixed issue where single-word plan confirmations (e.g., "oke", "yes", "proceed") triggered Conversation Fast-Path and stalled execution.
+  - Updated `isHighConfidenceConversation` to check `agent.planState` and bypass Fast-Path when a plan is active or pending approval.
+  - Added automatic planState transition from `PLANNING_PENDING` to `APPROVED` upon receiving user confirmation keywords in `RequestProcessor`.
+
 ## [1.2.563] - 2026-07-24
 
 ### Fixed

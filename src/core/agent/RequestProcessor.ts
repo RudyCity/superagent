@@ -71,6 +71,17 @@ export class RequestProcessor {
               agent.planState = "APPROVED";
               agent.simpleTaskApproved = true;
             }
+          } else if (agent.planState === "PLANNING_PENDING") {
+            const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
+            const lowerInput = userInputText.toLowerCase().trim();
+            const confirmationWords = ["oke", "ok", "okay", "yes", "y", "sip", "siap", "lanjut", "lanjutkan", "proceed", "go", "approved", "lgtm", "agree", "yep", "yup", "sure", "mantap", "gas"];
+            const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
+            const isConfirmation = confirmationWords.some(w => words.includes(w) || lowerInput === w);
+            if (isConfirmation) {
+              agent.planState = "APPROVED";
+              agent.simpleTaskApproved = true;
+              agent.writeToLogFile("INFO", `Plan state transitioned from PLANNING_PENDING to APPROVED via user confirmation: "${userInputText}"`);
+            }
           }
         } else {
           if (heuristicResult.category === "conversation") {
