@@ -274,7 +274,7 @@ export const runCommandTool: Tool = {
     command = await adjustCommandPorts(command);
 
     let releaseLock: (() => void) | undefined;
-    if (command.includes("npm install") || command.includes("npm i") || command.includes("yarn install")) {
+    if (command.includes("npm install") || command.includes("npm i") || command.includes("yarn install") || command.includes("bun install") || command.includes("bun i")) {
       releaseLock = await acquireNpmLock();
     }
 
@@ -282,7 +282,7 @@ export const runCommandTool: Tool = {
     if (process.platform === "win32") {
       const resolved = resolveWindowsShell();
       shellPath = resolved.shellPath;
-      if (resolved.isBash && /^(npm|npx|pnpm|yarn)(\s|$)/.test(command)) {
+      if (resolved.isBash && /^(npm|npx|pnpm|yarn|bun)(\s|$)/.test(command)) {
         command = normalizeWindowsPackageRunner(command);
       } else if (!resolved.isBash) {
         command = formatCommandForPowerShell(command);
@@ -605,7 +605,7 @@ export const runBackgroundProcessTool: Tool = {
       });
     };
 
-    let fallbackPrefix = "npx";
+    let fallbackPrefix = "bunx";
     if (fs.existsSync(path.join(targetCwd, "pnpm-lock.yaml"))) {
       fallbackPrefix = "pnpm dlx";
     } else if (fs.existsSync(path.join(targetCwd, "yarn.lock"))) {

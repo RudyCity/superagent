@@ -17,7 +17,12 @@ describe("Agent - Abort and Instant Interruption", () => {
 
   beforeEach(() => {
     if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempHome, { recursive: true, force: true });
+      } catch {
+        // On Windows the directory may still be locked (EBUSY) from a previous
+        // test run; silently ignore so the test can proceed with the existing dir.
+      }
     }
 
     getConfigSpy = vi.spyOn(configModule, "getConfig").mockReturnValue({
@@ -35,10 +40,14 @@ describe("Agent - Abort and Instant Interruption", () => {
   });
 
   afterEach(() => {
-    if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
-    }
     vi.restoreAllMocks();
+    if (fs.existsSync(tempHome)) {
+      try {
+        fs.rmSync(tempHome, { recursive: true, force: true });
+      } catch {
+        // On Windows the directory may still be locked (EBUSY); ignore.
+      }
+    }
   });
 
   it("should instantly interrupt and fire done event when abort() is called during text streaming", async () => {

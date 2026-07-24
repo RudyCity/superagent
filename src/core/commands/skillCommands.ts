@@ -55,7 +55,7 @@ export const installCommand: SlashCommand = {
         if (!parsedArgs.includes("-y") && !parsedArgs.includes("--yes")) {
           parsedArgs.push("-y");
         }
-        const result = await execa("npx", ["skills", "add", ...parsedArgs], {
+        const result = await execa("bunx", ["skills", "add", ...parsedArgs], {
           shell,
           cwd: process.cwd(),
           reject: false,

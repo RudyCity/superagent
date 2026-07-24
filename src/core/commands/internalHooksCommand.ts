@@ -211,21 +211,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
           });
         }
 
-        // Run npm install inside hook directory to bootstrap dependencies (skip in Vitest to save test run time)
+        // Run bun install inside hook directory to bootstrap dependencies (skip in Vitest to save test run time)
         let npmInstallSuccess = false;
         if (!process.env.VITEST) {
           try {
             ctx.addLine({
               type: "system",
-              content: "Running npm install to bootstrap dependencies...",
+              content: "Running bun install to bootstrap dependencies...",
               timestamp: Date.now(),
             });
-            await execa("npm", ["install"], { cwd: hookDir });
+            await execa("bun", ["install"], { cwd: hookDir });
             npmInstallSuccess = true;
           } catch (npmErr: any) {
             ctx.addLine({
               type: "system",
-              content: `⚠ Warning: Failed to run npm install in internal-hooks/${hookName}: ${npmErr.message}`,
+              content: `⚠ Warning: Failed to run bun install in internal-hooks/${hookName}: ${npmErr.message}`,
               timestamp: Date.now(),
             });
           }

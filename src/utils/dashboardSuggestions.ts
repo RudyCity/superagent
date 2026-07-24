@@ -51,7 +51,6 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-classifier": "Enable or disable multi-category request classifier (on or off)",
   "/setting-classifier-threshold": "Set classifier heuristic confidence threshold (high, medium, low)",
   "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
-  "/index": "Manage codebase vector embeddings — status, clean, search, or force rebuild",
 };
 
 export function getDashboardSuggestions(originalQuery: string): string[] {
@@ -133,11 +132,6 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
 
     if (mainCommand === "/checkpoint") {
       const possibilities = ["/checkpoint list", "/checkpoint restore", "/checkpoint delete"];
-      return filterSuggestions(possibilities, query);
-    }
-
-    if (mainCommand === "/index") {
-      const possibilities = ["/index status", "/index search", "/index clean", "/index force"];
       return filterSuggestions(possibilities, query);
     }
 

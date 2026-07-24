@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.546] - 2026-07-24
+
+### Fixed
+- **Silent Classifier Fallback on Local Model Failure**: When the local Supra-Router-51M-ONNX model fails to download or any error occurs during Phase 2 LLM classification, the system now silently falls back to the heuristic result instead of showing a user-facing `[SYS] Warning: Request classification issue` message. The heuristic result is applied directly to routing (planState, isSimpleTask) so execution continues normally. Failures are recorded to the log file only (`WARN` level). Root cause: `heuristicResult` was declared inside the `try` block making it inaccessible to the `catch` block — fixed by hoisting the declaration before `try`.
+
+## [1.2.545] - 2026-07-24
+
+### Removed
+- **Codebase Indexing RAG System**: Completely removed the codebase vector embedding and Auto-RAG feature.
+  - Deleted `CodebaseIndexer` module (`codebaseIndexer.ts`) and all background auto-indexing logic.
+  - Deleted `codebaseSearchTool` and removed it from all tier toolsets (master, superagent, chrome extension, and all subagent types).
+  - Removed Auto-RAG prompt injection from `ContextBuilder` system prompt construction.
+  - Deleted `/index` slash command (`indexCommand.ts`) and removed its import from commands registry.
+  - Removed `/index` entries from `/help` output and dashboard autocomplete suggestions.
+  - Deleted `codebaseIndexer.test.ts` test file.
+
 ## [1.2.544] - 2026-07-24
 
 ### Optimized

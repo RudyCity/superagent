@@ -1778,8 +1778,13 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     if (isEscape) {
+      // Always reset scroll when ESC is pressed — regardless of other conditions.
       if (scrollOffset > 0) {
         setScrollOffset(0);
+      }
+
+      if (scrollOffset > 0 && !activeWizard && !isProcessing && !agentRef.current?.isAgentRunning() && !agentRef.current?.wasRunningBeforeAbort) {
+        // Only scroll reset needed — nothing else to do.
       } else if (activeWizard) {
         if (activeWizard.type === "question" && activeWizard.questions && activeWizard.currentQuestionIndex !== undefined && activeWizard.currentQuestionIndex > 0) {
           const prevIndex = activeWizard.currentQuestionIndex - 1;

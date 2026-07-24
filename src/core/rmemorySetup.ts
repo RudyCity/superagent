@@ -15,7 +15,7 @@ import { getConfiguredProviders, getTierModelWithProvider } from "./config/provi
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { exec, spawn } from "child_process";
+import { exec, spawn, execSync } from "child_process";
 import { promisify } from "util";
 import { fileURLToPath } from "url";
 
@@ -24,6 +24,19 @@ const __dirname = path.dirname(__filename);
 
 /** Project root: go up from dist/core/ or src/core/ */
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
+
+// Detect if Bun is available globally
+let hasBunCached: boolean | null = null;
+function checkHasBun(): boolean {
+  if (hasBunCached !== null) return hasBunCached;
+  try {
+    execSync("bun --version", { stdio: "ignore" });
+    hasBunCached = true;
+  } catch {
+    hasBunCached = false;
+  }
+  return hasBunCached;
+}
 
 /**
  * Spawns the RMemory Gateway process completely silently in the background.
@@ -46,8 +59,13 @@ export function spawnRmemoryGateway(options: {
     MEMORY_RMEMORY_GATEWAY_PORT: "8420",
   };
 
-  // Run directly via node with --import tsx and shell: false to ensure NO console window is opened on Windows
-  return spawn(process.execPath, ["--import", "tsx", "src/gateway/server.ts"], {
+  const useBun = checkHasBun();
+  const cmd = useBun ? "bun" : process.execPath;
+  const args = useBun
+    ? ["src/gateway/server.ts"]
+    : ["--import", "tsx", "src/gateway/server.ts"];
+
+  return spawn(cmd, args, {
     cwd: options.gatewayDir,
     detached: true,
     shell: false,
@@ -70,9 +88,13 @@ export async function runRmemorySetup(): Promise<void> {
         ? path.join(PROJECT_ROOT, "src", "cli.tsx")
         : path.join(PROJECT_ROOT, "dist", "cli.js");
 
-      const args = isTsx
-        ? ["--import", "tsx", entryFile, "--sync-history-only"]
-        : [entryFile, "--sync-history-only"];
+      const useBun = checkHasBun();
+      const cmd = useBun ? "bun" : process.execPath;
+      const args = useBun
+        ? [entryFile, "--sync-history-only"]
+        : (isTsx
+            ? ["--import", "tsx", entryFile, "--sync-history-only"]
+            : [entryFile, "--sync-history-only"]);
 
       const logDir = path.join(os.homedir(), ".superagent-r", "logs");
       if (!fs.existsSync(logDir)) {
@@ -81,7 +103,7 @@ export async function runRmemorySetup(): Promise<void> {
       const outLog = fs.openSync(path.join(logDir, "rmemory-sync.log"), "a");
       const errLog = fs.openSync(path.join(logDir, "rmemory-sync.err"), "a");
 
-      const child = spawn(process.execPath, args, {
+      const child = spawn(cmd, args, {
         cwd: PROJECT_ROOT,
         detached: true,
         shell: false,

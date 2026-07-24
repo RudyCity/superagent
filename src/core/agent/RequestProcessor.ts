@@ -17,14 +17,15 @@ export class RequestProcessor {
 
     const isTestEnv = process.env.VITEST && process.env.SUPERAGENT_TEST_SIMPLE_TASK !== "true";
     if (!isTestEnv) {
+      const settings = getSettings();
+      const { classifyHeuristic } = await import("../requestClassifier.js");
+      const textInput = typeof userInput === "string"
+        ? userInput
+        : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
+      // Heuristic is computed outside try so catch can use it as silent fallback
+      const heuristicResult = classifyHeuristic(textInput, settings.classifierKeywords as any);
+
       try {
-        const settings = getSettings();
-        const { classifyHeuristic } = await import("../requestClassifier.js");
-        const textInput = typeof userInput === "string"
-          ? userInput
-          : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
-        const heuristicResult = classifyHeuristic(textInput, settings.classifierKeywords as any);
-        
         if (settings.classifierEnabled !== false) {
           const { classifyRequest } = await import("../requestClassifier.js");
           const classifierModel = getModelInstanceForTier("subagent", 2, "classifier", !agent.isMultiAgent);
@@ -138,8 +139,23 @@ export class RequestProcessor {
           }
         }
       } catch (err: any) {
-        agent.writeToLogFile("WARN", `Failed to classify user request: ${err.message}`);
-        agent.onEvent({ type: "text", content: `[SYS] Warning: Request classification issue (${err.message}). Falling back to main agent loop...\n\n` });
+        // Silently fall back to heuristic when LLM/local-model classification fails.
+        // No user-facing warning — heuristic result is good enough to continue.
+        agent.writeToLogFile("WARN", `Classifier failed, using heuristic fallback (category=${heuristicResult.category}, confidence=${heuristicResult.confidence}): ${err.message}`);
+        agent.currentClassification = { ...heuristicResult, heuristicOnly: true };
+        if (agent.planState === "IDLE") {
+          const skipPlanningCategories = ["conversation", "question", "research"];
+          if (skipPlanningCategories.includes(heuristicResult.category)) {
+            agent.isSimpleTask = true;
+            agent.planState = "APPROVED";
+            agent.simpleTaskApproved = true;
+          } else if (heuristicResult.category === "simple_edit" || heuristicResult.category === "command" || heuristicResult.category === "debug") {
+            agent.isSimpleTask = true;
+            agent.planState = "APPROVED";
+            agent.simpleTaskApproved = true;
+          }
+          // complex_task with low heuristic confidence → leave planState IDLE, main loop handles planning
+        }
       }
     }
 
