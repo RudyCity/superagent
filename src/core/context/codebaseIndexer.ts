@@ -358,9 +358,21 @@ export class CodebaseIndexer {
             totalChunksCount++;
           }
         }
+
+        // Optimize: call global.gc() if exposed, to actively clean up heap after each batch
+        if (typeof global !== "undefined" && (global as any).gc) {
+          try {
+            (global as any).gc();
+          } catch {}
+        }
       }
 
       this.saveHashes(normWorkspace, updatedHashes);
+      if (typeof global !== "undefined" && (global as any).gc) {
+        try {
+          (global as any).gc();
+        } catch {}
+      }
     } catch (err) {
       // Gracefully handle indexing error without throwing
     } finally {
@@ -405,8 +417,26 @@ export class CodebaseIndexer {
    * Clears codebase vector cache for the given workspace
    */
   public static async clearIndex(workspacePath: string): Promise<void> {
-    const indexDir = getWorkspaceIndexDir(workspacePath);
-    this.rMemoryInstances.delete(indexDir);
+    const normWorkspace = path.resolve(workspacePath);
+    const watcher = this.activeWatchers.get(normWorkspace);
+    if (watcher) {
+      try {
+        watcher.close();
+      } catch {}
+      this.activeWatchers.delete(normWorkspace);
+    }
+
+    const indexDir = getWorkspaceIndexDir(normWorkspace);
+    const instance = this.rMemoryInstances.get(indexDir);
+    if (instance) {
+      try {
+        if (typeof instance.close === "function") {
+          instance.close();
+        }
+      } catch {}
+      this.rMemoryInstances.delete(indexDir);
+    }
+
     if (fs.existsSync(indexDir)) {
       try {
         fs.rmSync(indexDir, { recursive: true, force: true });
@@ -439,11 +469,12 @@ export class CodebaseIndexer {
    */
   public static initAutoIndexing(workspacePath: string): void {
     const normWorkspace = path.resolve(workspacePath);
-    setTimeout(() => {
-      CodebaseIndexer.indexWorkspace(normWorkspace).catch(() => {});
-    }, 1000);
 
     if (!this.activeWatchers.has(normWorkspace)) {
+      setTimeout(() => {
+        CodebaseIndexer.indexWorkspace(normWorkspace).catch(() => {});
+      }, 1000);
+
       try {
         let timer: NodeJS.Timeout | null = null;
         const watcher = fs.watch(normWorkspace, { recursive: true }, (eventType, filename) => {
@@ -456,5 +487,26 @@ export class CodebaseIndexer {
         this.activeWatchers.set(normWorkspace, watcher);
       } catch {}
     }
+  }
+
+  /**
+   * Closes all active watchers and DB connections across all workspaces.
+   */
+  public static shutdown(): void {
+    for (const watcher of this.activeWatchers.values()) {
+      try {
+        watcher.close();
+      } catch {}
+    }
+    this.activeWatchers.clear();
+
+    for (const instance of this.rMemoryInstances.values()) {
+      try {
+        if (typeof instance.close === "function") {
+          instance.close();
+        }
+      } catch {}
+    }
+    this.rMemoryInstances.clear();
   }
 }

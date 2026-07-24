@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.543] - 2026-07-24
+
+### Fixed
+- **Indexing RAM and File Locks Leak**:
+  - Implemented batching (max size of 8) in `OptimizedLocalTextEmbeddingProvider.embedTexts` to prevent high peak memory allocation during feature extraction.
+  - Added explicit `.dispose()` calls on intermediate ONNX/WASM feature-extraction tensors in both `embedText` and `embedTexts` to prevent native memory leaks in the transformers pipeline.
+  - Resolved locked files and directory deletion failures on Windows by closing FS file watchers and calling `close()` on the cached `RMemory` SQLite database connection within `CodebaseIndexer.clearIndex`.
+  - Optimized `CodebaseIndexer.initAutoIndexing` to avoid scheduling redundant workspace indexing scans on every prompt construction call.
+
 ## [1.2.542] - 2026-07-24
 
 ### Fixed

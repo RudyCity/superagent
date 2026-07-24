@@ -114,24 +114,40 @@ export class OptimizedLocalTextEmbeddingProvider {
       pooling: "mean",
       normalize: true,
     });
-    return Array.from(output.data);
+    const result = Array.from(output.data) as number[];
+    if (output && typeof output.dispose === "function") {
+      try {
+        output.dispose();
+      } catch {}
+    }
+    return result;
   }
 
   async embedTexts(texts: string[], type?: "query" | "passage"): Promise<number[][]> {
     if (texts.length === 0) return [];
-    const formattedTexts = texts.map(t => this.formatText(t, type));
-    const extractor = await this.getExtractor();
-    const output = await extractor(formattedTexts, {
-      pooling: "mean",
-      normalize: true,
-    });
-    const dims = this.dimensions;
-    const data = output.data;
     const results: number[][] = [];
-    for (let i = 0; i < texts.length; i++) {
-      const start = i * dims;
-      const end = start + dims;
-      results.push(Array.from(data.subarray(start, end)));
+    const BATCH_SIZE = 8;
+    const extractor = await this.getExtractor();
+    
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const batch = texts.slice(i, i + BATCH_SIZE);
+      const formattedTexts = batch.map(t => this.formatText(t, type));
+      const output = await extractor(formattedTexts, {
+        pooling: "mean",
+        normalize: true,
+      });
+      const dims = this.dimensions;
+      const data = output.data;
+      for (let j = 0; j < batch.length; j++) {
+        const start = j * dims;
+        const end = start + dims;
+        results.push(Array.from(data.subarray(start, end)));
+      }
+      if (output && typeof output.dispose === "function") {
+        try {
+          output.dispose();
+        } catch {}
+      }
     }
     return results;
   }

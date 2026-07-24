@@ -77,7 +77,10 @@ export class Calculator {
       fs.writeFileSync(path.join(tempTestDir, "test.ts"), "export const hello = 'world';", "utf-8");
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+      try {
+        await CodebaseIndexer.clearIndex(tempTestDir);
+      } catch {}
       if (fs.existsSync(tempTestDir)) {
         try {
           fs.rmSync(tempTestDir, { recursive: true, force: true });
