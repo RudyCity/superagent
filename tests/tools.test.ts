@@ -513,8 +513,8 @@ describe("Search and Grep tools", () => {
 
   it("should search pattern using grepTool", async () => {
     const tool = getToolByName("grep");
-    const result = await tool?.execute({ pattern: "normalizeForMatching", path: "src/core/tools.ts" }, process.cwd());
-    expect(result).toContain("tools.ts");
+    const result = await tool?.execute({ pattern: "normalizeForMatching", path: "src/core/tools/helpers.ts" }, process.cwd());
+    expect(result).toContain("helpers.ts");
   });
 
   it("should search using ripgrepSearchTool", async () => {

@@ -22,7 +22,8 @@ const BATCH_OPS_RULE = `- BATCH_OPS: Consolidate parallel operations in single t
 
 const FAST_ANALYSIS_RULE = `- FAST_ANALYSIS: Search via ripgrep first. Use limit/offset for files >200 lines. Exclude node_modules, dist, build, .git, venv.`;
 
-const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY: Read target file pre-edit. Ensure oldString uniqueness or specify line range. Modify assigned feature files ONLY.`;
+const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY: Read target file pre-edit. Ensure oldString uniqueness or specify line range. Modify assigned feature files ONLY. Failures: Re-read target range, apply line-range replacement. Avoid repeating stale edits.
+- DIRTY_WORKSPACE: Observe pre-existing git changes. Modify assigned feature files ONLY.`;
 
 const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: Scope="project" for workspace/architecture facts; scope="global" for user preferences/configs.`;
 

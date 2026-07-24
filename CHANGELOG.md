@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.571] - 2026-07-24
+
+### Changed
+- **Workspace & Grep Tool Improvements**:
+  - Added DIRTY_WORKSPACE rule and updated FILE_EDIT_SAFETY_RULE in prompts to guide agents on handling existing changes.
+  - Fixed relative path output in grepTool when searching a single file path.
+
 ## [1.2.570] - 2026-07-24
 
 ### Changed

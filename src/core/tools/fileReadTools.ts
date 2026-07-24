@@ -282,8 +282,8 @@ export const grepTool: Tool = {
     try {
       let files: string[] | null = null;
 
-      // Handle single file search path safely
-      if (fsSync.existsSync(searchPath) && fsSync.statSync(searchPath).isFile()) {
+      const isSearchPathFile = fsSync.existsSync(searchPath) && fsSync.statSync(searchPath).isFile();
+      if (isSearchPathFile) {
         files = [searchPath];
       } else {
         try {
@@ -328,7 +328,9 @@ export const grepTool: Tool = {
               const localRegex = new RegExp(pattern, "gi");
               for (let i = 0; i < lines.length; i++) {
                 if (localRegex.test(lines[i])) {
-                  const relPath = path.relative(searchPath, file).replace(/\\/g, "/");
+                  const relPath = isSearchPathFile
+                    ? path.basename(file)
+                    : path.relative(searchPath, file).replace(/\\/g, "/");
                   results.push(`${relPath}:${i + 1}: ${lines[i].trim()}`);
                 }
                 localRegex.lastIndex = 0;
