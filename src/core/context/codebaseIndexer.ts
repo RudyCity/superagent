@@ -82,13 +82,14 @@ function readGitIgnoreRules(workspacePath: string): string[] {
 }
 
 function shouldIgnorePath(relPath: string, gitignoreRules: string[]): boolean {
-  const parts = relPath.split(path.sep);
+  const parts = relPath.split(/[/\\]/);
   for (const part of parts) {
     if (IGNORED_DIRS.has(part)) return true;
   }
+  const normRel = relPath.replace(/\\/g, "/");
   for (const rule of gitignoreRules) {
     const cleanRule = rule.replace(/^\//, "").replace(/\/$/, "");
-    if (cleanRule && (relPath === cleanRule || relPath.startsWith(cleanRule + path.sep))) {
+    if (cleanRule && (normRel === cleanRule || normRel.startsWith(cleanRule + "/"))) {
       return true;
     }
   }
@@ -142,6 +143,15 @@ export function chunkFileContent(relativePath: string, content: string, fileHash
   const CHUNK_SIZE = 80;
   const OVERLAP = 20;
 
+  const createChunk = (startLine: number, endLine: number, chunkLines: string[]) => ({
+    id: `code-${getWorkspaceHash(relativePath)}-${startLine}-${endLine}`,
+    relativePath,
+    startLine,
+    endLine,
+    content: `[File: ${relativePath} (lines ${startLine}-${endLine})]\n${chunkLines.join("\n")}`,
+    fileHash,
+  });
+
   // Structural boundary detection (functions, classes, exports, interfaces)
   const isStructuralLanguage = /\.(ts|tsx|js|jsx|py|go|rs|java|c|cpp|cs)$/i.test(relativePath);
 
@@ -158,17 +168,7 @@ export function chunkFileContent(relativePath: string, content: string, fileHash
 
       if (isBlockEnd || isSizeLimit || i === lines.length - 1) {
         const endLine = startLine + currentChunkLines.length - 1;
-        const chunkContent = currentChunkLines.join("\n");
-        const chunkId = `code-${getWorkspaceHash(relativePath)}-${startLine}-${endLine}`;
-
-        chunks.push({
-          id: chunkId,
-          relativePath,
-          startLine,
-          endLine,
-          content: `[File: ${relativePath} (lines ${startLine}-${endLine})]\n${chunkContent}`,
-          fileHash,
-        });
+        chunks.push(createChunk(startLine, endLine, currentChunkLines));
 
         // Retain overlap for continuity
         const overlapCount = Math.min(OVERLAP, currentChunkLines.length);
@@ -184,17 +184,7 @@ export function chunkFileContent(relativePath: string, content: string, fileHash
 
       const startLine = i + 1;
       const endLine = i + chunkLines.length;
-      const chunkContent = chunkLines.join("\n");
-      const chunkId = `code-${getWorkspaceHash(relativePath)}-${startLine}-${endLine}`;
-
-      chunks.push({
-        id: chunkId,
-        relativePath,
-        startLine,
-        endLine,
-        content: `[File: ${relativePath} (lines ${startLine}-${endLine})]\n${chunkContent}`,
-        fileHash,
-      });
+      chunks.push(createChunk(startLine, endLine, chunkLines));
 
       if (i + CHUNK_SIZE >= lines.length) break;
     }
@@ -282,19 +272,20 @@ export class CodebaseIndexer {
 
       const currentFilesSet = new Set(filePaths);
 
-      // Handle deleted files
-      for (const oldFile of Object.keys(storedHashes)) {
-        if (!currentFilesSet.has(oldFile)) {
-          delete updatedHashes[oldFile];
-          try {
-            // @ts-ignore
-            const allMemories = db.db.getAll();
-            const stale = allMemories.filter((m: any) => m.metadata?.relativePath === oldFile);
-            for (const item of stale) {
+      // Handle deleted files in single pass
+      const deletedFiles = Object.keys(storedHashes).filter(oldFile => !currentFilesSet.has(oldFile));
+      if (deletedFiles.length > 0) {
+        const deletedSet = new Set(deletedFiles);
+        for (const oldFile of deletedFiles) delete updatedHashes[oldFile];
+        try {
+          // @ts-ignore
+          const allMemories = db.db.getAll() || [];
+          for (const item of allMemories) {
+            if (deletedSet.has(item.metadata?.relativePath)) {
               db.delete(item.id);
             }
-          } catch {}
-        }
+          }
+        } catch {}
       }
 
       // Collect files needing index update
@@ -342,21 +333,22 @@ export class CodebaseIndexer {
             embeddings = await Promise.all(texts.map(t => db.provider.embedText(t, "passage")));
           }
 
-          for (let j = 0; j < batchChunks.length; j++) {
-            const chunk = batchChunks[j];
-            await db.addMemory({
-              id: chunk.id,
-              content: chunk.content,
-              embedding: embeddings[j],
-              metadata: {
-                relativePath: chunk.relativePath,
-                startLine: chunk.startLine,
-                endLine: chunk.endLine,
-                fileHash: chunk.fileHash,
-              },
-            });
-            totalChunksCount++;
-          }
+          await Promise.all(
+            batchChunks.map((chunk, j) =>
+              db.addMemory({
+                id: chunk.id,
+                content: chunk.content,
+                embedding: embeddings[j],
+                metadata: {
+                  relativePath: chunk.relativePath,
+                  startLine: chunk.startLine,
+                  endLine: chunk.endLine,
+                  fileHash: chunk.fileHash,
+                },
+              })
+            )
+          );
+          totalChunksCount += batchChunks.length;
         }
 
         // Optimize: call global.gc() if exposed, to actively clean up heap after each batch

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.544] - 2026-07-24
+
+### Optimized
+- **Pragmatic Minimalism for Codebase Indexer**:
+  - Refactored `CodebaseIndexer` according to pragmatic minimalism principles to eliminate over-engineering and reduce runtime overhead.
+  - Optimized database memory insertions within batches using concurrent `Promise.all` instead of sequential line-by-line `await` blocking loops.
+  - Streamlined stale deleted file purging into a single-pass `Set` lookup over vector memories instead of repeated O(N) array scans.
+  - Normalized path separator matching for cross-platform ignore rules on Windows and Linux.
+  - Reused chunk creation helper to keep structural and standard chunking DRY.
+
 ## [1.2.543] - 2026-07-24
 
 ### Fixed
