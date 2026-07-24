@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.565] - 2026-07-24
+
+### Removed
+- **`[SYS] Initiating action:` Fallback Text**:
+  - Removed `[SYS] Initiating action: ${description}...` fallback text from `app.tsx` and `uiHelpers.ts`. Tool executions in chat UI now display directly without the redundant system prefix line.
+
 ## [1.2.564] - 2026-07-24
 
 ### Fixed

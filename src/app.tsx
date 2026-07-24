@@ -1600,10 +1600,9 @@ export function App({
           if (content || reasoning) {
             flushBuffer();
           } else {
-            const fallbackNarrative = `[SYS] Initiating action: ${event.description}...`;
             addLine({
               type: "assistant",
-              content: fallbackNarrative,
+              content: "",
               timestamp: Date.now(),
             });
             streamBufferRef.current = "";

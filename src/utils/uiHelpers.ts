@@ -156,10 +156,9 @@ export function reconstructChatLines(msgs: Message[]): ChatLine[] {
           children: [],
         };
       } else if (m.toolCalls && m.toolCalls.length > 0) {
-        const desc = getToolDescription(m.toolCalls[0]);
         assistantLine = {
           type: "assistant",
-          content: `[SYS] Initiating action: ${desc}...`,
+          content: "",
           timestamp: m.timestamp,
           reasoning: m.reasoning,
           children: [],
