@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.553] - 2026-07-24
+
+### Added
+- **Startup Dependency & Model Progress Bars**:
+  - Implemented interactive `StartupChecker` Ink component to run and monitor initialization checks on startup.
+  - Added support for progress callbacks with total/loaded byte sizes during HuggingFace transformers model preloading (classifier and embedding models).
+  - Enhanced dependency installer functions (ripgrep, curl, Android CLI) in `androidSetup.ts` with streaming progress callbacks and visual progress tracking in TTY mode.
+
 ## [1.2.552] - 2026-07-24
 
 ### Fixed

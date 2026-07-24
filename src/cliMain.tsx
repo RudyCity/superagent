@@ -151,20 +151,22 @@ export async function runCli() {
 
 
 
-  // Auto-setup ripgrep and Android CLI asynchronously on startup
-  const { ensureRgInstalled, ensureAndroidCliInstalled } = await import("./core/androidSetup.js");
-  ensureRgInstalled().catch(() => {});
-  ensureAndroidCliInstalled().catch(() => {});
+  if (!process.stdin.isTTY) {
+    // Auto-setup ripgrep and Android CLI asynchronously on startup
+    const { ensureRgInstalled, ensureAndroidCliInstalled } = await import("./core/androidSetup.js");
+    ensureRgInstalled().catch(() => {});
+    ensureAndroidCliInstalled().catch(() => {});
 
-  // Auto-setup RMemory Gateway if enabled
-  const { runRmemorySetup } = await import("./core/rmemorySetup.js");
-  runRmemorySetup().catch(() => {});
+    // Auto-setup RMemory Gateway if enabled
+    const { runRmemorySetup } = await import("./core/rmemorySetup.js");
+    runRmemorySetup().catch(() => {});
 
-  // Initialize MCP Servers in background
-  const { initMcpServers } = await import("./core/mcp/McpManager.js");
-  initMcpServers().catch((err) => {
-    console.error("[MCP] Error initializing servers during startup:", err);
-  });
+    // Initialize MCP Servers in background
+    const { initMcpServers } = await import("./core/mcp/McpManager.js");
+    initMcpServers().catch((err) => {
+      console.error("[MCP] Error initializing servers during startup:", err);
+    });
+  }
 
   const { Agent } = await import("./core/agent.js");
   const { registerQuestionHandler, addMasterTokens, subscribeToMasterLogs, registerMasterAgent } = await import("./core/tools/index.js");
@@ -206,6 +208,24 @@ export async function runCli() {
       addTrustedDirectory(currentDir);
       await ensureDirectoryTrusted(currentDir);
     }
+
+    // Run startup checks with progress bar UI
+    const runStartupChecks = async (): Promise<void> => {
+      const React = (await import("react")).default;
+      const { render } = await import("ink");
+      const { StartupChecker } = await import("./components/startup-checker.js");
+      return new Promise<void>((resolve) => {
+        const { unmount } = render(
+          React.createElement(StartupChecker, {
+            onComplete: () => {
+              unmount();
+              resolve();
+            }
+          })
+        );
+      });
+    };
+    await runStartupChecks();
 
     const resumeIndex = process.argv.findIndex(arg => arg === "--resume" || arg === "-r");
     let resumeVal: string | undefined = undefined;

@@ -24,6 +24,45 @@ async function fetchWithRetry(url: string, retries = 3, delay = 2000): Promise<R
   throw new Error(`Failed to fetch ${url}`);
 }
 
+export type DownloadProgressCallback = (downloaded: number, total: number, stage: "downloading" | "extracting" | "done") => void;
+
+async function downloadFileWithProgress(
+  url: string,
+  destPath: string,
+  onProgress?: (downloaded: number, total: number) => void
+): Promise<void> {
+  const res = await fetchWithRetry(url);
+  const contentLength = Number(res.headers.get("content-length")) || 0;
+  
+  const reader = res.body?.getReader();
+  if (!reader) {
+    const buffer = Buffer.from(await res.arrayBuffer());
+    await fs.writeFile(destPath, buffer);
+    if (onProgress && contentLength > 0) {
+      onProgress(contentLength, contentLength);
+    }
+    return;
+  }
+  
+  const chunks: Uint8Array[] = [];
+  let receivedLength = 0;
+  
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value);
+      receivedLength += value.length;
+      if (onProgress) {
+        onProgress(receivedLength, contentLength);
+      }
+    }
+  }
+  
+  const buffer = Buffer.concat(chunks);
+  await fs.writeFile(destPath, buffer);
+}
+
 export async function isAndroidCliInstalledGlobally(): Promise<boolean> {
   const isWin = process.platform === "win32";
   try {
@@ -88,9 +127,10 @@ export async function isRgInstalledLocally(): Promise<boolean> {
   return cachedRgInstalledLocally;
 }
 
-export async function ensureRgInstalled(): Promise<void> {
+export async function ensureRgInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
   try {
     if (await isRgInstalledLocally() || await isRgInstalledGlobally()) {
+      if (onProgress) onProgress(0, 0, "done");
       return;
     }
 
@@ -98,7 +138,9 @@ export async function ensureRgInstalled(): Promise<void> {
     const isMac = process.platform === "darwin";
     const isArm = process.arch === "arm64";
 
-    console.log("\n⚡ [SYSTEM] ripgrep (rg) not found. Downloading and installing locally... Please wait.");
+    if (!onProgress) {
+      console.log("\n⚡ [SYSTEM] ripgrep (rg) not found. Downloading and installing locally... Please wait.");
+    }
     const binDir = getLocalBinDir();
     await fs.mkdir(binDir, { recursive: true });
 
@@ -118,10 +160,18 @@ export async function ensureRgInstalled(): Promise<void> {
     }
 
     const tempFile = path.join(os.tmpdir(), archiveName);
-    const res = await fetchWithRetry(downloadUrl);
-    const buffer = Buffer.from(await res.arrayBuffer());
-    await fs.writeFile(tempFile, buffer);
+    if (onProgress) {
+      onProgress(0, 0, "downloading");
+    }
+    await downloadFileWithProgress(downloadUrl, tempFile, (downloaded, total) => {
+      if (onProgress) {
+        onProgress(downloaded, total, "downloading");
+      }
+    });
 
+    if (onProgress) {
+      onProgress(0, 0, "extracting");
+    }
     const tempExtractDir = path.join(os.tmpdir(), "rg-extract");
     await fs.mkdir(tempExtractDir, { recursive: true });
 
@@ -151,7 +201,11 @@ export async function ensureRgInstalled(): Promise<void> {
       await fs.rm(tempExtractDir, { recursive: true, force: true });
     } catch {}
 
-    console.log("ripgrep (rg) installed successfully.");
+    if (onProgress) {
+      onProgress(0, 0, "done");
+    } else {
+      console.log("ripgrep (rg) installed successfully.");
+    }
   } catch (err) {
     console.error("Warning: Failed to auto-install ripgrep:", err);
   }
@@ -181,24 +235,35 @@ export async function isCurlInstalledLocally(): Promise<boolean> {
   }
 }
 
-export async function ensureCurlInstalled(): Promise<void> {
+export async function ensureCurlInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
   try {
     if (await isCurlInstalledLocally() || await isCurlInstalledGlobally()) {
+      if (onProgress) onProgress(0, 0, "done");
       return;
     }
 
     const isWin = process.platform === "win32";
     if (isWin) {
-      console.log("\n⚡ [SYSTEM] curl not found. Downloading and installing locally... Please wait.");
+      if (!onProgress) {
+        console.log("\n⚡ [SYSTEM] curl not found. Downloading and installing locally... Please wait.");
+      }
       const binDir = getLocalBinDir();
       await fs.mkdir(binDir, { recursive: true });
 
       const downloadUrl = "https://curl.se/windows/dl-8.4.0_7/curl-8.4.0_7-win64-mingw.zip";
       const tempFile = path.join(os.tmpdir(), "curl.zip");
-      const res = await fetchWithRetry(downloadUrl);
-      const buffer = Buffer.from(await res.arrayBuffer());
-      await fs.writeFile(tempFile, buffer);
+      if (onProgress) {
+        onProgress(0, 0, "downloading");
+      }
+      await downloadFileWithProgress(downloadUrl, tempFile, (downloaded, total) => {
+        if (onProgress) {
+          onProgress(downloaded, total, "downloading");
+        }
+      });
 
+      if (onProgress) {
+        onProgress(0, 0, "extracting");
+      }
       const tempExtractDir = path.join(os.tmpdir(), "curl-extract");
       await fs.mkdir(tempExtractDir, { recursive: true });
 
@@ -213,7 +278,12 @@ export async function ensureCurlInstalled(): Promise<void> {
         await fs.unlink(tempFile);
         await fs.rm(tempExtractDir, { recursive: true, force: true });
       } catch {}
-      console.log("curl installed successfully.");
+
+      if (onProgress) {
+        onProgress(0, 0, "done");
+      } else {
+        console.log("curl installed successfully.");
+      }
     } else {
       console.warn("Warning: 'curl' was not found on your system. Please install it using your package manager (e.g. apt, brew).");
     }
@@ -222,14 +292,15 @@ export async function ensureCurlInstalled(): Promise<void> {
   }
 }
 
-export async function ensureAndroidCliInstalled(): Promise<void> {
+export async function ensureAndroidCliInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
   try {
     // 1. Ensure curl and rg are installed first
-    await ensureCurlInstalled();
-    await ensureRgInstalled();
+    await ensureCurlInstalled(onProgress);
+    await ensureRgInstalled(onProgress);
 
     // 2. Ensure Android CLI is installed
     if (await isAndroidCliInstalledLocally() || await isAndroidCliInstalledGlobally()) {
+      if (onProgress) onProgress(0, 0, "done");
       return;
     }
 
@@ -237,7 +308,11 @@ export async function ensureAndroidCliInstalled(): Promise<void> {
     const isMac = process.platform === "darwin";
     const isArm = process.arch === "arm64";
 
-    console.log("\n⚡ [SYSTEM] Android CLI not found. Downloading and installing locally... Please wait.");
+    if (onProgress) {
+      onProgress(0, 0, "downloading");
+    } else {
+      console.log("\n⚡ [SYSTEM] Android CLI not found. Downloading and installing locally... Please wait.");
+    }
 
     if (isWin) {
       const tempCmd = path.join(os.tmpdir(), "install-android-cli.cmd");
@@ -247,6 +322,9 @@ export async function ensureAndroidCliInstalled(): Promise<void> {
       const buffer = Buffer.from(await res.arrayBuffer());
       await fs.writeFile(tempCmd, buffer);
 
+      if (onProgress) {
+        onProgress(0, 0, "extracting");
+      }
       await execa(tempCmd, { shell: true });
       
       try {
@@ -264,13 +342,21 @@ export async function ensureAndroidCliInstalled(): Promise<void> {
       const text = await res.text();
       await fs.writeFile(tempSh, text, { mode: 0o755 });
 
+      if (onProgress) {
+        onProgress(0, 0, "extracting");
+      }
       await execa(tempSh, { shell: true });
 
       try {
         await fs.unlink(tempSh);
       } catch {}
     }
-    console.log("Android CLI installed successfully.");
+    
+    if (onProgress) {
+      onProgress(0, 0, "done");
+    } else {
+      console.log("Android CLI installed successfully.");
+    }
   } catch (err) {
     console.error("Warning: Failed to auto-install Android CLI:", err);
   }

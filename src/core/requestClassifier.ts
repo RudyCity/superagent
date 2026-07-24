@@ -758,7 +758,9 @@ export async function warmUpClassifier(onProgress?: (event: any) => void): Promi
                 type: "model_download",
                 modelName: "classifier",
                 status: "progress",
-                progress: pct
+                progress: pct,
+                loaded: typeof data.loaded === "number" ? data.loaded : undefined,
+                total: typeof data.total === "number" ? data.total : undefined
               });
             } else {
               const pctStr = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";

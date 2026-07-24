@@ -138,15 +138,17 @@ export class OptimizedLocalTextEmbeddingProvider {
             }
           }
           if (data.status === "progress" && downloadStarted) {
-            const pct = typeof data.progress === "number" ? data.progress : 0;
-            if (onProgress) {
-              onProgress({
-                type: "model_download",
-                modelName: "embedding",
-                status: "progress",
-                progress: pct
-              });
-            } else {
+             const pct = typeof data.progress === "number" ? data.progress : 0;
+             if (onProgress) {
+               onProgress({
+                 type: "model_download",
+                 modelName: "embedding",
+                 status: "progress",
+                 progress: pct,
+                 loaded: typeof data.loaded === "number" ? data.loaded : undefined,
+                 total: typeof data.total === "number" ? data.total : undefined
+               });
+             } else {
               const pctStr = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
               process.stdout.write(`\r[INFO] Downloading embedding model: ${pctStr}%`);
             }
