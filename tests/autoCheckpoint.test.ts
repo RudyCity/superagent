@@ -39,7 +39,6 @@ describe("Auto-checkpoint: deleteCheckpointById", () => {
       workingDirectory: process.cwd(),
     } as any);
     vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([] as any);
-    vi.spyOn(configModule, "getInstalledSkillInstructions").mockReturnValue([] as any);
 
     await fs.mkdir(TEST_SESSION_DIR, { recursive: true });
     await fs.writeFile(TEST_SESSION_FILE, "{}", "utf-8");
@@ -101,7 +100,6 @@ describe("Auto-checkpoint: max rotation (20)", () => {
       workingDirectory: process.cwd(),
     } as any);
     vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([] as any);
-    vi.spyOn(configModule, "getInstalledSkillInstructions").mockReturnValue([] as any);
 
     await fs.mkdir(TEST_SESSION_DIR, { recursive: true });
     await fs.writeFile(TEST_SESSION_FILE, "{}", "utf-8");
@@ -138,7 +136,6 @@ describe("Auto-checkpoint: createCheckpoint preserves git SHA", () => {
       workingDirectory: process.cwd(),
     } as any);
     vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([] as any);
-    vi.spyOn(configModule, "getInstalledSkillInstructions").mockReturnValue([] as any);
 
     await fs.mkdir(TEST_SESSION_DIR, { recursive: true });
     await fs.writeFile(TEST_SESSION_FILE, "{}", "utf-8");

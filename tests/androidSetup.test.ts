@@ -1,19 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-
-// Mock execa for Bun test runner
-if (typeof Bun !== "undefined") {
-  const { mock } = await import("bun:test");
-  mock.module("execa", () => {
-    return {
-      execa: (cmd: string, args: string[]) => {
-        if (cmd === "where.exe" || cmd === "which") {
-          return Promise.resolve({ exitCode: 0, stdout: "path/to/cmd" });
-        }
-        return Promise.resolve({ exitCode: 0 });
-      }
-    };
-  });
-}
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import * as execaModule from "execa";
 
 const {
   isAndroidCliInstalledGlobally,
@@ -27,21 +13,21 @@ const {
   getLocalCurlPath
 } = await import("../src/core/androidSetup.js");
 
-// Mock execa for Vitest runner
-if (typeof Bun === "undefined") {
-  vi.mock("execa", () => {
-    return {
-      execa: vi.fn().mockImplementation((cmd, args) => {
-        if (cmd === "where.exe" || cmd === "which") {
-          return Promise.resolve({ exitCode: 0, stdout: "path/to/cmd" });
-        }
-        return Promise.resolve({ exitCode: 0 });
-      }),
-    };
-  });
-}
-
 describe("androidSetup", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(execaModule, "execa").mockImplementation(((cmd: string, args: string[]) => {
+      if (cmd === "where.exe" || cmd === "which") {
+        return Promise.resolve({ exitCode: 0, stdout: "path/to/cmd" });
+      }
+      return Promise.resolve({ exitCode: 0 });
+    }) as any);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("should check if android is installed globally", async () => {
     const installed = await isAndroidCliInstalledGlobally();
     expect(installed).toBe(true);

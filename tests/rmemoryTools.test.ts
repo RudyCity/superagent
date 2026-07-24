@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, mock, afterAll } from "vitest";
 import {
   rmemorySearchTool,
   rmemoryConversationSearchTool,
@@ -14,22 +14,23 @@ const mockReadFile = vi.fn();
 const mockUpdateAtomic = vi.fn();
 const mockReadScenario = vi.fn();
 
-vi.mock("../src/core/rmemoryUtil.js", () => {
-  return {
-    getRMemoryClient: () => ({
-      addConversation: mockAddConversation,
-      searchAtomic: mockSearchAtomic,
-      searchConversation: mockSearchConversation,
-      readFile: mockReadFile,
-      updateAtomic: mockUpdateAtomic,
-      readScenario: mockReadScenario,
-    }),
-    getRMemorySessionKey: () => "test-sess",
-    isRmemoryActive: async () => true,
-  };
-});
+import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
 
 describe("RMemory Tools", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+
+    vi.spyOn(rmemoryUtilModule, "getRMemoryClient").mockReturnValue({
+      addConversation: (...args: any[]) => mockAddConversation(...args),
+      searchAtomic: (...args: any[]) => mockSearchAtomic(...args),
+      searchConversation: (...args: any[]) => mockSearchConversation(...args),
+      readFile: (...args: any[]) => mockReadFile(...args),
+      updateAtomic: (...args: any[]) => mockUpdateAtomic(...args),
+      readScenario: (...args: any[]) => mockReadScenario(...args),
+    } as any);
+    vi.spyOn(rmemoryUtilModule, "getRMemorySessionKey").mockReturnValue("test-sess");
+    vi.spyOn(rmemoryUtilModule, "isRmemoryActive").mockResolvedValue(true);
+  });
   it("should define tool metadata", () => {
     expect(rmemorySearchTool.name).toBe("rmemory_search");
     expect(rmemoryConversationSearchTool.name).toBe("rmemory_conversation_search");
@@ -202,4 +203,6 @@ describe("RMemory Tools", () => {
       expect(result).toContain("Failed to add conversation message");
     });
   });
+
+  afterAll(() => {});
 });

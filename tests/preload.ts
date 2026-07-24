@@ -1,8 +1,43 @@
+import Yoga from "yoga-layout";
 import path from "path";
 import fs from "fs";
+import { mock } from "vitest";
+
+function parseStackTraceLine(line: string): string | null {
+  let filePath = line.trim();
+  if (filePath.startsWith("at ")) {
+    filePath = filePath.substring(3).trim();
+  }
+  const openParen = filePath.lastIndexOf("(");
+  const closeParen = filePath.lastIndexOf(")");
+  if (openParen !== -1 && closeParen !== -1 && closeParen > openParen) {
+    filePath = filePath.substring(openParen + 1, closeParen).trim();
+  }
+  const parts = filePath.split(":");
+  while (parts.length > 1) {
+    const last = parts[parts.length - 1];
+    if (/^\d+$/.test(last)) {
+      parts.pop();
+    } else {
+      break;
+    }
+  }
+  filePath = parts.join(":");
+  if (path.isAbsolute(filePath)) {
+    return filePath;
+  }
+  return null;
+}
+
+// Globally mock @huggingface/transformers to prevent ONNX runtime hangs on Windows under Bun
+if (typeof mock !== "undefined" && typeof mock.module === "function") {
+  mock.module("@huggingface/transformers", () => ({
+    pipeline: () => Promise.resolve(() => ({})),
+  }));
+}
 
 // Isolate configuration directory per worker to prevent parallel test lock contention
-const workerId = process.env.VITEST_WORKER_ID || "0";
+const workerId = process.env.VITEST_WORKER_ID || `bun-${process.pid}`;
 const workerHomeDir = path.join(process.cwd(), "tests", `temp-home-worker-${workerId}`);
 const workerConfigDir = path.join(workerHomeDir, ".superagent-r");
 
@@ -59,9 +94,9 @@ if (typeof vi !== "undefined") {
         const lines = stack.split("\n");
         for (const line of lines) {
           if (line.includes("setup.ts") || line.includes("preload.ts")) continue;
-          const match = line.match(/(?:at\s+)?([a-zA-Z]:\\[^\s:]+|\/[^\s:]+)/);
-          if (match) {
-            callerDir = path.dirname(match[1]);
+          const parsedPath = parseStackTraceLine(line);
+          if (parsedPath) {
+            callerDir = path.dirname(parsedPath);
             break;
           }
         }
@@ -80,28 +115,49 @@ if (typeof vi !== "undefined") {
   // vi.mock polyfill to inject importOriginal callback parameter under Bun using a lazy Proxy
   const originalMock = (vi as any).mock;
   (vi as any).mock = function (modulePath: string, factory?: any) {
-    if (typeof factory === "function") {
-      let callerDir = process.cwd();
-      try {
-        const stack = new Error().stack || "";
-        const lines = stack.split("\n");
-        for (const line of lines) {
-          if (line.includes("setup.ts") || line.includes("preload.ts")) continue;
-          const match = line.match(/(?:at\s+)?([a-zA-Z]:\\[^\s:]+|\/[^\s:]+)/);
-          if (match) {
-            callerDir = path.dirname(match[1]);
-            break;
-          }
+    let callerDir = process.cwd();
+    try {
+      const stack = new Error().stack || "";
+      const lines = stack.split("\n");
+      for (const line of lines) {
+        if (line.includes("setup.ts") || line.includes("preload.ts")) continue;
+        const parsedPath = parseStackTraceLine(line);
+        if (parsedPath) {
+          callerDir = path.dirname(parsedPath);
+          break;
         }
-      } catch {}
+      }
+    } catch {}
+
+    let importPath = modulePath;
+    if (modulePath.startsWith(".")) {
+      importPath = path.resolve(callerDir, modulePath);
+    }
+    importPath = importPath.replace(/\\/g, "/");
+
+    const pathsToMock = [importPath];
+    const getExtVariant = (p: string) => {
+      if (p.endsWith(".js")) return p.slice(0, -3) + ".ts";
+      if (p.endsWith(".jsx")) return p.slice(0, -4) + ".tsx";
+      return null;
+    };
+    const ext1 = getExtVariant(importPath);
+    if (ext1) pathsToMock.push(ext1);
+
+    let altImportPath: string | null = null;
+    if (importPath.match(/^[a-zA-Z]:/)) {
+      const firstChar = importPath[0];
+      const isUpper = firstChar === firstChar.toUpperCase();
+      const altChar = isUpper ? firstChar.toLowerCase() : firstChar.toUpperCase();
+      altImportPath = altChar + importPath.slice(1);
+      pathsToMock.push(altImportPath);
+      const ext2 = getExtVariant(altImportPath);
+      if (ext2) pathsToMock.push(ext2);
+    }
+
+    if (typeof factory === "function") {
 
       const importOriginal = () => {
-        let importPath = modulePath;
-        if (modulePath.startsWith(".")) {
-          importPath = path.resolve(callerDir, modulePath);
-        }
-        importPath = importPath.replace(/\\/g, "/");
-
         let cachedModule: any = null;
         const loadModule = () => {
           if (cachedModule) return cachedModule;
@@ -145,12 +201,43 @@ if (typeof vi !== "undefined") {
         });
       };
 
-      const wrappedFactory = async () => {
-        return await factory(importOriginal);
+      const wrappedFactory = () => {
+        return factory(importOriginal);
       };
 
-      return originalMock(modulePath, wrappedFactory);
+      for (const p of pathsToMock) {
+        mock.module(p, wrappedFactory);
+      }
+      return vi;
     }
-    return originalMock(modulePath, factory);
+    for (const p of pathsToMock) {
+      mock.module(p, factory);
+    }
+    return vi;
   };
 }
+
+import { beforeEach, afterEach } from "vitest";
+
+// Protect tests against global environment, command-line argument, and spy mock pollution
+let originalArgv: string[];
+let originalEnv: Record<string, string | undefined>;
+
+beforeEach(() => {
+  originalArgv = [...process.argv];
+  originalEnv = { ...process.env };
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  process.argv = originalArgv;
+  // Restore process.env key-by-key since process.env is a read-only object reference
+  for (const key in process.env) {
+    if (!(key in originalEnv)) {
+      delete process.env[key];
+    }
+  }
+  for (const key in originalEnv) {
+    process.env[key] = originalEnv[key];
+  }
+});

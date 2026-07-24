@@ -1,44 +1,35 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, mock } from "vitest";
 import os from "os";
 import path from "path";
 import fs from "fs";
 
 const tempHome = path.join(process.cwd(), "tests", "temp-home-nudge-skip");
-vi.spyOn(os, "homedir").mockReturnValue(tempHome);
+process.env.HOME = tempHome;
+process.env.USERPROFILE = tempHome;
+process.env.SUPERAGENT_CONFIG_DIR = tempHome;
 
 import { Agent } from "../src/core/agent.js";
 import { generateText } from "ai";
-import * as configModule from "../src/core/config.js";
+import * as baseConfigModule from "../src/core/config/base.js";
+import * as jsonConfigModule from "../src/core/config/jsonConfig.js";
 
-// Mock ai SDK with simple synchronous factory
-vi.mock("ai", () => {
-  const makeFakeStreamResult = (text: string) => {
-    const fullStream = (async function* () {
-      yield { type: "text-delta", textDelta: text };
-    })();
-    return {
-      fullStream,
-      usage: Promise.resolve({ promptTokens: 5, completionTokens: 5, totalTokens: 10 }),
-    };
-  };
-
-  return {
-    generateText: vi.fn(),
-    streamText: vi.fn().mockReturnValue(makeFakeStreamResult("Hello! How can I help you?")),
-    jsonSchema: (val: any) => val,
-  };
-});
+import { closeHistoryDb, clearHistoryCache } from "../src/core/config.js";
 
 describe("Agent - Planning Nudge Skip on Conversation and Question", () => {
   beforeEach(() => {
+    console.log("BEFORE EACH START");
+    closeHistoryDb();
+    clearHistoryCache();
     if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempHome, { recursive: true, force: true });
+      } catch {}
     }
     vi.restoreAllMocks();
     vi.clearAllMocks();
 
-    // Mock configuration using vi.spyOn for local module
-    vi.spyOn(configModule, "getConfig").mockReturnValue({
+    // Mock configuration using vi.spyOn for local modules directly
+    vi.spyOn(baseConfigModule, "getConfig").mockReturnValue({
       provider: "openai",
       model: "gpt-4",
       apiKey: "fake-key",
@@ -46,15 +37,20 @@ describe("Agent - Planning Nudge Skip on Conversation and Question", () => {
       workingDirectory: process.cwd(),
       systemPrompt: "Base Master Agent Prompt Content",
     } as any);
-    vi.spyOn(configModule, "getSettings").mockReturnValue({
+    vi.spyOn(jsonConfigModule, "getSettings").mockReturnValue({
       classifierEnabled: false, // disable classifier in config to control manually
       disableStreaming: true,
     } as any);
+    console.log("BEFORE EACH END");
   });
 
   afterEach(() => {
+    closeHistoryDb();
+    clearHistoryCache();
     if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempHome, { recursive: true, force: true });
+      } catch {}
     }
   });
 
@@ -66,6 +62,7 @@ describe("Agent - Planning Nudge Skip on Conversation and Question", () => {
     const agent = new Agent(onEvent, onPermission, onQuestion);
     agent.tier = "master";
     agent.planState = "APPROVED"; // Simple task or conversation
+    agent.disableWorkspaceDiscovery = true;
 
     // Explicitly set classification to conversation/high — triggers fast-path.
     // Config has disableStreaming:true so fast-path will use generateText.
@@ -106,6 +103,7 @@ describe("Agent - Planning Nudge Skip on Conversation and Question", () => {
     const agent = new Agent(onEvent, onPermission, onQuestion);
     agent.tier = "master";
     agent.planState = "APPROVED";
+    agent.disableWorkspaceDiscovery = true;
     
     // Explicitly set classification to question
     agent.currentClassification = {
@@ -143,6 +141,7 @@ describe("Agent - Planning Nudge Skip on Conversation and Question", () => {
     const agent = new Agent(onEvent, onPermission, onQuestion);
     agent.tier = "master";
     agent.planState = "APPROVED";
+    agent.disableWorkspaceDiscovery = true;
     
     // Explicitly set classification to complex_task
     agent.currentClassification = {

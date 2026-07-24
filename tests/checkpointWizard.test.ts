@@ -29,7 +29,6 @@ function setupConfigSpies() {
     workingDirectory: process.cwd(),
   } as any);
   vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([]);
-  vi.spyOn(configModule, "getInstalledSkillInstructions").mockReturnValue([]);
 }
 
 const configPath = getModelConfigPath();

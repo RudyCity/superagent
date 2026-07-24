@@ -5,57 +5,49 @@ import { agentLocalStorage } from "../src/core/agent.js";
 import { superagentInstances } from "../src/core/tools/state.js";
 import { invokeSuperagentTool } from "../src/core/tools/superagentTools.js";
 import { saveSharedMemoryTool } from "../src/core/tools/sharedMemoryTools.js";
+import * as configModule from "../src/core/config.js";
+import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
+import * as workspaceIsolationModule from "../src/core/workspaceIsolation.js";
+import * as execaModule from "execa";
 
-// Mock execa
-vi.mock("execa", () => ({
-  execa: vi.fn().mockResolvedValue({ stdout: "" }),
-}));
-
-// Mock config
-vi.mock("../src/core/config.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/core/config.js")>("../src/core/config.js");
-  let settings = { enableRmemory: false };
-  return {
-    ...actual,
-    getSettings: () => settings,
-    setSettings: (s: any) => { settings = s; },
-    getRootConfigDir: () => "/dummy/config/dir",
-    ensureGlobalConfigDir: () => "/dummy/config/dir",
-    getGlobalConfigDir: () => "/dummy/config/dir",
-  };
-});
-
-// Mock rmemoryClient
 const mockUpdateAtomic = vi.fn().mockResolvedValue({ id: "1", updated_at: "now" });
 const mockDeleteAtomic = vi.fn().mockResolvedValue({ deleted_count: 1 });
-vi.mock("../src/core/rmemoryUtil.js", () => {
-  return {
-    getRMemoryClient: () => ({
-      updateAtomic: mockUpdateAtomic,
-      deleteAtomic: mockDeleteAtomic,
-    }),
-    isRmemoryActive: vi.fn().mockImplementation(async () => {
-      const { getSettings } = await import("../src/core/config.js");
-      return !!getSettings().enableRmemory;
-    }),
-  };
+
+let settings = { enableRmemory: false };
+
+beforeEach(() => {
+  superagentInstances.clear();
+  vi.restoreAllMocks();
+
+  vi.spyOn(execaModule, "execa").mockResolvedValue({ stdout: "" } as any);
+
+  settings = { enableRmemory: false };
+  vi.spyOn(configModule, "getSettings").mockImplementation(() => settings);
+  vi.spyOn(configModule, "updateSettings" as any).mockImplementation((s: any) => { settings = { ...settings, ...s }; });
+  vi.spyOn(configModule, "getRootConfigDir").mockReturnValue("/dummy/config/dir");
+  vi.spyOn(configModule, "ensureGlobalConfigDir").mockReturnValue("/dummy/config/dir");
+  vi.spyOn(configModule, "getGlobalConfigDir").mockReturnValue("/dummy/config/dir");
+
+  vi.spyOn(rmemoryUtilModule, "getRMemoryClient").mockReturnValue({
+    updateAtomic: mockUpdateAtomic,
+    deleteAtomic: mockDeleteAtomic,
+  } as any);
+  vi.spyOn(rmemoryUtilModule, "isRmemoryActive").mockImplementation(async () => {
+    return !!settings.enableRmemory;
+  });
+
+  vi.spyOn(workspaceIsolationModule, "ensureGitIgnore").mockImplementation(vi.fn());
+  vi.spyOn(workspaceIsolationModule, "pruneWorktrees").mockResolvedValue(undefined);
+
+  mockUpdateAtomic.mockClear();
+  mockDeleteAtomic.mockClear();
 });
 
-// Mock workspace isolation
-vi.mock("../src/core/workspaceIsolation.js", () => ({
-  ensureGitIgnore: vi.fn(),
-  pruneWorktrees: vi.fn().mockResolvedValue(undefined),
-}));
+afterEach(() => {
+  superagentInstances.clear();
+});
 
 describe("DAG Cycle Detection", () => {
-  beforeEach(() => {
-    superagentInstances.clear();
-    vi.restoreAllMocks();
-  });
-
-  afterEach(() => {
-    superagentInstances.clear();
-  });
 
   it("should succeed if there are no dependency cycles", async () => {
     // Parent agent state is approved

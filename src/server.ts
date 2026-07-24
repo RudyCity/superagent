@@ -563,4 +563,6 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       console.log(`📂 Current Workspace: ${lastActiveWorkspace}\n`);
     }
   });
+
+  return server;
 }

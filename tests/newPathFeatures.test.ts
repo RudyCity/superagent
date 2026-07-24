@@ -3,6 +3,8 @@ import fs from "fs";
 import fsPromises from "fs/promises";
 import path from "path";
 import os from "os";
+import * as childProcessModule from "child_process";
+import * as execaModule from "execa";
 
 // Import config and checkpoints functions
 import {
@@ -25,37 +27,6 @@ import {
 import { runBackgroundProcessTool } from "../src/core/tools/shellTools.js";
 import { backgroundTasks } from "../src/core/tools/state.js";
 
-// Mock child_process and execa
-vi.mock("child_process", () => ({
-  execSync: vi.fn().mockReturnValue("mockSha12"),
-}));
-
-vi.mock("execa", () => {
-  const mockPromise: any = Promise.resolve({
-    stdout: "mocked process stdout",
-    exitCode: 0,
-    all: "mocked process stdout and stderr",
-  });
-  mockPromise.on = vi.fn().mockImplementation((event, callback) => {
-    if (event === "close") {
-      setTimeout(() => callback(0), 10);
-    }
-    return mockPromise;
-  });
-  mockPromise.all = {
-    on: vi.fn().mockImplementation((event, callback) => {
-      if (event === "data") {
-        setTimeout(() => callback(Buffer.from("mock task output")), 10);
-      }
-      return mockPromise.all;
-    }),
-  };
-  mockPromise.kill = vi.fn();
-  return {
-    execa: vi.fn().mockReturnValue(mockPromise),
-  };
-});
-
 describe("New Path Features (Checkpoint, Resume History, and Background Tasks)", () => {
   const tempHomeDir = path.join(process.cwd(), "tests", "tmp_new_path_test");
   let originalEnv: NodeJS.ProcessEnv;
@@ -68,6 +39,32 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
     delete process.env.SUPERAGENT_SESSION_ID;
     delete process.env.SUPERAGENT_CONFIG_DIR;
     vi.restoreAllMocks();
+
+    // Mock child_process and execa via spies
+    vi.spyOn(childProcessModule, "execSync").mockReturnValue("mockSha12" as any);
+
+    const mockPromise: any = Promise.resolve({
+      stdout: "mocked process stdout",
+      exitCode: 0,
+      all: "mocked process stdout and stderr",
+    });
+    mockPromise.on = vi.fn().mockImplementation((event, callback) => {
+      if (event === "close") {
+        setTimeout(() => callback(0), 5000);
+      }
+      return mockPromise;
+    });
+    mockPromise.all = {
+      on: vi.fn().mockImplementation((event, callback) => {
+        if (event === "data") {
+          setTimeout(() => callback(Buffer.from("mock task output")), 10);
+        }
+        return mockPromise.all;
+      }),
+    };
+    mockPromise.kill = vi.fn();
+
+    vi.spyOn(execaModule, "execa").mockReturnValue(mockPromise);
 
     // Mock os.homedir to use our temp directory inside the workspace
     vi.spyOn(os, "homedir").mockReturnValue(tempHomeDir);
@@ -258,8 +255,7 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
       // Run a background process
       const runBg = runBackgroundProcessTool;
       const result = await runBg.execute({ command: "node -e 'console.log(1)'" }, process.cwd());
-
-      expect(result).toContain("Background process");
+      expect(result.toLowerCase()).toContain("background process");
       const taskId = [...backgroundTasks.keys()].pop() || "";
       expect(taskId).toBeTruthy();
 
@@ -278,7 +274,7 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
       const runBg = runBackgroundProcessTool;
       const result = await runBg.execute({ command: "node -e 'console.log(2)'" }, process.cwd());
 
-      expect(result).toContain("Background process");
+      expect(result.toLowerCase()).toContain("background process");
       const taskId = [...backgroundTasks.keys()].pop() || "";
       expect(taskId).toBeTruthy();
 

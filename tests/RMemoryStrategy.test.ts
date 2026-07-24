@@ -1,15 +1,15 @@
-import { describe, it, expect, vi } from "vitest";
-import { RMemoryStrategy } from "../src/core/context/strategies/RMemoryStrategy.js";
-import { Message } from "../src/core/conversation.js";
-import { CompactionContext } from "../src/core/context/CompactionStrategy.js";
+import { describe, it, expect, vi, beforeEach, mock, afterAll } from "vitest";
+import path from "path";
 
 const mockAddConversation = vi.fn();
 const mockSearchAtomic = vi.fn();
 const mockReadCore = vi.fn();
 const mockListScenarios = vi.fn();
 
-vi.mock("../src/core/rmemoryUtil.js", () => {
+vi.mock("../src/core/rmemoryUtil.js", async (importOriginal) => {
+  const original = await importOriginal<any>();
   return {
+    ...original,
     getRMemoryClient: () => ({
       addConversation: mockAddConversation,
       searchAtomic: mockSearchAtomic,
@@ -21,10 +21,10 @@ vi.mock("../src/core/rmemoryUtil.js", () => {
   };
 });
 
-vi.mock("../src/core/config.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/core/config.js")>("../src/core/config.js");
+vi.mock("../src/core/config.js", async (importOriginal) => {
+  const original = await importOriginal<any>();
   return {
-    ...actual,
+    ...original,
     getSettings: () => ({
       rmemoryGatewayUrl: "http://127.0.0.1:8420",
       rmemoryGatewayApiKey: "sk-xxxx",
@@ -34,7 +34,46 @@ vi.mock("../src/core/config.js", async () => {
   };
 });
 
+vi.mock("../src/core/config/jsonConfig.js", async (importOriginal) => {
+  const original = await importOriginal<any>();
+  return {
+    ...original,
+    getSettings: () => ({
+      rmemoryGatewayUrl: "http://127.0.0.1:8420",
+      rmemoryGatewayApiKey: "sk-xxxx",
+      rmemoryServiceId: "default",
+      enableRmemory: true,
+    }),
+  };
+});
+
+import * as configModule from "../src/core/config.js";
+import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
+import { RMemoryStrategy } from "../src/core/context/strategies/RMemoryStrategy.js";
+
 describe("RMemoryStrategy", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    mockAddConversation.mockResolvedValue({ total_count: 10 });
+    mockSearchAtomic.mockResolvedValue({ items: [] });
+    mockReadCore.mockResolvedValue({ content: "" });
+    mockListScenarios.mockResolvedValue({ entries: [] });
+
+    vi.spyOn(rmemoryUtilModule, "getRMemoryClient").mockReturnValue({
+      addConversation: mockAddConversation,
+      searchAtomic: mockSearchAtomic,
+      readCore: mockReadCore,
+      listScenarios: mockListScenarios,
+    } as any);
+    vi.spyOn(rmemoryUtilModule, "getRMemorySessionKey").mockReturnValue("test-sess");
+
+    vi.spyOn(configModule, "getSettings").mockReturnValue({
+      rmemoryGatewayUrl: "http://127.0.0.1:8420",
+      rmemoryGatewayApiKey: "sk-xxxx",
+      rmemoryServiceId: "default",
+      enableRmemory: true,
+    } as any);
+  });
   it("should define strategy interface", () => {
     const strategy = new RMemoryStrategy();
     expect(strategy.name).toBe("rmemory");
@@ -144,4 +183,6 @@ describe("RMemoryStrategy", () => {
     expect(mockAddConversation).not.toHaveBeenCalled();
     expect(result3.metadata.strategy).toBe("summarization");
   });
+
+  afterAll(() => {});
 });

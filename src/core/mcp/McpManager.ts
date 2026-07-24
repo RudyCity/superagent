@@ -2,13 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { loadModelConfig } from "../config/jsonConfig.js";
 import type { Tool } from "../tools/types.js";
-import {
-  allTools,
-  masterToolset,
-  superagentToolset,
-  defaultSubagentToolset,
-  subagentToolsets,
-} from "../tools/index.js";
+
 
 export interface ConnectedMcpServer {
   name: string;
@@ -140,6 +134,14 @@ export async function initMcpServers(): Promise<void> {
 
   // Register newly loaded tools into all toolsets
   if (loadedMcpTools.length > 0) {
+    const {
+      allTools,
+      masterToolset,
+      superagentToolset,
+      defaultSubagentToolset,
+      subagentToolsets,
+    } = await import("../tools/index.js");
+
     allTools.push(...loadedMcpTools);
     masterToolset.push(...loadedMcpTools);
     superagentToolset.push(...loadedMcpTools);
@@ -169,6 +171,14 @@ export async function closeMcpServers(): Promise<void> {
 
   // Remove registered MCP tools from all toolsets
   if (loadedMcpTools.length > 0) {
+    const {
+      allTools,
+      masterToolset,
+      superagentToolset,
+      defaultSubagentToolset,
+      subagentToolsets,
+    } = await import("../tools/index.js");
+
     const toRemoveNames = new Set(loadedMcpTools.map((t) => t.name));
 
     const filterArray = (arr: any[]) => {

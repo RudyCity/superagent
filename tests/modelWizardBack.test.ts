@@ -7,26 +7,10 @@ import os from "os";
 const tempHome = path.join(process.cwd(), "tests", "temp-home-wizard-back");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
-vi.mock("react", () => {
-  const mocked = {
-    useRef: (val: any) => ({ current: val }),
-    useCallback: (fn: any) => fn,
-    useState: (initial: any) => [initial, vi.fn()],
-    useEffect: vi.fn(),
-    createElement: vi.fn(),
-  };
-  return { ...mocked, default: mocked };
-});
+import * as reactModule from "react";
+import * as inkModule from "ink";
 
 let inputCallbacks: any[] = [];
-vi.mock("ink", () => ({
-  useApp: () => ({ exit: vi.fn() }),
-  useInput: vi.fn((cb: any) => {
-    inputCallbacks.push(cb);
-  }),
-  Box: ({ children }: any) => children,
-  Text: ({ children }: any) => children,
-}));
 
 import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js";
 import { useModelWizard } from "../src/hooks/wizard/useModelWizard.js";
@@ -89,6 +73,23 @@ describe("Model Wizard Back Navigation", () => {
   };
 
   beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(inkModule, "useApp").mockReturnValue({ exit: vi.fn() });
+    vi.spyOn(inkModule, "useInput").mockImplementation((cb: any) => {
+      inputCallbacks.push(cb);
+    });
+    vi.spyOn(reactModule, "useRef").mockImplementation((val: any) => ({ current: val }));
+    vi.spyOn(reactModule, "useCallback").mockImplementation((fn: any) => fn);
+    vi.spyOn(reactModule, "useState").mockImplementation((initial: any) => [initial, vi.fn()]);
+    vi.spyOn(reactModule, "useEffect").mockImplementation(vi.fn());
+    vi.spyOn(reactModule, "createElement").mockImplementation(vi.fn());
+
+    vi.spyOn(reactModule.default, "useRef").mockImplementation((val: any) => ({ current: val }));
+    vi.spyOn(reactModule.default, "useCallback").mockImplementation((fn: any) => fn);
+    vi.spyOn(reactModule.default, "useState").mockImplementation((initial: any) => [initial, vi.fn()]);
+    vi.spyOn(reactModule.default, "useEffect").mockImplementation(vi.fn());
+    vi.spyOn(reactModule.default, "createElement").mockImplementation(vi.fn());
+
     originalEnv = { ...process.env };
     addedLines = [];
     activeWizard = null;

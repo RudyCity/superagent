@@ -3,24 +3,18 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { execa } from "execa";
+import * as execaModule from "execa";
+import * as aiModule from "ai";
 import { parseConflictHunks, resolveFileConflicts, MasterAgent, detectPackageManager } from "../src/core/masterAgent.js";
 import * as configModule from "../src/core/config.js";
-
-// Mock execa
-vi.mock("execa", () => ({
-  execa: vi.fn(),
-}));
-
-// Mock ai SDK generateText
-vi.mock("ai", () => ({
-  generateText: vi.fn().mockResolvedValue({ text: "resolved code content" }),
-}));
 
 describe("MasterAgent & Surgical Diff Resolution", () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(execaModule, "execa").mockImplementation(vi.fn() as any);
+    vi.spyOn(aiModule, "generateText").mockResolvedValue({ text: "resolved code content" } as any);
     process.env = { ...originalEnv };
     vi.spyOn(configModule, "getSettings").mockReturnValue({
       concurrencyLimit: 0,

@@ -2,32 +2,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import * as aiModule from "ai";
+import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
+
 import { fuzzyScore, searchHistory, clearSemanticSearchCache, computeBm25FuzzyScore } from "../src/core/historySearch.js";
 import { searchHistoryTool } from "../src/core/tools/otherTools.js";
 import { agentLocalStorage } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
 import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
-import { generateText } from "ai";
 import { closeHistoryDb } from "../src/core/storage/historyDb.js";
 
-vi.mock("ai", () => ({
-  generateText: vi.fn(),
-}));
-
-
-
-vi.mock("../src/core/rmemoryUtil.js", () => {
-  const mockClient = {
-    searchConversation: vi.fn().mockResolvedValue({ messages: [] }),
-    searchAtomic: vi.fn().mockResolvedValue({ items: [] }),
-    getConversationMessages: vi.fn().mockResolvedValue([]),
-    addConversation: vi.fn().mockResolvedValue({ accepted_ids: ["ok"], total_count: 1 }),
-  };
-  return {
-    getRMemoryClient: vi.fn().mockReturnValue(mockClient),
-    getRMemorySessionKey: vi.fn().mockReturnValue("test-session"),
-  };
-});
+const mockClient = {
+  searchConversation: vi.fn().mockResolvedValue({ messages: [] }),
+  searchAtomic: vi.fn().mockResolvedValue({ items: [] }),
+  getConversationMessages: vi.fn().mockResolvedValue([]),
+  addConversation: vi.fn().mockResolvedValue({ accepted_ids: ["ok"], total_count: 1 }),
+};
 
 describe("historySearch", () => {
   const originalEnv = process.env;
@@ -35,11 +25,20 @@ describe("historySearch", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(configModule, "getSettings").mockReturnValue({ enableRmemory: true } as any);
+    vi.spyOn(aiModule, "generateText").mockImplementation(vi.fn() as any);
+    vi.spyOn(rmemoryUtilModule, "getRMemoryClient").mockReturnValue(mockClient as any);
+    vi.spyOn(rmemoryUtilModule, "getRMemorySessionKey").mockReturnValue("test-session");
+
     closeHistoryDb();
     process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
     clearModelConfigCache();
     clearSemanticSearchCache();
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    try {
+      if (fs.existsSync(testConfigDir)) {
+        fs.rmSync(testConfigDir, { recursive: true, force: true });
+      }
+    } catch (e) {}
     // Spy on config module after restoreAllMocks
     vi.spyOn(configModule, "listHistorySessions" as any).mockResolvedValue([]);
     vi.spyOn(configModule, "getConfig").mockReturnValue({ apiKey: "" } as any);
@@ -50,7 +49,11 @@ describe("historySearch", () => {
     closeHistoryDb();
     clearModelConfigCache();
     clearSemanticSearchCache();
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    try {
+      if (fs.existsSync(testConfigDir)) {
+        fs.rmSync(testConfigDir, { recursive: true, force: true });
+      }
+    } catch (e) {}
     process.env = originalEnv;
   });
 

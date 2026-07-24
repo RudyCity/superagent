@@ -47,7 +47,7 @@ describe("Internal Hooks Feature", () => {
     // Verify content of hook.json
     const hookJson = JSON.parse(await fs.readFile(path.join(hookDir, "hook.json"), "utf-8"));
     expect(hookJson.name).toBe("test-hook");
-  });
+  }, 15000);
 
   it("should dynamically load initialized hooks as tools", async () => {
     // There is one hook initialized in the previous test
@@ -246,7 +246,7 @@ describe("Internal Hooks Feature", () => {
     // Execute the hook event
     await expect(
       runEventHooks("pre_tool", { toolName: "read", args: { filePath: "test.txt" }, cwd: tempDir })
-    ).resolves.not.toThrow();
+    ).resolves.toBeUndefined();
   });
 
   it("should dynamically load skills from active hooks skills subdirectory", async () => {

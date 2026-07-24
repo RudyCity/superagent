@@ -1,53 +1,41 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import * as reactModule from "react";
+import * as inkModule from "ink";
+import * as configModule from "../src/core/config.js";
+import * as slashCommandsModule from "../src/core/slash-commands.js";
 
-vi.mock("react", () => {
-  const mocked = {
-    useRef: (val: any) => ({ current: val }),
-    useCallback: (fn: any) => fn,
-    useState: (init: any) => [init, vi.fn()],
-    useEffect: (fn: any) => fn(),
-    useMemo: (fn: any) => fn(),
-    useContext: vi.fn(),
-    createContext: vi.fn(),
-    default: {} as any,
-  };
-  mocked.default = mocked;
-  return mocked;
-});
+let inputCallbacks: any[] = [];
 
 import { useKeyboardHandler } from "../src/hooks/useKeyboardHandler.js";
 import { useDashboardKeyboard } from "../src/hooks/useDashboardKeyboard.js";
-import * as configModule from "../src/core/config.js";
-
-let inputCallbacks: any[] = [];
-vi.mock("ink", () => ({
-  useApp: () => ({ exit: vi.fn() }),
-  useInput: vi.fn((cb) => {
-    inputCallbacks.push(cb);
-  }),
-  render: vi.fn(),
-  Text: ({ children }: any) => children,
-  Box: ({ children }: any) => children,
-}));
-
-// Mock the config module to avoid filesystem access
-vi.mock("../src/core/config.js", () => ({
-  getConfiguredProviders: () => [],
-  switchActiveProvider: vi.fn(),
-  fetchAndCacheModels: vi.fn(),
-  getContextWindowLimit: () => 200000,
-  listHistorySessions: () => [],
-  getModelPresets: () => [],
-  BUILT_IN_PRESETS: [],
-  getInstalledSkills: () => [],
-  getProviderOptionsList: () => [],
-  getDefaultModel: () => "test-model",
-}));
 
 describe("History Up/Down Navigation", () => {
   beforeEach(() => {
     inputCallbacks = [];
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    vi.spyOn(reactModule, "useRef").mockImplementation((val: any) => ({ current: val }));
+    vi.spyOn(reactModule, "useCallback").mockImplementation((fn: any) => fn);
+    vi.spyOn(reactModule.default, "useRef").mockImplementation((val: any) => ({ current: val }));
+    vi.spyOn(reactModule.default, "useCallback").mockImplementation((fn: any) => fn);
+
+    vi.spyOn(inkModule, "useApp").mockReturnValue({ exit: vi.fn() });
+    vi.spyOn(inkModule, "useInput").mockImplementation((cb: any) => {
+      inputCallbacks.push(cb);
+    });
+
+    vi.spyOn(configModule, "getSettings").mockReturnValue({
+      maxChecklistVisible: 3,
+      maxProcsVisible: 3,
+    } as any);
+    vi.spyOn(configModule, "getConfiguredProviders").mockReturnValue([]);
+    vi.spyOn(configModule, "switchActiveProvider").mockImplementation(async () => {});
+    vi.spyOn(configModule, "fetchAndCacheModels").mockImplementation(async () => {});
+    vi.spyOn(configModule, "getContextWindowLimit").mockReturnValue(200000);
+    vi.spyOn(configModule, "listHistorySessions").mockReturnValue([]);
+    vi.spyOn(configModule, "getModelPresets").mockReturnValue([]);
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([]);
+    vi.spyOn(configModule, "getProviderOptionsList").mockReturnValue([]);
+    vi.spyOn(slashCommandsModule, "getDefaultModel").mockReturnValue("test-model");
   });
 
   afterEach(() => {
@@ -96,6 +84,10 @@ describe("History Up/Down Navigation", () => {
         exit: vi.fn(),
         handleSubmit: vi.fn(),
         handleSlashCommand: vi.fn(),
+        expandCursorRef: { current: 0 },
+        visibleLinePositions: [],
+        toggleLineExpand: vi.fn(),
+        toggleChildExpand: vi.fn(),
         ...overrides,
       };
     }
@@ -263,6 +255,9 @@ describe("History Up/Down Navigation", () => {
         maxProcsVisible: 5,
         lastTabPrefix: null,
         setLastTabPrefix: vi.fn(),
+        expandCursorRef: { current: 0 },
+        groupBoundaries: [],
+        toggleGroupCollapse: vi.fn(),
         ...overrides,
       };
     }

@@ -10,8 +10,7 @@ import crypto from "crypto";
 import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getTierModelConfig, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD, getDynamicVisionThreshold } from "./config.js";
 import { GuidelineLoader } from "./agent/GuidelineLoader.js";
 import { Conversation } from "./conversation.js";
-import { getToolDefinitions, backgroundTasks, isTaskInWorkspace } from "./tools.js";
-import type { Tool, AgentTier, ViolationRecord } from "./tools.js";
+import type { Tool, AgentTier, ViolationRecord } from "./tools/types.js";
 import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
 import {
   executeToolCall,

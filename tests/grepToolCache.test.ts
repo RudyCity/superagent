@@ -4,40 +4,17 @@ import path from "path";
 import os from "os";
 import { grepTool } from "../src/core/tools/systemTools.js";
 import * as workspaceDiscovery from "../src/core/workspaceDiscovery.js";
-import fg from "fast-glob";
-
-// Mock fast-glob's default execution synchronously — avoids Bun deadlock from async importOriginal.
-vi.mock("fast-glob", () => {
-  const spyFg = vi.fn().mockImplementation(async (_pattern: any, _options: any) => {
-    return ["disk-file-1.ts", "disk-file-2.ts"];
-  });
-
-  // Real isMatch will be patched in beforeEach
-  (spyFg as any).isMatch = (_str: string, _pattern: string | string[]) => false;
-
-  return { default: spyFg };
-});
-
-// Mock fs/promises readFile synchronously
-vi.mock("fs/promises", () => {
-  const readFileMock = vi.fn().mockImplementation(async (filePath: string) => {
-    if (String(filePath).includes("index.ts")) {
-      return "console.log('hello matching query');";
-    }
-    return "some other content";
-  });
-  return {
-    default: { readFile: readFileMock },
-    readFile: readFileMock,
-  };
-});
+import * as fgModule from "fast-glob";
+import * as fsPromisesModule from "fs/promises";
 
 describe("grepTool Cache Interception", () => {
   let testWorkspaceDir: string;
   let testConfigDir: string;
   let originalConfigDirEnv: string | undefined;
+  let fgSpy: any;
+  let readFileSpy: any;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     originalConfigDirEnv = process.env.SUPERAGENT_CONFIG_DIR;
     testWorkspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "sa-grep-test-ws-"));
     testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "sa-grep-test-cfg-"));
@@ -45,9 +22,15 @@ describe("grepTool Cache Interception", () => {
 
     vi.restoreAllMocks();
 
-    // Patch isMatch with real implementation
-    const realFg = await import("fast-glob");
-    (fg as any).isMatch = realFg.default.isMatch;
+    fgSpy = vi.spyOn(fgModule, "default").mockResolvedValue(["disk-file-1.ts", "disk-file-2.ts"]);
+    (fgSpy as any).isMatch = fgModule.default.isMatch;
+
+    readFileSpy = vi.spyOn(fsPromisesModule.default, "readFile").mockImplementation((async (filePath: any) => {
+      if (String(filePath).includes("index.ts")) {
+        return "console.log('hello matching query');";
+      }
+      return "some other content";
+    }) as any);
   });
 
   afterEach(() => {
@@ -81,7 +64,7 @@ describe("grepTool Cache Interception", () => {
     expect(result).not.toContain("disk-file-1.ts");
 
     // Verify fast-glob on disk was bypassed (mock was not called)
-    expect(fg).not.toHaveBeenCalled();
+    expect(fgSpy).not.toHaveBeenCalled();
   });
 
   it("should fall back to disk globbing when no cache exists", async () => {
@@ -97,6 +80,6 @@ describe("grepTool Cache Interception", () => {
     expect(result).toContain("No matches found.");
 
     // Verify fast-glob on disk was executed
-    expect(fg).toHaveBeenCalled();
+    expect(fgSpy).toHaveBeenCalled();
   });
 });

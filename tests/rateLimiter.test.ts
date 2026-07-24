@@ -1,10 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll, mock } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
 import { SharedRateLimiter, SharedConcurrencyLimiter } from "../src/core/rateLimiter.js";
-import { getRateLimitStateFromDb, saveRateLimitStateToDb } from "../src/core/storage/historyDb.js";
-import { closeHistoryDb, getSettings } from "../src/core/config.js";
+import { getRateLimitStateFromDb, saveRateLimitStateToDb, closeHistoryDb } from "../src/core/storage/historyDb.js";
+import { getSettings } from "../src/core/config/jsonConfig.js";
 
 const mockSettings = {
   concurrencyLimit: 0,
@@ -15,13 +15,17 @@ const mockSettings = {
   maxIterations: 50,
 };
 
-import * as configModule from "../src/core/config.js";
+vi.mock("../src/core/config/paths.js", async (importOriginal) => {
+  const original = await importOriginal<any>();
+  return {
+    ...original,
+    getRootConfigDir: vi.fn(() => path.join(os.tmpdir(), `superagent-rate-limit-test-${process.pid}`)),
+    getGlobalConfigDir: vi.fn(() => path.join(os.tmpdir(), `superagent-rate-limit-test-${process.pid}`)),
+    getModelConfigPath: vi.fn(() => path.join(os.tmpdir(), `superagent-rate-limit-test-${process.pid}`, "model-config.json")),
+  };
+});
 
-vi.mock("../src/core/config.js", () => ({
-  getRootConfigDir: vi.fn(() => path.join(os.tmpdir(), `superagent-rate-limit-test-${process.pid}`)),
-  getSettings: vi.fn(() => mockSettings),
-  closeHistoryDb: vi.fn(),
-}));
+import * as jsonConfigModule from "../src/core/config/jsonConfig.js";
 
 describe("SharedRateLimiter", () => {
   let limiter: SharedRateLimiter;
@@ -39,6 +43,8 @@ describe("SharedRateLimiter", () => {
     mockSettings.contextWindowLimit = 0;
     mockSettings.maxIterations = 50;
 
+    vi.spyOn(jsonConfigModule, "getSettings").mockImplementation(() => mockSettings as any);
+
     closeHistoryDb();
     limiter = new SharedRateLimiter();
   });
@@ -49,7 +55,7 @@ describe("SharedRateLimiter", () => {
   });
 
   it("should acquire tokens immediately when bucket is full", async () => {
-    await expect(limiter.acquire(1)).resolves.not.toThrow();
+    await limiter.acquire(1);
 
     // Verify it is written to the SQLite DB
     const state = getRateLimitStateFromDb("default");
@@ -78,7 +84,7 @@ describe("SharedRateLimiter", () => {
 
   it("should bypass rate limiting if rateLimitRpm is 0", async () => {
     mockSettings.rateLimitRpm = 0;
-    await expect(limiter.acquire(1)).resolves.not.toThrow();
+    await limiter.acquire(1);
   });
 
   it("should use rateLimitRpm to dynamically set refill rate and capacity", () => {
@@ -96,4 +102,6 @@ describe("SharedRateLimiter", () => {
     const capacity = (limiter as any).getCapacity();
     expect(capacity).toBe(10);
   });
+
+  afterAll(() => {});
 });

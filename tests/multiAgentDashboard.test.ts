@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
-import React from "react";
-import { render } from "ink";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Console } from "node:console";
+import * as inkModule from "ink";
+import { render } from "ink";
+import React from "react";
 import { MultiAgentDashboard } from "../src/components/multi-agent-dashboard.js";
 
 // Restore console.Console if Vitest mocked or removed it
@@ -11,24 +12,28 @@ if (!console.Console) {
 
 let inputCallback: any = null;
 
-// Mock useApp and useInput from ink (synchronous factory — no importOriginal)
-vi.mock("ink", () => ({
-  useApp: () => ({ exit: vi.fn() }),
-  useInput: vi.fn((cb) => {
-    inputCallback = cb;
-  }),
-  render: vi.fn((el) => {
-    // minimal stub so callers that use render() directly still get an unmount
-    return { unmount: vi.fn(), rerender: vi.fn(), clear: vi.fn(), cleanup: vi.fn() };
-  }),
-  Text: ({ children }: any) => children,
-  Box: ({ children }: any) => children,
-  Static: ({ children }: any) => children,
-  Newline: () => null,
-  Spacer: () => null,
-}));
-
 describe("MultiAgentDashboard UI Component", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    inputCallback = null;
+    vi.spyOn(inkModule, "useApp").mockReturnValue({ exit: vi.fn() } as any);
+    vi.spyOn(inkModule, "useInput").mockImplementation((cb: any) => {
+      inputCallback = cb;
+    });
+    vi.spyOn(inkModule, "useStdin").mockReturnValue({
+      stdin: process.stdin,
+      isRawMode: false,
+      setRawMode: vi.fn(),
+      internal_eventEmitter: {
+        on: vi.fn(),
+        off: vi.fn(),
+      },
+    } as any);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
   it("should instantiate the dashboard React element successfully", () => {
     const mockAgent = { sendMessage: vi.fn().mockResolvedValue(undefined) };
     const element = React.createElement(MultiAgentDashboard, {
@@ -58,6 +63,7 @@ describe("MultiAgentDashboard UI Component", () => {
 
     // Verify useInput registered the callback
     expect(inputCallback).toBeDefined();
+    console.log("INPUT CALLBACK TYPE:", typeof inputCallback, "VALUE:", inputCallback);
     expect(typeof inputCallback).toBe("function");
 
     // Call inputCallback with Ctrl+T keypress

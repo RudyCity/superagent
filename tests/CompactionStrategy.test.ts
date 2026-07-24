@@ -231,7 +231,7 @@ describe("CompactionStrategy", () => {
     const strategy = new SummarizationStrategy();
     const messages: Message[] = [
       { role: "user", content: "User 1", timestamp: 1 },
-      { role: "assistant", content: "a".repeat(200), timestamp: 2 },
+      { role: "assistant", content: "a".repeat(800), timestamp: 2 },
       {
         role: "tool",
         content: "",

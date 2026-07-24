@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import fs from "fs/promises";
 import os from "os";
@@ -12,6 +12,14 @@ import {
 import { normalizePathsForImage, wrapLongLines } from "../src/utils/textToImage.js";
 
 describe("imageUtils", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   describe("isImageFilePath", () => {
     it("should return true for valid image file paths", () => {
       expect(isImageFilePath("C:\\Users\\user\\Pictures\\test.png")).toBe(true);

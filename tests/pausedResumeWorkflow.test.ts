@@ -1,55 +1,49 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { superagentInstances, subagentInstances } from "../src/core/tools/state.js";
-import { sendMessageToSuperagentTool, awaitSuperagentsTool } from "../src/core/tools/superagentTools.js";
-import { sendMessageTool } from "../src/core/tools/subagentTools.js";
-import { agentLocalStorage } from "../src/core/agent.js";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
+import path from "path";
 
-let mockLatestAgent: any = null;
-
-// Mock Agent and agentLocalStorage completely before any imports
-vi.mock("../src/core/agent.js", () => {
-  const { AsyncLocalStorage } = require("async_hooks");
-  const localStore = new AsyncLocalStorage();
-
-  class MockAgent {
-    public delegationDepth = 0;
-    public tier = "master";
-    public worktreePath: string | null = null;
-    public isMultiAgent = false;
-    public subagentType: string | null = null;
-    public isRunning = false;
-    public sendMessage = vi.fn().mockImplementation(() => {
-      return new Promise((resolve) => setTimeout(resolve, 10));
-    });
-    public getHistory = vi.fn().mockReturnValue({
-      getMessages: () => [
-        { role: "assistant", content: "### TASK REPORT\n- **Status**: Completed" }
-      ]
-    });
-    public getCurrentHistoryFilePath = vi.fn().mockReturnValue("/dummy/history.json");
-    public loadHistoryFromPath = vi.fn().mockResolvedValue(undefined);
-    constructor() {
-      mockLatestAgent = this;
-    }
-  }
+// ── Break circular dependency chain ──────────────────────────────────────────
+vi.mock("../src/core/tools.js", async (importOriginal) => {
+  const original = await importOriginal<any>();
   return {
-    Agent: MockAgent,
-    agentLocalStorage: localStore,
+    ...original,
+    getToolDefinitions: () => [],
+    backgroundTasks: new Map(),
+    isTaskInWorkspace: () => false,
   };
 });
 
+vi.mock("../src/core/masterAgent.js", async (importOriginal) => {
+  const original = await importOriginal<any>();
+  return {
+    ...original,
+    MasterAgent: class {},
+  };
+});
+
+// Dynamic imports after mocks are established
+const { superagentInstances, subagentInstances } = await import("../src/core/tools/state.js");
+const { sendMessageToSuperagentTool, awaitSuperagentsTool } = await import("../src/core/tools/superagentTools.js");
+const { sendMessageTool } = await import("../src/core/tools/subagentTools.js");
+const { Agent, agentLocalStorage } = await import("../src/core/agent.js");
+
 describe("Paused Resume Workflow", () => {
+  let loadHistorySpy: any;
+  let sendMessageSpy: any;
+
   beforeEach(() => {
     superagentInstances.clear();
     subagentInstances.clear();
-    mockLatestAgent = null;
     vi.restoreAllMocks();
+
+    loadHistorySpy = vi.spyOn(Agent.prototype, "loadHistoryFromPath").mockResolvedValue(undefined as any);
+    sendMessageSpy = vi.spyOn(Agent.prototype, "sendMessage").mockImplementation(async function(this: any) {
+      return "### TASK REPORT\n- **Status**: Completed";
+    });
   });
 
   afterEach(() => {
     superagentInstances.clear();
     subagentInstances.clear();
-    mockLatestAgent = null;
   });
 
   describe("sendMessageToSuperagentTool with paused state", () => {
@@ -84,9 +78,8 @@ describe("Paused Resume Workflow", () => {
       const inst = superagentInstances.get(instanceId);
       expect(inst).toBeDefined();
       expect(inst!.status).toBe("completed");
-      expect(mockLatestAgent).toBeDefined();
-      expect(mockLatestAgent.loadHistoryFromPath).toHaveBeenCalledWith("/dummy/history.json");
-      expect(mockLatestAgent.sendMessage).toHaveBeenCalledWith("please continue");
+      expect(loadHistorySpy).toHaveBeenCalledWith("/dummy/history.json");
+      expect(sendMessageSpy).toHaveBeenCalledWith("please continue");
     });
   });
 
@@ -120,9 +113,8 @@ describe("Paused Resume Workflow", () => {
       const inst = subagentInstances.get(instanceId);
       expect(inst).toBeDefined();
       expect(inst!.status).toBe("completed");
-      expect(mockLatestAgent).toBeDefined();
-      expect(mockLatestAgent.loadHistoryFromPath).toHaveBeenCalledWith("/dummy/sub-history.json");
-      expect(mockLatestAgent.sendMessage).toHaveBeenCalledWith("continue searching");
+      expect(loadHistorySpy).toHaveBeenCalledWith("/dummy/sub-history.json");
+      expect(sendMessageSpy).toHaveBeenCalledWith("continue searching");
     });
   });
 
@@ -144,4 +136,6 @@ describe("Paused Resume Workflow", () => {
       expect(result).toContain("You MUST resume them using \"send_message_to_superagent\"");
     });
   });
+
+  afterAll(() => {});
 });

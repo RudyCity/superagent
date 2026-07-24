@@ -1,28 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { execa } from "execa";
+import * as execaModule from "execa";
 import { gitWorktreeTool } from "../src/core/tools/otherTools.js";
 
-vi.mock("execa", () => ({
-  execa: vi.fn().mockResolvedValue({ stdout: "" }),
-}));
-
 describe("gitWorktreeTool", () => {
+  let execaSpy: any;
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    execaSpy = vi.spyOn(execaModule, "execa").mockResolvedValue({ stdout: "" } as any);
   });
 
   it("should list worktrees", async () => {
-    vi.mocked(execa).mockResolvedValueOnce({ stdout: "my-worktree" } as any);
+    execaSpy.mockResolvedValueOnce({ stdout: "my-worktree" } as any);
     const result = await gitWorktreeTool.execute({ action: "list" }, process.cwd());
     expect(result).toBe("my-worktree");
-    expect(execa).toHaveBeenCalledWith("git", ["worktree", "list"], expect.any(Object));
+    expect(execaSpy).toHaveBeenCalledWith("git", ["worktree", "list"], expect.any(Object));
   });
 
   it("should prune worktrees", async () => {
-    vi.mocked(execa).mockResolvedValueOnce({ stdout: "Pruned" } as any);
+    execaSpy.mockResolvedValueOnce({ stdout: "Pruned" } as any);
     const result = await gitWorktreeTool.execute({ action: "prune" }, process.cwd());
     expect(result).toBe("Pruned");
-    expect(execa).toHaveBeenCalledWith("git", ["worktree", "prune"], expect.any(Object));
+    expect(execaSpy).toHaveBeenCalledWith("git", ["worktree", "prune"], expect.any(Object));
   });
 
   it("should add a worktree", async () => {
@@ -31,7 +30,7 @@ describe("gitWorktreeTool", () => {
       process.cwd()
     );
     expect(result).toContain("Worktree added");
-    expect(execa).toHaveBeenCalledWith(
+    expect(execaSpy).toHaveBeenCalledWith(
       "git",
       ["worktree", "add", expect.stringContaining("test-worktree"), "my-branch"],
       expect.any(Object)
@@ -44,7 +43,7 @@ describe("gitWorktreeTool", () => {
       process.cwd()
     );
     expect(result).toContain("removed successfully");
-    expect(execa).toHaveBeenCalledWith(
+    expect(execaSpy).toHaveBeenCalledWith(
       "git",
       ["worktree", "remove", expect.stringContaining("test-worktree"), "--force"],
       expect.any(Object)
@@ -52,7 +51,7 @@ describe("gitWorktreeTool", () => {
   });
 
   it("should prune stale metadata when removing a path that is not a working tree", async () => {
-    vi.mocked(execa)
+    execaSpy
       .mockRejectedValueOnce(new Error("fatal: '.worktrees/demo' is not a working tree"))
       .mockResolvedValueOnce({ stdout: "Pruned" } as any);
 
@@ -62,11 +61,11 @@ describe("gitWorktreeTool", () => {
     );
 
     expect(result).toContain("Worktree metadata pruned after stale remove");
-    expect(execa).toHaveBeenLastCalledWith("git", ["worktree", "prune"], expect.any(Object));
+    expect(execaSpy).toHaveBeenLastCalledWith("git", ["worktree", "prune"], expect.any(Object));
   });
 
   it("should fall back to filesystem removal for forced remove failures", async () => {
-    vi.mocked(execa)
+    execaSpy
       .mockRejectedValueOnce(new Error("Filename too long"))
       .mockResolvedValueOnce({ stdout: "Pruned" } as any);
 
@@ -76,6 +75,6 @@ describe("gitWorktreeTool", () => {
     );
 
     expect(result).toContain("Worktree directory removed with filesystem fallback");
-    expect(execa).toHaveBeenLastCalledWith("git", ["worktree", "prune"], expect.any(Object));
+    expect(execaSpy).toHaveBeenLastCalledWith("git", ["worktree", "prune"], expect.any(Object));
   });
 });

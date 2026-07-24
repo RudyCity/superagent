@@ -1,12 +1,15 @@
-import { describe, it, expect, vi } from "vitest";
-import { isDangerousCommand, isPathInWorktree, isSuperagentOutOfBounds, isToolCallOutOfBounds, getToolDescription } from "../src/core/permissions.js";
-import path from "path";
+import { describe, it, expect, vi, mock } from "vitest";
 
-vi.mock("../src/core/config.js", () => {
+vi.mock("../src/core/config.js", async (importOriginal) => {
+  const original = await importOriginal<any>();
   return {
+    ...original,
     getRootConfigDir: () => process.platform === "win32" ? "C:\\superagent-config-test" : "/tmp/superagent-config-test",
   };
 });
+
+import { isDangerousCommand, isPathInWorktree, isSuperagentOutOfBounds, isToolCallOutOfBounds, getToolDescription } from "../src/core/permissions.js";
+import path from "path";
 
 describe("isDangerousCommand", () => {
   it("should detect dangerous Unix commands", () => {

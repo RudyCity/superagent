@@ -1,25 +1,26 @@
 
 
 import { useEffect, useState } from "react";
-import { getSettings } from "../core/config.js";
+import { getSettings } from "../core/config/jsonConfig.js";
 
 export type RmemoryStatus = "online" | "offline" | "checking" | "disabled";
 
 export function useRmemoryStatus(): RmemoryStatus {
-  const [status, setStatus] = useState<RmemoryStatus>("checking");
-
-  useEffect(() => {
+  const getInitialStatus = (): RmemoryStatus => {
     try {
       const settings = getSettings();
-      if (settings.enableRmemory) {
-        setStatus("online");
-      } else {
-        setStatus("disabled");
-      }
+      return settings?.enableRmemory ? "online" : "disabled";
     } catch {
-      setStatus("disabled");
+      return "disabled";
     }
+  };
+
+  const [status, setStatus] = useState<RmemoryStatus>(getInitialStatus);
+
+  useEffect(() => {
+    setStatus(getInitialStatus());
   }, []);
 
   return status;
 }
+

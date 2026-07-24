@@ -4,6 +4,7 @@ import { updateSettings } from "../src/core/config/jsonConfig.js";
 
 describe("rmemoryUtil - isRmemoryActive", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
   });
 

@@ -1,27 +1,23 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, mock } from "vitest";
+
 import { Conversation, Message, contentToString } from "../src/core/conversation.js";
 import { PruningStrategy } from "../src/core/context/strategies/PruningStrategy.js";
 import { SummarizationStrategy } from "../src/core/context/strategies/SummarizationStrategy.js";
 import { PinningStrategy } from "../src/core/context/strategies/PinningStrategy.js";
 import { Agent } from "../src/core/agent.js";
-import { streamText } from "ai";
+import { streamText, generateText } from "ai";
 
-import * as configModule from "../src/core/config.js";
-
-// Mock ai SDK with simple synchronous factory
-vi.mock("ai", () => ({
-  streamText: vi.fn(),
-  generateText: vi.fn(),
-  jsonSchema: (val: any) => val,
-}));
+import * as baseConfigModule from "../src/core/config/base.js";
+import * as modelsConfigModule from "../src/core/config/models.js";
+import * as jsonConfigModule from "../src/core/config/jsonConfig.js";
 
 describe("Orphaned Tool Messages & Error Handling", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
 
-    // Mock configuration using vi.spyOn for local module
-    vi.spyOn(configModule, "getConfig").mockReturnValue({
+    // Mock configuration using vi.spyOn for local modules directly
+    vi.spyOn(baseConfigModule, "getConfig").mockReturnValue({
       provider: "openai",
       model: "gpt-4",
       apiKey: "fake-key",
@@ -29,8 +25,8 @@ describe("Orphaned Tool Messages & Error Handling", () => {
       workingDirectory: process.cwd(),
       systemPrompt: "Base Master Agent Prompt Content",
     } as any);
-    vi.spyOn(configModule, "getContextWindowLimit").mockReturnValue(8000);
-    vi.spyOn(configModule, "getSettings").mockReturnValue({
+    vi.spyOn(modelsConfigModule, "getContextWindowLimit").mockReturnValue(8000);
+    vi.spyOn(jsonConfigModule, "getSettings").mockReturnValue({
       autoVisionTokenSaving: false,
     } as any);
   });

@@ -9,7 +9,7 @@ import {
   getActiveQuestionHandler,
   appendMasterLog
 } from "./state.js";
-import { agentLocalStorage } from "../agent.js";
+import { Agent, agentLocalStorage } from "../agent.js";
 import { resolveCarriageReturns } from "../../utils/text.js";
 import fs from "fs";
 import path from "path";
@@ -263,7 +263,6 @@ export const invokeSubagentTool: Tool = {
       return `Error: Subagent type "${typeName}" is not defined. Use define_subagent first.`;
     }
 
-    const { Agent } = await import("../agent.js");
     const subagentId = Math.random().toString(36).substring(2, 9);
 
     const logs: string[] = [];
@@ -734,7 +733,6 @@ export const sendMessageTool: Tool = {
         : `${baseSystemPrompt}\n\n${resumeReportInstruction}`;
       const toolset = subagentToolsets[typeName] ?? defaultSubagentToolset;
 
-      const { Agent } = await import("../agent.js");
       agentInstance = new Agent(
         (event) => {
           if (event.type === "text" || event.type === "reasoning") {

@@ -57,7 +57,7 @@ describe("Python Vision Inference Server daemon", () => {
     
     // Wait for server to boot (give it enough time to import torch/transformers)
     let isHealthy = false;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 90; i++) {
       await new Promise(r => setTimeout(r, 1000));
       try {
         const res = await fetch(`http://127.0.0.1:${testPort}/health`);

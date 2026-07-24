@@ -1,4 +1,30 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach, mock } from "vitest";
+
+vi.mock("../src/core/permissions.js", async (importOriginal) => {
+  const original = await importOriginal<any>();
+  return {
+    ...original,
+    executeToolCall: vi.fn(async (tc: any) => ({
+      toolCallId: tc.id,
+      name: tc.name,
+      result: "ok",
+    })),
+    getToolDescription: vi.fn(() => "mock tool description"),
+    isDangerousCommand: vi.fn(() => false),
+    isToolCallOutOfBounds: vi.fn(() => false),
+    isModelConfigAccess: vi.fn(() => false),
+    isSensitiveEnvFileAccess: vi.fn(() => false),
+    MODIFYING_TOOLS: [
+      "write",
+      "write_to_file",
+      "edit",
+      "replace_file_content",
+      "multi_replace_file_content",
+      "apply_patch",
+    ],
+  };
+});
+
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -15,36 +41,6 @@ process.env.USERPROFILE = tempHome;
 import * as jsonConfigModule from "../src/core/config/jsonConfig.js";
 import * as providersModule from "../src/core/config/providers.js";
 import * as permissionsModule from "../src/core/permissions.js";
-
-// Mock the AI SDK so we never hit a real provider.
-vi.mock("ai", () => ({
-  streamText: vi.fn(),
-  jsonSchema: (val: any) => val,
-}));
-
-// Stub executeToolCall so the model's `write` tool call to the plan file is a
-// no-op on disk — the agent's own MODIFYING_TOOLS guard handles the planState
-// transition before executeToolCall runs, which is what we are testing.
-vi.mock("../src/core/permissions.js", () => ({
-  executeToolCall: vi.fn(async (tc: any) => ({
-    toolCallId: tc.id,
-    name: tc.name,
-    result: "ok",
-  })),
-  getToolDescription: vi.fn(() => "mock tool description"),
-  isDangerousCommand: vi.fn(() => false),
-  isToolCallOutOfBounds: vi.fn(() => false),
-  isModelConfigAccess: vi.fn(() => false),
-  isSensitiveEnvFileAccess: vi.fn(() => false),
-  MODIFYING_TOOLS: [
-    "write",
-    "write_to_file",
-    "edit",
-    "replace_file_content",
-    "multi_replace_file_content",
-    "apply_patch",
-  ],
-}));
 
 describe("Agent – plan approval breaks the loop", () => {
   beforeEach(() => {

@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import React from "react";
 import * as inkModule from "ink";
+import { Console } from "node:console";
+
+if (!console.Console) {
+  console.Console = Console;
+}
 
 import { getDashboardSuggestions } from "../src/utils/dashboardSuggestions.js";
 import { useKeyboardHandler } from "../src/hooks/useKeyboardHandler.js";

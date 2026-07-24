@@ -1,5 +1,4 @@
 import path from "path";
-import { getToolByName } from "./tools.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { getRootConfigDir } from "./config.js";
 import { agentLocalStorage } from "./agent.js";
@@ -259,20 +258,29 @@ export function isToolCallOutOfBounds(
         return true;
       }
 
-      // Check absolute paths in command
-      const winAbsPathRegex = /(?:[a-zA-Z]:[\\/][^:\s]+)/g;
+      // Check absolute paths in command (support quoted paths and paths with spaces)
+      const winAbsPathRegex = /"[a-zA-Z]:\\[^"]+"|'[a-zA-Z]:\\[^']+'|(?:[a-zA-Z]:\\[^\r\n;&|]+)/g;
       let match;
       while ((match = winAbsPathRegex.exec(command)) !== null) {
-        const p = match[0];
+        let p = match[0].trim();
+        if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
+          p = p.slice(1, -1);
+        }
         const resolved = resolveNormalizedPath(p);
         const isModelConfig = normalizeAndCheckSubpath(resolved, path.join(rootConfig, "model-config.json"));
-        if ((!normalizeAndCheckSubpath(resolved, rootConfig) || isModelConfig) && !normalizeAndCheckSubpath(resolved, workspacePath)) {
+        const inRootConfig = normalizeAndCheckSubpath(resolved, rootConfig);
+        const inWorkspace = normalizeAndCheckSubpath(resolved, workspacePath);
+        if ((!inRootConfig || isModelConfig) && !inWorkspace) {
           return true;
         }
       }
 
-      const unixAbsPathRegex = /(?:\s|^)(\/[a-zA-Z0-9_\-\.\/]+)/g;
+      const unixAbsPathRegex = /(?:^|[\s"'])(\/[a-zA-Z0-9_\-\.\/]+)/g;
       while ((match = unixAbsPathRegex.exec(command)) !== null) {
+        const matchIndex = match.index + match[0].indexOf("/");
+        if (matchIndex > 0 && command[matchIndex - 1] === "\\") {
+          continue;
+        }
         const p = match[1];
         if (p.startsWith("/dev/") || p === "/dev/null" || p.startsWith("/bin/") || p.startsWith("/usr/bin/")) {
           continue;
@@ -612,12 +620,12 @@ function isErrorLikeToolResult(result: string): boolean {
     /^Exit code:\s*[1-9]\d*/i.test(trimmed)
   );
 }
-
 export async function executeToolCall(
   toolCall: ToolCall,
   cwd: string,
   signal?: AbortSignal
 ): Promise<ToolResult> {
+  const { getToolByName } = await import("./tools.js");
   const tool = getToolByName(toolCall.name);
   const currentAgent = agentLocalStorage.getStore();
   const tier = currentAgent ? currentAgent.tier : "unknown";

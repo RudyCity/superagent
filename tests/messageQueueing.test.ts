@@ -1,30 +1,48 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach, beforeAll } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { Agent } from "../src/core/agent.js";
-import { streamText } from "ai";
-import * as jsonConfigModule from "../src/core/config/jsonConfig.js";
-import * as providersModule from "../src/core/config/providers.js";
-import * as aiModule from "ai";
 
 const tempHome = path.join(os.tmpdir(), "superagent-msg-queue-test-home-" + Date.now());
 process.env.HOME = tempHome;
 process.env.USERPROFILE = tempHome;
+process.env.SUPERAGENT_CONFIG_DIR = path.join(tempHome, ".superagent-r");
 
-vi.mock("ai", () => ({
-  streamText: vi.fn(),
-  generateText: vi.fn(),
-  jsonSchema: (s: any) => s,
-}));
+// Mock the ai module for Bun test runner
+if (typeof Bun !== "undefined") {
+  const { mock } = await import("bun:test");
+  mock.module("ai", () => ({
+    streamText: vi.fn(),
+    generateText: vi.fn(),
+    jsonSchema: (s: any) => s,
+  }));
+}
+
+const { Agent } = await import("../src/core/agent.js");
+const { streamText } = await import("ai");
+const jsonConfigModule = await import("../src/core/config/jsonConfig.js");
+const providersModule = await import("../src/core/config/providers.js");
+
+// Mock the ai module for Vitest runner
+if (typeof Bun === "undefined") {
+  vi.mock("ai", () => ({
+    streamText: vi.fn(),
+    generateText: vi.fn(),
+    jsonSchema: (s: any) => s,
+  }));
+}
 
 
 describe("Agent – Message Queueing", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    try {
+      const { closeHistoryDb } = await import("../src/core/storage/historyDb.js");
+      closeHistoryDb();
+    } catch {}
     if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
+      try { fs.rmSync(tempHome, { recursive: true, force: true }); } catch {}
     }
-    fs.mkdirSync(tempHome, { recursive: true });
+    try { fs.mkdirSync(tempHome, { recursive: true }); } catch {}
     vi.clearAllMocks();
     // Restore config/provider spies after clearAllMocks
     vi.spyOn(jsonConfigModule, "getSettings").mockReturnValue({
@@ -41,9 +59,13 @@ describe("Agent – Message Queueing", () => {
     vi.spyOn(providersModule, "getConfiguredProviders" as any).mockReturnValue([{ provider: "openai", apiKey: "fake-key" }]);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    try {
+      const { closeHistoryDb } = await import("../src/core/storage/historyDb.js");
+      closeHistoryDb();
+    } catch {}
     if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
+      try { fs.rmSync(tempHome, { recursive: true, force: true }); } catch {}
     }
   });
 

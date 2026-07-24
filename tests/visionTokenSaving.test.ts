@@ -136,11 +136,12 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
 
 
   it("uses the correct dynamic threshold based on model provider in getDynamicVisionThreshold", async () => {
+    vi.mocked(configModule.getDynamicVisionThreshold as any).mockRestore();
     const { getDynamicVisionThreshold: realGetDynamic } = await import("../src/core/config/jsonConfig.js");
     
     vi.mocked(configModule.getSettings).mockReturnValue({
       autoVisionTokenSaving: true,
-      visionTokenSavingThreshold: 2000,
+      visionTokenSavingThreshold: 3000,
     });
 
     expect(realGetDynamic("claude-3-5-sonnet")).toBe(6500);

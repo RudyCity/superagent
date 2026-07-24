@@ -4,35 +4,13 @@ import path from "path";
 import os from "os";
 import { globTool } from "../src/core/tools/systemTools.js";
 import * as workspaceDiscovery from "../src/core/workspaceDiscovery.js";
-import fg from "fast-glob";
-
-import picomatch from "picomatch";
-
-// Mock fast-glob's default execution to see if it is called.
-// Synchronous factory — avoids Bun deadlock from async importOriginal.
-vi.mock("fast-glob", () => {
-  const spyFg = vi.fn().mockImplementation(async (_pattern: any, _options: any) => {
-    return ["disk-file-1.ts", "disk-file-2.ts"];
-  });
-
-  (spyFg as any).isMatch = (str: string, pattern: string | string[], options?: any) => {
-    const patterns = Array.isArray(pattern) ? pattern : [pattern];
-    return patterns.some((p) => picomatch.isMatch(str, p, options));
-  };
-
-  return {
-    default: spyFg,
-    isMatch: (str: string, pattern: string | string[], options?: any) => {
-      const patterns = Array.isArray(pattern) ? pattern : [pattern];
-      return patterns.some((p) => picomatch.isMatch(str, p, options));
-    },
-  };
-});
+import * as fgModule from "fast-glob";
 
 describe("globTool Cache Interception", () => {
   let testWorkspaceDir: string;
   let testConfigDir: string;
   let originalConfigDirEnv: string | undefined;
+  let fgSpy: any;
 
   beforeEach(() => {
     originalConfigDirEnv = process.env.SUPERAGENT_CONFIG_DIR;
@@ -41,6 +19,7 @@ describe("globTool Cache Interception", () => {
     process.env.SUPERAGENT_CONFIG_DIR = testConfigDir;
 
     vi.restoreAllMocks();
+    fgSpy = vi.spyOn(fgModule, "default").mockResolvedValue(["disk-file-1.ts", "disk-file-2.ts"]);
   });
 
   afterEach(() => {
@@ -78,7 +57,7 @@ describe("globTool Cache Interception", () => {
     expect(result).not.toContain("README.md");
 
     // Verify fast-glob on disk was bypassed (mock was not called)
-    expect(fg).not.toHaveBeenCalled();
+    expect(fgSpy).not.toHaveBeenCalled();
   });
 
   it("should fall back to disk globbing when no cache exists", async () => {
@@ -94,6 +73,6 @@ describe("globTool Cache Interception", () => {
     expect(result).toContain("disk-file-2.ts");
 
     // Verify fast-glob on disk was executed
-    expect(fg).toHaveBeenCalled();
+    expect(fgSpy).toHaveBeenCalled();
   });
 });

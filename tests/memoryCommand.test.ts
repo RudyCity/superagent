@@ -1,6 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js";
-import { updateSettings } from "../src/core/config/jsonConfig.js";
+import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from "vitest";
+import fs from "fs";
+import path from "path";
+import os from "os";
+import type { ChatLine } from "../src/core/slash-commands.js";
 
 // Mock the rmemoryUtil module
 const mockClient = {
@@ -13,16 +15,45 @@ const mockClient = {
   readScenario: vi.fn(),
 };
 
-vi.mock("../src/core/rmemoryUtil.js", () => ({
-  getRMemoryClient: () => mockClient,
-  getRMemorySessionKey: () => "test-sess",
-  isRmemoryActive: vi.fn().mockImplementation(async () => {
-    const { getSettings } = await import("../src/core/config.js");
-    return !!getSettings().enableRmemory;
-  }),
-}));
+if (typeof Bun !== "undefined") {
+  const { mock } = await import("bun:test");
+  mock.module("../src/core/rmemoryUtil.js", () => ({
+    getRMemoryClient: () => mockClient,
+    getRMemorySessionKey: () => "test-sess",
+    isRmemoryActive: vi.fn().mockImplementation(async () => {
+      const { getSettings } = await import("../src/core/config/jsonConfig.js");
+      return !!getSettings().enableRmemory;
+    }),
+  }));
+}
+
+const { handleSlashCommand } = await import("../src/core/slash-commands.js");
+const { updateSettings, getSettings } = await import("../src/core/config/jsonConfig.js");
+
+if (typeof Bun === "undefined") {
+  vi.mock("../src/core/rmemoryUtil.js", () => ({
+    getRMemoryClient: () => mockClient,
+    getRMemorySessionKey: () => "test-sess",
+    isRmemoryActive: vi.fn().mockImplementation(async () => {
+      return !!getSettings().enableRmemory;
+    }),
+  }));
+}
 
 describe("/memory Command Suite", () => {
+  const originalEnv = process.env;
+  const tempConfigDir = path.join(os.tmpdir(), `superagent-memory-test-${process.pid}`);
+
+  beforeAll(async () => {
+    process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: tempConfigDir };
+    try { fs.mkdirSync(tempConfigDir, { recursive: true }); } catch {}
+  });
+
+  afterAll(async () => {
+    process.env = originalEnv;
+    try { fs.rmSync(tempConfigDir, { recursive: true, force: true }); } catch {}
+  });
+
   let addedLines: ChatLine[] = [];
 
   const mockCtx = {
@@ -39,6 +70,10 @@ describe("/memory Command Suite", () => {
   beforeEach(() => {
     addedLines = [];
     vi.clearAllMocks();
+    const configPath = path.join(tempConfigDir, "model-config.json");
+    if (fs.existsSync(configPath)) {
+      try { fs.unlinkSync(configPath); } catch {}
+    }
     // Enable memory in settings for testing
     updateSettings({ enableRmemory: true });
   });

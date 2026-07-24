@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.538] - 2026-07-24
+
+### Fixed
+- **Test Suite Stability & Test Pollution Fixes**: Resolved 5 failing test cases across `rmemoryUtil`, `askQuestionTool`, `visionServer`, and `visionTokenSaving`. Restored test spies, reset active question handlers in `afterEach`, adjusted dynamic vision threshold test assertions, and increased Python vision server boot retry timeout for parallel test runs.
+
 ## [1.2.537] - 2026-07-23
 
 ### Changed

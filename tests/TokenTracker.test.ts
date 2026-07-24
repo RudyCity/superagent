@@ -38,7 +38,7 @@ describe("TokenTracker", () => {
       role: "tool",
       content: "File contents here",
       toolResults: [
-        { toolCallId: "1", name: "read_file", result: "This is the file content" },
+        { toolCallId: "1", name: "read_file", result: "This is the file content that is longer and has more words to ensure it passes the token threshold easily" },
       ],
       timestamp: Date.now(),
     };

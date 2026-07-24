@@ -1,7 +1,20 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll, mock } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
+
+vi.mock("../src/core/config.js", async (importOriginal) => {
+  const original = await importOriginal<any>();
+  return {
+    ...original,
+    getSettings: vi.fn().mockReturnValue({ enableRmemory: false }),
+    getRootConfigDir: vi.fn(),
+    getGlobalConfigDir: vi.fn(),
+    ensureGlobalConfigDir: vi.fn(),
+    closeHistoryDb: vi.fn(),
+  };
+});
+
 import {
   addToKnowledge,
   removeFromKnowledge,
@@ -13,48 +26,41 @@ import {
 import * as configModule from "../src/core/config.js";
 import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 import { closeHistoryDb, getAllPinnedKnowledgeFromDb } from "../src/core/storage/historyDb.js";
+import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
 
-vi.mock("../src/core/config.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/core/config.js")>("../src/core/config.js");
-  return {
-    ...actual,
-    getSettings: vi.fn().mockReturnValue({ enableRmemory: false }),
-    getRootConfigDir: vi.fn(),
-    getGlobalConfigDir: vi.fn(),
-    ensureGlobalConfigDir: vi.fn(),
-    closeHistoryDb: vi.fn(),
-  };
-});
-
-vi.mock("../src/core/rmemoryUtil.js", () => {
-  const mockClient = {
-    updateAtomic: vi.fn().mockResolvedValue({ id: "test", updated_at: "now" }),
-    deleteAtomic: vi.fn().mockResolvedValue(undefined),
-    searchAtomic: vi.fn().mockResolvedValue({ items: [] }),
-  };
-  return {
-    getRMemoryClient: vi.fn().mockReturnValue(mockClient),
-  };
-});
+const mockClient = {
+  updateAtomic: vi.fn(),
+  deleteAtomic: vi.fn(),
+  searchAtomic: vi.fn(),
+};
 
 describe("pinnedKnowledge", () => {
   const originalEnv = process.env;
-  const testConfigDir = path.join(os.tmpdir(), `superagent-pinned-knowledge-test-${process.pid}`);
+  const testConfigDir = path.join(os.tmpdir(), `superagent-pinned-knowledge-test-${Math.random().toString(36).substring(2, 15)}`);
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    
+
+    mockClient.updateAtomic = vi.fn().mockResolvedValue({ id: "test", updated_at: "now" });
+    mockClient.deleteAtomic = vi.fn().mockResolvedValue(undefined);
+    mockClient.searchAtomic = vi.fn().mockResolvedValue({ items: [] });
+
+    vi.spyOn(rmemoryUtilModule, "getRMemoryClient").mockReturnValue(mockClient as any);
+
     // Close history db to release locks before cleanup
     closeHistoryDb();
 
     process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
     clearModelConfigCache();
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(testConfigDir, { recursive: true, force: true });
+    } catch {}
     fs.mkdirSync(testConfigDir, { recursive: true });
-    
+
     // Setup mocks
-    vi.mocked(configModule.getRootConfigDir).mockReturnValue(testConfigDir);
-    vi.mocked(configModule.getGlobalConfigDir).mockReturnValue(testConfigDir);
+    vi.spyOn(configModule, "getRootConfigDir").mockReturnValue(testConfigDir);
+    vi.spyOn(configModule, "getGlobalConfigDir").mockReturnValue(testConfigDir);
+    vi.spyOn(configModule, "getSettings").mockReturnValue({ enableRmemory: false } as any);
   });
 
   afterEach(() => {
@@ -62,7 +68,9 @@ describe("pinnedKnowledge", () => {
     
     closeHistoryDb();
 
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(testConfigDir, { recursive: true, force: true });
+    } catch {}
     process.env = originalEnv;
   });
 
@@ -105,7 +113,7 @@ describe("pinnedKnowledge", () => {
 
   describe("rmemory sync operations", () => {
     it("should trigger rmemory sync if enabled", async () => {
-      vi.mocked(configModule.getSettings).mockReturnValue({ enableRmemory: true });
+      vi.spyOn(configModule, "getSettings").mockReturnValue({ enableRmemory: true } as any);
       const { getRMemoryClient } = await import("../src/core/rmemoryUtil.js");
       const mockClient = getRMemoryClient();
 
@@ -138,7 +146,7 @@ describe("pinnedKnowledge", () => {
     });
 
     it("should perform search using RMemory when enabled", async () => {
-      vi.mocked(configModule.getSettings).mockReturnValue({ enableRmemory: true });
+      vi.spyOn(configModule, "getSettings").mockReturnValue({ enableRmemory: true } as any);
       const { getRMemoryClient } = await import("../src/core/rmemoryUtil.js");
       const mockClient = getRMemoryClient();
 
@@ -153,7 +161,7 @@ describe("pinnedKnowledge", () => {
 
       const id = addToKnowledge(pin, "/path/to/session.json", "/path/to/project");
 
-      vi.mocked(mockClient.searchAtomic).mockResolvedValueOnce({
+      mockClient.searchAtomic.mockResolvedValueOnce({
         items: [
           {
             id: `pinned-knowledge-${id}`,
@@ -174,12 +182,12 @@ describe("pinnedKnowledge", () => {
     });
 
     it("should sync all existing pinned entries to RMemory", async () => {
-      vi.mocked(configModule.getSettings).mockReturnValue({ enableRmemory: true });
+      vi.spyOn(configModule, "getSettings").mockReturnValue({ enableRmemory: true } as any);
       const { getRMemoryClient } = await import("../src/core/rmemoryUtil.js");
-      const mockClient = getRMemoryClient();
+      const client = getRMemoryClient();
 
       // Seed local storage with two entries directly (rmemory disabled)
-      vi.mocked(configModule.getSettings).mockReturnValue({ enableRmemory: false });
+      vi.spyOn(configModule, "getSettings").mockReturnValue({ enableRmemory: false } as any);
       addToKnowledge(
         { id: "e1", role: "user", content: "Entry 1", timestamp: Date.now(), pinnedAt: Date.now(), originalIndex: 0 },
         "/session",
@@ -191,11 +199,14 @@ describe("pinnedKnowledge", () => {
         "/project"
       );
 
-      vi.mocked(configModule.getSettings).mockReturnValue({ enableRmemory: true });
-      vi.mocked(mockClient.updateAtomic).mockClear();
+      vi.spyOn(configModule, "getSettings").mockReturnValue({ enableRmemory: true } as any);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      mockClient.updateAtomic.mockClear();
 
       await syncAllPinnedToRMemory();
       expect(mockClient.updateAtomic).toHaveBeenCalledTimes(2);
     });
   });
+
+  afterAll(() => {});
 });

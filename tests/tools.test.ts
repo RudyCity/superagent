@@ -5,74 +5,79 @@ import path from "path";
 import { agentLocalStorage } from "../src/core/agent.js";
 import { getGlobalConfigDir, saveSessionToDb, deleteSessionFromDb } from "../src/core/config.js";
 import * as configModule from "../src/core/config.js";
+import * as execaModule from "execa";
 
-// Spy on getConfig to return empty apiKey so searchHistory uses offline fuzzy search
-// instead of hitting the AI API from model-config.json (causes timeouts).
-vi.spyOn(configModule, "getConfig").mockReturnValue({
-  apiKey: "",
-  provider: "openai",
-  model: "gpt-4o",
-  baseUrl: "",
-  maxTokens: 16384,
-  systemPrompt: "",
-  workingDirectory: process.cwd(),
-} as any);
+beforeEach(() => {
+  vi.restoreAllMocks();
 
-// Mock execa to avoid running real shell commands in the unit tests
-vi.mock("execa", () => {
-  return {
-    execa: vi.fn().mockImplementation((cmd, args, options) => {
-      const actualArgs = Array.isArray(args) ? args : [];
-      
-      const isError = typeof cmd === "string" && cmd.includes("invalid_command");
-      const mockResult = {
-        stdout: isError ? "" : "mocked process stdout",
-        exitCode: isError ? 127 : 0,
-        all: isError ? "command not found" : "mocked process stdout and stderr",
-      };
+  // Spy on getConfig to return empty apiKey so searchHistory uses offline fuzzy search
+  // instead of hitting the AI API from model-config.json (causes timeouts).
+  vi.spyOn(configModule, "getConfig").mockReturnValue({
+    apiKey: "",
+    provider: "openai",
+    model: "gpt-4o",
+    baseUrl: "",
+    maxTokens: 16384,
+    systemPrompt: "",
+    workingDirectory: process.cwd(),
+  } as any);
 
-      if (cmd === "git") {
-        if (actualArgs.includes("status")) {
-          mockResult.stdout = "M src/app.tsx";
-        } else if (actualArgs.includes("diff")) {
-          mockResult.stdout = "diff contents";
-        } else if (actualArgs.includes("commit")) {
-          mockResult.stdout = "committed";
-        } else if (actualArgs.includes("log")) {
-          mockResult.stdout = "commit log 1\ncommit log 2";
-        }
-      } else if (cmd === "rg") {
-        mockResult.stdout = "src/app.tsx:10:match content";
-      } else if (typeof cmd === "string" && cmd.toLowerCase().includes("android")) {
-        mockResult.stdout = "mocked android output";
-        mockResult.all = "mocked android output";
+  // Mock execa to avoid running real shell commands in the unit tests
+  vi.spyOn(execaModule, "execa").mockImplementation((cmd, args, options) => {
+    const actualArgs = Array.isArray(args) ? args : [];
+    
+    const isError = typeof cmd === "string" && cmd.includes("invalid_command");
+    const mockResult = {
+      stdout: isError ? "" : "mocked process stdout",
+      exitCode: isError ? 127 : 0,
+      all: isError ? "command not found" : "mocked process stdout and stderr",
+    };
+
+    if (cmd === "git") {
+      if (actualArgs.includes("status")) {
+        mockResult.stdout = "M src/app.tsx";
+      } else if (actualArgs.includes("diff")) {
+        mockResult.stdout = "diff contents";
+      } else if (actualArgs.includes("commit")) {
+        mockResult.stdout = "committed";
+      } else if (actualArgs.includes("log")) {
+        mockResult.stdout = "commit log 1\ncommit log 2";
       }
+    } else if (cmd === "rg") {
+      mockResult.stdout = "src/app.tsx:10:match content";
+    } else if (typeof cmd === "string" && cmd.toLowerCase().includes("android")) {
+      mockResult.stdout = "mocked android output";
+      mockResult.all = "mocked android output";
+    }
 
-      const mockPromise: any = Promise.resolve(mockResult);
-      mockPromise.on = vi.fn().mockImplementation((event, callback) => {
-        if (event === "close") {
-          const delay = (typeof cmd === "string" && cmd.includes("sleep")) ? 10000 : 10;
-          const code = (typeof cmd === "string" && cmd.includes("invalid_command")) ? 127 : 0;
-          setTimeout(() => callback(code), delay);
-        }
-        return mockPromise;
-      });
-      mockPromise.all = {
-        on: vi.fn().mockImplementation((event, callback) => {
-          if (event === "data") {
-            const dataToEmit = (typeof cmd === "string" && cmd.includes("long_output"))
-              ? Buffer.from("line\n".repeat(60))
-              : Buffer.from("mock process output");
-            setTimeout(() => callback(dataToEmit), 10);
-          }
-          return mockPromise.all;
-        })
-      };
-      mockPromise.kill = vi.fn();
-
+    const mockPromise: any = Promise.resolve(mockResult);
+    mockPromise.on = vi.fn().mockImplementation((event, callback) => {
+      if (event === "close") {
+        const delay = (typeof cmd === "string" && cmd.includes("sleep")) ? 10000 : 10;
+        const code = (typeof cmd === "string" && cmd.includes("invalid_command")) ? 127 : 0;
+        setTimeout(() => callback(code), delay);
+      }
       return mockPromise;
-    }),
-  };
+    });
+    mockPromise.all = {
+      on: vi.fn().mockImplementation((event, callback) => {
+        if (event === "data") {
+          const dataToEmit = (typeof cmd === "string" && cmd.includes("long_output"))
+            ? Buffer.from("line\n".repeat(60))
+            : Buffer.from("mock process output");
+          setTimeout(() => callback(dataToEmit), 10);
+        }
+        return mockPromise.all;
+      })
+    };
+    mockPromise.kill = vi.fn();
+
+    return mockPromise as any;
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 // Mock global fetch for webSearch and fetchUrl tools
@@ -562,6 +567,8 @@ describe("Scheduler and Subagent tools", () => {
 
 describe("Ask question, Patch and Screenshot tools", () => {
   it("should execute askQuestionTool interactively error", async () => {
+    const { registerQuestionHandler } = await import("../src/core/tools/state.js");
+    registerQuestionHandler(null);
     const tool = getToolByName("ask_question");
     const result = await tool?.execute({ question: "Is this correct?", options: ["Yes", "No"] }, process.cwd());
     expect(result).toContain("must be executed interactively");

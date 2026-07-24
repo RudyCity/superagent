@@ -1,12 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, mock, afterAll } from "vitest";
 import React from "react";
 import { render } from "ink";
 import { Console } from "node:console";
-import { useRmemoryStatus } from "../src/hooks/useRmemoryStatus.js";
+import path from "path";
 
 if (!console.Console) {
   console.Console = Console;
 }
+
+import * as jsonConfigModule from "../src/core/config/jsonConfig.js";
 
 let mockSettings = {
   enableRmemory: false,
@@ -16,11 +18,10 @@ let mockSettings = {
   rmemoryPollIntervalMs: 30000,
 };
 
-vi.mock("../src/core/config/jsonConfig.js", () => {
-  return {
-    getSettings: () => mockSettings,
-  };
-});
+vi.spyOn(jsonConfigModule, "getSettings").mockImplementation(() => mockSettings as any);
+
+
+import { useRmemoryStatus } from "../src/hooks/useRmemoryStatus.js";
 
 describe("useRmemoryStatus Hook", () => {
   beforeEach(() => {
@@ -64,3 +65,4 @@ describe("useRmemoryStatus Hook", () => {
     renderResult.unmount();
   });
 });
+

@@ -2,63 +2,120 @@ import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from "vites
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { loadModelConfig, saveModelConfig, clearModelConfigCache } from "../src/core/config/jsonConfig.js";
-import { initMcpServers, closeMcpServers, connectedServers } from "../src/core/mcp/McpManager.js";
-import { allTools } from "../src/core/tools/index.js";
 
-// Mock the MCP SDK
-vi.mock("@modelcontextprotocol/sdk/client/index.js", () => {
-  return {
-    Client: class {
-      connect = vi.fn().mockResolvedValue(undefined);
-      listTools = vi.fn().mockResolvedValue({
-        tools: [
-          {
-            name: "echo",
-            description: "Echoes back the input",
-            inputSchema: {
-              type: "object",
-              properties: {
-                message: { type: "string" }
+// Mock the MCP SDK for Bun test runner
+if (typeof Bun !== "undefined") {
+  const { mock } = await import("bun:test");
+  mock.module("@modelcontextprotocol/sdk/client/index.js", () => {
+    return {
+      Client: class {
+        connect = vi.fn().mockResolvedValue(undefined);
+        listTools = vi.fn().mockResolvedValue({
+          tools: [
+            {
+              name: "echo",
+              description: "Echoes back the input",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  message: { type: "string" }
+                }
               }
             }
-          }
-        ]
-      });
-      callTool = vi.fn().mockResolvedValue({
-        content: [
-          { type: "text", text: "hello world" }
-        ]
-      });
-    }
-  };
-});
+          ]
+        });
+        callTool = vi.fn().mockResolvedValue({
+          content: [
+            { type: "text", text: "hello world" }
+          ]
+        });
+      }
+    };
+  });
 
-vi.mock("@modelcontextprotocol/sdk/client/stdio.js", () => {
-  return {
-    StdioClientTransport: class {
-      close = vi.fn().mockResolvedValue(undefined);
-    }
-  };
-});
+  mock.module("@modelcontextprotocol/sdk/client/stdio.js", () => {
+    return {
+      StdioClientTransport: class {
+        close = vi.fn().mockResolvedValue(undefined);
+      }
+    };
+  });
+}
+
+const { loadModelConfig, saveModelConfig, clearModelConfigCache } = await import("../src/core/config/jsonConfig.js");
+const { initMcpServers, closeMcpServers, connectedServers } = await import("../src/core/mcp/McpManager.js");
+
+// Mock the MCP SDK for Vitest runner
+if (typeof Bun === "undefined") {
+  vi.mock("@modelcontextprotocol/sdk/client/index.js", () => {
+    return {
+      Client: class {
+        connect = vi.fn().mockResolvedValue(undefined);
+        listTools = vi.fn().mockResolvedValue({
+          tools: [
+            {
+              name: "echo",
+              description: "Echoes back the input",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  message: { type: "string" }
+                }
+              }
+            }
+          ]
+        });
+        callTool = vi.fn().mockResolvedValue({
+          content: [
+            { type: "text", text: "hello world" }
+          ]
+        });
+      }
+    };
+  });
+
+  vi.mock("@modelcontextprotocol/sdk/client/stdio.js", () => {
+    return {
+      StdioClientTransport: class {
+        close = vi.fn().mockResolvedValue(undefined);
+      }
+    };
+  });
+}
 
 describe("MCP Client Integration", () => {
-  beforeEach(() => {
-    clearModelConfigCache();
-    const configDir = process.env.SUPERAGENT_CONFIG_DIR;
-    if (configDir) {
-      const configPath = path.join(configDir, "model-config.json");
-      if (fs.existsSync(configPath)) {
-        try { fs.unlinkSync(configPath); } catch {}
-      }
-    }
+  const originalEnv = process.env;
+  const tempConfigDir = path.join(os.tmpdir(), `superagent-mcp-test-${process.pid}`);
+
+  beforeAll(async () => {
+    console.log("beforeAll start");
+    process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: tempConfigDir };
+    try { fs.mkdirSync(tempConfigDir, { recursive: true }); } catch {}
+    console.log("beforeAll end");
   });
 
   afterAll(async () => {
+    console.log("afterAll start");
     await closeMcpServers();
+    process.env = originalEnv;
+    try { fs.rmSync(tempConfigDir, { recursive: true, force: true }); } catch {}
+    console.log("afterAll end");
+  });
+
+  beforeEach(() => {
+    console.log("beforeEach start");
+    clearModelConfigCache();
+    const configPath = path.join(tempConfigDir, "model-config.json");
+    if (fs.existsSync(configPath)) {
+      try { fs.unlinkSync(configPath); } catch {}
+    }
+    console.log("beforeEach end");
   });
 
   it("should configure and initialize MCP servers", async () => {
+    console.log("first test start");
+    const { allTools } = await import("../src/core/tools/index.js");
+    console.log("imported allTools");
     // 1. Setup config with an MCP server
     const config = loadModelConfig();
     config.mcpServers = {
@@ -95,6 +152,7 @@ describe("MCP Client Integration", () => {
   });
 
   it("should manage MCP servers using manage_mcp tool", async () => {
+    const { allTools } = await import("../src/core/tools/index.js");
     const manageTool = allTools.find(t => t.name === "manage_mcp");
     expect(manageTool).toBeDefined();
 

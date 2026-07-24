@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
 import { execa } from "execa";
 import { Tool } from "./types.js";
@@ -1486,9 +1487,8 @@ export const getSkillsTool: Tool = {
 
         if (query) {
           try {
-            const fs = await import("fs");
-            if (fs.existsSync(s.path)) {
-              const content = fs.readFileSync(s.path, "utf-8");
+            if (fsSync.existsSync(s.path)) {
+              const content = fsSync.readFileSync(s.path, "utf-8");
               const indented = content
                 .split("\n")
                 .map((line) => `  ${line}`)
@@ -1549,8 +1549,7 @@ export const useSkillTool: Tool = {
       if (skillPath) {
         foundSkill = skills.find(s => s.path === skillPath);
         if (!foundSkill) {
-          const fs = await import("fs");
-          if (fs.existsSync(skillPath)) {
+          if (fsSync.existsSync(skillPath)) {
             foundSkill = {
               name: path.basename(path.dirname(skillPath)),
               description: "Custom skill file directly provided via path.",
@@ -1577,12 +1576,11 @@ export const useSkillTool: Tool = {
         return `Error: Skill "${skillName || skillPath}" not found. Available skills: ${availableNames}`;
       }
 
-      const fs = await import("fs");
-      if (!fs.existsSync(foundSkill.path)) {
+      if (!fsSync.existsSync(foundSkill.path)) {
         return `Error: Skill instruction file not found at path: ${foundSkill.path}`;
       }
 
-      const content = fs.readFileSync(foundSkill.path, "utf-8");
+      const content = fsSync.readFileSync(foundSkill.path, "utf-8");
       
       let output = `### Activated Skill: ${foundSkill.name}\n`;
       output += `**Path**: ${foundSkill.path}\n`;

@@ -1,58 +1,44 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import { getSkillsTool, useSkillTool } from "../src/core/tools/otherTools.js";
+import * as configModule from "../src/core/config.js";
+import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
+import fs from "fs";
 
-// Mock the config module
-vi.mock("../src/core/config.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/core/config.js")>("../src/core/config.js");
-  return {
-    ...actual,
-    getInstalledSkills: vi.fn(),
-    getModelInstance: vi.fn(),
-  };
-});
+const origExists = fs.existsSync.bind(fs);
+const origRead = fs.readFileSync.bind(fs);
 
-// Mock rmemoryUtil for semantic search
-vi.mock("../src/core/rmemoryUtil.js", () => {
-  return {
-    searchSkillsByQuery: vi.fn(),
-  };
-});
+beforeEach(() => {
+  vi.clearAllMocks();
 
-// Mock fs module for skill content reading
-vi.mock("fs", async () => {
-  const actual = await vi.importActual<typeof import("fs")>("fs");
-  return {
-    ...actual,
-    default: {
-      ...actual,
-      existsSync: vi.fn().mockReturnValue(true),
-      readFileSync: vi.fn().mockImplementation((filePath) => {
-        return `Mock content of ${filePath}`;
-      }),
-    },
-    existsSync: vi.fn().mockReturnValue(true),
-    readFileSync: vi.fn().mockImplementation((filePath) => {
+  vi.spyOn(fs, "existsSync").mockImplementation((filePath: any) => {
+    if (typeof filePath === "string" && (filePath.includes("SKILL.md") || filePath.includes("skills") || filePath.includes("mock-skill") || filePath.includes("debug"))) {
+      return true;
+    }
+    return origExists(filePath);
+  });
+
+  vi.spyOn(fs, "readFileSync").mockImplementation((filePath: any, options?: any) => {
+    if (typeof filePath === "string" && (filePath.includes("SKILL.md") || filePath.includes("skills") || filePath.includes("mock-skill") || filePath.includes("debug"))) {
       return `Mock content of ${filePath}`;
-    }),
-  };
+    }
+    return origRead(filePath, options);
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("get_skills Tool", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it("should return no skills found when list is empty", async () => {
-    const { getInstalledSkills } = await import("../src/core/config.js");
-    vi.mocked(getInstalledSkills).mockReturnValue([]);
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([]);
 
     const result = await getSkillsTool.execute({}, "/cwd");
     expect(result).toBe("No installed skills found.");
   });
 
   it("should list all installed skills without markdown decoration", async () => {
-    const { getInstalledSkills } = await import("../src/core/config.js");
-    vi.mocked(getInstalledSkills).mockReturnValue([
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([
       {
         name: "React Basics",
         description: "Learn standard react components",
@@ -67,16 +53,13 @@ describe("get_skills Tool", () => {
     expect(result).toContain("author: web-dev");
     expect(result).toContain("description: Learn standard react components");
     expect(result).toContain("path: /path/to/react-basics/SKILL.md");
-    
+
     // Check that there is no bold/heading markdown formatting
     expect(result).not.toContain("**");
     expect(result).not.toContain("##");
   });
 
   it("should filter skills by query correctly case-insensitively", async () => {
-    const { getInstalledSkills } = await import("../src/core/config.js");
-    const { searchSkillsByQuery } = await import("../src/core/rmemoryUtil.js");
-
     const mockSkills = [
       {
         name: "React Basics",
@@ -91,10 +74,10 @@ describe("get_skills Tool", () => {
         path: "/path/to/vue-basics/SKILL.md",
       },
     ];
-    vi.mocked(getInstalledSkills).mockReturnValue(mockSkills);
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue(mockSkills);
 
     // Simulate embedding failure → tool falls back to TF-IDF keyword matching
-    vi.mocked(searchSkillsByQuery).mockRejectedValue(new Error("Embedding unavailable"));
+    vi.spyOn(rmemoryUtilModule, "searchSkillsByQuery").mockRejectedValue(new Error("Embedding unavailable"));
 
     // TF-IDF fallback: "React" matches only React Basics by keyword
     const reactResult = await getSkillsTool.execute({ query: "React" }, "/cwd");
@@ -112,9 +95,6 @@ describe("get_skills Tool", () => {
   });
 
   it("should support RMemory semantic filtering when embedding is available", async () => {
-    const { getInstalledSkills } = await import("../src/core/config.js");
-    const { searchSkillsByQuery } = await import("../src/core/rmemoryUtil.js");
-
     const mockSkills = [
       {
         name: "React Basics",
@@ -129,21 +109,19 @@ describe("get_skills Tool", () => {
         path: "/path/to/vue-basics/SKILL.md",
       },
     ];
-    vi.mocked(getInstalledSkills).mockReturnValue(mockSkills);
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue(mockSkills);
 
     // Mock semantic search to only return Vue Basics (simulates embedding match)
-    vi.mocked(searchSkillsByQuery).mockResolvedValue([mockSkills[1]]);
+    const spySearch = vi.spyOn(rmemoryUtilModule, "searchSkillsByQuery").mockResolvedValue([mockSkills[1]]);
 
     const result = await getSkillsTool.execute({ query: "Vue UI library" }, "/cwd");
     expect(result).toContain("Vue Basics");
     expect(result).not.toContain("React Basics");
-    expect(searchSkillsByQuery).toHaveBeenCalledWith("vue ui library", mockSkills, 8);
+    expect(spySearch).toHaveBeenCalledWith("vue ui library", mockSkills, 8);
   });
 
   it("should fall back to smart keyword matching when AI returns empty or fails", async () => {
-    const { getInstalledSkills } = await import("../src/core/config.js");
-    const { searchSkillsByQuery } = await import("../src/core/rmemoryUtil.js");
-    vi.mocked(getInstalledSkills).mockReturnValue([
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([
       {
         name: "auth-implementation-patterns",
         description: "Master authentication and authorization patterns including JWT, OAuth2, session management, and RBAC to build secure, scalable access control systems.",
@@ -158,7 +136,7 @@ describe("get_skills Tool", () => {
       },
     ]);
     // Simulate embedding failure → TF-IDF fallback takes over
-    vi.mocked(searchSkillsByQuery).mockRejectedValue(new Error("Embedding unavailable"));
+    vi.spyOn(rmemoryUtilModule, "searchSkillsByQuery").mockRejectedValue(new Error("Embedding unavailable"));
 
     const result = await getSkillsTool.execute({ query: "rbac role user management" }, "/cwd");
     expect(result).toContain("auth-implementation-patterns");
@@ -166,9 +144,7 @@ describe("get_skills Tool", () => {
   });
 
   it("should automatically include skill contents when a query is provided and the file exists", async () => {
-    const { getInstalledSkills } = await import("../src/core/config.js");
-    const { searchSkillsByQuery } = await import("../src/core/rmemoryUtil.js");
-    vi.mocked(getInstalledSkills).mockReturnValue([
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([
       {
         name: "Mock Skill",
         description: "A skill for testing",
@@ -177,7 +153,7 @@ describe("get_skills Tool", () => {
       },
     ]);
     // Simulate embedding failure → TF-IDF fallback, skill still included in results
-    vi.mocked(searchSkillsByQuery).mockRejectedValue(new Error("Embedding unavailable"));
+    vi.spyOn(rmemoryUtilModule, "searchSkillsByQuery").mockRejectedValue(new Error("Embedding unavailable"));
 
     const result = await getSkillsTool.execute({ query: "testing" }, "/cwd");
     expect(result).toContain("Mock Skill");
@@ -193,8 +169,7 @@ describe("use_skill Tool", () => {
   });
 
   it("should successfully retrieve skill by name", async () => {
-    const { getInstalledSkills } = await import("../src/core/config.js");
-    vi.mocked(getInstalledSkills).mockReturnValue([
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([
       {
         name: "systematic-debugging",
         description: "Standard debugging skill",
@@ -208,8 +183,7 @@ describe("use_skill Tool", () => {
   });
 
   it("should successfully retrieve skill by path", async () => {
-    const { getInstalledSkills } = await import("../src/core/config.js");
-    vi.mocked(getInstalledSkills).mockReturnValue([
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([
       {
         name: "systematic-debugging",
         description: "Standard debugging skill",
@@ -223,8 +197,7 @@ describe("use_skill Tool", () => {
   });
 
   it("should return error when skill is not found", async () => {
-    const { getInstalledSkills } = await import("../src/core/config.js");
-    vi.mocked(getInstalledSkills).mockReturnValue([
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([
       {
         name: "React Basics",
         description: "React basics skill",
@@ -235,5 +208,7 @@ describe("use_skill Tool", () => {
     const result = await useSkillTool.execute({ skillName: "Vue Basics" }, "/cwd");
     expect(result).toContain("Error: Skill \"Vue Basics\" not found.");
   });
+
+  afterAll(() => {});
 });
 

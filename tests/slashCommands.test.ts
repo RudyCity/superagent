@@ -13,15 +13,39 @@ import * as configModule from "../src/core/config.js";
 import { getDashboardSuggestions } from "../src/utils/dashboardSuggestions.js";
 import { getModelConfigPath, ensureGlobalConfigDir } from "../src/core/config/paths.js";
 import { clearModelConfigCache, getSettings } from "../src/core/config/jsonConfig.js";
+import * as execaModule from "execa";
 import { execa } from "execa";
 
 const configPath = getModelConfigPath();
 
-vi.mock("execa", () => ({
-  execa: vi.fn().mockResolvedValue({ stdout: "" }),
-}));
 
 
+let execaSpy: any;
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+  execaSpy = vi.spyOn(execaModule, "execa").mockResolvedValue({ stdout: "" } as any);
+
+  // Bersihkan folder temp
+  if (fs.existsSync(tempHome)) {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+  ensureGlobalConfigDir();
+  clearModelConfigCache();
+
+  // Spy on config methods
+  vi.spyOn(configModule, "getInstalledSkills" as any).mockReturnValue([
+    { name: "Test Skill", description: "A test skill description", path: "/path/to/test-skill/SKILL.md" }
+  ]);
+});
+
+afterEach(() => {
+  // Bersihkan folder temp
+  if (fs.existsSync(tempHome)) {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+  clearModelConfigCache();
+});
 
 describe("Slash Command: /model", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -59,26 +83,10 @@ describe("Slash Command: /model", () => {
     activeWizard = null;
     wizardOptions = [];
     wizardSelectedIndex = 0;
-
-    // Bersihkan folder temp
-    if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
-    }
-    ensureGlobalConfigDir();
-    clearModelConfigCache();
-    // Spy on config methods
-    vi.spyOn(configModule, "getInstalledSkills" as any).mockReturnValue([
-      { name: "Test Skill", description: "A test skill description", path: "/path/to/test-skill/SKILL.md" }
-    ]);
   });
 
   afterEach(() => {
     process.env = originalEnv;
-    // Bersihkan folder temp
-    if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
-    }
-    clearModelConfigCache();
   });
 
   it("should show current configurations when run without arguments", () => {

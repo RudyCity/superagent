@@ -1,15 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import fs from "fs";
 import { execa } from "execa";
+import * as execaModule from "execa";
 import { validatePostMerge } from "../src/core/masterAgent.js";
-
-vi.mock("execa", () => ({
-  execa: vi.fn().mockResolvedValue({ stdout: "" }),
-}));
 
 describe("Post-Merge Validation (Universal)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(execaModule, "execa").mockResolvedValue({ stdout: "" } as any);
   });
 
   // ── Conflict Marker Detection ──────────────────────────────────────────

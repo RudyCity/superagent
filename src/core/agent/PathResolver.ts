@@ -28,7 +28,7 @@ export class PathResolver {
 
   public static resolveHistoryFilePath(agent: Agent, autoResume: boolean | string): string {
     ensureGlobalConfigDir();
-    const sanitizedPath = agent.workingDirectory.replace(/[^a-zA-Z0-9]/g, "_");
+    const sanitizedPath = (agent.workingDirectory || "").replace(/[^a-zA-Z0-9]/g, "_");
     const mode = agent.isMultiAgent ? "multi" : "single";
     let historyDir = path.join(getGlobalConfigDir(), "history", mode);
 
@@ -109,7 +109,7 @@ export class PathResolver {
                 const content = fs.readFileSync(item.filePath, "utf-8");
                 const parsed = JSON.parse(content);
                 if (parsed && parsed.workingDirectory) {
-                  if (normalizeAndCheckSubpath(parsed.workingDirectory, agent.workingDirectory)) {
+                  if (normalizeAndCheckSubpath(parsed.workingDirectory, agent.workingDirectory || "")) {
                     return item.filePath;
                   }
                 } else {

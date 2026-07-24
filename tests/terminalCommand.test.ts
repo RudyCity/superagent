@@ -2,15 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js";
 import { registry } from "../src/core/commands/registry.js";
 import { terminalCommand } from "../src/core/commands/terminalCommand.js";
-
-vi.mock("execa", () => ({
-  execa: vi.fn().mockReturnValue({
-    all: {
-      on: vi.fn(),
-    },
-    on: vi.fn(),
-  }),
-}));
+import * as execaModule from "execa";
 
 describe("Terminal Command Interactive Execution", () => {
   let addedLines: ChatLine[] = [];
@@ -32,6 +24,13 @@ describe("Terminal Command Interactive Execution", () => {
   };
 
   beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(execaModule, "execa").mockReturnValue({
+      all: {
+        on: vi.fn(),
+      },
+      on: vi.fn(),
+    } as any);
     addedLines = [];
     runInteractiveCalled = false;
     runInteractiveParams = null;

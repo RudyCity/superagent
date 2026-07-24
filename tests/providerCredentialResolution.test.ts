@@ -3,9 +3,8 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-// Mock os.homedir() di paling atas untuk isolasi penuh
+// Mock os.homedir() inside beforeEach for full isolation
 const tempHome = path.join(process.cwd(), "tests", "temp-home-provider-resolution");
-vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
 import {
   loadModelConfig,
@@ -29,6 +28,7 @@ describe("Provider Credential Resolution Fixes", () => {
   let presetsPath: string;
 
   beforeEach(() => {
+    vi.spyOn(os, "homedir").mockReturnValue(tempHome);
     originalProcessEnv = { ...process.env };
     delete process.env.SUPERAGENT_CONFIG_DIR;
     

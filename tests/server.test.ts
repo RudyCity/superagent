@@ -15,6 +15,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import * as execaModule from "execa";
 import {
   getFreePort,
   getJSON,
@@ -35,14 +36,12 @@ let port: number;
 
 beforeAll(async () => {
   // Prevent Vision Server (Python) from spawning during tests
-  vi.mock("execa", () => ({
-    execa: vi.fn().mockImplementation((..._args: any[]) => {
-      const p: any = Promise.resolve({ exitCode: 0, stdout: "", stderr: "", all: undefined });
-      p.catch = () => p;
-      p.pid = 99999;
-      return p;
-    }),
-  }));
+  vi.spyOn(execaModule, "execa").mockImplementation((..._args: any[]) => {
+    const p: any = Promise.resolve({ exitCode: 0, stdout: "", stderr: "", all: undefined });
+    p.catch = () => p;
+    p.pid = 99999;
+    return p;
+  });
 
   port = await getFreePort();
   setSharedPort(port);

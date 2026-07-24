@@ -117,6 +117,7 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     forcePromptBasedToolCalling: false,
     autoVisionTokenSaving: false,
     visionTokenSavingThreshold: DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
+    enableRmemory: false,
     rmemoryEmbeddingProvider: "local",
     rmemoryEmbeddingModel: "text-embedding-3-small",
     rmemoryEmbeddingDimensions: 1536,

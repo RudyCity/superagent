@@ -1,24 +1,29 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, mock, afterAll } from "vitest";
 import fs from "fs";
 import path from "path";
 import { execa } from "execa";
+import * as execaModule from "execa";
+
+vi.mock("../src/core/config/jsonConfig.js", async (importOriginal) => {
+  const original = await importOriginal<any>();
+  return {
+    ...original,
+    addTrustedDirectory: vi.fn(),
+    ensureDirectoryTrusted: vi.fn().mockResolvedValue(undefined),
+    isDirectoryTrusted: vi.fn().mockReturnValue(true),
+  };
+});
+
+import * as jsonConfigModule from "../src/core/config/jsonConfig.js";
 import { ensureGitIgnore, setupWorkspaceForSession, cleanupWorkspaceForSession } from "../src/core/workspaceIsolation.js";
-
-// Mock execa
-vi.mock("execa", () => ({
-  execa: vi.fn().mockResolvedValue({ stdout: "" }),
-}));
-
-// Mock config/jsonConfig to avoid file system writes during tests
-vi.mock("../src/core/config/jsonConfig.js", () => ({
-  addTrustedDirectory: vi.fn(),
-  ensureDirectoryTrusted: vi.fn().mockResolvedValue(undefined),
-  isDirectoryTrusted: vi.fn().mockReturnValue(true),
-}));
 
 describe("workspaceIsolation", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(jsonConfigModule, "addTrustedDirectory").mockImplementation(() => {});
+    vi.spyOn(jsonConfigModule, "ensureDirectoryTrusted").mockResolvedValue(undefined);
+    vi.spyOn(jsonConfigModule, "isDirectoryTrusted").mockReturnValue(true);
+    vi.spyOn(execaModule, "execa").mockResolvedValue({ stdout: "" } as any);
     vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
     vi.spyOn(fs, "appendFileSync").mockImplementation(() => {});
   });

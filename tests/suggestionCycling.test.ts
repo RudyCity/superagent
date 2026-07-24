@@ -1,36 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import React from "react";
-
-vi.mock("react", () => {
-  const mocked = {
-    useRef: (val: any) => ({ current: val }),
-    useCallback: (fn: any) => fn,
-    useState: (initial: any) => [initial, vi.fn()],
-    useEffect: vi.fn(),
-    createElement: vi.fn(),
-  };
-  return { ...mocked, default: mocked };
-});
-
+import * as reactModule from "react";
+import * as inkModule from "ink";
 import { useKeyboardHandler } from "../src/hooks/useKeyboardHandler.js";
 import { useDashboardKeyboard } from "../src/hooks/useDashboardKeyboard.js";
 
 let inputCallbacks: any[] = [];
-vi.mock("ink", () => ({
-  render: vi.fn(),
-  useApp: () => ({ exit: vi.fn() }),
-  useInput: vi.fn((cb: any) => {
-    inputCallbacks.push(cb);
-  }),
-  Box: ({ children }: any) => children,
-  Text: ({ children }: any) => children,
-}));
 
 
 describe("Tab Suggestion Cycling", () => {
   beforeEach(() => {
     inputCallbacks = [];
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    vi.spyOn(inkModule, "useApp").mockReturnValue({ exit: vi.fn() });
+    vi.spyOn(inkModule, "useInput").mockImplementation((cb: any) => {
+      inputCallbacks.push(cb);
+    });
+    vi.spyOn(reactModule, "useRef").mockImplementation((val: any) => ({ current: val }));
+    vi.spyOn(reactModule, "useCallback").mockImplementation((fn: any) => fn);
+    vi.spyOn(reactModule, "useState").mockImplementation((initial: any) => [initial, vi.fn()]);
+    vi.spyOn(reactModule, "useEffect").mockImplementation(vi.fn());
+    vi.spyOn(reactModule, "createElement").mockImplementation(vi.fn());
+
+    vi.spyOn(reactModule.default, "useRef").mockImplementation((val: any) => ({ current: val }));
+    vi.spyOn(reactModule.default, "useCallback").mockImplementation((fn: any) => fn);
+    vi.spyOn(reactModule.default, "useState").mockImplementation((initial: any) => [initial, vi.fn()]);
+    vi.spyOn(reactModule.default, "useEffect").mockImplementation(vi.fn());
+    vi.spyOn(reactModule.default, "createElement").mockImplementation(vi.fn());
   });
 
   it("should cycle suggestions in useKeyboardHandler (Single-Agent mode)", () => {

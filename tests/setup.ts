@@ -1,9 +1,29 @@
-import { beforeEach, afterEach } from "vitest";
+import { beforeEach, afterEach, mock, vi } from "vitest";
 import path from "path";
 import fs from "fs";
 
+// Globally mock @huggingface/transformers to prevent ONNX runtime hangs on Windows under Bun
+if (typeof mock !== "undefined" && typeof mock.module === "function") {
+  mock.module("@huggingface/transformers", () => ({
+    pipeline: () => Promise.resolve(() => ({})),
+  }));
+} else {
+  vi.mock("@huggingface/transformers", () => ({
+    pipeline: () => Promise.resolve(() => ({})),
+  }));
+}
+
+// Globally enable spying on read-only ESM modules
+vi.mock("execa", { spy: true });
+vi.mock("ink", { spy: true });
+vi.mock("react", { spy: true });
+vi.mock("ai", { spy: true });
+vi.mock("fast-glob", { spy: true });
+vi.mock("child_process", { spy: true });
+vi.mock("node:child_process", { spy: true });
+
 // Isolate configuration directory per Vitest worker to prevent parallel test lock contention
-const workerId = process.env.VITEST_WORKER_ID || "0";
+const workerId = process.env.VITEST_WORKER_ID || `bun-${process.pid}`;
 const workerHomeDir = path.join(process.cwd(), "tests", `temp-home-worker-${workerId}`);
 const workerConfigDir = path.join(workerHomeDir, ".superagent-r");
 
@@ -39,7 +59,6 @@ afterEach(() => {
 });
 
 // Polyfill Vitest functions for Bun Test compatibility
-import { vi } from "vitest";
 
 if (typeof vi !== "undefined") {
   // vi.mocked polyfill

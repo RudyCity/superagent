@@ -5,31 +5,14 @@ import path from "path";
 import os from "os";
 import { Agent } from "../src/core/agent.js";
 import { generateText, streamText } from "ai";
+import { execa } from "execa";
+import * as execaModule from "execa";
+import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
 import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 import { superagentInstances, subagentInstances } from "../src/core/tools/state.js";
 import * as configModule from "../src/core/config.js";
 import * as aiModule from "ai";
 import { closeHistoryDb } from "../src/core/storage/historyDb.js";
-
-// Mock ai SDK synchronously
-vi.mock("ai", () => ({
-  generateText: vi.fn(),
-  streamText: vi.fn(),
-  jsonSchema: (s: any) => s,
-}));
-
-
-// Mock execa to prevent executing real git commands (e.g. worktree creation)
-vi.mock("execa", () => ({
-  execa: vi.fn().mockResolvedValue({ stdout: "" }),
-}));
-
-// Mock rmemoryUtil to isolate workflow tests from RMemory active state
-vi.mock("../src/core/rmemoryUtil.js", () => ({
-  getRMemoryClient: vi.fn(),
-  getRMemorySessionKey: vi.fn().mockReturnValue("test-sess"),
-  isRmemoryActive: vi.fn().mockResolvedValue(false),
-}));
 
 describe("Master Agent Workflow & Guardrails", () => {
   const originalEnv = process.env;
@@ -37,6 +20,10 @@ describe("Master Agent Workflow & Guardrails", () => {
 
   beforeEach(async () => {
     vi.restoreAllMocks();
+    vi.spyOn(execaModule, "execa").mockResolvedValue({ stdout: "" } as any);
+    vi.spyOn(rmemoryUtilModule, "getRMemoryClient").mockImplementation(vi.fn());
+    vi.spyOn(rmemoryUtilModule, "getRMemorySessionKey").mockReturnValue("test-sess");
+    vi.spyOn(rmemoryUtilModule, "isRmemoryActive").mockResolvedValue(false);
     // Spy on config after restoreAllMocks
     vi.spyOn(configModule, "getConfig").mockReturnValue({
       provider: "openai",
@@ -321,7 +308,7 @@ describe("Master Agent Workflow & Guardrails", () => {
     agent.planState = "APPROVED";
     agent.getCurrentHistoryFilePath();
 
-    vi.spyOn(fs, "existsSync").mockImplementation((filePath) => {
+    const existsSpy = vi.spyOn(fs, "existsSync").mockImplementation((filePath) => {
       return String(filePath).endsWith("_implementation_plan.md");
     });
 
@@ -394,6 +381,7 @@ describe("Master Agent Workflow & Guardrails", () => {
     if (toolEndEvent[0].toolResult.isError) {
       expect(toolEndEvent[0].toolResult.result).not.toContain("Task Tracking File is missing");
     }
+    existsSpy.mockRestore();
   });
 
   it("should auto-inject delegation context when Master Agent writes a plan that lacks superagent/spawning references", async () => {

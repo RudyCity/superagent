@@ -17,8 +17,15 @@ describe("ask_question and ReplacementChunks robustness", () => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
     process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
+    configModule.closeHistoryDb();
+    try {
+      const { closeHistoryDb } = require("../src/core/storage/historyDb.js");
+      closeHistoryDb();
+    } catch {}
     clearModelConfigCache();
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(testConfigDir, { recursive: true, force: true });
+    } catch {}
 
     vi.spyOn(aiModule, "streamText").mockImplementation(() => ({} as any));
     vi.spyOn(aiModule, "generateText").mockImplementation(async () => ({} as any));
@@ -34,8 +41,16 @@ describe("ask_question and ReplacementChunks robustness", () => {
   });
 
   afterEach(() => {
+    configModule.closeHistoryDb();
+    try {
+      const { closeHistoryDb } = require("../src/core/storage/historyDb.js");
+      closeHistoryDb();
+    } catch {}
     clearModelConfigCache();
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    registerQuestionHandler(null);
+    try {
+      fs.rmSync(testConfigDir, { recursive: true, force: true });
+    } catch {}
     process.env = originalEnv;
   });
 

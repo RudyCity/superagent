@@ -728,13 +728,16 @@ export const invokeSuperagentTool: Tool = {
           }
         }
 
-        superagentInstances.set(superagentId, {
-          ...superagentInstances.get(superagentId)!,
-          status: "completed",
-          result,
-          completedAt: Date.now(),
-          agent: undefined,
-        });
+        const existing = superagentInstances.get(superagentId);
+        if (existing) {
+          superagentInstances.set(superagentId, {
+            ...existing,
+            status: "completed",
+            result,
+            completedAt: Date.now(),
+            agent: undefined,
+          });
+        }
         notifySuperagentsChanged();
         appendMasterLog(`[INFO] Superagent "${role}" (branch: ${branch}) completed successfully.`);
 
@@ -744,16 +747,16 @@ export const invokeSuperagentTool: Tool = {
         const inst = superagentInstances.get(superagentId);
         if (inst) {
           inst.logs.push(`[ERROR] Superagent failed: ${err.message}\n`);
+          if (inst.agent) {
+            inst.agent.writeToLogFile("SUPERAGENT_FAILED", err.message);
+          }
+          superagentInstances.set(superagentId, {
+            ...inst,
+            status: "error",
+            completedAt: Date.now(),
+            agent: undefined,
+          });
         }
-        if (inst && inst.agent) {
-          inst.agent.writeToLogFile("SUPERAGENT_FAILED", err.message);
-        }
-        superagentInstances.set(superagentId, {
-          ...inst!,
-          status: "error",
-          completedAt: Date.now(),
-          agent: undefined,
-        });
         notifySuperagentsChanged();
         appendMasterLog(`[ERROR] Superagent "${role}" (branch: ${branch}) failed: ${err.message}`);
         return `Superagent "${role}" failed: ${err.message}`;
@@ -1547,13 +1550,16 @@ export const sendMessageToSuperagentTool: Tool = {
           }
         }
 
-        superagentInstances.set(superagentId, {
-          ...superagentInstances.get(superagentId)!,
-          status: "completed",
-          result,
-          completedAt: Date.now(),
-          agent: undefined,
-        });
+        const existingInst = superagentInstances.get(superagentId);
+        if (existingInst) {
+          superagentInstances.set(superagentId, {
+            ...existingInst,
+            status: "completed",
+            result,
+            completedAt: Date.now(),
+            agent: undefined,
+          });
+        }
         notifySuperagentsChanged();
         appendMasterLog(`[INFO] Superagent "${inst.role}" (branch: ${inst.branch}) completed successfully.`);
 
@@ -1562,16 +1568,16 @@ export const sendMessageToSuperagentTool: Tool = {
         const superagentInst = superagentInstances.get(superagentId);
         if (superagentInst) {
           superagentInst.logs.push(`[ERROR] Superagent failed: ${err.message}\n`);
+          if (superagentInst.agent) {
+            superagentInst.agent.writeToLogFile("SUPERAGENT_FAILED", err.message);
+          }
+          superagentInstances.set(superagentId, {
+            ...superagentInst,
+            status: "error",
+            completedAt: Date.now(),
+            agent: undefined,
+          });
         }
-        if (superagentInst && superagentInst.agent) {
-          superagentInst.agent.writeToLogFile("SUPERAGENT_FAILED", err.message);
-        }
-        superagentInstances.set(superagentId, {
-          ...superagentInst!,
-          status: "error",
-          completedAt: Date.now(),
-          agent: undefined,
-        });
         notifySuperagentsChanged();
         appendMasterLog(`[ERROR] Superagent "${inst.role}" (branch: ${inst.branch}) failed: ${err.message}`);
         return `Superagent "${inst.role}" failed: ${err.message}`;

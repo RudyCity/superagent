@@ -50,14 +50,17 @@ describe("ContextManager", () => {
 
     // Threshold = min(100000 - 5000 - 5000, 100000 * 0.85) = min(90000, 85000) = 85000
     // 80% of threshold = 68000
-    // Create messages totaling ~75000 tokens (between 80% and 100%)
     const messages: Message[] = [];
-    for (let i = 0; i < 75; i++) {
-      messages.push({
+    let currentTokens = 0;
+    let i = 0;
+    while (currentTokens < 75000) {
+      const msg: Message = {
         role: "user",
         content: "A".repeat(4000),
-        timestamp: Date.now() + i,
-      });
+        timestamp: Date.now() + i++,
+      };
+      messages.push(msg);
+      currentTokens += manager.estimateTokens(msg);
     }
 
     const decision = manager.shouldCompact(messages);

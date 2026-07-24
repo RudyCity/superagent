@@ -17,6 +17,7 @@ describe("Agent - Empty Response Retry", () => {
   let generateTextSpy: any;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     if (fs.existsSync(tempHome)) {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }

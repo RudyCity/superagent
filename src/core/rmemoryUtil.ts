@@ -1,4 +1,4 @@
-import { getSettings } from "./config.js";
+import { getSettings } from "./config/jsonConfig.js";
 import { getConfiguredProviders } from "./config/providers.js";
 import { createHash } from "crypto";
 import fs from "fs";

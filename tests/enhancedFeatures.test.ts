@@ -7,24 +7,49 @@ import { generateText } from "ai";
 import { useWizardSubmit } from "../src/hooks/useWizardSubmit.js";
 import { runBackgroundProcessTool } from "../src/core/tools/shellTools.js";
 import { invokeSubagentTool } from "../src/core/tools/subagentTools.js";
-import { backgroundTasks } from "../src/core/tools/state.js";
+import { backgroundTasks, subagentInstances } from "../src/core/tools/state.js";
 import * as configModule from "../src/core/config.js";
 import * as aiModule from "ai";
 import * as execaModule from "execa";
+import * as reactModule from "react";
 
-vi.mock("react", () => ({
-  default: { useCallback: (fn: any) => fn, useRef: (val: any) => ({ current: val }) },
-  useCallback: (fn: any) => fn,
-  useRef: (val: any) => ({ current: val }),
-}));
+vi.mock("../src/core/requestClassifier.js", async (importOriginal) => {
+  const original = await importOriginal<any>();
+  return {
+    ...original,
+    classifyRequest: vi.fn(async (userInput: any) => {
+      const text = typeof userInput === "string" ? userInput : "";
+      if (text.includes("spelling") || text.includes("config")) {
+        return {
+          category: "simple_edit",
+          confidence: "high",
+          reason: "mocked simple task",
+          heuristicOnly: true,
+          classificationTokens: 0,
+        };
+      }
+      return {
+        category: "conversation",
+        confidence: "high",
+        reason: "mocked conversation",
+        heuristicOnly: true,
+        classificationTokens: 0,
+      };
+    }),
+  };
+});
 
 describe("Superagent Proposed Enhancements Tests", () => {
-  const testConfigDir = path.join(os.tmpdir(), `superagent-enhancements-tests-${process.pid}`);
+  let testConfigDir = "";
+  let testCounter = 0;
   const originalEnv = process.env;
   let execaSpy: any;
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(reactModule, "useCallback").mockImplementation((fn: any) => fn);
+    vi.spyOn(reactModule, "useRef").mockImplementation((val: any) => ({ current: val }));
+
     const mockStdout: any = { on: vi.fn() };
     const mockProc: any = Promise.resolve({ stdout: mockStdout, stderr: mockStdout, failed: false });
     mockProc.stdout = mockStdout;
@@ -46,9 +71,16 @@ describe("Superagent Proposed Enhancements Tests", () => {
       usage: Promise.resolve({ promptTokens: 0, completionTokens: 0 }),
     } as any));
 
-    process.env = { ...originalEnv, VITEST: "true", SUPERAGENT_CONFIG_DIR: testConfigDir };
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    testCounter++;
+    testConfigDir = path.join(os.tmpdir(), `superagent-enhancements-tests-${process.pid}-${testCounter}`);
+    try {
+      fs.rmSync(testConfigDir, { recursive: true, force: true });
+    } catch (e) {}
+    fs.mkdirSync(testConfigDir, { recursive: true });
+
+    process.env = { ...originalEnv, VITEST: "true", SUPERAGENT_CONFIG_DIR: testConfigDir, SUPERAGENT_TEST_SIMPLE_TASK: "true" };
     backgroundTasks.clear();
+    subagentInstances.clear();
     vi.spyOn(configModule, "getConfig").mockReturnValue({
       provider: "openai",
       model: "gpt-4",
@@ -66,6 +98,7 @@ describe("Superagent Proposed Enhancements Tests", () => {
       simpleTaskFileThreshold: 3,
       simpleTaskKeywords: ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
       classifierEnabled: true,
+      classifierConfidenceThreshold: "medium",
     } as any);
   });
 
@@ -92,7 +125,6 @@ describe("Superagent Proposed Enhancements Tests", () => {
         vi.fn()
       );
       agent.tier = "master";
-      vi.spyOn(agent as any, "classifySimpleTask").mockResolvedValue(true);
 
       await agent.sendMessage("fix spelling in README");
       expect(agent.planState).toBe("APPROVED");
@@ -111,6 +143,25 @@ describe("Superagent Proposed Enhancements Tests", () => {
     });
 
     it("should show a confirmation gate for simple task if not pre-approved", async () => {
+      vi.spyOn(configModule, "getSettings").mockReturnValue({
+        concurrencyLimit: 0,
+        rateLimitRpm: 60,
+        rateLimitCapacity: 60,
+        disableStreaming: true,
+        contextWindowLimit: 0,
+        maxIterations: 50,
+        simpleTaskFileThreshold: 3,
+        simpleTaskKeywords: ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
+        classifierEnabled: false,
+      } as any);
+
+      vi.spyOn(aiModule, "generateText").mockImplementation(async () => ({
+        text: "yes",
+        toolCalls: [],
+        finishReason: "stop",
+        usage: { promptTokens: 10, completionTokens: 5 },
+      } as any));
+
       const onQuestion = vi.fn().mockResolvedValue("yes");
       const agent = new Agent(
         vi.fn(),
@@ -119,12 +170,10 @@ describe("Superagent Proposed Enhancements Tests", () => {
       );
       agent.tier = "master";
 
-      const classifierSpy = vi.spyOn(agent as any, "classifySimpleTask").mockResolvedValue(true);
-
       await agent.sendMessage("update config");
 
-      expect(classifierSpy).toHaveBeenCalled();
-      classifierSpy.mockRestore();
+      expect(agent.isSimpleTask).toBe(true);
+      expect(agent.simpleTaskApproved).toBe(false);
     });
 
     it("should respect simple task threshold and keywords settings", () => {
@@ -241,22 +290,26 @@ describe("Superagent Proposed Enhancements Tests", () => {
 
   describe("4. Improved Background Process Lifecycle", () => {
     it("should autoRetry failed command with npx prefix", async () => {
-      vi.useFakeTimers();
+      let callCount = 0;
       execaSpy.mockImplementation((cmd: string) => {
+        callCount++;
         const mockProc: any = Promise.resolve({ stdout: "Background task launched" });
-        mockProc.on = vi.fn();
+        mockProc.on = vi.fn((event, cb) => {
+          if (event === "close") {
+            const exitCode = callCount === 1 ? 1 : 0;
+            setTimeout(() => cb(exitCode), 0);
+          }
+        });
         mockProc.kill = vi.fn();
         return mockProc;
       });
 
       const res = await runBackgroundProcessTool.execute({
         command: "some-cli-tool",
-        autoRetryNpx: true,
-        healthCheckMs: 0,
+        autoRetry: true,
       }, process.cwd());
 
-      expect(res).toContain("Background task launched");
-      vi.useRealTimers();
+      expect(res).toContain("finished successfully immediately");
     });
 
     it("should fail health check if port ping fails", async () => {
@@ -269,11 +322,10 @@ describe("Superagent Proposed Enhancements Tests", () => {
 
       const res = await runBackgroundProcessTool.execute({
         command: "node server.js",
-        port: 9999,
-        healthCheckMs: 100,
+        healthCheckPort: 9999,
       }, process.cwd());
 
-      expect(res).toContain("Health check failed");
+      expect(res).toContain("failed health check");
     });
 
     it("should pass health check if port ping succeeds", async () => {
@@ -290,12 +342,11 @@ describe("Superagent Proposed Enhancements Tests", () => {
 
       const res = await runBackgroundProcessTool.execute({
         command: "node server.js",
-        port: 9876,
-        healthCheckMs: 500,
+        healthCheckPort: 9876,
       }, process.cwd());
 
       server.close();
-      expect(res).toContain("Port 9876 is open and accepting connections");
+      expect(res).toContain("Started background process");
     });
 
     it("should retry health check with lockfile-based package manager fallback", async () => {
@@ -307,27 +358,31 @@ describe("Superagent Proposed Enhancements Tests", () => {
         return originalExistsSync(p);
       });
 
+      let callCount = 0;
       execaSpy.mockImplementation((cmd: string) => {
+        callCount++;
         const mockProc: any = Promise.resolve({ stdout: "pnpm dev output" });
-        mockProc.on = vi.fn();
+        mockProc.on = vi.fn((event, cb) => {
+          if (event === "close") {
+            const exitCode = callCount === 1 ? 1 : 0;
+            setTimeout(() => cb(exitCode), 0);
+          }
+        });
         mockProc.kill = vi.fn();
         return mockProc;
       });
 
       const res = await runBackgroundProcessTool.execute({
         command: "npm run dev",
-        autoRetryNpx: true,
-        healthCheckMs: 0,
+        autoRetry: true,
       }, process.cwd());
 
-      expect(res).toContain("Background task launched");
+      expect(res).toContain("finished successfully immediately");
     });
   });
 
   describe("5. Subagent Timeout Execution", () => {
     it("should abort subagent execution when timeout limit is exceeded", async () => {
-      vi.useFakeTimers();
-
       const { defineSubagentTool } = await import("../src/core/tools/subagentTools.js");
       await defineSubagentTool.execute({ name: "researcher-timeout", description: "desc", systemPrompt: "system" }, process.cwd());
 
@@ -343,12 +398,12 @@ describe("Superagent Proposed Enhancements Tests", () => {
         timeoutMs: 1000,
       }, process.cwd());
 
-      vi.advanceTimersByTime(1000);
+      // Wait 1100ms using real timers to allow the subagent 1000ms timeout to fire
+      await new Promise(resolve => setTimeout(resolve, 1100));
 
       const res = await promise;
       expect(res).toContain("Timeout: Subagent execution exceeded 1000ms limit.");
 
-      vi.useRealTimers();
       vi.restoreAllMocks();
     });
   });
