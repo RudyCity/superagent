@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.554] - 2026-07-24
+
+### Added
+- **uv and Python Startup Installer Checks**:
+  - Added checks and automatic installers for uv Package Manager and Python Environment to `androidSetup.ts`.
+  - Integrated uv and Python setup monitoring into `StartupChecker` CLI startup interface.
+
 ## [1.2.553] - 2026-07-24
 
 ### Added

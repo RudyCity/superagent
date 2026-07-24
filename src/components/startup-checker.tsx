@@ -4,12 +4,17 @@ import {
   ensureRgInstalled, 
   ensureCurlInstalled, 
   ensureAndroidCliInstalled,
+  ensureUvInstalled,
+  ensurePythonInstalled,
   isRgInstalledLocally,
   isRgInstalledGlobally,
   isCurlInstalledLocally,
   isCurlInstalledGlobally,
   isAndroidCliInstalledLocally,
-  isAndroidCliInstalledGlobally
+  isAndroidCliInstalledGlobally,
+  isUvInstalledLocally,
+  isUvInstalledGlobally,
+  isPythonInstalled
 } from "../core/androidSetup.js";
 import { initMcpServers } from "../core/mcp/McpManager.js";
 import { warmUpClassifier } from "../core/requestClassifier.js";
@@ -60,6 +65,8 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
     }
 
     initialTasks.androidCli = { id: "androidCli", name: "Android CLI", status: "pending" };
+    initialTasks.uv = { id: "uv", name: "uv Package Manager", status: "pending" };
+    initialTasks.python = { id: "python", name: "Python Environment", status: "pending" };
     initialTasks.mcpServers = { id: "mcpServers", name: "MCP Servers", status: "pending" };
 
     if (settings.classifierEnabled !== false) {
@@ -164,6 +171,44 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
             updateTask("androidCli", { status: "ready" });
           }
         }).catch(() => updateTask("androidCli", { status: "failed" }));
+      }
+
+      // 5. uv check & setup
+      updateTask("uv", { status: "checking" });
+      const hasUv = (await isUvInstalledLocally()) || (await isUvInstalledGlobally());
+      if (hasUv) {
+        updateTask("uv", { status: "ready" });
+      } else {
+        updateTask("uv", { status: "downloading", progress: 0 });
+        await ensureUvInstalled((downloaded, total, stage) => {
+          if (stage === "downloading") {
+            const progress = total > 0 ? (downloaded / total) * 100 : 0;
+            updateTask("uv", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
+          } else if (stage === "extracting") {
+            updateTask("uv", { status: "extracting" });
+          } else if (stage === "done") {
+            updateTask("uv", { status: "ready" });
+          }
+        }).catch(() => updateTask("uv", { status: "failed" }));
+      }
+
+      // 6. Python check & setup
+      updateTask("python", { status: "checking" });
+      const hasPython = await isPythonInstalled();
+      if (hasPython) {
+        updateTask("python", { status: "ready" });
+      } else {
+        updateTask("python", { status: "downloading", progress: 0 });
+        await ensurePythonInstalled((downloaded, total, stage) => {
+          if (stage === "downloading") {
+            const progress = total > 0 ? (downloaded / total) * 100 : 0;
+            updateTask("python", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
+          } else if (stage === "extracting") {
+            updateTask("python", { status: "extracting" });
+          } else if (stage === "done") {
+            updateTask("python", { status: "ready" });
+          }
+        }).catch(() => updateTask("python", { status: "failed" }));
       }
 
       // Concurrently run MCP, Request Classifier, Embedding Model, and RMemory setup

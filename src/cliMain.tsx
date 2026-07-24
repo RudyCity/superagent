@@ -153,9 +153,11 @@ export async function runCli() {
 
   if (!process.stdin.isTTY) {
     // Auto-setup ripgrep and Android CLI asynchronously on startup
-    const { ensureRgInstalled, ensureAndroidCliInstalled } = await import("./core/androidSetup.js");
+    const { ensureRgInstalled, ensureAndroidCliInstalled, ensureUvInstalled, ensurePythonInstalled } = await import("./core/androidSetup.js");
     ensureRgInstalled().catch(() => {});
     ensureAndroidCliInstalled().catch(() => {});
+    ensureUvInstalled().catch(() => {});
+    ensurePythonInstalled().catch(() => {});
 
     // Auto-setup RMemory Gateway if enabled
     const { runRmemorySetup } = await import("./core/rmemorySetup.js");

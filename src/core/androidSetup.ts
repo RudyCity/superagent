@@ -361,3 +361,108 @@ export async function ensureAndroidCliInstalled(onProgress?: DownloadProgressCal
     console.error("Warning: Failed to auto-install Android CLI:", err);
   }
 }
+
+export async function isUvInstalledGlobally(): Promise<boolean> {
+  const isWin = process.platform === "win32";
+  try {
+    await execa(isWin ? "where.exe" : "which", ["uv"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getLocalUvPath(): string {
+  const isWin = process.platform === "win32";
+  const home = isWin 
+    ? (process.env.USERPROFILE || process.env.HOMEPATH || "C:\\Users\\USER")
+    : (process.env.HOME || "");
+  return path.join(home, ".local", "bin", isWin ? "uv.exe" : "uv");
+}
+
+export async function isUvInstalledLocally(): Promise<boolean> {
+  try {
+    await fs.access(getLocalUvPath());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function ensureUvInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
+  try {
+    if (await isUvInstalledLocally() || await isUvInstalledGlobally()) {
+      if (onProgress) onProgress(0, 0, "done");
+      return;
+    }
+
+    if (onProgress) {
+      onProgress(0, 0, "downloading");
+    } else {
+      console.log("\n⚡ [SYSTEM] uv not found. Downloading and installing... Please wait.");
+    }
+
+    const isWin = process.platform === "win32";
+    if (isWin) {
+      await execa("powershell.exe", ["-ExecutionPolicy", "ByPass", "-c", "irm https://astral.sh/uv/install.ps1 | iex"]);
+    } else {
+      await execa("sh", ["-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"]);
+    }
+
+    if (onProgress) {
+      onProgress(0, 0, "done");
+    } else {
+      console.log("uv installed successfully.");
+    }
+  } catch (err) {
+    console.error("Warning: Failed to auto-install uv:", err);
+  }
+}
+
+export async function isPythonInstalled(): Promise<boolean> {
+  try {
+    await execa("python", ["--version"]);
+    return true;
+  } catch {
+    try {
+      await execa("python3", ["--version"]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+export async function ensurePythonInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
+  try {
+    if (await isPythonInstalled()) {
+      if (onProgress) onProgress(0, 0, "done");
+      return;
+    }
+
+    await ensureUvInstalled(onProgress);
+
+    if (onProgress) {
+      onProgress(0, 0, "downloading");
+    } else {
+      console.log("\n⚡ [SYSTEM] Python not found. Installing via uv... Please wait.");
+    }
+
+    const isWin = process.platform === "win32";
+    let uvCmd = "uv";
+    if (!(await isUvInstalledGlobally())) {
+      uvCmd = getLocalUvPath();
+    }
+
+    await execa(uvCmd, ["python", "install"]);
+
+    if (onProgress) {
+      onProgress(0, 0, "done");
+    } else {
+      console.log("Python installed successfully via uv.");
+    }
+  } catch (err) {
+    console.error("Warning: Failed to auto-install Python:", err);
+  }
+}
+
