@@ -33,10 +33,10 @@ describe("prompt and command guidance", () => {
   it("keeps prompt hardening guidance aligned", () => {
     const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
 
-    expect(prompts).toContain("Kill ONLY target PID");
+    expect(prompts).toContain("Target PID ONLY");
     expect(prompts).not.toContain("taskkill /F /IM bun.exe");
     expect(prompts).not.toContain("## Rencana Perubahan");
-    expect(prompts).toContain("User responses MUST use plain terminal text only");
+    expect(prompts).toContain("Plain terminal text only in user responses");
     expect(prompts).toContain("spawn 'researcher' subagent for broad mapping");
   });
 
@@ -57,8 +57,8 @@ describe("prompt and command guidance", () => {
     const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
     const base = fs.readFileSync(path.resolve(process.cwd(), "src/core/config/base.ts"), "utf-8");
 
-    expect(prompts).toContain("BATCH_OPS: Execute consolidated parallel delta operations");
-    expect(prompts).toContain("subagents/superagents: Issue multiple invoke_* tool calls concurrently");
+    expect(prompts).toContain("BATCH_OPS: Consolidate parallel operations in single turn");
+    expect(prompts).toContain("Issue concurrent subagent calls in single turn");
     expect(base).toContain("Plan batches upfront");
     expect(base).toContain("conversationIds");
   });

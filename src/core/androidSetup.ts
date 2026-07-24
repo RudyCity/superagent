@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { execa } from "execa";
+import { fileURLToPath } from "url";
 import { getGlobalConfigDir } from "./config.js";
 
 // Helper function to fetch resources with retry logic
@@ -465,4 +466,96 @@ export async function ensurePythonInstalled(onProgress?: DownloadProgressCallbac
     console.error("Warning: Failed to auto-install Python:", err);
   }
 }
+
+export async function isOfficeCliInstalledGlobally(): Promise<boolean> {
+  const isWin = process.platform === "win32";
+  try {
+    await execa(isWin ? "where.exe" : "which", ["officecli"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function ensureOfficeCliInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
+  try {
+    if (await isOfficeCliInstalledGlobally()) {
+      if (onProgress) onProgress(0, 0, "done");
+      return;
+    }
+
+    if (onProgress) {
+      onProgress(0, 0, "downloading");
+    } else {
+      console.log("\n⚡ [SYSTEM] officecli not found. Downloading and installing... Please wait.");
+    }
+
+    const isWin = process.platform === "win32";
+    if (isWin) {
+      await execa("powershell.exe", ["-ExecutionPolicy", "ByPass", "-c", "irm https://d.officecli.ai/install.ps1 | iex"]);
+    } else {
+      await execa("sh", ["-c", "curl -fsSL https://d.officecli.ai/install.sh | bash"]);
+    }
+
+    if (onProgress) {
+      onProgress(0, 0, "done");
+    } else {
+      console.log("officecli installed successfully.");
+    }
+  } catch (err) {
+    console.error("Warning: Failed to auto-install officecli:", err);
+  }
+}
+
+export async function isRmemoryInstalled(): Promise<boolean> {
+  try {
+    await import("r-memory");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function ensureRmemoryInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
+  try {
+    if (await isRmemoryInstalled()) {
+      if (onProgress) onProgress(0, 0, "done");
+      return;
+    }
+
+    if (onProgress) {
+      onProgress(0, 0, "downloading");
+    } else {
+      console.log("\n⚡ [SYSTEM] r-memory package not found. Installing from repository... Please wait.");
+    }
+
+    const isWin = process.platform === "win32";
+    let hasBun = false;
+    try {
+      await execa(isWin ? "where.exe" : "which", ["bun"]);
+      hasBun = true;
+    } catch {
+      hasBun = false;
+    }
+
+    const filename = fileURLToPath(import.meta.url);
+    const dirname = path.dirname(filename);
+    const projectRoot = path.resolve(dirname, "..", "..");
+
+    if (hasBun) {
+      await execa("bun", ["add", "git+https://github.com/RudyCity/r-memory.git"], { cwd: projectRoot });
+    } else {
+      await execa("npm", ["install", "git+https://github.com/RudyCity/r-memory.git"], { cwd: projectRoot });
+    }
+
+    if (onProgress) {
+      onProgress(0, 0, "done");
+    } else {
+      console.log("r-memory installed successfully.");
+    }
+  } catch (err) {
+    console.error("Warning: Failed to auto-install r-memory:", err);
+  }
+}
+
 

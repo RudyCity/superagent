@@ -14,7 +14,9 @@ const {
   isUvInstalledGlobally,
   isUvInstalledLocally,
   getLocalUvPath,
-  isPythonInstalled
+  isPythonInstalled,
+  isOfficeCliInstalledGlobally,
+  isRmemoryInstalled
 } = await import("../src/core/androidSetup.js");
 
 describe("androidSetup", () => {
@@ -99,5 +101,15 @@ describe("androidSetup", () => {
   it("should check if Python is installed", async () => {
     const installed = await isPythonInstalled();
     expect(installed).toBe(true);
+  });
+
+  it("should check if officecli is installed globally", async () => {
+    const installed = await isOfficeCliInstalledGlobally();
+    expect(installed).toBe(true);
+  });
+
+  it("should check if r-memory is installed", async () => {
+    const installed = await isRmemoryInstalled();
+    expect(typeof installed).toBe("boolean");
   });
 });

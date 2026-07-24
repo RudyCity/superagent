@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.567] - 2026-07-24
+
+### Added
+- **Automated Office CLI & RMemory Package Installation**:
+  - Integrated automated checking and installation routines for `officecli` and `r-memory` package inside `src/core/androidSetup.ts` and `src/components/startup-checker.tsx`.
+  - Added new unit test suite cases in `tests/androidSetup.test.ts` to verify global and repository detection logic.
+
 ## [1.2.566] - 2026-07-24
 
 ### Changed

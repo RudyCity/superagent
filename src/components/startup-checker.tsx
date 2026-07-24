@@ -6,6 +6,8 @@ import {
   ensureAndroidCliInstalled,
   ensureUvInstalled,
   ensurePythonInstalled,
+  ensureOfficeCliInstalled,
+  ensureRmemoryInstalled,
   isRgInstalledLocally,
   isRgInstalledGlobally,
   isCurlInstalledLocally,
@@ -14,7 +16,9 @@ import {
   isAndroidCliInstalledGlobally,
   isUvInstalledLocally,
   isUvInstalledGlobally,
-  isPythonInstalled
+  isPythonInstalled,
+  isOfficeCliInstalledGlobally,
+  isRmemoryInstalled
 } from "../core/androidSetup.js";
 import { initMcpServers } from "../core/mcp/McpManager.js";
 import { warmUpClassifier } from "../core/requestClassifier.js";
@@ -67,6 +71,8 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
     initialTasks.androidCli = { id: "androidCli", name: "Android CLI", status: "pending" };
     initialTasks.uv = { id: "uv", name: "uv Package Manager", status: "pending" };
     initialTasks.python = { id: "python", name: "Python Environment", status: "pending" };
+    initialTasks.officeCli = { id: "officeCli", name: "Office CLI", status: "pending" };
+    initialTasks.rmemory = { id: "rmemory", name: "RMemory Package", status: "pending" };
     initialTasks.mcpServers = { id: "mcpServers", name: "MCP Servers", status: "pending" };
 
     if (settings.classifierEnabled !== false) {
@@ -210,6 +216,45 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           }
         }).catch(() => updateTask("python", { status: "failed" }));
       }
+
+      // 7. Office CLI check & setup
+      updateTask("officeCli", { status: "checking" });
+      const hasOfficeCli = await isOfficeCliInstalledGlobally();
+      if (hasOfficeCli) {
+        updateTask("officeCli", { status: "ready" });
+      } else {
+        updateTask("officeCli", { status: "downloading", progress: 0 });
+        await ensureOfficeCliInstalled((downloaded, total, stage) => {
+          if (stage === "downloading") {
+            const progress = total > 0 ? (downloaded / total) * 100 : 0;
+            updateTask("officeCli", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
+          } else if (stage === "extracting") {
+            updateTask("officeCli", { status: "extracting" });
+          } else if (stage === "done") {
+            updateTask("officeCli", { status: "ready" });
+          }
+        }).catch(() => updateTask("officeCli", { status: "failed" }));
+      }
+
+      // 8. RMemory Package check & setup
+      updateTask("rmemory", { status: "checking" });
+      const hasRmemory = await isRmemoryInstalled();
+      if (hasRmemory) {
+        updateTask("rmemory", { status: "ready" });
+      } else {
+        updateTask("rmemory", { status: "downloading", progress: 0 });
+        await ensureRmemoryInstalled((downloaded, total, stage) => {
+          if (stage === "downloading") {
+            const progress = total > 0 ? (downloaded / total) * 100 : 0;
+            updateTask("rmemory", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
+          } else if (stage === "extracting") {
+            updateTask("rmemory", { status: "extracting" });
+          } else if (stage === "done") {
+            updateTask("rmemory", { status: "ready" });
+          }
+        }).catch(() => updateTask("rmemory", { status: "failed" }));
+      }
+
 
       // Concurrently run MCP, Request Classifier, Embedding Model, and RMemory setup
       const parallelTasks = [];
