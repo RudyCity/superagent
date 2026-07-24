@@ -55,7 +55,7 @@ function getWorkspaceHash(workspacePath: string): string {
 
 function getWorkspaceIndexDir(workspacePath: string): string {
   const hash = getWorkspaceHash(workspacePath);
-  return path.join(os.homedir(), ".superagent-r", "codebase-index", hash);
+  return path.join(os.homedir(), ".superagent-r", "codebase-index", "Xenova-all-MiniLM-L6-v2", hash);
 }
 
 function isBinaryOrIgnoredFile(filePath: string): boolean {
@@ -222,7 +222,7 @@ export class CodebaseIndexer {
     const { OptimizedLocalTextEmbeddingProvider } = await import("../rmemoryUtil.js");
 
     const provider = new OptimizedLocalTextEmbeddingProvider({
-      modelName: "nomic-ai/nomic-embed-text-v1.5",
+      modelName: "Xenova/all-MiniLM-L6-v2",
       dtype: "q8",
       device: "cpu",
     });

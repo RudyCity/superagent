@@ -17,7 +17,7 @@ export class OptimizedLocalTextEmbeddingProvider {
   private extractor: any = null;
 
   constructor(options: { modelName?: string; device?: string; dtype?: string } = {}) {
-    let name = options.modelName || "nomic-ai/nomic-embed-text-v1.5";
+    let name = options.modelName || "Xenova/all-MiniLM-L6-v2";
     if (name === "Xenova/nomic-embed-text-v1.5") {
       name = "nomic-ai/nomic-embed-text-v1.5";
     }
@@ -242,7 +242,7 @@ async function getRMemory(): Promise<any> {
       });
     } else {
       provider = new OptimizedLocalTextEmbeddingProvider({
-        modelName: "nomic-ai/nomic-embed-text-v1.5",
+        modelName: "Xenova/all-MiniLM-L6-v2",
         dtype: "q8",
         device: "cpu",
       });
@@ -250,7 +250,7 @@ async function getRMemory(): Promise<any> {
     
     const currentModelName = settings.rmemoryEmbeddingProvider === "openai"
       ? (settings.rmemoryEmbeddingModel || "text-embedding-3-small")
-      : "nomic-ai/nomic-embed-text-v1.5";
+      : "Xenova/all-MiniLM-L6-v2";
     
     checkAndPerformDbMigration(currentModelName, provider.dimensions);
 
@@ -564,12 +564,12 @@ async function getSkillsIndex(): Promise<any> {
     const dbPath = path.join(skillsDataDir, "skills.db");
     const { RMemory } = await import("r-memory");
     const provider = new OptimizedLocalTextEmbeddingProvider({
-      modelName: "nomic-ai/nomic-embed-text-v1.5",
+      modelName: "Xenova/all-MiniLM-L6-v2",
       dtype: "q8",
       device: "cpu",
     });
 
-    checkAndPerformDbMigration("nomic-ai/nomic-embed-text-v1.5", provider.dimensions);
+    checkAndPerformDbMigration("Xenova/all-MiniLM-L6-v2", provider.dimensions);
 
     skillsIndexInstance = new RMemory({
       dbPath,

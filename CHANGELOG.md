@@ -9,6 +9,7 @@
   - Resolved locked files and directory deletion failures on Windows by closing FS file watchers and calling `close()` on the cached `RMemory` SQLite database connection within `CodebaseIndexer.clearIndex`.
   - Optimized `CodebaseIndexer.initAutoIndexing` to avoid scheduling redundant workspace indexing scans on every prompt construction call.
   - Registered `codebaseSearchTool` in the `allTools` registry to resolve tool registry consistency checks.
+  - Switched default local embedding model from `nomic-ai/nomic-embed-text-v1.5` to `Xenova/all-MiniLM-L6-v2` to reduce memory usage and improve indexing startup and execution speeds. Isolates codebase index storage under model-specific subdirectories to prevent dimension mismatch errors.
 
 ## [1.2.542] - 2026-07-24
 
