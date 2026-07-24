@@ -34,9 +34,10 @@ function isGitRepo(): boolean {
 export interface BannerProps {
   classifierStatus?: "offline" | "loading" | "online";
   embeddingStatus?: "offline" | "loading" | "online";
+  workspacePath?: string;
 }
 
-export function Banner({ classifierStatus, embeddingStatus }: BannerProps = {}) {
+export function Banner({ classifierStatus, embeddingStatus, workspacePath }: BannerProps = {}) {
   const hasGit = isGitRepo();
 
   let rmemoryActive = false;
@@ -62,6 +63,8 @@ export function Banner({ classifierStatus, embeddingStatus }: BannerProps = {}) 
             <Text color="white" bold>A G E N T</Text>
             <Text color="gray"> ● </Text>
             <Text color="yellow" bold>v{version}</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="cyan" bold>Workspace: {workspacePath || process.cwd()}</Text>
           </Box>
           <Box flexDirection="row">
             <Text dimColor>Type your query or </Text>

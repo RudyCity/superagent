@@ -1320,6 +1320,7 @@ export interface ChatAreaProps {
   showBanner: boolean;
   classifierStatus?: "offline" | "loading" | "online";
   embeddingStatus?: "offline" | "loading" | "online";
+  workspacePath?: string;
   focusMode: string;
   scrollOffset: number;
   focusedResponseIndex: number | null;
@@ -1356,6 +1357,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     showBanner,
     classifierStatus,
     embeddingStatus,
+    workspacePath,
     focusMode,
     scrollOffset,
     focusedResponseIndex,
@@ -1508,7 +1510,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
 
   return (
     <>
-      {showBanner && <Banner classifierStatus={classifierStatus} embeddingStatus={embeddingStatus} />}
+      {showBanner && <Banner classifierStatus={classifierStatus} embeddingStatus={embeddingStatus} workspacePath={workspacePath} />}
 
       {/* Messages Header */}
       <Box flexDirection="row" justifyContent="space-between" paddingX={1} marginBottom={0}>

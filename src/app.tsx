@@ -2653,6 +2653,7 @@ export function App({
             showBanner={showBanner}
             classifierStatus={classifierStatus}
             embeddingStatus={embeddingStatus}
+            workspacePath={workspacePath}
             focusMode={focusMode}
             scrollOffset={scrollOffset}
             focusedResponseIndex={focusedResponseIndex}

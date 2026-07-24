@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.559] - 2026-07-24
+
+### Added
+- **Workspace Path Header Display**:
+  - Added workspace directory path display to the single-agent header banner (`Banner` component) and multi-agent dashboard system header banner (`MultiAgentDashboard`).
+
 ## [1.2.558] - 2026-07-24
 
 ### Added

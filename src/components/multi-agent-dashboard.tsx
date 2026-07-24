@@ -1284,6 +1284,8 @@ export function MultiAgentDashboard({
               <Text color="gray"> │ </Text>
               <Text color="yellow" bold>MULTI-AGENT SYSTEM v{multiVersion}</Text>
               <Text color="gray"> │ </Text>
+              <Text color="cyan" bold>Workspace: {agent?.workingDirectory || process.cwd()}</Text>
+              <Text color="gray"> │ </Text>
               <Text color="blue" bold>Branch: {gitBranch}</Text>
             </Box>
           </Box>
