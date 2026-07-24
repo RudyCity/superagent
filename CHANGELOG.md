@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.562] - 2026-07-24
+
+### Fixed
+- **Auto-Location and Range Tolerance in All File Edit and Replace Tools**:
+  - Fixed line range shifting/corruption bugs in bulk `edits` of the `edit` tool, single/bulk `replace_file_content`, and single/bulk `multi_replace_file_content`.
+  - Added full fuzzy auto-location fallback to the search-replace format block handler in `applyPatchToContent` (`apply_patch` tool).
+  - Added new comprehensive unit tests verifying correct auto-location behaviors across all edit and replace tools.
+
 ## [1.2.561] - 2026-07-24
 
 ### Added

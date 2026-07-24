@@ -352,12 +352,19 @@ export const editTool: Tool = {
               if (startLine !== undefined || endLine !== undefined) {
                 const lines = content.split(/\r?\n/);
                 const normLines = normContent.split("\n");
-                const startIdx = startLine !== undefined ? startLine - 1 : 0;
-                const endIdx = endLine !== undefined ? Math.min(lines.length, endLine) : lines.length;
+                let startIdx = startLine !== undefined ? startLine - 1 : 0;
+                let endIdx = endLine !== undefined ? Math.min(lines.length, endLine) : lines.length;
 
-                const targetSubNormContent = normLines.slice(startIdx, endIdx).join("\n");
+                let targetSubNormContent = normLines.slice(startIdx, endIdx).join("\n");
                 if (!targetSubNormContent.includes(normOldStr) && !fuzzyMatch(targetSubNormContent, normOldStr)) {
-                  throw new Error(`oldString not found within lines ${startLine || 1} to ${endLine || lines.length} of ${edit.filePath} (matching normalized content)`);
+                  const auto = autoLocateTargetContent(oldStr, startLine || 1, endLine || lines.length, lines, normContent, normOldStr);
+                  if (auto) {
+                    startIdx = auto.actualStartLine - 1;
+                    endIdx = auto.actualEndLine;
+                    targetSubNormContent = auto.normSliceText;
+                  } else {
+                    throw new Error(`oldString not found within lines ${startLine || 1} to ${endLine || lines.length} of ${edit.filePath} (matching normalized content)`);
+                  }
                 }
                 const count = targetSubNormContent.split(normOldStr).length - 1;
                 if (count > 1) {
@@ -785,8 +792,8 @@ export const replaceFileContentTool: Tool = {
             for (const edit of sortedFileEdits) {
                const targetContent = edit.targetContent;
                const replacementContent = edit.replacementContent;
-               const startLine = Math.max(1, Number(edit.startLine));
-               const endLine = Math.max(startLine, Number(edit.endLine));
+               let startLine = Math.max(1, Number(edit.startLine));
+               let endLine = Math.max(startLine, Number(edit.endLine));
                const allowMultiple = !!(edit.allowMultiple ?? edit.AllowMultiple);
 
                if (startLine < 1 || startLine > lines.length || endLine < startLine || endLine > lines.length) {
@@ -804,6 +811,8 @@ export const replaceFileContentTool: Tool = {
                  if (auto) {
                    sliceText = auto.sliceText;
                    normSliceText = auto.normSliceText;
+                   startLine = auto.actualStartLine;
+                   endLine = auto.actualEndLine;
                  } else {
                    throw new Error(`targetContent not found in specified line range [${startLine}, ${endLine}] (matching normalized content)`);
                  }
@@ -889,8 +898,8 @@ export const replaceFileContentTool: Tool = {
     }
     const targetContent = (args.targetContent ?? args.TargetContent ?? "") as string;
     const replacementContent = (args.replacementContent ?? args.ReplacementContent ?? "") as string;
-    const startLine = Math.max(1, Number(args.startLine ?? args.StartLine ?? 0));
-    const endLine = Math.max(startLine, Number(args.endLine ?? args.EndLine ?? 0));
+    let startLine = Math.max(1, Number(args.startLine ?? args.StartLine ?? 0));
+    let endLine = Math.max(startLine, Number(args.endLine ?? args.EndLine ?? 0));
     const allowMultiple = !!(args.allowMultiple ?? args.AllowMultiple);
 
     if (!targetContent) {
@@ -917,6 +926,8 @@ export const replaceFileContentTool: Tool = {
         if (auto) {
           sliceText = auto.sliceText;
           normSliceText = auto.normSliceText;
+          startLine = auto.actualStartLine;
+          endLine = auto.actualEndLine;
         } else {
           return buildNotFoundError("targetContent", targetContent, startLine, endLine, lines, normFullContent, normTargetContent);
         }
@@ -1179,7 +1190,8 @@ export const multiReplaceFileContentTool: Tool = {
 
             const resolvedChunks: ResolvedChunk[] = [];
             for (const chunk of chunks) {
-              const { targetContent, replacementContent, startLine, endLine, allowMultiple } = chunk;
+              let { startLine, endLine } = chunk;
+              const { targetContent, replacementContent, allowMultiple } = chunk;
               if (startLine < 1 || startLine > lines.length || endLine < startLine || endLine > lines.length) {
                 throw new Error(`Invalid line range [${startLine}, ${endLine}] in chunk. File has ${lines.length} lines.`);
               }
@@ -1195,6 +1207,8 @@ export const multiReplaceFileContentTool: Tool = {
                 if (auto) {
                   sliceText = auto.sliceText;
                   normSliceText = auto.normSliceText;
+                  startLine = auto.actualStartLine;
+                  endLine = auto.actualEndLine;
                 } else {
                   throw new Error(`targetContent not found in specified line range [${startLine}, ${endLine}] for a chunk.`);
                 }
@@ -1423,7 +1437,8 @@ export const multiReplaceFileContentTool: Tool = {
       const resolvedChunks: ResolvedChunk[] = [];
 
       for (const chunk of chunks) {
-        const { targetContent, replacementContent, startLine, endLine, allowMultiple } = chunk;
+        let { startLine, endLine } = chunk;
+        const { targetContent, replacementContent, allowMultiple } = chunk;
         if (startLine < 1 || startLine > lines.length || endLine < startLine || endLine > lines.length) {
           return `Error: Invalid line range [${startLine}, ${endLine}] in chunk. File has ${lines.length} lines.`;
         }
@@ -1438,6 +1453,8 @@ export const multiReplaceFileContentTool: Tool = {
           if (auto) {
             sliceText = auto.sliceText;
             normSliceText = auto.normSliceText;
+            startLine = auto.actualStartLine;
+            endLine = auto.actualEndLine;
           } else {
             return buildNotFoundError("targetContent", targetContent, startLine, endLine, lines, normFullContent, normTargetContent);
           }
@@ -1698,9 +1715,23 @@ async function applyPatchToContent(content: string, patchContent: string, filePa
         const newStr = replacementLines.join(originalEnding);
         const normContent = normalizeForMatching(content);
         const normOldStr = normalizeForMatching(oldStr);
-        if (normContent.includes(normOldStr)) {
-          const matchIndexInNorm = normContent.indexOf(normOldStr);
-          
+        let matchIndexInNorm = normContent.indexOf(normOldStr);
+        let found = matchIndexInNorm !== -1;
+
+        if (!found) {
+          const contentLines = content.split(/\r?\n/);
+          const auto = autoLocateTargetContent(oldStr, 1, contentLines.length, contentLines, normContent, normOldStr);
+          if (auto) {
+            const localMatchIdx = auto.normSliceText.indexOf(normOldStr);
+            const sliceStartIdx = normContent.indexOf(auto.normSliceText);
+            if (localMatchIdx !== -1 && sliceStartIdx !== -1) {
+              matchIndexInNorm = sliceStartIdx + localMatchIdx;
+              found = true;
+            }
+          }
+        }
+
+        if (found) {
           const normToOrigMap = mapNormToOrigIndices(content, normContent);
           const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
           const matchOrigEnd = normToOrigMap[matchIndexInNorm + normOldStr.length] ?? -1;

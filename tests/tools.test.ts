@@ -382,6 +382,96 @@ describe("File tools", () => {
       } catch {}
     }
   });
+
+  it("should auto-locate targetContent in other edit and replace tools", async () => {
+    const testFile = path.resolve(process.cwd(), "temp_auto_locate_multi_test.txt");
+    try {
+      await fs.writeFile(
+        testFile,
+        "line 1\nline 2\n{/* Target 1 */}\n<div className=\"t1\">\n  content1\n</div>\nline 7\nline 8\n{/* Target 2 */}\n<div className=\"t2\">\n  content2\n</div>\n",
+        "utf-8"
+      );
+
+      // 1. Test replace_file_content bulk mode auto-locate
+      const replaceTool = getToolByName("replace_file_content");
+      const replaceBulkResult = await replaceTool?.execute(
+        {
+          edits: [
+            {
+              filePath: "temp_auto_locate_multi_test.txt",
+              targetContent: "{/* Target 2 */}\n<div className=\"t2\">",
+              replacementContent: "{/* New Target 2 */}\n<div className=\"new-t2\">",
+              startLine: 10,
+              endLine: 12,
+            },
+            {
+              filePath: "temp_auto_locate_multi_test.txt",
+              targetContent: "{/* Target 1 */}\n<div className=\"t1\">",
+              replacementContent: "{/* New Target 1 */}\n<div className=\"new-t1\">",
+              startLine: 4,
+              endLine: 6,
+            }
+          ]
+        },
+        process.cwd()
+      );
+      expect(replaceBulkResult).toContain("File updated successfully");
+      let data = await fs.readFile(testFile, "utf-8");
+      expect(data).toContain("{/* New Target 1 */}\n<div className=\"new-t1\">");
+      expect(data).toContain("{/* New Target 2 */}\n<div className=\"new-t2\">");
+
+      // Reset content
+      await fs.writeFile(
+        testFile,
+        "line 1\nline 2\n{/* Target 1 */}\n<div className=\"t1\">\n  content1\n</div>\nline 7\nline 8\n{/* Target 2 */}\n<div className=\"t2\">\n  content2\n</div>\n",
+        "utf-8"
+      );
+
+      // 2. Test multi_replace_file_content single mode auto-locate
+      const multiReplaceTool = getToolByName("multi_replace_file_content");
+      const multiReplaceResult = await multiReplaceTool?.execute(
+        {
+          filePath: "temp_auto_locate_multi_test.txt",
+          chunks: [
+            {
+              targetContent: "{/* Target 1 */}\n<div className=\"t1\">",
+              replacementContent: "{/* Multi Target 1 */}\n<div className=\"multi-t1\">",
+              startLine: 4,
+              endLine: 6,
+            },
+            {
+              targetContent: "{/* Target 2 */}\n<div className=\"t2\">",
+              replacementContent: "{/* Multi Target 2 */}\n<div className=\"multi-t2\">",
+              startLine: 10,
+              endLine: 12,
+            }
+          ]
+        },
+        process.cwd()
+      );
+      expect(multiReplaceResult).toContain("File updated successfully");
+      data = await fs.readFile(testFile, "utf-8");
+      expect(data).toContain("{/* Multi Target 1 */}\n<div className=\"multi-t1\">");
+      expect(data).toContain("{/* Multi Target 2 */}\n<div className=\"multi-t2\">");
+
+      // 3. Test apply_patch search-replace mode auto-locate
+      const applyPatchTool = getToolByName("apply_patch");
+      const patchResult = await applyPatchTool?.execute(
+        {
+          filePath: "temp_auto_locate_multi_test.txt",
+          patchContent: "<<<<<<<\n{/* Multi Target 1 */}\n<div className=\"multi-t1\">\n=======\n{/* Patched Target 1 */}\n<div className=\"patched-t1\">\n>>>>>>>"
+        },
+        process.cwd()
+      );
+      expect(patchResult).toContain("Patch applied successfully");
+      data = await fs.readFile(testFile, "utf-8");
+      expect(data).toContain("{/* Patched Target 1 */}\n<div className=\"patched-t1\">");
+    } finally {
+      try {
+        await fs.unlink(testFile);
+      } catch {}
+    }
+  });
 });
 
 describe("Search and Grep tools", () => {
