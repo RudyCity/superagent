@@ -119,8 +119,8 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     visionTokenSavingThreshold: DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
     enableRmemory: false,
     rmemoryEmbeddingProvider: "local",
-    rmemoryEmbeddingModel: "text-embedding-3-small",
-    rmemoryEmbeddingDimensions: 1536,
+    rmemoryEmbeddingModel: "Xenova/all-MiniLM-L6-v2",
+    rmemoryEmbeddingDimensions: 384,
   },
   trustedDirectories: [],
   providers: [
@@ -783,25 +783,41 @@ export function removeProvider(id: string): void {
 export function getSettings(): SystemSettings {
   const config = loadModelConfig();
   const s: Partial<SystemSettings> = config.settings || {};
-  return {
-    concurrencyLimit: s.concurrencyLimit ?? 0,
-    rateLimitRpm: s.rateLimitRpm ?? 60,
-    rateLimitCapacity: s.rateLimitCapacity ?? 60,
-    disableStreaming: s.disableStreaming ?? false,
-    contextWindowLimit: s.contextWindowLimit ?? 0,
-    maxIterations: s.maxIterations ?? 50,
-    simpleTaskFileThreshold: s.simpleTaskFileThreshold ?? 3,
-    simpleTaskKeywords: s.simpleTaskKeywords ?? ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
-    classifierEnabled: s.classifierEnabled ?? false,
-    classifierConfidenceThreshold: s.classifierConfidenceThreshold ?? "high",
-    classifierKeywords: s.classifierKeywords ?? {},
-    rmemoryGatewayUrl: s.rmemoryGatewayUrl ?? "http://127.0.0.1:8420",
-    rmemoryGatewayApiKey: s.rmemoryGatewayApiKey ?? "sk-xxxx",
-    rmemoryServiceId: s.rmemoryServiceId ?? "default",
-    enableRmemory: s.enableRmemory ?? true,
-    rmemoryEmbeddingProvider: s.rmemoryEmbeddingProvider ?? "local",
-    rmemoryEmbeddingModel: s.rmemoryEmbeddingModel ?? "text-embedding-3-small",
-    rmemoryEmbeddingDimensions: s.rmemoryEmbeddingDimensions ?? 1536,
+
+  const rmemoryProvider = s.rmemoryEmbeddingProvider ?? "local";
+  let rmemoryModel = s.rmemoryEmbeddingModel;
+  let rmemoryDims = s.rmemoryEmbeddingDimensions;
+  if (rmemoryProvider === "local") {
+    if (!rmemoryModel || rmemoryModel.startsWith("text-embedding-")) {
+      rmemoryModel = "Xenova/all-MiniLM-L6-v2";
+      rmemoryDims = 384;
+    }
+  } else if (rmemoryProvider === "openai") {
+    if (!rmemoryModel || rmemoryModel.includes("Xenova")) {
+      rmemoryModel = "text-embedding-3-small";
+      rmemoryDims = 1536;
+    }
+  }
+
+    return {
+      concurrencyLimit: s.concurrencyLimit ?? 0,
+      rateLimitRpm: s.rateLimitRpm ?? 60,
+      rateLimitCapacity: s.rateLimitCapacity ?? 60,
+      disableStreaming: s.disableStreaming ?? false,
+      contextWindowLimit: s.contextWindowLimit ?? 0,
+      maxIterations: s.maxIterations ?? 50,
+      simpleTaskFileThreshold: s.simpleTaskFileThreshold ?? 3,
+      simpleTaskKeywords: s.simpleTaskKeywords ?? ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
+      classifierEnabled: s.classifierEnabled ?? false,
+      classifierConfidenceThreshold: s.classifierConfidenceThreshold ?? "high",
+      classifierKeywords: s.classifierKeywords ?? {},
+      rmemoryGatewayUrl: s.rmemoryGatewayUrl ?? "http://127.0.0.1:8420",
+      rmemoryGatewayApiKey: s.rmemoryGatewayApiKey ?? "sk-xxxx",
+      rmemoryServiceId: s.rmemoryServiceId ?? "default",
+      enableRmemory: s.enableRmemory ?? true,
+      rmemoryEmbeddingProvider: rmemoryProvider,
+      rmemoryEmbeddingModel: rmemoryModel,
+      rmemoryEmbeddingDimensions: rmemoryDims ?? 384,
     maxChecklistVisible: s.maxChecklistVisible ?? 3,
     maxHistoryVisible: s.maxHistoryVisible ?? 3,
     maxProcsVisible: s.maxProcsVisible ?? 3,

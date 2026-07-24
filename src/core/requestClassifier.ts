@@ -713,6 +713,10 @@ export function mapSupraTelemetryToCategory(
  * Warm up/pre-load the local classifier model in the background.
  * Call this during app startup to eliminate first-use classification delay.
  */
+export function isLocalClassifierLoaded(): boolean {
+  return localClassifierPipeline !== null;
+}
+
 export async function warmUpClassifier(onProgress?: (event: any) => void): Promise<void> {
   const settings = getSettings();
   if (settings.classifierEnabled === false) return;

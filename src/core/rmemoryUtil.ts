@@ -7,6 +7,67 @@ import os from "os";
 
 const globalDataDir = path.join(os.homedir(), ".superagent-r", "rmemory");
 
+export const DEFAULT_LOCAL_EMBEDDING_MODEL = "Xenova/all-MiniLM-L6-v2";
+
+export function checkLocalModelDownloadStatus(modelRepoName: string, isMemoryLoaded: boolean = false): string {
+  if (isMemoryLoaded) {
+    return "LOADED (In Memory)";
+  }
+
+  const cacheBase = process.env.TRANSFORMERS_CACHE || path.join(os.homedir(), ".cache", "huggingface", "hub");
+  const folderName = `models--${modelRepoName.replace(/\//g, "--")}`;
+  const path1 = path.join(cacheBase, folderName);
+  const path2 = path.join(os.homedir(), ".cache", "huggingface", "hub", folderName);
+  const path3 = path.join(os.homedir(), ".cache", "transformers", modelRepoName);
+
+  const exists = (p: string) => {
+    try {
+      return fs.existsSync(p) && fs.readdirSync(p).length > 0;
+    } catch {
+      return false;
+    }
+  };
+
+  if (exists(path1) || exists(path2) || exists(path3)) {
+    return "DOWNLOADED (Cached on Disk)";
+  }
+
+  return "NOT DOWNLOADED (Pending Auto-Download)";
+}
+
+export function resetRMemoryInstance() {
+  rMemoryInstance = null;
+}
+
+export function getActiveRMemoryEmbeddingInfo(): { provider: "local" | "openai"; modelName: string; dimensions: number } {
+  const settings = getSettings();
+  const providerType = (settings.rmemoryEmbeddingProvider || "local") as "local" | "openai";
+  if (providerType === "openai") {
+    const rawModel = settings.rmemoryEmbeddingModel;
+    const modelName = (!rawModel || rawModel.includes("Xenova") || rawModel === DEFAULT_LOCAL_EMBEDDING_MODEL) ? "text-embedding-3-small" : rawModel;
+    return {
+      provider: "openai",
+      modelName,
+      dimensions: settings.rmemoryEmbeddingDimensions || 1536,
+    };
+  }
+  const rawModel = settings.rmemoryEmbeddingModel;
+  const modelName = (!rawModel || rawModel.startsWith("text-embedding-")) ? DEFAULT_LOCAL_EMBEDDING_MODEL : rawModel;
+  const provider = new OptimizedLocalTextEmbeddingProvider({ modelName });
+  return {
+    provider: "local",
+    modelName,
+    dimensions: provider.dimensions,
+  };
+}
+
+export async function preloadLocalEmbeddingModel(): Promise<void> {
+  const info = getActiveRMemoryEmbeddingInfo();
+  if (info.provider !== "local") return;
+  const provider = new OptimizedLocalTextEmbeddingProvider({ modelName: info.modelName });
+  await provider.embedText("Initialization preload test");
+}
+
 export class OptimizedLocalTextEmbeddingProvider {
   get dimensions(): number {
     return this.modelName.includes("nomic") ? 768 : 384;
@@ -17,7 +78,7 @@ export class OptimizedLocalTextEmbeddingProvider {
   private extractor: any = null;
 
   constructor(options: { modelName?: string; device?: string; dtype?: string } = {}) {
-    let name = options.modelName || "Xenova/all-MiniLM-L6-v2";
+    let name = options.modelName || DEFAULT_LOCAL_EMBEDDING_MODEL;
     if (name === "Xenova/nomic-embed-text-v1.5") {
       name = "nomic-ai/nomic-embed-text-v1.5";
     }
@@ -157,9 +218,11 @@ export class OptimizedLocalTextEmbeddingProvider {
   }
 }
 
-function checkAndPerformDbMigration(currentModelName: string, currentDimensions: number) {
-  const metadataPath = path.join(globalDataDir, "metadata.json");
-  const dbPath = path.join(globalDataDir, "vectors.db");
+export function checkAndPerformDbMigration(targetDir: string, currentModelName: string, currentDimensions: number) {
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  const metadataPath = path.join(targetDir, "metadata.json");
 
   let migrateNeeded = false;
   if (fs.existsSync(metadataPath)) {
@@ -172,23 +235,26 @@ function checkAndPerformDbMigration(currentModelName: string, currentDimensions:
       migrateNeeded = true;
     }
   } else {
-    if (fs.existsSync(dbPath)) {
-      migrateNeeded = true;
+    if (fs.existsSync(targetDir)) {
+      const hasDb = fs.readdirSync(targetDir).some(f => f.endsWith(".db"));
+      if (hasDb) {
+        migrateNeeded = true;
+      }
     }
   }
 
   if (migrateNeeded) {
-    try {
-      if (fs.existsSync(globalDataDir)) {
-        const entries = fs.readdirSync(globalDataDir);
-        for (const entry of entries) {
-          if (entry === "metadata.json") continue;
-          const fullPath = path.join(globalDataDir, entry);
+    if (fs.existsSync(targetDir)) {
+      const entries = fs.readdirSync(targetDir);
+      for (const entry of entries) {
+        if (entry === "metadata.json") continue;
+        const fullPath = path.join(targetDir, entry);
+        try {
           fs.rmSync(fullPath, { recursive: true, force: true });
+        } catch {
+          // Ignore locking/permission issues during cleanup
         }
       }
-    } catch (err) {
-      console.error("Failed to delete stale DB files during embedding model migration:", err);
     }
   }
 
@@ -203,56 +269,66 @@ function checkAndPerformDbMigration(currentModelName: string, currentDimensions:
 }
 
 let rMemoryInstance: any = null;
+let cachedRMemoryModelName: string = "";
+let cachedRMemoryDimensions: number = 0;
 
 async function getRMemory(): Promise<any> {
+  const { RMemory, OpenAIEmbeddingProvider } = await import("r-memory");
+  const settings = getSettings();
+  
+  const localModelName = settings.rmemoryEmbeddingModel || DEFAULT_LOCAL_EMBEDDING_MODEL;
+  let provider: any;
+  if (settings.rmemoryEmbeddingProvider === "openai") {
+    const activeProvider = getConfiguredProviders().find(p => p.isActive);
+    const isOpenAICompatible = activeProvider && (
+      activeProvider.type === "openai" ||
+      activeProvider.type === "openrouter" ||
+      activeProvider.type === "custom" ||
+      activeProvider.type === "ollama" ||
+      activeProvider.type === "lmstudio"
+    );
+    
+    const apiKey = isOpenAICompatible ? activeProvider.apiKey : (process.env.OPENAI_API_KEY || "");
+    const baseURL = isOpenAICompatible ? activeProvider.baseUrl : undefined;
+    
+    provider = new OpenAIEmbeddingProvider({
+      apiKey,
+      baseURL,
+      model: settings.rmemoryEmbeddingModel || "text-embedding-3-small",
+      dimensions: settings.rmemoryEmbeddingDimensions || 1536,
+    });
+  } else {
+    provider = new OptimizedLocalTextEmbeddingProvider({
+      modelName: localModelName,
+      dtype: "q8",
+      device: "cpu",
+    });
+  }
+  
+  const currentModelName = settings.rmemoryEmbeddingProvider === "openai"
+    ? (settings.rmemoryEmbeddingModel || "text-embedding-3-small")
+    : localModelName;
+  const currentDimensions = provider.dimensions;
+
+  if (rMemoryInstance && (cachedRMemoryModelName !== currentModelName || cachedRMemoryDimensions !== currentDimensions)) {
+    rMemoryInstance = null;
+  }
+
   if (!rMemoryInstance) {
     if (!fs.existsSync(globalDataDir)) {
       fs.mkdirSync(globalDataDir, { recursive: true });
     }
     const dbPath = path.join(globalDataDir, "vectors.db");
     
-    const { RMemory, OpenAIEmbeddingProvider } = await import("r-memory");
-    const settings = getSettings();
-    
-    let provider;
-    if (settings.rmemoryEmbeddingProvider === "openai") {
-      const activeProvider = getConfiguredProviders().find(p => p.isActive);
-      const isOpenAICompatible = activeProvider && (
-        activeProvider.type === "openai" ||
-        activeProvider.type === "openrouter" ||
-        activeProvider.type === "custom" ||
-        activeProvider.type === "ollama" ||
-        activeProvider.type === "lmstudio"
-      );
-      
-      const apiKey = isOpenAICompatible ? activeProvider.apiKey : (process.env.OPENAI_API_KEY || "");
-      const baseURL = isOpenAICompatible ? activeProvider.baseUrl : undefined;
-      
-      provider = new OpenAIEmbeddingProvider({
-        apiKey,
-        baseURL,
-        model: settings.rmemoryEmbeddingModel || "text-embedding-3-small",
-        dimensions: settings.rmemoryEmbeddingDimensions || 1536,
-      });
-    } else {
-      provider = new OptimizedLocalTextEmbeddingProvider({
-        modelName: "Xenova/all-MiniLM-L6-v2",
-        dtype: "q8",
-        device: "cpu",
-      });
-    }
-    
-    const currentModelName = settings.rmemoryEmbeddingProvider === "openai"
-      ? (settings.rmemoryEmbeddingModel || "text-embedding-3-small")
-      : "Xenova/all-MiniLM-L6-v2";
-    
-    checkAndPerformDbMigration(currentModelName, provider.dimensions);
+    checkAndPerformDbMigration(globalDataDir, currentModelName, currentDimensions);
 
     rMemoryInstance = new RMemory({
       dbPath,
       collectionName: "memories",
       embeddingProvider: provider,
     });
+    cachedRMemoryModelName = currentModelName;
+    cachedRMemoryDimensions = currentDimensions;
   }
   return rMemoryInstance;
 }
@@ -546,7 +622,7 @@ export async function isRmemoryActive(forceRefresh = false): Promise<boolean> {
 // pollutes conversation memory. Active regardless of enableRmemory setting.
 // ---------------------------------------------------------------------------
 
-const skillsDataDir = path.join(os.homedir(), ".superagent-r", "rmemory");
+const skillsDataDir = path.join(os.homedir(), ".superagent-r", "rmemory-skills");
 let skillsIndexInstance: any = null;
 let skillsIndexHash: string = "";
 
@@ -563,7 +639,7 @@ async function getSkillsIndex(): Promise<any> {
       device: "cpu",
     });
 
-    checkAndPerformDbMigration("Xenova/all-MiniLM-L6-v2", provider.dimensions);
+    checkAndPerformDbMigration(skillsDataDir, "Xenova/all-MiniLM-L6-v2", provider.dimensions);
 
     skillsIndexInstance = new RMemory({
       dbPath,

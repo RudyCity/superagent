@@ -584,8 +584,8 @@ export const settingProcsLimitCommand: SlashCommand = {
 
 export const settingRmemoryCommand: SlashCommand = {
   name: "setting-rmemory",
-  description: "Configure RMemory memory settings (enable/disable, provider, model, dimensions)",
-  execute(args, ctx) {
+  description: "Configure RMemory memory settings (enable/disable, provider, model, dimensions, download)",
+  async execute(args, ctx) {
     const trimmed = args.trim();
     const parts = trimmed.split(/\s+/);
     const action = parts[0]?.toLowerCase();
@@ -605,9 +605,44 @@ export const settingRmemoryCommand: SlashCommand = {
           `  /setting-rmemory provider <local|openai> Set embedding provider (currently: ${current.rmemoryEmbeddingProvider})`,
           `  /setting-rmemory model <model_name>     Set remote embedding model (currently: ${current.rmemoryEmbeddingModel})`,
           `  /setting-rmemory dimensions <number>    Set remote embedding dimensions (currently: ${current.rmemoryEmbeddingDimensions})`,
+          "  /setting-rmemory download             Pre-download active local embedding model",
         ].join("\n"),
         timestamp: now,
       });
+      return;
+    }
+
+    if (action === "download") {
+      ctx.addLine({
+        type: "system",
+        content: "Triggering download for RMemory local embedding model...",
+        timestamp: now,
+      });
+      try {
+        const { getActiveRMemoryEmbeddingInfo, preloadLocalEmbeddingModel, checkLocalModelDownloadStatus } = await import("../rmemoryUtil.js");
+        const embInfo = getActiveRMemoryEmbeddingInfo();
+        if (embInfo.provider !== "local") {
+          ctx.addLine({
+            type: "system",
+            content: "RMemory is configured to use remote OpenAI provider. Skipping local model download.",
+            timestamp: Date.now(),
+          });
+        } else {
+          await preloadLocalEmbeddingModel();
+          const status = checkLocalModelDownloadStatus(embInfo.modelName);
+          ctx.addLine({
+            type: "system",
+            content: `✓ RMemory embedding model (${embInfo.modelName}) download complete! Status: ${status}`,
+            timestamp: Date.now(),
+          });
+        }
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to download RMemory embedding model: ${err.message}`,
+          timestamp: Date.now(),
+        });
+      }
       return;
     }
 
@@ -957,23 +992,48 @@ export const settingHideTimelineCommand: SlashCommand = {
 export const settingClassifierCommand: SlashCommand = {
   name: "setting-classifier",
   aliases: ["classifier"],
-  description: "Enable or disable the multi-category request classifier for token optimization",
-  execute(args, ctx) {
+  description: "Enable, disable, or pre-download the multi-category request classifier model",
+  async execute(args, ctx) {
     const now = Date.now();
-    const val = args.trim();
+    const val = args.trim().toLowerCase();
     if (!val) {
       const settings = getSettings();
       ctx.addLine({
         type: "system",
-        content: `Usage: /setting-classifier <on|off>\nCurrent value: ${settings.classifierEnabled !== false ? "on" : "off"}\nConfidence threshold: ${settings.classifierConfidenceThreshold ?? "high"}`,
+        content: `Usage: /setting-classifier <on|off|download>\nCurrent value: ${settings.classifierEnabled !== false ? "on" : "off"}\nConfidence threshold: ${settings.classifierConfidenceThreshold ?? "high"}`,
         timestamp: now,
       });
+      return;
+    }
+    if (val === "download") {
+      ctx.addLine({
+        type: "system",
+        content: "Downloading local classifier router model (Sharjeelbaig/Supra-Router-51M-ONNX)...",
+        timestamp: now,
+      });
+      try {
+        const { warmUpClassifier, isLocalClassifierLoaded } = await import("../requestClassifier.js");
+        const { checkLocalModelDownloadStatus } = await import("../rmemoryUtil.js");
+        await warmUpClassifier();
+        const status = checkLocalModelDownloadStatus("Sharjeelbaig/Supra-Router-51M-ONNX", isLocalClassifierLoaded());
+        ctx.addLine({
+          type: "system",
+          content: `✓ Local classifier router model (Sharjeelbaig/Supra-Router-51M-ONNX) download complete! Status: ${status}`,
+          timestamp: Date.now(),
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to download router model: ${err.message}`,
+          timestamp: Date.now(),
+        });
+      }
       return;
     }
     if (val !== "on" && val !== "off") {
       ctx.addLine({
         type: "error",
-        content: "Invalid value. Must be 'on' or 'off'.",
+        content: "Invalid value. Must be 'on', 'off', or 'download'.",
         timestamp: now,
       });
       return;

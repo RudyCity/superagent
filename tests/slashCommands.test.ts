@@ -528,16 +528,24 @@ describe("Slash Commands: /settings & /setting-*", () => {
     process.env = originalEnv;
   });
 
-  it("should show settings when running /settings", () => {
+  it("should show settings when running /settings", async () => {
     configModule.updateSettings({ concurrencyLimit: 1, rateLimitRpm: 30, rateLimitCapacity: 5 });
 
-    handleSlashCommand("/settings", mockCtx as any);
+    await handleSlashCommand("/settings", mockCtx as any);
 
     expect(addedLines.length).toBe(1);
     const content = addedLines[0].content;
     expect(content).toContain("Concurrency Limit  : 1 (enabled)");
     expect(content).toContain("Rate Limit (RPM)   : 30 RPM");
     expect(content).toContain("Limit Capacity     : 5");
+  });
+
+  it("should trigger model downloads via /setting-rmemory download and /setting-classifier download", async () => {
+    await handleSlashCommand("/setting-rmemory download", mockCtx as any);
+    expect(addedLines.some((l) => l.content.includes("Triggering download for RMemory local embedding model"))).toBe(true);
+
+    await handleSlashCommand("/setting-classifier download", mockCtx as any);
+    expect(addedLines.some((l) => l.content.includes("Downloading local classifier router model"))).toBe(true);
   });
 
   it("should configure concurrency limit when running /setting-concurrency", () => {

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.549] - 2026-07-24
+
+### Fixed
+- **RMemory Dynamic Migration & Local Model Downloads**:
+  - Refactored `checkAndPerformDbMigration` in `rmemoryUtil.ts` to accept explicit target directories and dimension metadata for both general vector storage and isolated skills index (`rmemory-skills`).
+  - Added cached RMemory instance invalidation when embedding model name or dimensions change.
+  - Added support for explicit local model download commands `/setting-rmemory download` and `/setting-classifier download` in slash commands.
+  - Added unit tests for RMemory database migration and slash command download triggers.
+
 ## [1.2.548] - 2026-07-24
 
 ### Fixed

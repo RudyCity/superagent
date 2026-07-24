@@ -1,7 +1,7 @@
 import { SlashCommand } from "./types.js";
 import { registry } from "./registry.js";
 import { getSettings } from "../config.js";
-import { getRMemoryClient, getRMemorySessionKey } from "../rmemoryUtil.js";
+import { getRMemoryClient, getRMemorySessionKey, getActiveRMemoryEmbeddingInfo } from "../rmemoryUtil.js";
 
 export const memoryCommand: SlashCommand = {
   name: "memory",
@@ -42,14 +42,16 @@ export const memoryCommand: SlashCommand = {
           ? new Date(watermark).toLocaleString() 
           : "None (no turns synchronized yet)";
 
+        const embeddingInfo = getActiveRMemoryEmbeddingInfo();
+
         const lines = [
           "----------------------------------------------------------------------",
           "RMEMORY STATUS",
           "----------------------------------------------------------------------",
           "RMemory Memory Status: Active",
           `Session ID: ${sessionKey}`,
-          `Embedding Provider: ${settings.rmemoryEmbeddingProvider || "local"}`,
-          `Embedding Model: ${settings.rmemoryEmbeddingProvider === "local" ? "nomic-embed-text-v1.5" : (settings.rmemoryEmbeddingModel || "text-embedding-3-small")}`,
+          `Embedding Provider: ${embeddingInfo.provider}`,
+          `Embedding Model: ${embeddingInfo.modelName} (${embeddingInfo.dimensions} dims)`,
           `Last Sync Watermark: ${watermarkStr}`,
           "----------------------------------------------------------------------",
         ];
