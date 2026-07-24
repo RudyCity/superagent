@@ -1,6 +1,12 @@
 # Changelog
 
+## [1.2.540] - 2026-07-24
+
+### Maintenance
+- **Graphify Output Cleanup**: Cleaned up auto-generated `graphify-out` directory artifacts and added `graphify-out/` to `.gitignore` to prevent generated graph files from tracking in repository.
+
 ## [1.2.539] - 2026-07-24
+
 
 ### Added
 - **Codebase Embedding & Auto RAG System**: Integrated a local vector embedding system using `rmemory` local embedding model (`nomic-embed-text-v1.5`) and SQLite vector storage. Added `CodebaseIndexer` for structural JS/TS and line-based file chunking, auto background indexing on workspace load, `codebase_search` tool for agents, Auto RAG prompt injection, and `/index` slash command (`/index`, `/index clean`, `/index search <query>`).
