@@ -2177,7 +2177,7 @@ export function App({
             timestamp: Date.now()
           });
 
-          if (agentRef.current && !agentRef.current.isAgentRunning()) {
+          if (task.notifyAgent && agentRef.current && !agentRef.current.isAgentRunning()) {
             setIsProcessing(true);
             addLine({
               type: "user",

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.550] - 2026-07-24
+
+### Fixed
+- **Background Task Agent Auto-Wake Guard**:
+  - Added `notifyAgent?: boolean` property to `BackgroundTask` interface in `types.ts`.
+  - Guarded agent auto-wake (`agentRef.current.sendMessage`) in `app.tsx` task completion listener to only trigger when `task.notifyAgent` is explicitly `true`.
+  - Prevents background shell tasks from triggering unwanted agent execution turns.
+
 ## [1.2.549] - 2026-07-24
 
 ### Fixed
