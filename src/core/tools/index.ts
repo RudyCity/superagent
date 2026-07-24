@@ -87,8 +87,10 @@ import {
 import { searchJournalTool } from "./academicSearchTools.js";
 import { readDocumentTool } from "./documentReadTools.js";
 import { officeCliTool } from "./officeCliTools.js";
+import { codebaseSearchTool } from "./codebaseSearchTool.js";
 
 export const allTools: Tool[] = [
+  codebaseSearchTool,
   searchJournalTool,
   readDocumentTool,
   officeCliTool,

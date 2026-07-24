@@ -8,6 +8,7 @@
   - Added explicit `.dispose()` calls on intermediate ONNX/WASM feature-extraction tensors in both `embedText` and `embedTexts` to prevent native memory leaks in the transformers pipeline.
   - Resolved locked files and directory deletion failures on Windows by closing FS file watchers and calling `close()` on the cached `RMemory` SQLite database connection within `CodebaseIndexer.clearIndex`.
   - Optimized `CodebaseIndexer.initAutoIndexing` to avoid scheduling redundant workspace indexing scans on every prompt construction call.
+  - Registered `codebaseSearchTool` in the `allTools` registry to resolve tool registry consistency checks.
 
 ## [1.2.542] - 2026-07-24
 
