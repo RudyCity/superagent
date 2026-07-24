@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.551] - 2026-07-24
+
+### Fixed
+- **Chrome Extension Single Mode Enforcement**:
+  - Enforced single agent mode in Chrome extension UI and scripts (`sidepanel.html`, `sidepanel.js`, `sidepanel-ui.js`).
+  - Removed multi-mode orchestration options from extension panel to focus exclusively on single agent mode and cognitive scale-up.
+
 ## [1.2.550] - 2026-07-24
 
 ### Fixed

@@ -180,11 +180,9 @@ document.addEventListener("DOMContentLoaded", () => {
         apiTokenInput.value = apiToken;
         chrome.storage.session.set({ apiToken });
       }
-      if (result.lastMode) {
-        currentMode = result.lastMode;
-        const radio = document.querySelector(`input[name="agent-mode"][value="${result.lastMode}"]`);
-        if (radio) radio.checked = true;
-      }
+      currentMode = "single";
+      const radio = document.querySelector('input[name="agent-mode"][value="single"]');
+      if (radio) radio.checked = true;
 
       // Initialize auto scroll & limit settings
       window.chatAutoScroll = result.chatAutoScroll !== false;
@@ -541,12 +539,10 @@ async function checkServerStatus() {
       }
 
       // Auto sync mode selection if setup screen is active
-      if (setupScreen.classList.contains("active") && data.mode) {
-        const radio = document.querySelector(`input[name="agent-mode"][value="${data.mode}"]`);
-        if (radio && !radio.checked) {
-          radio.checked = true;
-          currentMode = data.mode;
-        }
+      if (setupScreen.classList.contains("active")) {
+        const radio = document.querySelector('input[name="agent-mode"][value="single"]');
+        if (radio) radio.checked = true;
+        currentMode = "single";
       }
 
       if (data.agentRunning) {
@@ -636,7 +632,8 @@ async function checkServerStatus() {
 
 // Welcome screen transition (only Mode and API Token)
 async function launchWelcomeSession() {
-  const mode = document.querySelector('input[name="agent-mode"]:checked').value;
+  const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
+  const mode = modeRadio ? modeRadio.value : "single";
   const token = apiTokenInput.value.trim();
   const resume = document.getElementById("resume-session").checked;
   const rememberToken = rememberTokenInput?.checked === true;

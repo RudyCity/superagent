@@ -861,9 +861,9 @@ function updatePresetsDropdown() {
   const activePreset = presets.find(p => p.id === activePresetId);
   if (metaModelName && activePreset) {
     let modelName = "";
-    if (mode === "single" && activePreset.models && activePreset.models.superagent) {
+    if (activePreset.models && activePreset.models.superagent) {
       modelName = activePreset.models.superagent.model;
-    } else if (mode === "multi" && activePreset.models && activePreset.models.master) {
+    } else if (activePreset.models && activePreset.models.master) {
       modelName = activePreset.models.master.model;
     }
     metaModelName.textContent = modelName || "Unknown Model";
