@@ -153,8 +153,16 @@ export class RMemoryStrategy implements CompactionStrategy {
       if (l1Items.length > 0) {
         formattedMemories.push("\n<relevant-memories>");
         for (const item of l1Items) {
-          const typeTag = item.type ? `[${item.type}]` : "";
-          formattedMemories.push(`- ${typeTag} ${item.content}`);
+          let typeTag = item.type || "memory";
+          const meta = (item as any).metadata;
+          if (meta && meta.session) {
+            if (meta.session === sessionKey) {
+              typeTag = `current session ${meta.role || "message"}`;
+            } else {
+              typeTag = `past session ${meta.role || "message"}`;
+            }
+          }
+          formattedMemories.push(`- [${typeTag}] ${item.content}`);
         }
         formattedMemories.push("</relevant-memories>");
       }
@@ -169,9 +177,18 @@ export class RMemoryStrategy implements CompactionStrategy {
       }
       const toKeep = messages.slice(keepIndex);
 
+      // Check if we are in a brand new session (e.g. current messages count is small, e.g. <= 2)
+      const isNewSession = messages.length <= 2;
+
+      let warningHeader = "";
+      if (isNewSession) {
+        warningHeader = `IMPORTANT: This is a NEW, clean session. The memories below are retrieved from your long-term memory of PREVIOUS sessions and are provided for context and reference only.
+Do NOT automatically resume or reference these past sessions, previous code modifications, or past conversation threads unless the user's current request explicitly asks you to. Focus entirely on the user's new request.\n\n`;
+      }
+
       const memoryMessage: Message = {
         role: "user",
-        content: `[RMemory Agent Memory Context]:\n${summaryText || "No prior memories recalled."}`,
+        content: `[RMemory Agent Memory Context]:\n${warningHeader}${summaryText || "No prior memories recalled."}`,
         timestamp: Date.now(),
       };
 

@@ -2,7 +2,7 @@ import { generateText } from "ai";
 import { getContextWindowLimit, getSettings, getConfig } from "../config.js";
 import { rateLimiter, concurrencyLimiter } from "../rateLimiter.js";
 import { contentToString, type Message } from "../conversation.js";
-import { getRMemoryClient } from "../rmemoryUtil.js";
+import { getRMemoryClient, getRMemorySessionKey } from "../rmemoryUtil.js";
 import type { Agent } from "../agent.js";
 
 export class HistoryCompactor {
@@ -248,11 +248,22 @@ ${formatted}`;
       }
     }
 
+    const historyPath = agent.getCurrentHistoryFilePath();
+    const currentSessionKey = getRMemorySessionKey(historyPath);
+
     if (l1Items.length > 0) {
       formattedMemories.push("\n<relevant-memories>");
       for (const item of l1Items) {
-        const typeTag = item.type ? `[${item.type}]` : "";
-        formattedMemories.push(`- ${typeTag} ${item.content}`);
+        let typeTag = item.type || "memory";
+        const meta = (item as any).metadata;
+        if (meta && meta.session) {
+          if (meta.session === currentSessionKey) {
+            typeTag = `current session ${meta.role || "message"}`;
+          } else {
+            typeTag = `past session ${meta.role || "message"}`;
+          }
+        }
+        formattedMemories.push(`- [${typeTag}] ${item.content}`);
       }
       formattedMemories.push("</relevant-memories>");
     }
@@ -260,9 +271,18 @@ ${formatted}`;
     const summaryText = formattedMemories.join("\n").trim();
     if (!summaryText) return;
 
+    // Check if we are in a brand new session (e.g. current messages count is small, e.g. <= 2)
+    const isNewSession = messages.length <= 2;
+
+    let warningHeader = "";
+    if (isNewSession) {
+      warningHeader = `IMPORTANT: This is a NEW, clean session. The memories below are retrieved from your long-term memory of PREVIOUS sessions and are provided for context and reference only.
+Do NOT automatically resume or reference these past sessions, previous code modifications, or past conversation threads unless the user's current request explicitly asks you to. Focus entirely on the user's new request.\n\n`;
+    }
+
     const memoryMessage: Message = {
       role: "user",
-      content: `[RMemory Agent Memory Context]:\n${summaryText}`,
+      content: `[RMemory Agent Memory Context]:\n${warningHeader}${summaryText}`,
       timestamp: Date.now(),
     };
 

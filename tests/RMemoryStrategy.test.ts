@@ -170,5 +170,42 @@ describe("RMemoryStrategy", () => {
     expect(result3.metadata.strategy).toBe("summarization");
   });
 
+  it("should inject warning header and tag past vs current sessions in brand new session", async () => {
+    mockAddConversation.mockResolvedValue({ total_count: 1 });
+    mockSearchAtomic.mockResolvedValue({
+      items: [
+        {
+          id: "msg-1",
+          content: "Previous session command",
+          type: "message",
+          score: 0.9,
+          metadata: { session: "other-sess", role: "user" }
+        },
+        {
+          id: "msg-2",
+          content: "Current session message",
+          type: "message",
+          score: 0.85,
+          metadata: { session: "test-sess", role: "assistant" }
+        }
+      ]
+    });
+    mockReadCore.mockResolvedValue({ content: "" });
+    mockListScenarios.mockResolvedValue({ entries: [] });
+
+    const strategy = new RMemoryStrategy({ historyFilePath: "conversation_test.json" });
+    const messages: Message[] = [
+      { role: "user", content: "hello", timestamp: Date.now() }
+    ];
+
+    const result = await strategy.execute(messages, { preserveRecent: 5 });
+
+    // Expect warning header to be injected because messages.length <= 2
+    expect(result.messages[0].content).toContain("IMPORTANT: This is a NEW, clean session.");
+    // Expect type tags to be formatted correctly based on session matching
+    expect(result.messages[0].content).toContain("- [past session user] Previous session command");
+    expect(result.messages[0].content).toContain("- [current session assistant] Current session message");
+  });
+
   afterAll(() => {});
 });

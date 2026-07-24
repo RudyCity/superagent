@@ -417,6 +417,7 @@ export class MemoryClient {
         content: texts[i],
         embedding: embeddings[i],
         metadata: {
+          type: "message",
           session: options.session_id,
           role: msg.role,
           timestamp: msg.timestamp || new Date().toISOString(),
@@ -462,7 +463,7 @@ export class MemoryClient {
   async searchAtomic(options: {
     query: string;
     limit?: number;
-  }): Promise<{ items: { id: string; content: string; type: string; score: number }[] }> {
+  }): Promise<{ items: { id: string; content: string; type: string; score: number; metadata?: Record<string, any> }[] }> {
     const rMemory = await getRMemory();
     const limit = options.limit ?? 5;
 
@@ -477,6 +478,7 @@ export class MemoryClient {
       content: r.memory.content,
       type: r.memory.metadata?.type || "memory",
       score: r.score ?? (1.0 - r.distance),
+      metadata: r.memory.metadata,
     }));
 
     return { items };

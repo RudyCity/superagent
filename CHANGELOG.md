@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.569] - 2026-07-24
+
+### Changed
+- **Past Session Memory Mitigation**:
+  - Enhanced RMemory context pre-population and strategy to tag memories explicitly as `current session` or `past session` based on matching session keys.
+  - Injected an explicit warning header to the AI in brand-new sessions, advising it not to automatically continue or focus on past conversation threads and instead focus on the new user request.
+  - Added unit test cases to verify RMemory session tagging and warning header injection.
+
 ## [1.2.568] - 2026-07-24
 
 ### Changed
