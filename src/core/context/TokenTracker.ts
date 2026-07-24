@@ -120,7 +120,9 @@ export class TokenTracker {
         const resultStr = typeof result.result === "string" ? result.result : JSON.stringify(result.result);
         if (useVision && resultStr.length > threshold) {
           const lines = resultStr.split(/\r?\n/);
-          const pageCount = Math.min(3, Math.ceil(lines.length / 150));
+          const isAnthropic = this.model.toLowerCase().includes("anthropic");
+          const maxPages = isAnthropic ? 20 : 100;
+          const pageCount = Math.min(maxPages, Math.ceil(lines.length / 150));
           tokens += pageCount * 1600 + 150;
         } else {
           tokens += this.countText(resultStr);
@@ -158,7 +160,9 @@ export class TokenTracker {
             const resultStr = typeof result.result === "string" ? result.result : JSON.stringify(result.result);
             if (useVision && resultStr.length > threshold) {
               const lines = resultStr.split(/\r?\n/);
-              const pageCount = Math.min(3, Math.ceil(lines.length / 150));
+              const isAnthropic = this.model.toLowerCase().includes("anthropic");
+              const maxPages = isAnthropic ? 20 : 100;
+              const pageCount = Math.min(maxPages, Math.ceil(lines.length / 150));
               trTokens += pageCount * 1600 + 150;
             } else {
               trTokens += this.countText(resultStr);
@@ -196,7 +200,9 @@ export class TokenTracker {
       let sysTokens = 0;
       if (useVision && systemPrompt.length > threshold) {
         const lines = systemPrompt.split(/\r?\n/);
-        const pageCount = Math.min(3, Math.ceil(lines.length / 150));
+        const isAnthropic = this.model.toLowerCase().includes("anthropic");
+        const maxPages = isAnthropic ? 20 : 100;
+        const pageCount = Math.min(maxPages, Math.ceil(lines.length / 150));
         sysTokens = pageCount * 1600 + 150;
       } else {
         sysTokens = this.countText(systemPrompt);
@@ -215,7 +221,9 @@ export class TokenTracker {
       const isMemoryContext = content.startsWith("[RMemory Agent Memory Context]:");
       if (useVision && (content.length > threshold || isMemoryContext)) {
         const lines = content.split(/\r?\n/);
-        const pageCount = Math.min(3, Math.ceil(lines.length / 150));
+        const isAnthropic = this.model.toLowerCase().includes("anthropic");
+        const maxPages = isAnthropic ? 20 : 100;
+        const pageCount = Math.min(maxPages, Math.ceil(lines.length / 150));
         return pageCount * 1600 + 150;
       }
       return this.countText(content);

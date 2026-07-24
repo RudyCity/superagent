@@ -530,7 +530,7 @@ export class Conversation {
       if (msg.role === "tool") {
         toolMessagesSeen++;
         const isRoutine = msg.toolResults?.some(tr =>
-          ["read_file", "list_directory", "grep", "list_dir", "grep_search"].includes(tr.name)
+          ["read_file", "list_directory", "grep", "list_dir", "grep_search", "view_file", "view"].includes(tr.name)
         ) || false;
 
         const currentKeepCycles = isRoutine ? Math.max(1, effectiveKeepCycles - 1) : effectiveKeepCycles;
@@ -540,7 +540,7 @@ export class Conversation {
         }
       } else if (msg.role === "assistant") {
         const isRoutine = msg.toolCalls?.some(tc =>
-          ["read_file", "list_directory", "grep", "list_dir", "grep_search"].includes(tc.name)
+          ["read_file", "list_directory", "grep", "list_dir", "grep_search", "view_file", "view"].includes(tc.name)
         ) || false;
         const currentKeepCycles = isRoutine ? Math.max(1, effectiveKeepCycles - 1) : effectiveKeepCycles;
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.556] - 2026-07-24
+
+### Fixed
+- **Token Efficiency & Tool Truncation**:
+  - Added `view_file` and `view` to routine tools list in `conversation.ts` so file outputs age out and truncate earlier (1 cycle instead of 2).
+  - Synchronized `TokenTracker.ts` vision image page cap calculation with `MessageBuilder.ts` (up to 20/100 pages instead of 3), allowing accurate token counting and timely compaction triggers.
+
 ## [1.2.555] - 2026-07-24
 
 ### Changed
