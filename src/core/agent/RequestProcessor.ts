@@ -139,6 +139,7 @@ export class RequestProcessor {
         }
       } catch (err: any) {
         agent.writeToLogFile("WARN", `Failed to classify user request: ${err.message}`);
+        agent.onEvent({ type: "text", content: `[SYS] Warning: Request classification issue (${err.message}). Falling back to main agent loop...\n\n` });
       }
     }
 

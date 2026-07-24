@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.542] - 2026-07-24
+
+### Fixed
+- **Terminal Warning for Request Classification Failures**: Added terminal feedback when request classification fails due to invalid API keys or configuration errors, preventing silent logs and informing the user in the UI instead of hanging silently in THINKING state.
+
 ## [1.2.541] - 2026-07-24
 
 ### Fixed
