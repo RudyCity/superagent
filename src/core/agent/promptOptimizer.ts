@@ -84,6 +84,11 @@ Provide only the optimized guidelines as a flat bulleted list in English. Do not
       }
       await rateLimiter.acquire(1);
 
+      try {
+        const { logPrompt } = await import("./PromptLogger.js");
+        logPrompt("PromptOptimizer:optimizePrompt", this.model?.modelId, undefined, prompt);
+      } catch {}
+
       const { text } = await generateText({
         model: this.model,
         prompt,

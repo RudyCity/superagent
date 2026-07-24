@@ -206,7 +206,6 @@ Before finalizing a plan, challenge the first assumption with two extreme edge c
 - SECURITY: Never expose secrets, credentials, or API keys.
 - AGENTS_MD: Read and study 'agents.md' in workspace root if present. Adhere to project guidelines.
 - KARPATHY_GUIDELINES: Adhere to 'karpathy-guidelines' skill instructions for all coding decisions.
-- PRAGMATIC_MINIMALISM: Adhere to 'pragmatic-minimalism' skill instructions (enforce lean coding, footprint reduction, and complexity review/auditing) for all task implementations.
 - CONCERN_TRACKS: Evaluate code updates against: Correctness, Resilience, Consistency, Impact-Radius, Reversibility.
 - SELF_INTERROGATION: Challenge assumptions, failure modes, checklist gaps before completion.
 - ATTENTION_HIERARCHY: L0 (no data loss, auth bypass, circular deps), L1 (type safety, async error handling, input validation), L2 (immutability, composition, explicit), L3 (performance, DX).

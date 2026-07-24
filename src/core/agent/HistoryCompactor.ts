@@ -135,6 +135,17 @@ ${formatted}`;
         }
         await rateLimiter.acquire(1);
 
+        try {
+          const { logPrompt } = await import("./PromptLogger.js");
+          logPrompt(
+            "HistoryCompactor:summarizeMessages",
+            agent.getModel()?.modelId,
+            "You are a helpful system agent that summarizes conversation history logs to save token context window space.",
+            prompt,
+            agent
+          );
+        } catch {}
+
         result = await generateText({
           model: agent.getModel(),
           system: "You are a helpful system agent that summarizes conversation history logs to save token context window space.",

@@ -76,6 +76,10 @@ export class FastPath {
           let textContent = "";
 
           if (useStreaming) {
+            try {
+              const { logPrompt } = await import("./PromptLogger.js");
+              logPrompt("FastPath:streamText", modelInstance?.modelId, convSystemPrompt, coreMessages, agent);
+            } catch {}
             const result = streamText({
               model: modelInstance,
               system: convSystemPrompt,
@@ -116,6 +120,10 @@ export class FastPath {
               }
             } catch { /* non-critical */ }
           } else {
+            try {
+              const { logPrompt } = await import("./PromptLogger.js");
+              logPrompt("FastPath:generateText", modelInstance?.modelId, convSystemPrompt, coreMessages, agent);
+            } catch {}
             // disableStreaming=true: use generateText to match main agent loop behavior
             const result = await generateText({
               model: modelInstance,

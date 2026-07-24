@@ -106,6 +106,11 @@ export class RequestProcessor {
 
   Reply with EXACTLY "chat", "yes", or "no". Reply with nothing else.`;
 
+              try {
+                const { logPrompt } = await import("./PromptLogger.js");
+                logPrompt("RequestProcessor:classifyRequest", model?.modelId, undefined, classificationPrompt, agent);
+              } catch {}
+
               const response = await generateText({
                 model,
                 prompt: classificationPrompt,

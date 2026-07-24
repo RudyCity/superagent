@@ -150,6 +150,16 @@ ${truncated}`;
 
     while (true) {
       try {
+        try {
+          const { logPrompt } = await import("../../agent/PromptLogger.js");
+          logPrompt(
+            "SummarizationStrategy:summarizeMessages",
+            this.config?.model?.modelId || (typeof this.config?.model === "string" ? this.config?.model : undefined),
+            "You are a helpful system agent that summarizes conversation history logs to save token context window space.",
+            prompt
+          );
+        } catch {}
+
         const result = await generateText({
           model: this.config!.model,
           system:

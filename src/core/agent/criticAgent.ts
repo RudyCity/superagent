@@ -84,6 +84,11 @@ Output ONLY the raw JSON string. Do not include markdown code block formatting (
         }
         await rateLimiter.acquire(1);
 
+        try {
+          const { logPrompt } = await import("./PromptLogger.js");
+          logPrompt("CriticAgent:reviewChanges", this.model?.modelId, undefined, prompt);
+        } catch {}
+
         const { text } = await generateText({
           model: this.model,
           prompt,

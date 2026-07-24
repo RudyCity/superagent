@@ -88,6 +88,11 @@ Provide the resolved code for the CONFLICT HUNK only. Output ONLY the resolved c
       }
       await rateLimiter.acquire(1);
 
+      try {
+        const { logPrompt } = await import("./agent/PromptLogger.js");
+        logPrompt("masterAgent:resolveFileConflicts", model?.modelId, undefined, prompt);
+      } catch {}
+
       const { text } = await generateText({
         model,
         prompt,

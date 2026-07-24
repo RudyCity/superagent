@@ -138,6 +138,11 @@ If none of the options are suitable, still pick the closest one.`;
   try {
     await rateLimiter.acquire(1);
 
+    try {
+      const { logPrompt } = await import("./PromptLogger.js");
+      logPrompt("AgentUtils:answerQuestionAsMaster", agent.getModel()?.modelId, undefined, prompt, agent);
+    } catch {}
+
     const result = await generateText({
       model: agent.getModel(),
       prompt,

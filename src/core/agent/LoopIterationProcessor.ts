@@ -125,6 +125,10 @@ export class LoopIterationProcessor {
           while (true) {
             try {
               const callMessages = [...messages];
+              try {
+                const { logPrompt } = await import("./PromptLogger.js");
+                logPrompt("LoopIterationProcessor:streamText", modelName, system, callMessages, agent);
+              } catch {}
               const resultStream = await streamText({
                 model: modelInstance,
                 system,
@@ -324,6 +328,10 @@ export class LoopIterationProcessor {
           while (true) {
             try {
               const callMessages = [...messages];
+              try {
+                const { logPrompt } = await import("./PromptLogger.js");
+                logPrompt("LoopIterationProcessor:generateText", modelName, finalSystemPrompt, callMessages, agent);
+              } catch {}
               result = await generateText({
                 model: modelInstance,
                 system: finalSystemPrompt,
@@ -493,6 +501,10 @@ export class LoopIterationProcessor {
         while (true) {
           try {
             const callMessages = [...messages];
+            try {
+              const { logPrompt } = await import("./PromptLogger.js");
+              logPrompt("LoopIterationProcessor:xmlFallback", modelName, finalSystemPrompt, callMessages, agent);
+            } catch {}
             result = await generateText({
               model: modelInstance,
               system: finalSystemPrompt,
