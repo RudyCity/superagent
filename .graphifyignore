@@ -1,0 +1,26 @@
+# .graphifyignore for Superagent
+
+# Dependencies & Binaries
+node_modules/
+dist/
+vendor/
+bin/python/
+Notepad++/
+*.log
+
+# Test Artifacts & Temporary Directories
+tests/temp-home*
+scratch/
+
+# Workspace & Internal State
+.worktrees/
+.superagent/
+.fastcontext/
+.grok/
+
+# Graphify Cache & Costs
+graphify-out/cost.json
+graphify-out/cache/
+
+# Asset Images
+*.png

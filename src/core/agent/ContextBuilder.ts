@@ -97,6 +97,23 @@ export class ContextBuilder {
       agent.writeToLogFile("WARN", `Failed to prepopulate RMemory Memory context: ${err.message}`);
     }
 
+    try {
+      const { CodebaseIndexer } = await import("../context/codebaseIndexer.js");
+      CodebaseIndexer.initAutoIndexing(agent.workingDirectory);
+      if (queryStr && queryStr.length > 5) {
+        const ragSnippets = await CodebaseIndexer.searchCodebase(agent.workingDirectory, queryStr, 3);
+        if (ragSnippets.length > 0) {
+          let codebaseContext = "\n\nRELEVANT CODEBASE SNIPPETS (AUTO-RAG):\n";
+          for (const s of ragSnippets) {
+            codebaseContext += `[File: ${s.relativePath} (lines ${s.startLine}-${s.endLine})]\n${s.content}\n\n`;
+          }
+          baseSystemPrompt += codebaseContext;
+        }
+      }
+    } catch (err: any) {
+      agent.writeToLogFile("WARN", `Failed to retrieve codebase RAG context: ${err.message}`);
+    }
+
     await agent.compactHistoryIfNeeded(signal);
 
     let supportsNativeTools = true;

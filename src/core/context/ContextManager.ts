@@ -444,8 +444,9 @@ export class ContextManager {
   }
 
   private setState(state: ContextState): void {
+    const prevState = this.state;
     this.state = state;
-    this.emit("state:change", state);
+    this.emit("state:change", { from: prevState, to: state });
   }
 
   private emit(event: string, ...args: any[]): void {

@@ -105,14 +105,10 @@ class VisionRequestHandler(BaseHTTPRequestHandler):
             
     def do_GET(self):
         if self.path == "/health":
-            if detector is not None:
-                self.send_json_response({"status": "healthy"})
-            else:
-                try:
-                    get_detector()
-                    self.send_json_response({"status": "healthy"})
-                except Exception as e:
-                    self.send_error_response(f"Model loading error: {e}")
+            self.send_json_response({
+                "status": "healthy",
+                "model_loaded": detector is not None
+            })
         else:
             self.send_response(404)
             self.end_headers()
@@ -137,7 +133,11 @@ class VisionRequestHandler(BaseHTTPRequestHandler):
 
 def run(port=8095):
     server_address = ('127.0.0.1', port)
-    httpd = HTTPServer(server_address, VisionRequestHandler)
+    try:
+        from http.server import ThreadingHTTPServer
+        httpd = ThreadingHTTPServer(server_address, VisionRequestHandler)
+    except ImportError:
+        httpd = HTTPServer(server_address, VisionRequestHandler)
     print(f"Vision Server running locally on http://127.0.0.1:{port}")
     try:
         httpd.serve_forever()

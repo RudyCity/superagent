@@ -71,6 +71,7 @@ import {
   rmemorySaveTool,
   rmemoryConversationAddTool,
 } from "./rmemoryTools.js";
+import { codebaseSearchTool } from "./codebaseSearchTool.js";
 import { manageMcpTool } from "./mcpTools.js";
 import { saveSharedMemoryTool, readSharedMemoryTool } from "./sharedMemoryTools.js";
 
@@ -117,6 +118,7 @@ export const masterToolset: Tool[] = [
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
+  codebaseSearchTool,
 ];
 
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────
@@ -170,6 +172,7 @@ export const superagentToolset: Tool[] = [
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
+  codebaseSearchTool,
 ];
 
 // ─── Chrome Extension Toolset (depth 1) ──────────────────────────────────────
@@ -217,6 +220,7 @@ export const chromeExtensionToolset: Tool[] = [
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
+  codebaseSearchTool,
 ];
 
 
@@ -245,6 +249,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemoryConversationAddTool,
     saveSharedMemoryTool,
     readSharedMemoryTool,
+    codebaseSearchTool,
     controlBrowserTabTool,
     controlBrowserMacroSaveTool,
     controlBrowserMacroRunTool,
@@ -280,6 +285,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemoryConversationAddTool,
     saveSharedMemoryTool,
     readSharedMemoryTool,
+    codebaseSearchTool,
     defineSubagentTool,
     invokeSubagentTool,
     sendMessageTool,
@@ -303,6 +309,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemorySearchTool,
     rmemoryConversationSearchTool,
     rmemoryReadCosTool,
+    codebaseSearchTool,
   ],
 
   "software-tester": [
@@ -320,6 +327,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemorySearchTool,
     rmemoryConversationSearchTool,
     rmemoryReadCosTool,
+    codebaseSearchTool,
     controlBrowserTabTool,
     controlBrowserMacroSaveTool,
     controlBrowserMacroRunTool,
@@ -339,6 +347,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemorySearchTool,
     rmemoryConversationSearchTool,
     rmemoryReadCosTool,
+    codebaseSearchTool,
   ],
 };
 
@@ -352,6 +361,7 @@ export const defaultSubagentToolset: Tool[] = [
   askQuestionTool,
   getSkillsTool,
   useSkillTool,
+  codebaseSearchTool,
   defineSubagentTool,
   invokeSubagentTool,
   sendMessageTool,

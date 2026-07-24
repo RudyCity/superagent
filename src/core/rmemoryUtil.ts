@@ -7,7 +7,7 @@ import os from "os";
 
 const globalDataDir = path.join(os.homedir(), ".superagent-r", "rmemory");
 
-class OptimizedLocalTextEmbeddingProvider {
+export class OptimizedLocalTextEmbeddingProvider {
   get dimensions(): number {
     return this.modelName.includes("nomic") ? 768 : 384;
   }
