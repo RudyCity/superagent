@@ -492,9 +492,27 @@ export async function ensureOfficeCliInstalled(onProgress?: DownloadProgressCall
 
     const isWin = process.platform === "win32";
     if (isWin) {
-      await execa("powershell.exe", ["-ExecutionPolicy", "ByPass", "-c", "irm https://d.officecli.ai/install.ps1 | iex"]);
+      const tempPs1 = path.join(os.tmpdir(), "install-officecli.ps1");
+      const url = "https://d.officecli.ai/install.ps1";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed to download officecli installer: HTTP ${res.status}`);
+      const text = await res.text();
+      await fs.writeFile(tempPs1, text);
+      await execa("powershell.exe", ["-ExecutionPolicy", "ByPass", "-File", tempPs1]);
+      try {
+        await fs.unlink(tempPs1);
+      } catch {}
     } else {
-      await execa("sh", ["-c", "curl -fsSL https://d.officecli.ai/install.sh | bash"]);
+      const tempSh = path.join(os.tmpdir(), "install-officecli.sh");
+      const url = "https://d.officecli.ai/install.sh";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed to download officecli installer: HTTP ${res.status}`);
+      const text = await res.text();
+      await fs.writeFile(tempSh, text);
+      await execa("bash", [tempSh]);
+      try {
+        await fs.unlink(tempSh);
+      } catch {}
     }
 
     if (onProgress) {
@@ -506,6 +524,7 @@ export async function ensureOfficeCliInstalled(onProgress?: DownloadProgressCall
     console.error("Warning: Failed to auto-install officecli:", err);
   }
 }
+
 
 export async function isRmemoryInstalled(): Promise<boolean> {
   try {
