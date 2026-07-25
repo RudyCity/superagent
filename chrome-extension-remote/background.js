@@ -7,25 +7,76 @@ const WS_PORT = 9223;
 const WS_URL = `ws://127.0.0.1:${WS_PORT}`;
 
 let socket = null;
-let isConnected = false;
-let reconnectTimer = null;
+let currentReconnectDelay = 1000;
 
-function connectWebSocket() {
-  if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) {
+function showNotification(title, message) {
+  try {
+    chrome.notifications.create({
+      type: "basic",
+      iconUrl: "icons/icon48.png",
+      title: title,
+      message: message,
+      priority: 1,
+    });
+  } catch {}
+}
+
+function updateBadge(status) {
+  try {
+    if (status === "connected") {
+      chrome.action.setBadgeText({ text: "ON" });
+      chrome.action.setBadgeBackgroundColor({ color: "#1e8e3e" });
+    } else if (status === "connecting") {
+      chrome.action.setBadgeText({ text: "..." });
+      chrome.action.setBadgeBackgroundColor({ color: "#f9ab00" });
+    } else {
+      chrome.action.setBadgeText({ text: "OFF" });
+      chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
+    }
+  } catch {}
+}
+
+function connectWebSocket(force = false) {
+  if (!force && socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) {
     return;
   }
+
+  if (socket) {
+    try {
+      socket.close();
+    } catch {}
+    socket = null;
+  }
+
+  chrome.storage.local.set({ remoteStatus: "connecting" });
+  updateBadge("connecting");
 
   try {
     socket = new WebSocket(WS_URL);
 
-    socket.onopen = () => {
-      isConnected = true;
-      console.log("[Superagent Remote Bridge] Connected to Superagent CLI on port", WS_PORT);
+    socket.onopen = async () => {
       chrome.storage.local.set({ remoteStatus: "connected", lastConnected: Date.now() });
+      updateBadge("connected");
+      showNotification("Superagent Bridge Connected", "WebSocket connected to CLI server on port 9223.");
+      currentReconnectDelay = 1000;
       if (reconnectTimer) {
-        clearInterval(reconnectTimer);
+        clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
+
+      // Send client metadata hello packet
+      try {
+        const tabs = await chrome.tabs.query({});
+        socket.send(
+          JSON.stringify({
+            type: "hello",
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            extensionVersion: chrome.runtime.getManifest().version,
+            tabsCount: tabs.length,
+          })
+        );
+      } catch {}
     };
 
     socket.onmessage = async (event) => {
@@ -59,27 +110,41 @@ function connectWebSocket() {
     };
 
     socket.onclose = () => {
-      isConnected = false;
       chrome.storage.local.set({ remoteStatus: "disconnected" });
+      updateBadge("disconnected");
       scheduleReconnect();
     };
 
-    socket.onerror = (err) => {
-      isConnected = false;
+    socket.onerror = () => {
       chrome.storage.local.set({ remoteStatus: "error" });
+      updateBadge("disconnected");
+      scheduleReconnect();
     };
   } catch (err) {
+    chrome.storage.local.set({ remoteStatus: "error" });
+    updateBadge("disconnected");
     scheduleReconnect();
   }
 }
 
 function scheduleReconnect() {
   if (!reconnectTimer) {
-    reconnectTimer = setInterval(() => {
+    const delay = currentReconnectDelay;
+    currentReconnectDelay = Math.min(currentReconnectDelay * 2, 30000);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
       connectWebSocket();
-    }, 3000);
+    }, delay);
   }
 }
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === "connect" || msg.action === "reconnect") {
+    currentReconnectDelay = 1000;
+    connectWebSocket(true);
+    sendResponse({ ok: true });
+  }
+});
 
 async function handleAction(action, target, value, instanceId) {
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -193,6 +258,27 @@ async function handleAction(action, target, value, instanceId) {
     default:
       return `Action '${action}' executed successfully via Superagent Remote Bridge.`;
   }
+}
+
+// Keep service worker alive and ensure persistent WebSocket bridge connection
+try {
+  chrome.alarms.create("superagentKeepAlive", { periodInMinutes: 0.5 });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === "superagentKeepAlive") {
+      connectWebSocket();
+    }
+  });
+} catch (e) {
+  console.warn("Alarm setup failed:", e);
+}
+
+// Connect immediately on browser startup
+try {
+  chrome.runtime.onStartup.addListener(() => {
+    connectWebSocket(true);
+  });
+} catch (e) {
+  console.warn("onStartup listener setup failed:", e);
 }
 
 // Connect immediately on service worker start

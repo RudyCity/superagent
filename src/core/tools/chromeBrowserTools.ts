@@ -6,7 +6,7 @@ import { promisify } from "util";
 import { Tool } from "./types.js";
 import { getChromeUserDataPath, detectChromeProfiles } from "./chromeProfileTools.js";
 import { browserControlHandler } from "./browserMacroTools.js";
-import { ensureRemoteChromeBridge } from "./remoteChromeBridge.js";
+import { ensureRemoteChromeBridge, isRemoteChromeConnected, getRemoteChromeClientMetadata, sendRemoteCommand } from "./remoteChromeBridge.js";
 
 const execAsync = promisify(exec);
 
@@ -81,27 +81,53 @@ export const chromeExtensionStatusTool: Tool = {
   },
   execute: async () => {
     await ensureRemoteChromeBridge();
-    const connected = Boolean(browserControlHandler);
+    
+    // Connected if WebSocket client is open or custom mock control handler is registered
+    const isMockHandler = Boolean(browserControlHandler && browserControlHandler !== sendRemoteCommand);
+    let connected = isRemoteChromeConnected() || isMockHandler;
+    if (!connected) {
+      const start = Date.now();
+      while (!connected && Date.now() - start < 1500) {
+        await new Promise((res) => setTimeout(res, 150));
+        connected = isRemoteChromeConnected() || isMockHandler;
+      }
+    }
 
     if (!connected) {
       return [
         "### Chrome Extension Connection Status",
         "**Status**: 🔴 Disconnected",
+        "**Bridge Port**: 9223 (WebSocket Server Listening)",
         "\n**Troubleshooting:**",
-        "1. Start Superagent server: `superagent --server`",
-        "2. Open Google Chrome and launch Superagent Chrome Extension Sidepanel.",
-        "3. Verify Sidepanel status indicator shows Connected.",
+        "1. Open Google Chrome and ensure Superagent Remote Bridge extension is enabled.",
+        "2. Click on the extension icon in Chrome toolbar to trigger WebSocket connection (ws://127.0.0.1:9223).",
       ].join("\n");
     }
 
     try {
       const instances = await browserControlHandler!("list_instances", "");
+      const meta = getRemoteChromeClientMetadata();
+      const metaLines: string[] = [];
+
+      if (meta) {
+        const uptimeSec = Math.floor((Date.now() - meta.connectedAt) / 1000);
+        metaLines.push(`**Extension Version**: ${meta.extensionVersion || "1.0.0"}`);
+        metaLines.push(`**Platform**: ${meta.platform || "N/A"}`);
+        metaLines.push(`**Open Tabs**: ${meta.tabsCount ?? "N/A"}`);
+        metaLines.push(`**Connected Duration**: ${uptimeSec}s`);
+        metaLines.push(`**Commands Executed**: ${meta.commandCount}`);
+      }
+
       return [
         "### Chrome Extension Connection Status",
         "**Status**: 🟢 Connected",
+        "**Bridge Port**: 9223 (WebSocket Server Listening)",
+        metaLines.length > 0 ? "\n**Client Metadata:**\n" + metaLines.map((l) => `- ${l}`).join("\n") : "",
         "\n**Active Extension Instances / Connected Windows:**",
         instances || "No active connected tabs reported yet.",
-      ].join("\n");
+      ]
+        .filter(Boolean)
+        .join("\n");
     } catch (err: any) {
       return `### Chrome Extension Connection Status\n**Status**: 🟡 Connected (Error listing instances: ${err.message || String(err)})`;
     }

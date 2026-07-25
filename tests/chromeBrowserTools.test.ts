@@ -17,8 +17,10 @@ describe("chromeBrowserTools", () => {
     setBrowserControlHandler(null);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     setBrowserControlHandler(null);
+    const { stopRemoteChromeBridge } = await import("../src/core/tools/remoteChromeBridge.js");
+    await stopRemoteChromeBridge();
   });
 
   test("chromeExtensionStatusTool returns disconnected status when no handler registered", async () => {
@@ -27,22 +29,47 @@ describe("chromeBrowserTools", () => {
   });
 
   test("chromeExtensionStatusTool returns connected status when handler registered", async () => {
+    const { ensureRemoteChromeBridge } = await import("../src/core/tools/remoteChromeBridge.js");
+    const { WebSocket } = await import("ws");
+
+    await ensureRemoteChromeBridge(9223);
+    const client = new WebSocket("ws://127.0.0.1:9223");
+    await new Promise((res) => client.on("open", res));
+    await new Promise((res) => setTimeout(res, 100));
+
     setBrowserControlHandler(async (action: string) => {
       if (action === "list_instances") return "Window 1 (Tabs: 2)";
       return "";
     });
 
-    const res = await chromeExtensionStatusTool.execute({});
-    expect(res).toContain("Connected");
+    try {
+      const res = await chromeExtensionStatusTool.execute({});
+      expect(res).toContain("Connected");
+    } finally {
+      client.close();
+    }
   });
 
   test("chromeExtensionStatusTool handles handler errors gracefully", async () => {
-    setBrowserControlHandler(async () => {
-      throw new Error("Bridge connection lost");
+    const { ensureRemoteChromeBridge } = await import("../src/core/tools/remoteChromeBridge.js");
+    const { WebSocket } = await import("ws");
+
+    await ensureRemoteChromeBridge(9223);
+    const client = new WebSocket("ws://127.0.0.1:9223");
+    await new Promise((res) => client.on("open", res));
+    await new Promise((res) => setTimeout(res, 100));
+
+    setBrowserControlHandler(async (action: string) => {
+      if (action === "list_instances") throw new Error("Bridge connection lost");
+      return "";
     });
 
-    const res = await chromeExtensionStatusTool.execute({});
-    expect(res).toContain("Error listing instances: Bridge connection lost");
+    try {
+      const res = await chromeExtensionStatusTool.execute({});
+      expect(res).toContain("Error listing instances: Bridge connection lost");
+    } finally {
+      client.close();
+    }
   });
 
   test("getActiveBrowserTabsTool delegates to browserControlHandler", async () => {

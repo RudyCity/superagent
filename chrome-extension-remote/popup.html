@@ -78,6 +78,26 @@
       font-family: monospace;
       color: var(--text);
     }
+    .btn-connect {
+      width: 100%;
+      margin-top: 10px;
+      padding: 8px 12px;
+      background: var(--accent);
+      color: #101214;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+    }
+    .btn-connect:hover {
+      opacity: 0.9;
+    }
+    .btn-connect:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
     .footer {
       font-size: 11px;
       color: var(--text-dim);
@@ -104,10 +124,11 @@
       <span class="info-label">Mode</span>
       <span class="info-value">Serverless CLI</span>
     </div>
+    <button id="btn-connect" class="btn-connect">Connect Bridge</button>
   </div>
 
   <div class="footer">
-    Standalone bridge connecting Chrome directly to Superagent CLI without requiring <code>superagent --server</code>.
+    Bridge connecting Chrome to Superagent CLI on port 9223 with auto-retry.
   </div>
 
   <script src="popup.js"></script>

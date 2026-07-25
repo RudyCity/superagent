@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.579] - 2026-07-25
+
+### Added
+- **Zero-Defect Policy & Prompt Deduplication**:
+  - Added `ZERO_DEFECT_POLICY_RULE` to `src/core/prompts.ts` with strict anti-pattern prohibitions (forbidding `// TODO`, `@ts-ignore`, `any`, and incomplete edits).
+  - Injected zero-defect rules into `MASTER_AGENT_SYSTEM_PROMPT`, `SUPERAGENT_SYSTEM_PROMPT`, and subagent `coder`.
+  - Consolidated reasoning rules and deduplicated edit failure instructions to optimize token context.
+
+## [1.2.578] - 2026-07-25
+
+### Added
+- **Creative Thinking & Innovation System Prompt Module**:
+  - Added `CREATIVE_THINKING_RULE` to `src/core/prompts.ts` (`CREATIVE_EXPLORATION: Evaluate at least 2-3 distinct approaches pre-implementation...`).
+  - Injected `CREATIVE_THINKING_RULE` across `MASTER_AGENT_SYSTEM_PROMPT`, `SUPERAGENT_SYSTEM_PROMPT`, `CHROME_EXTENSION_SYSTEM_PROMPT`, and subagent system prompts (`coder`, `researcher`, `reviewer`).
+
 ## [1.2.577] - 2026-07-25
 
 ### Fixed

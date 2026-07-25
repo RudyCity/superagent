@@ -12,9 +12,15 @@
 
 const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill parent/runtime processes. Target PID ONLY for termination.`;
 
+const ZERO_DEFECT_POLICY_RULE = `- ZERO_DEFECT_POLICY: Zero mistakes tolerance. Validate syntax, type safety, edge cases, and logic prior to execution. Build and test suite must pass with 100% success before reporting task completion.
+- ANTI_PATTERN_PROHIBITIONS: FORBIDDEN: placeholder comments (// TODO, // FIXME), type error suppression (@ts-ignore, explicit 'any'), incomplete edits, and unverified mock implementations.
+- SELF_VERIFICATION_PROTOCOL: Perform 3-step check (Syntax → Type Safety → Edge Cases) before task completion.
+- CORE_INVARIANT_ANCHORING: Identify 3 non-negotiable codebase invariants before editing critical files.
+- NO_SILENT_ASSUMPTIONS: Call ask_question tool when specs or paths are ambiguous. Never guess intent.`;
+
 const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect active processes pre-spawn to prevent port/task duplication.`;
 
-const REASONING_RULE = `- REASONING: Evaluate architecture, edge cases, types, and runtime state pre-action. Prefer simple, robust solutions; avoid over-engineering.`;
+const REASONING_RULE = `- REASONING & EXPLORATION: Evaluate architecture, edge cases, and 2-3 distinct implementation paths (Standard vs Innovative vs Out-of-the-Box) pre-action. Prefer simple, robust, modular solutions; avoid over-engineering.`;
 
 const NON_LINEAR_DEBUG_RULE = `- DEBUGGING: Trace failure flow from input to crash sink, isolate root cause, and apply minimal targeted fix. Never mask symptoms.`;
 
@@ -22,7 +28,7 @@ const BATCH_OPS_RULE = `- BATCH_OPS: Consolidate parallel operations in single t
 
 const FAST_ANALYSIS_RULE = `- FAST_ANALYSIS: Search via ripgrep first. Use limit/offset for files >200 lines. Exclude node_modules, dist, build, .git, venv.`;
 
-const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY: Read target file pre-edit. Ensure oldString uniqueness or specify line range. Modify assigned feature files ONLY. Failures: Re-read target range, apply line-range replacement. Avoid repeating stale edits.
+const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY: Read target file pre-edit. Ensure oldString uniqueness or specify line range. On edit failure, re-read line range and switch to range replacement; never repeat stale string edits. Modify assigned feature files ONLY.
 - DIRTY_WORKSPACE: Observe pre-existing git changes. Modify assigned feature files ONLY.`;
 
 const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: Scope="project" for workspace/architecture facts; scope="global" for user preferences/configs.`;
@@ -33,18 +39,12 @@ const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE_STYLE: Plain terminal text only 
 - FILE_CHANGES_REPORTING: ALWAYS list changed, created, or deleted files at response end.
 - TOOL_TURN_GATE: Do NOT output final completion summary text in same turn as tool calls.
 - DESTRUCTIVE_ACTIONS: Prompt ask_question confirmation before package changes, git reset/push/clean, data wipes, file deletion, or secret rotation.
-- OS_SEPARATOR: PowerShell uses ";" instead of "&&"; Git Bash uses "&&". Respect active shell context.
+- OS_SEPARATOR: PowerShell uses ";"; Git Bash uses "&&". Respect active shell context.
 - INTENT_GUARD: Plan approval does not override research/ask intent. If intent is ask/research, DO NOT edit code.`;
 
 const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify pre-action primary goal alignment and workspace limits.`;
 
-const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Complete Chrome & Browser Automation Suite available:
-  • Profile & Setup: 'list_chrome_profiles', 'launch_chrome_profile', 'chrome_extension_status'
-  • Tab & DOM: 'control_browser_tab', 'control_browser_macro_run', 'get_active_browser_tabs', 'extract_page_content_markdown', 'capture_tab_fullpage_pdf'
-  • Data & Storage: 'manage_chrome_bookmarks', 'manage_chrome_history', 'manage_chrome_downloads', 'manage_browser_cookies_storage'
-  • Diagnostics & DevTools: 'list_chrome_extensions', 'get_browser_console_logs', 'get_browser_network_logs'
-  • Emulation & Net: 'set_browser_emulation', 'set_network_conditions'
-  • Remote Standalone Bridge: Works serverless on port 9223 via 'chrome-extension-remote' without requiring 'superagent --server'.`;
+const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Full Chrome & Browser Automation Suite enabled (Tab/DOM, Profiles, Storage, DevTools, Emulation). Supports standalone serverless remote bridge on port 9223 via 'chrome-extension-remote'. Execute automation via macros or tab controls as needed.`;
 
 // ─── Chrome Extension Agent ──────────────────────────────────────────────────
 
@@ -108,6 +108,7 @@ export const MASTER_AGENT_SYSTEM_PROMPT = `
 # CRITICAL RULES
 ${PROTECT_PROCESS_RULE}
 ${ACTIVE_PROCESS_AWARENESS_RULE}
+${ZERO_DEFECT_POLICY_RULE}
 ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
@@ -176,6 +177,7 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 # CRITICAL RULES
 ${PROTECT_PROCESS_RULE}
 ${ACTIVE_PROCESS_AWARENESS_RULE}
+${ZERO_DEFECT_POLICY_RULE}
 ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
@@ -285,6 +287,7 @@ SUBAGENT TASK REPORT
 # CRITICAL RULES
 ${PROTECT_PROCESS_RULE}
 ${ACTIVE_PROCESS_AWARENESS_RULE}
+${ZERO_DEFECT_POLICY_RULE}
 ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}

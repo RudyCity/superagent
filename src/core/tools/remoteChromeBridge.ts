@@ -1,16 +1,110 @@
 import { WebSocketServer, WebSocket } from "ws";
+import fs from "fs";
+import path from "path";
+import os from "os";
 import { setBrowserControlHandler, browserControlHandler } from "./browserMacroTools.js";
 
 const DEFAULT_REMOTE_WS_PORT = 9223;
 
+export interface ClientMetadata {
+  userAgent?: string;
+  platform?: string;
+  extensionVersion?: string;
+  tabsCount?: number;
+  connectedAt: number;
+  commandCount: number;
+}
+
 let wss: WebSocketServer | null = null;
+const connectedClients = new Set<WebSocket>();
+const clientMetadataMap = new Map<WebSocket, ClientMetadata>();
 let activeClient: WebSocket | null = null;
+let pingIntervalTimer: NodeJS.Timeout | null = null;
+
+// Rate limiting state: max 30 commands per second
+let commandCountWindow = 0;
+let lastWindowReset = Date.now();
+const MAX_COMMANDS_PER_SEC = 30;
+
 const pendingRequests = new Map<
   string,
   { resolve: (value: string) => void; reject: (reason: any) => void; timeout: NodeJS.Timeout }
 >();
 
 let messageCounter = 0;
+
+function logBridgeEvent(event: string, details?: string) {
+  try {
+    const logDir = path.join(os.homedir(), ".superagent-r");
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const logFile = path.join(logDir, "bridge.log");
+    const timestamp = new Date().toISOString();
+    const line = `[${timestamp}] [BRIDGE] ${event}${details ? ` - ${details}` : ""}\n`;
+    fs.appendFileSync(logFile, line, "utf8");
+  } catch {}
+}
+
+export function getRemoteChromeClientMetadata(): ClientMetadata | null {
+  const client = getActiveClient();
+  if (!client) return null;
+  return clientMetadataMap.get(client) || null;
+}
+
+function getActiveClient(): WebSocket | null {
+  if (activeClient && activeClient.readyState === WebSocket.OPEN) {
+    return activeClient;
+  }
+  for (const client of connectedClients) {
+    if (client.readyState === WebSocket.OPEN) {
+      activeClient = client;
+      return client;
+    }
+  }
+  activeClient = null;
+  return null;
+}
+
+export function isRemoteChromeConnected(): boolean {
+  return Boolean(getActiveClient());
+}
+
+function rejectAllPendingRequests(reason: string) {
+  for (const [id, pending] of pendingRequests.entries()) {
+    clearTimeout(pending.timeout);
+    pending.reject(new Error(reason));
+  }
+  pendingRequests.clear();
+}
+
+function startPingHeartbeat() {
+  if (pingIntervalTimer) return;
+  pingIntervalTimer = setInterval(() => {
+    for (const client of connectedClients) {
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.ping();
+        } catch {
+          client.terminate();
+          connectedClients.delete(client);
+        }
+      } else {
+        connectedClients.delete(client);
+      }
+    }
+    if (connectedClients.size === 0 && pendingRequests.size > 0) {
+      rejectAllPendingRequests("All Remote Chrome connections closed.");
+    }
+  }, 20000);
+}
+
+function stopPingHeartbeat() {
+  if (pingIntervalTimer) {
+    clearInterval(pingIntervalTimer);
+    pingIntervalTimer = null;
+  }
+}
 
 /**
  * Initializes a serverless WebSocket server on port 9223 for Superagent CLI remote control.
@@ -23,20 +117,46 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
 
   return new Promise((resolve) => {
     try {
-      wss = new WebSocketServer({ port });
+      wss = new WebSocketServer({ port, host: "0.0.0.0" });
 
       wss.on("listening", () => {
-        // Register the serverless handler
         setBrowserControlHandler(sendRemoteCommand);
+        startPingHeartbeat();
+        logBridgeEvent("Server Started", `WebSocket server listening on port ${port}`);
         resolve(true);
       });
 
       wss.on("connection", (ws: WebSocket) => {
+        connectedClients.add(ws);
         activeClient = ws;
+        clientMetadataMap.set(ws, { connectedAt: Date.now(), commandCount: 0 });
+        logBridgeEvent("Client Connected", `Active clients: ${connectedClients.size}`);
+
+        ws.on("pong", () => {
+          // Client alive
+        });
 
         ws.on("message", (raw: Buffer | string) => {
           try {
             const data = JSON.parse(raw.toString());
+
+            // Handle metadata hello packet
+            if (data.type === "hello") {
+              const currentMeta = clientMetadataMap.get(ws) || { connectedAt: Date.now(), commandCount: 0 };
+              clientMetadataMap.set(ws, {
+                ...currentMeta,
+                userAgent: data.userAgent,
+                platform: data.platform,
+                extensionVersion: data.extensionVersion,
+                tabsCount: data.tabsCount,
+              });
+              logBridgeEvent(
+                "Client Metadata",
+                `Version: ${data.extensionVersion || "N/A"}, Platform: ${data.platform || "N/A"}, Tabs: ${data.tabsCount || 0}`
+              );
+              return;
+            }
+
             const { id, success, result, error } = data;
 
             if (id && pendingRequests.has(id)) {
@@ -54,20 +174,37 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
         });
 
         ws.on("close", () => {
+          connectedClients.delete(ws);
+          clientMetadataMap.delete(ws);
+          logBridgeEvent("Client Disconnected", `Remaining clients: ${connectedClients.size}`);
           if (activeClient === ws) {
             activeClient = null;
+          }
+          if (connectedClients.size === 0 && pendingRequests.size > 0) {
+            rejectAllPendingRequests("Remote Chrome Extension disconnected.");
+          }
+        });
+
+        ws.on("error", (err: any) => {
+          connectedClients.delete(ws);
+          clientMetadataMap.delete(ws);
+          logBridgeEvent("Client Socket Error", err?.message || String(err));
+          if (activeClient === ws) {
+            activeClient = null;
+          }
+          if (connectedClients.size === 0 && pendingRequests.size > 0) {
+            rejectAllPendingRequests("Remote Chrome Extension socket error.");
           }
         });
       });
 
-      wss.on("error", (err: any) => {
-        // Port taken or error occurred; if server already running elsewhere, fallback gracefully
+      wss.on("error", () => {
         if (!browserControlHandler) {
           setBrowserControlHandler(sendRemoteCommand);
         }
         resolve(false);
       });
-    } catch (err) {
+    } catch {
       if (!browserControlHandler) {
         setBrowserControlHandler(sendRemoteCommand);
       }
@@ -79,13 +216,36 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
 /**
  * Sends a command to the connected Superagent Remote Chrome Extension via WebSocket.
  */
-export function sendRemoteCommand(
+export async function sendRemoteCommand(
   action: string,
   target: string,
   value?: string,
   instanceId?: string
 ): Promise<string> {
-  if (!activeClient || activeClient.readyState !== WebSocket.OPEN) {
+  // Rate limiting check (max 30 requests / sec)
+  const now = Date.now();
+  if (now - lastWindowReset > 1000) {
+    commandCountWindow = 0;
+    lastWindowReset = now;
+  }
+  if (commandCountWindow >= MAX_COMMANDS_PER_SEC) {
+    logBridgeEvent("Rate Limit Exceeded", `Action '${action}' blocked (max ${MAX_COMMANDS_PER_SEC} req/sec)`);
+    return Promise.reject(
+      new Error(`Bridge rate limit exceeded (${MAX_COMMANDS_PER_SEC} requests/sec). Please slow down command calls.`)
+    );
+  }
+  commandCountWindow++;
+
+  let client = getActiveClient();
+  if (!client) {
+    const startTime = Date.now();
+    while (!client && Date.now() - startTime < 6000) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      client = getActiveClient();
+    }
+  }
+
+  if (!client) {
     return Promise.reject(
       new Error(
         "Superagent Remote Chrome Extension is not connected. " +
@@ -94,20 +254,39 @@ export function sendRemoteCommand(
     );
   }
 
+  // Update client metadata command counter
+  const meta = clientMetadataMap.get(client);
+  if (meta) {
+    meta.commandCount++;
+  }
+
   const id = `req_${Date.now()}_${++messageCounter}`;
+  const commandStartTime = Date.now();
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       if (pendingRequests.has(id)) {
         pendingRequests.delete(id);
+        logBridgeEvent("Command Timeout", `Action '${action}' timed out after 15s`);
         reject(new Error(`Timeout waiting for Remote Chrome Extension response to action '${action}'.`));
       }
     }, 15000);
 
-    pendingRequests.set(id, { resolve, reject, timeout });
+    pendingRequests.set(id, {
+      resolve: (res) => {
+        const duration = Date.now() - commandStartTime;
+        logBridgeEvent("Command Executed", `Action '${action}' succeeded in ${duration}ms`);
+        resolve(res);
+      },
+      reject: (err) => {
+        logBridgeEvent("Command Failed", `Action '${action}' failed: ${err?.message || String(err)}`);
+        reject(err);
+      },
+      timeout,
+    });
 
     try {
-      activeClient!.send(
+      client!.send(
         JSON.stringify({
           id,
           action,
@@ -128,20 +307,16 @@ export function sendRemoteCommand(
  * Stop serverless bridge server.
  */
 export function stopRemoteChromeBridge(): Promise<void> {
+  stopPingHeartbeat();
   return new Promise((resolve) => {
-    // Clear pending request timeouts and reject pending promises
-    for (const [id, pending] of pendingRequests.entries()) {
-      clearTimeout(pending.timeout);
-      pending.reject(new Error("Remote Chrome Bridge server stopped."));
-    }
-    pendingRequests.clear();
-
-    if (activeClient) {
+    rejectAllPendingRequests("Remote Chrome Bridge server stopped.");
+    for (const ws of connectedClients) {
       try {
-        activeClient.close();
+        ws.close();
       } catch {}
-      activeClient = null;
     }
+    connectedClients.clear();
+    activeClient = null;
 
     if (wss) {
       const server = wss;
@@ -150,7 +325,6 @@ export function stopRemoteChromeBridge(): Promise<void> {
       server.close(() => {
         resolve();
       });
-      // Fallback resolve if server.close callback is delayed
       setTimeout(resolve, 50);
     } else {
       setBrowserControlHandler(null);
