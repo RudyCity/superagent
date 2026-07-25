@@ -190,7 +190,7 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
   let renderedPlaceholder = placeholder ? chalk.grey(placeholder) : undefined;
 
   const { prefix, inserted, suffix } = getPasteSplit(localValue, pastePrefixLength, pasteSuffixLength);
-  const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));
+  const isPasteActive = isPasted && inserted.length > 500;
 
   if (isPasteActive) {
     const lineCount = inserted.split("\n").length;
@@ -250,7 +250,12 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
       if (before.length > 0) result += chalk.grey(`⋯${before.length}⋯`);
       const localCursor = cursorOffset - windowStart;
       if (localCursor < visible.length) {
-        result += visible.slice(0, localCursor) + blinkInverse(visible[localCursor]) + visible.slice(localCursor + 1);
+        const charAtCursor = visible[localCursor];
+        if (charAtCursor === "\n") {
+          result += visible.slice(0, localCursor) + blinkInverse("↵") + "\n" + visible.slice(localCursor + 1);
+        } else {
+          result += visible.slice(0, localCursor) + blinkInverse(charAtCursor) + visible.slice(localCursor + 1);
+        }
       } else {
         result += visible;
       }
@@ -262,7 +267,12 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
     } else {
       if (value.length > 0) {
         if (cursorOffset < value.length) {
-          renderedValue = value.slice(0, cursorOffset) + blinkInverse(value[value.charCodeAt(cursorOffset) === undefined ? 0 : cursorOffset]) + value.slice(cursorOffset + 1);
+          const charAtCursor = value[cursorOffset];
+          if (charAtCursor === "\n") {
+            renderedValue = value.slice(0, cursorOffset) + blinkInverse("↵") + "\n" + value.slice(cursorOffset + 1);
+          } else {
+            renderedValue = value.slice(0, cursorOffset) + blinkInverse(charAtCursor) + value.slice(cursorOffset + 1);
+          }
         } else {
           renderedValue = value;
           if (cursorOffset === value.length) {
@@ -413,11 +423,13 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
           }
         } else {
           // Regular character insertion at cursor position.
+          // Normalize CRLF / CR from terminal paste to standard LF
+          const sanitizedInput = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
           nextValue =
             localValue.slice(0, cursorOffset) +
-            input +
+            sanitizedInput +
             localValue.slice(cursorOffset);
-          nextCursorOffset = cursorOffset + input.length;
+          nextCursorOffset = cursorOffset + sanitizedInput.length;
         }
       }
 

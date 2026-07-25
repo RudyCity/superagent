@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.573] - 2026-07-25
+
+### Fixed
+- **Terminal Input & Multiline Paste**:
+  - Normalized carriage returns (`\r\n` / `\r`) from Windows Git Bash terminal paste to standard line endings (`\n`) in `ChatTextInput.tsx` to prevent line overwrites.
+  - Raised pasted text placeholder threshold to 500 characters so multi-line text input under 500 characters renders directly in input box.
+  - Added safe visual cursor indicator (`↵`) rendering over newline characters to prevent ANSI layout breakage in Ink terminal output.
+
 ## [1.2.572] - 2026-07-25
 
 ### Changed
