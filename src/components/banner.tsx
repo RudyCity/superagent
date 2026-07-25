@@ -63,7 +63,7 @@ export function Banner({ classifierStatus, embeddingStatus, workspacePath }: Ban
             <Text color="white" bold>A G E N T</Text>
             <Text color="gray"> ● </Text>
             <Text color="yellow" bold>v{version}</Text>
-            <Text color="gray"> │ </Text>
+            <Text color="gray"> • </Text>
             <Text color="cyan" bold>Workspace: {workspacePath || process.cwd()}</Text>
           </Box>
           <Box flexDirection="row">

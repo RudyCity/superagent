@@ -38,7 +38,7 @@ export function ChecklistPanel({
   const scrollIndicator = hasScroll
     ? ` [Scroll: ${checklistScrollOffset + 1}-${Math.min(totalTasks, checklistScrollOffset + maxChecklistVisible)}/${totalTasks}]`
     : "";
-  const helpText = focusArea === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : "";
+  const helpText = focusArea === "checklist" ? " [↑/▼ Scroll │ Esc Exit]" : "";
   const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
 
   // History: show the most recent completed tasks (capped)

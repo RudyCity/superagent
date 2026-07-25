@@ -1516,7 +1516,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       <Box flexDirection="row" justifyContent="space-between" paddingX={1} marginBottom={0}>
         <Text color={focusMode === "chat" ? "gray" : "cyan"}>
           ┌─── [ <Text bold color={focusMode === "chat" ? "gray" : "cyan"}>💬 CONVERSATION LOG</Text>
-          {focusMode === "chat" && <Text dimColor> [↑/▼ Scroll • Esc Exit]</Text>} ]
+          {focusMode === "chat" && <Text dimColor> [↑/▼ Scroll │ Esc Exit]</Text>} ]
         </Text>
         {scrollOffset > 0 && (
           <Text color="yellow" bold>

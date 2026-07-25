@@ -26,7 +26,7 @@ export const ActiveSubagentsPanel = memo(function ActiveSubagentsPanel({
   const scrollIndicator = hasScroll
     ? ` [Scroll: ${agentsScrollOffset + 1}-${Math.min(totalAgents, agentsScrollOffset + maxAgentsVisible)}/${totalAgents}]`
     : "";
-  const helpText = focusArea === "agents" ? " [↑/▼ Scroll • Esc Exit]" : "";
+  const helpText = focusArea === "agents" ? " [↑/▼ Scroll │ Esc Exit]" : "";
   const visibleAgents = runningAgents.slice(agentsScrollOffset, agentsScrollOffset + maxAgentsVisible);
 
   return (

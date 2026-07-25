@@ -32,7 +32,7 @@ export const ActiveProcessesPanel = memo(function ActiveProcessesPanel({
   const scrollIndicator = hasScroll
     ? ` [Scroll: ${procsScrollOffset + 1}-${Math.min(totalProcs, procsScrollOffset + maxProcsVisible)}/${totalProcs}]`
     : "";
-  const helpText = focusArea === "procs" ? " [↑/▼ Scroll • Esc Exit]" : "";
+  const helpText = focusArea === "procs" ? " [↑/▼ Scroll │ Esc Exit]" : "";
   const visibleProcs = runningProcs.slice(procsScrollOffset, procsScrollOffset + maxProcsVisible);
   const isFirstHeader = runningSubagentsCount === 0;
 

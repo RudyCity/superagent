@@ -92,7 +92,7 @@ export function RegistryPanel({
       <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
         <Text bold color={focusArea === "list" ? "gray" : "cyan"}>📡 WORKSPACE REGISTRY | {sessions.length} threads</Text>
         {focusArea === "list" && (
-          <Text color="gray" dimColor> [↑/▼ Navigate • Enter Inspect]</Text>
+          <Text color="gray" dimColor> [↑/▼ Navigate │ Enter Inspect]</Text>
         )}
       </Box>
       {sessions.length === 0 ? (

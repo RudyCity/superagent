@@ -107,7 +107,7 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
         const scrollIndicator = hasScroll
           ? ` [Scroll: ${superagentsScrollOffset + 1}-${Math.min(totalSA, superagentsScrollOffset + maxSuperagentsVisible)}/${totalSA}]`
           : "";
-        const helpText = isFocused ? " [↑/▼ Scroll • Esc Exit]" : "";
+        const helpText = isFocused ? " [↑/▼ Scroll │ Esc Exit]" : "";
         const visibleSA = runningSuperagents.slice(superagentsScrollOffset, superagentsScrollOffset + maxSuperagentsVisible);
         return (
           <Box flexDirection="column">
@@ -155,7 +155,7 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
         const scrollIndicator = hasScroll
           ? ` [Scroll: ${subagentsScrollOffset + 1}-${Math.min(totalSubs, subagentsScrollOffset + maxSubagentsVisible)}/${totalSubs}]`
           : "";
-        const helpText = isFocused ? " [↑/▼ Scroll • Esc Exit]" : "";
+        const helpText = isFocused ? " [↑/▼ Scroll │ Esc Exit]" : "";
         const visibleSubs = runningSubagents.slice(subagentsScrollOffset, subagentsScrollOffset + maxSubagentsVisible);
         return (
           <Box flexDirection="column" marginTop={0}>
@@ -200,7 +200,7 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
         const scrollIndicator = hasScroll
           ? ` [Scroll: ${procsScrollOffset + 1}-${Math.min(totalProcs, procsScrollOffset + maxProcsVisible)}/${totalProcs}]`
           : "";
-        const helpText = isFocused ? " [↑/▼ Scroll • Esc Exit]" : "";
+        const helpText = isFocused ? " [↑/▼ Scroll │ Esc Exit]" : "";
         const visibleProcs = runningProcs.slice(procsScrollOffset, procsScrollOffset + maxProcsVisible);
         return (
           <Box flexDirection="column" marginTop={0}>

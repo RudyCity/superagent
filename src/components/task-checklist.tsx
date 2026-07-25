@@ -74,7 +74,7 @@ export const TaskChecklist = memo(function TaskChecklist({
     : "";
   const helpText = isCollapsed
     ? ""
-    : (focusMode === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : " [Ctrl+T Focus]");
+    : (focusMode === "checklist" ? " [↑/▼ Scroll │ Esc Exit]" : " [Ctrl+T Focus]");
   const visibleChecklist = resolvedTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
 
   // History: show the most recent completed tasks (capped)

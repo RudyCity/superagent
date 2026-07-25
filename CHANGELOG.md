@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.576] - 2026-07-25
+
+### Fixed
+- **UI Terminal Help Text Separators**:
+  - Normalized component help text and border text separators across active agents list, banner, chat area, history panel, task checklist, status bar, and dashboard panels to standard pipe (`│`) separators.
+
 ## [1.2.575] - 2026-07-25
 
 ### Added

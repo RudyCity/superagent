@@ -22,7 +22,7 @@ export const HistoryPanel = memo(function HistoryPanel({
       <Box flexDirection="column">
         <Text bold color="yellow">
           ┌─── [ <Text bold color="yellow">📜 INPUT HISTORY</Text>
-          <Text dimColor> [↑/↓ Navigate • Enter Select • Esc Close]</Text> ]
+          <Text dimColor> [↑/↓ Navigate │ Enter Select │ Esc Close]</Text> ]
         </Text>
         <Text color="gray" dimColor>
           │  (no history yet)
@@ -55,7 +55,7 @@ export const HistoryPanel = memo(function HistoryPanel({
       <Text bold color="yellow">
         ┌─── [ <Text bold color="yellow">📜 INPUT HISTORY</Text>
         {scrollInfo && <Text color="cyan">{scrollInfo}</Text>}
-        <Text dimColor> [↑/↓ Navigate • Enter Select • Esc Close]</Text> ]
+        <Text dimColor> [↑/↓ Navigate │ Enter Select │ Esc Close]</Text> ]
       </Text>
 
       {/* Hidden above indicator */}

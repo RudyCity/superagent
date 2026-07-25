@@ -74,19 +74,19 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
           <>
             <StatusBarSpinner />
             <Text color="yellow" bold>Processing...</Text>
-            <Text color="gray"> │ </Text>
+            <Text color="gray"> • </Text>
           </>
         )}
         <Text color="cyan" bold>🤖 {activeModel}</Text>
-        <Text color="gray"> │ </Text>
+        <Text color="gray"> • </Text>
         <Text color="gray" bold>Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>
         {lastSpeed !== null && (
           <>
-            <Text color="gray"> │ </Text>
+            <Text color="gray"> • </Text>
             <Text color="yellow" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
           </>
         )}
-        <Text color="gray"> │ </Text>
+        <Text color="gray"> • </Text>
         {rmemoryStatus === "online" && (
           <Text color="magenta" bold>🧠 Mem: ON</Text>
         )}
@@ -107,18 +107,18 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
         <Text color="white">Master: </Text>
         <Text color="cyan" bold>{(masterPromptTokens + masterCompletionTokens).toLocaleString()}t </Text>
         <Text color="gray" dimColor>(▲{formatCompactNumber(masterPromptTokens)} ▼{formatCompactNumber(masterCompletionTokens)})</Text>
-        <Text color="gray"> │ </Text>
+        <Text color="gray"> • </Text>
         <Text color="white">Super: </Text>
         <Text color="magenta" bold>{(historicalSuperagentTokens || 0).toLocaleString()}t </Text>
         <Text color="gray" dimColor>({activeSuperagentsCount} act)</Text>
-        <Text color="gray"> │ </Text>
+        <Text color="gray"> • </Text>
         <Text color="white">Sub: </Text>
         <Text color="yellow" bold>{subagentTokens.toLocaleString()}t </Text>
         <Text color="gray" dimColor>({runningSubagentsCount} run)</Text>
-        <Text color="gray"> │ </Text>
+        <Text color="gray"> • </Text>
         <Text color="white">Proc: </Text>
         <Text color="gray" bold>{runningTasksCount}</Text>
-        <Text color="gray"> │ </Text>
+        <Text color="gray"> • </Text>
         <Text color="white">WT: </Text>
         <Text color="cyan" bold>{worktreeCount}</Text>
       </Box>

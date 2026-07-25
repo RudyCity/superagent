@@ -1281,11 +1281,11 @@ export function MultiAgentDashboard({
             <Box flexDirection="row" alignItems="center">
               <Text color="red" bold>S U P E R</Text>
               <Text color="white" bold>A G E N T</Text>
-              <Text color="gray"> │ </Text>
+              <Text color="gray"> • </Text>
               <Text color="yellow" bold>MULTI-AGENT SYSTEM v{multiVersion}</Text>
-              <Text color="gray"> │ </Text>
+              <Text color="gray"> • </Text>
               <Text color="cyan" bold>Workspace: {agent?.workingDirectory || process.cwd()}</Text>
-              <Text color="gray"> │ </Text>
+              <Text color="gray"> • </Text>
               <Text color="blue" bold>Branch: {gitBranch}</Text>
             </Box>
           </Box>
