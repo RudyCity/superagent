@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { Tool } from "./types.js";
+import { ensureRemoteChromeBridge } from "./remoteChromeBridge.js";
 import {
   getBrowserMacros,
   saveBrowserMacro,
@@ -50,6 +51,7 @@ export const controlBrowserTabTool: Tool = {
     required: ["action"]
   },
   async execute(args, cwd, signal) {
+    await ensureRemoteChromeBridge();
     if (!browserControlHandler) {
       return "Error: Browser control handler is not active. Please launch the Superagent Chrome Extension and connect to activate browser control.";
     }

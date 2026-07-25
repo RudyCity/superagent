@@ -6,6 +6,7 @@ import { promisify } from "util";
 import { Tool } from "./types.js";
 import { getChromeUserDataPath, detectChromeProfiles } from "./chromeProfileTools.js";
 import { browserControlHandler } from "./browserMacroTools.js";
+import { ensureRemoteChromeBridge } from "./remoteChromeBridge.js";
 
 const execAsync = promisify(exec);
 
@@ -57,6 +58,7 @@ export const getActiveBrowserTabsTool: Tool = {
     properties: {},
   },
   execute: async () => {
+    await ensureRemoteChromeBridge();
     if (!browserControlHandler) {
       return "No active browser control connection. Ensure `superagent --server` is running and Superagent Chrome Extension is active.";
     }
@@ -78,6 +80,7 @@ export const chromeExtensionStatusTool: Tool = {
     properties: {},
   },
   execute: async () => {
+    await ensureRemoteChromeBridge();
     const connected = Boolean(browserControlHandler);
 
     if (!connected) {

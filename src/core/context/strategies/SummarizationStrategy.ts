@@ -132,13 +132,19 @@ export class SummarizationStrategy implements CompactionStrategy {
       ? formatted.slice(0, MAX_FORMATTED_CHARS) + "\n[... truncated for brevity ...]"
       : formatted;
 
-    const prompt = `You are a helper system node. Summarize the following past coding assistant chat history turns extremely briefly.
-Identify:
-1. What the user's goals or requirements were.
-2. What actions the assistant took (e.g. edited files, ran commands).
-3. The resulting workspace state or any unresolved issues.
+    const prompt = `You are a helper system node. Summarize the following past coding assistant chat history turns into a clean, human-readable format.
 
-Keep the summary concise, clear, and direct. Preserve key file paths, function names, and technical decisions.
+Structure:
+### 🎯 User Goal
+- What the user requested.
+
+### 🛠️ Key Actions Taken
+- Files created, edited, or commands executed.
+
+### 🔍 Workspace Status
+- Final state, test/build status, and unresolved issues if any.
+
+Keep the summary natural, clear, direct, and formatted with clean Markdown bullet points. Preserve key file paths, function names, and technical decisions.
 
 ---
 PAST CHAT HISTORY:

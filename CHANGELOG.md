@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.577] - 2026-07-25
+
+### Fixed
+- **History Compactor & Summarization Format**:
+  - Refined compaction prompts in `HistoryCompactor.ts` and `SummarizationStrategy.ts` for cleaner, human-readable summary outputs.
+- **Browser Tools Documentation & Error Messages**:
+  - Updated target parameter descriptions across `browserMacroTools.ts` and `chromeBrowserTools.ts`.
+
 ## [1.2.576] - 2026-07-25
 
 ### Fixed
