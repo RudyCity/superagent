@@ -751,27 +751,46 @@ export class LoopIterationProcessor {
     await agent.saveHistory();
 
     if (getSettings().enableAdvisor ?? true) {
-      const advisorResult = agent.advisor.evaluateStep(toolCalls, toolResults);
+      const advisorResult = agent.advisor.evaluateStep(toolCalls, toolResults, agent.tier);
+      const healthScore = advisorResult.healthScore ?? 100;
+
       if (advisorResult.action === "warn_agent" && advisorResult.message) {
+        const warningContent = `${advisorResult.message}\n[Advisor Health Score: ${healthScore}%]${advisorResult.autoCorrectionHint ? `\n${advisorResult.autoCorrectionHint}` : ""}`;
         agent.onEvent({
           type: "text",
-          content: `\n⚠️ [Advisor] Warning: ${advisorResult.message}\n`,
+          content: `\n⚠️ [Advisor - Health Score: ${healthScore}%] Warning: ${advisorResult.message}\n`,
         });
         agent.conversation.addMessage({
           role: "user",
-          content: advisorResult.message,
+          content: warningContent,
           timestamp: Date.now(),
         });
         await agent.saveHistory();
       } else if (advisorResult.action === "pause_execution" && advisorResult.message) {
+        const pauseContent = `${advisorResult.message}\n[Advisor Health Score: ${healthScore}%]${advisorResult.autoCorrectionHint ? `\n${advisorResult.autoCorrectionHint}` : ""}`;
         agent.onEvent({
           type: "text",
-          content: `\n❌ [Advisor] Critical: ${advisorResult.message}\n`,
+          content: `\n❌ [Advisor - Health Score: ${healthScore}%] Critical: ${advisorResult.message}\n`,
         });
         agent.onEvent({
           type: "error",
-          message: advisorResult.message,
+          message: pauseContent,
         });
+
+        // Auto-quarantine subagent if this agent is a subagent instance
+        try {
+          const { subagentInstances } = await import("../tools/state.js");
+          for (const [id, instance] of subagentInstances.entries()) {
+            if (instance.agent === agent) {
+              instance.status = "quarantined";
+              instance.completedAt = Date.now();
+              instance.result = `[AUTO-QUARANTINED BY ADVISOR]: Subagent loop/error threshold exceeded. Execution safely terminated without freezing parent agent. Health Score: ${healthScore}%. Details: ${advisorResult.message}`;
+              agent.writeToLogFile("WARN", `Subagent ${id} (${instance.role}) auto-quarantined by RealtimeAdvisor.`);
+              break;
+            }
+          }
+        } catch {}
+
         return { shouldBreak: true };
       }
     }

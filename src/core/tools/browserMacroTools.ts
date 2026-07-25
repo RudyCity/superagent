@@ -31,7 +31,8 @@ export const controlBrowserTabTool: Tool = {
           "click", "type", "paste", "navigate", "scroll", "screenshot", "detect_ui", "errors", "text", "hover", "keypress", "wait", "html", "reload", "back", "forward",
           "open", "close", "list", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window",
           "top_sites", "reading_list_add", "reading_list_remove", "reading_list_get", "group_update", "group_get", "history_search", "history_delete", "history_clear", "management_list", "management_get",
-          "show_detections", "hide_detections", "dom_info", "execute_chain", "highlight_element", "list_instances"
+          "show_detections", "hide_detections", "dom_info", "execute_chain", "highlight_element", "list_instances",
+          "element_screenshot", "highlight", "hotkey", "network_logs", "manage_storage", "fill_form", "scroll_to", "eval_js", "upload_file", "performance_metrics", "emulate_viewport", "extract_markdown", "mute_tab", "detect_captcha", "capture_pdf", "set_network_conditions"
         ],
         description: "The browser action to execute."
       },

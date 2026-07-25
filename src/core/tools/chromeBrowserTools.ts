@@ -244,7 +244,7 @@ export const extractPageContentMarkdownTool: Tool = {
     }
 
     try {
-      const text = await browserControlHandler("text", "", undefined, instanceId);
+      const text = await browserControlHandler("extract_markdown", "", undefined, instanceId);
       return text || "No text content extracted from current tab.";
     } catch (err: any) {
       return `Failed to extract page content: ${err.message || String(err)}`;

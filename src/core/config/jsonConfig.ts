@@ -72,6 +72,9 @@ export interface SystemSettings {
   visionTokenSavingThreshold?: number;
   hideTimeline?: boolean;
   enableAdvisor?: boolean;
+  advisorWarningThreshold?: number;
+  advisorPauseThreshold?: number;
+  advisorErrorThreshold?: number;
   maxConcurrentWorkspaceTasks?: number;
 }
 
@@ -121,6 +124,10 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     rmemoryEmbeddingProvider: "local",
     rmemoryEmbeddingModel: "Xenova/all-MiniLM-L6-v2",
     rmemoryEmbeddingDimensions: 384,
+    enableAdvisor: true,
+    advisorWarningThreshold: 3,
+    advisorPauseThreshold: 5,
+    advisorErrorThreshold: 5,
   },
   trustedDirectories: [],
   providers: [

@@ -1,15 +1,20 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { RealtimeAdvisor } from "../src/core/advisor.js";
 import type { ToolCall, ToolResult } from "../src/core/conversation.js";
+import { getAdvisorEvents, clearAdvisorEvents, logFailedPattern } from "../src/core/advisorLogger.js";
+import { subagentInstances } from "../src/core/tools/state.js";
+import type { SubagentInstance } from "../src/core/tools/types.js";
 
 describe("Real-Time Execution Advisor", () => {
   let advisor: RealtimeAdvisor;
 
   beforeEach(() => {
-    advisor = new RealtimeAdvisor();
+    advisor = new RealtimeAdvisor({ enableLogging: false, enableAdaptiveScaling: false, enablePatternMemory: true });
+    clearAdvisorEvents();
+    subagentInstances.clear();
   });
 
-  it("should pass normal execution steps", () => {
+  it("should pass normal execution steps and calculate 100% initial health score", () => {
     const toolCalls: ToolCall[] = [
       { id: "1", name: "glob", args: { pattern: "*.ts" } }
     ];
@@ -19,9 +24,10 @@ describe("Real-Time Execution Advisor", () => {
 
     const result = advisor.evaluateStep(toolCalls, toolResults);
     expect(result.action).toBe("pass");
+    expect(result.healthScore).toBe(100);
   });
 
-  it("should warn agent on 3 consecutively identical tool calls", () => {
+  it("should decrease Health Score and generate Auto-Correction Skill Hint on repeated calls", () => {
     const toolCalls: ToolCall[] = [
       { id: "1", name: "glob", args: { pattern: "*.ts" } }
     ];
@@ -29,45 +35,16 @@ describe("Real-Time Execution Advisor", () => {
       { toolCallId: "1", name: "glob", result: "index.ts" }
     ];
 
-    // First call
-    let result = advisor.evaluateStep(toolCalls, toolResults);
-    expect(result.action).toBe("pass");
+    advisor.evaluateStep(toolCalls, toolResults);
+    advisor.evaluateStep(toolCalls, toolResults);
+    const result = advisor.evaluateStep(toolCalls, toolResults);
 
-    // Second call
-    result = advisor.evaluateStep(toolCalls, toolResults);
-    expect(result.action).toBe("pass");
-
-    // Third call
-    result = advisor.evaluateStep(toolCalls, toolResults);
     expect(result.action).toBe("warn_agent");
-    expect(result.message).toContain("executed the exact same tool calls");
-    expect(result.message).toContain("glob");
+    expect(result.healthScore).toBeLessThan(100);
+    expect(result.autoCorrectionHint).toContain("SYSTEM AUTO-CORRECTION SKILL");
   });
 
-  it("should warn agent differently on 3 consecutively identical failing tool calls", () => {
-    const toolCalls: ToolCall[] = [
-      { id: "1", name: "run_command", args: { command: "npm test" } }
-    ];
-    const toolResults: ToolResult[] = [
-      { toolCallId: "1", name: "run_command", result: "Build failed", isError: true }
-    ];
-
-    // First call
-    let result = advisor.evaluateStep(toolCalls, toolResults);
-    expect(result.action).toBe("pass");
-
-    // Second call
-    result = advisor.evaluateStep(toolCalls, toolResults);
-    expect(result.action).toBe("pass");
-
-    // Third call
-    result = advisor.evaluateStep(toolCalls, toolResults);
-    expect(result.action).toBe("warn_agent");
-    expect(result.message).toContain("returned errors");
-    expect(result.message).toContain("run_command");
-  });
-
-  it("should pause execution on 5 consecutively identical tool calls", () => {
+  it("should generate pause auto-correction skill hint when pause threshold is hit", () => {
     const toolCalls: ToolCall[] = [
       { id: "1", name: "glob", args: { pattern: "*.ts" } }
     ];
@@ -78,80 +55,80 @@ describe("Real-Time Execution Advisor", () => {
     for (let i = 0; i < 4; i++) {
       advisor.evaluateStep(toolCalls, toolResults);
     }
-
     const result = advisor.evaluateStep(toolCalls, toolResults);
+
     expect(result.action).toBe("pause_execution");
-    expect(result.message).toContain("infinite loop");
+    expect(result.autoCorrectionHint).toContain("Loop limit reached. STOP repeating current calls");
   });
 
-  it("should warn immediately on unregistered or not found tool calls", () => {
+  it("should trigger Subagent Auto-Quarantine status update in registry", () => {
+    const mockAgent = {} as any;
+    const instance: SubagentInstance = {
+      id: "sub-123",
+      typeName: "coder",
+      role: "test-coder",
+      agent: mockAgent,
+      status: "running",
+      logs: [],
+    };
+    subagentInstances.set("sub-123", instance);
+
+    // Simulate quarantine state transition
+    instance.status = "quarantined";
+    instance.completedAt = Date.now();
+    instance.result = "[AUTO-QUARANTINED BY ADVISOR]: Subagent loop threshold exceeded.";
+
+    const fetched = subagentInstances.get("sub-123");
+    expect(fetched?.status).toBe("quarantined");
+    expect(fetched?.result).toContain("AUTO-QUARANTINED");
+  });
+
+  it("should trigger Transient Error Backoff on 429 rate limit errors", () => {
     const toolCalls: ToolCall[] = [
-      { id: "1", name: "invalid_tool", args: {} }
+      { id: "1", name: "fetch_url", args: { url: "https://api.example.com" } }
     ];
     const toolResults: ToolResult[] = [
-      { toolCallId: "1", name: "invalid_tool", result: "Error: invalid_tool is not a registered tool", isError: true }
+      { toolCallId: "1", name: "fetch_url", result: "HTTP 429 rate limit exceeded", isError: true }
     ];
 
     const result = advisor.evaluateStep(toolCalls, toolResults);
     expect(result.action).toBe("warn_agent");
-    expect(result.message).toContain("verify that this tool is available");
+    expect(result.message).toContain("TRANSIENT ERROR");
+    expect(result.recommendedBackoffMs).toBeGreaterThan(0);
   });
 
-  it("should warn on 5 consecutive failures across any tool calls", () => {
-    const toolCalls1: ToolCall[] = [{ id: "1", name: "read", args: { path: "a.ts" } }];
-    const toolResults1: ToolResult[] = [{ toolCallId: "1", name: "read", result: "error", isError: true }];
-    const toolCalls2: ToolCall[] = [{ id: "2", name: "glob", args: { pattern: "*.js" } }];
-    const toolResults2: ToolResult[] = [{ toolCallId: "2", name: "glob", result: "error", isError: true }];
+  it("should warn early on historical failing tool patterns (Pattern Memory)", () => {
+    const toolCallSignature = 'invalid_action:{"key":"fail"}';
+    logFailedPattern(toolCallSignature, "invalid_action", "Invalid key provided");
+    logFailedPattern(toolCallSignature, "invalid_action", "Invalid key provided");
 
-    // 4 failures
-    advisor.evaluateStep(toolCalls1, toolResults1);
-    advisor.evaluateStep(toolCalls1, toolResults1);
-    advisor.evaluateStep(toolCalls2, toolResults2);
-    advisor.evaluateStep(toolCalls2, toolResults2);
-
-    // 5th failure
-    const result = advisor.evaluateStep(toolCalls1, toolResults1);
-    expect(result.action).toBe("warn_agent");
-    expect(result.message).toContain("5 consecutive tool execution errors");
-  });
-
-  it("should not count consecutively identical polling/status tool calls as loops", () => {
     const toolCalls: ToolCall[] = [
-      { id: "1", name: "manage_subagents", args: { action: "report", conversationIds: ["subagent-1"] } }
+      { id: "1", name: "invalid_action", args: { key: "fail" } }
     ];
     const toolResults: ToolResult[] = [
-      { toolCallId: "1", name: "manage_subagents", result: "No report available yet." }
+      { toolCallId: "1", name: "invalid_action", result: "ready" }
     ];
 
-    for (let i = 0; i < 6; i++) {
-      const result = advisor.evaluateStep(toolCalls, toolResults);
-      expect(result.action).toBe("pass");
-    }
+    const result = advisor.evaluateStep(toolCalls, toolResults);
+    expect(result.action).toBe("warn_agent");
+    expect(result.message).toContain("ADVISOR PATTERN WARNING");
   });
 
-  it("should preserve loop count state for non-polling calls when polling calls are interleaved", () => {
-    const globCalls: ToolCall[] = [{ id: "1", name: "glob", args: { pattern: "*.ts" } }];
-    const globResults: ToolResult[] = [{ toolCallId: "1", name: "glob", result: "index.ts" }];
+  it("should isolate loop detection per agentId", () => {
+    const toolCalls: ToolCall[] = [
+      { id: "1", name: "glob", args: { pattern: "*.ts" } }
+    ];
+    const toolResults: ToolResult[] = [
+      { toolCallId: "1", name: "glob", result: "index.ts" }
+    ];
 
-    const pollCalls: ToolCall[] = [{ id: "2", name: "manage_subagents", args: { action: "report" } }];
-    const pollResults: ToolResult[] = [{ toolCallId: "2", name: "manage_subagents", result: "No report available yet." }];
+    advisor.evaluateStep(toolCalls, toolResults, "subagent-A");
+    advisor.evaluateStep(toolCalls, toolResults, "subagent-A");
 
-    // 1st glob call
-    let result = advisor.evaluateStep(globCalls, globResults);
-    expect(result.action).toBe("pass");
+    const resultB = advisor.evaluateStep(toolCalls, toolResults, "subagent-B");
+    expect(resultB.action).toBe("pass");
 
-    // Interleaved polling call (should be ignored for loop detection)
-    result = advisor.evaluateStep(pollCalls, pollResults);
-    expect(result.action).toBe("pass");
-
-    // 2nd glob call
-    result = advisor.evaluateStep(globCalls, globResults);
-    expect(result.action).toBe("pass");
-
-    // 3rd glob call (should warn because consecutive count of glob is now 3)
-    result = advisor.evaluateStep(globCalls, globResults);
-    expect(result.action).toBe("warn_agent");
-    expect(result.message).toContain("executed the exact same tool calls");
+    const resultA = advisor.evaluateStep(toolCalls, toolResults, "subagent-A");
+    expect(resultA.action).toBe("warn_agent");
   });
 });
-

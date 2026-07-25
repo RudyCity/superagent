@@ -510,6 +510,22 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Advisor Status & Events routes for Chrome Extension / Web Panel
+  if (pathname === "/api/advisor/status" && req.method === "GET") {
+    const { getAdvisorMetrics } = await import("./core/advisorLogger.js");
+    const metrics = getAdvisorMetrics();
+    sendJSON(res, 200, { success: true, metrics });
+    return true;
+  }
+
+  if (pathname === "/api/advisor/events" && req.method === "GET") {
+    const { getAdvisorEvents } = await import("./core/advisorLogger.js");
+    const limit = parseInt(parsedUrl.searchParams.get("limit") || "50", 10);
+    const events = getAdvisorEvents(limit);
+    sendJSON(res, 200, { success: true, events });
+    return true;
+  }
+
   // Handle Permission Approval
   if (pathname === "/api/approve" && req.method === "POST") {
     const bodyStr = await readBody(req);

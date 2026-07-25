@@ -29,9 +29,8 @@ export const manageBrowserCookiesStorageTool: Tool = {
     }
 
     try {
-      const payload = JSON.stringify({ action, targetType });
-      const res = await browserControlHandler("execute_chain", payload, undefined, instanceId);
-      return res || `Successfully executed ${action} on ${targetType}.`;
+      const res = await browserControlHandler("manage_storage", action, targetType, instanceId);
+      return res || `Successfully executed ${action} on storage/cookies.`;
     } catch (err: any) {
       return `Failed to manage browser cookies/storage: ${err.message || String(err)}`;
     }
@@ -85,9 +84,9 @@ export const setBrowserEmulationTool: Tool = {
     }
 
     try {
-      const payload = JSON.stringify({ device, width, height, userAgent });
-      const res = await browserControlHandler("execute_chain", payload, undefined, instanceId);
-      return res || `Successfully updated browser emulation settings to preset '${device}'.`;
+      const modeStr = device === "custom" && width && height ? `${width}x${height}` : device;
+      const res = await browserControlHandler("emulate_viewport", modeStr, userAgent, instanceId);
+      return res || `Successfully updated browser emulation settings to '${modeStr}'.`;
     } catch (err: any) {
       return `Failed to update browser emulation: ${err.message || String(err)}`;
     }
@@ -135,11 +134,98 @@ export const setNetworkConditionsTool: Tool = {
     }
 
     try {
-      const payload = JSON.stringify({ throttling, blockImages, blockAds });
-      const res = await browserControlHandler("execute_chain", payload, undefined, instanceId);
+      const res = await browserControlHandler("set_network_conditions", throttling, "", instanceId);
       return res || `Updated network conditions: Throttling=${throttling}, BlockImages=${blockImages}, BlockAds=${blockAds}.`;
     } catch (err: any) {
       return `Failed to update network conditions: ${err.message || String(err)}`;
+    }
+  },
+};
+
+export const captureTabFullpagePdfTool: Tool = {
+  name: "capture_tab_fullpage_pdf",
+  description: "Capture visual screenshot or HTML content of the active browser tab.",
+  parameters: {
+    type: "object",
+    properties: {
+      instanceId: {
+        type: "string",
+        description: "Optional Chrome instance ID.",
+      },
+      mode: {
+        type: "string",
+        enum: ["screenshot", "html"],
+        description: "Capture mode: 'screenshot' (image representation) or 'html' (DOM snapshot). Defaults to 'screenshot'.",
+      },
+    },
+  },
+  execute: async ({ instanceId, mode = "screenshot" }: { instanceId?: string; mode?: string }) => {
+    if (!browserControlHandler) {
+      return "No active browser connection. Ensure `superagent --server` is running and Chrome Extension is active.";
+    }
+
+    try {
+      const actionName = mode === "screenshot" ? "capture_pdf" : "html";
+      const res = await browserControlHandler(actionName, "", "", instanceId);
+      return res || `Captured ${mode} of current tab.`;
+    } catch (err: any) {
+      return `Failed to capture tab PDF/content: ${err.message || String(err)}`;
+    }
+  },
+};
+
+export const getBrowserConsoleLogsTool: Tool = {
+  name: "get_browser_console_logs",
+  description: "Retrieve JavaScript console output, errors, and warnings from the active Chrome tab.",
+  parameters: {
+    type: "object",
+    properties: {
+      instanceId: {
+        type: "string",
+        description: "Optional Chrome instance ID.",
+      },
+    },
+  },
+  execute: async ({ instanceId }: { instanceId?: string }) => {
+    if (!browserControlHandler) {
+      return "No active browser connection. Ensure `superagent --server` is running and Chrome Extension is active.";
+    }
+
+    try {
+      const res = await browserControlHandler("errors", "", "", instanceId);
+      return res || "No console logs recorded.";
+    } catch (err: any) {
+      return `Failed to retrieve browser console logs: ${err.message || String(err)}`;
+    }
+  },
+};
+
+export const getBrowserNetworkLogsTool: Tool = {
+  name: "get_browser_network_logs",
+  description: "Retrieve network requests/responses and XHR traffic from the active Chrome tab.",
+  parameters: {
+    type: "object",
+    properties: {
+      filterPattern: {
+        type: "string",
+        description: "Optional URL filter or regex pattern.",
+      },
+      instanceId: {
+        type: "string",
+        description: "Optional Chrome instance ID.",
+      },
+    },
+  },
+  execute: async ({ filterPattern = "", instanceId }: { filterPattern?: string; instanceId?: string }) => {
+    if (!browserControlHandler) {
+      return "No active browser connection. Ensure `superagent --server` is running and Chrome Extension is active.";
+    }
+
+    try {
+      const res = await browserControlHandler("network_logs", filterPattern, "", instanceId);
+      return res || "No network requests recorded.";
+    } catch (err: any) {
+      return `Failed to retrieve browser network logs: ${err.message || String(err)}`;
     }
   },
 };

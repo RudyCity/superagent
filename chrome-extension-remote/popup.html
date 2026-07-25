@@ -12,13 +12,14 @@
       --text-dim: #9aa0a6;
       --accent: #8ab4f8;
       --success: #81c995;
+      --warning: #fdd663;
       --danger: #f28b82;
       --border: #3c4043;
     }
     body {
       margin: 0;
       padding: 16px;
-      width: 280px;
+      width: 290px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: var(--bg);
       color: var(--text);
@@ -78,6 +79,42 @@
       font-family: monospace;
       color: var(--text);
     }
+    .advisor-gauge-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .gauge-bar-bg {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .gauge-bar-fill {
+      height: 100%;
+      width: 100%;
+      background: var(--success);
+      transition: width 0.3s ease, background 0.3s ease;
+    }
+    .events-list {
+      max-height: 80px;
+      overflow-y: auto;
+      font-size: 11px;
+      color: var(--text-dim);
+      display: flex;
+      flex-col: column;
+      gap: 4px;
+    }
+    .event-item {
+      padding: 4px 6px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.2);
+    }
     .btn-connect {
       width: 100%;
       margin-top: 10px;
@@ -93,10 +130,6 @@
     }
     .btn-connect:hover {
       opacity: 0.9;
-    }
-    .btn-connect:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
     }
     .footer {
       font-size: 11px;
@@ -115,6 +148,21 @@
     </div>
   </div>
 
+  <!-- Real-time Advisor Live Gauge Card -->
+  <div class="card">
+    <div class="advisor-gauge-header">
+      <span>🛡️ Advisor Health</span>
+      <span id="advisor-health-pct" style="color: var(--success);">100%</span>
+    </div>
+    <div class="gauge-bar-bg">
+      <div id="advisor-gauge-fill" class="gauge-bar-fill"></div>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Warnings / Pauses</span>
+      <span id="advisor-counts" class="info-value">0 / 0</span>
+    </div>
+  </div>
+
   <div class="card">
     <div class="info-row">
       <span class="info-label">WebSocket Port</span>
@@ -128,7 +176,7 @@
   </div>
 
   <div class="footer">
-    Bridge connecting Chrome to Superagent CLI on port 9223 with auto-retry.
+    Bridge connecting Chrome to Superagent CLI on port 9223 with live Advisor health monitoring.
   </div>
 
   <script src="popup.js"></script>

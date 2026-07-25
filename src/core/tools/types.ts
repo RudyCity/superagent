@@ -57,7 +57,7 @@ export interface SubagentInstance {
   prompt?: string;
   agent: any;
   parentAgent?: any;
-  status: "idle" | "running" | "completed" | "paused" | "error" | "waiting";
+  status: "idle" | "running" | "completed" | "paused" | "error" | "waiting" | "quarantined";
   logs: string[];
   result?: string;
   completedAt?: number;

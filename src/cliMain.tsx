@@ -545,7 +545,83 @@ export async function runCli() {
       }
 
       if (trimmed === "/help") {
-        console.log("Commands:\n  /new   - Clear conversation history\n  /clear - Clear conversation history\n  /quit  - Exit the app");
+        console.log("Commands:\n  /advisor - Show Advisor metrics & event log summary (Subcommands: config, clear, export)\n  /new     - Clear conversation history\n  /clear   - Clear conversation history\n  /quit    - Exit the app");
+        process.stdout.write("❯ ");
+        return;
+      }
+
+      if (trimmed.startsWith("/advisor")) {
+        const { getAdvisorMetrics, getAdvisorEvents, clearAdvisorEvents, exportAdvisorEvents } = await import("./core/advisorLogger.js");
+        const { updateSettings, getSettings } = await import("./core/config/jsonConfig.js");
+        const parts = trimmed.split(" ").filter(Boolean);
+        const sub = parts[1]?.toLowerCase();
+
+        if (sub === "clear") {
+          clearAdvisorEvents();
+          console.log("\nAdvisor event logs cleared successfully.\n");
+          process.stdout.write("❯ ");
+          return;
+        }
+
+        if (sub === "export") {
+          const targetPath = parts[2];
+          const exportedPath = exportAdvisorEvents(targetPath);
+          if (exportedPath) {
+            console.log(`\nAdvisor events exported successfully to: ${exportedPath}\n`);
+          } else {
+            console.log("\nFailed to export advisor events or no events recorded.\n");
+          }
+          process.stdout.write("❯ ");
+          return;
+        }
+
+        if (sub === "config") {
+          const warn = parseInt(parts[2], 10);
+          const pause = parseInt(parts[3], 10);
+          const err = parseInt(parts[4], 10);
+
+          if (!isNaN(warn) && !isNaN(pause) && !isNaN(err)) {
+            updateSettings({
+              advisorWarningThreshold: warn,
+              advisorPauseThreshold: pause,
+              advisorErrorThreshold: err,
+            });
+            console.log(`\nUpdated Advisor Thresholds:\n  Warning Threshold: ${warn}\n  Pause Threshold  : ${pause}\n  Error Threshold  : ${err}\n`);
+          } else {
+            const current = getSettings();
+            console.log(`\nCurrent Advisor Config:\n  Warning Threshold: ${current.advisorWarningThreshold ?? 3}\n  Pause Threshold  : ${current.advisorPauseThreshold ?? 5}\n  Error Threshold  : ${current.advisorErrorThreshold ?? 5}`);
+            console.log("Usage: /advisor config <warnThreshold> <pauseThreshold> <errorThreshold>\n");
+          }
+          process.stdout.write("❯ ");
+          return;
+        }
+
+        const metrics = getAdvisorMetrics();
+        const events = getAdvisorEvents(5);
+        console.log("\n--- RealtimeAdvisor Status & Metrics ---");
+        console.log(`Total Events Logged: ${metrics.totalEvents}`);
+        console.log(`Warnings Issued    : ${metrics.totalWarnings}`);
+        console.log(`Pauses Triggered   : ${metrics.totalPauses}`);
+        if (metrics.topLoopTools.length > 0) {
+          console.log("\nTop Looped Tools:");
+          for (const item of metrics.topLoopTools) {
+            console.log(`  - ${item.tool}: ${item.count} times`);
+          }
+        }
+        if (events.length > 0) {
+          console.log("\nRecent Advisor Events:");
+          for (const e of events) {
+            console.log(`  [${e.timestamp}] [${e.action.toUpperCase()}] ${e.reason}`);
+            console.log(`  Message: ${e.message}`);
+            if (e.suggestion) {
+              console.log(`  Suggestion: ${e.suggestion}`);
+            }
+          }
+        } else {
+          console.log("\nNo advisor warning/pause events recorded yet.");
+        }
+        console.log("Subcommands: /advisor config <warn> <pause> <err> | /advisor clear | /advisor export [path]");
+        console.log("----------------------------------------\n");
         process.stdout.write("❯ ");
         return;
       }

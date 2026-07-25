@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.580] - 2026-07-25
+
+### Added
+- **Advisor Logging & Chrome Bridge Enhancements**:
+  - Added `advisorLogger.ts` for structured event tracking and session exporting.
+  - Enhanced remote Chrome extension popup, background, and manifest setup.
+  - Updated `chromeExtraTools` and `browserMacroTools` integration.
+  - Fixed `GitUtils` summary formatting for discarded file changes.
+
 ## [1.2.579] - 2026-07-25
 
 ### Added

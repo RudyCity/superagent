@@ -95,7 +95,7 @@ export function getGitDiffSummary(start: GitSnapshot | null, end: GitSnapshot | 
         if (deletedDiff !== 0) {
           parts.push(deletedDiff > 0 ? `-${deletedDiff}` : `+${-deletedDiff}`);
         }
-        const statusText = chalk.green.bold("committed to repo");
+        const statusText = chalk.yellow.bold("discarded");
         summaryLines.push(`- ${file}: ${statusText} (${parts.join(", ")})`);
       }
       continue;
