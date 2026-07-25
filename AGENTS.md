@@ -40,7 +40,8 @@ Master Agent  (orchestrator)
 - `src/core/context/strategies/PruningStrategy.ts` — Emergency pruning with summary preservation (never silent context loss)
 - `src/core/context/strategies/PinningStrategy.ts` — Preserve critical pinned messages during compaction
 - `src/core/context/SemanticAnalyzer.ts` — Topic boundary detection, importance scoring, key point extraction
-- `src/core/context/CompactionHistory.ts` — Audit trail with disk persistence for all compaction events
+- `chrome-extension-remote/` — Standalone lightweight Chrome Extension (Manifest V3) for serverless CLI remote control on port 9223.
+- `src/core/tools/remoteChromeBridge.ts` — Serverless WebSocket server (port 9223) auto-initialized on-demand by Superagent CLI tools.
 
 ## Coding Guidelines & Constraints
 - **Language — English Only**: All user-facing text strings, UI labels, log messages, comments, variable names, documentation, and any other text content MUST be written in English. No exceptions.

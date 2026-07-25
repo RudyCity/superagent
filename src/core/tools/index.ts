@@ -87,8 +87,62 @@ import {
 import { searchJournalTool } from "./academicSearchTools.js";
 import { readDocumentTool } from "./documentReadTools.js";
 import { officeCliTool } from "./officeCliTools.js";
+import { listChromeProfilesTool } from "./chromeProfileTools.js";
+import {
+  launchChromeProfileTool,
+  getActiveBrowserTabsTool,
+  chromeExtensionStatusTool,
+  manageChromeBookmarksTool,
+  extractPageContentMarkdownTool,
+  captureTabFullpagePdfTool,
+} from "./chromeBrowserTools.js";
+import {
+  manageChromeHistoryTool,
+  listChromeExtensionsTool,
+  getBrowserConsoleLogsTool,
+  getBrowserNetworkLogsTool,
+  manageChromeDownloadsTool,
+} from "./chromeAdvancedTools.js";
+import {
+  manageBrowserCookiesStorageTool,
+  setBrowserEmulationTool,
+  setNetworkConditionsTool,
+} from "./chromeExtraTools.js";
+
+export {
+  listChromeProfilesTool,
+  launchChromeProfileTool,
+  getActiveBrowserTabsTool,
+  chromeExtensionStatusTool,
+  manageChromeBookmarksTool,
+  extractPageContentMarkdownTool,
+  captureTabFullpagePdfTool,
+  manageChromeHistoryTool,
+  listChromeExtensionsTool,
+  getBrowserConsoleLogsTool,
+  getBrowserNetworkLogsTool,
+  manageChromeDownloadsTool,
+  manageBrowserCookiesStorageTool,
+  setBrowserEmulationTool,
+  setNetworkConditionsTool,
+};
 
 export const allTools: Tool[] = [
+  listChromeProfilesTool,
+  launchChromeProfileTool,
+  getActiveBrowserTabsTool,
+  chromeExtensionStatusTool,
+  manageChromeBookmarksTool,
+  extractPageContentMarkdownTool,
+  captureTabFullpagePdfTool,
+  manageChromeHistoryTool,
+  listChromeExtensionsTool,
+  getBrowserConsoleLogsTool,
+  getBrowserNetworkLogsTool,
+  manageChromeDownloadsTool,
+  manageBrowserCookiesStorageTool,
+  setBrowserEmulationTool,
+  setNetworkConditionsTool,
   searchJournalTool,
   readDocumentTool,
   officeCliTool,

@@ -1,6 +1,16 @@
 # Changelog
 
-## [1.2.574] - 2026-07-25
+## [1.2.575] - 2026-07-25
+
+### Added
+- **Complete Chrome & Browser Automation Tool Suite (15 Tools)**:
+  - Added full suite of 15 Chrome integration tools: `list_chrome_profiles`, `launch_chrome_profile`, `chrome_extension_status`, `control_browser_tab`, `control_browser_macro_run`, `get_active_browser_tabs`, `extract_page_content_markdown`, `capture_tab_fullpage_pdf`, `manage_chrome_bookmarks`, `manage_chrome_history`, `manage_chrome_downloads`, `manage_browser_cookies_storage`, `list_chrome_extensions`, `get_browser_console_logs`, `get_browser_network_logs`, `set_browser_emulation`, `set_network_conditions`.
+- **Standalone Remote Chrome Extension & Serverless CLI Bridge**:
+  - Created standalone Manifest V3 extension in `chrome-extension-remote/` (`manifest.json`, `background.js`, `popup.html`, `popup.js`, `README.md`).
+  - Added serverless WebSocket bridge `src/core/tools/remoteChromeBridge.ts` listening on port `9223` for direct CLI-to-extension control without requiring `superagent --server`.
+- **100% Comprehensive Unit Test Suite**:
+  - Added unit test suites covering all 15 Chrome tools, error boundaries, parameter options, device emulation, storage management, network throttling, and WebSocket remote bridge protocol.
+
 
 ### Fixed
 - **Paste Mode Navigation & Spinner Alignment**:

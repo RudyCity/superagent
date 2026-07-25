@@ -345,6 +345,7 @@ const RESEARCH_KW = splitKeywords([
   "grep", "cari", "cek", "check if",
   "investigate", "scan", "temukan", "telusuri",
   "optimasi", "tingkatkan", "optimize",
+  "chrome", "browser", "profile", "bookmarks", "history", "downloads", "tab", "tabs",
 ]);
 
 /** Complex task indicator keywords — split into words + phrases */
@@ -959,12 +960,20 @@ const CATEGORY_TOOLS: Record<RequestCategory, string[] | null> = {
     "fetch_url", "search_history", "load_pinned_session", "search_pinned_knowledge",
     "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos", "ask_question",
     "read_shared_memory",
+    "list_chrome_profiles", "get_active_browser_tabs", "chrome_extension_status",
+    "manage_chrome_bookmarks", "manage_chrome_history", "list_chrome_extensions",
+    "get_browser_console_logs", "get_browser_network_logs", "manage_chrome_downloads",
+    "extract_page_content_markdown", "capture_tab_fullpage_pdf",
   ],
   research: [
     "read", "glob", "grep", "ripgrep_search", "web_search", "fetch_url",
     "get_skills", "use_skill", "search_history", "load_pinned_session", "search_pinned_knowledge",
     "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos", "ask_question",
     "read_shared_memory",
+    "list_chrome_profiles", "get_active_browser_tabs", "chrome_extension_status",
+    "manage_chrome_bookmarks", "manage_chrome_history", "list_chrome_extensions",
+    "get_browser_console_logs", "get_browser_network_logs", "manage_chrome_downloads",
+    "extract_page_content_markdown", "capture_tab_fullpage_pdf",
   ],
   simple_edit: null,
   complex_task: null,

@@ -53,6 +53,27 @@ import {
   controlBrowserMacroSaveTool,
   controlBrowserMacroRunTool,
 } from "./otherTools.js";
+import { listChromeProfilesTool } from "./chromeProfileTools.js";
+import {
+  launchChromeProfileTool,
+  getActiveBrowserTabsTool,
+  chromeExtensionStatusTool,
+  manageChromeBookmarksTool,
+  extractPageContentMarkdownTool,
+  captureTabFullpagePdfTool,
+} from "./chromeBrowserTools.js";
+import {
+  manageChromeHistoryTool,
+  listChromeExtensionsTool,
+  getBrowserConsoleLogsTool,
+  getBrowserNetworkLogsTool,
+  manageChromeDownloadsTool,
+} from "./chromeAdvancedTools.js";
+import {
+  manageBrowserCookiesStorageTool,
+  setBrowserEmulationTool,
+  setNetworkConditionsTool,
+} from "./chromeExtraTools.js";
 
 import {
   invokeSuperagentTool,
@@ -106,6 +127,21 @@ export const masterToolset: Tool[] = [
   controlBrowserTabTool,
   controlBrowserMacroSaveTool,
   controlBrowserMacroRunTool,
+  listChromeProfilesTool,
+  launchChromeProfileTool,
+  getActiveBrowserTabsTool,
+  chromeExtensionStatusTool,
+  manageChromeBookmarksTool,
+  extractPageContentMarkdownTool,
+  captureTabFullpagePdfTool,
+  manageChromeHistoryTool,
+  listChromeExtensionsTool,
+  getBrowserConsoleLogsTool,
+  getBrowserNetworkLogsTool,
+  manageChromeDownloadsTool,
+  manageBrowserCookiesStorageTool,
+  setBrowserEmulationTool,
+  setNetworkConditionsTool,
   writeToFileTool,       // for planning files
   replaceFileContentTool,// for planning files
   multiReplaceFileContentTool, // for planning files
@@ -162,6 +198,21 @@ export const superagentToolset: Tool[] = [
   controlBrowserTabTool,
   controlBrowserMacroSaveTool,
   controlBrowserMacroRunTool,
+  listChromeProfilesTool,
+  launchChromeProfileTool,
+  getActiveBrowserTabsTool,
+  chromeExtensionStatusTool,
+  manageChromeBookmarksTool,
+  extractPageContentMarkdownTool,
+  captureTabFullpagePdfTool,
+  manageChromeHistoryTool,
+  listChromeExtensionsTool,
+  getBrowserConsoleLogsTool,
+  getBrowserNetworkLogsTool,
+  manageChromeDownloadsTool,
+  manageBrowserCookiesStorageTool,
+  setBrowserEmulationTool,
+  setNetworkConditionsTool,
   androidCliTool,
   readPeerSuperagentFileTool, // read files from peer Superagent worktrees
   rmemorySearchTool,

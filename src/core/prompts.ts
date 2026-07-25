@@ -38,7 +38,13 @@ const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE_STYLE: Plain terminal text only 
 
 const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify pre-action primary goal alignment and workspace limits.`;
 
-const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Use 'control_browser_tab' / macros for browser automation, DOM inspection, and tab control.`;
+const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Complete Chrome & Browser Automation Suite available:
+  • Profile & Setup: 'list_chrome_profiles', 'launch_chrome_profile', 'chrome_extension_status'
+  • Tab & DOM: 'control_browser_tab', 'control_browser_macro_run', 'get_active_browser_tabs', 'extract_page_content_markdown', 'capture_tab_fullpage_pdf'
+  • Data & Storage: 'manage_chrome_bookmarks', 'manage_chrome_history', 'manage_chrome_downloads', 'manage_browser_cookies_storage'
+  • Diagnostics & DevTools: 'list_chrome_extensions', 'get_browser_console_logs', 'get_browser_network_logs'
+  • Emulation & Net: 'set_browser_emulation', 'set_network_conditions'
+  • Remote Standalone Bridge: Works serverless on port 9223 via 'chrome-extension-remote' without requiring 'superagent --server'.`;
 
 // ─── Chrome Extension Agent ──────────────────────────────────────────────────
 

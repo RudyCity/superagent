@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Superagent Remote Bridge",
+  "version": "1.0.0",
+  "description": "Standalone lightweight remote control extension for Superagent CLI without requiring local server or sidepanel GUI.",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "scripting",
+    "storage",
+    "webNavigation",
+    "bookmarks",
+    "history",
+    "downloads"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Superagent Remote Bridge Status"
+  }
+}

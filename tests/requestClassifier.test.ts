@@ -186,6 +186,26 @@ describe("classifyHeuristic", () => {
       const result = classifyHeuristic("explore the codebase for usage patterns");
       expect(result.category).toBe("research");
     });
+
+    it("should classify 'cari profile chrome' as research", () => {
+      const result = classifyHeuristic("cari profile chrome");
+      expect(result.category).toBe("research");
+    });
+
+    it("should include Chrome tools in research toolset", () => {
+      const mockTools = [
+        { name: "list_chrome_profiles" },
+        { name: "get_active_browser_tabs" },
+        { name: "manage_chrome_bookmarks" },
+        { name: "manage_chrome_history" },
+      ] as any;
+      const tools = getToolsetForCategory("research", mockTools);
+      const names = tools.map((t) => t.name);
+      expect(names).toContain("list_chrome_profiles");
+      expect(names).toContain("get_active_browser_tabs");
+      expect(names).toContain("manage_chrome_bookmarks");
+      expect(names).toContain("manage_chrome_history");
+    });
   });
 
   describe("complex task detection", () => {

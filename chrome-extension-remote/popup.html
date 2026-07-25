@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Superagent Remote Bridge</title>
+  <style>
+    :root {
+      --bg: #1e1f20;
+      --card-bg: #2d2f31;
+      --text: #f0f4f9;
+      --text-dim: #9aa0a6;
+      --accent: #8ab4f8;
+      --success: #81c995;
+      --danger: #f28b82;
+      --border: #3c4043;
+    }
+    body {
+      margin: 0;
+      padding: 16px;
+      width: 280px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--danger);
+    }
+    .status-dot.connected {
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .info-row:last-child {
+      margin-bottom: 0;
+    }
+    .info-label {
+      color: var(--text-dim);
+    }
+    .info-value {
+      font-family: monospace;
+      color: var(--text);
+    }
+    .footer {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-align: center;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">Superagent Remote</div>
+    <div class="status-badge">
+      <div id="dot" class="status-dot"></div>
+      <span id="status-text">Disconnected</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="info-row">
+      <span class="info-label">WebSocket Port</span>
+      <span class="info-value">9223</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Mode</span>
+      <span class="info-value">Serverless CLI</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    Standalone bridge connecting Chrome directly to Superagent CLI without requiring <code>superagent --server</code>.
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
