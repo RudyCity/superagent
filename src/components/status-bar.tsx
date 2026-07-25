@@ -46,7 +46,7 @@ function LoadingIndicator() {
 
   return (
     <Text bold color="blueBright">
-      [{frames[frame]}]
+      {frames[frame]}
     </Text>
   );
 }

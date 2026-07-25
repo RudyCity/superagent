@@ -80,7 +80,7 @@ export function ThinkingSpinner({ type = "orchestrating" }: { type?: "orchestrat
   }, []);
 
   const label = type === "orchestrating" ? "ORCHESTRATING" : "PROCESSING";
-  return <Text color="yellow" bold>⚡ {label} [{spinners[frame]}] </Text>;
+  return <Text color="yellow" bold>⚡ {label} {spinners[frame]} </Text>;
 }
 
 export function ActiveStatusBadge() {

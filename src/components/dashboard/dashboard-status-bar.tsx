@@ -36,7 +36,7 @@ function StatusBarSpinner() {
     return () => clearInterval(timer);
   }, []);
 
-  return <Text color="yellow" bold>[{spinnerFrames[frame]}] </Text>;
+  return <Text color="yellow" bold>{spinnerFrames[frame]} </Text>;
 }
 
 export const DashboardStatusBar = memo(function DashboardStatusBar({

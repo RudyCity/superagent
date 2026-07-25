@@ -74,12 +74,25 @@ export class RequestProcessor {
           } else if (agent.planState === "PLANNING_PENDING") {
             const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
             const lowerInput = userInputText.toLowerCase().trim();
-            const confirmationWords = ["oke", "ok", "okay", "yes", "y", "sip", "siap", "lanjut", "lanjutkan", "proceed", "go", "approved", "lgtm", "agree", "yep", "yup", "sure", "mantap", "gas"];
+            const confirmationWords = [
+              "oke", "ok", "okay", "yes", "y", "sip", "siap", "lanjut", "lanjutkan", 
+              "proceed", "go", "approved", "approve", "lgtm", "agree", "yep", "yup", 
+              "sure", "mantap", "gas", "confirm", "konfirmasi", "confirmsi", "acc", 
+              "setuju", "deal", "perbaik", "perbaiki"
+            ];
             const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
-            const isConfirmation = confirmationWords.some(w => words.includes(w) || lowerInput === w);
+            const isConfirmation = confirmationWords.some(w => words.includes(w) || lowerInput.includes(w));
             if (isConfirmation) {
               agent.planState = "APPROVED";
               agent.simpleTaskApproved = true;
+              // Reset current classification to complex_task (full toolset) so execution is not constrained by conversation category tools
+              agent.currentClassification = {
+                category: "complex_task",
+                confidence: "high",
+                reason: "User confirmed pending plan; restored full execution toolset",
+                heuristicOnly: true,
+                classificationTokens: 0,
+              };
               agent.writeToLogFile("INFO", `Plan state transitioned from PLANNING_PENDING to APPROVED via user confirmation: "${userInputText}"`);
             }
           }

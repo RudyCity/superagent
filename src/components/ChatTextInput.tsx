@@ -363,13 +363,28 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
             /^\x08+$/.test(lastRawKeyRef.current)));
       const isDelete = key.delete && !isBackspace;
 
+      const pasteStart = pastePrefixLength;
+      const pasteEnd = pastePrefixLength + inserted.length;
+
       if (key.leftArrow) {
         if (showCursor) {
-          nextCursorOffset = Math.max(0, cursorOffset - 1);
+          if (isPasteActive && cursorOffset === pasteEnd) {
+            nextCursorOffset = pasteStart;
+          } else if (isPasteActive && cursorOffset > pasteStart && cursorOffset < pasteEnd) {
+            nextCursorOffset = pasteStart;
+          } else {
+            nextCursorOffset = Math.max(0, cursorOffset - 1);
+          }
         }
       } else if (key.rightArrow) {
         if (showCursor) {
-          nextCursorOffset = Math.min(localValue.length, cursorOffset + 1);
+          if (isPasteActive && cursorOffset === pasteStart) {
+            nextCursorOffset = pasteEnd;
+          } else if (isPasteActive && cursorOffset > pasteStart && cursorOffset < pasteEnd) {
+            nextCursorOffset = pasteEnd;
+          } else {
+            nextCursorOffset = Math.min(localValue.length, cursorOffset + 1);
+          }
         }
       } else if (isBackspace) {
         // ── Backspace: delete character BEFORE cursor ──────────────────────

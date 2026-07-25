@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.574] - 2026-07-25
+
+### Fixed
+- **Paste Mode Navigation & Spinner Alignment**:
+  - Implemented left/right arrow jump out of paste preview block in `ChatTextInput.tsx`.
+  - Cleaned up line break formatting in `RequestProcessor.ts` narrative outputs.
+  - Aligned loader UI and status bar indicator rendering across dashboard and status components.
+
 ## [1.2.573] - 2026-07-25
 
 ### Fixed
