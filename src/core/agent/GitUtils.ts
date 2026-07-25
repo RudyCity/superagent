@@ -1,3 +1,4 @@
+import chalk from "chalk";
 import { execa } from "execa";
 import path from "path";
 import fs from "fs";
@@ -94,7 +95,8 @@ export function getGitDiffSummary(start: GitSnapshot | null, end: GitSnapshot | 
         if (deletedDiff !== 0) {
           parts.push(deletedDiff > 0 ? `-${deletedDiff}` : `+${-deletedDiff}`);
         }
-        summaryLines.push(`- ${file}: committed to repo (${parts.join(", ")})`);
+        const statusText = chalk.green.bold("committed to repo");
+        summaryLines.push(`- ${file}: ${statusText} (${parts.join(", ")})`);
       }
       continue;
     }
