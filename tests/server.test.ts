@@ -543,3 +543,14 @@ describe("Session resolution via ?sessionId query param", () => {
     expect(body.agentActive).toBe(true);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Duplicate server prevention
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Duplicate server prevention", () => {
+  it("should prevent duplicate server startup and return null if port is in use", async () => {
+    const { runServer } = await import("../src/server.js");
+    const secondServer = await runServer(port, true /* silent */);
+    expect(secondServer).toBeNull();
+  });
+});

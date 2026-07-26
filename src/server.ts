@@ -1,4 +1,5 @@
 import http from "http";
+import net from "net";
 import { URL } from "url";
 import fs from "fs";
 import path from "path";
@@ -448,7 +449,37 @@ const onQuestion = (question: any, options?: string[], isMultiSelect?: boolean) 
   });
 };
 
+function isPortInUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(150);
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once("error", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.connect(port, "127.0.0.1");
+  });
+}
+
 export async function runServer(port: number, silent = false, defaultClientMode: ClientMode = "tline") {
+  const inUse = await isPortInUse(port);
+  if (inUse) {
+    if (!silent) {
+      console.warn(`\n⚠️ SuperAgent Server is already running on port ${port}.`);
+      console.log(`💡 Exiting to prevent duplicate server instance.\n`);
+      process.exit(0);
+    }
+    return null;
+  }
+
   serverDefaultClientMode = defaultClientMode;
   registerQuestionHandler(onQuestion);
 

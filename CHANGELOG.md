@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.588] - 2026-07-26
+
+### Added
+- **Single Server Instance Check**: Implemented duplicate server port detection using net.Socket before starting a new server. Exits cleanly (or returns null if silent) to prevent duplicate SuperAgent server and Python Vision server processes.
+
 ## [1.2.587] - 2026-07-26
 
 ### Added
