@@ -11,6 +11,7 @@ import { promisify } from "util";
 import { fileURLToPath } from "url";
 import { spawnRmemoryGateway } from "../rmemorySetup.js";
 import { execa } from "execa";
+import net from "net";
 
 // Active terminal window viewer state for RMemory
 let activeViewerProcess: any = null;
@@ -120,12 +121,71 @@ function hideRmemoryWindow() {
   activeCloseSignalPath = null;
 }
 
+function pingPort(port: number): Promise<boolean> {
+  if (process.env.VITEST || process.env.NODE_ENV === "test") {
+    return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(100);
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once("error", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.connect(port, "127.0.0.1");
+  });
+}
+
 // /settings command — show all settings from JSON config
 export const settingsCommand: SlashCommand = {
   name: "settings",
   description: "Show current settings (rate limit, concurrency, streaming, focus, etc.)",
-  execute(args, ctx) {
+  async execute(args, ctx) {
     const s = getSettings();
+    const isServerOnline = await pingPort(7888);
+    const isChromeBridgeOnline = await pingPort(9223);
+
+    // Import activeSessions dynamically to avoid circular dependencies
+    let activeSessionsList: any[] = [];
+    try {
+      const serverModule = await import("../../server.js");
+      if (serverModule && serverModule.activeSessions) {
+        activeSessionsList = Array.from(serverModule.activeSessions.values());
+      }
+    } catch {}
+
+    let chromeConnected = false;
+    let chromeMeta = "";
+    try {
+      const bridgeModule = await import("../tools/remoteChromeBridge.js");
+      chromeConnected = bridgeModule.isRemoteChromeConnected();
+      const meta = bridgeModule.getRemoteChromeClientMetadata();
+      if (meta) {
+        chromeMeta = ` (${meta.platform || "unknown"}, v${meta.extensionVersion || "?"})`;
+      }
+    } catch {}
+
+    const sessionLines: string[] = [];
+    if (activeSessionsList.length > 0) {
+      sessionLines.push("│ ACTIVE SERVER SESSIONS:");
+      for (const sess of activeSessionsList) {
+        const status = sess.agent?.isAgentRunning() ? "RUNNING" : "IDLE";
+        const name = sess.workspace ? path.basename(sess.workspace) : "unknown";
+        sessionLines.push(`│   • [${sess.clientMode.toUpperCase()}] ID: ${sess.sessionId.slice(0, 8)}... (${sess.mode}) [${status}]`);
+        sessionLines.push(`│     Workspace: ${sess.workspace}`);
+      }
+    } else {
+      sessionLines.push("│ ACTIVE SERVER SESSIONS: None");
+    }
+
     ctx.addLine({
       type: "system",
       content: [
@@ -154,9 +214,13 @@ export const settingsCommand: SlashCommand = {
         `│ • RMemory Model      : ${s.rmemoryEmbeddingProvider === "local" ? "nomic-embed-text-v1.5" : (s.rmemoryEmbeddingModel || "text-embedding-3-small")} (${s.rmemoryEmbeddingProvider === "local" ? 768 : (s.rmemoryEmbeddingDimensions || 1536)} dims)`,
         "│ ",
         "│ SYSTEM SERVICES STATUS",
+        `│ • SuperAgent Server  : ${isServerOnline ? "ONLINE" : "OFFLINE"} (port 7888)`,
+        `│ • Chrome Remote WSS  : ${isChromeBridgeOnline ? "ONLINE" : "OFFLINE"} (port 9223)${chromeConnected ? ` [CONNECTED${chromeMeta}]` : ""}`,
         `│ • RMemory Gateway    : ${s.enableRmemory ? "ONLINE" : "OFFLINE"} (Transcript Memory Database)`,
         `│ • Local Embedding    : ${s.enableRmemory ? "ONLINE" : "OFFLINE"} (nomic-embed-text-v1.5 via Transformers.js)`,
         `│ • Local Router       : ${s.classifierEnabled !== false ? "ONLINE" : "OFFLINE"} (Supra-Router-51M-ONNX via Transformers.js)`,
+        "│ ",
+        ...sessionLines,
         "│ ",
         "└─────────────────────────────────",
         "Configure these settings using:",

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.587] - 2026-07-26
+
+### Added
+- **Server Status in Settings**: Added SuperAgent API server (port 7888) and Chrome Remote WSS bridge (port 9223) online/offline detection status to `/settings` command output.
+- **Active Server Sessions**: Included list of all active server sessions (showing clientMode, sessionId, workspace path, and running/idle status) under a new section in `/settings` command output.
+
 ## [1.2.586] - 2026-07-26
 
 ### Fixed

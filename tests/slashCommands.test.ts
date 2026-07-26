@@ -538,6 +538,9 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(content).toContain("Concurrency Limit  : 1 (enabled)");
     expect(content).toContain("Rate Limit (RPM)   : 30 RPM");
     expect(content).toContain("Limit Capacity     : 5");
+    expect(content).toContain("SuperAgent Server  :");
+    expect(content).toContain("Chrome Remote WSS  :");
+    expect(content).toContain("ACTIVE SERVER SESSIONS:");
   });
 
   it("should trigger model downloads via /setting-rmemory download and /setting-classifier download", async () => {
