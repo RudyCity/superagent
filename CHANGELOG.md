@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.589] - 2026-07-26
+
+### Added
+- **Chrome Remote WSS Bridge Auto-Start**: Auto-start the Chrome Remote WSS WebSocket bridge server on port 9223 immediately when the SuperAgent API server starts (unless running inside a unit test environment). This allows Chrome Remote Extensions to connect immediately upon opening without waiting for an on-demand tool trigger.
+
 ## [1.2.588] - 2026-07-26
 
 ### Added

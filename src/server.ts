@@ -595,5 +595,13 @@ export async function runServer(port: number, silent = false, defaultClientMode:
     }
   });
 
+  // Start the Chrome Remote WSS bridge silently in the background if not in a test environment
+  if (!process.env.VITEST && process.env.NODE_ENV !== "test") {
+    try {
+      const { ensureRemoteChromeBridge } = await import("./core/tools/remoteChromeBridge.js");
+      ensureRemoteChromeBridge().catch(() => {});
+    } catch {}
+  }
+
   return server;
 }
