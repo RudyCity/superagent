@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.593] - 2026-07-26
+
+### Fixed
+- **Tab Autocomplete Text Preservation**: Fixed Tab autocomplete replacing the entire input line when `/skill-*` or any slash command is typed mid-sentence. Now preserves all text before and after the slash command trigger during Tab completion.
+
 ## [1.2.592] - 2026-07-26
 
 ### Fixed

@@ -4,7 +4,7 @@ import type { ChatLinePosition } from "./useMouseScroll.js";
 import path from "path";
 import fs from "fs";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/responseScroll.js";
-import { getPasteSplit, filterSuggestions, getInsertion } from "../utils/text.js";
+import { getPasteSplit, filterSuggestions, getInsertion, getActiveCommandContext } from "../utils/text.js";
 import { reconstructChatLines } from "../utils/uiHelpers.js";
 import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders, getActiveProviderName, getResolvedModelWithProvider, getTierModel, getEffectiveMasterModel, getSettings } from "../core/config.js";
 import { getDefaultModel } from "../core/slash-commands.js";
@@ -2127,6 +2127,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
 
     if (key.tab && !isProcessing) {
       if (suggestions && suggestions.length > 0) {
+        const context = getActiveCommandContext(input, input.length);
+        const prefixBeforeTrigger = context ? input.slice(0, context.triggerIndex) : "";
+
         if (!lastTabPrefix) {
           setLastTabPrefix(input);
         }
@@ -2136,10 +2139,12 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           nextIndex = (currentMatchIndex + 1) % suggestions.length;
         }
         if (suggestions.length === 1) {
-          setInput(suggestions[0] + " ");
+          const selected = suggestions[0];
+          setInput(prefixBeforeTrigger + selected + " ");
           setLastTabPrefix(null);
         } else {
-          setInput(suggestions[nextIndex]);
+          const selected = suggestions[nextIndex];
+          setInput(prefixBeforeTrigger + selected);
         }
         if (setIsPasted) {
           setIsPasted(false);
