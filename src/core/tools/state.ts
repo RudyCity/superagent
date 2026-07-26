@@ -184,6 +184,9 @@ export function loadAndSyncPersistedTasks(): void {
           changed = true;
         }
       } else {
+        if (item.hasExited) {
+          continue;
+        }
         const restoredTask: BackgroundTask = {
           id: item.id,
           command: item.command,

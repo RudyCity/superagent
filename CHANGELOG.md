@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.590] - 2026-07-26
+
+### Fixed
+- **Background Task Sync Loop**: Fixed an infinite loop in background task notifications by preventing the restoration of already-completed tasks from the SQLite database to the active memory map.
+
 ## [1.2.589] - 2026-07-26
 
 ### Added
