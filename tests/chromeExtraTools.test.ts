@@ -16,10 +16,13 @@ describe("chromeExtraTools", () => {
   });
 
   test("manageBrowserCookiesStorageTool delegates get/clear to handler", async () => {
-    setBrowserControlHandler(async (action: string, target: string) => {
+    setBrowserControlHandler(async (action: string, target: string, value?: string) => {
       if (action === "execute_chain") {
         const data = JSON.parse(target);
         return `Storage action: ${data.action} on ${data.targetType}`;
+      }
+      if (action === "manage_storage") {
+        return `Storage action: ${target} on ${value}`;
       }
       return "";
     });
@@ -34,6 +37,9 @@ describe("chromeExtraTools", () => {
         const data = JSON.parse(target);
         return `Emulating device: ${data.device}`;
       }
+      if (action === "emulate_viewport") {
+        return `Emulating device: ${target}`;
+      }
       return "";
     });
 
@@ -46,6 +52,9 @@ describe("chromeExtraTools", () => {
       if (action === "execute_chain") {
         const data = JSON.parse(target);
         return `Throttling: ${data.throttling}, BlockImages: ${data.blockImages}`;
+      }
+      if (action === "set_network_conditions") {
+        return `Throttling: ${target}, BlockImages: true`;
       }
       return "";
     });

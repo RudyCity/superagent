@@ -93,7 +93,7 @@ describe("chromeBrowserTools", () => {
 
   test("extractPageContentMarkdownTool extracts text via browserControlHandler", async () => {
     setBrowserControlHandler(async (action: string) => {
-      if (action === "text") return "Heading Content Body Text";
+      if (action === "extract_markdown" || action === "text") return "Heading Content Body Text";
       return "";
     });
 

@@ -968,6 +968,9 @@ const CATEGORY_TOOLS: Record<RequestCategory, string[] | null> = {
     "manage_chrome_bookmarks", "manage_chrome_history", "list_chrome_extensions",
     "get_browser_console_logs", "get_browser_network_logs", "manage_chrome_downloads",
     "extract_page_content_markdown", "capture_tab_fullpage_pdf",
+    "control_browser_tab", "control_browser_macro_save", "control_browser_macro_run",
+    "run_headless_browser", "simulate_virtual_cursor", "control_isolated_cdp",
+    "manage_browser_cookies_storage", "set_browser_emulation", "set_network_conditions"
   ],
   research: [
     "read", "glob", "grep", "ripgrep_search", "web_search", "fetch_url",
@@ -978,6 +981,9 @@ const CATEGORY_TOOLS: Record<RequestCategory, string[] | null> = {
     "manage_chrome_bookmarks", "manage_chrome_history", "list_chrome_extensions",
     "get_browser_console_logs", "get_browser_network_logs", "manage_chrome_downloads",
     "extract_page_content_markdown", "capture_tab_fullpage_pdf",
+    "control_browser_tab", "control_browser_macro_save", "control_browser_macro_run",
+    "run_headless_browser", "simulate_virtual_cursor", "control_isolated_cdp",
+    "manage_browser_cookies_storage", "set_browser_emulation", "set_network_conditions"
   ],
   simple_edit: null,
   complex_task: null,

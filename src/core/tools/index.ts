@@ -108,6 +108,11 @@ import {
   setBrowserEmulationTool,
   setNetworkConditionsTool,
 } from "./chromeExtraTools.js";
+import {
+  runHeadlessBrowserTool,
+  simulateVirtualCursorTool,
+  controlIsolatedCdpTool,
+} from "./advancedAutomationTools.js";
 
 export {
   listChromeProfilesTool,
@@ -125,9 +130,15 @@ export {
   manageBrowserCookiesStorageTool,
   setBrowserEmulationTool,
   setNetworkConditionsTool,
+  runHeadlessBrowserTool,
+  simulateVirtualCursorTool,
+  controlIsolatedCdpTool,
 };
 
 export const allTools: Tool[] = [
+  runHeadlessBrowserTool,
+  simulateVirtualCursorTool,
+  controlIsolatedCdpTool,
   listChromeProfilesTool,
   launchChromeProfileTool,
   getActiveBrowserTabsTool,

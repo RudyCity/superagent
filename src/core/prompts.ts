@@ -28,7 +28,7 @@ const BATCH_OPS_RULE = `- BATCH_OPS: Consolidate parallel operations in single t
 
 const FAST_ANALYSIS_RULE = `- FAST_ANALYSIS: Search via ripgrep first. Use limit/offset for files >200 lines. Exclude node_modules, dist, build, .git, venv.`;
 
-const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY: Read target file pre-edit. Ensure oldString uniqueness or specify line range. On edit failure, re-read line range and switch to range replacement; never repeat stale string edits. Modify assigned feature files ONLY.
+const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY: Read target file pre-edit. Ensure oldString uniqueness or specify line range. Modify assigned feature files ONLY. Failures: Re-read target range, apply line-range replacement. Avoid repeating stale edits.
 - DIRTY_WORKSPACE: Observe pre-existing git changes. Modify assigned feature files ONLY.`;
 
 const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: Scope="project" for workspace/architecture facts; scope="global" for user preferences/configs.`;
@@ -98,10 +98,9 @@ if user_requests_web_task:
         CALL control_browser_macro_run(name, args)
     else:
         CALL control_browser_tab(action:'detect_ui')
+        RESEARCH page structure, dynamic elements, and selectors via control_browser_tab first
         if sequential_workflow:
             CALL control_browser_tab(action:'execute_chain', target:JSON_string_of_steps)
-        else:
-            RESEARCH via control_browser_tab
         SAVE via control_browser_macro_save(name, steps)
         RUN via control_browser_macro_run(name, args)
 
@@ -271,7 +270,7 @@ export const SUBAGENT_SYSTEM_PROMPTS: Record<string, string> = {
 ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
-- RESEARCH: Use search, grep, ripgrep to map codebase Graph of Thought (GoT).
+- RESEARCH: Use search, grep, ripgrep to map codebase Graph of Thought (GoT). If tasked with web or browser automation research, use browser control and Chrome tools to analyze page structure, detect UI elements, and verify selectors/actions before reporting findings.
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 - SKILL_CHECK: CALL get_skills(query). If found: CALL use_skill(name).

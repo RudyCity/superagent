@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.585] - 2026-07-26
+
+### Optimized
+- **Browser Automation Research Capabilities**: Added active browser tab control, emulation, simulation, and macro tools to Allowed Toolsets in the research and question categories in `src/core/requestClassifier.ts`.
+- **Researcher Subagent**: Equipped the researcher subagent in `src/core/tools/toolsets.ts` with all advanced Chrome and emulation tools. Modified researcher system prompt in `src/core/prompts.ts` to support page and element structure analysis.
+- **Chrome Extension Prompt**: Restructured Chrome Extension logic gates in `src/core/prompts.ts` to enforce page research before saving/running macros.
+
+### Fixed
+- **Tool Registry Consistency**: Registered advanced automation tools (`run_headless_browser`, `simulate_virtual_cursor`, `control_isolated_cdp`) in the tool registry index `src/core/tools/index.ts`.
+- **Browser Control Test Mocks**: Updated `tests/chromeBrowserTools.test.ts` and `tests/chromeExtraTools.test.ts` to mock direct action commands correctly.
+
 ## [1.2.584] - 2026-07-25
 
 ### Updated
