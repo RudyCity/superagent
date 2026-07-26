@@ -106,27 +106,50 @@ function stopPingHeartbeat() {
   }
 }
 
+// Maintain a registry of active WebSocketServer instances per port to prevent EADDRINUSE cycles
+const activeServers = new Map<number, WebSocketServer>();
+
 /**
  * Initializes a serverless WebSocket server on port 9223 for Superagent CLI remote control.
  * Allows CLI tools to communicate directly with Superagent Remote Chrome Extension without running `superagent --server`.
  */
 export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT): Promise<boolean> {
-  if (wss) {
+  const existingWss = activeServers.get(port);
+  if (existingWss) {
+    wss = existingWss;
+    if (!browserControlHandler) {
+      setBrowserControlHandler(sendRemoteCommand);
+    }
     return Promise.resolve(true);
+  }
+
+  if (wss) {
+    try {
+      const addr = wss.address();
+      if (addr && typeof addr === "object" && addr.port === port) {
+        activeServers.set(port, wss);
+        if (!browserControlHandler) {
+          setBrowserControlHandler(sendRemoteCommand);
+        }
+        return Promise.resolve(true);
+      }
+    } catch {}
   }
 
   return new Promise((resolve) => {
     try {
-      wss = new WebSocketServer({ port, host: "0.0.0.0" });
+      const server = new WebSocketServer({ port, host: "0.0.0.0" });
+      wss = server;
+      activeServers.set(port, server);
 
-      wss.on("listening", () => {
+      server.on("listening", () => {
         setBrowserControlHandler(sendRemoteCommand);
         startPingHeartbeat();
         logBridgeEvent("Server Started", `WebSocket server listening on port ${port}`);
         resolve(true);
       });
 
-      wss.on("connection", (ws: WebSocket) => {
+      server.on("connection", (ws: WebSocket) => {
         connectedClients.add(ws);
         activeClient = ws;
         clientMetadataMap.set(ws, { connectedAt: Date.now(), commandCount: 0 });
@@ -152,7 +175,7 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
               });
               logBridgeEvent(
                 "Client Metadata",
-                `Version: ${data.extensionVersion || "N/A"}, Platform: ${data.platform || "N/A"}, Tabs: ${data.tabsCount || 0}`
+                `Version: ${data.extensionVersion || "N/A"}.. Platform: ${data.platform || "N/A"}, Tabs: ${data.tabsCount || 0}`
               );
               return;
             }
@@ -198,13 +221,19 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
         });
       });
 
-      wss.on("error", () => {
+      server.on("error", (err: any) => {
+        activeServers.delete(port);
+        if (wss === server) {
+          wss = null;
+        }
         if (!browserControlHandler) {
           setBrowserControlHandler(sendRemoteCommand);
         }
+        logBridgeEvent("Server Socket Error", err?.message || String(err));
         resolve(false);
       });
     } catch {
+      activeServers.delete(port);
       if (!browserControlHandler) {
         setBrowserControlHandler(sendRemoteCommand);
       }
@@ -212,6 +241,35 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
     }
   });
 }
+
+// Clean up all active WebSocket servers on process exit to release ports immediately
+function setupExitHooks() {
+  const cleanup = () => {
+    for (const [port, server] of activeServers.entries()) {
+      try {
+        server.close();
+        logBridgeEvent("Exit Hook Cleanup", `Closed WebSocket server on port ${port}`);
+      } catch {}
+    }
+    activeServers.clear();
+    wss = null;
+    stopPingHeartbeat();
+  };
+
+  process.once("exit", cleanup);
+  process.once("SIGINT", () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.once("SIGTERM", () => {
+    cleanup();
+    process.exit(0);
+  });
+}
+
+// Initialize exit hooks registration
+setupExitHooks();
+
 
 /**
  * Sends a command to the connected Superagent Remote Chrome Extension via WebSocket.

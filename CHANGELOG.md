@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.586] - 2026-07-26
+
+### Fixed
+- **Tool Filtering During Active Plans**: Bypassed request-classification tool filtering in `ContextBuilder.ts` and `LoopIterationProcessor.ts` when a plan is active (`planState !== "IDLE"`) or the agent is a subagent. This fixes a critical bug where short user replies like "lanjut" disable all tools during plan execution.
+- **Plan Prompt Injection**: Ensured plan notices and rules are never skipped in the system prompt when a plan is active or the agent is a subagent.
+- **Tool Parameter Description Parsing**: Added more parameter aliases (`AbsolutePath`, `absolutePath`, `file`) to `permissions.ts` for robust path resolution in tool descriptions.
+
 ## [1.2.585] - 2026-07-26
 
 ### Optimized

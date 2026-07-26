@@ -160,4 +160,39 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
     expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
     expect(toolsPassed.length).toBe(expectedToolNames.length);
   });
+
+  it("should NOT filter tools based on classification category when planState is active (not IDLE)", async () => {
+    const onEvent = vi.fn();
+    const onPermission = vi.fn().mockResolvedValue(true);
+    const onQuestion = vi.fn();
+
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.tier = "single";
+    agent.planState = "APPROVED";
+    agent.currentClassification = {
+      category: "conversation",
+      confidence: "high",
+      reason: "Short acknowledgment",
+      heuristicOnly: true,
+      classificationTokens: 0,
+    };
+
+    let toolsPassed: any[] = [];
+    vi.mocked(streamText).mockImplementation(({ tools }: any) => {
+      toolsPassed = Object.keys(tools || {});
+      return {
+        fullStream: (async function* () {
+          yield { type: "text-delta", textDelta: "Test finished" };
+        })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    await agent.sendMessage("lanjut");
+
+    const expectedToolNames = superagentToolset.map((t) => t.name);
+    // Tools should NOT be filtered to empty array because planState is active
+    expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
+    expect(toolsPassed.length).toBe(expectedToolNames.length);
+  });
 });

@@ -96,14 +96,17 @@ export class ContextBuilder {
     let filteredToolDefs = toolDefs;
     if (agent.currentClassification) {
       try {
-        const { getToolsetForCategory } = await import("../requestClassifier.js");
-        const filteredTools = getToolsetForCategory(agent.currentClassification.category, toolsToUse || []);
-        if (filteredTools.length !== (toolsToUse?.length ?? toolDefs.length)) {
-          filteredToolDefs = filteredTools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: t.parameters,
-          }));
+        const shouldBypassFilter = agent.planState !== "IDLE" || agent.tier === "subagent";
+        if (!shouldBypassFilter) {
+          const { getToolsetForCategory } = await import("../requestClassifier.js");
+          const filteredTools = getToolsetForCategory(agent.currentClassification.category, toolsToUse || []);
+          if (filteredTools.length !== (toolsToUse?.length ?? toolDefs.length)) {
+            filteredToolDefs = filteredTools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters,
+            }));
+          }
         }
       } catch {}
     }
@@ -338,8 +341,10 @@ export class ContextBuilder {
     if (agent.currentClassification) {
       try {
         const { shouldSkipPlanInjection, getCategoryPromptAddendum } = await import("../requestClassifier.js");
-        classifierSkipPlan = shouldSkipPlanInjection(agent.currentClassification.category);
-        classifierPromptAddendum = getCategoryPromptAddendum(agent.currentClassification.category);
+        const category = agent.currentClassification.category;
+        const shouldBypassFilter = agent.planState !== "IDLE" || agent.tier === "subagent";
+        classifierSkipPlan = shouldSkipPlanInjection(category) && !shouldBypassFilter;
+        classifierPromptAddendum = getCategoryPromptAddendum(category);
       } catch {}
     }
 

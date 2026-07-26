@@ -484,8 +484,8 @@ export function getToolDescription(
   toolCall: ToolCall
 ): string {
   const args = toolCall.args;
-  /** Safely resolve file path from common LLM aliases (filePath, file_path, path, TargetFile, filePaths) */
-  let fp = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile) as string | undefined;
+  /** Safely resolve file path from common LLM aliases (filePath, file_path, path, TargetFile, file, AbsolutePath, absolutePath, filePaths) */
+  let fp = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile ?? args.file ?? args.AbsolutePath ?? args.absolutePath) as string | undefined;
   if (!fp && args.filePaths && Array.isArray(args.filePaths) && args.filePaths.length > 0) {
     const firstPath = extractFilePath(args.filePaths[0]) ?? "(invalid)";
     if (args.filePaths.length === 1) {

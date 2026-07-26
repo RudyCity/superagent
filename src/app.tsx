@@ -111,13 +111,13 @@ export function App({
 }) {
   const { exit } = useApp();
   const [lines, _setLines] = useState<ChatLine[]>([]);
+  const linesRef = useRef<ChatLine[]>([]);
   const setLines = useCallback((val: ChatLine[] | ((prev: ChatLine[]) => ChatLine[])) => {
     _setLines((prev) => {
       const next = typeof val === "function" ? val(prev) : val;
-      if (next.length > 1000) {
-        return next.slice(-1000);
-      }
-      return next;
+      const finalVal = next.length > 1000 ? next.slice(-1000) : next;
+      linesRef.current = finalVal;
+      return finalVal;
     });
   }, []);
   const [input, setInput] = useState("");
@@ -372,18 +372,31 @@ export function App({
   /** Append a tool-related line (tool_start/tool_end) as a child of the last assistant message */
   const addToolChild = useCallback((child: ChatLine) => {
     setLines((prev) => {
-      // Find the last assistant line
-      for (let i = prev.length - 1; i >= 0; i--) {
-        if (prev[i].type === "assistant") {
-          const updated = [...prev];
-          const parent = { ...updated[i] };
-          parent.children = [...(parent.children || []), child];
-          updated[i] = parent;
-          return updated;
-        }
+      if (prev.length === 0) {
+        const newAssistant: ChatLine = {
+          type: "assistant",
+          content: "",
+          timestamp: Date.now(),
+          children: [child],
+        };
+        return [...prev, newAssistant];
       }
-      // Fallback: no assistant line found, add as top-level
-      return [...prev, child];
+      const lastLine = prev[prev.length - 1];
+      if (lastLine.type === "assistant") {
+        const updated = [...prev];
+        const parent = { ...updated[prev.length - 1] };
+        parent.children = [...(parent.children || []), child];
+        updated[prev.length - 1] = parent;
+        return updated;
+      } else {
+        const newAssistant: ChatLine = {
+          type: "assistant",
+          content: "",
+          timestamp: Date.now(),
+          children: [child],
+        };
+        return [...prev, newAssistant];
+      }
     });
   }, []);
 
@@ -1600,11 +1613,6 @@ export function App({
           if (content || reasoning) {
             flushBuffer();
           } else {
-            addLine({
-              type: "assistant",
-              content: "",
-              timestamp: Date.now(),
-            });
             streamBufferRef.current = "";
             reasoningBufferRef.current = "";
             setStreamDisplay("");
