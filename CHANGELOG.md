@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.591] - 2026-07-26
+
+### Fixed
+- **Inline Trigger Slash Suggestions**: Fixed command suggestions and Tab autocomplete failing to trigger when `/` or `!` is typed in the middle or end of a sentence. Uses `getActiveCommandContext` to detect active command triggers anywhere in the input line.
+
 ## [1.2.590] - 2026-07-26
 
 ### Fixed

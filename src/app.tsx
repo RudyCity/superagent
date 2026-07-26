@@ -16,7 +16,7 @@ import {
 import fs from "fs/promises";
 import fsSync from "fs";
 import { handleSlashCommand, getDefaultModel } from "./core/slash-commands.js";
-import { registry } from "./core/commands/registry.js";
+import { registry } from "./core/commands/index.js";
 import { createCheckpoint, terminateActiveTasksAndSubagents } from "./core/checkpoints.js";
 import { getToolDescription } from "./core/permissions.js";
 import path from "path";
@@ -26,7 +26,7 @@ import { ActiveAgentsList } from "./components/active-agents-list.js";
 import { TaskChecklist } from "./components/task-checklist.js";
 import { HistoryPanel } from "./components/history-panel.js";
 import { execa } from "execa";
-import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions, getInsertion, getPasteSplit, stripSgrMouseSequences, updatePasteState } from "./utils/text.js";
+import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions, getInsertion, getPasteSplit, stripSgrMouseSequences, updatePasteState, getActiveCommandContext } from "./utils/text.js";
 import { reconstructChatLines } from "./utils/uiHelpers.js";
 import { getTruncatedAssistantIndexes } from "./utils/responseScroll.js";
 import { wrapTextForDisplay } from "./utils/responseScroll.js";
@@ -972,10 +972,13 @@ export function App({
   ];
 
   const getSuggestions = (originalInput = input) => {
-    const isBang = originalInput.startsWith("!");
-    let currentInput = originalInput;
+    const context = getActiveCommandContext(originalInput, originalInput.length);
+    if (!context) return [];
+
+    const { commandSegment, isBang } = context;
+    let currentInput = commandSegment;
     if (isBang) {
-      currentInput = `/terminal ${originalInput.slice(1).trim()}`;
+      currentInput = `/terminal ${commandSegment.slice(1).trim()}`;
     }
 
     const getRawSuggestions = () => {

@@ -2126,61 +2126,59 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     if (key.tab && !isProcessing) {
-      if (input.startsWith("/") || input.startsWith("!")) {
-        if (suggestions && suggestions.length > 0) {
-          if (!lastTabPrefix) {
-            setLastTabPrefix(input);
-          }
-          const currentMatchIndex = suggestions.indexOf(input);
-          let nextIndex = 0;
-          if (currentMatchIndex !== -1) {
-            nextIndex = (currentMatchIndex + 1) % suggestions.length;
-          }
-          if (suggestions.length === 1) {
-            setInput(suggestions[0] + " ");
-            setLastTabPrefix(null);
-          } else {
-            setInput(suggestions[nextIndex]);
-          }
-          if (setIsPasted) {
-            setIsPasted(false);
-          }
-          return;
+      if (suggestions && suggestions.length > 0) {
+        if (!lastTabPrefix) {
+          setLastTabPrefix(input);
         }
-
-        const query = input;
-        const matching = commands.filter((c) => c.startsWith(query));
-        if (matching.length === 1 && matching[0]) {
-          setInput(matching[0] + " ");
+        const currentMatchIndex = suggestions.indexOf(input);
+        let nextIndex = 0;
+        if (currentMatchIndex !== -1) {
+          nextIndex = (currentMatchIndex + 1) % suggestions.length;
+        }
+        if (suggestions.length === 1) {
+          setInput(suggestions[0] + " ");
           setLastTabPrefix(null);
-        } else if (matching.length > 1) {
-          let commonPrefix = query;
-          let possible = true;
-          while (possible) {
-            const nextChar = matching[0]?.[commonPrefix.length];
-            if (!nextChar) break;
-            for (let i = 1; i < matching.length; i++) {
-              if (matching[i]?.[commonPrefix.length] !== nextChar) {
-                possible = false;
-                break;
-              }
-            }
-            if (possible) {
-              commonPrefix += nextChar;
+        } else {
+          setInput(suggestions[nextIndex]);
+        }
+        if (setIsPasted) {
+          setIsPasted(false);
+        }
+        return;
+      }
+
+      const query = input;
+      const matching = commands.filter((c) => c.startsWith(query));
+      if (matching.length === 1 && matching[0]) {
+        setInput(matching[0] + " ");
+        setLastTabPrefix(null);
+      } else if (matching.length > 1) {
+        let commonPrefix = query;
+        let possible = true;
+        while (possible) {
+          const nextChar = matching[0]?.[commonPrefix.length];
+          if (!nextChar) break;
+          for (let i = 1; i < matching.length; i++) {
+            if (matching[i]?.[commonPrefix.length] !== nextChar) {
+              possible = false;
+              break;
             }
           }
-          if (commonPrefix !== query) {
-            setInput(commonPrefix);
-            setLastTabPrefix(commonPrefix);
-          } else {
-            const list = matching.join("  ");
-            addLine({
-              type: "system",
-              content: list,
-              timestamp: Date.now(),
-            });
-            setLastTabPrefix(query);
+          if (possible) {
+            commonPrefix += nextChar;
           }
+        }
+        if (commonPrefix !== query) {
+          setInput(commonPrefix);
+          setLastTabPrefix(commonPrefix);
+        } else {
+          const list = matching.join("  ");
+          addLine({
+            type: "system",
+            content: list,
+            timestamp: Date.now(),
+          });
+          setLastTabPrefix(query);
         }
       }
     }
