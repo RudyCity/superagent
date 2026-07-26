@@ -25,12 +25,17 @@ export function handleSlashCommand(
 
   let isDirectSkill = false;
   let targetSlug = "";
+  let extraPrompt = "";
+
   if (name.toLowerCase().startsWith("skill-")) {
     isDirectSkill = true;
     targetSlug = name.toLowerCase().slice(6);
+    extraPrompt = args;
   } else if (name.toLowerCase() === "skill" && args) {
     isDirectSkill = true;
-    targetSlug = args.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const [firstWord, ...restWords] = args.split(/\s+/);
+    targetSlug = firstWord.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    extraPrompt = restWords.join(" ").trim();
   }
 
   if (isDirectSkill) {
@@ -41,7 +46,10 @@ export function handleSlashCommand(
     });
 
     if (matchedSkill) {
-      const displayCmd = name.toLowerCase().startsWith("skill-") ? `skill-${targetSlug}` : `skill ${args}`;
+      const displayCmd = name.toLowerCase().startsWith("skill-")
+        ? `skill-${targetSlug}${extraPrompt ? ` ${extraPrompt}` : ""}`
+        : `skill ${targetSlug}${extraPrompt ? ` ${extraPrompt}` : ""}`;
+
       ctx.addLine({
         type: "user",
         content: `❯ /${displayCmd}`,
@@ -53,9 +61,14 @@ export function handleSlashCommand(
         timestamp: now,
       });
       ctx.setIsProcessing?.(true);
-      const sendPromise = ctx.agent?.sendMessage(
-        `I would like you to use the following skill: "${matchedSkill.name}".\nPlease read its instruction file at "${matchedSkill.path}" using a file read tool first, and then help me with my request based on its instructions.`
-      );
+
+      const fullPrompt = [
+        `I would like you to use the following skill: "${matchedSkill.name}".`,
+        `Please read its instruction file at "${matchedSkill.path}" using a file read tool first, and then help me with my request based on its instructions.`,
+        extraPrompt ? `\nUser request: ${extraPrompt}` : ""
+      ].filter(Boolean).join("\n");
+
+      const sendPromise = ctx.agent?.sendMessage(fullPrompt);
       if (sendPromise) {
         sendPromise.then(() => {
           runEventHooks("post_command", { command: cmd, name, args }).catch(() => {});

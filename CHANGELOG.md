@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.592] - 2026-07-26
+
+### Fixed
+- **Slash Skill Prompt Truncation**: Fixed `/skill <name> <user text>` and `/skill-<slug> <user text>` commands truncating user prompts appended after the skill name. `extraPrompt` text is now extracted and forwarded to the agent.
+
 ## [1.2.591] - 2026-07-26
 
 ### Fixed
