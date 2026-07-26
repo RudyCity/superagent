@@ -74,6 +74,11 @@ import {
   setBrowserEmulationTool,
   setNetworkConditionsTool,
 } from "./chromeExtraTools.js";
+import {
+  runHeadlessBrowserTool,
+  simulateVirtualCursorTool,
+  controlIsolatedCdpTool,
+} from "./advancedAutomationTools.js";
 
 import {
   invokeSuperagentTool,
@@ -213,6 +218,9 @@ export const superagentToolset: Tool[] = [
   manageBrowserCookiesStorageTool,
   setBrowserEmulationTool,
   setNetworkConditionsTool,
+  runHeadlessBrowserTool,
+  simulateVirtualCursorTool,
+  controlIsolatedCdpTool,
   androidCliTool,
   readPeerSuperagentFileTool, // read files from peer Superagent worktrees
   rmemorySearchTool,

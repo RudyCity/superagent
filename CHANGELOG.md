@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.2.584] - 2026-07-25
+
+### Updated
+- **Chrome & Automation System Prompts (`src/core/prompts.ts`)**:
+  - Comprehensive update to `BROWSER_CONTROL_RULE` and `CHROME_EXTENSION_SYSTEM_PROMPT`.
+  - Added explicit instructions for all 16 Chrome/Browser tools (profiles, session storage, cookies, emulation, network throttling, CDP, macros, text/PDF extraction, and diagnostic logging).
+  - Added logic gates for extension disconnection fallback (`run_headless_browser` / `control_isolated_cdp`), stealth anti-bot automation, and diagnostic logging (`get_browser_console_logs`, `get_browser_network_logs`, screenshot capture) on macro failure.
+
+## [1.2.583] - 2026-07-25
+
+### Updated
+- **System Prompts Update (`src/core/prompts.ts`)**:
+  - Enhanced `BROWSER_CONTROL_RULE` across system prompts to explicitly include `run_headless_browser`, `simulate_virtual_cursor`, and `control_isolated_cdp` advanced browser automation suite tools.
+
+## [1.2.582] - 2026-07-25
+
+### Added
+- **Advanced Automation Tools Suite (Features 1, 2, and 3)**:
+  - Added `run_headless_browser` tool in `src/core/tools/advancedAutomationTools.ts` for executing headless browser sessions without stealing window focus.
+  - Added `simulate_virtual_cursor` tool for multi-cursor virtual input and caret simulation.
+  - Added `control_isolated_cdp` tool for direct Chrome DevTools Protocol (CDP) command routing to isolated background tab targets.
+  - Registered all new tools in `src/core/tools/toolsets.ts` across Tier toolsets.
+
+## [1.2.581] - 2026-07-25
+
+### Fixed
+- **Slate.js / Medium Editor Browser Automation**:
+  - Enhanced `type` and `paste` action handlers in `chrome-extension-remote/background.js` with simulated `ClipboardEvent` paste dispatch and `DataTransfer` payloads.
+  - Added fallback node append and DOM selection range setup for rich `contenteditable` / Slate.js editors.
+
 ## [1.2.580] - 2026-07-25
 
 ### Added

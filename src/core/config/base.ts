@@ -149,6 +149,10 @@ Before finalizing a plan, challenge the first assumption with two extreme edge c
   - 'researcher': Codebase research, file analysis, web search, read-only.
   - 'coder': Code writing, file edits, feature implementation, refactoring.
   - 'reviewer': Code review, quality check, debug, test, bug hunting.
+  - 'software-tester': Browser testing, console log analysis, visual UI/UX verification.
+  - 'security-engineer': Vulnerability scanning, threat modeling, code audit, security architecture review.
+  - 'general': Multi-disciplinary tasks, versatile execution, general problem solving.
+  - 'writer': Technical writing, documentation, blog posts, articles, release notes, and copy creation.
 - Custom subagents can be defined via 'define_subagent'.
 
 # RMEMORY (LONG-TERM MEMORY)

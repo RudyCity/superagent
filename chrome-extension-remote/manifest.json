@@ -3,6 +3,11 @@
   "name": "Superagent Remote Bridge",
   "version": "1.0.0",
   "description": "Standalone lightweight remote control extension for Superagent CLI without requiring local server or sidepanel GUI.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": [
     "activeTab",
     "tabs",

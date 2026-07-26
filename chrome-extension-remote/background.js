@@ -664,46 +664,68 @@ async function handleAction(action, target, value, instanceId) {
       if (!activeTab) throw new Error("No active tab found.");
       if (!target) throw new Error("Target CSS selector required for type/paste.");
       const markdownHTML = parseMarkdownToHTML(value || "");
+      
+      // Focus target element in DOM via script injection
       await chrome.scripting.executeScript({
         target: { tabId: activeTab.id },
-        func: (selector, val, htmlVal) => {
-          return new Promise((resolve, reject) => {
-            const timeout = 5000;
-            const start = Date.now();
-            const timer = setInterval(() => {
-              const el = document.querySelector(selector);
-              if (el) {
-                clearInterval(timer);
-                const targetEl = el.isContentEditable || el.getAttribute("contenteditable") === "true" ? el : (el.closest('[contenteditable="true"]') || el);
-                targetEl.focus();
-                if (targetEl.isContentEditable || targetEl.getAttribute("contenteditable") === "true" || targetEl.closest('[contenteditable="true"]')) {
-                  const sel = window.getSelection();
-                  const range = document.createRange();
-                  range.selectNodeContents(targetEl);
-                  sel.removeAllRanges();
-                  sel.addRange(range);
-                  const inserted = document.execCommand("insertHTML", false, htmlVal) || document.execCommand("insertText", false, val);
-                  if (!inserted) {
-                    targetEl.innerText = val;
-                  }
-                  targetEl.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "insertText", data: val }));
-                  targetEl.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: val }));
-                } else {
-                  targetEl.value = val;
-                  targetEl.dispatchEvent(new Event("input", { bubbles: true }));
-                  targetEl.dispatchEvent(new Event("change", { bubbles: true }));
-                }
-                resolve();
-              } else if (Date.now() - start > timeout) {
-                clearInterval(timer);
-                reject(new Error(`Timeout waiting for element '${selector}'.`));
-              }
-            }, 100);
-          });
+        func: (selector) => {
+          const el = document.querySelector(selector);
+          if (el) {
+            const targetEl = el.isContentEditable || el.getAttribute("contenteditable") === "true" ? el : (el.closest('[contenteditable="true"]') || el);
+            targetEl.focus();
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(targetEl);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
         },
-        args: [target, value || "", markdownHTML],
+        args: [target],
       });
-      return `${action === "paste" ? "Pasted content" : "Typed"} into '${target}'`;
+
+      // Try native Chrome DevTools Protocol (CDP) key event dispatching
+      let cdpSuccess = false;
+      try {
+        await chrome.debugger.attach({ tabId: activeTab.id }, "1.3");
+        for (const char of (value || "")) {
+          await chrome.debugger.sendCommand({ tabId: activeTab.id }, "Input.dispatchKeyEvent", {
+            type: "keyDown",
+            text: char,
+            unmodifiedText: char,
+          });
+          await chrome.debugger.sendCommand({ tabId: activeTab.id }, "Input.dispatchKeyEvent", {
+            type: "keyUp",
+            text: char,
+            unmodifiedText: char,
+          });
+        }
+        await chrome.debugger.detach({ tabId: activeTab.id });
+        cdpSuccess = true;
+      } catch (cdpErr) {
+        // Fallback if debugger attach fails
+      }
+
+      if (!cdpSuccess) {
+        await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          func: (selector, val, htmlVal) => {
+            const el = document.querySelector(selector);
+            if (el) {
+              const targetEl = el.isContentEditable || el.getAttribute("contenteditable") === "true" ? el : (el.closest('[contenteditable="true"]') || el);
+              targetEl.focus();
+              if (targetEl.isContentEditable || targetEl.getAttribute("contenteditable") === "true" || targetEl.closest('[contenteditable="true"]')) {
+                document.execCommand("insertText", false, val);
+              } else {
+                targetEl.value = val;
+                targetEl.dispatchEvent(new Event("input", { bubbles: true }));
+                targetEl.dispatchEvent(new Event("change", { bubbles: true }));
+              }
+            }
+          },
+          args: [target, value || "", markdownHTML],
+        });
+      }
+      return `${action === "paste" ? "Pasted content" : "Typed"} into target '${target}' (CDP: ${cdpSuccess}).`;
     }
 
     case "errors": {

@@ -345,7 +345,7 @@ const RESEARCH_KW = splitKeywords([
   "grep", "cari", "cek", "check if",
   "investigate", "scan", "temukan", "telusuri",
   "optimasi", "tingkatkan", "optimize",
-  "chrome", "browser", "profile", "bookmarks", "history", "downloads", "tab", "tabs",
+  "profile", "bookmarks", "history", "downloads",
 ]);
 
 /** Complex task indicator keywords — split into words + phrases */
@@ -366,6 +366,10 @@ const COMMAND_KW = splitKeywords([
   // Note: "coba" removed from here — it lives in CONVERSATION_EXACT only.
   // "coba jalankan" / "coba run" is caught by other command keywords in the phrase.
   "jalankan", "jalanin", "running", "tes", "uji",
+  "upload", "ulad", "post", "publish", "postkan", "posting", "kirim",
+  "macro", "makro", "browser macro", "automation", "otomasi",
+  "type", "click", "fill", "ketik", "klik", "isi", "input",
+  "medium", "tab", "tabs", "chrome", "browser",
 ]);
 
 // ─── Precompiled RegExp Patterns ────────────────────────────────────────────

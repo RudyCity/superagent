@@ -253,6 +253,18 @@ registerSubagentType(
   SUBAGENT_SYSTEM_PROMPTS["security-engineer"]
 );
 
+registerSubagentType(
+  "general",
+  "General purpose subagent for multi-disciplinary tasks, versatile execution, and general problem solving.",
+  SUBAGENT_SYSTEM_PROMPTS.general
+);
+
+registerSubagentType(
+  "writer",
+  "Specialized in technical writing, documentation, blog posts, articles, release notes, and copy creation.",
+  SUBAGENT_SYSTEM_PROMPTS.writer
+);
+
 let loadedDynamicTools: Tool[] = [];
 let watcher: fs.FSWatcher | null = null;
 
