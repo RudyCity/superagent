@@ -186,6 +186,7 @@ interface BrowserInstance {
   tabTitle: string;
   tabUrl: string;
   profileName: string;
+  source: string;
   lastActive: number;
 }
 const sseClients = new Set<http.ServerResponse>();

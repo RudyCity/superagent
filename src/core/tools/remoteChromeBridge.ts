@@ -11,6 +11,7 @@ export interface ClientMetadata {
   platform?: string;
   extensionVersion?: string;
   tabsCount?: number;
+  activeTab?: { id?: number; title?: string; url?: string } | null;
   connectedAt: number;
   commandCount: number;
 }
@@ -172,10 +173,11 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
                 platform: data.platform,
                 extensionVersion: data.extensionVersion,
                 tabsCount: data.tabsCount,
+                activeTab: data.activeTab || null,
               });
               logBridgeEvent(
                 "Client Metadata",
-                `Version: ${data.extensionVersion || "N/A"}.. Platform: ${data.platform || "N/A"}, Tabs: ${data.tabsCount || 0}`
+                `Version: ${data.extensionVersion || "N/A"}.. Platform: ${data.platform || "N/A"}, Tabs: ${data.tabsCount || 0}, ActiveTab: ${data.activeTab?.title || "N/A"}`
               );
               return;
             }

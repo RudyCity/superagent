@@ -53,6 +53,165 @@ const OBRA_SKILLS = new Set([
   "writing-skills"
 ]);
 
+// OPT-4: Helper extracted, eliminates 3+ duplicate regex chains
+function toKebabCase(str: string): string {
+  return str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+// OPT-2: LockMap cache with 60s TTL — avoids re-reading skills-lock.json every 5s
+let cachedLockMap: Map<string, string> | null = null;
+let lastLockMapFetchTime = 0;
+const LOCKMAP_CACHE_TTL_MS = 60000;
+
+function getLockMap(packageRootDir: string): Map<string, string> {
+  const now = Date.now();
+  if (cachedLockMap && (now - lastLockMapFetchTime < LOCKMAP_CACHE_TTL_MS)) {
+    return cachedLockMap;
+  }
+
+  const lockMap = new Map<string, string>();
+  const possibleLockPaths = [
+    path.join(process.cwd(), "skills-lock.json"),
+    path.join(packageRootDir, "skills-lock.json")
+  ];
+  for (const lockPath of possibleLockPaths) {
+    if (fs.existsSync(lockPath)) {
+      try {
+        const lockContent = fs.readFileSync(lockPath, "utf-8");
+        const lockData = JSON.parse(lockContent);
+        if (lockData && lockData.skills) {
+          for (const [k, v] of Object.entries(lockData.skills)) {
+            if (v && typeof v === "object" && "source" in v && typeof v.source === "string") {
+              const sourceStr = v.source as string;
+              const resolvedAuthor = sourceStr.includes("/") ? sourceStr.split("/")[0] : sourceStr;
+              lockMap.set(toKebabCase(k), resolvedAuthor);
+              if ("skillPath" in v && typeof v.skillPath === "string") {
+                lockMap.set(
+                  toKebabCase(path.basename(path.dirname(v.skillPath as string))),
+                  resolvedAuthor
+                );
+              }
+            }
+          }
+        }
+        break;
+      } catch { /* ignore JSON errors */ }
+    }
+  }
+
+  cachedLockMap = lockMap;
+  lastLockMapFetchTime = now;
+  return lockMap;
+}
+
+// OPT-3: processSkillFile extracted to module scope — no longer recreated on every call
+function processSkillFile(
+  skillMdPath: string,
+  folderName: string,
+  defaultAuthor: string,
+  skills: LoadedSkill[],
+  lockMap: Map<string, string>
+): void {
+  try {
+    const content = fs.readFileSync(skillMdPath, "utf-8");
+    let name = folderName;
+    let description = "No description provided.";
+    let author = defaultAuthor;
+
+    const fmMatch = content.match(/^---[\r\n]+([\s\S]*?)[\r\n]+---/);
+    let hasAuthorInFm = false;
+    if (fmMatch) {
+      const fm = fmMatch[1];
+      const nameMatch = fm.match(/^\s*name:\s*(.*)$/m);
+      const descMatch = fm.match(/^\s*description:\s*(.*)$/m);
+      const authorMatch = fm.match(/^\s*(author|provider|owner):\s*(.*)$/m);
+      if (nameMatch) name = nameMatch[1].trim();
+      if (descMatch) description = descMatch[1].trim();
+      if (authorMatch) {
+        author = authorMatch[2].trim();
+        hasAuthorInFm = true;
+      }
+    } else {
+      const headingMatch = content.match(/^#\s*(.*)$/m);
+      if (headingMatch) name = headingMatch[1].trim();
+    }
+
+    if (!hasAuthorInFm) {
+      const folderKebab = toKebabCase(folderName);
+      const nameKebab = toKebabCase(name);
+      const lockAuthor = lockMap.get(folderKebab) || lockMap.get(nameKebab);
+      if (lockAuthor) {
+        author = lockAuthor;
+      } else if (OBRA_SKILLS.has(folderName)) {
+        author = "obra";
+      }
+    }
+
+    const normalizedPath = normalizePath(skillMdPath);
+    if (skills.some(s => normalizePath(s.path) === normalizedPath)) return;
+
+    const existingIndex = skills.findIndex(
+      s => s.name.toLowerCase() === name.toLowerCase() &&
+           (s.author || "").toLowerCase() === (author || "").toLowerCase()
+    );
+
+    const entry = { name, description, path: skillMdPath, author };
+    if (existingIndex !== -1) {
+      skills[existingIndex] = entry;
+    } else {
+      skills.push(entry);
+    }
+  } catch { /* ignore individual file errors */ }
+}
+
+// OPT-1: Combined flat+nested scan in single pass per directory
+function scanSkillDirectory(dir: string, skills: LoadedSkill[], lockMap: Map<string, string>): void {
+  if (!fs.existsSync(dir)) return;
+  try {
+    const items = fs.readdirSync(dir, { withFileTypes: true });
+    for (const item of items) {
+      if (!item.isDirectory()) continue;
+      const skillDir = path.join(dir, item.name);
+
+      // Flat: item/SKILL.md
+      const flatMdPath = path.join(skillDir, "SKILL.md");
+      if (fs.existsSync(flatMdPath)) {
+        processSkillFile(flatMdPath, item.name, "local", skills, lockMap);
+        continue;
+      }
+
+      // Nested: item/subdir/SKILL.md
+      try {
+        const subItems = fs.readdirSync(skillDir, { withFileTypes: true });
+        for (const subItem of subItems) {
+          if (subItem.isDirectory()) {
+            const nestedMdPath = path.join(skillDir, subItem.name, "SKILL.md");
+            if (fs.existsSync(nestedMdPath)) {
+              processSkillFile(nestedMdPath, subItem.name, item.name, skills, lockMap);
+            }
+          }
+        }
+      } catch { /* ignore nested read errors */ }
+    }
+  } catch { /* ignore dir read errors */ }
+}
+
+// OPT-5: Static base dirs cached once — avoids recomputing packageRoot + homedir paths
+let cachedBaseSearchDirs: string[] | null = null;
+
+function getBaseSearchDirs(packageRootDir: string): string[] {
+  if (cachedBaseSearchDirs) return cachedBaseSearchDirs;
+
+  cachedBaseSearchDirs = [
+    path.join(packageRootDir, ".agents", "skills"),
+    path.join(packageRootDir, "skills"),
+    path.join(os.homedir(), ".agents", "skills"),
+    path.join(os.homedir(), ".claude", "skills"),
+    path.join(os.homedir(), ".superagent-r", "skills"),
+  ];
+  return cachedBaseSearchDirs;
+}
+
 let cachedSkills: LoadedSkill[] | null = null;
 let lastSkillsFetchTime = 0;
 const SKILLS_CACHE_TTL_MS = 5000;
@@ -71,49 +230,12 @@ export function getInstalledSkills(): LoadedSkill[] {
 
   const skills: LoadedSkill[] = [];
   const packageRootDir = getPackageRootDir();
+  const lockMap = getLockMap(packageRootDir);
 
-  // Load skills-lock.json if available to map authors/providers
-  const lockMap = new Map<string, string>();
-  const possibleLockPaths = [
-    path.join(process.cwd(), "skills-lock.json"),
-    path.join(packageRootDir, "skills-lock.json")
-  ];
-  for (const lockPath of possibleLockPaths) {
-    if (fs.existsSync(lockPath)) {
-      try {
-        const lockContent = fs.readFileSync(lockPath, "utf-8");
-        const lockData = JSON.parse(lockContent);
-        if (lockData && lockData.skills) {
-          for (const [k, v] of Object.entries(lockData.skills)) {
-            if (v && typeof v === "object" && "source" in v && typeof v.source === "string") {
-              const sourceStr = v.source as string;
-              const resolvedAuthor = sourceStr.includes("/") ? sourceStr.split("/")[0] : sourceStr;
-              const keyKebab = k.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-              lockMap.set(keyKebab, resolvedAuthor);
-              if ("skillPath" in v && typeof v.skillPath === "string") {
-                const pathBase = path.basename(path.dirname(v.skillPath as string)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-                lockMap.set(pathBase, resolvedAuthor);
-              }
-            }
-          }
-        }
-        break; // Successfully loaded one
-      } catch (err) {
-        // Ignore JSON or read errors
-      }
-    }
-  }
+  // Fresh copy prevents base array mutation by hooks/workspace pushes
+  const searchDirs = [...getBaseSearchDirs(packageRootDir)];
 
-  // Precedence order: Package built-in (base/lowest) -> Global -> Hooks -> Workspace local (highest/overrides)
-  // Skills are deduplicated by name: first occurrence wins, so higher-priority dirs are appended LAST.
-  const searchDirs: string[] = [
-    path.join(packageRootDir, ".agents", "skills"),
-    path.join(packageRootDir, "skills"),
-    path.join(os.homedir(), ".agents", "skills"),
-    path.join(os.homedir(), ".superagent-r", "skills"),
-  ];
-
-  // Append active internal hooks' skills subdirectories (above global, below workspace)
+  // Append active internal hooks subdirectories
   const hooksRoot = path.join(process.cwd(), "internal-hooks");
   if (fs.existsSync(hooksRoot)) {
     try {
@@ -129,124 +251,29 @@ export function getInstalledSkills(): LoadedSkill[] {
 
       const items = fs.readdirSync(hooksRoot, { withFileTypes: true });
       for (const item of items) {
-        if (item.isDirectory()) {
-          const isActive = activeHooks === null || activeHooks.includes(item.name);
-          if (isActive) {
-            const hookAgentsSkillsDir = path.join(hooksRoot, item.name, ".agents", "skills");
-            if (fs.existsSync(hookAgentsSkillsDir)) {
-              searchDirs.push(hookAgentsSkillsDir);
-            }
-            const hookSkillsDir = path.join(hooksRoot, item.name, "skills");
-            if (fs.existsSync(hookSkillsDir)) {
-              searchDirs.push(hookSkillsDir);
-            }
-          }
-        }
+        if (!item.isDirectory()) continue;
+        const isActive = activeHooks === null || activeHooks.includes(item.name);
+        if (!isActive) continue;
+
+        const hookAgentsSkillsDir = path.join(hooksRoot, item.name, ".agents", "skills");
+        if (fs.existsSync(hookAgentsSkillsDir)) searchDirs.push(hookAgentsSkillsDir);
+
+        const hookSkillsDir = path.join(hooksRoot, item.name, "skills");
+        if (fs.existsSync(hookSkillsDir)) searchDirs.push(hookSkillsDir);
       }
     } catch {}
   }
 
-  // Workspace-local directories have highest precedence — appended last so they override duplicates
+  // Workspace-local dirs (highest priority)
   searchDirs.push(
     path.join(process.cwd(), "skills"),
     path.join(process.cwd(), ".superagent", "skills"),
-    path.join(process.cwd(), ".agents", "skills")
+    path.join(process.cwd(), ".agents", "skills"),
+    path.join(process.cwd(), ".claude", "skills")
   );
 
   for (const dir of searchDirs) {
-    if (fs.existsSync(dir)) {
-      try {
-        const items = fs.readdirSync(dir, { withFileTypes: true });
-        for (const item of items) {
-          if (item.isDirectory()) {
-            const skillDir = path.join(dir, item.name);
-            const skillMdPath = path.join(skillDir, "SKILL.md");
-            if (fs.existsSync(skillMdPath)) {
-              // Flat structure: e.g. .agents/skills/writing-plans/SKILL.md
-              processSkillFile(skillMdPath, item.name, "local");
-            } else {
-              // Check for nested structure: e.g. .agents/skills/vercel-labs/find-skills/SKILL.md
-              try {
-                const subItems = fs.readdirSync(skillDir, { withFileTypes: true });
-                for (const subItem of subItems) {
-                  if (subItem.isDirectory()) {
-                    const subSkillDir = path.join(skillDir, subItem.name);
-                    const subSkillMdPath = path.join(subSkillDir, "SKILL.md");
-                    if (fs.existsSync(subSkillMdPath)) {
-                      processSkillFile(subSkillMdPath, subItem.name, item.name);
-                    }
-                  }
-                }
-              } catch (subErr) {
-                // Ignore nested folder errors
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // Ignore directory read errors
-      }
-    }
-  }
-
-  function processSkillFile(skillMdPath: string, folderName: string, defaultAuthor: string) {
-    try {
-      const content = fs.readFileSync(skillMdPath, "utf-8");
-      let name = folderName;
-      let description = "No description provided.";
-      let author = defaultAuthor;
-
-      // Simple frontmatter parser
-      const fmMatch = content.match(/^---[\r\n]+([\s\S]*?)[\r\n]+---/);
-      let hasAuthorInFm = false;
-      if (fmMatch) {
-        const fm = fmMatch[1];
-        const nameMatch = fm.match(/^\s*name:\s*(.*)$/m);
-        const descMatch = fm.match(/^\s*description:\s*(.*)$/m);
-        const authorMatch = fm.match(/^\s*(author|provider|owner):\s*(.*)$/m);
-        if (nameMatch) name = nameMatch[1].trim();
-        if (descMatch) description = descMatch[1].trim();
-        if (authorMatch) {
-          author = authorMatch[2].trim();
-          hasAuthorInFm = true;
-        }
-      } else {
-        // Fallback to searching first heading
-        const headingMatch = content.match(/^#\s*(.*)$/m);
-        if (headingMatch) name = headingMatch[1].trim();
-      }
-
-      // Resolve author from lockfile if not specified in frontmatter
-      if (!hasAuthorInFm) {
-        const folderKebab = folderName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        const nameKebab = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        const lockAuthor = lockMap.get(folderKebab) || lockMap.get(nameKebab);
-        if (lockAuthor) {
-          author = lockAuthor;
-        } else if (OBRA_SKILLS.has(folderName)) {
-          author = "obra";
-        }
-      }
-
-      const normalizedPath = normalizePath(skillMdPath);
-      const hasPathDuplicate = skills.some(s => normalizePath(s.path) === normalizedPath);
-      if (hasPathDuplicate) return; // exact same file — skip
-
-      // Replace same-named skill (later/higher-priority dirs override earlier ones)
-      const existingIndex = skills.findIndex(
-        s => s.name.toLowerCase() === name.toLowerCase() &&
-             (s.author || "").toLowerCase() === (author || "").toLowerCase()
-      );
-
-      const entry = { name, description, path: skillMdPath, author };
-      if (existingIndex !== -1) {
-        skills[existingIndex] = entry; // project-local overrides package version
-      } else {
-        skills.push(entry);
-      }
-    } catch (e) {
-      // Ignore parsing errors for individual files
-    }
+    scanSkillDirectory(dir, skills, lockMap);
   }
 
   if (!isTesting) {
@@ -258,7 +285,6 @@ export function getInstalledSkills(): LoadedSkill[] {
 }
 
 export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?: string, isMultiAgent?: boolean): string {
-  // Return a concise instruction prompt using Concept A, B, and C to optimize token usage.
   return `
 
 # SKILL DISCOVERY
@@ -288,4 +314,3 @@ export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?
       proceed directly without searching further.
 - LIMIT: call get_skills() once per task. Do NOT retry with different queries if results are returned.`;
 }
-

@@ -25,14 +25,25 @@ async function requireBrowserConsent(tab, action, target, value) {
   return ok;
 }
 
+function getActiveTab(callback) {
+  chrome.tabs.query({ active: true, lastFocusedWindow: true }, function (tabs) {
+    if (tabs && tabs.length > 0) return callback(tabs[0]);
+    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs2) {
+      if (tabs2 && tabs2.length > 0) return callback(tabs2[0]);
+      chrome.tabs.query({ active: true }, function (tabs3) {
+        callback(tabs3 && tabs3.length > 0 ? tabs3[0] : null);
+      });
+    });
+  });
+}
+
 // Execute browser automation control
 async function executeBrowserControl(controlId, action, target, value) {
-  chrome.tabs.query({ active: true, currentWindow: true }, async function (tabs) {
-    if (!tabs || tabs.length === 0) {
-      sendBrowserResult(controlId, "Error: No active tab found in current window.", true);
+  getActiveTab(async function (activeTab) {
+    if (!activeTab) {
+      sendBrowserResult(controlId, "Error: No active tab found.", true);
       return;
     }
-    const activeTab = tabs[0];
     const url = activeTab.url || "";
     const lowerUrl = url.toLowerCase();
     const isRestricted = lowerUrl.startsWith("chrome://") || 
@@ -1658,10 +1669,10 @@ async function sendBrowserResult(controlId, result, isError) {
 // Function to lock the active tab
 window.lockCurrentTab = function() {
   if (isTabLocked) return;
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs && tabs.length > 0) {
-      originalTabId = tabs[0].id;
-      originalWindowId = tabs[0].windowId;
+  getActiveTab((activeTab) => {
+    if (activeTab) {
+      originalTabId = activeTab.id;
+      originalWindowId = activeTab.windowId;
       isTabLocked = true;
       console.log(`[TabLock] Locked to tab ID: ${originalTabId} in window ID: ${originalWindowId}`);
     }

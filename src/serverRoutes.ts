@@ -116,6 +116,7 @@ export async function handleServerRoute(
         tabTitle,
         tabUrl,
         profileName,
+        source: parsedUrl.searchParams.get("source") || "sidepanel",
         lastActive: Date.now()
       });
     }
@@ -588,22 +589,37 @@ export async function handleServerRoute(
     return true;
   }
 
-  // Update browser instance
+  // Update browser instance (upsert)
   if (pathname === "/api/browser/update-instance" && req.method === "POST") {
     try {
       const bodyStr = await readBody(req);
-      const { clientId, windowId, tabTitle, tabUrl, profileName } = JSON.parse(bodyStr || "{}");
+      const { clientId, windowId, tabTitle, tabUrl, profileName, source } = JSON.parse(bodyStr || "{}");
       const instanceKey = clientId && windowId ? `${clientId}:${windowId}` : "";
-      if (instanceKey && browserInstances.has(instanceKey)) {
-        const inst = browserInstances.get(instanceKey)!;
-        if (tabTitle !== undefined) inst.tabTitle = tabTitle;
-        if (tabUrl !== undefined) inst.tabUrl = tabUrl;
-        if (profileName !== undefined) inst.profileName = profileName;
-        inst.lastActive = Date.now();
+      if (instanceKey) {
+        if (browserInstances.has(instanceKey)) {
+          const inst = browserInstances.get(instanceKey)!;
+          if (tabTitle !== undefined) inst.tabTitle = tabTitle;
+          if (tabUrl !== undefined) inst.tabUrl = tabUrl;
+          if (profileName !== undefined) inst.profileName = profileName;
+          if (source !== undefined) inst.source = source;
+          inst.lastActive = Date.now();
+        } else {
+          browserInstances.set(instanceKey, {
+            res: null as any,
+            clientId: clientId || "",
+            windowId: windowId || "",
+            tabTitle: tabTitle || "",
+            tabUrl: tabUrl || "",
+            profileName: profileName || "",
+            source: source || "sidepanel",
+            lastActive: Date.now()
+          });
+        }
         sendJSON(res, 200, { success: true });
       } else {
-        sendJSON(res, 404, { error: "Instance not registered" });
+        sendJSON(res, 400, { error: "Missing clientId or windowId" });
       }
+
     } catch (err: any) {
       sendJSON(res, 400, { error: err.message });
     }

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.595] - 2026-07-27
+
+### Fixed
+- **Chrome Extension Tab-Awareness**: Dynamic window tracking via `chrome.windows.onFocusChanged` listener; re-register SSE instance on window switch.
+- **Server-side Upsert**: `POST /api/browser/update-instance` now creates instance if missing instead of silently dropping.
+- **Extension Source Tagging**: Added `source` field (`"sidepanel"`/`"remote"`) to instance registry for disambiguation.
+- **Tab Poll Fallback**: Added `setInterval(2000)` as fallback tab tracker.
+- **Test Alignment**: Updated `server2.test.ts` expectations to match new upsert behavior.
+
 ## [1.2.594] - 2026-07-26
 
 ### Fixed

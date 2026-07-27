@@ -14,6 +14,15 @@ const MAX_CONSOLE_LOGS = 100;
 const networkLogsBuffer = [];
 const MAX_NETWORK_LOGS = 100;
 
+async function getActiveTab() {
+  const [lastFocused] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (lastFocused) return lastFocused;
+  const [current] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (current) return current;
+  const [anyActive] = await chrome.tabs.query({ active: true });
+  return anyActive || null;
+}
+
 function logConsoleEvent(level, text, source = "console") {
   const logEntry = { timestamp: new Date().toISOString(), level, text, source };
   consoleLogsBuffer.push(logEntry);
@@ -98,13 +107,16 @@ function connectWebSocket(force = false) {
       // Send client metadata hello packet
       try {
         const tabs = await chrome.tabs.query({});
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
         socket.send(
           JSON.stringify({
             type: "hello",
+            source: "remote",
             userAgent: navigator.userAgent,
             platform: navigator.platform,
             extensionVersion: chrome.runtime.getManifest().version,
             tabsCount: tabs.length,
+            activeTab: activeTab ? { id: activeTab.id, title: activeTab.title, url: activeTab.url } : null,
           })
         );
       } catch {}
@@ -209,12 +221,16 @@ function parseMarkdownToHTML(markdownText) {
 }
 
 async function handleAction(action, target, value, instanceId) {
-  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const activeTab = await getActiveTab();
 
   switch (action) {
     case "list": {
       const tabs = await chrome.tabs.query({});
-      return tabs.map((t, idx) => `[${idx}] ${t.title} (${t.url}) - ID: ${t.id}`).join("\n");
+      const activeTab = await getActiveTab();
+      return tabs.map((t, idx) => {
+        const marker = activeTab && t.id === activeTab.id ? " ← ACTIVE" : "";
+        return `[${idx}] ${t.title} (${t.url}) - ID: ${t.id}${marker}`;
+      }).join("\n");
     }
 
     case "reload_extension": {
@@ -226,12 +242,30 @@ async function handleAction(action, target, value, instanceId) {
 
     case "list_instances": {
       const windows = await chrome.windows.getAll({ populate: true });
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       return windows
         .map(
-          (w) =>
-            `Window ${w.id} (Tabs: ${w.tabs ? w.tabs.length : 0}, Focused: ${w.focused})`
+          (w) => {
+            const focused = w.focused ? " ★ FOCUSED" : "";
+            const activeInWindow = activeTab && w.tabs?.some(t => t.id === activeTab.id)
+              ? ` | ActiveTab: "${activeTab.title.substring(0, 60)}"` : "";
+            return `Window ${w.id} (Tabs: ${w.tabs ? w.tabs.length : 0}${focused}${activeInWindow})`;
+          }
         )
         .join("\n");
+    }
+
+    case "get_active_tab": {
+      const [currentActive] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!currentActive) throw new Error("No active tab found.");
+      return JSON.stringify({
+        id: currentActive.id,
+        title: currentActive.title,
+        url: currentActive.url,
+        favIconUrl: currentActive.favIconUrl,
+        windowId: currentActive.windowId,
+        status: currentActive.status,
+      });
     }
 
     case "navigate": {

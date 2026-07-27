@@ -75,4 +75,31 @@ document.addEventListener("DOMContentLoaded", () => {
 
   pollAdvisorStatus();
   setInterval(pollAdvisorStatus, 3000);
+
+  // Active tab display
+  const tabTitleEl = document.getElementById("tab-title");
+  const tabUrlEl = document.getElementById("tab-url");
+
+  async function updateActiveTab() {
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs && tabs.length > 0) {
+        const t = tabs[0];
+        tabTitleEl.textContent = t.title || "Untitled";
+        tabUrlEl.textContent = t.url || "";
+      } else {
+        tabTitleEl.textContent = "No active tab";
+        tabUrlEl.textContent = "";
+      }
+    } catch {
+      tabTitleEl.textContent = "Error";
+      tabUrlEl.textContent = "";
+    }
+  }
+
+  updateActiveTab();
+  chrome.tabs.onActivated.addListener(updateActiveTab);
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.title || changeInfo.url) updateActiveTab();
+  });
 });

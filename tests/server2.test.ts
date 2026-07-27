@@ -68,21 +68,20 @@ afterAll(() => {
 // POST /api/browser/update-instance
 // ═══════════════════════════════════════════════════════════════════════════════
 describe("POST /api/browser/update-instance", () => {
-  it("returns 404 when instance key not registered", async () => {
-    const { status, body } = await postJSON(port, "/api/browser/update-instance", {
+  it("upserts instance when key not yet registered", async () => {
+    const { status } = await postJSON(port, "/api/browser/update-instance", {
       clientId: "client-abc",
       windowId: "win-1",
       tabTitle: "Test Tab",
     });
-    expect(status).toBe(404);
-    expect(body.error).toContain("not registered");
+    expect(status).toBe(200);
   });
 
-  it("returns 404 when clientId or windowId is missing", async () => {
+  it("returns 400 when clientId or windowId is missing", async () => {
     const { status, body } = await postJSON(port, "/api/browser/update-instance", {
       tabTitle: "No ID",
     });
-    expect(status).toBe(404);
+    expect(status).toBe(400);
     expect(body.error).toBeDefined();
   });
 });

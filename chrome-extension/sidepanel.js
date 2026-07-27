@@ -24,6 +24,7 @@ window.currentSessionId = null;
 
 let extensionClientId = "";
 let extensionWindowId = "";
+const extensionSource = "sidepanel";
 window.extensionProfileName = "";
 
 // Config state
@@ -794,6 +795,7 @@ function setupSSE() {
     if (extensionClientId) params.set("clientId", extensionClientId);
     if (extensionWindowId) params.set("windowId", extensionWindowId);
     if (window.extensionProfileName) params.set("profileName", window.extensionProfileName);
+    params.set("source", extensionSource);
     
     if (currentActiveTab) {
       params.set("tabTitle", currentActiveTab.title || "");
@@ -1717,6 +1719,7 @@ function updateCurrentTabInfo() {
               body: JSON.stringify({
                 clientId: extensionClientId,
                 windowId: extensionWindowId,
+                source: extensionSource,
                 profileName: profileName,
                 tabTitle: title,
                 tabUrl: url
@@ -1775,7 +1778,43 @@ if (typeof chrome !== "undefined" && chrome.tabs) {
   } else {
     setTimeout(updateCurrentTabInfo, 100);
   }
-}
 
+  // Fallback tab polling
+  setInterval(updateCurrentTabInfo, 2000);
+
+  // Re-register SSE instance with fresh windowId
+  function reRegisterInstance() {
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+    setupSSE();
+    // Also update server immediately
+    if (extensionClientId && extensionWindowId) {
+      fetch(`${BASE_URL}/api/browser/update-instance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: extensionClientId,
+          windowId: extensionWindowId,
+          source: extensionSource,
+          profileName: window.extensionProfileName || "",
+          tabTitle: currentActiveTab ? currentActiveTab.title : "",
+          tabUrl: currentActiveTab ? currentActiveTab.url : ""
+        })
+      }).catch(() => {});
+    }
+  }
+
+  // Track window focus changes — update windowId when user switches Chrome window
+  if (typeof chrome !== "undefined" && chrome.windows) {
+    chrome.windows.onFocusChanged.addListener((windowId) => {
+      if (windowId !== chrome.windows.WINDOW_ID_NONE) {
+        extensionWindowId = String(windowId);
+        reRegisterInstance();
+      }
+    });
+  }
+}
 
 
