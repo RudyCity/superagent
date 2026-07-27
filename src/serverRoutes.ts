@@ -40,6 +40,8 @@ import {
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, backgroundTasks } from "./core/tools/state.js";
 import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/config/browserMacros.js";
+import { getRMemoryClient, isRmemoryActive } from "./core/rmemoryUtil.js";
+import { getRootConfigDir } from "./core/config/paths.js";
 
 export async function handleServerRoute(
   req: http.IncomingMessage,
@@ -1017,6 +1019,100 @@ export async function handleServerRoute(
     try {
       const skills = getInstalledSkills();
       sendJSON(res, 200, { skills });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message || String(err) });
+    }
+    return true;
+  }
+n  // Memory: search atomic rmemory + shared memory
+  if (pathname === "/api/memory/search" && req.method === "GET") {
+    try {
+      const query = parsedUrl.searchParams.get("query") || "";
+      const scope = parsedUrl.searchParams.get("scope") || "all";
+      const isActive = await isRmemoryActive();
+      let memory: any[] = [];
+      if (isActive && query) {
+        const client = getRMemoryClient();
+        try {
+          const result = await client.searchAtomic({ query, limit: 20 });
+          memory = result.items || [];
+        } catch {}
+      }
+      let sharedMemory: any[] = [];
+      try {
+        const sharedMemPath = path.join(getRootConfigDir(), "shared-memory.json");
+        if (fs.existsSync(sharedMemPath)) {
+          const raw = fs.readFileSync(sharedMemPath, "utf-8");
+          const allShared = JSON.parse(raw);
+          if (Array.isArray(allShared)) {
+            sharedMemory = allShared.filter((e: any) => {
+              if (scope === "project") return e.scope === "project";
+              if (scope === "global") return e.scope === "global";
+              return true;
+            });
+            if (query) {
+              const q = query.toLowerCase();
+              sharedMemory = sharedMemory.filter((e: any) =>
+                (e.key && e.key.toLowerCase().includes(q)) ||
+                (e.value && e.value.toLowerCase().includes(q))
+              );
+            }
+          }
+        }
+      } catch {}
+      sendJSON(res, 200, { memory, sharedMemory });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Memory: save atomic memory
+  if (pathname === "/api/memory/save" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const data = JSON.parse(body);
+      const client = getRMemoryClient();
+      const isActive = await isRmemoryActive();
+      if (!isActive) {
+        sendJSON(res, 200, { success: false, error: "RMemory not enabled" });
+        return true;
+      }
+      const { id, content, type, scope: memScope, key, value } = data;
+      if (key && value) {
+        // Save as shared memory
+        const sharedMemPath = path.join(getRootConfigDir(), "shared-memory.json");
+        let memories: any[] = [];
+        if (fs.existsSync(sharedMemPath)) {
+          try { memories = JSON.parse(fs.readFileSync(sharedMemPath, "utf-8")); } catch {}
+          if (!Array.isArray(memories)) memories = [];
+        }
+        memories.push({ key, value, source: "api", timestamp: Date.now(), scope: memScope || "project" });
+        fs.writeFileSync(sharedMemPath, JSON.stringify(memories, null, 2));
+        sendJSON(res, 200, { success: true });
+      } else if (id && content) {
+        await client.updateAtomic({ id, content });
+        sendJSON(res, 200, { success: true });
+      } else {
+        sendJSON(res, 400, { error: "Missing id+content or key+value" });
+      }
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Memory: delete atomic memory
+  if (pathname === "/api/memory/delete" && req.method === "DELETE") {
+    try {
+      const body = await readBody(req);
+      const data = JSON.parse(body);
+      const client = getRMemoryClient();
+      const ids = data.ids || (data.id ? [data.id] : []);
+      if (ids.length > 0) {
+        await client.deleteAtomic({ ids });
+      }
+      sendJSON(res, 200, { success: true });
     } catch (err: any) {
       sendJSON(res, 500, { error: err.message || String(err) });
     }
