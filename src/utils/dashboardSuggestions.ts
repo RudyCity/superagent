@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { filterSuggestions } from "./text.js";
+import { filterSuggestions, getActiveCommandContext } from "./text.js";
 import { getCachedModelIds, getInstalledSkills, listHistorySessions, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD, getTrustedDirectories } from "../core/config.js";
 import { registry } from "../core/commands/registry.js";
 import { backgroundTasks } from "../core/tools.js";
@@ -53,18 +53,21 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
 };
 
-export function getDashboardSuggestions(originalQuery: string): string[] {
-  const isBang = originalQuery.startsWith("!");
-  let query = originalQuery;
+export function getDashboardSuggestions(originalQuery: string, cursorPosition: number = originalQuery.length): string[] {
+  const context = getActiveCommandContext(originalQuery, cursorPosition);
+  if (!context) return [];
+
+  const { commandSegment, isBang } = context;
+  let query = commandSegment;
   if (isBang) {
-    query = `/terminal ${originalQuery.slice(1).trim()}`;
+    query = `/terminal ${commandSegment.slice(1)}`;
   }
 
   const getRawSuggestions = () => {
     if (!query.startsWith("/")) return [];
     const skillCommands = getInstalledSkills().map(s => {
       const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-      return `/skill-${slug}`;
+      return `/${slug}`;
     });
 
     const commands = [
@@ -363,7 +366,7 @@ export function getSuggestionDescriptions(): Record<string, string> {
   }
   for (const s of getInstalledSkills()) {
     const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    desc[`/skill-${slug}`] = s.description;
+    desc[`/${slug}`] = s.description;
   }
   return desc;
 }

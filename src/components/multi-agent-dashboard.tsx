@@ -58,7 +58,8 @@ import {
   getPasteSplit,
   stripSgrMouseSequences,
   resolveCarriageReturns,
-  updatePasteState
+  updatePasteState,
+  getActiveCommandContext
 } from "../utils/text.js";
 import { WizardDialog } from "./wizard-dialog.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
@@ -130,6 +131,7 @@ export function MultiAgentDashboard({
   const [isProcessing, setIsProcessing] = useState(false);
   const [tick, setTick] = useState(0);
   const [query, setQuery] = useState("");
+  const [queryCursorOffset, setQueryCursorOffset] = useState(0);
   const chatTextInputRef = useRef<ChatTextInputRef>(null);
   const [lastTabPrefix, setLastTabPrefix] = useState<string | null>(null);
   const [masterLogs, setMasterLogs] = useState<string[]>(["[MASTER] System initialised. Ready for tasks."]);
@@ -208,7 +210,7 @@ export function MultiAgentDashboard({
     setPasteSuffixLength(nextPasteState.pasteSuffixLength);
     setQuery(sanitizedVal);
     if (lastTabPrefix) {
-      const suggs = getDashboardSuggestions(lastTabPrefix);
+      const suggs = getDashboardSuggestions(lastTabPrefix, queryCursorOffset);
       if (!suggs.includes(sanitizedVal) && sanitizedVal !== lastTabPrefix) {
         setLastTabPrefix(null);
       }
@@ -466,7 +468,7 @@ export function MultiAgentDashboard({
     }
   }, [activeWizard]);
 
-  const suggestions = activeWizard ? [] : getDashboardSuggestions(lastTabPrefix || query);
+  const suggestions = activeWizard ? [] : getDashboardSuggestions(lastTabPrefix || query, queryCursorOffset);
   const suggestionDescs = getSuggestionDescriptions();
 
   useEffect(() => {
@@ -886,8 +888,11 @@ export function MultiAgentDashboard({
   })();
 
   let bottomPromptHeight = isSelectionOnlyStep ? 0 : 1; // Prompt input row (hidden for selection-only steps)
-  if (!isSelectionOnlyStep && focusArea === "input" && (query.startsWith("/") || query.startsWith("!")) && suggestions.length > 0) {
-    const activeDesc = suggestionDescs[query];
+  const hasSlashOrBang = query.includes("/") || query.includes("!");
+  if (!isSelectionOnlyStep && focusArea === "input" && hasSlashOrBang && suggestions.length > 0) {
+    const activeWordContext = getActiveCommandContext(query, queryCursorOffset);
+    const activeCommandSegment = activeWordContext?.commandSegment || query;
+    const activeDesc = suggestionDescs[activeCommandSegment];
     bottomPromptHeight += activeDesc ? 3 : 2;
   }
   let wizardHeight = 0;
@@ -1152,6 +1157,7 @@ export function MultiAgentDashboard({
     setIsProcessing,
     setMasterLogs,
     lastTabPrefix,
+    queryCursorOffset,
     setLastTabPrefix,
     agent,
     checkpointsList,
@@ -1246,16 +1252,17 @@ export function MultiAgentDashboard({
       const prefixLength = getPromptPrefixLength();
       
       const statusBarHeight = 5 + ([...superagentInstances.values()].filter((i) => i.status === "running").map((i) => i.branch).length > 0 ? 1 : 0);
-      const suggestions_click = getDashboardSuggestions(query);
-      const isSuggestionsVisible = focusArea === "input" && (query.startsWith("/") || query.startsWith("!")) && suggestions_click.length > 0;
-      const bottomPromptHeight = 1 + (isSuggestionsVisible ? 2 : 0);
-      const promptStartRow = terminalSize.height - statusBarHeight - bottomPromptHeight + 1;
-      const promptInputRow = promptStartRow + (isSuggestionsVisible ? 2 : 0);
-
-      const rowOffset = y - promptInputRow;
+      
+      // Calculate cursor position index first
+      const approxPromptInputRow = terminalSize.height - statusBarHeight - 1; // approximation for row calculation
+      const rowOffset = y - approxPromptInputRow;
       const colOffset = Math.max(0, x - (prefixLength + 2));
       const clickedIndex = rowOffset * (terminalSize.width - prefixLength - 2) + colOffset;
       const clampedIndex = Math.max(0, Math.min(clickedIndex, query.length));
+
+      const suggestions_click = getDashboardSuggestions(query, clampedIndex);
+      const isSuggestionsVisible = focusArea === "input" && (query.includes("/") || query.includes("!")) && suggestions_click.length > 0;
+      
       chatTextInputRef.current?.setCursorOffset(clampedIndex);
     },
   });
@@ -1402,7 +1409,7 @@ export function MultiAgentDashboard({
       {/* Interactive Full-Width Console Prompt — hidden for selection-only wizard steps */}
       {!isSelectionOnlyStep && (
         <>
-          {focusArea === "input" && (query.startsWith("/") || query.startsWith("!")) && suggestions.length > 0 && (
+          {focusArea === "input" && getActiveCommandContext(query, queryCursorOffset) !== null && suggestions.length > 0 && (
             <Box flexDirection="column" marginBottom={1} paddingX={1}>
               <Box flexDirection="row">
                 <Text color="cyan" dimColor>│   </Text>
@@ -1489,6 +1496,7 @@ export function MultiAgentDashboard({
                       isPasted={isPasted}
                       pastePrefixLength={pastePrefixLength}
                       pasteSuffixLength={pasteSuffixLength}
+                      onCursorOffsetChange={setQueryCursorOffset}
                     />
                   </Box>
             </Box>

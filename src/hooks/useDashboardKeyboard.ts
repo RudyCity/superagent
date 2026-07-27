@@ -1,7 +1,7 @@
 import React from "react";
 import { useInput } from "ink";
 import fs from "fs";
-import { getPasteSplit, filterSuggestions } from "../utils/text.js";
+import { getPasteSplit, filterSuggestions, getActiveCommandContext } from "../utils/text.js";
 import { subagentInstances, backgroundTasks, isTaskInWorkspace } from "../core/tools/state.js";
 import { getConfiguredProviders, getProviders } from "../core/config.js";
 import { listCheckpointsForSession } from "../core/checkpoints.js";
@@ -65,6 +65,7 @@ export interface DashboardKeyboardContext {
   setIsProcessing?: React.Dispatch<React.SetStateAction<boolean>>;
   setMasterLogs?: React.Dispatch<React.SetStateAction<string[]>>;
   lastTabPrefix?: string | null;
+  queryCursorOffset?: number;
   setLastTabPrefix?: React.Dispatch<React.SetStateAction<string | null>>;
   agent?: Agent;
   checkpointsList?: any[];
@@ -132,6 +133,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     setIsProcessing = () => {},
     setMasterLogs,
     lastTabPrefix = null,
+    queryCursorOffset,
     setLastTabPrefix,
     agent,
     checkpointsList,
@@ -665,7 +667,8 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     }
 
     if (key.tab) {
-      if (focusArea === "input" && (query.startsWith("/") || query.startsWith("!"))) {
+      const activeCmdCtx = focusArea === "input" ? getActiveCommandContext(query, queryCursorOffset ?? query.length) : null;
+      if (focusArea === "input" && (activeCmdCtx || query.startsWith("/") || query.startsWith("!"))) {
         if (suggestions.length > 0) {
           if (setLastTabPrefix && !lastTabPrefix) {
             setLastTabPrefix(query);

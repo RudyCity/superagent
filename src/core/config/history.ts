@@ -26,7 +26,9 @@ function normalizeAndCheckSubpath(childPath: string, parentPath: string): boolea
   return resolvedChild.startsWith(resolvedParent + path.sep) || 
          resolvedChild === resolvedParent || 
          childSlash.startsWith(parentSlash + "/") || 
-         childSlash === parentSlash;
+         childSlash === parentSlash ||
+         resolvedParent.startsWith(resolvedChild + path.sep) ||
+         parentSlash.startsWith(childSlash + "/");
 }
 
 export interface HistorySession {

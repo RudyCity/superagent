@@ -217,6 +217,13 @@ async function handleAction(action, target, value, instanceId) {
       return tabs.map((t, idx) => `[${idx}] ${t.title} (${t.url}) - ID: ${t.id}`).join("\n");
     }
 
+    case "reload_extension": {
+      setTimeout(() => {
+        chrome.runtime.reload();
+      }, 100);
+      return "Reloading extension...";
+    }
+
     case "list_instances": {
       const windows = await chrome.windows.getAll({ populate: true });
       return windows
@@ -236,6 +243,16 @@ async function handleAction(action, target, value, instanceId) {
         await chrome.tabs.create({ url: destUrl });
       }
       return `Navigated to ${destUrl}`;
+    }
+
+    case "switch": {
+      if (!target) throw new Error("Target tab ID required for switch action.");
+      const tabId = parseInt(target, 10);
+      const tab = await chrome.tabs.update(tabId, { active: true });
+      if (tab && tab.windowId) {
+        await chrome.windows.update(tab.windowId, { focused: true });
+      }
+      return `Switched to tab ID ${tabId}`;
     }
 
     case "save_session": {
@@ -270,7 +287,47 @@ async function handleAction(action, target, value, instanceId) {
       if (!activeTab) throw new Error("No active tab found.");
       const [{ result }] = await chrome.scripting.executeScript({
         target: { tabId: activeTab.id },
-        func: () => document.documentElement.outerHTML,
+        func: (selector) => {
+          if (selector) {
+            const resolveSelector = (sel) => {
+              if (!sel) return null;
+              const parts = sel.split(/,(?![^()]*\))/);
+              for (const part of parts) {
+                const trimmed = part.trim();
+                const match = trimmed.match(/(.*?):has-text\((.*)\)/);
+                if (match) {
+                  const baseSelector = match[1].trim() || "*";
+                  let searchText = match[2].trim();
+                  if ((searchText.startsWith('"') && searchText.endsWith('"')) || 
+                      (searchText.startsWith("'") && searchText.endsWith("'"))) {
+                    searchText = searchText.slice(1, -1);
+                  }
+                  if (searchText.startsWith("\\\"") && searchText.endsWith("\\\"")) {
+                    searchText = searchText.slice(2, -2);
+                  }
+                  if (searchText.startsWith("\\'") && searchText.endsWith("\\'")) {
+                    searchText = searchText.slice(2, -2);
+                  }
+                  try {
+                    const elements = Array.from(document.querySelectorAll(baseSelector));
+                    const found = elements.find(el => el.textContent.includes(searchText));
+                    if (found) return found;
+                  } catch (e) {}
+                } else {
+                  try {
+                    const found = document.querySelector(trimmed);
+                    if (found) return found;
+                  } catch (e) {}
+                }
+              }
+              return null;
+            };
+            const el = resolveSelector(selector);
+            return el ? el.outerHTML : `Element matching '${selector}' not found.`;
+          }
+          return document.documentElement.outerHTML;
+        },
+        args: [target || ""],
       });
       return result || "";
     }
@@ -462,6 +519,50 @@ async function handleAction(action, target, value, instanceId) {
       return `Eval Output: ${result}`;
     }
 
+    case "eval_js_direct": {
+      if (!activeTab) throw new Error("No active tab found.");
+      const code = value || target || "";
+      if (!code) throw new Error("JavaScript code string required for eval_js_direct.");
+      // We will wrap the code in a function constructor that is executed directly in the page context.
+      // Since chrome.scripting.executeScript runs in the tab, we can run code via Function constructor,
+      // but wait, does Function() constructor violate CSP too? Yes, usually it does.
+      // But we can run DOM queries directly! Let's provide a few helper modes, or directly return page HTML,
+      // or inspect specific elements.
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: activeTab.id },
+        func: (actionType, selectorVal) => {
+          try {
+            if (actionType === "get_html") {
+              const el = document.querySelector(selectorVal);
+              return el ? el.outerHTML : "Element not found";
+            }
+            if (actionType === "set_slate_content") {
+              // selectorVal is JSON string: { selector, text }
+              const data = JSON.parse(selectorVal);
+              const el = document.querySelector(data.selector);
+              if (!el) return "Element not found";
+              const targetEl = el.isContentEditable || el.getAttribute("contenteditable") === "true" ? el : (el.closest('[contenteditable="true"]') || el);
+              targetEl.focus();
+              const range = document.createRange();
+              range.selectNodeContents(targetEl);
+              range.collapse(false);
+              const sel = window.getSelection();
+              sel.removeAllRanges();
+              sel.addRange(range);
+              document.execCommand("insertText", false, data.text);
+              targetEl.dispatchEvent(new Event("input", { bubbles: true }));
+              return "Successfully set Slate content";
+            }
+            return "Unknown action type";
+          } catch (err) {
+            return "Error: " + err.message;
+          }
+        },
+        args: [target, value || ""],
+      });
+      return String(result);
+    }
+
     case "upload_file": {
       if (!activeTab) throw new Error("No active tab found.");
       if (!target) throw new Error("Target file input CSS selector required for upload_file.");
@@ -642,14 +743,53 @@ async function handleAction(action, target, value, instanceId) {
             const timeout = 5000;
             const start = Date.now();
             const timer = setInterval(() => {
-              const el = document.querySelector(selector);
-              if (el) {
+              try {
+                const resolveSelector = (sel) => {
+                  if (!sel) return null;
+                  const parts = sel.split(/,(?![^()]*\))/);
+                  for (const part of parts) {
+                    const trimmed = part.trim();
+                    const match = trimmed.match(/(.*?):has-text\((.*)\)/);
+                    if (match) {
+                      const baseSelector = match[1].trim() || "*";
+                      let searchText = match[2].trim();
+                      if ((searchText.startsWith('"') && searchText.endsWith('"')) ||
+                          (searchText.startsWith("'") && searchText.endsWith("'"))) {
+                        searchText = searchText.slice(1, -1);
+                      }
+                      if (searchText.startsWith("\\\"") && searchText.endsWith("\\\"")) {
+                        searchText = searchText.slice(2, -2);
+                      }
+                      if (searchText.startsWith("\\'") && searchText.endsWith("\\'")) {
+                        searchText = searchText.slice(2, -2);
+                      }
+                      try {
+                        const elements = Array.from(document.querySelectorAll(baseSelector));
+                        const found = elements.find(el => el.textContent.includes(searchText));
+                        if (found) return found;
+                      } catch (e) {}
+                    } else {
+                      try {
+                        const found = document.querySelector(trimmed);
+                        if (found) return found;
+                      } catch (e) {}
+                    }
+                  }
+                  return null;
+                };
+
+                const el = resolveSelector(selector);
+                if (el) {
+                  clearInterval(timer);
+                  el.click();
+                  resolve(`Clicked element matching '${selector}'`);
+                } else if (Date.now() - start > timeout) {
+                  clearInterval(timer);
+                  reject(new Error(`Timeout waiting for element '${selector}' to be clickable.`));
+                }
+              } catch (err) {
                 clearInterval(timer);
-                el.click();
-                resolve(`Clicked element matching '${selector}'`);
-              } else if (Date.now() - start > timeout) {
-                clearInterval(timer);
-                reject(new Error(`Timeout waiting for element '${selector}' to be clickable.`));
+                reject(err);
               }
             }, 100);
           });
@@ -666,10 +806,46 @@ async function handleAction(action, target, value, instanceId) {
       const markdownHTML = parseMarkdownToHTML(value || "");
       
       // Focus target element in DOM via script injection
-      await chrome.scripting.executeScript({
+      const [{ result: isContentEditable }] = await chrome.scripting.executeScript({
         target: { tabId: activeTab.id },
         func: (selector) => {
-          const el = document.querySelector(selector);
+          const resolveSelector = (sel) => {
+            if (!sel) return null;
+            const parts = sel.split(/,(?![^()]*\x29)/);
+            for (const part of parts) {
+              const trimmed = part.trim();
+              const match = trimmed.match(/(.*?):has-text\((.*)\)/);
+              if (match) {
+                const baseSelector = match[1].trim() || "*";
+                let searchText = match[2].trim();
+                if (searchText.startsWith('\"') && searchText.endsWith('\"')) {
+                  searchText = searchText.slice(2, -2);
+                }
+                if (searchText.startsWith('\'') && searchText.endsWith('\'')) {
+                  searchText = searchText.slice(2, -2);
+                }
+                if (searchText.startsWith('"') && searchText.endsWith('"')) {
+                  searchText = searchText.slice(1, -1);
+                }
+                if (searchText.startsWith("'") && searchText.endsWith("'")) {
+                  searchText = searchText.slice(1, -1);
+                }
+                try {
+                  const elements = Array.from(document.querySelectorAll(baseSelector));
+                  const found = elements.find(el => el.textContent.includes(searchText));
+                  if (found) return found;
+                } catch (e) {}
+              } else {
+                try {
+                  const found = document.querySelector(trimmed);
+                  if (found) return found;
+                } catch (e) {}
+              }
+            }
+            return null;
+          };
+          const el = resolveSelector(selector);
+
           if (el) {
             const targetEl = el.isContentEditable || el.getAttribute("contenteditable") === "true" ? el : (el.closest('[contenteditable="true"]') || el);
             targetEl.focus();
@@ -678,38 +854,69 @@ async function handleAction(action, target, value, instanceId) {
             range.selectNodeContents(targetEl);
             sel.removeAllRanges();
             sel.addRange(range);
+            return !!(targetEl.isContentEditable || targetEl.getAttribute("contenteditable") === "true" || targetEl.closest('[contenteditable="true"]'));
           }
+          return false;
         },
         args: [target],
       });
 
-      // Try native Chrome DevTools Protocol (CDP) key event dispatching
+      // Try native Chrome DevTools Protocol (CDP) text insertion if NOT contenteditable
       let cdpSuccess = false;
-      try {
-        await chrome.debugger.attach({ tabId: activeTab.id }, "1.3");
-        for (const char of (value || "")) {
-          await chrome.debugger.sendCommand({ tabId: activeTab.id }, "Input.dispatchKeyEvent", {
-            type: "keyDown",
-            text: char,
-            unmodifiedText: char,
+      if (!isContentEditable) {
+        try {
+          await chrome.debugger.attach({ tabId: activeTab.id }, "1.3");
+          await chrome.debugger.sendCommand({ tabId: activeTab.id }, "Input.insertText", {
+            text: value || "",
           });
-          await chrome.debugger.sendCommand({ tabId: activeTab.id }, "Input.dispatchKeyEvent", {
-            type: "keyUp",
-            text: char,
-            unmodifiedText: char,
-          });
+          await chrome.debugger.detach({ tabId: activeTab.id });
+          cdpSuccess = true;
+        } catch (cdpErr) {
+          // Fallback if debugger attach fails
         }
-        await chrome.debugger.detach({ tabId: activeTab.id });
-        cdpSuccess = true;
-      } catch (cdpErr) {
-        // Fallback if debugger attach fails
       }
 
       if (!cdpSuccess) {
         await chrome.scripting.executeScript({
           target: { tabId: activeTab.id },
           func: (selector, val, htmlVal) => {
-            const el = document.querySelector(selector);
+            const resolveSelector = (sel) => {
+              if (!sel) return null;
+              const parts = sel.split(/,(?![^()]*\x29)/);
+              for (const part of parts) {
+                const trimmed = part.trim();
+                const match = trimmed.match(/(.*?):has-text\((.*)\)/);
+                if (match) {
+                  const baseSelector = match[1].trim() || "*";
+                  let searchText = match[2].trim();
+                  if (searchText.startsWith('\"') && searchText.endsWith('\"')) {
+                    searchText = searchText.slice(2, -2);
+                  }
+                  if (searchText.startsWith('\'') && searchText.endsWith('\'')) {
+                    searchText = searchText.slice(2, -2);
+                  }
+                  if (searchText.startsWith('"') && searchText.endsWith('"')) {
+                    searchText = searchText.slice(1, -1);
+                  }
+                  if (searchText.startsWith("'") && searchText.endsWith("'")) {
+                    searchText = searchText.slice(1, -1);
+                  }
+                  try {
+                    const elements = Array.from(document.querySelectorAll(baseSelector));
+                    const found = elements.find(el => el.textContent.includes(searchText));
+                    if (found) return found;
+                  } catch (e) {}
+                } else {
+                  try {
+                    const found = document.querySelector(trimmed);
+                    if (found) return found;
+                  } catch (e) {}
+                }
+              }
+              return null;
+            };
+            const el = resolveSelector(selector);
+
             if (el) {
               const targetEl = el.isContentEditable || el.getAttribute("contenteditable") === "true" ? el : (el.closest('[contenteditable="true"]') || el);
               targetEl.focus();
@@ -725,7 +932,7 @@ async function handleAction(action, target, value, instanceId) {
           args: [target, value || "", markdownHTML],
         });
       }
-      return `${action === "paste" ? "Pasted content" : "Typed"} into target '${target}' (CDP: ${cdpSuccess}).`;
+      return `${action === "paste" ? "Pasted content" : "Typed"} into target '${target}' (CDP: ${cdpSuccess}, editable: ${isContentEditable}).`;
     }
 
     case "errors": {

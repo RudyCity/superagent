@@ -27,28 +27,40 @@ export function handleSlashCommand(
   let targetSlug = "";
   let extraPrompt = "";
 
-  if (name.toLowerCase().startsWith("skill-")) {
+  const skills = getInstalledSkills();
+  const rawName = name.toLowerCase();
+
+  if (rawName.startsWith("skill-")) {
     isDirectSkill = true;
-    targetSlug = name.toLowerCase().slice(6);
+    targetSlug = rawName.slice(6);
     extraPrompt = args;
-  } else if (name.toLowerCase() === "skill" && args) {
+  } else if (rawName === "skill" && args) {
     isDirectSkill = true;
     const [firstWord, ...restWords] = args.split(/\s+/);
     targetSlug = firstWord.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     extraPrompt = restWords.join(" ").trim();
+  } else {
+    const directMatch = skills.find(s => {
+      const sSlug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      return sSlug === rawName;
+    });
+    if (directMatch) {
+      isDirectSkill = true;
+      targetSlug = rawName;
+      extraPrompt = args;
+    }
   }
 
   if (isDirectSkill) {
-    const skills = getInstalledSkills();
     const matchedSkill = skills.find(s => {
       const sSlug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
       return sSlug === targetSlug;
     });
 
     if (matchedSkill) {
-      const displayCmd = name.toLowerCase().startsWith("skill-")
-        ? `skill-${targetSlug}${extraPrompt ? ` ${extraPrompt}` : ""}`
-        : `skill ${targetSlug}${extraPrompt ? ` ${extraPrompt}` : ""}`;
+      const displayCmd = rawName === "skill"
+        ? `skill ${targetSlug}${extraPrompt ? ` ${extraPrompt}` : ""}`
+        : `${rawName}${extraPrompt ? ` ${extraPrompt}` : ""}`;
 
       ctx.addLine({
         type: "user",

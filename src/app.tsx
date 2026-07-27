@@ -916,7 +916,7 @@ export function App({
   const installedSkills = getInstalledSkills();
   const skillCommands = installedSkills.map(s => {
     const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    return `/skill-${slug}`;
+    return `/${slug}`;
   });
 
   // ── Image attachment handlers ─────────────────────────────────────────────

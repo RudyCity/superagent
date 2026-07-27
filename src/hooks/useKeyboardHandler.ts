@@ -1670,7 +1670,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               const slug = chosen.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
               addLine({
                 type: "user",
-                content: `❯ /skill-${slug}`,
+                content: `❯ /${slug}`,
                 timestamp: now,
               });
               addLine({

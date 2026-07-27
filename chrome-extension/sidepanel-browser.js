@@ -700,14 +700,50 @@ async function executeBrowserControl(controlId, action, target, value) {
         target: { tabId: activeTab.id },
         func: async (act, tgt, val) => {
           try {
+            const resolveSelector = (selector) => {
+              if (!selector) return null;
+              const parts = selector.split(/,(?![^()]*\x29)/);
+              for (const part of parts) {
+                const trimmed = part.trim();
+                const match = trimmed.match(/(.*?):has-text\((.*)\)/);
+                if (match) {
+                  const baseSelector = match[1].trim() || "*";
+                  let searchText = match[2].trim();
+                  if (searchText.startsWith('\"') && searchText.endsWith('\"')) {
+                    searchText = searchText.slice(2, -2);
+                  }
+                  if (searchText.startsWith('\'') && searchText.endsWith('\'')) {
+                    searchText = searchText.slice(2, -2);
+                  }
+                  if (searchText.startsWith('"') && searchText.endsWith('"')) {
+                    searchText = searchText.slice(1, -1);
+                  }
+                  if (searchText.startsWith("'") && searchText.endsWith("'")) {
+                    searchText = searchText.slice(1, -1);
+                  }
+                  try {
+                    const elements = Array.from(document.querySelectorAll(baseSelector));
+                    const found = elements.find(el => el.textContent.includes(searchText));
+                    if (found) return found;
+                  } catch (e) {}
+                } else {
+                  try {
+                    const found = document.querySelector(trimmed);
+                    if (found) return found;
+                  } catch (e) {}
+                }
+              }
+              return null;
+            };
+
             const waitForSelector = (selector, timeoutMs = 5000) => {
               return new Promise((resolve, reject) => {
-                if (document.querySelector(selector)) {
+                if (resolveSelector(selector)) {
                   return resolve(true);
                 }
                 const startTime = Date.now();
                 const interval = setInterval(() => {
-                  if (document.querySelector(selector)) {
+                  if (resolveSelector(selector)) {
                     clearInterval(interval);
                     resolve(true);
                   } else if (Date.now() - startTime > timeoutMs) {
@@ -1339,7 +1375,7 @@ async function executeBrowserControl(controlId, action, target, value) {
               if (!tgt) {
                 return document.documentElement ? document.documentElement.outerHTML : "";
               }
-              const el = document.querySelector(tgt);
+              const el = resolveSelector(tgt);
               if (!el) {
                 return `Error: Element not found for selector: ${tgt}`;
               }
@@ -1355,7 +1391,7 @@ async function executeBrowserControl(controlId, action, target, value) {
                 window.scrollBy(0, window.innerHeight / 2);
                 return "Scrolled page down";
               } else {
-                const el = document.querySelector(tgt);
+                const el = resolveSelector(tgt);
                 if (el) {
                   el.scrollIntoView({ behavior: "smooth" });
                   return `Scrolled to element ${tgt}`;
@@ -1369,7 +1405,7 @@ async function executeBrowserControl(controlId, action, target, value) {
               if (!tgt) {
                 return document.body ? document.body.innerText : "";
               }
-              const el = document.querySelector(tgt);
+              const el = resolveSelector(tgt);
               if (!el) {
                 return `Error: Element not found for selector: ${tgt}`;
               }
@@ -1390,7 +1426,7 @@ async function executeBrowserControl(controlId, action, target, value) {
               
               // Smart fallback: if element is null/body/html and we have a backup selector
               if ((!el || el === document.body || el === document.documentElement) && selectorBackup) {
-                const fallbackEl = document.querySelector(selectorBackup);
+                const fallbackEl = resolveSelector(selectorBackup);
                 if (fallbackEl) {
                   el = fallbackEl;
                   const rect = el.getBoundingClientRect();
@@ -1404,7 +1440,7 @@ async function executeBrowserControl(controlId, action, target, value) {
               }
               cursorTarget = { x: clientX, y: clientY };
             } else {
-              el = document.querySelector(tgt);
+              el = resolveSelector(tgt);
               if (!el) {
                 return `Error: Element not found for selector: ${tgt}`;
               }
@@ -1547,6 +1583,34 @@ async function executeBrowserControl(controlId, action, target, value) {
               }, 3000);
 
               return `Pasted "${val}" into element ${tgt}`;
+            }
+
+            if (act === "eval_js_direct") {
+              try {
+                if (tgt === "get_html") {
+                  const el = document.querySelector(val);
+                  return el ? el.outerHTML : "Element not found";
+                }
+                if (tgt === "set_slate_content") {
+                  const data = JSON.parse(val);
+                  const el = document.querySelector(data.selector);
+                  if (!el) return "Element not found";
+                  const targetEl = el.isContentEditable || el.getAttribute("contenteditable") === "true" ? el : (el.closest('[contenteditable="true"]') || el);
+                  targetEl.focus();
+                  const range = document.createRange();
+                  range.selectNodeContents(targetEl);
+                  range.collapse(false);
+                  const sel = window.getSelection();
+                  sel.removeAllRanges();
+                  sel.addRange(range);
+                  document.execCommand("insertText", false, data.text);
+                  targetEl.dispatchEvent(new Event("input", { bubbles: true }));
+                  return "Successfully set Slate content";
+                }
+                return "Unknown action type";
+              } catch (err) {
+                return "Error: " + err.message;
+              }
             }
 
             return `Error: Unknown action ${act}`;

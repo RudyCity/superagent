@@ -100,16 +100,19 @@ export const MODEL_LIMITS: Record<string, number> = {
   "google/gemini-2.5-pro": 1048576,
   "google/gemini-2.5-pro-preview": 1048576,
   "google/gemini-2.5-pro-preview-05-06": 1048576,
+  "google/gemini-3.6-flash": 1048576,
+  "google/gemini-3.5-flash": 1048576,
+  "google/gemini-3.5-flash-lite": 1048576,
   "google/gemini-3-flash-preview": 1048576,
-  "google/gemini-3-pro-image": 65536,
+  "google/gemini-3-pro-image": 131072,
   "google/gemini-3-pro-image-preview": 65536,
   "google/gemini-3.1-flash-image": 131072,
   "google/gemini-3.1-flash-image-preview": 131072,
+  "google/gemini-3.1-flash-lite-image": 65536,
   "google/gemini-3.1-flash-lite": 1048576,
   "google/gemini-3.1-flash-lite-preview": 1048576,
   "google/gemini-3.1-pro-preview": 1048576,
-  "google/gemini-3.1-pro-preview-customtools": 1048756,
-  "google/gemini-3.5-flash": 1048576,
+  "google/gemini-3.1-pro-preview-customtools": 1048576,
   "google/gemma-2-27b-it": 8192,
   "google/gemma-3-12b-it": 131072,
   "google/gemma-3-27b-it": 131072,
@@ -517,7 +520,10 @@ export function getStaticModelLimit(model: string): number | null {
   }
 
   // 3. Fallback matching with keywords/substrings
-  if (m.includes("gemini-2.5-flash-lite") || m.includes("gemini-3.1-flash-lite")) return 1048576;
+  if (m.includes("flash-lite-image") || m.includes("lite-image")) return 65536;
+  if (m.includes("flash-image") || m.includes("pro-image")) return 131072;
+  if (m.includes("gemini-3.6-flash") || m.includes("gemini-3.5-flash")) return 1048576;
+  if (m.includes("gemini-2.5-flash-lite") || m.includes("gemini-3.1-flash-lite") || m.includes("gemini-3.5-flash-lite")) return 1048576;
   if (m.includes("gemini-2.5-flash") || m.includes("gemini-2.0-flash") || m.includes("gemini-1.5-flash")) return 1048576;
   if (m.includes("gemini-2.5-pro") || m.includes("gemini-2.0-pro") || m.includes("gemini-1.5-pro")) return 1048576;
   if (m.includes("gemini")) return 1048576; // Default gemini fallback

@@ -498,6 +498,25 @@ describe("Slash Command: /skills and /skill", () => {
     expect(mockSendMessage).toHaveBeenCalled();
   });
 
+  it("should activate skill directly on /<slug> (e.g. /test-skill)", () => {
+    const mockSendMessage = vi.fn().mockResolvedValue({});
+    const mockAgent = {
+      sendMessage: mockSendMessage,
+    } as any;
+
+    const ctxWithAgent = {
+      ...mockCtx,
+      agent: mockAgent,
+    };
+
+    handleSlashCommand("/test-skill", ctxWithAgent);
+
+    expect(addedLines.length).toBe(2);
+    expect(addedLines[0].content).toBe("❯ /test-skill");
+    expect(addedLines[1].content).toContain("Activating skill \"Test Skill\"");
+    expect(mockSendMessage).toHaveBeenCalled();
+  });
+
   it("should report error if direct skill not found", () => {
     handleSlashCommand("/skill non-existent-skill", mockCtx);
 

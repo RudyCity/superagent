@@ -378,3 +378,33 @@ export function updatePasteState(
   return currentState;
 }
 
+export function getActiveCommandContext(text: string, cursorPosition: number) {
+  const textBeforeCursor = text.slice(0, cursorPosition);
+  
+  // Find the last occurrence of '/' or '!' that acts as a command trigger.
+  // A command trigger must be either at the start of the string or preceded by a whitespace character.
+  let lastTriggerIndex = -1;
+  for (let i = textBeforeCursor.length - 1; i >= 0; i--) {
+    const char = textBeforeCursor[i];
+    if (char === "/" || char === "!") {
+      if (i === 0 || /\s/.test(textBeforeCursor[i - 1])) {
+        lastTriggerIndex = i;
+        break;
+      }
+    }
+  }
+  
+  if (lastTriggerIndex === -1) {
+    return null;
+  }
+  
+  const commandSegment = textBeforeCursor.slice(lastTriggerIndex);
+  
+  return {
+    triggerIndex: lastTriggerIndex,
+    commandSegment, // e.g. "/model" or "/model pr" or "/model preset list"
+    isBang: textBeforeCursor[lastTriggerIndex] === "!"
+  };
+}
+
+

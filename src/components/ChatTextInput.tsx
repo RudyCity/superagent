@@ -49,6 +49,7 @@ type Props = {
   isPasted?: boolean;
   pastePrefixLength?: number;
   pasteSuffixLength?: number;
+  onCursorOffsetChange?: (offset: number) => void;
 };
 
 const BLINK_ON = "\x1b[5m";
@@ -73,11 +74,16 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
   isPasted = false,
   pastePrefixLength = 0,
   pasteSuffixLength = 0,
+  onCursorOffsetChange,
 }: Props, ref) {
   const [localValue, setLocalValue] = useState(originalValue || "");
   const [cursorOffset, setCursorOffset] = useState(
     (originalValue || "").length
   );
+
+  useEffect(() => {
+    onCursorOffsetChange?.(cursorOffset);
+  }, [cursorOffset, onCursorOffsetChange]);
 
   useImperativeHandle(ref, () => ({
     setCursorOffset: (offset: number) => {

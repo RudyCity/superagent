@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.594] - 2026-07-26
+
+### Fixed
+- **Slash Commands & UI Polish**: Enhanced slash command auto-completion, browser macro execution tools, keyboard handlers, and multi-agent dashboard updates.
+- **Extension Controls**: Added extension reload action and browser macro control features.
+
 ## [1.2.593] - 2026-07-26
 
 ### Fixed

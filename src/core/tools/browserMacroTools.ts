@@ -75,7 +75,7 @@ export const controlBrowserTabTool: Tool = {
       }
     }
 
-    if (["click", "type", "paste", "navigate", "scroll", "hover", "keypress", "switch", "move", "group", "ungroup", "reading_list_add", "reading_list_remove", "group_update", "history_delete", "management_get", "show_detections", "dom_info", "execute_chain", "highlight_element"].includes(action) && !args.target) {
+    if (["click", "type", "paste", "navigate", "scroll", "hover", "keypress", "switch", "move", "group", "ungroup", "reading_list_add", "reading_list_remove", "group_update", "history_delete", "management_get", "show_detections", "dom_info", "execute_chain", "highlight_element", "eval_js_direct", "reload_extension"].includes(action) && !args.target) {
       return `Error: Target parameter is required for action "${action}".`;
     }
     if (action === "wait" && !args.target && !args.value) {
