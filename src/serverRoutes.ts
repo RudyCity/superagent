@@ -1102,8 +1102,7 @@ export async function handleServerRoute(
     return true;
   }
 
-  // Memory: delete atomic memory
-n  // Memory: generic get (list/search all)
+    // Memory: generic get (list/search all)
   if (pathname === "/api/memory" && req.method === "GET") {
     try {
       const query = parsedUrl.searchParams.get("query") || "";
@@ -1188,7 +1187,8 @@ n  // Memory: generic get (list/search all)
     } catch (err: any) {
       sendJSON(res, 500, { error: err.message || String(err) });
     }
-      activePresetId: { single: activeSinglePresetId, multi: activeMultiPresetId },
+    return true;
+  }
       activeProviderProfileId: deriveActiveProviderId(),
       trustedDirectories
     });
