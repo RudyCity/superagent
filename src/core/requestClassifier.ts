@@ -272,18 +272,21 @@ const CONVERSATION_EXACT: ReadonlySet<string> = new Set([
   // Indonesian affirmations / acknowledgments
   // Note: "ya" intentionally omitted — too ambiguous (variable name, Python keyword,
   // yes-answer to agent confirmation that should still route through the main loop).
-  "oke", "iya", "sip", "siap",
+  "oke", "iya", "sip", "siap", "siap bos", "siap boss",
   "lanjut", "lanjutkan",
-  "mantap", "mantul", "keren", "bagus",
-  "gas", "gass", "gassss",
-  "ngerti", "paham", "mengerti",
-  "halo", "hai",
-  "yaudah", "udah", "sudah",
-  "terima kasih", "makasih", "trims",
-  "benar", "betul", "tepat",
-  "setuju",
+  "mantap", "mantul", "keren", "bagus", "oke sip",
+  "gas", "gass", "gassss", "gaskeun",
+  "ngerti", "paham", "mengerti", "ngerti kok",
+  "halo", "hai", "halo juga", "hai juga",
+  "yaudah", "udah", "sudah", "udah selesai",
+  "terima kasih", "makasih", "trims", "makasih ya",
+  "benar", "betul", "tepat", "bener",
+  "setuju", "tentu", "tentu saja", "boleh", "silakan", "silahkan",
+  "ayo", "mari", "monggo",
+  "ga", "gak", "enggak", "kaga", "tidak",
+  "woke", "wkkwkw", "wkwk", "haha", "hehe",
   // Discussion indicators
-  "diskusi", "ngobrol",
+  "diskusi", "ngobrol", "obrol",
 ]);
 
 /** Phrase patterns that strongly indicate conversation (matched as substring) */
@@ -301,6 +304,12 @@ const CONVERSATION_PHRASES: readonly string[] = [
   "oke siap", "siap bos", "siap boss",
   "oke paham", "iya paham", "sudah paham", "ngerti kok",
   "iya betul", "iya benar", "iya tepat", "oke betul",
+  // Indonesian conversational questions (catch before weak question detection)
+  "kamu siapa", "kamu apa", "model apa", "nama kamu", "siapa kamu",
+  "apa kabar", "kamu lagi apa", "kamu pakai", "kamu pake",
+  "lagu apa", "versi berapa", "umur berapa", "kamu dari mana",
+  "kamu bisa apa", "kamu kerja apa", "tujuan kamu",
+  "itu apa", "ini apa", "maksudnya apa",
   "oke deh lanjut", "ya udah lanjut", "gass aja",
   "sip lanjut", "gas bro",
   "diskusi aja", "cuma nanya", "cuma diskusi", "hanya diskusi",
@@ -416,7 +425,14 @@ export function classifyHeuristic(
         getSoundex(cleanLower) === getSoundex("oke") ||
         getSoundex(cleanLower) === getSoundex("iya") ||
         getSoundex(cleanLower) === getSoundex("yes") ||
-        getSoundex(cleanLower) === getSoundex("gas")
+        getSoundex(cleanLower) === getSoundex("gas") ||
+        getSoundex(cleanLower) === getSoundex("bisa") ||
+        getSoundex(cleanLower) === getSoundex("boleh") ||
+        getSoundex(cleanLower) === getSoundex("siap") ||
+        getSoundex(cleanLower) === getSoundex("makasih") ||
+        getSoundex(cleanLower) === getSoundex("betul") ||
+        getSoundex(cleanLower) === getSoundex("paham") ||
+        getSoundex(cleanLower) === getSoundex("mas")
       ))
     ) {
       return {
@@ -556,6 +572,20 @@ export function classifyHeuristic(
     };
   }
 
+  // ── Conversational heuristic: short Indonesian questions with personal pronouns ──
+  const CONVERSATION_PRONOUNS = /\b(kamu|aku|saya|dia|kita|anda|lo|lu|gue|gw|elo)\b/i;
+  if ((startsWithQuestion || endsWithQuestion) && wordCount <= 6) {
+    if (CONVERSATION_PRONOUNS.test(cleanLower)) {
+      return {
+        category: "conversation",
+        confidence: "medium",
+        reason: `Short conversational question: pronoun detected (${wordCount} words)`,
+        heuristicOnly: true,
+        classificationTokens: 0,
+      };
+    }
+  }
+
   // ── Weak/Possible question detection (Moved to bottom to prevent hijacking) ──
   if (startsWithQuestion || endsWithQuestion) {
     return {
@@ -593,7 +623,7 @@ function classifyStatistical(
   cleanLower: string,
   customKeywords?: Partial<Record<RequestCategory, string[]>>
 ): ClassificationResult | null {
-  const categories: RequestCategory[] = ["debug", "research", "command", "complex_task"];
+  const categories: RequestCategory[] = ["debug", "research", "command", "complex_task", "conversation", "question"];
   const scores: Record<RequestCategory, number> = {
     conversation: 0,
     question: 0,
