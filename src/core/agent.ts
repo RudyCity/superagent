@@ -3,7 +3,6 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import { execa } from "execa";
-import { renderTextToImageBase64, sliceTextIntoPages, minifyTextForImage } from "../utils/textToImage.js";
 import { captureGitSnapshot, getGitDiffSummary, type GitSnapshot } from "./agent/GitUtils.js";
 import fs from "fs";
 import crypto from "crypto";

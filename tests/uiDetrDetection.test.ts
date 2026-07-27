@@ -23,8 +23,10 @@ describe("detect_ui action — controlBrowserTabTool", () => {
     fs.writeFileSync(path.join(tmpDir, "chrome_screenshot.png"), "dummy");
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    const { stopRemoteChromeBridge } = await import("../src/core/tools/remoteChromeBridge.js");
+    await stopRemoteChromeBridge().catch(() => {});
     vi.restoreAllMocks();
   });
 
@@ -94,7 +96,7 @@ describe("detect_ui action — controlBrowserTabTool", () => {
 
     const result = await controlBrowserTabTool.execute({ action: "detect_ui" }, tmpDir, undefined);
 
-    expect(result).toContain("Browser control handler is not active");
+    expect(result).toContain("UI Detection execution failed");
   });
 });
 

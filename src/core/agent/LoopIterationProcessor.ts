@@ -2,7 +2,6 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
-import { renderTextToImageBase64, sliceTextIntoPages, minifyTextForImage } from "../../utils/textToImage.js";
 import { captureGitSnapshot, getGitDiffSummary } from "./GitUtils.js";
 import fs from "fs";
 import { getConfig, getSettings, getDynamicVisionThreshold } from "../config.js";

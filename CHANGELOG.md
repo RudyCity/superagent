@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.596] - 2026-07-28
+
+### Fixed
+- **Test Pollution (uiDetrDetection)**: Added `stopRemoteChromeBridge()` cleanup in `afterEach` to prevent WebSocketServer singleton from leaking between tests, which silently reinstated `browserControlHandler` and broke null-handler expectations.
+
 ## [1.2.595] - 2026-07-27
 
 ### Fixed

@@ -14,8 +14,35 @@ import {
 } from "../../utils/textToImage.js";
 import type { Agent } from "../agent.js";
 
+/**
+ * Minimal LRU cache backed by Map (insertion-order preserved).
+ * Access moves entry to end; evicts oldest at capacity.
+ */
+class LRUCache<K, V> {
+  private map = new Map<K, V>();
+  constructor(private capacity: number) {}
+  get(key: K): V | undefined {
+    if (!this.map.has(key)) return undefined;
+    const val = this.map.get(key)!;
+    this.map.delete(key);
+    this.map.set(key, val);
+    return val;
+  }
+  set(key: K, value: V): void {
+    if (this.map.has(key)) this.map.delete(key);
+    else if (this.map.size >= this.capacity) {
+      const oldest = this.map.keys().next().value;
+      if (oldest !== undefined) this.map.delete(oldest);
+    }
+    this.map.set(key, value);
+  }
+  has(key: K): boolean { return this.map.has(key); }
+  delete(key: K): boolean { return this.map.delete(key); }
+  get size(): number { return this.map.size; }
+}
+
 export class MessageBuilder {
-  private static imageCache: Map<string, string[]> = new Map();
+  private static imageCache = new LRUCache<string, string[]>(500);
 
   private getCachedImages(text: string): string[] | null {
     const hash = crypto.createHash("sha256").update(text).digest("hex");
@@ -24,10 +51,6 @@ export class MessageBuilder {
 
   private setCachedImages(text: string, images: string[]): void {
     const hash = crypto.createHash("sha256").update(text).digest("hex");
-    if (MessageBuilder.imageCache.size >= 500) {
-      const oldest = MessageBuilder.imageCache.keys().next().value;
-      if (oldest) MessageBuilder.imageCache.delete(oldest);
-    }
     MessageBuilder.imageCache.set(hash, images);
   }
 
@@ -84,24 +107,24 @@ export class MessageBuilder {
         if (m.role === "system") continue;
         const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
         if (m.role === "user") {
-          compiledText += `\n=== USER MESSAGE ===\n${rawContent}\n`;
+          compiledText += `\n[USER]\n${rawContent}\n`;
         } else if (m.role === "assistant") {
-          compiledText += `\n=== ASSISTANT MESSAGE ===\n${rawContent}\n`;
+          compiledText += `\n[ASST]\n${rawContent}\n`;
           if (m.toolCalls && m.toolCalls.length > 0) {
-            compiledText += `\n[Tool Calls]:\n` + m.toolCalls.map(tc => `- Call ID: ${tc.id}, Tool: ${tc.name}, Args: ${JSON.stringify(tc.args)}`).join("\n") + "\n";
+            compiledText += `\n[TOOL_CALLS]\n` + m.toolCalls.map(tc => `- ${tc.id}: ${tc.name}(${JSON.stringify(tc.args)})`).join("\n") + "\n";
           }
         } else if (m.role === "tool") {
           const results = m.toolResults || [];
           for (const tr of results) {
             const resStr = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
-            compiledText += `\n=== TOOL RESULT: ${tr.name} (ID: ${tr.toolCallId}) ===\n${resStr}\n`;
+            compiledText += `\n[TOOL:${tr.name} #${tr.toolCallId}]\n${resStr}\n`;
           }
         }
       }
 
       // Append dynamic execution context at the end of compiled text in Mode 2
       if (dynamicContext) {
-        compiledText += `\n=== DYNAMIC EXECUTION CONTEXT ===\n${dynamicContext}\n`;
+        compiledText += `\n[CTX]\n${dynamicContext}\n`;
       }
 
       const cleanText = minifyTextForImage(compiledText);
@@ -109,14 +132,11 @@ export class MessageBuilder {
         let base64List = this.getCachedImages(cleanText);
         if (!base64List) {
           const pages = sliceTextIntoPages(cleanText);
-          base64List = [];
-          for (const page of pages) {
-            const base64 = renderTextToImageBase64(page);
-            base64List.push(base64);
-          }
+          base64List = pages.map(page => renderTextToImageBase64(page));
           this.setCachedImages(cleanText, base64List);
         }
 
+        // Per-provider image limit (Anthropic: 20, others: 100)
         const isAnthropic = modelName.toLowerCase().includes("anthropic");
         const maxModelImages = isAnthropic ? 20 : 100;
         const limitedBase64List = base64List.slice(0, maxModelImages);
