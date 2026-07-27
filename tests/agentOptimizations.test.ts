@@ -68,10 +68,10 @@ describe("agentOptimizations", () => {
       const coderPrompt = SUBAGENT_SYSTEM_PROMPTS.coder;
 
       expect(researcherPrompt).toContain("Research Subagent");
-      expect(researcherPrompt).toContain("CRITICAL RULES");
+      expect(researcherPrompt).toContain("# RULES");
 
-      expect(coderPrompt).toContain("SCOPE_GUARD");
-      expect(coderPrompt).toContain("CRITICAL RULES");
+      expect(coderPrompt).toContain("- SCOPE:");
+      expect(coderPrompt).toContain("# RULES");
     });
   });
 });

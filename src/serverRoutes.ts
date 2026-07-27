@@ -1024,7 +1024,7 @@ export async function handleServerRoute(
     }
     return true;
   }
-n  // Memory: search atomic rmemory + shared memory
+ // Memory: search atomic rmemory + shared memory
   if (pathname === "/api/memory/search" && req.method === "GET") {
     try {
       const query = parsedUrl.searchParams.get("query") || "";
@@ -1103,6 +1103,78 @@ n  // Memory: search atomic rmemory + shared memory
   }
 
   // Memory: delete atomic memory
+n  // Memory: generic get (list/search all)
+  if (pathname === "/api/memory" && req.method === "GET") {
+    try {
+      const query = parsedUrl.searchParams.get("query") || "";
+      const scope = parsedUrl.searchParams.get("scope") || "all";
+      const isActive = await isRmemoryActive();
+      let memory: any[] = [];
+      if (isActive) {
+        const client = getRMemoryClient();
+        try {
+          const result = await client.searchAtomic({ query, limit: 50 });
+          memory = result.items || [];
+        } catch {}
+      }
+      let sharedMemory: any[] = [];
+      try {
+        const sharedMemPath = path.join(getRootConfigDir(), "shared-memory.json");
+        if (fs.existsSync(sharedMemPath)) {
+          const raw = fs.readFileSync(sharedMemPath, "utf-8");
+          const allShared = JSON.parse(raw);
+          if (Array.isArray(allShared)) {
+            sharedMemory = allShared.filter((e: any) => {
+              if (scope === "project") return e.scope === "project";
+              if (scope === "global") return e.scope === "global";
+              return true;
+            });
+            if (query) {
+              const q = query.toLowerCase();
+              sharedMemory = sharedMemory.filter((e: any) =>
+                (e.key && e.key.toLowerCase().includes(q)) ||
+                (e.value && e.value.toLowerCase().includes(q))
+              );
+            }
+          }
+        }
+      } catch {}
+      sendJSON(res, 200, { memory, sharedMemory });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Memory: generic post (save)
+  if (pathname === "/api/memory" && req.method === "POST") {
+    try {
+      const body = await readBody(req);
+      const data = JSON.parse(body);
+      const { id, content, scope: memScope, key, value } = data;
+      const isActive = await isRmemoryActive();
+      if (key && value) {
+        const sharedMemPath = path.join(getRootConfigDir(), "shared-memory.json");
+        let memories: any[] = [];
+        if (fs.existsSync(sharedMemPath)) {
+          try { memories = JSON.parse(fs.readFileSync(sharedMemPath, "utf-8")); } catch {}
+          if (!Array.isArray(memories)) memories = [];
+        }
+        memories.push({ key, value, source: "api", timestamp: Date.now(), scope: memScope || "project" });
+        fs.writeFileSync(sharedMemPath, JSON.stringify(memories, null, 2));
+        sendJSON(res, 200, { success: true });
+      } else if (isActive && id && content) {
+        const client = getRMemoryClient();
+        await client.updateAtomic({ id, content });
+        sendJSON(res, 200, { success: true });
+      } else {
+        sendJSON(res, 400, { error: "Missing id+content or key+value" });
+      }
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message || String(err) });
+    }
+    return true;
+  }
   if (pathname === "/api/memory/delete" && req.method === "DELETE") {
     try {
       const body = await readBody(req);
@@ -1116,56 +1188,6 @@ n  // Memory: search atomic rmemory + shared memory
     } catch (err: any) {
       sendJSON(res, 500, { error: err.message || String(err) });
     }
-    return true;
-  }
-
-  // Helper: derive active provider profile id from active preset's main tier
-  const deriveActiveProviderId = (): string => {
-    try {
-      const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
-      const preset = getActivePreset<any>(isMulti ? "multi" : "single");
-      const tier = isMulti ? preset.models?.master : preset.models?.superagent;
-      return tier?.providerProfileId || "";
-    } catch { return ""; }
-  };
-
-  // Fetch Config (full snapshot: settings, providers, presets, activePresetId)
-  if (pathname === "/api/config" && req.method === "GET") {
-    const settings = getSettings();
-    const config = loadModelConfig();
-    const configSingle: any[] = getPresets("single") || [];
-    const configMulti: any[] = getPresets("multi") || [];
-    let cliSingle: any[] = [];
-    let cliMulti: any[] = [];
-    try {
-      cliSingle = getModelPresets("single") || [];
-      cliMulti = getModelPresets("multi") || [];
-    } catch (e) {}
-
-    const mergePresets = (configList: any[], cliList: any[]) => {
-      const map = new Map<string, any>();
-      for (const p of cliList) {
-        if (p && p.name) map.set(p.name, { ...p, id: p.id || p.name });
-      }
-      for (const p of configList) {
-        if (p && (p.name || p.id)) {
-          const key = p.name || p.id;
-          map.set(key, { ...map.get(key), ...p, id: p.id || p.name });
-        }
-      }
-      return Array.from(map.values());
-    };
-
-    const singlePresets = mergePresets(configSingle, cliSingle);
-    const multiPresets = mergePresets(configMulti, cliMulti);
-    const activeSinglePresetId = getActivePresetId("single");
-    const activeMultiPresetId = getActivePresetId("multi");
-    const trustedDirectories = getTrustedDirectories();
-    sendJSON(res, 200, {
-      settings,
-      superagentVersion: getSuperAgentVersion(),
-      providers: config.providers,    // ALL providers, not filtered by apiKey
-      presets: { single: singlePresets, multi: multiPresets },
       activePresetId: { single: activeSinglePresetId, multi: activeMultiPresetId },
       activeProviderProfileId: deriveActiveProviderId(),
       trustedDirectories

@@ -36,8 +36,8 @@ describe("prompt and command guidance", () => {
     expect(prompts).toContain("Target PID ONLY");
     expect(prompts).not.toContain("taskkill /F /IM bun.exe");
     expect(prompts).not.toContain("## Rencana Perubahan");
-    expect(prompts).toContain("Plain terminal text only in user responses");
-    expect(prompts).toContain("spawn 'researcher' subagent for broad mapping");
+    expect(prompts).toContain("Plain terminal text only");
+    expect(prompts).toContain("spawn 'researcher' for broad");
   });
 
   it("documents tool failure recovery guidance", () => {
@@ -49,7 +49,7 @@ describe("prompt and command guidance", () => {
     expect(configBase).toContain("Use action 'report' (singular), not 'reports'");
     expect(configBase).toContain("npm.cmd");
 
-    expect(prompts).toContain("Failures: Re-read target range, apply line-range replacement. Avoid repeating stale edits.");
+    expect(prompts).toContain("Re-read range → line-range replace. Avoid stale edits.");
     expect(prompts).toContain("DIRTY_WORKSPACE");
   });
 
@@ -57,8 +57,8 @@ describe("prompt and command guidance", () => {
     const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
     const base = fs.readFileSync(path.resolve(process.cwd(), "src/core/config/base.ts"), "utf-8");
 
-    expect(prompts).toContain("BATCH_OPS: Consolidate parallel operations in single turn");
-    expect(prompts).toContain("Issue concurrent subagent calls in single turn");
+    expect(prompts).toContain("BATCH_OPS: Consolidate parallel ops in single turn");
+    expect(prompts).toContain("concurrent calls for independent");
     expect(base).toContain("Plan batches upfront");
     expect(base).toContain("conversationIds");
   });

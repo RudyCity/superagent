@@ -76,6 +76,8 @@ export interface SystemSettings {
   advisorPauseThreshold?: number;
   advisorErrorThreshold?: number;
   maxConcurrentWorkspaceTasks?: number;
+  /** Log level for prompt logging: off | metadata (no messages) | full (all content) */
+  promptLogLevel?: "off" | "metadata" | "full";
 }
 
 export interface McpServerConfig {
