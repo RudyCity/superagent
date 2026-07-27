@@ -1102,7 +1102,7 @@ export async function handleServerRoute(
     return true;
   }
 
-    // Memory: generic get (list/search all)
+  // Memory: generic get (list/search all)
   if (pathname === "/api/memory" && req.method === "GET") {
     try {
       const query = parsedUrl.searchParams.get("query") || "";
@@ -1189,6 +1189,55 @@ export async function handleServerRoute(
     }
     return true;
   }
+
+  // Helper: derive active provider profile id from active preset's main tier
+  const deriveActiveProviderId = (): string => {
+    try {
+      const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+      const preset = getActivePreset<any>(isMulti ? "multi" : "single");
+      const tier = isMulti ? preset.models?.master : preset.models?.superagent;
+      return tier?.providerProfileId || "";
+    } catch { return ""; }
+  };
+
+  // Fetch Config (full snapshot: settings, providers, presets, activePresetId)
+  if (pathname === "/api/config" && req.method === "GET") {
+    const settings = getSettings();
+    const config = loadModelConfig();
+    const configSingle: any[] = getPresets("single") || [];
+    const configMulti: any[] = getPresets("multi") || [];
+    let cliSingle: any[] = [];
+    let cliMulti: any[] = [];
+    try {
+      cliSingle = getModelPresets("single") || [];
+      cliMulti = getModelPresets("multi") || [];
+    } catch (e) {}
+
+    const mergePresets = (configList: any[], cliList: any[]) => {
+      const map = new Map<string, any>();
+      for (const p of cliList) {
+        if (p && p.name) map.set(p.name, { ...p, id: p.id || p.name });
+      }
+      for (const p of configList) {
+        if (p && (p.name || p.id)) {
+          const key = p.name || p.id;
+          map.set(key, { ...map.get(key), ...p, id: p.id || p.name });
+        }
+      }
+      return Array.from(map.values());
+    };
+
+    const singlePresets = mergePresets(configSingle, cliSingle);
+    const multiPresets = mergePresets(configMulti, cliMulti);
+    const activeSinglePresetId = getActivePresetId("single");
+    const activeMultiPresetId = getActivePresetId("multi");
+    const trustedDirectories = getTrustedDirectories();
+    sendJSON(res, 200, {
+      settings,
+      superagentVersion: getSuperAgentVersion(),
+      providers: config.providers,    // ALL providers, not filtered by apiKey
+      presets: { single: singlePresets, multi: multiPresets },
+      activePresetId: { single: activeSinglePresetId, multi: activeMultiPresetId },
       activeProviderProfileId: deriveActiveProviderId(),
       trustedDirectories
     });

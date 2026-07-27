@@ -55,6 +55,7 @@ function getStream(filePath: string): fs.WriteStream {
     return writeStream;
   }
   writeStream = fs.createWriteStream(filePath, { flags: "a" });
+  writeStream.on("error", () => {});
   return writeStream;
 }
 
@@ -231,6 +232,7 @@ export function logPrompt(
     // Write asynchronously
     const line = JSON.stringify(logEntry) + "\n";
     const stream = fs.createWriteStream(filePath, { flags: "a" });
+    stream.on("error", () => {});
     stream.write(line, "utf-8", () => {
       stream.end();
     });

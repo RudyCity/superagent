@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.597] - 2026-07-27
+
+### Fixed
+- **Compilation & REST APIs**: Restored the missing `deriveActiveProviderId` helper and `GET /api/config` endpoint in `serverRoutes.ts` which were accidentally removed during recent memory API enhancements.
+- **Test Robustness**: Added error event handlers to write streams in `PromptLogger.ts` to prevent uncaught exceptions when test environments purge temp config/log directories.
+
 ## [1.2.596] - 2026-07-28
 
 ### Fixed
