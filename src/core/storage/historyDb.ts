@@ -102,6 +102,18 @@ function initDatabaseSchema(db: any): void {
     db.exec("PRAGMA foreign_keys = ON;");
     db.exec("PRAGMA auto_vacuum = INCREMENTAL;");
     db.exec("PRAGMA busy_timeout = 5000;");
+    db.exec("PRAGMA temp_store = MEMORY;");
+    db.exec("PRAGMA cache_size = -16000;"); // 16MB cache
+  } catch {}
+
+  try {
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        content,
+        session_id UNINDEXED,
+        role UNINDEXED
+      );
+    `);
   } catch {}
 
   db.exec(`
@@ -116,7 +128,7 @@ function initDatabaseSchema(db: any): void {
 
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
+      file_path TEXT NOT NULL DEFAULT '',
       display_name TEXT NOT NULL,
       message_count INTEGER NOT NULL DEFAULT 0,
       last_modified INTEGER NOT NULL,
@@ -394,7 +406,7 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
     const now = Date.now();
     upsertSessionStmt.run(
       session.id,
-      session.filePath,
+      session.filePath || "",
       session.displayName,
       session.messageCount,
       session.lastModified,

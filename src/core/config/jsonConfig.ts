@@ -836,6 +836,9 @@ export function getSettings(): SystemSettings {
     visionTokenSavingThreshold: s.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
     hideTimeline: s.hideTimeline ?? false,
     enableAdvisor: s.enableAdvisor ?? true,
+    advisorWarningThreshold: s.advisorWarningThreshold ?? 3,
+    advisorPauseThreshold: s.advisorPauseThreshold ?? 5,
+    advisorErrorThreshold: s.advisorErrorThreshold ?? 5,
     maxConcurrentWorkspaceTasks: s.maxConcurrentWorkspaceTasks ?? 5,
   };
 }

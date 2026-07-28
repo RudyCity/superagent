@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.2.600] - 2026-07-28
+
+### Fixed & Improved - Advisor System Overhaul
+- **Critical: Config thresholds now respected** (`advisor.ts`, `agent.ts`, `jsonConfig.ts`): `advisorWarningThreshold`, `advisorPauseThreshold`, and `advisorErrorThreshold` from `model-config.json` were silently ignored — advisor was always constructed with hardcoded defaults. Fixed by adding all three fields to `getSettings()` return and passing them to the `RealtimeAdvisor` constructor.
+- **Critical: Transient error backoff is now applied** (`LoopIterationProcessor.ts`): `recommendedBackoffMs` returned by the advisor on rate-limit / network errors was computed but never used. Now triggers `delayWithCountdown()` and surfaces the delay message to the user before the next iteration.
+- **Critical: Transient error counter fixed** (`advisor.ts`): `consecutiveErrorsCount` was not incremented when a transient error (429, ETIMEDOUT, etc.) was detected, breaking exponential backoff escalation. Counter now increments before the early return, enabling proper escalating backoffs across repeated transient errors. Transient errors are now also logged to advisor events.
+- **Pattern memory: deterministic keys** (`advisor.ts`): Pattern cache signatures now use `sortedJsonStringify()` so objects with the same keys in different insertion order correctly match stored patterns.
+- **Pattern memory: in-memory cache** (`advisorLogger.ts`): Replaced synchronous file I/O on every tool step with an authoritative in-memory `Map`. Disk persistence is async fire-and-forget. `getFailedPattern()` reads from memory instantly — no disk access.
+- **Pattern memory: TTL eviction** (`advisorLogger.ts`): Patterns older than 24 hours are evicted on write and silently skipped on read. Prevents stale patterns from past sessions causing false-positive warnings indefinitely.
+- **Pattern memory: LRU cap** (`advisorLogger.ts`): Pattern store capped at 200 entries. Oldest entries (by `lastFailed`) are removed when the limit is reached.
+- **Health score enhancement** (`advisor.ts`): Added `successStreak` and `patternWarningHits` to `AgentState`. Score now rewards sustained success (≥5 consecutive clean steps → +10 cap at 100) and penalizes repeated pattern memory hits. Error penalty capped at 6 errors (-90 max) to prevent permanently zero scores.
+- **Event logging for transient errors** (`advisor.ts`): Transient error events are now logged to the advisor event store (same as loop warnings) for visibility in `/advisor events` and the server API.
+- **4 new tests** (`tests/advisor.test.ts`): Covering transient error backoff escalation, custom threshold enforcement, health score recovery via success streak, and health score floor at 0.
+
+## [1.2.599] - 2026-07-28
+
+### Fixed & Enhanced
+- **Terminal & Commands**: Updated terminal commands and types.
+- **RMemory Integration**: Enhanced RMemory strategy and history storage.
+- **Agent Context & Messaging**: Updated ContextBuilder, HistoryCompactor, and MessageBuilder.
+
 ## [1.2.598] - 2026-07-28
 
 ### Added

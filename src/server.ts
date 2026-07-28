@@ -33,6 +33,19 @@ export function logToSuperAgentServerFile(message: string) {
   }
 }
 
+// Global Process Crash Handlers to prevent silent crashes and log to superagent-server.log
+process.on('uncaughtException', (err: Error) => {
+  const errStr = `[FATAL CRASH] Uncaught Exception: ${err?.stack || err?.message || String(err)}`;
+  console.error(errStr);
+  logToSuperAgentServerFile(errStr);
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  const errStr = `[FATAL ERROR] Unhandled Promise Rejection: ${reason?.stack || reason?.message || String(reason)}`;
+  console.error(errStr);
+  logToSuperAgentServerFile(errStr);
+});
+
 export type ClientMode = "chrome-extension" | "tline";
 
 interface AgentSession {
@@ -280,22 +293,28 @@ setBrowserControlHandler((action, target, value, instanceId) => {
 });
 
 function broadcastEvent(event: any) {
-  const data = `data: ${JSON.stringify(event)}\n\n`;
+  // Normalize SSE event types for client backward compatibility
+  const normalizedEvent = { ...event };
+  if (event?.type === "superagent-sessions-changed") {
+    normalizedEvent.event = "sessions_changed";
+  }
+
+  const data = `data: ${JSON.stringify(normalizedEvent)}\n\n`;
   
   // Log event to the server debug log file
-  logToSuperAgentServerFile(`[Broadcast Event] ${JSON.stringify(event).slice(0, 1000)}`);
+  logToSuperAgentServerFile(`[Broadcast Event] ${JSON.stringify(normalizedEvent).slice(0, 1000)}`);
   
   if (process.env.LOG_STREAM_RESPONSE === 'true') {
-    if (event?.event?.type === 'text_delta') {
-      process.stdout.write(event.event.text || event.event.delta || '');
-    } else if (event?.event?.type === 'message') {
-      const sub = event.event;
+    if (normalizedEvent?.event?.type === 'text_delta') {
+      process.stdout.write(normalizedEvent.event.text || normalizedEvent.event.delta || '');
+    } else if (normalizedEvent?.event?.type === 'message') {
+      const sub = normalizedEvent.event;
       const contentStr = typeof sub.content === 'string' ? sub.content : JSON.stringify(sub.content);
       console.log(`\n[SuperAgent][Stream Message] [${sub.role || 'assistant'}]: ${contentStr}`);
-    } else if (event?.event?.type) {
-      console.log(`\n[SuperAgent][Stream Event] [${event.event.type}]`, JSON.stringify(event.event));
+    } else if (normalizedEvent?.event?.type) {
+      console.log(`\n[SuperAgent][Stream Event] [${normalizedEvent.event.type}]`, JSON.stringify(normalizedEvent.event));
     } else {
-      console.log(`\n[SuperAgent][Stream Event]`, JSON.stringify(event));
+      console.log(`\n[SuperAgent][Stream Event]`, JSON.stringify(normalizedEvent));
     }
   }
   for (const client of sseClients) {
@@ -626,11 +645,13 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       }
     } catch (err: any) {
       console.error("[SERVER ERROR]", err);
+      logToSuperAgentServerFile(`[SERVER ROUTE ERROR] ${err?.stack || err?.message || String(err)}`);
       sendJSON(res, 500, { error: err.message || String(err) });
     }
   });
 
   server.on("error", (err: any) => {
+    logToSuperAgentServerFile(`[SERVER SOCKET ERROR] ${err?.stack || err?.message || String(err)}`);
     if (!silent) {
       console.error("[Server Error]", err);
     }

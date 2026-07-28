@@ -177,15 +177,17 @@ export async function handleServerRoute(
   // Get chat history
   if (pathname === "/api/history" && req.method === "GET") {
     const targetSessionId = parsedUrl.searchParams.get("sessionId") || parsedUrl.searchParams.get("id");
-    const session = resolveSession(req, targetSessionId || undefined);
-    if (session && targetSessionId && session.sessionId === targetSessionId) {
-      const msgs = session.agent.getConversationMessages();
-      if (msgs.length > 0) {
-        sendJSON(res, 200, { success: true, messages: msgs });
-        return true;
-      }
-    }
     if (targetSessionId) {
+      // First check active in-memory session
+      const session = resolveSession(req, targetSessionId);
+      if (session && session.sessionId === targetSessionId) {
+        const msgs = session.agent.getConversationMessages();
+        if (msgs && msgs.length > 0) {
+          sendJSON(res, 200, { success: true, messages: msgs });
+          return true;
+        }
+      }
+      // Fallback directly to SQLite database persistent storage
       const dbResult = loadSessionFromDb(targetSessionId);
       if (dbResult && dbResult.session && dbResult.messages.length > 0) {
         const formattedMsgs = dbResult.messages.map((m) => {
@@ -220,16 +222,13 @@ export async function handleServerRoute(
 
   // Get list of previous history sessions
   if (pathname === "/api/history/sessions" && req.method === "GET") {
-    const workspacePath = resolveWorkspacePath(req);
+    const workspacePath = resolveWorkspacePath(req) || parsedUrl.searchParams.get("workspace") || undefined;
     const queryMode = parsedUrl.searchParams.get("mode");
     const session = resolveSession(req);
     const mode = queryMode || (session ? session.mode : "single");
     const isMulti = mode === "multi";
-    if (!workspacePath) {
-      sendJSON(res, 200, { success: true, sessions: [] });
-      return true;
-    }
-    const sessions = listHistorySessions(isMulti, false, workspacePath);
+    const crossSession = parsedUrl.searchParams.get("crossSession") === "true";
+    const sessions = listHistorySessions(isMulti, crossSession, workspacePath);
     sendJSON(res, 200, { success: true, sessions });
     return true;
   }
@@ -278,7 +277,7 @@ export async function handleServerRoute(
       const { saveSessionToDb, loadSessionFromDb, clearHistoryCache, getGlobalConfigDir } = await import("./core/config.js");
       
       const existing = loadSessionFromDb(sessionId);
-      const filePath = existing.session?.filePath || session.filePath || path.join(getGlobalConfigDir(), "history", "single", sessionId, `${sessionId}.json`);
+      const filePath = existing.session?.filePath || session.filePath || "";
       
       const msgsToSave = Array.isArray(messages) && messages.length > 0 ? messages.map((m: any, idx: number) => ({
         sessionId,
@@ -378,44 +377,47 @@ export async function handleServerRoute(
     const targetClientMode = resolveClientMode(req, body, serverDefaultClientMode);
     const sessionId = customSessionId || resume || generateSessionId();
 
-    const existingSession = activeSessions.get(`${targetClientMode}:${targetWorkspace}:server`);
-    if (
-      existingSession &&
-      existingSession.sessionId === sessionId &&
-      existingSession.mode === targetMode &&
-      existingSession.clientMode === targetClientMode
-    ) {
+    const sessionKey = `${targetClientMode}:${sessionId}`;
+    let existingSession = activeSessions.get(sessionKey);
+
+    if (!existingSession) {
+      // Find existing active session by sessionId across any key
+      for (const sess of activeSessions.values()) {
+        if (sess.sessionId === sessionId && sess.clientMode === targetClientMode) {
+          existingSession = sess;
+          break;
+        }
+      }
+    }
+
+    if (existingSession) {
+      existingSession.lastActiveTime = Date.now();
       sendJSON(res, 200, {
         success: true,
         sessionId: existingSession.sessionId,
-        workspace: targetWorkspace,
+        workspace: existingSession.workspace || targetWorkspace,
         mode: existingSession.mode,
         clientMode: existingSession.clientMode
       });
       return true;
     }
 
-    if (existingSession && existingSession.agent.isAgentRunning()) {
-      existingSession.agent.abort();
-    }
-
+    // Do NOT abort running agents when user switches views in UI.
     const agent = await createAgentForMode(targetWorkspace, targetMode, targetClientMode);
     agent.sessionId = sessionId;
-
-    pendingPermissions.clear();
-    pendingQuestions.clear();
 
     if (resume) {
       try { await agent.loadHistory(resume); } catch {}
     }
 
-    activeSessions.set(`${targetClientMode}:${targetWorkspace}:server`, {
+    activeSessions.set(sessionKey, {
       agent,
       workspace: targetWorkspace,
       mode: targetMode,
       clientMode: targetClientMode,
       sessionId,
-      isCliSession: false
+      isCliSession: false,
+      lastActiveTime: Date.now()
     });
     setLastActiveWorkspace(targetWorkspace);
 
@@ -1539,15 +1541,27 @@ export async function handleServerRoute(
 
     const targetMode = mode === "multi" ? "multi" : "single";
     const targetClientMode = resolveClientMode(req, body, serverDefaultClientMode);
+    const reqSessionId = body?.sessionId || body?.id || parsedUrl.searchParams.get("sessionId");
 
-    let session = activeSessions.get(`${targetClientMode}:${targetWorkspace}:server`);
-    if (!session || session.mode !== targetMode || session.clientMode !== targetClientMode) {
-      if (session && session.agent.isAgentRunning()) session.agent.abort();
+    let session: any = null;
+    if (reqSessionId) {
+      session = activeSessions.get(`${targetClientMode}:${reqSessionId}`) || null;
+      if (!session) {
+        for (const sess of activeSessions.values()) {
+          if (sess.sessionId === reqSessionId && sess.clientMode === targetClientMode) {
+            session = sess;
+            break;
+          }
+        }
+      }
+    }
 
-      const sessionId = Date.now().toString();
+    if (!session) {
+      const sessionId = reqSessionId || generateSessionId();
       const agent = await createAgentForMode(targetWorkspace, targetMode, targetClientMode);
+      agent.sessionId = sessionId;
 
-      try { await agent.loadHistory(true); } catch {}
+      try { await agent.loadHistory(sessionId); } catch {}
 
       session = {
         agent,
@@ -1555,11 +1569,10 @@ export async function handleServerRoute(
         mode: targetMode,
         clientMode: targetClientMode,
         sessionId,
-        isCliSession: false
+        isCliSession: false,
+        lastActiveTime: Date.now()
       };
-      activeSessions.set(`${targetClientMode}:${targetWorkspace}:server`, session);
-    } else {
-      if (session.agent.isAgentRunning()) session.agent.abort();
+      activeSessions.set(`${targetClientMode}:${sessionId}`, session);
     }
 
     setLastActiveWorkspace(targetWorkspace);

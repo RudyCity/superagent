@@ -123,7 +123,11 @@ export class Agent {
   /** Keys of skills that were successfully preloaded into guidelinesText */
   private preloadedSkillKeys: Set<string> = new Set();
   public gitStartSnapshot: Record<string, { added: number; deleted: number }> | null = null;
-  public advisor = new RealtimeAdvisor();
+  public advisor = new RealtimeAdvisor({
+    warningThreshold: getSettings().advisorWarningThreshold ?? 3,
+    pauseThreshold: getSettings().advisorPauseThreshold ?? 5,
+    errorThreshold: getSettings().advisorErrorThreshold ?? 5,
+  });
 
   public approvePlan(): void {
     this.planState = "APPROVED";

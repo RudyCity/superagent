@@ -766,6 +766,16 @@ export class LoopIterationProcessor {
           timestamp: Date.now(),
         });
         await agent.saveHistory();
+
+        // Apply transient-error backoff if advisor recommends it
+        if (advisorResult.recommendedBackoffMs && advisorResult.recommendedBackoffMs > 0) {
+          const backoffSec = Math.round(advisorResult.recommendedBackoffMs / 1000);
+          agent.onEvent({
+            type: "text",
+            content: `\n[Advisor] Applying transient-error backoff: ${backoffSec}s before retry...\n`,
+          });
+          await agent.delayWithCountdown(1, advisorResult.recommendedBackoffMs, signal);
+        }
       } else if (advisorResult.action === "pause_execution" && advisorResult.message) {
         const pauseContent = `${advisorResult.message}\n[Advisor Health Score: ${healthScore}%]${advisorResult.autoCorrectionHint ? `\n${advisorResult.autoCorrectionHint}` : ""}`;
         agent.onEvent({

@@ -50,4 +50,31 @@ describe("Terminal Command Interactive Execution", () => {
     expect(addedLines.some(l => l.content.includes("Executing in-place terminal command"))).toBe(true);
     expect(addedLines.some(l => l.content.includes("Process finished with exit code 0"))).toBe(true);
   });
+
+  it("should execute foreground terminal command and display output in chat lines", async () => {
+    if (!registry.get("terminal")) {
+      registry.register(terminalCommand);
+    }
+
+    const mockRunWithOutput = vi.fn().mockResolvedValue({
+      exitCode: 0,
+      output: "v20.10.0\nHello World",
+    });
+
+    const ctx = {
+      addLine: (line: ChatLine) => {
+        addedLines.push(line);
+      },
+      exit: () => {},
+      agent: null,
+      runInteractiveProcess: mockRunWithOutput,
+    };
+
+    addedLines = [];
+    await handleSlashCommand("/terminal node --version", ctx as any);
+
+    expect(mockRunWithOutput).toHaveBeenCalledWith("node --version", expect.any(String), expect.any(Object));
+    expect(addedLines.some(l => l.content.includes("v20.10.0\nHello World"))).toBe(true);
+    expect(addedLines.some(l => l.content.includes("Process finished with exit code 0"))).toBe(true);
+  });
 });

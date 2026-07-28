@@ -740,22 +740,30 @@ export function App({
         process.stdin.pause();
 
         let exitCode = 0;
+        let output = "";
         try {
-          const { execSync } = await import("child_process");
-          execSync(command, {
+          const { execa } = await import("execa");
+          let shellExe: string | boolean = true;
+          if (process.platform === "win32") shellExe = "powershell.exe";
+          const res = await execa(command, {
             cwd,
             env: { ...process.env, ...env },
-            stdio: "inherit",
+            shell: shellExe,
+            reject: false,
+            all: true,
           });
+          exitCode = res.exitCode ?? 0;
+          output = res.all || res.stdout || res.stderr || "";
         } catch (err: any) {
-          exitCode = err.status ?? 1;
+          exitCode = err.status ?? err.exitCode ?? 1;
+          output = err.all || err.stdout || err.stderr || err.message || "";
         }
 
         process.stdin.resume();
         if (wasRaw) {
           process.stdin.setRawMode(true);
         }
-        return exitCode;
+        return { exitCode, output };
       };
 
       if (trimmed.startsWith("/")) {

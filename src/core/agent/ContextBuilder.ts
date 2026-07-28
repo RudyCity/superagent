@@ -355,19 +355,32 @@ export class ContextBuilder {
 
     const injectDynamicContext = (msgs: CoreMessage[]) => {
       if (msgs.length > 0) {
-        const lastMsg = msgs[msgs.length - 1];
-        if (lastMsg.role === "user") {
-          if (typeof lastMsg.content === "string") {
-            lastMsg.content += dynamicContext;
-          } else if (Array.isArray(lastMsg.content)) {
-            const lastPart = lastMsg.content[lastMsg.content.length - 1];
+        // Find the actual last user message (skip any non-user or system context blocks)
+        let targetMsg: CoreMessage | undefined;
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].role === "user") {
+            const raw = typeof msgs[i].content === "string" ? (msgs[i].content as string) : "";
+            if (!raw.startsWith("[RMemory Agent Memory Context]:")) {
+              targetMsg = msgs[i];
+              break;
+            }
+          }
+        }
+
+        if (targetMsg) {
+          if (typeof targetMsg.content === "string") {
+            targetMsg.content += dynamicContext;
+          } else if (Array.isArray(targetMsg.content)) {
+            const arr = targetMsg.content as any[];
+            const lastPart = arr[arr.length - 1];
             if (lastPart && lastPart.type === "text") {
               lastPart.text += dynamicContext;
             } else {
-              lastMsg.content.push({ type: "text", text: dynamicContext });
+              arr.push({ type: "text", text: dynamicContext });
             }
           }
-        } else if (lastMsg.role === "tool") {
+        } else {
+          // Fallback: append dynamic context as a standard user message
           msgs.push({
             role: "user",
             content: dynamicContext,

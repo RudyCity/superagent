@@ -369,7 +369,16 @@ export class MessageBuilder {
   ): void {
     const messages = agent.conversation.getMessages();
     for (const m of messages) {
-      if (m.role === "system") continue;
+      if (m.role === "system") {
+        const rawContent = contentToString(m.content);
+        if (rawContent.startsWith("[RMemory Agent Memory Context]:")) {
+          coreMessages.push({
+            role: "system",
+            content: rawContent,
+          });
+        }
+        continue;
+      }
 
       if (m.role === "user") {
         let sdkContent: string | Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = "";

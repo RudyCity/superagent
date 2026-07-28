@@ -355,10 +355,23 @@ export const terminalCommand: SlashCommand = {
             content: `🖥️ Executing in-place terminal command: "${commandStr}" (cwd: ${runCwd})`,
             timestamp: Date.now()
           });
-          const exitCode = await ctx.runInteractiveProcess(commandStr, runCwd, runEnv);
+          const res = await ctx.runInteractiveProcess(commandStr, runCwd, runEnv);
+          const exitCode = typeof res === "number" ? res : res.exitCode;
+          const outputText = typeof res === "number" ? "" : res.output;
+
+          if (outputText && outputText.trim()) {
+            ctx.addLine({
+              type: "system",
+              content: outputText.trim(),
+              timestamp: Date.now()
+            });
+          }
+
           ctx.addLine({
             type: "system",
-            content: `✓ Process finished with exit code ${exitCode}.`,
+            content: exitCode === 0 
+              ? `✅ Process finished with exit code 0.`
+              : `❌ Process failed with exit code ${exitCode}.`,
             timestamp: Date.now()
           });
           return;

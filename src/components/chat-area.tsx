@@ -1176,7 +1176,7 @@ export function computeWrappedLines({
   for (let idx = 0; idx < lines.length; idx++) {
     const isFirst = idx === 0;
     const isCollapsed = (lines[idx].type === "error" || lines[idx].type === "system")
-      ? expandedLines.has(idx)
+      ? !expandedLines.has(idx)
       : (isCollapsibleType(lines[idx].type) && !expandedLines.has(idx));
     const childSet = expandedChildren.get(idx) || new Set<number>();
     const isLastAssistant = idx === lastAssistantIdx;

@@ -23,6 +23,8 @@ interface AgentState {
   consecutiveErrorsCount: number;
   consecutiveSameCallCount: number;
   lastCallKey: string;
+  successStreak: number;
+  patternWarningHits: number;
 }
 
 const POLLING_STATUS_ACTIONS = new Set(["list", "report", "logs", "violations"]);
@@ -80,6 +82,8 @@ export class RealtimeAdvisor {
         consecutiveErrorsCount: 0,
         consecutiveSameCallCount: 0,
         lastCallKey: "",
+        successStreak: 0,
+        patternWarningHits: 0,
       };
       this.agentStates.set(agentId, state);
     }
@@ -92,9 +96,19 @@ export class RealtimeAdvisor {
   public getHealthScore(agentId = "default"): number {
     const state = this.getAgentState(agentId);
     let score = 100;
-    score -= state.consecutiveErrorsCount * 15;
+    // Penalize consecutive errors (capped at 6 for max -90)
+    score -= Math.min(state.consecutiveErrorsCount, 6) * 15;
+    // Penalize loop repetition
     if (state.consecutiveSameCallCount > 1) {
       score -= (state.consecutiveSameCallCount - 1) * 20;
+    }
+    // Penalize repeat pattern memory warnings
+    if (state.patternWarningHits > 0) {
+      score -= Math.min(state.patternWarningHits, 3) * 5;
+    }
+    // Boost score for sustained successful execution
+    if (state.successStreak >= 5) {
+      score = Math.min(100, score + 10);
     }
     return Math.max(0, score);
   }
@@ -140,7 +154,7 @@ export class RealtimeAdvisor {
         const resStr = result.result;
         const matchingCall = toolCalls.find(tc => tc.id === result.toolCallId) || toolCalls[i];
         if (matchingCall) {
-          const sig = `${matchingCall.name}:${JSON.stringify(matchingCall.args)}`;
+          const sig = `${matchingCall.name}:${sortedJsonStringify(matchingCall.args)}`;
           logFailedPattern(sig, matchingCall.name, resStr.slice(0, 200));
         }
 
@@ -160,9 +174,10 @@ export class RealtimeAdvisor {
     // Check Pattern Memory for pre-execution early warnings
     if (this.enablePatternMemory && toolCalls.length > 0) {
       for (const tc of toolCalls) {
-        const sig = `${tc.name}:${JSON.stringify(tc.args)}`;
+        const sig = `${tc.name}:${sortedJsonStringify(tc.args)}`;
         const pattern = getFailedPattern(sig);
         if (pattern) {
+          state.patternWarningHits++;
           const suggestion = `Tool signature '${tc.name}' previously failed ${pattern.failCount} times with error: "${pattern.errorMessage}". Double-check arguments before proceeding.`;
           const message = `ADVISOR PATTERN WARNING: This specific tool call pattern (${tc.name}) has failed repeatedly in previous sessions. Suggestion: ${suggestion}`;
           const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "warn_agent" }, [tc.name]);
@@ -331,10 +346,25 @@ export class RealtimeAdvisor {
     }
 
     if (stepErrorCount > 0) {
+      // Always increment error count FIRST so health score is accurate
+      state.consecutiveErrorsCount += stepErrorCount;
+      state.successStreak = 0;
+
       if (transientErrorDetected) {
         const backoffMs = Math.min(1000 * Math.pow(2, state.consecutiveErrorsCount), 16000);
         const suggestion = `Transient API/Network error detected (${transientErrorMessage}). Applying exponential backoff delay of ${backoffMs}ms before retrying.`;
         const message = `ADVISOR TRANSIENT ERROR: ${suggestion}`;
+
+        if (this.enableLogging) {
+          logAdvisorEvent({
+            agentId,
+            action: "warn_agent",
+            reason: "consecutive_errors",
+            consecutiveCount: state.consecutiveErrorsCount,
+            message,
+            suggestion,
+          });
+        }
 
         return {
           action: "warn_agent",
@@ -344,10 +374,9 @@ export class RealtimeAdvisor {
           healthScore: this.getHealthScore(agentId),
         };
       }
-
-      state.consecutiveErrorsCount += stepErrorCount;
     } else {
       state.consecutiveErrorsCount = 0;
+      state.successStreak++;
     }
 
     // 3. Check for general consecutive errors threshold
@@ -426,4 +455,19 @@ function isPollingOrStatusCall(name: string, args: any): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * Stable JSON serialization with sorted keys.
+ * Prevents key-insertion-order differences from creating false pattern cache misses.
+ */
+function sortedJsonStringify(obj: unknown): string {
+  if (obj === null || typeof obj !== "object" || Array.isArray(obj)) {
+    return JSON.stringify(obj);
+  }
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(obj as Record<string, unknown>).sort()) {
+    sorted[key] = (obj as Record<string, unknown>)[key];
+  }
+  return JSON.stringify(sorted);
 }

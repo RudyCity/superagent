@@ -186,13 +186,24 @@ export class RMemoryStrategy implements CompactionStrategy {
 Do NOT automatically resume or reference these past sessions, previous code modifications, or past conversation threads unless the user's current request explicitly asks you to. Focus entirely on the user's new request.\n\n`;
       }
 
+      // Check if a memory context message already exists in toKeep or original messages
+      const existingMemoryIdx = toKeep.findIndex((m) =>
+        contentToString(m.content).startsWith("[RMemory Agent Memory Context]:")
+      );
+
       const memoryMessage: Message = {
-        role: "user",
+        role: "system",
         content: `[RMemory Agent Memory Context]:\n${warningHeader}${summaryText || "No prior memories recalled."}`,
         timestamp: Date.now(),
       };
 
-      const result = [memoryMessage, ...toKeep];
+      let result: Message[];
+      if (existingMemoryIdx !== -1) {
+        toKeep[existingMemoryIdx] = memoryMessage;
+        result = toKeep;
+      } else {
+        result = [memoryMessage, ...toKeep];
+      }
 
       return {
         messages: result,

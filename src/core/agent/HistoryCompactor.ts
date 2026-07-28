@@ -214,7 +214,7 @@ ${formatted}`;
     const messages = agent.conversation.getMessages();
     // Check if we already have a memory context message in the conversation
     const hasMemoryContext = messages.some(
-      (m) => m.role === "user" && contentToString(m.content).startsWith("[RMemory Agent Memory Context]:")
+      (m) => contentToString(m.content).startsWith("[RMemory Agent Memory Context]:")
     );
     if (hasMemoryContext) return;
 
@@ -225,7 +225,14 @@ ${formatted}`;
     const client = getRMemoryClient(2000); // 2s timeout for fast startup check
 
     const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
-    const query = lastUserMsg ? contentToString(lastUserMsg.content) : "latest coding context";
+    const rawQuery = lastUserMsg ? contentToString(lastUserMsg.content) : "latest coding context";
+    // Sanitize query: strip code blocks, stack traces, and dynamic system tags for better semantic recall
+    const query = rawQuery
+      .replace(/```[\s\S]*?```/g, "")
+      .replace(/<system_context[\s\S]*?<\/system_context_do_not_echo_or_repeat>/g, "")
+      .replace(/\[RMemory Agent Memory Context\]:[\s\S]*/g, "")
+      .trim()
+      .slice(0, 300) || "latest coding context";
 
     agent.writeToLogFile("INFO", `Pre-populating RMemory memory context for query: "${query.slice(0, 50)}"...`);
 
@@ -292,7 +299,7 @@ Do NOT automatically resume or reference these past sessions, previous code modi
     }
 
     const memoryMessage: Message = {
-      role: "user",
+      role: "system",
       content: `[RMemory Agent Memory Context]:\n${warningHeader}${summaryText}`,
       timestamp: Date.now(),
     };
