@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.2.601",
+  "version": "1.2.604",
   "description": "Interactive terminal-based AI coding assistant",
   "type": "module",
   "bin": {
@@ -35,6 +35,8 @@
     "pdf-parse": "^2.4.5",
     "r-memory": "git+https://github.com/RudyCity/r-memory.git",
     "react": "^18.3.1",
+    "ssh2": "^1.17.0",
+    "ssh2-sftp-client": "^12.1.1",
     "tiktoken": "^1.0.22",
     "xlsx": "^0.18.5"
   },
@@ -42,6 +44,8 @@
     "@tailwindcss/cli": "^4.3.2",
     "@types/node": "^22.15.2",
     "@types/react": "^18.3.20",
+    "@types/ssh2": "^1.15.5",
+    "@types/ssh2-sftp-client": "^9.0.6",
     "@types/ws": "^8.18.1",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",

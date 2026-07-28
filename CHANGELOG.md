@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.2.604] - 2026-07-28
+
+### Documentation & Terminal Help Updates
+- **Updated Terminal `/help` Text** (`coreCommands.ts`): Added detailed usage pattern for `/workspace add` with custom port and `?key=` query parameters.
+- **Expanded `README.md`**: Added CLI shortcut examples (`-ws`), custom port, and `.pem` key connection examples.
+
+## [1.2.603] - 2026-07-28
+
+### Added - Custom Private Key Query Parameter (`?key=...`)
+- **Query Parameter Key Parsing** (`workspaceMode.ts`): Supported custom `.pem` / private key paths directly inside SSH target URIs using `?key=C:\path\to\key.pem`.
+- **Custom Port & Private Key SSH Parsing**: Users can connect directly to custom SSH ports with custom identity files in a single URI string.
+
+## [1.2.602] - 2026-07-28
+
+### Added & Improved - Complete SSH Proxy Workspace Mode & Advanced Features
+- **100% Comprehensive Tool Interception Layer** (`fileEditTools.ts`, `fileReadTools.ts`, `shellTools.ts`): All tools (`read`, `write_to_file`, `edit`, `replace_file_content`, `multi_replace_file_content`, `glob`, `grep`, `ripgrep_search`, `run_command`, `bash`, `run_background_process`) are transparently routed to SSH/SFTP when in SSH mode.
+- **SFTP In-Memory Smart Caching** (`sshProxy.ts`): Implemented a 30s TTL in-memory cache for SFTP `readFile` operations to eliminate latency delays during repetitive file reads.
+- **Remote System Metrics & `/workspace status`** (`sshProxy.ts`, `workspaceCommand.ts`): Added real-time remote system metrics collector (`sshProxy.getSystemMetrics()`) and `/workspace status` slash command displaying SSH latency, remote OS, system uptime, RAM, and disk usage.
+- **Interactive Password Prompt Fallback** (`cliMain.tsx`, `sshProxy.ts`): Automatically prompts for interactive password input when SSH key authentication is unavailable or fails.
+- **Bulk File Operations Routing** (`sshCommands.ts`): Full support for array-based bulk reads (`filePaths`) and bulk writes (`files`) over SSH.
+- **Unit Tests Added**: Added 14 unit tests across `tests/sshProxy.test.ts`, `tests/sshBulkOps.test.ts`, `tests/sshToolsFull.test.ts`, and `tests/sshAdvanced.test.ts`.
+
 ## [1.2.601] - 2026-07-28
 
 ### Fixed & Improved - Advisor Runtime Config

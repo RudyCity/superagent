@@ -94,6 +94,42 @@ export async function runCli() {
     runServer(7888, true).catch(() => {});
   } catch {}
 
+  // Check for --workspace-ssh flag
+  const sshFlagIdx = process.argv.findIndex((arg) => arg === "--workspace-ssh" || arg === "-ws");
+  if (sshFlagIdx !== -1 && process.argv[sshFlagIdx + 1]) {
+    const sshTarget = process.argv[sshFlagIdx + 1];
+    const { workspaceMode } = await import("./core/ssh/workspaceMode.js");
+    const { sshProxy } = await import("./core/ssh/sshProxy.js");
+    const parsed = workspaceMode.parseSshTarget(sshTarget);
+    if (parsed) {
+      workspaceMode.setSshMode(parsed);
+      sshProxy.setPasswordHandler(async () => {
+        const readline = await import("readline");
+        const rl = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        return new Promise<string>((resolve) => {
+          rl.question(`Enter SSH password for ${parsed.username}@${parsed.host}: `, (answer) => {
+            rl.close();
+            resolve(answer.trim());
+          });
+        });
+      });
+      try {
+        console.log(`Connecting to SSH proxy workspace ${parsed.username}@${parsed.host}:${parsed.port}...`);
+        await sshProxy.connect(parsed);
+        console.log(`Connected to SSH remote workspace: ${parsed.remoteCwd}`);
+      } catch (err: any) {
+        console.error(`Failed to connect to SSH target ${sshTarget}: ${err.message}`);
+        process.exit(1);
+      }
+    } else {
+      console.error(`Invalid --workspace-ssh format. Use: user@host[:port]:/remote/path or ssh://user@host/path`);
+      process.exit(1);
+    }
+  }
+
 
   process.on("exit", () => {
     if (masterAgentRef) {

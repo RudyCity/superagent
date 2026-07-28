@@ -2,6 +2,8 @@ import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
 import { getTrustedDirectories, addTrustedDirectory } from "../config/jsonConfig.js";
 import { getWorkspacesFromDb } from "../storage/historyDb.js";
+import { workspaceMode } from "../ssh/workspaceMode.js";
+import { sshProxy } from "../ssh/sshProxy.js";
 import path from "path";
 import fs from "fs";
 
@@ -40,10 +42,39 @@ export const workspaceCommand: SlashCommand = {
 
     const parts = args.trim().split(/\s+/);
     let action = parts[0].toLowerCase() || "list";
+
+    // Handle /workspace status
+    if (action === "status") {
+      if (!workspaceMode.isSsh()) {
+        const localPath = ctx.agent?.workingDirectory || process.cwd();
+        ctx.addLine({
+          type: "system",
+          content: `📁 Local Workspace Status:\n- Mode: Local Disk\n- Active Path: ${localPath}`,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+      try {
+        const metrics = await sshProxy.getSystemMetrics();
+        ctx.addLine({
+          type: "system",
+          content: `🌐 SSH Remote Workspace Status:\n- Target Host: ${metrics.user}@${metrics.host}\n- Remote OS: ${metrics.osName}\n- System Uptime: ${metrics.uptime}\n- RAM Usage: ${metrics.ramUsage}\n- Disk Usage: ${metrics.diskUsage}\n- SSH Latency: ${metrics.pingMs}ms\n- Active Remote Directory: ${workspaceMode.getConfig()?.remoteCwd}`,
+          timestamp: Date.now(),
+        });
+        return;
+      } catch (err: any) {
+        ctx.addLine({
+          type: "system",
+          content: `Error fetching SSH remote metrics: ${err.message}`,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+    }
     let targetArg = parts.slice(1).join(" ").trim();
 
     // If action is not a known command but exists as a path or index, treat as "use"
-    if (action !== "list" && action !== "add" && action !== "use" && action !== "select") {
+    if (action !== "list" && action !== "status" && action !== "add" && action !== "use" && action !== "select") {
       const combined = args.trim();
       const index = parseInt(combined, 10);
       const trustedDirs = getTrustedDirectories().map(d => path.resolve(d));
@@ -95,10 +126,26 @@ export const workspaceCommand: SlashCommand = {
       if (!targetArg) {
         ctx.addLine({
           type: "error",
-          content: "Error: Please specify a workspace path to add. Usage: /workspace add <path> [name]",
+          content: "Error: Please specify a workspace path or SSH target to add. Usage: /workspace add <path|ssh://user@host/path> [name]",
           timestamp: now
         });
         return;
+      }
+
+      // Check if SSH target format
+      const sshConfig = workspaceMode.parseSshTarget(targetArg);
+      if (sshConfig || targetArg.startsWith("ssh://") || targetArg.includes(":@")) {
+        const parsed = sshConfig || workspaceMode.parseSshTarget(targetArg.split(" ")[0]);
+        if (parsed) {
+          const sshUri = `ssh://${parsed.username}@${parsed.host}:${parsed.port}${parsed.remoteCwd}`;
+          addTrustedDirectory(sshUri, targetArg.split(" ")[1] || `${parsed.host}:${parsed.remoteCwd}`);
+          ctx.addLine({
+            type: "system",
+            content: `Added SSH remote workspace: ${sshUri}`,
+            timestamp: now
+          });
+          return;
+        }
       }
 
       let resolvedPath = "";

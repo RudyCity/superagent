@@ -177,11 +177,43 @@ Beyond manual `/checkpoint` commands, Superagent creates checkpoints automatical
 - **Cooldown-based**: A configurable minimum interval between auto-checkpoints prevents excessive snapshots during rapid interactions.
 - **Non-blocking**: Auto-checkpoints run asynchronously in the background and never interrupt the conversation flow. A visible notification appears in the terminal UI when one is created.
 
-### 10. Illegal Operation Reporting & Auto-Escalation
-In multi-agent mode, the permission layer emits structured `ViolationRecord` events whenever a child agent attempts a blocked operation. These violations include:
-- **Severity levels**: `"warning"` for soft blocks (e.g., scope creep attempts) and `"critical"` for hard policy violations (e.g., unauthorized file modifications).
-- **Automatic propagation**: Violation events bubble up from Subagents → Superagents → Master Agent, allowing the parent agent to track, log, and take corrective action.
-- **Structured metadata**: Each violation records the timestamp, tool name, reason code, description, and optional context (file path, command, worktree).
+### 11. SSH Proxy Workspace Mode 🌐
+Superagent can operate directly on remote servers without installing any agent or software on the remote host:
+- **Zero Server Footprint**: Connects to remote host via pure SSH (`ssh2`) and SFTP (`ssh2-sftp-client`).
+- **Remote File & Command Execution**: All file operations (`read`, `write_to_file`) and terminal commands (`run_command`, `bash`) are proxied directly to the remote server.
+- **Remote Background Process Support**: Launches persistent background processes on remote server via `nohup` (ideal for dev servers or provisioning scripts).
+- **100% Transparent Tool Routing**: Automatically routes file tools (`read`, `write_to_file`, `edit`, `glob`, `grep`), execution tools (`bash`, `run_command`), and background tasks (`run_background_process`) to the remote host.
+- **SFTP In-Memory Smart Caching**: 30-second TTL in-memory SFTP file cache to eliminate latency lag during repetitive file reads.
+- **Remote System Metrics & Dashboard**: Displays real-time remote CPU/RAM/Disk usage, OS kernel, system uptime, and SSH connection latency via `/workspace status`.
+- **Auto-Keepalive & Reconnect**: Built-in SSH keepalive ping and automatic socket reconnection.
+- **POSIX Path Normalization**: Automatic path translation between Windows local client and Linux remote host.
+
+### `/workspace` Slash Commands & Options
+Superagent provides a complete `/workspace` (or shortcut `/w`) command suite for managing local directories and remote SSH environments:
+
+| Command | Action / Description | Example |
+| :--- | :--- | :--- |
+| `/workspace list` | Lists all registered local and SSH remote workspaces. | `/workspace list` |
+| `/workspace status` | Displays live system metrics (OS, Uptime, RAM/Disk usage, Latency) of active workspace. | `/workspace status` |
+| `/workspace add <path>` | Registers and switches to a local workspace path. | `/workspace add /var/www/my-app` |
+| `/workspace add ssh://...` | Connects & switches to a remote server via SSH URL (supports `?key=` for custom `.pem` keys). | `/workspace add "ssh://user@192.168.1.50:22/home/user?key=C:\path\to\key.pem" MyServer` |
+| `/workspace use <index\|path\|ssh-url>` | Switches active workspace by list index, local path, or SSH URL. | `/workspace use 2` or `/workspace use ssh://root@10.0.0.1/app` |
+
+Usage CLI & Terminal Examples:
+```bash
+# Option 1: Launch CLI directly connected to SSH remote server (supports custom port & ?key= parameter)
+superagent --workspace-ssh "ubuntu@192.168.1.50:2345/home/ubuntu?key=C:\path\to\key.pem"
+
+# Short flag alias:
+superagent -ws "user@192.168.1.100:/var/www/app"
+
+# Option 2: Add and switch workspaces inside the terminal UI
+/workspace add /path/to/local/project MyProject
+/workspace add "ssh://ubuntu@192.168.1.50:2345/home/ubuntu?key=C:\path\to\key.pem" RemoteServer
+/workspace status
+/workspace list
+/workspace use RemoteServer
+```
 
 ---
 

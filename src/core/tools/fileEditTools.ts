@@ -4,6 +4,8 @@ import path from "path";
 import { Tool } from "./types.js";
 import { normalizeForMatching, verifySyntax, mapNormToOrigIndices, countOccurrences, fileLockManager } from "./helpers.js";
 import { normalizePath, resolveFilePathFromArgs } from "./pathHelpers.js";
+import { workspaceMode } from "../ssh/workspaceMode.js";
+import { sshWriteToolExecute, sshEditToolExecute } from "../ssh/sshCommands.js";
 
 function fuzzyMatch(text: string, pattern: string): boolean {
   const cleanText = text.replace(/\s+/g, ' ');
@@ -328,6 +330,15 @@ export const editTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
+    if (workspaceMode.isSsh()) {
+      const targetPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
+      const oldStr = (args.oldString as string) || ((args.edits as any[])?.[0]?.oldString);
+      const newStr = (args.newString as string) || ((args.edits as any[])?.[0]?.newString);
+      if (!targetPath || oldStr === undefined || newStr === undefined) {
+        return "Error: Missing filePath, oldString, or newString for SSH edit";
+      }
+      return await sshEditToolExecute(targetPath, oldStr, newStr);
+    }
     const edits = args.edits as Array<{ filePath: string; oldString: string; newString: string; startLine?: number; endLine?: number }> | undefined;
     if (edits && Array.isArray(edits)) {
       if (edits.length === 0) {
@@ -586,6 +597,11 @@ export const writeToFileTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
+    if (workspaceMode.isSsh()) {
+      const targets = args.files || args.filePath;
+      if (!targets) return "Error: Missing filePath or files for SSH write";
+      return await sshWriteToolExecute(targets as any, args.content as string | undefined);
+    }
     const files = args.files as Array<{ filePath: string; content: string; overwrite?: boolean }> | undefined;
     if (files && Array.isArray(files)) {
       if (files.length === 0) {
@@ -775,6 +791,15 @@ export const replaceFileContentTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
+    if (workspaceMode.isSsh()) {
+      const targetPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
+      const targetContent = (args.targetContent as string) || ((args.edits as any[])?.[0]?.targetContent);
+      const replacementContent = (args.replacementContent as string) || ((args.edits as any[])?.[0]?.replacementContent);
+      if (!targetPath || targetContent === undefined || replacementContent === undefined) {
+        return "Error: Missing filePath, targetContent, or replacementContent for SSH replace_file_content";
+      }
+      return await sshEditToolExecute(targetPath, targetContent, replacementContent);
+    }
     const edits = args.edits as Array<{ filePath: string; targetContent: string; replacementContent: string; startLine: number; endLine: number; allowMultiple?: boolean; AllowMultiple?: boolean }> | undefined;
     if (edits && Array.isArray(edits)) {
       if (edits.length === 0) {
@@ -1122,6 +1147,16 @@ export const multiReplaceFileContentTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
+    if (workspaceMode.isSsh()) {
+      const targetPath = (args.filePath as string) || ((args.files as any[])?.[0]?.filePath);
+      const chunks = (args.chunks as any[]) || ((args.files as any[])?.[0]?.chunks);
+      const targetStr = chunks?.[0]?.targetContent;
+      const replacementStr = chunks?.[0]?.replacementContent;
+      if (!targetPath || targetStr === undefined || replacementStr === undefined) {
+        return "Error: Missing filePath or chunks for SSH multi_replace_file_content";
+      }
+      return await sshEditToolExecute(targetPath, targetStr, replacementStr);
+    }
     interface Chunk {
       targetContent: string;
       replacementContent: string;
@@ -1811,6 +1846,9 @@ export const applyPatchTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
+    if (workspaceMode.isSsh()) {
+      return "Notice: apply_patch is not supported over SSH proxy mode. Please use write_to_file or edit tool instead.";
+    }
     const patches = args.patches as Array<{ filePath: string; patchContent: string }> | undefined;
     if (patches && Array.isArray(patches)) {
       if (patches.length === 0) {

@@ -13,6 +13,8 @@ import {
   normalizeWindowsPackageRunner,
   formatUnknownActionError
 } from "./helpers.js";
+import { workspaceMode } from "../ssh/workspaceMode.js";
+import { sshRunCommandExecute, sshRunBackgroundProcessExecute } from "../ssh/sshCommands.js";
 import { 
   backgroundTasks, 
   notifyTasksChanged, 
@@ -147,6 +149,9 @@ export const bashTool: Tool = {
     if (!rawCommand || typeof rawCommand !== "string" || rawCommand.trim() === "") {
       return "Error: Missing required parameter 'command'. Provide the shell command to execute.";
     }
+    if (workspaceMode.isSsh()) {
+      return await sshRunCommandExecute(rawCommand, args.cwd as string | undefined);
+    }
     let command = normalizeGitPaths(rawCommand);
     const timeout = (args.timeout as number) || 600000;
     
@@ -264,6 +269,9 @@ export const runCommandTool: Tool = {
     const rawCommand = (args.command ?? args.cmd) as string | undefined;
     if (!rawCommand || typeof rawCommand !== "string" || rawCommand.trim() === "") {
       return "Error: Missing required parameter 'command'. Provide the shell command to execute.";
+    }
+    if (workspaceMode.isSsh()) {
+      return await sshRunCommandExecute(rawCommand, args.cwd as string | undefined);
     }
     let command = normalizeGitPaths(rawCommand);
     const targetCwd = args.cwd 
@@ -456,6 +464,9 @@ export const runBackgroundProcessTool: Tool = {
     const rawCommand = (args.command ?? args.cmd) as string | undefined;
     if (!rawCommand || typeof rawCommand !== "string" || rawCommand.trim() === "") {
       return "Error: Missing required parameter 'command'. Provide the command to run in the background.";
+    }
+    if (workspaceMode.isSsh()) {
+      return await sshRunBackgroundProcessExecute(rawCommand, args.cwd as string | undefined);
     }
     const targetCwd = args.cwd 
       ? path.resolve(cwd, args.cwd as string)

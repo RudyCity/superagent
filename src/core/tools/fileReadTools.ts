@@ -7,6 +7,8 @@ import { Tool } from "./types.js";
 import { normalizePath, resolveFilePathFromArgs, getImageMimeType } from "./pathHelpers.js";
 import { getLocalRgPath, isRgInstalledGlobally, ensureRgInstalled } from "../androidSetup.js";
 import { getWorkspaceCachePath } from "../workspaceDiscovery.js";
+import { workspaceMode } from "../ssh/workspaceMode.js";
+import { sshReadToolExecute, sshGlobToolExecute, sshGrepToolExecute } from "../ssh/sshCommands.js";
 
 export const readTool: Tool = {
   name: "read",
@@ -34,6 +36,11 @@ export const readTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
+    if (workspaceMode.isSsh()) {
+      const targets = args.filePaths || args.filePath;
+      if (!targets) return "Error: Missing filePath or filePaths";
+      return await sshReadToolExecute(targets as any);
+    }
     const filePaths = args.filePaths as any[] | undefined;
     const offset = Math.max(1, (args.offset as number) || 1);
     const limit = (args.limit as number) || 800;
@@ -197,6 +204,9 @@ export const globTool: Tool = {
     required: ["pattern"],
   },
   async execute(args, cwd, signal) {
+    if (workspaceMode.isSsh()) {
+      return await sshGlobToolExecute(args.pattern as string);
+    }
     const pattern = args.pattern as string;
     const searchPath = args.path
       ? path.resolve(cwd, args.path as string)
@@ -266,6 +276,9 @@ export const grepTool: Tool = {
     required: ["pattern"],
   },
   async execute(args, cwd, signal) {
+    if (workspaceMode.isSsh()) {
+      return await sshGrepToolExecute(args.pattern as string, args.include as string | undefined);
+    }
     const pattern = args.pattern as string;
     const include = (args.include as string) || "*";
     const searchPath = args.path
@@ -373,6 +386,9 @@ export const ripgrepSearchTool: Tool = {
     required: ["pattern"],
   },
   async execute(args, cwd, signal) {
+    if (workspaceMode.isSsh()) {
+      return await sshGrepToolExecute(args.pattern as string);
+    }
     const pattern = args.pattern as string;
     const rawPath = args.path as string | undefined;
     const searchPath = rawPath ? path.resolve(cwd, rawPath) : cwd;
