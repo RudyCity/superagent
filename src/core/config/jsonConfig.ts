@@ -1069,7 +1069,7 @@ export function getTrustedDirectories(): string[] {
 }
 
 export function addTrustedDirectory(dirPath: string, name?: string): void {
-  const resolvedPath = dirPath.startsWith("ssh://") ? dirPath : path.resolve(dirPath);
+  const resolvedPath = dirPath.startsWith("ssh:") ? dirPath : path.resolve(dirPath);
   const id = getWorkspaceId(resolvedPath);
   saveWorkspaceToDb({
     id,

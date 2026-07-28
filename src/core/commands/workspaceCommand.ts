@@ -22,7 +22,7 @@ export const workspaceCommand: SlashCommand = {
     // If no args and wizard is supported, launch wizard
     if (!args.trim()) {
       if (ctx.setActiveWizard) {
-        const trustedDirs = getTrustedDirectories().map(d => path.resolve(d));
+        const trustedDirs = getTrustedDirectories().map(d => d.startsWith("ssh:") ? d : path.resolve(d));
         const allDirs = [...new Set([currentWorkspace, ...trustedDirs])];
         const dbWorkspaces = getWorkspacesFromDb();
         const workspacesMap = new Map(dbWorkspaces.map(w => [path.resolve(w.path), w]));
@@ -30,7 +30,7 @@ export const workspaceCommand: SlashCommand = {
         const options = allDirs.map((dir) => {
           let isActive = dir === currentWorkspace;
           // SSH format normalization: raw trusted dir may have colon before path vs config URI
-          if (!isActive && workspaceMode.isSsh() && sshCfg && (dir.startsWith('ssh://') || (dir.includes('@') && (dir.includes(':/') || dir.includes(':'))))) {
+          if (!isActive && workspaceMode.isSsh() && sshCfg && (dir.startsWith('ssh:') || (dir.includes('@') && (dir.includes(':/') || dir.includes(':'))))) {
             const parsedDir = workspaceMode.parseSshTarget(dir);
             if (parsedDir) {
               isActive =
@@ -97,7 +97,7 @@ export const workspaceCommand: SlashCommand = {
     if (action && action !== "status" && action !== "add" && action !== "use" && action !== "select") {
       const combined = args.trim();
       const index = parseInt(combined, 10);
-      const trustedDirs = getTrustedDirectories().map(d => path.resolve(d));
+      const trustedDirs = getTrustedDirectories().map(d => d.startsWith("ssh:") ? d : path.resolve(d));
       const allDirs = [...new Set([currentWorkspace, ...trustedDirs])];
 
       if ((!isNaN(index) && index >= 1 && index <= allDirs.length) || fs.existsSync(path.resolve(currentWorkspace, combined))) {
@@ -120,7 +120,7 @@ export const workspaceCommand: SlashCommand = {
 
       // Check if SSH target format
       const sshConfig = workspaceMode.parseSshTarget(targetArg);
-      if (sshConfig || targetArg.startsWith("ssh://") || targetArg.includes(":@")) {
+      if (sshConfig || targetArg.startsWith("ssh:") || targetArg.includes(":@")) {
         const parsed = sshConfig || workspaceMode.parseSshTarget(targetArg.split(" ")[0]);
         if (parsed) {
           const sshUri = `ssh://${parsed.username}@${parsed.host}:${parsed.port}${parsed.remoteCwd}`;
@@ -209,7 +209,7 @@ export const workspaceCommand: SlashCommand = {
         return;
       }
 
-      const trustedDirs = getTrustedDirectories().map(d => d.startsWith("ssh://") ? d : path.resolve(d));
+      const trustedDirs = getTrustedDirectories().map(d => d.startsWith("ssh:") ? d : path.resolve(d));
       const allDirs = [...new Set([currentWorkspace, ...trustedDirs])];
 
       let targetPath = "";
@@ -219,9 +219,16 @@ export const workspaceCommand: SlashCommand = {
       if (!isNaN(index) && index >= 1 && index <= allDirs.length) {
         targetPath = allDirs[index - 1];
       } else {
-        // SSH detection before path.resolve to avoid mangling SSH URIs on Windows
-        const isSshTarget = targetArg.startsWith("ssh://") || (targetArg.includes("@") && (targetArg.includes(":/") || targetArg.includes(":")));
-        targetPath = isSshTarget ? targetArg : path.resolve(currentWorkspace, targetArg);
+        // Check if targetArg matches a workspace name in DB
+        const dbWorkspaces = getWorkspacesFromDb();
+        const nameMatch = dbWorkspaces.find(w => w.name === targetArg);
+        if (nameMatch) {
+          targetPath = nameMatch.path;
+        } else {
+          // SSH detection before path.resolve to avoid mangling SSH URIs on Windows
+          const isSshTarget = targetArg.startsWith("ssh:") || (targetArg.includes("@") && (targetArg.includes(":/") || targetArg.includes(":")));
+          targetPath = isSshTarget ? targetArg : path.resolve(currentWorkspace, targetArg);
+        }
       }
 
       // Detect SSH URI target
