@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.613] - 2026-07-28
+
+### Documentation
+- **Added Contact Email to Footer**: Updated README.md footer section to include author contact email `rudy.city.developer@gmail.com`.
+
 ## [1.2.612] - 2026-07-28
 
 ### Documentation
