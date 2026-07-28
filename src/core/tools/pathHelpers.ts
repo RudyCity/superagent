@@ -36,7 +36,7 @@ export function resolveFilePathFromArgs(args: Record<string, unknown>, cwd: stri
   const allowedRoots = [workspaceRoot, testRoot, rootConfigDir];
   const isAllowed = allowedRoots.some(root => resolved === root || resolved.startsWith(root + "/")) || resolved.endsWith("_walkthrough.md");
   if (!isAllowed) {
-    throw new Error('Path "' + raw + '" violates workspace boundary. Operations must remain within "' + workspaceRoot + '"');
+    throw new Error('Path "' + raw + '" violates workspace boundary. Operations must remain within "' + workspaceRoot + '". To read external files, ask for user permission via ask_question or copy the file into the workspace directory.');
   }
   return normalizePath(path.resolve(cwd, raw));
 }

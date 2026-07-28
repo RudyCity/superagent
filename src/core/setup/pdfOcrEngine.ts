@@ -212,7 +212,7 @@ def main():
         try:
             import pypdfium2 as pdfium
             pdf = pdfium.PdfDocument(pdf_path)
-            pages = [page.render(scale=2).to_pil() for page in pdf]
+            pages = [page.render(scale=1.5).to_pil() for page in pdf]
         except Exception as e:
             print(json.dumps({"error": f"Failed to render PDF pages: {str(e)}"}))
             return
@@ -270,6 +270,10 @@ if __name__ == "__main__":
 
     return textResult;
   } catch (err: any) {
+    // Negative Cache entry to prevent re-processing broken PDF repeatedly
+    if (fileHash) {
+      await saveDiskCache(fileHash, "", "failed").catch(() => {});
+    }
     throw new Error(`PDF OCR processing failed: ${err.message || String(err)}`);
   }
 }

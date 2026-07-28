@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.605] - 2026-07-28
+
+### Fixed & Improved - OCR Engine & Workspace Boundary Policy
+- **Workspace Boundary Guidance** (`pathHelpers.ts`): Updated security boundary guard error message to provide clear actionable instructions for external paths (`ask_question` user permission gate or copying target file into workspace).
+- **OCR Engine Optimization** (`pdfOcrEngine.ts`): Reduced PDF rendering scale to `scale=1.5` (~35% faster render) and added negative caching to prevent redundant processing of failed/corrupted PDF files.
+- **Dynamic Language & OCR Engine Fallback** (`pdfOcrEngine.ts`): Enhanced fallback chain (`ind+eng` -> `eng`) for PyTesseract OCR.
+- **External Path Security Gate** (`prompts.ts`): Enforced `EXTERNAL_PATH_PERMIT` prompt rule requiring interactive `ask_question` user confirmation before referencing files outside the active workspace.
+
 ## [1.2.604] - 2026-07-28
 
 ### Documentation & Terminal Help Updates

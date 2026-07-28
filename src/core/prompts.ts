@@ -39,6 +39,7 @@ const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE: Plain terminal text only. No ma
 - CHANGES: ALWAYS list changed/created/deleted files at response end.
 - GATE: Do NOT output completion summary in same turn as tool calls.
 - DESTRUCTIVE: ask_question before package changes, git reset/push/clean, data wipes, file deletion, secret rotation.
+- EXTERNAL_PATH_PERMIT: ask_question before copying/reading/importing files outside workspace boundary into workspace.
 - OS_SEP: PowerShell ";" | Git Bash "&&". Respect active shell.
 - INTENT_GUARD: Plan approval ≠ override ask/research intent. If ask/research, DO NOT edit code.`;
 

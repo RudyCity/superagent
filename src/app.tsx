@@ -366,7 +366,15 @@ export function App({
   const originalWorkingDirectoryRef = useRef<string>(process.cwd());
 
   const addLine = useCallback((line: ChatLine) => {
-    setLines((prev) => [...prev, line]);
+    setLines((prev) => {
+      const nextIdx = prev.length;
+      setExpandedLines((expanded) => {
+        const next = new Set(expanded);
+        next.add(nextIdx);
+        return next;
+      });
+      return [...prev, line];
+    });
   }, []);
 
   /** Append a tool-related line (tool_start/tool_end) as a child of the last assistant message */
