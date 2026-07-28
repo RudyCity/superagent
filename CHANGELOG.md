@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.609] - 2026-07-28
+
+### Documentation
+- **Automatic `t-line` Desktop Integration**: Clarified in README.md that `t-line` desktop app connects automatically to Superagent without needing manual server commands.
+
 ## [1.2.608] - 2026-07-28
 
 ### Documentation

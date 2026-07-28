@@ -22,14 +22,7 @@ An interactive, terminal-based AI coding assistant designed for pair programming
 
 Superagent seamlessly pairs with [t-line](https://github.com/RudyCity/t-line), the official Superagent desktop GUI client.
 
-### Quick Setup
-
-1. **Start Superagent in Server Mode**:
-   ```bash
-   superagent --server 9222 --client-mode tline
-   ```
-2. **Connect via t-line**:
-   Launch `t-line` desktop application and set the server URL to `http://localhost:9222`.
+Integration with `t-line` is automatic. When launching `t-line`, it seamlessly connects to Superagent without requiring manual server initialization or configuration commands.
 
 ---
 
@@ -58,9 +51,6 @@ superagent
 
 # Start in specific working directory
 superagent --dir /path/to/project
-
-# Server Mode for t-line Desktop Integration
-superagent --server 9222 --client-mode tline
 
 # Multi-agent mode (Experimental)
 superagent --multi
