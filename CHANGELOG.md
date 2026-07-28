@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.606] - 2026-07-28
+
+### Documentation & Desktop App Integration
+- **Simplified `README.md`**: Cleaned up and restructured documentation for conciseness and token efficiency.
+- **Added `t-line` Integration**: Documented integration setup with [t-line](https://github.com/RudyCity/t-line) (Superagent Desktop App) via `superagent --server 9222 --client-mode tline`.
+
 ## [1.2.605] - 2026-07-28
 
 ### Fixed & Improved - OCR Engine & Workspace Boundary Policy

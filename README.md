@@ -1,549 +1,103 @@
 # Superagent 🚀
 
-Superagent is an interactive, terminal-based AI coding assistant designed to facilitate the cycle of development, testing, debugging, and application optimization directly from your workspace.
+An interactive, terminal-based AI coding assistant featuring a cyberpunk UI, model context tracking, local checkpointing, and a 3-tier multi-agent orchestration architecture.
 
-It features a cyberpunk-styled terminal user interface built with terminal UI components, automatic tracking of model context token limits, a robust security permission layer, a **3-tier multi-agent orchestration system** (Master Agent → Superagent → Subagent), and persistent integration with local terminal shells.
-
-![Superagent Cyberpunk Terminal UI](assets/Video_SuperAgent.gif)
+![Superagent Terminal UI](assets/Video_SuperAgent.gif)
 
 ---
 
-## 📖 Background
+## Key Features
 
-In modern software development, developers frequently switch context between writing code, running terminal commands, inspecting system logs, searching documentation, and interacting with Large Language Models (LLMs).
-
-Superagent bridges this gap by providing an integrated terminal environment that understands your project's context automatically using a project specification file (`agents.md`), automates execution of independent tasks through secondary agents (*subagents*), and tracks LLM context window limits in real-time. Security is a primary design goal: every file modification, tool invocation, and shell command execution requires explicit user authorization.
-
----
-
-## 💎 Unique Advantages
-
-Unlike standard headless execution bots or basic shell wrappers, Superagent is designed from the ground up as a fully interactive developer workspace companion:
-
-- **Real-Time Context Window Tracking & Intelligent Compacting**: Traditional assistants run blind to token consumption. Superagent features a continuous visual dashboard tracking prompt tokens, completion costs, and remaining context windows, powered by a modular **Context Manager** with model-specific tokenizers (OpenAI/Anthropic). When the context grows too large, automatic compaction kicks in using pluggable strategies — truncation, LLM-powered summarization, or semantic-aware scoring. Use `/compact now` to force compaction on demand, `/pin` to protect important messages from being compacted, and `/compaction-history` to audit all compaction events.
-- **Global Pinned Knowledge Store**: Pinned messages are automatically stored in a persistent, cross-session knowledge base. Use `/knowledge` to browse and search pinned knowledge across ALL sessions and projects. AI agents can access this via `search_pinned_knowledge` and `load_pinned_session` tools, enabling them to learn from previous sessions' decisions and context.
-- **Granular Session Checkpoints**: Never lose progress. Superagent lets you snapshot your conversational and code states into checkpoints (via `/checkpoint`). If an experimental approach fails, you can revert back instantly to a previous checkpoint, restoring the entire session timeline.
-- **3-Tier Multi-Agent Orchestration (Experimental)**: Instead of doing all work sequentially under a single LLM thread, Superagent supports a full 3-tier agent hierarchy. A **Master Agent** orchestrates one or more **Superagents**, each isolated in their own git worktree for independent feature development. Superagents can further delegate atomic operations to ephemeral **Subagents**. It adopts explicit multi-stage planning, structured delegation with constraints and acceptance criteria, and automated self-verification. Launch with `superagent --multi`. *Note: Multi-agent mode is currently experimental.*
-- **Pre-Merge Auto-Debugging Loop**: Ensures code quality at merge boundaries. Before any Superagent task is merged, a verification script runs builds and tests. If a failure occurs, the Master Agent triggers an auto-debugging loop (up to 3 retries), prompting the Superagent to analyze the logs, implement a fix, and verify it dynamically.
-- **Visible, Non-Headless Interactive Terminals**: Most agents run shell commands in the background without visibility or interactivity. With `/terminal`, Superagent spawns a real, popped-up host emulator terminal window. This is perfect for running interactive servers, watch scripts, and commands that require manual inputs.
-- **Global Config & Repository Hygiene**: No messy `.env` or log files cluttering your project codebase. All API keys, environment settings, and session logs are kept safe and clean in your user's global directory (`~/.superagent-r/`).
-- **Smart Workspace Discovery & Automatic Directory Trust**: Automatically fingerprints and hashes the workspace files and structure on startup, caching results under `~/.superagent-r/workspace-caches/` to bypass redundant scans. It dynamically monitors and updates the cache when workspace changes occur in the agent loop. Additionally, git worktree directories created for Superagents (`~/.superagent-r/worktrees/<name>`) are automatically configured as trusted (`safe.directory`) in git to prevent "dubious ownership" warnings and errors.
-- **Automatic Checkpointing**: In addition to manual checkpoints, Superagent automatically snapshots your session on every user message and before any destructive tool operation (file writes, deletions, etc.), with a built-in cooldown to avoid excessive snapshots. You always have a safe rollback point without lifting a finger.
-- **Mandatory Interactive Decision Points**: All agent tiers (Master, Superagent, Subagent) are required to use the `ask_question` tool at every decision point — choosing implementations, resolving ambiguity, or selecting approaches — ensuring the AI never guesses or assumes on the user's behalf.
-- **AI-Guided Preset Initialization**: Configure your workspace commands effortlessly. Superagent scans your codebase structure (such as dependencies, packages, and scripts) to automatically recommend, select, and construct terminal command presets with the `/terminal init` wizard.
-- **Multimodal Image Paste & Path Detection**: Drag-and-drop or paste an image file path (like `D:\images\screenshot.png`) directly into the prompt to auto-attach it. Press `Ctrl+V` to automatically capture image binary data from your system clipboard (cross-platform support for Windows, macOS, and Linux). Attached images are rendered in a sleek visual queue above the prompt and transmitted as high-fidelity multimodal inputs to vision-capable models (e.g. Claude 3.5 Sonnet, GPT-4o), with automatic token tracking.
-- **Internal Hooks — Custom Agent Tools**: Extend Superagent's toolset with your own executable scripts directly from your project. Place a script in `internal-hooks/<name>/` with a `hook.json` schema definition and an `index.js` entrypoint. Hooks are auto-discovered on startup and registered as first-class agent tools. Use `/ih init <name>` to scaffold the project, `/ih dev <name>` to run and test it locally, and `/ih active` to pick which hooks are active via an interactive multi-select checkbox dialog. Active selections are persisted per-project in `~/.superagent-r/model-config.json`.
+- **3-Tier Multi-Agent Architecture**: 
+  - **Master Agent**: High-level task planner & worktree orchestrator.
+  - **Superagent**: Feature developer isolated in Git worktrees.
+  - **Subagent**: Ephemeral atomic file/search runners.
+- **t-line (Desktop App Integration)**: Connect Superagent CLI with [t-line](https://github.com/RudyCity/t-line) via client/server mode.
+- **Smart Context & Token Management**: Automatic token tracking, strategy-based pruning, summarization, and pinning.
+- **Git Checkpoint Recovery**: Instant rollback & branch switching on error or experimentation.
+- **Chrome Extension Integration**: Remote control browser tabs, capture console/network logs, and extract Markdown DOM snapshots.
+- **Interactive Terminal & Tooling**: Built-in interactive execution with streaming output and full shell capabilities.
 
 ---
 
-## 🛠️ Tech Stack & Architecture
+## Desktop App Integration (`t-line`)
 
-Superagent is built on modern Node.js technologies for high performance and modular architecture:
+Superagent seamlessly pairs with [t-line](https://github.com/RudyCity/t-line), the official Superagent desktop GUI client.
 
-- **Language**: TypeScript (ES Modules)
-- **Runtime**: Node.js (v18+)
-- **User Interface**: [Ink](https://github.com/vadimdemedes/ink) (React for the terminal) for a highly interactive, responsive visual layout.
-- **LLM Integration**: [Vercel AI SDK](https://sdk.vercel.ai/) (`ai`, `@ai-sdk/openai`, `@ai-sdk/anthropic`) for structured and streaming interactions.
-- **Process Execution**: [Execa](https://github.com/sindresorhus/execa) for reliable control of background and external processes.
-- **Testing**: [Vitest](https://vitest.dev/) for fast and reliable unit testing.
+### Quick Setup
 
-### Directory Structure
-
-```
-superagent/
-├── src/
-│   ├── cli.tsx                    # Main entrypoint; routes --multi flag to masterAgent
-│   ├── app.tsx                    # React UI wrapper and command handling logic
-│   ├── core/
-│   │   ├── agent.ts               # Core cognitive loop and instruction runner
-│   │   ├── masterAgent.ts         # Master Agent orchestrator (3-tier entry point)
-│   │   ├── config.ts              # Environment variable and global config management
-│   │   ├── checkpoints.ts         # Conversation state checkpoint save/load logic
-│   │   ├── slash-commands.ts      # Interactive command definitions
-│   │   └── tools/
-│   │       ├── types.ts           # Shared types: AgentTier, SubagentInstance, ToolSet
-│   │       ├── toolsets.ts        # ToolSet definitions per tier (master/super/sub)
-│   │       ├── prompts.ts         # System prompts per tier with dynamic context
-│   │       ├── state.ts           # Shared subagent registry and event emitters
-│   │       ├── shellTools.ts      # Command execution and background task control
-│   │       ├── systemTools.ts     # File operations, directory creation, port checks
-│   │       ├── subagentTools.ts   # Subagent instantiation (superagent tier)
-│   │       ├── superagentTools.ts # Superagent orchestration tools (master tier)
-│   │       ├── dynamicHooks.ts    # Internal hook discovery, loading, and active state
-│   │       ├── academicSearchTools.ts # Academic journal search engine API integrations
-│   │       └── networkTools.ts    # Web content fetch and browser integration
-│   └── components/                # React Ink components (visual stats, wizards)
-├── bin/                           # Portable Python and setup scripts
-├── tests/                         # Unit test suites using Vitest
-└── package.json                   # Project manifest and scripts
-```
+1. **Start Superagent in Server Mode**:
+   ```bash
+   superagent --server 9222 --client-mode tline
+   ```
+2. **Connect via t-line**:
+   Launch `t-line` desktop application and set the server URL to `http://localhost:9222`.
 
 ---
 
-## 🌟 Key Developer Features
+## Installation
 
-### 1. Cyberpunk Terminal UI, Token Tracking & Model Speed
-A rich terminal interface showing live statistics on active prompt sizes, completion token counts, token cost summaries, active models, remaining context windows, and real-time model generation speed (tokens per second).
-
-### 2. Session Management & Checkpoints
-Allows developers to save the current state of a coding conversation and restore it at any point using `/checkpoint save <name>` and `/checkpoint restore <id>`. This allows you to safely experiment with different implementations. Checkpoints can be browsed, restored, or deleted via an interactive wizard (launched by `/checkpoint`, `/checkpoint list`, or `Ctrl+P` in multi-agent mode). Use the `--resume` or `-r` flag to continue where you left off. Multi-agent sessions are fully serialized, ensuring smooth restore and resume of running tasks and interactive prompts. **Auto-checkpointing** creates snapshots automatically on every user message and before destructive tool operations, with a cooldown to prevent excessive saves — ensuring you always have a safe rollback point.
-
-### 3. 3-Tier Multi-Agent Orchestration (`--multi`) (Experimental)
-
-> [!WARNING]
-> Multi-agent mode (`--multi`) is currently experimental and not recommended for production environments.
-
-Launch with `superagent --multi` to activate the full 3-tier hierarchy:
-
-```
-superagent --multi
-      │
-  Master Agent  (orchestrator tier)
-  Tools: invoke_superagent, await_superagents, merge_superagents, manage_superagents, define_superagent, send_message_to_superagent, manage_subagents, git_worktree
-  Spawns Superagents with git worktree isolation
-      │
-  Superagent  (per-feature coordinator/lead)
-  Tools: shell + file tools, invoke_subagent, manage_subagents, git_worktree
-  Isolated in its own git worktree
-  Can spawn Subagents for atomic ops
-      │
-  Subagent  (atomic operation tier)
-  Tools: file tools only (read/write/search)
-  Ephemeral, single-purpose execution
-```
-
-**Tier Responsibilities:**
-- **Master Agent**: High-level planning, task decomposition, and result merging. Manages which Superagents are running, lets you dynamically define custom Superagent roles/prompts, and allows sending interactive messages/instructions to active Superagents.
-- **Superagent**: Feature coordination and development in an isolated git worktree. Responsible for leading implementation and delegating atomic operations (research, coding, testing) to specialized Subagents.
-- **Subagent**: Atomic file/search operations delegated by a Superagent. Ephemeral — lives only for the duration of a single task.
-
-**Advanced Orchestration Features:**
-- **Pre-Merge Auto-Debugging Loop**: Before merging changes from any Superagent branch, a verification phase runs builds and test suites in the worktree. If errors are encountered, an automatic feedback loop triggers (up to 3 retries) that sends the failure output to the Superagent, instructing it to automatically debug, fix, and commit updates before completing the task.
-- **ASCII Dependency Graph**: The dashboard's active agents registry panel draws a real-time, hierarchical ASCII tree (using `├──` and `└──` connectors) mapping active relationships between the Master Agent, spawned Superagents, and running subagents/tasks.
-- **Illegal Operation Reporting & Auto-Escalation**: When a child agent attempts a blocked operation (e.g., unauthorized file modification, scope creep, or policy violation), a structured `ViolationRecord` event is emitted with severity levels (`warning` or `critical`). These violations automatically propagate up the agent hierarchy (Subagent → Superagent → Master Agent), enabling parent agents to track, log, and take corrective action — including halting or redirecting the offending agent.
-- **Mandatory Interactive Decision Points**: All tiers enforce the use of the `ask_question` tool at every decision point. Agents must present multiple-choice options to the user rather than guessing, assuming, or making unilateral decisions about implementation approaches, file selections, or design trade-offs.
-
-**Standard subagent roles (single-agent mode):**
-- **Researcher**: Explores the codebase and retrieves context (Read-Only).
-- **Coder**: Implements code modifications and refactoring.
-- **Reviewer**: Audits changes, runs tests, and validates implementations.
-- **software-tester**: Automated browser testing (Playwright), browser log/error analysis, and visual UI/UX design taste checks.
-- **security-engineer**: Security auditing, threat modeling, vulnerability scanning, and secure remediation.
-
-### 4. Visible Terminal Windows (`/terminal`)
-Runs development servers, local builds, or test watchers in popped-up, visible OS terminal windows (Windows cmd, macOS Terminal, Linux x-terminal). It includes an AI-assisted preset initializer (`/terminal init`) to auto-configure workspace command presets.
-
-### 5. Structured Planning & Approvals
-For complex changes, the Master Agent enforces structured planning and execution boundaries:
-- **Explicit Multi-Stage Planning**: The implementation plan is structured into three mandatory stages: **Stage 1: Discovery & Dependency Mapping** (dependency tracing), **Stage 2: Interface & Contract Definition** (API/types specification), and **Stage 3: Spawning Roadmap** (Superagent spawning checklist and branch topology).
-- **Structured Delegation**: When invoking a Superagent, the Master Agent specifies explicit task `constraints` (files or logic NOT to modify) and `acceptanceCriteria` (a checklist of specific test cases to satisfy).
-- **Approval Checkpoint**: The plan is written to the workspace root as `implementation_plan.md` and requires explicit user review and approval before any execution begins, guaranteeing complete oversight.
-
-### 6. Safe Merge Strategy (v2)
-The merge system uses a **safe-by-default** strategy that prevents file corruption:
-- **Line-Based Conflict Resolution**: When conflicts occur, the system first attempts safe line-based resolution (e.g., one side is empty, both sides identical, or one side is a subset). Only trivially safe conflicts are auto-resolved.
-- **Universal Post-Merge Validation**: After a clean merge (or successful line-based resolution), the system runs validation checks:
-  - Conflict marker detection (leftover `<<<<<<<` in files)
-  - Duplicate adjacent lines detection
-  - Duplicate attributes detection
-  - Line merging detection (multiple statements crammed onto one line)
-  - Diff sanity check (abnormally large diffs)
-  - Project-level validation (build/test/lint scripts)
-- **Auto-Revert on Failure**: If validation fails, the merge is automatically reverted before committing. No corrupted files are ever committed.
-- **Manual Resolution Required**: Complex conflicts that cannot be safely resolved are aborted and reported to the user for manual resolution.
-
-### 7. Advanced Superagent Modes
-- **Patch Mode** (`mode: 'patch'`): Lightweight mode that skips worktree creation and operates directly in the parent's working directory. Ideal for small, targeted fixes (1-2 lines). Much faster than spawning a full Superagent. Includes safety warnings if the parent worktree has uncommitted changes.
-- **Base Branch** (`baseBranch: 'feat/...'`): When a Superagent needs to build on top of another feature branch instead of the current HEAD, specify `baseBranch` to create the worktree from that branch. Useful for dependent features or building on top of in-progress work.
-
-Example:
-```
-invoke_superagent({
-  role: 'fix-html-corrupt',
-  task: 'Fix duplicate closing tags in Toolbar component',
-  branch: 'fix/toolbar-html',
-  baseBranch: 'feat/separate-compressor-menu',  // Build on top of this branch
-  mode: 'patch'  // Quick fix, no worktree needed
-})
-```
-
-### 8. Centralized Logging
-All agent operations, including single-agent and 3-tier multi-agent processes, are dynamically logged to a central log file in the user's home directory (`~/.superagent-r/superagent.log`). The log maintains tier-aware indentation to cleanly trace parallel execution branches.
-
-### 9. Automatic Checkpointing
-Beyond manual `/checkpoint` commands, Superagent creates checkpoints automatically:
-- **On every user message**: A snapshot is taken before processing each new user input, preserving the state prior to the agent's response.
-- **Before destructive operations**: File writes, deletions, and other state-modifying tool calls trigger a checkpoint before execution.
-- **Cooldown-based**: A configurable minimum interval between auto-checkpoints prevents excessive snapshots during rapid interactions.
-- **Non-blocking**: Auto-checkpoints run asynchronously in the background and never interrupt the conversation flow. A visible notification appears in the terminal UI when one is created.
-
-### 11. SSH Proxy Workspace Mode 🌐
-Superagent can operate directly on remote servers without installing any agent or software on the remote host:
-- **Zero Server Footprint**: Connects to remote host via pure SSH (`ssh2`) and SFTP (`ssh2-sftp-client`).
-- **Remote File & Command Execution**: All file operations (`read`, `write_to_file`) and terminal commands (`run_command`, `bash`) are proxied directly to the remote server.
-- **Remote Background Process Support**: Launches persistent background processes on remote server via `nohup` (ideal for dev servers or provisioning scripts).
-- **100% Transparent Tool Routing**: Automatically routes file tools (`read`, `write_to_file`, `edit`, `glob`, `grep`), execution tools (`bash`, `run_command`), and background tasks (`run_background_process`) to the remote host.
-- **SFTP In-Memory Smart Caching**: 30-second TTL in-memory SFTP file cache to eliminate latency lag during repetitive file reads.
-- **Remote System Metrics & Dashboard**: Displays real-time remote CPU/RAM/Disk usage, OS kernel, system uptime, and SSH connection latency via `/workspace status`.
-- **Auto-Keepalive & Reconnect**: Built-in SSH keepalive ping and automatic socket reconnection.
-- **POSIX Path Normalization**: Automatic path translation between Windows local client and Linux remote host.
-
-### `/workspace` Slash Commands & Options
-Superagent provides a complete `/workspace` (or shortcut `/w`) command suite for managing local directories and remote SSH environments:
-
-| Command | Action / Description | Example |
-| :--- | :--- | :--- |
-| `/workspace list` | Lists all registered local and SSH remote workspaces. | `/workspace list` |
-| `/workspace status` | Displays live system metrics (OS, Uptime, RAM/Disk usage, Latency) of active workspace. | `/workspace status` |
-| `/workspace add <path>` | Registers and switches to a local workspace path. | `/workspace add /var/www/my-app` |
-| `/workspace add ssh://...` | Connects & switches to a remote server via SSH URL (supports `?key=` for custom `.pem` keys). | `/workspace add "ssh://user@192.168.1.50:22/home/user?key=C:\path\to\key.pem" MyServer` |
-| `/workspace use <index\|path\|ssh-url>` | Switches active workspace by list index, local path, or SSH URL. | `/workspace use 2` or `/workspace use ssh://root@10.0.0.1/app` |
-
-Usage CLI & Terminal Examples:
 ```bash
-# Option 1: Launch CLI directly connected to SSH remote server (supports custom port & ?key= parameter)
-superagent --workspace-ssh "ubuntu@192.168.1.50:2345/home/ubuntu?key=C:\path\to\key.pem"
+# Clone the repository
+git clone https://github.com/RudyCity/superagent.git
+cd superagent
 
-# Short flag alias:
-superagent -ws "user@192.168.1.100:/var/www/app"
+# Install dependencies & build
+bun install
+bun run build
 
-# Option 2: Add and switch workspaces inside the terminal UI
-/workspace add /path/to/local/project MyProject
-/workspace add "ssh://ubuntu@192.168.1.50:2345/home/ubuntu?key=C:\path\to\key.pem" RemoteServer
-/workspace status
-/workspace list
-/workspace use RemoteServer
+# Link globally (optional)
+npm link
 ```
 
 ---
 
-## 🔬 Deep Dive: System Architecture & Core Logic
+## Usage
 
-Superagent features several robust subsystems that ensure stability, execution safety, and a seamless developer workflow:
+```bash
+# Interactive CLI mode
+superagent
 
-### 1. Active Host Diagnostics & Auto-Dependency Setup (`androidSetup.ts`)
-Superagent proactively audits and prepares your local machine's developer environment:
-- **Automatic Utility Provisioning**: If `ripgrep` (`rg` for high-speed workspace indexing) or `curl` (on Windows) is missing on your host machine, Superagent automatically downloads, extracts, and places the binaries locally in `~/.superagent-r/bin/`.
-- **Android CLI Orchestrator**: Scans and provisions Google's official Android SDK command-line utilities using custom PowerShell (`install.cmd` for Windows) and Shell (`install.sh` for macOS/Linux) scripts.
+# Start in specific working directory
+superagent --dir /path/to/project
 
-### 2. 3-Tier Multi-Agent Architecture (`masterAgent.ts`, `superagentTools.ts`, `subagentTools.ts`)
-For parallel feature development, Superagent implements a 3-tier hierarchy:
-- **Tier Isolation**: Each Superagent runs in an isolated git worktree (`~/.superagent-r/worktrees/<name>`), preventing file conflicts between concurrent agents.
-- **Instant Dependency Linking**: To speed up execution, spawning a Superagent automatically links the root `node_modules` into the worktree using platform-specific symlinks (or directory junctions on Windows) instead of re-installing dependencies.
-- **Delegation Guardrails**: Delegation depth is enforced per-tier — Master can spawn Superagents, Superagents can spawn Subagents, Subagents cannot spawn further agents.
-- **Permission Scoping**: Each tier gets a strictly scoped toolset. Master agents get orchestration, definition, and messaging tools; Superagents get shell + file tools; Subagents get file tools only.
-- **Dynamic Custom Roles**: Master Agent can define customized Superagent types/roles dynamically using `define_superagent` with custom system prompts, enabling domain-specific behaviors.
-- **Interactive Messaging & Routing**: Master Agent can send follow-up instructions and questions to active Superagents via `send_message_to_superagent`, permitting real-time collaboration. Multi-agent sessions are fully serialized, allowing dynamic resumption and routing of paused instances.
-- **Robust Worktree Cleanup**: Terminating or killing Superagents (via `manage_superagents` with `kill` or `kill_all` actions) robustly cleans up and removes their corresponding Git worktrees, avoiding disk clutter.
-- **Structured Markdown Reporting**: Every Superagent completes its task by printing a standardized markdown report (goal, actions taken, key findings, outcome status) that the Master Agent can parse and merge.
-- **Concurrent Task Isolation**: Uses `agentLocalStorage` to track and isolate concurrent task logging paths, preventing environment variable clashes during parallel execution.
-- **Visual Log Streaming & Centralized Logging**: Agent actions, thoughts, tool calls, and execution errors are formatted and logged in a nested visual tree layout with tier-aware indentation. All logs are dynamically captured and written to the global directory at `~/.superagent-r/superagent.log`.
+# Multi-agent mode (Master Tier orchestration)
+superagent --multi
 
-### 3. Execution Safety Guardrails (`permissions.ts`)
-A dedicated validation layer inspects all terminal execution commands before they are executed. It immediately blocks destructive command invocations, including:
-- Directory wipes on root/home directories (`rm -rf /`, `rmdir /s /q C:\`, etc.)
-- Disk formatting/initialization commands (`Format-Volume`, `Initialize-Disk`, `mkfs`)
-- System power commands (`shutdown`, `reboot`, `Stop-Computer`)
-- Force process termination on critical system tasks
-- Unverified remote script pipes (`curl/wget | sh`, `Invoke-Expression/iex`)
-
-### 4. Background Job Scheduling & Timers (`schedule`)
-Superagent implements a background scheduler supporting:
-- **Active Waiting**: Synchronous waiting (`wait: true`) showing a real-time countdown indicator directly on the stdout terminal.
-- **Asynchronous Timers**: One-shot background reminders and recurring interval cron checks (e.g., `5m` or `1h`).
-- **Full Abort Signal Propagation**: Timers immediately clean up processes and interval hooks upon getting a cancel or abort event from the agent core.
-
-### 5. Auto-Checkpoint Engine
-Built into the core agent loop (`agent.ts`), the auto-checkpoint system:
-- **Triggers on user messages**: A snapshot is taken before the agent processes each new user input.
-- **Triggers before destructive tools**: File writes, deletions, and other mutating tool calls create a checkpoint before execution begins.
-- **Cooldown mechanism**: A minimum time interval (`AUTO_CHECKPOINT_COOLDOWN_MS`) prevents excessive checkpoint creation during rapid interactions.
-- **Non-blocking**: Runs asynchronously and swallows errors — never interrupts the conversation flow. A visible notification event (`checkpoint_auto`) appears in the terminal UI.
-
-### 6. Atomic Config Persistence
-Model configuration (`model-config.json`) uses atomic write operations to prevent file corruption. If the process is interrupted (e.g., Ctrl+C), the config file remains intact — writes are first written to a temporary file and then atomically renamed, ensuring zero risk of partial/corrupt state.
-
-### 8. Chrome Extension Integration & Local Server (Experimental)
-
-> [!WARNING]
-> The Chrome Extension integration and local server are currently experimental features.
-
-Superagent features a built-in REST API and Server-Sent Events (SSE) server (`server.ts`) that enables two-way integration with the browser via a Chrome Extension SidePanel:
-- **Local Server Engine**: Run with `superagent --server`, starting an HTTP server on port 7888 (or custom port). The CLI automatically trust-checks the workspace directory initialized by the browser client.
-- **Bi-directional Streaming (SSE)**: Streams real-time thoughts, reasoning blocks, and tool executions to the Chrome SidePanel dynamically.
-- **Interactive Prompts Overlays**: Intercepts tool execution permissions and question requests from active agents, routing them to the Chrome sidepanel as responsive overlay forms for immediate user authorization and feedback.
-- **Browser Automation Capabilities**: Empowers the assistant to interact with active browser tabs by capturing tab content (grab page text or selection context), taking visible screenshots, reading client-side console error logs, and executing automated page tasks (navigation, scroll, click, and text entry).
+# Server Mode for t-line Desktop Integration
+superagent --server 9222 --client-mode tline
+```
 
 ---
 
-## 🚀 Getting Started & Configuration
+## Slash Commands Reference
 
-### Prerequisites
-- **Node.js** v18+ or **Bun** v1.0+
-- **npm** or **Bun** package manager
-
-### Installation
-
-1. Clone and navigate into the repository:
-   ```bash
-   git clone <repository-url>
-   cd superagent
-   ```
-
-2. Install dependencies:
-   Using npm:
-   ```bash
-   npm install
-   ```
-   Or using Bun:
-   ```bash
-   bun install
-   ```
-
-3. Make Superagent Executable Globally:
-   To install the `superagent` command globally on your system so you can invoke it from any directory, build the project and register it:
-   
-   Using npm:
-   ```bash
-   npm run build
-   npm link
-   ```
-   
-   Or using Bun:
-   ```bash
-   bun run build
-   bun link
-   ```
-   This compiles the TypeScript files to JavaScript and registers a global symlink pointing to your local repository build. Now, you can start the assistant from any directory simply by typing:
-   ```bash
-   superagent
-   ```
-   *(To uninstall the global symlink, run `npm unlink` inside this directory).*
-
-### Linking and Running in Another Project
-
-If you want to use the local development version of Superagent inside another project using Bun:
-
-1. In the `superagent` repository root directory, register the package:
-   ```bash
-   bun link
-   ```
-
-2. In your target project's root directory, link the registered package:
-   ```bash
-   bun link superagent
-   ```
-
-3. Start the assistant in your target project using `bunx` with the `--bun` flag (to run it fully under the Bun runtime instead of Node.js):
-   ```bash
-   bunx --bun superagent
-   ```
-   Alternatively, you can add a script in your target project's `package.json`:
-   ```json
-   "scripts": {
-     "superagent": "superagent"
-   }
-   ```
-   And run it using:
-   ```bash
-   bun run superagent
-   ```
-
-
-4. Configure Global API Credentials:
-   Superagent stores all configuration — provider credentials, model settings, rate limits, and system settings — in a centralized JSON config file at `~/.superagent-r/model-config.json`. The easiest way to configure everything is through the interactive slash commands:
-   ```
-   superagent
-   # Then inside the terminal UI:
-   /login     # Add API keys and configure providers
-   /model     # Set active AI models per tier
-   /settings  # Configure rate limits, concurrency, streaming, etc.
-   ```
-   Alternatively, you can create a `.env` file in `~/.superagent-r/` for optional runtime overrides:
-    ```env
-    # Global model override (format: "provider:model" or just "model")
-    # MODEL=openai:gpt-4o
-
-    # Enable multi-agent mode via flag (or set SUPERAGENT_MULTI=true)
-    # SUPERAGENT_MULTI=false
-    ```
-
-### 🔑 Multi-API Key & Model Management
-Superagent natively supports configuring multiple API providers concurrently. All provider profiles, API keys, and model settings are stored in `~/.superagent-r/model-config.json` and managed through slash commands:
-- `/login` — Add or update provider profiles with API keys.
-- `/model` — Set active models per agent tier (Master, Superagent, Subagent).
-- `/settings` — Configure rate limits, concurrency, streaming, context window, and max iterations.
-
-Custom providers (e.g., self-hosted Claude API proxies, Ollama, vLLM) are supported via `/login custom <base_url> <key>`. Anthropic-compatible endpoints are automatically detected and run with the Anthropic driver.
-
-To dynamically switch your active API provider or model at runtime, use the `/login` or `/model` slash commands. Changes take effect immediately without restarting the assistant.
-
-### 🔌 Chrome Extension Setup (Experimental)
-
-> [!WARNING]
-> The Chrome Extension is currently experimental and may contain bugs or incomplete features.
-
-Superagent includes a developer Chrome Extension that provides a cyberpunk-themed sidepanel interface to interact with your agent workspace directly inside the browser.
-
-#### Installation
-1. Open Google Chrome and navigate to `chrome://extensions/`.
-2. Enable **Developer mode** using the toggle switch in the top-right corner.
-3. Click **Load unpacked** in the top-left corner.
-4. Select the `chrome-extension` folder located at the root of your cloned Superagent repository.
-5. The extension "Superagent AI Coding SidePanel" is now ready. Click the extension icon in Chrome or pin it to open the sidepanel interface.
-
-#### Usage
-1. Start the Superagent local server (by default it listens on port 7888):
-   ```bash
-   superagent --server 7888
-   ```
-2. Open the sidepanel extension in Chrome.
-3. Input the absolute path of your workspace folder in the **Workspace Path** input field.
-4. (Optional) Provide the security **API Token** if configured.
-5. Select the **Agent Mode** (Single or Multi) and toggle **Resume last session** if you wish to restore previous state.
-6. Click **LAUNCHING SESSION** to initialize and connect.
-7. You can now chat, view task checklists, monitor the agent tree, and let the agent automate tab actions.
-
-## ⚙️ Development Scripts
-
-Run the following scripts during development:
-
-- **Start Development Mode**:
-  Using npm:
-  ```bash
-  npm run dev
-  ```
-  Or using Bun:
-  ```bash
-  bun run dev
-  ```
-
-- **Start Multi-Agent Mode (3-tier orchestration)**:
-  Using npm:
-  ```bash
-  npm run dev -- --multi
-  ```
-  Or using Bun:
-  ```bash
-  bun run dev --multi
-  ```
-  *(Or globally: `superagent --multi`)*
-
-- **Start Chrome Extension API Server**:
-  Using npm:
-  ```bash
-  npm run dev -- --server [port]
-  ```
-  Or using Bun:
-  ```bash
-  bun run dev --server [port]
-  ```
-  *(Or globally: `superagent --server [port]`)*
-
-- **Resume Last Session**:
-  Using npm:
-  ```bash
-  npm run dev -- --resume
-  ```
-  Or using Bun:
-  ```bash
-  bun run dev --resume
-  ```
-
-- **Compile TypeScript**:
-  Using npm:
-  ```bash
-  npm run build
-  ```
-  Or using Bun:
-  ```bash
-  bun run build
-  ```
-
-- **Run Production Build**:
-  Using npm:
-  ```bash
-  npm start
-  ```
-  Or using Bun:
-  ```bash
-  bun start
-  ```
-
-- **Run Unit Tests**:
-  Using npm:
-  ```bash
-  npm test
-  ```
-  Or using Bun:
-  ```bash
-  bun test
-  ```
+| Command | Description |
+|---|---|
+| `/help` | Show command list |
+| `/login` | Configure AI provider keys & endpoints |
+| `/model` | Switch model presets or custom tier configurations |
+| `/settings` | View and edit application settings |
+| `/compact` | Compress context window manually |
+| `/clear` | Clear active conversation history |
+| `/history` | Inspect or search past sessions |
+| `/terminal` | Access and run embedded terminal presets |
 
 ---
 
-## 💬 Interactive Slash Commands
+## System Architecture
 
-Superagent supports a wide range of slash commands within the terminal chat to manage session state, configure the assistant, and run commands.
-
-### Navigation & Session Control
-- **`/new`**: Starts a fresh conversation session. Wipes the chat history, resets agent states, and deletes temporary checkpoints.
-- **`/resume`**: Opens an interactive visual wizard listing previous session histories, allowing you to select and resume any past conversation.
-- **`/clear`**: Wipes the visual logs and terminal chat screen while maintaining the current conversation history.
-- **`/compact`**: Shows the current ContextManager status including compaction count, total tokens saved, current state, and last compaction strategy used.
-- **`/compact now`**: Forces manual compaction on demand. Displays tokens before/after, tokens saved, and the strategy used (truncation, summarization, or semantic).
-- **`/pin`**: Pin important messages to prevent them from being removed during compaction. Pinned messages store full content, agent tags, and sync to the global knowledge store. Subcommands: `/pin list` (view pinned messages with metadata), `/pin last` (pin the last user message), `/pin unpin <id>` (remove a pin), `/pin view <index>` (view full pinned content), `/pin tag <index> <label>` (tag a pinned message), `/pin list-messages` (show all messages with indexes).
-- **`/knowledge`** (alias: **`/k`**): Browse and search the global pinned knowledge store — important messages pinned across ALL sessions and projects. Subcommands: `/knowledge` (list all entries), `/knowledge <query>` (search), `/knowledge projects` (list projects with pins).
-- **`/search-history <query>`** (alias: **`/sh`**): Search conversation history. Add `--all` flag to search across ALL sessions and projects (e.g., `/search-history auth login --all`). Add `--debug` flag to display step-by-step logs of the AI semantic matching and summary generation process (e.g., `/search-history auth login --debug`).
-- **`/compaction-history`** (alias: **`/ch`**): View the full audit trail of compaction events with timestamps, strategies used, tokens saved, and messages preserved.
-- **`/quit`** or **`/exit`**: Safely exits the application.
-
-### State Checkpoints
-- **`/checkpoint`** (or **`/checkpoint <name>`**): Saves a snapshot of your current conversation history, active model state, and planning states.
-- **`/checkpoint list`** (or **`/checkpoint`** with no args): Opens an interactive wizard listing all saved checkpoints with relative timestamps, message counts, and Git commit tags. From the wizard, you can restore or delete any checkpoint.
-- **`/checkpoint restore <id>`**: Restores a checkpoint by its ID. If no ID is provided, opens a pre-filtered restore wizard. Automatically terminates running subagents/tasks and reverts the agent's internal state to the checkpoint.
-- **`/checkpoint delete <id>`**: Deletes a specific checkpoint by its ID. If no ID is provided, opens a pre-filtered delete wizard for interactive selection.
-- **Auto-Checkpoint Notifications**: When an auto-checkpoint is created (e.g., before destructive operations), a visible system notification appears in the terminal UI.
-- **Ctrl+P (Multi-Agent)**: In multi-agent dashboard mode, press `Ctrl+P` to open the interactive checkpoint browser wizard.
-
-### Automation & Tasks
-- **`/goal <description>`**: Activates **Goal Mode**. The assistant enters a persistent, autonomous loop (up to 200 iterations) to accomplish the goal (e.g., `/goal write a full suite of unit tests for auth.ts`).
-- **`/init`**: Runs a system audit. Checks OS info, Node.js version, Git repository status, active model configuration, and auto-generates the `agents.md` specification file.
-- **`/agents`**: Lists all active subagents and details about the preconfigured types (`researcher`, `coder`, `reviewer`).
-- **`/processes`** (or **`/procs`**): Displays active background processes managed by the agent, along with a visual progress bar and a checklist parsed from the current `task.md`.
-
-### Terminal & Presets
-- **`/terminal <command>`**: Spawns a visible, popped-up terminal window executing the specified command.
-- **`/terminal preset <name>`** (or **`/terminal <preset_name>`**): Executes a command preset defined in your `terminal-presets.json` or `.superagent-r/terminal-presets.json`.
-- **`/terminal init`**: Launches an interactive, AI-guided wizard that scans your workspace files (like `package.json`, `Cargo.toml`, etc.), suggests relevant run commands, and writes them to `.superagent-r/terminal-presets.json`.
-
-### Skills & Plugins
-- **`/skills`**: Displays a visual wizard containing all currently installed automation templates and guidelines.
-- **`/install <owner/repo>`**: Installs new automated developer *skills* directly from remote repositories via `npx skills add`.
-
-### Internal Hooks
-- **`/ih init <name>`** (alias: **`/internal-hooks init <name>`**): Scaffolds a new internal hook project workspace under `internal-hooks/<name>/`, creating `hook.json` (tool schema), `package.json`, `index.js` (entrypoint), and `test-payload.json` (dev test fixture). The new hook is automatically activated and hot-reloaded into the agent's toolset.
-- **`/ih dev <name>`**: Runs the hook's `dev` script (from `package.json`) or falls back to the `command` field in `hook.json`, piping `test-payload.json` as stdin. Ideal for rapid local iteration.
-- **`/ih active`**: Opens an interactive multi-select checkbox dialog listing all discovered hooks. Space to check/uncheck, Enter to confirm. The selected set is saved per-project in `~/.superagent-r/model-config.json` and takes effect immediately.
-
-### Provider & Model Settings
-- **`/login`**: Opens a visual wizard to add API credentials, switch active providers, or list configured providers. You can also log in directly via `/login <key>` or `/login custom <base_url> <key>`.
-- **`/model <name>`**: Switches the active Large Language Model (e.g., `/model openai/gpt-4o` or `/model google/gemini-2.5-flash`). Running without arguments prints the active model name.
-
+```
+Master Agent (Orchestrator)
+  ├── Superagent A (Git Worktree 1 - Feature A)
+  │     ├── Subagent (Search & Read)
+  │     └── Subagent (Code Writer)
+  └── Superagent B (Git Worktree 2 - Feature B)
+        └── Subagent (Tester / Debugger)
+```
 
 ---
 
-## ✍️ Authors & Contributors
+## License & Credits
 
-Developed and maintained by:
-- **Rudy H.** ([GitHub Profile](https://github.com/RudyCity)) - *Creator & Lead Developer*
-
-For guidelines on how to contribute to features and bug fixes, please see [CONTRIBUTING.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/CONTRIBUTING.md).
-
----
-
-## 📄 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/LICENSE) file for details.
-
-Copyright (c) 2026 Rudy H. <hrudy715@gmail.com>
+Created by **Rudy City** ([@RudyCity](https://github.com/RudyCity)). Distributed under the MIT License.
