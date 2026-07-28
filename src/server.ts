@@ -3,6 +3,7 @@ import net from "net";
 import { URL } from "url";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
 import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb, generateSessionId, purgeEmptySessions, getPackageRootDir, getInstalledSkills, getSuperAgentVersion } from "./core/config.js";
@@ -12,6 +13,25 @@ import { setBrowserControlHandler } from "./core/tools/otherTools.js";
 import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/config/browserMacros.js";
 import { execSync } from "child_process";
 import { handleServerRoute } from "./serverRoutes.js";
+
+const SUPERAGENT_SERVER_LOG_FILE = path.join(os.homedir(), ".superagent-r", "superagent-server.log");
+
+export function logToSuperAgentServerFile(message: string) {
+  const timestamp = new Date().toISOString();
+  const logLine = `[${timestamp}] ${message}\n`;
+  try {
+    const dir = path.dirname(SUPERAGENT_SERVER_LOG_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    if (fs.existsSync(SUPERAGENT_SERVER_LOG_FILE) && fs.statSync(SUPERAGENT_SERVER_LOG_FILE).size > 5 * 1024 * 1024) {
+      fs.writeFileSync(SUPERAGENT_SERVER_LOG_FILE, `[${timestamp}] [INFO] Log file rotated (exceeded 5MB limit)\n`);
+    }
+    fs.appendFile(SUPERAGENT_SERVER_LOG_FILE, logLine, () => {});
+  } catch (err) {
+    // Ignore logging errors
+  }
+}
 
 export type ClientMode = "chrome-extension" | "tline";
 
@@ -261,6 +281,10 @@ setBrowserControlHandler((action, target, value, instanceId) => {
 
 function broadcastEvent(event: any) {
   const data = `data: ${JSON.stringify(event)}\n\n`;
+  
+  // Log event to the server debug log file
+  logToSuperAgentServerFile(`[Broadcast Event] ${JSON.stringify(event).slice(0, 1000)}`);
+  
   if (process.env.LOG_STREAM_RESPONSE === 'true') {
     if (event?.event?.type === 'text_delta') {
       process.stdout.write(event.event.text || event.event.delta || '');
@@ -284,6 +308,7 @@ function broadcastEvent(event: any) {
 }
 
 function sendJSON(res: http.ServerResponse, status: number, data: any) {
+  logToSuperAgentServerFile(`[Response] Status: ${status}`);
   res.writeHead(status, {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
@@ -471,6 +496,28 @@ function isPortInUse(port: number): Promise<boolean> {
 }
 
 export async function runServer(port: number, silent = false, defaultClientMode: ClientMode = "tline") {
+  // Override console methods to write server logs to file
+  const originalLog = console.log;
+  const originalError = console.error;
+  const originalWarn = console.warn;
+
+  console.log = (...args: any[]) => {
+    originalLog.apply(console, args);
+    logToSuperAgentServerFile(`[INFO] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`);
+  };
+
+  console.error = (...args: any[]) => {
+    originalError.apply(console, args);
+    logToSuperAgentServerFile(`[ERROR] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`);
+  };
+
+  console.warn = (...args: any[]) => {
+    originalWarn.apply(console, args);
+    logToSuperAgentServerFile(`[WARN] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`);
+  };
+
+  logToSuperAgentServerFile(`Initializing SuperAgent Server on port ${port}...`);
+
   const inUse = await isPortInUse(port);
   if (inUse) {
     if (!silent) {
@@ -536,6 +583,8 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   const server = http.createServer(async (req, res) => {
     const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
     const pathname = parsedUrl.pathname;
+
+    logToSuperAgentServerFile(`[Request] ${req.method} ${req.url} (Workspace: ${req.headers["x-workspace-path"] || "none"})`);
 
     // CORS preflight
     if (req.method === "OPTIONS") {

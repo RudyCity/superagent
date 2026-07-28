@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.598] - 2026-07-28
+
+### Added
+- **Server Logging (`server.ts`)**:
+  - Implemented a dedicated debug log file (`~/.superagent-r/superagent-server.log`) to record server events, request methods/URLs, response statuses, and SSE client broadcasts.
+  - Overwrote global `console.log`, `console.error`, and `console.warn` methods inside the server execution context to automatically mirror all server logs and warnings into the dedicated file.
+  - Implemented automatic log file rotation when the file size exceeds 5MB.
+
 ## [1.2.597] - 2026-07-27
 
 ### Fixed
