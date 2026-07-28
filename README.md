@@ -136,6 +136,6 @@ Master Agent (Orchestrator)
 
 ## 📄 License & Author
 
-Developed by **Rudy City** ([@RudyCity](https://github.com/RudyCity)) • 📧 Contact: [rudy.city.developer@gmail.com](mailto:rudy.city.developer@gmail.com)
+Developed by **Rudy City** ([@RudyCity](https://github.com/RudyCity)) • 📧 Contact: [hrudy715@gmail.com](mailto:hrudy715@gmail.com)
 
 Distributed under the [MIT License](LICENSE).

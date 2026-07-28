@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.614] - 2026-07-28
+
+### Documentation
+- **Corrected Contact Email**: Updated author contact email to `hrudy715@gmail.com` in README.md footer.
+
 ## [1.2.613] - 2026-07-28
 
 ### Documentation
