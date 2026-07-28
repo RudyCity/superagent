@@ -2,6 +2,13 @@
 
 ## [1.2.601] - 2026-07-28
 
+### Fixed & Improved - Advisor Runtime Config
+
+- **Live settings sync** (`advisor.ts`, `agent.ts`): Added `syncSettings(s)` method to `RealtimeAdvisor` — called at the start of every `runAgentLoop()` via `this.advisor.syncSettings(getSettings())`. All threshold and feature-flag changes made via `/setting-advisor` now take effect on the next agent run without restarting.
+- **`enableAdaptiveScaling` and `enablePatternMemory` now configurable** (`jsonConfig.ts`, `agent.ts`): Added `advisorAdaptiveScaling` and `advisorPatternMemory` to `SystemSettings` interface, `DEFAULT_CONFIG`, `getSettings()` return, and the `RealtimeAdvisor` constructor in `agent.ts`. Both default to `true`.
+- **Expanded `/setting-advisor` command** (`settingsCommand.ts`): Command now supports 7 sub-commands — `on`, `off`, `warn=N`, `pause=N`, `error=N`, `adaptive=on/off`, `pattern=on/off`. Calling with no args now shows a full status table of all current advisor settings.
+- **`/settings` display now shows full advisor config** (`settingsCommand.ts`): The Advisor line now includes all 5 configurable values inline: warn threshold, pause threshold, error threshold, adaptive scaling state, and pattern memory state.
+
 ### Refactored - Android Setup & Document Reading Extraction
 - **Android setup refactored** (`androidSetup.ts` → `setup/ocrSetup.ts`, `setup/pdfOcrEngine.ts`): Extracted OCR and PDF engine setup from monolithic `androidSetup.ts` into modular, testable modules under `src/core/setup/`. Reduces `androidSetup.ts` by 200+ lines.
 - **Office CLI setup extracted** (`setup/officeCliSetup.ts`): Moved LibreOffice / OfficeCLI detection logic into dedicated module.

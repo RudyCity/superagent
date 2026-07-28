@@ -57,6 +57,26 @@ export class RealtimeAdvisor {
     if (options.enablePatternMemory !== undefined) this.enablePatternMemory = options.enablePatternMemory;
   }
 
+  /**
+   * Syncs live advisor settings from model-config.json.
+   * Call this at the start of each agent loop run so runtime config changes
+   * (e.g. /setting-advisor warn=2) take effect without restarting.
+   * Accepts a partial settings bag so the caller can pass getSettings() directly.
+   */
+  public syncSettings(s: {
+    advisorWarningThreshold?: number;
+    advisorPauseThreshold?: number;
+    advisorErrorThreshold?: number;
+    advisorAdaptiveScaling?: boolean;
+    advisorPatternMemory?: boolean;
+  }): void {
+    if (s.advisorWarningThreshold !== undefined) this.baseWarningThreshold = s.advisorWarningThreshold;
+    if (s.advisorPauseThreshold   !== undefined) this.basePauseThreshold   = s.advisorPauseThreshold;
+    if (s.advisorErrorThreshold   !== undefined) this.baseErrorThreshold   = s.advisorErrorThreshold;
+    if (s.advisorAdaptiveScaling  !== undefined) this.enableAdaptiveScaling = s.advisorAdaptiveScaling;
+    if (s.advisorPatternMemory    !== undefined) this.enablePatternMemory   = s.advisorPatternMemory;
+  }
+
   private getEffectiveThresholds(toolCalls: ToolCall[]) {
     let warningThreshold = this.baseWarningThreshold;
     let pauseThreshold = this.basePauseThreshold;

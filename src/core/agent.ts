@@ -127,6 +127,8 @@ export class Agent {
     warningThreshold: getSettings().advisorWarningThreshold ?? 3,
     pauseThreshold: getSettings().advisorPauseThreshold ?? 5,
     errorThreshold: getSettings().advisorErrorThreshold ?? 5,
+    enableAdaptiveScaling: getSettings().advisorAdaptiveScaling ?? true,
+    enablePatternMemory: getSettings().advisorPatternMemory ?? true,
   });
 
   public approvePlan(): void {
@@ -463,6 +465,8 @@ export class Agent {
 
   private async runAgentLoop(): Promise<void> {
     this.advisor.reset();
+    // Sync advisor thresholds/flags from live config so runtime changes take effect
+    this.advisor.syncSettings(getSettings());
     const signal = this.abortController?.signal;
     const isGoalMode = !!this.goalMode;
     const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 50);

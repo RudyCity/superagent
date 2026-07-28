@@ -208,7 +208,7 @@ export const settingsCommand: SlashCommand = {
         `│ • Hide Timeline Line : ${s.hideTimeline ? "ENABLED" : "DISABLED"}`,
         `│ • Request Classifier : ${s.classifierEnabled !== false ? "ENABLED" : "DISABLED"}`,
         `│ • Classifier Threshold: ${s.classifierConfidenceThreshold ?? "high"}`,
-        `│ • Advisor Active      : ${s.enableAdvisor !== false ? "ENABLED" : "DISABLED"}`,
+        `│ • Advisor Active      : ${s.enableAdvisor !== false ? "ENABLED" : "DISABLED"}  warn=${s.advisorWarningThreshold ?? 3}  pause=${s.advisorPauseThreshold ?? 5}  error=${s.advisorErrorThreshold ?? 5}  adaptive=${s.advisorAdaptiveScaling !== false ? "on" : "off"}  pattern=${s.advisorPatternMemory !== false ? "on" : "off"}`,
         `│ • RMemory Active     : ${s.enableRmemory ? "ENABLED" : "DISABLED"}`,
         `│ • RMemory Provider   : ${s.rmemoryEmbeddingProvider || "local"}`,
         `│ • RMemory Model      : ${s.rmemoryEmbeddingProvider === "local" ? "nomic-embed-text-v1.5" : (s.rmemoryEmbeddingModel || "text-embedding-3-small")} (${s.rmemoryEmbeddingProvider === "local" ? 768 : (s.rmemoryEmbeddingDimensions || 1536)} dims)`,
@@ -1165,41 +1165,103 @@ export const settingClassifierThresholdCommand: SlashCommand = {
 export const settingAdvisorCommand: SlashCommand = {
   name: "setting-advisor",
   aliases: ["advisor"],
-  description: "Enable or disable the Real-Time Execution Advisor",
+  description: "Configure the Real-Time Execution Advisor (on/off, thresholds, features)",
   execute(args, ctx) {
     const now = Date.now();
     const val = args.trim();
+
+    // No args → show current status of all advisor settings
     if (!val) {
-      const settings = getSettings();
+      const s = getSettings();
       ctx.addLine({
         type: "system",
-        content: `Usage: /setting-advisor <on|off>\nCurrent value: ${settings.enableAdvisor !== false ? "on" : "off"}`,
+        content: [
+          "Advisor settings:",
+          `  enabled   : ${s.enableAdvisor !== false ? "on" : "off"}`,
+          `  warn      : ${s.advisorWarningThreshold ?? 3}   (same-call repeat count before warn)`,
+          `  pause     : ${s.advisorPauseThreshold ?? 5}   (same-call repeat count before pause)`,
+          `  error     : ${s.advisorErrorThreshold ?? 5}   (consecutive error count before warn)`,
+          `  adaptive  : ${s.advisorAdaptiveScaling !== false ? "on" : "off"}   (scale thresholds for benign tools)`,
+          `  pattern   : ${s.advisorPatternMemory !== false ? "on" : "off"}   (warn on historically failing patterns)`,
+          "",
+          "Usage: /setting-advisor <on|off|warn=N|pause=N|error=N|adaptive=on/off|pattern=on/off>",
+        ].join("\n"),
         timestamp: now,
       });
       return;
     }
-    if (val !== "on" && val !== "off") {
+
+    // on / off
+    if (val === "on" || val === "off") {
+      try {
+        updateSettings({ enableAdvisor: val === "on" });
+        ctx.addLine({
+          type: "system",
+          content: `✓ Advisor set to: ${val === "on" ? "ENABLED" : "DISABLED"}`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({ type: "error", content: `Failed to save: ${err.message}`, timestamp: now });
+      }
+      return;
+    }
+
+    // key=value sub-commands
+    const match = val.match(/^(warn|pause|error|adaptive|pattern)=(.+)$/i);
+    if (!match) {
       ctx.addLine({
         type: "error",
-        content: "Invalid value. Must be 'on' or 'off'.",
+        content: `Unknown option "${val}". Use: on | off | warn=N | pause=N | error=N | adaptive=on/off | pattern=on/off`,
         timestamp: now,
       });
       return;
     }
-    const enable = val === "on";
-    try {
-      updateSettings({ enableAdvisor: enable });
-      ctx.addLine({
-        type: "system",
-        content: `✓ Real-Time Execution Advisor set to: ${enable ? "ENABLED" : "DISABLED"}`,
-        timestamp: now,
-      });
-    } catch (err: any) {
-      ctx.addLine({
-        type: "error",
-        content: `Failed to save setting: ${err.message}`,
-        timestamp: now,
-      });
+
+    const [, key, rawValue] = match;
+
+    // Numeric threshold keys
+    if (key === "warn" || key === "pause" || key === "error") {
+      const n = parseInt(rawValue, 10);
+      if (isNaN(n) || n < 1 || n > 100) {
+        ctx.addLine({ type: "error", content: `Invalid value "${rawValue}" — must be an integer between 1 and 100.`, timestamp: now });
+        return;
+      }
+      const settingKey =
+        key === "warn"  ? "advisorWarningThreshold" :
+        key === "pause" ? "advisorPauseThreshold" :
+                          "advisorErrorThreshold";
+      try {
+        updateSettings({ [settingKey]: n });
+        ctx.addLine({
+          type: "system",
+          content: `✓ Advisor ${key} threshold set to: ${n}`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({ type: "error", content: `Failed to save: ${err.message}`, timestamp: now });
+      }
+      return;
+    }
+
+    // Boolean feature flags
+    if (key === "adaptive" || key === "pattern") {
+      if (rawValue !== "on" && rawValue !== "off") {
+        ctx.addLine({ type: "error", content: `Invalid value "${rawValue}" — must be on or off.`, timestamp: now });
+        return;
+      }
+      const enabled = rawValue === "on";
+      const settingKey = key === "adaptive" ? "advisorAdaptiveScaling" : "advisorPatternMemory";
+      try {
+        updateSettings({ [settingKey]: enabled });
+        ctx.addLine({
+          type: "system",
+          content: `✓ Advisor ${key} set to: ${enabled ? "ENABLED" : "DISABLED"}`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({ type: "error", content: `Failed to save: ${err.message}`, timestamp: now });
+      }
+      return;
     }
   }
 };

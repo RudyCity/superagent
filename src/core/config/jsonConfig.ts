@@ -75,6 +75,8 @@ export interface SystemSettings {
   advisorWarningThreshold?: number;
   advisorPauseThreshold?: number;
   advisorErrorThreshold?: number;
+  advisorAdaptiveScaling?: boolean;
+  advisorPatternMemory?: boolean;
   maxConcurrentWorkspaceTasks?: number;
   /** Log level for prompt logging: off | metadata (no messages) | full (all content) */
   promptLogLevel?: "off" | "metadata" | "full";
@@ -130,6 +132,8 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     advisorWarningThreshold: 3,
     advisorPauseThreshold: 5,
     advisorErrorThreshold: 5,
+    advisorAdaptiveScaling: true,
+    advisorPatternMemory: true,
   },
   trustedDirectories: [],
   providers: [
@@ -839,6 +843,8 @@ export function getSettings(): SystemSettings {
     advisorWarningThreshold: s.advisorWarningThreshold ?? 3,
     advisorPauseThreshold: s.advisorPauseThreshold ?? 5,
     advisorErrorThreshold: s.advisorErrorThreshold ?? 5,
+    advisorAdaptiveScaling: s.advisorAdaptiveScaling ?? true,
+    advisorPatternMemory: s.advisorPatternMemory ?? true,
     maxConcurrentWorkspaceTasks: s.maxConcurrentWorkspaceTasks ?? 5,
   };
 }
