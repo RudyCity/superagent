@@ -6,4 +6,7 @@ vendor/*
 tests/temp-home-*/
 tests/temp-home*
 graphify-out/
+.fastcontext/
+.grok/
+Notepad++/
 
