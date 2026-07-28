@@ -352,14 +352,37 @@ export const terminalCommand: SlashCommand = {
         if (ctx.runInteractiveProcess) {
           ctx.addLine({
             type: "system",
-            content: `🖥️ Executing in-place terminal command: "${commandStr}" (cwd: ${runCwd})`,
+            content: `🖥️ Executing terminal command: "${commandStr}" (cwd: ${runCwd})`,
             timestamp: Date.now()
           });
-          const res = await ctx.runInteractiveProcess(commandStr, runCwd, runEnv);
+
+          let streamedOutput = "";
+          let liveLineId: number | null = null;
+
+          const res = await ctx.runInteractiveProcess(commandStr, runCwd, runEnv, (chunk: string) => {
+            streamedOutput += chunk;
+            const cleaned = streamedOutput.trim();
+            if (cleaned) {
+              if (liveLineId === null) {
+                const lineObj = {
+                  type: "system" as const,
+                  content: cleaned,
+                  timestamp: Date.now()
+                };
+                ctx.addLine(lineObj);
+                liveLineId = lineObj.timestamp;
+              } else if (ctx.setLines) {
+                ctx.setLines((prev) => 
+                  prev.map((l) => l.timestamp === liveLineId ? { ...l, content: cleaned } : l)
+                );
+              }
+            }
+          });
+
           const exitCode = typeof res === "number" ? res : res.exitCode;
           const outputText = typeof res === "number" ? "" : res.output;
 
-          if (outputText && outputText.trim()) {
+          if (!liveLineId && outputText && outputText.trim()) {
             ctx.addLine({
               type: "system",
               content: outputText.trim(),

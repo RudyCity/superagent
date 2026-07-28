@@ -37,7 +37,8 @@ export interface SlashCommandContext {
   setIsProcessing?: (val: boolean) => void;
   /** Clear the arrow-key input history log (used by /new and /clear) */
   setInputHistory?: (history: string[]) => void;
-  runInteractiveProcess?: (command: string, cwd: string, env?: Record<string, string | undefined>) => Promise<number | { exitCode: number; output?: string }>;
+  setLines?: (fn: (prev: ChatLine[]) => ChatLine[]) => void;
+  runInteractiveProcess?: (command: string, cwd: string, env?: Record<string, string | undefined>, onData?: (chunk: string) => void) => Promise<number | { exitCode: number; output?: string }>;
   attachImage?: (filePath: string) => Promise<void>;
   pasteImage?: () => Promise<void>;
   setActiveDevHook?: (name: string | null) => void;

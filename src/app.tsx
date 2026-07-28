@@ -740,31 +740,58 @@ export function App({
       setHistoryIndex(-1);
       setScrollOffset(0);
 
-      const runInteractiveProcess = async (command: string, cwd: string, env?: Record<string, string | undefined>) => {
+      const runInteractiveProcess = async (
+        command: string, 
+        cwd: string, 
+        env?: Record<string, string | undefined>,
+        onData?: (chunk: string) => void
+      ) => {
         const wasRaw = process.stdin.isRaw;
         if (wasRaw) {
           process.stdin.setRawMode(false);
         }
         process.stdin.pause();
 
+        setIsExecutingTool(true);
+        setIsProcessing(true);
         let exitCode = 0;
         let output = "";
         try {
           const { execa } = await import("execa");
           let shellExe: string | boolean = true;
           if (process.platform === "win32") shellExe = "powershell.exe";
-          const res = await execa(command, {
+          
+          const childProcess = execa(command, {
             cwd,
             env: { ...process.env, ...env },
             shell: shellExe,
             reject: false,
             all: true,
           });
+
+          if (childProcess.all) {
+            childProcess.all.on("data", (chunk: Buffer) => {
+              const str = chunk.toString("utf-8");
+              output += str;
+              if (onData) {
+                onData(str);
+              }
+            });
+          }
+
+          const res = await childProcess;
           exitCode = res.exitCode ?? 0;
-          output = res.all || res.stdout || res.stderr || "";
+          if (!output) {
+            output = res.all || res.stdout || res.stderr || "";
+          }
         } catch (err: any) {
           exitCode = err.status ?? err.exitCode ?? 1;
-          output = err.all || err.stdout || err.stderr || err.message || "";
+          if (!output) {
+            output = err.all || err.stdout || err.stderr || err.message || "";
+          }
+        } finally {
+          setIsExecutingTool(false);
+          setIsProcessing(false);
         }
 
         process.stdin.resume();

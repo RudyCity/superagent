@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.615] - 2026-07-28
+
+### Features
+- **Live Terminal & Bang Execution Output**: Added real-time loading indicator and live stdout/stderr streaming into the chat area when executing bang (`!`) commands or `/terminal` commands, matching tool call execution behavior.
+
 ## [1.2.614] - 2026-07-28
 
 ### Documentation
