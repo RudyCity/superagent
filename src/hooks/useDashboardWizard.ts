@@ -279,6 +279,26 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         }
 
         const cleanVal = value.replace(/^\*\s*\[active\]\s*/i, "").replace(/^📁\s*/, "").replace(/\s*\(active\)$/i, "").trim();
+
+        // SSH detection before path.resolve (avoids mangling ssh:// URIs on Windows)
+        const isSsh = cleanVal.startsWith("ssh://") || (cleanVal.includes("@") && (cleanVal.includes(":/") || cleanVal.includes(":")));
+        if (isSsh) {
+          const { addTrustedDirectory } = await import("../core/config/jsonConfig.js");
+          addTrustedDirectory(cleanVal);
+          const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+          const sshConfig = workspaceMode.parseSshTarget(cleanVal);
+          if (sshConfig) {
+            workspaceMode.setSshMode(sshConfig);
+            setMasterLogs([`[SYSTEM] 🔌 Switched to SSH workspace: ${sshConfig.username}@${sshConfig.host}:${sshConfig.port}${sshConfig.remoteCwd}`]);
+          } else {
+            setMasterLogs([`[ERROR] Invalid SSH target: ${cleanVal}`]);
+          }
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
+        }
+
         const resolvedPath = path.resolve(cleanVal);
 
         if (fsSync.existsSync(resolvedPath)) {
@@ -312,6 +332,26 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
       if (activeWizard.step === 2) {
         const pathInput = value.trim();
         if (!pathInput) {
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
+        }
+
+        // SSH detection before path.resolve
+        const isSsh = pathInput.startsWith("ssh://") || (pathInput.includes("@") && (pathInput.includes(":/") || pathInput.includes(":")));
+        if (isSsh) {
+          const { addTrustedDirectory } = await import("../core/config/jsonConfig.js");
+          addTrustedDirectory(pathInput);
+          const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+          const sshConfig = workspaceMode.parseSshTarget(pathInput);
+          if (sshConfig) {
+            workspaceMode.setSshMode(sshConfig);
+            if (agent) agent.workingDirectory = pathInput;
+            setMasterLogs([`[SYSTEM] 🔌 Added and switched to SSH workspace: ${sshConfig.username}@${sshConfig.host}:${sshConfig.port}${sshConfig.remoteCwd}`]);
+          } else {
+            setMasterLogs([`[ERROR] Invalid SSH target: ${pathInput}`]);
+          }
           setActiveWizard(null);
           setWizardOptions([]);
           setWizardSelectedIndex(0);

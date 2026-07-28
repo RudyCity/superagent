@@ -24,8 +24,8 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/agents": "List active subagents and configured types",
   "/worktree": "Manage git worktrees",
   "/worktrees": "Manage git worktrees",
-  "/workspace": "Manage local & SSH remote project workspaces (list, add, use)",
-  "/w": "Manage local & SSH remote project workspaces (list, add, use)",
+  "/workspace": "Manage local & SSH remote project workspaces",
+  "/w": "Manage local & SSH remote project workspaces",
   "/search-history": "Search through previous session histories",
   "/history": "Manage SQLite history database — export, backup, or migrate sessions",
   "/compact": "Summarize conversation to free up context window",
@@ -192,7 +192,6 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         return filterSuggestions(possibilities, query);
       }
       const possibilities = [
-        `${parts[0]} list`,
         `${parts[0]} status`,
         `${parts[0]} add`,
         `${parts[0]} add ssh://user@host/path`,

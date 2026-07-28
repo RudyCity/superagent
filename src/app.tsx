@@ -1054,7 +1054,6 @@ export function App({
           return useSuggestions.filter(p => p.startsWith(currentInput));
         }
         const workspaceSuggestions = [
-          `${mainCommand} list`,
           `${mainCommand} add`,
           `${mainCommand} use`
         ];

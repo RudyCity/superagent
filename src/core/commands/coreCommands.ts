@@ -151,7 +151,7 @@ export const helpCommand: SlashCommand = {
         "  /init     - Initialize project (Git setup, agents.md generation, system audit)",
         "  /agents   - List active subagents and defined subagent types",
         "  /workspace - Manage local & SSH remote project workspaces (shortcut: /w)",
-        "               Usage: /workspace [list|status|add <path|ssh://user@host:port/path?key=/path/key.pem> [name]|use <path-or-index>]",
+        "               Usage: /workspace [status|add <path|ssh://user@host:port/path?key=/path/key.pem> [name]|use <path-or-index>]",
         "  /worktrees - Manage Git worktrees (alias: /worktree)",
         "               Usage: /worktrees [list|prune|remove <path-or-branch>]",
         "  /processes - List running background processes (shortcut: /procs)",

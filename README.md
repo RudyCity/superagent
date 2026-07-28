@@ -149,7 +149,6 @@ No manual server configuration or extra CLI arguments are required—simply laun
 | `/worktrees` `/worktree` | Manage Git worktrees: list, prune, remove |
 
 `/workspace` subcommands:
-- `list` — Show all registered workspaces
 - `status` — Show current workspace info & SSH remote status
 - `add <path\|ssh://...>` — Register a workspace (local path or SSH remote)
 - `use <path\|index>` — Switch to a registered workspace

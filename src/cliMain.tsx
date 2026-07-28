@@ -103,6 +103,8 @@ export async function runCli() {
     const parsed = workspaceMode.parseSshTarget(sshTarget);
     if (parsed) {
       workspaceMode.setSshMode(parsed);
+      const sshRef = (await import("./core/tools/state.js")).masterAgentRef;
+      if (sshRef?.current) sshRef.current.workingDirectory = sshTarget;
       sshProxy.setPasswordHandler(async () => {
         const readline = await import("readline");
         const rl = readline.createInterface({

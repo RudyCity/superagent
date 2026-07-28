@@ -12,7 +12,11 @@ export const workspaceCommand: SlashCommand = {
   aliases: ["w"],
   description: "Manage project workspaces (list, add, use)",
   async execute(args, ctx) {
-    const currentWorkspace = path.resolve(ctx.agent?.workingDirectory || process.cwd());
+    const sshCfg = workspaceMode.getConfig();
+    const isSshActive = workspaceMode.isSsh();
+    const currentWorkspace = isSshActive && sshCfg
+      ? `${sshCfg.username}@${sshCfg.host}:${sshCfg.port}${sshCfg.remoteCwd}`
+      : path.resolve(ctx.agent?.workingDirectory || process.cwd());
     const now = Date.now();
 
     // If no args and wizard is supported, launch wizard
@@ -20,11 +24,27 @@ export const workspaceCommand: SlashCommand = {
       if (ctx.setActiveWizard) {
         const trustedDirs = getTrustedDirectories().map(d => path.resolve(d));
         const allDirs = [...new Set([currentWorkspace, ...trustedDirs])];
+        const dbWorkspaces = getWorkspacesFromDb();
+        const workspacesMap = new Map(dbWorkspaces.map(w => [path.resolve(w.path), w]));
         
         const options = allDirs.map((dir) => {
-          const isActive = dir === currentWorkspace;
+          let isActive = dir === currentWorkspace;
+          // SSH format normalization: raw trusted dir may have colon before path vs config URI
+          if (!isActive && workspaceMode.isSsh() && sshCfg && (dir.startsWith('ssh://') || (dir.includes('@') && (dir.includes(':/') || dir.includes(':'))))) {
+            const parsedDir = workspaceMode.parseSshTarget(dir);
+            if (parsedDir) {
+              isActive =
+                parsedDir.host === sshCfg.host &&
+                parsedDir.port === sshCfg.port &&
+                parsedDir.username === sshCfg.username &&
+                parsedDir.remoteCwd === sshCfg.remoteCwd;
+            }
+          }
           const prefix = isActive ? "* [active] " : "📁 ";
-          return `${prefix}${dir}`;
+          const wsRecord = workspacesMap.get(dir);
+          const wsName = wsRecord?.name || "";
+          const namePart = wsName ? ` [${wsName}]` : "";
+          return `${prefix}${namePart} ${dir}`;
         });
         
         options.push("➕ Add a new workspace...");
@@ -41,7 +61,7 @@ export const workspaceCommand: SlashCommand = {
     }
 
     const parts = args.trim().split(/\s+/);
-    let action = parts[0].toLowerCase() || "list";
+    let action = parts[0].toLowerCase() || "";
 
     // Handle /workspace status
     if (action === "status") {
@@ -74,7 +94,7 @@ export const workspaceCommand: SlashCommand = {
     let targetArg = parts.slice(1).join(" ").trim();
 
     // If action is not a known command but exists as a path or index, treat as "use"
-    if (action !== "list" && action !== "status" && action !== "add" && action !== "use" && action !== "select") {
+    if (action && action !== "status" && action !== "add" && action !== "use" && action !== "select") {
       const combined = args.trim();
       const index = parseInt(combined, 10);
       const trustedDirs = getTrustedDirectories().map(d => path.resolve(d));
@@ -86,42 +106,7 @@ export const workspaceCommand: SlashCommand = {
       }
     }
 
-    if (action === "list") {
-      const trustedDirs = getTrustedDirectories().map(d => path.resolve(d));
-      const allDirs = [...new Set([currentWorkspace, ...trustedDirs])];
-      const dbWorkspaces = getWorkspacesFromDb();
-      const workspacesMap = new Map(dbWorkspaces.map(w => [path.resolve(w.path), w]));
 
-      ctx.addLine({
-        type: "system",
-        content: `Current Active Workspace: ${currentWorkspace}\nRegistered Workspaces:`,
-        timestamp: now
-      });
-
-      if (allDirs.length === 0) {
-        ctx.addLine({
-          type: "system",
-          content: "  No workspaces registered.",
-          timestamp: now
-        });
-        return;
-      }
-
-      allDirs.forEach((dir, idx) => {
-        const isActive = dir === currentWorkspace;
-        const marker = isActive ? "*" : "-";
-        const label = isActive ? " (active)" : "";
-        const wsRecord = workspacesMap.get(dir);
-        const wsName = wsRecord?.name || path.basename(dir);
-        const namePart = wsName ? ` [${wsName}]` : "";
-        ctx.addLine({
-          type: "system",
-          content: `  ${marker} ${idx + 1}:${namePart} ${dir}${label}`,
-          timestamp: now
-        });
-      });
-      return;
-    }
 
     if (action === "add") {
       if (!targetArg) {
@@ -234,10 +219,12 @@ export const workspaceCommand: SlashCommand = {
       if (!isNaN(index) && index >= 1 && index <= allDirs.length) {
         targetPath = allDirs[index - 1];
       } else {
-        targetPath = path.resolve(currentWorkspace, targetArg);
+        // SSH detection before path.resolve to avoid mangling SSH URIs on Windows
+        const isSshTarget = targetArg.startsWith("ssh://") || (targetArg.includes("@") && (targetArg.includes(":/") || targetArg.includes(":")));
+        targetPath = isSshTarget ? targetArg : path.resolve(currentWorkspace, targetArg);
       }
 
-      // Detect SSH URI target (strict prefix-only; also catch legacy mangled paths from path.resolve on Windows)
+      // Detect SSH URI target
       const isSsh = targetPath.startsWith("ssh://") || targetPath.includes('\\ssh:\\') || targetPath.includes(':/ssh:');
 
       if (!isSsh) {

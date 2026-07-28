@@ -387,13 +387,7 @@ export class MessageBuilder {
           ? m.content
           : (m.content as any[]).map((p: any) => {
               if (p.type === "image") {
-                if (supportsVision) {
-                  return { type: "image" as const, image: p.image, mimeType: p.mimeType };
-                }
-                return {
-                  type: "text" as const,
-                  text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images. Base64 Data: data:${p.mimeType || "image/webp"};base64,${p.image}]`
-                };
+                return { type: "image" as const, image: p.image, mimeType: p.mimeType };
               }
               return { type: "text" as const, text: p.text };
             });
