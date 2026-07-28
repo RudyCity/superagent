@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.610] - 2026-07-28
+
+### Documentation
+- **Updated Installation Command**: Changed global link command in README.md from `npm link` to `bun link`.
+
 ## [1.2.609] - 2026-07-28
 
 ### Documentation
