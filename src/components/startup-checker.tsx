@@ -8,6 +8,8 @@ import {
   ensurePythonInstalled,
   ensureOfficeCliInstalled,
   ensureRmemoryInstalled,
+  isPaddleOcrAvailable,
+  ensurePaddleOcrInstalled,
   isRgInstalledLocally,
   isRgInstalledGlobally,
   isCurlInstalledLocally,
@@ -72,6 +74,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
     initialTasks.androidCli = { id: "androidCli", name: "Android CLI", status: "pending" };
     initialTasks.uv = { id: "uv", name: "uv Package Manager", status: "pending" };
     initialTasks.python = { id: "python", name: "Python Environment", status: "pending" };
+    initialTasks.paddleOcr = { id: "paddleOcr", name: "PaddleOCR Engine", status: "pending" };
     initialTasks.officeCli = { id: "officeCli", name: "Office CLI", status: "pending" };
     initialTasks.rmemory = { id: "rmemory", name: "RMemory Package", status: "pending" };
     initialTasks.mcpServers = { id: "mcpServers", name: "MCP Servers", status: "pending" };
@@ -208,14 +211,28 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
         updateTask("python", { status: "downloading", progress: 0 });
         await ensurePythonInstalled((downloaded, total, stage) => {
           if (stage === "downloading") {
-            const progress = total > 0 ? (downloaded / total) * 100 : 0;
-            updateTask("python", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
           } else if (stage === "extracting") {
             updateTask("python", { status: "extracting" });
           } else if (stage === "done") {
             updateTask("python", { status: "ready" });
           }
         }).catch(() => updateTask("python", { status: "failed" }));
+      }
+
+      // 6.5. PaddleOCR check & setup
+      updateTask("paddleOcr", { status: "checking" });
+      const hasPaddleOcr = await isPaddleOcrAvailable();
+      if (hasPaddleOcr) {
+        updateTask("paddleOcr", { status: "ready" });
+      } else {
+        updateTask("paddleOcr", { status: "downloading", progress: 0 });
+        await ensurePaddleOcrInstalled((downloaded, total, stage) => {
+          if (stage === "downloading") {
+            updateTask("paddleOcr", { status: "downloading", progress: 50 });
+          } else if (stage === "done") {
+            updateTask("paddleOcr", { status: "ready" });
+          }
+        }).catch(() => updateTask("paddleOcr", { status: "ready" })); // Fallback ready
       }
 
       // 7. Office CLI check & setup

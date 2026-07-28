@@ -4,6 +4,7 @@ import { execa } from "execa";
 import { Tool } from "./types.js";
 import { resolveFilePathFromArgs } from "./pathHelpers.js";
 import { getLocalOfficeCliPath, isOfficeCliInstalledLocally } from "../androidSetup.js";
+import { isPaddleOcrAvailable, runPaddleOcrOnPdf } from "../setup/ocrSetup.js";
 
 // Lazy-loaded imports to prevent startup performance drop
 let pdfParse: any = null;
@@ -12,7 +13,7 @@ let mammoth: any = null;
 
 export const readDocumentTool: Tool = {
   name: "read_document",
-  description: "Read and extract text content from PDF, Excel (.xlsx, .xls), and Word (.docx) document files. Uses officecli when available, falling back to local parsers.",
+  description: "Read and extract text content from PDF, Excel (.xlsx, .xls), and Word (.docx) document files. Uses officecli when available, falling back to local parsers and PaddleOCR for scanned PDF images.",
   parameters: {
     type: "object",
     properties: {
@@ -64,8 +65,45 @@ export const readDocumentTool: Tool = {
           const pdfModule = await import("pdf-parse");
           pdfParse = typeof pdfModule === "function" ? pdfModule : (pdfModule as any).default;
         }
-        const data = await pdfParse(buffer);
-        return `--- PDF Document Content (${path.basename(resolvedPath)}) ---\n\n${data.text || "No text content found."}`;
+        let text = "";
+        try {
+          const data = await pdfParse(buffer);
+          text = data.text ? data.text.trim() : "";
+        } catch {
+          text = "";
+        }
+
+        if (text) {
+          return `--- PDF Document Content (${path.basename(resolvedPath)}) ---\n\n${text}`;
+        }
+
+        // Attempt 2: Try officecli text extraction for PDF if available
+        try {
+          const bin = (await isOfficeCliInstalledLocally()) ? getLocalOfficeCliPath() : "officecli";
+          const { stdout } = await execa(bin, ["view", "text", resolvedPath], {
+            cwd,
+            cancelSignal: signal,
+          });
+          if (stdout && stdout.trim()) {
+            return `--- PDF Document Content (${path.basename(resolvedPath)} via OfficeCLI) ---\n\n${stdout.trim()}`;
+          }
+        } catch {
+          // Continue to OCR fallback
+        }
+
+        // Attempt 3: Enhanced OCR (PaddleOCR + PyTesseract) fallback for scanned/image PDFs
+        if (await isPaddleOcrAvailable()) {
+          try {
+            const ocrText = await runPaddleOcrOnPdf(resolvedPath, signal);
+            if (ocrText && ocrText.trim()) {
+              return `--- PDF Document Content (${path.basename(resolvedPath)} via OCR Engine) ---\n\n${ocrText.trim()}`;
+            }
+          } catch (ocrErr: any) {
+            return `Error extracting text via OCR Engine: ${ocrErr?.message || ocrErr}`;
+          }
+        }
+
+        return `--- PDF Document Content (${path.basename(resolvedPath)}) ---\n\nNo text content found (PDF may be scanned image or protected). ${await isPaddleOcrAvailable() ? '' : 'Install PaddleOCR via superagent setup for OCR support.'}`;
       } 
       
       if (ext === ".xlsx" || ext === ".xls") {

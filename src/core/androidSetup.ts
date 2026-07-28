@@ -116,22 +116,7 @@ export function getLocalRgPath(): string {
   return path.join(getLocalBinDir(), isWin ? "rg.exe" : "rg");
 }
 
-export function getLocalOfficeCliPath(): string {
-  const isWin = process.platform === "win32";
-  return path.join(getLocalBinDir(), isWin ? "officecli.exe" : "officecli");
-}
 
-let cachedOfficeCliInstalledLocally: boolean | null = null;
-export async function isOfficeCliInstalledLocally(): Promise<boolean> {
-  if (cachedOfficeCliInstalledLocally !== null) return cachedOfficeCliInstalledLocally;
-  try {
-    await fs.access(getLocalOfficeCliPath());
-    cachedOfficeCliInstalledLocally = true;
-  } catch {
-    cachedOfficeCliInstalledLocally = false;
-  }
-  return cachedOfficeCliInstalledLocally;
-}
 
 let cachedRgInstalledLocally: boolean | null = null;
 export async function isRgInstalledLocally(): Promise<boolean> {
@@ -380,111 +365,7 @@ export async function ensureAndroidCliInstalled(onProgress?: DownloadProgressCal
   }
 }
 
-export async function isUvInstalledGlobally(): Promise<boolean> {
-  const isWin = process.platform === "win32";
-  try {
-    await execa(isWin ? "where.exe" : "which", ["uv"]);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function getLocalUvPath(): string {
-  const isWin = process.platform === "win32";
-  const home = isWin 
-    ? (process.env.USERPROFILE || process.env.HOMEPATH || "C:\\Users\\USER")
-    : (process.env.HOME || "");
-  return path.join(home, ".local", "bin", isWin ? "uv.exe" : "uv");
-}
-
-export async function isUvInstalledLocally(): Promise<boolean> {
-  try {
-    await fs.access(getLocalUvPath());
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function ensureUvInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
-  try {
-    if (await isUvInstalledLocally() || await isUvInstalledGlobally()) {
-      if (onProgress) onProgress(0, 0, "done");
-      return;
-    }
-
-    if (onProgress) {
-      onProgress(0, 0, "downloading");
-    } else {
-      console.log("\n⚡ [SYSTEM] uv not found. Downloading and installing... Please wait.");
-    }
-
-    const isWin = process.platform === "win32";
-    if (isWin) {
-      await execa("powershell.exe", ["-ExecutionPolicy", "ByPass", "-c", "irm https://astral.sh/uv/install.ps1 | iex"]);
-    } else {
-      await execa("sh", ["-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"]);
-    }
-
-    if (onProgress) {
-      onProgress(0, 0, "done");
-    } else {
-      console.log("uv installed successfully.");
-    }
-  } catch (err) {
-    console.error("Warning: Failed to auto-install uv:", err);
-  }
-}
-
-export async function isPythonInstalled(): Promise<boolean> {
-  try {
-    await execa("python", ["--version"]);
-    return true;
-  } catch {
-    try {
-      await execa("python3", ["--version"]);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-}
-
-export async function ensurePythonInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
-  try {
-    if (await isPythonInstalled()) {
-      if (onProgress) onProgress(0, 0, "done");
-      return;
-    }
-
-    await ensureUvInstalled(onProgress);
-
-    if (onProgress) {
-      onProgress(0, 0, "downloading");
-    } else {
-      console.log("\n⚡ [SYSTEM] Python not found. Installing via uv... Please wait.");
-    }
-
-    const isWin = process.platform === "win32";
-    let uvCmd = "uv";
-    if (!(await isUvInstalledGlobally())) {
-      uvCmd = getLocalUvPath();
-    }
-
-    await execa(uvCmd, ["python", "install"]);
-
-    if (onProgress) {
-      onProgress(0, 0, "done");
-    } else {
-      console.log("Python installed successfully via uv.");
-    }
-  } catch (err) {
-    console.error("Warning: Failed to auto-install Python:", err);
-  }
-}
-
-async function logSetupDebug(message: string): Promise<void> {
+export async function logSetupDebug(message: string): Promise<void> {
   try {
     const configDir = getGlobalConfigDir();
     const logFile = path.join(configDir, "superagent.log");
@@ -496,108 +377,30 @@ async function logSetupDebug(message: string): Promise<void> {
   }
 }
 
-export async function isOfficeCliInstalledGlobally(): Promise<boolean> {
-  const isWin = process.platform === "win32";
-  try {
-    await execa(isWin ? "where.exe" : "which", ["officecli"]);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
-function getOfficeCliBinaryName(): string {
-  const platform = process.platform;
-  const arch = process.arch;
 
-  if (platform === "win32") {
-    return arch === "arm64" ? "officecli-win-arm64.exe" : "officecli-win-x64.exe";
-  } else if (platform === "darwin") {
-    return arch === "arm64" ? "officecli-darwin-arm64" : "officecli-darwin-x64";
-  } else {
-    return arch === "arm64" ? "officecli-linux-arm64" : "officecli-linux-x64";
-  }
-}
 
-export async function ensureOfficeCliInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
-  try {
-    await logSetupDebug("Starting Office CLI installation check...");
-    if ((await isOfficeCliInstalledLocally()) || (await isOfficeCliInstalledGlobally())) {
-      await logSetupDebug("Office CLI is already installed locally or globally.");
-      if (onProgress) onProgress(0, 0, "done");
-      return;
-    }
+export {
+  clearOfficeCliCache,
+  getLocalOfficeCliPath,
+  isOfficeCliInstalledLocally,
+  isOfficeCliInstalledGlobally,
+  isOfficeCliAvailable,
+  ensureOfficeCliInstalled
+} from "./setup/officeCliSetup.js";
 
-    await logSetupDebug("Office CLI not found. Initiating direct binary download...");
-    if (onProgress) {
-      onProgress(0, 0, "downloading");
-    } else {
-      console.log("\n⚡ [SYSTEM] officecli not found. Downloading binary... Please wait.");
-    }
-
-    const binName = getOfficeCliBinaryName();
-    const url = `https://d.officecli.ai/releases/latest/download/${binName}`;
-    await logSetupDebug(`Downloading Office CLI binary from ${url}...`);
-
-    const res = await fetchWithRetry(url);
-    if (!res.ok) throw new Error(`Failed to download Office CLI binary: HTTP ${res.status}`);
-
-    const totalStr = res.headers.get("content-length");
-    const totalBytes = totalStr ? parseInt(totalStr, 10) : 0;
-    let downloadedBytes = 0;
-
-    const binDir = getLocalBinDir();
-    await fs.mkdir(binDir, { recursive: true });
-
-    const localPath = getLocalOfficeCliPath();
-    const tempPath = `${localPath}.tmp`;
-
-    if (!res.body) throw new Error("ReadableStream not supported by fetch response body");
-
-    const reader = (res.body as any).getReader();
-    const chunks: Uint8Array[] = [];
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        downloadedBytes += value.length;
-        if (onProgress) {
-          onProgress(downloadedBytes, totalBytes, "downloading");
-        }
-      }
-    }
-
-    const totalBuffer = Buffer.concat(chunks);
-    await fs.writeFile(tempPath, totalBuffer);
-
-    if (process.platform !== "win32") {
-      await fs.chmod(tempPath, 0o755);
-    }
-
-    await fs.rename(tempPath, localPath);
-
-    if (process.platform !== "win32") {
-      await fs.chmod(localPath, 0o755);
-    }
-
-    cachedOfficeCliInstalledLocally = true;
-
-    await logSetupDebug(`Office CLI downloaded and installed successfully at ${localPath}`);
-    if (onProgress) {
-      onProgress(downloadedBytes, totalBytes, "done");
-    } else {
-      console.log("officecli installed successfully.");
-    }
-  } catch (err: any) {
-    await logSetupDebug(`Warning: Failed to auto-install officecli: ${err?.message || err}`);
-    console.error("Warning: Failed to auto-install officecli:", err);
-    if (onProgress) onProgress(0, 0, "error");
-    throw err;
-  }
-}
-
+export {
+  clearOcrCache,
+  isUvInstalledGlobally,
+  isUvInstalledLocally,
+  getLocalUvPath,
+  ensureUvInstalled,
+  isPythonInstalled,
+  ensurePythonInstalled,
+  isPaddleOcrAvailable,
+  ensurePaddleOcrInstalled,
+  runPaddleOcrOnPdf
+} from "./setup/ocrSetup.js";
 
 export async function isRmemoryInstalled(): Promise<boolean> {
   try {
@@ -658,5 +461,6 @@ export async function ensureRmemoryInstalled(onProgress?: DownloadProgressCallba
     console.error("Warning: Failed to auto-install r-memory:", err);
   }
 }
+
 
 

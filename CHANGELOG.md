@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.601] - 2026-07-28
+
+### Refactored - Android Setup & Document Reading Extraction
+- **Android setup refactored** (`androidSetup.ts` → `setup/ocrSetup.ts`, `setup/pdfOcrEngine.ts`): Extracted OCR and PDF engine setup from monolithic `androidSetup.ts` into modular, testable modules under `src/core/setup/`. Reduces `androidSetup.ts` by 200+ lines.
+- **Office CLI setup extracted** (`setup/officeCliSetup.ts`): Moved LibreOffice / OfficeCLI detection logic into dedicated module.
+- **Document read tool enhanced** (`documentReadTools.ts`): Integrated new modular setup pipeline for OCR + office-cli with cleaner error handling and fallback chain.
+- **Tests added** (`tests/documentReadTools.test.ts`, `tests/pdfOcr.test.ts`): Unit tests for refactored setup modules.
+
 ## [1.2.600] - 2026-07-28
 
 ### Fixed & Improved - Advisor System Overhaul
