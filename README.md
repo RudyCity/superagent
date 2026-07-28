@@ -38,7 +38,7 @@ bun install
 bun run build
 
 # Link globally (optional)
-bun link
+bun install -g .
 ```
 
 ---

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.611] - 2026-07-28
+
+### Documentation
+- **Updated Global Installation**: Updated README.md global installation command to `bun install -g .` for registering global CLI binary executable.
+
 ## [1.2.610] - 2026-07-28
 
 ### Documentation
