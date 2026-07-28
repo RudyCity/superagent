@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.607] - 2026-07-28
+
+### Documentation
+- **Focused README on Single Agent Mode**: Reorganized README.md to focus on default Single Agent pair programming mode and explicitly marked 3-Tier Multi-Agent mode as experimental.
+
 ## [1.2.606] - 2026-07-28
 
 ### Documentation & Desktop App Integration

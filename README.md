@@ -1,6 +1,6 @@
 # Superagent 🚀
 
-An interactive, terminal-based AI coding assistant featuring a cyberpunk UI, model context tracking, local checkpointing, and a 3-tier multi-agent orchestration architecture.
+An interactive, terminal-based AI coding assistant designed for pair programming, automated context management, local git checkpointing, and seamless desktop UI integration.
 
 ![Superagent Terminal UI](assets/Video_SuperAgent.gif)
 
@@ -8,15 +8,13 @@ An interactive, terminal-based AI coding assistant featuring a cyberpunk UI, mod
 
 ## Key Features
 
-- **3-Tier Multi-Agent Architecture**: 
-  - **Master Agent**: High-level task planner & worktree orchestrator.
-  - **Superagent**: Feature developer isolated in Git worktrees.
-  - **Subagent**: Ephemeral atomic file/search runners.
-- **t-line (Desktop App Integration)**: Connect Superagent CLI with [t-line](https://github.com/RudyCity/t-line) via client/server mode.
+- **Single Agent Mode (Primary)**: Direct pair programming with shell execution, file tools, and subagents for atomic operations.
+- **t-line Desktop Integration**: Seamlessly connect Superagent CLI with the [t-line](https://github.com/RudyCity/t-line) desktop GUI app.
 - **Smart Context & Token Management**: Automatic token tracking, strategy-based pruning, summarization, and pinning.
 - **Git Checkpoint Recovery**: Instant rollback & branch switching on error or experimentation.
 - **Chrome Extension Integration**: Remote control browser tabs, capture console/network logs, and extract Markdown DOM snapshots.
 - **Interactive Terminal & Tooling**: Built-in interactive execution with streaming output and full shell capabilities.
+- **3-Tier Multi-Agent Mode *(Experimental)***: Master Agent orchestrating isolated Superagents across Git worktrees (`--multi`).
 
 ---
 
@@ -55,17 +53,17 @@ npm link
 ## Usage
 
 ```bash
-# Interactive CLI mode
+# Start Superagent (Single Agent mode - Default)
 superagent
 
 # Start in specific working directory
 superagent --dir /path/to/project
 
-# Multi-agent mode (Master Tier orchestration)
-superagent --multi
-
 # Server Mode for t-line Desktop Integration
 superagent --server 9222 --client-mode tline
+
+# Multi-agent mode (Experimental)
+superagent --multi
 ```
 
 ---
@@ -85,7 +83,9 @@ superagent --server 9222 --client-mode tline
 
 ---
 
-## System Architecture
+## Experimental Multi-Agent Architecture
+
+> **Note**: 3-Tier Multi-Agent mode is currently **experimental**. Activate using `superagent --multi`.
 
 ```
 Master Agent (Orchestrator)
