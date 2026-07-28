@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.612] - 2026-07-28
+
+### Documentation
+- **Professional README Redesign**: Polished README.md with clean layout, badges, structured overview, architecture diagrams, collapsible experimental section, and command cheat-sheet.
+
 ## [1.2.611] - 2026-07-28
 
 ### Documentation
