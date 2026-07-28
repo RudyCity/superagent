@@ -59,7 +59,7 @@ export function getSuperAgentVersion(): string {
  * cross-project task bleeding.
  */
 export function getWorkspaceId(dirPath?: string): string {
-  const cwd = path.resolve(dirPath || process.cwd());
+  const cwd = dirPath && dirPath.startsWith("ssh://") ? dirPath : path.resolve(dirPath || process.cwd());
   return crypto.createHash("sha1").update(cwd).digest("hex").slice(0, 12);
 }
 

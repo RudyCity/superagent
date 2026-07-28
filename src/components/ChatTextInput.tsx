@@ -409,10 +409,20 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
           // cursor stays in place
         }
       } else if (key.ctrl && input === "a") {
-        // Ctrl+A / Home — move to start
+        // Ctrl+A — move to start
         nextCursorOffset = 0;
       } else if (key.ctrl && input === "e") {
-        // Ctrl+E / End — move to end
+        // Ctrl+E — move to end
+        nextCursorOffset = localValue.length;
+      } else if (
+        /^\x1b(?:\[H|OH)$/.test(lastRawKeyRef.current)
+      ) {
+        // Home key (raw escape seq) — move to start
+        nextCursorOffset = 0;
+      } else if (
+        /^\x1b(?:\[F|OF)$/.test(lastRawKeyRef.current)
+      ) {
+        // End key (raw escape seq) — move to end
         nextCursorOffset = localValue.length;
       } else if (key.ctrl && input === "k") {
         // Ctrl+K — delete to end of line

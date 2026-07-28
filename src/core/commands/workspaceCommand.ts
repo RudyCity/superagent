@@ -112,7 +112,8 @@ export const workspaceCommand: SlashCommand = {
         const marker = isActive ? "*" : "-";
         const label = isActive ? " (active)" : "";
         const wsRecord = workspacesMap.get(dir);
-        const namePart = wsRecord?.name ? ` [${wsRecord.name}]` : "";
+        const wsName = wsRecord?.name || path.basename(dir);
+        const namePart = wsName ? ` [${wsName}]` : "";
         ctx.addLine({
           type: "system",
           content: `  ${marker} ${idx + 1}:${namePart} ${dir}${label}`,
@@ -223,7 +224,7 @@ export const workspaceCommand: SlashCommand = {
         return;
       }
 
-      const trustedDirs = getTrustedDirectories().map(d => path.resolve(d));
+      const trustedDirs = getTrustedDirectories().map(d => d.startsWith("ssh://") ? d : path.resolve(d));
       const allDirs = [...new Set([currentWorkspace, ...trustedDirs])];
 
       let targetPath = "";
@@ -236,33 +237,48 @@ export const workspaceCommand: SlashCommand = {
         targetPath = path.resolve(currentWorkspace, targetArg);
       }
 
-      if (!fs.existsSync(targetPath)) {
-        ctx.addLine({
-          type: "error",
-          content: `Error: Workspace path does not exist: ${targetPath}`,
-          timestamp: now
-        });
-        return;
-      }
+      // Detect SSH URI target (strict prefix-only; also catch legacy mangled paths from path.resolve on Windows)
+      const isSsh = targetPath.startsWith("ssh://") || targetPath.includes('\\ssh:\\') || targetPath.includes(':/ssh:');
 
-      const stats = fs.statSync(targetPath);
-      if (!stats.isDirectory()) {
-        ctx.addLine({
-          type: "error",
-          content: `Error: Path is not a directory: ${targetPath}`,
-          timestamp: now
-        });
-        return;
+      if (!isSsh) {
+        if (!fs.existsSync(targetPath)) {
+          ctx.addLine({
+            type: "error",
+            content: `Error: Workspace path does not exist: ${targetPath}`,
+            timestamp: now
+          });
+          return;
+        }
+
+        const stats = fs.statSync(targetPath);
+        if (!stats.isDirectory()) {
+          ctx.addLine({
+            type: "error",
+            content: `Error: Path is not a directory: ${targetPath}`,
+            timestamp: now
+          });
+          return;
+        }
       }
 
       // Add targetPath to trusted directory if it isn't there already
       addTrustedDirectory(targetPath);
 
+      // Handle SSH workspace mode
+      if (isSsh) {
+        const sshConfig = workspaceMode.parseSshTarget(targetPath);
+        if (sshConfig) {
+          workspaceMode.setSshMode(sshConfig);
+        }
+      } else {
+        workspaceMode.setLocalMode();
+      }
+
       // Switch CWD and agent working directory
       if (ctx.setWorkingDirectory) {
         ctx.setWorkingDirectory(targetPath);
       } else {
-        process.chdir(targetPath);
+        if (!isSsh) process.chdir(targetPath);
         if (ctx.agent) {
           ctx.agent.workingDirectory = targetPath;
         }
