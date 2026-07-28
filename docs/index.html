@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Superagent - Terminal-Based AI Coding Assistant</title>
+  <meta name="description" content="An interactive, terminal-based AI coding assistant for pair programming, context engineering, and autonomous workflow automation.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            cyber: {
+              black: '#0a0a0f',
+              dark: '#12121e',
+              card: '#1a1a2e',
+              border: '#2a2a4a',
+              accent: '#8a2be2',
+              cyan: '#00d1b2',
+              pink: '#ff2a6d',
+              neon: '#05d9e8'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+    
+    body {
+      background-color: #0a0a0f;
+      color: #e2e8f0;
+      font-family: 'Inter', sans-serif;
+    }
+    .glow-purple {
+      box-shadow: 0 0 50px -10px rgba(138, 43, 226, 0.35);
+    }
+    .glow-cyan {
+      box-shadow: 0 0 30px -5px rgba(0, 209, 178, 0.3);
+    }
+    .text-gradient {
+      background: linear-gradient(135deg, #a855f7 0%, #00d1b2 50%, #ff2a6d 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .grid-bg {
+      background-image: radial-gradient(rgba(138, 43, 226, 0.15) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+    .terminal-header {
+      background: linear-gradient(90deg, #1a1a2e 0%, #161626 100%);
+    }
+  </style>
+</head>
+<body class="grid-bg min-h-screen selection:bg-purple-600 selection:text-white">
+
+  <!-- Navbar -->
+  <nav class="sticky top-0 z-50 backdrop-blur-md bg-cyber-black/80 border-b border-cyber-border/50 px-6 py-4">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <span class="text-2xl font-extrabold text-gradient tracking-wider">🚀 SUPERAGENT</span>
+        <span class="bg-purple-950/80 text-purple-400 border border-purple-800/50 text-xs px-2.5 py-0.5 rounded-full font-mono">v1.0.0</span>
+      </div>
+      <div class="hidden md:flex items-center space-x-8 text-sm font-medium text-gray-300">
+        <a href="#features" class="hover:text-cyber-cyan transition">Features</a>
+        <a href="#commands" class="hover:text-cyber-cyan transition">Commands</a>
+        <a href="#architecture" class="hover:text-cyber-cyan transition">Architecture</a>
+        <a href="#quickstart" class="hover:text-cyber-cyan transition">Quick Start</a>
+        <a href="https://github.com/RudyCity/t-line" target="_blank" class="text-cyber-cyan flex items-center gap-1 hover:underline">
+          <i class="fa-solid fa-desktop text-xs"></i> t-line Desktop
+        </a>
+      </div>
+      <div class="flex items-center space-x-4">
+        <a href="https://github.com/RudyCity/superagent" target="_blank" class="flex items-center space-x-2 bg-cyber-dark hover:bg-cyber-border text-white border border-cyber-border px-4 py-2 rounded-lg transition font-mono text-sm">
+          <i class="fa-brands fa-github text-lg"></i>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <header class="relative pt-20 pb-16 px-6 max-w-7xl mx-auto text-center">
+    <div class="inline-flex items-center gap-2 bg-purple-900/30 border border-purple-700/50 text-purple-300 text-xs font-mono px-4 py-1.5 rounded-full mb-8">
+      <span class="inline-block w-2 h-2 rounded-full bg-cyber-neon animate-pulse"></span>
+      Autonomous Agentic Pair-Programming Assistant
+    </div>
+    
+    <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 leading-tight">
+      Next-Gen Terminal <br />
+      <span class="text-gradient">AI Coding Assistant</span>
+    </h1>
+    
+    <p class="text-lg md:text-xl text-gray-400 max-w-3xl mx-auto mb-10 font-normal leading-relaxed">
+      Pair programming, context engineering, and autonomous workflow automation with 
+      <span class="text-cyber-cyan font-semibold">3-Tier Multi-Agent Orchestration</span>, 
+      <span class="text-purple-400 font-semibold">Git Worktree Isolation</span>, and 
+      <span class="text-pink-400 font-semibold">SSH Remote Workspaces</span>.
+    </p>
+
+    <div class="flex flex-wrap justify-center items-center gap-4 mb-16 font-mono">
+      <div class="bg-cyber-dark border border-cyber-border px-5 py-3 rounded-lg text-sm text-gray-200 flex items-center gap-3">
+        <span class="text-purple-400">$</span>
+        <span>git clone https://github.com/RudyCity/superagent.git</span>
+        <button onclick="navigator.clipboard.writeText('git clone https://github.com/RudyCity/superagent.git')" class="text-gray-400 hover:text-white transition">
+          <i class="fa-regular fa-copy"></i>
+        </button>
+      </div>
+      <a href="#quickstart" class="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-sans font-semibold px-6 py-3 rounded-lg shadow-lg hover:shadow-purple-500/25 transition">
+        Get Started <i class="fa-solid fa-arrow-right ml-2"></i>
+      </a>
+    </div>
+
+    <!-- Terminal Demo Mockup -->
+    <div class="relative max-w-5xl mx-auto rounded-xl overflow-hidden border border-cyber-border glow-purple bg-cyber-dark">
+      <div class="terminal-header px-4 py-3 border-b border-cyber-border/70 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+          <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+          <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
+          <span class="text-xs font-mono text-gray-400 ml-2">superagent - interactive bash</span>
+        </div>
+        <div class="text-xs font-mono text-gray-500">Tier: Single Agent | Worktree: main</div>
+      </div>
+      <div class="p-4 bg-[#0d0d15] font-mono text-left text-sm leading-relaxed overflow-x-auto text-gray-300">
+        <div class="flex items-center gap-2 text-purple-400 mb-2">
+          <span>🚀 Superagent CLI v1.0.0</span>
+          <span class="text-xs text-gray-500">(Type /help for slash commands)</span>
+        </div>
+        <div class="text-gray-400 mb-4">Workspace: D:\projects\superagent | Active Model: anthropic/claude-3-5-sonnet</div>
+        <div class="text-emerald-400">[SYS] Scanning workspace node...</div>
+        <div class="text-cyan-400">[SYS] Initializing context compaction & token tracking engine...</div>
+        <div class="text-pink-400 font-semibold mb-2">✦ Superagent &gt; Hello! How can I help you build today?</div>
+        <div class="bg-cyber-card/70 border border-cyber-border/60 rounded p-3 text-xs text-gray-300 space-y-1 mb-2">
+          <div class="text-purple-300 font-bold">Try running slash commands:</div>
+          <div><span class="text-cyber-cyan font-bold">/workspace</span> — Switch local or remote SSH project workspaces</div>
+          <div><span class="text-cyber-cyan font-bold">/model</span> — Configure multi-tier models (master/superagent/subagent)</div>
+          <div><span class="text-cyber-cyan font-bold">/goal</span> — Autonomous overnight task execution</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Features Grid -->
+  <section id="features" class="py-20 px-6 max-w-7xl mx-auto border-t border-cyber-border/40">
+    <div class="text-center mb-16">
+      <h2 class="text-3xl md:text-5xl font-extrabold text-white mb-4">Core Capabilities</h2>
+      <p class="text-gray-400 max-w-2xl mx-auto">Designed for developers who demand full autonomous control, context precision, and terminal efficiency.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <!-- Feature 1 -->
+      <div class="bg-cyber-card/60 border border-cyber-border/70 p-8 rounded-xl hover:border-purple-500/50 transition glow-purple">
+        <div class="w-12 h-12 rounded-lg bg-purple-900/50 border border-purple-700/50 text-purple-400 flex items-center justify-center text-xl mb-6">
+          <i class="fa-solid fa-sitemap"></i>
+        </div>
+        <h3 class="text-xl font-bold text-white mb-3">3-Tier Multi-Agent System</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">
+          Master Agent orchestrates isolated Superagents in parallel Git worktrees, which spawn atomic Subagents for execution without context collision.
+        </p>
+      </div>
+
+      <!-- Feature 2 -->
+      <div class="bg-cyber-card/60 border border-cyber-border/70 p-8 rounded-xl hover:border-cyber-cyan/50 transition">
+        <div class="w-12 h-12 rounded-lg bg-cyan-900/40 border border-cyan-700/50 text-cyber-cyan flex items-center justify-center text-xl mb-6">
+          <i class="fa-solid fa-network-wired"></i>
+        </div>
+        <h3 class="text-xl font-bold text-white mb-3">SSH Remote Workspaces</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">
+          Connect seamlessly to remote SSH instances. Inspect system metrics, RAM, disk usage, and manage remote workspaces directly.
+        </p>
+      </div>
+
+      <!-- Feature 3 -->
+      <div class="bg-cyber-card/60 border border-cyber-border/70 p-8 rounded-xl hover:border-pink-500/50 transition">
+        <div class="w-12 h-12 rounded-lg bg-pink-900/40 border border-pink-700/50 text-pink-400 flex items-center justify-center text-xl mb-6">
+          <i class="fa-solid fa-brain"></i>
+        </div>
+        <h3 class="text-xl font-bold text-white mb-3">Context Compaction & Pinning</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">
+          Smart context engineering via LLM summarization, token tracking, pruning strategies, and global cross-session message pinning.
+        </p>
+      </div>
+
+      <!-- Feature 4 -->
+      <div class="bg-cyber-card/60 border border-cyber-border/70 p-8 rounded-xl hover:border-purple-500/50 transition">
+        <div class="w-12 h-12 rounded-lg bg-purple-900/40 border border-purple-700/50 text-purple-300 flex items-center justify-center text-xl mb-6">
+          <i class="fa-solid fa-terminal"></i>
+        </div>
+        <h3 class="text-xl font-bold text-white mb-3">Terminal Presets & Commands</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">
+          Configure custom terminal preset workflows (`/terminal`), background processes (`/procs`), and instant shell executions (`!<cmd>`).
+        </p>
+      </div>
+
+      <!-- Feature 5 -->
+      <div class="bg-cyber-card/60 border border-cyber-border/70 p-8 rounded-xl hover:border-cyber-neon/50 transition">
+        <div class="w-12 h-12 rounded-lg bg-teal-900/40 border border-teal-700/50 text-cyber-neon flex items-center justify-center text-xl mb-6">
+          <i class="fa-solid fa-plug"></i>
+        </div>
+        <h3 class="text-xl font-bold text-white mb-3">MCP & Skill Ecosystem</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">
+          Plug into Model Context Protocol (MCP) servers and install reusable skills from skills.sh to supercharge workflow automation.
+        </p>
+      </div>
+
+      <!-- Feature 6 -->
+      <div class="bg-cyber-card/60 border border-cyber-border/70 p-8 rounded-xl hover:border-pink-500/50 transition">
+        <div class="w-12 h-12 rounded-lg bg-pink-900/40 border border-pink-700/50 text-pink-400 flex items-center justify-center text-xl mb-6">
+          <i class="fa-solid fa-desktop"></i>
+        </div>
+        <h3 class="text-xl font-bold text-white mb-3">t-line Desktop Integration</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">
+          Integrate natively with <a href="https://github.com/RudyCity/t-line" target="_blank" class="text-cyber-cyan hover:underline">t-line desktop app</a> via client/server bridge mode (`--server [port]`).
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive Slash Commands Reference -->
+  <section id="commands" class="py-20 px-6 max-w-7xl mx-auto border-t border-cyber-border/40">
+    <div class="text-center mb-12">
+      <h2 class="text-3xl md:text-5xl font-extrabold text-white mb-4">Slash Commands Reference</h2>
+      <p class="text-gray-400 max-w-2xl mx-auto mb-8">Search through 30+ interactive slash commands built directly into Superagent CLI.</p>
+      
+      <!-- Search Input -->
+      <div class="max-w-md mx-auto relative">
+        <i class="fa-solid fa-magnifying-glass absolute left-4 top-3.5 text-gray-500"></i>
+        <input id="commandSearch" type="text" placeholder="Search commands (e.g. /workspace, /model, /session)..." 
+               class="w-full bg-cyber-dark border border-cyber-border text-gray-200 pl-11 pr-4 py-3 rounded-xl focus:outline-none focus:border-purple-500 font-mono text-sm shadow-inner" 
+               onkeyup="filterCommands()">
+      </div>
+    </div>
+
+    <!-- Commands Table -->
+    <div class="bg-cyber-dark border border-cyber-border rounded-xl overflow-hidden shadow-xl">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left font-mono text-sm">
+          <thead class="bg-cyber-card text-gray-400 border-b border-cyber-border uppercase text-xs">
+            <tr>
+              <th class="py-4 px-6">Command</th>
+              <th class="py-4 px-6">Category</th>
+              <th class="py-4 px-6">Description</th>
+            </tr>
+          </thead>
+          <tbody id="commandTableBody" class="divide-y divide-cyber-border/60 text-gray-300">
+            <!-- Row 1 -->
+            <tr class="cmd-row hover:bg-cyber-card/50">
+              <td class="py-4 px-6 font-bold text-cyber-cyan">/workspace <span class="text-gray-500 font-normal">(/w)</span></td>
+              <td class="py-4 px-6 text-xs text-purple-400">Workspace</td>
+              <td class="py-4 px-6">Manage local & SSH remote project workspaces (list, add, use, status)</td>
+            </tr>
+            <!-- Row 2 -->
+            <tr class="cmd-row hover:bg-cyber-card/50">
+              <td class="py-4 px-6 font-bold text-cyber-cyan">/model</td>
+              <td class="py-4 px-6 text-xs text-purple-400">Config</td>
+              <td class="py-4 px-6">Configure tier models (master/superagent/subagent) and model presets</td>
+            </tr>
+            <!-- Row 3 -->
+            <tr class="cmd-row hover:bg-cyber-card/50">
+              <td class="py-4 px-6 font-bold text-cyber-cyan">/login</td>
+              <td class="py-4 px-6 text-xs text-purple-400">Config</td>
+              <td class="py-4 px-6">Add/switch AI providers (Anthropic, OpenRouter, OpenAI, Custom)</td>
+            </tr>
+            <!-- Row 4 -->
+            <tr class="cmd-row hover:bg-cyber-card/50">
+              <td class="py-4 px-6 font-bold text-cyber-cyan">/session</td>
+              <td class="py-4 px-6 text-xs text-purple-400">Session</td>
+              <td class="py-4 px-6">Manage conversation sessions: list, export &lt;id&gt;, clear --empty</td>
+            </tr>
+            <!-- Row 5 -->
+            <tr class="cmd-row hover:bg-cyber-card/50">
+              <td class="py-4 px-6 font-bold text-cyber-cyan">/search-history <span class="text-gray-500 font-normal">(/sh)</span></td>
+              <td class="py-4 px-6 text-xs text-purple-400">Session</td>
+              <td class="py-4 px-6">Semantic search conversation history across current or all workspaces</td>
+            </tr>
+            <!-- Row 6 -->
+            <tr class="cmd-row hover:bg-cyber-card/50">
+              <td class="py-4 px-6 font-bold text-cyber-cyan">/pin</td>
+              <td class="py-4 px-6 text-xs text-purple-400">Context</td>
+              <td class="py-4 px-6">Pin critical messages and code context across compaction cycles</td>
+            </tr>
+            <!-- Row 7 -->
+            <tr class="cmd-row hover:bg-cyber-card/50">
+              <td class="py-4 px-6 font-bold text-cyber-cyan">/goal</td>
+              <td class="py-4 px-6 text-xs text-purple-400">Agent</td>
+              <td class="py-4 px-6">Activate Goal Mode for long-running autonomous overnight tasks</td>
+            </tr>
+            <!-- Row 8 -->
+            <tr class="cmd-row hover:bg-cyber-card/50">
+              <td class="py-4 px-6 font-bold text-cyber-cyan">/terminal</td>
+              <td class="py-4 px-6 text-xs text-purple-400">Tools</td>
+              <td class="py-4 px-6">Manage & run terminal presets (`list`, `run <preset>`, `bg`, `stop`)</td>
+            </tr>
+            <!-- Row 9 -->
+            <tr class="cmd-row hover:bg-cyber-card/50">
+              <td class="py-4 px-6 font-bold text-cyber-cyan">/worktrees <span class="text-gray-500 font-normal">(/worktree)</span></td>
+              <td class="py-4 px-6 text-xs text-purple-400">Workspace</td>
+              <td class="py-4 px-6">Manage Git worktrees: list active worktrees, prune stale metadata, remove</td>
+            </tr>
+            <!-- Row 10 -->
+            <tr class="cmd-row hover:bg-cyber-card/50">
+              <td class="py-4 px-6 font-bold text-cyber-cyan">/mcp</td>
+              <td class="py-4 px-6 text-xs text-purple-400">Tools</td>
+              <td class="py-4 px-6">Manage Model Context Protocol servers (list, add, remove, reload)</td>
+            </tr>
+            <!-- Row 11 -->
+            <tr class="cmd-row hover:bg-cyber-card/50">
+              <td class="py-4 px-6 font-bold text-cyber-cyan">/memory</td>
+              <td class="py-4 px-6 text-xs text-purple-400">Memory</td>
+              <td class="py-4 px-6">Manage RMemory long-term structured memory, scenes, and personas</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Start -->
+  <section id="quickstart" class="py-20 px-6 max-w-5xl mx-auto border-t border-cyber-border/40">
+    <div class="text-center mb-12">
+      <h2 class="text-3xl md:text-5xl font-extrabold text-white mb-4">Quick Start</h2>
+      <p class="text-gray-400">Get up and running with Superagent in under 2 minutes.</p>
+    </div>
+
+    <div class="space-y-6 font-mono">
+      <div class="bg-cyber-dark border border-cyber-border p-6 rounded-xl">
+        <div class="text-xs text-purple-400 uppercase font-bold mb-2">1. Clone & Install Dependencies</div>
+        <pre class="bg-black/50 p-4 rounded-lg text-sm text-gray-200 overflow-x-auto"><code>git clone https://github.com/RudyCity/superagent.git
+cd superagent
+bun install</code></pre>
+      </div>
+
+      <div class="bg-cyber-dark border border-cyber-border p-6 rounded-xl">
+        <div class="text-xs text-purple-400 uppercase font-bold mb-2">2. Run Superagent CLI</div>
+        <pre class="bg-black/50 p-4 rounded-lg text-sm text-gray-200 overflow-x-auto"><code>bun run start</code></pre>
+      </div>
+
+      <div class="bg-cyber-dark border border-cyber-border p-6 rounded-xl">
+        <div class="text-xs text-purple-400 uppercase font-bold mb-2">3. Configure AI Provider</div>
+        <pre class="bg-black/50 p-4 rounded-lg text-sm text-gray-200 overflow-x-auto"><code># Inside Superagent CLI:
+/login openrouter sk-or-v1-xxxxxx
+/model</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-12 border-t border-cyber-border/60 bg-cyber-black text-center text-gray-500 font-mono text-sm">
+    <div class="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div>
+        🚀 Superagent &copy; 2025. Released under MIT License.
+      </div>
+      <div class="flex items-center space-x-6">
+        <a href="https://github.com/RudyCity/superagent" target="_blank" class="hover:text-white transition">GitHub Repo</a>
+        <a href="https://github.com/RudyCity/t-line" target="_blank" class="hover:text-cyber-cyan transition">t-line Desktop</a>
+        <a href="#features" class="hover:text-white transition">Features</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    function filterCommands() {
+      const input = document.getElementById('commandSearch').value.toLowerCase();
+      const rows = document.querySelectorAll('.cmd-row');
+      rows.forEach(row => {
+        const text = row.innerText.toLowerCase();
+        row.style.display = text.includes(input) ? '' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>

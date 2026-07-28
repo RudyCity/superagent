@@ -81,16 +81,113 @@ No manual server configuration or extra CLI arguments are required—simply laun
 
 ## ⌨️ Command Reference
 
+### Core & Session Commands
+
 | Command | Description |
 |---|---|
 | `/help` | Display interactive command guide and active shortcuts |
-| `/login` | Configure AI provider credentials and API keys |
+| `/new` | Start a new session (clear history & screen) |
+| `/clear` | Clear conversation history |
+| `/resume` | Resume a conversation session from history via wizard |
+| `/session` | Manage session history: list, export `<id>`, clear --empty |
+| `/history` | Manage SQLite history database: stats, export, backup, migrate, tag |
+| `/search-history` `/sh` | Search conversation history. Usage: `/sh <query> [--all] [--debug]` |
+| `/knowledge` `/k` | Browse & search global pinned knowledge (cross-session) |
+| `/pin` | Pin important messages (full content + agent tag) |
+| `/checkpoint` | Manage checkpoints to save/restore conversation state |
+| `/compact` | Show compaction status / force context compaction |
+| `/compaction-history` `/ch` | View compaction audit trail |
+| `/goal` | Activate Goal Mode for long-running overnight tasks |
+| `/init` | Initialize project (Git setup, agents.md generation, system audit) |
+| `/exit` `/quit` | Exit the application |
+| `/image` | Attach image from clipboard (`paste`) or file path (`attach <path>`) |
+
+### Configuration & Providers
+
+| Command | Description |
+|---|---|
+| `/login` | Configure AI provider credentials (e.g. `/login openrouter sk-or-...`) |
 | `/model` | Switch model presets or custom tier configurations |
-| `/settings` | View and edit application settings |
-| `/compact` | Trigger manual context window compaction |
-| `/clear` | Clear current active session history |
-| `/history` | Search and inspect past session transcripts |
-| `/terminal` | Manage and execute workspace terminal presets |
+| `/settings` | View current rate limit, concurrency & app settings |
+| `/setting-concurrency <0\|1>` | Set LLM concurrency limit |
+| `/setting-rpm <number>` | Set rate limit RPM |
+| `/setting-capacity <number>` | Set rate limit capacity |
+| `/setting-streaming <on\|off>` | Enable or disable streaming |
+| `/setting-context-limit <number>` | Set context window limit (0 = auto) |
+| `/setting-max-iterations <number>` | Set max agent iterations (0 = unlimited) |
+| `/setting-checklist-limit <number>` | Set task checklist visible limit |
+| `/setting-history-limit <number>` | Set checklist history visible limit |
+| `/setting-procs-limit <number>` | Set processes panel visible limit |
+| `/setting-focus` `/focus` | Set reasoning focus depth: off\|low\|medium\|high\|xhigh\|max\|custom |
+| `/setting-focus-budget <number>` | Set reasoning focus custom budget tokens |
+| `/setting-auto-vision <on\|off>` | Enable/disable automatic vision token saving |
+| `/setting-vision-threshold <number>` | Set characters threshold for auto vision token saving |
+| `/setting-classifier <on\|off>` | Enable/disable multi-category request classifier |
+| `/setting-classifier-threshold <high\|medium\|low>` | Set classifier heuristic confidence threshold |
+| `/setting-rmemory` | Configure RMemory: on, off, provider, model, dimensions |
+
+### Agent, Tools & Automation
+
+| Command | Description |
+|---|---|
+| `/agents` | List active subagents and defined subagent types |
+| `/processes` `/procs` | List running background processes |
+| `/processes stop [id\|all]` | Stop background processes |
+| `/terminal` | Manage & execute terminal presets. Subcommands: `<command>`, `preset <name>`, `bg <cmd>`, `all`, `init`, `stop`, `list` |
+| `/skills` | List all installed agent skills and templates |
+| `/install` | Install a skill from skills.sh (e.g. `/install vercel-labs/skills/find-skills`) |
+| `/memory` | Manage and inspect RMemory long-term memory: status, sync, search, add, delete, list-scenes, read-scene, read-persona |
+| `/mcp` | Manage MCP (Model Context Protocol) servers: list, add, remove, reload |
+| `/macro` | Manage and run browser macro presets: list, run, delete |
+| `/internal-hooks` `/ih` | Manage custom internal hook tools: init, dev, list, active |
+
+### Workspace Management
+
+| Command | Description |
+|---|---|
+| `/workspace` `/w` | Manage local & remote (SSH) project workspaces |
+| `/worktrees` `/worktree` | Manage Git worktrees: list, prune, remove |
+
+`/workspace` subcommands:
+- `list` — Show all registered workspaces
+- `status` — Show current workspace info & SSH remote status
+- `add <path\|ssh://...>` — Register a workspace (local path or SSH remote)
+- `use <path\|index>` — Switch to a registered workspace
+
+SSH remote format: `ssh://user@host:port/path?key=/path/key.pem`
+
+**SSH workspace example:**
+
+```bash
+# Add SSH remote workspace
+/workspace add ssh://root@192.168.1.100:22/home/projects/myapp?key=~/.ssh/id_rsa
+
+# Switch to it
+/workspace use ssh://root@192.168.1.100:22/home/projects/myapp
+
+# Check remote status
+/workspace status
+```
+
+**`/worktrees` subcommands:**
+- `list` — Show all Git worktrees
+- `prune` — Clean stale worktree metadata
+- `remove <path>` — Remove a worktree
+
+### Keyboard Shortcuts
+
+| Shortcut | Description |
+|---|---|
+| `Ctrl+C` | Abort current process / Exit if input is empty |
+| `Ctrl+P` | Show checkpoints interactive wizard dialog |
+| `Ctrl+H` | Toggle search history panel |
+| `Ctrl+T` | Toggle checklist focus mode (when plan is approved) |
+| `Ctrl+O` | Cycle through and toggle expand/collapse of tool/system entries |
+| `Esc` | Reset input focus, cancel active wizard, or reset scroll |
+| `↑/↓` | Scroll message viewer or navigate CLI history |
+| `Tab` | Autocomplete slash commands or cycle suggestions |
+| `Click` | Focus or scroll panels via terminal mouse interaction |
+| `!<command>` | Quick shortcut to run a shell command (e.g. `!npm run dev`) |
 
 ---
 

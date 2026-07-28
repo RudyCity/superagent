@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.616] - 2026-07-29
+
+### Documentation & GitHub Pages
+- **GitHub Pages Landing Page**: Added standalone responsive dark-cyberpunk landing page in `docs/index.html` for GitHub Pages deployment.
+- **Comprehensive Slash Commands & Workspace Reference**: Updated `README.md` with complete reference table for 30+ `/slash` commands, including `/workspace` local and SSH remote commands with examples.
+
 ## [1.2.615] - 2026-07-28
 
 ### Features
