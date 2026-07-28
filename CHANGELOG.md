@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.608] - 2026-07-28
+
+### Documentation
+- **Marked Chrome Extension as Experimental**: Updated README.md key features list to mark Chrome Extension integration as experimental.
+
 ## [1.2.607] - 2026-07-28
 
 ### Documentation

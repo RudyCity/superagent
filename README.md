@@ -12,7 +12,7 @@ An interactive, terminal-based AI coding assistant designed for pair programming
 - **t-line Desktop Integration**: Seamlessly connect Superagent CLI with the [t-line](https://github.com/RudyCity/t-line) desktop GUI app.
 - **Smart Context & Token Management**: Automatic token tracking, strategy-based pruning, summarization, and pinning.
 - **Git Checkpoint Recovery**: Instant rollback & branch switching on error or experimentation.
-- **Chrome Extension Integration**: Remote control browser tabs, capture console/network logs, and extract Markdown DOM snapshots.
+- **Chrome Extension Integration *(Experimental)***: Remote control browser tabs, capture console/network logs, and extract Markdown DOM snapshots.
 - **Interactive Terminal & Tooling**: Built-in interactive execution with streaming output and full shell capabilities.
 - **3-Tier Multi-Agent Mode *(Experimental)***: Master Agent orchestrating isolated Superagents across Git worktrees (`--multi`).
 
