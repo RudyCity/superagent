@@ -228,10 +228,54 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "➕ Add a new workspace...") {
+        if (value === "📁 Select & Switch Workspace...") {
+          const { getTrustedDirectories } = await import("../core/config/jsonConfig.js");
+          const { getWorkspacesFromDb } = await import("../core/storage/historyDb.js");
+          const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+          const sshCfg = workspaceMode.getConfig();
+          const currentWorkspace = workspaceMode.isSsh() && sshCfg
+            ? `${sshCfg.username}@${sshCfg.host}:${sshCfg.port}${sshCfg.remoteCwd}`
+            : path.resolve(agentRef.current?.workingDirectory || process.cwd());
+
+          const trustedDirs = getTrustedDirectories().map(d => d.startsWith("ssh:") ? d : path.resolve(d));
+          const allDirs = [...new Set([currentWorkspace, ...trustedDirs])];
+          const dbWorkspaces = getWorkspacesFromDb();
+          const workspacesMap = new Map(dbWorkspaces.map(w => [path.resolve(w.path), w]));
+
+          const switchOptions = allDirs.map((dir) => {
+            let isActive = dir === currentWorkspace;
+            if (!isActive && workspaceMode.isSsh() && sshCfg && (dir.startsWith("ssh:") || (dir.includes("@") && (dir.includes(":/") || dir.includes(":"))))) {
+              const parsedDir = workspaceMode.parseSshTarget(dir);
+              if (parsedDir) {
+                isActive =
+                  parsedDir.host === sshCfg.host &&
+                  parsedDir.port === sshCfg.port &&
+                  parsedDir.username === sshCfg.username &&
+                  parsedDir.remoteCwd === sshCfg.remoteCwd;
+              }
+            }
+            const prefix = isActive ? "* [active] " : "📁 ";
+            const wsRecord = workspacesMap.get(dir);
+            const wsName = wsRecord?.name || "";
+            const namePart = wsName ? ` [${wsName}]` : "";
+            return `${prefix}${namePart} ${dir}`;
+          });
+
           setActiveWizard({
             type: "workspace",
             step: 2,
+            data: {},
+          });
+          setWizardOptions(switchOptions);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        if (value === "➕ Add a new workspace...") {
+          setActiveWizard({
+            type: "workspace",
+            step: 3,
             data: {},
           });
           setWizardOptions([]);
@@ -272,7 +316,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
 
           setActiveWizard({
             type: "workspace",
-            step: 3,
+            step: 4,
             data: {},
           });
           setWizardOptions(removeOptions);
@@ -312,9 +356,10 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           setWizardSelectedIndex(0);
           return;
         }
+      }
 
+      if (activeWizard.step === 2) {
         let cleanVal = value.replace(/^\*\s*\[active\]\s*/i, "").replace(/^📁\s*/, "").replace(/\s*\(active\)$/i, "").trim();
-        // Strip custom workspace name bracket if present e.g. "[name] /path/to/dir" -> "/path/to/dir"
         if (cleanVal.startsWith("[")) {
           const bracketEnd = cleanVal.indexOf("]");
           if (bracketEnd !== -1) {
@@ -375,7 +420,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
         return;
       }
 
-      if (activeWizard.step === 2) {
+      if (activeWizard.step === 3) {
         const pathInput = value.trim();
         if (!pathInput) {
           setActiveWizard(null);
@@ -440,7 +485,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
         return;
       }
 
-      if (activeWizard.step === 3) {
+      if (activeWizard.step === 4) {
         let targetWs = value.replace(/^📁\s*/, "").replace(/\s*\(active\)$/i, "").trim();
         if (targetWs.startsWith("[")) {
           const bracketEnd = targetWs.indexOf("]");
@@ -458,7 +503,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
 
         setActiveWizard({
           type: "workspace",
-          step: 4,
+          step: 5,
           data: { targetWorkspace: targetWs },
         });
         setWizardOptions(["Yes, remove this workspace", "No, cancel"]);
@@ -467,7 +512,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
         return;
       }
 
-      if (activeWizard.step === 4) {
+      if (activeWizard.step === 5) {
         if (value === "Yes, remove this workspace" && activeWizard.data.targetWorkspace) {
           const targetWs = activeWizard.data.targetWorkspace;
           const { removeTrustedDirectory } = await import("../core/config/jsonConfig.js");

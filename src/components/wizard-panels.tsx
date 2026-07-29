@@ -829,19 +829,29 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
-        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 1 && wizardOptions.length > 0 && (() => {
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 1 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title="📁 WORKSPACE MANAGER — Select action (↑/↓ Navigate, Enter: Select, Esc: Cancel):"
+            description="Choose a workspace action:"
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 2 && wizardOptions.length > 0 && (() => {
           const searchQuery = input.trim();
           const filteredOptions = searchQuery
             ? filterSuggestions(wizardOptions, searchQuery)
             : wizardOptions;
           const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
           const searchTitle = searchQuery
-            ? `📁 WORKSPACE MANAGER — 🔍 "${searchQuery}" (${filteredOptions.length}/${wizardOptions.length} results):`
-            : `📁 WORKSPACE MANAGER — Select action or workspace (type to filter, ↑/↓ Navigate, Enter: Select, Esc: Cancel):`;
+            ? `📁 SELECT WORKSPACE — 🔍 "${searchQuery}" (${filteredOptions.length}/${wizardOptions.length} results):`
+            : `📁 SELECT WORKSPACE — Select workspace to switch to (type to filter, ↑/↓ Navigate, Enter: Select, Esc: Back):`;
           return (
             <WizardDialog
               title={searchTitle}
-              description="Select a workspace directory to switch to, or choose an action:"
+              description="Select a workspace directory to switch to:"
               borderColor="cyan"
               options={filteredOptions.length > 0 ? filteredOptions : ["(no results)"]}
               selectedIndex={clampedIndex}
@@ -850,7 +860,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           );
         })()}
 
-        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 2 && (
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 3 && (
           <WizardDialog
             title="📁 ADD WORKSPACE — Enter workspace path (Type & Enter, Esc: Back):"
             description="Enter directory path or SSH target (e.g. C:\projects\my-app or ssh://user@host/path):"
@@ -860,7 +870,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
-        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 3 && wizardOptions.length > 0 && (() => {
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 4 && wizardOptions.length > 0 && (() => {
           const searchQuery = input.trim();
           const filteredOptions = searchQuery
             ? filterSuggestions(wizardOptions, searchQuery)
@@ -881,7 +891,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           );
         })()}
 
-        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 4 && wizardOptions.length > 0 && (
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 5 && wizardOptions.length > 0 && (
           <WizardDialog
             title="🗑️ REMOVE WORKSPACE — Are you sure?"
             description={`Remove "${activeWizard.data.targetWorkspace || ""}" from trusted workspaces?`}

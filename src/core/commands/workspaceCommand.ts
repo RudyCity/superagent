@@ -19,34 +19,13 @@ export const workspaceCommand: SlashCommand = {
       : path.resolve(ctx.agent?.workingDirectory || process.cwd());
 
     if (ctx.setActiveWizard) {
-      const trustedDirs = getTrustedDirectories().map(d => d.startsWith("ssh:") ? d : path.resolve(d));
-      const allDirs = [...new Set([currentWorkspace, ...trustedDirs])];
-      const dbWorkspaces = getWorkspacesFromDb();
-      const workspacesMap = new Map(dbWorkspaces.map(w => [path.resolve(w.path), w]));
-      
-      const options = allDirs.map((dir) => {
-        let isActive = dir === currentWorkspace;
-        if (!isActive && workspaceMode.isSsh() && sshCfg && (dir.startsWith('ssh:') || (dir.includes('@') && (dir.includes(':/') || dir.includes(':'))))) {
-          const parsedDir = workspaceMode.parseSshTarget(dir);
-          if (parsedDir) {
-            isActive =
-              parsedDir.host === sshCfg.host &&
-              parsedDir.port === sshCfg.port &&
-              parsedDir.username === sshCfg.username &&
-              parsedDir.remoteCwd === sshCfg.remoteCwd;
-          }
-        }
-        const prefix = isActive ? "* [active] " : "📁 ";
-        const wsRecord = workspacesMap.get(dir);
-        const wsName = wsRecord?.name || "";
-        const namePart = wsName ? ` [${wsName}]` : "";
-        return `${prefix}${namePart} ${dir}`;
-      });
-      
-      options.push("➕ Add a new workspace...");
-      options.push("🗑️ Remove a workspace...");
-      options.push("📊 View workspace status");
-      options.push("❌ Exit Wizard");
+      const options = [
+        "📁 Select & Switch Workspace...",
+        "➕ Add a new workspace...",
+        "🗑️ Remove a workspace...",
+        "📊 View workspace status",
+        "❌ Exit Wizard",
+      ];
 
       ctx.setActiveWizard({
         type: "workspace",
