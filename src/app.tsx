@@ -598,7 +598,9 @@ export function App({
       if (agentRef.current) {
         agentRef.current.workingDirectory = newPath;
       }
-      process.chdir(newPath);
+      if (!newPath.startsWith("ssh:") && !newPath.startsWith("ssh://")) {
+        process.chdir(newPath);
+      }
     },
   });
 

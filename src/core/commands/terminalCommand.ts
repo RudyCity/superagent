@@ -18,6 +18,7 @@ import {
   isTaskInWorkspace
 } from "../tools.js";
 import { killProcessTree } from "../tools/shellTools.js";
+import { workspaceMode } from "../ssh/workspaceMode.js";
 function normalizeCwd(cwdPath: string): string {
   if (process.platform === "win32") {
     const msysMatch = cwdPath.match(/^\/([a-zA-Z])($|\/.*)/);
@@ -67,6 +68,29 @@ export const terminalCommand: SlashCommand = {
     if (args.toLowerCase() === "stop" || args.toLowerCase().startsWith("stop ")) {
       const stopArg = args.slice(4).trim().toLowerCase();
       const workspacePath = ctx.agent?.workingDirectory || process.cwd();
+
+      // SSH routing: kill remote background process by PID via sshProxy.
+      if (workspaceMode.isSsh()) {
+        const sshConfig = workspaceMode.getConfig();
+        (async () => {
+          try {
+            const { sshProxy } = await import("../ssh/sshProxy.js");
+            const { sshKillBackgroundProcessExecute, sshViewBackgroundProcessesExecute } = await import("../ssh/sshCommands.js");
+            if (!stopArg || stopArg === "all") {
+              const listRes = await sshViewBackgroundProcessesExecute();
+              ctx.addLine({ type: "system", content: `[SSH ${sshConfig?.username}@${sshConfig?.host}] Active remote background processes:\n${listRes}`, timestamp: Date.now() });
+              ctx.addLine({ type: "system", content: "Provide specific PID: `/terminal stop <pid>` to terminate one process.", timestamp: Date.now() });
+            } else {
+              const res = await sshKillBackgroundProcessExecute(stopArg);
+              ctx.addLine({ type: "system", content: res, timestamp: Date.now() });
+            }
+          } catch (err: any) {
+            ctx.addLine({ type: "error", content: `SSH stop failed: ${err?.message || err}`, timestamp: Date.now() });
+          }
+        })();
+        return;
+      }
+
       const termTasks = Array.from(backgroundTasks.entries()).filter(([id, task]) => id.startsWith("term-") && isTaskInWorkspace(task.cwd, workspacePath));
 
       if (termTasks.length === 0) {
@@ -129,6 +153,33 @@ export const terminalCommand: SlashCommand = {
 
     if (args.toLowerCase() === "bg" || args.toLowerCase().startsWith("bg ")) {
       const bgRaw = args.slice(2).trim();
+
+      // SSH routing: delegate to sshRunBackgroundProcessExecute so the process
+      // runs on the remote host, not locally.
+      if (workspaceMode.isSsh()) {
+        const bgCmd = bgRaw;
+        if (!bgCmd) {
+          ctx.addLine({ type: "error", content: "Usage: /terminal bg <command>", timestamp: Date.now() });
+          return;
+        }
+        (async () => {
+          try {
+            const { sshRunBackgroundProcessExecute } = await import("../ssh/sshCommands.js");
+            const remoteCwd = workspaceMode.getConfig()?.remoteCwd;
+            const res = await sshRunBackgroundProcessExecute(bgCmd, remoteCwd);
+            const taskId = `term-ssh-bg-${Math.random().toString(36).substring(2, 9)}`;
+            const sshConfig = workspaceMode.getConfig();
+            ctx.addLine({
+              type: "system",
+              content: `⚙️ [SSH ${sshConfig?.username}@${sshConfig?.host}] ${res}\nTask ID: ${taskId}\nUse \`/terminal stop <pid>\` to kill (or \`/terminal stop all\` to list active PIDs).`,
+              timestamp: Date.now(),
+            });
+          } catch (err: any) {
+            ctx.addLine({ type: "error", content: `SSH bg failed: ${err?.message || err}`, timestamp: Date.now() });
+          }
+        })();
+        return;
+      }
 
       (async () => {
         const localPresetDir = path.join(cwd, ".superagent-r");
@@ -349,6 +400,31 @@ export const terminalCommand: SlashCommand = {
 
         if (!commandStr) return;
 
+        // SSH routing: run command on remote host synchronously, stream stdout
+        // to chat. No detached PowerShell window on the laptop.
+        if (workspaceMode.isSsh()) {
+          const sshCfg = workspaceMode.getConfig();
+          const remoteCwd = sshCfg?.remoteCwd || runCwd;
+          ctx.addLine({
+            type: "system",
+            content: `🖥️ [SSH ${sshCfg?.username}@${sshCfg?.host}] Executing terminal command: "${commandStr}" (cwd: ${remoteCwd})`,
+            timestamp: Date.now(),
+          });
+          (async () => {
+            try {
+              const { sshRunCommandExecute } = await import("../ssh/sshCommands.js");
+              const output = await sshRunCommandExecute(commandStr, remoteCwd);
+              if (output && output.trim()) {
+                ctx.addLine({ type: "system", content: output, timestamp: Date.now() });
+              }
+              ctx.addLine({ type: "system", content: `✅ SSH process finished.`, timestamp: Date.now() });
+            } catch (err: any) {
+              ctx.addLine({ type: "error", content: `SSH run failed: ${err?.message || err}`, timestamp: Date.now() });
+            }
+          })();
+          return;
+        }
+
         if (ctx.runInteractiveProcess) {
           ctx.addLine({
             type: "system",
@@ -372,7 +448,7 @@ export const terminalCommand: SlashCommand = {
                 ctx.addLine(lineObj);
                 liveLineId = lineObj.timestamp;
               } else if (ctx.setLines) {
-                ctx.setLines((prev) => 
+                ctx.setLines((prev) =>
                   prev.map((l) => l.timestamp === liveLineId ? { ...l, content: cleaned } : l)
                 );
               }
@@ -392,7 +468,7 @@ export const terminalCommand: SlashCommand = {
 
           ctx.addLine({
             type: "system",
-            content: exitCode === 0 
+            content: exitCode === 0
               ? `✅ Process finished with exit code 0.`
               : `❌ Process failed with exit code ${exitCode}.`,
             timestamp: Date.now()

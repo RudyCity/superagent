@@ -390,6 +390,13 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             if (sshConfig) {
               await sshProxy.disconnect();
               workspaceMode.setSshMode(sshConfig);
+              try {
+                await sshProxy.connect(sshConfig);
+              } catch (connErr: any) {
+                workspaceMode.setLocalMode();
+                addLine({ type: "error", content: `SSH connect failed: ${connErr?.message || connErr}`, timestamp: Date.now() });
+                return;
+              }
             }
           } else {
             await sshProxy.disconnect();
@@ -449,16 +456,86 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
         const resolvedPath = isSsh ? pathInput : path.resolve(currentCwd, pathInput);
 
         if (isSsh || (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory())) {
+          // Validate SSH URI before proceeding to name step
+          if (isSsh) {
+            const { workspaceMode: wmProbe } = await import("../core/ssh/workspaceMode.js");
+            const probe = wmProbe.parseSshTarget(resolvedPath);
+            if (!probe) {
+              addLine({
+                type: "error",
+                content: `Error: Invalid SSH target: ${pathInput}`,
+                timestamp: now,
+              });
+              setInput("");
+              setActiveWizard(null);
+              setWizardOptions([]);
+              setWizardSelectedIndex(0);
+              return;
+            }
+          }
+
+          // Move to name prompt step; finalize add in step 6 handler.
+          setActiveWizard({
+            type: "workspace",
+            step: 6,
+            data: { ...(activeWizard.data ?? {}), pendingPath: resolvedPath, pendingIsSsh: isSsh },
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        addLine({
+          type: "error",
+          content: `Error: Path does not exist or is not a directory: ${resolvedPath}`,
+          timestamp: now,
+        });
+        setInput("");
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        return;
+      }
+
+      if (activeWizard.step === 6) {
+        const nameInput = value.trim();
+        const pendingPath = (activeWizard.data as any)?.pendingPath as string | undefined;
+        const pendingIsSsh = !!(activeWizard.data as any)?.pendingIsSsh;
+
+        if (!pendingPath) {
+          addLine({
+            type: "error",
+            content: "Error: lost pending workspace path. Please retry /workspace.",
+            timestamp: now,
+          });
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
+        }
+
+        // Empty name is allowed (falls back to default basename in DB).
+        const wsName = nameInput;
+
+        try {
           const { addTrustedDirectory } = await import("../core/config/jsonConfig.js");
           const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
           const { sshProxy } = await import("../core/ssh/sshProxy.js");
-          addTrustedDirectory(resolvedPath);
+          addTrustedDirectory(pendingPath, wsName || undefined);
 
-          if (isSsh) {
-            const sshConfig = workspaceMode.parseSshTarget(resolvedPath);
+          if (pendingIsSsh) {
+            const sshConfig = workspaceMode.parseSshTarget(pendingPath);
             if (sshConfig) {
               await sshProxy.disconnect();
               workspaceMode.setSshMode(sshConfig);
+              try {
+                await sshProxy.connect(sshConfig);
+              } catch (connErr: any) {
+                workspaceMode.setLocalMode();
+                addLine({ type: "error", content: `SSH connect failed: ${connErr?.message || connErr}`, timestamp: Date.now() });
+                return;
+              }
             }
           } else {
             await sshProxy.disconnect();
@@ -466,37 +543,48 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           }
 
           if (setWorkingDirectory) {
-            setWorkingDirectory(resolvedPath);
+            setWorkingDirectory(pendingPath);
           } else {
-            if (!isSsh) process.chdir(resolvedPath);
-            if (agentRef.current) agentRef.current.workingDirectory = resolvedPath;
+            if (!pendingIsSsh) process.chdir(pendingPath);
+            if (agentRef.current) agentRef.current.workingDirectory = pendingPath;
           }
 
           if (agentRef.current) {
             agentRef.current.resetInternalState();
-            await agentRef.current.clearHistory();
+            try {
+              await agentRef.current.clearHistory();
+            } catch (err: any) {
+              addLine({
+                type: "error",
+                content: `Warning: failed to clear history (${err?.message ?? err}); continuing with workspace switch.`,
+                timestamp: now,
+              });
+            }
             agentRef.current.planState = "IDLE";
             agentRef.current.goalMode = null;
           }
           if (setPlanState) setPlanState("IDLE");
           if (clearLines) clearLines();
 
+          const displayName = wsName || pendingPath;
+          const kindLabel = pendingIsSsh ? "🔌 SSH workspace" : "📁 Workspace";
           addLine({
             type: "system",
-            content: `Added and switched to workspace: ${resolvedPath}\nStarted a new chat session.`,
+            content: `${kindLabel} added: ${displayName}\nPath: ${pendingPath}\nStarted a new chat session.`,
             timestamp: now,
           });
-          setActiveWizard(null);
-          setWizardOptions([]);
-          setWizardSelectedIndex(0);
-        } else {
+        } catch (err: any) {
           addLine({
             type: "error",
-            content: `Error: Path does not exist or is not a directory: ${resolvedPath}`,
+            content: `Failed to add workspace: ${err?.message ?? err}`,
             timestamp: now,
           });
-          setInput("");
         }
+
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
         return;
       }
 

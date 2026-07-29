@@ -324,6 +324,14 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             const { sshProxy } = await import("../core/ssh/sshProxy.js");
             await sshProxy.disconnect();
             workspaceMode.setSshMode(sshConfig);
+            try {
+              await sshProxy.connect(sshConfig);
+            } catch (connErr: any) {
+              workspaceMode.setLocalMode();
+              setMasterLogs([`[ERROR] SSH connect failed: ${connErr?.message || connErr}`]);
+              setActiveWizard(null);
+              return;
+            }
             setMasterLogs([`[SYSTEM] 🔌 Switched to SSH workspace: ${sshConfig.username}@${sshConfig.host}:${sshConfig.port}${sshConfig.remoteCwd}`]);
           } else {
             setMasterLogs([`[ERROR] Invalid SSH target: ${cleanVal}`]);
@@ -391,8 +399,29 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             const { sshProxy } = await import("../core/ssh/sshProxy.js");
             await sshProxy.disconnect();
             workspaceMode.setSshMode(sshConfig);
-            if (agent) agent.workingDirectory = pathInput;
-            setMasterLogs([`[SYSTEM] 🔌 Added and switched to SSH workspace: ${sshConfig.username}@${sshConfig.host}:${sshConfig.port}${sshConfig.remoteCwd}`]);
+            try {
+              await sshProxy.connect(sshConfig);
+            } catch (connErr: any) {
+              workspaceMode.setLocalMode();
+              setMasterLogs([`[ERROR] SSH connect failed: ${connErr?.message || connErr}`]);
+              setActiveWizard(null);
+              return;
+            }
+
+            if (setWorkingDirectory) {
+              setWorkingDirectory(pathInput);
+            } else if (agent) {
+              agent.workingDirectory = pathInput;
+            }
+
+            if (agent) {
+              agent.resetInternalState();
+              await agent.clearHistory();
+              agent.planState = "IDLE";
+              agent.goalMode = null;
+            }
+
+            setMasterLogs([`[SYSTEM] 🔌 Added and switched to SSH workspace: ${sshConfig.username}@${sshConfig.host}:${sshConfig.port}${sshConfig.remoteCwd} (started new chat session)`]);
           } else {
             setMasterLogs([`[ERROR] Invalid SSH target: ${pathInput}`]);
           }

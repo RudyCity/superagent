@@ -11,6 +11,7 @@ import {
   isTaskInWorkspace,
 } from "../tools.js";
 import { killProcessTree } from "../tools/shellTools.js";
+import { workspaceMode } from "../ssh/workspaceMode.js";
 import { getGlobalConfigDir } from "../config.js";
 
 // /agents command
@@ -189,6 +190,37 @@ export const processesCommand: SlashCommand = {
     const now = Date.now();
     const lowerArgs = args.toLowerCase();
     const workspacePath = ctx.agent?.workingDirectory || process.cwd();
+
+    // SSH routing: list/kill remote background PIDs via sshProxy.
+    if (workspaceMode.isSsh()) {
+      const sshCfg = workspaceMode.getConfig();
+      const sshHost = `${sshCfg?.username}@${sshCfg?.host}:${sshCfg?.port}`;
+      (async () => {
+        try {
+          const { sshViewBackgroundProcessesExecute, sshKillBackgroundProcessExecute } = await import("../ssh/sshCommands.js");
+          if (lowerArgs === "stop" || lowerArgs.startsWith("stop ")) {
+            const stopArg = args.slice(4).trim();
+            if (!stopArg) {
+              const list = await sshViewBackgroundProcessesExecute();
+              ctx.addLine({ type: "system", content: `[SSH ${sshHost}] Active remote background processes:\n${list}\n\nUsage: /processes stop <pid>`, timestamp: now });
+              return;
+            }
+            const res = await sshKillBackgroundProcessExecute(stopArg);
+            ctx.addLine({ type: "system", content: res, timestamp: now });
+          } else {
+            const list = await sshViewBackgroundProcessesExecute();
+            ctx.addLine({
+              type: "system",
+              content: `┌─── [ ⚙️ SSH REMOTE BACKGROUND PROCESSES (${sshHost}) ]\n│\n${list || "│  No active background processes."}\n└──`,
+              timestamp: now,
+            });
+          }
+        } catch (err: any) {
+          ctx.addLine({ type: "error", content: `SSH /processes failed: ${err?.message || err}`, timestamp: now });
+        }
+      })();
+      return;
+    }
 
     if (lowerArgs === "stop" || lowerArgs.startsWith("stop ")) {
       const stopArg = args.slice(4).trim();

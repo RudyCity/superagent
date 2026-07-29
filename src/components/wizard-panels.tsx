@@ -871,6 +871,16 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 6 && (
+          <WizardDialog
+            title="🏷️ ADD WORKSPACE — Enter display name (Type & Enter, Esc: Back):"
+            description={`Optional friendly name for: ${(activeWizard.data as any)?.pendingPath || ""}`}
+            borderColor="cyan"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
         {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 4 && wizardOptions.length > 0 && (() => {
           const searchQuery = input.trim();
           const filteredOptions = searchQuery
