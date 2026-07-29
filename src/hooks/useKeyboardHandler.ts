@@ -1017,7 +1017,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
           return;
         }
-      } else if (activeWizard.type === "workspace" && activeWizard.step === 1 && wizardOptions.length > 0) {
+      } else if (activeWizard.type === "workspace" && wizardOptions.length > 0) {
         const searchQuery = input.trim();
         const filtered = searchQuery
           ? filterSuggestions(wizardOptions, searchQuery)
@@ -1039,8 +1039,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.return) {
-          const selectedVal = filtered[wizardSelectedIndex] ?? filtered[0];
-          if (selectedVal) {
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filtered.length - 1));
+          const selectedVal = filtered[clampedIndex] ?? filtered[0];
+          if (selectedVal && selectedVal !== "(no results)") {
             handleWizardSubmit(selectedVal);
           }
           return;
@@ -1883,6 +1884,18 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           setWizardOptions(options);
           setWizardSelectedIndex(skillIndex);
           setInput(""); // Clear input when returning to search
+          return;
+        } else if (activeWizard.type === "workspace" && activeWizard.step > 1) {
+          setActiveWizard({ type: "workspace", step: 1, data: {} });
+          setWizardOptions([
+            "📁 Select & Switch Workspace...",
+            "➕ Add a new workspace...",
+            "🗑️ Remove a workspace...",
+            "📊 View workspace status",
+            "❌ Exit Wizard",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
           return;
         } else if (activeWizard.type === "login") {
           if (activeWizard.step === 2) {
