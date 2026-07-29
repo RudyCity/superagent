@@ -319,10 +319,11 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             return;
           }
 
+          const removePaths = trustedDirs.map(d => d.startsWith("ssh:") ? d : path.resolve(d));
           setActiveWizard({
             type: "workspace",
             step: 4,
-            data: {},
+            data: { removePaths },
           });
           setWizardOptions(removeOptions);
           setWizardSelectedIndex(0);
@@ -496,11 +497,18 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
       }
 
       if (activeWizard.step === 4) {
-        let targetWs = value.replace(/^📁\s*/, "").replace(/\s*\(active\)$/i, "").trim();
-        if (targetWs.startsWith("[")) {
-          const bracketEnd = targetWs.indexOf("]");
-          if (bracketEnd !== -1) {
-            targetWs = targetWs.substring(bracketEnd + 1).trim();
+        let targetWs = "";
+        const removePaths: string[] = Array.isArray(activeWizard.data?.removePaths) ? activeWizard.data.removePaths : [];
+        const match = removePaths.find(p => value.includes(p));
+        if (match) {
+          targetWs = match;
+        } else {
+          targetWs = value.replace(/^📁\s*/, "").replace(/\s*\(active\)$/i, "").trim();
+          if (targetWs.startsWith("[")) {
+            const bracketEnd = targetWs.indexOf("]");
+            if (bracketEnd !== -1) {
+              targetWs = targetWs.substring(bracketEnd + 1).trim();
+            }
           }
         }
 

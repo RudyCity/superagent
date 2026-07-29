@@ -1698,10 +1698,20 @@ export function getWorkspaceFromDb(id: string): WorkspaceRecord | null {
   return null;
 }
 
-export function deleteWorkspaceFromDb(id: string): void {
+export function deleteWorkspaceFromDb(idOrPath: string): void {
   try {
     const db = getHistoryDb();
-    db.prepare("DELETE FROM workspaces WHERE id = ?").run(id);
+    const resolved = idOrPath.startsWith("ssh:") ? idOrPath : path.resolve(idOrPath);
+    const normalized = (process.platform === "win32" && !resolved.startsWith("ssh:") && /^[a-z]:/i.test(resolved))
+      ? resolved[0].toUpperCase() + resolved.slice(1)
+      : resolved;
+    const id = getWorkspaceId(normalized);
+
+    if (process.platform === "win32") {
+      db.prepare("DELETE FROM workspaces WHERE id = ? OR id = ? OR LOWER(path) = LOWER(?) OR LOWER(path) = LOWER(?)").run(id, idOrPath, normalized, idOrPath);
+    } else {
+      db.prepare("DELETE FROM workspaces WHERE id = ? OR id = ? OR path = ? OR path = ?").run(id, idOrPath, normalized, idOrPath);
+    }
   } catch {}
 }
 
