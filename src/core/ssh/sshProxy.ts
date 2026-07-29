@@ -3,7 +3,7 @@ import SFTPClient from "ssh2-sftp-client";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { SshWorkspaceConfig } from "./workspaceMode.js";
+import { SshWorkspaceConfig, workspaceMode } from "./workspaceMode.js";
 
 export interface SshSystemMetrics {
   host: string;
@@ -15,11 +15,16 @@ export interface SshSystemMetrics {
   pingMs: number;
 }
 
+export function escapeShellArg(arg: string): string {
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
 export class SshProxyService {
   private sshClient: Client | null = null;
   private sftpClient: SFTPClient | null = null;
   private config: SshWorkspaceConfig | null = null;
   private isConnecting = false;
+  private connectPromise: Promise<void> | null = null;
   private passwordHandler?: () => Promise<string>;
   
   // SFTP In-memory Smart Cache
@@ -35,6 +40,16 @@ export class SshProxyService {
   }
 
   public async connect(config: SshWorkspaceConfig): Promise<void> {
+    if (this.connectPromise) {
+      return this.connectPromise;
+    }
+    this.connectPromise = this._doConnect(config).finally(() => {
+      this.connectPromise = null;
+    });
+    return this.connectPromise;
+  }
+
+  private async _doConnect(config: SshWorkspaceConfig): Promise<void> {
     this.config = config;
     this.isConnecting = true;
     this.clearCache();
@@ -113,7 +128,7 @@ export class SshProxyService {
 
   private async ensureConnected(): Promise<void> {
     if (!this.sshClient || !this.sftpClient) {
-      if (this.config && !this.isConnecting) {
+      if (this.config) {
         await this.connect(this.config);
       } else {
         throw new Error("SSH Proxy is not connected");
@@ -140,20 +155,50 @@ export class SshProxyService {
 
   public normalizePosixPath(targetPath: string): string {
     let clean = targetPath.replace(/\\/g, "/");
-    if (path.isAbsolute(targetPath) || clean.startsWith("/")) {
-      return clean;
-    }
-    const base = this.config?.remoteCwd || "/";
+    const base = this.config?.remoteCwd || workspaceMode.getConfig()?.remoteCwd || "/";
     const posixBase = base.replace(/\\/g, "/");
-    return posixBase.endsWith("/") ? `${posixBase}${clean}` : `${posixBase}/${clean}`;
+
+    let resolved: string;
+    if (clean.startsWith("/")) {
+      resolved = clean;
+    } else {
+      resolved = posixBase.endsWith("/") ? `${posixBase}${clean}` : `${posixBase}/${clean}`;
+    }
+
+    const parts = resolved.split("/").reduce<string[]>((acc, seg) => {
+      if (seg === "..") {
+        acc.pop();
+      } else if (seg !== "" && seg !== ".") {
+        acc.push(seg);
+      }
+      return acc;
+    }, []);
+
+    const normalized = "/" + parts.join("/");
+    const baseParts = posixBase.split("/").filter((p) => p !== "" && p !== ".");
+    const normalizedBase = "/" + baseParts.join("/");
+
+    if (
+      normalizedBase !== "/" &&
+      normalized !== normalizedBase &&
+      !normalized.startsWith(normalizedBase + "/")
+    ) {
+      throw new Error(`Access denied: Path "${targetPath}" escapes remote workspace boundary "${posixBase}"`);
+    }
+
+    return normalized;
   }
 
-  public async exec(command: string, cwd?: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  public async exec(
+    command: string,
+    cwd?: string,
+    timeoutMs: number = 600000
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     await this.ensureConnected();
     const workingDir = this.normalizePosixPath(cwd || ".");
     const fullCommand = `cd ${this.escapeShellArg(workingDir)} && ${command}`;
 
-    return new Promise((resolve, reject) => {
+    const execPromise = new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
       this.sshClient!.exec(fullCommand, (err, stream) => {
         if (err) return reject(err);
 
@@ -164,6 +209,9 @@ export class SshProxyService {
           .on("close", (code: number) => {
             resolve({ stdout, stderr, exitCode: code || 0 });
           })
+          .on("error", (streamErr: Error) => {
+            reject(streamErr);
+          })
           .on("data", (data: Buffer) => {
             stdout += data.toString();
           })
@@ -171,6 +219,19 @@ export class SshProxyService {
             stderr += data.toString();
           });
       });
+    });
+
+    if (timeoutMs <= 0) return execPromise;
+
+    let timer: NodeJS.Timeout;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`SSH execution timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
+    return Promise.race([execPromise, timeoutPromise]).finally(() => {
+      clearTimeout(timer);
     });
   }
 
@@ -194,8 +255,19 @@ export class SshProxyService {
     }
 
     const buffer = await this.sftpClient!.get(target);
-    const content = buffer.toString("utf-8");
-
+    if (Buffer.isBuffer(buffer) || Array.isArray(buffer)) {
+      const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer as any);
+      const checkLength = Math.min(buf.length, 8192);
+      for (let i = 0; i < checkLength; i++) {
+        if (buf[i] === 0) {
+          throw new Error(`Cannot read binary file "${remotePath}" over SSH as text`);
+        }
+      }
+      const content = buf.toString("utf-8");
+      this.fileCache.set(target, { content, timestamp: now });
+      return content;
+    }
+    const content = String(buffer);
     this.fileCache.set(target, { content, timestamp: now });
     return content;
   }
@@ -253,14 +325,15 @@ export class SshProxyService {
 
     if (this.sshClient) {
       try {
+        this.sshClient.removeAllListeners();
         this.sshClient.end();
       } catch {}
       this.sshClient = null;
     }
   }
 
-  private escapeShellArg(arg: string): string {
-    return `'${arg.replace(/'/g, "'\\''")}'`;
+  public escapeShellArg(arg: string): string {
+    return escapeShellArg(arg);
   }
 }
 

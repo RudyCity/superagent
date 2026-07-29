@@ -288,6 +288,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
           const sshConfig = workspaceMode.parseSshTarget(cleanVal);
           if (sshConfig) {
+            const { sshProxy } = await import("../core/ssh/sshProxy.js");
+            await sshProxy.disconnect();
             workspaceMode.setSshMode(sshConfig);
             setMasterLogs([`[SYSTEM] 🔌 Switched to SSH workspace: ${sshConfig.username}@${sshConfig.host}:${sshConfig.port}${sshConfig.remoteCwd}`]);
           } else {
@@ -304,6 +306,12 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         if (fsSync.existsSync(resolvedPath)) {
           const { addTrustedDirectory } = await import("../core/config/jsonConfig.js");
           addTrustedDirectory(resolvedPath);
+
+          // Disconnect SSH proxy if active, reset to local mode
+          const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+          const { sshProxy } = await import("../core/ssh/sshProxy.js");
+          await sshProxy.disconnect();
+          workspaceMode.setLocalMode();
 
           if (setWorkingDirectory) {
             setWorkingDirectory(resolvedPath);
@@ -346,6 +354,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
           const sshConfig = workspaceMode.parseSshTarget(pathInput);
           if (sshConfig) {
+            const { sshProxy } = await import("../core/ssh/sshProxy.js");
+            await sshProxy.disconnect();
             workspaceMode.setSshMode(sshConfig);
             if (agent) agent.workingDirectory = pathInput;
             setMasterLogs([`[SYSTEM] 🔌 Added and switched to SSH workspace: ${sshConfig.username}@${sshConfig.host}:${sshConfig.port}${sshConfig.remoteCwd}`]);

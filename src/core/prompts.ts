@@ -45,6 +45,9 @@ const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE: Plain terminal text only. No ma
 
 const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify pre-action primary goal alignment + workspace limits.`;
 
+const POST_CHANGE_INTEGRITY_RULE = `- POST_CHANGE_INTEGRITY: After EVERY change, 5-dim sweep before completion:
+  GAP_SCAN (uncovered paths, stubs, missing imports) → MISSING_CHECK (error handling, validation, types, tests, docs) → BOTTLENECK_DETECT (sync-in-async, N+1, mem leaks, unbounded ops) → CROSS_REF_VALIDATE (callers, consumers, config refs, dead code) → REGRESSION_SURFACE (adjacent modules, contract breaks, side-effects). Block completion until clean.`;
+
 const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Full Chrome automation suite.
   - Bridge/Profile: remoteBridge:9223, list_chrome_profiles, launch_chrome_profile, chrome_extension_status
   - DOM/Tabs: control_browser_tab, get_active_browser_tabs, extract_page_content_markdown, capture_tab_fullpage_pdf
@@ -151,6 +154,7 @@ ${FAST_ANALYSIS_RULE}
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
 ${BROWSER_CONTROL_RULE}
+${POST_CHANGE_INTEGRITY_RULE}
 
 # LOGIC GATES
 if spawning_superagent:
@@ -181,7 +185,7 @@ if multiple_superagents_ready:
 5. MONITOR: manage_superagents.
 6. AWAIT: await_superagents.
 7. MERGE: transactional merge_superagents.
-8. VALIDATE: build → test.
+8. VALIDATE: build → test → POST_CHANGE_INTEGRITY sweep.
 9. WALKTHROUGH: Write verification results.
 10. CLEANUP: git_worktree prune.
 11. REPORT: Plain text summary.
@@ -221,6 +225,7 @@ ${FAST_ANALYSIS_RULE}
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
 ${BROWSER_CONTROL_RULE}
+${POST_CHANGE_INTEGRITY_RULE}
 
 # LOGIC GATES
 if spawning_subagent:
@@ -243,8 +248,9 @@ if verification_failed:
 5. SELF-VERIFY (MANDATORY):
    - Build: Run build. Fix ALL errors.
    - Test: Run suite. ALL pass.
+   - Integrity: POST_CHANGE_INTEGRITY 5-dim sweep. Fix ALL findings.
    - Red Team: Stress edge cases, zero placeholders.
-   - NO completion until build+test pass.
+   - NO completion until build+test+integrity pass.
 6. SAVE: Commit to ${branch} only on handoff/finalization.
 7. REPORT: Exact format below.
 
@@ -259,6 +265,7 @@ SUPERAGENT REPORT
 - Acceptance: [criteria + result]
 - Build: [passed/failed]
 - Tests: [passed/failed/count]
+- Integrity: [GAP_SCAN|MISSING_CHECK|BOTTLENECK|CROSS_REF|REGRESSION: clean/issues]
 - Critique: [gaps, edge cases]
 - Confidence: [High/Medium/Low]
 - Bump: [patch/minor/major — reason]
@@ -333,8 +340,9 @@ if compile_or_test_error:
 # SELF-VERIFY (MANDATORY)
 1. Build: Run build. Fix ALL errors.
 2. Test: Run suite. Fix ALL failures.
-3. Red Team: Edge cases, contracts, zero placeholders.
-4. NO completion until build+test pass.
+3. Integrity: POST_CHANGE_INTEGRITY 5-dim sweep. Fix ALL findings.
+4. Red Team: Edge cases, contracts, zero placeholders.
+5. NO completion until build+test+integrity pass.
 
 # REPORT
 SUBAGENT REPORT
@@ -345,6 +353,7 @@ SUBAGENT REPORT
 - Findings: [impl details]
 - Build: [passed/failed]
 - Tests: [passed/failed/count]
+- Integrity: [sweep results per dimension]
 - Critique: [edge cases, regression risks]
 - Confidence: [High/Medium/Low]
 - Status: [Completed/Blocked/Next]
@@ -375,6 +384,7 @@ if decision_point: CALL ask_question()
 3. Performance (Team2): Complexity, blocking calls, N+1.
 4. Pragmatism (Team6): Veto over-engineering.
 5. Build+Tests (Team4): Verify empirically.
+6. Integrity (POST_CHANGE_INTEGRITY): GAP_SCAN, MISSING_CHECK, BOTTLENECK_DETECT, CROSS_REF_VALIDATE, REGRESSION_SURFACE.
 
 # SEVERITY
 - [CRITICAL]: Must fix (breaks functionality, security, test failure)
@@ -431,6 +441,7 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 - SKILL_CHECK: get_skills(query). If found: use_skill(name).
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
+${POST_CHANGE_INTEGRITY_RULE}
 
 # LOGIC GATES
 if decision_point: CALL ask_question()
@@ -463,6 +474,7 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 ${CONTEXT_ANCHOR_RULE}
+${POST_CHANGE_INTEGRITY_RULE}
 
 # LOGIC GATES
 if decision_point: CALL ask_question()

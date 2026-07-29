@@ -123,11 +123,11 @@ export const workspaceCommand: SlashCommand = {
       if (sshConfig || targetArg.startsWith("ssh:") || targetArg.includes(":@")) {
         const parsed = sshConfig || workspaceMode.parseSshTarget(targetArg.split(" ")[0]);
         if (parsed) {
-          const sshUri = `ssh://${parsed.username}@${parsed.host}:${parsed.port}${parsed.remoteCwd}`;
-          addTrustedDirectory(sshUri, targetArg.split(" ")[1] || `${parsed.host}:${parsed.remoteCwd}`);
+          const originalUri = targetArg.split(" ")[0];
+          addTrustedDirectory(originalUri, targetArg.split(" ")[1] || `${parsed.host}:${parsed.remoteCwd}`);
           ctx.addLine({
             type: "system",
-            content: `Added SSH remote workspace: ${sshUri}`,
+            content: `Added SSH remote workspace: ${originalUri}`,
             timestamp: now
           });
           return;
@@ -262,9 +262,11 @@ export const workspaceCommand: SlashCommand = {
       if (isSsh) {
         const sshConfig = workspaceMode.parseSshTarget(targetPath);
         if (sshConfig) {
+          await sshProxy.disconnect();
           workspaceMode.setSshMode(sshConfig);
         }
       } else {
+        await sshProxy.disconnect();
         workspaceMode.setLocalMode();
       }
 

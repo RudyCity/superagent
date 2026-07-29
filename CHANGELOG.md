@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.619] - 2026-07-29
+
+### Features & Enhancements
+- **SSH Workspace & Tooling Enhancements**: Enhanced SSH tunnel, proxy connection handling, workspace command integration, remote file read/edit tools, and expanded test suite in `tests/sshToolsFull.test.ts`.
+
 ## [1.2.618] - 2026-07-29
 
 ### Features & Enhancements

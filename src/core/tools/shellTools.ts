@@ -14,7 +14,13 @@ import {
   formatUnknownActionError
 } from "./helpers.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
-import { sshRunCommandExecute, sshRunBackgroundProcessExecute } from "../ssh/sshCommands.js";
+import { 
+  sshRunCommandExecute, 
+  sshRunBackgroundProcessExecute,
+  sshKillBackgroundProcessExecute,
+  sshViewBackgroundProcessesExecute,
+  sshManageBackgroundProcessExecute
+} from "../ssh/sshCommands.js";
 import { 
   backgroundTasks, 
   notifyTasksChanged, 
@@ -733,6 +739,9 @@ export const killBackgroundProcessTool: Tool = {
   },
   async execute(args, cwd, signal) {
     const processId = args.processId as string;
+    if (workspaceMode.isSsh()) {
+      return await sshKillBackgroundProcessExecute(processId);
+    }
     const task = backgroundTasks.get(processId);
     if (!task) {
       return `Error: No background process found with ID "${processId}"`;
@@ -764,6 +773,9 @@ export const viewBackgroundProcessesTool: Tool = {
   },
   async execute(args, cwd, signal) {
     const processId = args.processId as string;
+    if (workspaceMode.isSsh()) {
+      return await sshViewBackgroundProcessesExecute(processId);
+    }
     if (processId) {
       const task = backgroundTasks.get(processId);
       if (!task) return `No background process found with ID "${processId}"`;
@@ -811,6 +823,10 @@ export const manageBackgroundProcessTool: Tool = {
     const action = args.action as string;
     const processId = args.processId as string;
     const input = args.input as string;
+
+    if (workspaceMode.isSsh()) {
+      return await sshManageBackgroundProcessExecute(action, processId, input);
+    }
 
     if (action === "list") {
       if (backgroundTasks.size === 0) return "No active background processes.";

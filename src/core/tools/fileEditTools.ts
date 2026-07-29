@@ -5,7 +5,7 @@ import { Tool } from "./types.js";
 import { normalizeForMatching, verifySyntax, mapNormToOrigIndices, countOccurrences, fileLockManager } from "./helpers.js";
 import { normalizePath, resolveFilePathFromArgs } from "./pathHelpers.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
-import { sshWriteToolExecute, sshEditToolExecute } from "../ssh/sshCommands.js";
+import { sshWriteToolExecute, sshEditToolExecute, sshMultiEditToolExecute } from "../ssh/sshCommands.js";
 
 function fuzzyMatch(text: string, pattern: string): boolean {
   const cleanText = text.replace(/\s+/g, ' ');
@@ -234,6 +234,12 @@ export const writeTool: Tool = {
     required: ["filePath", "content"],
   },
   async execute(args, cwd, signal) {
+    if (workspaceMode.isSsh()) {
+      const filePath = (args.filePath || args.path) as string;
+      const content = args.content as string;
+      if (!filePath || content === undefined) return "Error: Missing filePath or content";
+      return await sshWriteToolExecute(filePath, content);
+    }
     let filePath: string;
     try {
       const resolved = resolveFilePathFromArgs(args, cwd);
@@ -1150,12 +1156,10 @@ export const multiReplaceFileContentTool: Tool = {
     if (workspaceMode.isSsh()) {
       const targetPath = (args.filePath as string) || ((args.files as any[])?.[0]?.filePath);
       const chunks = (args.chunks as any[]) || ((args.files as any[])?.[0]?.chunks);
-      const targetStr = chunks?.[0]?.targetContent;
-      const replacementStr = chunks?.[0]?.replacementContent;
-      if (!targetPath || targetStr === undefined || replacementStr === undefined) {
+      if (!targetPath || !Array.isArray(chunks) || chunks.length === 0) {
         return "Error: Missing filePath or chunks for SSH multi_replace_file_content";
       }
-      return await sshEditToolExecute(targetPath, targetStr, replacementStr);
+      return await sshMultiEditToolExecute(targetPath, chunks);
     }
     interface Chunk {
       targetContent: string;

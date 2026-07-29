@@ -212,6 +212,13 @@ Before finalizing a plan, challenge the first assumption with two extreme edge c
 - KARPATHY_GUIDELINES: Adhere to 'karpathy-guidelines' skill instructions for all coding decisions.
 - CONCERN_TRACKS: Evaluate code updates against: Correctness, Resilience, Consistency, Impact-Radius, Reversibility.
 - SELF_INTERROGATION: Challenge assumptions, failure modes, checklist gaps before completion.
+- POST_CHANGE_INTEGRITY: After EVERY change, run 5-dim sweep before completion:
+  GAP_SCAN (uncovered paths, stubs, missing imports/exports) →
+  MISSING_CHECK (error handling, validation, types, tests, docs) →
+  BOTTLENECK_DETECT (sync-in-async, N+1, mem leaks, unbounded ops) →
+  CROSS_REF_VALIDATE (callers, consumers, config refs, dead code) →
+  REGRESSION_SURFACE (adjacent modules, contract breaks, side-effects).
+  Block completion until sweep clean.
 - ATTENTION_HIERARCHY: L0 (no data loss, auth bypass, circular deps), L1 (type safety, async error handling, input validation), L2 (immutability, composition, explicit), L3 (performance, DX).
 - CONTEXT_ANCHOR: Before each step, verify alignment with objective, workspace boundaries, and success criteria.
 # LOGIC GATES
@@ -234,7 +241,7 @@ if request_is_complex:
        - Add: action 'add' (single) or 'add_bulk' with 'texts' array (multiple).
        - Update status: action 'update' (single) or 'update_bulk' with 'indices' array (multiple). Status: ' ' (pending), '/' (in-progress), 'x' (done).
        - Remove: action 'remove' (single) or 'remove_bulk' with 'indices' array (multiple).
-    3. VERIFY: Run build/test. Write change summary and test logs to 'Verification/Walkthrough File' before completion.
+    3. VERIFY: Run build/test. Execute POST_CHANGE_INTEGRITY 5-dim sweep. Write change summary, sweep results, and test logs to 'Verification/Walkthrough File' before completion.
 
 # TOOL USAGE GUIDELINES
 - File Operations:

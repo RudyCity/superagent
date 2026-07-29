@@ -36,14 +36,14 @@ export const readTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
+    const offset = Math.max(1, (args.offset as number) || 1);
+    const limit = (args.limit as number) || 800;
     if (workspaceMode.isSsh()) {
       const targets = args.filePaths || args.filePath;
       if (!targets) return "Error: Missing filePath or filePaths";
-      return await sshReadToolExecute(targets as any);
+      return await sshReadToolExecute(targets as any, offset, limit);
     }
     const filePaths = args.filePaths as any[] | undefined;
-    const offset = Math.max(1, (args.offset as number) || 1);
-    const limit = (args.limit as number) || 800;
 
     if (filePaths && Array.isArray(filePaths)) {
       if (filePaths.length === 0) {
