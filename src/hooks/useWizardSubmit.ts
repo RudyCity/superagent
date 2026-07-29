@@ -221,6 +221,11 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
     if (activeWizard.type === "workspace") {
       if (activeWizard.step === 1) {
         if (value === "❌ Exit Wizard") {
+          addLine({
+            type: "system",
+            content: "Workspace wizard closed.",
+            timestamp: now,
+          });
           setActiveWizard(null);
           setWizardOptions([]);
           setWizardSelectedIndex(0);
@@ -423,6 +428,11 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
       if (activeWizard.step === 3) {
         const pathInput = value.trim();
         if (!pathInput) {
+          addLine({
+            type: "system",
+            content: "Workspace addition cancelled.",
+            timestamp: now,
+          });
           setActiveWizard(null);
           setWizardOptions([]);
           setWizardSelectedIndex(0);
@@ -495,6 +505,11 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
         }
 
         if (!targetWs) {
+          addLine({
+            type: "system",
+            content: "Workspace removal cancelled.",
+            timestamp: now,
+          });
           setActiveWizard(null);
           setWizardOptions([]);
           setWizardSelectedIndex(0);
@@ -519,7 +534,13 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           removeTrustedDirectory(targetWs);
           addLine({
             type: "system",
-            content: `🗑️ Removed workspace from trusted list: ${targetWs}`,
+            content: `🗑️ Successfully removed workspace from trusted list: ${targetWs}`,
+            timestamp: now,
+          });
+        } else {
+          addLine({
+            type: "system",
+            content: "Cancelled workspace removal.",
             timestamp: now,
           });
         }
