@@ -9,9 +9,9 @@ vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
 import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js";
 import { Agent } from "../src/core/agent.js";
-import { getTrustedDirectories, clearModelConfigCache, addTrustedDirectory } from "../src/core/config/jsonConfig.js";
+import { getTrustedDirectories, clearModelConfigCache, addTrustedDirectory, removeTrustedDirectory } from "../src/core/config/jsonConfig.js";
 
-describe("Slash Command: /workspace and /w", () => {
+describe("Slash Command: /workspace and /w (Interactive Wizard)", () => {
   let addedLines: ChatLine[] = [];
   let activeWizard: any = null;
   let wizardOptions: string[] = [];
@@ -64,13 +64,16 @@ describe("Slash Command: /workspace and /w", () => {
     } catch {}
   });
 
-  it("should trigger wizard dialog when run without arguments (/workspace and /w)", async () => {
+  it("should trigger wizard dialog when run with or without arguments (/workspace and /w)", async () => {
     await handleSlashCommand("/workspace", mockCtx as any);
     expect(activeWizard).toBeDefined();
     expect(activeWizard.type).toBe("workspace");
     expect(activeWizard.step).toBe(1);
     expect(wizardOptions.length).toBeGreaterThan(0);
-    expect(wizardOptions[wizardOptions.length - 1]).toBe("➕ Add a new workspace...");
+    expect(wizardOptions).toContain("➕ Add a new workspace...");
+    expect(wizardOptions).toContain("🗑️ Remove a workspace...");
+    expect(wizardOptions).toContain("📊 View workspace status");
+    expect(wizardOptions).toContain("❌ Exit Wizard");
 
     activeWizard = null;
     await handleSlashCommand("/w", mockCtx as any);
@@ -79,64 +82,17 @@ describe("Slash Command: /workspace and /w", () => {
     expect(activeWizard.step).toBe(1);
   });
 
-  it("should list workspaces", async () => {
-    await handleSlashCommand("/workspace list", mockCtx as any);
-    expect(addedLines.length).toBeGreaterThan(0);
-    expect(addedLines[0].content).toContain("Registered Workspaces:");
-  });
-
-  it("should add a workspace path and update trusted directories", async () => {
+  it("should add and remove trusted workspace directories using config functions", async () => {
     const dummyDir = path.join(tempHome, "dummy-workspace");
     fs.mkdirSync(dummyDir, { recursive: true });
 
-    await handleSlashCommand(`/workspace add ${dummyDir}`, mockCtx as any);
-    expect(addedLines.some(l => l.content.includes("Added workspace"))).toBe(true);
-
-    const trusted = getTrustedDirectories();
+    addTrustedDirectory(dummyDir, "Dummy Workspace");
+    let trusted = getTrustedDirectories();
     expect(trusted.map(d => path.resolve(d))).toContain(path.resolve(dummyDir));
-  });
 
-  it("should fail to add a non-existent path", async () => {
-    const nonExistent = path.join(tempHome, "does-not-exist");
-    await handleSlashCommand(`/workspace add ${nonExistent}`, mockCtx as any);
-    expect(addedLines.some(l => l.content.includes("Error: Path does not exist"))).toBe(true);
-  });
-
-  it("should switch working directory using select/use command", async () => {
-    const switchDir = path.join(tempHome, "switch-workspace");
-    fs.mkdirSync(switchDir, { recursive: true });
-
-    await handleSlashCommand(`/workspace use ${switchDir}`, mockCtx as any);
-    expect(addedLines.some(l => l.content.includes("Switched workspace to"))).toBe(true);
-    expect(addedLines.some(l => l.content.includes("Started a new chat session"))).toBe(true);
-    expect(workingDir).toBe(path.resolve(switchDir));
-    expect(testAgent?.workingDirectory).toBe(path.resolve(switchDir));
-  });
-
-  it("should switch workspace using numerical index", async () => {
-    const dir1 = path.join(tempHome, "ws-index-1");
-    const dir2 = path.join(tempHome, "ws-index-2");
-    fs.mkdirSync(dir1, { recursive: true });
-    fs.mkdirSync(dir2, { recursive: true });
-
-    addTrustedDirectory(dir1);
-    addTrustedDirectory(dir2);
-
-    const trusted1 = getTrustedDirectories().map(d => path.resolve(d));
-    const allDirs1 = [...new Set([workingDir, ...trusted1])];
-    const idx1 = allDirs1.indexOf(path.resolve(dir1)) + 1;
-
-    await handleSlashCommand(`/workspace use ${idx1}`, mockCtx as any);
-    expect(workingDir).toBe(path.resolve(dir1));
-    expect(testAgent?.workingDirectory).toBe(path.resolve(dir1));
-
-    const trusted2 = getTrustedDirectories().map(d => path.resolve(d));
-    const allDirs2 = [...new Set([workingDir, ...trusted2])];
-    const idx2 = allDirs2.indexOf(path.resolve(dir2)) + 1;
-
-    await handleSlashCommand(`/w use ${idx2}`, mockCtx as any);
-    expect(workingDir).toBe(path.resolve(dir2));
-    expect(testAgent?.workingDirectory).toBe(path.resolve(dir2));
+    removeTrustedDirectory(dummyDir);
+    trusted = getTrustedDirectories();
+    expect(trusted.map(d => path.resolve(d))).not.toContain(path.resolve(dummyDir));
   });
 
   it("should update agent working directory and generate distinct history file paths when workspace switches", async () => {
@@ -145,40 +101,15 @@ describe("Slash Command: /workspace and /w", () => {
     fs.mkdirSync(dirA, { recursive: true });
     fs.mkdirSync(dirB, { recursive: true });
 
-    await handleSlashCommand(`/workspace use ${dirA}`, mockCtx as any);
+    mockCtx.setWorkingDirectory(dirA);
     expect(testAgent?.workingDirectory).toBe(path.resolve(dirA));
     const historyPathA = (testAgent as any).resolveHistoryFilePath(false) || "";
     expect(historyPathA).toContain("single");
 
-    await handleSlashCommand(`/workspace use ${dirB}`, mockCtx as any);
+    mockCtx.setWorkingDirectory(dirB);
     expect(testAgent?.workingDirectory).toBe(path.resolve(dirB));
     const historyPathB = (testAgent as any).resolveHistoryFilePath(false) || "";
     expect(historyPathB).toContain("single");
     expect(historyPathA).not.toEqual(historyPathB);
   });
-
-  it("should verify tool execution uses updated agent working directory as CWD", async () => {
-    const customWorkspace = path.join(tempHome, "tool-cwd-workspace");
-    fs.mkdirSync(customWorkspace, { recursive: true });
-
-    await handleSlashCommand(`/workspace use ${customWorkspace}`, mockCtx as any);
-    expect(testAgent?.workingDirectory).toBe(path.resolve(customWorkspace));
-
-    // Verify tools obtain workingDirectory from agent
-    const targetCwd = testAgent?.workingDirectory || process.cwd();
-    expect(targetCwd).toBe(path.resolve(customWorkspace));
-  });
-
-  it("should add a workspace with a custom name and list it with the name", async () => {
-    const dummyDir = path.join(tempHome, "custom-name-workspace");
-    fs.mkdirSync(dummyDir, { recursive: true });
-
-    await handleSlashCommand(`/workspace add "${dummyDir}" "My Super Project"`, mockCtx as any);
-    expect(addedLines.some(l => l.content.includes('Added workspace "My Super Project"'))).toBe(true);
-
-    addedLines = [];
-    await handleSlashCommand("/workspace list", mockCtx as any);
-    expect(addedLines.some(l => l.content.includes("[My Super Project]"))).toBe(true);
-  });
 });
-

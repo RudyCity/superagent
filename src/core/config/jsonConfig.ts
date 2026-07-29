@@ -3,7 +3,7 @@ import path from "path";
 import { execa } from "execa";
 import { threadId } from "worker_threads";
 import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir, ensureProtocol, getWorkspaceId } from "./paths.js";
-import { saveWorkspaceToDb, getWorkspacesFromDb, getWorkspaceFromDb } from "../storage/historyDb.js";
+import { saveWorkspaceToDb, getWorkspacesFromDb, getWorkspaceFromDb, deleteWorkspaceFromDb } from "../storage/historyDb.js";
 
 export interface ProviderProfile {
   id: string;
@@ -1077,6 +1077,12 @@ export function addTrustedDirectory(dirPath: string, name?: string): void {
     name,
     isTrusted: true
   });
+}
+
+export function removeTrustedDirectory(dirPath: string): void {
+  const resolvedPath = dirPath.startsWith("ssh:") ? dirPath : path.resolve(dirPath);
+  const id = getWorkspaceId(resolvedPath);
+  deleteWorkspaceFromDb(id);
 }
 
 export function isDirectoryTrusted(dirPath: string): boolean {

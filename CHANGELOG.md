@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.620] - 2026-07-29
+
+### Features & Refactoring
+- **Unified Workspace Wizard**: Deprecated subcommands for `/workspace` (`/w`) in favor of an interactive multi-step Ink UI wizard supporting listing, switching, creating/adding, deleting/removing, and status inspection.
+- **Trusted Workspace Removal**: Added `removeTrustedDirectory` helper to clean up untrusted or deleted workspace entries in `jsonConfig.ts` and SQLite history database.
+
 ## [1.2.619] - 2026-07-29
 
 ### Features & Enhancements

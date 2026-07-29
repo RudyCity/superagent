@@ -837,11 +837,11 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
           const searchTitle = searchQuery
             ? `📁 WORKSPACE MANAGER — 🔍 "${searchQuery}" (${filteredOptions.length}/${wizardOptions.length} results):`
-            : `📁 WORKSPACE MANAGER — Select workspace (type to filter, ↑/↓ Navigate, Enter: Select, Esc: Cancel):`;
+            : `📁 WORKSPACE MANAGER — Select action or workspace (type to filter, ↑/↓ Navigate, Enter: Select, Esc: Cancel):`;
           return (
             <WizardDialog
               title={searchTitle}
-              description="Select a workspace directory to switch to:"
+              description="Select a workspace directory to switch to, or choose an action:"
               borderColor="cyan"
               options={filteredOptions.length > 0 ? filteredOptions : ["(no results)"]}
               selectedIndex={clampedIndex}
@@ -853,10 +853,41 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
         {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 2 && (
           <WizardDialog
             title="📁 ADD WORKSPACE — Enter workspace path (Type & Enter, Esc: Back):"
-            description="Enter the directory path for the workspace (relative or absolute):"
+            description="Enter directory path or SSH target (e.g. C:\projects\my-app or ssh://user@host/path):"
             borderColor="cyan"
             options={[]}
             selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 3 && wizardOptions.length > 0 && (() => {
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+          const searchTitle = searchQuery
+            ? `🗑️ REMOVE WORKSPACE — 🔍 "${searchQuery}" (${filteredOptions.length}/${wizardOptions.length} results):`
+            : `🗑️ REMOVE WORKSPACE — Select workspace to remove (↑/↓ Navigate, Enter: Select, Esc: Back):`;
+          return (
+            <WizardDialog
+              title={searchTitle}
+              description="Select a workspace from the list below to untrust and remove:"
+              borderColor="red"
+              options={filteredOptions.length > 0 ? filteredOptions : ["(no results)"]}
+              selectedIndex={clampedIndex}
+              maxVisible={10}
+            />
+          );
+        })()}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 4 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title="🗑️ REMOVE WORKSPACE — Are you sure?"
+            description={`Remove "${activeWizard.data.targetWorkspace || ""}" from trusted workspaces?`}
+            borderColor="red"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
           />
         )}
 

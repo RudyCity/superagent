@@ -220,6 +220,14 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
 
     if (activeWizard.type === "workspace") {
       if (activeWizard.step === 1) {
+        if (value === "❌ Exit Wizard") {
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
         if (value === "➕ Add a new workspace...") {
           setActiveWizard({
             type: "workspace",
@@ -232,18 +240,111 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        const cleanVal = value.replace(/^\*\s*\[active\]\s*/i, "").replace(/^📁\s*/, "").replace(/\s*\(active\)$/i, "").trim();
-        const resolvedPath = path.resolve(cleanVal);
+        if (value === "🗑️ Remove a workspace...") {
+          const { getTrustedDirectories } = await import("../core/config/jsonConfig.js");
+          const { getWorkspacesFromDb } = await import("../core/storage/historyDb.js");
+          const trustedDirs = getTrustedDirectories();
+          const dbWorkspaces = getWorkspacesFromDb();
+          const workspacesMap = new Map(dbWorkspaces.map(w => [path.resolve(w.path), w]));
+          const currentCwd = path.resolve(agentRef.current?.workingDirectory || process.cwd());
 
-        if (fs.existsSync(resolvedPath)) {
-          import("../core/config/jsonConfig.js").then(({ addTrustedDirectory }) => {
-            addTrustedDirectory(resolvedPath);
-          }).catch(() => {});
+          const removeOptions = trustedDirs.map((dir) => {
+            const cleanDir = dir.startsWith("ssh:") ? dir : path.resolve(dir);
+            const wsRecord = workspacesMap.get(cleanDir);
+            const wsName = wsRecord?.name || "";
+            const namePart = wsName ? ` [${wsName}]` : "";
+            const isCurrent = cleanDir === currentCwd;
+            const currentBadge = isCurrent ? " (active)" : "";
+            return `📁${namePart} ${cleanDir}${currentBadge}`;
+          });
+
+          if (removeOptions.length === 0) {
+            addLine({
+              type: "system",
+              content: "No stored workspaces to remove.",
+              timestamp: now,
+            });
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            return;
+          }
+
+          setActiveWizard({
+            type: "workspace",
+            step: 3,
+            data: {},
+          });
+          setWizardOptions(removeOptions);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        if (value === "📊 View workspace status") {
+          const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+          const { sshProxy } = await import("../core/ssh/sshProxy.js");
+          if (!workspaceMode.isSsh()) {
+            const localPath = agentRef.current?.workingDirectory || process.cwd();
+            addLine({
+              type: "system",
+              content: `📁 Local Workspace Status:\n- Mode: Local Disk\n- Active Path: ${localPath}`,
+              timestamp: now,
+            });
+          } else {
+            try {
+              const metrics = await sshProxy.getSystemMetrics();
+              addLine({
+                type: "system",
+                content: `🌐 SSH Remote Workspace Status:\n- Target Host: ${metrics.user}@${metrics.host}\n- Remote OS: ${metrics.osName}\n- System Uptime: ${metrics.uptime}\n- RAM Usage: ${metrics.ramUsage}\n- Disk Usage: ${metrics.diskUsage}\n- SSH Latency: ${metrics.pingMs}ms\n- Active Remote Directory: ${workspaceMode.getConfig()?.remoteCwd}`,
+                timestamp: now,
+              });
+            } catch (err: any) {
+              addLine({
+                type: "system",
+                content: `Error fetching SSH remote metrics: ${err.message}`,
+                timestamp: now,
+              });
+            }
+          }
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
+        }
+
+        let cleanVal = value.replace(/^\*\s*\[active\]\s*/i, "").replace(/^📁\s*/, "").replace(/\s*\(active\)$/i, "").trim();
+        // Strip custom workspace name bracket if present e.g. "[name] /path/to/dir" -> "/path/to/dir"
+        if (cleanVal.startsWith("[")) {
+          const bracketEnd = cleanVal.indexOf("]");
+          if (bracketEnd !== -1) {
+            cleanVal = cleanVal.substring(bracketEnd + 1).trim();
+          }
+        }
+        const isSsh = cleanVal.startsWith("ssh:") || (cleanVal.includes("@") && (cleanVal.includes(":/") || cleanVal.includes(":")));
+        const resolvedPath = isSsh ? cleanVal : path.resolve(cleanVal);
+
+        if (isSsh || fs.existsSync(resolvedPath)) {
+          const { addTrustedDirectory } = await import("../core/config/jsonConfig.js");
+          const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+          const { sshProxy } = await import("../core/ssh/sshProxy.js");
+          addTrustedDirectory(resolvedPath);
+
+          if (isSsh) {
+            const sshConfig = workspaceMode.parseSshTarget(resolvedPath);
+            if (sshConfig) {
+              await sshProxy.disconnect();
+              workspaceMode.setSshMode(sshConfig);
+            }
+          } else {
+            await sshProxy.disconnect();
+            workspaceMode.setLocalMode();
+          }
 
           if (setWorkingDirectory) {
             setWorkingDirectory(resolvedPath);
           } else {
-            process.chdir(resolvedPath);
+            if (!isSsh) process.chdir(resolvedPath);
             if (agentRef.current) agentRef.current.workingDirectory = resolvedPath;
           }
 
@@ -284,17 +385,30 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
         }
 
         const currentCwd = agentRef.current?.workingDirectory || process.cwd();
-        const resolvedPath = path.resolve(currentCwd, pathInput);
+        const isSsh = pathInput.startsWith("ssh:") || (pathInput.includes("@") && (pathInput.includes(":/") || pathInput.includes(":")));
+        const resolvedPath = isSsh ? pathInput : path.resolve(currentCwd, pathInput);
 
-        if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
-          import("../core/config/jsonConfig.js").then(({ addTrustedDirectory }) => {
-            addTrustedDirectory(resolvedPath);
-          }).catch(() => {});
+        if (isSsh || (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory())) {
+          const { addTrustedDirectory } = await import("../core/config/jsonConfig.js");
+          const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+          const { sshProxy } = await import("../core/ssh/sshProxy.js");
+          addTrustedDirectory(resolvedPath);
+
+          if (isSsh) {
+            const sshConfig = workspaceMode.parseSshTarget(resolvedPath);
+            if (sshConfig) {
+              await sshProxy.disconnect();
+              workspaceMode.setSshMode(sshConfig);
+            }
+          } else {
+            await sshProxy.disconnect();
+            workspaceMode.setLocalMode();
+          }
 
           if (setWorkingDirectory) {
             setWorkingDirectory(resolvedPath);
           } else {
-            process.chdir(resolvedPath);
+            if (!isSsh) process.chdir(resolvedPath);
             if (agentRef.current) agentRef.current.workingDirectory = resolvedPath;
           }
 
@@ -323,6 +437,50 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           });
           setInput("");
         }
+        return;
+      }
+
+      if (activeWizard.step === 3) {
+        let targetWs = value.replace(/^📁\s*/, "").replace(/\s*\(active\)$/i, "").trim();
+        if (targetWs.startsWith("[")) {
+          const bracketEnd = targetWs.indexOf("]");
+          if (bracketEnd !== -1) {
+            targetWs = targetWs.substring(bracketEnd + 1).trim();
+          }
+        }
+
+        if (!targetWs) {
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
+        }
+
+        setActiveWizard({
+          type: "workspace",
+          step: 4,
+          data: { targetWorkspace: targetWs },
+        });
+        setWizardOptions(["Yes, remove this workspace", "No, cancel"]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
+
+      if (activeWizard.step === 4) {
+        if (value === "Yes, remove this workspace" && activeWizard.data.targetWorkspace) {
+          const targetWs = activeWizard.data.targetWorkspace;
+          const { removeTrustedDirectory } = await import("../core/config/jsonConfig.js");
+          removeTrustedDirectory(targetWs);
+          addLine({
+            type: "system",
+            content: `🗑️ Removed workspace from trusted list: ${targetWs}`,
+            timestamp: now,
+          });
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
         return;
       }
     }
