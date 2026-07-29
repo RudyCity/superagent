@@ -278,6 +278,39 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           return;
         }
 
+        if (value === "🗑️ Remove a workspace...") {
+          const { getTrustedDirectories } = await import("../core/config/jsonConfig.js");
+          const { getWorkspacesFromDb } = await import("../core/storage/historyDb.js");
+          const trustedDirs = getTrustedDirectories();
+          if (trustedDirs.length === 0) {
+            setMasterLogs((prev) => [...prev, "[SYSTEM] No stored workspaces to remove."].slice(-500));
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setQuery("");
+            return;
+          }
+          const dbWorkspaces = getWorkspacesFromDb();
+          const workspacesMap = new Map(dbWorkspaces.map(w => [w.path.startsWith("ssh:") ? w.path : path.resolve(w.path), w]));
+          const removeOptions = trustedDirs.map((dir) => {
+            const cleanDir = dir.startsWith("ssh:") ? dir : path.resolve(dir);
+            const wsRecord = workspacesMap.get(cleanDir);
+            const wsName = wsRecord?.name || "";
+            const namePart = wsName ? ` [${wsName}]` : "";
+            return `📁${namePart} ${cleanDir}`;
+          });
+          const removePaths = trustedDirs.map(d => d.startsWith("ssh:") ? d : path.resolve(d));
+          setActiveWizard({
+            type: "workspace",
+            step: 4,
+            data: { removePaths },
+          });
+          setWizardOptions(removeOptions);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
+        }
+
         const cleanVal = value.replace(/^\*\s*\[active\]\s*/i, "").replace(/^📁\s*/, "").replace(/\s*\(active\)$/i, "").trim();
 
         // SSH detection before path.resolve (avoids mangling ssh:// URIs on Windows)
@@ -340,6 +373,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
       if (activeWizard.step === 2) {
         const pathInput = value.trim();
         if (!pathInput) {
+          setMasterLogs((prev) => [...prev, "[SYSTEM] Workspace addition cancelled."].slice(-500));
           setActiveWizard(null);
           setWizardOptions([]);
           setWizardSelectedIndex(0);
@@ -397,6 +431,57 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           setMasterLogs((prev) => [...prev, `[ERROR] Path does not exist or is not a directory: ${resolvedPath}`].slice(-500));
           setQuery("");
         }
+        return;
+      }
+
+      if (activeWizard.step === 4) {
+        let targetWs = "";
+        const removePaths: string[] = Array.isArray(activeWizard.data?.removePaths) ? activeWizard.data.removePaths : [];
+        const match = removePaths.find(p => value.includes(p));
+        if (match) {
+          targetWs = match;
+        } else {
+          targetWs = value.replace(/^📁\s*/, "").replace(/\s*\(active\)$/i, "").trim();
+          if (targetWs.startsWith("[")) {
+            const bracketEnd = targetWs.indexOf("]");
+            if (bracketEnd !== -1) {
+              targetWs = targetWs.substring(bracketEnd + 1).trim();
+            }
+          }
+        }
+
+        if (!targetWs) {
+          setMasterLogs((prev) => [...prev, "[SYSTEM] Workspace removal cancelled."].slice(-500));
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
+        }
+
+        setActiveWizard({
+          type: "workspace",
+          step: 5,
+          data: { targetWorkspace: targetWs },
+        });
+        setWizardOptions(["Yes, remove this workspace", "No, cancel"]);
+        setWizardSelectedIndex(0);
+        setQuery("");
+        return;
+      }
+
+      if (activeWizard.step === 5) {
+        if (value === "Yes, remove this workspace" && activeWizard.data.targetWorkspace) {
+          const { removeTrustedDirectory } = await import("../core/config/jsonConfig.js");
+          removeTrustedDirectory(activeWizard.data.targetWorkspace);
+          setMasterLogs((prev) => [...prev, `[SYSTEM] 🗑️ Successfully removed workspace from trusted list: ${activeWizard.data.targetWorkspace}`].slice(-500));
+        } else {
+          setMasterLogs((prev) => [...prev, "[SYSTEM] Workspace removal cancelled."].slice(-500));
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setQuery("");
         return;
       }
     }

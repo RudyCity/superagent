@@ -3,7 +3,7 @@ import { scheduledJobs, notifyScheduleTriggered } from "./state.js";
 
 export const askQuestionTool: Tool = {
   name: "ask_question",
-  description: "Ask the user a multiple-choice question to clarify requirements or get design decisions. Returns the selected option.",
+  description: "Ask the user a question. For select/multi-select, provide options. For text/password input, leave options empty or omit.",
   parameters: {
     type: "object",
     properties: {
@@ -21,6 +21,11 @@ export const askQuestionTool: Tool = {
       isMultiSelect: {
         type: "boolean",
         description: "If true, the user can select multiple options using space and submit with Enter",
+      },
+      type: {
+        type: "string",
+        enum: ["select", "text", "password"],
+        description: "Input type: 'select' (default, multiple-choice), 'text' (free-text), 'password' (masked text). Default: select.",
       },
     },
     required: ["question", "options"],
@@ -64,7 +69,9 @@ export const askQuestionTool: Tool = {
         const qOpts = Array.isArray(qOptsRaw) ? qOptsRaw.map(o => String(o)) : [];
         const isMsRaw = q.isMultiSelect !== undefined ? q.isMultiSelect : q.is_multi_select;
         const isMs = typeof isMsRaw === "string" ? isMsRaw.toLowerCase() === "true" : !!isMsRaw;
-        return { question: qText, options: qOpts, isMultiSelect: isMs };
+        const inputTypeRaw: string = q.inputType || "";
+        const inputType: "select" | "text" | "password" | undefined = inputTypeRaw === "text" || inputTypeRaw === "password" ? inputTypeRaw : undefined;
+        return { question: qText, options: qOpts, isMultiSelect: isMs, inputType };
       });
 
       if (currentTier === "superagent" || currentTier === "subagent") {
@@ -89,7 +96,7 @@ export const askQuestionTool: Tool = {
             }
           } else if (handler) {
             try {
-              const selected = await handler(q.question, q.options, q.isMultiSelect);
+              const selected = await handler(q.question, q.options, q.isMultiSelect, undefined, q.inputType);
               answers.push(String(selected));
             } catch (err: any) {
               answers.push(`Error: ${err.message}`);
@@ -108,7 +115,8 @@ export const askQuestionTool: Tool = {
         }
         try {
           const q = normalizedQuestions[0];
-          const result = await handler(q.question, q.options, q.isMultiSelect);
+          const inputType = q.inputType;
+          const result = await handler(q.question, q.options, q.isMultiSelect, undefined, inputType);
           return `User selected option: "${result}"`;
         } catch (err: any) {
           return `Error getting user answer: ${err.message}`;
@@ -136,6 +144,9 @@ export const askQuestionTool: Tool = {
     if (isMultiSelectRaw !== undefined) {
       isMultiSelect = typeof isMultiSelectRaw === "string" ? isMultiSelectRaw.toLowerCase() === "true" : !!isMultiSelectRaw;
     }
+    let inputType: "text" | "password" | undefined = undefined;
+    const rawType = args.type as string;
+    if (rawType === "text" || rawType === "password") inputType = rawType;
 
     if (typeof rawOptionsVal === "string") {
       try {
@@ -174,7 +185,7 @@ export const askQuestionTool: Tool = {
         const role = (currentAgent as any).subagentType || (currentAgent as any).tier || "?";
         const prefix = currentTier === "superagent" ? `[Superagent "${role}"]` : `[Subagent (${role})]`;
         try {
-          const selected = await handler(`${prefix}: ${question}`, options, isMultiSelect);
+          const selected = await handler(`${prefix}: ${question}`, options, isMultiSelect, undefined, inputType);
           return `User selected option: "${selected}"`;
         } catch (err: any) {
           return `Error getting user answer: ${err.message}`;
@@ -188,7 +199,7 @@ export const askQuestionTool: Tool = {
     }
 
     try {
-      const selected = await handler(question, options, isMultiSelect);
+      const selected = await handler(question, options, isMultiSelect, undefined, inputType);
       return `User selected option: "${selected}"`;
     } catch (err: any) {
       return `Error getting user answer: ${err.message}`;

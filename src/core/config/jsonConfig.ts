@@ -1081,8 +1081,7 @@ export function addTrustedDirectory(dirPath: string, name?: string): void {
 
 export function removeTrustedDirectory(dirPath: string): void {
   const resolvedPath = dirPath.startsWith("ssh:") ? dirPath : path.resolve(dirPath);
-  const id = getWorkspaceId(resolvedPath);
-  deleteWorkspaceFromDb(id);
+  deleteWorkspaceFromDb(resolvedPath);
 }
 
 export function isDirectoryTrusted(dirPath: string): boolean {

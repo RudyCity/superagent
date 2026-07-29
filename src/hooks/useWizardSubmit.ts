@@ -47,6 +47,7 @@ export interface WizardSubmitContext {
     question: string;
     options: string[];
     resolve: (value: any) => void;
+    inputType?: "select" | "text" | "password";
   } | null;
   setPendingQuestion: React.Dispatch<React.SetStateAction<any>>;
   wizardIsLoadingModels: boolean;
@@ -294,8 +295,10 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           const { getWorkspacesFromDb } = await import("../core/storage/historyDb.js");
           const trustedDirs = getTrustedDirectories();
           const dbWorkspaces = getWorkspacesFromDb();
-          const workspacesMap = new Map(dbWorkspaces.map(w => [path.resolve(w.path), w]));
-          const currentCwd = path.resolve(agentRef.current?.workingDirectory || process.cwd());
+          const workspacesMap = new Map(dbWorkspaces.map(w => [w.path.startsWith("ssh:") ? w.path : path.resolve(w.path), w]));
+          const currentCwd = agentRef.current?.workingDirectory?.startsWith("ssh:")
+            ? agentRef.current.workingDirectory
+            : path.resolve(agentRef.current?.workingDirectory || process.cwd());
 
           const removeOptions = trustedDirs.map((dir) => {
             const cleanDir = dir.startsWith("ssh:") ? dir : path.resolve(dir);
@@ -373,7 +376,8 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           }
         }
         const isSsh = cleanVal.startsWith("ssh:") || (cleanVal.includes("@") && (cleanVal.includes(":/") || cleanVal.includes(":")));
-        const resolvedPath = isSsh ? cleanVal : path.resolve(cleanVal);
+        const currentCwd = agentRef.current?.workingDirectory || process.cwd();
+        const resolvedPath = isSsh ? cleanVal : path.resolve(currentCwd, cleanVal);
 
         if (isSsh || fs.existsSync(resolvedPath)) {
           const { addTrustedDirectory } = await import("../core/config/jsonConfig.js");
@@ -539,12 +543,20 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
         if (value === "Yes, remove this workspace" && activeWizard.data.targetWorkspace) {
           const targetWs = activeWizard.data.targetWorkspace;
           const { removeTrustedDirectory } = await import("../core/config/jsonConfig.js");
-          removeTrustedDirectory(targetWs);
-          addLine({
-            type: "system",
-            content: `🗑️ Successfully removed workspace from trusted list: ${targetWs}`,
-            timestamp: now,
-          });
+          try {
+            removeTrustedDirectory(targetWs);
+            addLine({
+              type: "system",
+              content: `🗑️ Successfully removed workspace from trusted list: ${targetWs}`,
+              timestamp: now,
+            });
+          } catch (err) {
+            addLine({
+              type: "error",
+              content: `🗑️ Failed to remove workspace: ${err instanceof Error ? err.message : String(err)}`,
+              timestamp: now,
+            });
+          }
         } else {
           addLine({
             type: "system",
@@ -565,10 +577,11 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
       if (qList && currIdx !== undefined) {
         const updatedAnswers = [...(activeWizard.answers || [])];
         updatedAnswers[currIdx] = value;
-        
+        const isPassword = pendingQuestion?.inputType === "password";
+        const displayValue = isPassword ? "•".repeat(String(value).length) : value;
         addLine({
           type: "system",
-          content: `❓ Answered: "${value}"`,
+          content: `❓ Answered: "${displayValue}"`,
           timestamp: now,
         });
         
@@ -647,9 +660,11 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
 
       if (pendingQuestion) {
         pendingQuestion.resolve(value);
+        const isPassword2 = pendingQuestion?.inputType === "password";
+        const displayValue2 = isPassword2 ? "•".repeat(String(value).length) : value;
         addLine({
           type: "system",
-          content: `❓ Answered: "${value}"`,
+          content: `❓ Answered: "${displayValue2}"`,
           timestamp: now,
         });
         setPendingQuestion(null);

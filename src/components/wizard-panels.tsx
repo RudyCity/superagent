@@ -30,6 +30,7 @@ export interface WizardPanelsProps {
     question: string;
     options: string[];
     resolve: (value: any) => void;
+    inputType?: "select" | "text" | "password";
   } | null;
   planState: string;
   planUrl: string;
@@ -151,7 +152,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
               </Box>
             )}
             <WizardDialog
-              title={activeWizard.step === 2 ? "❓ ENTER CUSTOM ANSWER (Type and press Enter):" : (activeWizard.isMultiSelect ? "❓ QUESTION FROM AGENT (Arrows: navigate, Space: select, Enter: submit):" : "❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):")}
+              title={pendingQuestion?.inputType === "password" ? "🔒 PASSWORD INPUT (Type and press Enter):" : pendingQuestion?.inputType === "text" ? "📝 TEXT INPUT (Type and press Enter):" : (activeWizard.step === 2 ? "❓ ENTER CUSTOM ANSWER (Type and press Enter):" : (activeWizard.isMultiSelect ? "❓ QUESTION FROM AGENT (Arrows: navigate, Space: select, Enter: submit):" : "❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):"))}
               description={pendingQuestion.question}
               borderColor="cyan"
               options={wizardOptions}
@@ -863,7 +864,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
         {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 3 && (
           <WizardDialog
             title="📁 ADD WORKSPACE — Enter workspace path (Type & Enter, Esc: Back):"
-            description="Enter directory path or SSH target (e.g. C:\projects\my-app or ssh://user@host/path):"
+            description="Enter directory path or SSH target (e.g. C:\\projects\\my-app, ssh://user@host:port/path?key=key.pem):"
             borderColor="cyan"
             options={[]}
             selectedIndex={0}

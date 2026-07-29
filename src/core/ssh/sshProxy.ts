@@ -4,6 +4,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { SshWorkspaceConfig, workspaceMode } from "./workspaceMode.js";
+import { getActiveQuestionHandler } from "../tools/state.js";
 
 export interface SshSystemMetrics {
   host: string;
@@ -33,6 +34,36 @@ export class SshProxyService {
 
   public setPasswordHandler(handler: () => Promise<string>) {
     this.passwordHandler = handler;
+  }
+
+  public clearPasswordHandler() {
+    this.passwordHandler = undefined;
+  }
+
+  private async resolvePassword(): Promise<string> {
+    if (this.passwordHandler) {
+      return this.passwordHandler();
+    }
+    const handler = getActiveQuestionHandler();
+    if (!handler) {
+      throw new Error(
+        "SSH password required but no question handler is registered. Use sshProxy.setPasswordHandler() first."
+      );
+    }
+    const host = this.config?.host ?? "unknown host";
+    const user = this.config?.username ?? "unknown user";
+    const result = await handler(
+      `🔐 SSH password required for ${user}@${host}:`,
+      [],
+      false,
+      undefined,
+      "password"
+    );
+    if (Array.isArray(result)) {
+      if (result.length === 0) return "";
+      return String(result[0] ?? "");
+    }
+    return String(result ?? "");
   }
 
   public clearCache() {
@@ -88,13 +119,14 @@ export class SshProxyService {
             .connect(connectConfig);
         });
       } catch (err: any) {
-        if (!config.password && this.passwordHandler && err.message.includes("authentication")) {
-          const promptPassword = await this.passwordHandler();
+        const canPrompt = !config.password && err.message.includes("authentication");
+        if (canPrompt) {
+          const promptPassword = await this.resolvePassword();
           if (promptPassword) {
             config.password = promptPassword;
             connectConfig.password = promptPassword;
             delete connectConfig.privateKey;
-            
+
             await new Promise<void>((resolve, reject) => {
               const client = new Client();
               client

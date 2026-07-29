@@ -114,11 +114,13 @@ export interface QuestionItem {
   question: string;
   options: string[];
   isMultiSelect?: boolean;
+  inputType?: "select" | "text" | "password";
 }
 
 export type QuestionHandler = (
   question: string | QuestionItem[],
   options?: string[],
   isMultiSelect?: boolean,
-  initialCheckedIndices?: number[]
+  initialCheckedIndices?: number[],
+  inputType?: "select" | "text" | "password"
 ) => Promise<string | string[]>;

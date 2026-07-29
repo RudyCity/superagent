@@ -73,7 +73,7 @@ describe("ask_question and ReplacementChunks robustness", () => {
         process.cwd()
       );
 
-      expect(questionHandler).toHaveBeenCalledWith("Do you agree?", ["Yes", "No"], false);
+      expect(questionHandler).toHaveBeenCalledWith("Do you agree?", ["Yes", "No"], false, undefined, undefined);
       expect(result).toBe("User selected option: \"Yes\"");
     });
 

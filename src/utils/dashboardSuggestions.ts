@@ -194,7 +194,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       const possibilities = [
         `${parts[0]} status`,
         `${parts[0]} add`,
-        `${parts[0]} add ssh://user@host/path`,
+        `${parts[0]} add ssh://user@host:port/path?key=key.pem`,
         `${parts[0]} use`
       ];
       return filterSuggestions(possibilities, query);

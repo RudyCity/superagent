@@ -51,13 +51,14 @@ export class ToolExecutor {
               question: String(qObj.question || ""),
               options: qOpts,
               isMultiSelect: !!(qObj.is_multi_select ?? qObj.isMultiSelect),
+              inputType: qObj.inputType as "select" | "text" | "password" | undefined,
             };
           });
 
           if (normalizedQuestions.length === 1) {
             try {
               const q = normalizedQuestions[0];
-              const selected = await (agent as any).onQuestion(q.question, q.options, q.isMultiSelect);
+              const selected = await (agent as any).onQuestion(q.question, q.options, q.isMultiSelect, undefined, q.inputType);
               const toolResult: ToolResult = {
                 toolCallId: tc.id,
                 name: tc.name,
@@ -105,6 +106,8 @@ export class ToolExecutor {
         let question = tc.args.question as string || "";
         let rawOptionsVal = tc.args.options;
         let isMultiSelect = tc.args.isMultiSelect as boolean | undefined;
+        let inputType = tc.args.type as string | undefined;
+        inputType = inputType === "text" || inputType === "password" ? inputType : undefined;
 
         const rawOptions = Array.isArray(rawOptionsVal)
           ? rawOptionsVal
@@ -120,7 +123,7 @@ export class ToolExecutor {
           return String(o);
         });
         try {
-          const selected = await (agent as any).onQuestion(question, options, isMultiSelect);
+          const selected = await (agent as any).onQuestion(question, options, isMultiSelect, undefined, inputType);
           const toolResult: ToolResult = {
             toolCallId: tc.id,
             name: tc.name,

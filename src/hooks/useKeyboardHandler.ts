@@ -2040,6 +2040,20 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           // Step 1 and Step 10: fall through to cancel wizard below
         }
 
+        if (activeWizard.type === "workspace") {
+          setActiveWizard({ type: "workspace", step: 1, data: {} });
+          setWizardOptions([
+            "📁 Select & Switch Workspace...",
+            "➕ Add a new workspace...",
+            "🗑️ Remove a workspace...",
+            "📊 View workspace status",
+            "❌ Exit Wizard",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
         if (activeWizard.step !== 1) {
           const backOption = wizardOptions.find(opt => {
             const trimmed = opt.trim();

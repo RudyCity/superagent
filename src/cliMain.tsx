@@ -127,7 +127,7 @@ export async function runCli() {
         process.exit(1);
       }
     } else {
-      console.error(`Invalid --workspace-ssh format. Use: user@host[:port]:/remote/path or ssh://user@host/path`);
+      console.error(`Invalid --workspace-ssh format. Use: user@host[:port]:/remote/path or ssh://user@host[:port]/path?key=key.pem`);
       process.exit(1);
     }
   }

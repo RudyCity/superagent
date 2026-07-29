@@ -139,6 +139,7 @@ export function App({
     question: string;
     options: string[];
     resolve: (value: any) => void;
+    inputType?: "select" | "text" | "password";
   } | null>(null);
 
   const [lastTabPrefix, setLastTabPrefix] = useState<string | null>(null);
@@ -1382,6 +1383,8 @@ export function App({
       if (activeWizard.step === 2) return "Enter new workspace directory path and press Enter...";
     }
     if (activeWizard.type === "question") {
+      if (pendingQuestion?.inputType === "password") return "Enter password (hidden) and press Enter...";
+      if (pendingQuestion?.inputType === "text") return "Type answer and press Enter...";
       if (activeWizard.step === 2) return "Type custom answer and press Enter...";
       return "Select option using arrows and Enter, or choose Custom...";
     }
@@ -1983,15 +1986,17 @@ export function App({
     },
     []
   );  const questionHandler: QuestionHandler = useCallback(
-    (question: string | QuestionItem[], options?: string[], isMultiSelect?: boolean, initialCheckedIndices?: number[]) => {
+    (question: string | QuestionItem[], options?: string[], isMultiSelect?: boolean, initialCheckedIndices?: number[], inputType?: "select" | "text" | "password") => {
       return new Promise<any>((resolve) => {
         if (Array.isArray(question)) {
           const questions = question;
           const answers = new Array(questions.length).fill("");
           const q0 = questions[0];
-          const hasOptions = Array.isArray(q0.options) && q0.options.length > 0;
+          const effectiveInputType = inputType || q0.inputType;
+          const isTextMode = effectiveInputType === "text" || effectiveInputType === "password";
+          const hasOptions = !isTextMode && Array.isArray(q0.options) && q0.options.length > 0;
           const allOptions = hasOptions ? [...q0.options, "Custom..."] : [];
-          setPendingQuestion({ question: q0.question, options: allOptions, resolve });
+          setPendingQuestion({ question: q0.question, options: allOptions, resolve, inputType: effectiveInputType });
           setWizardOptions(allOptions);
           setWizardSelectedIndex(0);
           setWizardSelectedSet(initialCheckedIndices ? new Set(initialCheckedIndices) : new Set());
@@ -2005,9 +2010,10 @@ export function App({
             answers,
           });
         } else {
-          const hasOptions = Array.isArray(options) && options.length > 0;
+          const isTextMode = inputType === "text" || inputType === "password";
+          const hasOptions = !isTextMode && Array.isArray(options) && options.length > 0;
           const allOptions = hasOptions ? [...options, "Custom..."] : [];
-          setPendingQuestion({ question, options: allOptions, resolve });
+          setPendingQuestion({ question, options: allOptions, resolve, inputType });
           setWizardOptions(allOptions);
           setWizardSelectedIndex(0);
           setWizardSelectedSet(initialCheckedIndices ? new Set(initialCheckedIndices) : new Set());
@@ -2842,6 +2848,7 @@ export function App({
                     isPasted={isPasted}
                     pastePrefixLength={pastePrefixLength}
                     pasteSuffixLength={pasteSuffixLength}
+                    mask={pendingQuestion?.inputType === "password" ? "•" : undefined}
                   />
                 </Box>
               </Box>

@@ -123,7 +123,7 @@ export function MultiAgentDashboard({
   autoResume?: boolean | string;
   registerLogHandler: (handler: (msg: string) => void) => void;
   registerEventHandler?: (handler: (event: any) => void) => void;
-  registerQuestionHandlerRef?: (setter: (q: string | QuestionItem[], opts?: string[], isMultiSelect?: boolean, initialCheckedIndices?: number[]) => Promise<string | string[]>) => void;
+  registerQuestionHandlerRef?: (setter: (q: string | QuestionItem[], opts?: string[], isMultiSelect?: boolean, initialCheckedIndices?: number[], inputType?: "select" | "text" | "password") => Promise<string | string[]>) => void;
 }) {
   const { exit } = useApp();
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -226,6 +226,7 @@ export function MultiAgentDashboard({
     question: string;
     options: string[];
     resolve: (value: any) => void;
+    inputType?: "select" | "text" | "password";
   } | null>(null);
   const [checkpointsList, setCheckpointsList] = useState<any[]>([]);
   const [worktreeCount, setWorktreeCount] = useState<number>(0);
@@ -421,15 +422,17 @@ export function MultiAgentDashboard({
   // Register the interactive question handler
   useEffect(() => {
     if (registerQuestionHandlerRef) {
-      registerQuestionHandlerRef(async (question, options, isMultiSelect, initialCheckedIndices) => {
+      registerQuestionHandlerRef(async (question, options, isMultiSelect, initialCheckedIndices, inputType) => {
         return new Promise<any>((resolve) => {
           if (Array.isArray(question)) {
             const questions = question;
             const answers = new Array(questions.length).fill("");
             const q0 = questions[0];
-            const hasOptions = Array.isArray(q0.options) && q0.options.length > 0;
+            const effectiveInputType = inputType || q0.inputType;
+            const isTextMode = effectiveInputType === "text" || effectiveInputType === "password";
+            const hasOptions = !isTextMode && Array.isArray(q0.options) && q0.options.length > 0;
             const allOptions = hasOptions ? [...q0.options, "Custom..."] : [];
-            setPendingQuestion({ question: q0.question, options: allOptions, resolve });
+            setPendingQuestion({ question: q0.question, options: allOptions, resolve, inputType: effectiveInputType });
             setWizardOptions(allOptions);
             setWizardSelectedIndex(0);
             setWizardSelectedSet(initialCheckedIndices ? new Set(initialCheckedIndices) : new Set());
@@ -443,9 +446,10 @@ export function MultiAgentDashboard({
               answers,
             });
           } else {
-            const hasOptions = Array.isArray(options) && options.length > 0;
+            const isTextMode = inputType === "text" || inputType === "password";
+            const hasOptions = !isTextMode && Array.isArray(options) && options.length > 0;
             const allOptions = hasOptions ? [...options, "Custom..."] : [];
-            setPendingQuestion({ question, options: allOptions, resolve });
+            setPendingQuestion({ question, options: allOptions, resolve, inputType });
             setWizardOptions(allOptions);
             setWizardSelectedIndex(0);
             setWizardSelectedSet(initialCheckedIndices ? new Set(initialCheckedIndices) : new Set());
@@ -1497,6 +1501,7 @@ export function MultiAgentDashboard({
                       pastePrefixLength={pastePrefixLength}
                       pasteSuffixLength={pasteSuffixLength}
                       onCursorOffsetChange={setQueryCursorOffset}
+                      mask={pendingQuestion?.inputType === "password" ? "•" : undefined}
                     />
                   </Box>
             </Box>
