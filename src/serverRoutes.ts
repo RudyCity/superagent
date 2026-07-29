@@ -255,6 +255,41 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Search history messages via FTS5 / LIKE search
+  if (pathname === "/api/history/search" && req.method === "GET") {
+    const query = parsedUrl.searchParams.get("q") || parsedUrl.searchParams.get("query") || "";
+    const workspacePath = resolveWorkspacePath(req) || parsedUrl.searchParams.get("workspace") || undefined;
+    const limitParam = parsedUrl.searchParams.get("limit");
+    const limit = limitParam ? parseInt(limitParam, 10) : 50;
+
+    if (!query.trim()) {
+      sendJSON(res, 200, { success: true, results: [] });
+      return true;
+    }
+
+    try {
+      const { searchMessagesInDb } = await import("./core/storage/historyDb.js");
+      const rawResults = searchMessagesInDb(query.trim(), limit * 3);
+
+      let filteredResults = rawResults;
+      if (workspacePath) {
+        const { loadSessionFromDb } = await import("./core/storage/historyDb.js");
+        const { normalizeAndCheckSubpath } = await import("./core/config/history.js");
+        filteredResults = rawResults.filter((r) => {
+          const loaded = loadSessionFromDb(r.sessionId);
+          const sessDir = loaded.session?.workingDirectory;
+          return sessDir ? normalizeAndCheckSubpath(sessDir, workspacePath) : true;
+        });
+      }
+
+      const results = filteredResults.slice(0, limit);
+      sendJSON(res, 200, { success: true, results });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
   // Delete a history session by ID
   if (pathname.startsWith("/api/history/session/") && req.method === "DELETE") {
     const sessionId = decodeURIComponent(pathname.replace("/api/history/session/", ""));
@@ -274,7 +309,7 @@ export async function handleServerRoute(
         }
       }
 
-      broadcastEvent({ type: "superagent-sessions-changed" });
+      broadcastEvent({ type: "superagent-sessions-changed", action: "delete", sessionId });
       sendJSON(res, 200, { success: true });
     } catch (err: any) {
       sendJSON(res, 500, { error: err.message });
@@ -349,7 +384,13 @@ export async function handleServerRoute(
       );
 
       clearHistoryCache();
-      broadcastEvent({ type: "superagent-sessions-changed" });
+      broadcastEvent({
+        type: "superagent-sessions-changed",
+        action: existing.session ? "update" : "create",
+        sessionId,
+        title,
+        workspace: workspacePath
+      });
       sendJSON(res, 200, { success: true });
     } catch (err: any) {
       sendJSON(res, 500, { error: err.message });

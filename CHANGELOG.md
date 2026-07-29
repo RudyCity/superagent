@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.618] - 2026-07-29
+
+### Features & Enhancements
+- **FTS5 Full-Text Search API**: Added `/api/history/search` endpoint supporting full-text message content search across workspace sessions using SQLite FTS5 table `messages_fts`.
+- **Granular WebSocket Syncing**: Enriched `superagent-sessions-changed` WebSocket event payloads with `action` (`create`, `update`, `delete`), `sessionId`, and `title` for selective frontend updates.
+- **T-Line Integrations**: Added FTS search proxy route, selective session syncing, and LocalStorage orphan cache cleanup in T-Line desktop client.
+
 ## [1.2.617] - 2026-07-29
 
 ### Fixes
