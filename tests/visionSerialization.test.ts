@@ -3,7 +3,6 @@ import { Agent } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
 
 
-
 describe("Vision Message Serialization", () => {
   let agent: Agent;
 
@@ -48,8 +47,8 @@ describe("Vision Message Serialization", () => {
     ]);
   });
 
-  it("should convert image parts to text placeholders when the model does not support vision", () => {
-    // Mock getTierModel to return a non-vision model (e.g., deepseek-chat)
+  it("should preserve image parts as-is when model does not support vision", () => {
+    // buildPlaintextMessages preserves image parts for any model
     vi.mocked(configModule.getTierModel).mockReturnValue("deepseek-chat");
 
     const conv = (agent as any).conversation;
@@ -68,10 +67,7 @@ describe("Vision Message Serialization", () => {
     expect(sdkMessages[0].role).toBe("user");
     expect(sdkMessages[0].content).toEqual([
       { type: "text", text: "Here is an image" },
-      {
-        type: "text",
-        text: "[Image: (image/png) - not sent because the active model (deepseek-chat) does not support vision/images. Base64 Data: data:image/png;base64,base64data]"
-      }
+      { type: "image", image: "base64data", mimeType: "image/png" }
     ]);
   });
 });

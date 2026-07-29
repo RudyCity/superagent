@@ -106,15 +106,7 @@ function initDatabaseSchema(db: any): void {
     db.exec("PRAGMA cache_size = -16000;"); // 16MB cache
   } catch {}
 
-  try {
-    db.exec(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-        content,
-        session_id UNINDEXED,
-        role UNINDEXED
-      );
-    `);
-  } catch {}
+  // FTS5 table created below with full schema (incl display_name)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS workspaces (

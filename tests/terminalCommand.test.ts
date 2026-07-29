@@ -47,7 +47,7 @@ describe("Terminal Command Interactive Execution", () => {
 
     expect(runInteractiveCalled).toBe(true);
     expect(runInteractiveParams?.command).toBe("node --version");
-    expect(addedLines.some(l => l.content.includes("Executing in-place terminal command"))).toBe(true);
+    expect(addedLines.some(l => l.content.includes("Executing terminal command"))).toBe(true);
     expect(addedLines.some(l => l.content.includes("Process finished with exit code 0"))).toBe(true);
   });
 
@@ -73,7 +73,7 @@ describe("Terminal Command Interactive Execution", () => {
     addedLines = [];
     await handleSlashCommand("/terminal node --version", ctx as any);
 
-    expect(mockRunWithOutput).toHaveBeenCalledWith("node --version", expect.any(String), expect.any(Object));
+    expect(mockRunWithOutput).toHaveBeenCalledWith("node --version", expect.any(String), expect.any(Object), expect.any(Function));
     expect(addedLines.some(l => l.content.includes("v20.10.0\nHello World"))).toBe(true);
     expect(addedLines.some(l => l.content.includes("Process finished with exit code 0"))).toBe(true);
   });
