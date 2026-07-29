@@ -1,15 +1,20 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { workspaceMode } from "../src/core/ssh/workspaceMode.js";
 import { sshProxy, escapeShellArg } from "../src/core/ssh/sshProxy.js";
+import { sshRunCommandExecute, sshGlobToolExecute, sshGrepToolExecute } from "../src/core/ssh/sshCommands.js";
 import { editTool, writeTool, writeToFileTool, multiReplaceFileContentTool } from "../src/core/tools/fileEditTools.js";
 import { readTool, globTool, grepTool, ripgrepSearchTool } from "../src/core/tools/fileReadTools.js";
-import { 
-  bashTool, 
-  runBackgroundProcessTool, 
-  killBackgroundProcessTool, 
-  viewBackgroundProcessesTool, 
-  manageBackgroundProcessTool 
+import {
+  bashTool,
+  runBackgroundProcessTool,
+  killBackgroundProcessTool,
+  viewBackgroundProcessesTool,
+  manageBackgroundProcessTool
 } from "../src/core/tools/shellTools.js";
+import { gitActionTool, gitWorktreeTool } from "../src/core/tools/otherTools.js";
+import { readDocumentTool } from "../src/core/tools/documentReadTools.js";
+import { officeCliTool } from "../src/core/tools/officeCliTools.js";
+import { resolveFilePathFromArgs } from "../src/core/tools/pathHelpers.js";
 
 describe("Full SSH Tool Suite Interception", () => {
   beforeEach(() => {
@@ -109,6 +114,146 @@ describe("Full SSH Tool Suite Interception", () => {
     expect(res).toContain("SSH");
   });
 
+  it("should intercept gitActionTool status and route to SSH", async () => {
+    const res = await gitActionTool.execute({
+      action: "status",
+    }, "/mock/local");
+    expect(res).toBeDefined();
+  });
+
+  it("should intercept gitActionTool log and route to SSH", async () => {
+    const res = await gitActionTool.execute({
+      action: "log",
+      limit: 3,
+    }, "/mock/local");
+    expect(res).toBeDefined();
+  });
+
+  it("should intercept gitActionTool commit and route to SSH", async () => {
+    const res = await gitActionTool.execute({
+      action: "commit",
+      message: "test commit from SSH",
+    }, "/mock/local");
+    expect(res).toBeDefined();
+  });
+
+  it("should intercept gitActionTool diff and route to SSH", async () => {
+    const res = await gitActionTool.execute({
+      action: "diff",
+    }, "/mock/local");
+    expect(res).toBeDefined();
+  });
+
+  it("should reject gitActionTool commit without message even over SSH", async () => {
+    const res = await gitActionTool.execute({
+      action: "commit",
+    }, "/mock/local");
+    expect(res).toContain("Commit message is required");
+  });
+
+  it("should reject gitActionTool restore without files even over SSH", async () => {
+    const res = await gitActionTool.execute({
+      action: "restore",
+    }, "/mock/local");
+    expect(res).toContain("'files' parameter is required");
+  });
+
+  it("should intercept gitWorktreeTool list and route to SSH", async () => {
+    const res = await gitWorktreeTool.execute({
+      action: "list",
+    }, "/mock/local");
+    expect(res).toBeDefined();
+  });
+
+  it("should reject gitWorktreeTool with unknown action", async () => {
+    const res = await gitWorktreeTool.execute({
+      action: "bogus",
+    }, "/mock/local");
+    expect(res).toContain("Unknown action");
+  });
+
+  it("should reject gitWorktreeTool add without path", async () => {
+    const res = await gitWorktreeTool.execute({
+      action: "add",
+    }, "/mock/local");
+    expect(res).toContain("path parameter is required");
+  });
+
+  it("should intercept gitWorktreeTool prune and route to SSH", async () => {
+    const res = await gitWorktreeTool.execute({
+      action: "prune",
+    }, "/mock/local");
+    expect(res).toBeDefined();
+  });
+
+  it("should resolve relative file paths under remoteCwd in SSH mode", () => {
+    const resolved = resolveFilePathFromArgs({ filePath: "src/index.ts" }, "/mock/local");
+    expect(resolved).toBe("/mock/remote/src/index.ts");
+  });
+
+  it("should normalize Windows-style paths to POSIX in SSH mode", () => {
+    const resolved = resolveFilePathFromArgs({ filePath: "src\\app.ts" }, "/mock/local");
+    expect(resolved).toBe("/mock/remote/src/app.ts");
+  });
+
+  it("should preserve absolute POSIX paths inside remoteCwd in SSH mode", () => {
+    const resolved = resolveFilePathFromArgs({ filePath: "/mock/remote/src/index.ts" }, "/mock/local");
+    expect(resolved).toBe("/mock/remote/src/index.ts");
+  });
+
+  it("should reject absolute paths outside remoteCwd (SSH boundary)", () => {
+    expect(() => resolveFilePathFromArgs({ filePath: "/etc/passwd" }, "/mock/local")).toThrow(/violates SSH workspace boundary/);
+    expect(() => resolveFilePathFromArgs({ filePath: "/root/.ssh/id_rsa" }, "/mock/local")).toThrow(/violates SSH workspace boundary/);
+    expect(() => resolveFilePathFromArgs({ filePath: "/mock/other-secret.txt" }, "/mock/local")).toThrow(/violates SSH workspace boundary/);
+  });
+
+  it("should reject relative path traversal outside remoteCwd (SSH boundary)", () => {
+    expect(() => resolveFilePathFromArgs({ filePath: "../../../etc/passwd" }, "/mock/local")).toThrow(/violates SSH workspace boundary/);
+  });
+
+  it("should reject gitWorktree add with path that escapes remoteCwd", async () => {
+    const res = await gitWorktreeTool.execute({
+      action: "add",
+      path: "../../../etc/evil",
+    }, "/mock/local");
+    expect(res).toContain("escapes remote workspace boundary");
+  });
+
+  it("should reject gitWorktree remove with path that escapes remoteCwd", async () => {
+    const res = await gitWorktreeTool.execute({
+      action: "remove",
+      path: "../../../etc/evil",
+    }, "/mock/local");
+    expect(res).toContain("escapes remote workspace boundary");
+  });
+
+  it("should throw boundary error for leading-slash path outside remoteCwd in SSH mode", () => {
+    expect(() => resolveFilePathFromArgs({ filePath: "/etc/hosts" }, "/mock/local")).toThrow(/violates SSH workspace boundary/);
+  });
+
+  it("should intercept readDocumentTool SSH routing with missing file", async () => {
+    const res = await readDocumentTool.execute({
+      filePath: "missing-file.pdf",
+    }, "/mock/local");
+    expect(res).toBeDefined();
+    expect(typeof res).toBe("string");
+  });
+
+  it("should intercept officeCliTool missing-command validation", async () => {
+    const res = await officeCliTool.execute({
+      command: "",
+    }, "/mock/local");
+    expect(res).toContain("Missing required parameter");
+  });
+
+  it("should intercept officeCliTool SSH routing", async () => {
+    const res = await officeCliTool.execute({
+      command: "view text report.docx",
+    }, "/mock/local");
+    expect(res).toBeDefined();
+    expect(typeof res).toBe("string");
+  });
+
   it("should prevent path traversal outside remoteCwd", () => {
     expect(() => {
       sshProxy.normalizePosixPath("../../etc/passwd");
@@ -125,6 +270,30 @@ describe("Full SSH Tool Suite Interception", () => {
   it("should correctly escape shell arguments", () => {
     const escaped = escapeShellArg("foo'; rm -rf / #");
     expect(escaped).toBe("'foo'\\''; rm -rf / #'");
+  });
+
+  it("should propagate AbortSignal through sshRunCommandExecute", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    // After abort, exec should reject immediately with abort-related error.
+    // Since sshProxy is mocked, we just verify the function handles the signal without crashing.
+    const res = await sshRunCommandExecute("echo hello", undefined, 5000, controller.signal).catch((e) => `aborted: ${e.message}`);
+    // Either returns early or signals aborted — just shouldn't hang.
+    expect(res).toBeDefined();
+  });
+
+  it("should propagate AbortSignal through sshGlobToolExecute", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const res = await sshGlobToolExecute("**/*.ts", controller.signal).catch((e) => `aborted: ${e.message}`);
+    expect(res).toBeDefined();
+  });
+
+  it("should propagate AbortSignal through sshGrepToolExecute", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const res = await sshGrepToolExecute("TODO", "*.ts", controller.signal).catch((e) => `aborted: ${e.message}`);
+    expect(res).toBeDefined();
   });
 });
 

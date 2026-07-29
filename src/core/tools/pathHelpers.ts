@@ -28,6 +28,40 @@ export function normalizePath(filePath: string): string {
 export function resolveFilePathFromArgs(args: Record<string, unknown>, cwd: string): string | undefined {
   const raw = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile ?? args.targetFile ?? args.target_file ?? args.file) as string | undefined;
   if (!raw || typeof raw !== "string" || raw.trim() === "") return undefined;
+
+  // SSH routing: resolve to POSIX path under remoteCwd with boundary enforcement.
+  try {
+    const { workspaceMode } = require("../ssh/workspaceMode.js");
+    if (workspaceMode.isSsh()) {
+      const sshCfg = workspaceMode.getConfig();
+      const remoteCwd = (sshCfg?.remoteCwd || cwd || "").replace(/\\/g, "/").replace(/\/+$/, "");
+      let posix = raw.replace(/\\/g, "/");
+      if (!posix.startsWith("/")) {
+        posix = `${remoteCwd}/${posix.replace(/^\/+/, "")}`;
+      }
+      posix = posix.replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/";
+
+      // Resolve '..' segments so traversal escapes are detected by boundary check below.
+      const parts = posix.split("/").reduce<string[]>((acc, seg) => {
+        if (seg === "..") acc.pop();
+        else if (seg !== "" && seg !== ".") acc.push(seg);
+        return acc;
+      }, []);
+      posix = "/" + parts.join("/");
+
+      // Boundary enforcement: reject paths that escape remoteCwd.
+      const normalizedBase = "/" + remoteCwd.split("/").filter((p: string) => p && p !== ".").join("/");
+      if (normalizedBase !== "/" && posix !== normalizedBase && !posix.startsWith(normalizedBase + "/")) {
+        throw new Error('Path "' + raw + '" violates SSH workspace boundary. Operations must remain within "' + remoteCwd + '". To access external files, ask for user permission via ask_question or copy the file into the workspace directory.');
+      }
+      return posix;
+    }
+  } catch (err) {
+    // Re-throw boundary errors; suppress only initialization failures.
+    if (err instanceof Error && /workspace boundary|violates SSH/i.test(err.message)) throw err;
+    // workspaceMode unavailable; fall through to local resolution.
+  }
+
   const clean = (p: string) => p.split(String.fromCharCode(92)).join('/').toLowerCase().replace(/\/$/, '');
   const resolved = clean(normalizePath(path.resolve(cwd, raw)));
   const workspaceRoot = clean(normalizePath(path.resolve(process.cwd())));

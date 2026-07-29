@@ -224,7 +224,8 @@ export class SshProxyService {
   public async exec(
     command: string,
     cwd?: string,
-    timeoutMs: number = 600000
+    timeoutMs: number = 600000,
+    signal?: AbortSignal
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     await this.ensureConnected();
     const workingDir = this.normalizePosixPath(cwd || ".");
@@ -237,19 +238,42 @@ export class SshProxyService {
         let stdout = "";
         let stderr = "";
 
+        // Wire up AbortSignal: closing the channel kills the remote process.
+        let abortHandler: (() => void) | null = null;
+        if (signal) {
+          if (signal.aborted) {
+            stream.close();
+            return reject(new Error("SSH execution aborted before start"));
+          }
+          abortHandler = () => {
+            try { stream.close(); } catch {}
+            reject(new Error("SSH execution aborted by signal"));
+          };
+          signal.addEventListener("abort", abortHandler);
+        }
+
+        const cleanup = () => {
+          if (signal && abortHandler) {
+            signal.removeEventListener("abort", abortHandler);
+            abortHandler = null;
+          }
+        };
+
         stream
           .on("close", (code: number) => {
+            cleanup();
             resolve({ stdout, stderr, exitCode: code || 0 });
           })
           .on("error", (streamErr: Error) => {
+            cleanup();
             reject(streamErr);
           })
           .on("data", (data: Buffer) => {
             stdout += data.toString();
-          })
-          .stderr.on("data", (data: Buffer) => {
-            stderr += data.toString();
           });
+        stream.stderr.on("data", (data: Buffer) => {
+          stderr += data.toString();
+        });
       });
     });
 
@@ -276,17 +300,43 @@ export class SshProxyService {
     return res.stdout.trim();
   }
 
-  public async readFile(remotePath: string): Promise<string> {
+  public async stat(remotePath: string): Promise<{ size: number; mtime: number; isFile: boolean; isDirectory: boolean }> {
+    await this.ensureConnected();
+    const target = this.normalizePosixPath(remotePath);
+    const stat = await this.sftpClient!.stat(target);
+    return {
+      size: stat.size,
+      mtime: stat.modifyTime,
+      isFile: !!stat.isFile,
+      isDirectory: !!stat.isDirectory,
+    };
+  }
+
+  public async readFile(remotePath: string, options?: { skipCache?: boolean }): Promise<string> {
     await this.ensureConnected();
     const target = this.normalizePosixPath(remotePath);
     const now = Date.now();
 
-    const cached = this.fileCache.get(target);
-    if (cached && now - cached.timestamp < this.cacheTtlMs) {
-      return cached.content;
+    // Mtime-aware cache: validate file hasn't changed since cached.
+    if (!options?.skipCache) {
+      const cached = this.fileCache.get(target);
+      if (cached && now - cached.timestamp < this.cacheTtlMs) {
+        try {
+          const currentStat = await this.sftpClient!.stat(target);
+          if (cached.mtime !== undefined && currentStat.modifyTime === cached.mtime) {
+            return cached.content;
+          }
+          // File was modified externally — invalidate cache.
+          this.fileCache.delete(target);
+        } catch {
+          // Stat failed (file deleted, perms changed) — invalidate.
+          this.fileCache.delete(target);
+        }
+      }
     }
 
     const buffer = await this.sftpClient!.get(target);
+    let content: string;
     if (Buffer.isBuffer(buffer) || Array.isArray(buffer)) {
       const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer as any);
       const checkLength = Math.min(buf.length, 8192);
@@ -295,12 +345,15 @@ export class SshProxyService {
           throw new Error(`Cannot read binary file "${remotePath}" over SSH as text`);
         }
       }
-      const content = buf.toString("utf-8");
-      this.fileCache.set(target, { content, timestamp: now });
-      return content;
+      content = buf.toString("utf-8");
+    } else {
+      content = String(buffer);
     }
-    const content = String(buffer);
-    this.fileCache.set(target, { content, timestamp: now });
+    let mtime: number | undefined;
+    try {
+      mtime = (await this.sftpClient!.stat(target)).modifyTime;
+    } catch {}
+    this.fileCache.set(target, { content, timestamp: now, mtime });
     return content;
   }
 

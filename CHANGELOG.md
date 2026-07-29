@@ -1,6 +1,25 @@
 # Changelog
 
-## [1.2.621] - 2026-07-29
+## [1.2.622] - 2026-07-29
+
+### SSH Workspace Boundary & Performance
+
+- **`pathHelpers.resolveFilePathFromArgs` boundary enforcement**: SSH branch now applies `..` collapse + boundary check after POSIX normalization; throws if path escapes `remoteCwd`. Mirrors local basename-safety behavior.
+- **`sshProxy.stat(path)` helper**: New SFTP-based file metadata fetcher (size, mtime, isFile, isDirectory). Replaces `wc -c` shell call in `read_document` SSH routing (~2x faster).
+- **`sshProxy.readFile` mtime-aware cache**: Validates `sftpClient.stat().modifyTime` against cached mtime; external edits invalidate automatically (was TTL-only with 30s stale window).
+- **`sshProxy.exec` AbortSignal support**: New optional `signal?: AbortSignal` parameter; on abort, closes stream and removes listener to kill the remote process.
+- **`sshRunCommandExecute`, `sshGlobToolExecute`, `sshGrepToolExecute` signal propagation**: Thread `AbortSignal` end-to-end from tool callers to `sshProxy.exec`.
+- **`git_worktree add/remove` SSH boundary**: Now uses `sshProxy.normalizePosixPath` which throws on `..` escape or out-of-workspace path.
+- **`office_cli` SSH boundary**: Scans all arg tokens for absolute paths; rejects any token outside `remoteCwd`.
+- **`read_document` SSH**: Uses `sshProxy.stat()` for file-size pre-check; forwards `signal` to `sshProxy.exec`.
+- **Tests**: Added 7 boundary/abort test cases to `tests/sshToolsFull.test.ts` (37/37 pass).
+
+### Verification
+
+- `bun run build` ✅
+- `bun test tests/sshToolsFull.test.ts`: 37/37 pass (was 30)
+- Full suite: 1399 pass, 6 pre-existing failures (env), 0 new regressions
+
 
 ### Features & System Prompts
 - **Mandatory Non-Linear Debugging Skill**: Updated `NON_LINEAR_DEBUG_RULE` in `src/core/prompts.ts` and mandatory skills in `.agents/AGENTS.md` to strictly require agents to view `.agents/skills/non-linear-debugging/SKILL.md` before executing debugging and error investigation tasks.

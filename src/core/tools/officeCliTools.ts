@@ -1,7 +1,6 @@
 import { execa } from "execa";
 import { Tool } from "./types.js";
-import { resolveFilePathFromArgs } from "./pathHelpers.js";
-import { getLocalOfficeCliPath, isOfficeCliInstalledLocally } from "../androidSetup.js";
+import { workspaceMode } from "../ssh/workspaceMode.js";
 
 export const officeCliTool: Tool = {
   name: "office_cli",
@@ -18,9 +17,11 @@ export const officeCliTool: Tool = {
   },
   async execute(args, cwd, signal) {
     const rawCommand = args.command as string;
+    if (!rawCommand || typeof rawCommand !== "string" || rawCommand.trim() === "") {
+      return "Error: Missing required parameter 'command'. Provide the officecli sub-command to execute.";
+    }
 
     // Split parameters to pass to execa
-    // Basic shell splitting (handles spaces, does not handle complex nested quotes, but fits CLI execution needs)
     const parts = rawCommand.match(/(?:[^\s"']+|"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*')+/g) || [];
     const cleanParts = parts.map(part => {
       if ((part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
@@ -33,11 +34,44 @@ export const officeCliTool: Tool = {
       return "Error: Empty command parameter";
     }
 
-    const bin = (await isOfficeCliInstalledLocally()) ? getLocalOfficeCliPath() : "officecli";
+    const androidSetup = await import("../androidSetup.js");
+    const localBin = (await androidSetup.isOfficeCliInstalledLocally()) ? androidSetup.getLocalOfficeCliPath() : "officecli";
 
-    // Attempt to execute officecli
+    // SSH routing: run officecli on remote host (where the files live).
+    if (workspaceMode.isSsh()) {
+      try {
+        const { sshProxy } = await import("../ssh/sshProxy.js");
+        const remoteCwd = (workspaceMode.getConfig()?.remoteCwd || cwd || "").replace(/\\/g, "/").replace(/\/+$/, "");
+        // Boundary enforcement: scan args for absolute paths that escape remoteCwd.
+        const normalizedBase = "/" + remoteCwd.split("/").filter((p) => p && p !== ".").join("/");
+        const isInsideRemote = (posix: string) => {
+          if (!normalizedBase || normalizedBase === "/") return true;
+          return posix === normalizedBase || posix.startsWith(normalizedBase + "/");
+        };
+        for (const token of cleanParts) {
+          if (typeof token === "string" && token.includes("/")) {
+            const posix = token.replace(/\\/g, "/");
+            if (posix.startsWith("/") && !isInsideRemote(posix)) {
+              return `Error: Path "${token}" violates SSH workspace boundary. Operations must remain within "${remoteCwd}".`;
+            }
+          }
+        }
+        const escaped = cleanParts.map((p) => /^[A-Za-z0-9_./:@\-]+$/.test(p) ? p : `"${p.replace(/"/g, '\\"')}"`).join(" ");
+        const res = await sshProxy.exec(`officecli ${escaped}`, remoteCwd, 600000, signal);
+        if (res.exitCode !== 0) {
+          if (/command not found|not found.*officecli/i.test(res.stderr || "")) {
+            return `Error: 'officecli' command not found on remote SSH host. Install it via:\n  curl -fsSL https://d.officecli.ai/install.sh | bash`;
+          }
+          return res.stderr || res.stdout || `Remote officecli failed with exit ${res.exitCode}`;
+        }
+        return res.stdout || res.stderr || "Command executed successfully with no output.";
+      } catch (err: any) {
+        return `Error executing officecli on remote SSH host: ${err?.message || err}`;
+      }
+    }
+
     try {
-      const { stdout, stderr } = await execa(bin, cleanParts, {
+      const { stdout, stderr } = await execa(localBin, cleanParts, {
         cwd,
         reject: false,
         signal,

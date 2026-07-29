@@ -99,9 +99,9 @@ export async function sshMultiEditToolExecute(
   }
 }
 
-export async function sshRunCommandExecute(command: string, cwd?: string, timeoutMs?: number): Promise<string> {
+export async function sshRunCommandExecute(command: string, cwd?: string, timeoutMs?: number, signal?: AbortSignal): Promise<string> {
   try {
-    const res = await sshProxy.exec(command, cwd, timeoutMs);
+    const res = await sshProxy.exec(command, cwd, timeoutMs, signal);
     let output = res.stdout;
     if (res.stderr) {
       output += (output ? "\n--- STDERR ---\n" : "") + res.stderr;
@@ -170,23 +170,23 @@ export async function sshManageBackgroundProcessExecute(
   return `Error: Unknown background process action "${action}" for SSH remote workspace.`;
 }
 
-export async function sshGlobToolExecute(pattern: string): Promise<string> {
+export async function sshGlobToolExecute(pattern: string, signal?: AbortSignal): Promise<string> {
   try {
     const escapedPattern = sshProxy.escapeShellArg(pattern);
-    const res = await sshProxy.exec(`find . -path ${escapedPattern} -o -name ${escapedPattern} 2>/dev/null | head -n 500`);
+    const res = await sshProxy.exec(`find . -path ${escapedPattern} -o -name ${escapedPattern} 2>/dev/null | head -n 500`, undefined, 600000, signal);
     return res.stdout || "No files found matching pattern.";
   } catch (err: any) {
     return `Error running remote SSH glob: ${err.message}`;
   }
 }
 
-export async function sshGrepToolExecute(pattern: string, pathPattern?: string): Promise<string> {
+export async function sshGrepToolExecute(pattern: string, pathPattern?: string, signal?: AbortSignal): Promise<string> {
   try {
     const escapedPattern = sshProxy.escapeShellArg(pattern);
     const cmd = pathPattern
       ? `grep -rnE ${escapedPattern} --include=${sshProxy.escapeShellArg(pathPattern)} . | head -n 200`
       : `grep -rnE ${escapedPattern} . | head -n 200`;
-    const res = await sshProxy.exec(cmd);
+    const res = await sshProxy.exec(cmd, undefined, 600000, signal);
     return res.stdout || "No matches found.";
   } catch (err: any) {
     return `Error running remote SSH grep: ${err.message}`;

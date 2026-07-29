@@ -7,6 +7,7 @@ import { appendActiveToolOutput, clearActiveToolOutput } from "./state.js";
 import { killProcessTree } from "./shellTools.js";
 import { ensureAndroidCliInstalled } from "../androidSetup.js";
 import { formatUnknownActionError, detectInteractivePrompt } from "./helpers.js";
+import { workspaceMode } from "../ssh/workspaceMode.js";
 
 export { askQuestionTool, scheduleTool } from "./interactionTools.js";
 
@@ -182,6 +183,62 @@ export const gitActionTool: Tool = {
   async execute(args, cwd, signal) {
     const action = args.action as string;
     const files = args.files as string[] || [];
+
+    // SSH routing: run git commands on remote host via sshProxy.
+    if (workspaceMode.isSsh()) {
+      try {
+        const { sshProxy } = await import("../ssh/sshProxy.js");
+        const remoteCwd = workspaceMode.getConfig()?.remoteCwd || cwd;
+        const runRemote = async (cmd: string) => {
+          const res = await sshProxy.exec(cmd, remoteCwd);
+          if (res.exitCode !== 0) {
+            return `Git action error: ${(res.stderr || res.stdout || `exit ${res.exitCode}`).trim()}`;
+          }
+          return res.stdout || "(no output)";
+        };
+        const esc = (s: string) => sshProxy.escapeShellArg(s);
+
+        if (action === "status") {
+          return await runRemote("git status --porcelain") || "Clean working tree.";
+        }
+        if (action === "diff") {
+          const { truncateOutput } = await import("./helpers.js");
+          return truncateOutput(await runRemote("git diff"), 120) || "No unstaged changes.";
+        }
+        if (action === "commit") {
+          const message = args.message as string;
+          if (!message) return "Error: Commit message is required.";
+          await runRemote("git add -A");
+          return await runRemote(`git commit -m ${esc(message)}`);
+        }
+        if (action === "log") {
+          const limit = (args.limit as number) || 5;
+          return await runRemote(`git log -${limit} --oneline`);
+        }
+        if (action === "add") {
+          const targets = files.length > 0 ? files : ["-A"];
+          const cmd = targets.map((t) => (t === "-A" ? "-A" : esc(t))).join(" ");
+          await runRemote(`git add ${cmd}`);
+          return `Successfully staged files: ${targets.join(", ")}`;
+        }
+        if (action === "restore") {
+          if (files.length === 0) {
+            return "Error: The 'files' parameter is required for the restore action.";
+          }
+          const cmd = files.map(esc).join(" ");
+          await runRemote(`git restore ${cmd}`);
+          return `Successfully restored files: ${files.join(", ")}`;
+        }
+        if (action === "clean") {
+          return (await runRemote("git clean -fd")) || "Cleaned untracked files/directories successfully.";
+        }
+        return "Unknown git action.";
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return `Git SSH action error: ${message}`;
+      }
+    }
+
     try {
       if (action === "status") {
         const { stdout } = await execa("git", ["status", "--porcelain"], { cwd, cancelSignal: signal });
@@ -605,6 +662,80 @@ export const gitWorktreeTool: Tool = {
     const worktreePath = args.path as string;
     const branch = args.branch as string;
     const force = args.force === true;
+
+    // SSH routing: run git worktree commands on remote host via sshProxy.
+    if (workspaceMode.isSsh()) {
+      try {
+        const { sshProxy } = await import("../ssh/sshProxy.js");
+        const remoteCwd = workspaceMode.getConfig()?.remoteCwd || cwd;
+        const esc = (s: string) => sshProxy.escapeShellArg(s);
+        const runRemote = async (cmd: string) => {
+          const res = await sshProxy.exec(cmd, remoteCwd);
+          if (res.exitCode !== 0) {
+            throw new Error((res.stderr || res.stdout || `exit ${res.exitCode}`).trim());
+          }
+          return res.stdout || "";
+        };
+
+        if (action === "list") {
+          const out = await runRemote("git worktree list");
+          return out || "No Git worktrees found.";
+        }
+        if (action === "prune") {
+          const out = await runRemote("git worktree prune");
+          return out || "Git worktrees pruned successfully.";
+        }
+        if (action === "add") {
+          if (!worktreePath) return "Error: path parameter is required to add a worktree.";
+          // Boundary enforcement: reject paths that escape remoteCwd.
+          const candidate = `${remoteCwd.replace(/\/+$/, "")}/${worktreePath.replace(/^\/+/, "")}`.replace(/\/{2,}/g, "/");
+          let absoluteRemote: string;
+          try {
+            absoluteRemote = sshProxy.normalizePosixPath(candidate);
+          } catch (err: any) {
+            return `Git SSH worktree error: ${err?.message || err}`;
+          }
+          const branchPart = branch ? ` ${esc(branch)}` : "";
+          const out = await runRemote(`git worktree add ${esc(absoluteRemote)}${branchPart}`);
+          return out || `Worktree added at ${absoluteRemote}`;
+        }
+        if (action === "remove") {
+          if (!worktreePath) return "Error: path parameter is required to remove a worktree.";
+          const candidate = `${remoteCwd.replace(/\/+$/, "")}/${worktreePath.replace(/^\/+/, "")}`.replace(/\/{2,}/g, "/");
+          let absoluteRemote: string;
+          try {
+            absoluteRemote = sshProxy.normalizePosixPath(candidate);
+          } catch (err: any) {
+            return `Git SSH worktree error: ${err?.message || err}`;
+          }
+          const forcePart = force ? " --force" : "";
+          try {
+            const out = await runRemote(`git worktree remove ${esc(absoluteRemote)}${forcePart}`);
+            return out || `Worktree at ${absoluteRemote} removed successfully.`;
+          } catch (err: any) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (force && /not a working tree/i.test(message)) {
+              const out = await runRemote("git worktree prune");
+              return out
+                ? `Worktree metadata pruned after stale remove.\n${out}`
+                : "Worktree metadata pruned after stale remove.";
+            }
+            if (force && /(filename too long|directory not empty|failed to delete)/i.test(message)) {
+              await runRemote(`rm -rf ${esc(absoluteRemote)}`);
+              const out = await runRemote("git worktree prune");
+              return out
+                ? `Worktree directory removed with filesystem fallback: ${absoluteRemote}\n${out}`
+                : `Worktree directory removed with filesystem fallback: ${absoluteRemote}`;
+            }
+            throw err;
+          }
+        }
+        return `Error: Unknown action "${action}"`;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return `Git SSH worktree error: ${message}`;
+      }
+    }
 
     try {
       if (action === "list") {

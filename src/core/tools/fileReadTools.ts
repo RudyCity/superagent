@@ -205,7 +205,7 @@ export const globTool: Tool = {
   },
   async execute(args, cwd, signal) {
     if (workspaceMode.isSsh()) {
-      return await sshGlobToolExecute(args.pattern as string);
+      return await sshGlobToolExecute(args.pattern as string, signal);
     }
     const pattern = args.pattern as string;
     const searchPath = args.path
@@ -277,7 +277,7 @@ export const grepTool: Tool = {
   },
   async execute(args, cwd, signal) {
     if (workspaceMode.isSsh()) {
-      return await sshGrepToolExecute(args.pattern as string, args.include as string | undefined);
+      return await sshGrepToolExecute(args.pattern as string, args.include as string | undefined, signal);
     }
     const pattern = args.pattern as string;
     const include = (args.include as string) || "*";
@@ -387,7 +387,7 @@ export const ripgrepSearchTool: Tool = {
   },
   async execute(args, cwd, signal) {
     if (workspaceMode.isSsh()) {
-      return await sshGrepToolExecute(args.pattern as string);
+      return await sshGrepToolExecute(args.pattern as string, undefined, signal);
     }
     const pattern = args.pattern as string;
     const rawPath = args.path as string | undefined;

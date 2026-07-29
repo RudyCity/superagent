@@ -156,7 +156,7 @@ export const bashTool: Tool = {
       return "Error: Missing required parameter 'command'. Provide the shell command to execute.";
     }
     if (workspaceMode.isSsh()) {
-      return await sshRunCommandExecute(rawCommand, args.cwd as string | undefined);
+      return await sshRunCommandExecute(rawCommand, args.cwd as string | undefined, undefined, signal);
     }
     let command = normalizeGitPaths(rawCommand);
     const timeout = (args.timeout as number) || 600000;
@@ -277,7 +277,7 @@ export const runCommandTool: Tool = {
       return "Error: Missing required parameter 'command'. Provide the shell command to execute.";
     }
     if (workspaceMode.isSsh()) {
-      return await sshRunCommandExecute(rawCommand, args.cwd as string | undefined);
+      return await sshRunCommandExecute(rawCommand, args.cwd as string | undefined, undefined, signal);
     }
     let command = normalizeGitPaths(rawCommand);
     const targetCwd = args.cwd 
