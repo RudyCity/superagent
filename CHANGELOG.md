@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.621] - 2026-07-29
+
+### Features & System Prompts
+- **Mandatory Non-Linear Debugging Skill**: Updated `NON_LINEAR_DEBUG_RULE` in `src/core/prompts.ts` and mandatory skills in `.agents/AGENTS.md` to strictly require agents to view `.agents/skills/non-linear-debugging/SKILL.md` before executing debugging and error investigation tasks.
+- **Prompt Guidance Testing**: Added automated test assertion in `tests/promptToolGuidance.test.ts` ensuring `non-linear-debugging` skill requirement is preserved in system prompts.
+
 ## [1.2.620] - 2026-07-29
 
 ### Features & Refactoring

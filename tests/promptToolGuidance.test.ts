@@ -68,4 +68,10 @@ describe("prompt and command guidance", () => {
 
     expect(skillsConfig).toContain("single-agent-cognitive-scaleup");
   });
+
+  it("requires non-linear-debugging skill to be mandatory when debugging in prompts", () => {
+    const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
+
+    expect(prompts).toContain("Debugging tasks MUST view .agents/skills/non-linear-debugging/SKILL.md first");
+  });
 });

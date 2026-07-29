@@ -21,7 +21,7 @@ const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect activ
 
 const REASONING_RULE = `- REASONING: Evaluate arch, edge cases, 2-3 impl paths pre-action. Prefer simple, robust, modular. Avoid over-engineering.`;
 
-const NON_LINEAR_DEBUG_RULE = `- DEBUG: Trace failure flow input→crash sink. Isolate root cause. Minimal targeted fix. Never mask symptoms.`;
+const NON_LINEAR_DEBUG_RULE = `- DEBUG: Debugging tasks MUST view .agents/skills/non-linear-debugging/SKILL.md first. Trace failure flow input→crash sink. Isolate root cause. Minimal targeted fix. Never mask symptoms.`;
 
 const BATCH_OPS_RULE = `- BATCH_OPS: Consolidate parallel ops in single turn. Use bulk params (filePaths, edits, files, patches).`;
 

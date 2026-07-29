@@ -8,3 +8,4 @@
 ## Mandatory Skills
 
 - **Design Tasks**: When building, designing, or refactoring user interfaces, layouts, components, or web applications, you MUST treat the hallmark skill (.agents/skills/hallmark/SKILL.md) as a mandatory skill and read its instructions using the view_file tool before proceeding.
+- **Debugging Tasks**: When investigating bugs, runtime errors, failures, or diagnosing issues, you MUST treat the non-linear-debugging skill (.agents/skills/non-linear-debugging/SKILL.md) as a mandatory skill and read its instructions using the view_file tool before proceeding.
