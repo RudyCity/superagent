@@ -25,6 +25,7 @@ import {
   mutateModelConfig,
   updateSettings, 
   listHistorySessions, 
+  listHistorySessionsPaginated,
   getTrustedDirectories, 
   generateSessionId, 
   getInstalledSkills,
@@ -177,13 +178,21 @@ export async function handleServerRoute(
   // Get chat history
   if (pathname === "/api/history" && req.method === "GET") {
     const targetSessionId = parsedUrl.searchParams.get("sessionId") || parsedUrl.searchParams.get("id");
+    const limitParam = parsedUrl.searchParams.get("limit");
+    const offsetParam = parsedUrl.searchParams.get("offset");
+    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+    const offset = offsetParam ? parseInt(offsetParam, 10) : 0;
+
     if (targetSessionId) {
       // First check active in-memory session
       const session = resolveSession(req, targetSessionId);
       if (session && session.sessionId === targetSessionId) {
         const msgs = session.agent.getConversationMessages();
         if (msgs && msgs.length > 0) {
-          sendJSON(res, 200, { success: true, messages: msgs });
+          const totalCount = msgs.length;
+          const paginatedMsgs = limit !== undefined ? msgs.slice(offset, offset + limit) : msgs.slice(offset);
+          const hasMore = limit !== undefined ? offset + limit < totalCount : false;
+          sendJSON(res, 200, { success: true, messages: paginatedMsgs, totalCount, hasMore });
           return true;
         }
       }
@@ -212,24 +221,37 @@ export async function handleServerRoute(
             timestamp: m.timestamp,
           };
         });
-        sendJSON(res, 200, { success: true, messages: formattedMsgs });
+        const totalCount = formattedMsgs.length;
+        const paginatedMsgs = limit !== undefined ? formattedMsgs.slice(offset, offset + limit) : formattedMsgs.slice(offset);
+        const hasMore = limit !== undefined ? offset + limit < totalCount : false;
+        sendJSON(res, 200, { success: true, messages: paginatedMsgs, totalCount, hasMore });
         return true;
       }
     }
-    sendJSON(res, 200, { success: true, messages: [] });
+    sendJSON(res, 200, { success: true, messages: [], totalCount: 0, hasMore: false });
     return true;
   }
 
   // Get list of previous history sessions
   if (pathname === "/api/history/sessions" && req.method === "GET") {
     const workspacePath = resolveWorkspacePath(req) || parsedUrl.searchParams.get("workspace") || undefined;
-    const queryMode = parsedUrl.searchParams.get("mode");
-    const session = resolveSession(req);
-    const mode = queryMode || (session ? session.mode : "single");
-    const isMulti = mode === "multi";
+    const queryMode = parsedUrl.searchParams.get("mode") || "all";
     const crossSession = parsedUrl.searchParams.get("crossSession") === "true";
-    const sessions = listHistorySessions(isMulti, crossSession, workspacePath);
-    sendJSON(res, 200, { success: true, sessions });
+    const limitParam = parsedUrl.searchParams.get("limit");
+    const offsetParam = parsedUrl.searchParams.get("offset");
+    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+    const offset = offsetParam ? parseInt(offsetParam, 10) : 0;
+
+    const { sessions, totalCount, hasMore } = listHistorySessionsPaginated({
+      isMulti: queryMode === "multi",
+      crossSession,
+      workspaceDir: workspacePath,
+      limit,
+      offset,
+      modeFilter: queryMode as any
+    });
+
+    sendJSON(res, 200, { success: true, sessions, totalCount, hasMore });
     return true;
   }
 
@@ -272,23 +294,40 @@ export async function handleServerRoute(
       }
       const workspacePath = resolveWorkspacePath(req);
       const sessionId = session.id;
-      const title = session.title || session.displayName || "New Chat";
       
-      const { saveSessionToDb, loadSessionFromDb, clearHistoryCache, getGlobalConfigDir } = await import("./core/config.js");
+      const { saveSessionToDb, loadSessionFromDb, clearHistoryCache } = await import("./core/config.js");
       
       const existing = loadSessionFromDb(sessionId);
       const filePath = existing.session?.filePath || session.filePath || "";
+
+      let title = session.title || session.displayName || "New Chat";
+      if ((!title || title === "New Chat") && existing.session?.displayName && existing.session.displayName !== "New Chat") {
+        title = existing.session.displayName;
+      }
       
-      const msgsToSave = Array.isArray(messages) && messages.length > 0 ? messages.map((m: any, idx: number) => ({
-        sessionId,
-        role: m.role || "user",
-        content: typeof m.text === "string" ? m.text : (typeof m.content === "string" ? m.content : JSON.stringify(m.content || m.text || "")),
-        toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
-        toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
-        reasoning: m.reasoning || m.thought,
-        timestamp: m.timestamp || Date.now(),
-        sequenceOrder: idx
-      })) : (existing.messages || []);
+      const msgsToSave = Array.isArray(messages) && messages.length > 0 ? messages.map((m: any, idx: number) => {
+        let role = m.role || "user";
+        let reasoning = m.reasoning || m.thought;
+        let content = typeof m.text === "string" ? m.text : (typeof m.content === "string" ? m.content : JSON.stringify(m.content || m.text || ""));
+
+        if (role === "thought") {
+          role = "assistant";
+          if (!reasoning) reasoning = content;
+        } else if (role === "tool") {
+          role = "assistant";
+        }
+
+        return {
+          sessionId,
+          role,
+          content,
+          toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
+          toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
+          reasoning,
+          timestamp: m.timestamp || Date.now(),
+          sequenceOrder: idx
+        };
+      }) : (existing.messages || []);
 
       const userMsgs = msgsToSave.filter((m: any) => m.role === "user" && m.content);
       const firstUserContent = userMsgs[0]?.content || null;

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.617] - 2026-07-29
+
+### Fixes
+- **History Chat Alignment with T-Line**: Added `modeFilter` ('all' | 'single' | 'multi') and server-side pagination (`limit`, `offset`, `totalCount`, `hasMore`) to `/api/history/sessions` and `/api/history` endpoints.
+- **Session Title & Role Preservation**: Preserved custom non-generic session titles and mapped synthetic `thought` / `tool` message roles cleanly without database schema corruption.
+
 ## [1.2.616] - 2026-07-29
 
 ### Documentation & GitHub Pages

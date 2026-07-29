@@ -140,24 +140,64 @@ export function importSession(filePath: string): { success: boolean; id?: string
   }
 }
 
-export function listHistorySessions(isMulti = false, crossSession = false, workspaceDir?: string, limit?: number): HistorySession[] {
+export function listHistorySessions(
+  isMulti = false,
+  crossSession = false,
+  workspaceDir?: string,
+  limit?: number,
+  offset?: number,
+  modeFilter?: "single" | "multi" | "all"
+): HistorySession[] {
+  const { sessions } = listHistorySessionsPaginated({
+    isMulti,
+    crossSession,
+    workspaceDir,
+    limit,
+    offset,
+    modeFilter,
+  });
+  return sessions;
+}
+
+export function listHistorySessionsPaginated(options: {
+  isMulti?: boolean;
+  crossSession?: boolean;
+  workspaceDir?: string;
+  limit?: number;
+  offset?: number;
+  modeFilter?: "single" | "multi" | "all";
+}): { sessions: HistorySession[]; totalCount: number; hasMore: boolean } {
+  const isMulti = options.isMulti ?? false;
+  const crossSession = options.crossSession ?? false;
+  const workspaceDir = options.workspaceDir;
+  const limit = options.limit;
+  const offset = options.offset ?? 0;
+  const modeFilter = options.modeFilter ?? (isMulti ? "multi" : "single");
+
   const currentDir = workspaceDir ? path.resolve(workspaceDir) : process.cwd();
-  const cacheKey = `${isMulti}:${crossSession}:${currentDir}:${limit ?? "all"}`;
+  const cacheKey = `${isMulti}:${crossSession}:${currentDir}:${limit ?? "all"}:${offset}:${modeFilter}`;
   const now = Date.now();
   const cached = listCache.get(cacheKey);
   if (!process.env.VITEST && cached && now - cached.timestamp < 30000) {
-    return cached.data;
+    const totalCount = cached.data.length;
+    const paginated = limit !== undefined ? cached.data.slice(offset, offset + limit) : cached.data.slice(offset);
+    const hasMore = limit !== undefined ? offset + limit < totalCount : false;
+    return { sessions: paginated, totalCount, hasMore };
   }
 
   const sessions: HistorySession[] = [];
   try {
-    const dbSessions = listSessionsFromDb(limit || 200);
-    const modeIndicator = isMulti ? "/multi/" : "/single/";
+    const dbSessions = listSessionsFromDb(1000);
     for (const s of dbSessions) {
       const normalizedPath = s.filePath.replace(/\\/g, "/");
-      if (!normalizedPath.includes(modeIndicator)) {
-        continue;
+
+      if (modeFilter !== "all") {
+        const modeIndicator = modeFilter === "multi" ? "/multi/" : "/single/";
+        if (!normalizedPath.includes(modeIndicator)) {
+          continue;
+        }
       }
+
       if (normalizedPath.includes("/superagents/") || normalizedPath.includes("/subagents/")) {
         continue;
       }
@@ -182,8 +222,13 @@ export function listHistorySessions(isMulti = false, crossSession = false, works
   }
 
   sessions.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
-  const finalResult = limit !== undefined ? sessions.slice(0, limit) : sessions;
-  listCache.set(cacheKey, { timestamp: now, data: finalResult });
-  return finalResult;
+  listCache.set(cacheKey, { timestamp: now, data: sessions });
+
+  const totalCount = sessions.length;
+  const paginated = limit !== undefined ? sessions.slice(offset, offset + limit) : sessions.slice(offset);
+  const hasMore = limit !== undefined ? offset + limit < totalCount : false;
+
+  return { sessions: paginated, totalCount, hasMore };
 }
+
 
