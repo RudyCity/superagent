@@ -174,6 +174,14 @@ export async function sshGlobToolExecute(pattern: string, signal?: AbortSignal):
   try {
     const escapedPattern = sshProxy.escapeShellArg(pattern);
     const res = await sshProxy.exec(`find . -path ${escapedPattern} -o -name ${escapedPattern} 2>/dev/null | head -n 500`, undefined, 600000, signal);
+    // CRITICAL: surface stream/SSH failures instead of silently returning "No files found".
+    // When exec() fails (exitCode -1) but stdout happens to be empty, the previous
+    // `res.stdout || "No files found."` masked real errors. Now any non-zero exit
+    // returns the error so the agent can see what actually went wrong.
+    if (res.exitCode !== 0) {
+      const errMsg = (res.stderr || `exit code ${res.exitCode}`).trim();
+      return `Error running remote SSH glob: ${errMsg}`;
+    }
     return res.stdout || "No files found matching pattern.";
   } catch (err: any) {
     return `Error running remote SSH glob: ${err.message}`;
@@ -187,6 +195,12 @@ export async function sshGrepToolExecute(pattern: string, pathPattern?: string, 
       ? `grep -rnE ${escapedPattern} --include=${sshProxy.escapeShellArg(pathPattern)} . | head -n 200`
       : `grep -rnE ${escapedPattern} . | head -n 200`;
     const res = await sshProxy.exec(cmd, undefined, 600000, signal);
+    // CRITICAL: same fix as sshGlobToolExecute — surface SSH failures instead of
+    // silently returning "No matches found" when exit is non-zero.
+    if (res.exitCode !== 0) {
+      const errMsg = (res.stderr || `exit code ${res.exitCode}`).trim();
+      return `Error running remote SSH grep: ${errMsg}`;
+    }
     return res.stdout || "No matches found.";
   } catch (err: any) {
     return `Error running remote SSH grep: ${err.message}`;

@@ -87,12 +87,18 @@ class WorkspaceModeManager {
 
       if (!host || !remotePath) return null;
 
+      // Validation: remoteCwd must be non-empty, start with '/', and have no invalid segments.
+      const normalizedRemote = remotePath.startsWith("/") ? remotePath : `/${remotePath}`;
+      if (normalizedRemote === "/" || normalizedRemote.includes("\0") || normalizedRemote.includes("//")) {
+        return null;
+      }
+
       return {
         host,
         port,
-        username,
+        username: username || "root",
         privateKeyPath,
-        remoteCwd: remotePath.startsWith("/") ? remotePath : `/${remotePath}`,
+        remoteCwd: normalizedRemote,
       };
     } catch {
       return null;

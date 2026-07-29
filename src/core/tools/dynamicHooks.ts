@@ -7,6 +7,65 @@ import { loadModelConfig, mutateModelConfig } from "../config/jsonConfig.js";
 import { registry } from "../commands/registry.js";
 import { SlashCommand } from "../commands/types.js";
 
+/**
+ * Execute a hook command, routing to SSH workspace when active.
+ * In SSH mode, hooks must run on the remote host — not locally — to operate
+ * against the user's actual workspace. Without this routing, hooks like
+ * `pnpm test` or `make build` would silently run on the user's local machine
+ * (often an empty dir or unrelated checkout), masking real failures.
+ */
+export async function executeHookCommand(
+  finalCommand: string,
+  cwd: string,
+  signal?: AbortSignal,
+  stdinInput?: string,
+  timeoutMs?: number
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  // Dynamic import avoids circular dep with sshCommands.ts (which itself imports tools/state)
+  const { workspaceMode } = await import("../ssh/workspaceMode.js");
+  if (workspaceMode.isSsh()) {
+    const { sshProxy } = await import("../ssh/sshProxy.js");
+    const remoteCwd = workspaceMode.getConfig()?.remoteCwd || ".";
+    const commandWithStdin = stdinInput
+      ? `printf '%s' ${sshProxy.escapeShellArg(stdinInput)} | ${finalCommand}`
+      : finalCommand;
+    const res = await sshProxy.exec(commandWithStdin, remoteCwd, timeoutMs ?? 600000, signal);
+    return {
+      stdout: res.stdout || "",
+      stderr: res.stderr || "",
+      exitCode: res.exitCode,
+    };
+  }
+  // Local path: use execa as before
+  let shellPath: string | boolean = true;
+  let cmd = finalCommand;
+  if (process.platform === "win32") {
+    const resolved = resolveWindowsShell();
+    shellPath = resolved.shellPath;
+    if (!resolved.isBash) {
+      cmd = formatCommandForPowerShell(cmd);
+    }
+  }
+  const result = await execa(cmd, {
+    shell: shellPath,
+    cwd,
+    env: {
+      ...process.env,
+      SUPERAGENT_HOOK_DIR: cwd,
+      SUPERAGENT_CWD: cwd,
+      SUPERAGENT_WORKSPACE: cwd,
+    },
+    input: stdinInput,
+    reject: true,
+    timeout: timeoutMs,
+  });
+  return {
+    stdout: result.stdout || "",
+    stderr: result.stderr || "",
+    exitCode: result.exitCode ?? 0,
+  };
+}
+
 let registeredDynamicCommands: string[] = [];
 
 export interface HookMetadata {
@@ -163,17 +222,13 @@ export function loadDynamicHooks(): Tool[] {
 
                     const startTime = Date.now();
                     try {
-                      const result = await execa(finalCommand, {
-                        shell: shellPath,
-                        cwd: process.cwd(),
-                        env: {
-                          ...process.env,
-                          SUPERAGENT_HOOK_DIR: hookDir,
-                          SUPERAGENT_CWD: process.cwd(),
-                          SUPERAGENT_WORKSPACE: process.cwd(),
-                        },
-                        reject: true,
-                      });
+                      const result = await executeHookCommand(
+                        finalCommand,
+                        process.cwd(),
+                        undefined,
+                        undefined,
+                        600000
+                      );
                       const duration = Date.now() - startTime;
                       const logFile = path.join(process.cwd(), "internal-hooks", "hooks.log");
                       const timestamp = new Date().toISOString();
@@ -241,18 +296,13 @@ Error: ${errorMsg}
 
                 const startTime = Date.now();
                 try {
-                  const result = await execa(finalCommand, {
-                    shell: shellPath,
-                    cwd, // execute inside active agent CWD (workspace)
-                    env: {
-                      ...process.env,
-                      SUPERAGENT_HOOK_DIR: hookDir,
-                      SUPERAGENT_CWD: cwd,
-                      SUPERAGENT_WORKSPACE: cwd,
-                    },
-                    input: argsJson, // pipe parameters to stdin
-                    reject: true,
-                  });
+                  const result = await executeHookCommand(
+                    finalCommand,
+                    cwd,
+                    signal,
+                    argsJson,
+                    600000
+                  );
                   const duration = Date.now() - startTime;
                   const logFile = path.join(process.cwd(), "internal-hooks", "hooks.log");
                   const timestamp = new Date().toISOString();
@@ -340,24 +390,18 @@ export async function runEventHooks(
                   }
 
                   const startTime = Date.now();
-                  const result = await execa(finalCommand, {
-                    shell: shellPath,
-                    cwd: process.cwd(),
-                    env: {
-                      ...process.env,
-                      SUPERAGENT_HOOK_DIR: hookDir,
-                      SUPERAGENT_CWD: process.cwd(),
-                      SUPERAGENT_WORKSPACE: process.cwd(),
-                      SUPERAGENT_EVENT: event,
-                    },
-                    input: JSON.stringify(contextData),
-                    reject: false,
-                  });
+                  const result = await executeHookCommand(
+                    finalCommand,
+                    process.cwd(),
+                    undefined,
+                    JSON.stringify(contextData),
+                    600000
+                  );
                   const duration = Date.now() - startTime;
                   
                   const logFile = path.join(process.cwd(), "internal-hooks", "hooks.log");
                   const timestamp = new Date().toISOString();
-                  const status = result.failed ? `FAILED (exit code ${result.exitCode})` : "SUCCESS";
+                  const status = result.exitCode !== 0 ? `FAILED (exit code ${result.exitCode})` : "SUCCESS";
                   const logEntry = `[${timestamp}] [EVENT: ${event}] [HOOK: ${item.name}] [STATUS: ${status}] [DURATION: ${duration}ms]
 Command: ${finalCommand}
 Stdout:

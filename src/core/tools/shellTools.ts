@@ -156,7 +156,14 @@ export const bashTool: Tool = {
       return "Error: Missing required parameter 'command'. Provide the shell command to execute.";
     }
     if (workspaceMode.isSsh()) {
-      return await sshRunCommandExecute(rawCommand, args.cwd as string | undefined, undefined, signal);
+      // In SSH mode, default cwd to remote workspace cwd so commands like `dir`, `pwd`, `ls`
+      // resolve correctly without violating workspace boundaries.
+      // Skip pathHelpers boundary validation entirely — sshProxy.normalizePosixPath enforces
+      // it correctly for remote paths.
+      const sshCfg = workspaceMode.getConfig();
+      const remoteCwd = sshCfg?.remoteCwd || ".";
+      const requestedCwd = (args.cwd as string | undefined) || remoteCwd;
+      return await sshRunCommandExecute(rawCommand, requestedCwd, undefined, signal);
     }
     let command = normalizeGitPaths(rawCommand);
     const timeout = (args.timeout as number) || 600000;

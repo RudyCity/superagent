@@ -186,15 +186,17 @@ export class SshProxyService {
   }
 
   public normalizePosixPath(targetPath: string): string {
-    let clean = targetPath.replace(/\\/g, "/");
+    // Defensive: treat null/undefined/non-string as "."
+    const raw = typeof targetPath === "string" && targetPath.length > 0 ? targetPath : ".";
+    let clean = raw.replace(/\\/g, "/");
     const base = this.config?.remoteCwd || workspaceMode.getConfig()?.remoteCwd || "/";
-    const posixBase = base.replace(/\\/g, "/");
+    const posixBase = base.replace(/\\/g, "/").replace(/\/+$/, "") || "/";
 
     let resolved: string;
     if (clean.startsWith("/")) {
       resolved = clean;
     } else {
-      resolved = posixBase.endsWith("/") ? `${posixBase}${clean}` : `${posixBase}/${clean}`;
+      resolved = posixBase === "/" ? `/${clean}` : `${posixBase}/${clean}`;
     }
 
     const parts = resolved.split("/").reduce<string[]>((acc, seg) => {
@@ -237,17 +239,30 @@ export class SshProxyService {
 
         let stdout = "";
         let stderr = "";
+        let settled = false;
+        let streamError: Error | null = null;
+
+        const settle = (result: { stdout: string; stderr: string; exitCode: number } | Error) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          if (result instanceof Error) {
+            reject(result);
+          } else {
+            resolve(result);
+          }
+        };
 
         // Wire up AbortSignal: closing the channel kills the remote process.
         let abortHandler: (() => void) | null = null;
         if (signal) {
           if (signal.aborted) {
-            stream.close();
-            return reject(new Error("SSH execution aborted before start"));
+            try { stream.close(); } catch {}
+            return settle(new Error("SSH execution aborted before start"));
           }
           abortHandler = () => {
             try { stream.close(); } catch {}
-            reject(new Error("SSH execution aborted by signal"));
+            settle(new Error("SSH execution aborted by signal"));
           };
           signal.addEventListener("abort", abortHandler);
         }
@@ -259,20 +274,40 @@ export class SshProxyService {
           }
         };
 
-        stream
-          .on("close", (code: number) => {
-            cleanup();
-            resolve({ stdout, stderr, exitCode: code || 0 });
-          })
-          .on("error", (streamErr: Error) => {
-            cleanup();
-            reject(streamErr);
-          })
-          .on("data", (data: Buffer) => {
-            stdout += data.toString();
-          });
+        // CRITICAL: wire `error` BEFORE `close` so synchronous stream errors don't get swallowed.
+        // ssh2 emits close with code=null on stream errors; without an error listener the promise
+        // would resolve with empty stdout and exitCode 0 — masking the real failure.
+        stream.on("error", (streamErr: Error) => {
+          streamError = streamErr;
+          // Don't settle here — wait for close to fire so we can include any buffered output.
+          if (!stderr.includes(streamErr.message)) {
+            stderr += (stderr ? "\n" : "") + `[stream error] ${streamErr.message}`;
+          }
+        });
+
+        stream.on("data", (data: Buffer) => {
+          stdout += data.toString();
+        });
+
+        stream.on("close", (code: number | null) => {
+          // Resolve with:
+          //  - exit code if non-null
+          //  - else -1 if stream errored (real failure, not silent success)
+          //  - else 0 for normal completion
+          const finalExit = code !== null && code !== undefined
+            ? code
+            : (streamError ? -1 : 0);
+          settle({ stdout, stderr, exitCode: finalExit });
+        });
+
         stream.stderr.on("data", (data: Buffer) => {
           stderr += data.toString();
+        });
+
+        stream.stderr.on("error", (streamErr: Error) => {
+          if (!stderr.includes(streamErr.message)) {
+            stderr += (stderr ? "\n" : "") + `[stderr error] ${streamErr.message}`;
+          }
         });
       });
     });
@@ -414,6 +449,38 @@ export class SshProxyService {
         this.sshClient.end();
       } catch {}
       this.sshClient = null;
+    }
+  }
+
+  /**
+   * Diagnose the SSH workspace connection: runs `pwd` and `whoami` to confirm
+   * the remote shell is functional. Returns a diagnostic report on success
+   * or a detailed error string on failure.
+   *
+   * Use this after `connect()` to surface real errors (auth, network, invalid cwd)
+   * instead of silently returning empty stdout from later commands.
+   */
+  public async diagnose(): Promise<
+    | { ok: true; pwd: string; user: string; remoteCwd: string; host: string }
+    | { ok: false; error: string }
+  > {
+    try {
+      await this.ensureConnected();
+      const host = this.config?.host || "unknown";
+      const remoteCwd = this.config?.remoteCwd || "/";
+      const pwdRes = await this.exec("pwd", ".", 10000);
+      const whoamiRes = await this.exec("whoami", ".", 10000);
+      if (pwdRes.exitCode !== 0 || whoamiRes.exitCode !== 0) {
+        return {
+          ok: false,
+          error: `pwd exit=${pwdRes.exitCode} stdout="${pwdRes.stdout.trim()}" stderr="${pwdRes.stderr.trim()}" | whoami exit=${whoamiRes.exitCode} stderr="${whoamiRes.stderr.trim()}"`,
+        };
+      }
+      const pwd = pwdRes.stdout.trim();
+      const user = whoamiRes.stdout.trim();
+      return { ok: true, pwd, user, remoteCwd, host };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
     }
   }
 

@@ -104,7 +104,10 @@ export async function runCli() {
     if (parsed) {
       workspaceMode.setSshMode(parsed);
       const sshRef = (await import("./core/tools/state.js")).masterAgentRef;
-      if (sshRef?.current) sshRef.current.workingDirectory = sshTarget;
+      // CRITICAL: set workingDirectory to the remote cwd path, NOT the raw SSH URL.
+      // The raw SSH URL leaks into file path resolution and triggers workspace boundary
+      // errors when pathHelpers tries to enforce local-workspace rules on the URL.
+      if (sshRef?.current) sshRef.current.workingDirectory = parsed.remoteCwd;
       sshProxy.setPasswordHandler(async () => {
         const readline = await import("readline");
         const rl = readline.createInterface({
