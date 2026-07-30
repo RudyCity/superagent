@@ -5,6 +5,16 @@ export interface SshWorkspaceConfig {
   password?: string;
   privateKeyPath?: string;
   remoteCwd: string;
+  /** Connection timeout in ms (default 15000) */
+  readyTimeout?: number;
+  /** Enable SSH compression (default false) */
+  compression?: boolean;
+  /** Enable SSH agent forwarding (default false) */
+  agentForward?: boolean;
+  /** ProxyJump / bastion host (e.g., "user@bastion:2222") */
+  proxyJump?: string;
+  /** Bandwidth throttle limit in bytes/sec (0 = unlimited) */
+  bandwidthLimit?: number;
 }
 
 import { sshLogger } from "./sshLogger.js";
@@ -87,12 +97,35 @@ class WorkspaceModeManager {
       }
 
       let privateKeyPath: string | undefined;
+      let readyTimeout: number | undefined;
+      let compression: boolean | undefined;
+      let agentForward: boolean | undefined;
+      let proxyJump: string | undefined;
+      let bandwidthLimit: number | undefined;
+
       if (remotePath.includes("?")) {
         const [basePath, queryString] = remotePath.split("?");
         remotePath = basePath;
         const params = new URLSearchParams(queryString);
         if (params.has("key")) {
           privateKeyPath = params.get("key") || undefined;
+        }
+        if (params.has("timeout")) {
+          const t = parseInt(params.get("timeout")!, 10);
+          if (!isNaN(t) && t > 0) readyTimeout = t;
+        }
+        if (params.has("compress")) {
+          compression = params.get("compress") === "yes";
+        }
+        if (params.has("agentForward")) {
+          agentForward = params.get("agentForward") === "yes";
+        }
+        if (params.has("proxyJump")) {
+          proxyJump = params.get("proxyJump") || undefined;
+        }
+        if (params.has("bwlimit")) {
+          const bw = parseInt(params.get("bwlimit")!, 10);
+          if (!isNaN(bw) && bw >= 0) bandwidthLimit = bw;
         }
       }
 
@@ -120,6 +153,11 @@ class WorkspaceModeManager {
         username: username || "root",
         privateKeyPath,
         remoteCwd: normalizedRemote,
+        readyTimeout,
+        compression,
+        agentForward,
+        proxyJump,
+        bandwidthLimit,
       };
     } catch {
       return null;

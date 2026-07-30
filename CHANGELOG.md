@@ -1,3 +1,26 @@
+## [1.2.627] - 2026-07-30
+
+### SSH Workspace — Advanced Features
+
+- **SSH Config File Support** (`sshConfig.ts`): Parse `~/.ssh/config` for host aliases, identity files, ProxyJump, compression, and agent forwarding settings. Host aliases resolved automatically on connect.
+- **Connection State Events** (`sshEvents.ts`): EventEmitter for connection state changes (connecting/connected/disconnected/reconnecting/error), SFTP transfer progress, and port forwarding events. UI components can subscribe via `sshEvents.onStateChange()`, `sshEvents.onTransferProgress()`, `sshEvents.onPortForward()`.
+- **Connection Retry with Backoff**: Automatic reconnection with exponential backoff (1s, 2s, 4s) on transient failures. Auth and host key errors are not retried.
+- **Configurable Connection Timeout**: `readyTimeout` configurable via URL parameter `?timeout=30000` or `SshWorkspaceConfig.readyTimeout`.
+- **ProxyJump / Bastion Host**: Parse and log ProxyJump configuration from `~/.ssh/config` or URL parameter `?proxyJump=user@bastion:port`.
+- **SSH Agent Forwarding**: Enable via `?agentForward=yes` URL parameter or `~/.ssh/config` `ForwardAgent yes`.
+- **SSH Compression**: Enable via `?compress=yes` URL parameter or `~/.ssh/config` `Compression yes`.
+- **SFTP Transfer Progress**: Transfer progress events emitted on readFile/writeFile operations.
+- **Bandwidth Throttling**: Configurable via `?bwlimit=102400` URL parameter (bytes/sec).
+- **Port Forwarding**: Local port forwarding via `sshProxy.addLocalPortForward()` with event emission.
+- **New Config Fields**: `readyTimeout`, `compression`, `agentForward`, `proxyJump`, `bandwidthLimit` added to `SshWorkspaceConfig`.
+- **New Modules**: `sshConfig.ts` (SSH config parser), `sshEvents.ts` (connection state events).
+- **Tests**: 17 new tests in `sshAdvancedFeatures.test.ts` (122 pass, 1 skipped).
+
+### Verification
+
+- `npx tsc --noEmit`: No errors
+- `npx vitest run` (SSH suite): 122 passed, 1 skipped (123 total)
+
 # Changelog
 
 ## [1.2.626] - 2026-07-30

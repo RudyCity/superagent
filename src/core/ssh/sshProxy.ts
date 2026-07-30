@@ -7,6 +7,8 @@ import crypto from "crypto";
 import { SshWorkspaceConfig, workspaceMode } from "./workspaceMode.js";
 import { sshLogger } from "./sshLogger.js";
 import { getActiveQuestionHandler } from "../tools/state.js";
+import { sshEvents, SshConnectionState } from "./sshEvents.js";
+import { resolveHostAlias, parseProxyJump } from "./sshConfig.js";
 
 export interface SshSystemMetrics {
   host: string;
@@ -177,7 +179,7 @@ export class SshProxyService {
         username: config.username,
         keepaliveInterval: 10000,
         keepaliveCountMax: 3,
-        readyTimeout: 15000,
+        readyTimeout: config.readyTimeout || 15000,
       };
 
       // S1: Host key verification via known_hosts
@@ -582,6 +584,27 @@ export class SshProxyService {
       diskUsage: lines[3] || "N/A",
       pingMs,
     };
+  }
+
+  private portForwards: Array<{ type: "local" | "remote"; localPort: number; remoteHost: string; remotePort: number }> = [];
+
+  public async addLocalPortForward(localPort: number, remoteHost: string, remotePort: number): Promise<void> {
+    await this.ensureConnected();
+    if (!this.sshClient) throw new Error("SSH client not connected");
+    return new Promise((resolve, reject) => {
+      this.sshClient!.forwardOut("127.0.0.1", localPort, remoteHost, remotePort, (err) => {
+        if (err) { reject(new Error("Port forward failed: " + err.message)); return; }
+        const fwd = { type: "local" as const, localPort, remoteHost, remotePort };
+        this.portForwards.push(fwd);
+        sshEvents.emitPortForward(fwd);
+        sshLogger.info("port_forward", "local: 127.0.0.1:" + localPort + " -> " + remoteHost + ":" + remotePort);
+        resolve();
+      });
+    });
+  }
+
+  public getPortForwards(): Array<{ type: "local" | "remote"; localPort: number; remoteHost: string; remotePort: number }> {
+    return [...this.portForwards];
   }
 
   public async disconnect(): Promise<void> {
