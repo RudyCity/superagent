@@ -5,11 +5,10 @@ const rPulseColors = ["cyan", "cyanBright", "yellow", "white", "magenta", "yello
 
 export function LoadingIndicator() {
   const [frame, setFrame] = useState(0);
-  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setFrame((prev) => (prev + 1) % frames.length);
+      setFrame((prev) => (prev + 1) % 6);
     }, 120);
     return () => clearInterval(interval);
   }, []);
@@ -18,19 +17,17 @@ export function LoadingIndicator() {
 
   return (
     <Text color="yellow">
-      <Text bold color={rColor}>[R] </Text>
-      {frames[frame]} Thinking...
+      <Text bold color={rColor}>[R]</Text>
     </Text>
   );
 }
 
 export function ToolLoadingIndicator() {
   const [frame, setFrame] = useState(0);
-  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setFrame((prev) => (prev + 1) % frames.length);
+      setFrame((prev) => (prev + 1) % 6);
     }, 120);
     return () => clearInterval(interval);
   }, []);
@@ -39,47 +36,30 @@ export function ToolLoadingIndicator() {
 
   return (
     <Text color="yellow">
-      <Text bold color={rColor}>[R] </Text>
-      {frames[frame]} Running system tool...
+      <Text bold color={rColor}>[R]</Text>
     </Text>
   );
 }
 
 export function ProcessingIndicator({ scrollOffset }: { scrollOffset: number }) {
   const [frame, setFrame] = useState(0);
-  const progressFrames = [
-    "[■□□□□□□□□□]",
-    "[■■□□□□□□□□]",
-    "[■■■□□□□□□□]",
-    "[■■■■□□□□□□]",
-    "[■■■■■□□□□□]",
-    "[■■■■■■□□□□]",
-    "[■■■■■■■□□□]",
-    "[■■■■■■■■□□]",
-    "[■■■■■■■■■□]",
-    "[■■■■■■■■■■]",
-  ];
-  const pulseFrames = ["   ", ".  ", ".. ", "..."];
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setFrame((prev) => (prev + 1) % 40);
+      setFrame((prev) => (prev + 1) % 6);
     }, 150);
     return () => clearInterval(interval);
   }, []);
 
-  const pulse = pulseFrames[frame % pulseFrames.length];
-  const barIndex = Math.floor(frame / 4) % progressFrames.length;
-  const bar = progressFrames[barIndex];
   const rColor = rPulseColors[frame % rPulseColors.length];
 
   return (
     <Box flexDirection="row">
-      <Text bold color={rColor}>[R] </Text>
-      <Text dimColor>Processing{pulse} (Ctrl+C to abort) </Text>
+      <Text bold color={rColor}>[R]</Text>
+      <Text dimColor> (Ctrl+C to abort)</Text>
       {scrollOffset > 0 && (
         <Text color="yellow" bold>
-          [New outputs streaming at bottom - {bar}]
+          [New outputs streaming at bottom]
         </Text>
       )}
     </Box>
@@ -88,11 +68,10 @@ export function ProcessingIndicator({ scrollOffset }: { scrollOffset: number }) 
 
 export function ThinkingSpinner({ type = "orchestrating" }: { type?: "orchestrating" | "processing" }) {
   const [frame, setFrame] = useState(0);
-  const spinners = ["▰▱▱▱▱▱▱", "▰▰▱▱▱▱▱", "▰▰▰▱▱▱▱", "▰▰▰▰▱▱▱", "▰▰▰▰▰▱▱", "▰▰▰▰▰▰▱", "▰▰▰▰▰▰▰"];
-  
+
   useEffect(() => {
     const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % spinners.length);
+      setFrame((prev) => (prev + 1) % 6);
     }, 150);
     return () => clearInterval(timer);
   }, []);
@@ -102,7 +81,7 @@ export function ThinkingSpinner({ type = "orchestrating" }: { type?: "orchestrat
 
   return (
     <Text color="yellow" bold>
-      ⚡ <Text color={rColor}>[R]</Text> {label} {spinners[frame]}{" "}
+      <Text color={rColor}>[R]</Text> {label}{" "}
     </Text>
   );
 }
@@ -137,11 +116,10 @@ export function BlinkingCursor() {
 
 export function SessionSpinner() {
   const [frame, setFrame] = useState(0);
-  const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % spinnerFrames.length);
+      setFrame((prev) => (prev + 1) % 6);
     }, 120);
     return () => clearInterval(timer);
   }, []);
@@ -150,8 +128,7 @@ export function SessionSpinner() {
 
   return (
     <Text color="yellow" bold>
-      <Text color={rColor}>[R] </Text>
-      {spinnerFrames[frame]}{" "}
+      <Text color={rColor}>[R]</Text>
     </Text>
   );
 }

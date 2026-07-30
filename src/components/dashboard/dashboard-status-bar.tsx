@@ -27,16 +27,17 @@ export interface DashboardStatusBarProps {
 
 function StatusBarSpinner() {
   const [frame, setFrame] = React.useState(0);
-  const spinnerFrames = ["▰▱▱▱▱", "▱▰▱▱▱", "▱▱▰▱▱", "▱▱▱▰▱", "▱▱▱▱▰", "▱▱▱▰▱", "▱▱▰▱▱", "▱▰▱▱▱"];
+  const rPulseColors = ["cyan", "cyanBright", "yellow", "white", "magenta"];
 
   React.useEffect(() => {
     const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % spinnerFrames.length);
+      setFrame((prev) => (prev + 1) % 5);
     }, 120);
     return () => clearInterval(timer);
   }, []);
 
-  return <Text color="yellow" bold>{spinnerFrames[frame]} </Text>;
+  const rColor = rPulseColors[frame % rPulseColors.length];
+  return <Text color={rColor} bold>[R]</Text>;
 }
 
 export const DashboardStatusBar = memo(function DashboardStatusBar({

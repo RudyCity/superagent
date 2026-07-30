@@ -28,21 +28,11 @@ export interface StatusBarProps {
 
 function LoadingIndicator() {
   const [frame, setFrame] = React.useState(0);
-  const frames = [
-    "▰▱▱▱▱",
-    "▱▰▱▱▱",
-    "▱▱▰▱▱",
-    "▱▱▱▰▱",
-    "▱▱▱▱▰",
-    "▱▱▱▰▱",
-    "▱▱▰▱▱",
-    "▱▰▱▱▱",
-  ];
   const rPulseColors = ["cyan", "cyanBright", "yellow", "white", "magenta"];
 
   React.useEffect(() => {
     const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % frames.length);
+      setFrame((prev) => (prev + 1) % 5);
     }, 100);
     return () => clearInterval(timer);
   }, []);
@@ -51,8 +41,7 @@ function LoadingIndicator() {
 
   return (
     <Text bold color="cyan">
-      <Text color={rColor}>[R] </Text>
-      {frames[frame]}
+      <Text color={rColor}>[R]</Text>
     </Text>
   );
 }

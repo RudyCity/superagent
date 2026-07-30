@@ -159,31 +159,31 @@ export function renderLogInlineStyles(
 
 export function ThinkingSpinner({ type = "orchestrating" }: { type?: "orchestrating" | "processing" }) {
   const [frame, setFrame] = useState(0);
-  const spinners = ["▰▱▱▱▱▱▱", "▰▰▱▱▱▱▱", "▰▰▰▱▱▱▱", "▰▰▰▰▱▱▱", "▰▰▰▰▰▱▱", "▰▰▰▰▰▰▱", "▰▰▰▰▰▰▰"];
-  
+
   useEffect(() => {
     const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % spinners.length);
+      setFrame((prev) => (prev + 1) % 6);
     }, 150);
     return () => clearInterval(timer);
   }, []);
 
+  const rColor = ["cyan", "cyanBright", "yellow", "white", "magenta", "yellow"][frame % 6];
   const label = type === "orchestrating" ? "ORCHESTRATING" : "PROCESSING";
-  return <Text color="yellow" bold>⚡ {label} [{spinners[frame]}] </Text>;
+  return <Text color="yellow" bold><Text color={rColor}>[R]</Text> {label} </Text>;
 }
 
 export function ToolLoadingIndicator() {
   const [frame, setFrame] = useState(0);
-  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setFrame((prev) => (prev + 1) % frames.length);
+      setFrame((prev) => (prev + 1) % 6);
     }, 120);
     return () => clearInterval(interval);
   }, []);
 
-  return <Text color="yellow">{frames[frame]} Running system tool...</Text>;
+  const rColor = ["cyan", "cyanBright", "yellow", "white", "magenta", "yellow"][frame % 6];
+  return <Text color="yellow"><Text color={rColor}>[R]</Text></Text>;
 }
 
 export function BlinkingCursor() {
