@@ -1,10 +1,21 @@
 import { sshProxy } from "./sshProxy.js";
+import { sshLogger } from "./sshLogger.js";
+
+function logToolEntry(op: string, meta: Record<string, unknown>): void {
+  sshLogger.info(op, "tool entry", { meta });
+}
+
+function logToolExit(op: string, meta: Record<string, unknown>): void {
+  sshLogger.info(op, "tool exit", { meta });
+}
 
 export async function sshReadToolExecute(
   filePath: string | Array<string | { path: string }>,
   offset: number = 1,
   limit: number = 800
 ): Promise<string> {
+  const start = Date.now();
+  logToolEntry("ssh.read", { files: Array.isArray(filePath) ? filePath.length : 1, offset, limit });
   try {
     const sliceContent = (content: string): string => {
       if (offset === 1 && limit >= 800 && content.split("\n").length <= limit) {
@@ -31,8 +42,11 @@ export async function sshReadToolExecute(
       return results.join("\n\n");
     }
     const content = await sshProxy.readFile(filePath);
-    return sliceContent(content);
+    const out = sliceContent(content);
+    logToolExit("ssh.read", { files: Array.isArray(filePath) ? filePath.length : 1, durationMs: Date.now() - start, status: "ok" });
+    return out;
   } catch (err: any) {
+    logToolExit("ssh.read", { durationMs: Date.now() - start, status: "error", error: err.message });
     return `Error reading SSH remote file: ${err.message}`;
   }
 }
@@ -41,6 +55,8 @@ export async function sshWriteToolExecute(
   filePath: string | Array<{ filePath: string; content: string }>,
   content?: string
 ): Promise<string> {
+  const start = Date.now();
+  logToolEntry("ssh.write", { files: Array.isArray(filePath) ? filePath.length : 1 });
   try {
     if (Array.isArray(filePath)) {
       const results: string[] = [];
@@ -65,6 +81,8 @@ export async function sshWriteToolExecute(
 }
 
 export async function sshEditToolExecute(filePath: string, oldString: string, newString: string): Promise<string> {
+  const start = Date.now();
+  logToolEntry("ssh.edit", { filePath });
   try {
     const original = await sshProxy.readFile(filePath);
     if (!original.includes(oldString)) {
@@ -82,6 +100,8 @@ export async function sshMultiEditToolExecute(
   filePath: string,
   chunks: Array<{ targetContent: string; replacementContent: string }>
 ): Promise<string> {
+  const start = Date.now();
+  logToolEntry("ssh.multi_edit", { filePath, chunks: chunks.length });
   try {
     let content = await sshProxy.readFile(filePath);
     let appliedCount = 0;
@@ -100,14 +120,17 @@ export async function sshMultiEditToolExecute(
 }
 
 export async function sshRunCommandExecute(command: string, cwd?: string, timeoutMs?: number, signal?: AbortSignal): Promise<string> {
+  const start = Date.now();
+  logToolEntry("ssh.run", { command, cwd });
   try {
     const res = await sshProxy.exec(command, cwd, timeoutMs, signal);
     let output = res.stdout;
     if (res.stderr) {
       output += (output ? "\n--- STDERR ---\n" : "") + res.stderr;
     }
-    if (res.exitCode !== 0) {
-      output += `\n[Process exited with status code ${res.exitCode}]`;
+    const exitCodeNum = typeof res.exitCode === "number" && !isNaN(res.exitCode) ? res.exitCode : 0;
+    if (exitCodeNum !== 0) {
+      output += `\n[Process exited with status code ${exitCodeNum}]`;
     }
     return output || "(no output)";
   } catch (err: any) {
@@ -116,6 +139,8 @@ export async function sshRunCommandExecute(command: string, cwd?: string, timeou
 }
 
 export async function sshRunBackgroundProcessExecute(command: string, cwd?: string): Promise<string> {
+  const start = Date.now();
+  logToolEntry("ssh.run_bg", { command, cwd });
   try {
     const pid = await sshProxy.execBackground(command, ".superagent-bg.log", cwd);
     return `Started remote background process PID ${pid}. Output logged to .superagent-bg.log on SSH remote host.`;
@@ -125,6 +150,8 @@ export async function sshRunBackgroundProcessExecute(command: string, cwd?: stri
 }
 
 export async function sshKillBackgroundProcessExecute(processId: string): Promise<string> {
+  const start = Date.now();
+  logToolEntry("ssh.kill_bg", { processId });
   try {
     const res = await sshProxy.exec(`kill -9 ${sshProxy.escapeShellArg(processId)} 2>/dev/null || true`);
     return `Sent termination signal to remote SSH background process PID ${processId}.`;
@@ -134,6 +161,8 @@ export async function sshKillBackgroundProcessExecute(processId: string): Promis
 }
 
 export async function sshViewBackgroundProcessesExecute(processId?: string): Promise<string> {
+  const start = Date.now();
+  logToolEntry("ssh.view_bg", { processId });
   try {
     if (processId) {
       const res = await sshProxy.exec(`ps -p ${sshProxy.escapeShellArg(processId)} -o pid,stat,time,command 2>/dev/null || echo "Process not running."`);
@@ -171,6 +200,8 @@ export async function sshManageBackgroundProcessExecute(
 }
 
 export async function sshGlobToolExecute(pattern: string, signal?: AbortSignal): Promise<string> {
+  const start = Date.now();
+  logToolEntry("ssh.glob", { pattern });
   try {
     const escapedPattern = sshProxy.escapeShellArg(pattern);
     const res = await sshProxy.exec(`find . -path ${escapedPattern} -o -name ${escapedPattern} 2>/dev/null | head -n 500`, undefined, 600000, signal);
@@ -189,6 +220,8 @@ export async function sshGlobToolExecute(pattern: string, signal?: AbortSignal):
 }
 
 export async function sshGrepToolExecute(pattern: string, pathPattern?: string, signal?: AbortSignal): Promise<string> {
+  const start = Date.now();
+  logToolEntry("ssh.grep", { pattern, pathPattern });
   try {
     const escapedPattern = sshProxy.escapeShellArg(pattern);
     const cmd = pathPattern

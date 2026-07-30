@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.624] - 2026-07-30
+
+### SSH Workspace Logging & Boundary Hardening
+
+- **sshLogger.ts**: New centralized SSH operation logger with rotation (10 MB cap), 5 levels (INFO/WARN/ERROR/DEBUG/BOUNDARY), structured JSON output to `~/.superagent-r/ssh-workspace.log`.
+- **sshCommands.ts**: Added `logToolEntry`/`logToolExit` wrappers to all SSH tool handlers (read, write, edit, multiEdit, exec, glob, grep) with duration tracking.
+- **sshProxy.ts**: Added connect/disconnect/command/read/write/boundary violation logging with host, user, remoteCwd, durationMs, and error details.
+- **workspaceMode.ts**: Added `logBoundaryViolation()` method logging boundary violations with operation, path, and violation type.
+- **.gitignore**: Added `*.pem`, `*.key` patterns to prevent SSH key material from being committed.
+
 ## [1.2.623] - 2026-07-30
 
 ### Credential Error Surfacing (Silent Fallback Fixes)

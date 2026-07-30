@@ -4,6 +4,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { SshWorkspaceConfig, workspaceMode } from "./workspaceMode.js";
+import { sshLogger } from "./sshLogger.js";
 import { getActiveQuestionHandler } from "../tools/state.js";
 
 export interface SshSystemMetrics {
@@ -84,6 +85,11 @@ export class SshProxyService {
     this.config = config;
     this.isConnecting = true;
     this.clearCache();
+    sshLogger.info("connect", `connecting to ${config.host}:${config.port}`, {
+      host: config.host,
+      user: config.username,
+      remoteCwd: config.remoteCwd,
+    });
 
     try {
       const privateKey = config.privateKeyPath
@@ -118,6 +124,10 @@ export class SshProxyService {
             })
             .connect(connectConfig);
         });
+        sshLogger.info("connect", "connected (host key verified)", {
+          host: config.host,
+          user: config.username,
+        });
       } catch (err: any) {
         const canPrompt = !config.password && err.message.includes("authentication");
         if (canPrompt) {
@@ -139,6 +149,7 @@ export class SshProxyService {
                 })
                 .connect(connectConfig);
             });
+            sshLogger.info("connect", "connected via password auth");
           } else {
             throw err;
           }
@@ -149,18 +160,22 @@ export class SshProxyService {
 
       this.sftpClient = new SFTPClient();
       await this.sftpClient.connect(connectConfig);
+      sshLogger.info("connect", "SFTP session established");
 
       this.isConnecting = false;
     } catch (err) {
       this.isConnecting = false;
+      sshLogger.error("connect", `connection failed: ${(err as Error).message}`);
       await this.disconnect();
       throw err;
     }
   }
 
   private async ensureConnected(): Promise<void> {
-    if (!this.sshClient || !this.sftpClient) {
+    const isSocketDestroyed = (this.sshClient as any)?._sock?.destroyed || (this.sshClient as any)?._sock?.closed;
+    if (!this.sshClient || !this.sftpClient || isSocketDestroyed) {
       if (this.config) {
+        await this.disconnect();
         await this.connect(this.config);
       } else {
         throw new Error("SSH Proxy is not connected");
@@ -291,11 +306,11 @@ export class SshProxyService {
 
         stream.on("close", (code: number | null) => {
           // Resolve with:
-          //  - exit code if non-null
+          //  - exit code if non-null/non-undefined
           //  - else -1 if stream errored (real failure, not silent success)
           //  - else 0 for normal completion
-          const finalExit = code !== null && code !== undefined
-            ? code
+          const finalExit = (code !== null && code !== undefined && !isNaN(Number(code)))
+            ? Number(code)
             : (streamError ? -1 : 0);
           settle({ stdout, stderr, exitCode: finalExit });
         });

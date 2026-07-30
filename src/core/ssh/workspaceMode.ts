@@ -7,6 +7,8 @@ export interface SshWorkspaceConfig {
   remoteCwd: string;
 }
 
+import { sshLogger } from "./sshLogger.js";
+
 class WorkspaceModeManager {
   private mode: "local" | "ssh-proxy" = "local";
   private config?: SshWorkspaceConfig;
@@ -14,11 +16,18 @@ class WorkspaceModeManager {
   public setSshMode(config: SshWorkspaceConfig) {
     this.mode = "ssh-proxy";
     this.config = config;
+    sshLogger.info("workspace.mode", "switched to ssh-proxy", {
+      host: config.host,
+      user: config.username,
+      remoteCwd: config.remoteCwd,
+    });
   }
 
   public setLocalMode() {
+    const prev = this.mode;
     this.mode = "local";
     this.config = undefined;
+    sshLogger.info("workspace.mode", "switched to local", { meta: { previous: prev } });
   }
 
   public getMode(): "local" | "ssh-proxy" {

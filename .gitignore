@@ -3,6 +3,8 @@ node_modules/
 dist/
 bin/python/
 vendor/*
+*.pem
+*.key
 tests/temp-home-*/
 tests/temp-home*
 graphify-out/
