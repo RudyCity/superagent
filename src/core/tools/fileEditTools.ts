@@ -6,6 +6,7 @@ import { normalizeForMatching, verifySyntax, mapNormToOrigIndices, countOccurren
 import { normalizePath, resolveFilePathFromArgs } from "./pathHelpers.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { sshWriteToolExecute, sshEditToolExecute, sshMultiEditToolExecute } from "../ssh/sshCommands.js";
+import { sshLogger } from "../ssh/sshLogger.js";
 
 function fuzzyMatch(text: string, pattern: string): boolean {
   const cleanText = text.replace(/\s+/g, ' ');
@@ -798,6 +799,7 @@ export const replaceFileContentTool: Tool = {
   },
   async execute(args, cwd, signal) {
     if (workspaceMode.isSsh()) {
+      sshLogger.toolUse("replace_file_content", "routing replace_file_content tool to SSH remote", { meta: { batch: !!args.edits } });
       const targetPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
       const targetContent = (args.targetContent as string) || ((args.edits as any[])?.[0]?.targetContent);
       const replacementContent = (args.replacementContent as string) || ((args.edits as any[])?.[0]?.replacementContent);

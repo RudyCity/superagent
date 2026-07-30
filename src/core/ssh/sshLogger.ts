@@ -7,7 +7,7 @@ const LOG_DIR = path.join(os.homedir(), ".superagent-r");
 const LOG_FILE = path.join(LOG_DIR, "ssh-workspace.log");
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
-export type SshLogLevel = "INFO" | "WARN" | "ERROR" | "DEBUG" | "BOUNDARY";
+export type SshLogLevel = "INFO" | "WARN" | "ERROR" | "DEBUG" | "BOUNDARY" | "TOOL_USE";
 
 export interface SshLogEntry {
   ts: string;
@@ -119,6 +119,11 @@ class SshLogger {
   /** Dedicated BOUNDARY level for workspace boundary violations */
   public boundary(operation: string, msg: string, extra?: Partial<SshLogEntry>): void {
     this.write("BOUNDARY", operation, msg, extra);
+  }
+
+  /** Dedicated TOOL_USE level for logging when tools route to SSH remote execution */
+  public toolUse(operation: string, msg: string, extra?: Partial<SshLogEntry>): void {
+    this.write("TOOL_USE", operation, msg, extra);
   }
 
   /** Close stream — call on process exit */

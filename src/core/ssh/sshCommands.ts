@@ -1,12 +1,21 @@
 import { sshProxy } from "./sshProxy.js";
 import { sshLogger } from "./sshLogger.js";
 
+/**
+ * Log SSH tool use entry — called when a tool detects SSH mode and routes
+ * to the remote execution path. Uses the dedicated TOOL_USE log level so
+ * SSH tool invocations are easy to filter in ssh-workspace.log.
+ */
 function logToolEntry(op: string, meta: Record<string, unknown>): void {
-  sshLogger.info(op, "tool entry", { meta });
+  sshLogger.toolUse(op, "tool entry — routing to SSH remote", { meta });
 }
 
+/**
+ * Log SSH tool use exit — called after the remote operation completes
+ * (success or error). Includes duration and status for performance tracking.
+ */
 function logToolExit(op: string, meta: Record<string, unknown>): void {
-  sshLogger.info(op, "tool exit", { meta });
+  sshLogger.toolUse(op, "tool exit — SSH remote operation complete", { meta });
 }
 
 export async function sshReadToolExecute(
@@ -15,7 +24,8 @@ export async function sshReadToolExecute(
   limit: number = 800
 ): Promise<string> {
   const start = Date.now();
-  logToolEntry("ssh.read", { files: Array.isArray(filePath) ? filePath.length : 1, offset, limit });
+  const fileCount = Array.isArray(filePath) ? filePath.length : 1;
+  logToolEntry("ssh.read", { files: fileCount, offset, limit });
   try {
     const sliceContent = (content: string): string => {
       if (offset === 1 && limit >= 800 && content.split("\n").length <= limit) {
@@ -39,14 +49,15 @@ export async function sshReadToolExecute(
           results.push(`=== File: ${pathStr} ===\nError reading file: ${err.message}`);
         }
       }
+      logToolExit("ssh.read", { files: fileCount, durationMs: Date.now() - start, status: "ok" });
       return results.join("\n\n");
     }
     const content = await sshProxy.readFile(filePath);
     const out = sliceContent(content);
-    logToolExit("ssh.read", { files: Array.isArray(filePath) ? filePath.length : 1, durationMs: Date.now() - start, status: "ok" });
+    logToolExit("ssh.read", { files: fileCount, path: filePath, durationMs: Date.now() - start, status: "ok" });
     return out;
   } catch (err: any) {
-    logToolExit("ssh.read", { durationMs: Date.now() - start, status: "error", error: err.message });
+    logToolExit("ssh.read", { files: fileCount, durationMs: Date.now() - start, status: "error", error: err.message });
     return `Error reading SSH remote file: ${err.message}`;
   }
 }
@@ -56,7 +67,8 @@ export async function sshWriteToolExecute(
   content?: string
 ): Promise<string> {
   const start = Date.now();
-  logToolEntry("ssh.write", { files: Array.isArray(filePath) ? filePath.length : 1 });
+  const fileCount = Array.isArray(filePath) ? filePath.length : 1;
+  logToolEntry("ssh.write", { files: fileCount });
   try {
     if (Array.isArray(filePath)) {
       const results: string[] = [];
@@ -68,14 +80,18 @@ export async function sshWriteToolExecute(
           results.push(`Error writing SSH remote file ${file.filePath}: ${err.message}`);
         }
       }
+      logToolExit("ssh.write", { files: fileCount, durationMs: Date.now() - start, status: "ok" });
       return results.join("\n");
     }
     if (!content && content !== "") {
+      logToolExit("ssh.write", { files: fileCount, durationMs: Date.now() - start, status: "error", error: "Missing content" });
       return "Error: Missing content for file write";
     }
     await sshProxy.writeFile(filePath, content);
+    logToolExit("ssh.write", { files: fileCount, path: filePath, durationMs: Date.now() - start, status: "ok" });
     return `Successfully wrote remote SSH file: ${filePath}`;
   } catch (err: any) {
+    logToolExit("ssh.write", { files: fileCount, durationMs: Date.now() - start, status: "error", error: err.message });
     return `Error writing SSH remote file: ${err.message}`;
   }
 }
@@ -86,12 +102,15 @@ export async function sshEditToolExecute(filePath: string, oldString: string, ne
   try {
     const original = await sshProxy.readFile(filePath);
     if (!original.includes(oldString)) {
+      logToolExit("ssh.edit", { path: filePath, durationMs: Date.now() - start, status: "error", error: "target string not found" });
       return `Error: target string not found in SSH remote file ${filePath}`;
     }
     const updated = original.replace(oldString, newString);
     await sshProxy.writeFile(filePath, updated);
+    logToolExit("ssh.edit", { path: filePath, durationMs: Date.now() - start, status: "ok" });
     return `Successfully updated SSH remote file: ${filePath}`;
   } catch (err: any) {
+    logToolExit("ssh.edit", { path: filePath, durationMs: Date.now() - start, status: "error", error: err.message });
     return `Error editing SSH remote file ${filePath}: ${err.message}`;
   }
 }
@@ -107,14 +126,17 @@ export async function sshMultiEditToolExecute(
     let appliedCount = 0;
     for (const chunk of chunks) {
       if (!content.includes(chunk.targetContent)) {
+        logToolExit("ssh.multi_edit", { path: filePath, durationMs: Date.now() - start, status: "error", error: "target string not found", appliedCount });
         return `Error: target string "${chunk.targetContent.slice(0, 40)}..." not found in SSH remote file ${filePath}`;
       }
       content = content.replace(chunk.targetContent, chunk.replacementContent);
       appliedCount++;
     }
     await sshProxy.writeFile(filePath, content);
+    logToolExit("ssh.multi_edit", { path: filePath, durationMs: Date.now() - start, status: "ok", appliedCount });
     return `Successfully applied ${appliedCount} chunk edit(s) to SSH remote file: ${filePath}`;
   } catch (err: any) {
+    logToolExit("ssh.multi_edit", { path: filePath, durationMs: Date.now() - start, status: "error", error: err.message });
     return `Error applying multi-edit to SSH remote file ${filePath}: ${err.message}`;
   }
 }
@@ -132,8 +154,10 @@ export async function sshRunCommandExecute(command: string, cwd?: string, timeou
     if (exitCodeNum !== 0) {
       output += `\n[Process exited with status code ${exitCodeNum}]`;
     }
+    logToolExit("ssh.run", { command, durationMs: Date.now() - start, exitCode: exitCodeNum, status: exitCodeNum === 0 ? "ok" : "error" });
     return output || "(no output)";
   } catch (err: any) {
+    logToolExit("ssh.run", { command, durationMs: Date.now() - start, status: "error", error: err.message });
     return `Error executing remote SSH command: ${err.message}`;
   }
 }
@@ -143,8 +167,10 @@ export async function sshRunBackgroundProcessExecute(command: string, cwd?: stri
   logToolEntry("ssh.run_bg", { command, cwd });
   try {
     const pid = await sshProxy.execBackground(command, ".superagent-bg.log", cwd);
+    logToolExit("ssh.run_bg", { command, durationMs: Date.now() - start, status: "ok", meta: { pid } });
     return `Started remote background process PID ${pid}. Output logged to .superagent-bg.log on SSH remote host.`;
   } catch (err: any) {
+    logToolExit("ssh.run_bg", { command, durationMs: Date.now() - start, status: "error", error: err.message });
     return `Error starting remote SSH background process: ${err.message}`;
   }
 }
@@ -154,8 +180,10 @@ export async function sshKillBackgroundProcessExecute(processId: string): Promis
   logToolEntry("ssh.kill_bg", { processId });
   try {
     const res = await sshProxy.exec(`kill -9 ${sshProxy.escapeShellArg(processId)} 2>/dev/null || true`);
+    logToolExit("ssh.kill_bg", { processId, durationMs: Date.now() - start, status: "ok" });
     return `Sent termination signal to remote SSH background process PID ${processId}.`;
   } catch (err: any) {
+    logToolExit("ssh.kill_bg", { processId, durationMs: Date.now() - start, status: "error", error: err.message });
     return `Error terminating remote SSH background process: ${err.message}`;
   }
 }
@@ -167,11 +195,14 @@ export async function sshViewBackgroundProcessesExecute(processId?: string): Pro
     if (processId) {
       const res = await sshProxy.exec(`ps -p ${sshProxy.escapeShellArg(processId)} -o pid,stat,time,command 2>/dev/null || echo "Process not running."`);
       const logRes = await sshProxy.exec(`tail -n 50 .superagent-bg.log 2>/dev/null || true`);
+      logToolExit("ssh.view_bg", { processId, durationMs: Date.now() - start, status: "ok" });
       return `Remote Process PID ${processId}:\n${res.stdout}\n\nRecent Log Output (.superagent-bg.log):\n${logRes.stdout || "(empty)"}`;
     }
     const res = await sshProxy.exec(`ps aux | grep -i superagent-bg | grep -v grep || echo "No active SSH background processes found."`);
+    logToolExit("ssh.view_bg", { durationMs: Date.now() - start, status: "ok" });
     return `Remote SSH Background Processes:\n${res.stdout}`;
   } catch (err: any) {
+    logToolExit("ssh.view_bg", { processId, durationMs: Date.now() - start, status: "error", error: err.message });
     return `Error viewing remote SSH background processes: ${err.message}`;
   }
 }
@@ -211,10 +242,14 @@ export async function sshGlobToolExecute(pattern: string, signal?: AbortSignal):
     // returns the error so the agent can see what actually went wrong.
     if (res.exitCode !== 0) {
       const errMsg = (res.stderr || `exit code ${res.exitCode}`).trim();
+      logToolExit("ssh.glob", { pattern, durationMs: Date.now() - start, exitCode: res.exitCode, status: "error", error: errMsg });
       return `Error running remote SSH glob: ${errMsg}`;
     }
+    const fileCount = res.stdout ? res.stdout.split("\n").filter(Boolean).length : 0;
+    logToolExit("ssh.glob", { pattern, durationMs: Date.now() - start, exitCode: 0, status: "ok", meta: { fileCount } });
     return res.stdout || "No files found matching pattern.";
   } catch (err: any) {
+    logToolExit("ssh.glob", { pattern, durationMs: Date.now() - start, status: "error", error: err.message });
     return `Error running remote SSH glob: ${err.message}`;
   }
 }
@@ -232,11 +267,14 @@ export async function sshGrepToolExecute(pattern: string, pathPattern?: string, 
     // silently returning "No matches found" when exit is non-zero.
     if (res.exitCode !== 0) {
       const errMsg = (res.stderr || `exit code ${res.exitCode}`).trim();
+      logToolExit("ssh.grep", { pattern, pathPattern, durationMs: Date.now() - start, exitCode: res.exitCode, status: "error", error: errMsg });
       return `Error running remote SSH grep: ${errMsg}`;
     }
+    const matchCount = res.stdout ? res.stdout.split("\n").filter(Boolean).length : 0;
+    logToolExit("ssh.grep", { pattern, pathPattern, durationMs: Date.now() - start, exitCode: 0, status: "ok", meta: { matchCount } });
     return res.stdout || "No matches found.";
   } catch (err: any) {
+    logToolExit("ssh.grep", { pattern, pathPattern, durationMs: Date.now() - start, status: "error", error: err.message });
     return `Error running remote SSH grep: ${err.message}`;
   }
 }
-

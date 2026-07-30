@@ -9,6 +9,7 @@ import { getLocalRgPath, isRgInstalledGlobally, ensureRgInstalled } from "../and
 import { getWorkspaceCachePath } from "../workspaceDiscovery.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { sshReadToolExecute, sshGlobToolExecute, sshGrepToolExecute } from "../ssh/sshCommands.js";
+import { sshLogger } from "../ssh/sshLogger.js";
 
 export const readTool: Tool = {
   name: "read",
@@ -39,6 +40,7 @@ export const readTool: Tool = {
     const offset = Math.max(1, (args.offset as number) || 1);
     const limit = (args.limit as number) || 800;
     if (workspaceMode.isSsh()) {
+      sshLogger.toolUse("read", "routing read tool to SSH remote", { meta: { batch: !!args.filePaths } });
       const targets = args.filePaths || args.filePath;
       if (!targets) return "Error: Missing filePath or filePaths";
       return await sshReadToolExecute(targets as any, offset, limit);
@@ -205,6 +207,7 @@ export const globTool: Tool = {
   },
   async execute(args, cwd, signal) {
     if (workspaceMode.isSsh()) {
+      sshLogger.toolUse("glob", "routing glob tool to SSH remote", { meta: { pattern: args.pattern } });
       return await sshGlobToolExecute(args.pattern as string, signal);
     }
     const pattern = args.pattern as string;
@@ -277,6 +280,7 @@ export const grepTool: Tool = {
   },
   async execute(args, cwd, signal) {
     if (workspaceMode.isSsh()) {
+      sshLogger.toolUse("grep", "routing grep tool to SSH remote", { meta: { pattern: args.pattern, include: args.include } });
       return await sshGrepToolExecute(args.pattern as string, args.include as string | undefined, signal);
     }
     const pattern = args.pattern as string;
@@ -387,6 +391,7 @@ export const ripgrepSearchTool: Tool = {
   },
   async execute(args, cwd, signal) {
     if (workspaceMode.isSsh()) {
+      sshLogger.toolUse("ripgrep_search", "routing ripgrep_search tool to SSH remote (fallback to grep)", { meta: { pattern: args.pattern } });
       return await sshGrepToolExecute(args.pattern as string, undefined, signal);
     }
     const pattern = args.pattern as string;
