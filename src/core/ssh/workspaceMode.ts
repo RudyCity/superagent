@@ -81,7 +81,9 @@ class WorkspaceModeManager {
       if (hostPort.includes(":")) {
         const portIdx = hostPort.lastIndexOf(":");
         host = hostPort.slice(0, portIdx);
-        port = parseInt(hostPort.slice(portIdx + 1), 10) || 22;
+        const parsedPort = parseInt(hostPort.slice(portIdx + 1), 10);
+        // Use isNaN check instead of || to handle port 0 correctly
+        port = isNaN(parsedPort) ? 22 : parsedPort;
       }
 
       let privateKeyPath: string | undefined;
@@ -95,6 +97,16 @@ class WorkspaceModeManager {
       }
 
       if (!host || !remotePath) return null;
+
+      // Q1: Validate host format — must be a valid hostname or IP address
+      const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$/;
+      const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+      const ipv6Regex = /^\[?[a-fA-F0-9:]+\]?$/;
+      const isValidHost = hostnameRegex.test(host) || ipv4Regex.test(host) || ipv6Regex.test(host);
+      if (!isValidHost) return null;
+
+      // Q1: Validate port range — must be between 1 and 65535
+      if (port < 1 || port > 65535) return null;
 
       // Validation: remoteCwd must be non-empty, start with '/', and have no invalid segments.
       const normalizedRemote = remotePath.startsWith("/") ? remotePath : `/${remotePath}`;

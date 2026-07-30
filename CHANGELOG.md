@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.2.626] - 2026-07-30
+
+### SSH Workspace — All Audit Findings Implemented
+
+Implemented all 8 improvements identified in the SSH workspace audit:
+
+- **S1: Host Key Verification** (`sshProxy.ts`): Added known_hosts-based host key verification using SHA-256 fingerprints stored in `~/.superagent-r/known_hosts`. First connection uses TOFU (Trust On First Use); subsequent connections verify the fingerprint and reject MITM attacks.
+- **S2: Password Memory Cleanup** (`sshProxy.ts`): Password is now deleted from `SshWorkspaceConfig` after successful authentication, preventing exposure via `workspaceMode.getConfig()`.
+- **S4: Background Process PID Tracking** (`sshProxy.ts`, `sshCommands.ts`): PIDs started by `execBackground()` are tracked in a Set. `sshKillBackgroundProcessExecute` now validates that the PID was started by Superagent before sending `kill -9`.
+- **S5: Exec Timeout Process Cleanup** (`sshProxy.ts`): Timeout handler now closes the SSH stream to kill the remote process instead of leaving it orphaned.
+- **Q1: Host/Port Validation** (`workspaceMode.ts`): `parseSshTarget` now validates host format (hostname/IPv4/IPv6 regex) and port range (1-65535). Fixed port 0 parsing bug (`parseInt("0") || 22` → 22).
+- **Q2: Glob Command Fix** (`sshCommands.ts`): `sshGlobToolExecute` now uses `-name` for filename patterns (no slashes) and `-path` for path patterns (with slashes) separately, instead of using the same pattern for both.
+- **Q3: Configurable Cache Mode** (`sshProxy.ts`): Added `setCacheMode("strict" | "fast")` API. "strict" mode validates mtime on every cache hit (default); "fast" mode trusts TTL without mtime check for reduced latency.
+- **Q4: Connection Health Monitoring** (`sshProxy.ts`): `ensureConnected()` now runs a lightweight keepalive check (`exec("true")`) if the connection has been idle > 60s, detecting half-open connections and automatically reconnecting.
+
+### Tests
+
+- Added `tests/sshImprovements.test.ts` with 23 tests covering all 8 improvements.
+- All 105 SSH tests pass (7 test files).
+
+### Verification
+
+- `npx vitest run` (SSH suite): 105/105 pass
+- `npx tsc --noEmit`: No errors
+
 ## [1.2.625] - 2026-07-30
 
 ### SSH Workspace Audit — Critical ESM Fix

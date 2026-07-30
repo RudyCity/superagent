@@ -3,6 +3,7 @@ import SFTPClient from "ssh2-sftp-client";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import crypto from "crypto";
 import { SshWorkspaceConfig, workspaceMode } from "./workspaceMode.js";
 import { sshLogger } from "./sshLogger.js";
 import { getActiveQuestionHandler } from "../tools/state.js";
@@ -17,8 +18,49 @@ export interface SshSystemMetrics {
   pingMs: number;
 }
 
+export type SshCacheMode = "strict" | "fast";
+
 export function escapeShellArg(arg: string): string {
   return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+/** Path to known_hosts file for host key verification */
+function getKnownHostsPath(): string {
+  return path.join(os.homedir(), ".superagent-r", "known_hosts");
+}
+
+/** Load known host keys from the known_hosts file. Returns Map<host, fingerprint> */
+function loadKnownHosts(): Map<string, string> {
+  const hosts = new Map<string, string>();
+  try {
+    const content = fs.readFileSync(getKnownHostsPath(), "utf-8");
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const [host, fingerprint] = trimmed.split(/\s+/);
+      if (host && fingerprint) {
+        hosts.set(host, fingerprint);
+      }
+    }
+  } catch {
+    // File doesn't exist yet — that's OK, first connection
+  }
+  return hosts;
+}
+
+/** Save a host key fingerprint to the known_hosts file */
+function saveKnownHost(host: string, fingerprint: string): void {
+  try {
+    const knownHostsPath = getKnownHostsPath();
+    const dir = path.dirname(knownHostsPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const entry = `${host} ${fingerprint}\n`;
+    fs.appendFileSync(knownHostsPath, entry, "utf-8");
+  } catch (err) {
+    sshLogger.warn("host_key", `Failed to save known host: ${(err as Error).message}`);
+  }
 }
 
 export class SshProxyService {
@@ -28,10 +70,18 @@ export class SshProxyService {
   private isConnecting = false;
   private connectPromise: Promise<void> | null = null;
   private passwordHandler?: () => Promise<string>;
-  
+
   // SFTP In-memory Smart Cache
   private fileCache = new Map<string, { content: string; timestamp: number; mtime?: number }>();
   private cacheTtlMs = 30000; // 30s TTL
+  private cacheMode: SshCacheMode = "strict";
+
+  // S4: Tracked background PIDs for kill validation
+  private trackedPids = new Set<string>();
+
+  // Q4: Connection health monitoring
+  private lastActivityTime = 0;
+  private readonly healthCheckIntervalMs = 60000; // Check if idle > 60s
 
   public setPasswordHandler(handler: () => Promise<string>) {
     this.passwordHandler = handler;
@@ -39,6 +89,30 @@ export class SshProxyService {
 
   public clearPasswordHandler() {
     this.passwordHandler = undefined;
+  }
+
+  // Q3: Configurable cache mode — "strict" validates mtime, "fast" trusts TTL
+  public setCacheMode(mode: SshCacheMode) {
+    this.cacheMode = mode;
+  }
+
+  public getCacheMode(): SshCacheMode {
+    return this.cacheMode;
+  }
+
+  // S4: Track a background PID
+  public trackPid(pid: string): void {
+    this.trackedPids.add(pid);
+  }
+
+  // S4: Untrack a background PID
+  public untrackPid(pid: string): void {
+    this.trackedPids.delete(pid);
+  }
+
+  // S4: Check if a PID was started by Superagent
+  public isPidTracked(pid: string): boolean {
+    return this.trackedPids.has(pid);
   }
 
   private async resolvePassword(): Promise<string> {
@@ -85,6 +159,7 @@ export class SshProxyService {
     this.config = config;
     this.isConnecting = true;
     this.clearCache();
+    this.trackedPids.clear();
     sshLogger.info("connect", `connecting to ${config.host}:${config.port}`, {
       host: config.host,
       user: config.username,
@@ -104,6 +179,29 @@ export class SshProxyService {
         keepaliveCountMax: 3,
         readyTimeout: 15000,
       };
+
+      // S1: Host key verification via known_hosts
+      const knownHosts = loadKnownHosts();
+      const knownFingerprint = knownHosts.get(config.host);
+      if (knownFingerprint) {
+        connectConfig.hostVerifier = (key: Buffer): boolean => {
+          const fingerprint = crypto.createHash("sha256").update(key).digest("hex");
+          if (fingerprint === knownFingerprint) {
+            sshLogger.info("host_key", `host key verified for ${config.host}`);
+            return true;
+          }
+          sshLogger.error("host_key", `HOST KEY MISMATCH for ${config.host} — possible MITM attack`);
+          return false;
+        };
+      } else {
+        // First connection — accept and save the key (TOFU)
+        connectConfig.hostVerifier = (key: Buffer): boolean => {
+          const fingerprint = crypto.createHash("sha256").update(key).digest("hex");
+          saveKnownHost(config.host, fingerprint);
+          sshLogger.info("host_key", `first connection — saved host key for ${config.host}`);
+          return true;
+        };
+      }
 
       if (config.password) {
         connectConfig.password = config.password;
@@ -158,10 +256,17 @@ export class SshProxyService {
         }
       }
 
+      // S2: Clear password from config after successful authentication
+      if (config.password) {
+        delete config.password;
+        sshLogger.info("connect", "password cleared from config after auth");
+      }
+
       this.sftpClient = new SFTPClient();
       await this.sftpClient.connect(connectConfig);
       sshLogger.info("connect", "SFTP session established");
 
+      this.lastActivityTime = Date.now();
       this.isConnecting = false;
     } catch (err) {
       this.isConnecting = false;
@@ -180,7 +285,26 @@ export class SshProxyService {
       } else {
         throw new Error("SSH Proxy is not connected");
       }
+      return;
     }
+
+    // Q4: Connection health monitoring — check if session is still alive after idle period
+    const idleTime = Date.now() - this.lastActivityTime;
+    if (idleTime > this.healthCheckIntervalMs) {
+      try {
+        await this.exec("true", ".", 5000);
+        sshLogger.debug("health", "keepalive check passed");
+      } catch (err) {
+        sshLogger.warn("health", `keepalive check failed — reconnecting: ${(err as Error).message}`);
+        if (this.config) {
+          await this.disconnect();
+          await this.connect(this.config);
+        } else {
+          throw new Error("SSH Proxy is not connected");
+        }
+      }
+    }
+    this.lastActivityTime = Date.now();
   }
 
   private findDefaultPrivateKey(): Buffer | undefined {
@@ -248,9 +372,12 @@ export class SshProxyService {
     const workingDir = this.normalizePosixPath(cwd || ".");
     const fullCommand = `cd ${this.escapeShellArg(workingDir)} && ${command}`;
 
+    let sshStream: any = null;
+
     const execPromise = new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
       this.sshClient!.exec(fullCommand, (err, stream) => {
         if (err) return reject(err);
+        sshStream = stream;
 
         let stdout = "";
         let stderr = "";
@@ -290,11 +417,8 @@ export class SshProxyService {
         };
 
         // CRITICAL: wire `error` BEFORE `close` so synchronous stream errors don't get swallowed.
-        // ssh2 emits close with code=null on stream errors; without an error listener the promise
-        // would resolve with empty stdout and exitCode 0 — masking the real failure.
         stream.on("error", (streamErr: Error) => {
           streamError = streamErr;
-          // Don't settle here — wait for close to fire so we can include any buffered output.
           if (!stderr.includes(streamErr.message)) {
             stderr += (stderr ? "\n" : "") + `[stream error] ${streamErr.message}`;
           }
@@ -305,10 +429,6 @@ export class SshProxyService {
         });
 
         stream.on("close", (code: number | null) => {
-          // Resolve with:
-          //  - exit code if non-null/non-undefined
-          //  - else -1 if stream errored (real failure, not silent success)
-          //  - else 0 for normal completion
           const finalExit = (code !== null && code !== undefined && !isNaN(Number(code)))
             ? Number(code)
             : (streamError ? -1 : 0);
@@ -332,6 +452,10 @@ export class SshProxyService {
     let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
+        // S5: Close the SSH stream to kill the remote process on timeout
+        if (sshStream) {
+          try { sshStream.close(); } catch {}
+        }
         reject(new Error(`SSH execution timed out after ${timeoutMs}ms`));
       }, timeoutMs);
     });
@@ -347,7 +471,12 @@ export class SshProxyService {
     const normalizedLog = this.normalizePosixPath(logFile);
     const bgCommand = `nohup bash -c ${this.escapeShellArg(command)} > ${this.escapeShellArg(normalizedLog)} 2>&1 & echo $!`;
     const res = await this.exec(bgCommand, workingDir);
-    return res.stdout.trim();
+    const pid = res.stdout.trim();
+    // S4: Track the PID for kill validation
+    if (pid) {
+      this.trackPid(pid);
+    }
+    return pid;
   }
 
   public async stat(remotePath: string): Promise<{ size: number; mtime: number; isFile: boolean; isDirectory: boolean }> {
@@ -368,9 +497,15 @@ export class SshProxyService {
     const now = Date.now();
 
     // Mtime-aware cache: validate file hasn't changed since cached.
+    // Q3: In "fast" mode, skip the mtime stat check and trust the TTL.
     if (!options?.skipCache) {
       const cached = this.fileCache.get(target);
       if (cached && now - cached.timestamp < this.cacheTtlMs) {
+        if (this.cacheMode === "fast") {
+          // Fast mode: trust cache within TTL without mtime validation
+          return cached.content;
+        }
+        // Strict mode: validate mtime
         try {
           const currentStat = await this.sftpClient!.stat(target);
           if (cached.mtime !== undefined && currentStat.modifyTime === cached.mtime) {
@@ -451,6 +586,8 @@ export class SshProxyService {
 
   public async disconnect(): Promise<void> {
     this.clearCache();
+    this.trackedPids.clear();
+
     if (this.sftpClient) {
       try {
         await this.sftpClient.end();
@@ -471,9 +608,6 @@ export class SshProxyService {
    * Diagnose the SSH workspace connection: runs `pwd` and `whoami` to confirm
    * the remote shell is functional. Returns a diagnostic report on success
    * or a detailed error string on failure.
-   *
-   * Use this after `connect()` to surface real errors (auth, network, invalid cwd)
-   * instead of silently returning empty stdout from later commands.
    */
   public async diagnose(): Promise<
     | { ok: true; pwd: string; user: string; remoteCwd: string; host: string }
