@@ -23,6 +23,8 @@ import {
   setActiveChainId,
 } from "./WorkspaceChainConfig.js";
 import { sshLogger } from "../ssh/sshLogger.js";
+import { workspaceMode } from "../ssh/workspaceMode.js";
+import { resolveHostAlias } from "../ssh/sshConfig.js";
 
 /** SSH connection wrapper for a chain node */
 interface ChainSshConnection {
@@ -76,6 +78,11 @@ class WorkspaceChainManagerClass {
     const node = this.activeChain.nodes.find(n => n.id === nodeId);
     if (!node) return false;
     this.activeNodeId = nodeId;
+    if (node.type === "ssh" && node.sshConfig) {
+      workspaceMode.setSshMode(node.sshConfig);
+    } else {
+      workspaceMode.setLocalMode();
+    }
     return true;
   }
 
@@ -89,6 +96,13 @@ class WorkspaceChainManagerClass {
     this.activeChain = chain;
     this.activeNodeId = chain.primaryNodeId;
     setActiveChainId(chainId);
+    
+    const primaryNode = chain.nodes.find(n => n.id === chain.primaryNodeId);
+    if (primaryNode && primaryNode.type === "ssh" && primaryNode.sshConfig) {
+      workspaceMode.setSshMode(primaryNode.sshConfig);
+    } else {
+      workspaceMode.setLocalMode();
+    }
     return chain;
   }
 
@@ -98,6 +112,7 @@ class WorkspaceChainManagerClass {
     this.activeChain = null;
     this.activeNodeId = null;
     setActiveChainId(null);
+    workspaceMode.setLocalMode();
   }
 
   /** Get a node by ID from the active chain */
@@ -144,6 +159,18 @@ class WorkspaceChainManagerClass {
 
   /** Internal SSH connection logic */
   private async _doConnectSsh(nodeId: string, config: NonNullable<WorkspaceNode["sshConfig"]>): Promise<void> {
+    // SSH config file support: resolve host alias from ~/.ssh/config
+    const alias = resolveHostAlias(config.host);
+    if (alias) {
+      if (alias.hostname) config.host = alias.hostname;
+      if (alias.user && config.username === "root") config.username = alias.user;
+      if (alias.identityFile && !config.privateKeyPath) config.privateKeyPath = alias.identityFile;
+      if (alias.proxyJump && !config.proxyJump) config.proxyJump = alias.proxyJump;
+      if (alias.compression !== undefined && config.compression === undefined) config.compression = alias.compression;
+      if (alias.forwardAgent !== undefined && config.agentForward === undefined) config.agentForward = alias.forwardAgent;
+      sshLogger.info("chain.ssh_config", `resolved host alias for node ${nodeId} from ~/.ssh/config`);
+    }
+
     sshLogger.info("chain.connect", `connecting to SSH node ${nodeId}`, {
       host: config.host,
       user: config.username,
@@ -162,6 +189,15 @@ class WorkspaceChainManagerClass {
       keepaliveCountMax: 3,
       readyTimeout: config.readyTimeout || 15000,
     };
+
+    if (config.compression) {
+      connectConfig.compress = true;
+      sshLogger.info("chain.connect", `SSH compression enabled for node ${nodeId}`);
+    }
+    if (config.agentForward) {
+      connectConfig.agentForward = true;
+      sshLogger.info("chain.connect", `SSH agent forwarding enabled for node ${nodeId}`);
+    }
 
     if (config.password) {
       connectConfig.password = config.password;
@@ -210,7 +246,12 @@ class WorkspaceChainManagerClass {
     });
 
     const sftp = new SFTPClient();
-    await sftp.connect(connectConfig);
+    try {
+      await sftp.connect(connectConfig);
+    } catch (err) {
+      try { client.end(); } catch {}
+      throw err;
+    }
 
     this.sshConnections.set(nodeId, {
       nodeId,
@@ -240,6 +281,54 @@ class WorkspaceChainManagerClass {
     return this.sshConnections.get(nodeId) || null;
   }
 
+  /** Secure path normalization and boundary check */
+  private normalizeAndVerifyPath(node: WorkspaceNode, filePath: string): string {
+    const isSsh = node.type === "ssh";
+    const raw = typeof filePath === "string" && filePath.length > 0 ? filePath : ".";
+    const clean = raw.replace(/\\/g, "/");
+
+    if (isSsh) {
+      const base = node.sshConfig?.remoteCwd || "/";
+      const posixBase = base.replace(/\\/g, "/").replace(/\/+$/, "") || "/";
+      let resolved: string;
+      if (clean.startsWith("/")) {
+        resolved = clean;
+      } else {
+        resolved = posixBase === "/" ? `/${clean}` : `${posixBase}/${clean}`;
+      }
+
+      const parts = resolved.split("/").reduce<string[]>((acc, seg) => {
+        if (seg === "..") {
+          acc.pop();
+        } else if (seg !== "" && seg !== ".") {
+          acc.push(seg);
+        }
+        return acc;
+      }, []);
+      const normalized = "/" + parts.join("/");
+
+      const baseParts = posixBase.split("/").filter((p) => p !== "" && p !== ".");
+      const normalizedBase = "/" + baseParts.join("/");
+
+      if (
+        normalizedBase !== "/" &&
+        normalized !== normalizedBase &&
+        !normalized.startsWith(normalizedBase + "/")
+      ) {
+        throw new Error(`Access denied: Path "${filePath}" escapes remote workspace boundary "${posixBase}"`);
+      }
+      return normalized;
+    } else {
+      const base = node.path || process.cwd();
+      const resolved = path.resolve(base, filePath);
+      const cleanBase = path.resolve(base);
+      if (resolved !== cleanBase && !resolved.startsWith(cleanBase + path.sep)) {
+        throw new Error(`Access denied: Path "${filePath}" escapes local workspace boundary "${base}"`);
+      }
+      return resolved;
+    }
+  }
+
   /** Execute a command on a specific node (local or SSH) */
   public async execOnNode(
     nodeId: string,
@@ -254,7 +343,7 @@ class WorkspaceChainManagerClass {
 
     if (node.type === "local") {
       const { execa } = await import("execa");
-      const workingDir = cwd || node.path || process.cwd();
+      const workingDir = this.normalizeAndVerifyPath(node, cwd || ".");
       const result = await execa(command, {
         cwd: workingDir,
         shell: true,
@@ -279,45 +368,54 @@ class WorkspaceChainManagerClass {
         throw new Error(`Failed to establish SSH connection to node ${nodeId}`);
       }
 
-      const remoteCwd = cwd || node.sshConfig?.remoteCwd || ".";
+      const remoteCwd = this.normalizeAndVerifyPath(node, cwd || ".");
       const esc = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
       const fullCommand = `cd ${esc(remoteCwd)} && ${command}`;
 
-      return new Promise((resolve, reject) => {
-        let stdout = "";
-        let stderr = "";
-        let settled = false;
+      let sshStream: any = null;
 
-        const timer = setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            reject(new Error(`SSH execution timed out after ${timeoutMs}ms on node ${nodeId}`));
-          }
-        }, timeoutMs);
-
+      const execPromise = new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
         conn!.client.exec(fullCommand, (err, stream) => {
           if (err) {
-            clearTimeout(timer);
             reject(err);
             return;
           }
+          sshStream = stream;
+          let stdout = "";
+          let stderr = "";
+          let settled = false;
+
           stream.on("data", (data: Buffer) => { stdout += data.toString(); });
           stream.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
           stream.on("close", (code: number | null) => {
             if (!settled) {
               settled = true;
-              clearTimeout(timer);
               resolve({ stdout, stderr, exitCode: code ?? 0 });
             }
           });
           stream.on("error", (streamErr: Error) => {
             if (!settled) {
               settled = true;
-              clearTimeout(timer);
               reject(streamErr);
             }
           });
         });
+      });
+
+      if (timeoutMs <= 0) return execPromise;
+
+      let timer: NodeJS.Timeout;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          if (sshStream) {
+            try { sshStream.close(); } catch {}
+          }
+          reject(new Error(`SSH execution timed out after ${timeoutMs}ms on node ${nodeId}`));
+        }, timeoutMs);
+      });
+
+      return Promise.race([execPromise, timeoutPromise]).finally(() => {
+        clearTimeout(timer);
       });
     }
 
@@ -330,8 +428,8 @@ class WorkspaceChainManagerClass {
     if (!node) throw new Error(`Node not found: ${nodeId}`);
 
     if (node.type === "local") {
-      const fullPath = path.resolve(node.path || process.cwd(), filePath);
-      return fs.readFileSync(fullPath, "utf-8");
+      const verifiedPath = this.normalizeAndVerifyPath(node, filePath);
+      return fs.readFileSync(verifiedPath, "utf-8");
     }
 
     let conn = this.getSshConnection(nodeId);
@@ -341,9 +439,7 @@ class WorkspaceChainManagerClass {
     }
     if (!conn) throw new Error(`No SSH connection to node ${nodeId}`);
 
-    const remotePath = filePath.startsWith("/")
-      ? filePath
-      : `${node.sshConfig?.remoteCwd}/${filePath}`.replace(/\/+/g, "/");
+    const remotePath = this.normalizeAndVerifyPath(node, filePath);
     const buffer = await conn.sftp.get(remotePath);
     if (Buffer.isBuffer(buffer)) {
       return buffer.toString("utf-8");
@@ -357,10 +453,10 @@ class WorkspaceChainManagerClass {
     if (!node) throw new Error(`Node not found: ${nodeId}`);
 
     if (node.type === "local") {
-      const fullPath = path.resolve(node.path || process.cwd(), filePath);
-      const dir = path.dirname(fullPath);
+      const verifiedPath = this.normalizeAndVerifyPath(node, filePath);
+      const dir = path.dirname(verifiedPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(fullPath, content, "utf-8");
+      fs.writeFileSync(verifiedPath, content, "utf-8");
       return;
     }
 
@@ -371,9 +467,7 @@ class WorkspaceChainManagerClass {
     }
     if (!conn) throw new Error(`No SSH connection to node ${nodeId}`);
 
-    const remotePath = filePath.startsWith("/")
-      ? filePath
-      : `${node.sshConfig?.remoteCwd}/${filePath}`.replace(/\/+/g, "/");
+    const remotePath = this.normalizeAndVerifyPath(node, filePath);
     const dir = path.posix.dirname(remotePath);
     try { await conn.sftp.mkdir(dir, true); } catch {}
     await conn.sftp.put(Buffer.from(content, "utf-8"), remotePath);

@@ -279,11 +279,19 @@ export class SshProxyService {
   }
 
   private async ensureConnected(): Promise<void> {
+    const activeConfig = workspaceMode.getConfig() || this.config;
+    const configChanged = activeConfig && this.config && (
+      activeConfig.host !== this.config.host ||
+      activeConfig.port !== this.config.port ||
+      activeConfig.username !== this.config.username ||
+      activeConfig.remoteCwd !== this.config.remoteCwd
+    );
+
     const isSocketDestroyed = (this.sshClient as any)?._sock?.destroyed || (this.sshClient as any)?._sock?.closed;
-    if (!this.sshClient || !this.sftpClient || isSocketDestroyed) {
-      if (this.config) {
+    if (!this.sshClient || !this.sftpClient || isSocketDestroyed || configChanged) {
+      if (activeConfig) {
         await this.disconnect();
-        await this.connect(this.config);
+        await this.connect(activeConfig);
       } else {
         throw new Error("SSH Proxy is not connected");
       }
@@ -330,7 +338,7 @@ export class SshProxyService {
     // Defensive: treat null/undefined/non-string as "."
     const raw = typeof targetPath === "string" && targetPath.length > 0 ? targetPath : ".";
     let clean = raw.replace(/\\/g, "/");
-    const base = this.config?.remoteCwd || workspaceMode.getConfig()?.remoteCwd || "/";
+    const base = (workspaceMode.isSsh() ? workspaceMode.getConfig()?.remoteCwd : null) || this.config?.remoteCwd || "/";
     const posixBase = base.replace(/\\/g, "/").replace(/\/+$/, "") || "/";
 
     let resolved: string;
@@ -610,6 +618,7 @@ export class SshProxyService {
   public async disconnect(): Promise<void> {
     this.clearCache();
     this.trackedPids.clear();
+    this.config = null;
 
     if (this.sftpClient) {
       try {

@@ -1035,6 +1035,12 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
                 port: sshCfg.port,
                 username: sshCfg.username,
                 remoteCwd: sshCfg.remoteCwd,
+                privateKeyPath: sshCfg.privateKeyPath,
+                readyTimeout: sshCfg.readyTimeout,
+                compression: sshCfg.compression,
+                agentForward: sshCfg.agentForward,
+                proxyJump: sshCfg.proxyJump,
+                bandwidthLimit: sshCfg.bandwidthLimit,
               },
             }
           : {
@@ -1328,6 +1334,12 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
               port: parsed.port,
               username: parsed.username,
               remoteCwd: parsed.remoteCwd,
+              privateKeyPath: parsed.privateKeyPath,
+              readyTimeout: parsed.readyTimeout,
+              compression: parsed.compression,
+              agentForward: parsed.agentForward,
+              proxyJump: parsed.proxyJump,
+              bandwidthLimit: parsed.bandwidthLimit,
             },
             description: description || undefined,
           };

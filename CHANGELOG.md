@@ -1,3 +1,25 @@
+## [1.2.638] - 2026-07-30
+
+### Fix: Workspace Chain and SSH Target Configuration Sync and Verification
+
+- **Workspace Mode & sshProxy Target Sync**:
+  - Updated `ensureConnected()` in `sshProxy.ts` to detect target host configuration changes and automatically reconnect.
+  - Prioritized `workspaceMode` configuration in `normalizePosixPath` to avoid cross-test state leakage.
+  - Cleared target `config` on `disconnect()` to clean up singleton state.
+- **WorkspaceChainManager Security & Operations**:
+  - Synchronized active node changes (local and SSH) directly with `workspaceMode` to ensure tool actions route to the correct active host.
+  - Resolved SSH config file aliases/proxy jumps during connection establishment.
+  - Added support for SSH compression and agent forwarding.
+  - Enforced workspace boundary checks (`normalizeAndVerifyPath`) for all read, write, and command execution operations on both local and SSH nodes.
+  - Added stream-level close on timeouts for SSH command execution to prevent resource leaks.
+- **Wizard Form Preservation**:
+  - Preserved all SSH parameters when creating workspace chains or adding nodes in `useWizardSubmit.ts`.
+- **Cleanup & Tests**:
+  - Removed duplicate `src/core/workspace/Workspace` file.
+  - Added unit test suite `tests/workspaceChainSsh.test.ts` covering WorkspaceChainManager boundaries and synchronization.
+
+---
+
 ## [1.2.637] - 2026-07-30
 
 ### Patch: Version bump for AgenRouter fix release
