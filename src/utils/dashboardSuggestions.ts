@@ -9,6 +9,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/internal-hooks": "Manage custom internal hook tools — init, dev, or select active hooks",
   "/ih": "Manage custom internal hook tools — init, dev, or select active hooks",
   "/model": "Switch active LLM model or configure per-tier models",
+  "/mp": "Quick-switch model preset (e.g. /mp fast, /mp default). Shortcut: /mp-<name>",
   "/login": "Add API credentials or switch active provider",
   "/resume": "Resume a previous session from history",
   "/clear": "Clear the visual log screen",
@@ -87,6 +88,17 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       return filterSuggestions(commands, query);
     }
     
+    if (mainCommand === "/mp") {
+      const presetSuggestions = [
+        "/mp fast",
+        "/mp default",
+      ];
+      const searchTerm = query.replace(/^\/mp\s*/i, "").trim();
+      return searchTerm
+        ? filterSuggestions(presetSuggestions, query)
+        : presetSuggestions;
+    }
+
     if (mainCommand === "/model") {
       if (parts.length >= 2 && parts[1].toLowerCase() === "preset") {
         const presetSuggestions = [

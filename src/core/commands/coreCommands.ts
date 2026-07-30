@@ -179,6 +179,7 @@ export const helpCommand: SlashCommand = {
         "              /ih active       - Select which hooks to activate via checkbox dialog",
         "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
         "  /model    - Set or list active AI models (e.g. /model openai/gpt-4o)",
+        "  /mp       - Quick-switch model preset (e.g. /mp fast, /mp default). Shortcut: /mp-<name>",
         "  /settings - Show current rate limit & concurrency settings",
         "  /setting-concurrency <0|1> - Set LLM concurrency limit",
         "  /setting-rpm <number>      - Set rate limit RPM",
