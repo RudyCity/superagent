@@ -932,7 +932,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             const namePart = dbWs?.name ? ` [${dbWs.name}]` : "";
             const isCurrent = dir === currentCwd;
             const currentBadge = isCurrent ? " (Current)" : "";
-            const cleanDir = dir.startsWith("ssh:") ? dir : path.basename(dir) || dir;
+            const cleanDir = dir;
             return `📁${namePart} ${cleanDir}${currentBadge}`;
           });
           options.push("➕ Type a custom path or SSH target...");
@@ -1216,7 +1216,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             const namePart = dbWs?.name ? ` [${dbWs.name}]` : "";
             const isCurrent = dir === currentCwd;
             const currentBadge = isCurrent ? " (Current)" : "";
-            const cleanDir = dir.startsWith("ssh:") ? dir : path.basename(dir) || dir;
+            const cleanDir = dir;
             return `📁${namePart} ${cleanDir}${currentBadge}`;
           });
           options.push("➕ Type a custom path or SSH target...");
@@ -1280,7 +1280,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             const namePart = dbWs?.name ? ` [${dbWs.name}]` : "";
             const isCurrent = dir === currentCwd;
             const currentBadge = isCurrent ? " (Current)" : "";
-            const cleanDir = dir.startsWith("ssh:") ? dir : path.basename(dir) || dir;
+            const cleanDir = dir;
             return `📁${namePart} ${cleanDir}${currentBadge}`;
           });
           options.push("➕ Type a custom path or SSH target...");

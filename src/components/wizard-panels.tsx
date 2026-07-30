@@ -963,15 +963,25 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
-        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 11 && wizardOptions.length > 0 && (
-          <WizardDialog
-            title="➕ ADD NODE TO CHAIN — Select Workspace or Node (↑/↓ Navigate, Enter: Select, Esc: Back):"
-            description="Select an existing workspace directory, or type a custom path/target:"
-            borderColor="cyan"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-          />
-        )}
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 11 && wizardOptions.length > 0 && (() => {
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const searchTitle = searchQuery
+            ? `➕ ADD NODE TO CHAIN — 🔍 "${searchQuery}" (${filteredOptions.length}/${wizardOptions.length} results):`
+            : "➕ ADD NODE TO CHAIN — Select Workspace or Node (↑/↓ Navigate, Enter: Select, Esc: Back):";
+          return (
+            <WizardDialog
+              title={searchTitle}
+              description="Select an existing workspace directory, or type a custom path/target:"
+              borderColor="cyan"
+              options={filteredOptions}
+              selectedIndex={wizardSelectedIndex}
+              searchQuery={searchQuery || undefined}
+            />
+          );
+        })()}
 
         {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 15 && (
           <WizardDialog

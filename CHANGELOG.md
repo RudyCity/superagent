@@ -1,3 +1,12 @@
+## [1.2.632] - 2026-07-30
+
+### Step 11 Path Completeness & Filter Suggestions Upgrades
+
+- **Full Paths Displayed**:
+  - Replaced directory basenames with the complete/full paths in the Step 11 options list when adding a node to a workspace chain.
+- **Filter Suggestions & Search Bar**:
+  - Implemented dynamic suggestion filtering and added the search input bar to the Step 11 panels layout in `wizard-panels.tsx` so users can filter options by typing segments of the path or the workspace name.
+
 ## [1.2.631] - 2026-07-30
 
 ### Node Description Input & Skip Node Role Selection
