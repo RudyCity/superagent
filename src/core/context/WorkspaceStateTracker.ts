@@ -210,13 +210,15 @@ export function buildWorkspaceStateBlock(opts: WorkspaceStateOptions): Workspace
   if (activeChainId) {
     const chain = getWorkspaceChain(activeChainId);
     if (chain) {
-      parts.push(`🔗 ACTIVE WORKSPACE CHAIN: ${chain.name} (${chain.id})`);
+      const chainDesc = chain.description ? ` — ${chain.description}` : "";
+      parts.push(`🔗 ACTIVE WORKSPACE CHAIN: ${chain.name} (${chain.id})${chainDesc}`);
       const primaryNode = chain.nodes.find(n => n.id === chain.primaryNodeId);
       if (primaryNode) {
         const pathOrTarget = primaryNode.type === "ssh" && primaryNode.sshConfig
           ? `${primaryNode.sshConfig.username}@${primaryNode.sshConfig.host}:${primaryNode.sshConfig.port}${primaryNode.sshConfig.remoteCwd}`
           : primaryNode.path;
-        parts.push(`   Primary Node: ${primaryNode.label} (role: main, type: ${primaryNode.type}, target: ${pathOrTarget})`);
+        const descStr = primaryNode.description ? `, description: "${primaryNode.description}"` : "";
+        parts.push(`   Primary Node: ${primaryNode.label} (role: main, type: ${primaryNode.type}, target: ${pathOrTarget}${descStr})`);
       }
       const otherNodes = chain.nodes.filter(n => n.id !== chain.primaryNodeId);
       if (otherNodes.length > 0) {
@@ -225,7 +227,8 @@ export function buildWorkspaceStateBlock(opts: WorkspaceStateOptions): Workspace
           const pathOrTarget = n.type === "ssh" && n.sshConfig
             ? `${n.sshConfig.username}@${n.sshConfig.host}:${n.sshConfig.port}${n.sshConfig.remoteCwd}`
             : n.path;
-          parts.push(`   • ${n.label} (role: ${n.role}, type: ${n.type}, target: ${pathOrTarget})`);
+          const descStr = n.description ? `, description: "${n.description}"` : "";
+          parts.push(`   • ${n.label} (role: ${n.role}, type: ${n.type}, target: ${pathOrTarget}${descStr})`);
         }
       }
     }

@@ -1,3 +1,12 @@
+## [1.2.633] - 2026-07-30
+
+### Workspace Chain & Node Descriptions Injected into System Base Prompt
+
+- **Live Workspace State Prompt Update** (`src/core/context/WorkspaceStateTracker.ts`):
+  - Injected both the workspace chain description and all workspace node descriptions (purpose/context) directly into the `LIVE WORKSPACE STATE` block.
+- **System Prompts Instruction Update** (`src/core/prompts.ts`):
+  - Updated the base system prompt instructions (`WORKSPACE_CHAINS` rule) to explicitly instruct the agent to read active workspace chains, node names, paths, roles, and description contexts from the `LIVE WORKSPACE STATE` block.
+
 ## [1.2.632] - 2026-07-30
 
 ### Step 11 Path Completeness & Filter Suggestions Upgrades
