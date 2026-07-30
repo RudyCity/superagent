@@ -303,7 +303,7 @@ export class ContextBuilder {
       research: `- Read-only research mode. Do NOT modify files or run build/test commands.`,
       plan: `- Propose implementation plan via 'manage_plan'. Do NOT edit source files before user approval.`,
       implement: `- Implement code changes. Plan mandatory only for complex/risky changes. Run build+test if shell available.`,
-      debug: `- Investigate and fix bugs. Trace root cause first. Run build+test if shell available.`,
+      debug: `- Investigate and fix bugs. Debug via terminal execution first. Trace root cause. Run build or test on new/updated files at END of repair process.`,
       review: `- Code quality/security review. No file edits unless requested. Output issues with severity and file/line refs.`,
     };
     const activeModeNotice = `\n# ACTIVE MODE: '${activeMode}'\n${MODE_INSTRUCTIONS[activeMode] || ""}\n`;

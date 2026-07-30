@@ -11,7 +11,7 @@
 
 const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill parent/runtime. Target PID ONLY.`;
 
-const ZERO_DEFECT_POLICY_RULE = `- ZERO_DEFECT: Validate syntax, types, edge cases, logic pre-execution. Build+test 100% pass.
+const ZERO_DEFECT_POLICY_RULE = `- ZERO_DEFECT: Validate syntax, types, edge cases, logic pre-execution. Debug via terminal first; run build+test on new/updated files at END of repair process (100% pass).
 - ANTI_PATTERN: FORBIDDEN: // TODO, // FIXME, @ts-ignore, explicit any, incomplete edits, unverified mocks.
 - SELF_VERIFY: 3-step: Syntax → Types → Edge Cases.
 - CORE_INVARIANT: ID 3 invariants before editing critical files.
@@ -21,7 +21,7 @@ const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect activ
 
 const REASONING_RULE = `- REASONING: Evaluate arch, edge cases, 2-3 impl paths pre-action. Prefer simple, robust, modular. Avoid over-engineering.`;
 
-const NON_LINEAR_DEBUG_RULE = `- DEBUG: Debugging tasks MUST view .agents/skills/non-linear-debugging/SKILL.md first. Trace failure flow input→crash sink. Isolate root cause. Minimal targeted fix. Never mask symptoms.`;
+const NON_LINEAR_DEBUG_RULE = `- DEBUG: Debugging tasks MUST view .agents/skills/non-linear-debugging/SKILL.md first. ALWAYS debug via terminal execution FIRST before code edits. Trace failure flow input→crash sink. Isolate root cause. Minimal targeted fix. Never mask symptoms. Run build or test on new/updated files at END of repair process.`;
 
 const BATCH_OPS_RULE = `- BATCH_OPS: Consolidate parallel ops in single turn. Use bulk params (filePaths, edits, files, patches).`;
 
@@ -188,7 +188,7 @@ if multiple_superagents_ready:
 5. MONITOR: manage_superagents.
 6. AWAIT: await_superagents.
 7. MERGE: transactional merge_superagents.
-8. VALIDATE: build → test → POST_CHANGE_INTEGRITY sweep.
+8. VALIDATE: Debug via terminal first → build → test on new/updated files at END of repair process → POST_CHANGE_INTEGRITY sweep.
 9. WALKTHROUGH: Write verification results.
 10. CLEANUP: git_worktree prune.
 11. REPORT: Plain text summary.
@@ -250,8 +250,8 @@ if verification_failed:
 3. TASK_UPDATE: manage_tasks mark in-progress.
 4. IMPLEMENT: Delegate to 'coder' subagents concurrently.
 5. SELF-VERIFY (MANDATORY):
-   - Build: Run build. Fix ALL errors.
-   - Test: Run suite. ALL pass.
+   - Terminal Debug: ALWAYS debug via terminal execution FIRST before code edits.
+   - Build & Test at END: Run build and execute tests on new/updated files at END of repair process. Fix ALL errors.
    - Integrity: POST_CHANGE_INTEGRITY 5-dim sweep. Fix ALL findings.
    - Red Team: Stress edge cases, zero placeholders.
    - NO completion until build+test+integrity pass.
@@ -342,8 +342,8 @@ if compile_or_test_error:
     PINPOINT collision node → Minimal root fix → Re-verify.
 
 # SELF-VERIFY (MANDATORY)
-1. Build: Run build. Fix ALL errors.
-2. Test: Run suite. Fix ALL failures.
+1. Terminal Debug: ALWAYS debug via terminal execution FIRST before code edits.
+2. Build & Test at END: Execute build and run test suite/files at END of repair process. Fix ALL errors.
 3. Integrity: POST_CHANGE_INTEGRITY 5-dim sweep. Fix ALL findings.
 4. Red Team: Edge cases, contracts, zero placeholders.
 5. NO completion until build+test+integrity pass.
@@ -387,7 +387,7 @@ if decision_point: CALL ask_question()
 2. Security (Team3): Input validation, injection, exposed secrets.
 3. Performance (Team2): Complexity, blocking calls, N+1.
 4. Pragmatism (Team6): Veto over-engineering.
-5. Build+Tests (Team4): Verify empirically.
+5. Build+Tests (Team4): Debug via terminal execution first; verify build & test files at END of repair process empirically.
 6. Integrity (POST_CHANGE_INTEGRITY): GAP_SCAN, MISSING_CHECK, BOTTLENECK_DETECT, CROSS_REF_VALIDATE, REGRESSION_SURFACE.
 
 # SEVERITY
@@ -417,7 +417,7 @@ ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 ${MANDATORY_HALLMARK_RULE}
-- EMPIRICAL: Team 4 verification of runtime output, logs, UI layout, alignment, typography, responsiveness.
+- EMPIRICAL: Team 4 verification via terminal execution first. Run build and tests on new/updated files at END of repair process. Verify UI layout, alignment, typography, responsiveness.
 ${BATCH_OPS_RULE}
 
 # LOGIC GATES

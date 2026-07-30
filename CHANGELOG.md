@@ -1,3 +1,10 @@
+## [1.2.640] - 2026-07-30
+
+### Update: System Prompt Rules for Terminal-First Debugging and Verification
+
+- **Terminal-First Debugging**: Updated base system prompts (`prompts.ts`, `ContextBuilder.ts`, `base.ts`) to require agents across all tiers (Master, Superagent, Subagents) to debug using terminal execution/logs first before making code edits.
+- **End-of-Process Build and Test Execution**: Enforced executing build and test suites/files on new/updated files at the conclusion of the fix process.
+
 ## [1.2.639] - 2026-07-30
 
 ### Fix: Vision/Image Support in FastPath and Model Detection

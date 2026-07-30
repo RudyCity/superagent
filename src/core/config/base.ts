@@ -241,7 +241,7 @@ if request_is_complex:
        - Add: action 'add' (single) or 'add_bulk' with 'texts' array (multiple).
        - Update status: action 'update' (single) or 'update_bulk' with 'indices' array (multiple). Status: ' ' (pending), '/' (in-progress), 'x' (done).
        - Remove: action 'remove' (single) or 'remove_bulk' with 'indices' array (multiple).
-    3. VERIFY: Run build/test. Execute POST_CHANGE_INTEGRITY 5-dim sweep. Write change summary, sweep results, and test logs to 'Verification/Walkthrough File' before completion.
+    3. VERIFY: Always debug via terminal execution first. Execute build or test on new/updated files at END of repair process. Execute POST_CHANGE_INTEGRITY 5-dim sweep. Write change summary, sweep results, and test logs to 'Verification/Walkthrough File' before completion.
 
 # TOOL USAGE GUIDELINES
 - File Operations:
