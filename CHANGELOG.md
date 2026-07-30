@@ -1,3 +1,24 @@
+## [1.2.629] - 2026-07-30
+
+### Workspace Chaining — Cross-Workspace Operations & Debugging
+
+- **Workspace Chain System** (`src/core/workspace/`): New feature for chaining multiple workspaces (local + SSH) into a directed graph so the AI agent understands cross-workspace relationships and can operate on any node.
+  - **`WorkspaceChainTypes.ts`**: Type definitions for `WorkspaceChain`, `WorkspaceNode` (local/SSH), `WorkspaceNodeRole` (main/module/deploy/dependency/test/staging/custom), `dependsOn` relationships, validation helpers, and topology formatting.
+  - **`WorkspaceChainConfig.ts`**: Persistence layer storing chains in `model-config.json` under `workspaceChains` key (JSON-only, no process.env). CRUD operations: create, update, delete, add-node, remove-node, activate/deactivate. `createQuickChain` helper for rapid chain creation from SSH targets.
+  - **`WorkspaceChainManager.ts`**: Runtime singleton managing active chain state, multi-SSH connection pool (one connection per SSH node), cross-workspace execution (`execOnNode`, `execOnAllNodes`, `execOnDependencyNodes`), file read/write across nodes, and connection lifecycle management.
+  - **`workspaceChainTools.ts`**: Two new AI tools:
+    - `manage_workspace_chain`: Create, list, activate, deactivate, delete, add-node, remove-node, status, topology, update chains.
+    - `cross_workspace_exec`: Execute operations on specific chain nodes (exec, read, write, exec-all, exec-deps, connect, disconnect, switch-node).
+  - **Tool Registration**: Both tools added to `masterToolset` and `superagentToolset` in `toolsets.ts`.
+  - **Context Injection** (`ContextBuilder.ts`): Active chain topology injected into system prompt so AI understands cross-workspace relationships, active node, and available cross-workspace tools.
+  - **System Prompt** (`base.ts`): Added `manage_workspace_chain` and `cross_workspace_exec` to the TOOLS documentation section.
+  - **Workspace Command** (`workspaceCommand.ts`): Added "🔗 Manage workspace chains..." option to the `/workspace` wizard.
+- **Tests**: 14 unit tests in `tests/workspaceChain.test.ts` covering ID generation, chain validation (7 cases), topology formatting, and chain structure creation. All pass.
+
+### Verification
+- `npx vitest run tests/workspaceChain.test.ts`: 14/14 pass
+- ESM compatibility: Replaced `require()` with dynamic `import()` in `createQuickChain`
+
 ## [1.2.628] - 2026-07-30
 
 ### Quick Model Preset Switching

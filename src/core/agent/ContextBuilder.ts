@@ -229,6 +229,21 @@ export class ContextBuilder {
       ? `\n\n# ACTIVE WORKSPACE: "${workspaceDir}"\n- ALL file operations MUST target paths inside this directory. NEVER write outside workspace root.`
       : "";
 
+    // Workspace chain topology injection — lets AI understand cross-workspace relationships
+    let workspaceChainNotice = "";
+    try {
+      const { workspaceChainManager } = await import("../workspace/WorkspaceChainManager.js");
+      const chain = workspaceChainManager.getActiveChain();
+      if (chain) {
+        const topology = workspaceChainManager.getTopologyString();
+        const activeNode = workspaceChainManager.getActiveNode();
+        const activeNodeInfo = activeNode
+          ? `\n- ACTIVE NODE: ${activeNode.label} (${activeNode.id}) — type=${activeNode.type}, role=${activeNode.role}`
+          : "";
+        workspaceChainNotice = `\n\n# WORKSPACE CHAIN ACTIVE\n${topology}${activeNodeInfo}\n- Use 'manage_workspace_chain' to view/modify chain topology.\n- Use 'cross_workspace_exec' to execute operations on specific chain nodes.\n- Cross-workspace debugging: use 'cross_workspace_exec' with operation 'exec' on relevant nodes to trace issues across workspaces.`;
+      }
+    } catch {}
+
     const hasShell = filteredToolDefs.some((t: any) => t.name === "run_command" || t.name === "bash" || t.name === "run_background_process");
     const hasWrite = filteredToolDefs.some((t: any) => t.name === "write_to_file" || t.name === "edit" || t.name === "replace_file_content" || t.name === "multi_replace_file_content" || t.name === "write" || t.name === "apply_patch");
     const hasNetwork = filteredToolDefs.some((t: any) => t.name === "web_search" || t.name === "fetch_url");
@@ -301,7 +316,7 @@ export class ContextBuilder {
     const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 50);
     const maxIterations = agent.goalMode ? agent.goalMaxIterations : defaultMax;
     const maxIterationsStr = maxIterations === Infinity ? "unlimited" : maxIterations.toString();
-    const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}\n\nEXECUTION CONTEXT:\n- Step limit: ${maxIterationsStr} iterations. Be efficient.\n- Spawn subagents in parallel for independent tasks (>3 files, >2 domains, broad research).\n${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}`;
+    const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}\n\nEXECUTION CONTEXT:\n- Step limit: ${maxIterationsStr} iterations. Be efficient.\n- Spawn subagents in parallel for independent tasks (>3 files, >2 domains, broad research).\n${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}${workspaceChainNotice}`;
 
     const stepsRemaining = maxIterations === Infinity ? Infinity : (maxIterations - 1);
     const stepNotice = stepsRemaining <= 5

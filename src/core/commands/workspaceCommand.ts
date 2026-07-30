@@ -5,12 +5,11 @@ import { getWorkspacesFromDb } from "../storage/historyDb.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { sshProxy } from "../ssh/sshProxy.js";
 import path from "path";
-import fs from "fs";
 
 export const workspaceCommand: SlashCommand = {
   name: "workspace",
   aliases: ["w"],
-  description: "Manage project workspaces via interactive wizard",
+  description: "Manage project workspaces and workspace chains via interactive wizard",
   async execute(_args, ctx) {
     const sshCfg = workspaceMode.getConfig();
     const isSshActive = workspaceMode.isSsh();
@@ -24,6 +23,7 @@ export const workspaceCommand: SlashCommand = {
         "➕ Add a new workspace...",
         "🗑️ Remove a workspace...",
         "📊 View workspace status",
+        "🔗 Manage workspace chains...",
         "❌ Exit Wizard",
       ];
 

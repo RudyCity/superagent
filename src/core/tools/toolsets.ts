@@ -100,6 +100,7 @@ import {
 
 import { manageMcpTool } from "./mcpTools.js";
 import { saveSharedMemoryTool, readSharedMemoryTool } from "./sharedMemoryTools.js";
+import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../workspace/workspaceChainTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Focused on orchestration. Does NOT write code itself.
@@ -159,6 +160,8 @@ export const masterToolset: Tool[] = [
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
+  manageWorkspaceChainTool,
+  crossWorkspaceExecTool,
 ];
 
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────
@@ -230,6 +233,8 @@ export const superagentToolset: Tool[] = [
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
+  manageWorkspaceChainTool,
+  crossWorkspaceExecTool,
 ];
 
 // ─── Chrome Extension Toolset (depth 1) ──────────────────────────────────────
