@@ -727,7 +727,7 @@ export function wrapChatLineToLines({
       const headerNode = (
         <Box flexDirection="row">
           <Text color="gray" dimColor>
-            {hideTimeline ? "  [ " : `${isFirst ? "┌" : "├"}─── [ `}<Text bold color="gray">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text color="gray"> [#{lineIndex}]</Text> : null}
+            {hideTimeline ? "  [ " : `${isFirst ? "┌" : "├"}─── [ `}<Text bold color="gray">✦ SUPERAGENT R</Text> ]{lineIndex !== undefined ? <Text color="gray"> [#{lineIndex}]</Text> : null}
           </Text>
         </Box>
       );
@@ -1217,7 +1217,7 @@ export function computeWrappedLines({
     const headerNode = (
       <Box flexDirection="row">
         <Text color="gray" dimColor>
-          {hideTimeline ? "  [ " : `${borderPrefix}─── [ `}<Text bold color="gray">✦ SUPERAGENT (STREAMING...)</Text> ]
+          {hideTimeline ? "  [ " : `${borderPrefix}─── [ `}<Text bold color="gray">✦ SUPERAGENT R (STREAMING...)</Text> ]
         </Text>
       </Box>
     );
@@ -1232,7 +1232,7 @@ export function computeWrappedLines({
     const headerNode = (
       <Box flexDirection="row">
         <Text color="gray" dimColor>
-          {hideTimeline ? "  [ " : `${borderPrefix}─── [ `}<Text bold color="gray">✦ SUPERAGENT (THINKING...)</Text> ]
+          {hideTimeline ? "  [ " : `${borderPrefix}─── [ `}<Text bold color="gray">✦ SUPERAGENT R (THINKING...)</Text> ]
         </Text>
       </Box>
     );

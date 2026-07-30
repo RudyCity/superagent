@@ -802,7 +802,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       return (
         <Box flexDirection="column">
           <Text color="gray" dimColor>
-            {isFirst ? "┌" : "├"}─── [ <Text bold color="gray">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text color="gray"> [#{lineIndex}]</Text> : null}
+            {isFirst ? "┌" : "├"}─── [ <Text bold color="gray">✦ SUPERAGENT R</Text> ]{lineIndex !== undefined ? <Text color="gray"> [#{lineIndex}]</Text> : null}
           </Text>
           {line.reasoning && (
             <Box flexDirection="column">

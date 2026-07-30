@@ -1,3 +1,9 @@
+## [1.2.643] - 2026-07-30
+
+### UI: Update Thinking, Streaming, and Chat Line Headers to SUPERAGENT R
+
+- **Headers**: Updated `✦ SUPERAGENT (THINKING...)`, `✦ SUPERAGENT (STREAMING...)`, and assistant chat headers to `✦ SUPERAGENT R` for visual consistency.
+
 ## [1.2.642] - 2026-07-30
 
 ### UI: Update Header Banner Logo and Workspace Alignment
