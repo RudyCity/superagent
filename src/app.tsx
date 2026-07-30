@@ -928,8 +928,11 @@ export function App({
       // Build MessageContent — plain string or multimodal array
       let messageContent: MessageContent = trimmed;
       if (attachments.length > 0) {
+        const textParts: Array<{ type: "text"; text: string }> = trimmed
+          ? [{ type: "text" as const, text: trimmed }]
+          : [{ type: "text" as const, text: "I've attached an image for you to analyze." }];
         const parts: import("./core/conversation.js").MessageContent = [
-          ...(trimmed ? [{ type: "text" as const, text: trimmed }] : []),
+          ...textParts,
           ...attachments.map(attachmentToImagePart),
         ];
         messageContent = parts;

@@ -101,23 +101,42 @@ export class MessageBuilder {
 
     if (useVisionTokenSaving) {
       // MODE 2: Compile all messages into a single text block, clean up, render to images, and append.
+      // Preserve user-attached image parts — they are NOT converted to text.
       let compiledText = "";
+      const userImageParts: Array<{ image: string; mimeType: string }> = [];
       const messages = agent.conversation.getMessages();
       for (const m of messages) {
         if (m.role === "system") continue;
-        const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
-        if (m.role === "user") {
-          compiledText += `\n[USER]\n${rawContent}\n`;
-        } else if (m.role === "assistant") {
-          compiledText += `\n[ASST]\n${rawContent}\n`;
-          if (m.toolCalls && m.toolCalls.length > 0) {
-            compiledText += `\n[TOOL_CALLS]\n` + m.toolCalls.map(tc => `- ${tc.id}: ${tc.name}(${JSON.stringify(tc.args)})`).join("\n") + "\n";
+        if (m.role === "user" && Array.isArray(m.content)) {
+          // User message with multimodal content — extract text and preserve images
+          let textParts: string[] = [];
+          for (const part of m.content) {
+            if (part.type === "text") {
+              textParts.push(part.text);
+            } else if (part.type === "image") {
+              userImageParts.push({ image: part.image, mimeType: part.mimeType || "image/png" });
+            }
           }
-        } else if (m.role === "tool") {
-          const results = m.toolResults || [];
-          for (const tr of results) {
-            const resStr = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
-            compiledText += `\n[TOOL:${tr.name} #${tr.toolCallId}]\n${resStr}\n`;
+          const textContent = textParts.join(" ");
+          compiledText += `\n[USER]\n${textContent}\n`;
+          if (userImageParts.length > 0) {
+            compiledText += `\n[USER_ATTACHED_IMAGES: ${userImageParts.length} image(s)]\n`;
+          }
+        } else {
+          const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
+          if (m.role === "user") {
+            compiledText += `\n[USER]\n${rawContent}\n`;
+          } else if (m.role === "assistant") {
+            compiledText += `\n[ASST]\n${rawContent}\n`;
+            if (m.toolCalls && m.toolCalls.length > 0) {
+              compiledText += `\n[TOOL_CALLS]\n` + m.toolCalls.map(tc => `- ${tc.id}: ${tc.name}(${JSON.stringify(tc.args)})`).join("\n") + "\n";
+            }
+          } else if (m.role === "tool") {
+            const results = m.toolResults || [];
+            for (const tr of results) {
+              const resStr = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
+              compiledText += `\n[TOOL:${tr.name} #${tr.toolCallId}]\n${resStr}\n`;
+            }
           }
         }
       }
@@ -145,6 +164,11 @@ export class MessageBuilder {
         limitedBase64List.forEach((base64) => {
           contentParts.push({ type: "image", image: base64, mimeType: "image/webp" });
         });
+
+        // Append user-attached images after the compiled text images
+        for (const img of userImageParts) {
+          contentParts.push({ type: "image", image: img.image, mimeType: img.mimeType });
+        }
 
         coreMessages.push({
           role: "user",

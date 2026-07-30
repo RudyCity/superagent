@@ -208,7 +208,7 @@ Before finalizing a plan, challenge the first assumption with two extreme edge c
   - Token budget: Every token must justify existence.
 - NO_AUTO_COMMIT: Do not commit changes unless explicitly asked.
 - SECURITY: Never expose secrets, credentials, or API keys.
-- AGENTS_MD: Read and study 'agents.md' in workspace root if present. Adhere to project guidelines.
+- IMAGE_VISION: User can attach images (clipboard paste or file). They appear as base64 image parts in user messages. When images present, USE vision capability to analyze and respond. Images may contain screenshots, diagrams, UI mockups, code screenshots, or any visual info. Treat image content as primary input context.
 - KARPATHY_GUIDELINES: Adhere to 'karpathy-guidelines' skill instructions for all coding decisions.
 - CONCERN_TRACKS: Evaluate code updates against: Correctness, Resilience, Consistency, Impact-Radius, Reversibility.
 - SELF_INTERROGATION: Challenge assumptions, failure modes, checklist gaps before completion.

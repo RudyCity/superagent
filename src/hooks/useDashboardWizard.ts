@@ -1844,8 +1844,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
     let messageContent: import("../core/conversation.js").MessageContent = commandInput;
     if (attachments.length > 0) {
+      const textParts: Array<{ type: "text"; text: string }> = commandInput
+        ? [{ type: "text" as const, text: commandInput }]
+        : [{ type: "text" as const, text: "I've attached an image for you to analyze." }];
       const parts: import("../core/conversation.js").MessageContent = [
-        ...(commandInput ? [{ type: "text" as const, text: commandInput }] : []),
+        ...textParts,
         ...attachments.map(attachmentToImagePart),
       ];
       messageContent = parts;
