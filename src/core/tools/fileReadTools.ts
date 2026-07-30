@@ -110,7 +110,9 @@ export const readTool: Tool = {
           const lines = content.replace(/\r\n/g, "\n").split("\n");
           const sliced = lines.slice(fileOffset - 1, fileOffset - 1 + fileLimit);
           const output = sliced.map((line, i) => `${fileOffset + i}: ${line}`).join("\n");
-          let fileOutput = `--- File: ${rawPath} ---\n${output}`;
+          const startLine = fileOffset;
+          const endLine = Math.min(fileOffset + fileLimit - 1, lines.length);
+          let fileOutput = `--- File: ${rawPath} (lines ${startLine}-${endLine} of ${lines.length}) ---\n${output}`;
           if (lines.length > fileOffset - 1 + fileLimit) {
             const remaining = lines.length - (fileOffset - 1 + fileLimit);
             fileOutput += `\n... (output truncated, showing ${fileLimit} of ${lines.length} lines. There are ${remaining} more lines)`;
@@ -172,11 +174,10 @@ export const readTool: Tool = {
       const lines = content.replace(/\r\n/g, "\n").split("\n");
       const sliced = lines.slice(offset - 1, offset - 1 + limit);
       const output = sliced.map((line, i) => `${offset + i}: ${line}`).join("\n");
-      if (lines.length > offset - 1 + limit) {
-        const remaining = lines.length - (offset - 1 + limit);
-        return `${output}\n... (output truncated, showing ${limit} of ${lines.length} lines. There are ${remaining} more lines)`;
-      }
-      return output;
+      const startLine = offset;
+      const endLine = Math.min(offset + limit - 1, lines.length);
+      let result = `--- File: ${filePath} (lines ${startLine}-${endLine} of ${lines.length}) ---\n${output}`;
+      return result;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error reading file: ${message}`;

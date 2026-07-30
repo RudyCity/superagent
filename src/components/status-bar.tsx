@@ -22,6 +22,8 @@ export interface StatusBarProps {
   workspace?: string;
   focus?: string;
   isProcessing?: boolean;
+  activeChainName?: string | null;
+  activeChainNodeCount?: number;
 }
 
 function LoadingIndicator() {
@@ -66,6 +68,8 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
     lastSpeed,
     isProcessing = false,
     rmemoryStatus,
+    activeChainName,
+    activeChainNodeCount,
   } = props;
 
   return (
@@ -89,6 +93,12 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
           <>
             <Text color="gray"> • </Text>
             <Text color="gray">🌿 {gitBranch}</Text>
+          </>
+        )}
+        {activeChainName && (
+          <>
+            <Text color="gray"> • </Text>
+            <Text color="magentaBright" bold>🔗 Chain: {activeChainName}{activeChainNodeCount ? ` (${activeChainNodeCount} nodes)` : ""}</Text>
           </>
         )}
       </Box>

@@ -77,7 +77,7 @@ async function getSortedChainOptions(currentWorkspace: string): Promise<{ option
     return `🔗 ${c.name} (${c.id})${isActive}${currentBadge} — ${c.nodes.length} nodes`;
   });
 
-  options.push("➕ Create new workspace chain...");
+  options.push("1. Create new workspace chain...");
   options.push("❌ Back");
 
   return {
@@ -309,7 +309,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "📁 Select & Switch Workspace...") {
+        if (value === "1. Select & Switch Workspace...") {
           const { getTrustedDirectories } = await import("../core/config/jsonConfig.js");
           const { getWorkspacesFromDb } = await import("../core/storage/historyDb.js");
           const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
@@ -353,7 +353,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "➕ Add a new workspace...") {
+        if (value === "2. Add a new workspace...") {
           setActiveWizard({
             type: "workspace",
             step: 3,
@@ -365,7 +365,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "🗑️ Remove a workspace...") {
+        if (value === "3. Remove a workspace...") {
           const { getTrustedDirectories } = await import("../core/config/jsonConfig.js");
           const { getWorkspacesFromDb } = await import("../core/storage/historyDb.js");
           const trustedDirs = getTrustedDirectories();
@@ -409,7 +409,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "🔗 Manage workspace chains...") {
+        if (value === "5. Manage workspace chains...") {
           const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
           const sshCfg = workspaceMode.getConfig();
           const currentWorkspace = workspaceMode.isSsh() && sshCfg
@@ -428,7 +428,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "📊 View workspace status") {
+        if (value === "4. View workspace status") {
           const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
           const { sshProxy } = await import("../core/ssh/sshProxy.js");
           if (!workspaceMode.isSsh()) {
@@ -765,18 +765,18 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
         if (value === "❌ Back" || value.endsWith("Back")) {
           setActiveWizard({ type: "workspace", step: 1, data: {} });
           setWizardOptions([
-            "📁 Select & Switch Workspace...",
-            "➕ Add a new workspace...",
-            "🗑️ Remove a workspace...",
-            "📊 View workspace status",
-            "🔗 Manage workspace chains...",
+            "1. Select & Switch Workspace...",
+            "2. Add a new workspace...",
+            "3. Remove a workspace...",
+            "4. View workspace status",
+            "5. Manage workspace chains...",
             "❌ Exit Wizard",
           ]);
           setWizardSelectedIndex(0);
           setInput("");
           return;
         }
-        if (value === "➕ Create new workspace chain...") {
+        if (value === "1. Create new workspace chain...") {
           setActiveWizard({
             type: "workspace",
             step: 9,
@@ -799,12 +799,13 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
               data: { chainId: chain.id, chainName: chain.name },
             });
             setWizardOptions([
-              "⚡ Activate Chain",
-              "📊 View Topology",
-              "✏️ Edit Chain Name",
-              "➕ Add Node to Chain...",
-              "🗑️ Remove Node from Chain...",
-              "🗑️ Delete Chain",
+              "1. Activate Chain",
+              "2. Deactivate Chain",
+              "3. View Topology",
+              "4. Edit Chain Name",
+              "5. Add Node to Chain...",
+              "6. Remove Node from Chain...",
+              "7. Delete Chain",
               "❌ Back",
             ]);
             setWizardSelectedIndex(0);
@@ -847,12 +848,13 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             data: { chainId: cId, chainName: cName },
           });
           setWizardOptions([
-            "⚡ Activate Chain",
-            "📊 View Topology",
-            "✏️ Edit Chain Name",
-            "➕ Add Node to Chain...",
-            "🗑️ Remove Node from Chain...",
-            "🗑️ Delete Chain",
+            "1. Activate Chain",
+            "2. Deactivate Chain",
+            "3. View Topology",
+            "4. Edit Chain Name",
+            "5. Add Node to Chain...",
+            "6. Remove Node from Chain...",
+            "7. Delete Chain",
             "❌ Back",
           ]);
           setWizardSelectedIndex(0);
@@ -864,7 +866,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "⚡ Activate Chain") {
+        if (value === "1. Activate Chain") {
           const { workspaceChainManager } = await import("../core/workspace/WorkspaceChainManager.js");
           const { formatChainTopology } = await import("../core/workspace/WorkspaceChainTypes.js");
           try {
@@ -889,7 +891,30 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "📊 View Topology") {
+        if (value === "2. Deactivate Chain") {
+          const { workspaceChainManager } = await import("../core/workspace/WorkspaceChainManager.js");
+          try {
+            await workspaceChainManager.deactivateChain();
+            addLine({
+              type: "system",
+              content: `⏹️ Workspace chain deactivated: ${chainName}`,
+              timestamp: now,
+            });
+          } catch (err: any) {
+            addLine({
+              type: "error",
+              content: `Failed to deactivate workspace chain: ${err?.message ?? err}`,
+              timestamp: now,
+            });
+          }
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        if (value === "3. View Topology") {
           const { getWorkspaceChain } = await import("../core/workspace/WorkspaceChainConfig.js");
           const { formatChainTopology } = await import("../core/workspace/WorkspaceChainTypes.js");
           const chain = getWorkspaceChain(chainId);
@@ -908,7 +933,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "✏️ Edit Chain Name") {
+        if (value === "4. Edit Chain Name") {
           setActiveWizard({
             type: "workspace",
             step: 10,
@@ -920,7 +945,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "➕ Add Node to Chain...") {
+        if (value === "5. Add Node to Chain...") {
           const { getTrustedDirectories } = await import("../core/config/jsonConfig.js");
           const { getWorkspacesFromDb } = await import("../core/storage/historyDb.js");
           const trustedDirs = getTrustedDirectories();
@@ -935,7 +960,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             const cleanDir = dir;
             return `📁${namePart} ${cleanDir}${currentBadge}`;
           });
-          options.push("➕ Type a custom path or SSH target...");
+          options.push("1. Type a custom path or SSH target...");
           options.push("❌ Back");
 
           setActiveWizard({
@@ -953,7 +978,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "🗑️ Remove Node from Chain...") {
+        if (value === "6. Remove Node from Chain...") {
           const { getWorkspaceChain } = await import("../core/workspace/WorkspaceChainConfig.js");
           const chain = getWorkspaceChain(chainId);
           if (!chain || chain.nodes.length === 0) {
@@ -977,7 +1002,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "🗑️ Delete Chain") {
+        if (value === "7. Delete Chain") {
           setActiveWizard({
             type: "workspace",
             step: 14,
@@ -1058,12 +1083,13 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             data: { chainId: cId, chainName: cName },
           });
           setWizardOptions([
-            "⚡ Activate Chain",
-            "📊 View Topology",
-            "✏️ Edit Chain Name",
-            "➕ Add Node to Chain...",
-            "🗑️ Remove Node from Chain...",
-            "🗑️ Delete Chain",
+            "1. Activate Chain",
+            "2. Deactivate Chain",
+            "3. View Topology",
+            "4. Edit Chain Name",
+            "5. Add Node to Chain...",
+            "6. Remove Node from Chain...",
+            "7. Delete Chain",
             "❌ Back",
           ]);
           setWizardSelectedIndex(0);
@@ -1100,12 +1126,13 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             data: { chainId: cId, chainName: cName },
           });
           setWizardOptions([
-            "⚡ Activate Chain",
-            "📊 View Topology",
-            "✏️ Edit Chain Name",
-            "➕ Add Node to Chain...",
-            "🗑️ Remove Node from Chain...",
-            "🗑️ Delete Chain",
+            "1. Activate Chain",
+            "2. Deactivate Chain",
+            "3. View Topology",
+            "4. Edit Chain Name",
+            "5. Add Node to Chain...",
+            "6. Remove Node from Chain...",
+            "7. Delete Chain",
             "❌ Back",
           ]);
           setWizardSelectedIndex(0);
@@ -1137,12 +1164,13 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             data: { chainId: cId, chainName: cName },
           });
           setWizardOptions([
-            "⚡ Activate Chain",
-            "📊 View Topology",
-            "✏️ Edit Chain Name",
-            "➕ Add Node to Chain...",
-            "🗑️ Remove Node from Chain...",
-            "🗑️ Delete Chain",
+            "1. Activate Chain",
+            "2. Deactivate Chain",
+            "3. View Topology",
+            "4. Edit Chain Name",
+            "5. Add Node to Chain...",
+            "6. Remove Node from Chain...",
+            "7. Delete Chain",
             "❌ Back",
           ]);
           setWizardSelectedIndex(0);
@@ -1154,7 +1182,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "➕ Type a custom path or SSH target...") {
+        if (value === "1. Type a custom path or SSH target...") {
           setActiveWizard({
             type: "workspace",
             step: 15,
@@ -1197,12 +1225,13 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             data: { chainId: cId, chainName: cName },
           });
           setWizardOptions([
-            "⚡ Activate Chain",
-            "📊 View Topology",
-            "✏️ Edit Chain Name",
-            "➕ Add Node to Chain...",
-            "🗑️ Remove Node from Chain...",
-            "🗑️ Delete Chain",
+            "1. Activate Chain",
+            "2. Deactivate Chain",
+            "3. View Topology",
+            "4. Edit Chain Name",
+            "5. Add Node to Chain...",
+            "6. Remove Node from Chain...",
+            "7. Delete Chain",
             "❌ Back",
           ]);
           setWizardSelectedIndex(0);
@@ -1225,7 +1254,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             const cleanDir = dir;
             return `📁${namePart} ${cleanDir}${currentBadge}`;
           });
-          options.push("➕ Type a custom path or SSH target...");
+          options.push("1. Type a custom path or SSH target...");
           options.push("❌ Back");
 
           setActiveWizard({
@@ -1262,12 +1291,13 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             data: { chainId: cId, chainName: cName },
           });
           setWizardOptions([
-            "⚡ Activate Chain",
-            "📊 View Topology",
-            "✏️ Edit Chain Name",
-            "➕ Add Node to Chain...",
-            "🗑️ Remove Node from Chain...",
-            "🗑️ Delete Chain",
+            "1. Activate Chain",
+            "2. Deactivate Chain",
+            "3. View Topology",
+            "4. Edit Chain Name",
+            "5. Add Node to Chain...",
+            "6. Remove Node from Chain...",
+            "7. Delete Chain",
             "❌ Back",
           ]);
           setWizardSelectedIndex(0);
@@ -1289,7 +1319,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             const cleanDir = dir;
             return `📁${namePart} ${cleanDir}${currentBadge}`;
           });
-          options.push("➕ Type a custom path or SSH target...");
+          options.push("1. Type a custom path or SSH target...");
           options.push("❌ Back");
 
           setActiveWizard({
@@ -1374,12 +1404,13 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             data: { chainId: cId, chainName: cName },
           });
           setWizardOptions([
-            "⚡ Activate Chain",
-            "📊 View Topology",
-            "✏️ Edit Chain Name",
-            "➕ Add Node to Chain...",
-            "🗑️ Remove Node from Chain...",
-            "🗑️ Delete Chain",
+            "1. Activate Chain",
+            "2. Deactivate Chain",
+            "3. View Topology",
+            "4. Edit Chain Name",
+            "5. Add Node to Chain...",
+            "6. Remove Node from Chain...",
+            "7. Delete Chain",
             "❌ Back",
           ]);
           setWizardSelectedIndex(0);
@@ -1432,12 +1463,13 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             data: { chainId: cId, chainName: cName },
           });
           setWizardOptions([
-            "⚡ Activate Chain",
-            "📊 View Topology",
-            "✏️ Edit Chain Name",
-            "➕ Add Node to Chain...",
-            "🗑️ Remove Node from Chain...",
-            "🗑️ Delete Chain",
+            "1. Activate Chain",
+            "2. Deactivate Chain",
+            "3. View Topology",
+            "4. Edit Chain Name",
+            "5. Add Node to Chain...",
+            "6. Remove Node from Chain...",
+            "7. Delete Chain",
             "❌ Back",
           ]);
           setWizardSelectedIndex(0);

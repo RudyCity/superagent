@@ -1,3 +1,10 @@
+## [1.2.642] - 2026-07-30
+
+### UI: Update Header Banner Logo and Workspace Alignment
+
+- **Header Banner**: Updated banner logo to `S U P E R  A G E N T  R` with refined spacing and removed workspace path from logo line.
+- **Conversation Log Header**: Aligned workspace path indicator horizontally with the `[` bracket of `💬 CONVERSATION LOG` header for clean terminal presentation.
+
 ## [1.2.641] - 2026-07-30
 
 ### Update: Workspace Chain Advanced Operations & Health Monitoring Guidance

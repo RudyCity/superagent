@@ -1896,11 +1896,11 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
           setActiveWizard({ type: "workspace", step: 1, data: {} });
           setWizardOptions([
-            "📁 Select & Switch Workspace...",
-            "➕ Add a new workspace...",
-            "🗑️ Remove a workspace...",
-            "📊 View workspace status",
-            "🔗 Manage workspace chains...",
+            "1. Select & Switch Workspace...",
+            "2. Add a new workspace...",
+            "3. Remove a workspace...",
+            "4. View workspace status",
+            "5. Manage workspace chains...",
             "❌ Exit Wizard",
           ]);
           setWizardSelectedIndex(0);
@@ -2061,11 +2061,11 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           if (activeWizard.step > 1) {
             setActiveWizard({ type: "workspace", step: 1, data: {} });
             setWizardOptions([
-              "📁 Select & Switch Workspace...",
-              "➕ Add a new workspace...",
-              "🗑️ Remove a workspace...",
-              "📊 View workspace status",
-              "🔗 Manage workspace chains...",
+              "1. Select & Switch Workspace...",
+              "2. Add a new workspace...",
+              "3. Remove a workspace...",
+              "4. View workspace status",
+              "5. Manage workspace chains...",
               "❌ Exit Wizard",
             ]);
             setWizardSelectedIndex(0);

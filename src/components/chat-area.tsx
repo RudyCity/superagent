@@ -1321,6 +1321,7 @@ export interface ChatAreaProps {
   classifierStatus?: "offline" | "loading" | "online";
   embeddingStatus?: "offline" | "loading" | "online";
   workspacePath?: string;
+  primaryWorkspacePath?: string;
   focusMode: string;
   scrollOffset: number;
   focusedResponseIndex: number | null;
@@ -1358,6 +1359,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     classifierStatus,
     embeddingStatus,
     workspacePath,
+    primaryWorkspacePath,
     focusMode,
     scrollOffset,
     focusedResponseIndex,
@@ -1523,6 +1525,13 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
             [Scroll: -{scrollOffset} lines - Esc to snap bottom]
           </Text>
         )}
+      </Box>
+
+      {/* Workspace Path Indicator */}
+      <Box paddingX={1} marginLeft={5} marginBottom={0}>
+        <Text color="cyan" dimColor>
+          📁 Workspace: <Text bold color="cyan">{primaryWorkspacePath || workspacePath || process.cwd()}</Text>
+        </Text>
       </Box>
  
       {/* Messages */}

@@ -32,6 +32,7 @@ import { getTruncatedAssistantIndexes } from "./utils/responseScroll.js";
 import { wrapTextForDisplay } from "./utils/responseScroll.js";
 import type { ChatLine } from "./core/slash-commands.js";
 import { readChecklistTasks, readTaskHistory } from "./core/taskChecklist.js";
+import { getActiveChainId, getWorkspaceChain } from "./core/workspace/WorkspaceChainConfig.js";
 
 // Hook & Component Baru
 import { StatusBar } from "./components/status-bar.js";
@@ -2733,6 +2734,11 @@ export function App({
     },
   };
 
+  const activeChainId = getActiveChainId();
+  const activeChain = activeChainId ? getWorkspaceChain(activeChainId) : null;
+  const primaryChainNode = activeChain ? activeChain.nodes.find((n) => n.id === activeChain.primaryNodeId || n.role === "main") : null;
+  const primaryWorkspacePath = primaryChainNode?.path || workspacePath;
+
   return (
     <Box flexDirection="column" height={terminalHeight}>
       <Box flexDirection="row" flexGrow={1}>
@@ -2744,6 +2750,7 @@ export function App({
             classifierStatus={classifierStatus}
             embeddingStatus={embeddingStatus}
             workspacePath={workspacePath}
+            primaryWorkspacePath={primaryWorkspacePath}
             focusMode={focusMode}
             scrollOffset={scrollOffset}
             focusedResponseIndex={focusedResponseIndex}
@@ -2913,6 +2920,8 @@ export function App({
         workspace={workspacePath}
         focus={activeFocus}
         isProcessing={isProcessing}
+        activeChainName={activeChain?.name || null}
+        activeChainNodeCount={activeChain?.nodes.length}
       />
     </Box>
   );

@@ -60,11 +60,10 @@ export function Banner({ classifierStatus, embeddingStatus, workspacePath }: Ban
         <Box flexDirection="column" justifyContent="center">
           <Box flexDirection="row" marginBottom={1} alignItems="center">
             <Text color="red" bold>S U P E R</Text>
-            <Text color="white" bold>A G E N T</Text>
+            <Text color="white" bold>  A G E N T</Text>
+            <Text color="cyan" bold>  R</Text>
             <Text color="gray"> ● </Text>
             <Text color="yellow" bold>v{version}</Text>
-            <Text color="gray"> • </Text>
-            <Text color="cyan" bold>Workspace: {workspacePath || process.cwd()}</Text>
           </Box>
           <Box flexDirection="row">
             <Text dimColor>Type your query or </Text>
