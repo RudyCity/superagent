@@ -1,3 +1,12 @@
+## [1.2.635] - 2026-07-30
+
+### Documentation Upgrade: GitHub Pages Update
+
+- **GitHub Pages Update** (`docs/index.html`):
+  - Updated the static website to reflect both **Workspace Chaining (Cross-Workspace Development)** and **SSH Workspaces** features.
+  - Bumped site versioning to `v1.2.634` in navbar and terminal mockups.
+  - Refactored feature cards and command descriptions in the interactive commands tables.
+
 ## [1.2.634] - 2026-07-30
 
 ### Documentation Upgrade: Workspace Chaining & SSH Workspaces

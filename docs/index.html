@@ -67,7 +67,7 @@
     <div class="max-w-7xl mx-auto flex items-center justify-between">
       <div class="flex items-center space-x-3">
         <span class="text-2xl font-extrabold text-gradient tracking-wider">🚀 SUPERAGENT</span>
-        <span class="bg-purple-950/80 text-purple-400 border border-purple-800/50 text-xs px-2.5 py-0.5 rounded-full font-mono">v1.2.616</span>
+        <span class="bg-purple-950/80 text-purple-400 border border-purple-800/50 text-xs px-2.5 py-0.5 rounded-full font-mono">v1.2.634</span>
       </div>
       <div class="hidden md:flex items-center space-x-8 text-sm font-medium text-gray-300">
         <a href="#features" class="hover:text-cyber-cyan transition">Features</a>
@@ -102,8 +102,9 @@
     <p class="text-lg md:text-xl text-gray-400 max-w-3xl mx-auto mb-10 font-normal leading-relaxed">
       Pair programming, context engineering, and autonomous workflow automation with 
       <span class="text-cyber-cyan font-semibold">3-Tier Multi-Agent Orchestration</span>, 
-      <span class="text-purple-400 font-semibold">Git Worktree Isolation</span>, and 
-      <span class="text-pink-400 font-semibold">SSH Remote Workspaces</span>.
+      <span class="text-purple-400 font-semibold">Workspace Chaining</span>, 
+      <span class="text-pink-400 font-semibold">SSH Remote Workspaces</span>, and 
+      <span class="text-purple-400 font-semibold">Git Worktree Isolation</span>.
     </p>
 
     <div class="flex flex-wrap justify-center items-center gap-4 mb-16 font-mono">
@@ -132,7 +133,7 @@
       </div>
       <div class="p-4 bg-[#0d0d15] font-mono text-left text-sm leading-relaxed overflow-x-auto text-gray-300">
         <div class="flex items-center gap-2 text-purple-400 mb-2">
-          <span>🚀 Superagent CLI v1.2.616</span>
+          <span>🚀 Superagent CLI v1.2.634</span>
           <span class="text-xs text-gray-500">(Type /help for slash commands)</span>
         </div>
         <div class="text-gray-400 mb-4">Workspace: D:\projects\superagent | Active Model: anthropic/claude-3-5-sonnet</div>
@@ -141,7 +142,7 @@
         <div class="text-pink-400 font-semibold mb-2">✦ Superagent &gt; Hello! How can I help you build today?</div>
         <div class="bg-cyber-card/70 border border-cyber-border/60 rounded p-3 text-xs text-gray-300 space-y-1 mb-2">
           <div class="text-purple-300 font-bold">Try running slash commands:</div>
-          <div><span class="text-cyber-cyan font-bold">/workspace</span> — Switch local or remote SSH project workspaces</div>
+          <div><span class="text-cyber-cyan font-bold">/workspace</span> — Manage workspaces & connect local/SSH nodes in workspace chains</div>
           <div><span class="text-cyber-cyan font-bold">/model</span> — Configure multi-tier models (master/superagent/subagent)</div>
           <div><span class="text-cyber-cyan font-bold">/goal</span> — Autonomous overnight task execution</div>
         </div>
@@ -173,9 +174,9 @@
         <div class="w-12 h-12 rounded-lg bg-cyan-900/40 border border-cyan-700/50 text-cyber-cyan flex items-center justify-center text-xl mb-6">
           <i class="fa-solid fa-network-wired"></i>
         </div>
-        <h3 class="text-xl font-bold text-white mb-3">SSH Remote Workspaces</h3>
+        <h3 class="text-xl font-bold text-white mb-3">SSH & Workspace Chaining</h3>
         <p class="text-gray-400 text-sm leading-relaxed">
-          Connect seamlessly to remote SSH instances. Inspect system metrics, RAM, disk usage, and manage remote workspaces directly.
+          Connect to remote SSH workspaces and build structured workspace chain topologies (local & SSH) to enable seamless cross-workspace pair programming.
         </p>
       </div>
 
@@ -256,7 +257,7 @@
             <tr class="cmd-row hover:bg-cyber-card/50">
               <td class="py-4 px-6 font-bold text-cyber-cyan">/workspace <span class="text-gray-500 font-normal">(/w)</span></td>
               <td class="py-4 px-6 text-xs text-purple-400">Workspace</td>
-              <td class="py-4 px-6">Manage local & SSH remote project workspaces (add, use, status)</td>
+              <td class="py-4 px-6">Manage workspaces & workspace chains (list, create, edit, add/remove node, delete, auto-switch, SSH remote support)</td>
             </tr>
             <!-- Row 2 -->
             <tr class="cmd-row hover:bg-cyber-card/50">
