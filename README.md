@@ -145,7 +145,7 @@ No manual server configuration or extra CLI arguments are required—simply laun
 
 | Command | Description |
 |---|---|
-| `/workspace` `/w` | Manage local & remote (SSH) project workspaces |
+| `/workspace` `/w` | Manage local, remote (SSH) workspaces, and workspace chains |
 | `/worktrees` `/worktree` | Manage Git worktrees: list, prune, remove |
 
 `/workspace` subcommands:
@@ -167,6 +167,16 @@ SSH remote format: `ssh://user@host:port/path?key=/path/key.pem`
 # Check remote status
 /workspace status
 ```
+
+#### 🔗 Workspace Chaining (Cross-Workspace Development)
+
+Workspace Chaining allows you to link multiple workspaces—both local directories and remote SSH targets—into a single connected topology. This enables the AI agent to understand relationships between your services (e.g. backend api, frontend app, database, worker) and perform cross-workspace operations.
+
+- **Workspace Chains Wizard**: Manage chains interactively by opening the `/workspace` wizard and selecting `🔗 Manage workspace chains...`. You can list, create, edit, add nodes, remove nodes, and delete chains.
+- **Node Context Descriptions**: When adding a node to a chain, you can specify a text description (purpose/context) describing what the node represents.
+- **Dynamic Context Injection**: The active chain's topology, node roles, paths, and purpose descriptions are dynamically injected into the AI's base prompt.
+- **Automatic Workspace Switching**: Switching workspaces automatically switches to the workspace chain associated with the active workspace.
+- **Cross-Workspace Execution**: The agent uses `cross_workspace_exec` to run commands, read files, and write code across different local or remote nodes within the chain.
 
 **`/worktrees` subcommands:**
 - `list` — Show all Git worktrees

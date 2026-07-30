@@ -1,3 +1,11 @@
+## [1.2.634] - 2026-07-30
+
+### Documentation Upgrade: Workspace Chaining & SSH Workspaces
+
+- **README Documentation** (`README.md`):
+  - Added a comprehensive documentation section for the new **Workspace Chaining (Cross-Workspace Development)** feature.
+  - Documented workspace chains wizard usage, node context descriptions, dynamic context injection, auto-workspace switching, and cross-workspace execution.
+
 ## [1.2.633] - 2026-07-30
 
 ### Workspace Chain & Node Descriptions Injected into System Base Prompt
