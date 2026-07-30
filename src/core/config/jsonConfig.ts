@@ -773,6 +773,9 @@ export function addProvider(profile: ProviderProfile): void {
   if (profile.baseUrl) {
     profile.baseUrl = ensureProtocol(profile.baseUrl);
   }
+  // Note: we do NOT validate apiKey here. Empty keys are valid storage state
+  // (e.g. legacy configs, OAuth providers awaiting refresh). Validation lives
+  // in getConfiguredProviders().hasValidKey so callers can decide how to react.
   mutateModelConfig((config) => {
     const index = config.providers.findIndex((p) => p.id === profile.id);
     if (index !== -1) {

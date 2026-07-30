@@ -180,7 +180,14 @@ export async function fetchModelsForProvider(
 
   try {
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(4000) });
-    if (!res.ok) return [];
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(
+        `Authentication rejected by ${providerType} (HTTP ${res.status}) — the API key is invalid or revoked.`
+      );
+    }
+    if (!res.ok) {
+      throw new Error(`${providerType} model list returned HTTP ${res.status}.`);
+    }
     const json = (await res.json()) as any;
     const isDataArray = Array.isArray(json?.data);
     const dataArr = isDataArray
@@ -211,10 +218,20 @@ export async function fetchModelsForProvider(
           return true;
         });
     }
-  } catch {
-    // Return empty on failure
+    // Auth ok but response shape unrecognized — treat as empty list, not error.
+    return [];
+  } catch (err: any) {
+    // Re-throw auth/clear errors so the caller can surface them.
+    if (err?.message && /Authentication rejected|HTTP \d{3}/.test(err.message)) throw err;
+    if (err?.name === "AbortError" || err?.name === "TimeoutError") {
+      throw new Error(`Network timeout contacting ${providerType} — check your connection.`);
+    }
+    if (err?.cause?.code === "ENOTFOUND" || err?.cause?.code === "ECONNREFUSED") {
+      throw new Error(`Network error contacting ${providerType}: ${err.message}`);
+    }
+    // Unknown error: surface as a generic network failure rather than silently swallowing.
+    throw new Error(`Failed to fetch models from ${providerType}: ${err?.message || "unknown error"}`);
   }
-  return [];
 }
 
 export function resolveTestModel(providerType: string, baseUrl: string): string {

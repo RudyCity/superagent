@@ -245,7 +245,13 @@ export const loginCommand: SlashCommand = {
             if (ctx.setContextLimit) ctx.setContextLimit(limit);
             if (ctx.setActiveModel) ctx.setActiveModel(defaultModel);
           })
-          .catch(() => {});
+          .catch((err) => {
+            ctx.addLine({
+              type: "error",
+              content: `Post-save key validation failed: ${err.message}. The key was saved but the provider did not accept it — recheck the key value.`,
+              timestamp: now,
+            });
+          });
       } catch (err: any) {
         ctx.addLine({
           type: "error",
@@ -348,7 +354,13 @@ export const loginCommand: SlashCommand = {
             if (ctx.setContextLimit) ctx.setContextLimit(limit);
             if (ctx.setActiveModel) ctx.setActiveModel(defaultModel);
           })
-          .catch(() => {});
+          .catch((err) => {
+            ctx.addLine({
+              type: "error",
+              content: `Post-save key validation failed: ${err.message}. The key was saved but the provider did not accept it — recheck the key value.`,
+              timestamp: now,
+            });
+          });
       } catch (err: any) {
         ctx.addLine({
           type: "error",

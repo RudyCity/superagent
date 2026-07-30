@@ -1,5 +1,57 @@
 # Changelog
 
+## [1.2.623] - 2026-07-30
+
+### Credential Error Surfacing (Silent Fallback Fixes)
+
+Fixes six independent silent-fallback layers where credential-needing tools
+(`/login`, `/settings`, RMemory embedding, provider selection) hid failures
+instead of surfacing clear errors.
+
+- **`getConfiguredProviders()` no longer filters empty-key providers**: now
+  returns ALL providers with a new `hasValidKey: boolean` flag, so callers
+  can distinguish "provider exists but needs key" from "no provider
+  configured". Sorted: active first → valid-key → insertion order.
+- **`getActiveProviderName()` returns `string | null`**: previously hardcoded
+  `'openai'` when no provider had a valid key. Now returns `null`. All callers
+  updated: `getProviderLabel()` shows `"(no provider — /login)"`,
+  `getResolvedModelWithProvider()` shows `"(no active provider with valid
+  API key — run /login)"` hint.
+- **`loginCommand.ts` post-save validation**: both `.catch(() => {})` handlers
+  (lines 248, 351) replaced with explicit `addLine({type:'error'})` so
+  post-save key-validation failures are visible to the user.
+- **`loginWizardLogic.fetchModelsForProvider` error differentiation**:
+  HTTP 401/403 → `Authentication rejected by <provider>`; HTTP non-2xx →
+  `HTTP <status>`; timeout → `Network timeout`; DNS/connect → `Network
+  error`; unknown → `Failed to fetch models`. Removed the catch-all silent
+  empty-list fallback.
+- **`rmemoryUtil.ts:304` removed `process.env.OPENAI_API_KEY` fallback**:
+  now throws clear error when embedding provider is `"openai"` but active
+  provider has no key or is not OpenAI-compatible.
+- **`useLoginWizard` step 14/17**: filter provider picker to `hasValidKey`
+  providers only, preserving the "No providers configured yet" UX when no
+  usable providers exist.
+- **Dead imports removed**: `getActiveProviderName` removed from
+  `useDashboardWizard`, `useKeyboardHandler`, `useModelWizard`.
+
+### Verification
+
+- `bun run build` ✅
+- `bun test` (scope): 102/102 pass in
+  `loginWizardLogic`, `loginWizardDelete`, `loginWizardEdit`, `config`,
+  `configJson`, `providerCredentialResolution`, `rmemoryUtil`.
+- Full suite: 1418 pass, 6 pre-existing failures (verified on `main` HEAD,
+  unrelated to this fix).
+
+### Out of scope
+
+- `addProvider()` storage-layer validation: explicitly NOT added at
+  `jsonConfig.ts:772` because storage of empty keys is valid (OAuth/legacy
+  configs). Validation lives in consumers via `hasValidKey`.
+- `remoteChromeBridge` has no auth layer — separate security concern,
+  flagged but not fixed here.
+
+
 ## [1.2.622] - 2026-07-29
 
 ### SSH Workspace Boundary & Performance

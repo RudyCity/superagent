@@ -12,7 +12,6 @@ import {
   BUILT_IN_PRESETS,
   getProviderOptionsList,
   addProvider,
-  getActiveProviderName,
   getResolvedModelWithProvider,
   formatProviderForPicker,
   formatProviderForLog,

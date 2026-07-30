@@ -54,7 +54,8 @@ export interface SlashCommand {
 }
 
 export function getProviderLabel(): string {
-  return getActiveProviderName();
+  // Surface the missing-credential case explicitly rather than displaying "openai" as a fake fallback.
+  return getActiveProviderName() ?? "(no provider — /login)";
 }
 
 export function getDefaultModel(): string {

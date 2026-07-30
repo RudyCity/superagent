@@ -7,6 +7,7 @@ export interface ConfiguredProvider {
   apiKey: string;
   baseUrl?: string;
   isActive: boolean;
+  hasValidKey: boolean;
 }
 
 export function getConfiguredProviders(): ConfiguredProvider[] {
@@ -19,16 +20,30 @@ export function getConfiguredProviders(): ConfiguredProvider[] {
   const tierConfig = mode === "multi" ? activePreset.models.master : activePreset.models.superagent;
   const activeProfileId = tierConfig?.providerProfileId || "";
 
-  const list = providers
-    .filter((p) => p.apiKey && p.apiKey.trim() !== "")
-    .map((p) => ({
+  // Return ALL providers — including those with empty/missing keys —
+  // so callers can distinguish "provider exists but needs key" from "no provider configured".
+  // hasValidKey flags whether the credential is actually usable.
+  const list = providers.map((p) => {
+    const hasValidKey = !!(p.apiKey && p.apiKey.trim() !== "");
+    return {
       id: p.id,
       name: p.name,
       type: p.provider,
       apiKey: p.apiKey,
       baseUrl: p.baseUrl,
       isActive: p.id === activeProfileId,
-    }));
+      hasValidKey,
+    };
+  });
+
+  // Sort: usable providers first (valid key), active provider pinned to top,
+  // then by insertion order. This keeps the wizard UI focused on working options.
+  const insertionIndex = new Map(providers.map((p, i) => [p.id, i]));
+  list.sort((a, b) => {
+    if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+    if (a.hasValidKey !== b.hasValidKey) return a.hasValidKey ? -1 : 1;
+    return (insertionIndex.get(a.id) ?? 0) - (insertionIndex.get(b.id) ?? 0);
+  });
 
   return list;
 }
@@ -102,11 +117,17 @@ export function getProviderOptionsList(list: ConfiguredProvider[]): string[] {
 
 /**
  * Get the active provider type name from JSON config.
+ * Returns null when no provider with a valid API key is available.
+ * Callers MUST handle the null case instead of receiving a silent "openai" fallback.
  */
-export function getActiveProviderName(): string {
+export function getActiveProviderName(): string | null {
   const list = getConfiguredProviders();
-  const active = list.find((p) => p.isActive);
-  return active ? active.type : (list[0]?.type || "openai");
+  // Prefer the explicitly-active provider IF it has a valid key.
+  const active = list.find((p) => p.isActive && p.hasValidKey);
+  if (active) return active.type;
+  // Fall back to the first provider with a valid key (more informative than the previous hardcoded "openai").
+  const firstValid = list.find((p) => p.hasValidKey);
+  return firstValid ? firstValid.type : null;
 }
 
 /**
@@ -119,6 +140,9 @@ export function getResolvedModelWithProvider(rawVal: string, isDefault: boolean,
   if (!mStr) return "(not set)";
   if (mStr.includes(":")) return mStr;
   const activeProvider = getActiveProviderName();
+  if (!activeProvider) {
+    return `${mStr} (no active provider with valid API key — run /login)`;
+  }
   return `${activeProvider}:${mStr}`;
 }
 

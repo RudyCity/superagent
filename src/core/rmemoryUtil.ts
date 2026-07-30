@@ -301,9 +301,21 @@ async function getRMemory(): Promise<any> {
       activeProvider.type === "lmstudio"
     );
     
-    const apiKey = isOpenAICompatible ? activeProvider.apiKey : (process.env.OPENAI_API_KEY || "");
+    // Determine an API key only when a real one exists — never fall back to "".
+    let apiKey = "";
+    if (isOpenAICompatible && activeProvider?.apiKey && activeProvider.apiKey.trim() !== "") {
+      apiKey = activeProvider.apiKey.trim();
+    } else if (isOpenAICompatible) {
+      throw new Error(
+        `Embedding API key missing for active provider '${activeProvider?.name || "unknown"}' (type: ${activeProvider?.type}). Configure an OpenAI-compatible provider in /login, or switch rmemoryEmbeddingProvider away from "openai".`
+      );
+    } else {
+      throw new Error(
+        `RMemory embedding provider is set to "openai" but active provider type '${activeProvider?.type || "none"}' is not OpenAI-compatible. Switch rmemoryEmbeddingProvider to a local model or configure an OpenAI-compatible active provider.`
+      );
+    }
     const baseURL = isOpenAICompatible ? activeProvider.baseUrl : undefined;
-    
+
     provider = new OpenAIEmbeddingProvider({
       apiKey,
       baseURL,

@@ -6,7 +6,7 @@ import fs from "fs";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/responseScroll.js";
 import { getPasteSplit, filterSuggestions, getInsertion, getActiveCommandContext } from "../utils/text.js";
 import { reconstructChatLines } from "../utils/uiHelpers.js";
-import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders, getActiveProviderName, getResolvedModelWithProvider, getTierModel, getEffectiveMasterModel, getSettings } from "../core/config.js";
+import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders, getResolvedModelWithProvider, getTierModel, getEffectiveMasterModel, getSettings } from "../core/config.js";
 import { getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, deleteCheckpointById, type Checkpoint } from "../core/checkpoints.js";
 import { getToolDescription } from "../core/permissions.js";
