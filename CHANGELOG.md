@@ -1,3 +1,11 @@
+## [1.2.639] - 2026-07-30
+
+### Fix: Vision/Image Support in FastPath and Model Detection
+
+- **FastPath Vision Passthrough**: Updated `FastPath.ts` to preserve image content parts (base64 data) when sending user messages to vision-capable models, instead of flattening all multipart content to text strings.
+- **Model Vision Detection Priority**: Reordered `modelSupportsVision()` in `MessageBuilder.ts` to check known model names (claude-3, gpt-4o, gemini, gemma-3) before config lookup, preventing config misconfigurations from silently disabling vision.
+- **Stray Statement Removal**: Removed accidental `MergedParts: [...]` labeled statement in `mergeMessages()` that was a no-op but could confuse readers.
+
 ## [1.2.638] - 2026-07-30
 
 ### Fix: Workspace Chain and SSH Target Configuration Sync and Verification

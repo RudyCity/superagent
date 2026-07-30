@@ -57,7 +57,21 @@ export class MessageBuilder {
   public modelSupportsVision(modelName: string, agent?: Agent): boolean {
     if (!modelName) return false;
 
-    // Check configuration first
+    const name = modelName.toLowerCase();
+    
+    // Known vision-supporting models - name check overrides config misconfigurations
+    if (
+      name.includes("claude-3") ||
+      name.includes("gpt-4o") ||
+      name.includes("gpt-4-vision") ||
+      name.includes("gemini") ||
+      name.includes("gemma-3") ||
+      name.includes("vision")
+    ) {
+      return true;
+    }
+
+    // Check configuration for custom/other models
     if (agent) {
       try {
         const mode = (agent.isMultiAgent && !process.env.SINGLE_AGENT_MODE) ? "multi" : "single";
@@ -66,20 +80,10 @@ export class MessageBuilder {
           return tierConfig.supportsVision;
         }
       } catch (e) {
-        // Fallback to name check
+        // ignore configuration read errors
       }
     }
 
-    const name = modelName.toLowerCase();
-    
-    // Known vision-supporting models
-    if (name.includes("claude-3")) return true;
-    if (name.includes("gpt-4o")) return true;
-    if (name.includes("gpt-4-vision")) return true;
-    if (name.includes("gemini")) return true;
-    if (name.includes("gemma-3")) return true;
-    if (name.includes("vision")) return true;
-    
     return false;
   }
 

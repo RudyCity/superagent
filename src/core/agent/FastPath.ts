@@ -53,12 +53,30 @@ export class FastPath {
           // Build minimal conversation history (user/assistant pairs only, skip tool results)
           const coreMessages: CoreMessage[] = [];
           const messages = agent.conversation.getMessages();
+          const modelName = modelInstance.modelId;
+          const supportsVision = agent.modelSupportsVision(modelName);
+
           for (const m of messages) {
             if (m.role === "system" || m.role === "tool") continue;
-            const content = typeof m.content === "string" ? m.content : contentToString(m.content);
             if (m.role === "user") {
-              coreMessages.push({ role: "user", content });
+              let sdkContent: string | Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = "";
+              if (typeof m.content === "string") {
+                sdkContent = m.content;
+              } else if (Array.isArray(m.content)) {
+                if (supportsVision) {
+                  sdkContent = m.content.map((p: any) => {
+                    if (p.type === "image") {
+                      return { type: "image" as const, image: p.image, mimeType: p.mimeType };
+                    }
+                    return { type: "text" as const, text: p.text };
+                  });
+                } else {
+                  sdkContent = contentToString(m.content);
+                }
+              }
+              coreMessages.push({ role: "user", content: sdkContent as any });
             } else if (m.role === "assistant") {
+              const content = typeof m.content === "string" ? m.content : contentToString(m.content);
               if (content.trim()) {
                 coreMessages.push({ role: "assistant", content });
               }
