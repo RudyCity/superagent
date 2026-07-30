@@ -1,3 +1,12 @@
+## [1.2.646] - 2026-07-31
+
+### Permissions: Workspace Chain Permission Bypass
+
+- **Permission Management**: Added `getAllowedWorkspacePaths` helper in `permissions.ts` to dynamically retrieve all active workspace chain node paths (local and remote).
+- **Out of Bounds Check**: Updated `isToolCallOutOfBounds` and `isSuperagentOutOfBounds` to evaluate cross-chain file and command accesses against all active workspace chain node boundaries, eliminating permission prompts when operating within an active workspace chain topology.
+- **Tools**: Auto-approved `cross_workspace_exec` and `manage_workspace_chain` operations when an active workspace chain is loaded.
+- **Tests**: Added test suite in `tests/workspaceChainPermissions.test.ts`.
+
 ## [1.2.645] - 2026-07-31
 
 ### UI: Subagent Action Streaming and Text Truncation

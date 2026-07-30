@@ -4,6 +4,7 @@ import { getRootConfigDir } from "./config.js";
 import { agentLocalStorage } from "./agent.js";
 import { runEventHooks } from "./tools/dynamicHooks.js";
 import { workspaceMode } from "./ssh/workspaceMode.js";
+import { workspaceChainManager } from "./workspace/WorkspaceChainManager.js";
 
 export const MODIFYING_TOOLS = [
   "write",
@@ -88,6 +89,26 @@ export function isPathInWorktree(filePath: string, worktreePath: string): boolea
   return normalizeAndCheckSubpath(resolved, worktreePath);
 }
 
+export function getAllowedWorkspacePaths(basePath: string): string[] {
+  const allowed = [basePath];
+  try {
+    const chain = workspaceChainManager.getActiveChain();
+    if (chain && chain.nodes && Array.isArray(chain.nodes)) {
+      for (const node of chain.nodes) {
+        if (node.path && typeof node.path === "string" && node.path.trim()) {
+          allowed.push(node.path.trim());
+        }
+        if (node.sshConfig && typeof node.sshConfig.remoteCwd === "string" && node.sshConfig.remoteCwd.trim()) {
+          allowed.push(node.sshConfig.remoteCwd.trim());
+        }
+      }
+    }
+  } catch {
+    // Ignore error if workspace chain manager is uninitialized
+  }
+  return allowed;
+}
+
 /**
  * Returns true if a Superagent's tool call targets a file OUTSIDE its worktree.
  * Checked for both modifying and reading/search tools.
@@ -153,6 +174,7 @@ export function isSuperagentOutOfBounds(
   }
 
   const rootConfig = resolveNormalizedPath(getRootConfigDir());
+  const allowedWorkspaces = getAllowedWorkspacePaths(worktreePath);
 
   for (const fp of candidatePaths) {
     const isAbs = path.isAbsolute(fp) || (process.platform === "win32" && /^\/[a-zA-Z]\//.test(fp));
@@ -169,19 +191,28 @@ export function isSuperagentOutOfBounds(
       }
     }
 
-    if (!isPathInWorktree(fp, worktreePath)) return true;
+    const inAnyAllowed = allowedWorkspaces.some((wsPath) => isPathInWorktree(fp, wsPath));
+    if (!inAnyAllowed) return true;
   }
   return false;
 }
 
 /**
- * Returns true if a tool call targets any path outside the active workspace directory,
+ * Returns true if a tool call targets any path outside the active workspace directory or chain nodes,
  * excluding the global ~/.superagent-r config directory.
  */
 export function isToolCallOutOfBounds(
   toolCall: { name: string; args?: Record<string, unknown> },
   workspacePath: string
 ): boolean {
+  if (toolCall.name === "cross_workspace_exec" || toolCall.name === "manage_workspace_chain") {
+    try {
+      if (workspaceChainManager.isChainActive()) {
+        return false;
+      }
+    } catch {}
+  }
+
   const isSsh = workspaceMode.isSsh() || workspacePath.startsWith("ssh://");
   let effectiveWorkspacePath = workspacePath;
 
@@ -200,6 +231,7 @@ export function isToolCallOutOfBounds(
     }
   }
 
+  const allowedWorkspaces = getAllowedWorkspacePaths(effectiveWorkspacePath);
   const args = toolCall.args || {};
   const candidatePaths = [
     args.filePath,
@@ -210,6 +242,8 @@ export function isToolCallOutOfBounds(
     args.DirectoryPath,
     args.SearchPath,
     args.AbsolutePath,
+    args.targetPath,
+    args.sourcePath,
   ].filter((v): v is string => typeof v === "string");
 
   if (args.filePaths && Array.isArray(args.filePaths)) {
@@ -250,9 +284,12 @@ export function isToolCallOutOfBounds(
   for (const fp of candidatePaths) {
     if (isSsh) {
       const normFp = fp.replace(/\\/g, "/");
-      const normW = effectiveWorkspacePath.replace(/\\/g, "/");
-      const normWWithSlash = normW.endsWith("/") ? normW : normW + "/";
-      if (normFp === normW || normFp.startsWith(normWWithSlash) || (!normFp.startsWith("/") && !normFp.includes(":"))) {
+      const inAnyWorkspace = allowedWorkspaces.some((wsPath) => {
+        const normW = wsPath.replace(/\\/g, "/");
+        const normWWithSlash = normW.endsWith("/") ? normW : normW + "/";
+        return normFp === normW || normFp.startsWith(normWWithSlash) || (!normFp.startsWith("/") && !normFp.includes(":"));
+      });
+      if (inAnyWorkspace) {
         continue;
       }
       return true;
@@ -263,10 +300,15 @@ export function isToolCallOutOfBounds(
       ? resolveNormalizedPath(fp)
       : resolveNormalizedPath(fp, effectiveWorkspacePath);
 
-    // If it's inside ~/.superagent-r/ or workspacePath, it's allowed without permission
+    // If it's inside ~/.superagent-r/ or any workspace chain node path, it's allowed without permission prompt
     // BUT model-config.json is strictly protected and requires permission confirmation
     const isModelConfig = normalizeAndCheckSubpath(resolved, path.join(rootConfig, "model-config.json"));
-    if ((normalizeAndCheckSubpath(resolved, rootConfig) && !isModelConfig) || normalizeAndCheckSubpath(resolved, effectiveWorkspacePath)) {
+    const inAnyWorkspace = allowedWorkspaces.some((wsPath) => {
+      const resolvedWs = resolveNormalizedPath(wsPath);
+      return normalizeAndCheckSubpath(resolved, resolvedWs);
+    });
+
+    if ((normalizeAndCheckSubpath(resolved, rootConfig) && !isModelConfig) || inAnyWorkspace) {
       continue;
     }
     return true;
@@ -284,7 +326,12 @@ export function isToolCallOutOfBounds(
         command.includes(".. ") || 
         command.endsWith("..")
       )) {
-        return true;
+        const cwdArg = (args.cwd as string) || effectiveWorkspacePath;
+        const resolvedCwd = resolveNormalizedPath(cwdArg);
+        const inAnyWorkspace = allowedWorkspaces.some((wsPath) => normalizeAndCheckSubpath(resolvedCwd, resolveNormalizedPath(wsPath)));
+        if (!inAnyWorkspace) {
+          return true;
+        }
       }
 
       // Check absolute paths in command (support quoted paths and paths with spaces)
@@ -299,8 +346,8 @@ export function isToolCallOutOfBounds(
           const resolved = resolveNormalizedPath(p);
           const isModelConfig = normalizeAndCheckSubpath(resolved, path.join(rootConfig, "model-config.json"));
           const inRootConfig = normalizeAndCheckSubpath(resolved, rootConfig);
-          const inWorkspace = normalizeAndCheckSubpath(resolved, effectiveWorkspacePath);
-          if ((!inRootConfig || isModelConfig) && !inWorkspace) {
+          const inAnyWorkspace = allowedWorkspaces.some((wsPath) => normalizeAndCheckSubpath(resolved, resolveNormalizedPath(wsPath)));
+          if ((!inRootConfig || isModelConfig) && !inAnyWorkspace) {
             return true;
           }
         }
@@ -319,9 +366,12 @@ export function isToolCallOutOfBounds(
         }
 
         if (isSsh) {
-          const normW = effectiveWorkspacePath.replace(/\\/g, "/");
-          const normWWithSlash = normW.endsWith("/") ? normW : normW + "/";
-          if (p === normW || p.startsWith(normWWithSlash)) {
+          const inAnyWorkspace = allowedWorkspaces.some((wsPath) => {
+            const normW = wsPath.replace(/\\/g, "/");
+            const normWWithSlash = normW.endsWith("/") ? normW : normW + "/";
+            return p === normW || p.startsWith(normWWithSlash);
+          });
+          if (inAnyWorkspace) {
             continue;
           }
           return true;
@@ -329,7 +379,8 @@ export function isToolCallOutOfBounds(
 
         const resolved = resolveNormalizedPath(p);
         const isModelConfig = normalizeAndCheckSubpath(resolved, path.join(rootConfig, "model-config.json"));
-        if ((!normalizeAndCheckSubpath(resolved, rootConfig) || isModelConfig) && !normalizeAndCheckSubpath(resolved, effectiveWorkspacePath)) {
+        const inAnyWorkspace = allowedWorkspaces.some((wsPath) => normalizeAndCheckSubpath(resolved, resolveNormalizedPath(wsPath)));
+        if ((!normalizeAndCheckSubpath(resolved, rootConfig) || isModelConfig) && !inAnyWorkspace) {
           return true;
         }
       }
