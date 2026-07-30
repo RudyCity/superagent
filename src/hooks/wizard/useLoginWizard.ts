@@ -215,6 +215,12 @@ export function useLoginWizard(ctx: LoginWizardContext) {
         // Set this provider as active in preset JSON
         switchActiveProvider(providerId);
 
+        // Invalidate stale tool-call-support probe cache so next run re-probes the new endpoint
+        try {
+          const { clearToolCallSupportCache } = await import("../../utils/promptBasedToolCalling.js");
+          clearToolCallSupportCache();
+        } catch {}
+
         const effectiveBaseUrl = baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : "");
         const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");
 
@@ -940,6 +946,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         });
 
         switchActiveProvider(pId);
+
+        // Invalidate stale tool-call-support probe cache so next run re-probes the new endpoint
+        try {
+          const { clearToolCallSupportCache } = await import("../../utils/promptBasedToolCalling.js");
+          clearToolCallSupportCache();
+        } catch {}
 
         addLine({
           type: "system",

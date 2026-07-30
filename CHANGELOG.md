@@ -1,4 +1,31 @@
+## [1.2.637] - 2026-07-30
+
+### Patch: Version bump for AgenRouter fix release
+
+---
+
+## [1.2.636] - 2026-07-30
+
+### Fix: AgenRouter (Custom Provider) Agent Loop Not Running
+
+- **Root Cause** (`src/utils/promptBasedToolCalling.ts`):
+  - `probeToolCallSupport` was sending the tool-call probe without `User-Agent` and browser-like headers, causing AgenRouter's WAF to reject it with 401.
+  - On any non-ok probe response, the function cached `false` (no native tools) and returned — silently forcing the agent into XML prompt-based tool calling mode, which the model does not produce.
+  - This made the agent loop appear frozen/non-functional when using AgenRouter models.
+
+- **Fix** (`src/utils/promptBasedToolCalling.ts`):
+  - Added `DEFAULT_API_HEADERS` (User-Agent, HTTP-Referer, X-Title) to the probe fetch call to pass WAF checks.
+  - Changed fallback behavior: when probe returns non-ok HTTP status or throws a network error, now caches `true` (native tools supported) rather than `false`, preventing false-negative downgrades.
+  - Updated `clearToolCallSupportCache()` to also delete all entries from the SQLite `tool_support_cache` table, clearing stale incorrect entries.
+
+- **Cascade Fix** (`src/core/storage/historyDb.ts`):
+  - Added `deleteAllToolSupportCacheFromDb()` export to bulk-clear the `tool_support_cache` table.
+
+- **Auto-Invalidation** (`src/hooks/wizard/useLoginWizard.ts`):
+  - Probe cache is now automatically cleared whenever a provider is saved or updated via the `/login` wizard, ensuring the first run with a new endpoint always does a fresh probe.
+
 ## [1.2.635] - 2026-07-30
+
 
 ### Documentation Upgrade: GitHub Pages Update
 

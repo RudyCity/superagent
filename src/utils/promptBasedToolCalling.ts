@@ -116,20 +116,24 @@ export async function probeToolCallSupport(
 
   try {
     const url = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
+    const { DEFAULT_API_HEADERS } = await import("../core/loginWizardLogic.js");
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        ...DEFAULT_API_HEADERS,
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
       body: JSON.stringify(probeBody),
       signal: AbortSignal.timeout(30000), // Increased from 10000 to accommodate slower/local custom endpoints
     });
 
     if (!res.ok) {
-      toolCallSupportCache.set(cacheKey, { value: false, timestamp: Date.now() });
-      saveDiskCache(cacheKey, false);
-      return false;
+      // Non-ok probe response (e.g. 401 from WAF/auth gatekeeping) does NOT mean tools are unsupported.
+      // Default to true (native tools) to avoid silently falling back to broken XML mode.
+      toolCallSupportCache.set(cacheKey, { value: true, timestamp: Date.now() });
+      saveDiskCache(cacheKey, true);
+      return true;
     }
 
     const json = (await res.json()) as any;
@@ -143,16 +147,21 @@ export async function probeToolCallSupport(
     saveDiskCache(cacheKey, hasToolCalls);
     return hasToolCalls;
   } catch {
-    toolCallSupportCache.set(cacheKey, { value: false, timestamp: Date.now() });
-    saveDiskCache(cacheKey, false);
-    return false;
+    // Network/timeout errors: default to native tools (same reasoning as non-ok above).
+    toolCallSupportCache.set(cacheKey, { value: true, timestamp: Date.now() });
+    saveDiskCache(cacheKey, true);
+    return true;
   }
 }
 
-/** Clears the tool-call-support probe cache (useful in tests). */
+/** Clears the tool-call-support probe cache (useful in tests and after provider changes). */
 export function clearToolCallSupportCache(): void {
   toolCallSupportCache.clear();
   diskCacheLoaded = false;
+  try {
+    const { deleteAllToolSupportCacheFromDb } = require("../core/storage/historyDb.js");
+    deleteAllToolSupportCacheFromDb();
+  } catch {}
 }
 
 /**

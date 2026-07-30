@@ -1395,6 +1395,13 @@ export function loadAllToolSupportCacheFromDb(ttlMs: number): Record<string, boo
   return result;
 }
 
+export function deleteAllToolSupportCacheFromDb(): void {
+  try {
+    const db = getHistoryDb();
+    db.prepare("DELETE FROM tool_support_cache").run();
+  } catch {}
+}
+
 export function getRateLimitStateFromDb(key: string): { tokensRemaining: number; lastUpdated: number } | null {
   try {
     const db = getHistoryDb();
