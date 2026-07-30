@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.625] - 2026-07-30
+
+### SSH Workspace Audit — Critical ESM Fix
+
+- **`pathHelpers.ts`**: Fixed critical ESM `require()` incompatibility — `require("../ssh/workspaceMode.js")` is unavailable in ESM modules (`"type": "module"`). Replaced with top-level static `import { workspaceMode }` and extracted SSH path resolution into synchronous `tryResolveSshPath()` helper. This was silently bypassing SSH boundary enforcement for all file tools.
+- **`docs/ssh-workspace-audit.md`**: Added comprehensive audit report covering 13 files, 82 tests, 1 critical fix, 5 security findings, 5 code quality findings, and 12 test coverage gaps.
+- **Tests**: 6 previously-failing tests in `sshToolsFull.test.ts` now pass (82/82 SSH tests pass).
+
+### Verification
+
+- `npx vitest run` (SSH suite): 82/82 pass
+- `npx tsc --noEmit`: No errors
+
 ## [1.2.624] - 2026-07-30
 
 ### SSH Workspace Logging & Boundary Hardening
