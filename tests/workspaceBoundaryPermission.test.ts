@@ -11,7 +11,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { Agent } from "../src/core/agent.js";
 import type { AgentEvent } from "../src/core/agent.js";
-import { MODIFYING_TOOLS } from "../src/core/permissions.js";
+import { MODIFYING_TOOLS, isToolCallOutOfBounds } from "../src/core/permissions.js";
+import { workspaceMode } from "../src/core/ssh/workspaceMode.js";
 
 function makeAgent() {
   const onEvent = vi.fn((_e: AgentEvent) => {});
@@ -160,3 +161,56 @@ describe("Non-interactive CLI permission handler", () => {
     }
   });
 });
+
+// ─── SSH Workspace Mode Permission Boundary Tests ──────────────────────────────
+
+describe("isToolCallOutOfBounds with SSH workspace mode", () => {
+  it("allows bash commands targeting remoteCwd in SSH mode", () => {
+    workspaceMode.setSshMode({
+      host: "43.134.226.18",
+      port: 2345,
+      username: "ubuntu",
+      remoteCwd: "/home/ubuntu",
+    });
+
+    const isOutOfBounds = isToolCallOutOfBounds(
+      { name: "bash", args: { command: 'ls -la /home/ubuntu 2>&1; echo "EXIT:$?"' } },
+      "/home/ubuntu"
+    );
+    expect(isOutOfBounds).toBe(false);
+    workspaceMode.setLocalMode();
+  });
+
+  it("allows file reads inside remoteCwd in SSH mode", () => {
+    workspaceMode.setSshMode({
+      host: "43.134.226.18",
+      port: 2345,
+      username: "ubuntu",
+      remoteCwd: "/home/ubuntu",
+    });
+
+    const isOutOfBounds = isToolCallOutOfBounds(
+      { name: "view_file", args: { AbsolutePath: "/home/ubuntu/package.json" } },
+      "/home/ubuntu"
+    );
+    expect(isOutOfBounds).toBe(false);
+    workspaceMode.setLocalMode();
+  });
+
+  it("blocks file reads outside remoteCwd in SSH mode", () => {
+    workspaceMode.setSshMode({
+      host: "43.134.226.18",
+      port: 2345,
+      username: "ubuntu",
+      remoteCwd: "/home/ubuntu",
+    });
+
+    const isOutOfBounds = isToolCallOutOfBounds(
+      { name: "view_file", args: { AbsolutePath: "/etc/shadow" } },
+      "/home/ubuntu"
+    );
+    expect(isOutOfBounds).toBe(true);
+    workspaceMode.setLocalMode();
+  });
+});
+

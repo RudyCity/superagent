@@ -1,3 +1,17 @@
+## [1.2.628] - 2026-07-30
+
+### Quick Model Preset Switching
+
+- **`/mp` Command**: New `/mp <preset-name>` slash command for fast model preset switching. Shortcut: `/mp-<name>`.
+- **`/mp-<name>` Shortcut**: Type `/mp-fast` or `/mp-default` directly to instantly switch to a saved model preset without typing the full `/mp` command.
+- **Mode-Aware**: Automatically detects multi-agent vs single-agent mode and applies the correct preset section.
+- **Context Manager Integration**: Updates ContextManager model and threshold after switching.
+- **Background Model Fetch**: Fetches and caches model config in background for accurate context limit.
+
+### Verification
+- TypeScript compilation: ✅ Pass
+- Test suite: 143 test files passed, 1464 tests passed, 5 skipped
+
 ## [1.2.627] - 2026-07-30
 
 ### SSH Workspace — Advanced Features

@@ -228,8 +228,9 @@ export const bashTool: Tool = {
           return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background_process', then monitor it with 'manage_background_process' (action: 'status') and send inputs using 'manage_background_process' (action: 'send_input').`;
         }
 
-        if (result.exitCode !== 0) {
-          return `Exit code: ${result.exitCode}\n${output}`;
+        const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
+        if (exitCodeNum !== 0) {
+          return `Exit code: ${exitCodeNum}\n${output}`;
         }
         return output || "(no output)";
       } catch (innerErr: any) {
@@ -361,10 +362,11 @@ export const runCommandTool: Tool = {
           return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background_process', then monitor it with 'manage_background_process' (action: 'status') and send inputs using 'manage_background_process' (action: 'send_input').`;
         }
 
-        if (result.exitCode !== 0) {
+        const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
+        if (exitCodeNum !== 0) {
           const reporterHint = /Failed to load custom Reporter from (\w+)/.exec(output)?.[1];
           const hint = reporterHint ? `\nFix: Vitest reporter "${reporterHint}" is unavailable. Use default output, --reporter=dot, or --reporter=json.` : "";
-          return `Exit code: ${result.exitCode}\n${output}${hint}`;
+          return `Exit code: ${exitCodeNum}\n${output}${hint}`;
         }
 
         return output || "(no output)";

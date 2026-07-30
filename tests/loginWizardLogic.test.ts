@@ -140,7 +140,7 @@ describe("loginWizardLogic", () => {
       expect(globalThis.fetch).toHaveBeenCalledWith(
         "http://localhost:20128/v1/models",
         expect.objectContaining({
-          headers: { Authorization: "Bearer sk-test" },
+          headers: expect.objectContaining({ Authorization: "Bearer sk-test" }),
         })
       );
     });
@@ -188,7 +188,9 @@ describe("loginWizardLogic", () => {
       await fetchModelsFromEndpoint("http://localhost:8080/v1", "");
       expect(globalThis.fetch).toHaveBeenCalledWith(
         "http://localhost:8080/v1/models",
-        expect.objectContaining({ headers: {} })
+        expect.objectContaining({
+          headers: expect.not.objectContaining({ Authorization: expect.anything() }),
+        })
       );
     });
   });

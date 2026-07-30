@@ -149,16 +149,19 @@ export function resolveProfileFromPicker(
   return found;
 }
 
+export const DEFAULT_API_HEADERS: Record<string, string> = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Superagent/1.0",
+  "HTTP-Referer": "https://github.com/RudyCity/superagent",
+  "X-Title": "SuperAgent CLI",
+};
+
 export async function fetchModelsForProvider(
   providerType: string,
   apiKey: string,
   baseUrl: string
 ): Promise<string[]> {
   let url = "";
-  const headers: Record<string, string> = {
-    "HTTP-Referer": "https://github.com/RudyCity/superagent",
-    "X-Title": "SuperAgent CLI",
-  };
+  const headers: Record<string, string> = { ...DEFAULT_API_HEADERS };
   const cleanUrl = baseUrl ? (ensureProtocol(baseUrl) as string) : "";
   const cleanBase = cleanUrl.replace(/\/(chat\/completions|models)\/?$/i, "").replace(/\/+$/, "");
 
@@ -266,6 +269,17 @@ function formatInvalidJsonDiagnostic(rawText: string): string {
     return "endpoint returned empty response body";
   }
 
+  // Attempt to parse JSON error responses directly
+  try {
+    const json = JSON.parse(trimmed);
+    const errMsg = json?.error?.message || json?.message || (typeof json?.error === "string" ? json.error : null);
+    if (errMsg && typeof errMsg === "string") {
+      return errMsg;
+    }
+  } catch {
+    // Not valid JSON, proceed with standard diagnostics
+  }
+
   if (
     trimmed.includes("Vercel Security Checkpoint") ||
     trimmed.includes("verifying your browser") ||
@@ -338,7 +352,10 @@ export async function testCustomProviderMessage(
 ): Promise<CustomProviderMessageTestResult> {
   try {
     baseUrl = ensureProtocol(baseUrl) as string;
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...DEFAULT_API_HEADERS,
+    };
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
     const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, {
@@ -390,7 +407,7 @@ export async function checkEndpointCompatibility(
     baseUrl = ensureProtocol(baseUrl) as string;
     const cleanBase = baseUrl.replace(/\/(chat\/completions|models)\/?$/i, "").replace(/\/+$/, "");
     const url = `${cleanBase}/models`;
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...DEFAULT_API_HEADERS };
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
     const res = await fetch(url, {

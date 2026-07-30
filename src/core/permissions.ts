@@ -3,6 +3,7 @@ import type { ToolCall, ToolResult } from "./conversation.js";
 import { getRootConfigDir } from "./config.js";
 import { agentLocalStorage } from "./agent.js";
 import { runEventHooks } from "./tools/dynamicHooks.js";
+import { workspaceMode } from "./ssh/workspaceMode.js";
 
 export const MODIFYING_TOOLS = [
   "write",
@@ -181,6 +182,24 @@ export function isToolCallOutOfBounds(
   toolCall: { name: string; args?: Record<string, unknown> },
   workspacePath: string
 ): boolean {
+  const isSsh = workspaceMode.isSsh() || workspacePath.startsWith("ssh://");
+  let effectiveWorkspacePath = workspacePath;
+
+  if (isSsh) {
+    const sshCfg = workspaceMode.getConfig();
+    if (sshCfg?.remoteCwd) {
+      effectiveWorkspacePath = sshCfg.remoteCwd;
+    } else if (workspacePath.startsWith("ssh://")) {
+      const slashIdx = workspacePath.indexOf("/", 6);
+      if (slashIdx !== -1) {
+        let pPart = workspacePath.slice(slashIdx);
+        const qIdx = pPart.indexOf("?");
+        if (qIdx !== -1) pPart = pPart.slice(0, qIdx);
+        effectiveWorkspacePath = pPart;
+      }
+    }
+  }
+
   const args = toolCall.args || {};
   const candidatePaths = [
     args.filePath,
@@ -229,15 +248,25 @@ export function isToolCallOutOfBounds(
   const rootConfig = resolveNormalizedPath(getRootConfigDir());
 
   for (const fp of candidatePaths) {
+    if (isSsh) {
+      const normFp = fp.replace(/\\/g, "/");
+      const normW = effectiveWorkspacePath.replace(/\\/g, "/");
+      const normWWithSlash = normW.endsWith("/") ? normW : normW + "/";
+      if (normFp === normW || normFp.startsWith(normWWithSlash) || (!normFp.startsWith("/") && !normFp.includes(":"))) {
+        continue;
+      }
+      return true;
+    }
+
     const isAbs = path.isAbsolute(fp) || (process.platform === "win32" && /^\/[a-zA-Z]\//.test(fp));
     const resolved = isAbs
       ? resolveNormalizedPath(fp)
-      : resolveNormalizedPath(fp, workspacePath);
+      : resolveNormalizedPath(fp, effectiveWorkspacePath);
 
     // If it's inside ~/.superagent-r/ or workspacePath, it's allowed without permission
     // BUT model-config.json is strictly protected and requires permission confirmation
     const isModelConfig = normalizeAndCheckSubpath(resolved, path.join(rootConfig, "model-config.json"));
-    if ((normalizeAndCheckSubpath(resolved, rootConfig) && !isModelConfig) || normalizeAndCheckSubpath(resolved, workspacePath)) {
+    if ((normalizeAndCheckSubpath(resolved, rootConfig) && !isModelConfig) || normalizeAndCheckSubpath(resolved, effectiveWorkspacePath)) {
       continue;
     }
     return true;
@@ -259,35 +288,48 @@ export function isToolCallOutOfBounds(
       }
 
       // Check absolute paths in command (support quoted paths and paths with spaces)
-      const winAbsPathRegex = /"[a-zA-Z]:\\[^"]+"|'[a-zA-Z]:\\[^']+'|(?:[a-zA-Z]:\\[^\r\n;&|]+)/g;
-      let match;
-      while ((match = winAbsPathRegex.exec(command)) !== null) {
-        let p = match[0].trim();
-        if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
-          p = p.slice(1, -1);
-        }
-        const resolved = resolveNormalizedPath(p);
-        const isModelConfig = normalizeAndCheckSubpath(resolved, path.join(rootConfig, "model-config.json"));
-        const inRootConfig = normalizeAndCheckSubpath(resolved, rootConfig);
-        const inWorkspace = normalizeAndCheckSubpath(resolved, workspacePath);
-        if ((!inRootConfig || isModelConfig) && !inWorkspace) {
-          return true;
+      if (!isSsh) {
+        const winAbsPathRegex = /"[a-zA-Z]:\\[^"]+"|'[a-zA-Z]:\\[^']+'|(?:[a-zA-Z]:\\[^\r\n;&|]+)/g;
+        let match;
+        while ((match = winAbsPathRegex.exec(command)) !== null) {
+          let p = match[0].trim();
+          if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
+            p = p.slice(1, -1);
+          }
+          const resolved = resolveNormalizedPath(p);
+          const isModelConfig = normalizeAndCheckSubpath(resolved, path.join(rootConfig, "model-config.json"));
+          const inRootConfig = normalizeAndCheckSubpath(resolved, rootConfig);
+          const inWorkspace = normalizeAndCheckSubpath(resolved, effectiveWorkspacePath);
+          if ((!inRootConfig || isModelConfig) && !inWorkspace) {
+            return true;
+          }
         }
       }
 
       const unixAbsPathRegex = /(?:^|[\s"'])(\/[a-zA-Z0-9_\-\.\/]+)/g;
+      let match;
       while ((match = unixAbsPathRegex.exec(command)) !== null) {
         const matchIndex = match.index + match[0].indexOf("/");
         if (matchIndex > 0 && command[matchIndex - 1] === "\\") {
           continue;
         }
         const p = match[1];
-        if (p.startsWith("/dev/") || p === "/dev/null" || p.startsWith("/bin/") || p.startsWith("/usr/bin/")) {
+        if (p.startsWith("/dev/") || p === "/dev/null" || p.startsWith("/bin/") || p.startsWith("/usr/bin/") || p.startsWith("/tmp/")) {
           continue;
         }
+
+        if (isSsh) {
+          const normW = effectiveWorkspacePath.replace(/\\/g, "/");
+          const normWWithSlash = normW.endsWith("/") ? normW : normW + "/";
+          if (p === normW || p.startsWith(normWWithSlash)) {
+            continue;
+          }
+          return true;
+        }
+
         const resolved = resolveNormalizedPath(p);
         const isModelConfig = normalizeAndCheckSubpath(resolved, path.join(rootConfig, "model-config.json"));
-        if ((!normalizeAndCheckSubpath(resolved, rootConfig) || isModelConfig) && !normalizeAndCheckSubpath(resolved, workspacePath)) {
+        if ((!normalizeAndCheckSubpath(resolved, rootConfig) || isModelConfig) && !normalizeAndCheckSubpath(resolved, effectiveWorkspacePath)) {
           return true;
         }
       }

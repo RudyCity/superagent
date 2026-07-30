@@ -8,6 +8,7 @@ import "./memoryCommand.js";
 import "./mcpCommand.js";
 import "./workspaceCommand.js";
 import "./macroCommand.js";
+import "./mpCommand.js";
 
 
 export { registry } from "./registry.js";

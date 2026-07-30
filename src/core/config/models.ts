@@ -20,7 +20,11 @@ export async function fetchAndCacheModels(): Promise<void> {
     if (provider.type === "anthropic" && !provider.baseUrl) return;
 
     let url = "";
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Superagent/1.0",
+      "HTTP-Referer": "https://github.com/RudyCity/superagent",
+      "X-Title": "SuperAgent CLI",
+    };
     const apiKey = provider.apiKey || "";
     const baseUrl = ensureProtocol(provider.baseUrl || "");
 
@@ -531,6 +535,7 @@ export function getModelInstanceForString(modelStr: string) {
     apiKey,
     ...(baseUrl && { baseURL: baseUrl }),
     headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Superagent/1.0",
       "HTTP-Referer": "https://github.com/RudyCity/superagent",
       "X-Title": "SuperAgent CLI",
     },

@@ -24,13 +24,19 @@ export function handleSlashCommand(
   runEventHooks("pre_command", { command: cmd, name, args }).catch(() => {});
 
   let isDirectSkill = false;
+  let isMpShortcut = false;
+  let mpPresetName = "";
   let targetSlug = "";
   let extraPrompt = "";
 
   const skills = getInstalledSkills();
   const rawName = name.toLowerCase();
 
-  if (rawName.startsWith("skill-")) {
+  // Handle /mp-<name> shortcut for quick model preset switching
+  if (rawName.startsWith("mp-")) {
+    isMpShortcut = true;
+    mpPresetName = rawName.slice(3);
+  } else if (rawName.startsWith("skill-")) {
     isDirectSkill = true;
     targetSlug = rawName.slice(6);
     extraPrompt = args;
@@ -49,6 +55,47 @@ export function handleSlashCommand(
       targetSlug = rawName;
       extraPrompt = args;
     }
+  }
+
+  // Handle /mp-<name> shortcut for quick model preset switching
+  if (isMpShortcut) {
+    const mpCommand = registry.get("mp");
+    if (mpCommand) {
+      ctx.addLine({
+        type: "user",
+        content: `❯ /mp ${mpPresetName}`,
+        timestamp: now,
+      });
+      try {
+        const res = mpCommand.execute(mpPresetName, ctx);
+        if (res instanceof Promise) {
+          return res.then(() => {
+            runEventHooks("post_command", { command: cmd, name, args }).catch(() => {});
+          }).catch((err: any) => {
+            ctx.addLine({
+              type: "error",
+              content: `Command execution failed: ${err.message}`,
+              timestamp: Date.now(),
+            });
+          });
+        } else {
+          runEventHooks("post_command", { command: cmd, name, args }).catch(() => {});
+        }
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Command execution failed: ${err.message}`,
+          timestamp: Date.now(),
+        });
+      }
+    } else {
+      ctx.addLine({
+        type: "error",
+        content: `mp command not found.`,
+        timestamp: now,
+      });
+    }
+    return;
   }
 
   if (isDirectSkill) {
