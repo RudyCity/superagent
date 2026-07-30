@@ -38,6 +38,7 @@ function LoadingIndicator() {
     "▱▱▰▱▱",
     "▱▰▱▱▱",
   ];
+  const rPulseColors = ["cyan", "cyanBright", "yellow", "white", "magenta"];
 
   React.useEffect(() => {
     const timer = setInterval(() => {
@@ -46,8 +47,11 @@ function LoadingIndicator() {
     return () => clearInterval(timer);
   }, []);
 
+  const rColor = rPulseColors[frame % rPulseColors.length];
+
   return (
-    <Text bold color="blueBright">
+    <Text bold color="cyan">
+      <Text color={rColor}>[R] </Text>
       {frames[frame]}
     </Text>
   );

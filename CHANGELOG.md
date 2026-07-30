@@ -1,3 +1,9 @@
+## [1.2.644] - 2026-07-30
+
+### UI: Add Animated Pulsing [R] Badge to Loading and Thinking Indicators
+
+- **Loading & Thinking Indicators**: Added animated pulsing `[R]` badge across `LoadingIndicator`, `ToolLoadingIndicator`, `ProcessingIndicator`, `ThinkingSpinner`, `SessionSpinner`, and `StatusBar` spinner.
+
 ## [1.2.643] - 2026-07-30
 
 ### UI: Update Thinking, Streaming, and Chat Line Headers to SUPERAGENT R
