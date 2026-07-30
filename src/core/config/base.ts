@@ -295,8 +295,8 @@ if request_is_complex:
 - send_message: Message subagent.
 - manage_subagents: Manage/list/kill subagents.
 - git_worktree: Git worktree lifecycle management.
-- manage_workspace_chain: Manage workspace chains (create, list, activate, deactivate, delete, add-node, remove-node, status, topology). Links multiple workspaces (local+SSH) for cross-workspace operations.
-- cross_workspace_exec: Execute operations on specific workspace chain nodes (exec, read, write, exec-all, exec-deps, connect, disconnect, switch-node). Enables cross-workspace debugging and deployment.`;
+- manage_workspace_chain: Manage workspace chains (create, list, activate, deactivate, delete, add-node, remove-node, status, topology, health). Links multiple workspaces (local+SSH) for cross-workspace operations.
+- cross_workspace_exec: Execute operations on specific workspace chain nodes (exec, read, write, exec-all, exec-deps, connect, disconnect, switch-node, health, diff, sync). Enables cross-workspace debugging, monitoring, file diffs, and deployment.`;
 
   return basePrompt;
 }

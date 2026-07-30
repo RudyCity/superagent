@@ -24,7 +24,7 @@ import {
 } from "./WorkspaceChainConfig.js";
 import { sshLogger } from "../ssh/sshLogger.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
-import { resolveHostAlias } from "../ssh/sshConfig.js";
+import { resolveHostAlias, findDefaultPrivateKey } from "../ssh/sshConfig.js";
 
 /** SSH connection wrapper for a chain node */
 interface ChainSshConnection {
@@ -138,8 +138,8 @@ class WorkspaceChainManagerClass {
     return this.activeChain !== null;
   }
 
-  /** Connect to an SSH node in the chain */
-  public async connectSshNode(nodeId: string): Promise<void> {
+  /** Connect to an SSH node in the chain with exponential backoff retry */
+  public async connectSshNode(nodeId: string, maxRetries = 3, initialBackoffMs = 1000): Promise<void> {
     if (this.sshConnections.has(nodeId)) return;
     if (this.connectingPromises.has(nodeId)) {
       return this.connectingPromises.get(nodeId)!;
@@ -150,11 +150,26 @@ class WorkspaceChainManagerClass {
       throw new Error(`Node ${nodeId} is not an SSH node or missing SSH config`);
     }
 
-    const promise = this._doConnectSsh(nodeId, node.sshConfig).finally(() => {
-      this.connectingPromises.delete(nodeId);
-    });
-    this.connectingPromises.set(nodeId, promise);
-    return promise;
+    let lastErr: Error | null = null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const promise = this._doConnectSsh(nodeId, node.sshConfig).finally(() => {
+          this.connectingPromises.delete(nodeId);
+        });
+        this.connectingPromises.set(nodeId, promise);
+        await promise;
+        return;
+      } catch (err: any) {
+        lastErr = err;
+        this.sshConnections.delete(nodeId);
+        if (attempt < maxRetries - 1) {
+          const backoff = initialBackoffMs * Math.pow(2, attempt);
+          sshLogger.warn("chain.connect", `retrying SSH connection for node ${nodeId} in ${backoff}ms (attempt ${attempt + 1}/${maxRetries}): ${err.message}`);
+          await new Promise((r) => setTimeout(r, backoff));
+        }
+      }
+    }
+    throw lastErr || new Error(`Failed to connect to SSH node ${nodeId} after ${maxRetries} attempts`);
   }
 
   /** Internal SSH connection logic */
@@ -179,7 +194,7 @@ class WorkspaceChainManagerClass {
 
     const privateKey = config.privateKeyPath
       ? fs.readFileSync(config.privateKeyPath)
-      : this.findDefaultPrivateKey();
+      : findDefaultPrivateKey();
 
     const connectConfig: any = {
       host: config.host,
@@ -238,20 +253,17 @@ class WorkspaceChainManagerClass {
       };
     }
 
-    const client = await new Promise<Client>((resolve, reject) => {
-      const c = new Client();
-      c.on("ready", () => resolve(c))
-        .on("error", (err) => reject(new Error(`SSH connection failed to ${config.host}:${config.port} — ${err.message}`)))
-        .connect(connectConfig);
-    });
-
     const sftp = new SFTPClient();
     try {
       await sftp.connect(connectConfig);
-    } catch (err) {
-      try { client.end(); } catch {}
-      throw err;
+    } catch (err: any) {
+      const hint = !config.privateKeyPath && !config.password
+        ? ` — no privateKeyPath or password set. Set 'privateKeyPath' in the SSH node config or place a key in ~/.ssh/`
+        : "";
+      throw new Error(`SSH connection failed to ${config.host}:${config.port} — ${err.message}${hint}`);
     }
+
+    const client = (sftp as any).client as Client;
 
     this.sshConnections.set(nodeId, {
       nodeId,
@@ -260,20 +272,7 @@ class WorkspaceChainManagerClass {
       config,
     });
 
-    sshLogger.info("chain.connect", `SSH node ${nodeId} connected`, { host: config.host });
-  }
-
-  /** Find default SSH private key */
-  private findDefaultPrivateKey(): Buffer | undefined {
-    const defaultKeys = ["id_ed25519", "id_rsa", "id_ecdsa"];
-    const sshDir = path.join(os.homedir(), ".ssh");
-    for (const key of defaultKeys) {
-      const keyPath = path.join(sshDir, key);
-      if (fs.existsSync(keyPath)) {
-        try { return fs.readFileSync(keyPath); } catch {}
-      }
-    }
-    return undefined;
+    sshLogger.info("chain.connect", `SSH node ${nodeId} connected (single TCP session)`, { host: config.host });
   }
 
   /** Get SSH connection for a node */
@@ -571,6 +570,191 @@ class WorkspaceChainManagerClass {
       connected: node.type === "local" ? true : this.sshConnections.has(node.id),
       type: node.type,
     }));
+  }
+
+  /** Get health metrics for a specific node */
+  public async getNodeHealth(nodeId: string): Promise<{
+    nodeId: string;
+    label: string;
+    type: string;
+    role: string;
+    status: "CONNECTED" | "DISCONNECTED" | "LOCAL" | "ERROR";
+    pingMs: number;
+    osInfo: string;
+    uptime: string;
+    ramUsage: string;
+    diskUsage: string;
+    error?: string;
+  }> {
+    const node = this.getNode(nodeId);
+    if (!node) {
+      throw new Error(`Node not found: ${nodeId}`);
+    }
+
+    if (node.type === "local") {
+      const start = Date.now();
+      const freeMem = (os.freemem() / (1024 * 1024 * 1024)).toFixed(1);
+      const totalMem = (os.totalmem() / (1024 * 1024 * 1024)).toFixed(1);
+      const uptimeHours = (os.uptime() / 3600).toFixed(1);
+      return {
+        nodeId: node.id,
+        label: node.label,
+        type: node.type,
+        role: node.role,
+        status: "LOCAL",
+        pingMs: Date.now() - start,
+        osInfo: `${os.type()} ${os.release()} (${os.arch()})`,
+        uptime: `${uptimeHours} hours`,
+        ramUsage: `${(Number(totalMem) - Number(freeMem)).toFixed(1)}GB / ${totalMem}GB`,
+        diskUsage: "Local Filesystem",
+      };
+    }
+
+    // SSH node
+    const start = Date.now();
+    try {
+      const res = await this.execOnNode(
+        nodeId,
+        `uname -sr; uptime -p 2>/dev/null || uptime; free -h 2>/dev/null | awk '/Mem:/ {print $3 "/" $2}'; df -h . | awk 'NR==2 {print $3 "/" $2 " (" $5 ")"}'`,
+        ".",
+        15000
+      );
+      const pingMs = Date.now() - start;
+      const lines = res.stdout.trim().split("\n");
+      return {
+        nodeId: node.id,
+        label: node.label,
+        type: node.type,
+        role: node.role,
+        status: "CONNECTED",
+        pingMs,
+        osInfo: lines[0] || "Linux/POSIX",
+        uptime: lines[1] || "unknown",
+        ramUsage: lines[2] || "N/A",
+        diskUsage: lines[3] || "N/A",
+      };
+    } catch (err: any) {
+      return {
+        nodeId: node.id,
+        label: node.label,
+        type: node.type,
+        role: node.role,
+        status: "ERROR",
+        pingMs: Date.now() - start,
+        osInfo: "N/A",
+        uptime: "N/A",
+        ramUsage: "N/A",
+        diskUsage: "N/A",
+        error: err.message,
+      };
+    }
+  }
+
+  /** Get health monitoring dashboard table for all nodes in the active chain */
+  public async getChainHealth(): Promise<string> {
+    if (!this.activeChain) {
+      return "No active workspace chain.";
+    }
+    const promises = this.activeChain.nodes.map((node) => this.getNodeHealth(node.id));
+    const results = await Promise.all(promises);
+
+    const rows = results.map((h) => {
+      const pingStr = `${h.pingMs}ms`;
+      const statusBadge = h.status === "ERROR" ? `❌ ERROR (${h.error})` : `✅ ${h.status}`;
+      return `| \`${h.nodeId}\` | ${h.label} | ${h.role} | ${h.type} | ${statusBadge} | ${pingStr} | ${h.ramUsage} | ${h.diskUsage} | ${h.uptime} |`;
+    });
+
+    const table = [
+      `### 📊 Workspace Chain Health Dashboard: ${this.activeChain.name} (${this.activeChain.id})`,
+      "",
+      "| Node ID | Label | Role | Type | Status | Ping | RAM Usage | Disk Usage | Uptime |",
+      "|---------|-------|------|------|--------|------|-----------|------------|--------|",
+      ...rows,
+    ].join("\n");
+
+    return table;
+  }
+
+  /** Compare a file across two nodes in the chain */
+  public async diffNodes(
+    sourceNodeId: string,
+    targetNodeId: string,
+    filePath: string
+  ): Promise<string> {
+    const sourceNode = this.getNode(sourceNodeId);
+    const targetNode = this.getNode(targetNodeId);
+    if (!sourceNode) throw new Error(`Source node not found: ${sourceNodeId}`);
+    if (!targetNode) throw new Error(`Target node not found: ${targetNodeId}`);
+
+    let sourceContent: string | null = null;
+    let targetContent: string | null = null;
+    let sourceErr: string | null = null;
+    let targetErr: string | null = null;
+
+    try {
+      sourceContent = await this.readFileFromNode(sourceNodeId, filePath);
+    } catch (e: any) {
+      sourceErr = e.message;
+    }
+
+    try {
+      targetContent = await this.readFileFromNode(targetNodeId, filePath);
+    } catch (e: any) {
+      targetErr = e.message;
+    }
+
+    const sourceLabel = `${sourceNode.label} (${sourceNodeId})`;
+    const targetLabel = `${targetNode.label} (${targetNodeId})`;
+
+    if (sourceErr && targetErr) {
+      return `[Diff Failed]\nSource (${sourceLabel}): ${sourceErr}\nTarget (${targetLabel}): ${targetErr}`;
+    }
+
+    if (sourceErr) {
+      return `[Diff Result: Missing on Source]\nFile "${filePath}" exists on ${targetLabel} but failed to read from ${sourceLabel}: ${sourceErr}`;
+    }
+
+    if (targetErr) {
+      return `[Diff Result: Missing on Target]\nFile "${filePath}" exists on ${sourceLabel} (${sourceContent?.length} bytes) but does not exist on ${targetLabel}: ${targetErr}`;
+    }
+
+    if (sourceContent === targetContent) {
+      return `[Diff Result: IDENTICAL]\nFile "${filePath}" is identical between ${sourceLabel} and ${targetLabel} (${sourceContent?.length} bytes).`;
+    }
+
+    // Line by line diff summary
+    const srcLines = (sourceContent || "").split("\n");
+    const tgtLines = (targetContent || "").split("\n");
+
+    return [
+      `[Diff Result: MODIFIED] File: "${filePath}"`,
+      `Source: ${sourceLabel} (${srcLines.length} lines, ${sourceContent?.length} bytes)`,
+      `Target: ${targetLabel} (${tgtLines.length} lines, ${targetContent?.length} bytes)`,
+      "",
+      `--- ${sourceLabel}/${filePath}`,
+      `+++ ${targetLabel}/${filePath}`,
+      `@@ Line count delta: ${tgtLines.length - srcLines.length} @@`,
+    ].join("\n");
+  }
+
+  /** Sync a file from source node to target node */
+  public async syncNodes(
+    sourceNodeId: string,
+    targetNodeId: string,
+    sourcePath: string,
+    targetPath?: string
+  ): Promise<string> {
+    const destPath = targetPath || sourcePath;
+    const sourceNode = this.getNode(sourceNodeId);
+    const targetNode = this.getNode(targetNodeId);
+    if (!sourceNode) throw new Error(`Source node not found: ${sourceNodeId}`);
+    if (!targetNode) throw new Error(`Target node not found: ${targetNodeId}`);
+
+    sshLogger.info("chain.sync", `syncing ${sourcePath} from ${sourceNodeId} to ${targetNodeId}:${destPath}`);
+    const content = await this.readFileFromNode(sourceNodeId, sourcePath);
+    await this.writeFileToNode(targetNodeId, destPath, content);
+
+    return `✅ Successfully synced file "${sourcePath}" (${content.length} bytes)\nFrom: ${sourceNode.label} (${sourceNodeId})\nTo:   ${targetNode.label} (${targetNodeId}:${destPath})`;
   }
 }
 

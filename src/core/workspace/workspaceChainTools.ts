@@ -38,11 +38,11 @@ export const manageWorkspaceChainTool: Tool = {
     properties: {
       action: {
         type: "string",
-        enum: ["create", "list", "activate", "deactivate", "delete", "add-node", "remove-node", "status", "topology", "update"],
+        enum: ["create", "list", "activate", "deactivate", "delete", "add-node", "remove-node", "status", "topology", "update", "health"],
         description:
           "Action: 'create' (new chain), 'list' (all chains), 'activate' (set active), 'deactivate' (clear active), " +
           "'delete' (remove chain), 'add-node' (add workspace to chain), 'remove-node' (remove workspace from chain), " +
-          "'status' (connection status), 'topology' (view chain graph), 'update' (modify chain metadata)",
+          "'status' (connection status), 'topology' (view chain graph), 'update' (modify chain metadata), 'health' (resource & latency dashboard)",
       },
       chainId: {
         type: "string",
@@ -115,12 +115,15 @@ export const manageWorkspaceChainTool: Tool = {
   },
   async execute(args, _cwd, _signal) {
     const action = args.action as string;
-    const validActions = ["create", "list", "activate", "deactivate", "delete", "add-node", "remove-node", "status", "topology", "update"];
+    const validActions = ["create", "list", "activate", "deactivate", "delete", "add-node", "remove-node", "status", "topology", "update", "health"];
     if (!validActions.includes(action)) {
       return formatUnknownActionError(action, validActions);
     }
 
     try {
+      if (action === "health") {
+        return await workspaceChainManager.getChainHealth();
+      }
       if (action === "list") {
         const chains = getWorkspaceChains();
         if (chains.length === 0) {
@@ -280,15 +283,28 @@ export const crossWorkspaceExecTool: Tool = {
     properties: {
       operation: {
         type: "string",
-        enum: ["exec", "read", "write", "exec-all", "exec-deps", "connect", "disconnect", "switch-node"],
+        enum: ["exec", "read", "write", "exec-all", "exec-deps", "connect", "disconnect", "switch-node", "health", "diff", "sync"],
         description:
           "Operation: 'exec' (run command on node), 'read' (read file from node), 'write' (write file to node), " +
           "'exec-all' (run command on all nodes), 'exec-deps' (run on dependency nodes), " +
-          "'connect' (connect SSH node), 'disconnect' (disconnect SSH node), 'switch-node' (change active node)",
+          "'connect' (connect SSH node), 'disconnect' (disconnect SSH node), 'switch-node' (change active node), " +
+          "'health' (monitoring dashboard), 'diff' (compare file between nodes), 'sync' (copy file from source node to target node)",
       },
       nodeId: {
         type: "string",
         description: "Target node ID (for exec, read, write, connect, disconnect, switch-node)",
+      },
+      sourceNodeId: {
+        type: "string",
+        description: "Source node ID (for diff, sync)",
+      },
+      targetNodeId: {
+        type: "string",
+        description: "Target node ID (for diff, sync)",
+      },
+      targetPath: {
+        type: "string",
+        description: "Destination file path on target node (optional for sync, defaults to filePath)",
       },
       command: {
         type: "string",
@@ -315,7 +331,7 @@ export const crossWorkspaceExecTool: Tool = {
   },
   async execute(args, _cwd, _signal) {
     const operation = args.operation as string;
-    const validOps = ["exec", "read", "write", "exec-all", "exec-deps", "connect", "disconnect", "switch-node"];
+    const validOps = ["exec", "read", "write", "exec-all", "exec-deps", "connect", "disconnect", "switch-node", "health", "diff", "sync"];
     if (!validOps.includes(operation)) {
       return formatUnknownActionError(operation, validOps);
     }
@@ -326,6 +342,35 @@ export const crossWorkspaceExecTool: Tool = {
       }
       if (!workspaceChainManager.isChainActive()) {
         return "Error: No active workspace chain. Use 'manage_workspace_chain' with action 'activate' first.";
+      }
+
+      if (operation === "health") {
+        return await workspaceChainManager.getChainHealth();
+      }
+
+      if (operation === "diff") {
+        const sourceNodeId = (args.sourceNodeId || args.nodeId) as string;
+        const targetNodeId = args.targetNodeId as string;
+        const filePath = args.filePath as string;
+        if (!sourceNodeId) return "Error: 'sourceNodeId' (or 'nodeId') is required for diff.";
+        if (!targetNodeId) return "Error: 'targetNodeId' is required for diff.";
+        if (!filePath) return "Error: 'filePath' is required for diff.";
+        return await workspaceChainManager.diffNodes(sourceNodeId, targetNodeId, filePath);
+      }
+
+      if (operation === "sync") {
+        const sourceNodeId = (args.sourceNodeId || args.nodeId) as string;
+        const targetNodeId = args.targetNodeId as string;
+        const filePath = args.filePath as string;
+        if (!sourceNodeId) return "Error: 'sourceNodeId' (or 'nodeId') is required for sync.";
+        if (!targetNodeId) return "Error: 'targetNodeId' is required for sync.";
+        if (!filePath) return "Error: 'filePath' is required for sync.";
+        return await workspaceChainManager.syncNodes(
+          sourceNodeId,
+          targetNodeId,
+          filePath,
+          args.targetPath as string | undefined
+        );
       }
 
       if (operation === "exec") {

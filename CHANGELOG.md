@@ -1,3 +1,10 @@
+## [1.2.641] - 2026-07-30
+
+### Update: Workspace Chain Advanced Operations & Health Monitoring Guidance
+
+- **Workspace Chain Operations**: Enhanced system prompts and ContextBuilder notices for workspace chains to document multi-node health monitoring (`health`), cross-node code/config diffs (`diff`), and cross-node file deployments (`sync`).
+- **Prompt Guidance**: Synchronized `manage_workspace_chain` and `cross_workspace_exec` tool documentation across base config, prompts, and ContextBuilder.
+
 ## [1.2.640] - 2026-07-30
 
 ### Update: System Prompt Rules for Terminal-First Debugging and Verification

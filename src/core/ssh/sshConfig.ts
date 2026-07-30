@@ -1,4 +1,4 @@
-﻿import fs from "fs";
+import fs from "fs";
 import os from "os";
 import path from "path";
 import { sshLogger } from "./sshLogger.js";
@@ -88,3 +88,62 @@ export function parseProxyJump(proxyJump: string): { host: string; port: number;
     return { host, port, user };
   } catch { return null; }
 }
+
+/** Find default SSH private key — scans standard names first, then *.pem and other key files in ~/.ssh/, validating parsability */
+export function findDefaultPrivateKey(): Buffer | undefined {
+  const sshDir = path.join(os.homedir(), ".ssh");
+  const standardKeys = ["id_ed25519", "id_rsa", "id_ecdsa"];
+
+  // Helper to validate with ssh2 utils
+  const tryLoadKey = (filePath: string): Buffer | undefined => {
+    try {
+      const buf = fs.readFileSync(filePath);
+      const { utils } = require("ssh2");
+      const parsed = utils.parseKey(buf);
+      if (parsed && !(parsed instanceof Error)) {
+        return buf;
+      }
+    } catch {}
+    return undefined;
+  };
+
+  // Priority 1: Standard key names
+  for (const key of standardKeys) {
+    const keyPath = path.join(sshDir, key);
+    if (fs.existsSync(keyPath)) {
+      const validBuf = tryLoadKey(keyPath);
+      if (validBuf) return validBuf;
+    }
+  }
+
+  // Priority 2: Scan all files in ~/.ssh/ for any parsable private key file
+  try {
+    if (!fs.existsSync(sshDir)) return undefined;
+    const files = fs.readdirSync(sshDir);
+    for (const file of files) {
+      if (
+        file.endsWith(".pub") ||
+        file === "known_hosts" ||
+        file === "known_hosts.old" ||
+        file === "config" ||
+        file === "authorized_keys"
+      ) {
+        continue;
+      }
+      const filePath = path.join(sshDir, file);
+      try {
+        const stat = fs.statSync(filePath);
+        if (!stat.isFile() || stat.size > 32768) continue;
+        const validBuf = tryLoadKey(filePath);
+        if (validBuf) {
+          sshLogger.info("key_discovery", `found valid SSH private key: ${file}`);
+          return validBuf;
+        }
+      } catch {}
+    }
+  } catch {}
+
+  sshLogger.warn("key_discovery", "no valid SSH private key found in ~/.ssh/");
+  return undefined;
+}
+

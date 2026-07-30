@@ -8,7 +8,7 @@ import { SshWorkspaceConfig, workspaceMode } from "./workspaceMode.js";
 import { sshLogger } from "./sshLogger.js";
 import { getActiveQuestionHandler } from "../tools/state.js";
 import { sshEvents, SshConnectionState } from "./sshEvents.js";
-import { resolveHostAlias, parseProxyJump } from "./sshConfig.js";
+import { resolveHostAlias, parseProxyJump, findDefaultPrivateKey } from "./sshConfig.js";
 
 export interface SshSystemMetrics {
   host: string;
@@ -171,7 +171,7 @@ export class SshProxyService {
     try {
       const privateKey = config.privateKeyPath
         ? fs.readFileSync(config.privateKeyPath)
-        : this.findDefaultPrivateKey();
+        : findDefaultPrivateKey();
 
       const connectConfig: any = {
         host: config.host,
@@ -211,20 +211,12 @@ export class SshProxyService {
         connectConfig.privateKey = privateKey;
       }
 
+      this.sftpClient = new SFTPClient();
+
       try {
-        await new Promise<void>((resolve, reject) => {
-          const client = new Client();
-          client
-            .on("ready", () => {
-              this.sshClient = client;
-              resolve();
-            })
-            .on("error", (err) => {
-              reject(new Error(`SSH connection failed to ${config.host}:${config.port} — ${err.message}`));
-            })
-            .connect(connectConfig);
-        });
-        sshLogger.info("connect", "connected (host key verified)", {
+        await this.sftpClient.connect(connectConfig);
+        this.sshClient = (this.sftpClient as any).client;
+        sshLogger.info("connect", "connected (host key verified, single TCP session)", {
           host: config.host,
           user: config.username,
         });
@@ -237,19 +229,9 @@ export class SshProxyService {
             connectConfig.password = promptPassword;
             delete connectConfig.privateKey;
 
-            await new Promise<void>((resolve, reject) => {
-              const client = new Client();
-              client
-                .on("ready", () => {
-                  this.sshClient = client;
-                  resolve();
-                })
-                .on("error", (err) => {
-                  reject(new Error(`SSH connection failed with provided password to ${config.host}:${config.port} — ${err.message}`));
-                })
-                .connect(connectConfig);
-            });
-            sshLogger.info("connect", "connected via password auth");
+            await this.sftpClient.connect(connectConfig);
+            this.sshClient = (this.sftpClient as any).client;
+            sshLogger.info("connect", "connected via password auth (single TCP session)");
           } else {
             throw err;
           }
@@ -264,15 +246,12 @@ export class SshProxyService {
         sshLogger.info("connect", "password cleared from config after auth");
       }
 
-      this.sftpClient = new SFTPClient();
-      await this.sftpClient.connect(connectConfig);
-      sshLogger.info("connect", "SFTP session established");
-
       this.lastActivityTime = Date.now();
       this.isConnecting = false;
     } catch (err) {
       this.isConnecting = false;
       sshLogger.error("connect", `connection failed: ${(err as Error).message}`);
+      await this.disconnect();
       await this.disconnect();
       throw err;
     }
@@ -317,22 +296,7 @@ export class SshProxyService {
     this.lastActivityTime = Date.now();
   }
 
-  private findDefaultPrivateKey(): Buffer | undefined {
-    const defaultKeys = ["id_ed25519", "id_rsa", "id_ecdsa"];
-    const sshDir = path.join(os.homedir(), ".ssh");
 
-    for (const key of defaultKeys) {
-      const keyPath = path.join(sshDir, key);
-      if (fs.existsSync(keyPath)) {
-        try {
-          return fs.readFileSync(keyPath);
-        } catch {
-          // ignore
-        }
-      }
-    }
-    return undefined;
-  }
 
   public normalizePosixPath(targetPath: string): string {
     // Defensive: treat null/undefined/non-string as "."

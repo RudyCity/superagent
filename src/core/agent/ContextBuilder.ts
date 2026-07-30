@@ -240,7 +240,7 @@ export class ContextBuilder {
         const activeNodeInfo = activeNode
           ? `\n- ACTIVE NODE: ${activeNode.label} (${activeNode.id}) — type=${activeNode.type}, role=${activeNode.role}`
           : "";
-        workspaceChainNotice = `\n\n# WORKSPACE CHAIN ACTIVE\n${topology}${activeNodeInfo}\n- Use 'manage_workspace_chain' to view/modify chain topology.\n- Use 'cross_workspace_exec' to execute operations on specific chain nodes.\n- Cross-workspace debugging: use 'cross_workspace_exec' with operation 'exec' on relevant nodes to trace issues across workspaces.`;
+        workspaceChainNotice = `\n\n# WORKSPACE CHAIN ACTIVE\n${topology}${activeNodeInfo}\n- **Execution**: Use 'cross_workspace_exec' (operation='exec') to run commands on any chain node.\n- **Health & Metrics**: Use 'cross_workspace_exec' (operation='health') or 'manage_workspace_chain' (action='health') for real-time node latency, RAM, Disk, Uptime metrics.\n- **Cross-Node Diff**: Use 'cross_workspace_exec' (operation='diff', sourceNodeId, targetNodeId, filePath) to compare code/config across nodes.\n- **Cross-Node Sync**: Use 'cross_workspace_exec' (operation='sync', sourceNodeId, targetNodeId, filePath, targetPath?) to deploy/transfer files between nodes.\n- **Topology**: Use 'manage_workspace_chain' to manage graph nodes or switch active chain.`;
       }
     } catch {}
 
