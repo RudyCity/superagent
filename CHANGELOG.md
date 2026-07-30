@@ -1,3 +1,11 @@
+## [1.2.645] - 2026-07-31
+
+### UI: Subagent Action Streaming and Text Truncation
+
+- **Action Streaming**: Added `getSubagentActionStreams` in `uiHelpers.ts` to extract clean subagent action steps and rotate action displays smoothly across timer ticks.
+- **Terminal UI**: Enforced `wrap="truncate"` on subagent and superagent text elements across terminal components to prevent layout wrap glitches.
+- **Tests**: Added test suite coverage for `getSubagentActionStreams` helper in `tests/helpers.test.ts`.
+
 ## [1.2.644] - 2026-07-30
 
 ### UI: Add Animated Pulsing [R] Badge to Loading and Thinking Indicators

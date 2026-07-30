@@ -65,6 +65,41 @@ export function getLatestSubagentAction(logs: string[], prompt?: string): string
   return prompt ? prompt : "Processing...";
 }
 
+export function getSubagentActionStreams(logs: string[], prompt?: string): string[] {
+  const streams: string[] = [];
+  if (prompt && prompt.trim()) {
+    streams.push(prompt.trim());
+  }
+  if (logs && logs.length > 0) {
+    for (let i = 0; i < logs.length; i++) {
+      const raw = logs[i].replace(/\r/g, "").trim();
+      if (raw) {
+        let clean = raw
+          .replace(/^.*?───\[\s*/, "")
+          .replace(/\s*\]$/, "")
+          .replace(/^[│┌├└─\s]+/, "")
+          .trim()
+          .replace(/^Description:\s*/i, "")
+          .replace(/^Args:\s*/i, "");
+        if (clean && !streams.includes(clean)) {
+          streams.push(clean);
+        }
+      }
+    }
+  }
+  if (streams.length === 0) {
+    return [prompt ? prompt : "Processing..."];
+  }
+  if (streams.length > 2) {
+    const first = streams[0];
+    const last = streams[streams.length - 1];
+    const middle = streams.slice(1, -1);
+    return [first, last, ...middle];
+  }
+  return streams;
+}
+
+
 export function getLatestSuperagentAction(logs: string[], task?: string): string {
   if (!logs || logs.length === 0) return task ? task : "Initializing...";
   for (let i = logs.length - 1; i >= 0; i--) {

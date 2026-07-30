@@ -1,6 +1,7 @@
-import React, { memo } from "react";
+import React, { memo, useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import { superagentInstances, subagentInstances, backgroundTasks, isTaskInWorkspace } from "../core/tools.js";
+import { getSubagentActionStreams } from "../utils/uiHelpers.js";
 
 function getLatestSubagentAction(logs: string[], prompt?: string): string {
   if (!logs || logs.length === 0) return prompt ? prompt : "Initializing...";
@@ -74,6 +75,16 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
   workspace,
   procsSelectedIndex,
 }: ActiveAgentsListProps) {
+  const [streamTick, setStreamTick] = useState(0);
+
+  useEffect(() => {
+    if (runningSubagentsCount === 0) return;
+    const timer = setInterval(() => {
+      setStreamTick((t) => (t + 1) % 1000);
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [runningSubagentsCount]);
+
   if (runningSuperagentsCount === 0 && runningSubagentsCount === 0 && runningTasksCount === 0) {
     return null;
   }
@@ -116,13 +127,13 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
             </Text>
             {visibleSA.map((inst) => (
               <Box key={inst.id} flexDirection="column">
-                <Text color="cyan">
+                <Text color="cyan" wrap="truncate">
                   ├─── [{inst.id}] Role: {inst.role} ({inst.status})
                 </Text>
-                <Text color="cyan">
+                <Text color="cyan" wrap="truncate">
                   │    ├─── Task: <Text color="white">{inst.task}</Text>
                 </Text>
-                <Text color="cyan">
+                <Text color="cyan" wrap="truncate">
                   │    └─ Action: <Text italic color="white">{getLatestSuperagentAction(inst.logs, inst.task)}</Text>
                 </Text>
               </Box>
@@ -165,10 +176,11 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
             {visibleSubs.map((inst, index) => {
               const isLast = index === visibleSubs.length - 1;
               const branchChar = isLast ? "└──" : "├──";
-              const action = getLatestSubagentAction(inst.logs, inst.prompt);
+              const streams = getSubagentActionStreams(inst.logs, inst.prompt);
+              const currentAction = streams[streamTick % streams.length];
               return (
-                <Text key={inst.id} color="yellow">
-                  │  {branchChar} Action: {inst.id}: <Text italic color="white">{action}</Text> | Role: {inst.role} ({inst.status})
+                <Text key={inst.id} color="yellow" wrap="truncate">
+                  │  {branchChar} Action: {inst.id}: <Text italic color="white">{currentAction}</Text> | Role: {inst.role} ({inst.status})
                 </Text>
               );
             })}

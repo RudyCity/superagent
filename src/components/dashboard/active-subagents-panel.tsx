@@ -1,5 +1,6 @@
-import React, { memo } from "react";
+import React, { memo, useState, useEffect } from "react";
 import { Box, Text } from "ink";
+import { getSubagentActionStreams } from "../../utils/uiHelpers.js";
 
 interface ActiveSubagentsPanelProps {
   subagentInstances: Map<string, any>;
@@ -16,7 +17,17 @@ export const ActiveSubagentsPanel = memo(function ActiveSubagentsPanel({
   focusArea,
   getLatestSubagentAction,
 }: ActiveSubagentsPanelProps) {
+  const [streamTick, setStreamTick] = useState(0);
   const runningAgents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
+
+  useEffect(() => {
+    if (runningAgents.length === 0) return;
+    const timer = setInterval(() => {
+      setStreamTick((t) => (t + 1) % 1000);
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [runningAgents.length]);
+
   if (runningAgents.length === 0) {
     return null;
   }
@@ -31,15 +42,16 @@ export const ActiveSubagentsPanel = memo(function ActiveSubagentsPanel({
 
   return (
     <Box flexDirection="column">
-      <Text color={focusArea === "agents" ? "gray" : "yellow"} bold>
+      <Text color={focusArea === "agents" ? "gray" : "yellow"} bold wrap="truncate">
         ┌───[ 🤖 ACTIVE SUBAGENTS ]{scrollIndicator}{helpText}
       </Text>
       {visibleAgents.map((inst, index) => {
         const isLast = index === visibleAgents.length - 1;
         const branchChar = isLast ? "└──" : "├──";
-        const action = getLatestSubagentAction(inst.logs, inst.prompt);
+        const streams = getSubagentActionStreams(inst.logs, inst.prompt);
+        const action = streams[streamTick % streams.length];
         return (
-          <Text key={inst.id} color="yellow">
+          <Text key={inst.id} color="yellow" wrap="truncate">
             │  {branchChar} Action: {inst.id}: <Text italic color="white">{action}</Text> | Role: {inst.role} ({inst.status})
           </Text>
         );
@@ -47,3 +59,4 @@ export const ActiveSubagentsPanel = memo(function ActiveSubagentsPanel({
     </Box>
   );
 });
+

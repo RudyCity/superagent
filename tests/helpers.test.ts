@@ -4,6 +4,8 @@ import { grepTool } from "../src/core/tools/fileReadTools.js";
 import { manageTasksTool } from "../src/core/tools/otherTools.js";
 import path from "path";
 
+import { getSubagentActionStreams } from "../src/utils/uiHelpers.js";
+
 describe("Tool Helpers Safeguards", () => {
   test("suggestClosest handles undefined, null, or non-string inputs safely", () => {
     expect(suggestClosest(undefined as any, ["list", "add"])).toBeUndefined();
@@ -12,7 +14,21 @@ describe("Tool Helpers Safeguards", () => {
     expect(suggestClosest("lst", ["list", "add"])).toBe("list");
   });
 
+  test("getSubagentActionStreams extracts clean stream items and alternates first/last line", () => {
+    const logs = [
+      "│  ├── Description: Step 1 doing audit",
+      "│  └── Args: Step 2 writing files",
+      "│  └── Tool call complete"
+    ];
+    const prompt = "Initial Subagent Task";
+    const streams = getSubagentActionStreams(logs, prompt);
+    expect(streams[0]).toBe("Initial Subagent Task");
+    expect(streams[1]).toBe("Tool call complete");
+    expect(streams.length).toBe(4);
+  });
+
   test("formatUnknownActionError handles missing action parameter safely", () => {
+
     const resUndefined = formatUnknownActionError(undefined as any, ["list", "add", "update"]);
     expect(resUndefined).toContain("Error: Action parameter is required.");
     expect(resUndefined).toContain("Use one of: list, add, update.");
