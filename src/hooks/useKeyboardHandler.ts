@@ -2054,7 +2054,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             handleWizardSubmit("❌ Back");
             return;
           }
-          if ([10, 11, 12, 13, 14, 15, 16].includes(activeWizard.step)) {
+          if ([10, 11, 12, 13, 14, 15].includes(activeWizard.step)) {
             handleWizardSubmit("❌ Back");
             return;
           }

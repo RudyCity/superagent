@@ -983,17 +983,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
-        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 12 && wizardOptions.length > 0 && (
-          <WizardDialog
-            title="➕ ADD NODE TO CHAIN — Select Node Role (↑/↓ Navigate, Enter: Select, Esc: Back):"
-            description={`Select role for node target "${activeWizard.data.pendingTarget || ""}":`}
-            borderColor="cyan"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-          />
-        )}
-
-        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 16 && (
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 12 && (
           <WizardDialog
             title="➕ ADD NODE TO CHAIN — Enter Node Description (Type & Enter, Esc: Back):"
             description={`Enter description (purpose/context) for node "${activeWizard.data.pendingTarget || ""}" (optional):`}

@@ -1,3 +1,13 @@
+## [1.2.631] - 2026-07-30
+
+### Node Description Input & Skip Node Role Selection
+
+- **Skip Node Role Selection**:
+  - Removed the select node role step (Step 12 role option list) in the wizard when adding a node to a workspace chain.
+  - Role is automatically assigned to `"custom"` for newly added nodes.
+- **Node Description Input**:
+  - Step 12 is rewritten as a text input dialog asking for the node description directly after path/target selection, providing a faster and more direct setup.
+
 ## [1.2.630] - 2026-07-30
 
 ### Workspace Chaining Wizard CRUD, Auto-Switch & Dynamic Context Injection
@@ -5,7 +15,6 @@
 - **Workspace Chaining CRUD Wizard** (`src/hooks/useWizardSubmit.ts`, `src/components/wizard-panels.tsx`):
   - Fully implemented Steps 7 through 16 in the `/workspace` wizard to support all workspace chain CRUD operations: list, create, edit name, add node (with local workspace selection and SSH custom target input), remove node, and delete chain.
   - Removed legacy exit path that closed the wizard immediately when 0 chains existed.
-  - Implemented Step 16 for prompting node descriptions (optional context of node purpose) during node registration.
 - **Auto-Switch Workspace Chain**:
   - Automatically matches and activates/switches the active workspace chain when switching workspaces via the `/workspace` wizard (Step 2), comparing the primary node's path or SSH target configuration.
 - **Sorted Listing & Current Workspace Badges**:

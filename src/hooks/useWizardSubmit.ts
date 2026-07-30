@@ -1175,7 +1175,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           step: 12,
           data: { ...activeWizard.data, pendingTarget: selectedPath },
         });
-        setWizardOptions(["main", "backend", "frontend", "worker", "service", "module"]);
+        setWizardOptions([]);
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -1238,7 +1238,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           step: 12,
           data: { ...activeWizard.data, pendingTarget: targetInput },
         });
-        setWizardOptions(["main", "backend", "frontend", "worker", "service", "module"]);
+        setWizardOptions([]);
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -1247,7 +1247,8 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
       if (activeWizard.step === 12) {
         const chainId = activeWizard.data?.chainId;
         const pendingTarget = activeWizard.data?.pendingTarget;
-        const role = (value.trim() as any) || "module";
+        const description = value.trim();
+
         const openSelectedMenu = (cId: string, cName: string) => {
           setActiveWizard({
             type: "workspace",
@@ -1301,59 +1302,6 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        setActiveWizard({
-          type: "workspace",
-          step: 16,
-          data: { ...activeWizard.data, pendingRole: role },
-        });
-        setWizardOptions([]);
-        setWizardSelectedIndex(0);
-        setInput("");
-        return;
-      }
-
-      if (activeWizard.step === 16) {
-        const chainId = activeWizard.data?.chainId;
-        const pendingTarget = activeWizard.data?.pendingTarget;
-        const role = activeWizard.data?.pendingRole || "module";
-        const description = value.trim();
-
-        const openSelectedMenu = (cId: string, cName: string) => {
-          setActiveWizard({
-            type: "workspace",
-            step: 8,
-            data: { chainId: cId, chainName: cName },
-          });
-          setWizardOptions([
-            "⚡ Activate Chain",
-            "📊 View Topology",
-            "✏️ Edit Chain Name",
-            "➕ Add Node to Chain...",
-            "🗑️ Remove Node from Chain...",
-            "🗑️ Delete Chain",
-            "❌ Back",
-          ]);
-          setWizardSelectedIndex(0);
-          setInput("");
-        };
-
-        if (value === "❌ Back" || value.endsWith("Back")) {
-          setActiveWizard({
-            type: "workspace",
-            step: 12,
-            data: { ...activeWizard.data },
-          });
-          setWizardOptions(["main", "backend", "frontend", "worker", "service", "module"]);
-          setWizardSelectedIndex(0);
-          setInput("");
-          return;
-        }
-
-        if (!chainId || !pendingTarget) {
-          openSelectedMenu(chainId, activeWizard.data?.chainName || chainId);
-          return;
-        }
-
         const { addNodeToChain } = await import("../core/workspace/WorkspaceChainConfig.js");
         const { generateNodeId } = await import("../core/workspace/WorkspaceChainTypes.js");
         const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
@@ -1374,7 +1322,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             id: nodeId,
             label,
             type: "ssh",
-            role,
+            role: "custom",
             sshConfig: {
               host: parsed.host,
               port: parsed.port,
@@ -1389,7 +1337,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             id: nodeId,
             label,
             type: "local",
-            role,
+            role: "custom",
             path: resolvedPath,
             description: description || undefined,
           };
@@ -1397,7 +1345,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
 
         try {
           addNodeToChain(chainId, node);
-          addLine({ type: "system", content: `➕ Added node "${label}" (${role}) to chain.`, timestamp: now });
+          addLine({ type: "system", content: `➕ Added node "${label}" to chain.`, timestamp: now });
         } catch (err: any) {
           addLine({ type: "error", content: `Failed to add node: ${err?.message ?? err}`, timestamp: now });
         }
