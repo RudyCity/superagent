@@ -677,7 +677,8 @@ export function App({
           (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10 || activeWizard.step === 15 || activeWizard.step === 17)) ||
           (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40 || activeWizard.step === 41 || activeWizard.step === 50)) ||
           (activeWizard.type === "permission") ||
-          (activeWizard.type === "question" && wizardOptions.length > 0);
+          (activeWizard.type === "question" && wizardOptions.length > 0) ||
+          (activeWizard.type === "workspace" && wizardOptions.length > 0);
 
         if (isSelectionStep) {
           return;
@@ -1330,8 +1331,21 @@ export function App({
       return pendingQuestion?.question || "Select an option or type a custom answer.";
     }
     if (activeWizard.type === "workspace") {
-      if (activeWizard.step === 1) return "Select a workspace directory to switch to.";
-      if (activeWizard.step === 2) return "Enter the directory path of the new workspace:";
+      if (activeWizard.step === 1) return "Select a workspace option using arrows and Enter.";
+      if (activeWizard.step === 2) return "Select a workspace directory to switch to.";
+      if (activeWizard.step === 3) return "Enter the directory path of the new workspace:";
+      if (activeWizard.step === 6) return "Enter a friendly display name for the new workspace:";
+      if (activeWizard.step === 4) return "Select a workspace directory to remove.";
+      if (activeWizard.step === 5) return "Confirm removal of the selected workspace.";
+      if (activeWizard.step === 7) return "Select a workspace chain to manage or create a new one.";
+      if (activeWizard.step === 8) return "Select an action for the chosen workspace chain.";
+      if (activeWizard.step === 9) return "Enter a name for the new workspace chain:";
+      if (activeWizard.step === 10) return "Enter a new name for the workspace chain:";
+      if (activeWizard.step === 11) return "Select a workspace to add as a node:";
+      if (activeWizard.step === 12) return "Select a role for the new node:";
+      if (activeWizard.step === 13) return "Select a node to remove from the chain:";
+      if (activeWizard.step === 14) return "Confirm deletion of the workspace chain.";
+      if (activeWizard.step === 15) return "Enter directory path or SSH target for the new node:";
     }
     if (activeWizard.type === "permission") {
       return pendingPermission?.description || "Allow or deny this action.";
@@ -1384,8 +1398,21 @@ export function App({
         : "Enter model name (e.g. google/gemini-2.5-flash)...";
     }
     if (activeWizard.type === "workspace") {
-      if (activeWizard.step === 1) return "Select workspace directory using arrows and Enter (Esc: Cancel)...";
-      if (activeWizard.step === 2) return "Enter new workspace directory path and press Enter...";
+      if (activeWizard.step === 1) return "Select workspace option using arrows and Enter (Esc: Cancel)...";
+      if (activeWizard.step === 2) return "🔍 Search workspaces (type to filter, arrows to navigate, Enter to select)...";
+      if (activeWizard.step === 3) return "Enter workspace directory path and press Enter...";
+      if (activeWizard.step === 6) return "Enter workspace display name (or press Enter for default)...";
+      if (activeWizard.step === 4) return "🔍 Search workspaces to remove (type to filter, Enter to select)...";
+      if (activeWizard.step === 5) return "Select confirmation using arrows and Enter...";
+      if (activeWizard.step === 7) return "🔍 Search workspace chains (type to filter, Enter to select)...";
+      if (activeWizard.step === 8) return "Select action using arrows and Enter (Esc: Back)...";
+      if (activeWizard.step === 9) return "Enter workspace chain name and press Enter...";
+      if (activeWizard.step === 10) return "Enter new chain name and press Enter...";
+      if (activeWizard.step === 11) return "🔍 Search workspaces (type to filter, arrows to navigate, Enter to select)...";
+      if (activeWizard.step === 12) return "Select role using arrows and Enter (Esc: Back)...";
+      if (activeWizard.step === 13) return "Select node using arrows and Enter (Esc: Back)...";
+      if (activeWizard.step === 14) return "Select confirmation using arrows and Enter...";
+      if (activeWizard.step === 15) return "Enter node path or user@host:port/path target and press Enter...";
     }
     if (activeWizard.type === "question") {
       if (pendingQuestion?.inputType === "password") return "Enter password (hidden) and press Enter...";

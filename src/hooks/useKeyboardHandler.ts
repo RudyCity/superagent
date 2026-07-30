@@ -1886,12 +1886,21 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           setInput(""); // Clear input when returning to search
           return;
         } else if (activeWizard.type === "workspace" && activeWizard.step > 1) {
+          if (activeWizard.step === 8 || activeWizard.step === 9) {
+            handleWizardSubmit("❌ Back");
+            return;
+          }
+          if ([10, 11, 12, 13, 14, 15].includes(activeWizard.step)) {
+            handleWizardSubmit("❌ Back");
+            return;
+          }
           setActiveWizard({ type: "workspace", step: 1, data: {} });
           setWizardOptions([
             "📁 Select & Switch Workspace...",
             "➕ Add a new workspace...",
             "🗑️ Remove a workspace...",
             "📊 View workspace status",
+            "🔗 Manage workspace chains...",
             "❌ Exit Wizard",
           ]);
           setWizardSelectedIndex(0);
@@ -2041,17 +2050,28 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         }
 
         if (activeWizard.type === "workspace") {
-          setActiveWizard({ type: "workspace", step: 1, data: {} });
-          setWizardOptions([
-            "📁 Select & Switch Workspace...",
-            "➕ Add a new workspace...",
-            "🗑️ Remove a workspace...",
-            "📊 View workspace status",
-            "❌ Exit Wizard",
-          ]);
-          setWizardSelectedIndex(0);
-          setInput("");
-          return;
+          if (activeWizard.step === 8 || activeWizard.step === 9) {
+            handleWizardSubmit("❌ Back");
+            return;
+          }
+          if ([10, 11, 12, 13, 14, 15, 16].includes(activeWizard.step)) {
+            handleWizardSubmit("❌ Back");
+            return;
+          }
+          if (activeWizard.step > 1) {
+            setActiveWizard({ type: "workspace", step: 1, data: {} });
+            setWizardOptions([
+              "📁 Select & Switch Workspace...",
+              "➕ Add a new workspace...",
+              "🗑️ Remove a workspace...",
+              "📊 View workspace status",
+              "🔗 Manage workspace chains...",
+              "❌ Exit Wizard",
+            ]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          }
         }
 
         if (activeWizard.step !== 1) {

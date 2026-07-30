@@ -134,6 +134,8 @@ export {
   simulateVirtualCursorTool,
   controlIsolatedCdpTool,
 };
+import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../workspace/workspaceChainTools.js";
+
 
 export const allTools: Tool[] = [
   runHeadlessBrowserTool,
@@ -208,6 +210,8 @@ export const allTools: Tool[] = [
   saveSharedMemoryTool,
   readSharedMemoryTool,
   readPeerSuperagentFileTool,
+  manageWorkspaceChainTool,
+  crossWorkspaceExecTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {

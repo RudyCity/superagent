@@ -11,6 +11,81 @@ import { useLoginWizard } from "./wizard/useLoginWizard.js";
 import { useModelWizard } from "./wizard/useModelWizard.js";
 import { useGoalWizard } from "./wizard/useGoalWizard.js";
 
+async function getSortedChainOptions(currentWorkspace: string): Promise<{ options: string[], chainIds: string[] }> {
+  const { getWorkspaceChains, getActiveChainId } = await import("../core/workspace/WorkspaceChainConfig.js");
+  const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+  
+  const chains = getWorkspaceChains();
+  const activeId = getActiveChainId();
+  const isSsh = workspaceMode.isSsh();
+  
+  // Sort chains so that current workspace chains are first
+  const sortedChains = [...chains].sort((a, b) => {
+    let aCurrent = 0;
+    let bCurrent = 0;
+    const aPrimary = a.nodes.find(n => n.id === a.primaryNodeId);
+    const bPrimary = b.nodes.find(n => n.id === b.primaryNodeId);
+    
+    if (aPrimary) {
+      if (aPrimary.type === "local" && !isSsh) {
+        if (path.resolve(aPrimary.path || "") === path.resolve(currentWorkspace)) aCurrent = 1;
+      } else if (aPrimary.type === "ssh" && isSsh) {
+        const sshCfg = workspaceMode.getConfig();
+        if (sshCfg && aPrimary.sshConfig &&
+            aPrimary.sshConfig.host === sshCfg.host &&
+            aPrimary.sshConfig.port === sshCfg.port &&
+            aPrimary.sshConfig.username === sshCfg.username &&
+            aPrimary.sshConfig.remoteCwd === sshCfg.remoteCwd) aCurrent = 1;
+      }
+    }
+    if (bPrimary) {
+      if (bPrimary.type === "local" && !isSsh) {
+        if (path.resolve(bPrimary.path || "") === path.resolve(currentWorkspace)) bCurrent = 1;
+      } else if (bPrimary.type === "ssh" && isSsh) {
+        const sshCfg = workspaceMode.getConfig();
+        if (sshCfg && bPrimary.sshConfig &&
+            bPrimary.sshConfig.host === sshCfg.host &&
+            bPrimary.sshConfig.port === sshCfg.port &&
+            bPrimary.sshConfig.username === sshCfg.username &&
+            bPrimary.sshConfig.remoteCwd === sshCfg.remoteCwd) bCurrent = 1;
+      }
+    }
+    return bCurrent - aCurrent;
+  });
+
+  const options = sortedChains.map(c => {
+    const isActive = c.id === activeId ? " [ACTIVE]" : "";
+    
+    // Check if current
+    let isCurrentWs = false;
+    const primaryNode = c.nodes.find(n => n.id === c.primaryNodeId);
+    if (primaryNode) {
+      if (primaryNode.type === "local" && !isSsh) {
+        isCurrentWs = path.resolve(primaryNode.path || "") === path.resolve(currentWorkspace);
+      } else if (primaryNode.type === "ssh" && isSsh) {
+        const sshCfg = workspaceMode.getConfig();
+        if (sshCfg && primaryNode.sshConfig) {
+          isCurrentWs = 
+            primaryNode.sshConfig.host === sshCfg.host &&
+            primaryNode.sshConfig.port === sshCfg.port &&
+            primaryNode.sshConfig.username === sshCfg.username &&
+            primaryNode.sshConfig.remoteCwd === sshCfg.remoteCwd;
+        }
+      }
+    }
+    const currentBadge = isCurrentWs ? " [CURRENT]" : "";
+    return `🔗 ${c.name} (${c.id})${isActive}${currentBadge} — ${c.nodes.length} nodes`;
+  });
+
+  options.push("➕ Create new workspace chain...");
+  options.push("❌ Back");
+
+  return {
+    options,
+    chainIds: sortedChains.map(c => c.id)
+  };
+}
+
 export interface WizardSubmitContext {
   activeWizard: {
     type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm" | "workspace";
@@ -334,6 +409,25 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
+        if (value === "🔗 Manage workspace chains...") {
+          const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+          const sshCfg = workspaceMode.getConfig();
+          const currentWorkspace = workspaceMode.isSsh() && sshCfg
+            ? `${sshCfg.username}@${sshCfg.host}:${sshCfg.port}${sshCfg.remoteCwd}`
+            : path.resolve(agentRef.current?.workingDirectory || process.cwd());
+
+          const { options, chainIds } = await getSortedChainOptions(currentWorkspace);
+          setActiveWizard({
+            type: "workspace",
+            step: 7,
+            data: { chainIds },
+          });
+          setWizardOptions(options);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
         if (value === "📊 View workspace status") {
           const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
           const { sshProxy } = await import("../core/ssh/sshProxy.js");
@@ -419,9 +513,49 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           if (setPlanState) setPlanState("IDLE");
           if (clearLines) clearLines();
 
+          let chainNotice = "";
+          try {
+            const { getWorkspaceChains, getWorkspaceChain, setActiveChainId } = await import("../core/workspace/WorkspaceChainConfig.js");
+            const chains = getWorkspaceChains();
+            let matchedChainId: string | null = null;
+            
+            for (const chain of chains) {
+              const primaryNode = chain.nodes.find(n => n.id === chain.primaryNodeId);
+              if (primaryNode) {
+                let matches = false;
+                if (primaryNode.type === "local" && !isSsh) {
+                  matches = path.resolve(primaryNode.path || "") === path.resolve(resolvedPath);
+                } else if (primaryNode.type === "ssh" && isSsh) {
+                  const sshCfg = workspaceMode.getConfig();
+                  if (sshCfg && primaryNode.sshConfig) {
+                    matches = 
+                      primaryNode.sshConfig.host === sshCfg.host &&
+                      primaryNode.sshConfig.port === sshCfg.port &&
+                      primaryNode.sshConfig.username === sshCfg.username &&
+                      primaryNode.sshConfig.remoteCwd === sshCfg.remoteCwd;
+                  }
+                }
+                if (matches) {
+                  matchedChainId = chain.id;
+                  break;
+                }
+              }
+            }
+            
+            if (matchedChainId) {
+              setActiveChainId(matchedChainId);
+              const activeChainName = getWorkspaceChain(matchedChainId)?.name || matchedChainId;
+              chainNotice = `\n🔗 Active Workspace Chain auto-switched to: ${activeChainName} (${matchedChainId})`;
+            } else {
+              setActiveChainId(null);
+            }
+          } catch (chainErr: any) {
+            // ignore
+          }
+
           addLine({
             type: "system",
-            content: `Switched workspace to: ${resolvedPath}\nStarted a new chat session.`,
+            content: `Switched workspace to: ${resolvedPath}${chainNotice}\nStarted a new chat session.`,
             timestamp: now,
           });
         } else {
@@ -624,6 +758,749 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
         setWizardOptions(["Yes, remove this workspace", "No, cancel"]);
         setWizardSelectedIndex(0);
         setInput("");
+        return;
+      }
+
+      if (activeWizard.step === 7) {
+        if (value === "❌ Back" || value.endsWith("Back")) {
+          setActiveWizard({ type: "workspace", step: 1, data: {} });
+          setWizardOptions([
+            "📁 Select & Switch Workspace...",
+            "➕ Add a new workspace...",
+            "🗑️ Remove a workspace...",
+            "📊 View workspace status",
+            "🔗 Manage workspace chains...",
+            "❌ Exit Wizard",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+        if (value === "➕ Create new workspace chain...") {
+          setActiveWizard({
+            type: "workspace",
+            step: 9,
+            data: {},
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+        const chainIds: string[] = Array.isArray(activeWizard.data?.chainIds) ? activeWizard.data.chainIds : [];
+        const selectedChainId = chainIds.find(id => value.includes(id));
+        if (selectedChainId) {
+          const { getWorkspaceChain } = await import("../core/workspace/WorkspaceChainConfig.js");
+          const chain = getWorkspaceChain(selectedChainId);
+          if (chain) {
+            setActiveWizard({
+              type: "workspace",
+              step: 8,
+              data: { chainId: chain.id, chainName: chain.name },
+            });
+            setWizardOptions([
+              "⚡ Activate Chain",
+              "📊 View Topology",
+              "✏️ Edit Chain Name",
+              "➕ Add Node to Chain...",
+              "🗑️ Remove Node from Chain...",
+              "🗑️ Delete Chain",
+              "❌ Back",
+            ]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          }
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
+
+      if (activeWizard.step === 8) {
+        const chainId = activeWizard.data?.chainId;
+        const chainName = activeWizard.data?.chainName || chainId;
+        const openChainsList = async () => {
+          const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+          const sshCfg = workspaceMode.getConfig();
+          const currentWorkspace = workspaceMode.isSsh() && sshCfg
+            ? `${sshCfg.username}@${sshCfg.host}:${sshCfg.port}${sshCfg.remoteCwd}`
+            : path.resolve(agentRef.current?.workingDirectory || process.cwd());
+
+          const { options, chainIds } = await getSortedChainOptions(currentWorkspace);
+          setActiveWizard({
+            type: "workspace",
+            step: 7,
+            data: { chainIds },
+          });
+          setWizardOptions(options);
+          setWizardSelectedIndex(0);
+          setInput("");
+        };
+
+        const openSelectedMenu = (cId: string, cName: string) => {
+          setActiveWizard({
+            type: "workspace",
+            step: 8,
+            data: { chainId: cId, chainName: cName },
+          });
+          setWizardOptions([
+            "⚡ Activate Chain",
+            "📊 View Topology",
+            "✏️ Edit Chain Name",
+            "➕ Add Node to Chain...",
+            "🗑️ Remove Node from Chain...",
+            "🗑️ Delete Chain",
+            "❌ Back",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+        };
+
+        if (!chainId || value === "❌ Back" || value.endsWith("Back")) {
+          await openChainsList();
+          return;
+        }
+
+        if (value === "⚡ Activate Chain") {
+          const { workspaceChainManager } = await import("../core/workspace/WorkspaceChainManager.js");
+          const { formatChainTopology } = await import("../core/workspace/WorkspaceChainTypes.js");
+          try {
+            const chain = await workspaceChainManager.activateChain(chainId);
+            const topology = formatChainTopology(chain);
+            addLine({
+              type: "system",
+              content: `🔗 Workspace Chain Activated: ${chain.name} (${chain.id})\n\n${topology}`,
+              timestamp: now,
+            });
+          } catch (err: any) {
+            addLine({
+              type: "error",
+              content: `Failed to activate workspace chain: ${err?.message ?? err}`,
+              timestamp: now,
+            });
+          }
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        if (value === "📊 View Topology") {
+          const { getWorkspaceChain } = await import("../core/workspace/WorkspaceChainConfig.js");
+          const { formatChainTopology } = await import("../core/workspace/WorkspaceChainTypes.js");
+          const chain = getWorkspaceChain(chainId);
+          if (chain) {
+            const topology = formatChainTopology(chain);
+            addLine({
+              type: "system",
+              content: `🔗 Workspace Chain Topology (${chain.name} / ${chain.id}):\n\n${topology}`,
+              timestamp: now,
+            });
+          }
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        if (value === "✏️ Edit Chain Name") {
+          setActiveWizard({
+            type: "workspace",
+            step: 10,
+            data: { chainId, chainName },
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setInput(chainName);
+          return;
+        }
+
+        if (value === "➕ Add Node to Chain...") {
+          const { getTrustedDirectories } = await import("../core/config/jsonConfig.js");
+          const { getWorkspacesFromDb } = await import("../core/storage/historyDb.js");
+          const trustedDirs = getTrustedDirectories();
+          const dbWorkspaces = getWorkspacesFromDb();
+          const currentCwd = agentRef.current?.workingDirectory || process.cwd();
+          
+          const options = trustedDirs.map(dir => {
+            const dbWs = dbWorkspaces.find(ws => ws.path === dir);
+            const namePart = dbWs?.name ? ` [${dbWs.name}]` : "";
+            const isCurrent = dir === currentCwd;
+            const currentBadge = isCurrent ? " (Current)" : "";
+            const cleanDir = dir.startsWith("ssh:") ? dir : path.basename(dir) || dir;
+            return `📁${namePart} ${cleanDir}${currentBadge}`;
+          });
+          options.push("➕ Type a custom path or SSH target...");
+          options.push("❌ Back");
+
+          setActiveWizard({
+            type: "workspace",
+            step: 11,
+            data: { 
+              chainId, 
+              chainName,
+              trustedPaths: JSON.stringify(trustedDirs)
+            },
+          });
+          setWizardOptions(options);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        if (value === "🗑️ Remove Node from Chain...") {
+          const { getWorkspaceChain } = await import("../core/workspace/WorkspaceChainConfig.js");
+          const chain = getWorkspaceChain(chainId);
+          if (!chain || chain.nodes.length === 0) {
+            addLine({ type: "system", content: "No nodes in chain to remove.", timestamp: now });
+            openSelectedMenu(chainId, chainName);
+            return;
+          }
+          const nodeOptions = chain.nodes.map(n => {
+            const badge = n.id === chain.primaryNodeId ? " [PRIMARY]" : "";
+            return `🖥️ ${n.label} (${n.id}) [${n.type}/${n.role}]${badge}`;
+          });
+          nodeOptions.push("❌ Back");
+          setActiveWizard({
+            type: "workspace",
+            step: 13,
+            data: { chainId, chainName, nodeIds: chain.nodes.map(n => n.id) },
+          });
+          setWizardOptions(nodeOptions);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        if (value === "🗑️ Delete Chain") {
+          setActiveWizard({
+            type: "workspace",
+            step: 14,
+            data: { chainId, chainName },
+          });
+          setWizardOptions(["Yes, delete chain", "No, cancel"]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+      }
+
+      if (activeWizard.step === 9) {
+        const nameInput = value.trim();
+        const openChainsList = async () => {
+          const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+          const sshCfg = workspaceMode.getConfig();
+          const currentWorkspace = workspaceMode.isSsh() && sshCfg
+            ? `${sshCfg.username}@${sshCfg.host}:${sshCfg.port}${sshCfg.remoteCwd}`
+            : path.resolve(agentRef.current?.workingDirectory || process.cwd());
+
+          const { options, chainIds } = await getSortedChainOptions(currentWorkspace);
+          setActiveWizard({
+            type: "workspace",
+            step: 7,
+            data: { chainIds },
+          });
+          setWizardOptions(options);
+          setWizardSelectedIndex(0);
+          setInput("");
+        };
+
+        if (!nameInput) {
+          addLine({ type: "system", content: "Workspace chain creation cancelled.", timestamp: now });
+          await openChainsList();
+          return;
+        }
+        const { createWorkspaceChain } = await import("../core/workspace/WorkspaceChainConfig.js");
+        const { generateNodeId } = await import("../core/workspace/WorkspaceChainTypes.js");
+        const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+        const sshCfg = workspaceMode.getConfig();
+        const isSsh = workspaceMode.isSsh() && !!sshCfg;
+        const currentCwd = agentRef.current?.workingDirectory || process.cwd();
+        const primaryLabel = path.basename(currentCwd) || "main";
+        const primaryNodeId = generateNodeId(primaryLabel);
+
+        const primaryNode = isSsh
+          ? {
+              id: primaryNodeId,
+              label: primaryLabel,
+              type: "ssh" as const,
+              role: "main" as const,
+              sshConfig: {
+                host: sshCfg.host,
+                port: sshCfg.port,
+                username: sshCfg.username,
+                remoteCwd: sshCfg.remoteCwd,
+              },
+            }
+          : {
+              id: primaryNodeId,
+              label: primaryLabel,
+              type: "local" as const,
+              role: "main" as const,
+              path: currentCwd,
+            };
+
+        const openSelectedMenu = (cId: string, cName: string) => {
+          setActiveWizard({
+            type: "workspace",
+            step: 8,
+            data: { chainId: cId, chainName: cName },
+          });
+          setWizardOptions([
+            "⚡ Activate Chain",
+            "📊 View Topology",
+            "✏️ Edit Chain Name",
+            "➕ Add Node to Chain...",
+            "🗑️ Remove Node from Chain...",
+            "🗑️ Delete Chain",
+            "❌ Back",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+        };
+
+        try {
+          const chain = createWorkspaceChain(nameInput, "Created via workspace wizard", [primaryNode], primaryNodeId);
+          addLine({
+            type: "system",
+            content: `✅ Workspace chain created: ${chain.name} (${chain.id})\nPrimary Node: ${primaryLabel}`,
+            timestamp: now,
+          });
+          openSelectedMenu(chain.id, chain.name);
+          return;
+        } catch (err: any) {
+          addLine({
+            type: "error",
+            content: `Failed to create workspace chain: ${err?.message ?? err}`,
+            timestamp: now,
+          });
+          await openChainsList();
+        }
+        return;
+      }
+
+      if (activeWizard.step === 10) {
+        const chainId = activeWizard.data?.chainId;
+        const newName = value.trim();
+        const openSelectedMenu = (cId: string, cName: string) => {
+          setActiveWizard({
+            type: "workspace",
+            step: 8,
+            data: { chainId: cId, chainName: cName },
+          });
+          setWizardOptions([
+            "⚡ Activate Chain",
+            "📊 View Topology",
+            "✏️ Edit Chain Name",
+            "➕ Add Node to Chain...",
+            "🗑️ Remove Node from Chain...",
+            "🗑️ Delete Chain",
+            "❌ Back",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+        };
+
+        if (chainId && newName) {
+          const { updateWorkspaceChain } = await import("../core/workspace/WorkspaceChainConfig.js");
+          try {
+            updateWorkspaceChain(chainId, { name: newName });
+            addLine({ type: "system", content: `✏️ Updated workspace chain name to: ${newName}`, timestamp: now });
+            openSelectedMenu(chainId, newName);
+            return;
+          } catch (err: any) {
+            addLine({ type: "error", content: `Failed to rename chain: ${err?.message ?? err}`, timestamp: now });
+          }
+        }
+        openSelectedMenu(chainId, activeWizard.data?.chainName || chainId);
+        return;
+      }
+
+      if (activeWizard.step === 11) {
+        const chainId = activeWizard.data?.chainId;
+        const chainName = activeWizard.data?.chainName;
+        const openSelectedMenu = (cId: string, cName: string) => {
+          setActiveWizard({
+            type: "workspace",
+            step: 8,
+            data: { chainId: cId, chainName: cName },
+          });
+          setWizardOptions([
+            "⚡ Activate Chain",
+            "📊 View Topology",
+            "✏️ Edit Chain Name",
+            "➕ Add Node to Chain...",
+            "🗑️ Remove Node from Chain...",
+            "🗑️ Delete Chain",
+            "❌ Back",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+        };
+
+        if (value === "❌ Back" || value.endsWith("Back")) {
+          openSelectedMenu(chainId, chainName);
+          return;
+        }
+
+        if (value === "➕ Type a custom path or SSH target...") {
+          setActiveWizard({
+            type: "workspace",
+            step: 15,
+            data: { ...activeWizard.data },
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        const trustedPaths: string[] = JSON.parse(activeWizard.data?.trustedPaths || "[]");
+        const idx = wizardOptions.indexOf(value);
+        const selectedPath = trustedPaths[idx];
+
+        if (!chainId || !selectedPath) {
+          addLine({ type: "system", content: "Add node cancelled.", timestamp: now });
+          openSelectedMenu(chainId, chainName);
+          return;
+        }
+
+        setActiveWizard({
+          type: "workspace",
+          step: 12,
+          data: { ...activeWizard.data, pendingTarget: selectedPath },
+        });
+        setWizardOptions(["main", "backend", "frontend", "worker", "service", "module"]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
+
+      if (activeWizard.step === 15) {
+        const chainId = activeWizard.data?.chainId;
+        const chainName = activeWizard.data?.chainName;
+        const openSelectedMenu = (cId: string, cName: string) => {
+          setActiveWizard({
+            type: "workspace",
+            step: 8,
+            data: { chainId: cId, chainName: cName },
+          });
+          setWizardOptions([
+            "⚡ Activate Chain",
+            "📊 View Topology",
+            "✏️ Edit Chain Name",
+            "➕ Add Node to Chain...",
+            "🗑️ Remove Node from Chain...",
+            "🗑️ Delete Chain",
+            "❌ Back",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+        };
+
+        const targetInput = value.trim();
+        if (value === "❌ Back" || value.endsWith("Back") || !targetInput) {
+          const { getTrustedDirectories } = await import("../core/config/jsonConfig.js");
+          const { getWorkspacesFromDb } = await import("../core/storage/historyDb.js");
+          const trustedDirs = getTrustedDirectories();
+          const dbWorkspaces = getWorkspacesFromDb();
+          const currentCwd = agentRef.current?.workingDirectory || process.cwd();
+          
+          const options = trustedDirs.map(dir => {
+            const dbWs = dbWorkspaces.find(ws => ws.path === dir);
+            const namePart = dbWs?.name ? ` [${dbWs.name}]` : "";
+            const isCurrent = dir === currentCwd;
+            const currentBadge = isCurrent ? " (Current)" : "";
+            const cleanDir = dir.startsWith("ssh:") ? dir : path.basename(dir) || dir;
+            return `📁${namePart} ${cleanDir}${currentBadge}`;
+          });
+          options.push("➕ Type a custom path or SSH target...");
+          options.push("❌ Back");
+
+          setActiveWizard({
+            type: "workspace",
+            step: 11,
+            data: { ...activeWizard.data },
+          });
+          setWizardOptions(options);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        setActiveWizard({
+          type: "workspace",
+          step: 12,
+          data: { ...activeWizard.data, pendingTarget: targetInput },
+        });
+        setWizardOptions(["main", "backend", "frontend", "worker", "service", "module"]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
+
+      if (activeWizard.step === 12) {
+        const chainId = activeWizard.data?.chainId;
+        const pendingTarget = activeWizard.data?.pendingTarget;
+        const role = (value.trim() as any) || "module";
+        const openSelectedMenu = (cId: string, cName: string) => {
+          setActiveWizard({
+            type: "workspace",
+            step: 8,
+            data: { chainId: cId, chainName: cName },
+          });
+          setWizardOptions([
+            "⚡ Activate Chain",
+            "📊 View Topology",
+            "✏️ Edit Chain Name",
+            "➕ Add Node to Chain...",
+            "🗑️ Remove Node from Chain...",
+            "🗑️ Delete Chain",
+            "❌ Back",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+        };
+
+        if (value === "❌ Back" || value.endsWith("Back")) {
+          const { getTrustedDirectories } = await import("../core/config/jsonConfig.js");
+          const { getWorkspacesFromDb } = await import("../core/storage/historyDb.js");
+          const trustedDirs = getTrustedDirectories();
+          const dbWorkspaces = getWorkspacesFromDb();
+          const currentCwd = agentRef.current?.workingDirectory || process.cwd();
+          
+          const options = trustedDirs.map(dir => {
+            const dbWs = dbWorkspaces.find(ws => ws.path === dir);
+            const namePart = dbWs?.name ? ` [${dbWs.name}]` : "";
+            const isCurrent = dir === currentCwd;
+            const currentBadge = isCurrent ? " (Current)" : "";
+            const cleanDir = dir.startsWith("ssh:") ? dir : path.basename(dir) || dir;
+            return `📁${namePart} ${cleanDir}${currentBadge}`;
+          });
+          options.push("➕ Type a custom path or SSH target...");
+          options.push("❌ Back");
+
+          setActiveWizard({
+            type: "workspace",
+            step: 11,
+            data: { ...activeWizard.data },
+          });
+          setWizardOptions(options);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        if (!chainId || !pendingTarget) {
+          openSelectedMenu(chainId, activeWizard.data?.chainName || chainId);
+          return;
+        }
+
+        setActiveWizard({
+          type: "workspace",
+          step: 16,
+          data: { ...activeWizard.data, pendingRole: role },
+        });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
+
+      if (activeWizard.step === 16) {
+        const chainId = activeWizard.data?.chainId;
+        const pendingTarget = activeWizard.data?.pendingTarget;
+        const role = activeWizard.data?.pendingRole || "module";
+        const description = value.trim();
+
+        const openSelectedMenu = (cId: string, cName: string) => {
+          setActiveWizard({
+            type: "workspace",
+            step: 8,
+            data: { chainId: cId, chainName: cName },
+          });
+          setWizardOptions([
+            "⚡ Activate Chain",
+            "📊 View Topology",
+            "✏️ Edit Chain Name",
+            "➕ Add Node to Chain...",
+            "🗑️ Remove Node from Chain...",
+            "🗑️ Delete Chain",
+            "❌ Back",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+        };
+
+        if (value === "❌ Back" || value.endsWith("Back")) {
+          setActiveWizard({
+            type: "workspace",
+            step: 12,
+            data: { ...activeWizard.data },
+          });
+          setWizardOptions(["main", "backend", "frontend", "worker", "service", "module"]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        if (!chainId || !pendingTarget) {
+          openSelectedMenu(chainId, activeWizard.data?.chainName || chainId);
+          return;
+        }
+
+        const { addNodeToChain } = await import("../core/workspace/WorkspaceChainConfig.js");
+        const { generateNodeId } = await import("../core/workspace/WorkspaceChainTypes.js");
+        const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+
+        const isSsh = pendingTarget.startsWith("ssh:") || (pendingTarget.includes("@") && (pendingTarget.includes(":/") || pendingTarget.includes(":")));
+        const label = path.basename(pendingTarget) || "node";
+        const nodeId = generateNodeId(label);
+
+        let node: any;
+        if (isSsh) {
+          const parsed = workspaceMode.parseSshTarget(pendingTarget);
+          if (!parsed) {
+            addLine({ type: "error", content: `Invalid SSH target: ${pendingTarget}`, timestamp: now });
+            openSelectedMenu(chainId, activeWizard.data?.chainName || chainId);
+            return;
+          }
+          node = {
+            id: nodeId,
+            label,
+            type: "ssh",
+            role,
+            sshConfig: {
+              host: parsed.host,
+              port: parsed.port,
+              username: parsed.username,
+              remoteCwd: parsed.remoteCwd,
+            },
+            description: description || undefined,
+          };
+        } else {
+          const resolvedPath = path.resolve(agentRef.current?.workingDirectory || process.cwd(), pendingTarget);
+          node = {
+            id: nodeId,
+            label,
+            type: "local",
+            role,
+            path: resolvedPath,
+            description: description || undefined,
+          };
+        }
+
+        try {
+          addNodeToChain(chainId, node);
+          addLine({ type: "system", content: `➕ Added node "${label}" (${role}) to chain.`, timestamp: now });
+        } catch (err: any) {
+          addLine({ type: "error", content: `Failed to add node: ${err?.message ?? err}`, timestamp: now });
+        }
+        openSelectedMenu(chainId, activeWizard.data?.chainName || chainId);
+        return;
+      }
+
+      if (activeWizard.step === 13) {
+        const chainId = activeWizard.data?.chainId;
+        const openSelectedMenu = (cId: string, cName: string) => {
+          setActiveWizard({
+            type: "workspace",
+            step: 8,
+            data: { chainId: cId, chainName: cName },
+          });
+          setWizardOptions([
+            "⚡ Activate Chain",
+            "📊 View Topology",
+            "✏️ Edit Chain Name",
+            "➕ Add Node to Chain...",
+            "🗑️ Remove Node from Chain...",
+            "🗑️ Delete Chain",
+            "❌ Back",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+        };
+
+        if (value === "❌ Back" || value.endsWith("Back") || !chainId) {
+          openSelectedMenu(chainId, activeWizard.data?.chainName || chainId);
+          return;
+        }
+        const nodeIds: string[] = Array.isArray(activeWizard.data?.nodeIds) ? activeWizard.data.nodeIds : [];
+        const selectedNodeId = nodeIds.find(id => value.includes(id));
+        if (selectedNodeId) {
+          const { removeNodeFromChain } = await import("../core/workspace/WorkspaceChainConfig.js");
+          try {
+            removeNodeFromChain(chainId, selectedNodeId);
+            addLine({ type: "system", content: `🗑️ Removed node "${selectedNodeId}" from workspace chain.`, timestamp: now });
+          } catch (err: any) {
+            addLine({ type: "error", content: `Failed to remove node: ${err?.message ?? err}`, timestamp: now });
+          }
+        }
+        openSelectedMenu(chainId, activeWizard.data?.chainName || chainId);
+        return;
+      }
+
+      if (activeWizard.step === 14) {
+        const chainId = activeWizard.data?.chainId;
+        const openChainsList = async () => {
+          const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+          const sshCfg = workspaceMode.getConfig();
+          const currentWorkspace = workspaceMode.isSsh() && sshCfg
+            ? `${sshCfg.username}@${sshCfg.host}:${sshCfg.port}${sshCfg.remoteCwd}`
+            : path.resolve(agentRef.current?.workingDirectory || process.cwd());
+
+          const { options, chainIds } = await getSortedChainOptions(currentWorkspace);
+          setActiveWizard({
+            type: "workspace",
+            step: 7,
+            data: { chainIds },
+          });
+          setWizardOptions(options);
+          setWizardSelectedIndex(0);
+          setInput("");
+        };
+
+        const openSelectedMenu = (cId: string, cName: string) => {
+          setActiveWizard({
+            type: "workspace",
+            step: 8,
+            data: { chainId: cId, chainName: cName },
+          });
+          setWizardOptions([
+            "⚡ Activate Chain",
+            "📊 View Topology",
+            "✏️ Edit Chain Name",
+            "➕ Add Node to Chain...",
+            "🗑️ Remove Node from Chain...",
+            "🗑️ Delete Chain",
+            "❌ Back",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+        };
+
+        if (value === "Yes, delete chain" && chainId) {
+          const { deleteWorkspaceChain } = await import("../core/workspace/WorkspaceChainConfig.js");
+          const { workspaceChainManager } = await import("../core/workspace/WorkspaceChainManager.js");
+          try {
+            if (workspaceChainManager.getActiveChain()?.id === chainId) {
+              await workspaceChainManager.deactivateChain();
+            }
+            deleteWorkspaceChain(chainId);
+            addLine({ type: "system", content: `🗑️ Deleted workspace chain: ${chainId}`, timestamp: now });
+          } catch (err: any) {
+            addLine({ type: "error", content: `Failed to delete chain: ${err?.message ?? err}`, timestamp: now });
+          }
+          await openChainsList();
+          return;
+        }
+        addLine({ type: "system", content: "Cancelled chain deletion.", timestamp: now });
+        openSelectedMenu(chainId, activeWizard.data?.chainName || chainId);
         return;
       }
 

@@ -207,8 +207,10 @@ export function DashboardWizard({
               activeWizard.type === "model" && activeWizard.step === 16 ? `⚙️ CONFIGURE PROVIDER — PROFILE NAME (Type & Enter):` :
               activeWizard.type === "model" && activeWizard.step === 17 ? `⚙️ CONFIGURE PROVIDER — BASE URL (Type & Enter):` :
               activeWizard.type === "model" && activeWizard.step === 18 ? `⚙️ CONFIGURE PROVIDER — API KEY (Type & Enter):` :
-              activeWizard.type === "workspace" && activeWizard.step === 1 ? "📁 SELECT WORKSPACE DIRECTORY:" :
-              activeWizard.type === "workspace" && activeWizard.step === 2 ? "📁 ADD NEW WORKSPACE — ENTER DIRECTORY PATH:" :
+              activeWizard.type === "workspace" && activeWizard.step === 1 ? "📁 WORKSPACE MANAGER — SELECT ACTION:" :
+              activeWizard.type === "workspace" && activeWizard.step === 2 ? "📁 SELECT WORKSPACE TO SWITCH TO:" :
+              activeWizard.type === "workspace" && activeWizard.step === 7 ? "🔗 MANAGE WORKSPACE CHAINS:" :
+              activeWizard.type === "workspace" && activeWizard.step === 8 ? "🔗 WORKSPACE CHAIN ACTIONS:" :
               activeWizard.type === "resume" ? `📁 SELECT SESSION TO RESUME:` :
               activeWizard.type === "skills" ? `🛠️ SKILLS MANAGER (Step ${activeWizard.step}):` :
               activeWizard.type === "checkpoint" ? `📋 CHECKPOINT MANAGER (Step ${activeWizard.step}):` :
@@ -240,8 +242,10 @@ export function DashboardWizard({
             description={
               activeWizard.type === "plan_approve" ? `AI model has designed a plan in file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}` :
               activeWizard.type === "question" ? (pendingQuestion?.question || "") :
-              activeWizard.type === "workspace" && activeWizard.step === 1 ? "Select a registered workspace directory to switch to, or choose to add a new one:" :
-              activeWizard.type === "workspace" && activeWizard.step === 2 ? "Type the directory path (absolute or relative to current workspace) and press Enter:" :
+              activeWizard.type === "workspace" && activeWizard.step === 1 ? "Select a registered workspace action to perform:" :
+              activeWizard.type === "workspace" && activeWizard.step === 2 ? "Select a registered workspace directory to switch to:" :
+              activeWizard.type === "workspace" && activeWizard.step === 7 ? "Select a workspace chain to manage:" :
+              activeWizard.type === "workspace" && activeWizard.step === 8 ? "Select an action for the selected workspace chain:" :
               activeWizard.type === "model" && activeWizard.step === 20 ? "Give a unique name for your custom model configuration preset (type name and press Enter, or type 'back' to go back):" :
               activeWizard.type === "model" && activeWizard.step === 21 ? "Enter a helpful description for what this preset is designed for (type description and press Enter, or type 'back' to go back):" :
               activeWizard.type === "model" && activeWizard.step === 31 ? "Update the description for this custom preset (type description and press Enter, or type 'back' to go back):" :

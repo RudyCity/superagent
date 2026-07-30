@@ -55,6 +55,8 @@ const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Full Chrome automation suite.
   - Automation: control_browser_macro_save|run, run_headless_browser, simulate_virtual_cursor, control_isolated_cdp
   - Diagnostics: get_browser_console_logs|network_logs, manage_chrome_bookmarks|history|downloads, list_chrome_extensions`;
 
+const WORKSPACE_CHAIN_RULE = `- WORKSPACE_CHAINS: Use manage_workspace_chain to define/manage chains, and cross_workspace_exec for executing commands across nodes.`;
+
 // ─── Report Template (dedup'd) ────────────────────────────────
 
 const SUBAGENT_REPORT_TEMPLATE = `# REPORT
@@ -153,6 +155,7 @@ ${FAST_ANALYSIS_RULE}
 - POST_MERGE: (1)build→(2)test→(3)bump package→(4)prepend CHANGELOG→(5)update AGENTS.md→(6)commit→(7)prune worktrees.
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
+${WORKSPACE_CHAIN_RULE}
 ${BROWSER_CONTROL_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
 
@@ -224,6 +227,7 @@ ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
+${WORKSPACE_CHAIN_RULE}
 ${BROWSER_CONTROL_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
 

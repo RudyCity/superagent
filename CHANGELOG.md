@@ -1,3 +1,22 @@
+## [1.2.630] - 2026-07-30
+
+### Workspace Chaining Wizard CRUD, Auto-Switch & Dynamic Context Injection
+
+- **Workspace Chaining CRUD Wizard** (`src/hooks/useWizardSubmit.ts`, `src/components/wizard-panels.tsx`):
+  - Fully implemented Steps 7 through 16 in the `/workspace` wizard to support all workspace chain CRUD operations: list, create, edit name, add node (with local workspace selection and SSH custom target input), remove node, and delete chain.
+  - Removed legacy exit path that closed the wizard immediately when 0 chains existed.
+  - Implemented Step 16 for prompting node descriptions (optional context of node purpose) during node registration.
+- **Auto-Switch Workspace Chain**:
+  - Automatically matches and activates/switches the active workspace chain when switching workspaces via the `/workspace` wizard (Step 2), comparing the primary node's path or SSH target configuration.
+- **Sorted Listing & Current Workspace Badges**:
+  - Automatically sorts chains in Step 7 so that those matching the current active workspace appear at the top, decorated with a `[CURRENT]` badge.
+- **Dynamic Context Topology Injection** (`src/core/context/WorkspaceStateTracker.ts`):
+  - Dynamically injects the active workspace chain name, ID, primary node path/target, and the complete node topology list into the live `LIVE WORKSPACE STATE` system prompt block on every turn.
+- **System Prompts Update** (`src/core/prompts.ts`):
+  - Added workspace chain and cross-workspace execution tool awareness to the Master Agent and Superagent system prompts.
+- **Unit Tests**:
+  - Added new unit tests in `tests/workspaceWizardFlow.test.ts` to verify full CRUD config manipulation and dynamic active chain state block injection. All pass.
+
 ## [1.2.629] - 2026-07-30
 
 ### Workspace Chaining — Cross-Workspace Operations & Debugging

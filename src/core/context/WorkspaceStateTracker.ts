@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { execSync } from "child_process";
+import { getActiveChainId, getWorkspaceChain } from "../workspace/WorkspaceChainConfig.js";
 
 export interface WorkspaceStateOptions {
   /** Absolute path to active task file */
@@ -201,6 +202,32 @@ export function buildWorkspaceStateBlock(opts: WorkspaceStateOptions): Workspace
     if (completed.length > 0) {
       const names = completed.map(s => `${s.role} (${s.id})`).join(", ");
       parts.push(`✅ COMPLETED SUBAGENTS [${completed.length}]: ${names} — use manage_subagents(action:"report") to read their output`);
+    }
+  }
+
+  // ── Active workspace chain info ───────────────────────────────────────────
+  const activeChainId = getActiveChainId();
+  if (activeChainId) {
+    const chain = getWorkspaceChain(activeChainId);
+    if (chain) {
+      parts.push(`🔗 ACTIVE WORKSPACE CHAIN: ${chain.name} (${chain.id})`);
+      const primaryNode = chain.nodes.find(n => n.id === chain.primaryNodeId);
+      if (primaryNode) {
+        const pathOrTarget = primaryNode.type === "ssh" && primaryNode.sshConfig
+          ? `${primaryNode.sshConfig.username}@${primaryNode.sshConfig.host}:${primaryNode.sshConfig.port}${primaryNode.sshConfig.remoteCwd}`
+          : primaryNode.path;
+        parts.push(`   Primary Node: ${primaryNode.label} (role: main, type: ${primaryNode.type}, target: ${pathOrTarget})`);
+      }
+      const otherNodes = chain.nodes.filter(n => n.id !== chain.primaryNodeId);
+      if (otherNodes.length > 0) {
+        parts.push(`   Other Nodes:`);
+        for (const n of otherNodes) {
+          const pathOrTarget = n.type === "ssh" && n.sshConfig
+            ? `${n.sshConfig.username}@${n.sshConfig.host}:${n.sshConfig.port}${n.sshConfig.remoteCwd}`
+            : n.path;
+          parts.push(`   • ${n.label} (role: ${n.role}, type: ${n.type}, target: ${pathOrTarget})`);
+        }
+      }
     }
   }
 

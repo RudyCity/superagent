@@ -912,6 +912,117 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 7 && wizardOptions.length > 0 && (() => {
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+          const searchTitle = searchQuery
+            ? `🔗 WORKSPACE CHAINS — 🔍 "${searchQuery}" (${filteredOptions.length}/${wizardOptions.length} results):`
+            : `🔗 WORKSPACE CHAINS — Select a chain to manage (↑/↓ Navigate, Enter: Select, Esc: Back):`;
+          return (
+            <WizardDialog
+              title={searchTitle}
+              description="Registered workspace chains:"
+              borderColor="cyan"
+              options={filteredOptions.length > 0 ? filteredOptions : ["(no results)"]}
+              selectedIndex={clampedIndex}
+              maxVisible={10}
+            />
+          );
+        })()}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 8 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title={`🔗 CHAIN ACTIONS — ${activeWizard.data.chainName || activeWizard.data.chainId || "Workspace Chain"}`}
+            description="Select an action for this workspace chain:"
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 9 && (
+          <WizardDialog
+            title="➕ CREATE WORKSPACE CHAIN — Enter Chain Name (Type & Enter, Esc: Back):"
+            description="Type a friendly name for your new workspace chain (e.g. Frontend-Backend):"
+            borderColor="cyan"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 10 && (
+          <WizardDialog
+            title="✏️ EDIT WORKSPACE CHAIN NAME — Enter New Name (Type & Enter, Esc: Back):"
+            description={`Renaming workspace chain: ${activeWizard.data.chainName || activeWizard.data.chainId || ""}`}
+            borderColor="cyan"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 11 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title="➕ ADD NODE TO CHAIN — Select Workspace or Node (↑/↓ Navigate, Enter: Select, Esc: Back):"
+            description="Select an existing workspace directory, or type a custom path/target:"
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 15 && (
+          <WizardDialog
+            title="➕ ADD NODE TO CHAIN — Enter Custom Node Path or SSH Target (Type & Enter, Esc: Back):"
+            description="Enter directory path (e.g. ../backend) or SSH target (e.g. user@host:22/remote/path):"
+            borderColor="cyan"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 12 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title="➕ ADD NODE TO CHAIN — Select Node Role (↑/↓ Navigate, Enter: Select, Esc: Back):"
+            description={`Select role for node target "${activeWizard.data.pendingTarget || ""}":`}
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 16 && (
+          <WizardDialog
+            title="➕ ADD NODE TO CHAIN — Enter Node Description (Type & Enter, Esc: Back):"
+            description={`Enter description (purpose/context) for node "${activeWizard.data.pendingTarget || ""}" (optional):`}
+            borderColor="cyan"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 13 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title="🗑️ REMOVE NODE FROM CHAIN — Select Node to Remove (↑/↓ Navigate, Enter: Select, Esc: Back):"
+            description={`Select a node to remove from chain "${activeWizard.data.chainName || ""}":`}
+            borderColor="red"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 14 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title="🗑️ DELETE WORKSPACE CHAIN — Are you sure?"
+            description={`Delete workspace chain "${activeWizard.data.chainName || activeWizard.data.chainId || ""}"?`}
+            borderColor="red"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
         {/* Goal Mode Banner */}
         {goalMode && !activeWizard && (
           <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
