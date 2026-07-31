@@ -1,3 +1,11 @@
+## [1.2.655] - 2026-07-31
+
+### CLI: chrome-agent Debugging, Testing, and Documentation Improvements
+
+- **chrome-agent System Prompt**: Added `PORT_9223_BRIDGE` debugging instructions to `"chrome-agent"` system prompt in `src/core/prompts.ts` to handle remote WebSocket bridge connection failures and port conflicts.
+- **Unit Testing**: Added a unit test verifying `chrome-agent` subagent toolset resolution in `tests/tierToolsetResolution.test.ts`.
+- **Documentation**: Documented the `chrome-agent` subagent in `AGENTS.md` and clarified browser/Chrome tool isolation.
+
 ## [1.2.654] - 2026-07-31
 
 ### CLI: chrome-agent Subagent and Chrome Tools Isolation

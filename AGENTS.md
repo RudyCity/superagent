@@ -23,7 +23,7 @@ Master Agent  (orchestrator)
 |------|------|---------|-----------|
 | **Master Agent** | Orchestration, planning, result merging | `invokeSuperagentTool`, `awaitSuperagentsTool`, `mergeSuperagentsTool`, `manageSuperagentsTool`, `manageSubagentsTool`, `gitWorktreeTool` | Main repo |
 | **Superagent** | Feature-level development | Shell + File tools + `invokeSubagentTool`, `manageSubagentsTool`, `gitWorktreeTool` | Isolated git worktree (`~/.superagent-r/worktrees/<name>`) |
-| **Subagent** | Atomic file/search operations | File tools only (read/write/search/grep) | Ephemeral, within parent worktree |
+| **Subagent** | Ephemeral subagent types (e.g. `researcher`, `coder`, `reviewer`, `software-tester`, `chrome-agent`). Note that Chrome/browser control is isolated to `chrome-agent`. | Tools allowed per subagent type | Ephemeral, within parent worktree |
 
 ### Key Files
 - `src/core/masterAgent.ts` — Master Agent entry point and orchestrator logic

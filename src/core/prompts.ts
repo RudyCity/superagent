@@ -535,6 +535,7 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 - STEALTH: 'click' pauses for manual anti-bot. Mandatory for login, CAPTCHA, form submit.
 - EMULATION/NETWORK: set_browser_emulation or set_network_conditions pre-dynamic testing.
 - STORAGE: manage_browser_cookies_storage for session/cookie inspection.
+- PORT_9223_BRIDGE: If connection fails or times out, check if remote websocket bridge server on port 9223 is initialized. If not, trigger chrome_extension_status to auto-initialize it. If port conflict occurs, instruct user to verify active background Chrome profiles or other instances using the bridge.
 - HEADLESS_FALLBACK: If extension disconnected → run_headless_browser or control_isolated_cdp.
 - INSPECT: Tag-label syntax (\`<button#submit>\`) in parens = CSS locator.
 - VISION: Use detect_ui when selectors missing/dynamic.

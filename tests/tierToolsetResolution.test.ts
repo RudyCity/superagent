@@ -167,6 +167,34 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
     expect(toolsPassed.length).toBe(expectedToolNames.length);
   });
 
+  it("should resolve chrome-agent subagent toolset containing all Chrome tools", async () => {
+    const onEvent = vi.fn();
+    const onPermission = vi.fn().mockResolvedValue(true);
+    const onQuestion = vi.fn();
+
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.tier = "subagent";
+    agent.subagentType = "chrome-agent";
+    agent.planState = "APPROVED";
+
+    let toolsPassed: any[] = [];
+    vi.mocked(streamText).mockImplementation(({ tools }: any) => {
+      toolsPassed = Object.keys(tools || {});
+      return {
+        fullStream: (async function* () {
+          yield { type: "text-delta", textDelta: "Test finished" };
+        })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    await agent.sendMessage("hello");
+
+    const expectedToolNames = subagentToolsets["chrome-agent"].map((t) => t.name);
+    expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
+    expect(toolsPassed.length).toBe(expectedToolNames.length);
+  });
+
   it("should NOT filter tools based on classification category when planState is active (not IDLE)", async () => {
     const onEvent = vi.fn();
     const onPermission = vi.fn().mockResolvedValue(true);
