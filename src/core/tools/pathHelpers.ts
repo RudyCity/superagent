@@ -1,6 +1,7 @@
 import path from "path";
 import { getRootConfigDir } from "../config/paths.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
+import { workspaceChainManager } from "../workspace/WorkspaceChainManager.js";
 
 /**
  * Normalize a file path to fix common LLM path construction errors.
@@ -80,6 +81,16 @@ export function resolveFilePathFromArgs(args: Record<string, unknown>, cwd: stri
   const testRoot = clean(normalizePath(path.resolve(cwd)));
   const rootConfigDir = clean(normalizePath(getRootConfigDir()));
   const allowedRoots = [workspaceRoot, testRoot, rootConfigDir];
+  try {
+    const activeChain = workspaceChainManager.getActiveChain(cwd);
+    if (activeChain && activeChain.nodes) {
+      for (const node of activeChain.nodes) {
+        if (node.type === "local" && node.path) {
+          allowedRoots.push(clean(normalizePath(path.resolve(node.path))));
+        }
+      }
+    }
+  } catch {}
   const isAllowed = allowedRoots.some(root => resolved === root || resolved.startsWith(root + "/")) || resolved.endsWith("_walkthrough.md");
   if (!isAllowed) {
     throw new Error('Path "' + raw + '" violates workspace boundary. Operations must remain within "' + workspaceRoot + '". To read external files, ask for user permission via ask_question or copy the file into the workspace directory.');

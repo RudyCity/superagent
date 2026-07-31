@@ -55,7 +55,8 @@ const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Full Chrome automation suite.
   - Automation: control_browser_macro_save|run, run_headless_browser, simulate_virtual_cursor, control_isolated_cdp
   - Diagnostics: get_browser_console_logs|network_logs, manage_chrome_bookmarks|history|downloads, list_chrome_extensions`;
 
-const WORKSPACE_CHAIN_RULE = `- WORKSPACE_CHAINS: Multi-node topology (local & SSH). Read active topology from WORKSPACE CHAIN ACTIVE prompt block. Use manage_workspace_chain (topology, health, activate) and cross_workspace_exec (exec, read, write, exec-all, exec-deps, health, diff, sync).`;
+const WORKSPACE_CHAIN_RULE = `- WORKSPACE_CHAINS: Multi-node topology (local & SSH). Read active topology from WORKSPACE CHAIN ACTIVE prompt block. Use manage_workspace_chain (topology, health, activate) and cross_workspace_exec (exec, read, write, exec-all, exec-deps, health, diff, sync, switch-node).
+- WORKSPACE_CHAIN_ROUTING: Use cross_workspace_exec (switch-node) to set the active node. Once switched, all standard system tools (glob, grep, ripgrep_search, view_file, write_to_file, run_command) automatically and transparently route and execute on the active node (local or SSH) via workspaceMode.`;
 
 // ─── Report Template (dedup'd) ────────────────────────────────
 

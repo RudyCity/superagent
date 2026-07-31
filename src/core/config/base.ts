@@ -218,7 +218,7 @@ if request_is_complex:
 - Workspace & Environment:
   - 'git_worktree': Git worktree lifecycle management.
   - 'manage_workspace_chain': Manage workspace chains (create, list, activate, deactivate, delete, add/remove nodes, topology). Links local+SSH workspaces.
-  - 'cross_workspace_exec': Execute operations on specific workspace chain nodes (exec, read, write, diff, sync) for cross-workspace debug/deploy.
+  - 'cross_workspace_exec': Execute operations on specific workspace chain nodes (exec, read, write, diff, sync, switch-node) for cross-workspace debug/deploy/routing. Use switch-node to route standard search/edit/run tools to that node.
 - Interactive & Core:
   - 'ask_question': Multi-choice questions for user input. Use at decision points.
 - Best Practices:

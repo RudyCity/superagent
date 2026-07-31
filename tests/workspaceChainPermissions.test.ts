@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import { isToolCallOutOfBounds } from "../src/core/permissions.js";
 import { workspaceChainManager } from "../src/core/workspace/WorkspaceChainManager.js";
+import { resolveFilePathFromArgs } from "../src/core/tools/pathHelpers.js";
 
 describe("Workspace Chain Permission Bypass", () => {
   const primaryWorkspace = path.resolve("/projects/node-a");
@@ -63,5 +64,21 @@ describe("Workspace Chain Permission Bypass", () => {
     };
 
     expect(isToolCallOutOfBounds(toolCallExternal, primaryWorkspace)).toBe(true);
+  });
+
+  test("resolveFilePathFromArgs should allow local chain node paths when chain is active", () => {
+    vi.spyOn(workspaceChainManager, "getActiveChain").mockReturnValue({
+      id: "chain-1",
+      name: "Test Chain",
+      primaryNodeId: "node-a",
+      nodes: [
+        { id: "node-a", label: "Node A", type: "local", path: primaryWorkspace },
+        { id: "node-b", label: "Node B", type: "local", path: secondaryWorkspace },
+      ],
+    } as any);
+
+    const targetFile = path.join(secondaryWorkspace, "src/server.ts");
+    const resolved = resolveFilePathFromArgs({ filePath: targetFile }, primaryWorkspace);
+    expect(resolved).toBeDefined();
   });
 });
