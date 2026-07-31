@@ -79,7 +79,7 @@ describe("RMemoryStrategy", () => {
       entries: [{ path: "scene_blocks/coding-style.md" }]
     });
 
-    const strategy = new RMemoryStrategy({ historyFilePath: "conversation_test.json" });
+    const strategy = new RMemoryStrategy();
     const messages: Message[] = [];
     for (let i = 0; i < 15; i++) {
       messages.push({
@@ -120,7 +120,7 @@ describe("RMemoryStrategy", () => {
   it("should fallback to SummarizationStrategy when gateway calls throw an error", async () => {
     mockAddConversation.mockRejectedValue(new Error("Gateway connection timeout"));
 
-    const strategy = new RMemoryStrategy({ historyFilePath: "conversation_test.json" });
+    const strategy = new RMemoryStrategy();
     const messages: Message[] = [];
     for (let i = 0; i < 15; i++) {
       messages.push({
@@ -141,7 +141,7 @@ describe("RMemoryStrategy", () => {
     // First call: gateway fails
     mockAddConversation.mockRejectedValue(new Error("Connection refused"));
 
-    const strategy = new RMemoryStrategy({ historyFilePath: "conversation_test.json" });
+    const strategy = new RMemoryStrategy();
     const messages: Message[] = [];
     for (let i = 0; i < 15; i++) {
       messages.push({
@@ -193,7 +193,7 @@ describe("RMemoryStrategy", () => {
     mockReadCore.mockResolvedValue({ content: "" });
     mockListScenarios.mockResolvedValue({ entries: [] });
 
-    const strategy = new RMemoryStrategy({ historyFilePath: "conversation_test.json" });
+    const strategy = new RMemoryStrategy();
     const messages: Message[] = [
       { role: "user", content: "hello", timestamp: Date.now() }
     ];

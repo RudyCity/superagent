@@ -110,242 +110,242 @@ export class Conversation {
     }
   }
 
+  /**
+   * Save session to SQLite (single source of truth).
+   * NOTE: JSON file is NOT used for data storage. filePath is only used as session key/identifier
+   * and for deriving plan/task/walkthrough file paths. SQLite is the sole transcript storage.
+   */
   async saveToFile(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED", workingDirectory?: string): Promise<void> {
     try {
-      try {
-        await fs.mkdir(path.dirname(filePath), { recursive: true });
-        await fs.writeFile(filePath, "", "utf-8");
-      } catch {}
-      const sid = path.basename(filePath, ".json");
-      const userMessages = this.messages.filter((m) => {
-        if (m.role !== "user") return false;
-        const text = contentToString(m.content);
-        return !text.startsWith("[RMemory Agent Memory Context]:");
-      });
-      const firstUser = userMessages[0];
-      const lastUser = userMessages[userMessages.length - 1];
-      const firstUserText = firstUser ? contentToString(firstUser.content).trim() : "";
-      const lastUserText = lastUser ? contentToString(lastUser.content).trim() : "";
-      const preview = lastUser
-        ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
-        : "(no user messages)";
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+    } catch {}
+    const sid = path.basename(filePath, ".json");
+    const userMessages = this.messages.filter((m) => {
+      if (m.role !== "user") return false;
+      const text = contentToString(m.content);
+      return !text.startsWith("[RMemory Agent Memory Context]:");
+    });
+    const firstUser = userMessages[0];
+    const lastUser = userMessages[userMessages.length - 1];
+    const firstUserText = firstUser ? contentToString(firstUser.content).trim() : "";
+    const lastUserText = lastUser ? contentToString(lastUser.content).trim() : "";
+    const preview = lastUser
+      ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
+      : "(no user messages)";
 
-      let folderPathName = sid;
-      if (!sid.startsWith("sess_") && !sid.startsWith("session_")) {
-        const cleanName = sid.replace(/_\d+$/, "");
-        folderPathName = cleanName
-          .replace(/^([a-zA-Z])__/, "$1:\\")
-          .replace(/^_+/, "/")
-          .replace(/_/g, "/");
-      }
-
-      const formatSnippet = (text: string, maxLen = 45) => {
-        let clean = text.replace(/\[(RMemory|TencentDB|Emergency|Context|SYS|System)[^\]]*\]/gi, '')
-          .replace(/<\/?user_request>/gi, '')
-          .replace(/<[^>]+>/g, '')
-          .replace(/^(\/[a-zA-Z0-9_-]+\s*)+/g, '')
-          .replace(/\n/g, " ")
-          .trim();
-        return clean.length > maxLen ? clean.slice(0, maxLen).trim() + "…" : clean;
-      };
-
-      let displayName: string;
-      const cleanFirstSnippet = formatSnippet(firstUserText, 25);
-      const cleanLastSnippet = formatSnippet(lastUserText, 25);
-      if (cleanFirstSnippet && cleanLastSnippet && cleanFirstSnippet.toLowerCase() !== cleanLastSnippet.toLowerCase()) {
-        displayName = `${cleanFirstSnippet} → ${cleanLastSnippet}`;
-      } else if (cleanFirstSnippet) {
-        displayName = formatSnippet(firstUserText, 45);
-      } else if (cleanLastSnippet) {
-        displayName = formatSnippet(lastUserText, 45);
-      } else {
-        displayName = folderPathName;
-      }
-
-      const serializedSuperagents = Array.from(superagentInstances.values()).map(inst => {
-        const { agent, ...rest } = inst;
-        return {
-          ...rest,
-          historyFilePath: inst.historyFilePath || (agent && typeof agent.getCurrentHistoryFilePath === "function" ? agent.getCurrentHistoryFilePath() : undefined)
-        };
-      });
-
-      const serializedSubagents = Array.from(subagentInstances.values()).map(inst => {
-        const { agent, ...rest } = inst;
-        return {
-          ...rest,
-          historyFilePath: inst.historyFilePath || (agent && typeof agent.getCurrentHistoryFilePath === "function" ? agent.getCurrentHistoryFilePath() : undefined)
-        };
-      });
-
-      const pinnedMessages = this.contextManager
-        ? this.contextManager.serializePinnedMessages()
-        : (this.pendingPinnedMessages || []);
-
-      let activePreset: any = undefined;
-      try {
-        const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
-        const mode = isMulti ? "multi" : "single";
-        activePreset = getActivePreset(mode);
-      } catch {}
-
-      const extraData = {
-        superagents: serializedSuperagents,
-        subagents: serializedSubagents,
-        historicalSuperagentTokens,
-        masterPromptTokens,
-        masterCompletionTokens,
-        lastMasterPromptTokens,
-        lastCapturedTimestamp: this.lastCapturedTimestamp,
-      };
-
-      saveSessionToDb(
-        {
-          id: sid,
-          filePath,
-          displayName,
-          messageCount: this.messages.length,
-          lastModified: Date.now(),
-          preview,
-          workingDirectory,
-          planState,
-          activePreset: activePreset ? JSON.stringify(activePreset) : undefined,
-          extraData: JSON.stringify(extraData),
-        },
-        this.messages.map((m, idx) => ({
-          sessionId: sid,
-          role: m.role,
-          content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-          toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
-          toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
-          reasoning: m.reasoning,
-          timestamp: m.timestamp || Date.now(),
-          sequenceOrder: idx,
-        })),
-        pinnedMessages ? JSON.stringify(pinnedMessages) : undefined
-      );
-    } catch (err) {
-      console.error("Failed to save history to SQLite:", err);
+    let folderPathName = sid;
+    if (!sid.startsWith("sess_") && !sid.startsWith("session_")) {
+      const cleanName = sid.replace(/_\d+$/, "");
+      folderPathName = cleanName
+        .replace(/^([a-zA-Z])__/, "$1:\\")
+        .replace(/^_+/, "/")
+        .replace(/_/g, "/");
     }
+
+    const formatSnippet = (text: string, maxLen = 45) => {
+      let clean = text.replace(/\[(RMemory|TencentDB|Emergency|Context|SYS|System)[^\]]*\]/gi, '')
+        .replace(/<\/?user_request>/gi, '')
+        .replace(/<[^>]+>/g, '')
+        .replace(/^(\/[a-zA-Z0-9_-]+\s*)+/g, '')
+        .replace(/\n/g, " ")
+        .trim();
+      return clean.length > maxLen ? clean.slice(0, maxLen).trim() + "…" : clean;
+    };
+
+    let displayName: string;
+    const cleanFirstSnippet = formatSnippet(firstUserText, 25);
+    const cleanLastSnippet = formatSnippet(lastUserText, 25);
+    if (cleanFirstSnippet && cleanLastSnippet && cleanFirstSnippet.toLowerCase() !== cleanLastSnippet.toLowerCase()) {
+      displayName = `${cleanFirstSnippet} → ${cleanLastSnippet}`;
+    } else if (cleanFirstSnippet) {
+      displayName = formatSnippet(firstUserText, 45);
+    } else if (cleanLastSnippet) {
+      displayName = formatSnippet(lastUserText, 45);
+    } else {
+      displayName = folderPathName;
+    }
+
+    const serializedSuperagents = Array.from(superagentInstances.values()).map(inst => {
+      const { agent, ...rest } = inst;
+      return {
+        ...rest,
+        historyFilePath: inst.historyFilePath || (agent && typeof agent.getCurrentHistoryFilePath === "function" ? agent.getCurrentHistoryFilePath() : undefined)
+      };
+    });
+
+    const serializedSubagents = Array.from(subagentInstances.values()).map(inst => {
+      const { agent, ...rest } = inst;
+      return {
+        ...rest,
+        historyFilePath: inst.historyFilePath || (agent && typeof agent.getCurrentHistoryFilePath === "function" ? agent.getCurrentHistoryFilePath() : undefined)
+      };
+    });
+
+    const pinnedMessages = this.contextManager
+      ? this.contextManager.serializePinnedMessages()
+      : (this.pendingPinnedMessages || []);
+
+    let activePreset: any = undefined;
+    try {
+      const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+      const mode = isMulti ? "multi" : "single";
+      activePreset = getActivePreset(mode);
+    } catch {}
+
+    const extraData = {
+      superagents: serializedSuperagents,
+      subagents: serializedSubagents,
+      historicalSuperagentTokens,
+      masterPromptTokens,
+      masterCompletionTokens,
+      lastMasterPromptTokens,
+      lastCapturedTimestamp: this.lastCapturedTimestamp,
+    };
+
+    saveSessionToDb(
+      {
+        id: sid,
+        filePath,
+        displayName,
+        messageCount: this.messages.length,
+        lastModified: Date.now(),
+        preview,
+        workingDirectory,
+        planState,
+        activePreset: activePreset ? JSON.stringify(activePreset) : undefined,
+        extraData: JSON.stringify(extraData),
+      },
+      this.messages.map((m, idx) => ({
+        sessionId: sid,
+        role: m.role,
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+        toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
+        toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
+        reasoning: m.reasoning,
+        timestamp: m.timestamp || Date.now(),
+        sequenceOrder: idx,
+      })),
+      pinnedMessages ? JSON.stringify(pinnedMessages) : undefined
+    );
   }
 
+  /**
+   * Save session to SQLite (single source of truth).
+   * NOTE: JSON file is NOT used for data storage. filePath is only used as session key/identifier
+   * and for deriving plan/task/walkthrough file paths. SQLite is the sole transcript storage.
+   */
   saveToFileSync(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED", workingDirectory?: string): void {
     try {
-      try {
-        fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
-        fsSync.writeFileSync(filePath, "");
-      } catch {}
-      const sid = path.basename(filePath, ".json");
-      const userMessages = this.messages.filter((m) => {
-        if (m.role !== "user") return false;
-        const text = contentToString(m.content);
-        return !text.startsWith("[RMemory Agent Memory Context]:");
-      });
-      const firstUser = userMessages[0];
-      const lastUser = userMessages[userMessages.length - 1];
-      const firstUserText = firstUser ? contentToString(firstUser.content).trim() : "";
-      const lastUserText = lastUser ? contentToString(lastUser.content).trim() : "";
-      const preview = lastUser
-        ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
-        : "(no user messages)";
+      fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
+    } catch {}
+    const sid = path.basename(filePath, ".json");
+    const userMessages = this.messages.filter((m) => {
+      if (m.role !== "user") return false;
+      const text = contentToString(m.content);
+      return !text.startsWith("[RMemory Agent Memory Context]:");
+    });
+    const firstUser = userMessages[0];
+    const lastUser = userMessages[userMessages.length - 1];
+    const firstUserText = firstUser ? contentToString(firstUser.content).trim() : "";
+    const lastUserText = lastUser ? contentToString(lastUser.content).trim() : "";
+    const preview = lastUser
+      ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
+      : "(no user messages)";
 
-      let folderPathName = sid;
-      if (!sid.startsWith("sess_") && !sid.startsWith("session_")) {
-        const cleanName = sid.replace(/_\d+$/, "");
-        folderPathName = cleanName
-          .replace(/^([a-zA-Z])__/, "$1:\\")
-          .replace(/^_+/, "/")
-          .replace(/_/g, "/");
-      }
-
-      const formatSnippet = (text: string, maxLen = 45) => {
-        let clean = text.replace(/\[(RMemory|TencentDB|Emergency|Context|SYS|System)[^\]]*\]/gi, '')
-          .replace(/<\/?user_request>/gi, '')
-          .replace(/<[^>]+>/g, '')
-          .replace(/^(\/[a-zA-Z0-9_-]+\s*)+/g, '')
-          .replace(/\n/g, " ")
-          .trim();
-        return clean.length > maxLen ? clean.slice(0, maxLen).trim() + "…" : clean;
-      };
-
-      let displayName: string;
-      const cleanFirstSnippet = formatSnippet(firstUserText, 25);
-      const cleanLastSnippet = formatSnippet(lastUserText, 25);
-      if (cleanFirstSnippet && cleanLastSnippet && cleanFirstSnippet.toLowerCase() !== cleanLastSnippet.toLowerCase()) {
-        displayName = `${cleanFirstSnippet} → ${cleanLastSnippet}`;
-      } else if (cleanFirstSnippet) {
-        displayName = formatSnippet(firstUserText, 45);
-      } else if (cleanLastSnippet) {
-        displayName = formatSnippet(lastUserText, 45);
-      } else {
-        displayName = folderPathName;
-      }
-
-      const serializedSuperagents = Array.from(superagentInstances.values()).map(inst => {
-        const { agent, ...rest } = inst;
-        return {
-          ...rest,
-          historyFilePath: inst.historyFilePath || (agent && typeof agent.getCurrentHistoryFilePath === "function" ? agent.getCurrentHistoryFilePath() : undefined)
-        };
-      });
-
-      const serializedSubagents = Array.from(subagentInstances.values()).map(inst => {
-        const { agent, ...rest } = inst;
-        return {
-          ...rest,
-          historyFilePath: inst.historyFilePath || (agent && typeof agent.getCurrentHistoryFilePath === "function" ? agent.getCurrentHistoryFilePath() : undefined)
-        };
-      });
-
-      const pinnedMessages = this.contextManager
-        ? this.contextManager.serializePinnedMessages()
-        : (this.pendingPinnedMessages || []);
-
-      let activePreset: any = undefined;
-      try {
-        const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
-        const mode = isMulti ? "multi" : "single";
-        activePreset = getActivePreset(mode);
-      } catch {}
-
-      const extraData = {
-        superagents: serializedSuperagents,
-        subagents: serializedSubagents,
-        historicalSuperagentTokens,
-        masterPromptTokens,
-        masterCompletionTokens,
-        lastMasterPromptTokens,
-        lastCapturedTimestamp: this.lastCapturedTimestamp,
-      };
-
-      saveSessionToDb(
-        {
-          id: sid,
-          filePath,
-          displayName,
-          messageCount: this.messages.length,
-          lastModified: Date.now(),
-          preview,
-          workingDirectory,
-          planState,
-          activePreset: activePreset ? JSON.stringify(activePreset) : undefined,
-          extraData: JSON.stringify(extraData),
-        },
-        this.messages.map((m, idx) => ({
-          sessionId: sid,
-          role: m.role,
-          content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-          toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
-          toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
-          reasoning: m.reasoning,
-          timestamp: m.timestamp || Date.now(),
-          sequenceOrder: idx,
-        })),
-        pinnedMessages ? JSON.stringify(pinnedMessages) : undefined
-      );
-    } catch (err) {
-      console.error("Failed to save history synchronously to SQLite:", err);
+    let folderPathName = sid;
+    if (!sid.startsWith("sess_") && !sid.startsWith("session_")) {
+      const cleanName = sid.replace(/_\d+$/, "");
+      folderPathName = cleanName
+        .replace(/^([a-zA-Z])__/, "$1:\\")
+        .replace(/^_+/, "/")
+        .replace(/_/g, "/");
     }
+
+    const formatSnippet = (text: string, maxLen = 45) => {
+      let clean = text.replace(/\[(RMemory|TencentDB|Emergency|Context|SYS|System)[^\]]*\]/gi, '')
+        .replace(/<\/?user_request>/gi, '')
+        .replace(/<[^>]+>/g, '')
+        .replace(/^(\/[a-zA-Z0-9_-]+\s*)+/g, '')
+        .replace(/\n/g, " ")
+        .trim();
+      return clean.length > maxLen ? clean.slice(0, maxLen).trim() + "…" : clean;
+    };
+
+    let displayName: string;
+    const cleanFirstSnippet = formatSnippet(firstUserText, 25);
+    const cleanLastSnippet = formatSnippet(lastUserText, 25);
+    if (cleanFirstSnippet && cleanLastSnippet && cleanFirstSnippet.toLowerCase() !== cleanLastSnippet.toLowerCase()) {
+      displayName = `${cleanFirstSnippet} → ${cleanLastSnippet}`;
+    } else if (cleanFirstSnippet) {
+      displayName = formatSnippet(firstUserText, 45);
+    } else if (cleanLastSnippet) {
+      displayName = formatSnippet(lastUserText, 45);
+    } else {
+      displayName = folderPathName;
+    }
+
+    const serializedSuperagents = Array.from(superagentInstances.values()).map(inst => {
+      const { agent, ...rest } = inst;
+      return {
+        ...rest,
+        historyFilePath: inst.historyFilePath || (agent && typeof agent.getCurrentHistoryFilePath === "function" ? agent.getCurrentHistoryFilePath() : undefined)
+      };
+    });
+
+    const serializedSubagents = Array.from(subagentInstances.values()).map(inst => {
+      const { agent, ...rest } = inst;
+      return {
+        ...rest,
+        historyFilePath: inst.historyFilePath || (agent && typeof agent.getCurrentHistoryFilePath === "function" ? agent.getCurrentHistoryFilePath() : undefined)
+      };
+    });
+
+    const pinnedMessages = this.contextManager
+      ? this.contextManager.serializePinnedMessages()
+      : (this.pendingPinnedMessages || []);
+
+    let activePreset: any = undefined;
+    try {
+      const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+      const mode = isMulti ? "multi" : "single";
+      activePreset = getActivePreset(mode);
+    } catch {}
+
+    const extraData = {
+      superagents: serializedSuperagents,
+      subagents: serializedSubagents,
+      historicalSuperagentTokens,
+      masterPromptTokens,
+      masterCompletionTokens,
+      lastMasterPromptTokens,
+      lastCapturedTimestamp: this.lastCapturedTimestamp,
+    };
+
+    saveSessionToDb(
+      {
+        id: sid,
+        filePath,
+        displayName,
+        messageCount: this.messages.length,
+        lastModified: Date.now(),
+        preview,
+        workingDirectory,
+        planState,
+        activePreset: activePreset ? JSON.stringify(activePreset) : undefined,
+        extraData: JSON.stringify(extraData),
+      },
+      this.messages.map((m, idx) => ({
+        sessionId: sid,
+        role: m.role,
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+        toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
+        toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
+        reasoning: m.reasoning,
+        timestamp: m.timestamp || Date.now(),
+        sequenceOrder: idx,
+      })),
+      pinnedMessages ? JSON.stringify(pinnedMessages) : undefined
+    );
   }
 
   async loadFromFile(filePath: string): Promise<void> {

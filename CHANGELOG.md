@@ -1,3 +1,10 @@
+## [1.2.664] - 2026-07-31
+
+### Fix: resolveSession() Silent SessionId Mutation Bug
+- **Bug Fix**: Removed 3-line silent mutation `session.sessionId = targetSessionId` in `resolveSession()` (src/server.ts:169-171) that caused API `/api/history` to return wrong in-memory session data instead of persistent SQLite data.
+- **Behavior**: `resolveSession()` with `targetSessionId` now only matches exact session ID — no silent overwrite. API falls back to `loadSessionFromDb()` when in-memory session doesn't match.
+- **Code Quality**: Collateral cleanup of LF/CRLF formatting in `src/core/conversation.ts` and removal of unused code in `agent.ts`, `checkpoints.ts`, `RMemoryStrategy.ts`.
+
 ## [1.2.663] - 2026-07-31
 
 ### Fix: Workspace Chain Path Allowed Roots & Humanized Tool Descriptions

@@ -18,7 +18,7 @@ export class CompactionHistory {
   private events: CompactionEvent[] = [];
   private maxHistory = 50;
 
-  constructor(_filePath?: string) {
+  constructor() {
     this.load();
   }
 

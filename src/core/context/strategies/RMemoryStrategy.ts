@@ -12,16 +12,13 @@ import { getRMemoryClient, getRMemorySessionKey } from "../../rmemoryUtil.js";
 
 export class RMemoryStrategy implements CompactionStrategy {
   name = "rmemory";
-  private historyFilePath?: string;
   private lastCapturedTimestamp = 0;
   private lastConnectAttempt = 0;
   private gatewayOffline = false;
   private recallCache: { key: string; ts: number; value: any } | null = null;
   private static RECALL_TTL = 60 * 1000;
 
-  constructor(config?: { historyFilePath?: string }) {
-    this.historyFilePath = config?.historyFilePath;
-  }
+  constructor() {}
 
   canHandle(context: CompactionContext): boolean {
     const settings = getSettings();
@@ -41,35 +38,7 @@ export class RMemoryStrategy implements CompactionStrategy {
     }
 
     const client = getRMemoryClient(3000); // 3s timeout to prevent CLI hang
-    const sessionKey = getRMemorySessionKey(this.historyFilePath || null);
-
-    const historyPath = this.historyFilePath || "";
-    // Lazily load lastCapturedTimestamp from persisted compaction history
-    if (this.lastCapturedTimestamp === 0 && historyPath) {
-      try {
-        const fs = await import("fs/promises");
-        const fileData = await fs.readFile(historyPath, "utf-8");
-        const events = JSON.parse(fileData);
-        if (Array.isArray(events)) {
-          const rmemoryEvents = events.filter(
-            (e: any) =>
-              e.strategy === "rmemory" ||
-              e.metadata?.strategy === "rmemory"
-          );
-          let maxWatermark = 0;
-          for (const e of rmemoryEvents) {
-            const watermark =
-              e.metadata?.lastCapturedTimestamp || e.lastCapturedTimestamp || 0;
-            if (watermark > maxWatermark) {
-              maxWatermark = watermark;
-            }
-          }
-          this.lastCapturedTimestamp = maxWatermark;
-        }
-      } catch (e) {
-        // Ignore file read/parse errors
-      }
-    }
+    const sessionKey = getRMemorySessionKey(null);
 
     try {
       // 1. Capture user/assistant messages to L0 incrementally

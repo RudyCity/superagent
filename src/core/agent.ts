@@ -255,11 +255,9 @@ export class Agent {
 
   private async initContextManager(): Promise<void> {
     const modelLimit = getContextWindowLimit(this.config.model);
-    const historyFilePath = this.getCurrentHistoryFilePath().replace(/\.json$/, ".compaction.json");
     await this.conversation.initContextManager({
       model: this.config.model,
       contextWindowLimit: modelLimit,
-      historyFilePath,
       llmModel: this.getModel(),
       abortSignal: this.abortController?.signal,
     });

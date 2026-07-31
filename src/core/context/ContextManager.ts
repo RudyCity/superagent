@@ -76,7 +76,7 @@ export class ContextManager {
     this.config = config;
     this.tokenTracker = new TokenTracker(config.model);
     this.semanticAnalyzer = new SemanticAnalyzer();
-    this.history = new CompactionHistory(config.historyFilePath);
+    this.history = new CompactionHistory();
     this.eventEmitter = new EventEmitter();
 
     const summarizationStrategy = new SummarizationStrategy({
@@ -86,7 +86,7 @@ export class ContextManager {
 
     this.strategies = [
       new PinningStrategy(),
-      new RMemoryStrategy({ historyFilePath: config.historyFilePath }),
+      new RMemoryStrategy(),
       summarizationStrategy,
       new PruningStrategy(),
     ];

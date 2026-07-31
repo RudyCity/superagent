@@ -195,10 +195,9 @@ export async function restoreCheckpoint(
     msgs
   );
 
-  // Touch session directory anchor file
+  // Ensure session directory exists for plan/task/walkthrough files
   try {
     await fs.mkdir(path.dirname(sessionFilePath), { recursive: true });
-    await fs.writeFile(sessionFilePath, "", "utf-8");
   } catch {}
 
   clearHistoryCache();

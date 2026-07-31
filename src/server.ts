@@ -166,9 +166,6 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
     wsPath = (wsPath.startsWith("ssh:") || wsPath.startsWith("ssh://") || wsPath.startsWith("chain:")) ? wsPath : path.resolve(wsPath);
     for (const [key, session] of activeSessions.entries()) {
       if (session.clientMode === reqClientMode && session.workspace.toLowerCase() === wsPath.toLowerCase()) {
-        if (targetSessionId) {
-          session.sessionId = targetSessionId;
-        }
         session.lastActiveTime = Date.now();
         return session;
       }
