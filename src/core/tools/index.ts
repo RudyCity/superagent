@@ -280,6 +280,12 @@ registerSubagentType(
   SUBAGENT_SYSTEM_PROMPTS.writer
 );
 
+registerSubagentType(
+  "chrome-agent",
+  "Specialized subagent for browser automation, web research, Chrome profiles, DOM automation, and handling all Chrome-related tools.",
+  SUBAGENT_SYSTEM_PROMPTS["chrome-agent"]
+);
+
 let loadedDynamicTools: Tool[] = [];
 let watcher: fs.FSWatcher | null = null;
 

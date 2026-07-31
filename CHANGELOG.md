@@ -1,3 +1,11 @@
+## [1.2.654] - 2026-07-31
+
+### CLI: chrome-agent Subagent and Chrome Tools Isolation
+
+- **chrome-agent Subagent**: Added a new specialized subagent type `"chrome-agent"` with its own custom system prompt in `src/core/prompts.ts` defining its browser automation role, macros system, rules, and logic gates.
+- **Subagent Registration**: Registered `"chrome-agent"` default subagent in `src/core/tools/index.ts`.
+- **Toolset Isolation**: Modified `src/core/tools/toolsets.ts` to remove all Chrome and browser control tools (e.g. `controlBrowserTabTool`, `launchChromeProfileTool`, `screenshotTool`, `runHeadlessBrowserTool`) from all other toolsets (`masterToolset`, `superagentToolset`, `chromeExtensionToolset`, `researcher`, `software-tester`) and restrict them exclusively to the `"chrome-agent"` subagent.
+
 ## [1.2.653] - 2026-07-31
 
 ### Testing: Alignment of Test Suites with Production Behavior
