@@ -607,6 +607,33 @@ export async function runServer(port: number, silent = false, defaultClientMode:
 
     logToSuperAgentServerFile(`[Request] ${req.method} ${req.url} (Workspace: ${req.headers["x-workspace-path"] || "none"})`);
 
+    // Dynamically configure workspace mode based on the request's workspace path
+    const targetWorkspace = resolveWorkspacePath(req);
+    if (targetWorkspace) {
+      try {
+        const { workspaceMode } = await import("./core/ssh/workspaceMode.js");
+        const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
+        if (targetWorkspace.startsWith("ssh:") || targetWorkspace.startsWith("ssh://")) {
+          const sshConfig = workspaceMode.parseSshTarget(targetWorkspace);
+          if (sshConfig) {
+            workspaceMode.setSshMode(sshConfig);
+          } else {
+            workspaceMode.setLocalMode();
+          }
+        } else if (targetWorkspace.startsWith("chain:")) {
+          const chainId = targetWorkspace.substring(6);
+          const activeChain = workspaceChainManager.getActiveChain(targetWorkspace);
+          if (!activeChain || activeChain.id !== chainId) {
+            await workspaceChainManager.activateChain(chainId, targetWorkspace);
+          }
+        } else {
+          workspaceMode.setLocalMode();
+        }
+      } catch (err: any) {
+        logToSuperAgentServerFile(`[workspaceMode auto-config error] ${err.message}`);
+      }
+    }
+
     // CORS preflight
     if (req.method === "OPTIONS") {
       res.writeHead(204, {

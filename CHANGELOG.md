@@ -1,3 +1,9 @@
+## [1.2.660] - 2026-07-31
+
+### Feat: Server Auto-configuration & Workspace Chain Routes
+- **Workspace Auto-configuration**: Added logic to dynamically configure workspace mode (local, SSH proxy, or workspace chain) inside the HTTP server middleware in `src/server.ts` based on request workspace path parameters.
+- **REST Endpoints**: Added dedicated workspace chain API routes in `src/serverRoutes.ts` supporting retrieval, activation, node health checks, and CRUD operations for workspace chains and nodes.
+
 ## [1.2.659] - 2026-07-31
 
 ### Fix: History Workspace and Resume Filtering for Local, SSH, and Chain modes

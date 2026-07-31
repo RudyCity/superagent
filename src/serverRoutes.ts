@@ -1866,5 +1866,170 @@ export async function handleServerRoute(
     return true;
   }
 
+  // --- Workspace Chain Endpoints ---
+  if (pathname === "/api/workspace/chains" && req.method === "GET") {
+    try {
+      const workspace = resolveWorkspacePath(req);
+      const { getWorkspaceChains } = await import("./core/workspace/WorkspaceChainConfig.js");
+      const filterStr = parsedUrl.searchParams.get("filter");
+      const filterByWorkspace = filterStr !== "false";
+      const chains = getWorkspaceChains(workspace, filterByWorkspace);
+      sendJSON(res, 200, { success: true, chains });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/workspace/chains/active" && req.method === "GET") {
+    try {
+      const workspace = resolveWorkspacePath(req);
+      const { getActiveChainId } = await import("./core/workspace/WorkspaceChainConfig.js");
+      const activeChainId = getActiveChainId(workspace);
+      sendJSON(res, 200, { success: true, activeChainId });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/workspace/chains/active" && req.method === "POST") {
+    try {
+      const workspace = resolveWorkspacePath(req);
+      const bodyStr = await readBody(req);
+      const { chainId } = JSON.parse(bodyStr || "{}");
+      const { setActiveChainId } = await import("./core/workspace/WorkspaceChainConfig.js");
+      const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
+      setActiveChainId(chainId);
+      if (chainId) {
+        await workspaceChainManager.activateChain(chainId, workspace);
+      } else {
+        await workspaceChainManager.deactivateChain();
+      }
+      sendJSON(res, 200, { success: true });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/workspace/chains" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const { chainId, name, description, nodes, primaryNodeId } = JSON.parse(bodyStr || "{}");
+      const { createWorkspaceChain, updateWorkspaceChain } = await import("./core/workspace/WorkspaceChainConfig.js");
+      let chain;
+      if (chainId) {
+        chain = updateWorkspaceChain(chainId, { name, description, nodes, primaryNodeId });
+      } else {
+        chain = createWorkspaceChain(name, description, nodes, primaryNodeId);
+      }
+      sendJSON(res, 200, { success: true, chain });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/workspace/chains" && req.method === "DELETE") {
+    try {
+      const bodyStr = await readBody(req);
+      const { chainId } = JSON.parse(bodyStr || "{}");
+      if (!chainId) {
+        sendJSON(res, 400, { success: false, error: "chainId is required" });
+        return true;
+      }
+      const { deleteWorkspaceChain } = await import("./core/workspace/WorkspaceChainConfig.js");
+      const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
+      if (workspaceChainManager.getActiveChain()?.id === chainId) {
+        await workspaceChainManager.deactivateChain();
+      }
+      deleteWorkspaceChain(chainId);
+      sendJSON(res, 200, { success: true });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/workspace/chains/nodes" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const { chainId, node } = JSON.parse(bodyStr || "{}");
+      const { addNodeToChain } = await import("./core/workspace/WorkspaceChainConfig.js");
+      const updatedChain = addNodeToChain(chainId, node);
+      sendJSON(res, 200, { success: true, chain: updatedChain });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/workspace/chains/nodes" && req.method === "DELETE") {
+    try {
+      const bodyStr = await readBody(req);
+      const { chainId, nodeId } = JSON.parse(bodyStr || "{}");
+      const { removeNodeFromChain } = await import("./core/workspace/WorkspaceChainConfig.js");
+      const updatedChain = removeNodeFromChain(chainId, nodeId);
+      sendJSON(res, 200, { success: true, chain: updatedChain });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/workspace/chains/switch-node" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const { nodeId } = JSON.parse(bodyStr || "{}");
+      const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
+      const success = workspaceChainManager.setActiveNode(nodeId);
+      if (success) {
+        sendJSON(res, 200, { success: true, activeNodeId: nodeId });
+      } else {
+        sendJSON(res, 400, { success: false, error: `Failed to set active node to ${nodeId}` });
+      }
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/workspace/chains/health" && req.method === "GET") {
+    try {
+      const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
+      if (workspaceChainManager.isChainActive()) {
+        const activeChain = workspaceChainManager.getActiveChain();
+        const promises = activeChain!.nodes.map((node) => workspaceChainManager.getNodeHealth(node.id));
+        const results = await Promise.all(promises);
+        const table = await workspaceChainManager.getChainHealth();
+        sendJSON(res, 200, { success: true, healthTable: table, healthData: results });
+      } else {
+        sendJSON(res, 200, { success: true, healthTable: "No active workspace chain.", healthData: [] });
+      }
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/workspace/chains/status" && req.method === "GET") {
+    try {
+      const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
+      if (workspaceChainManager.isChainActive()) {
+        sendJSON(res, 200, {
+          success: true,
+          status: workspaceChainManager.getConnectionStatus(),
+          activeNodeId: workspaceChainManager.getActiveNodeId()
+        });
+      } else {
+        sendJSON(res, 200, { success: true, status: [], activeNodeId: null });
+      }
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
   return false;
 }
