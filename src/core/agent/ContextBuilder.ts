@@ -21,6 +21,7 @@ export class ContextBuilder {
     dynamicContext: string;
   }> {
     const isGoalMode = !!agent.goalMode;
+    const category = agent.currentClassification?.category || "complex_task";
     let baseSystemPrompt = (agent as any).customSystemPrompt || (agent as any).config.systemPrompt || "";
 
     const allMessages = agent.conversation.getMessages();
@@ -44,12 +45,14 @@ export class ContextBuilder {
     }
 
     let scratchpadText = "";
-    try {
-      const scratchpadPath = path.resolve(agent.workingDirectory, "scratch", "scratchpad.md");
-      if (fs.existsSync(scratchpadPath)) {
-        scratchpadText = fs.readFileSync(scratchpadPath, "utf-8");
-      }
-    } catch {}
+    if (category !== "conversation") {
+      try {
+        const scratchpadPath = path.resolve(agent.workingDirectory, "scratch", "scratchpad.md");
+        if (fs.existsSync(scratchpadPath)) {
+          scratchpadText = fs.readFileSync(scratchpadPath, "utf-8");
+        }
+      } catch {}
+    }
 
     const goalModeAddendum = isGoalMode
       ? `\n\n🎯 GOAL MODE: "${agent.goalMode}"\nDo NOT stop until goal is FULLY achieved. Self-verify (build+test), fix errors, use subagents aggressively. End with "GOAL_COMPLETE:" or "GOAL_PARTIAL:" summary.\n`
@@ -203,43 +206,45 @@ export class ContextBuilder {
     } catch {}
 
     let sharedMemoryNotice = "";
-    try {
-      const { getRootConfigDir } = await import("../config/paths.js");
-      const sharedMemPath = path.join(getRootConfigDir(), "shared-memory.json");
-      if (fs.existsSync(sharedMemPath)) {
-        const raw = fs.readFileSync(sharedMemPath, "utf-8");
-        const memories = JSON.parse(raw);
-        if (Array.isArray(memories) && memories.length > 0) {
-          const currentWorkspace = path.resolve(process.cwd());
-          
-          const globalMemories = memories
-            .filter((m: any) => m.scope === "global")
-            .slice(-10);
+    if (category !== "conversation") {
+      try {
+        const { getRootConfigDir } = await import("../config/paths.js");
+        const sharedMemPath = path.join(getRootConfigDir(), "shared-memory.json");
+        if (fs.existsSync(sharedMemPath)) {
+          const raw = fs.readFileSync(sharedMemPath, "utf-8");
+          const memories = JSON.parse(raw);
+          if (Array.isArray(memories) && memories.length > 0) {
+            const currentWorkspace = path.resolve(process.cwd());
+            
+            const globalMemories = memories
+              .filter((m: any) => m.scope === "global")
+              .slice(-10);
 
-          const projectMemories = memories
-            .filter((m: any) => {
-              if (m.scope === "global") return false;
-              if (!m.projectPath) return true;
-              return path.resolve(m.projectPath) === currentWorkspace;
-            })
-            .slice(-15);
+            const projectMemories = memories
+              .filter((m: any) => {
+                if (m.scope === "global") return false;
+                if (!m.projectPath) return true;
+                return path.resolve(m.projectPath) === currentWorkspace;
+              })
+              .slice(-15);
 
-          const sections: string[] = [];
-          if (globalMemories.length > 0) {
-            const lines = globalMemories.map((m: any) => `- [${m.source}] ${m.key}: ${m.value}`).join("\n");
-            sections.push(`### GLOBAL AGENT MEMORIES:\n${lines}`);
-          }
-          if (projectMemories.length > 0) {
-            const lines = projectMemories.map((m: any) => `- [${m.source}] ${m.key}: ${m.value}`).join("\n");
-            sections.push(`### PROJECT AGENT MEMORIES (this workspace):\n${lines}`);
-          }
+            const sections: string[] = [];
+            if (globalMemories.length > 0) {
+              const lines = globalMemories.map((m: any) => `- [${m.source}] ${m.key}: ${m.value}`).join("\n");
+              sections.push(`### GLOBAL AGENT MEMORIES:\n${lines}`);
+            }
+            if (projectMemories.length > 0) {
+              const lines = projectMemories.map((m: any) => `- [${m.source}] ${m.key}: ${m.value}`).join("\n");
+              sections.push(`### PROJECT AGENT MEMORIES (this workspace):\n${lines}`);
+            }
 
-          if (sections.length > 0) {
-            sharedMemoryNotice = `\n\n${sections.join("\n\n")}`;
+            if (sections.length > 0) {
+              sharedMemoryNotice = `\n\n${sections.join("\n\n")}`;
+            }
           }
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
     const workspaceDir = agent.worktreePath || agent.workingDirectory;
     const workspaceBoundaryNotice = workspaceDir
@@ -248,18 +253,21 @@ export class ContextBuilder {
 
     // Workspace chain topology injection — lets AI understand cross-workspace relationships
     let workspaceChainNotice = "";
-    try {
-      const { workspaceChainManager } = await import("../workspace/WorkspaceChainManager.js");
-      const chain = workspaceChainManager.getActiveChain(workspaceDir);
-      if (chain) {
-        const topology = workspaceChainManager.getTopologyString();
-        const activeNode = workspaceChainManager.getActiveNode();
-        const activeNodeInfo = activeNode
-          ? `\n- ACTIVE NODE: ${activeNode.label} (${activeNode.id}) — type=${activeNode.type}, role=${activeNode.role}`
-          : "";
-        workspaceChainNotice = `\n\n# WORKSPACE CHAIN ACTIVE\n${topology}${activeNodeInfo}\n- **Execution**: Use 'cross_workspace_exec' (operation='exec') to run commands on any chain node.\n- **Health & Metrics**: Use 'cross_workspace_exec' (operation='health') or 'manage_workspace_chain' (action='health') for real-time node latency, RAM, Disk, Uptime metrics.\n- **Cross-Node Diff**: Use 'cross_workspace_exec' (operation='diff', sourceNodeId, targetNodeId, filePath) to compare code/config across nodes.\n- **Cross-Node Sync**: Use 'cross_workspace_exec' (operation='sync', sourceNodeId, targetNodeId, filePath, targetPath?) to deploy/transfer files between nodes.\n- **Topology**: Use 'manage_workspace_chain' to manage graph nodes or switch active chain.`;
-      }
-    } catch {}
+    const skipHeavyContext = category === "conversation" || category === "question";
+    if (!skipHeavyContext) {
+      try {
+        const { workspaceChainManager } = await import("../workspace/WorkspaceChainManager.js");
+        const chain = workspaceChainManager.getActiveChain(workspaceDir);
+        if (chain) {
+          const topology = workspaceChainManager.getTopologyString();
+          const activeNode = workspaceChainManager.getActiveNode();
+          const activeNodeInfo = activeNode
+            ? `\n- ACTIVE NODE: ${activeNode.label} (${activeNode.id}) — type=${activeNode.type}, role=${activeNode.role}`
+            : "";
+          workspaceChainNotice = `\n\n# WORKSPACE CHAIN ACTIVE\n${topology}${activeNodeInfo}\n- **Execution**: Use 'cross_workspace_exec' (operation='exec') to run commands on any chain node.\n- **Health & Metrics**: Use 'cross_workspace_exec' (operation='health') or 'manage_workspace_chain' (action='health') for real-time node latency, RAM, Disk, Uptime metrics.\n- **Cross-Node Diff**: Use 'cross_workspace_exec' (operation='diff', sourceNodeId, targetNodeId, filePath) to compare code/config across nodes.\n- **Cross-Node Sync**: Use 'cross_workspace_exec' (operation='sync', sourceNodeId, targetNodeId, filePath, targetPath?) to deploy/transfer files between nodes.\n- **Topology**: Use 'manage_workspace_chain' to manage graph nodes or switch active chain.`;
+        }
+      } catch {}
+    }
 
     const hasShell = filteredToolDefs.some((t: any) => t.name === "run_command" || t.name === "bash" || t.name === "run_background_process");
     const hasWrite = filteredToolDefs.some((t: any) => t.name === "write_to_file" || t.name === "edit" || t.name === "replace_file_content" || t.name === "multi_replace_file_content" || t.name === "write" || t.name === "apply_patch");
@@ -289,7 +297,6 @@ export class ContextBuilder {
 
     const runtimeCapabilitiesText = `\n# RUNTIME\n- Shell: ${hasShell ? "enabled" : "disabled"} | Write: ${hasWrite ? "enabled" : "disabled"} | Network: ${hasNetwork ? "enabled" : "disabled"} | Subagents: ${hasSubagents ? "enabled" : "disabled"}\n- Verification: ${verificationStatus} | Platform: ${activeShellType} | Separator: ${shellSep}\n`;
 
-    const category = agent.currentClassification?.category || "complex_task";
     const lastUserMessage = messages.slice().reverse().find((m: any) => m.role === "user");
     const userInputText = lastUserMessage ? (typeof lastUserMessage.content === "string" ? lastUserMessage.content : "") : "";
     const lowerInput = userInputText.toLowerCase();

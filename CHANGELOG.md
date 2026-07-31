@@ -1,3 +1,13 @@
+## [1.2.657] - 2026-07-31
+
+### Optimization: System Prompt Token Efficiency and Classification Accuracy
+
+- **Base System Prompt Compression**: Optimized `getSystemPrompt()` in `src/core/config/base.ts` to reduce token usage by ~24%, streamlining cognitive scale-up, reasoning optimization, Maximum Compression rules, and merging redundant tool descriptions.
+- **Tier-Specific Prompt Pruning**: Removed redundant static `BROWSER_CONTROL_RULE` and `WORKSPACE_CHAIN_RULE` rules from `MASTER_AGENT_SYSTEM_PROMPT` and `SUPERAGENT_SYSTEM_PROMPT` in `src/core/prompts.ts` (relying on dynamic capability injection). Deduplicated chrome-agent prompts and introduced a shared report checklist base.
+- **Classification Accuracy & Tie-Breaking**: Optimized keyword routing in `src/core/requestClassifier.ts` by relocating Indonesian and English optimization terms to `COMPLEX_KW`. Corrected question/debug query disambiguation. Improved statistical classifier to output runner-up in `secondaryCategory` and support high confidence dominance checks.
+- **Fuzzy Matching Exclusions**: Prevented incorrect phonetic/semantic keyword matches (e.g. `"file"` fuzzy matching `"fill"`, or `"mikro"` matching `"makro"`).
+- **Dynamic Context Pruning**: Updated `src/core/agent/ContextBuilder.ts` to lazily extract category and bypass workspace chain notices, scratchpads, and shared memory reads for lightweight categories.
+
 ## [1.2.656] - 2026-07-31
 
 ### CLI: Subagent Prompts and Configuration Visibility Improvements

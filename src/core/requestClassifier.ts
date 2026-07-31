@@ -34,6 +34,8 @@ export interface ClassificationResult {
   heuristicOnly: boolean;
   /** Token cost of the classification LLM call (0 if heuristic only) */
   classificationTokens: number;
+  /** Optional secondary category when classification is ambiguous */
+  secondaryCategory?: RequestCategory;
 }
 
 // ─── Confidence Threshold Helper ────────────────────────────────────────────
@@ -171,6 +173,14 @@ function fuzzyMatch(word: string, targets: ReadonlySet<string>): boolean {
 
     const collapsedTarget = target.replace(/(.)\1+/g, "$1");
     if (collapsedWord === collapsedTarget) return true;
+
+    // Guard: exclude bad phonetic/semantic overlaps that similarity algorithms incorrectly match
+    if (
+      (collapsedTarget === "otomasi" && (collapsedWord === "optimasi" || collapsedWord === "optimize" || collapsedWord === "optimas")) ||
+      (collapsedTarget === "makro" && collapsedWord === "mikro")
+    ) {
+      continue;
+    }
 
     // Use Jaro-Winkler for quick similarity scoring on words of similar length
     if (Math.abs(collapsedWord.length - collapsedTarget.length) <= 3) {
@@ -353,7 +363,6 @@ const RESEARCH_KW = splitKeywords([
   "show me all", "list all", "find all",
   "grep", "cari", "cek", "check if",
   "investigate", "scan", "temukan", "telusuri",
-  "optimasi", "tingkatkan", "optimize",
   "profile", "bookmarks", "history", "downloads",
 ]);
 
@@ -366,6 +375,7 @@ const COMPLEX_KW = splitKeywords([
   "buat", "bikin", "tambahkan", "tambah fitur",
   "schema", "database", "auth", "oauth", "docker", "kubernetes", "migrasi", "integrasi", "refaktor", "rancang",
   "audit", "review",
+  "optimasi", "tingkatkan", "optimize",
 ]);
 
 /** Command action indicator keywords — split into words + phrases */
@@ -435,13 +445,31 @@ export function classifyHeuristic(
         getSoundex(cleanLower) === getSoundex("mas")
       ))
     ) {
-      return {
-        category: "conversation",
-        confidence: "high",
-        reason: `Short acknowledgment/phonetic match: "${trimmed}"`,
-        heuristicOnly: true,
-        classificationTokens: 0,
-      };
+      // Guard: skip conversation if short message contains technical keywords alongside conversation tokens
+      if (wordCount <= 3 && wordCount > 1) {
+        const hasTechnicalWord = words.some(w => 
+          COMPLEX_KW.words.has(w) || DEBUG_KW.words.has(w) || COMMAND_KW.words.has(w) || RESEARCH_KW.words.has(w)
+        );
+        if (hasTechnicalWord) {
+          // Don't classify as conversation — fall through to other detectors
+        } else {
+          return {
+            category: "conversation",
+            confidence: "high",
+            reason: `Short acknowledgment/phonetic match: "${trimmed}"`,
+            heuristicOnly: true,
+            classificationTokens: 0,
+          };
+        }
+      } else {
+        return {
+          category: "conversation",
+          confidence: "high",
+          reason: `Short acknowledgment/phonetic match: "${trimmed}"`,
+          heuristicOnly: true,
+          classificationTokens: 0,
+        };
+      }
     }
 
     // Merge custom conversation keywords
@@ -488,77 +516,113 @@ export function classifyHeuristic(
     }
   }
 
-  // ── Debug detection (word-boundary safe) ───────────────────────────────
+  // ── Pre-calculate category scores to detect ambiguities ────────────────
   const debugScore = countKeywordMatches(words, cleanLower, DEBUG_KW.words, DEBUG_KW.phrases, true);
   const customDebugKw = customKeywords?.debug ? splitKeywords(customKeywords.debug) : null;
   const customDebug = customDebugKw
     ? countKeywordMatches(words, cleanLower, customDebugKw.words, customDebugKw.phrases, true)
     : 0;
-  if (debugScore + customDebug >= 2) {
-    return {
-      category: "debug",
-      confidence: "high",
-      reason: `Multiple debug keywords detected (${debugScore + customDebug} matches)`,
-      heuristicOnly: true,
-      classificationTokens: 0,
-    };
-  }
-  if (debugScore + customDebug >= 1) {
-    return {
-      category: "debug",
-      confidence: "medium",
-      reason: `Debug keyword detected (${debugScore + customDebug} match)`,
-      heuristicOnly: true,
-      classificationTokens: 0,
-    };
-  }
+  const totalDebug = debugScore + customDebug;
 
-  // ── Research detection (word-boundary safe) ────────────────────────────
   const researchScore = countKeywordMatches(words, cleanLower, RESEARCH_KW.words, RESEARCH_KW.phrases, true);
   const customResearchKw = customKeywords?.research ? splitKeywords(customKeywords.research) : null;
   const customResearch = customResearchKw
     ? countKeywordMatches(words, cleanLower, customResearchKw.words, customResearchKw.phrases, true)
     : 0;
-  if (researchScore + customResearch >= 1 && wordCount <= 15) {
-    return {
-      category: "research",
-      confidence: researchScore + customResearch >= 2 ? "high" : "medium",
-      reason: `Research keywords detected (${researchScore + customResearch} matches)`,
-      heuristicOnly: true,
-      classificationTokens: 0,
-    };
-  }
+  const totalResearch = researchScore + customResearch;
 
-  // ── Complex task detection (word-boundary safe) ────────────────────────
   const complexScore = countKeywordMatches(words, cleanLower, COMPLEX_KW.words, COMPLEX_KW.phrases, true);
   const customComplexKw = customKeywords?.complex_task ? splitKeywords(customKeywords.complex_task) : null;
   const customComplex = customComplexKw
     ? countKeywordMatches(words, cleanLower, customComplexKw.words, customComplexKw.phrases, true)
     : 0;
-  if (complexScore + customComplex >= 2 || (complexScore + customComplex >= 1 && wordCount > 15)) {
-    return {
-      category: "complex_task",
-      confidence: complexScore + customComplex >= 2 ? "high" : "medium",
-      reason: `Complex task keywords detected (${complexScore + customComplex} matches, ${wordCount} words)`,
-      heuristicOnly: true,
-      classificationTokens: 0,
-    };
-  }
+  const totalComplex = complexScore + customComplex;
 
-  // ── Command detection (word-boundary safe) ─────────────────────────────
   const commandScore = countKeywordMatches(words, cleanLower, COMMAND_KW.words, COMMAND_KW.phrases, true);
   const customCommandKw = customKeywords?.command ? splitKeywords(customKeywords.command) : null;
   const customCommand = customCommandKw
     ? countKeywordMatches(words, cleanLower, customCommandKw.words, customCommandKw.phrases, true)
     : 0;
-  if (commandScore + customCommand >= 1) {
+  const totalCommand = commandScore + customCommand;
+
+  // Disambiguate: question-phrased debug queries ("how do I fix this bug?") → question
+  if (totalDebug <= 2 && totalDebug >= 1 && startsWithQuestion && endsWithQuestion) {
     return {
-      category: "command",
-      confidence: wordCount <= 10 ? "high" : "medium",
-      reason: `Command keywords detected (${commandScore + customCommand} matches, ${wordCount} words)`,
+      category: "question",
+      confidence: "medium",
+      reason: `Question-phrased debug query: starts with question word + ends with ? + <=2 debug keywords`,
       heuristicOnly: true,
       classificationTokens: 0,
     };
+  }
+
+  // ── Debug detection (word-boundary safe) ───────────────────────────────
+  if (totalDebug >= 2) {
+    const hasConflict = totalResearch >= totalDebug || totalComplex >= totalDebug || totalCommand >= totalDebug;
+    if (!hasConflict) {
+      return {
+        category: "debug",
+        confidence: "high",
+        reason: `Multiple debug keywords detected (${totalDebug} matches)`,
+        heuristicOnly: true,
+        classificationTokens: 0,
+      };
+    }
+  }
+
+  if (totalDebug >= 1) {
+    const hasConflict = totalResearch >= totalDebug || totalComplex >= totalDebug || totalCommand >= totalDebug;
+    if (!hasConflict) {
+      return {
+        category: "debug",
+        confidence: "medium",
+        reason: `Debug keyword detected (${totalDebug} match)`,
+        heuristicOnly: true,
+        classificationTokens: 0,
+      };
+    }
+  }
+
+  // ── Research detection (word-boundary safe) ────────────────────────────
+  if (totalResearch >= 1 && wordCount <= 15) {
+    const hasConflict = totalDebug >= totalResearch || totalComplex >= totalResearch || totalCommand >= totalResearch;
+    if (!hasConflict) {
+      return {
+        category: "research",
+        confidence: totalResearch >= 2 ? "high" : "medium",
+        reason: `Research keywords detected (${totalResearch} matches)`,
+        heuristicOnly: true,
+        classificationTokens: 0,
+      };
+    }
+  }
+
+  // ── Complex task detection (word-boundary safe) ────────────────────────
+  if (totalComplex >= 2 || (totalComplex >= 1 && wordCount > 15)) {
+    const hasConflict = totalDebug >= totalComplex || totalResearch >= totalComplex || totalCommand >= totalComplex;
+    if (!hasConflict) {
+      return {
+        category: "complex_task",
+        confidence: totalComplex >= 2 ? "high" : "medium",
+        reason: `Complex task keywords detected (${totalComplex} matches, ${wordCount} words)`,
+        heuristicOnly: true,
+        classificationTokens: 0,
+      };
+    }
+  }
+
+  // ── Command detection (word-boundary safe) ─────────────────────────────
+  if (totalCommand >= 1) {
+    const hasConflict = totalDebug >= totalCommand || totalResearch >= totalCommand || totalComplex >= totalCommand;
+    if (!hasConflict) {
+      return {
+        category: "command",
+        confidence: wordCount <= 10 ? "high" : "medium",
+        reason: `Command keywords detected (${totalCommand} matches, ${wordCount} words)`,
+        heuristicOnly: true,
+        classificationTokens: 0,
+      };
+    }
   }
 
   // ── Simple edit detection (short imperative with edit verbs) ──────────
@@ -659,24 +723,45 @@ function classifyStatistical(
     totalScore += score;
   }
 
-  if (totalScore >= 3) {
+  if (totalScore >= 2) {
     let bestCategory: RequestCategory = "complex_task";
+    let runnerUpCategory: RequestCategory | undefined;
     let maxScore = 0;
+    let runnerUpScore = 0;
+
     for (const cat of categories) {
       if (scores[cat] > maxScore) {
+        runnerUpScore = maxScore;
+        runnerUpCategory = bestCategory;
         maxScore = scores[cat];
         bestCategory = cat;
+      } else if (scores[cat] > runnerUpScore) {
+        runnerUpScore = scores[cat];
+        runnerUpCategory = cat;
       }
     }
 
     const confidenceRatio = maxScore / totalScore;
-    if (confidenceRatio >= 0.7) {
+    const ratioDifference = (maxScore - runnerUpScore) / totalScore;
+    let secondaryCategory: RequestCategory | undefined;
+    
+    if (ratioDifference < 0.3 && runnerUpCategory) {
+      secondaryCategory = runnerUpCategory;
+    }
+
+    if (totalScore === 2 && confidenceRatio < 0.7 && !secondaryCategory) {
+      return null;
+    }
+
+    if (confidenceRatio >= 0.7 || totalScore === 2 || secondaryCategory) {
+      const confidence = (confidenceRatio >= 0.7 || (totalScore === 2 && confidenceRatio === 1.0)) ? "high" : "medium";
       return {
         category: bestCategory,
-        confidence: "high",
-        reason: `Statistical TF-IDF routing confidence ratio=${confidenceRatio.toFixed(2)}`,
+        confidence,
+        reason: `Statistical TF-IDF routing totalScore=${totalScore} confidenceRatio=${confidenceRatio.toFixed(2)}`,
         heuristicOnly: true,
-        classificationTokens: 0
+        classificationTokens: 0,
+        ...(secondaryCategory ? { secondaryCategory } : {})
       };
     }
   }

@@ -686,10 +686,45 @@ describe("optimizations (Jaro-Winkler, Trie, Soundex, TF-IDF)", () => {
   });
 
   it("should route medium text using statistical TF-IDF classifier", () => {
-    const res = classifyHeuristic("please find search locate explore check if optimize investigate scan along with other files in the workspace to see if there is any clean code");
+    const res = classifyHeuristic("please find search locate explore check if inspect investigate scan along with other files in the workspace to see if there is any clean code");
     expect(res.category).toBe("research");
     expect(res.confidence).toBe("high");
     expect(res.reason).toContain("Statistical TF-IDF routing");
+  });
+
+  describe("Accuracy Improvements (C1-C5)", () => {
+    it("should classify 'optimasi' requests as complex_task", () => {
+      const res = classifyHeuristic("optimasi prompt base dan classifier");
+      expect(res.category).toBe("complex_task");
+    });
+
+    it("should disambiguate question-phrased debug queries to question", () => {
+      const res = classifyHeuristic("how do I fix this bug?");
+      expect(res.category).toBe("question");
+      expect(res.confidence).toBe("medium");
+    });
+
+    it("should guard conversation token 'gas' from technical false positives", () => {
+      const res1 = classifyHeuristic("gas fees ethereum");
+      expect(res1.category).not.toBe("conversation");
+
+      const res2 = classifyHeuristic("gas");
+      expect(res2.category).toBe("conversation");
+    });
+
+    it("should lower statistical classifier threshold to 2 and support dominance check", () => {
+      // Input has exactly two matches for complex_task (rancang, schema)
+      const res = classifyHeuristic("tolong rancang schema");
+      expect(res.category).toBe("complex_task");
+      expect(res.confidence).toBe("high"); // 100% dominance
+    });
+
+    it("should populate secondaryCategory when scores are close", () => {
+      // Input has matches for both command (jalankan) and debug (error)
+      const res = classifyHeuristic("jalankan perbaikan error");
+      expect(res.category).toBeDefined();
+      expect(res.secondaryCategory).toBeDefined();
+    });
   });
 });
 

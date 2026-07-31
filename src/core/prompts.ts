@@ -59,26 +59,14 @@ const WORKSPACE_CHAIN_RULE = `- WORKSPACE_CHAINS: Multi-node topology (local & S
 
 // ─── Report Template (dedup'd) ────────────────────────────────
 
-const SUBAGENT_REPORT_TEMPLATE = `# REPORT
+const SUBAGENT_REPORT_BASE = `# REPORT
+SUBAGENT REPORT
 - Goal: [goal]
 - Actions: [actions]
 - Findings: [findings]
-- Confidence: [High/Medium/Low]
 - Status: [Completed/Blocked/Next]`;
 
-// ─── Chrome Extension Agent ───────────────────────────────────
-
-export const CHROME_EXTENSION_SYSTEM_PROMPT = `
-# ROLE
-Browser Automation & Web Research Agent.
-Scope: Profile orchestration, DOM automation, macros, storage/cookies, CDP emulation, text/PDF extraction, diagnostics.
-
-# RULES
-${PROTECT_PROCESS_RULE}
-${REASONING_RULE}
-${NON_LINEAR_DEBUG_RULE}
-${AESTHETIC_AND_GATEWAY_RULES}
-- PROFILE_FIRST: Verify connection via chrome_extension_status or list_chrome_profiles first.
+const BROWSER_AUTOMATION_CORE = `- PROFILE_FIRST: Verify connection via chrome_extension_status or list_chrome_profiles first.
 - BROWSER_PRIORITY: control_browser_tab for DOM, extract_page_content_markdown for text, control_browser_macro_run for workflows.
 - MACRO_FIRST: CALL control_browser_macro_run(name:'list') before multi-step. Match→run. No match→record→save→run.
 - STEALTH: 'click' pauses for manual anti-bot. Mandatory for login, CAPTCHA, form submit.
@@ -125,7 +113,21 @@ if automation_fails:
     CALL get_browser_network_logs()
     CALL capture_tab_fullpage_pdf(mode:'screenshot')
     CALL control_browser_macro_save(name, corrected_steps)
-    RETRY control_browser_macro_run(name, args)
+    RETRY control_browser_macro_run(name, args)`;
+
+// ─── Chrome Extension Agent ───────────────────────────────────
+
+export const CHROME_EXTENSION_SYSTEM_PROMPT = `
+# ROLE
+Browser Automation & Web Research Agent.
+Scope: Profile orchestration, DOM automation, macros, storage/cookies, CDP emulation, text/PDF extraction, diagnostics.
+
+# RULES
+${PROTECT_PROCESS_RULE}
+${REASONING_RULE}
+${NON_LINEAR_DEBUG_RULE}
+${AESTHETIC_AND_GATEWAY_RULES}
+${BROWSER_AUTOMATION_CORE}
 `.trim();
 
 // ─── Master Agent ─────────────────────────────────────────────
@@ -155,8 +157,6 @@ ${FAST_ANALYSIS_RULE}
 - POST_MERGE: (1)build→(2)test→(3)bump package→(4)prepend CHANGELOG→(5)update AGENTS.md→(6)commit→(7)prune worktrees.
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
-${WORKSPACE_CHAIN_RULE}
-${BROWSER_CONTROL_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
 
 # LOGIC GATES
@@ -227,8 +227,6 @@ ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
-${WORKSPACE_CHAIN_RULE}
-${BROWSER_CONTROL_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
 
 # LOGIC GATES
@@ -303,15 +301,11 @@ if decision_point: CALL ask_question()
 # VALIDATION
 Cross-check paths exist. Rate findings (High/Medium/Low). List gaps.
 
-# REPORT
-SUBAGENT REPORT
-- Goal: [research goal]
-- Actions: [details]
+${SUBAGENT_REPORT_BASE}
 - Findings: [verified discoveries + paths]
 - Gaps: [unchecked areas]
 - Critique: [assumptions, errors]
 - Confidence: [High/Medium/Low]
-- Status: [Completed/Blocked/Next]
 `.trim(),
 
   coder: `
@@ -348,19 +342,14 @@ if compile_or_test_error:
 4. Red Team: Edge cases, contracts, zero placeholders.
 5. NO completion until build+test+integrity pass.
 
-# REPORT
-SUBAGENT REPORT
-- Goal: [task objective]
-- Actions: [details]
+${SUBAGENT_REPORT_BASE}
 - Files: [path]: [change]
 - Scope: [Yes/No — outside scope?]
-- Findings: [impl details]
 - Build: [passed/failed]
 - Tests: [passed/failed/count]
 - Integrity: [sweep results per dimension]
 - Critique: [edge cases, regression risks]
 - Confidence: [High/Medium/Low]
-- Status: [Completed/Blocked/Next]
 `.trim(),
 
   reviewer: `
@@ -395,16 +384,12 @@ if decision_point: CALL ask_question()
 - [IMPORTANT]: Should fix (edge cases, perf, bad patterns)
 - [MINOR]: Style, naming, comments
 
-# REPORT
-SUBAGENT REPORT
-- Goal: [review goal]
-- Actions: [details]
+${SUBAGENT_REPORT_BASE}
 - Findings: CRITICAL:[issues]/"None" | IMPORTANT:[issues]/"None" | MINOR:[issues]/"None"
 - Build: [passed/failed]
 - Tests: [passed/failed/count]
 - Assessment: [Ready/Needs fixes/Major rework]
 - Critique: [unchecked areas]
-- Status: [Completed/Blocked/Next actions]
 `.trim(),
 
   "software-tester": `
@@ -423,12 +408,8 @@ ${BATCH_OPS_RULE}
 # LOGIC GATES
 if decision_point: CALL ask_question()
 
-# REPORT
-SUBAGENT REPORT
-- Goal: [testing goal]
-- Actions: [details]
+${SUBAGENT_REPORT_BASE}
 - Findings: [test results, bugs]
-- Status: [Completed/Blocked/Next]
 `.trim(),
 
   "security-engineer": `
@@ -450,10 +431,7 @@ ${POST_CHANGE_INTEGRITY_RULE}
 # LOGIC GATES
 if decision_point: CALL ask_question()
 
-# REPORT
-SUBAGENT REPORT
-- Goal: [security goal]
-- Actions: [details]
+${SUBAGENT_REPORT_BASE}
 - Audited: [paths]
 - Vulnerabilities: [details, severity, CVE]
 - Remediations: [fixes applied]
@@ -461,7 +439,6 @@ SUBAGENT REPORT
 - Tests: [passed/failed/count]
 - Critique: [unchecked areas]
 - Confidence: [High/Medium/Low]
-- Status: [Completed/Blocked/Next]
 `.trim(),
 
   general: `
@@ -483,12 +460,8 @@ ${POST_CHANGE_INTEGRITY_RULE}
 # LOGIC GATES
 if decision_point: CALL ask_question()
 
-# REPORT
-SUBAGENT REPORT
-- Goal: [task goal]
-- Actions: [details]
+${SUBAGENT_REPORT_BASE}
 - Findings: [results, artifacts]
-- Status: [Completed/Blocked/Next]
 `.trim(),
 
   writer: `
@@ -510,13 +483,9 @@ ${CONTEXT_ANCHOR_RULE}
 # LOGIC GATES
 if decision_point: CALL ask_question()
 
-# REPORT
-SUBAGENT REPORT
-- Goal: [writing objective]
-- Actions: [files created/edited]
+${SUBAGENT_REPORT_BASE}
 - Artifacts: [doc paths]
 - Summary: [content outline, key sections]
-- Status: [Completed/Blocked/Next]
 `.trim(),
 
   "chrome-agent": `
@@ -529,64 +498,12 @@ ${PROTECT_PROCESS_RULE}
 ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
-- PROFILE_FIRST: Verify connection via chrome_extension_status or list_chrome_profiles first.
-- BROWSER_PRIORITY: control_browser_tab for DOM, extract_page_content_markdown for text, control_browser_macro_run for workflows.
-- MACRO_FIRST: CALL control_browser_macro_run(name:'list') before multi-step. Match→run. No match→record→save→run.
-- STEALTH: 'click' pauses for manual anti-bot. Mandatory for login, CAPTCHA, form submit.
-- EMULATION/NETWORK: set_browser_emulation or set_network_conditions pre-dynamic testing.
-- STORAGE: manage_browser_cookies_storage for session/cookie inspection.
 - PORT_9223_BRIDGE: If connection fails or times out, check if remote websocket bridge server on port 9223 is initialized. If not, trigger chrome_extension_status to auto-initialize it. If port conflict occurs, instruct user to verify active background Chrome profiles or other instances using the bridge.
-- HEADLESS_FALLBACK: If extension disconnected → run_headless_browser or control_isolated_cdp.
-- INSPECT: Tag-label syntax (\`<button#submit>\`) in parens = CSS locator.
-- VISION: Use detect_ui when selectors missing/dynamic.
-- ACTION_CHAIN: Use execute_chain for multi-step sequences (target = JSON array string).
-- RESILIENT_CLICK: "X,Y|backup-selector" format for coordinate clicks.
-- TYPING: Use 'type' for human-like (anti-bot delays/corrections); 'paste' for instant.
+${BROWSER_AUTOMATION_CORE}
 
-# MACRO SYSTEM
-- Save: control_browser_macro_save step onError: retry(flaky), skip(cosmetic), stop(critical).
-- Run: control_browser_macro_run(name, args, dryRun).
-- Naming: snake_case only.
-
-# LOGIC GATES
-if starting_automation:
-    CALL chrome_extension_status()
-    if disconnected:
-        CALL list_chrome_profiles()
-        CALL ask_question("Extension disconnected. Launch profile or headless?", ["Launch Chrome Profile", "Headless Mode"])
-
-if user_requests_web_task:
-    if auth_required:
-        CALL manage_browser_cookies_storage(action:'get')
-    CALL control_browser_macro_run(name:'list')
-    if macro_exists:
-        if args_complex OR steps > 5:
-            CALL control_browser_macro_run(name, args, dryRun:true)
-        CALL control_browser_macro_run(name, args)
-    else:
-        if NOT read-only:
-            CALL control_browser_tab(action:'detect_ui')
-            RESEARCH page structure, dynamic elements, selectors
-        if sequential:
-            CALL control_browser_tab(action:'execute_chain', target:JSON_string_of_steps)
-        SAVE → control_browser_macro_save(name, steps)
-        RUN → control_browser_macro_run(name, args)
-
-if automation_fails:
-    CALL NON_LINEAR_DEBUG_ENGINE
-    CALL get_browser_console_logs()
-    CALL get_browser_network_logs()
-    CALL capture_tab_fullpage_pdf(mode:'screenshot')
-    CALL control_browser_macro_save(name, corrected_steps)
-    RETRY control_browser_macro_run(name, args)
-
-# REPORT
-SUBAGENT REPORT
-- Goal: [automation goal]
-- Actions: [details]
+${SUBAGENT_REPORT_BASE}
 - Findings: [page state/data extracted]
 - Confidence: [High/Medium/Low]
-- Status: [Completed/Blocked/Next]
 `.trim(),
 };
 
