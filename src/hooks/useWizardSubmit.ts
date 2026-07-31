@@ -15,8 +15,8 @@ async function getSortedChainOptions(currentWorkspace: string): Promise<{ option
   const { getWorkspaceChains, getActiveChainId } = await import("../core/workspace/WorkspaceChainConfig.js");
   const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
   
-  const chains = getWorkspaceChains();
-  const activeId = getActiveChainId();
+  const chains = getWorkspaceChains(currentWorkspace);
+  const activeId = getActiveChainId(currentWorkspace);
   const isSsh = workspaceMode.isSsh();
   
   // Sort chains so that current workspace chains are first
@@ -516,7 +516,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           let chainNotice = "";
           try {
             const { getWorkspaceChains, getWorkspaceChain, setActiveChainId } = await import("../core/workspace/WorkspaceChainConfig.js");
-            const chains = getWorkspaceChains();
+            const chains = getWorkspaceChains(resolvedPath);
             let matchedChainId: string | null = null;
             
             for (const chain of chains) {

@@ -1135,6 +1135,8 @@ export function computeWrappedLines({
   activeToolOutput,
   timeLeft,
   formatCompactNumber,
+  activeToolName,
+  activeToolDesc,
 }: {
   lines: ChatLine[];
   chatWidth: number;
@@ -1151,6 +1153,8 @@ export function computeWrappedLines({
   activeToolOutput: string;
   timeLeft: number | null;
   formatCompactNumber: (val: number) => string;
+  activeToolName?: string;
+  activeToolDesc?: string;
 }): WrappedChatLine[] {
   const result: WrappedChatLine[] = [];
 
@@ -1284,7 +1288,7 @@ export function computeWrappedLines({
     const spinnerNode = (
       <Box flexDirection="row">
         <Text color="gray" dimColor>{marginSpaces}</Text>
-        <ToolLoadingIndicator />
+        <ToolLoadingIndicator toolName={activeToolName} toolDesc={activeToolDesc} />
       </Box>
     );
     result.push({ node: spinnerNode, lineIndex: -1, type: "tool_start" });
@@ -1351,6 +1355,8 @@ export interface ChatAreaProps {
   expandedChildren?: Map<number, Set<number>>;
   toggleChildExpand?: (parentIndex: number, childIndex: number) => void;
   wrappedLines?: WrappedChatLine[];
+  activeToolName?: string;
+  activeToolDesc?: string;
 }
 
 export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
@@ -1389,6 +1395,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     expandedChildren = new Map(),
     toggleChildExpand,
     wrappedLines: passedWrappedLines,
+    activeToolName,
+    activeToolDesc,
   } = props;
 
   const chatWidth = Math.max(20, terminalWidth - 6);
@@ -1411,6 +1419,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       activeToolOutput,
       timeLeft,
       formatCompactNumber,
+      activeToolName,
+      activeToolDesc,
     });
   }, [
     passedWrappedLines,
@@ -1429,6 +1439,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     activeToolOutput,
     timeLeft,
     formatCompactNumber,
+    activeToolName,
+    activeToolDesc,
   ]);
 
   const visibleLinePositions = useMemo(() => {

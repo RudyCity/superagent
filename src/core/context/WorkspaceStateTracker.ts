@@ -206,7 +206,7 @@ export function buildWorkspaceStateBlock(opts: WorkspaceStateOptions): Workspace
   }
 
   // ── Active workspace chain info ───────────────────────────────────────────
-  const activeChainId = getActiveChainId();
+  const activeChainId = getActiveChainId(opts.cwd);
   if (activeChainId) {
     const chain = getWorkspaceChain(activeChainId);
     if (chain) {

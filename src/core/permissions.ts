@@ -92,7 +92,7 @@ export function isPathInWorktree(filePath: string, worktreePath: string): boolea
 export function getAllowedWorkspacePaths(basePath: string): string[] {
   const allowed = [basePath];
   try {
-    const chain = workspaceChainManager.getActiveChain();
+    const chain = workspaceChainManager.getActiveChain(basePath);
     if (chain && chain.nodes && Array.isArray(chain.nodes)) {
       for (const node of chain.nodes) {
         if (node.path && typeof node.path === "string" && node.path.trim()) {
@@ -207,7 +207,7 @@ export function isToolCallOutOfBounds(
 ): boolean {
   if (toolCall.name === "cross_workspace_exec" || toolCall.name === "manage_workspace_chain") {
     try {
-      if (workspaceChainManager.isChainActive()) {
+      if (workspaceChainManager.isChainActive(workspacePath)) {
         return false;
       }
     } catch {}

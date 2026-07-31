@@ -19,11 +19,11 @@ export const workspaceCommand: SlashCommand = {
 
     if (ctx.setActiveWizard) {
       const options = [
-        "📁 Select & Switch Workspace...",
-        "➕ Add a new workspace...",
-        "🗑️ Remove a workspace...",
-        "📊 View workspace status",
-        "🔗 Manage workspace chains...",
+        "1. Select & Switch Workspace...",
+        "2. Add a new workspace...",
+        "3. Remove a workspace...",
+        "4. View workspace status",
+        "5. Manage workspace chains...",
         "❌ Exit Wizard",
       ];
 

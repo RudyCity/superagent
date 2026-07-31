@@ -129,6 +129,8 @@ export function App({
   const [isProcessing, setIsProcessing] = useState(false);
   const [isExecutingTool, setIsExecutingTool] = useState(false);
   const [streamDisplay, setStreamDisplay] = useState("");
+  const [activeToolName, setActiveToolName] = useState("");
+  const [activeToolDesc, setActiveToolDesc] = useState("");
   
   const [pendingPermission, setPendingPermission] = useState<{
     toolCall: ToolCall;
@@ -759,6 +761,8 @@ export function App({
 
         setIsExecutingTool(true);
         setIsProcessing(true);
+        setActiveToolName("command");
+        setActiveToolDesc(command);
         let exitCode = 0;
         let output = "";
         try {
@@ -797,6 +801,8 @@ export function App({
         } finally {
           setIsExecutingTool(false);
           setIsProcessing(false);
+          setActiveToolName("");
+          setActiveToolDesc("");
         }
 
         process.stdin.resume();
@@ -1710,6 +1716,8 @@ export function App({
             setTimeLeft(null);
           }
           setIsExecutingTool(true);
+          setActiveToolName(event.toolCall.name);
+          setActiveToolDesc(event.description || "");
           let prefixEmoji = "⚡";
           let customTitle = event.description;
           if (event.toolCall.name === "read" && typeof event.toolCall.args.filePath === "string") {
@@ -1759,6 +1767,8 @@ export function App({
         }
         case "tool_end": {
           setIsExecutingTool(false);
+          setActiveToolName("");
+          setActiveToolDesc("");
           setToolTimeout(null);
           setToolStartTime(null);
           setTimeLeft(null);
@@ -2087,6 +2097,8 @@ export function App({
         agent.abort();
         setIsProcessing(false);
         setIsExecutingTool(false);
+        setActiveToolName("");
+        setActiveToolDesc("");
         setToolTimeout(null);
         setToolStartTime(null);
         setTimeLeft(null);
@@ -2099,6 +2111,8 @@ export function App({
         agent.abort();
         setIsProcessing(false);
         setIsExecutingTool(false);
+        setActiveToolName("");
+        setActiveToolDesc("");
         setToolTimeout(null);
         setToolStartTime(null);
         setTimeLeft(null);
@@ -2780,6 +2794,8 @@ export function App({
             expandedChildren={expandedChildren}
             toggleChildExpand={toggleChildExpand}
             wrappedLines={wrappedLines}
+            activeToolName={activeToolName}
+            activeToolDesc={activeToolDesc}
           />
 
           {/* Active Agents, Tasks checklists & Wizard dialogs */}

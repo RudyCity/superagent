@@ -41,8 +41,8 @@ class WorkspaceChainManagerClass {
   private connectingPromises: Map<string, Promise<void>> = new Map();
 
   /** Load the active chain from config */
-  public loadActiveChain(): WorkspaceChain | null {
-    const chainId = getActiveChainId();
+  public loadActiveChain(currentWorkspacePath?: string): WorkspaceChain | null {
+    const chainId = getActiveChainId(currentWorkspacePath);
     if (!chainId) {
       this.activeChain = null;
       this.activeNodeId = null;
@@ -60,11 +60,8 @@ class WorkspaceChainManagerClass {
   }
 
   /** Get the currently active chain */
-  public getActiveChain(): WorkspaceChain | null {
-    if (!this.activeChain) {
-      return this.loadActiveChain();
-    }
-    return this.activeChain;
+  public getActiveChain(currentWorkspacePath?: string): WorkspaceChain | null {
+    return this.loadActiveChain(currentWorkspacePath);
   }
 
   /** Get the active node ID */
@@ -87,8 +84,8 @@ class WorkspaceChainManagerClass {
   }
 
   /** Activate a chain by ID */
-  public async activateChain(chainId: string): Promise<WorkspaceChain> {
-    const chain = getWorkspaceChain(chainId);
+  public async activateChain(chainId: string, currentWorkspacePath?: string): Promise<WorkspaceChain> {
+    const chain = getWorkspaceChain(chainId, currentWorkspacePath);
     if (!chain) {
       throw new Error(`Workspace chain not found: ${chainId}`);
     }
@@ -134,8 +131,8 @@ class WorkspaceChainManagerClass {
   }
 
   /** Check if a chain is active */
-  public isChainActive(): boolean {
-    return this.activeChain !== null;
+  public isChainActive(currentWorkspacePath?: string): boolean {
+    return this.getActiveChain(currentWorkspacePath) !== null;
   }
 
   /** Connect to an SSH node in the chain with exponential backoff retry */

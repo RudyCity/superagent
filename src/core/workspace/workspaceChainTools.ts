@@ -125,11 +125,11 @@ export const manageWorkspaceChainTool: Tool = {
         return await workspaceChainManager.getChainHealth();
       }
       if (action === "list") {
-        const chains = getWorkspaceChains();
+        const chains = getWorkspaceChains(_cwd);
         if (chains.length === 0) {
           return "No workspace chains found. Use action 'create' to create one.";
         }
-        const activeId = getActiveChainId();
+        const activeId = getActiveChainId(_cwd);
         const lines = chains.map(c => {
           const isActive = c.id === activeId ? " [ACTIVE]" : "";
           const nodeCount = c.nodes.length;
@@ -172,7 +172,7 @@ export const manageWorkspaceChainTool: Tool = {
       if (action === "activate") {
         const chainId = args.chainId as string;
         if (!chainId) return "Error: 'chainId' is required for activate.";
-        const chain = await workspaceChainManager.activateChain(chainId);
+        const chain = await workspaceChainManager.activateChain(chainId, _cwd);
         const topology = formatChainTopology(chain, chain.primaryNodeId);
         return `Workspace chain activated: ${chain.name} (${chain.id})\n\n${topology}`;
       }
@@ -185,9 +185,9 @@ export const manageWorkspaceChainTool: Tool = {
       if (action === "delete") {
         const chainId = args.chainId as string;
         if (!chainId) return "Error: 'chainId' is required for delete.";
-        const chain = getWorkspaceChain(chainId);
+        const chain = getWorkspaceChain(chainId, _cwd);
         if (!chain) return `Error: Chain not found: ${chainId}`;
-        if (getActiveChainId() === chainId) {
+        if (getActiveChainId(_cwd) === chainId) {
           await workspaceChainManager.deactivateChain();
         }
         deleteWorkspaceChain(chainId);
@@ -239,9 +239,9 @@ export const manageWorkspaceChainTool: Tool = {
         const chainId = args.chainId as string;
         let chain;
         if (chainId) {
-          chain = getWorkspaceChain(chainId);
+          chain = getWorkspaceChain(chainId, _cwd);
         } else {
-          chain = workspaceChainManager.getActiveChain();
+          chain = workspaceChainManager.getActiveChain(_cwd);
         }
         if (!chain) {
           return chainId

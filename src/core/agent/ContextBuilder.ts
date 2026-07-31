@@ -233,7 +233,7 @@ export class ContextBuilder {
     let workspaceChainNotice = "";
     try {
       const { workspaceChainManager } = await import("../workspace/WorkspaceChainManager.js");
-      const chain = workspaceChainManager.getActiveChain();
+      const chain = workspaceChainManager.getActiveChain(workspaceDir);
       if (chain) {
         const topology = workspaceChainManager.getTopologyString();
         const activeNode = workspaceChainManager.getActiveNode();

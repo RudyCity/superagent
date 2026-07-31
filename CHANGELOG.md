@@ -1,3 +1,45 @@
+## [1.2.651] - 2026-07-31
+
+### CLI: Dynamic and Varied Thinking Loading Indicators
+
+- **Rotating Thinking Messages**: Updated `LoadingIndicator` in `LoadingIndicators.tsx` to cycle through a varied set of thinking messages (e.g. context analysis, logic processing, plan formulation) every 2 seconds when thinking.
+- **Dynamic Tool Execution Logs**: Enhanced `ToolLoadingIndicator` in `LoadingIndicators.tsx` to accept the current tool name and description parameters and format them dynamically (e.g. showing the currently running shell command or tool invocation).
+- **Core Orchestration**: Updated `computeWrappedLines` and `ChatArea` in `chat-area.tsx` to accept active tool name/description props and thread them down to `ToolLoadingIndicator`.
+- **State Integration**: Declared and updated `activeToolName` and `activeToolDesc` React states in `app.tsx`, setting them during `tool_start`, `tool_end`, `runInteractiveProcess`, and `handleSigint` events.
+
+## [1.2.650] - 2026-07-31
+
+### Workspace Chaining: Workspace Chain Isolation and Dynamic Filtering
+
+- **Dynamic Workspace Filtering**: Updated `getWorkspaceChains()` in `WorkspaceChainConfig.ts` to accept a target workspace path and filter chains such that a chain is only visible/active if the current workspace matches one of its nodes (local or SSH). Case-insensitive checks are used on Windows.
+- **Wizard & CLI Integration**: Updated `useWizardSubmit.ts` and `workspaceChainTools.ts` to pass the active workspace path parameter down when retrieving and activating chains.
+- **Tests**: Added a unit test case in `tests/workspaceChain.test.ts` verifying chain list filtering and isolation across workspaces.
+
+## [1.2.649] - 2026-07-31
+
+### CLI: Fix /workspace Wizard Options Mismatch
+
+- **Wizard Options**: Updated `workspaceCommand.ts` option array to match the numbered list expected by `useWizardSubmit.ts` and `useKeyboardHandler.ts`, restoring functionality to the `/workspace` slash command.
+- **Tests**: Updated tests in `tests/workspaceCommand.test.ts` to assert the corrected option array values.
+
+## [1.2.648] - 2026-07-31
+
+### Workspace Chaining: Active Chain Workspace Path Verification
+
+- **Workspace Path Check**: Added validation to `getActiveChainId()` in `WorkspaceChainConfig.ts` to verify if the active workspace chain belongs to the current workspace path (or one of its subdirectories). It returns `null` if the paths do not match, preventing workspace chains defined for other projects from remaining active.
+- **Dynamic Resolvers**: Updated `WorkspaceChainManager` (`loadActiveChain`, `getActiveChain`, `isChainActive`) and `permissions.ts` to pass the active workspace path, ensuring path validation checks are dynamically performed.
+- **Context Injection**: Updated `WorkspaceStateTracker.ts` and `ContextBuilder.ts` to pass the current workspace directory when resolving the active chain.
+- **Tests**: Added path validation unit test coverage in `tests/workspaceChain.test.ts`.
+
+## [1.2.647] - 2026-07-31
+
+### CLI: Workspace Flag Parsing and Directory Switching
+
+- **CLI Arguments**: Added `-w` and `--workspace` command-line argument parsing at startup in `cliMain.tsx`.
+- **Directory Switching**: Enforced automatic `process.chdir` to the target directory if `-w`/`--workspace` is provided.
+- **Filtering**: Filtered out workspace and SSH target arguments from positional arguments to prevent them from bleeding into the initial user prompt.
+- **Tests**: Added tests for workspace argument parsing in `tests/cliWorkspace.test.ts`.
+
 ## [1.2.646] - 2026-07-31
 
 ### Permissions: Workspace Chain Permission Bypass

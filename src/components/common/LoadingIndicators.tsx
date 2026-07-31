@@ -3,8 +3,22 @@ import { Text, Box } from "ink";
 
 const rPulseColors = ["cyan", "cyanBright", "yellow", "white", "magenta", "yellow"];
 
-export function LoadingIndicator() {
+export function LoadingIndicator({ text }: { text?: string } = {}) {
   const [frame, setFrame] = useState(0);
+  const [thinkingIndex, setThinkingIndex] = useState(0);
+
+  const thinkingPhrases = [
+    "Thinking...",
+    "Analyzing request context...",
+    "Formulating implementation plan...",
+    "Searching local files...",
+    "Querying codebase structures...",
+    "Checking constraints & instructions...",
+    "Processing logic tokens...",
+    "Evaluating trade-offs...",
+    "Synthesizing response...",
+    "Preparing execution context..."
+  ];
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -13,16 +27,26 @@ export function LoadingIndicator() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (text) return;
+    const interval = setInterval(() => {
+      setThinkingIndex((prev) => (prev + 1) % thinkingPhrases.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [text, thinkingPhrases.length]);
+
   const rColor = rPulseColors[frame % rPulseColors.length];
+  const displayText = text || thinkingPhrases[thinkingIndex];
 
   return (
     <Text color="yellow">
       <Text bold color={rColor}>[R]</Text>
+      <Text color="gray"> {displayText}</Text>
     </Text>
   );
 }
 
-export function ToolLoadingIndicator() {
+export function ToolLoadingIndicator({ toolName, toolDesc }: { toolName?: string; toolDesc?: string } = {}) {
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
@@ -34,9 +58,28 @@ export function ToolLoadingIndicator() {
 
   const rColor = rPulseColors[frame % rPulseColors.length];
 
+  let displayMsg = "Executing system call...";
+  if (toolName) {
+    if (toolName === "command") {
+      const cleanDesc = toolDesc ? toolDesc.replace(/\r?\n/g, " ") : "";
+      displayMsg = `Running: ${cleanDesc}`;
+    } else {
+      displayMsg = `Invoking tool: ${toolName}`;
+      if (toolDesc) {
+        const cleanDesc = toolDesc.replace(/\r?\n/g, " ");
+        displayMsg += ` (${cleanDesc})`;
+      }
+    }
+  }
+
+  if (displayMsg.length > 70) {
+    displayMsg = displayMsg.substring(0, 67) + "...";
+  }
+
   return (
     <Text color="yellow">
       <Text bold color={rColor}>[R]</Text>
+      <Text color="gray"> {displayMsg}</Text>
     </Text>
   );
 }

@@ -5,7 +5,9 @@
  * the JSON-only config rule (no process.env).
  */
 
+import path from "path";
 import { mutateModelConfig, loadModelConfig } from "../config/jsonConfig.js";
+import { workspaceMode } from "../ssh/workspaceMode.js";
 import {
   WorkspaceChain,
   WorkspaceNode,
@@ -15,22 +17,56 @@ import {
 } from "./WorkspaceChainTypes.js";
 
 /** Get all stored workspace chains */
-export function getWorkspaceChains(): WorkspaceChain[] {
+export function getWorkspaceChains(currentWorkspacePath?: string, filterByWorkspace = true): WorkspaceChain[] {
   const config = loadModelConfig();
   const chains = (config as any).workspaceChains;
   if (!Array.isArray(chains)) return [];
-  return chains as WorkspaceChain[];
+  if (!filterByWorkspace) {
+    return chains as WorkspaceChain[];
+  }
+
+  const targetWorkspace = currentWorkspacePath || process.cwd();
+  const isSshActive = workspaceMode.isSsh() || targetWorkspace.startsWith("ssh:");
+  const sshCfg = workspaceMode.getConfig();
+
+  return (chains as WorkspaceChain[]).filter((chain) => {
+    return chain.nodes.some((node) => {
+      if (node.type === "local" && !isSshActive && node.path) {
+        const resolvedNode = path.resolve(node.path).toLowerCase();
+        const resolvedTarget = path.resolve(targetWorkspace).toLowerCase();
+        const relative = path.relative(resolvedNode, resolvedTarget);
+        return relative === "" || (!relative.startsWith('..') && !path.isAbsolute(relative));
+      }
+      if (node.type === "ssh" && isSshActive && node.sshConfig && sshCfg) {
+        const hostMatches = (node.sshConfig.host || "").toLowerCase() === (sshCfg.host || "").toLowerCase();
+        const portMatches = node.sshConfig.port === sshCfg.port;
+        const userMatches = (node.sshConfig.username || "").toLowerCase() === (sshCfg.username || "").toLowerCase();
+        const resolvedNodeCwd = (node.sshConfig.remoteCwd || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase() || "/";
+        const resolvedTargetCwd = (sshCfg.remoteCwd || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase() || "/";
+        const relative = path.posix.relative(resolvedNodeCwd, resolvedTargetCwd);
+        const isSameOrSubdirSsh = relative === "" || (!relative.startsWith('..') && !relative.startsWith('/'));
+        return hostMatches && portMatches && userMatches && isSameOrSubdirSsh;
+      }
+      return false;
+    });
+  });
 }
 
 /** Get a specific chain by ID */
-export function getWorkspaceChain(chainId: string): WorkspaceChain | null {
-  return getWorkspaceChains().find(c => c.id === chainId) || null;
+export function getWorkspaceChain(chainId: string, currentWorkspacePath?: string, filterByWorkspace = true): WorkspaceChain | null {
+  return getWorkspaceChains(currentWorkspacePath, filterByWorkspace).find(c => c.id === chainId) || null;
 }
 
 /** Get the active chain ID from config */
-export function getActiveChainId(): string | null {
+export function getActiveChainId(currentWorkspacePath?: string): string | null {
   const config = loadModelConfig();
-  return (config as any).activeWorkspaceChainId || null;
+  const chainId = (config as any).activeWorkspaceChainId || null;
+  if (!chainId) return null;
+
+  // Validate that the active chain belongs to the current workspace
+  const matchingChains = getWorkspaceChains(currentWorkspacePath, true);
+  const chainExists = matchingChains.some(c => c.id === chainId);
+  return chainExists ? chainId : null;
 }
 
 /** Set the active chain ID in config */
@@ -81,7 +117,7 @@ export function createWorkspaceChain(
 
 /** Update an existing workspace chain */
 export function updateWorkspaceChain(chainId: string, updates: Partial<WorkspaceChain>): WorkspaceChain {
-  const existing = getWorkspaceChain(chainId);
+  const existing = getWorkspaceChain(chainId, undefined, false);
   if (!existing) {
     throw new Error(`Workspace chain not found: ${chainId}`);
   }
@@ -121,7 +157,7 @@ export function deleteWorkspaceChain(chainId: string): void {
 
 /** Add a node to an existing chain */
 export function addNodeToChain(chainId: string, node: WorkspaceNode): WorkspaceChain {
-  const chain = getWorkspaceChain(chainId);
+  const chain = getWorkspaceChain(chainId, undefined, false);
   if (!chain) {
     throw new Error(`Workspace chain not found: ${chainId}`);
   }
@@ -134,7 +170,7 @@ export function addNodeToChain(chainId: string, node: WorkspaceNode): WorkspaceC
 
 /** Remove a node from a chain */
 export function removeNodeFromChain(chainId: string, nodeId: string): WorkspaceChain {
-  const chain = getWorkspaceChain(chainId);
+  const chain = getWorkspaceChain(chainId, undefined, false);
   if (!chain) {
     throw new Error(`Workspace chain not found: ${chainId}`);
   }
@@ -167,8 +203,6 @@ export function createQuickChain(
   const nodes: WorkspaceNode[] = entries.map((entry, idx) => {
     const nodeId = generateNodeId(entry.label);
     if (entry.type === "ssh" && entry.sshTarget) {
-      // Lazy import to avoid circular dependency
-      const { workspaceMode } = require("../ssh/workspaceMode.js");
       const sshConfig = workspaceMode.parseSshTarget(entry.sshTarget);
       if (!sshConfig) {
         throw new Error(`Invalid SSH target for node "${entry.label}": ${entry.sshTarget}`);

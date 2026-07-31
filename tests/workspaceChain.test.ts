@@ -14,6 +14,7 @@ import {
   generateNodeId,
   formatChainTopology,
 } from "../src/core/workspace/WorkspaceChainTypes.js";
+import { getActiveChainId, setActiveChainId, createWorkspaceChain, getWorkspaceChains, deleteWorkspaceChain } from "../src/core/workspace/WorkspaceChainConfig.js";
 
 describe("WorkspaceChainTypes", () => {
   describe("generateChainId", () => {
@@ -222,5 +223,53 @@ describe("WorkspaceChainConfig", () => {
     expect(chain.id).toBe("dev-to-prod");
     expect(chain.nodes).toHaveLength(2);
     expect(chain.nodes[1].dependsOn).toEqual(["local-dev"]);
+  });
+
+  it("should return null in getActiveChainId if the primary node path does not match current workspace path", () => {
+    // Create a mock chain
+    const nodes: WorkspaceNode[] = [
+      { id: "mock-main", label: "Mock Main", type: "local", role: "main", path: "/some/other/workspace" }
+    ];
+    const chain = createWorkspaceChain("Mock Chain", "Description", nodes, "mock-main");
+    
+    // Activate it
+    setActiveChainId(chain.id);
+    
+    // If we check with matching path (same or subdirectory), it should return chain.id
+    expect(getActiveChainId("/some/other/workspace")).toBe(chain.id);
+    expect(getActiveChainId("/some/other/workspace/subdir")).toBe(chain.id);
+    
+    // If we check with non-matching path, it should return null
+    expect(getActiveChainId("/different/workspace")).toBe(null);
+    
+    // Clean up
+    setActiveChainId(null);
+  });
+
+  it("should filter getWorkspaceChains by workspace path and isolate unrelated chains", () => {
+    // Create a mock chain for workspace A (local path) and workspace B (local path)
+    const nodes: WorkspaceNode[] = [
+      { id: "node-a", label: "Node A", type: "local", role: "main", path: "/workspace-a" },
+      { id: "node-b", label: "Node B", type: "local", role: "module", path: "/workspace-b" }
+    ];
+    const chain = createWorkspaceChain("Chain A-B", "Description", nodes, "node-a");
+
+    // Under workspace-a or workspace-b, the chain should be visible
+    const chainsA = getWorkspaceChains("/workspace-a", true);
+    expect(chainsA.some((c: any) => c.id === chain.id)).toBe(true);
+
+    const chainsB = getWorkspaceChains("/workspace-b", true);
+    expect(chainsB.some((c: any) => c.id === chain.id)).toBe(true);
+
+    // Under an unrelated workspace-d, the chain should NOT be visible
+    const chainsD = getWorkspaceChains("/workspace-d", true);
+    expect(chainsD.some((c: any) => c.id === chain.id)).toBe(false);
+
+    // If filterByWorkspace is false, it should return all chains including Chain A-B
+    const allChains = getWorkspaceChains("/workspace-d", false);
+    expect(allChains.some((c: any) => c.id === chain.id)).toBe(true);
+
+    // Clean up
+    deleteWorkspaceChain(chain.id);
   });
 });

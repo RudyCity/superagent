@@ -1,4 +1,5 @@
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -82,6 +83,31 @@ function abortAllAgents() {
 let sigintCount = 0;
 
 export async function runCli() {
+  // Check for -w / --workspace flag
+  const workspaceIndex = process.argv.findIndex(arg => arg === "--workspace" || arg === "-w");
+  let workspaceVal: string | undefined = undefined;
+  if (workspaceIndex !== -1 && workspaceIndex + 1 < process.argv.length) {
+    const nextArg = process.argv[workspaceIndex + 1];
+    if (!nextArg.startsWith("-")) {
+      workspaceVal = nextArg;
+    }
+  }
+
+  if (workspaceVal) {
+    const resolvedPath = path.resolve(workspaceVal);
+    try {
+      if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
+        process.chdir(resolvedPath);
+      } else {
+        console.error(`Workspace directory does not exist or is not a directory: ${resolvedPath}`);
+        process.exit(1);
+      }
+    } catch (err: any) {
+      console.error(`Failed to change directory to ${resolvedPath}: ${err.message}`);
+      process.exit(1);
+    }
+  }
+
   // Purge empty draft sessions in background on startup
   try {
     const { purgeEmptySessions } = await import("./core/config.js");
@@ -280,12 +306,44 @@ export async function runCli() {
     }
     const autoResume = resumeVal !== undefined ? resumeVal : (resumeIndex !== -1 ? true : false);
 
-    const flags = ["--resume", "-r", "--help", "-h", "--multi"];
+    // Workspace value for prompt filtering
+    const workspaceIndexForPrompt = process.argv.findIndex(arg => arg === "--workspace" || arg === "-w");
+    let workspaceValForPrompt: string | undefined = undefined;
+    if (workspaceIndexForPrompt !== -1 && workspaceIndexForPrompt + 1 < process.argv.length) {
+      const nextArg = process.argv[workspaceIndexForPrompt + 1];
+      if (!nextArg.startsWith("-")) {
+        workspaceValForPrompt = nextArg;
+      }
+    }
+
+    // SSH Workspace value for prompt filtering
+    const sshFlagIdx = process.argv.findIndex((arg) => arg === "--workspace-ssh" || arg === "-ws");
+    let sshVal: string | undefined = undefined;
+    if (sshFlagIdx !== -1 && process.argv[sshFlagIdx + 1]) {
+      const nextArg = process.argv[sshFlagIdx + 1];
+      if (!nextArg.startsWith("-")) {
+        sshVal = nextArg;
+      }
+    }
+
+    const flags = ["--resume", "-r", "--help", "-h", "--multi", "--workspace", "-w", "--workspace-ssh", "-ws"];
     const positionalArgs = process.argv.slice(2).filter((arg, idx) => {
       if (flags.includes(arg)) return false;
       if (resumeVal && arg === resumeVal) {
         const prevArg = process.argv[2 + idx - 1];
         if (prevArg === "--resume" || prevArg === "-r") {
+          return false;
+        }
+      }
+      if (workspaceValForPrompt && arg === workspaceValForPrompt) {
+        const prevArg = process.argv[2 + idx - 1];
+        if (prevArg === "--workspace" || prevArg === "-w") {
+          return false;
+        }
+      }
+      if (sshVal && arg === sshVal) {
+        const prevArg = process.argv[2 + idx - 1];
+        if (prevArg === "--workspace-ssh" || prevArg === "-ws") {
           return false;
         }
       }
