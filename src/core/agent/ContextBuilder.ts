@@ -158,7 +158,7 @@ export class ContextBuilder {
       }
     } catch {}
 
-    const singleModeSubagentDirective = agent.tier === "single" ? `\n\nSINGLE MODE SUBAGENT DISPATCH:\n- Perform small/simple operations directly. Spawn subagents for: broad research (researcher), multi-file changes (coder), large feature review (reviewer), or parallel independent subtasks.\n- Run build + test after code changes. Only report completion when both pass.` : "";
+    const singleModeSubagentDirective = agent.tier === "single" ? `\n\nSINGLE MODE SUBAGENT DISPATCH:\n- Perform small/simple operations directly. Spawn subagents for: broad research (researcher), multi-file changes (coder), large feature review (reviewer), security audits (security-engineer), browser automation (chrome-agent), or parallel independent subtasks.\n- Run build + test after code changes. Only report completion when both pass.` : "";
 
     let activeSystemPrompt = baseSystemPrompt;
     if (agent.workspaceCache) {

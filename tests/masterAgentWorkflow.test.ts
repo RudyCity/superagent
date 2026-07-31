@@ -401,9 +401,14 @@ describe("Master Agent Workflow & Guardrails", () => {
 
     let genCallCount = 0;
     let streamCallCount = 0;
-    vi.mocked(generateText).mockImplementation(async () => {
-      genCallCount++;
-      if (genCallCount === 1) {
+    vi.mocked(generateText).mockImplementation(async (options?: any) => {
+      const messagesStr = JSON.stringify(options?.messages || []);
+      const isTarget = messagesStr.includes("write plan") || messagesStr.includes("call_plan_no_sa");
+      if (isTarget) {
+        genCallCount++;
+      }
+      const current = genCallCount;
+      if (isTarget && current === 1) {
         return {
           text: "",
           toolCalls: [
@@ -425,12 +430,16 @@ describe("Master Agent Workflow & Guardrails", () => {
       } as any;
     });
 
-    vi.mocked(streamText).mockImplementation(() => {
-      streamCallCount++;
+    vi.mocked(streamText).mockImplementation((options?: any) => {
+      const messagesStr = JSON.stringify(options?.messages || []);
+      const isTarget = messagesStr.includes("write plan") || messagesStr.includes("call_plan_no_sa");
+      if (isTarget) {
+        streamCallCount++;
+      }
       const current = streamCallCount;
       return {
         fullStream: (async function* () {
-          if (current === 1) {
+          if (isTarget && current === 1) {
             yield {
               type: "tool-call",
               toolCallId: "call_plan_no_sa",

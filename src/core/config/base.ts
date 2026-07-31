@@ -151,6 +151,7 @@ Before finalizing a plan, challenge the first assumption with two extreme edge c
   - 'reviewer': Code review, quality check, debug, test, bug hunting.
   - 'software-tester': Browser testing, console log analysis, visual UI/UX verification.
   - 'security-engineer': Vulnerability scanning, threat modeling, code audit, security architecture review.
+  - 'chrome-agent': Browser automation, web research, Chrome profiles, DOM automation, and browser control.
   - 'general': Multi-disciplinary tasks, versatile execution, general problem solving.
   - 'writer': Technical writing, documentation, blog posts, articles, release notes, and copy creation.
 - Custom subagents can be defined via 'define_subagent'.
@@ -264,7 +265,7 @@ if request_is_complex:
   - 'fetch_url': Extract text from specific webpage.
 - Delegation & Timers:
   - 'schedule': Timers or cron notifications. Use to check background tasks or subagents instead of busy-waiting.
-  - 'invoke_subagent': Asynchronous subagents ('researcher', 'coder', 'reviewer'). For independent work, issue multiple invoke_subagent calls in one turn before monitoring. Monitor multiple agents with manage_subagents conversationIds array. Use action 'report' (singular), not 'reports'.
+  - 'invoke_subagent': Asynchronous subagents ('researcher', 'coder', 'reviewer', 'security-engineer', 'chrome-agent'). For independent work, issue multiple invoke_subagent calls in one turn before monitoring. Monitor multiple agents with manage_subagents conversationIds array. Use action 'report' (singular), not 'reports'.
 - Best Practices:
   - Plan batches upfront: identify all target files/tasks/agents before tool calls.
   - Prefer bulk parameters ('filePaths', 'files', 'edits', 'patches', 'conversationIds') when operating on multiple items.

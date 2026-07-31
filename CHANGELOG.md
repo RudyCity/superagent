@@ -1,3 +1,12 @@
+## [1.2.656] - 2026-07-31
+
+### CLI: Subagent Prompts and Configuration Visibility Improvements
+
+- **Prompts Visibility**: Updated `SUPERAGENT_SYSTEM_PROMPT` in `src/core/prompts.ts` to include explicit delegation examples for the `"security-engineer"` and `"chrome-agent"` subagents.
+- **Context Builder**: Updated `singleModeSubagentDirective` in `src/core/agent/ContextBuilder.ts` to direct the single mode agent to spawn `"security-engineer"` for security audits and `"chrome-agent"` for browser automation tasks.
+- **Tool Configuration**: Updated the available out-of-the-box subagents list and `invoke_subagent` tool description in `src/core/config/base.ts` to explicitly document the `"security-engineer"` and `"chrome-agent"` subagents.
+- **Testing Robustness**: Refactored the failing master workflow test in `tests/masterAgentWorkflow.test.ts` to filter mock calls by payload, making it robust against concurrent environment/mock pollution.
+
 ## [1.2.655] - 2026-07-31
 
 ### CLI: chrome-agent Debugging, Testing, and Documentation Improvements

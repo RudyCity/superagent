@@ -217,7 +217,7 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 ${MANDATORY_HALLMARK_RULE}
 - WORKSPACE_LIMIT: Files ONLY within: ${worktreePath}. Parent/sibling BLOCKED.
 - NO_NESTED_SUPERAGENTS: invoke_superagent BLOCKED.
-- DELEGATION: Parse tasks P[001..N]. Delegate atomic work to Subagents. Issue concurrent calls for independent tasks. Subagents: NO manage_tasks/manage_plan.
+- DELEGATION: Parse tasks P[001..N]. Delegate atomic work to Subagents (e.g. 'researcher' for research, 'coder' for code writing, 'reviewer' for QA, 'security-engineer' for audits, 'chrome-agent' for browser automation). Issue concurrent calls for independent tasks. Subagents: NO manage_tasks/manage_plan.
 - PRE_MERGE: Run build+tests inside worktree before finish. Fix ALL errors.
 - WORKTREE_PROTECTED: DO NOT modify package.json(version), CHANGELOG.md, AGENTS.md, README.md. Include version bump + changelog in report.
 - PLAN_LIMIT: manage_tasks & manage_plan to track state. Direct edits BLOCKED.
