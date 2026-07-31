@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
-import { isToolCallOutOfBounds } from "../src/core/permissions.js";
+import { isToolCallOutOfBounds, getToolDescription } from "../src/core/permissions.js";
 import { workspaceChainManager } from "../src/core/workspace/WorkspaceChainManager.js";
 import { resolveFilePathFromArgs } from "../src/core/tools/pathHelpers.js";
 
@@ -80,5 +80,28 @@ describe("Workspace Chain Permission Bypass", () => {
     const targetFile = path.join(secondaryWorkspace, "src/server.ts");
     const resolved = resolveFilePathFromArgs({ filePath: targetFile }, primaryWorkspace);
     expect(resolved).toBeDefined();
+  });
+
+  test("getToolDescription should return humanized descriptions for cross_workspace_exec and manage_workspace_chain", () => {
+    const execToolCall = {
+      name: "cross_workspace_exec",
+      args: { operation: "exec", nodeId: "node-b", command: "npm test" },
+    };
+    const descExec = getToolDescription(execToolCall as any);
+    expect(descExec).toBe('Running command "npm test" on chain node "node-b"');
+
+    const switchToolCall = {
+      name: "cross_workspace_exec",
+      args: { operation: "switch-node", nodeId: "node-a" },
+    };
+    const descSwitch = getToolDescription(switchToolCall as any);
+    expect(descSwitch).toBe('Switching active chain node to "node-a"');
+
+    const manageToolCall = {
+      name: "manage_workspace_chain",
+      args: { action: "activate", chainId: "chain-1" },
+    };
+    const descManage = getToolDescription(manageToolCall as any);
+    expect(descManage).toBe('Activating workspace chain: chain-1');
   });
 });

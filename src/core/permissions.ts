@@ -699,6 +699,42 @@ export function getToolDescription(
       return `Listing peer superagents`;
     case "manage_plan":
       return `Managing plan (${s(args.action)})`;
+    case "cross_workspace_exec": {
+      const op = s(args.operation);
+      const nodeId = s(args.nodeId);
+      const cmd = s(args.command ?? args.cmd);
+      const pathVal = s(args.filePath ?? args.path);
+      const srcNode = s(args.sourceNodeId || args.nodeId);
+      const tgtNode = s(args.targetNodeId);
+      if (op === "exec") return `Running command "${truncateCommand(cmd)}" on chain node "${nodeId}"`;
+      if (op === "read") return `Reading file "${pathVal}" from chain node "${nodeId}"`;
+      if (op === "write") return `Writing file "${pathVal}" to chain node "${nodeId}"`;
+      if (op === "exec-all") return `Running command "${truncateCommand(cmd)}" on all chain nodes`;
+      if (op === "exec-deps") return `Running command "${truncateCommand(cmd)}" on dependency nodes`;
+      if (op === "connect") return `Connecting to SSH chain node "${nodeId}"`;
+      if (op === "disconnect") return `Disconnecting from SSH chain node "${nodeId}"`;
+      if (op === "switch-node") return `Switching active chain node to "${nodeId}"`;
+      if (op === "health") return `Checking chain health metrics`;
+      if (op === "diff") return `Comparing file "${pathVal}" between node "${srcNode}" and node "${tgtNode}"`;
+      if (op === "sync") return `Syncing file "${pathVal}" from node "${srcNode}" to node "${tgtNode}"${args.targetPath ? ` as "${s(args.targetPath)}"` : ""}`;
+      return `Executing operation "${op}" on chain`;
+    }
+    case "manage_workspace_chain": {
+      const action = s(args.action);
+      const chainId = s(args.chainId);
+      if (action === "create") return `Creating workspace chain: ${s(args.name)}`;
+      if (action === "list") return `Listing workspace chains`;
+      if (action === "activate") return `Activating workspace chain: ${chainId}`;
+      if (action === "deactivate") return `Deactivating active workspace chain`;
+      if (action === "delete") return `Deleting workspace chain: ${chainId}`;
+      if (action === "add-node") return `Adding node "${s((args.node as any)?.id || (args.node as any)?.label)}" to workspace chain "${chainId}"`;
+      if (action === "remove-node") return `Removing node "${s(args.nodeId)}" from workspace chain "${chainId}"`;
+      if (action === "status") return `Checking workspace chain connection status`;
+      if (action === "topology") return `Viewing workspace chain topology`;
+      if (action === "update") return `Updating workspace chain: ${chainId}`;
+      if (action === "health") return `Checking workspace chain health metrics`;
+      return `Managing workspace chain (${action})`;
+    }
     default:
       return `Running tool ${toolCall.name} with parameters ${JSON.stringify(args)}`;
   }

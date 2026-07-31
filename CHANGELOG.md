@@ -1,9 +1,10 @@
 ## [1.2.663] - 2026-07-31
 
-### Fix: Workspace Chain Path Allowed Roots
+### Fix: Workspace Chain Path Allowed Roots & Humanized Tool Descriptions
 - **Path Verification**: Modified resolveFilePathFromArgs in src/core/tools/pathHelpers.ts to allow local node paths belonging to the active workspace chain, resolving boundary violation errors when switching active nodes.
+- **Humanization**: Humanized and clarified terminal UI execution progress description text for all cross_workspace_exec operations and manage_workspace_chain actions in src/core/permissions.ts.
 - **Documentation**: Documented workspace chain automatic routing via cross_workspace_exec (switch-node) in src/core/prompts.ts and src/core/config/base.ts.
-- **Tests**: Added a unit test in tests/workspaceChainPermissions.test.ts to verify local node path resolution in active chains.
+- **Tests**: Added unit tests in tests/workspaceChainPermissions.test.ts to verify local node path resolution and tool description humanization in active chains.
 
 ## [1.2.662] - 2026-07-31
 
