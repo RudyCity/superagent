@@ -1,4 +1,4 @@
-import { clearHistoryCache, getSettings } from "../config.js";
+import { clearHistoryCache, getSettings, getCurrentWorkspaceIdentifier } from "../config.js";
 import { getRMemoryClient, getRMemorySessionKey } from "../rmemoryUtil.js";
 import { contentToString } from "../conversation.js";
 import type { Agent } from "../agent.js";
@@ -37,7 +37,8 @@ export class HistoryManager {
       agent.writeToLogFile("WARN", `Failed to incrementally sync conversation to RMemory: ${err.message}`);
     }
 
-    await agent.conversation.saveToFile(historyPath, agent.planState, agent.workingDirectory);
+    const wsIdentifier = getCurrentWorkspaceIdentifier(agent.workingDirectory);
+    await agent.conversation.saveToFile(historyPath, agent.planState, wsIdentifier);
     clearHistoryCache();
   }
 
@@ -49,7 +50,8 @@ export class HistoryManager {
     }
     process.env.SUPERAGENT_SESSION_PATH = historyPath;
 
-    agent.conversation.saveToFileSync(historyPath, agent.planState, agent.workingDirectory);
+    const wsIdentifier = getCurrentWorkspaceIdentifier(agent.workingDirectory);
+    agent.conversation.saveToFileSync(historyPath, agent.planState, wsIdentifier);
     clearHistoryCache();
   }
 

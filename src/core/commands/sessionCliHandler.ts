@@ -5,7 +5,8 @@ import { listHistorySessions, purgeEmptySessions, exportSession, importSession, 
 function parseWorkspaceArg(args: string[]): string {
   const wsIdx = args.findIndex(a => a === "--workspace" || a === "-w");
   if (wsIdx !== -1 && args[wsIdx + 1] && !args[wsIdx + 1].startsWith("-")) {
-    return path.resolve(args[wsIdx + 1]);
+    const raw = args[wsIdx + 1];
+    return (raw.startsWith("ssh:") || raw.startsWith("ssh://") || raw.startsWith("chain:")) ? raw : path.resolve(raw);
   }
   return process.cwd();
 }

@@ -449,7 +449,11 @@ export async function handleServerRoute(
     const body = JSON.parse(bodyStr || "{}");
     const { mode, workspace, resume, initialPrompt, sessionId: customSessionId } = body;
 
-    const targetWorkspace = workspace ? path.resolve(workspace) : process.cwd();
+    const targetWorkspace = workspace
+      ? ((workspace.startsWith("ssh:") || workspace.startsWith("ssh://") || workspace.startsWith("chain:"))
+        ? workspace
+        : path.resolve(workspace))
+      : process.cwd();
     addTrustedDirectory(targetWorkspace);
     await ensureDirectoryTrusted(targetWorkspace);
 
@@ -1615,7 +1619,9 @@ export async function handleServerRoute(
       sendJSON(res, 400, { error: "workspace path is required" });
       return true;
     }
-    const targetWorkspace = path.resolve(workspace);
+    const targetWorkspace = (workspace.startsWith("ssh:") || workspace.startsWith("ssh://") || workspace.startsWith("chain:"))
+      ? workspace
+      : path.resolve(workspace);
     addTrustedDirectory(targetWorkspace);
     await ensureDirectoryTrusted(targetWorkspace);
 

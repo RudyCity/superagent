@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs";
-import { ensureGlobalConfigDir, getGlobalConfigDir, generateSessionId } from "../config.js";
+import { ensureGlobalConfigDir, getGlobalConfigDir, generateSessionId, getCurrentWorkspaceIdentifier } from "../config.js";
 import { normalizeAndCheckSubpath } from "../permissions.js";
 import { getTaskHistoryPath } from "../taskChecklist.js";
 import type { Agent } from "../agent.js";
@@ -28,7 +28,8 @@ export class PathResolver {
 
   public static resolveHistoryFilePath(agent: Agent, autoResume: boolean | string): string {
     ensureGlobalConfigDir();
-    const sanitizedPath = (agent.workingDirectory || "").replace(/[^a-zA-Z0-9]/g, "_");
+    const wsId = getCurrentWorkspaceIdentifier(agent.workingDirectory || undefined);
+    const sanitizedPath = wsId.replace(/[^a-zA-Z0-9]/g, "_");
     const mode = agent.isMultiAgent ? "multi" : "single";
     let historyDir = path.join(getGlobalConfigDir(), "history", mode);
 

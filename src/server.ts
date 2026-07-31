@@ -163,7 +163,7 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
   }
 
   if (wsPath) {
-    wsPath = path.resolve(wsPath);
+    wsPath = (wsPath.startsWith("ssh:") || wsPath.startsWith("ssh://") || wsPath.startsWith("chain:")) ? wsPath : path.resolve(wsPath);
     for (const [key, session] of activeSessions.entries()) {
       if (session.clientMode === reqClientMode && session.workspace.toLowerCase() === wsPath.toLowerCase()) {
         if (targetSessionId) {
@@ -191,15 +191,17 @@ function resolveWorkspacePath(req: http.IncomingMessage): string {
   const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
   const headerWs = req.headers["x-workspace-path"] as string;
   const paramWs = parsedUrl.searchParams.get("workspace");
-  if (headerWs) return path.resolve(headerWs);
-  if (paramWs) return path.resolve(paramWs);
+  if (headerWs) return (headerWs.startsWith("ssh:") || headerWs.startsWith("ssh://") || headerWs.startsWith("chain:")) ? headerWs : path.resolve(headerWs);
+  if (paramWs) return (paramWs.startsWith("ssh:") || paramWs.startsWith("ssh://") || paramWs.startsWith("chain:")) ? paramWs : path.resolve(paramWs);
   
   const session = resolveSession(req);
   return session ? session.workspace : lastActiveWorkspace;
 }
 
 export function registerCliAgent(agent: Agent, workspace: string, mode: "single" | "multi", clientMode: ClientMode = "tline") {
-  const targetWorkspace = path.resolve(workspace);
+  const targetWorkspace = (workspace.startsWith("ssh:") || workspace.startsWith("ssh://") || workspace.startsWith("chain:"))
+    ? workspace
+    : path.resolve(workspace);
   activeSessions.set(`${clientMode}:${targetWorkspace}:cli`, {
     agent,
     workspace: targetWorkspace,

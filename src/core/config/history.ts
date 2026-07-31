@@ -1,6 +1,8 @@
 import path from "path";
 import fs from "fs";
 import { listSessionsFromDb, deleteSessionFromDb, purgeEmptySessionsFromDb, loadSessionFromDb, saveSessionToDb } from "../storage/historyDb.js";
+import { workspaceMode } from "../ssh/workspaceMode.js";
+import { workspaceChainManager } from "../workspace/WorkspaceChainManager.js";
 
 function resolveNormalizedPath(fp: string, baseDir?: string): string {
   let normalized = fp;
@@ -14,7 +16,59 @@ function resolveNormalizedPath(fp: string, baseDir?: string): string {
   return baseDir ? path.resolve(baseDir, normalized) : path.resolve(normalized);
 }
 
+function parseSshUrl(url: string): { prefix: string; path: string } | null {
+  if (!url.startsWith("ssh://")) return null;
+  const match = url.match(/^ssh:\/\/([^/]+)(.*)$/);
+  if (!match) return null;
+  return {
+    prefix: match[1].toLowerCase(),
+    path: match[2] || "/"
+  };
+}
+
+export function getCurrentWorkspaceIdentifier(workingDir?: string): string {
+  if (workingDir) {
+    const trimmed = workingDir.trim();
+    if (trimmed.startsWith("ssh:") || trimmed.startsWith("ssh://") || trimmed.startsWith("chain:")) {
+      return trimmed;
+    }
+  }
+
+  try {
+    const activeChain = workspaceChainManager.getActiveChain();
+    if (activeChain) {
+      return `chain:${activeChain.id}`;
+    }
+  } catch {}
+
+  try {
+    if (workspaceMode.isSsh()) {
+      const config = workspaceMode.getConfig();
+      if (config) {
+        return `ssh://${config.username}@${config.host}:${config.port}${config.remoteCwd}`;
+      }
+    }
+  } catch {}
+
+  const raw = workingDir || process.cwd();
+  return path.resolve(raw);
+}
+
 export function normalizeAndCheckSubpath(childPath: string, parentPath: string): boolean {
+  if (childPath.startsWith("chain:") || parentPath.startsWith("chain:")) {
+    return childPath.toLowerCase() === parentPath.toLowerCase();
+  }
+
+  const childSsh = parseSshUrl(childPath);
+  const parentSsh = parseSshUrl(parentPath);
+  if (childSsh && parentSsh) {
+    if (childSsh.prefix !== parentSsh.prefix) return false;
+    const cPath = childSsh.path.replace(/\/+$/, "") || "/";
+    const pPath = parentSsh.path.replace(/\/+$/, "") || "/";
+    return cPath === pPath || cPath.startsWith(pPath + "/") || pPath.startsWith(cPath + "/");
+  }
+  if (childSsh || parentSsh) return false;
+
   let resolvedChild = resolveNormalizedPath(childPath);
   let resolvedParent = resolveNormalizedPath(parentPath);
   if (process.platform === "win32") {
@@ -174,7 +228,7 @@ export function listHistorySessionsPaginated(options: {
   const offset = options.offset ?? 0;
   const modeFilter = options.modeFilter ?? (isMulti ? "multi" : "single");
 
-  const currentDir = workspaceDir ? path.resolve(workspaceDir) : process.cwd();
+  const currentDir = getCurrentWorkspaceIdentifier(workspaceDir);
   const cacheKey = `${isMulti}:${crossSession}:${currentDir}:${limit ?? "all"}:${offset}:${modeFilter}`;
   const now = Date.now();
   const cached = listCache.get(cacheKey);

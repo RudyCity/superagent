@@ -1,3 +1,17 @@
+## [1.2.659] - 2026-07-31
+
+### Fix: History Workspace and Resume Filtering for Local, SSH, and Chain modes
+
+- **Workspace Identifiers**: Replaced raw local filesystem paths with structured workspace identifiers in history resolving, listing, and saving.
+  - Local mode -> absolute local directory path.
+  - SSH mode -> `ssh://username@host:port/remoteCwd`.
+  - Workspace chain mode -> `chain:<chainId>`.
+- **PathResolver**: Modified `resolveHistoryFilePath` in `src/core/agent/PathResolver.ts` to sanitize and use the workspace identifier when building unique folder names, preventing collisions between different servers or local paths sharing similar relative folder paths.
+- **Normalize and Check Subpath**: Updated `normalizeAndCheckSubpath` in `src/core/config/history.ts` to correctly compare workspace chain IDs (case-insensitive) and SSH target URLs (comparing username/host/port prefix and remote subpaths).
+- **Paths and Database Layer**: Updated `getWorkspaceId` in `src/core/config/paths.ts` and `saveSessionToDb`, `savePinnedKnowledgeToDb`, and `deleteWorkspaceFromDb` in `src/core/storage/historyDb.ts` to support chain and SSH prefix protocols without resolving locally.
+- **CLI & Server Routes**: Updated `/resume`, `/session list`, `/api/init`, `/api/switch-workspace`, and server session resolution to preserve and use workspace identifiers.
+- **Tests**: Created `tests/history_workspace.test.ts` covering workspace identifier resolution and path validation.
+
 ## [1.2.658] - 2026-07-31
 
 ### Fix: documentReadTools.ts — 7 improvements

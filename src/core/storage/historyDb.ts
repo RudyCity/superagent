@@ -363,11 +363,14 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
     const workspaceId = session.workingDirectory ? getWorkspaceId(session.workingDirectory) : null;
     if (workspaceId && session.workingDirectory) {
       try {
+        const resolvedPath = (session.workingDirectory.startsWith("ssh:") || session.workingDirectory.startsWith("ssh://") || session.workingDirectory.startsWith("chain:"))
+          ? session.workingDirectory
+          : path.resolve(session.workingDirectory);
         db.prepare(`
           INSERT INTO workspaces (id, path, name, is_trusted)
           VALUES (?, ?, ?, 0)
           ON CONFLICT(id) DO NOTHING
-        `).run(workspaceId, path.resolve(session.workingDirectory), path.basename(session.workingDirectory));
+        `).run(workspaceId, resolvedPath, path.basename(resolvedPath));
       } catch {}
     }
 
@@ -1430,11 +1433,14 @@ export function savePinnedKnowledgeToDb(entry: any): void {
     const workspaceId = entry.workingDirectory ? getWorkspaceId(entry.workingDirectory) : null;
     if (workspaceId && entry.workingDirectory) {
       try {
+        const resolvedPath = (entry.workingDirectory.startsWith("ssh:") || entry.workingDirectory.startsWith("ssh://") || entry.workingDirectory.startsWith("chain:"))
+          ? entry.workingDirectory
+          : path.resolve(entry.workingDirectory);
         db.prepare(`
           INSERT INTO workspaces (id, path, name, is_trusted)
           VALUES (?, ?, ?, 0)
           ON CONFLICT(id) DO NOTHING
-        `).run(workspaceId, path.resolve(entry.workingDirectory), path.basename(entry.workingDirectory));
+        `).run(workspaceId, resolvedPath, path.basename(resolvedPath));
       } catch {}
     }
 
@@ -1700,8 +1706,8 @@ export function getWorkspaceFromDb(id: string): WorkspaceRecord | null {
 export function deleteWorkspaceFromDb(idOrPath: string): void {
   try {
     const db = getHistoryDb();
-    const resolved = idOrPath.startsWith("ssh:") ? idOrPath : path.resolve(idOrPath);
-    const normalized = (process.platform === "win32" && !resolved.startsWith("ssh:") && /^[a-z]:/i.test(resolved))
+    const resolved = (idOrPath.startsWith("ssh:") || idOrPath.startsWith("ssh://") || idOrPath.startsWith("chain:")) ? idOrPath : path.resolve(idOrPath);
+    const normalized = (process.platform === "win32" && !resolved.startsWith("ssh:") && !resolved.startsWith("ssh://") && !resolved.startsWith("chain:") && /^[a-z]:/i.test(resolved))
       ? resolved[0].toUpperCase() + resolved.slice(1)
       : resolved;
     const id = getWorkspaceId(normalized);

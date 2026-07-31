@@ -59,8 +59,8 @@ export function getSuperAgentVersion(): string {
  * cross-project task bleeding.
  */
 export function getWorkspaceId(dirPath?: string): string {
-  let cwd = dirPath && dirPath.startsWith("ssh:") ? dirPath : path.resolve(dirPath || process.cwd());
-  if (process.platform === "win32" && !cwd.startsWith("ssh:")) {
+  let cwd = dirPath && (dirPath.startsWith("ssh:") || dirPath.startsWith("ssh://") || dirPath.startsWith("chain:")) ? dirPath : path.resolve(dirPath || process.cwd());
+  if (process.platform === "win32" && !cwd.startsWith("ssh:") && !cwd.startsWith("ssh://") && !cwd.startsWith("chain:")) {
     if (/^[a-z]:/i.test(cwd)) {
       cwd = cwd[0].toUpperCase() + cwd.slice(1);
     }

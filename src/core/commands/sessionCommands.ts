@@ -2,7 +2,7 @@ import { execa } from "execa";
 import path from "path";
 import { registry } from "./registry.js";
 import { SlashCommand, SlashCommandContext } from "./types.js";
-import { listHistorySessions, formatSessionLabel } from "../config.js";
+import { listHistorySessions, formatSessionLabel, getCurrentWorkspaceIdentifier } from "../config.js";
 import { searchHistory } from "../historySearch.js";
 import {
   createCheckpoint,
@@ -18,7 +18,8 @@ export const resumeCommand: SlashCommand = {
   description: "Resume a conversation session from history via wizard dialog",
   execute(args, ctx) {
     const isMulti = ctx.agent?.isMultiAgent || false;
-    const sessions = listHistorySessions(isMulti, false, undefined, 20).slice(0, 10);
+    const wsId = getCurrentWorkspaceIdentifier(ctx.agent?.workingDirectory);
+    const sessions = listHistorySessions(isMulti, false, wsId, 20).slice(0, 10);
     const now = Date.now();
     if (sessions.length === 0) {
       ctx.addLine({ type: "system", content: "No previous sessions found. Start a conversation first!", timestamp: now });
@@ -521,7 +522,8 @@ export const sessionSlashCommand: SlashCommand = {
     if (action === "list" || action === "ls") {
       const isAll = parts.includes("--all") || parts.includes("-a");
       const isMulti = ctx.agent?.isMultiAgent || false;
-      const sessions = listHistorySessions(isMulti, isAll, undefined, 20);
+      const wsId = getCurrentWorkspaceIdentifier(ctx.agent?.workingDirectory);
+      const sessions = listHistorySessions(isMulti, isAll, wsId, 20);
 
       if (sessions.length === 0) {
         ctx.addLine({ type: "system", content: "No conversation sessions found.", timestamp: now });
