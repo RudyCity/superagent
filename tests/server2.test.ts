@@ -16,7 +16,7 @@
  * Both parts share the same server instance via serverTestHelper.ts.
  */
 
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import http from "http";
 import fs from "fs";
 import path from "path";
@@ -639,6 +639,169 @@ describe.skip("GET /api/events (SSE)", () => {
     });
 
     expect(typeof receivedData).toBe("string");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEW ENDPOINTS VERIFICATION TESTS
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("New API Endpoints", () => {
+  beforeEach(() => {
+    vi.spyOn(execaModule, "execa").mockImplementation((..._args: any[]) => {
+      const p: any = Promise.resolve({ exitCode: 0, stdout: "", stderr: "", all: undefined });
+      p.catch = () => p;
+      p.pid = 99999;
+      return p;
+    });
+  });
+  it("GET /api/git/worktrees", async () => {
+    const { status, body } = await getJSON(port, "/api/git/worktrees", {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.worktrees)).toBe(true);
+  });
+
+  it("POST /api/git/worktrees/prune", async () => {
+    const { status, body } = await postJSON(port, "/api/git/worktrees/prune", {}, {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    if (status !== 200) {
+      console.log("PRUNE FAILURE BODY:", body);
+    }
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it("POST /api/git/worktrees/remove without path returns 400", async () => {
+    const { status } = await postJSON(port, "/api/git/worktrees/remove", {}, {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(400);
+  });
+
+  it("GET /api/checkpoints", async () => {
+    const { status, body } = await getJSON(port, "/api/checkpoints", {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.checkpoints)).toBe(true);
+  });
+
+  it("POST /api/checkpoints without name returns 400", async () => {
+    const { status } = await postJSON(port, "/api/checkpoints", {}, {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(400);
+  });
+
+  it("POST /api/checkpoints with name creates checkpoint", async () => {
+    const { status, body } = await postJSON(port, "/api/checkpoints", { name: "Test Checkpoint" }, {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.checkpoint).toBeDefined();
+    expect(body.checkpoint.name).toBe("Test Checkpoint");
+  });
+
+  it("GET /api/knowledge", async () => {
+    const { status, body } = await getJSON(port, "/api/knowledge");
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.entries)).toBe(true);
+  });
+
+  it("POST /api/knowledge with invalid content returns 400", async () => {
+    const { status } = await postJSON(port, "/api/knowledge", {}, {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(400);
+  });
+
+  it("POST /api/knowledge adds entry", async () => {
+    const { status, body } = await postJSON(port, "/api/knowledge", { content: "Test Content", role: "user" }, {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it("GET /api/history/compaction", async () => {
+    const { status, body } = await getJSON(port, "/api/history/compaction");
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.history)).toBe(true);
+  });
+
+  it("POST /api/history/compaction/clear", async () => {
+    const { status, body } = await postJSON(port, "/api/history/compaction/clear", {});
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it("GET /api/goal", async () => {
+    const { status, body } = await getJSON(port, "/api/goal", {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.goal).toBeNull();
+  });
+
+  it("POST /api/goal updates goal", async () => {
+    const { status, body } = await postJSON(port, "/api/goal", { goal: "Achieve the task" }, {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it("DELETE /api/goal clears goal", async () => {
+    const { status, body } = await deleteJSON(port, "/api/goal", {}, {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it("GET /api/terminal/presets", async () => {
+    const { status, body } = await getJSON(port, "/api/terminal/presets", {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.presets).toBeDefined();
+  });
+
+  it("POST /api/terminal/presets saves presets", async () => {
+    const { status, body } = await postJSON(port, "/api/terminal/presets", { presets: { build: "npm run build" } }, {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it("GET /api/internal-hooks", async () => {
+    const { status, body } = await getJSON(port, "/api/internal-hooks");
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.hooks)).toBe(true);
+  });
+
+  it("POST /api/internal-hooks/active updates active hooks", async () => {
+    const { status, body } = await postJSON(port, "/api/internal-hooks/active", { activeHooks: ["pre-commit"] }, {
+      "x-workspace-path": server2TestWorkspace,
+    });
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it("POST /api/skills without name returns 400", async () => {
+    const { status } = await postJSON(port, "/api/skills", {});
+    expect(status).toBe(400);
   });
 });
 

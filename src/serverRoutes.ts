@@ -2049,5 +2049,612 @@ export async function handleServerRoute(
     return true;
   }
 
+  // ─── Git Worktrees Endpoints ────────────────────────────────────────────────
+  if (pathname === "/api/git/worktrees" && req.method === "GET") {
+    const wsPath = resolveWorkspacePath(req);
+    if (!wsPath) {
+      sendJSON(res, 400, { error: "No active workspace path" });
+      return true;
+    }
+    try {
+      const { execa } = await import("execa");
+      const result = await execa("git", ["worktree", "list"], { cwd: wsPath, reject: false });
+      if (result.failed) {
+        sendJSON(res, 200, { success: true, worktrees: [] });
+        return true;
+      }
+      const lines = result.stdout.trim().split("\n").filter(Boolean);
+      const worktrees = lines.map(line => {
+        const parts = line.split(/\s+/);
+        return {
+          path: parts[0],
+          sha: parts[1] || "",
+          branch: parts[2] ? parts[2].replace(/[()]/g, "") : ""
+        };
+      });
+      sendJSON(res, 200, { success: true, worktrees });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/git/worktrees/prune" && req.method === "POST") {
+    const wsPath = resolveWorkspacePath(req);
+    if (!wsPath) {
+      sendJSON(res, 400, { error: "No active workspace path" });
+      return true;
+    }
+    try {
+      const { execa } = await import("execa");
+      await execa("git", ["worktree", "prune"], { cwd: wsPath });
+      sendJSON(res, 200, { success: true });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/git/worktrees/remove" && req.method === "POST") {
+    const wsPath = resolveWorkspacePath(req);
+    if (!wsPath) {
+      sendJSON(res, 400, { error: "No active workspace path" });
+      return true;
+    }
+    try {
+      const bodyStr = await readBody(req);
+      const { path: targetPath, force } = JSON.parse(bodyStr || "{}");
+      if (!targetPath) {
+        sendJSON(res, 400, { error: "Missing path" });
+        return true;
+      }
+      const { execa } = await import("execa");
+      const args = ["worktree", "remove"];
+      if (force) args.push("--force");
+      args.push(targetPath);
+      await execa("git", args, { cwd: wsPath });
+      await execa("git", ["worktree", "prune"], { cwd: wsPath });
+      sendJSON(res, 200, { success: true });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  // ─── Checkpoints Endpoints ──────────────────────────────────────────────────
+  if (pathname === "/api/checkpoints" && req.method === "GET") {
+    const session = resolveSession(req);
+    if (!session) {
+      sendJSON(res, 400, { error: "Session not initialized" });
+      return true;
+    }
+    try {
+      const sessionFilePath = session.agent.getCurrentHistoryFilePath();
+      const { listCheckpointsForSession } = await import("./core/checkpoints.js");
+      const checkpoints = await listCheckpointsForSession(sessionFilePath);
+      sendJSON(res, 200, { success: true, checkpoints });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/checkpoints" && req.method === "POST") {
+    const session = resolveSession(req);
+    if (!session) {
+      sendJSON(res, 400, { error: "Session not initialized" });
+      return true;
+    }
+    try {
+      const bodyStr = await readBody(req);
+      const { name } = JSON.parse(bodyStr || "{}");
+      if (!name) {
+        sendJSON(res, 400, { error: "Missing name" });
+        return true;
+      }
+      const sessionFilePath = session.agent.getCurrentHistoryFilePath();
+      const messages = session.agent.getHistory().getMessages();
+      const planState = session.agent.planState;
+      const { createCheckpoint } = await import("./core/checkpoints.js");
+      const checkpoint = await createCheckpoint(
+        sessionFilePath,
+        name,
+        messages,
+        planState,
+        session.workspace
+      );
+      sendJSON(res, 200, { success: true, checkpoint });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/checkpoints/restore" && req.method === "POST") {
+    const session = resolveSession(req);
+    if (!session) {
+      sendJSON(res, 400, { error: "Session not initialized" });
+      return true;
+    }
+    try {
+      const bodyStr = await readBody(req);
+      const { id } = JSON.parse(bodyStr || "{}");
+      if (!id) {
+        sendJSON(res, 400, { error: "Missing id" });
+        return true;
+      }
+      const sessionFilePath = session.agent.getCurrentHistoryFilePath();
+      const { restoreCheckpointById, terminateActiveTasksAndSubagents } = await import("./core/checkpoints.js");
+      const checkpoint = await restoreCheckpointById(id, sessionFilePath);
+      if (!checkpoint) {
+        sendJSON(res, 404, { error: `Checkpoint with ID "${id}" not found.` });
+        return true;
+      }
+      terminateActiveTasksAndSubagents(session.workspace);
+      if (session.agent.loadHistory) {
+        await session.agent.loadHistory(session.sessionId);
+      }
+      
+      if (checkpoint.gitSha) {
+        const { execa } = await import("execa");
+        await execa("git", ["stash", "--include-untracked"], { cwd: session.workspace, reject: false });
+        await execa("git", ["checkout", checkpoint.gitSha], { cwd: session.workspace, reject: false });
+      }
+      sendJSON(res, 200, { success: true, checkpoint });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/checkpoints" && req.method === "DELETE") {
+    const session = resolveSession(req);
+    if (!session) {
+      sendJSON(res, 400, { error: "Session not initialized" });
+      return true;
+    }
+    try {
+      const bodyStr = await readBody(req);
+      const { id } = JSON.parse(bodyStr || "{}");
+      if (!id) {
+        sendJSON(res, 400, { error: "Missing id" });
+        return true;
+      }
+      const sessionFilePath = session.agent.getCurrentHistoryFilePath();
+      const { deleteCheckpointById } = await import("./core/checkpoints.js");
+      const deleted = await deleteCheckpointById(id, sessionFilePath);
+      sendJSON(res, 200, { success: deleted });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  // ─── Pinned Knowledge Endpoints ─────────────────────────────────────────────
+  if (pathname === "/api/knowledge" && req.method === "GET") {
+    const query = parsedUrl.searchParams.get("query") || "";
+    const limitParam = parsedUrl.searchParams.get("limit");
+    const limit = limitParam ? parseInt(limitParam, 10) : 50;
+    try {
+      const { getAllKnowledge, searchKnowledge } = await import("./core/pinnedKnowledge.js");
+      let entries = [];
+      if (query.trim()) {
+        entries = await searchKnowledge(query.trim(), { limit });
+      } else {
+        entries = getAllKnowledge({ limit });
+      }
+      sendJSON(res, 200, { success: true, entries });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/knowledge" && req.method === "POST") {
+    const session = resolveSession(req);
+    if (!session) {
+      sendJSON(res, 400, { error: "Session not initialized" });
+      return true;
+    }
+    try {
+      const bodyStr = await readBody(req);
+      const { content, role, tag, timestamp } = JSON.parse(bodyStr || "{}");
+      if (!content || !role) {
+        sendJSON(res, 400, { error: "Missing content or role" });
+        return true;
+      }
+      const sessionFilePath = session.agent.getCurrentHistoryFilePath();
+      const { addToKnowledge } = await import("./core/pinnedKnowledge.js");
+      const entry = {
+        id: `pin_${Date.now()}`,
+        role,
+        content,
+        timestamp: timestamp || Date.now(),
+        pinnedAt: Date.now(),
+        originalIndex: 0,
+        agentTag: {
+          tier: session.agent.tier || "unknown",
+          subagentType: session.agent.subagentType,
+          workingDirectory: session.workspace
+        },
+        tag: tag || undefined
+      };
+      addToKnowledge(entry, sessionFilePath, session.workspace);
+      sendJSON(res, 200, { success: true });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/knowledge" && req.method === "DELETE") {
+    try {
+      const bodyStr = await readBody(req);
+      const { id } = JSON.parse(bodyStr || "{}");
+      if (!id) {
+        sendJSON(res, 400, { error: "Missing id" });
+        return true;
+      }
+      const { removeFromKnowledge } = await import("./core/pinnedKnowledge.js");
+      const deleted = removeFromKnowledge(id);
+      sendJSON(res, 200, { success: deleted });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  // ─── Context Compaction Endpoints ───────────────────────────────────────────
+  if (pathname === "/api/history/compaction" && req.method === "GET") {
+    const limitParam = parsedUrl.searchParams.get("limit");
+    const limit = limitParam ? parseInt(limitParam, 10) : 50;
+    try {
+      const { getCompactionHistoryFromDb } = await import("./core/storage/historyDb.js");
+      const history = getCompactionHistoryFromDb(limit);
+      sendJSON(res, 200, { success: true, history });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/history/compaction/clear" && req.method === "POST") {
+    try {
+      const { clearCompactionHistoryInDb } = await import("./core/storage/historyDb.js");
+      clearCompactionHistoryInDb();
+      sendJSON(res, 200, { success: true });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/history/compaction/compact" && req.method === "POST") {
+    const session = resolveSession(req);
+    if (!session) {
+      sendJSON(res, 400, { error: "Session not initialized" });
+      return true;
+    }
+    try {
+      const conversation = session.agent.getHistory();
+      const cm = conversation?.getContextManager?.();
+      if (!cm) {
+        sendJSON(res, 400, { error: "ContextManager not initialized" });
+        return true;
+      }
+      const messages = conversation.getMessages();
+      const tokensBefore = cm.estimateTokensForAll(messages).total;
+      const result = await cm.compact(messages);
+      conversation.replaceMessages(result.messages);
+      const tokensAfter = cm.estimateTokensForAll(result.messages).total;
+      sendJSON(res, 200, {
+        success: true,
+        strategy: result.metadata.strategy,
+        tokensBefore,
+        tokensAfter,
+        messagesBefore: messages.length,
+        messagesAfter: result.messages.length
+      });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  // ─── Goal Mode Endpoints ────────────────────────────────────────────────────
+  if (pathname === "/api/goal" && req.method === "GET") {
+    const session = resolveSession(req);
+    if (!session) {
+      sendJSON(res, 400, { error: "Session not initialized" });
+      return true;
+    }
+    sendJSON(res, 200, { success: true, goal: session.agent.goalMode });
+    return true;
+  }
+
+  if (pathname === "/api/goal" && req.method === "POST") {
+    const session = resolveSession(req);
+    if (!session) {
+      sendJSON(res, 400, { error: "Session not initialized" });
+      return true;
+    }
+    try {
+      const bodyStr = await readBody(req);
+      const { goal } = JSON.parse(bodyStr || "{}");
+      if (!goal) {
+        sendJSON(res, 400, { error: "Missing goal objective" });
+        return true;
+      }
+      session.agent.goalMode = goal;
+      
+      try {
+        const fsPromises = await import("fs/promises");
+        const scratchDir = path.resolve(session.workspace, "scratch");
+        await fsPromises.mkdir(scratchDir, { recursive: true });
+        const scratchPath = path.join(scratchDir, "scratchpad.md");
+        let existing = "";
+        try { existing = await fsPromises.readFile(scratchPath, "utf-8"); } catch {}
+        const goalBlock = `\n\n## 🎯 ACTIVE GOAL (set ${new Date().toISOString()})\n${goal}\n`;
+        const cleaned = existing.replace(/\n\n## 🎯 ACTIVE GOAL[\s\S]*?(?=\n\n##|$)/g, "");
+        await fsPromises.writeFile(scratchPath, cleaned + goalBlock, "utf-8");
+      } catch {}
+
+      session.agent.sendMessage(
+        `GOAL MODE: Your primary objective is to achieve the following goal completely and verifiably:\n\n"${goal}"\n\nBegin immediately. Plan thoroughly, execute step by step, verify completion, and report back with GOAL_COMPLETE or GOAL_PARTIAL.`
+      ).catch(() => {});
+
+      sendJSON(res, 200, { success: true });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/goal" && req.method === "DELETE") {
+    const session = resolveSession(req);
+    if (!session) {
+      sendJSON(res, 400, { error: "Session not initialized" });
+      return true;
+    }
+    session.agent.goalMode = null;
+    session.agent.abort();
+    sendJSON(res, 200, { success: true });
+    return true;
+  }
+
+  // ─── Terminal Presets Endpoints ─────────────────────────────────────────────
+  if (pathname === "/api/terminal/presets" && req.method === "GET") {
+    const wsPath = resolveWorkspacePath(req);
+    if (!wsPath) {
+      sendJSON(res, 400, { error: "No active workspace path" });
+      return true;
+    }
+    try {
+      const os = await import("os");
+      const localPresetDir = path.join(wsPath, ".superagent-r");
+      const localPresetPath = path.join(localPresetDir, "terminal-presets.json");
+      const localRootPresetPath = path.join(wsPath, "terminal-presets.json");
+      const globalPresetPath = path.join(os.homedir(), ".superagent-r", "terminal-presets.json");
+      const paths = [localPresetPath, localRootPresetPath, globalPresetPath];
+      let presets: Record<string, any> = {};
+      for (const p of paths) {
+        try {
+          const content = fs.readFileSync(p, "utf-8");
+          const data = JSON.parse(content);
+          presets = data?.presets ?? data;
+          break;
+        } catch {}
+      }
+      sendJSON(res, 200, { success: true, presets });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/terminal/presets" && req.method === "POST") {
+    const wsPath = resolveWorkspacePath(req);
+    if (!wsPath) {
+      sendJSON(res, 400, { error: "No active workspace path" });
+      return true;
+    }
+    try {
+      const bodyStr = await readBody(req);
+      const { presets } = JSON.parse(bodyStr || "{}");
+      if (!presets) {
+        sendJSON(res, 400, { error: "Missing presets data" });
+        return true;
+      }
+      const localPresetDir = path.join(wsPath, ".superagent-r");
+      if (!fs.existsSync(localPresetDir)) {
+        fs.mkdirSync(localPresetDir, { recursive: true });
+      }
+      const localPresetPath = path.join(localPresetDir, "terminal-presets.json");
+      fs.writeFileSync(localPresetPath, JSON.stringify({ presets }, null, 2), "utf-8");
+      sendJSON(res, 200, { success: true });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/terminal/run" && req.method === "POST") {
+    const wsPath = resolveWorkspacePath(req);
+    if (!wsPath) {
+      sendJSON(res, 400, { error: "No active workspace path" });
+      return true;
+    }
+    try {
+      const bodyStr = await readBody(req);
+      const { command, presetName } = JSON.parse(bodyStr || "{}");
+      if (!command && !presetName) {
+        sendJSON(res, 400, { error: "Missing command or presetName" });
+        return true;
+      }
+      
+      const os = await import("os");
+      const localPresetDir = path.join(wsPath, ".superagent-r");
+      const localPresetPath = path.join(localPresetDir, "terminal-presets.json");
+      const localRootPresetPath = path.join(wsPath, "terminal-presets.json");
+      const globalPresetPath = path.join(os.homedir(), ".superagent-r", "terminal-presets.json");
+      const paths = [localPresetPath, localRootPresetPath, globalPresetPath];
+      let presets: Record<string, any> = {};
+      for (const p of paths) {
+        try {
+          const content = fs.readFileSync(p, "utf-8");
+          const data = JSON.parse(content);
+          presets = data?.presets ?? data;
+          break;
+        } catch {}
+      }
+
+      let commandStr = command || "";
+      let runCwd = wsPath;
+      let runEnv = { ...process.env };
+
+      const { findPreset } = await import("./core/commands/types.js");
+      if (presetName) {
+        const found = findPreset(presets, presetName);
+        if (!found) {
+          sendJSON(res, 404, { error: `Preset "${presetName}" not found` });
+          return true;
+        }
+        const val = found.value;
+        if (typeof val === "object" && val !== null) {
+          commandStr = val.command || "";
+          if (val.cwd) {
+            runCwd = path.resolve(wsPath, val.cwd);
+          }
+          if (val.env) {
+            runEnv = { ...runEnv, ...val.env };
+          }
+        } else {
+          commandStr = String(val);
+        }
+      }
+
+      const taskId = `term-bg-${Math.random().toString(36).substring(2, 9)}`;
+      const session = resolveSession(req);
+      const sessionPath = session?.agent?.getCurrentHistoryFilePath();
+      const { getWorkspaceTasksLogDir } = await import("./core/config.js");
+      const tasksLogDir = sessionPath
+        ? path.join(path.dirname(sessionPath), "tasks")
+        : getWorkspaceTasksLogDir();
+      if (!fs.existsSync(tasksLogDir)) fs.mkdirSync(tasksLogDir, { recursive: true });
+      const logPath = path.join(tasksLogDir, `${taskId}.log`);
+      fs.writeFileSync(logPath, "");
+
+      let shellPath: string | boolean = true;
+      if (process.platform === "win32") {
+        shellPath = "powershell.exe";
+      }
+
+      const { execa } = await import("execa");
+      const proc = execa(commandStr, {
+        shell: shellPath,
+        cwd: runCwd,
+        env: runEnv,
+        reject: false,
+        all: true,
+      });
+
+      const { notifyTasksChanged } = await import("./core/tools/state.js");
+      const task = {
+        id: taskId,
+        command: commandStr,
+        process: proc,
+        output: [] as string[],
+        logPath,
+        cwd: runCwd,
+      };
+
+      backgroundTasks.set(taskId, task as any);
+      notifyTasksChanged();
+
+      proc.all?.on("data", (data: Buffer) => {
+        const text = data.toString();
+        task.output.push(text);
+        if (task.output.length > 1000) task.output.shift();
+        try { fs.appendFileSync(logPath, text); } catch {}
+      });
+
+      proc.on("close", (code: number | null) => {
+        (task as any).hasExited = true;
+        (task as any).exitCode = code;
+        const exitMsg = `\n[Process exited with code ${code}]`;
+        task.output.push(exitMsg);
+        try { fs.appendFileSync(logPath, exitMsg); } catch {}
+        notifyTasksChanged();
+      });
+
+      sendJSON(res, 200, { success: true, taskId, command: commandStr, logPath });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  // ─── Internal Hooks Endpoints ───────────────────────────────────────────────
+  if (pathname === "/api/internal-hooks" && req.method === "GET") {
+    try {
+      const { getAvailableHooks } = await import("./core/tools/dynamicHooks.js");
+      sendJSON(res, 200, { success: true, hooks: getAvailableHooks() });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/internal-hooks/active" && req.method === "POST") {
+    const wsPath = resolveWorkspacePath(req);
+    if (!wsPath) {
+      sendJSON(res, 400, { error: "No active workspace path" });
+      return true;
+    }
+    try {
+      const bodyStr = await readBody(req);
+      const { activeHooks } = JSON.parse(bodyStr || "{}");
+      if (!Array.isArray(activeHooks)) {
+        sendJSON(res, 400, { error: "activeHooks must be an array of strings" });
+        return true;
+      }
+      const { saveActiveHooksForProject } = await import("./core/tools/dynamicHooks.js");
+      saveActiveHooksForProject(wsPath, activeHooks);
+      sendJSON(res, 200, { success: true });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  // ─── Skills Endpoints ───────────────────────────────────────────────────────
+  if (pathname === "/api/skills" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const { name } = JSON.parse(bodyStr || "{}");
+      if (!name) {
+        sendJSON(res, 400, { error: "Missing skill name (owner/repo)" });
+        return true;
+      }
+      const isWin = process.platform === "win32";
+      const shell = isWin ? "powershell.exe" : true;
+      const { execa } = await import("execa");
+      const result = await execa("bunx", ["skills", "add", "-y", name], {
+        shell,
+        cwd: process.cwd(),
+        reject: false
+      });
+      if (result.failed) {
+        sendJSON(res, 500, { error: result.stderr || result.stdout || "Failed to install skill" });
+      } else {
+        sendJSON(res, 200, { success: true, output: result.stdout });
+      }
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
   return false;
 }
+

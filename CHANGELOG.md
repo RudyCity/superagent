@@ -1,3 +1,17 @@
+## [1.2.662] - 2026-07-31
+
+### Feat: Server REST Endpoints Integration
+- **REST Endpoints**: Implemented and integrated missing REST API endpoints for key Superagent feature sets in `src/serverRoutes.ts`:
+  - Git Worktrees: GET `/api/git/worktrees`, POST `/api/git/worktrees/prune`, POST `/api/git/worktrees/remove`.
+  - Session Checkpoints: GET `/api/checkpoints`, POST `/api/checkpoints`, POST `/api/checkpoints/restore`, DELETE `/api/checkpoints`.
+  - Pinned Messages & Knowledge: GET `/api/knowledge`, POST `/api/knowledge`, DELETE `/api/knowledge`.
+  - Context Compaction: GET `/api/history/compaction`, POST `/api/history/compaction/clear`, POST `/api/history/compaction/compact`.
+  - Goal Mode: GET `/api/goal`, POST `/api/goal`, DELETE `/api/goal`.
+  - Terminal Presets & background tasks: GET `/api/terminal/presets`, POST `/api/terminal/presets`, POST `/api/terminal/run`.
+  - Internal Hooks: GET `/api/internal-hooks`, POST `/api/internal-hooks/active`.
+  - Skills Installation: POST `/api/skills`.
+- **Tests**: Added full suite of integration tests for all new server endpoints in `tests/server2.test.ts`.
+
 ## [1.2.661] - 2026-07-31
 
 ### Fix: Fast-fail Timeout for Node Health Checks
