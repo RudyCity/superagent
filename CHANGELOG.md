@@ -1,3 +1,15 @@
+## [1.2.658] - 2026-07-31
+
+### Fix: documentReadTools.ts — 7 improvements
+
+- **Local file size limit**: Added 100 MB cap before `fs.readFile()` for local files (SSH path already had it).
+- **Re-import redundant**: Moved `import os from "os"` to top-level; removed duplicate `import()` calls inside function body.
+- **Silent catches logged**: All 4 catch blocks now log via `console.warn()` with `[readDocument]` prefix for traceability.
+- **OfficeCLI timeout**: Added `timeout: 30000` to `execa()` call preventing indefinite hangs.
+- **Reduced `any` casts**: Renamed `pdfParse` → `PDFParseCtor`; minimized `as any` usage.
+- **PDF error detail**: Catch block logs specific error message before OCR fallback.
+- **Temp file leak fix**: `fs.writeFile(tmp)` wrapped in try → `finally { unlink }` ensures cleanup.
+
 ## [1.2.657] - 2026-07-31
 
 ### Optimization: System Prompt Token Efficiency and Classification Accuracy
