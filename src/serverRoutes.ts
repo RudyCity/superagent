@@ -2,6 +2,7 @@ import http from "http";
 import path from "path";
 import fs from "fs";
 import { URL } from "url";
+import { logE2E } from "./core/utils/unifiedLogger.js";
 import type { Agent } from "./core/agent.js";
 import { 
   getSettings,
@@ -183,21 +184,11 @@ export async function handleServerRoute(
     const limit = limitParam ? parseInt(limitParam, 10) : undefined;
     const offset = offsetParam ? parseInt(offsetParam, 10) : 0;
 
+    logE2E("SUPERAGENT-SERVER", `GET /api/history`, { targetSessionId, limit, offset });
     if (targetSessionId) {
-      // First check active in-memory session
-      const session = resolveSession(req, targetSessionId);
-      if (session && session.sessionId === targetSessionId) {
-        const msgs = session.agent.getConversationMessages();
-        if (msgs && msgs.length > 0) {
-          const totalCount = msgs.length;
-          const paginatedMsgs = limit !== undefined ? msgs.slice(offset, offset + limit) : msgs.slice(offset);
-          const hasMore = limit !== undefined ? offset + limit < totalCount : false;
-          sendJSON(res, 200, { success: true, messages: paginatedMsgs, totalCount, hasMore });
-          return true;
-        }
-      }
-      // Fallback directly to SQLite database persistent storage
+      // First check SQLite database persistent storage for complete history
       const dbResult = loadSessionFromDb(targetSessionId);
+      logE2E("SUPERAGENT-SERVER", `GET /api/history dbResult`, { targetSessionId, found: !!dbResult?.session, count: dbResult?.messages?.length });
       if (dbResult && dbResult.session && dbResult.messages.length > 0) {
         const formattedMsgs = dbResult.messages.map((m) => {
           let content = m.content;
@@ -217,15 +208,38 @@ export async function handleServerRoute(
             content,
             toolCalls,
             toolResults,
-            reasoning: m.reasoning,
-            timestamp: m.timestamp,
+            timestamp: m.timestamp
           };
         });
-        const totalCount = formattedMsgs.length;
-        const paginatedMsgs = limit !== undefined ? formattedMsgs.slice(offset, offset + limit) : formattedMsgs.slice(offset);
+
+        // Check if in-memory session has newer unpersisted messages
+        const session = resolveSession(req, targetSessionId);
+        let finalMsgs = formattedMsgs;
+        if (session && session.sessionId === targetSessionId) {
+          const memMsgs = session.agent.getConversationMessages();
+          if (memMsgs && memMsgs.length > formattedMsgs.length) {
+            finalMsgs = memMsgs as any;
+          }
+        }
+
+        const totalCount = finalMsgs.length;
+        const paginatedMsgs = limit !== undefined ? finalMsgs.slice(offset, offset + limit) : finalMsgs.slice(offset);
         const hasMore = limit !== undefined ? offset + limit < totalCount : false;
         sendJSON(res, 200, { success: true, messages: paginatedMsgs, totalCount, hasMore });
         return true;
+      }
+
+      // Fallback to active in-memory session if DB entry is empty
+      const session = resolveSession(req, targetSessionId);
+      if (session && session.sessionId === targetSessionId) {
+        const msgs = session.agent.getConversationMessages();
+        if (msgs && msgs.length > 0) {
+          const totalCount = msgs.length;
+          const paginatedMsgs = limit !== undefined ? msgs.slice(offset, offset + limit) : msgs.slice(offset);
+          const hasMore = limit !== undefined ? offset + limit < totalCount : false;
+          sendJSON(res, 200, { success: true, messages: paginatedMsgs, totalCount, hasMore });
+          return true;
+        }
       }
     }
     sendJSON(res, 200, { success: true, messages: [], totalCount: 0, hasMore: false });

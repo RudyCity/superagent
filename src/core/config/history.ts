@@ -32,6 +32,7 @@ export function getCurrentWorkspaceIdentifier(workingDir?: string): string {
     if (trimmed.startsWith("ssh:") || trimmed.startsWith("ssh://") || trimmed.startsWith("chain:")) {
       return trimmed;
     }
+    return path.resolve(trimmed);
   }
 
   try {
@@ -56,7 +57,20 @@ export function getCurrentWorkspaceIdentifier(workingDir?: string): string {
 
 export function normalizeAndCheckSubpath(childPath: string, parentPath: string): boolean {
   if (childPath.startsWith("chain:") || parentPath.startsWith("chain:")) {
-    return childPath.toLowerCase() === parentPath.toLowerCase();
+    if (childPath.toLowerCase() === parentPath.toLowerCase()) return true;
+    const physPath = childPath.startsWith("chain:") ? parentPath : childPath;
+    try {
+      const activeChain = workspaceChainManager.getActiveChain();
+      if (activeChain) {
+        return activeChain.nodes.some((n: { path?: string }) => {
+          if (!n.path) return false;
+          const resolvedNode = path.resolve(n.path).toLowerCase();
+          const resolvedPhys = path.resolve(physPath).toLowerCase();
+          return resolvedPhys === resolvedNode || resolvedPhys.startsWith(resolvedNode + path.sep) || resolvedNode.startsWith(resolvedPhys + path.sep);
+        });
+      }
+    } catch {}
+    return false;
   }
 
   const childSsh = parseSshUrl(childPath);
@@ -77,12 +91,37 @@ export function normalizeAndCheckSubpath(childPath: string, parentPath: string):
   }
   const childSlash = resolvedChild.replace(/\\/g, "/");
   const parentSlash = resolvedParent.replace(/\\/g, "/");
-  return resolvedChild.startsWith(resolvedParent + path.sep) || 
-         resolvedChild === resolvedParent || 
-         childSlash.startsWith(parentSlash + "/") || 
-         childSlash === parentSlash ||
-         resolvedParent.startsWith(resolvedChild + path.sep) ||
-         parentSlash.startsWith(childSlash + "/");
+  if (
+    resolvedChild.startsWith(resolvedParent + path.sep) || 
+    resolvedChild === resolvedParent || 
+    childSlash.startsWith(parentSlash + "/") || 
+    childSlash === parentSlash ||
+    resolvedParent.startsWith(resolvedChild + path.sep) ||
+    parentSlash.startsWith(childSlash + "/")
+  ) {
+    return true;
+  }
+
+  try {
+    const activeChain = workspaceChainManager.getActiveChain();
+    if (activeChain && activeChain.nodes && activeChain.nodes.length > 0) {
+      const isChildInChain = activeChain.nodes.some((n: { path?: string }) => {
+        if (!n.path) return false;
+        const resN = path.resolve(n.path).toLowerCase();
+        const resC = path.resolve(childPath).toLowerCase();
+        return resC === resN || resC.startsWith(resN + path.sep) || resN.startsWith(resC + path.sep);
+      });
+      const isParentInChain = activeChain.nodes.some((n: { path?: string }) => {
+        if (!n.path) return false;
+        const resN = path.resolve(n.path).toLowerCase();
+        const resP = path.resolve(parentPath).toLowerCase();
+        return resP === resN || resP.startsWith(resN + path.sep) || resN.startsWith(resP + path.sep);
+      });
+      if (isChildInChain && isParentInChain) return true;
+    }
+  } catch {}
+
+  return false;
 }
 
 export interface HistorySession {
@@ -116,19 +155,12 @@ export function formatSessionLabel(s: HistorySession): string {
   return s.displayName || s.id;
 }
 
-interface HistoryCacheEntry {
-  timestamp: number;
-  data: HistorySession[];
-}
-
-const listCache = new Map<string, HistoryCacheEntry>();
-
 export function generateSessionId(): string {
   return `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 }
 
 export function clearHistoryCache(): void {
-  listCache.clear();
+  // No-op kept for API backward compatibility
 }
 
 export function purgeEmptySessions(maxAgeHours: number = 24): { purgedCount: number } {
@@ -229,15 +261,6 @@ export function listHistorySessionsPaginated(options: {
   const modeFilter = options.modeFilter ?? (isMulti ? "multi" : "single");
 
   const currentDir = getCurrentWorkspaceIdentifier(workspaceDir);
-  const cacheKey = `${isMulti}:${crossSession}:${currentDir}:${limit ?? "all"}:${offset}:${modeFilter}`;
-  const now = Date.now();
-  const cached = listCache.get(cacheKey);
-  if (!process.env.VITEST && cached && now - cached.timestamp < 30000) {
-    const totalCount = cached.data.length;
-    const paginated = limit !== undefined ? cached.data.slice(offset, offset + limit) : cached.data.slice(offset);
-    const hasMore = limit !== undefined ? offset + limit < totalCount : false;
-    return { sessions: paginated, totalCount, hasMore };
-  }
 
   const sessions: HistorySession[] = [];
   try {
@@ -276,7 +299,6 @@ export function listHistorySessionsPaginated(options: {
   }
 
   sessions.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
-  listCache.set(cacheKey, { timestamp: now, data: sessions });
 
   const totalCount = sessions.length;
   const paginated = limit !== undefined ? sessions.slice(offset, offset + limit) : sessions.slice(offset);

@@ -2,6 +2,7 @@ import { createRequire } from "module";
 import fs from "fs";
 import path from "path";
 import { getGlobalConfigDir, getWorkspaceId, getModelConfigPath, getRootConfigDir } from "../config/paths.js";
+import { logE2E } from "../utils/unifiedLogger.js";
 
 const require = createRequire(import.meta.url);
 
@@ -451,11 +452,13 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
 
     db.exec("COMMIT;");
     try {
-      const { clearHistoryCache } = require("../config/history.js");
+      const { clearHistoryCache } = require("../config/history");
       clearHistoryCache();
     } catch {}
+    logE2E("SQL", `saveSessionToDb: ${session.id}`, { messageCount: messages.length, workingDirectory: session.workingDirectory });
   } catch (err) {
     db.exec("ROLLBACK;");
+    logE2E("SQL", `saveSessionToDb ERROR: ${session.id}`, { error: String(err) });
     throw err;
   }
 }
@@ -497,6 +500,12 @@ export function loadSessionFromDb(sessionId: string): {
 
   const getPinnedStmt = db.prepare("SELECT message_data as messageData FROM pinned_messages WHERE session_id = ? ORDER BY id DESC LIMIT 1");
   const pinnedRow = getPinnedStmt.get(sessionId) as { messageData: string } | undefined;
+
+  logE2E("SQL", `loadSessionFromDb: ${sessionId}`, {
+    found: !!sessionRow,
+    messageCount: messages.length,
+    workingDirectory: sessionRow?.workingDirectory
+  });
 
   return {
     session: sessionRow,

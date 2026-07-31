@@ -1,3 +1,11 @@
+"## [1.2.665] - 2026-07-31
+
+### Fix & Refactor: Workspace Chain Search & Session Resolution
+- **Workspace Chain Search**: Enhanced FTS search in `src/core/storage/historyDb.ts` to support chain node path matching.
+- **Path Resolution**: Fixed path normalization for workspace chain identifiers in `src/core/config/history.ts` and file tools in `src/core/tools/fileReadTools.ts`.
+- **Session Matching**: Fixed `resolveSession()` in `src/server.ts` to prevent silent ID mutations.
+- **Tests**: Added workspace chain search unit tests in `tests/workspaceChainSearch.test.ts`.
+
 ## [1.2.664] - 2026-07-31
 
 ### Fix: resolveSession() Silent SessionId Mutation Bug

@@ -155,11 +155,12 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
 
   if (targetSessionId) {
     for (const session of activeSessions.values()) {
-      if (session.sessionId === targetSessionId && session.clientMode === reqClientMode) {
+      if (session.sessionId === targetSessionId) {
         session.lastActiveTime = Date.now();
         return session;
       }
     }
+    return null;
   }
 
   if (wsPath) {

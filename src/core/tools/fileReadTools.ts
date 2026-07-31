@@ -10,6 +10,7 @@ import { getWorkspaceCachePath } from "../workspaceDiscovery.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { sshReadToolExecute, sshGlobToolExecute, sshGrepToolExecute } from "../ssh/sshCommands.js";
 import { sshLogger } from "../ssh/sshLogger.js";
+import { workspaceChainManager } from "../workspace/WorkspaceChainManager.js";
 
 export const readTool: Tool = {
   name: "read",
@@ -286,9 +287,6 @@ export const grepTool: Tool = {
     }
     const pattern = args.pattern as string;
     const include = (args.include as string) || "*";
-    const searchPath = args.path
-      ? path.resolve(cwd, args.path as string)
-      : cwd;
 
     try {
       new RegExp(pattern, "gi");
@@ -297,67 +295,107 @@ export const grepTool: Tool = {
       return `Error: ${message}`;
     }
 
-    try {
-      let files: string[] | null = null;
+    const activeChain = workspaceChainManager.isChainActive(cwd)
+      ? workspaceChainManager.getActiveChain(cwd)
+      : null;
 
-      const isSearchPathFile = fsSync.existsSync(searchPath) && fsSync.statSync(searchPath).isFile();
-      if (isSearchPathFile) {
-        files = [searchPath];
-      } else {
-        try {
-          const cachePath = getWorkspaceCachePath(searchPath);
-          if (fsSync.existsSync(cachePath)) {
-            const cacheContent = fsSync.readFileSync(cachePath, "utf-8");
-            const cache = JSON.parse(cacheContent);
-            if (cache && Array.isArray(cache.fileList)) {
-              const picomatchModule = await import("picomatch") as any;
-              const picomatch = picomatchModule.default;
-              const isMatch = picomatch(`**/${include}`);
-              const matchedFiles = cache.fileList.filter((file: string) => isMatch(file));
-              files = matchedFiles.map((file: string) => path.resolve(searchPath, file));
-            }
+    let targetNodes: { id: string; label: string; rootPath: string; searchPath: string }[] = [];
+
+    if (activeChain && (!args.path || !path.isAbsolute(args.path as string))) {
+      for (const node of activeChain.nodes) {
+        if (node.type === "local" && node.path) {
+          const rootPath = path.resolve(cwd, node.path);
+          const sPath = args.path
+            ? path.resolve(rootPath, args.path as string)
+            : rootPath;
+          if (fsSync.existsSync(sPath)) {
+            targetNodes.push({
+              id: node.id,
+              label: node.label || node.id,
+              rootPath,
+              searchPath: sPath,
+            });
           }
-        } catch (cacheErr) {
-          // Fallback to disk
-        }
-
-        if (files === null) {
-          files = await fg(`**/${include}`, {
-            cwd: searchPath,
-            absolute: true,
-            onlyFiles: true,
-            ignore: ["**/node_modules/**", "**/dist/**", "**/.git/**"],
-          });
         }
       }
+    }
 
+    if (targetNodes.length === 0) {
+      const singleSearchPath = args.path
+        ? path.resolve(cwd, args.path as string)
+        : cwd;
+      targetNodes.push({
+        id: "current",
+        label: "current",
+        rootPath: cwd,
+        searchPath: singleSearchPath,
+      });
+    }
+
+    try {
       const results: string[] = [];
-      const slicedFiles = files.slice(0, 500);
+      const showNodePrefix = targetNodes.length > 1;
 
-      const BATCH_SIZE = 25;
-      for (let offset = 0; offset < slicedFiles.length; offset += BATCH_SIZE) {
-        const batch = slicedFiles.slice(offset, offset + BATCH_SIZE);
-        await Promise.all(
-          batch.map(async (file) => {
-            try {
-              const content = await fs.readFile(file, "utf-8");
-              if (content.includes("\0")) return; // skip binary
-              const lines = content.split(/\r?\n/);
-              const localRegex = new RegExp(pattern, "gi");
-              for (let i = 0; i < lines.length; i++) {
-                if (localRegex.test(lines[i])) {
-                  const relPath = isSearchPathFile
-                    ? path.basename(file)
-                    : path.relative(searchPath, file).replace(/\\/g, "/");
-                  results.push(`${relPath}:${i + 1}: ${lines[i].trim()}`);
-                }
-                localRegex.lastIndex = 0;
+      for (const node of targetNodes) {
+        let files: string[] | null = null;
+        const isSearchPathFile = fsSync.existsSync(node.searchPath) && fsSync.statSync(node.searchPath).isFile();
+        if (isSearchPathFile) {
+          files = [node.searchPath];
+        } else {
+          try {
+            const cachePath = getWorkspaceCachePath(node.searchPath);
+            if (fsSync.existsSync(cachePath)) {
+              const cacheContent = fsSync.readFileSync(cachePath, "utf-8");
+              const cache = JSON.parse(cacheContent);
+              if (cache && Array.isArray(cache.fileList)) {
+                const picomatchModule = await import("picomatch") as any;
+                const picomatch = picomatchModule.default;
+                const isMatch = picomatch(`**/${include}`);
+                const matchedFiles = cache.fileList.filter((file: string) => isMatch(file));
+                files = matchedFiles.map((file: string) => path.resolve(node.searchPath, file));
               }
-            } catch {
-              // skip unreadable files
             }
-          })
-        );
+          } catch (cacheErr) {
+            // Fallback to disk
+          }
+
+          if (files === null) {
+            files = await fg(`**/${include}`, {
+              cwd: node.searchPath,
+              absolute: true,
+              onlyFiles: true,
+              ignore: ["**/node_modules/**", "**/dist/**", "**/.git/**"],
+            });
+          }
+        }
+
+        const slicedFiles = files.slice(0, 500);
+        const BATCH_SIZE = 25;
+        for (let offset = 0; offset < slicedFiles.length; offset += BATCH_SIZE) {
+          const batch = slicedFiles.slice(offset, offset + BATCH_SIZE);
+          await Promise.all(
+            batch.map(async (file) => {
+              try {
+                const content = await fs.readFile(file, "utf-8");
+                if (content.includes("\0")) return; // skip binary
+                const lines = content.split(/\r?\n/);
+                const localRegex = new RegExp(pattern, "gi");
+                for (let i = 0; i < lines.length; i++) {
+                  if (localRegex.test(lines[i])) {
+                    const relPath = isSearchPathFile
+                      ? path.basename(file)
+                      : path.relative(node.rootPath, file).replace(/\\/g, "/");
+                    const prefix = showNodePrefix ? `[${node.id}] ` : "";
+                    results.push(`${prefix}${relPath}:${i + 1}: ${lines[i].trim()}`);
+                  }
+                  localRegex.lastIndex = 0;
+                }
+              } catch {
+                // skip unreadable files
+              }
+            })
+          );
+        }
       }
 
       if (results.length > 100) {
@@ -397,10 +435,43 @@ export const ripgrepSearchTool: Tool = {
     }
     const pattern = args.pattern as string;
     const rawPath = args.path as string | undefined;
-    const searchPath = rawPath ? path.resolve(cwd, rawPath) : cwd;
 
-    if (rawPath && /\s/.test(rawPath) && !fsSync.existsSync(searchPath)) {
-      return `Error: Search path "${rawPath}" does not exist. Pass one path per ripgrep_search call; do not combine paths like "src tests".`;
+    const activeChain = workspaceChainManager.isChainActive(cwd)
+      ? workspaceChainManager.getActiveChain(cwd)
+      : null;
+
+    let targetNodes: { id: string; label: string; rootPath: string; searchPath: string }[] = [];
+
+    if (activeChain && (!rawPath || !path.isAbsolute(rawPath))) {
+      for (const node of activeChain.nodes) {
+        if (node.type === "local" && node.path) {
+          const rootPath = path.resolve(cwd, node.path);
+          const sPath = rawPath
+            ? path.resolve(rootPath, rawPath)
+            : rootPath;
+          if (fsSync.existsSync(sPath)) {
+            targetNodes.push({
+              id: node.id,
+              label: node.label || node.id,
+              rootPath,
+              searchPath: sPath,
+            });
+          }
+        }
+      }
+    }
+
+    if (targetNodes.length === 0) {
+      const singleSearchPath = rawPath ? path.resolve(cwd, rawPath) : cwd;
+      if (rawPath && /\s/.test(rawPath) && !fsSync.existsSync(singleSearchPath)) {
+        return `Error: Search path "${rawPath}" does not exist. Pass one path per ripgrep_search call; do not combine paths like "src tests".`;
+      }
+      targetNodes.push({
+        id: "current",
+        label: "current",
+        rootPath: cwd,
+        searchPath: singleSearchPath,
+      });
     }
 
     await ensureRgInstalled();
@@ -415,36 +486,60 @@ export const ripgrepSearchTool: Tool = {
     }
 
     try {
-      const result = await execa(
-        rgExe,
-        [
-          "--vimgrep",
-          "--smart-case",
-          "--glob", "!node_modules",
-          "--glob", "!dist",
-          "--glob", "!.git",
-          pattern,
-          searchPath
-        ],
-        {
-          reject: false,
-          cancelSignal: signal,
-        }
+      const showNodePrefix = targetNodes.length > 1;
+      const allLines: string[] = [];
+
+      await Promise.all(
+        targetNodes.map(async (node) => {
+          const result = await execa(
+            rgExe,
+            [
+              "--vimgrep",
+              "--smart-case",
+              "--glob", "!node_modules",
+              "--glob", "!dist",
+              "--glob", "!.git",
+              pattern,
+              node.searchPath,
+            ],
+            {
+              reject: false,
+              cancelSignal: signal,
+            }
+          );
+
+          if (result.exitCode === 0 && result.stdout) {
+            const lines = result.stdout.split("\n");
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              const match = line.match(/^(.*?):(\d+):(\d+):(.*)$/);
+              if (match) {
+                const fullPath = match[1];
+                const lineNum = match[2];
+                const colNum = match[3];
+                const content = match[4];
+                const relPath = path.isAbsolute(fullPath)
+                  ? path.relative(node.rootPath, fullPath).replace(/\\/g, "/")
+                  : path.relative(node.rootPath, path.resolve(cwd, fullPath)).replace(/\\/g, "/");
+                const prefix = showNodePrefix ? `[${node.id}] ` : "";
+                allLines.push(`${prefix}${relPath}:${lineNum}:${colNum}:${content}`);
+              } else {
+                const prefix = showNodePrefix ? `[${node.id}] ` : "";
+                allLines.push(`${prefix}${line}`);
+              }
+            }
+          }
+        })
       );
 
-      if (result.exitCode === 1) {
+      if (allLines.length === 0) {
         return "No matches found.";
       }
-      if (result.exitCode !== 0) {
-        return `ripgrep failed with code ${result.exitCode}: ${result.stderr}`;
-      }
 
-      const lines = result.stdout.split("\n");
-      const truncateOutput = (await import("./helpers.js")).truncateOutput;
-      if (lines.length > 100) {
-        return lines.slice(0, 100).join("\n") + `\n\n... (showing 100 of ${lines.length} results)`;
+      if (allLines.length > 100) {
+        return allLines.slice(0, 100).join("\n") + `\n\n... (showing 100 of ${allLines.length} results)`;
       }
-      return result.stdout;
+      return allLines.join("\n");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `ripgrep error: ${message}. Make sure ripgrep is installed.`;
