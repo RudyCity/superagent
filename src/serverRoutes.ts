@@ -2000,7 +2000,25 @@ export async function handleServerRoute(
       const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
       if (workspaceChainManager.isChainActive()) {
         const activeChain = workspaceChainManager.getActiveChain();
-        const promises = activeChain!.nodes.map((node) => workspaceChainManager.getNodeHealth(node.id));
+        const promises = activeChain!.nodes.map((node) => {
+          const healthPromise = workspaceChainManager.getNodeHealth(node.id);
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Health check timeout")), 2500)
+          );
+          return Promise.race([healthPromise, timeoutPromise]).catch((err) => ({
+            nodeId: node.id,
+            label: node.label,
+            type: node.type,
+            role: node.role,
+            status: "ERROR" as const,
+            pingMs: -1,
+            osInfo: "Unknown",
+            uptime: "Offline",
+            ramUsage: "N/A",
+            diskUsage: "N/A",
+            error: err.message || String(err)
+          }));
+        });
         const results = await Promise.all(promises);
         const table = await workspaceChainManager.getChainHealth();
         sendJSON(res, 200, { success: true, healthTable: table, healthData: results });

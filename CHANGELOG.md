@@ -1,3 +1,8 @@
+## [1.2.661] - 2026-07-31
+
+### Fix: Fast-fail Timeout for Node Health Checks
+- **Health Checks**: Wrapped active workspace chain node health queries in a fast 2500ms timeout race to prevent offline SSH nodes from hanging settings panels.
+
 ## [1.2.660] - 2026-07-31
 
 ### Feat: Server Auto-configuration & Workspace Chain Routes
