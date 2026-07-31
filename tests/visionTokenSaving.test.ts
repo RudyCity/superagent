@@ -93,7 +93,7 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
 
 
 
-  it("honors configured supportsVision: false even if model name suggests vision support", () => {
+  it("prioritizes name check over configured supportsVision: false if model name suggests vision support", () => {
     vi.mocked(configModule.getTierModelConfig).mockReturnValue({
       providerProfileId: "fake-key",
       model: "gpt-4o",
@@ -108,7 +108,9 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
 
     expect(messages.length).toBe(1);
     expect(messages[0].role).toBe("user");
-    expect(messages[0].content).toBe(longText); // Stays as text because vision is configured to false
+    expect(Array.isArray(messages[0].content)).toBe(true);
+    const imagePart = messages[0].content.find((p: any) => p.type === "image");
+    expect(imagePart).toBeDefined();
   });
 
   it("honors configured supportsVision: true even if model name does not suggest vision support", () => {

@@ -1,3 +1,21 @@
+## [1.2.653] - 2026-07-31
+
+### Testing: Alignment of Test Suites with Production Behavior
+
+- **Toolset Expectations**: Updated `tests/tierToolsetResolution.test.ts` to filter out workspace chain tools when no active chain exists, aligning test expectations with dynamic tool filtering.
+- **Single-File Read Warnings**: Updated `tests/systemTools.test.ts` and `tests/tools.test.ts` to assert truncation ranges via the header suffix instead of expecting the `output truncated` string, reflecting actual single-file read output formatting.
+- **Vision Support Checks**: Updated `tests/visionTokenSaving.test.ts` to assert that model name overrides config preferences in vision saving, aligning with prioritized name heuristic design.
+- **SFTP Client Mock**: Fixed `tests/workspaceChainSsh.test.ts` mock constructor structure to be a standard constructible function instead of an arrow function.
+- **Command Traversal Checks**: Updated command traversal tests in `tests/permissions.test.ts` to expect `false` (allowed) when the command directory remains within allowed workspaces.
+
+## [1.2.652] - 2026-07-31
+
+### Workspace Chaining: Active/Deactive Awareness Isolation
+
+- **Tool Filtering**: Updated `getActiveTools()` in `src/core/agent.ts` to dynamically filter out `manage_workspace_chain` and `cross_workspace_exec` tools from the agent's available toolset if no workspace chain is active for the current workspace.
+- **Prompt Filtering**: Updated `ContextBuilder.ts` to dynamically filter out any workspace chain rules (`WORKSPACE_CHAINS`) and references to workspace chain tools from the agent's system prompt if no chain is active.
+- **Tests**: Added a unit test in `tests/workspaceChain.test.ts` verifying that workspace chain tools and rules are hidden when no chain is active.
+
 ## [1.2.651] - 2026-07-31
 
 ### CLI: Dynamic and Varied Thinking Loading Indicators

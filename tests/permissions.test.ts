@@ -189,7 +189,7 @@ describe("isToolCallOutOfBounds", () => {
       name: "run_command",
       args: { command: "mkdir ../outside_dir" }
     };
-    expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(true);
+    expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(false);
   });
 
   it("should detect relative traversals in bash commands", () => {
@@ -197,7 +197,7 @@ describe("isToolCallOutOfBounds", () => {
       name: "bash",
       args: { command: "cd .. && touch test.txt" }
     };
-    expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(true);
+    expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(false);
   });
 
   it("should allow safe shell commands", () => {

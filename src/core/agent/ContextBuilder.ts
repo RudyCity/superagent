@@ -176,6 +176,23 @@ export class ContextBuilder {
         .replace(/rmemory_[a-zA-Z0-9_]+/g, "");
     }
 
+    try {
+      const { workspaceChainManager } = await import("../workspace/WorkspaceChainManager.js");
+      const workspaceDir = agent.worktreePath || agent.workingDirectory;
+      if (!workspaceChainManager.isChainActive(workspaceDir)) {
+        activeSystemPrompt = activeSystemPrompt
+          .split("\n")
+          .filter((line: string) => {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("- WORKSPACE_CHAINS:") || trimmed.includes("manage_workspace_chain") || trimmed.includes("cross_workspace_exec")) {
+              return false;
+            }
+            return true;
+          })
+          .join("\n");
+      }
+    } catch {}
+
     let devHookNotice = "";
     try {
       const { getActiveDevHookGlobal } = await import("../tools/state.js");

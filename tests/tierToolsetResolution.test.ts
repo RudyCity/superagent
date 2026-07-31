@@ -74,7 +74,9 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
 
     await agent.sendMessage("hello");
 
-    const expectedToolNames = masterToolset.map((t) => t.name);
+    const expectedToolNames = masterToolset
+      .map((t) => t.name)
+      .filter((name) => name !== "manage_workspace_chain" && name !== "cross_workspace_exec");
     expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
     expect(toolsPassed.length).toBe(expectedToolNames.length);
   });
@@ -101,7 +103,9 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
 
     await agent.sendMessage("hello");
 
-    const expectedToolNames = superagentToolset.map((t) => t.name);
+    const expectedToolNames = superagentToolset
+      .map((t) => t.name)
+      .filter((name) => name !== "manage_workspace_chain" && name !== "cross_workspace_exec");
     expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
     expect(toolsPassed.length).toBe(expectedToolNames.length);
   });
@@ -128,7 +132,9 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
 
     await agent.sendMessage("hello");
 
-    const expectedToolNames = superagentToolset.map((t) => t.name);
+    const expectedToolNames = superagentToolset
+      .map((t) => t.name)
+      .filter((name) => name !== "manage_workspace_chain" && name !== "cross_workspace_exec");
     expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
     expect(toolsPassed.length).toBe(expectedToolNames.length);
   });
@@ -190,7 +196,9 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
 
     await agent.sendMessage("lanjut");
 
-    const expectedToolNames = superagentToolset.map((t) => t.name);
+    const expectedToolNames = superagentToolset
+      .map((t) => t.name)
+      .filter((name) => name !== "manage_workspace_chain" && name !== "cross_workspace_exec");
     // Tools should NOT be filtered to empty array because planState is active
     expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
     expect(toolsPassed.length).toBe(expectedToolNames.length);

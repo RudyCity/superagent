@@ -52,7 +52,9 @@ vi.mock("ssh2", () => {
 
 vi.mock("ssh2-sftp-client", () => {
   return {
-    default: vi.fn().mockImplementation(() => mockSftp)
+    default: vi.fn().mockImplementation(function() {
+      return mockSftp;
+    })
   };
 });
 

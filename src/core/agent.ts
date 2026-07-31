@@ -342,6 +342,12 @@ export class Agent {
       tools = tools.filter((t) => !t.name.startsWith("rmemory_"));
     }
 
+    const { workspaceChainManager } = await import("./workspace/WorkspaceChainManager.js");
+    const workspaceDir = this.worktreePath || this.workingDirectory;
+    if (!workspaceChainManager.isChainActive(workspaceDir)) {
+      tools = tools.filter((t) => t.name !== "manage_workspace_chain" && t.name !== "cross_workspace_exec");
+    }
+
     const { browserControlHandler } = await import("./tools/browserMacroTools.js");
     // Removed isServerMode check so normal CLI can use control_browser_ tools.
     return tools;

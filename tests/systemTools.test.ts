@@ -28,9 +28,8 @@ describe("System Tools Optimizations", () => {
       expect(result).toContain("800: Line 800");
       expect(result).not.toContain("801: Line 801");
       
-      // Should contain the truncation warning
-      expect(result).toContain("output truncated, showing 800 of 1000 lines");
-      expect(result).toContain("There are 200 more lines");
+      // Should contain the truncation indication in the header
+      expect(result).toContain("(lines 1-800 of 1000)");
     } finally {
       await fs.unlink(tempFilePath).catch(() => {});
     }
@@ -49,8 +48,8 @@ describe("System Tools Optimizations", () => {
       expect(result).not.toContain("9: Line 9");
       expect(result).not.toContain("15: Line 15");
       
-      // Should show truncation warning because we only read a slice of a larger file
-      expect(result).toContain("output truncated");
+      // Should show truncation range in the header because we only read a slice of a larger file
+      expect(result).toContain("(lines 10-14 of 50)");
     } finally {
       await fs.unlink(tempFilePath).catch(() => {});
     }

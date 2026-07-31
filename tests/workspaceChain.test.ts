@@ -272,4 +272,28 @@ describe("WorkspaceChainConfig", () => {
     // Clean up
     deleteWorkspaceChain(chain.id);
   });
+
+  it("should hide workspace chain tools and rules when no chain is active", async () => {
+    const { Agent } = await import("../src/core/agent.js");
+    const { ContextBuilder } = await import("../src/core/agent/ContextBuilder.js");
+    const { workspaceChainManager } = await import("../src/core/workspace/WorkspaceChainManager.js");
+
+    // Ensure no chain is active
+    await workspaceChainManager.deactivateChain();
+
+    // Instantiate a mock agent
+    const agent = new Agent(() => {}, async () => true, async () => "stop", undefined, undefined, "/workspace-a");
+    agent.tier = "master";
+
+    // 1. Verify getActiveTools does not contain workspace chain tools
+    const tools = await agent.getActiveTools();
+    expect(tools.some(t => t.name === "manage_workspace_chain")).toBe(false);
+    expect(tools.some(t => t.name === "cross_workspace_exec")).toBe(false);
+
+    // 2. Verify ContextBuilder system prompt doesn't mention workspace chains or tools
+    const context = await ContextBuilder.buildContext(agent);
+    expect(context.finalSystemPrompt).not.toContain("WORKSPACE_CHAINS");
+    expect(context.finalSystemPrompt).not.toContain("manage_workspace_chain");
+    expect(context.finalSystemPrompt).not.toContain("cross_workspace_exec");
+  });
 });
