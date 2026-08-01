@@ -13,6 +13,15 @@ import { setBrowserControlHandler } from "./core/tools/otherTools.js";
 import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/config/browserMacros.js";
 import { execSync } from "child_process";
 import { handleServerRoute } from "./serverRoutes.js";
+import { lockEventEmitter } from "./core/storage/sharedMemory.js";
+
+// Forward lock events to connected t-line desktop clients
+lockEventEmitter.on("tline_bridge_sync", (syncPayload) => {
+  broadcastEvent({
+    type: "tline_bridge_sync",
+    ...syncPayload
+  });
+});
 
 const SUPERAGENT_SERVER_LOG_FILE = path.join(os.homedir(), ".superagent-r", "superagent-server.log");
 

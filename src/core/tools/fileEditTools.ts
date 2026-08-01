@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
+import { createHash } from "crypto";
 import { Tool } from "./types.js";
 import { normalizeForMatching, verifySyntax, mapNormToOrigIndices, countOccurrences, fileLockManager } from "./helpers.js";
 import { normalizePath, resolveFilePathFromArgs } from "./pathHelpers.js";
@@ -15,7 +16,29 @@ function fuzzyMatch(text: string, pattern: string): boolean {
   return cleanText.includes(cleanPattern);
 }
 
+function computeContentHash(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex").slice(0, 16);
+}
+
+async function verifyContentFreshness(filePath: string, expectedHash: string, existedBefore: boolean): Promise<boolean> {
+  try {
+    const exists = await fs.access(filePath).then(() => true).catch(() => false);
+    if (!exists) {
+      return !existedBefore;
+    }
+    if (!existedBefore) {
+      return false;
+    }
+    const currentContent = await fs.readFile(filePath, "utf-8");
+    const currentHash = computeContentHash(currentContent);
+    return currentHash === expectedHash;
+  } catch {
+    return false;
+  }
+}
+
 async function waitForFileLockRelease(targetPath: string, cwd?: string, timeoutMs: number = 3000, sessionId?: string): Promise<{ locked: boolean; owner?: any }> {
+
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const status = checkFileLock(targetPath, sessionId, cwd);
@@ -431,6 +454,7 @@ export const editTool: Tool = {
         for (const [filePath, fileEdits] of editsByFile.entries()) {
           try {
             let content = await fs.readFile(filePath, "utf-8");
+            const expectedHash = computeContentHash(content);
             const originalContent = content;
             for (const edit of fileEdits) {
               const oldStr = edit.oldString;
@@ -501,6 +525,9 @@ export const editTool: Tool = {
               content = updated;
             }
 
+            if (!(await verifyContentFreshness(filePath, expectedHash, true))) {
+              throw new Error(`[LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${filePath}" has been modified by another process since it was read.`);
+            }
             await fs.writeFile(filePath, content, "utf-8");
             const summary = buildEditSummary(originalContent, content, filePath);
             const syntaxError = await verifySyntax(filePath);
@@ -532,6 +559,7 @@ export const editTool: Tool = {
     const release = await fileLockManager.acquire(filePath);
     try {
       const content = await fs.readFile(filePath, "utf-8");
+      const expectedHash = computeContentHash(content);
       const originalContent = content;
       const oldStr = args.oldString as string;
       const newStr = args.newString as string;
@@ -599,6 +627,9 @@ export const editTool: Tool = {
         }
       }
 
+      if (!(await verifyContentFreshness(filePath, expectedHash, true))) {
+        return `Error: [LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${filePath}" has been modified by another process since it was read.`;
+      }
       await fs.writeFile(filePath, updated, "utf-8");
       const summary = buildEditSummary(originalContent, updated, filePath);
       
@@ -733,9 +764,14 @@ export const writeToFileTool: Tool = {
           } catch {
             existedBefore = false;
           }
+          const expectedHash = existedBefore ? computeContentHash(previousContent) : "";
           const summary = buildEditSummary(previousContent, nextContent, file.resolvedPath, existedBefore);
           if (previousContent === nextContent && existedBefore) {
             results.push(summary);
+            continue;
+          }
+          if (!(await verifyContentFreshness(file.resolvedPath, expectedHash, existedBefore))) {
+            results.push(`Error writing file ${file.filePath}: [LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File has been modified by another process since it was read.`);
             continue;
           }
           await fs.mkdir(path.dirname(file.resolvedPath), { recursive: true });
@@ -785,11 +821,15 @@ export const writeToFileTool: Tool = {
       } catch {
         existedBefore = false;
       }
+      const expectedHash = existedBefore ? computeContentHash(previousContent) : "";
       const summary = buildEditSummary(previousContent, nextContent, filePath, existedBefore);
       if (previousContent === nextContent && existedBefore) {
         return summary;
       }
 
+      if (!(await verifyContentFreshness(filePath, expectedHash, existedBefore))) {
+        return `Error: [LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${filePath}" has been modified by another process since it was read.`;
+      }
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, nextContent, "utf-8");
       const syntaxError = await verifySyntax(filePath);
@@ -948,6 +988,7 @@ export const replaceFileContentTool: Tool = {
         for (const [filePath, fileEdits] of editsByFile.entries()) {
           try {
             let content = await fs.readFile(filePath, "utf-8");
+            const expectedHash = computeContentHash(content);
             const sortedFileEdits = [...fileEdits].sort((a, b) => b.startLine - a.startLine);
             let lines = content.split(/\r?\n/);
             const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
@@ -1032,6 +1073,9 @@ export const replaceFileContentTool: Tool = {
               results.push(summary);
               continue;
             }
+            if (!(await verifyContentFreshness(filePath, expectedHash, true))) {
+              throw new Error(`[LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${filePath}" has been modified by another process since it was read.`);
+            }
             await fs.writeFile(filePath, nextContent, "utf-8");
             const syntaxError = await verifySyntax(filePath);
             if (syntaxError) {
@@ -1072,6 +1116,7 @@ export const replaceFileContentTool: Tool = {
     const release = await fileLockManager.acquire(filePath);
     try {
       const content = await fs.readFile(filePath, "utf-8");
+      const expectedHash = computeContentHash(content);
       const lines = content.split(/\r?\n/);
       
       if (startLine < 1 || startLine > lines.length || endLine < startLine || endLine > lines.length) {
@@ -1145,6 +1190,9 @@ export const replaceFileContentTool: Tool = {
       const summary = buildEditSummary(content, nextContent, filePath);
       if (content === nextContent) {
         return summary;
+      }
+      if (!(await verifyContentFreshness(filePath, expectedHash, true))) {
+        return `Error: [LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${filePath}" has been modified by another process since it was read.`;
       }
       await fs.writeFile(filePath, nextContent, "utf-8");
 
@@ -1375,6 +1423,7 @@ export const multiReplaceFileContentTool: Tool = {
             }
 
             let content = await fs.readFile(file.resolvedPath, "utf-8");
+            const expectedHash = computeContentHash(content);
             const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
             let lines = content.split(/\r?\n/);
 
@@ -1533,6 +1582,9 @@ export const multiReplaceFileContentTool: Tool = {
               results.push(summary);
               continue;
             }
+            if (!(await verifyContentFreshness(file.resolvedPath, expectedHash, true))) {
+              throw new Error(`[LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${file.filePath}" has been modified by another process since it was read.`);
+            }
             await fs.writeFile(file.resolvedPath, nextContent, "utf-8");
             const syntaxError = await verifySyntax(file.resolvedPath);
             if (syntaxError) {
@@ -1619,6 +1671,7 @@ export const multiReplaceFileContentTool: Tool = {
     const release = await fileLockManager.acquire(filePath);
     try {
       let content = await fs.readFile(filePath, "utf-8");
+      const expectedHash = computeContentHash(content);
       const originalContent = content;
       const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
       let lines = content.split(/\r?\n/);
@@ -1778,6 +1831,9 @@ export const multiReplaceFileContentTool: Tool = {
       const summary = buildEditSummary(content, nextContent, filePath);
       if (content === nextContent) {
         return summary;
+      }
+      if (!(await verifyContentFreshness(filePath, expectedHash, true))) {
+        return `Error: [LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${filePath}" has been modified by another process since it was read.`;
       }
       await fs.writeFile(filePath, nextContent, "utf-8");
 
@@ -2022,6 +2078,7 @@ export const applyPatchTool: Tool = {
         for (const patch of sortedPatches) {
           try {
             const originalContent = await fs.readFile(patch.resolvedPath, "utf-8");
+            const expectedHash = computeContentHash(originalContent);
             const { result: content, error } = await applyPatchToContent(originalContent, patch.patchContent, patch.resolvedPath);
             if (error) {
               results.push(`Error patching ${patch.filePath}: ${error}`);
@@ -2031,6 +2088,9 @@ export const applyPatchTool: Tool = {
             if (originalContent === content) {
               results.push(summary);
               continue;
+            }
+            if (!(await verifyContentFreshness(patch.resolvedPath, expectedHash, true))) {
+              throw new Error(`[LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${patch.filePath}" has been modified by another process since it was read.`);
             }
             await fs.writeFile(patch.resolvedPath, content, "utf-8");
             const syntaxError = await verifySyntax(patch.resolvedPath);

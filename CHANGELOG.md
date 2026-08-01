@@ -1,3 +1,11 @@
+## [1.2.672] - 2026-08-02
+
+### Feature: Optimistic Concurrency & Lock Status UI (Poin 3 & 4)
+- **Optimistic Concurrency (Poin 3)**: Implemented validation using content hashing (`sha256` digest slice) to prevent race conditions from external editors or other processes modifying files between read and write operations. When an edit tool reads a file, it computes and saves the content hash. Right before writing the modified content back to disk, the tool reads the file again and verifies its current hash matches the expected hash. If the hash does not match, the operation aborts with a `[CONCURRENCY_CONFLICT]` error. Applied to `editTool`, `writeToFileTool`, `replaceFileContentTool`, `multiReplaceFileContentTool`, and `applyPatchTool`.
+- **Lock Status UI (Poin 4)**: Renders a lock count badge (e.g. `🔒 N`) in the CLI bottom `StatusBar` component when active locks are held by the project. The main `App` component subscribes to events (`lock_acquired`, `lock_released`, `lock_updated`, `deadlock_recovered`) emitted by `lockEventEmitter` in `sharedMemory.ts` to keep the active locks count state reactive.
+- **t-line Sync**: The server now listens to `tline_bridge_sync` lock events emitted by the backend lock engine and forwards them to connected t-line desktop app clients via standard server-sent events (SSE).
+- **Tests**: Created `tests/fileLockOptimisticAndUI.test.ts` to test lock event synchronization, active lock stats, and concurrency-aware editing.
+
 ## [1.2.671] - 2026-08-02
 
 ### Fix: Lock System — SessionId Self-Blocking & Auto-Lock on Edit

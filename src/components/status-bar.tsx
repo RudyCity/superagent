@@ -24,6 +24,7 @@ export interface StatusBarProps {
   isProcessing?: boolean;
   activeChainName?: string | null;
   activeChainNodeCount?: number;
+  activeLocks?: number;
 }
 
 function LoadingIndicator() {
@@ -63,6 +64,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
     rmemoryStatus,
     activeChainName,
     activeChainNodeCount,
+    activeLocks,
   } = props;
 
   return (
@@ -100,6 +102,12 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
       <Box justifyContent="space-between" marginTop={0}>
         <Box>
           <Text color="white">Msg: {messageCount}</Text>
+          {activeLocks && activeLocks > 0 ? (
+            <>
+              <Text color="gray"> • </Text>
+              <Text color="yellowBright" bold>🔒 {activeLocks}</Text>
+            </>
+          ) : null}
           <Text color="gray"> • </Text>
           <Text color={runningTasksCount > 0 ? "yellowBright" : "gray"}>Proc: {runningTasksCount}</Text>
           <Text color="gray"> • </Text>
@@ -144,4 +152,3 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
     </Box>
   );
 });
-

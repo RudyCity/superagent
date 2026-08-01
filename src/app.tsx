@@ -34,6 +34,7 @@ import { wrapTextForDisplay } from "./utils/responseScroll.js";
 import type { ChatLine } from "./core/slash-commands.js";
 import { readChecklistTasks, readTaskHistory } from "./core/taskChecklist.js";
 import { getActiveChainId, getWorkspaceChain } from "./core/workspace/WorkspaceChainConfig.js";
+import { lockEventEmitter, getLockStats } from "./core/storage/sharedMemory.js";
 
 // Hook & Component Baru
 import { StatusBar } from "./components/status-bar.js";
@@ -152,6 +153,7 @@ export function App({
   const [lastPromptTokens, setLastPromptTokens] = useState(0);
   const [lastSpeed, setLastSpeed] = useState<number | null>(null);
   const [contextLimit, setContextLimit] = useState(256000);
+  const [activeLocks, setActiveLocks] = useState(0);
   
   const streamBufferRef = useRef("");
   const lastStreamUpdateRef = useRef<number>(0);
@@ -2245,6 +2247,29 @@ export function App({
     };
   }, [workspacePath]);
 
+  // Subscribe to lock status changes
+  useEffect(() => {
+    const updateLocks = () => {
+      try {
+        const stats = getLockStats(workspacePath);
+        setActiveLocks(stats.totalActiveLocks);
+      } catch (e) {
+        // Ignore
+      }
+    };
+    updateLocks();
+    lockEventEmitter.on("lock_acquired", updateLocks);
+    lockEventEmitter.on("lock_released", updateLocks);
+    lockEventEmitter.on("lock_updated", updateLocks);
+    lockEventEmitter.on("deadlock_recovered", updateLocks);
+    return () => {
+      lockEventEmitter.off("lock_acquired", updateLocks);
+      lockEventEmitter.off("lock_released", updateLocks);
+      lockEventEmitter.off("lock_updated", updateLocks);
+      lockEventEmitter.off("deadlock_recovered", updateLocks);
+    };
+  }, [workspacePath]);
+
   // Sync scroll offsets on list length change
   useEffect(() => {
     if (checklistScrollOffset >= checklistTasks.length && checklistTasks.length > 0) {
@@ -2948,6 +2973,7 @@ export function App({
         isProcessing={isProcessing}
         activeChainName={activeChain?.name || null}
         activeChainNodeCount={activeChain?.nodes.length}
+        activeLocks={activeLocks}
       />
     </Box>
   );
