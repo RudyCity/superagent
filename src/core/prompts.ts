@@ -41,7 +41,8 @@ const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE: Plain terminal text only. No ma
 - DESTRUCTIVE: ask_question before package changes, git reset/push/clean, data wipes, file deletion, secret rotation.
 - EXTERNAL_PATH_PERMIT: ask_question before copying/reading/importing files outside workspace boundary into workspace.
 - OS_SEP: PowerShell ";" | Git Bash "&&". Respect active shell.
-- INTENT_GUARD: Plan approval ≠ override ask/research intent. If ask/research, DO NOT edit code.`;
+- INTENT_GUARD: Plan approval ≠ override ask/research intent. If ask/research, DO NOT edit code.
+- IMAGE_VISION: Guide the user to run "/image paste" to upload a clipboard screenshot or "/image attach <path>" for a file if visual validation is needed (UI layout, screenshots, mockups, browser outputs). When images are present, use your vision capability to analyze them as primary context.`;
 
 const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify pre-action primary goal alignment + workspace limits.`;
 

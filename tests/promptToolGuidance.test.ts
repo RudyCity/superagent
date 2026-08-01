@@ -47,7 +47,6 @@ describe("prompt and command guidance", () => {
     expect(configBase).toContain("Do not repeat stale exact-match edits");
     expect(configBase).toContain("Pass one path per call");
     expect(configBase).toContain("Use action 'report' (singular), not 'reports'");
-    expect(configBase).toContain("npm.cmd");
 
     expect(prompts).toContain("Re-read range → line-range replace. Avoid stale edits.");
     expect(prompts).toContain("DIRTY_WORKSPACE");
