@@ -157,7 +157,6 @@ describe("CompactionStrategy", () => {
     const result = await strategy.execute(messages, {
       preserveRecent: 5,
       byteBudget: 102 * 1024,
-      useVisionTokenSaving: false,
     });
 
     expect(result.metadata.strategy).toBe("pruning-with-emergency-summary");
@@ -171,36 +170,6 @@ describe("CompactionStrategy", () => {
     expect(lastMsg.toolResults?.[0].result.length).toBeLessThan(60000);
   });
 
-  it("should estimate bytes using image size in pruning strategy when useVisionTokenSaving is true", async () => {
-    const strategy = new PruningStrategy();
-    const messages: Message[] = [
-      {
-        role: "user",
-        content: "a".repeat(5000),
-        timestamp: 100,
-      },
-      {
-        role: "assistant",
-        content: "short reply",
-        timestamp: 101,
-      }
-    ];
-
-    const resultNoVision = await strategy.execute(messages, {
-      preserveRecent: 5,
-      byteBudget: 50 * 1024,
-      useVisionTokenSaving: false,
-    });
-    expect(resultNoVision.messages.some(m => typeof m.content === "string" && m.content.includes("a".repeat(5000)))).toBe(true);
-
-    const resultVision = await strategy.execute(messages, {
-      preserveRecent: 5,
-      byteBudget: 50 * 1024,
-      useVisionTokenSaving: true,
-      visionThreshold: 3000,
-    });
-    expect(resultVision.messages.some(m => typeof m.content === "string" && m.content.includes("a".repeat(5000)))).toBe(false);
-  });
 
   it("should prevent starting kept slice with tool message in pruning strategy after byte budget pruning", async () => {
     const strategy = new PruningStrategy();
@@ -219,7 +188,6 @@ describe("CompactionStrategy", () => {
     const result = await strategy.execute(messages, {
       preserveRecent: 3,
       byteBudget: 250,
-      useVisionTokenSaving: false,
     });
 
     const kept = result.messages.slice(1);

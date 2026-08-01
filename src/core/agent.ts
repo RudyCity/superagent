@@ -6,7 +6,7 @@ import { execa } from "execa";
 import { captureGitSnapshot, getGitDiffSummary, type GitSnapshot } from "./agent/GitUtils.js";
 import fs from "fs";
 import crypto from "crypto";
-import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getTierModelConfig, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD, getDynamicVisionThreshold } from "./config.js";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getTierModelConfig, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache } from "./config.js";
 import { GuidelineLoader } from "./agent/GuidelineLoader.js";
 import { Conversation } from "./conversation.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools/types.js";
@@ -571,8 +571,8 @@ export class Agent {
     return new MessageBuilder().modelSupportsVision(modelName, this);
   }
 
-  public buildMessages(supportsNativeTools = true, dynamicContext?: string): CoreMessage[] {
-    return new MessageBuilder().buildMessages(this, supportsNativeTools, dynamicContext);
+  public buildMessages(supportsNativeTools = true): CoreMessage[] {
+    return new MessageBuilder().buildMessages(this, supportsNativeTools);
   }
 
 

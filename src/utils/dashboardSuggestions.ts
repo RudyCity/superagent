@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { filterSuggestions, getActiveCommandContext } from "./text.js";
-import { getCachedModelIds, getInstalledSkills, listHistorySessions, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD, getTrustedDirectories } from "../core/config.js";
+import { getCachedModelIds, getInstalledSkills, listHistorySessions, getTrustedDirectories } from "../core/config.js";
 import { registry } from "../core/commands/registry.js";
 import { backgroundTasks } from "../core/tools.js";
 
@@ -46,8 +46,6 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-procs-limit": "Set processes visible limit",
   "/setting-focus": "Set reasoning focus depth level (alias: /focus)",
   "/setting-focus-budget": "Set reasoning focus custom budget tokens",
-  "/setting-auto-vision": "Enable or disable automatic vision token saving (on or off)",
-  "/setting-vision-threshold": "Set characters threshold for auto vision token saving",
   "/setting-hide-timeline": "Hide or show the timeline lines connecting turns (on or off)",
   "/setting-classifier": "Enable or disable multi-category request classifier (on or off)",
   "/setting-classifier-threshold": "Set classifier heuristic confidence threshold (high, medium, low)",
@@ -234,23 +232,6 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       return filterSuggestions(possibilities, query);
     }
 
-    if (mainCommand === "/setting-auto-vision") {
-      const possibilities = [
-        "/setting-auto-vision on",
-        "/setting-auto-vision off",
-      ];
-      return filterSuggestions(possibilities, query);
-    }
-
-    if (mainCommand === "/setting-vision-threshold") {
-      const possibilities = [
-        `/setting-vision-threshold ${DEFAULT_VISION_TOKEN_SAVING_THRESHOLD}`,
-        "/setting-vision-threshold 4000",
-        "/setting-vision-threshold 8000",
-        "/setting-vision-threshold 0",
-      ];
-      return filterSuggestions(possibilities, query);
-    }
 
     if (mainCommand === "/setting-hide-timeline") {
       const possibilities = [

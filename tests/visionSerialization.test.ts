@@ -18,7 +18,7 @@ describe("Vision Message Serialization", () => {
     } as any);
     vi.spyOn(configModule, "getContextWindowLimit" as any).mockReturnValue(8000);
     vi.spyOn(configModule, "getTierModel" as any).mockReturnValue(undefined);
-    vi.spyOn(configModule, "getSettings" as any).mockReturnValue({ autoVisionTokenSaving: false });
+    vi.spyOn(configModule, "getSettings" as any).mockReturnValue({});
     agent = new Agent(() => {}, () => Promise.resolve(true), () => {});
     agent.tier = "master";
   });
@@ -43,7 +43,7 @@ describe("Vision Message Serialization", () => {
     expect(sdkMessages[0].role).toBe("user");
     expect(sdkMessages[0].content).toEqual([
       { type: "text", text: "Here is an image" },
-      { type: "image", image: "base64data", mimeType: "image/png" }
+      { type: "image", image: "data:image/png;base64,base64data", mimeType: "image/png" }
     ]);
   });
 
@@ -67,7 +67,7 @@ describe("Vision Message Serialization", () => {
     expect(sdkMessages[0].role).toBe("user");
     expect(sdkMessages[0].content).toEqual([
       { type: "text", text: "Here is an image" },
-      { type: "image", image: "base64data", mimeType: "image/png" }
+      { type: "image", image: "data:image/png;base64,base64data", mimeType: "image/png" }
     ]);
   });
 });

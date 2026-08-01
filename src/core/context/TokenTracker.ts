@@ -1,5 +1,5 @@
 import { Message, MessageContent, contentToString } from "../conversation.js";
-import { getSettings, getDynamicVisionThreshold } from "../config.js";
+import { getSettings } from "../config.js";
 
 export interface TokenBreakdown {
   systemPrompt: number;
@@ -98,20 +98,6 @@ export class TokenTracker {
     return false;
   }
 
-  /**
-   * Shared vision-token-saving resolver. Single source of truth for
-   * whether vision token saving applies + the active threshold.
-   */
-  static resolveVisionSaving(
-    modelName: string,
-    settings?: { autoVisionTokenSaving?: boolean }
-  ): { useVision: boolean; threshold: number } {
-    const s = settings ?? getSettings();
-    const supportsVision = TokenTracker.modelSupportsVision(modelName);
-    const useVision = supportsVision && (s.autoVisionTokenSaving ?? false);
-    return { useVision, threshold: getDynamicVisionThreshold(modelName) };
-  }
-
   estimateTokens(message: Message): number {
     const hash = this.hashMessage(message);
 
@@ -119,9 +105,7 @@ export class TokenTracker {
       return this.cache.get(hash)!;
     }
 
-    const { useVision, threshold } = TokenTracker.resolveVisionSaving(this.model);
-
-    let tokens = this.countContent(message.content, useVision, threshold);
+    let tokens = this.countContent(message.content);
 
     if (message.toolCalls) {
       for (const call of message.toolCalls) {
@@ -132,15 +116,7 @@ export class TokenTracker {
     if (message.toolResults) {
       for (const result of message.toolResults) {
         const resultStr = typeof result.result === "string" ? result.result : JSON.stringify(result.result);
-        if (useVision && resultStr.length > threshold) {
-          const lines = resultStr.split(/\r?\n/);
-          const isAnthropic = this.model.toLowerCase().includes("anthropic");
-          const maxPages = isAnthropic ? 20 : 100;
-          const pageCount = Math.min(maxPages, Math.ceil(lines.length / 150));
-          tokens += pageCount * 1600 + 150;
-        } else {
-          tokens += this.countText(resultStr);
-        }
+        tokens += this.countText(resultStr);
       }
     }
 
@@ -154,14 +130,12 @@ export class TokenTracker {
     let toolCalls = 0;
     let toolResults = 0;
 
-    const { useVision, threshold } = TokenTracker.resolveVisionSaving(this.model);
-
     for (const msg of messages) {
       const hash = this.hashMessage(msg);
       let cached = this.breakdownCache.get(hash);
 
       if (!cached) {
-        let content = this.countContent(msg.content, useVision, threshold);
+        let content = this.countContent(msg.content);
         let tcTokens = 0;
         if (msg.toolCalls) {
           for (const call of msg.toolCalls) {
@@ -172,15 +146,7 @@ export class TokenTracker {
         if (msg.toolResults) {
           for (const result of msg.toolResults) {
             const resultStr = typeof result.result === "string" ? result.result : JSON.stringify(result.result);
-            if (useVision && resultStr.length > threshold) {
-              const lines = resultStr.split(/\r?\n/);
-              const isAnthropic = this.model.toLowerCase().includes("anthropic");
-              const maxPages = isAnthropic ? 20 : 100;
-              const pageCount = Math.min(maxPages, Math.ceil(lines.length / 150));
-              trTokens += pageCount * 1600 + 150;
-            } else {
-              trTokens += this.countText(resultStr);
-            }
+            trTokens += this.countText(resultStr);
           }
         }
         cached = { content, toolCalls: tcTokens, toolResults: trTokens };
@@ -209,18 +175,7 @@ export class TokenTracker {
     const breakdown = this.estimateTokensForAll(messages);
 
     if (systemPrompt) {
-      const { useVision, threshold } = TokenTracker.resolveVisionSaving(this.model);
-
-      let sysTokens = 0;
-      if (useVision && systemPrompt.length > threshold) {
-        const lines = systemPrompt.split(/\r?\n/);
-        const isAnthropic = this.model.toLowerCase().includes("anthropic");
-        const maxPages = isAnthropic ? 20 : 100;
-        const pageCount = Math.min(maxPages, Math.ceil(lines.length / 150));
-        sysTokens = pageCount * 1600 + 150;
-      } else {
-        sysTokens = this.countText(systemPrompt);
-      }
+      const sysTokens = this.countText(systemPrompt);
       breakdown.systemPrompt += sysTokens;
       breakdown.total += sysTokens;
     }
@@ -228,18 +183,10 @@ export class TokenTracker {
     return breakdown;
   }
 
-  private countContent(content: MessageContent, useVision: boolean, threshold: number): number {
+  private countContent(content: MessageContent): number {
     if (!content) return 0;
 
     if (typeof content === "string") {
-      const isMemoryContext = content.startsWith("[RMemory Agent Memory Context]:");
-      if (useVision && (content.length > threshold || isMemoryContext)) {
-        const lines = content.split(/\r?\n/);
-        const isAnthropic = this.model.toLowerCase().includes("anthropic");
-        const maxPages = isAnthropic ? 20 : 100;
-        const pageCount = Math.min(maxPages, Math.ceil(lines.length / 150));
-        return pageCount * 1600 + 150;
-      }
       return this.countText(content);
     }
 

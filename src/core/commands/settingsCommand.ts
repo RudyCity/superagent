@@ -1,6 +1,6 @@
 import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
-import { getSettings, updateSettings, getContextWindowLimit, getEffectiveMasterModel, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD } from "../config.js";
+import { getSettings, updateSettings, getContextWindowLimit, getEffectiveMasterModel } from "../config.js";
 
 import { getConfiguredProviders, getTierModelWithProvider } from "../config/providers.js";
 import fs from "fs";
@@ -203,8 +203,6 @@ export const settingsCommand: SlashCommand = {
         `│ • Focus Level (Depth): ${s.focus?.toUpperCase() ?? "OFF"}`,
         `│ • Focus Custom Budget: ${s.focusBudget} tokens`,
         `│ • Force Prompt Tools : ${s.forcePromptBasedToolCalling ? "ENABLED" : "DISABLED"}`,
-        `│ • Auto Vision Token  : ${s.autoVisionTokenSaving ?? false ? "ENABLED" : "DISABLED"}`,
-        `│ • Vision Threshold   : ${s.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD} chars`,
         `│ • Hide Timeline Line : ${s.hideTimeline ? "ENABLED" : "DISABLED"}`,
         `│ • Request Classifier : ${s.classifierEnabled !== false ? "ENABLED" : "DISABLED"}`,
         `│ • Classifier Threshold: ${s.classifierConfidenceThreshold ?? "high"}`,
@@ -236,8 +234,6 @@ export const settingsCommand: SlashCommand = {
         "  /setting-focus <off|low|medium|high|xhigh|max|custom>",
         "  /setting-focus-budget <number>",
         "  /setting-force-prompt-tools <on|off>",
-        "  /setting-auto-vision <on|off>",
-        "  /setting-vision-threshold <number>",
         "  /setting-hide-timeline <on|off>",
         "  /setting-advisor <on|off>",
         "  /setting-classifier <on|off>",
@@ -935,87 +931,6 @@ export const settingForcePromptToolsCommand: SlashCommand = {
   }
 };
 
-// /setting-auto-vision command
-export const settingAutoVisionCommand: SlashCommand = {
-  name: "setting-auto-vision",
-  description: "Enable or disable automatic text-to-image conversion for large prompt context",
-  execute(args, ctx) {
-    const now = Date.now();
-    const val = args.trim();
-    if (!val) {
-      ctx.addLine({
-        type: "system",
-        content: `Usage: /setting-auto-vision <on|off>\nCurrent value: ${getSettings().autoVisionTokenSaving ?? false ? "on" : "off"}`,
-        timestamp: now,
-      });
-      return;
-    }
-    if (val !== "on" && val !== "off") {
-      ctx.addLine({
-        type: "error",
-        content: "Invalid value. Must be 'on' or 'off'.",
-        timestamp: now,
-      });
-      return;
-    }
-    const enable = val === "on";
-    try {
-      updateSettings({ autoVisionTokenSaving: enable });
-      ctx.addLine({
-        type: "system",
-        content: `✓ Automatic vision token saving set to: ${enable ? "ENABLED" : "DISABLED"}`,
-        timestamp: now,
-      });
-    } catch (err: any) {
-      ctx.addLine({
-        type: "error",
-        content: `Failed to save setting: ${err.message}`,
-        timestamp: now,
-      });
-    }
-  }
-};
-
-// /setting-vision-threshold command
-export const settingVisionThresholdCommand: SlashCommand = {
-  name: "setting-vision-threshold",
-  description: "Set the character threshold above which prompt context is converted to image",
-  execute(args, ctx) {
-    const now = Date.now();
-    const val = args.trim();
-    if (!val) {
-      ctx.addLine({
-        type: "system",
-        content: `Usage: /setting-vision-threshold <number>\nCurrent value: ${getSettings().visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD} chars`,
-        timestamp: now,
-      });
-      return;
-    }
-    const num = parseInt(val, 10);
-    if (isNaN(num) || num < 0) {
-      ctx.addLine({
-        type: "error",
-        content: "Invalid value. Must be a non-negative number.",
-        timestamp: now,
-      });
-      return;
-    }
-    try {
-      updateSettings({ visionTokenSavingThreshold: num });
-      ctx.addLine({
-        type: "system",
-        content: `✓ Vision token saving threshold set to: ${num} chars`,
-        timestamp: now,
-      });
-    } catch (err: any) {
-      ctx.addLine({
-        type: "error",
-        content: `Failed to save setting: ${err.message}`,
-        timestamp: now,
-      });
-    }
-  }
-};
 
 
 
@@ -1280,8 +1195,6 @@ registry.register(settingRmemoryCommand);
 registry.register(settingFocusCommand);
 registry.register(settingFocusBudgetCommand);
 registry.register(settingForcePromptToolsCommand);
-registry.register(settingAutoVisionCommand);
-registry.register(settingVisionThresholdCommand);
 registry.register(settingHideTimelineCommand);
 registry.register(settingClassifierCommand);
 registry.register(settingClassifierThresholdCommand);

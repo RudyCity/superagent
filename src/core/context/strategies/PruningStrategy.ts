@@ -73,27 +73,7 @@ export class PruningStrategy implements CompactionStrategy {
 
     // Enforce byte budget: reduce preserved messages/truncate contents if they exceed byte budget
     if (byteBudget > 0) {
-      let useVisionTokenSaving = options.useVisionTokenSaving;
-      let visionThreshold = options.visionThreshold ?? 3000;
-
-      if (useVisionTokenSaving === undefined) {
-        try {
-          const modelName = options.modelName || "";
-          if (modelName && (byteBudget === 0 || byteBudget >= 500 * 1024)) {
-            const resolved = TokenTracker.resolveVisionSaving(modelName);
-            useVisionTokenSaving = resolved.useVision;
-            visionThreshold = resolved.threshold;
-          } else {
-            useVisionTokenSaving = false;
-          }
-        } catch {
-          useVisionTokenSaving = false; // default to false on config failure/unit tests
-          visionThreshold = 3000;
-        }
-      }
-
-
-      let currentBytes = toKeep.reduce((sum, msg) => sum + estimateMessagePayloadBytes(msg, useVisionTokenSaving!, visionThreshold), 0);
+      let currentBytes = toKeep.reduce((sum, msg) => sum + estimateMessagePayloadBytes(msg), 0);
 
       // First, truncate very large fields within toKeep message objects to avoid throwing away everything.
       if (currentBytes > byteBudget) {
@@ -115,14 +95,14 @@ export class PruningStrategy implements CompactionStrategy {
             }
           }
         }
-        currentBytes = toKeep.reduce((sum, msg) => sum + estimateMessagePayloadBytes(msg, useVisionTokenSaving!, visionThreshold), 0);
+        currentBytes = toKeep.reduce((sum, msg) => sum + estimateMessagePayloadBytes(msg), 0);
       }
 
       // If still exceeding, prune older messages
       while (currentBytes > byteBudget && toKeep.length > 0) {
         const moved = toKeep.shift()!;
         toPrune.push(moved);
-        currentBytes = toKeep.reduce((sum, msg) => sum + estimateMessagePayloadBytes(msg, useVisionTokenSaving!, visionThreshold), 0);
+        currentBytes = toKeep.reduce((sum, msg) => sum + estimateMessagePayloadBytes(msg), 0);
       }
     }
 
@@ -202,23 +182,12 @@ Confidence: static-only`;
 }
 
 function estimateMessagePayloadBytes(
-  msg: Message,
-  useVisionTokenSaving: boolean,
-  visionThreshold: number
+  msg: Message
 ): number {
   let size = 0;
-  const ESTIMATED_IMAGE_PAGE_BYTES = 150 * 1024; // 150 KB per page
 
   if (msg.role === "user") {
-    const rawContent = typeof msg.content === "string" ? msg.content : contentToString(msg.content);
-    const isMemoryContext = rawContent.startsWith("[RMemory Agent Memory Context]:");
-    if (useVisionTokenSaving && (rawContent.length > visionThreshold || isMemoryContext)) {
-      const lines = rawContent.split(/\r?\n/).length;
-      const pages = Math.min(3, Math.ceil(lines / 150));
-      size += pages * ESTIMATED_IMAGE_PAGE_BYTES;
-    } else {
-      size += Buffer.byteLength(JSON.stringify(msg.content), "utf-8");
-    }
+    size += Buffer.byteLength(JSON.stringify(msg.content), "utf-8");
   } else if (msg.role === "assistant") {
     size += Buffer.byteLength(JSON.stringify(msg.content), "utf-8");
     if (msg.toolCalls) {
@@ -227,14 +196,7 @@ function estimateMessagePayloadBytes(
   } else if (msg.role === "tool") {
     const results = msg.toolResults || [];
     for (const tr of results) {
-      const resultStr = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
-      if (useVisionTokenSaving && resultStr.length > visionThreshold) {
-        const lines = resultStr.split(/\r?\n/).length;
-        const pages = Math.min(3, Math.ceil(lines / 150));
-        size += pages * ESTIMATED_IMAGE_PAGE_BYTES;
-      } else {
-        size += Buffer.byteLength(JSON.stringify(tr), "utf-8");
-      }
+      size += Buffer.byteLength(JSON.stringify(tr), "utf-8");
     }
   } else {
     size += Buffer.byteLength(JSON.stringify(msg), "utf-8");

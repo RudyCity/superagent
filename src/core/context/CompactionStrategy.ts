@@ -35,8 +35,6 @@ export interface CompactionOptions {
   /** Pass AbortSignal so long-running strategies (e.g. LLM summarization) can be cancelled. */
   abortSignal?: AbortSignal;
   modelName?: string;
-  useVisionTokenSaving?: boolean;
-  visionThreshold?: number;
 }
 
 export interface CompactionStrategy {

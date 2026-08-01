@@ -67,17 +67,6 @@ export class Conversation {
   public lastCapturedTimestamp = 0;
   /** Pinned messages loaded from file, waiting for ContextManager to be initialized */
   private pendingPinnedMessages: PinnedMessage[] | null = null;
-  /**
-   * When true, buildMessages() in agent.ts converts large tool results to images
-   * on-the-fly via vision token saving. stripOldToolResults uses a much higher
-   * keepCycles so the AI can see full outputs via vision rather than a text preview.
-   */
-  private visionMode = false;
-
-  /** Called by agent.ts each iteration once vision capability is known. */
-  setVisionMode(enabled: boolean): void {
-    this.visionMode = enabled;
-  }
 
   async initContextManager(config: ContextManagerConfig): Promise<void> {
     const { ContextManager: CM } = await import("./context/index.js");
@@ -477,13 +466,6 @@ export class Conversation {
    * compaction for very long sessions.
    */
   stripOldToolResults(keepCycles = 2): void {
-    /**
-     * How many full cycles to retain when vision token saving is active.
-     * buildMessages() will image-convert anything large within this window.
-     */
-    const VISION_KEEP_CYCLES = 8;
-    /** Effective keep threshold — higher when vision handles large content. */
-    const effectiveKeepCycles = this.visionMode ? VISION_KEEP_CYCLES : keepCycles;
     /** Max lines to keep in the preview snippet */
     const PREVIEW_LINES = 20;
     /** Hard character cap for the preview snippet */
@@ -533,7 +515,7 @@ export class Conversation {
           ["read_file", "list_directory", "grep", "list_dir", "grep_search", "view_file", "view"].includes(tr.name)
         ) || false;
 
-        const currentKeepCycles = isRoutine ? Math.max(1, effectiveKeepCycles - 1) : effectiveKeepCycles;
+        const currentKeepCycles = isRoutine ? Math.max(1, keepCycles - 1) : keepCycles;
 
         if (toolMessagesSeen > currentKeepCycles && msg.toolResults) {
           msg.toolResults = msg.toolResults.map(truncateResult);
@@ -542,7 +524,7 @@ export class Conversation {
         const isRoutine = msg.toolCalls?.some(tc =>
           ["read_file", "list_directory", "grep", "list_dir", "grep_search", "view_file", "view"].includes(tc.name)
         ) || false;
-        const currentKeepCycles = isRoutine ? Math.max(1, effectiveKeepCycles - 1) : effectiveKeepCycles;
+        const currentKeepCycles = isRoutine ? Math.max(1, keepCycles - 1) : keepCycles;
 
         if (msg.toolResults && toolMessagesSeen > currentKeepCycles) {
           msg.toolResults = msg.toolResults.map(truncateResult);

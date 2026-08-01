@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { type CoreMessage } from "ai";
-import { getSettings, getContextWindowLimit, getModelConnectionDetailsForTier, getDynamicVisionThreshold, loadAgentSkills, getConfig } from "../config.js";
+import { getSettings, getContextWindowLimit, getModelConnectionDetailsForTier, loadAgentSkills, getConfig } from "../config.js";
 import { contentToString, type Message } from "../conversation.js";
 import { getToolDefinitions, backgroundTasks, isTaskInWorkspace } from "../tools.js";
 import { isRmemoryActive } from "../rmemoryUtil.js";
@@ -348,10 +348,7 @@ export class ContextBuilder {
       : "";
     const modelInstance = agent.getModel();
     const modelName = modelInstance ? modelInstance.modelId : "";
-    const supportsVision = (agent as any).modelSupportsVision(modelName);
-    const settings = getSettings();
-    const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? false) && (agent.detectedPayloadLimitBytes === undefined || agent.detectedPayloadLimitBytes >= 500 * 1024);
-    agent.conversation.setVisionMode(useVisionTokenSaving);
+
 
     let workspaceStateText = "";
     if (agent.tier !== "subagent") {
@@ -433,11 +430,8 @@ export class ContextBuilder {
       }
     };
 
-    if (useVisionTokenSaving) {
-      messages = (agent as any).buildMessages(supportsNativeTools, dynamicContext);
-    } else {
-      injectDynamicContext(messages);
-    }
+    messages = (agent as any).buildMessages(supportsNativeTools);
+    injectDynamicContext(messages);
 
     {
       const systemSize = systemPrompt ? Buffer.byteLength(systemPrompt, "utf-8") : 0;
@@ -455,12 +449,8 @@ export class ContextBuilder {
         );
         const targetBudget = Math.max(20 * 1024, maxPayloadBytes - systemSize - toolsSize - 5000);
         await agent.compactHistoryIfNeeded(signal, true, undefined, targetBudget);
-        if (useVisionTokenSaving) {
-          messages = (agent as any).buildMessages(supportsNativeTools, dynamicContext);
-        } else {
-          messages = (agent as any).buildMessages(supportsNativeTools);
-          injectDynamicContext(messages);
-        }
+        messages = (agent as any).buildMessages(supportsNativeTools);
+        injectDynamicContext(messages);
       }
     }
 
@@ -501,12 +491,8 @@ export class ContextBuilder {
         }) : Math.ceil(dynamicContext.length / 3);
         const targetHistoryBudget = Math.max(1000, safetyMax - estSysTokens - dynamicContextTokens);
         await agent.compactHistoryIfNeeded(signal, false, targetHistoryBudget);
-        if (useVisionTokenSaving) {
-          messages = (agent as any).buildMessages(supportsNativeTools, dynamicContext);
-        } else {
-          messages = (agent as any).buildMessages(supportsNativeTools);
-          injectDynamicContext(messages);
-        }
+        messages = (agent as any).buildMessages(supportsNativeTools);
+        injectDynamicContext(messages);
         const afterEstMsgTokens = agent.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
         const afterEstTotal = afterEstMsgTokens + estSysTokens;
         agent.writeToLogFile("INFO", `Post-compaction estimated total: ~${afterEstTotal.toLocaleString()} tokens.`);

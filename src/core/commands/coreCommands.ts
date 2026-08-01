@@ -192,8 +192,6 @@ export const helpCommand: SlashCommand = {
         "  /setting-procs-limit <number> - Set processes panel visible limit",
         "  /setting-focus <off|low|medium|high|xhigh|max|custom> - Set reasoning focus depth level (alias: /focus)",
         "  /setting-focus-budget <number> - Set reasoning focus custom budget tokens",
-        "  /setting-auto-vision <on|off> - Enable or disable automatic vision token saving",
-        "  /setting-vision-threshold <number> - Set characters threshold for auto vision token saving",
         "  /setting-classifier <on|off> - Enable or disable multi-category request classifier",
         "  /setting-classifier-threshold <high|medium|low> - Set classifier heuristic confidence threshold",
         "  /setting-rmemory - Configure RMemory settings",

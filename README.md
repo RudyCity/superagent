@@ -120,8 +120,6 @@ No manual server configuration or extra CLI arguments are required—simply laun
 | `/setting-procs-limit <number>` | Set processes panel visible limit |
 | `/setting-focus` `/focus` | Set reasoning focus depth: off\|low\|medium\|high\|xhigh\|max\|custom |
 | `/setting-focus-budget <number>` | Set reasoning focus custom budget tokens |
-| `/setting-auto-vision <on\|off>` | Enable/disable automatic vision token saving |
-| `/setting-vision-threshold <number>` | Set characters threshold for auto vision token saving |
 | `/setting-classifier <on\|off>` | Enable/disable multi-category request classifier |
 | `/setting-classifier-threshold <high\|medium\|low>` | Set classifier heuristic confidence threshold |
 | `/setting-rmemory` | Configure RMemory: on, off, provider, model, dimensions |

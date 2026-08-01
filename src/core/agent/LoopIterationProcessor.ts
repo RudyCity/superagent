@@ -4,7 +4,7 @@ import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import { captureGitSnapshot, getGitDiffSummary } from "./GitUtils.js";
 import fs from "fs";
-import { getConfig, getSettings, getDynamicVisionThreshold } from "../config.js";
+import { getConfig, getSettings } from "../config.js";
 import { rateLimiter, concurrencyLimiter } from "../rateLimiter.js";
 import type { ToolCall, ToolResult } from "../conversation.js";
 import { contentToString } from "../conversation.js";
@@ -74,8 +74,6 @@ export class LoopIterationProcessor {
 
     const modelInstance = agent.getModel();
     const modelName = modelInstance ? modelInstance.modelId : "";
-    const supportsVision = agent.modelSupportsVision(modelName);
-    const useVisionTokenSaving = supportsVision && (getSettings().autoVisionTokenSaving ?? false) && (agent.detectedPayloadLimitBytes === undefined || agent.detectedPayloadLimitBytes >= 500 * 1024);
 
     const isTest = !!process.env.VITEST;
     const isAnthropic = !isTest && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
@@ -284,12 +282,8 @@ export class LoopIterationProcessor {
                 agent.writeToLogFile("INFO", `413 Compaction (stream): attempt ${payload413Count}. Before size: ${(beforePayloadBytes / 1024).toFixed(1)} KB, Budget target: ${(currentByteBudget / 1024).toFixed(1)} KB`);
                 await agent.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
 
-                if (useVisionTokenSaving) {
-                  messages = agent.buildMessages(supportsNativeTools, dynamicContext);
-                } else {
-                  messages = agent.buildMessages(supportsNativeTools);
-                  injectDynamicContext(messages);
-                }
+                messages = agent.buildMessages(supportsNativeTools);
+                injectDynamicContext(messages);
                 agent.onEvent({ type: "text", content: `\n[SYS] Payload limit exceeded (413). Retrying compaction... (attempt ${payload413Count}/3)\n` });
                 await agent.delayWithCountdown(1, 1000, signal);
                 continue;
@@ -458,12 +452,8 @@ export class LoopIterationProcessor {
                 agent.writeToLogFile("INFO", `413 Compaction (non-stream): attempt ${payload413Count}. Before size: ${(beforePayloadBytes / 1024).toFixed(1)} KB, Budget target: ${(currentByteBudget / 1024).toFixed(1)} KB`);
                 await agent.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
 
-                if (useVisionTokenSaving) {
-                  messages = agent.buildMessages(supportsNativeTools, dynamicContext);
-                } else {
-                  messages = agent.buildMessages(supportsNativeTools);
-                  injectDynamicContext(messages);
-                }
+                messages = agent.buildMessages(supportsNativeTools);
+                injectDynamicContext(messages);
                 agent.onEvent({ type: "text", content: `\n[SYS] Payload limit exceeded (413). Retrying compaction...\n` });
                 await agent.delayWithCountdown(1, 1000, signal);
                 continue;
@@ -621,12 +611,8 @@ export class LoopIterationProcessor {
               agent.writeToLogFile("INFO", `413 Compaction (xml-fallback): attempt ${payload413Count}. Before size: ${(beforePayloadBytes / 1024).toFixed(1)} KB, Budget target: ${(currentByteBudget / 1024).toFixed(1)} KB`);
               await agent.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
 
-              if (useVisionTokenSaving) {
-                messages = agent.buildMessages(supportsNativeTools, dynamicContext);
-              } else {
-                messages = agent.buildMessages(supportsNativeTools);
-                injectDynamicContext(messages);
-              }
+              messages = agent.buildMessages(supportsNativeTools);
+              injectDynamicContext(messages);
               agent.onEvent({ type: "text", content: `\n[SYS] Payload limit exceeded (413). Retrying compaction...\n` });
               await agent.delayWithCountdown(1, 1000, signal);
               continue;

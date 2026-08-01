@@ -705,36 +705,6 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(addedLines[addedLines.length - 1].content).toContain("Max iterations set to: 120");
   });
 
-  it("should configure auto vision token saving when running /setting-auto-vision", () => {
-    handleSlashCommand("/setting-auto-vision", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-auto-vision");
-
-    handleSlashCommand("/setting-auto-vision invalid", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].type).toBe("error");
-
-    handleSlashCommand("/setting-auto-vision off", mockCtx as any);
-    expect(getSettings().autoVisionTokenSaving).toBe(false);
-    expect(addedLines[addedLines.length - 1].content).toContain("Automatic vision token saving set to: DISABLED");
-
-    handleSlashCommand("/setting-auto-vision on", mockCtx as any);
-    expect(getSettings().autoVisionTokenSaving).toBe(true);
-    expect(addedLines[addedLines.length - 1].content).toContain("Automatic vision token saving set to: ENABLED");
-  });
-
-  it("should configure vision token saving threshold when running /setting-vision-threshold", () => {
-    handleSlashCommand("/setting-vision-threshold", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-vision-threshold");
-
-    handleSlashCommand("/setting-vision-threshold invalid", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].type).toBe("error");
-
-    handleSlashCommand("/setting-vision-threshold -10", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].type).toBe("error");
-
-    handleSlashCommand("/setting-vision-threshold 8000", mockCtx as any);
-    expect(getSettings().visionTokenSavingThreshold).toBe(8000);
-    expect(addedLines[addedLines.length - 1].content).toContain("Vision token saving threshold set to: 8000 chars");
-  });
 
   it("should configure hide timeline when running /setting-hide-timeline", () => {
     handleSlashCommand("/setting-hide-timeline", mockCtx as any);
@@ -768,21 +738,7 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(addedLines[addedLines.length - 1].content).toContain("Advisor set to: ENABLED");
   });
 
-  it("should return autocomplete suggestions for setting-auto-vision, setting-vision-threshold, and setting-hide-timeline", () => {
-    const s1 = getDashboardSuggestions("/setting-auto");
-    expect(s1).toContain("/setting-auto-vision");
-
-    const s2 = getDashboardSuggestions("/setting-auto-vision ");
-    expect(s2).toContain("/setting-auto-vision on");
-    expect(s2).toContain("/setting-auto-vision off");
-
-    const s3 = getDashboardSuggestions("/setting-vision");
-    expect(s3).toContain("/setting-vision-threshold");
-
-    const s4 = getDashboardSuggestions("/setting-vision-threshold ");
-    expect(s4).toContain("/setting-vision-threshold 4000");
-    expect(s4).toContain("/setting-vision-threshold 8000");
-
+  it("should return autocomplete suggestions for setting-hide-timeline", () => {
     const s5 = getDashboardSuggestions("/setting-hide");
     expect(s5).toContain("/setting-hide-timeline");
 

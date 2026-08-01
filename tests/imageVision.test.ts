@@ -30,7 +30,6 @@ describe("Image Vision and FastPath Integration", () => {
     } as any);
     vi.spyOn(modelsConfigModule, "getContextWindowLimit").mockReturnValue(8000);
     vi.spyOn(jsonConfigModule, "getSettings").mockReturnValue({
-      autoVisionTokenSaving: false,
       enableRmemory: false,
     } as any);
   });
@@ -94,7 +93,7 @@ describe("Image Vision and FastPath Integration", () => {
       const content = lastMessage.content;
       expect(Array.isArray(content)).toBe(true);
       expect(content[0]).toEqual({ type: "text", text: "Check this image" });
-      expect(content[1]).toEqual({ type: "image", image: "base64data", mimeType: "image/png" });
+      expect(content[1]).toEqual({ type: "image", image: "data:image/png;base64,base64data", mimeType: "image/png" });
     });
 
     it("should strip image parts if model does not support vision", async () => {

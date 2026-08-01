@@ -31,9 +31,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
       systemPrompt: "Base Master Agent Prompt Content",
     } as any);
 
-    vi.spyOn(configModule, "getSettings").mockReturnValue({
-      autoVisionTokenSaving: false,
-    } as any);
+    vi.spyOn(configModule, "getSettings").mockReturnValue({} as any);
 
     streamTextSpy = vi.spyOn(aiModule, "streamText");
     generateTextSpy = vi.spyOn(aiModule, "generateText");

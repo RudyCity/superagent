@@ -68,8 +68,6 @@ export interface SystemSettings {
   focus?: "off" | "low" | "medium" | "high" | "xhigh" | "max" | "custom";
   focusBudget?: number;
   forcePromptBasedToolCalling?: boolean;
-  autoVisionTokenSaving?: boolean;
-  visionTokenSavingThreshold?: number;
   hideTimeline?: boolean;
   enableAdvisor?: boolean;
   advisorWarningThreshold?: number;
@@ -104,7 +102,6 @@ export interface GlobalModelConfig {
   mcpServers?: Record<string, McpServerConfig>;
 }
 
-export const DEFAULT_VISION_TOKEN_SAVING_THRESHOLD = 3000;
 
 const DEFAULT_CONFIG: GlobalModelConfig = {
   settings: {
@@ -122,8 +119,6 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     focus: "off",
     focusBudget: 4000,
     forcePromptBasedToolCalling: false,
-    autoVisionTokenSaving: false,
-    visionTokenSavingThreshold: DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
     enableRmemory: false,
     rmemoryEmbeddingProvider: "local",
     rmemoryEmbeddingModel: "Xenova/all-MiniLM-L6-v2",
@@ -839,8 +834,6 @@ export function getSettings(): SystemSettings {
     maxProcsVisible: s.maxProcsVisible ?? 3,
     focus: s.focus ?? "off",
     focusBudget: s.focusBudget ?? 4000,
-    autoVisionTokenSaving: s.autoVisionTokenSaving ?? false,
-    visionTokenSavingThreshold: s.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
     hideTimeline: s.hideTimeline ?? false,
     enableAdvisor: s.enableAdvisor ?? true,
     advisorWarningThreshold: s.advisorWarningThreshold ?? 3,
@@ -850,27 +843,6 @@ export function getSettings(): SystemSettings {
     advisorPatternMemory: s.advisorPatternMemory ?? true,
     maxConcurrentWorkspaceTasks: s.maxConcurrentWorkspaceTasks ?? 5,
   };
-}
-
-/**
- * Get dynamic vision token saving threshold based on model provider.
- * Anthropic uses a high image token overhead (1600 tokens), so it needs a higher threshold.
- * Gemini has a low image token overhead, so it can use a lower threshold.
- */
-export function getDynamicVisionThreshold(modelName: string): number {
-  const settings = getSettings();
-  if (settings.visionTokenSavingThreshold !== undefined && settings.visionTokenSavingThreshold !== DEFAULT_VISION_TOKEN_SAVING_THRESHOLD) {
-    return settings.visionTokenSavingThreshold;
-  }
-  if (!modelName) return settings.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD;
-  const name = modelName.toLowerCase();
-  if (name.includes("claude")) {
-    return 6500;
-  }
-  if (name.includes("gemini")) {
-    return 3000;
-  }
-  return settings.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD;
 }
 
 /**

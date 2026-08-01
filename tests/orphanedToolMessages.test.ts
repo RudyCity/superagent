@@ -26,9 +26,7 @@ describe("Orphaned Tool Messages & Error Handling", () => {
       systemPrompt: "Base Master Agent Prompt Content",
     } as any);
     vi.spyOn(modelsConfigModule, "getContextWindowLimit").mockReturnValue(8000);
-    vi.spyOn(jsonConfigModule, "getSettings").mockReturnValue({
-      autoVisionTokenSaving: false,
-    } as any);
+    vi.spyOn(jsonConfigModule, "getSettings").mockReturnValue({} as any);
   });
 
   describe("isRetryableError Status 400", () => {

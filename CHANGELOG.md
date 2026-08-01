@@ -1,4 +1,11 @@
-"## [1.2.666] - 2026-07-31
+## [1.2.667] - 2026-08-01
+
+### Clean: Remove Automatic Image Prompt System
+- **Footprint Removal**: Removed the automatic text-to-image prompt compilation (Mode 2 vision token saving) including settings, helpers, slash commands, autocomplete suggestions, descriptions, help pages, and README documentation.
+- **Message and Token Processing**: Simplified `MessageBuilder`, `ContextBuilder`, `LoopIterationProcessor`, `TokenTracker`, `PruningStrategy`, and `Conversation` to process messages directly as plaintext and user-attached images, bypassing image page token/byte estimations.
+- **Tests**: Deleted `tests/visionTokenSaving.test.ts` and updated compaction, serialization, and settings slash command test assertions to align with the simplified, clean message structure.
+
+## [1.2.666] - 2026-07-31
 
 ### Fix: Clipboard Image Paste (/image paste) and Multimodal Attachment Support
 - **Windows PowerShell Clipboard**: Added `-sta` (Single-Threaded Apartment) mode flag and safe path escaping to `readClipboardWindows()` in `src/utils/imageUtils.ts` to allow `System.Windows.Forms.Clipboard` OLE access.
