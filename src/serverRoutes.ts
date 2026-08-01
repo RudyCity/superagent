@@ -575,7 +575,14 @@ export async function handleServerRoute(
       return true;
     }
 
-    if (typeof message === "string" && message.startsWith("!")) {
+    let parsedMessage = message;
+    if (typeof message === "string" && (message.trim().startsWith("[") || message.trim().startsWith("{"))) {
+      try {
+        parsedMessage = JSON.parse(message);
+      } catch {}
+    }
+
+    if (typeof parsedMessage === "string" && parsedMessage.startsWith("!")) {
       const command = message.slice(1).trim();
       if (!command) {
         sendJSON(res, 400, { error: "Empty terminal command", sessionId: session.sessionId });
@@ -605,7 +612,7 @@ export async function handleServerRoute(
       return true;
     }
 
-    session.agent.sendMessage(message).catch((err: any) => {
+    session.agent.sendMessage(parsedMessage).catch((err: any) => {
       broadcastEvent({ type: "error", message: err.message || String(err) });
     });
 
