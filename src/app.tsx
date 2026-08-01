@@ -11,6 +11,7 @@ import {
   readImageFromPath,
   readImageFromClipboard,
   attachmentToImagePart,
+  formatFileSize,
   type ImageAttachment,
 } from "./utils/imageUtils.js";
 import fs from "fs/promises";
@@ -998,13 +999,22 @@ export function App({
         setAttachments((prev) => [...prev, attachment]);
         addLine({
           type: "system",
-          content: `📎 Clipboard image attached: ${attachment.filename}`,
+          content: `📎 Clipboard image attached: ${attachment.filename} (${formatFileSize(attachment.sizeBytes)})`,
+          timestamp: Date.now(),
+        });
+      } else {
+        addLine({
+          type: "system",
+          content: `⚠️ No image found in system clipboard (or clipboard format not supported). Make sure you copied an image or took a screenshot first.`,
           timestamp: Date.now(),
         });
       }
-      // If null — clipboard had no image, normal text paste proceeds through stdin
-    } catch {
-      // Silently ignore — clipboard had no image
+    } catch (err: any) {
+      addLine({
+        type: "error",
+        content: `Could not read image from clipboard: ${err?.message || err}`,
+        timestamp: Date.now(),
+      });
     }
   }, [addLine]);
 

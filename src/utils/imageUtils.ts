@@ -153,14 +153,16 @@ export async function readImageFromClipboard(): Promise<ImageAttachment | null> 
 
 async function readClipboardWindows(): Promise<ImageAttachment | null> {
   const tmpFile = path.join(os.tmpdir(), `superagent-clip-${Date.now()}.png`);
+  const safeTmpFile = tmpFile.replace(/'/g, "''");
 
   // PowerShell script: read clipboard image or file drop list
+  // MUST use -sta (Single-Threaded Apartment) mode for System.Windows.Forms.Clipboard
   const script = [
     "Add-Type -AssemblyName System.Windows.Forms;",
     "Add-Type -AssemblyName System.Drawing;",
     "if ([System.Windows.Forms.Clipboard]::ContainsImage()) {",
     "  $img = [System.Windows.Forms.Clipboard]::GetImage();",
-    `  $img.Save('${tmpFile}', [System.Drawing.Imaging.ImageFormat]::Png);`,
+    `  $img.Save('${safeTmpFile}', [System.Drawing.Imaging.ImageFormat]::Png);`,
     "  Write-Output 'SAVED_RAW';",
     "  exit 0;",
     "}",
@@ -181,7 +183,7 @@ async function readClipboardWindows(): Promise<ImageAttachment | null> {
   let result = "";
   try {
     const { stdout } = await execFileAsync("powershell.exe", [
-      "-NoProfile", "-NonInteractive", "-Command", script,
+      "-sta", "-NoProfile", "-NonInteractive", "-Command", script,
     ], { timeout: 8000 });
     result = stdout.trim();
   } catch {

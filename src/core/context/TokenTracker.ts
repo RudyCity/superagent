@@ -75,12 +75,26 @@ export class TokenTracker {
   static modelSupportsVision(modelName: string): boolean {
     if (!modelName) return false;
     const name = modelName.toLowerCase();
-    if (name.includes("claude-3")) return true;
-    if (name.includes("gpt-4o")) return true;
-    if (name.includes("gpt-4-vision")) return true;
-    if (name.includes("gemini")) return true;
-    if (name.includes("gemma-3")) return true;
-    if (name.includes("vision")) return true;
+    if (
+      name.includes("claude-3") ||
+      name.includes("claude") ||
+      name.includes("gpt-4o") ||
+      name.includes("gpt-4.5") ||
+      name.includes("gpt-4-vision") ||
+      name.includes("o1") ||
+      name.includes("o3") ||
+      name.includes("gemini") ||
+      name.includes("gemma-3") ||
+      name.includes("vision") ||
+      name.includes("-vl") ||
+      name.includes("vl-") ||
+      name.includes("qwen") ||
+      name.includes("pixtral") ||
+      name.includes("llava") ||
+      name.includes("llama-3.2")
+    ) {
+      return true;
+    }
     return false;
   }
 

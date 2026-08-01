@@ -1,4 +1,12 @@
-"## [1.2.665] - 2026-07-31
+"## [1.2.666] - 2026-07-31
+
+### Fix: Clipboard Image Paste (/image paste) and Multimodal Attachment Support
+- **Windows PowerShell Clipboard**: Added `-sta` (Single-Threaded Apartment) mode flag and safe path escaping to `readClipboardWindows()` in `src/utils/imageUtils.ts` to allow `System.Windows.Forms.Clipboard` OLE access.
+- **Terminal UI Feedback**: Added explicit terminal notices and error handling in `src/app.tsx` when system clipboard contains no image or fails to read.
+- **Vision Model Detection**: Expanded `modelSupportsVision()` in `MessageBuilder.ts` and `TokenTracker.ts` to support models such as `claude`, `gpt-4o`, `gpt-4.5`, `o1`, `o3`, `gemini`, `gemma-3`, `vision`, `vl`, `qwen`, `pixtral`, `llava`, and `llama-3.2`.
+- **Base64 Data URL Standard**: Standardized base64 image encoding with Data URL scheme (`data:${mimeType};base64,...`) across `MessageBuilder.ts` and `FastPath.ts` for full compatibility with all Vercel AI SDK LLM providers.
+
+## [1.2.665] - 2026-07-31
 
 ### Fix & Refactor: Workspace Chain Search & Session Resolution
 - **Workspace Chain Search**: Enhanced FTS search in `src/core/storage/historyDb.ts` to support chain node path matching.

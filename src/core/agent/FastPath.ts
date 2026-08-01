@@ -66,7 +66,12 @@ export class FastPath {
                 if (supportsVision) {
                   sdkContent = m.content.map((p: any) => {
                     if (p.type === "image") {
-                      return { type: "image" as const, image: p.image, mimeType: p.mimeType };
+                      const mime = p.mimeType || "image/png";
+                      const imgStr = typeof p.image === "string" ? p.image : "";
+                      const dataUrl = imgStr.startsWith("data:")
+                        ? imgStr
+                        : `data:${mime};base64,${imgStr}`;
+                      return { type: "image" as const, image: dataUrl, mimeType: mime };
                     }
                     return { type: "text" as const, text: p.text };
                   });

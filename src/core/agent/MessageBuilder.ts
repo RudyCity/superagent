@@ -62,11 +62,21 @@ export class MessageBuilder {
     // Known vision-supporting models - name check overrides config misconfigurations
     if (
       name.includes("claude-3") ||
+      name.includes("claude") ||
       name.includes("gpt-4o") ||
+      name.includes("gpt-4.5") ||
       name.includes("gpt-4-vision") ||
+      name.includes("o1") ||
+      name.includes("o3") ||
       name.includes("gemini") ||
       name.includes("gemma-3") ||
-      name.includes("vision")
+      name.includes("vision") ||
+      name.includes("-vl") ||
+      name.includes("vl-") ||
+      name.includes("qwen") ||
+      name.includes("pixtral") ||
+      name.includes("llava") ||
+      name.includes("llama-3.2")
     ) {
       return true;
     }
@@ -171,7 +181,12 @@ export class MessageBuilder {
 
         // Append user-attached images after the compiled text images
         for (const img of userImageParts) {
-          contentParts.push({ type: "image", image: img.image, mimeType: img.mimeType });
+          const mime = img.mimeType || "image/png";
+          const imgStr = typeof img.image === "string" ? img.image : "";
+          const dataUrl = imgStr.startsWith("data:")
+            ? imgStr
+            : `data:${mime};base64,${imgStr}`;
+          contentParts.push({ type: "image", image: dataUrl, mimeType: mime });
         }
 
         coreMessages.push({
@@ -415,7 +430,12 @@ export class MessageBuilder {
           ? m.content
           : (m.content as any[]).map((p: any) => {
               if (p.type === "image") {
-                return { type: "image" as const, image: p.image, mimeType: p.mimeType };
+                const mime = p.mimeType || "image/png";
+                const imgStr = typeof p.image === "string" ? p.image : "";
+                const dataUrl = imgStr.startsWith("data:")
+                  ? imgStr
+                  : `data:${mime};base64,${imgStr}`;
+                return { type: "image" as const, image: dataUrl, mimeType: mime };
               }
               return { type: "text" as const, text: p.text };
             });
