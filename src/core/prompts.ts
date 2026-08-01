@@ -28,6 +28,7 @@ const BATCH_OPS_RULE = `- BATCH_OPS: Consolidate parallel ops in single turn. Us
 const FAST_ANALYSIS_RULE = `- SEARCH: ripgrep first. limit/offset for files >200 lines. Exclude node_modules, dist, build, .git, venv.`;
 
 const FILE_EDIT_SAFETY_RULE = `- EDIT_SAFETY: Read target pre-edit. Ensure oldString uniqueness or specify line range. Modify assigned files ONLY.
+- CROSS_SESSION_CONFLICT: Multi-terminal & multi-session active. Check shared memory locks before file modification (read_shared_memory). Do NOT overwrite files locked by active parallel sessions (CLI A, t-line S1/S2). Read exact line range immediately before edit.
 - Failures: Re-read range → line-range replace. Avoid stale edits.
 - DIRTY_WORKSPACE: Observe pre-existing changes. Edit assigned files ONLY.`;
 

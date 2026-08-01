@@ -4,6 +4,7 @@ import path from "path";
 import { Tool } from "./types.js";
 import { normalizeForMatching, verifySyntax, mapNormToOrigIndices, countOccurrences, fileLockManager } from "./helpers.js";
 import { normalizePath, resolveFilePathFromArgs } from "./pathHelpers.js";
+import { checkFileLock } from "../storage/sharedMemory.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { sshWriteToolExecute, sshEditToolExecute, sshMultiEditToolExecute } from "../ssh/sshCommands.js";
 import { sshLogger } from "../ssh/sshLogger.js";
@@ -12,6 +13,16 @@ function fuzzyMatch(text: string, pattern: string): boolean {
   const cleanText = text.replace(/\s+/g, ' ');
   const cleanPattern = pattern.replace(/\s+/g, ' ');
   return cleanText.includes(cleanPattern);
+}
+
+async function waitForFileLockRelease(targetPath: string, cwd?: string, timeoutMs: number = 3000): Promise<{ locked: boolean; owner?: any }> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const status = checkFileLock(targetPath, undefined, cwd);
+    if (!status.locked) return status;
+    await new Promise(r => setTimeout(r, 200));
+  }
+  return checkFileLock(targetPath, undefined, cwd);
 }
 
 /**
@@ -337,6 +348,16 @@ export const editTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
+    const targetCheckPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
+    if (targetCheckPath) {
+      let lockStatus = checkFileLock(targetCheckPath, undefined, cwd);
+      if (lockStatus.locked) {
+        lockStatus = await waitForFileLockRelease(targetCheckPath, cwd, 2500);
+      }
+      if (lockStatus.locked) {
+        return `Error: [LOCK_CONFLICT] File "${targetCheckPath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+      }
+    }
     if (workspaceMode.isSsh()) {
       const targetPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
       const oldStr = (args.oldString as string) || ((args.edits as any[])?.[0]?.oldString);
@@ -604,6 +625,13 @@ export const writeToFileTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
+    const targetWritePath = (args.filePath as string) || (args.files as any[])?.[0]?.filePath;
+    if (targetWritePath) {
+      const lockStatus = checkFileLock(targetWritePath, undefined, cwd);
+      if (lockStatus.locked) {
+        return `Error: [LOCK_CONFLICT] File "${targetWritePath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+      }
+    }
     if (workspaceMode.isSsh()) {
       const targets = args.files || args.filePath;
       if (!targets) return "Error: Missing filePath or files for SSH write";
@@ -798,6 +826,13 @@ export const replaceFileContentTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
+    const targetReplacePath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
+    if (targetReplacePath) {
+      const lockStatus = checkFileLock(targetReplacePath, undefined, cwd);
+      if (lockStatus.locked) {
+        return `Error: [LOCK_CONFLICT] File "${targetReplacePath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+      }
+    }
     if (workspaceMode.isSsh()) {
       sshLogger.toolUse("replace_file_content", "routing replace_file_content tool to SSH remote", { meta: { batch: !!args.edits } });
       const targetPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);

@@ -63,6 +63,7 @@ import {
 
 import { manageMcpTool } from "./mcpTools.js";
 import { saveSharedMemoryTool, readSharedMemoryTool } from "./sharedMemoryTools.js";
+import { unlockFileTool, getLockStatsTool, resolveConflictTool, generateLockReportTool } from "./lockTools.js";
 
 import { 
   askQuestionTool, 
@@ -209,6 +210,10 @@ export const allTools: Tool[] = [
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
+  unlockFileTool,
+  getLockStatsTool,
+  resolveConflictTool,
+  generateLockReportTool,
   readPeerSuperagentFileTool,
   manageWorkspaceChainTool,
   crossWorkspaceExecTool,

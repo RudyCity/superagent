@@ -245,6 +245,15 @@ function initDatabaseSchema(db: any): void {
     CREATE INDEX IF NOT EXISTS idx_pinned_knowledge_wd ON pinned_knowledge(working_directory);
     CREATE INDEX IF NOT EXISTS idx_pinned_knowledge_tag ON pinned_knowledge(tag);
 
+    CREATE TABLE IF NOT EXISTS file_lock_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_path TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      terminal_type TEXT,
+      event_type TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS workspace_tasks (
       workspace_id TEXT NOT NULL,
       task_id TEXT NOT NULL,
@@ -1755,6 +1764,16 @@ export function migrateLegacyTrustedDirs(db: any): void {
         fs.writeFileSync(configPath, JSON.stringify(parsed, null, 2), "utf-8");
       } catch {}
     }
+  } catch {}
+}
+
+export function recordLockEvent(filePath: string, sessionId: string, terminalType: string = "cli", eventType: "acquired" | "conflict_blocked" | "released" | "soft_locked") {
+  try {
+    const db = getHistoryDb();
+    db.prepare(`
+      INSERT INTO file_lock_events (file_path, session_id, terminal_type, event_type, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(filePath, sessionId, terminalType, eventType, Date.now());
   } catch {}
 }
 

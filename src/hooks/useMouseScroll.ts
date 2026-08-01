@@ -167,7 +167,7 @@ export function useMouseScroll(
                 }
               });
             } else {
-              ctx.scrollChat(isUp ? "up" : "down", 10);
+              ctx.scrollChat(isUp ? "up" : "down", 3);
             }
           } else if (sectionName === "wizard" && ctx.activeWizard?.type === "plan_approve") {
             ctx.setActiveWizard?.((curr: any) => {
@@ -208,7 +208,7 @@ export function useMouseScroll(
             ) {
               scrollSection(ctx, ctx.focusMode, isUp ? "up" : "down");
             } else {
-              ctx.scrollChat(isUp ? "up" : "down", 10);
+              ctx.scrollChat(isUp ? "up" : "down", 3);
             }
           }
           continue;

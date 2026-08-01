@@ -11,6 +11,7 @@ import { workspaceMode } from "../ssh/workspaceMode.js";
 import { sshReadToolExecute, sshGlobToolExecute, sshGrepToolExecute } from "../ssh/sshCommands.js";
 import { sshLogger } from "../ssh/sshLogger.js";
 import { workspaceChainManager } from "../workspace/WorkspaceChainManager.js";
+import { setIntentSoftLock } from "../storage/sharedMemory.js";
 
 export const readTool: Tool = {
   name: "read",
@@ -47,6 +48,18 @@ export const readTool: Tool = {
       return await sshReadToolExecute(targets as any, offset, limit);
     }
     const filePaths = args.filePaths as any[] | undefined;
+    const singlePath = args.filePath as string | undefined;
+    try {
+      const pathsToLock: string[] = [];
+      if (singlePath) pathsToLock.push(singlePath);
+      if (Array.isArray(filePaths)) {
+        filePaths.forEach(fp => {
+          const p = typeof fp === "string" ? fp : fp?.path;
+          if (p) pathsToLock.push(p);
+        });
+      }
+      pathsToLock.forEach(p => setIntentSoftLock(p, "active_session", "cli", cwd));
+    } catch {}
 
     if (filePaths && Array.isArray(filePaths)) {
       if (filePaths.length === 0) {

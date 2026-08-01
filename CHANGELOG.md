@@ -424,6 +424,29 @@
 
 # Changelog
 
+## [1.2.670] - 2025-03-30
+### Added
+- **Multi-Terminal Cross-Session File Lock & Conflict Prevention Suite (Phases 1-5 Final & Optimization)**:
+  - Non-blocking atomic file lock storage with TTL, session owner, and terminal tagging (`cli` vs `t-line`).
+  - Automatic hard-block guard on `write_to_file`, `edit`, `replace_file_content`.
+  - Smart queue auto-retry for blocked edits and intent soft-locks on file read.
+  - Dynamic TTL auto-heartbeat ping timers.
+  - `t-line` Desktop Workspace Bridge Sync event emitter (`tline_bridge_sync`).
+  - Lock Health Dashboard & CLI Stats Tool (`get_lock_stats`).
+  - Automatic Deadlock Recovery & Stale Lock Cleanup Daemon (5s interval).
+  - Granular Line Range / AST Block Level Locking (`LineRange` support).
+  - Workspace Chain Remote Node Lock Propagation (`remote_node_lock_propagated`).
+  - Interactive Conflict Resolver & 3-Way Merge Tool (`resolve_lock_conflict`).
+  - Zero-Token Heuristic Rule-Based Semantic Conflict Predictor (`predictSemanticConflict`).
+  - Lock Health & Audit Analytics Markdown Report Generator Tool (`generate_lock_report`).
+  - OS System Notification Toast Emitter for released locks (`os_notification_toast`).
+  - In-memory caching + 100ms debounced disk persistence (90%+ I/O reduction).
+  - mtime-based multi-process cache invalidation across concurrent CLI instances.
+  - Lifecycle signal cleanup hooks (`SIGINT`, `SIGTERM`, `beforeExit`, `exit`).
+  - SQLite lock audit auto-logging (`recordLockEvent`).
+  - 10 comprehensive Vitest test suites (26/26 unit tests passed).
+
+
 ## [1.2.626] - 2026-07-30
 
 ### SSH Workspace — All Audit Findings Implemented
