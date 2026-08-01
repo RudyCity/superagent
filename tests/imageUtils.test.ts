@@ -9,7 +9,6 @@ import {
   attachmentToImagePart,
   formatFileSize,
 } from "../src/utils/imageUtils.js";
-import { normalizePathsForImage, wrapLongLines } from "../src/utils/textToImage.js";
 
 describe("imageUtils", () => {
   beforeEach(() => {
@@ -107,50 +106,6 @@ describe("imageUtils", () => {
       } finally {
         await fs.unlink(tempFilePath).catch(() => {});
       }
-    });
-  });
-
-  describe("normalizePathsForImage", () => {
-    it("should normalize Windows absolute paths with backslashes to forward slashes", () => {
-      expect(normalizePathsForImage("C:\\Users\\foo")).toBe("C:/Users/foo");
-      expect(normalizePathsForImage("d:\\backup from pc asus\\Documents Development\\superagent\\src\\app.tsx"))
-        .toBe("d:/backup from pc asus/Documents Development/superagent/src/app.tsx");
-      expect(normalizePathsForImage("C:\\Program Files (x86)\\My-Folder(sub)\\test.png"))
-        .toBe("C:/Program Files (x86)/My-Folder(sub)/test.png");
-    });
-
-    it("should normalize Windows relative paths with backslashes to forward slashes", () => {
-      expect(normalizePathsForImage("Some relative path: .\\src\\app.tsx")).toBe("Some relative path: ./src/app.tsx");
-    });
-
-    it("should not mutate non-path backslash strings like escape sequences or regexes", () => {
-      expect(normalizePathsForImage("escaped characters \\n and \\t")).toBe("escaped characters \\n and \\t");
-      expect(normalizePathsForImage("regex like /\\\\/g")).toBe("regex like /\\\\/g");
-    });
-  });
-
-  describe("wrapLongLines", () => {
-    it("should wrap long lines exceeding max character limit", () => {
-      const longLine = "a".repeat(150);
-      const wrapped = wrapLongLines(longLine, 50);
-      const parts = wrapped.split("\n");
-      expect(parts.length).toBe(3);
-      expect(parts[0].length).toBe(50);
-      expect(parts[1].length).toBe(50);
-      expect(parts[2].length).toBe(50);
-    });
-
-    it("should split at word boundaries/delimiters when possible", () => {
-      const sentence = "this is a very long line that should be wrapped neatly at space delimiters if we can find them";
-      const wrapped = wrapLongLines(sentence, 30);
-      const parts = wrapped.split("\n");
-      expect(parts.every(p => p.length <= 30)).toBe(true);
-      expect(parts[0]).toBe("this is a very long line that "); // split at space
-    });
-
-    it("should not wrap lines that are shorter than the limit", () => {
-      const shortText = "short text\nanother line";
-      expect(wrapLongLines(shortText, 50)).toBe(shortText);
     });
   });
 });

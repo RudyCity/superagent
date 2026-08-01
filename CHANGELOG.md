@@ -1,3 +1,9 @@
+## [1.2.668] - 2026-08-01
+
+### Fix: Restore System Prompt Clipboard Paste Instructions & Cleanup Test Imports
+- **System Prompts**: Restored the `/image paste` and `IMAGE_VISION` prompt instructions to `src/core/config/base.ts` and `src/core/prompts.ts` so the AI agent understands when and how to ask the user to paste clipboard screenshots or attach image files.
+- **Test Cleanup**: Removed obsolete imports and test cases for `textToImage.ts` helpers (`normalizePathsForImage` and `wrapLongLines`) from `tests/imageUtils.test.ts` to ensure the test suite is fully aligned after the vision prompt cleaning.
+
 ## [1.2.667] - 2026-08-01
 
 ### Clean: Remove Automatic Image Prompt System
