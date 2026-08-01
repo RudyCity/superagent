@@ -4,7 +4,7 @@ import path from "path";
 import { Tool } from "./types.js";
 import { normalizeForMatching, verifySyntax, mapNormToOrigIndices, countOccurrences, fileLockManager } from "./helpers.js";
 import { normalizePath, resolveFilePathFromArgs } from "./pathHelpers.js";
-import { checkFileLock } from "../storage/sharedMemory.js";
+import { checkFileLock, lockFile, releaseFile } from "../storage/sharedMemory.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { sshWriteToolExecute, sshEditToolExecute, sshMultiEditToolExecute } from "../ssh/sshCommands.js";
 import { sshLogger } from "../ssh/sshLogger.js";
@@ -15,14 +15,14 @@ function fuzzyMatch(text: string, pattern: string): boolean {
   return cleanText.includes(cleanPattern);
 }
 
-async function waitForFileLockRelease(targetPath: string, cwd?: string, timeoutMs: number = 3000): Promise<{ locked: boolean; owner?: any }> {
+async function waitForFileLockRelease(targetPath: string, cwd?: string, timeoutMs: number = 3000, sessionId?: string): Promise<{ locked: boolean; owner?: any }> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const status = checkFileLock(targetPath, undefined, cwd);
+    const status = checkFileLock(targetPath, sessionId, cwd);
     if (!status.locked) return status;
     await new Promise(r => setTimeout(r, 200));
   }
-  return checkFileLock(targetPath, undefined, cwd);
+  return checkFileLock(targetPath, sessionId, cwd);
 }
 
 /**
@@ -246,11 +246,25 @@ export const writeTool: Tool = {
     required: ["filePath", "content"],
   },
   async execute(args, cwd, signal) {
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+    const sessionId = currentAgent?.sessionId;
+    const terminalType = (currentAgent as any)?.terminalType || "cli";
     if (workspaceMode.isSsh()) {
       const filePath = (args.filePath || args.path) as string;
       const content = args.content as string;
       if (!filePath || content === undefined) return "Error: Missing filePath or content";
       return await sshWriteToolExecute(filePath, content);
+    }
+    const writeCheckPath = (args.filePath || args.path) as string;
+    if (writeCheckPath) {
+      let lockStatus = checkFileLock(writeCheckPath, sessionId, cwd);
+      if (lockStatus.locked) {
+        lockStatus = await waitForFileLockRelease(writeCheckPath, cwd, 2500, sessionId);
+      }
+      if (lockStatus.locked) {
+        return `Error: [LOCK_CONFLICT] File "${writeCheckPath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+      }
     }
     let filePath: string;
     try {
@@ -265,6 +279,9 @@ export const writeTool: Tool = {
     const content = args.content as string | undefined;
     if (content === undefined || content === null) {
       return "Error: Missing required parameter 'content'. Provide the content to write to the file.";
+    }
+    if (sessionId) {
+      lockFile(filePath, sessionId, terminalType, 30000, cwd);
     }
     const release = await fileLockManager.acquire(filePath);
     try {
@@ -284,6 +301,7 @@ export const writeTool: Tool = {
       return `Error writing file: ${message}`;
     } finally {
       release();
+      if (sessionId) releaseFile(filePath, sessionId, cwd);
     }
   },
 };
@@ -348,14 +366,29 @@ export const editTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
-    const targetCheckPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
-    if (targetCheckPath) {
-      let lockStatus = checkFileLock(targetCheckPath, undefined, cwd);
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+    const sessionId = currentAgent?.sessionId;
+    const terminalType = (currentAgent as any)?.terminalType || "cli";
+    const editPathsToCheck: string[] = [];
+    if (args.filePath) editPathsToCheck.push(args.filePath as string);
+    if (args.edits && Array.isArray(args.edits)) {
+      for (const e of args.edits as any[]) {
+        if (e?.filePath) editPathsToCheck.push(e.filePath);
+      }
+    }
+    const editAutoLockPaths: string[] = [];
+    for (const checkPath of [...new Set(editPathsToCheck)]) {
+      let lockStatus = checkFileLock(checkPath, sessionId, cwd);
       if (lockStatus.locked) {
-        lockStatus = await waitForFileLockRelease(targetCheckPath, cwd, 2500);
+        lockStatus = await waitForFileLockRelease(checkPath, cwd, 2500, sessionId);
       }
       if (lockStatus.locked) {
-        return `Error: [LOCK_CONFLICT] File "${targetCheckPath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+        return `Error: [LOCK_CONFLICT] File "${checkPath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+      }
+      if (sessionId) {
+        lockFile(checkPath, sessionId, terminalType, 30000, cwd);
+        editAutoLockPaths.push(checkPath);
       }
     }
     if (workspaceMode.isSsh()) {
@@ -385,6 +418,8 @@ export const editTool: Tool = {
         for (const p of uniquePaths) {
           releases.push(await fileLockManager.acquire(p));
         }
+        // Release cross-session locks on exit (acquired before SSH check)
+        releases.push(() => { for (const p of editAutoLockPaths) releaseFile(p, sessionId!, cwd); });
 
         const editsByFile = new Map<string, typeof sortedEdits>();
         for (const edit of sortedEdits) {
@@ -625,11 +660,29 @@ export const writeToFileTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
-    const targetWritePath = (args.filePath as string) || (args.files as any[])?.[0]?.filePath;
-    if (targetWritePath) {
-      const lockStatus = checkFileLock(targetWritePath, undefined, cwd);
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+    const sessionId = currentAgent?.sessionId;
+    const terminalType = (currentAgent as any)?.terminalType || "cli";
+    const writePathsToCheck: string[] = [];
+    if (args.filePath) writePathsToCheck.push(args.filePath as string);
+    if (args.files && Array.isArray(args.files)) {
+      for (const f of args.files as any[]) {
+        if (f?.filePath) writePathsToCheck.push(f.filePath);
+      }
+    }
+    const writeAutoLockPaths: string[] = [];
+    for (const checkPath of [...new Set(writePathsToCheck)]) {
+      let lockStatus = checkFileLock(checkPath, sessionId, cwd);
       if (lockStatus.locked) {
-        return `Error: [LOCK_CONFLICT] File "${targetWritePath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+        lockStatus = await waitForFileLockRelease(checkPath, cwd, 2500, sessionId);
+      }
+      if (lockStatus.locked) {
+        return `Error: [LOCK_CONFLICT] File "${checkPath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+      }
+      if (sessionId) {
+        lockFile(checkPath, sessionId, terminalType, 30000, cwd);
+        writeAutoLockPaths.push(checkPath);
       }
     }
     if (workspaceMode.isSsh()) {
@@ -654,6 +707,9 @@ export const writeToFileTool: Tool = {
         for (const file of sortedFiles) {
           releases.push(await fileLockManager.acquire(file.resolvedPath));
         }
+        // Release cross-session locks on exit
+        if (sessionId) releases.push(() => { for (const p of writeAutoLockPaths) releaseFile(p, sessionId!, cwd); });
+
         for (const file of sortedFiles) {
           const overwrite = !!file.overwrite;
           const nextContent = file.content;
@@ -826,11 +882,29 @@ export const replaceFileContentTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
-    const targetReplacePath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
-    if (targetReplacePath) {
-      const lockStatus = checkFileLock(targetReplacePath, undefined, cwd);
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+    const sessionId = currentAgent?.sessionId;
+    const terminalType = (currentAgent as any)?.terminalType || "cli";
+    const replacePathsToCheck: string[] = [];
+    if (args.filePath) replacePathsToCheck.push(args.filePath as string);
+    if (args.edits && Array.isArray(args.edits)) {
+      for (const e of args.edits as any[]) {
+        if (e?.filePath) replacePathsToCheck.push(e.filePath);
+      }
+    }
+    const replaceAutoLockPaths: string[] = [];
+    for (const checkPath of [...new Set(replacePathsToCheck)]) {
+      let lockStatus = checkFileLock(checkPath, sessionId, cwd);
       if (lockStatus.locked) {
-        return `Error: [LOCK_CONFLICT] File "${targetReplacePath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+        lockStatus = await waitForFileLockRelease(checkPath, cwd, 2500, sessionId);
+      }
+      if (lockStatus.locked) {
+        return `Error: [LOCK_CONFLICT] File "${checkPath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+      }
+      if (sessionId) {
+        lockFile(checkPath, sessionId, terminalType, 30000, cwd);
+        replaceAutoLockPaths.push(checkPath);
       }
     }
     if (workspaceMode.isSsh()) {
@@ -861,6 +935,8 @@ export const replaceFileContentTool: Tool = {
         for (const p of uniquePaths) {
           releases.push(await fileLockManager.acquire(p));
         }
+        // Release cross-session locks on exit
+        if (sessionId) releases.push(() => { for (const p of replaceAutoLockPaths) releaseFile(p, sessionId!, cwd); });
 
         const editsByFile = new Map<string, typeof sortedEdits>();
         for (const edit of sortedEdits) {
@@ -1190,6 +1266,10 @@ export const multiReplaceFileContentTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+    const sessionId = currentAgent?.sessionId;
+    const terminalType = (currentAgent as any)?.terminalType || "cli";
     if (workspaceMode.isSsh()) {
       const targetPath = (args.filePath as string) || ((args.files as any[])?.[0]?.filePath);
       const chunks = (args.chunks as any[]) || ((args.files as any[])?.[0]?.chunks);
@@ -1197,6 +1277,19 @@ export const multiReplaceFileContentTool: Tool = {
         return "Error: Missing filePath or chunks for SSH multi_replace_file_content";
       }
       return await sshMultiEditToolExecute(targetPath, chunks);
+    }
+    const targetMultiReplacePath = (args.filePath as string) || ((args.files as any[])?.[0]?.filePath);
+    if (targetMultiReplacePath) {
+      let lockStatus = checkFileLock(targetMultiReplacePath, sessionId, cwd);
+      if (lockStatus.locked) {
+        lockStatus = await waitForFileLockRelease(targetMultiReplacePath, cwd, 2500, sessionId);
+      }
+      if (lockStatus.locked) {
+        return `Error: [LOCK_CONFLICT] File "${targetMultiReplacePath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+      }
+      if (sessionId) {
+        lockFile(targetMultiReplacePath, sessionId, terminalType, 30000, cwd);
+      }
     }
     interface Chunk {
       targetContent: string;
@@ -1232,6 +1325,8 @@ export const multiReplaceFileContentTool: Tool = {
         for (const file of sortedFiles) {
           releases.push(await fileLockManager.acquire(file.resolvedPath));
         }
+        // Release cross-session lock acquired before this branch
+        if (sessionId && targetMultiReplacePath) releases.push(() => releaseFile(targetMultiReplacePath, sessionId!, cwd));
 
         for (const file of sortedFiles) {
           try {
@@ -1887,8 +1982,22 @@ export const applyPatchTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+    const sessionId = currentAgent?.sessionId;
+    const terminalType = (currentAgent as any)?.terminalType || "cli";
     if (workspaceMode.isSsh()) {
       return "Notice: apply_patch is not supported over SSH proxy mode. Please use write_to_file or edit tool instead.";
+    }
+    const targetPatchPath = (args.filePath as string) || ((args.patches as any[])?.[0]?.filePath);
+    if (targetPatchPath) {
+      let lockStatus = checkFileLock(targetPatchPath, sessionId, cwd);
+      if (lockStatus.locked) {
+        lockStatus = await waitForFileLockRelease(targetPatchPath, cwd, 2500, sessionId);
+      }
+      if (lockStatus.locked) {
+        return `Error: [LOCK_CONFLICT] File "${targetPatchPath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+      }
     }
     const patches = args.patches as Array<{ filePath: string; patchContent: string }> | undefined;
     if (patches && Array.isArray(patches)) {
@@ -1907,6 +2016,8 @@ export const applyPatchTool: Tool = {
         for (const p of uniquePaths) {
           releases.push(await fileLockManager.acquire(p));
         }
+        // Release cross-session locks on exit
+        if (sessionId) releases.push(() => { for (const p of uniquePaths) releaseFile(p, sessionId!, cwd); });
 
         for (const patch of sortedPatches) {
           try {

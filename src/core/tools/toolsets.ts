@@ -101,6 +101,7 @@ import {
 import { manageMcpTool } from "./mcpTools.js";
 import { saveSharedMemoryTool, readSharedMemoryTool } from "./sharedMemoryTools.js";
 import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../workspace/workspaceChainTools.js";
+import { unlockFileTool, getLockStatsTool, resolveConflictTool, generateLockReportTool } from "./lockTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Focused on orchestration. Does NOT write code itself.
@@ -142,6 +143,9 @@ export const masterToolset: Tool[] = [
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
+  unlockFileTool,
+  getLockStatsTool,
+  generateLockReportTool,
   manageWorkspaceChainTool,
   crossWorkspaceExecTool,
 ];
@@ -193,6 +197,10 @@ export const superagentToolset: Tool[] = [
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
+  unlockFileTool,
+  getLockStatsTool,
+  resolveConflictTool,
+  generateLockReportTool,
   manageWorkspaceChainTool,
   crossWorkspaceExecTool,
 ];
@@ -238,6 +246,10 @@ export const chromeExtensionToolset: Tool[] = [
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
+  unlockFileTool,
+  getLockStatsTool,
+  resolveConflictTool,
+  generateLockReportTool,
 ];
 
 
@@ -298,6 +310,8 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemoryConversationAddTool,
     saveSharedMemoryTool,
     readSharedMemoryTool,
+    unlockFileTool,
+    getLockStatsTool,
     defineSubagentTool,
     invokeSubagentTool,
     sendMessageTool,

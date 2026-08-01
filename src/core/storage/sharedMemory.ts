@@ -93,7 +93,9 @@ function persistLocksToDisk(locks: FileLockEntry[], immediate: boolean = false) 
     return;
   }
 
-  if (saveDebounceTimer) return;
+  if (saveDebounceTimer) {
+    clearTimeout(saveDebounceTimer);
+  }
 
   saveDebounceTimer = setTimeout(() => {
     saveDebounceTimer = null;
@@ -124,6 +126,12 @@ process.on("SIGTERM", () => {
   flushPendingLocksOnExit();
   process.exit(0);
 });
+try {
+  process.on("SIGBREAK", () => {
+    flushPendingLocksOnExit();
+    process.exit(0);
+  });
+} catch {}
 
 function withLock<T>(fn: () => T): T {
   const locksFile = getLocksFilePath();
@@ -145,7 +153,12 @@ function withLock<T>(fn: () => T): T {
           }
         }
       } catch {}
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1);
     }
+  }
+
+  if (!acquired) {
+    throw new Error("Failed to acquire lock");
   }
 
   try {
@@ -315,7 +328,8 @@ export function releaseFile(
         !(
           path.resolve(l.filePath) === absPath &&
           l.projectPath === projectPath &&
-          isOverlappingRange(l.lineRange, lineRange)
+          isOverlappingRange(l.lineRange, lineRange) &&
+          (forceUnlock || l.sessionId === (sessionId || targetLock.sessionId))
         )
     );
     persistLocksToDisk(filtered, true);
@@ -390,8 +404,8 @@ export function startDeadlockRecoveryDaemon(checkIntervalMs: number = 5000) {
   if (recoveryDaemonTimer) return;
 
   recoveryDaemonTimer = setInterval(() => {
-    const now = Date.now();
     withLock(() => {
+      const now = Date.now();
       let locks = loadLocksFromDisk();
       const active = locks.filter(l => now - l.lockedAt < l.ttlMs);
       const staleCount = locks.length - active.length;
@@ -432,4 +446,6 @@ export function getLockStats(cwd?: string): LockStats {
   };
 }
 
-startDeadlockRecoveryDaemon(5000);
+if (typeof process !== 'undefined' && !process.env.VITEST) {
+  startDeadlockRecoveryDaemon(5000);
+}

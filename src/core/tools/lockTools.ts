@@ -71,7 +71,20 @@ export const resolveConflictTool: Tool = {
       return `Conflict resolved on "${filePath}" using strategy "${strategy}". File lock released for new edits.`;
     }
 
-    return `Conflict resolution state recorded for "${filePath}" using strategy "${strategy}".`;
+    if (strategy === "take_theirs") {
+      releaseFile(filePath, undefined, cwd, true);
+      return `Conflict resolved on "${filePath}" using strategy "take_theirs". Lock released — the other session's version is preserved.`;
+    }
+
+    if (strategy === "merge_adjacent") {
+      const lockCheck = checkFileLock(filePath, undefined, cwd);
+      if (lockCheck.locked) {
+        releaseFile(filePath, undefined, cwd, true);
+      }
+      return `Conflict resolved on "${filePath}" using strategy "merge_adjacent". Lock cleared — both sessions may now edit non-overlapping ranges.`;
+    }
+
+    return `Unknown resolution strategy: "${strategy}".`;
   },
 };
 

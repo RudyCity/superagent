@@ -1,4 +1,20 @@
+## [1.2.671] - 2026-08-02
+
+### Fix: Lock System — SessionId Self-Blocking & Auto-Lock on Edit
+- **SessionId Self-Blocking (Bug #2)**: All `checkFileLock()` and `waitForFileLockRelease()` calls in `fileEditTools.ts` previously passed `undefined` as `sessionId`, causing a session to block itself when it held a lock. Fixed by reading `sessionId` from `agentLocalStorage.getStore()` via dynamic import inside each `execute()` body and passing it through all lock check calls. The `checkFileLock()` logic `if (sessionId === valid.sessionId) return { locked: false }` now correctly short-circuits.
+- **Auto-Lock on Edit (Bug #1)**: After a cross-session lock check passes, each write tool now automatically acquires a cross-session lock (`lockFile()`) before performing the write operation, and releases it (`releaseFile()`) in the `finally` block. This ensures two sessions cannot race on the same file even without an explicit `lockFile()` call. Applies to all 6 tools: `writeTool`, `editTool`, `writeToFileTool`, `replaceFileContentTool`, `multiReplaceFileContentTool`, `applyPatchTool`.
+- **waitForFileLockRelease**: Updated to accept optional `sessionId` parameter, passed through to all internal `checkFileLock()` polling calls.
+
+## [1.2.670] - 2026-08-01
+
+### Fix: Lock System — Comprehensive Audit & Bug Fixes (9 Bugs)
+- **sharedMemory.ts (6 fixes)**: `withLock()` now throws on timeout instead of executing unprotected; added `Atomics.wait(1ms)` sleep to reduce CPU spin. `releaseFile()` filter now scoped to target session (`forceUnlock || l.sessionId === targetSessionId`). Debounce timer in `persistLocksToDisk` clears/resets instead of silently dropping. VITEST guard added for `startDeadlockRecoveryDaemon`. `Date.now()` moved inside `withLock()` to fix TOCTOU. Added `SIGBREAK` handler for Windows Git Bash.
+- **fileEditTools.ts (4 fixes)**: Added cross-session lock check to `multiReplaceFileContentTool`, `applyPatchTool`, and `writeTool` which had none. Fixed batch tools (`editTool`, `writeToFileTool`, `replaceFileContentTool`) to check ALL file paths in batch arrays, not just the first.
+- **lockTools.ts (2 fixes)**: `take_theirs` and `merge_adjacent` conflict resolution strategies were stubs — now both call `releaseFile()` with `forceUnlock: true`.
+- **toolsets.ts (1 fix)**: Lock tools (`unlockFileTool`, `getLockStatsTool`, `resolveConflictTool`, `generateLockReportTool`) registered in master, superagent, chromeExtension, and coder toolsets.
+
 ## [1.2.669] - 2026-08-01
+
 
 ### Fix: Restore history session placeholder file writing and test environment home directory caching
 - **History Session Anchor**: Reintroduced 0-byte JSON file writing to `saveToFile` and `saveToFileSync` in [conversation.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/conversation.ts) to serve as physical session anchors on disk. This fixes the flaky `saveHistorySync` test failure caused by missing expected files.

@@ -1905,9 +1905,12 @@ export async function handleServerRoute(
   if (pathname === "/api/workspace/chains/active" && req.method === "GET") {
     try {
       const workspace = resolveWorkspacePath(req);
-      const { getActiveChainId } = await import("./core/workspace/WorkspaceChainConfig.js");
-      const activeChainId = getActiveChainId(workspace);
-      sendJSON(res, 200, { success: true, activeChainId });
+      const { getActiveChainId, getWorkspaceChains } = await import("./core/workspace/WorkspaceChainConfig.js");
+      const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
+      const activeChainId = getActiveChainId(workspace) || getActiveChainId(undefined);
+      const activeChain = workspaceChainManager.getActiveChain() || (activeChainId ? getWorkspaceChains(undefined, false).find(c => c.id === activeChainId) : null);
+      const activeNodeId = workspaceChainManager.getActiveNode()?.id || activeChain?.primaryNodeId || "";
+      sendJSON(res, 200, { success: true, activeChainId, activeChain, activeNodeId });
     } catch (err: any) {
       sendJSON(res, 500, { success: false, error: err.message || String(err) });
     }
