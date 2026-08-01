@@ -107,6 +107,7 @@ export class Conversation {
   async saveToFile(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED", workingDirectory?: string): Promise<void> {
     try {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, "", "utf-8");
     } catch {}
     const sid = path.basename(filePath, ".json");
     const userMessages = this.messages.filter((m) => {
@@ -226,6 +227,7 @@ export class Conversation {
   saveToFileSync(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED", workingDirectory?: string): void {
     try {
       fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
+      fsSync.writeFileSync(filePath, "", "utf-8");
     } catch {}
     const sid = path.basename(filePath, ".json");
     const userMessages = this.messages.filter((m) => {

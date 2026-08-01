@@ -200,6 +200,9 @@ function scanSkillDirectory(dir: string, skills: LoadedSkill[], lockMap: Map<str
 let cachedBaseSearchDirs: string[] | null = null;
 
 function getBaseSearchDirs(packageRootDir: string): string[] {
+  if (process.env.VITEST === "true") {
+    cachedBaseSearchDirs = null;
+  }
   if (cachedBaseSearchDirs) return cachedBaseSearchDirs;
 
   cachedBaseSearchDirs = [

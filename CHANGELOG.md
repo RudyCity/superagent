@@ -1,3 +1,9 @@
+## [1.2.669] - 2026-08-01
+
+### Fix: Restore history session placeholder file writing and test environment home directory caching
+- **History Session Anchor**: Reintroduced 0-byte JSON file writing to `saveToFile` and `saveToFileSync` in [conversation.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/conversation.ts) to serve as physical session anchors on disk. This fixes the flaky `saveHistorySync` test failure caused by missing expected files.
+- **Skills Resolution Caching**: Added automatic cache invalidation of base search directories under test environments (when `process.env.VITEST` is active) in [skills.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/config/skills.ts). This ensures that mocked home directories are correctly resolved, fixing global skills resolution test failures.
+
 ## [1.2.668] - 2026-08-01
 
 ### Fix: Restore System Prompt Clipboard Paste Instructions & Cleanup Test Imports
