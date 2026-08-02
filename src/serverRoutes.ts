@@ -1907,10 +1907,21 @@ export async function handleServerRoute(
       const workspace = resolveWorkspacePath(req);
       const { getActiveChainId, getWorkspaceChains } = await import("./core/workspace/WorkspaceChainConfig.js");
       const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
-      const activeChainId = getActiveChainId(workspace) || getActiveChainId(undefined);
-      const activeChain = workspaceChainManager.getActiveChain() || (activeChainId ? getWorkspaceChains(undefined, false).find(c => c.id === activeChainId) : null);
+      const allChains = getWorkspaceChains(undefined, false);
+      const matchingChains = getWorkspaceChains(workspace, true);
+      let activeChainId = getActiveChainId(workspace) || getActiveChainId(undefined);
+      let activeChain = workspaceChainManager.getActiveChain() || (activeChainId ? allChains.find(c => c.id === activeChainId) : null);
+
+      if (!activeChain && matchingChains.length > 0) {
+        activeChain = matchingChains[0];
+        activeChainId = activeChain.id;
+      } else if (!activeChain && allChains.length > 0) {
+        activeChain = allChains[0];
+        activeChainId = activeChain.id;
+      }
+
       const activeNodeId = workspaceChainManager.getActiveNode()?.id || activeChain?.primaryNodeId || "";
-      sendJSON(res, 200, { success: true, activeChainId, activeChain, activeNodeId });
+      sendJSON(res, 200, { success: true, activeChainId: activeChainId || null, activeChain: activeChain || null, activeNodeId });
     } catch (err: any) {
       sendJSON(res, 500, { success: false, error: err.message || String(err) });
     }

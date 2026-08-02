@@ -1,4 +1,0 @@
-[2026-08-01T14:52:38.178Z] [SQL] loadSessionFromDb: session_test_restore | {"found":true,"messageCount":0,"workingDirectory":null}
-[2026-08-01T14:52:38.179Z] [SQL] saveSessionToDb: session_test_restore | {"messageCount":0,"workingDirectory":null}
-[2026-08-01T14:52:38.205Z] [SQL] saveSessionToDb: d__backup_from_pc_asus_documents_development_superagent_tests_tmp_new_path_test_my_project_12345 | {"messageCount":1,"workingDirectory":"D:\\backup from pc asus\\Documents Development\\superagent\\tests\\tmp_new_path_test\\my-project"}
-[2026-08-01T14:52:38.207Z] [SQL] saveSessionToDb: d__backup_from_pc_asus_documents_development_superagent_tests_tmp_new_path_test_my_project_67890 | {"messageCount":1,"workingDirectory":"D:\\backup from pc asus\\Documents Development\\superagent\\tests\\tmp_new_path_test\\my-project"}
