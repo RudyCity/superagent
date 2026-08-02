@@ -210,6 +210,78 @@ describe("SSH Improvements — Audit Findings Implementation", () => {
     });
   });
 
+  // ─── SSH boundary expansion confirmation ────────────────────────────────────
+
+  describe("SSH boundary expansion confirmation", () => {
+    it("should prompt user when path escapes remote workspace boundary", async () => {
+      const config = {
+        host: "test-host",
+        port: 22,
+        username: "test-user",
+        remoteCwd: "/home/ubuntu",
+      };
+      workspaceMode.setSshMode(config);
+      (sshProxy as any).config = config;
+
+      // Mock SFTP Client to prevent actual connection issues in testing
+      (sshProxy as any).sftpClient = {
+        stat: async () => ({ size: 10, modifyTime: 12345, isFile: true, isDirectory: false }),
+        get: async () => Buffer.from("mock content"),
+      } as any;
+
+      // Mock ensureConnected to bypass connection logic
+      const origEnsureConnected = sshProxy.ensureConnected;
+      sshProxy.ensureConnected = async () => {};
+
+      // Register mock question handler
+      const { registerQuestionHandler } = await import("../src/core/tools/state.js");
+      
+      let handlerCalled = false;
+      let questionAsked = "";
+      
+      // Case 1: Deny expansion
+      registerQuestionHandler(async (question, options) => {
+        handlerCalled = true;
+        questionAsked = question;
+        return "No, block access";
+      });
+
+      try {
+        await sshProxy.readFile("/tmp/home.php");
+        // Should throw boundary error because we denied access
+        expect(true).toBe(false); // Should not reach here
+      } catch (err: any) {
+        expect(err.message).toContain("escapes remote workspace boundary");
+        expect(handlerCalled).toBe(true);
+        expect(questionAsked).toContain("/tmp/home.php");
+      }
+
+      // Case 2: Allow expansion
+      handlerCalled = false;
+      registerQuestionHandler(async (question, options) => {
+        handlerCalled = true;
+        return "Yes, expand workspace boundary";
+      });
+
+      try {
+        const content = await sshProxy.readFile("/tmp/home.php");
+        expect(handlerCalled).toBe(true);
+        expect(content).toBe("mock content");
+        
+        // Allowed paths should now include /tmp
+        const cfg = workspaceMode.getConfig();
+        expect(cfg?.additionalAllowedPaths).toContain("/tmp");
+      } finally {
+        // Cleanup
+        sshProxy.ensureConnected = origEnsureConnected;
+        (sshProxy as any).config = null;
+        (sshProxy as any).sftpClient = null;
+        workspaceMode.setLocalMode();
+        registerQuestionHandler(null as any);
+      }
+    });
+  });
+
   // ─── Shell escaping regression ─────────────────────────────────────────────
 
   describe("Shell escaping regression", () => {

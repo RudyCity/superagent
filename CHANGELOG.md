@@ -1,3 +1,10 @@
+## [1.2.705] - 2026-08-03
+
+### Added: User Confirmation Dialog for Remote SSH Boundary Expansion
+
+- **`sshProxy.ts`**: Implemented `verifyAndExpandBoundary` checking. If a requested path escapes the remote workspace boundary, and the active question handler is present, the agent asks the user for confirmation via a modal/question wizard. If approved, the workspace boundary is expanded dynamically to allow access, preventing access denied errors.
+- **Test Coverage**: Added comprehensive test cases to `tests/sshImprovements.test.ts` asserting that boundary violations trigger the user confirmation and either expand access or reject as requested.
+
 ## [1.2.704] - 2026-08-03
 
 ### Updated: System Prompts for Mandatory Skill Usage in SSH Workspaces

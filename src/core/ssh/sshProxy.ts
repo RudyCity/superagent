@@ -301,7 +301,73 @@ export class SshProxyService {
     this.lastActivityTime = Date.now();
   }
 
+  public async verifyAndExpandBoundary(targetPath: string | undefined): Promise<void> {
+    if (!targetPath) return;
+    const raw = typeof targetPath === "string" && targetPath.length > 0 ? targetPath : ".";
+    let clean = raw.replace(/\\/g, "/");
+    const base = (workspaceMode.isSsh() ? workspaceMode.getConfig()?.remoteCwd : null) || this.config?.remoteCwd || "/";
+    const posixBase = base.replace(/\\/g, "/").replace(/\/+$/, "") || "/";
 
+    let resolved: string;
+    if (clean.startsWith("/")) {
+      resolved = clean;
+    } else {
+      resolved = posixBase === "/" ? `/${clean}` : `${posixBase}/${clean}`;
+    }
+
+    const parts = resolved.split("/").reduce<string[]>((acc, seg) => {
+      if (seg === "..") {
+        acc.pop();
+      } else if (seg !== "" && seg !== ".") {
+        acc.push(seg);
+      }
+      return acc;
+    }, []);
+
+    const normalized = "/" + parts.join("/");
+    const baseParts = posixBase.split("/").filter((p) => p !== "" && p !== ".");
+    const normalizedBase = "/" + baseParts.join("/");
+
+    if (
+      normalizedBase !== "/" &&
+      normalized !== normalizedBase &&
+      !normalized.startsWith(normalizedBase + "/")
+    ) {
+      // Check additionalAllowedPaths before throwing
+      const cfg = workspaceMode.isSsh() ? workspaceMode.getConfig() : this.config;
+      const extraPaths = cfg?.additionalAllowedPaths ?? [];
+      const isUnderExtra = extraPaths.some(p => {
+        const ep = p.replace(/\/+$/, "");
+        return ep && (normalized === ep || normalized.startsWith(ep + "/"));
+      });
+      if (!isUnderExtra) {
+        const expandDir = normalized.endsWith("/") ? normalized : path.posix.dirname(normalized);
+        const cleanExpandDir = expandDir.replace(/\/+$/, "") || "/";
+
+        const handler = getActiveQuestionHandler();
+        if (handler) {
+          const question = `⚠️ SSH Boundary Warning: The requested path "${targetPath}" is outside the remote workspace "${posixBase}". Do you want to expand the workspace boundary to allow access to "${cleanExpandDir}"?`;
+          const options = ["Yes, expand workspace boundary", "No, block access"];
+          const answer = await handler(question, options, false);
+          const choice = Array.isArray(answer) ? answer[0] : answer;
+
+          if (choice === "Yes, expand workspace boundary") {
+            workspaceMode.addAllowedPath(cleanExpandDir);
+            if (this.config) {
+              if (!this.config.additionalAllowedPaths) {
+                this.config.additionalAllowedPaths = [];
+              }
+              if (!this.config.additionalAllowedPaths.includes(cleanExpandDir)) {
+                this.config.additionalAllowedPaths.push(cleanExpandDir);
+              }
+            }
+            sshLogger.info("boundary", `workspace boundary expanded to include: ${cleanExpandDir}`);
+            return;
+          }
+        }
+      }
+    }
+  }
 
   public normalizePosixPath(targetPath: string): string {
     // Defensive: treat null/undefined/non-string as "."
@@ -356,6 +422,7 @@ export class SshProxyService {
     timeoutMs: number = 600000,
     signal?: AbortSignal
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    await this.verifyAndExpandBoundary(cwd);
     await this.ensureConnected();
     const workingDir = this.normalizePosixPath(cwd || ".");
     const fullCommand = `cd ${this.escapeShellArg(workingDir)} && ${command}`;
@@ -454,6 +521,8 @@ export class SshProxyService {
   }
 
   public async execBackground(command: string, logFile: string = ".superagent-bg.log", cwd?: string): Promise<string> {
+    await this.verifyAndExpandBoundary(cwd);
+    await this.verifyAndExpandBoundary(logFile);
     await this.ensureConnected();
     const workingDir = this.normalizePosixPath(cwd || ".");
     const normalizedLog = this.normalizePosixPath(logFile);
@@ -468,6 +537,7 @@ export class SshProxyService {
   }
 
   public async stat(remotePath: string): Promise<{ size: number; mtime: number; isFile: boolean; isDirectory: boolean }> {
+    await this.verifyAndExpandBoundary(remotePath);
     await this.ensureConnected();
     const target = this.normalizePosixPath(remotePath);
     const stat = await this.sftpClient!.stat(target);
@@ -480,6 +550,7 @@ export class SshProxyService {
   }
 
   public async readFile(remotePath: string, options?: { skipCache?: boolean }): Promise<string> {
+    await this.verifyAndExpandBoundary(remotePath);
     await this.ensureConnected();
     const target = this.normalizePosixPath(remotePath);
     const now = Date.now();
@@ -531,6 +602,7 @@ export class SshProxyService {
   }
 
   public async writeFile(remotePath: string, content: string): Promise<void> {
+    await this.verifyAndExpandBoundary(remotePath);
     await this.ensureConnected();
     const target = this.normalizePosixPath(remotePath);
     const parentDir = path.posix.dirname(target);
@@ -542,6 +614,7 @@ export class SshProxyService {
   }
 
   public async listFiles(remoteDir?: string): Promise<Array<{ name: string; isDirectory: boolean; size: number }>> {
+    await this.verifyAndExpandBoundary(remoteDir);
     await this.ensureConnected();
     const target = this.normalizePosixPath(remoteDir || ".");
     const list = await this.sftpClient!.list(target);
@@ -644,6 +717,7 @@ export class SshProxyService {
   }
 
   public async downloadFile(remotePath: string, localPath: string): Promise<void> {
+    await this.verifyAndExpandBoundary(remotePath);
     await this.ensureConnected();
     const target = this.normalizePosixPath(remotePath);
     const parentDir = path.dirname(localPath);
@@ -652,6 +726,7 @@ export class SshProxyService {
   }
 
   public async uploadFile(localPath: string, remotePath: string): Promise<void> {
+    await this.verifyAndExpandBoundary(remotePath);
     await this.ensureConnected();
     const target = this.normalizePosixPath(remotePath);
     const remoteParentDir = path.posix.dirname(target);
