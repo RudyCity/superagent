@@ -1,4 +1,9 @@
-"## [1.2.682] - 2026-08-02
+"## [1.2.683] - 2026-08-02
+
+### Fix: Suppress ONNX Runtime Warning Logs
+- **ONNX Log Level**: Set `env.backends.onnx.logLevel = 'error'` on `@xenova/transformers` initialization to suppress internal graph optimization warning messages.
+
+## [1.2.682] - 2026-08-02
 
 ### Feature: ONNX Local Translation Model Preload on Startup
 - **Startup Warmup & Download**: Triggered lightweight ONNX translation transformer (`Xenova/opus-mt-id-en` INT8) preloading in background upon application launch (`cliMain.tsx` and `server.ts`).

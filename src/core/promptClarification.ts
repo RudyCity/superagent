@@ -21,6 +21,9 @@ export async function initONNXTranslationPipeline(): Promise<any> {
         // Disable local model download checks if offline, set low concurrency
         env.allowRemoteModels = true;
         env.useBrowserCache = false;
+        if (env.backends?.onnx) {
+          env.backends.onnx.logLevel = 'error';
+        }
         
         const translator = await pipeline("translation", "Xenova/opus-mt-id-en", {
           quantized: true,
