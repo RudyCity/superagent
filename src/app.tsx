@@ -2821,8 +2821,8 @@ export function App({
     },
   };
 
-  const activeChainId = getActiveChainId();
-  const activeChain = activeChainId ? getWorkspaceChain(activeChainId) : null;
+  const activeChainId = getActiveChainId(workspacePath);
+  const activeChain = activeChainId ? getWorkspaceChain(activeChainId, workspacePath) : null;
   const primaryChainNode = activeChain ? activeChain.nodes.find((n) => n.id === activeChain.primaryNodeId || n.role === "main") : null;
   const primaryWorkspacePath = primaryChainNode?.path || workspacePath;
 

@@ -1542,7 +1542,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       {/* Workspace Path Indicator */}
       <Box paddingX={1} marginLeft={5} marginBottom={0}>
         <Text color="cyan" dimColor>
-          📁 Workspace: <Text bold color="cyan">{primaryWorkspacePath || workspacePath || process.cwd()}</Text>
+          📁 Workspace: <Text bold color="cyan">{workspacePath || primaryWorkspacePath || process.cwd()}</Text>
         </Text>
       </Box>
  

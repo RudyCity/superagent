@@ -1,4 +1,10 @@
-"## [1.2.684] - 2026-08-02
+## [1.2.685] - 2026-08-02
+
+### Fix: Workspace Path Display Indicator & Chain Lookup Scope
+- **Workspace Header Fix**: Updated `ChatArea` workspace header fallback order to `{workspacePath || primaryWorkspacePath || process.cwd()}` so the terminal UI always displays the current active workspace directory.
+- **Scoped Active Chain Validation**: Passed `workspacePath` to `getActiveChainId(workspacePath)` and `getWorkspaceChain(activeChainId, workspacePath)` in `app.tsx` to ensure workspace chain lookup is correctly scoped to the current directory.
+
+## [1.2.684] - 2026-08-02
 
 ### Fix: Git Edits Changes Summary Pipeline
 - **Initial Commit / No-HEAD Fallback**: Added fallback to `git diff --numstat` and `git diff --cached --numstat` when `git diff HEAD` fails in initial git repositories without a `HEAD` commit.
