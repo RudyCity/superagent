@@ -24,7 +24,19 @@
 - **`?allow=` URL parameter**: SSH target URLs now accept `?allow=/path1,/path2` to declare extra allowed paths at connection time (e.g. `ubuntu@host:/home/ubuntu?allow=/var/www/html`).
 - **Error hint updated**: Boundary violation error messages now suggest `/ssh expand <path>` as the resolution step.
 
-## [1.2.696] - 2026-08-02
+## [1.2.700] - 2026-08-02
+
+### Fix: Test Reliability & planState Architecture
+
+- **planState Stale Reset**: Moved stale `APPROVED` planState validation out of the hot paths (`ContextBuilder.buildContext`, `RequestProcessor.processRequest`) and into `HistoryManager.loadHistory` — the correct architectural location where session state is restored from disk.
+- **RequestProcessor**: Removed premature planState reset that fired on every request even when planState was set programmatically. Only task archival (when all tasks complete) now resets planState.
+- **Agent**: Added `_planApprovedExplicitly` flag (set by `approvePlan()`) for future use in distinguishing programmatic from session-restored approvals.
+- **remoteChromeBridge**: Reduced WebSocket client wait loop from 6000ms to 500ms in VITEST test environments, preventing test timeouts on `sendRemoteCommand` when no extension is connected.
+- **slashCommands.test.ts**: Fixed test isolation bug where `vi.restoreAllMocks()` in `beforeEach` cleared the `os.homedir()` spy, causing subsequent `/model` tests to read the real `~/.superagent-r/model-config.json` instead of the temp test config.
+
+## [1.2.699] - 2026-08-02
+
+
 
 ### Added: Article Writing Skill & System Improvements
 - **Article Writing Skill**: Added `article-writing` skill to skill registry and lockfile.
