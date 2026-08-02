@@ -1,7 +1,28 @@
 import path from "path";
+import os from "os";
 import { getRootConfigDir } from "../config/paths.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { workspaceChainManager } from "../workspace/WorkspaceChainManager.js";
+
+/**
+ * Helper to determine if a path refers to a local configuration or session directory.
+ */
+export function isLocalConfigOrSessionPath(rawPath: string): boolean {
+  if (!rawPath || typeof rawPath !== "string") return false;
+  let cleanPath = rawPath;
+  if (cleanPath.startsWith("~")) {
+    cleanPath = path.join(os.homedir(), cleanPath.slice(1));
+  }
+  const rootConfig = path.resolve(getRootConfigDir());
+  const sessionPath = process.env.SUPERAGENT_SESSION_PATH;
+  const sessionDir = sessionPath ? path.resolve(path.dirname(sessionPath)) : undefined;
+  try {
+    const resolved = path.resolve(cleanPath);
+    return resolved.startsWith(rootConfig) || (!!sessionDir && resolved.startsWith(sessionDir));
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Normalize a file path to fix common LLM path construction errors.
@@ -74,6 +95,14 @@ function tryResolveSshPath(raw: string, cwd: string): string | null {
 export function resolveFilePathFromArgs(args: Record<string, unknown>, cwd: string): string | undefined {
   const raw = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile ?? args.targetFile ?? args.target_file ?? args.file) as string | undefined;
   if (!raw || typeof raw !== "string" || raw.trim() === "") return undefined;
+
+  if (isLocalConfigOrSessionPath(raw)) {
+    let cleanPath = raw;
+    if (cleanPath.startsWith("~")) {
+      cleanPath = path.join(os.homedir(), cleanPath.slice(1));
+    }
+    return normalizePath(path.resolve(cleanPath));
+  }
 
   // SSH routing: resolve to POSIX path under remoteCwd with boundary enforcement.
   // Use synchronous workspaceMode access — the module is already loaded by this point

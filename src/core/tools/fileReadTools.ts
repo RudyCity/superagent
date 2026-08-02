@@ -4,7 +4,7 @@ import path from "path";
 import fg from "fast-glob";
 import { execa } from "execa";
 import { Tool } from "./types.js";
-import { normalizePath, resolveFilePathFromArgs, getImageMimeType } from "./pathHelpers.js";
+import { normalizePath, resolveFilePathFromArgs, getImageMimeType, isLocalConfigOrSessionPath } from "./pathHelpers.js";
 import { getLocalRgPath, isRgInstalledGlobally, ensureRgInstalled } from "../androidSetup.js";
 import { getWorkspaceCachePath } from "../workspaceDiscovery.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
@@ -41,7 +41,19 @@ export const readTool: Tool = {
   async execute(args, cwd, signal) {
     const offset = Math.max(1, (args.offset as number) || 1);
     const limit = (args.limit as number) || 800;
-    if (workspaceMode.isSsh()) {
+
+    const isTargetLocal = (): boolean => {
+      const single = args.filePath as string | undefined;
+      const multiple = args.filePaths as any[] | undefined;
+      if (single && isLocalConfigOrSessionPath(single)) return true;
+      if (multiple && multiple.length > 0) {
+        const first = typeof multiple[0] === "string" ? multiple[0] : multiple[0]?.path;
+        if (first && isLocalConfigOrSessionPath(first)) return true;
+      }
+      return false;
+    };
+
+    if (workspaceMode.isSsh() && !isTargetLocal()) {
       sshLogger.toolUse("read", "routing read tool to SSH remote", { meta: { batch: !!args.filePaths } });
       const targets = args.filePaths || args.filePath;
       if (!targets) return "Error: Missing filePath or filePaths";

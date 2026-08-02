@@ -103,10 +103,12 @@ import { manageMcpTool } from "./mcpTools.js";
 import { saveSharedMemoryTool, readSharedMemoryTool } from "./sharedMemoryTools.js";
 import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../workspace/workspaceChainTools.js";
 import { unlockFileTool, getLockStatsTool, resolveConflictTool, generateLockReportTool } from "./lockTools.js";
+import { transferSshFileTool } from "./sshTransferTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Focused on orchestration. Does NOT write code itself.
 export const masterToolset: Tool[] = [
+  transferSshFileTool,
   askQuestionTool,
   invokeSuperagentTool,  // spawn superagent in worktree
   awaitSuperagentsTool,  // wait for all superagents to finish
@@ -155,6 +157,7 @@ export const masterToolset: Tool[] = [
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────
 // Full development toolset. Scoped to own worktree at runtime via permission layer.
 export const superagentToolset: Tool[] = [
+  transferSshFileTool,
   readTool,
   readDocumentTool,
   officeCliTool,
@@ -288,6 +291,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
   ],
 
   coder: [
+    transferSshFileTool,
     readTool,
     readDocumentTool,
     officeCliTool,

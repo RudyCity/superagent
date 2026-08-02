@@ -115,6 +115,7 @@ import {
   simulateVirtualCursorTool,
   controlIsolatedCdpTool,
 } from "./advancedAutomationTools.js";
+import { transferSshFileTool } from "./sshTransferTools.js";
 
 export {
   listChromeProfilesTool,
@@ -219,6 +220,7 @@ export const allTools: Tool[] = [
   readPeerSuperagentFileTool,
   manageWorkspaceChainTool,
   crossWorkspaceExecTool,
+  transferSshFileTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {

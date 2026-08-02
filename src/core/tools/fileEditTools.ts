@@ -4,7 +4,7 @@ import path from "path";
 import { createHash } from "crypto";
 import { Tool } from "./types.js";
 import { normalizeForMatching, verifySyntax, mapNormToOrigIndices, countOccurrences, fileLockManager } from "./helpers.js";
-import { normalizePath, resolveFilePathFromArgs } from "./pathHelpers.js";
+import { normalizePath, resolveFilePathFromArgs, isLocalConfigOrSessionPath } from "./pathHelpers.js";
 import { checkFileLock, lockFile, releaseFile } from "../storage/sharedMemory.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { sshWriteToolExecute, sshEditToolExecute, sshMultiEditToolExecute } from "../ssh/sshCommands.js";
@@ -273,11 +273,11 @@ export const writeTool: Tool = {
     const currentAgent = agentLocalStorage.getStore();
     const sessionId = currentAgent?.sessionId;
     const terminalType = (currentAgent as any)?.terminalType || "cli";
-    if (workspaceMode.isSsh()) {
-      const filePath = (args.filePath || args.path) as string;
+    const rawFilePath = (args.filePath || args.path) as string;
+    if (workspaceMode.isSsh() && !isLocalConfigOrSessionPath(rawFilePath)) {
       const content = args.content as string;
-      if (!filePath || content === undefined) return "Error: Missing filePath or content";
-      return await sshWriteToolExecute(filePath, content);
+      if (!rawFilePath || content === undefined) return "Error: Missing filePath or content";
+      return await sshWriteToolExecute(rawFilePath, content);
     }
     const writeCheckPath = (args.filePath || args.path) as string;
     if (writeCheckPath) {
@@ -414,8 +414,8 @@ export const editTool: Tool = {
         editAutoLockPaths.push(checkPath);
       }
     }
-    if (workspaceMode.isSsh()) {
-      const targetPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
+    const targetPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
+    if (workspaceMode.isSsh() && !isLocalConfigOrSessionPath(targetPath)) {
       const oldStr = (args.oldString as string) || ((args.edits as any[])?.[0]?.oldString);
       const newStr = (args.newString as string) || ((args.edits as any[])?.[0]?.newString);
       if (!targetPath || oldStr === undefined || newStr === undefined) {
@@ -716,7 +716,18 @@ export const writeToFileTool: Tool = {
         writeAutoLockPaths.push(checkPath);
       }
     }
-    if (workspaceMode.isSsh()) {
+    const isTargetLocal = (): boolean => {
+      const single = args.filePath as string | undefined;
+      const multiple = args.files as any[] | undefined;
+      if (single && isLocalConfigOrSessionPath(single)) return true;
+      if (multiple && multiple.length > 0) {
+        const first = typeof multiple[0] === "string" ? multiple[0] : multiple[0]?.filePath;
+        if (first && isLocalConfigOrSessionPath(first)) return true;
+      }
+      return false;
+    };
+
+    if (workspaceMode.isSsh() && !isTargetLocal()) {
       const targets = args.files || args.filePath;
       if (!targets) return "Error: Missing filePath or files for SSH write";
       return await sshWriteToolExecute(targets as any, args.content as string | undefined);
@@ -947,9 +958,9 @@ export const replaceFileContentTool: Tool = {
         replaceAutoLockPaths.push(checkPath);
       }
     }
-    if (workspaceMode.isSsh()) {
+    const targetPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
+    if (workspaceMode.isSsh() && !isLocalConfigOrSessionPath(targetPath)) {
       sshLogger.toolUse("replace_file_content", "routing replace_file_content tool to SSH remote", { meta: { batch: !!args.edits } });
-      const targetPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
       const targetContent = (args.targetContent as string) || ((args.edits as any[])?.[0]?.targetContent);
       const replacementContent = (args.replacementContent as string) || ((args.edits as any[])?.[0]?.replacementContent);
       if (!targetPath || targetContent === undefined || replacementContent === undefined) {
@@ -1318,8 +1329,8 @@ export const multiReplaceFileContentTool: Tool = {
     const currentAgent = agentLocalStorage.getStore();
     const sessionId = currentAgent?.sessionId;
     const terminalType = (currentAgent as any)?.terminalType || "cli";
-    if (workspaceMode.isSsh()) {
-      const targetPath = (args.filePath as string) || ((args.files as any[])?.[0]?.filePath);
+    const targetPath = (args.filePath as string) || ((args.files as any[])?.[0]?.filePath);
+    if (workspaceMode.isSsh() && !isLocalConfigOrSessionPath(targetPath)) {
       const chunks = (args.chunks as any[]) || ((args.files as any[])?.[0]?.chunks);
       if (!targetPath || !Array.isArray(chunks) || chunks.length === 0) {
         return "Error: Missing filePath or chunks for SSH multi_replace_file_content";

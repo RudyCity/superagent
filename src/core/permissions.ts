@@ -182,6 +182,13 @@ export function isSuperagentOutOfBounds(
       ? resolveNormalizedPath(fp)
       : resolveNormalizedPath(fp, worktreePath);
 
+    // Allow full read and write access to the session scratch directory
+    const sessionPath = process.env.SUPERAGENT_SESSION_PATH;
+    const sessionDir = sessionPath ? resolveNormalizedPath(path.dirname(sessionPath)) : undefined;
+    if (sessionDir && normalizeAndCheckSubpath(resolved, sessionDir)) {
+      continue;
+    }
+
     // Allow read-only access to files inside global configuration directory
     // BUT model-config.json is strictly protected and requires permission confirmation
     if (fileReadingTools.includes(toolCall.name)) {
@@ -282,6 +289,15 @@ export function isToolCallOutOfBounds(
   const rootConfig = resolveNormalizedPath(getRootConfigDir());
 
   for (const fp of candidatePaths) {
+    // Check if it's a local config or session path (allowed without prompt in both local and SSH mode)
+    const resolvedLocal = path.isAbsolute(fp) || (process.platform === "win32" && /^\/[a-zA-Z]\//.test(fp))
+      ? resolveNormalizedPath(fp)
+      : resolveNormalizedPath(fp, process.env.SUPERAGENT_SESSION_PATH ? path.dirname(process.env.SUPERAGENT_SESSION_PATH) : process.cwd());
+    const isModelConfigLocal = normalizeAndCheckSubpath(resolvedLocal, path.join(rootConfig, "model-config.json"));
+    if (normalizeAndCheckSubpath(resolvedLocal, rootConfig) && !isModelConfigLocal) {
+      continue;
+    }
+
     if (isSsh) {
       const normFp = fp.replace(/\\/g, "/");
       const inAnyWorkspace = allowedWorkspaces.some((wsPath) => {

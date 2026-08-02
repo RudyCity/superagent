@@ -638,6 +638,23 @@ export class SshProxyService {
     }
   }
 
+  public async downloadFile(remotePath: string, localPath: string): Promise<void> {
+    await this.ensureConnected();
+    const target = this.normalizePosixPath(remotePath);
+    const parentDir = path.dirname(localPath);
+    await fs.promises.mkdir(parentDir, { recursive: true });
+    await this.sftpClient!.get(target, localPath);
+  }
+
+  public async uploadFile(localPath: string, remotePath: string): Promise<void> {
+    await this.ensureConnected();
+    const target = this.normalizePosixPath(remotePath);
+    const remoteParentDir = path.posix.dirname(target);
+    await this.sftpClient!.mkdir(remoteParentDir, true);
+    await this.sftpClient!.put(localPath, target);
+    this.fileCache.delete(target);
+  }
+
   public escapeShellArg(arg: string): string {
     return escapeShellArg(arg);
   }

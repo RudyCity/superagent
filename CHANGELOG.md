@@ -1,3 +1,12 @@
+## [1.2.701] - 2026-08-03
+
+### Added: Local Session Workspace & SSH File Transfer Tool
+
+- **Local Session Workspace Access**: Enabled reading and writing files under the current session directory (`~/.superagent-r/history/<mode>/<sessionId>/`) without permission prompts, regardless of whether in local or SSH workspace mode.
+- **SSH Routing Bypass**: File tools (`read`, `write`, `write_to_file`, `replace_file_content`, `multi_replace_file_content`) automatically bypass remote SSH routing if the path points to the local config or session directories.
+- **`transfer_ssh_file` Tool**: Introduced a new tool to copy/transfer files (upload/download) between the local session history/scratch directory and the remote SSH workspace.
+- **Test Coverage**: Added `tests/sshTransfer.test.ts` to verify the local path detection, routing bypass, and transfer tool behaviors.
+
 ## [1.2.699] - 2026-08-02
 
 ### Fix: SSH Workspace — Complete Boundary Coverage
