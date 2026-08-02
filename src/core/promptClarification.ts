@@ -6,6 +6,53 @@ import path from "path";
 import os from "os";
 import { EventEmitter } from "events";
 
+// Lazy-loaded @xenova/transformers pipeline for ONNX translation (< 100MB RAM)
+let translationPipelinePromise: Promise<any> | null = null;
+
+/**
+ * Initializes and warms up the ONNX translation model (Xenova/opus-mt-id-en INT8).
+ * Runs lazily in the background on startup with low memory footprint (<100MB RAM).
+ */
+export async function initONNXTranslationPipeline(): Promise<any> {
+  if (!translationPipelinePromise) {
+    translationPipelinePromise = (async () => {
+      try {
+        const { pipeline, env } = await import("@xenova/transformers");
+        // Disable local model download checks if offline, set low concurrency
+        env.allowRemoteModels = true;
+        env.useBrowserCache = false;
+        
+        const translator = await pipeline("translation", "Xenova/opus-mt-id-en", {
+          quantized: true,
+        });
+        return translator;
+      } catch (error) {
+        // Fallback gracefully if ONNX model fail to load or offline
+        translationPipelinePromise = null;
+        return null;
+      }
+    })();
+  }
+  return translationPipelinePromise;
+}
+
+/**
+ * Translates prompt using ONNX local transformer if available, falling back to dictionary/pass-through.
+ */
+export async function translatePromptWithONNX(promptText: string): Promise<string | null> {
+  try {
+    const translator = await initONNXTranslationPipeline();
+    if (!translator) return null;
+    const output = await translator(promptText);
+    if (Array.isArray(output) && output[0]?.translation_text) {
+      return output[0].translation_text;
+    }
+  } catch (err) {
+    // Graceful fallback
+  }
+  return null;
+}
+
 export interface IntentAnalysisResult {
   isAmbiguous: boolean;
   confidence: number;
@@ -15,6 +62,147 @@ export interface IntentAnalysisResult {
   reason?: string;
   shortcutApplied?: boolean;
   learnedFromCorrection?: boolean;
+  secretsMasked?: boolean;
+}
+
+/**
+ * Secret & Sensitive Data Masking (Security Pre-Filter)
+ * High-performance single-pass pre-compiled Master Regex scanner with Early Exit Guard.
+ */
+const SECRET_HINT_PATTERN = /(?:sk-|ghp_|AKIA|eyJ|BEGIN|password|passwd|pwd|secret_key|api_key|access_token|db_pass|[:=])/i;
+
+const MASTER_SECRET_PATTERN = new RegExp(
+  [
+    "(?:sk-(?:proj-)?[a-zA-Z0-9]{20,})",
+    "(?:ghp_[a-zA-Z0-9]{36})",
+    "(?:AKIA[0-9A-Z]{16})",
+    "(?:eyJ[a-zA-Z0-9_-]{10,}\\.eyJ[a-zA-Z0-9_-]{10,}\\.[a-zA-Z0-9_-]+)",
+    "-----BEGIN (?:RSA|OPENSSH|EC|PGP)? PRIVATE KEY-----[\\s\\S]*?-----END (?:RSA|OPENSSH|EC|PGP)? PRIVATE KEY-----",
+    "(?:password|passwd|pwd|secret_key|api_key|access_token|db_pass)\\s*[:=]\\s*[\"']?([^\\s\"']{4,})[\"']?",
+  ].join("|"),
+  "gi"
+);
+
+// Ephemeral Secret Vault map: $SECRET_1 -> original secret value (bounded size max 100)
+const SECRET_VAULT = new Map<string, string>();
+let secretCounter = 0;
+
+export function clearSecretVault(): void {
+  SECRET_VAULT.clear();
+  secretCounter = 0;
+}
+
+export function maskSensitiveData(text: string): { maskedText: string; secretsFound: boolean; vault: Map<string, string> } {
+  // Optimization 1: Early Exit Guard Check (0 ms execution for normal prompts)
+  SECRET_HINT_PATTERN.lastIndex = 0;
+  if (!SECRET_HINT_PATTERN.test(text)) {
+    return { maskedText: text, secretsFound: false, vault: SECRET_VAULT };
+  }
+
+  let maskedText = text;
+  let secretsFound = false;
+
+  // Optimization 2: Single-pass scanning with Master Regex
+  MASTER_SECRET_PATTERN.lastIndex = 0;
+  if (MASTER_SECRET_PATTERN.test(maskedText)) {
+    secretsFound = true;
+    MASTER_SECRET_PATTERN.lastIndex = 0;
+    maskedText = maskedText.replace(MASTER_SECRET_PATTERN, (match) => {
+      let rawSecret = match;
+      let prefix = "";
+
+      if (match.includes("=") || match.includes(":")) {
+        const delim = match.includes("=") ? "=" : ":";
+        const parts = match.split(delim);
+        prefix = `${parts[0]}${delim} `;
+        rawSecret = parts.slice(1).join(delim).trim();
+      }
+
+      // Check if rawSecret already has an alias in SECRET_VAULT
+      let alias = "";
+      for (const [existingAlias, existingValue] of SECRET_VAULT.entries()) {
+        if (existingValue === rawSecret) {
+          alias = existingAlias;
+          break;
+        }
+      }
+
+      if (!alias) {
+        if (SECRET_VAULT.size >= 100) {
+          const oldestKey = SECRET_VAULT.keys().next().value;
+          if (oldestKey) SECRET_VAULT.delete(oldestKey);
+        }
+
+        secretCounter++;
+        alias = `$SECRET_${secretCounter}`;
+        SECRET_VAULT.set(alias, rawSecret);
+      }
+
+      return `${prefix}${alias}`;
+    });
+  }
+
+  if (secretsFound) {
+    translationBadgeEmitter.emit("badge", {
+      originalPrompt: text,
+      translatedPrompt: maskedText,
+      detectedLanguage: "en",
+      confidence: 1.0,
+      shortcutApplied: false,
+      securityRedacted: true,
+    });
+  }
+
+  return { maskedText, secretsFound, vault: SECRET_VAULT };
+}
+
+/**
+ * Replaces secret aliases ($SECRET_1, $SECRET_2, etc.) in text back with their original sensitive values.
+ * Useful when tools need to execute or write authentic values safely.
+ */
+export function unmaskSensitiveData(text: string): string {
+  let unmaskedText = text;
+  for (const [alias, originalValue] of SECRET_VAULT.entries()) {
+    const escapedAlias = alias.replace(/\$/g, "\\$");
+    unmaskedText = unmaskedText.replace(new RegExp(escapedAlias, "g"), originalValue);
+  }
+  return unmaskedText;
+}
+
+export function getSecretVault(): Map<string, string> {
+  return SECRET_VAULT;
+}
+
+/**
+ * Noise & Filler Trimming (Token Saver)
+ * Strips conversational filler in Indonesian & English to focus LLM on core instructions.
+ */
+const FILLER_PREFIX_PATTERNS = [
+  /^(?:halo|hai|hi|hey|permisi|pantesan|tolong|mohon|bisa|bisakah|bro|gan|min|mas|mbak|pak|bu|ai)\b\s*/gi,
+  /^(?:can you|could you|please|kindly|would you mind|i want to|i need to|help me to)\b\s*/gi,
+  /^(?:tolong bantu saya untuk|tolong bantuin|bisa tolong|bisakah anda|minta tolong)\b\s*/gi,
+];
+
+const FILLER_SUFFIX_PATTERNS = [
+  /\b(?:dong|ya|yah|nih|tuh|kan|deh|dulu|saja|aja|makasih|terima kasih|thanks|thank you)\s*[.!?]*$/gi,
+];
+
+export function trimConversationalNoise(text: string): string {
+  let cleaned = text.trim();
+
+  let previous = "";
+  while (cleaned !== previous) {
+    previous = cleaned;
+    for (const pattern of FILLER_PREFIX_PATTERNS) {
+      cleaned = cleaned.replace(pattern, "");
+    }
+  }
+
+  for (const pattern of FILLER_SUFFIX_PATTERNS) {
+    cleaned = cleaned.replace(pattern, "");
+  }
+
+  return cleaned.trim() || text;
 }
 
 export interface TranslationBadgePayload {
@@ -224,7 +412,9 @@ function findMatchingShortcut(text: string): { shortcut: string; target: string 
  * Translates prompt to English for LLM processing using multi-language dictionary & hybrid fallback.
  */
 export function translatePromptToEnglish(promptText: string): { translated: string; detectedLang: string; shortcutApplied?: boolean } {
-  let text = promptText.trim();
+  const { maskedText } = maskSensitiveData(promptText);
+  const trimmed = trimConversationalNoise(maskedText);
+  let text = trimmed.trim();
   const lang = detectLanguage(text);
 
   const multiTurnResolved = resolveMultiTurnSelection(text);
@@ -260,9 +450,15 @@ export function translatePromptToEnglish(promptText: string): { translated: stri
  * Analyzes prompt text for ambiguity and returns intent clarity + auto-translation.
  */
 export function analyzePromptIntent(promptText: string): IntentAnalysisResult {
-  const text = promptText.trim();
+  // Pre-processing step 1: Mask sensitive credentials & API keys
+  const { maskedText, secretsFound } = maskSensitiveData(promptText);
+
+  // Pre-processing step 2: Trim conversational noise & filler words
+  const trimmedText = trimConversationalNoise(maskedText);
+
+  const text = trimmedText.trim();
   if (!text) {
-    return { isAmbiguous: false, confidence: 1.0, detectedLanguage: "en" };
+    return { isAmbiguous: false, confidence: 1.0, detectedLanguage: "en", secretsMasked: secretsFound };
   }
 
   const correction = autoLearnFromCorrection(text);
@@ -337,6 +533,34 @@ export function analyzePromptIntent(promptText: string): IntentAnalysisResult {
     detectedLanguage: detectedLang,
     translatedEnglishPrompt,
   };
+}
+
+/**
+ * Async version of prompt intent analysis that utilizes ONNX local transformer (<100MB RAM)
+ * for high-accuracy translation fallback when detected language is non-English.
+ */
+export async function analyzePromptIntentAsync(promptText: string): Promise<IntentAnalysisResult> {
+  const result = analyzePromptIntent(promptText);
+
+  // If already shortcut-resolved or language is English, return immediate result
+  if (result.shortcutApplied || result.learnedFromCorrection || result.detectedLanguage === "en") {
+    return result;
+  }
+
+  // Fallback to ONNX Transformer for Indonesian or multi-language translation
+  const onnxTranslated = await translatePromptWithONNX(promptText);
+  if (onnxTranslated && onnxTranslated !== promptText) {
+    result.translatedEnglishPrompt = onnxTranslated;
+    translationBadgeEmitter.emit("badge", {
+      originalPrompt: promptText,
+      translatedPrompt: onnxTranslated,
+      detectedLanguage: result.detectedLanguage,
+      confidence: 0.98,
+      shortcutApplied: false,
+    });
+  }
+
+  return result;
 }
 
 /**

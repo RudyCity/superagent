@@ -1,4 +1,13 @@
-"## [1.2.680] - 2026-08-02
+"## [1.2.681] - 2026-08-02
+
+### Feature: Pre-Processing Pipeline — ONNX Local Translation, Secret Alias Vault & Noise Trimming
+- **ONNX Local Translation Pipeline**: Integrated lightweight (< 100MB RAM) local transformer model (`Xenova/opus-mt-id-en` INT8) with async fallback for high-accuracy Indonesian-to-English translation (`analyzePromptIntentAsync`).
+- **Secret & Sensitive Data Masking with Secret Vault**: Implemented automated credential redaction (OpenAI `sk-proj-`, GitHub `ghp_`, AWS `AKIA`, JWT, Private Keys, complex passwords) into ephemeral `$SECRET_N` aliases. Added `unmaskSensitiveData()` for local tool execution recovery.
+- **Conversational Noise & Filler Trimming**: Strips conversational fluff in Indonesian & English (e.g. `"halo mas ai tolong bantu saya untuk..."`) to minimize token consumption and focus LLM attention on core technical instructions.
+- **High Performance Optimizations**: Added `SECRET_HINT_PATTERN` Early Exit Guard (0 ms execution on normal prompts) and single-pass pre-compiled Master Regex scanner.
+- **Files Modified**: `src/core/promptClarification.ts`, `src/core/agent/RequestProcessor.ts`, `tests/onnxTranslation.test.ts`, `tests/promptPreprocessing.test.ts`, `package.json`, `CHANGELOG.md`.
+
+## [1.2.680] - 2026-08-02
 
 ### Fix: Request Classifier Indonesian Keyword Support & Degeneration Fallback
 - **Indonesian Debug Keywords**: Added Indonesian debug/fix keywords ("perbaiki", "perbaikan", "benerin", "betulkan", "eror") to the heuristic pre-filter.

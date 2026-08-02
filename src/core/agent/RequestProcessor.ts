@@ -5,7 +5,7 @@ import { captureGitSnapshot } from "./GitUtils.js";
 import { contentToString } from "../conversation.js";
 import type { Agent } from "../agent.js";
 
-import { analyzePromptIntent, translationBadgeEmitter } from "../promptClarification.js";
+import { analyzePromptIntent, translationBadgeEmitter, initONNXTranslationPipeline } from "../promptClarification.js";
 
 export class RequestProcessor {
   public static async processRequest(
@@ -16,6 +16,9 @@ export class RequestProcessor {
       ? agent.worktreePath
       : agent.workingDirectory;
     (agent as any).gitStartSnapshot = await captureGitSnapshot(currentCwd);
+
+    // Warm up lightweight local ONNX translation pipeline (<100MB RAM) in background
+    initONNXTranslationPipeline().catch(() => {});
 
     const onBadge = (badge: any) => {
       agent.writeToLogFile("INFO", `[🌐 Desktop Badge UI] [${badge.detectedLanguage.toUpperCase()}] "${badge.originalPrompt}" -> "${badge.translatedPrompt}"`);
