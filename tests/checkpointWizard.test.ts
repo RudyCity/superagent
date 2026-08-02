@@ -279,3 +279,17 @@ describe("Checkpoint: /checkpoint <name> creates checkpoint", () => {
     expect(checkpoints[0].name).toBe("my-save-point");
   });
 });
+
+describe("Checkpoint wizard search filtering", () => {
+  it("should correctly filter checkpoint options using filterSuggestions", () => {
+    const { filterSuggestions } = require("../src/utils/text.js");
+    const options = [
+      "📌 feature-auth  |  5 msgs  |  1m ago",
+      "📌 bugfix-login  |  3 msgs  |  5m ago",
+      "📌 refactor-db   |  8 msgs  |  10m ago"
+    ];
+    const filtered = filterSuggestions(options, "auth");
+    expect(filtered.length).toBe(1);
+    expect(filtered[0]).toContain("feature-auth");
+  });
+});

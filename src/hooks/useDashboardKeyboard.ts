@@ -389,7 +389,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
               const clampedPrev = Math.min(prev, currentMax);
               return Math.max(0, clampedPrev - 1);
             });
-          } else if (activeWizard.type === "workspace" && activeWizard.step === 1) {
+          } else if ((activeWizard.type === "workspace" && activeWizard.step === 1) || (activeWizard.type === "checkpoint" && activeWizard.step === 1 && activeWizard.data?.action !== "choose")) {
             const lc = query.trim();
             const len = lc
               ? filterSuggestions(wizardOptions, lc).length
@@ -419,7 +419,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
               const clampedPrev = Math.min(prev, currentMax);
               return Math.min(currentMax, clampedPrev + 1);
             });
-          } else if (activeWizard.type === "workspace" && activeWizard.step === 1) {
+          } else if ((activeWizard.type === "workspace" && activeWizard.step === 1) || (activeWizard.type === "checkpoint" && activeWizard.step === 1 && activeWizard.data?.action !== "choose")) {
             const lc = query.trim();
             const len = lc
               ? filterSuggestions(wizardOptions, lc).length

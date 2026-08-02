@@ -1,3 +1,11 @@
+## [1.2.678] - 2026-08-02
+
+### Feature: Interactive Checkpoint & Rollback UI Wizard
+- **Interactive Checkpoint Selection**: Enhanced `/checkpoint` wizard UI to allow interactive navigation, preview, and selection of available session checkpoints via keyboard arrow keys (↑/↓) and Enter.
+- **Wizard Hooks & Handlers**: Refactored keyboard handlers and wizard hooks (`useDashboardKeyboard`, `useDashboardWizard`, `useKeyboardHandler`) to support multi-step checkpoint browsing, direct restoration, and deletion.
+- **Component Rendering**: Added structured rendering for `checkpoint` type wizards in `wizard-panels.tsx` with dialog header options and max visible limit.
+- **Files Modified**: `src/components/wizard-panels.tsx`, `src/hooks/useDashboardKeyboard.ts`, `src/hooks/useDashboardWizard.ts`, `src/hooks/useKeyboardHandler.ts`, `tests/checkpointWizard.test.ts`, `package.json`, `CHANGELOG.md`.
+
 ## [1.2.677] - 2026-08-02
 
 ### Feature: Prompt Intent Analysis, Multi-Language Auto-Translation & Desktop UI Badge

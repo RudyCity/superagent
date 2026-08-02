@@ -1202,13 +1202,23 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
     } else if (activeWizard.type === "checkpoint") {
       if (activeWizard.step === 1) {
-        const chosen = checkpointsList[wizardSelectedIndex];
+        const action = activeWizard.data?.action || "browse";
+        let chosenIdx = wizardSelectedIndex;
+        if (action !== "choose") {
+          const searchQuery = value.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+          const selectedText = filteredOptions[clampedIndex];
+          chosenIdx = selectedText ? wizardOptions.indexOf(selectedText) : -1;
+        }
+        const chosen = chosenIdx >= 0 ? checkpointsList[chosenIdx] : null;
         if (!chosen) return;
-        const action = activeWizard.data.action || "browse";
 
         // "browse" mode: show action sub-menu
         if (action === "browse") {
-          setActiveWizard({ type: "checkpoint", step: 1, data: { action: "choose", checkpointIndex: String(wizardSelectedIndex) } });
+          setActiveWizard({ type: "checkpoint", step: 1, data: { action: "choose", checkpointIndex: String(chosenIdx) } });
           setWizardOptions(["🔄 Restore this checkpoint", "🗑️ Delete this checkpoint"]);
           setWizardSelectedIndex(0);
           return;

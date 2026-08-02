@@ -1384,30 +1384,65 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
       } else if (activeWizard.type === "checkpoint" && activeWizard.step === 1 && wizardOptions.length > 0) {
-        if (key.upArrow) {
-          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
-          return;
-        }
-        if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
-          return;
+        const action = activeWizard.data?.action || "browse";
+        if (action === "choose") {
+          if (key.upArrow) {
+            setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+            return;
+          }
+          if (key.downArrow) {
+            setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
+            return;
+          }
+        } else {
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+
+          if (key.upArrow) {
+            setWizardSelectedIndex((prev) => {
+              const currentMax = Math.max(0, filteredOptions.length - 1);
+              const clampedPrev = Math.min(prev, currentMax);
+              return Math.max(0, clampedPrev - 1);
+            });
+            return;
+          }
+          if (key.downArrow) {
+            setWizardSelectedIndex((prev) => {
+              const currentMax = Math.max(0, filteredOptions.length - 1);
+              const clampedPrev = Math.min(prev, currentMax);
+              return Math.min(currentMax, clampedPrev + 1);
+            });
+            return;
+          }
         }
         if (key.return) {
-          const chosen = checkpointsList[wizardSelectedIndex];
+          let chosenIdx = wizardSelectedIndex;
+          if (action !== "choose") {
+            const searchQuery = input.trim();
+            const filteredOptions = searchQuery
+              ? filterSuggestions(wizardOptions, searchQuery)
+              : wizardOptions;
+            const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+            const selectedText = filteredOptions[clampedIndex];
+            chosenIdx = selectedText ? wizardOptions.indexOf(selectedText) : -1;
+          }
+          const chosen = chosenIdx >= 0 ? checkpointsList[chosenIdx] : null;
           if (!chosen) return;
           const now = Date.now();
-          const action = activeWizard.data.action || "browse";
+          const actionName = activeWizard.data?.action || "browse";
 
           // "browse" mode: show action sub-menu (Restore or Delete)
-          if (action === "browse") {
-            setActiveWizard({ type: "checkpoint", step: 1, data: { action: "choose", checkpointIndex: String(wizardSelectedIndex) } });
+          if (actionName === "browse") {
+            setActiveWizard({ type: "checkpoint", step: 1, data: { action: "choose", checkpointIndex: String(chosenIdx) } });
             setWizardOptions(["🔄 Restore this checkpoint", "🗑️ Delete this checkpoint"]);
             setWizardSelectedIndex(0);
             return;
           }
 
           // "choose" sub-menu: user picked Restore or Delete
-          if (action === "choose") {
+          if (actionName === "choose") {
             const chkIndex = parseInt(activeWizard.data.checkpointIndex || "0", 10);
             const targetChk = checkpointsList[chkIndex];
             if (!targetChk) return;
@@ -1472,9 +1507,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
 
           // "restore" mode (direct from /checkpoint restore wizard)
-          if (action === "restore") {
+          if (actionName === "restore") {
             if (chosen.gitSha) {
-              setActiveWizard({ type: "checkpoint", step: 2, data: { checkpointIndex: String(wizardSelectedIndex) } });
+              setActiveWizard({ type: "checkpoint", step: 2, data: { checkpointIndex: String(chosenIdx) } });
               setWizardOptions(["✓ Yes, restore workspace to this commit (git stash & checkout)", "✗ No, only restore conversation history"]);
               setWizardSelectedIndex(0);
               return;
@@ -1509,7 +1544,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
 
           // "delete" mode (direct from /checkpoint delete wizard)
-          if (action === "delete") {
+          if (actionName === "delete") {
             const sessionPath = agentRef.current?.getCurrentHistoryFilePath();
             if (!sessionPath) return;
             deleteCheckpointById(chosen.id, sessionPath)

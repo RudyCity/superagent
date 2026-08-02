@@ -799,16 +799,40 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           }
         })()}
 
-        {activeWizard && activeWizard.type === "checkpoint" && activeWizard.step === 1 && wizardOptions.length > 0 && (
-          <WizardDialog
-            title="📌 CHECKPOINT — Select checkpoint to restore (↑/↓ Navigate, Enter: Restore, Esc: Cancel):"
-            description="Checkpoints sorted by most recent:"
-            borderColor="green"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-            maxVisible={10}
-          />
-        )}
+        {activeWizard && activeWizard.type === "checkpoint" && activeWizard.step === 1 && wizardOptions.length > 0 && (() => {
+          const action = activeWizard.data?.action || "browse";
+          if (action === "choose") {
+            return (
+              <WizardDialog
+                title="📌 CHECKPOINT — Choose Action:"
+                description="Select what action to perform for the chosen checkpoint:"
+                borderColor="green"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+                maxVisible={10}
+              />
+            );
+          }
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+          const searchTitle = searchQuery
+            ? `📌 CHECKPOINT — 🔍 "${searchQuery}" (${filteredOptions.length}/${wizardOptions.length} results, ↑/↓ Navigate, Enter: Choose, Esc: Cancel):`
+            : "📌 CHECKPOINT — Select checkpoint (type to filter, ↑/↓ Navigate, Enter: Choose, Esc: Cancel):";
+
+          return (
+            <WizardDialog
+              title={searchTitle}
+              description="Checkpoints sorted by most recent:"
+              borderColor="green"
+              options={filteredOptions}
+              selectedIndex={clampedIndex}
+              maxVisible={10}
+            />
+          );
+        })()}
 
         {activeWizard && activeWizard.type === "checkpoint" && activeWizard.step === 2 && wizardOptions.length > 0 && (
           <WizardDialog
