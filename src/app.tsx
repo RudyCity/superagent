@@ -1293,7 +1293,14 @@ export function App({
         return filterSuggestions(mcpSuggestions, currentInput);
       }
 
-
+      if (mainCommand === "/ssh") {
+        const sshSuggestions = [
+          `${mainCommand} expand`,
+          `${mainCommand} allowed`,
+          `${mainCommand} status`
+        ];
+        return filterSuggestions(sshSuggestions, currentInput);
+      }
 
       if (mainCommand === "/setting-focus" || mainCommand === "/focus") {
         const focusSuggestions = [

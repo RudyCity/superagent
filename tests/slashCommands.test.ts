@@ -24,6 +24,9 @@ let execaSpy: any;
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  // Re-establish homedir mock after restoreAllMocks() clears it.
+  // Without this, tests that run after the first one read the real ~/.superagent-r config.
+  vi.spyOn(os, "homedir").mockReturnValue(tempHome);
   execaSpy = vi.spyOn(execaModule, "execa").mockResolvedValue({ stdout: "" } as any);
 
   // Bersihkan folder temp

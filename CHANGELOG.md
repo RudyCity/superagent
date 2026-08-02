@@ -1,3 +1,10 @@
+## [1.2.698] - 2026-08-02
+
+### Added: /ssh Command — Suggestions & Help
+
+- **Tab autocomplete**: `/ssh` subcommands (`expand`, `allowed`, `status`) now appear in Tab autocomplete suggestions in `app.tsx`.
+- **Help text**: `/ssh` command with full subcommand usage added to `/help` output in `coreCommands.ts`.
+
 ## [1.2.697] - 2026-08-02
 
 ### Added: SSH Workspace Expansion
