@@ -226,6 +226,25 @@ export function App({
   const [activePresetName, setActivePresetName] = useState(() => {
     try { return getActivePreset<any>("single")?.name || ""; } catch { return ""; }
   });
+
+  // Sync contextLimit with the active model's context window limit.
+  // This ensures the Ctx: percentage display uses the correct denominator
+  // on startup and whenever the model changes (e.g. via /model wizard).
+  useEffect(() => {
+    try {
+      const limit = getContextWindowLimit(activeModel);
+      setContextLimit(limit);
+      // Also update the ContextManager if it exists
+      const cm = agentRef.current?.getContextManager?.();
+      if (cm) {
+        cm.setThreshold(limit);
+        cm.setModel(activeModel);
+      }
+    } catch {
+      // Fall back to default if model lookup fails
+      setContextLimit(256000);
+    }
+  }, [activeModel]);
   const [activeFocus, setActiveFocus] = useState(() => getSettings().focus || "off");
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
   const [completedHistory, setCompletedHistory] = useState<{ status: string; text: string; remainingSeconds?: number }[]>([]);

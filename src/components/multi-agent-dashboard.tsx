@@ -157,16 +157,27 @@ export function MultiAgentDashboard({
   const [executingToolDescription, setExecutingToolDescription] = useState("");
   const [contextLimit, setContextLimit] = useState(() => {
     const modelName = getEffectiveMasterModel("auto") || getDefaultModel();
-    let initialLimit = getContextWindowLimit(modelName);
-    if (process.env.CONTEXT_WINDOW_LIMIT) {
-      const parsed = parseInt(process.env.CONTEXT_WINDOW_LIMIT, 10);
-      if (!isNaN(parsed)) initialLimit = parsed;
-    } else if (process.env.MAX_CONTEXT_TOKENS) {
-      const parsed = parseInt(process.env.MAX_CONTEXT_TOKENS, 10);
-      if (!isNaN(parsed)) initialLimit = parsed;
-    }
-    return initialLimit;
+    return getContextWindowLimit(modelName);
   });
+
+  // Sync contextLimit with the active model's context window limit.
+  // This ensures the Ctx: percentage display uses the correct denominator
+  // whenever the model changes (e.g. via /model wizard).
+  useEffect(() => {
+    try {
+      const limit = getContextWindowLimit(activeModel);
+      setContextLimit(limit);
+      // Also update the ContextManager if it exists
+      const cm = agent?.getContextManager?.();
+      if (cm) {
+        cm.setThreshold(limit);
+        cm.setModel(activeModel);
+      }
+    } catch {
+      // Fall back to default if model lookup fails
+      setContextLimit(256000);
+    }
+  }, [activeModel, agent]);
 
   // Persist input history to disk so it survives restarts
   const HISTORY_FILE = path.join(getRootConfigDir(), "input-history-multi.json");
@@ -1280,7 +1291,21 @@ export function MultiAgentDashboard({
 
 
 
-  const activeContextUsage = lastMasterPromptTokens;
+  // Use ContextManager's TokenTracker for accurate context usage if available,
+  // falling back to lastMasterPromptTokens from API responses.
+  let activeContextUsage = 0;
+  const cm = agent?.getContextManager?.();
+  if (cm && agent) {
+    try {
+      const messages = agent.getHistory().getMessages();
+      const breakdown = cm.estimateTokensForAll(messages);
+      activeContextUsage = breakdown.total;
+    } catch {
+      activeContextUsage = lastMasterPromptTokens;
+    }
+  } else {
+    activeContextUsage = lastMasterPromptTokens;
+  }
   const contextPercentage = contextLimit > 0 ? ((activeContextUsage / contextLimit) * 100).toFixed(2) : "0.00";
 
   return (

@@ -1,3 +1,13 @@
+## [1.2.675] - 2026-08-02
+
+### Fix: Context Window Percentage Display Stuck at 0%
+- **Root Cause**: The `Ctx: 0%` display bug had two causes:
+  1. **`app.tsx` (single-agent mode)**: `contextLimit` was hardcoded to `256000` at initialization and never synced with the actual model's context window limit on startup or when `activeModel` changed. This meant the denominator was wrong for any model with a different context window size.
+  2. **`multi-agent-dashboard.tsx` (multi-agent mode)**: `activeContextUsage` only used `lastMasterPromptTokens` from `state.ts`, which is `0` until the first LLM API response arrives. It did not use the `ContextManager`'s `estimateTokensForAll()` for proactive token calculation like `app.tsx` does, so the numerator was always 0 before the first API call.
+- **Fix — `app.tsx`**: Added a `useEffect` that syncs `contextLimit` with `getContextWindowLimit(activeModel)` whenever `activeModel` changes. Also updates the `ContextManager`'s threshold and model to stay in sync.
+- **Fix — `multi-agent-dashboard.tsx`**: Replaced the simple `activeContextUsage = lastMasterPromptTokens` assignment with a `ContextManager`-based estimation that calls `cm.estimateTokensForAll(messages)` to get accurate token counts from conversation history, falling back to `lastMasterPromptTokens` only when `ContextManager` is unavailable. Also added a `useEffect` to sync `contextLimit` with `activeModel` and removed prohibited `process.env.CONTEXT_WINDOW_LIMIT` / `process.env.MAX_CONTEXT_TOKENS` usage (per AGENTS.md JSON-only config rule).
+- **Files Modified**: `src/app.tsx`, `src/components/multi-agent-dashboard.tsx`.
+
 ## [1.2.674] - 2026-08-02
 
 ### Feature: Dynamic Model Preset Suggestions for `/mp` and `/mp-*`
