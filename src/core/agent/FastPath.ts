@@ -161,6 +161,21 @@ export class FastPath {
                       continue;
                     }
                     
+                    const ltIdx = streamBuffer.indexOf("<");
+                    if (ltIdx === -1) {
+                      const textToEmit = streamBuffer;
+                      textContent += textToEmit;
+                      agent.onEvent({ type: "text", content: textToEmit });
+                      streamBuffer = "";
+                      break;
+                    } else if (ltIdx > 0) {
+                      const textToEmit = streamBuffer.substring(0, ltIdx);
+                      textContent += textToEmit;
+                      agent.onEvent({ type: "text", content: textToEmit });
+                      streamBuffer = streamBuffer.substring(ltIdx);
+                      continue;
+                    }
+                    
                     let isPrefix = false;
                     const tags = ["<think>", "<thought>", "<reasoning>", "<thinking>"];
                     for (const t of tags) {
@@ -183,6 +198,21 @@ export class FastPath {
                       inThinkTagState = false;
                       currentThinkTagType = "";
                       streamBuffer = streamBuffer.substring(closeMatch[1].length);
+                      continue;
+                    }
+                    
+                    const ltIdx = streamBuffer.indexOf("<");
+                    if (ltIdx === -1) {
+                      const textToEmit = streamBuffer;
+                      reasoningContent += textToEmit;
+                      agent.onEvent({ type: "reasoning", content: textToEmit });
+                      streamBuffer = "";
+                      break;
+                    } else if (ltIdx > 0) {
+                      const textToEmit = streamBuffer.substring(0, ltIdx);
+                      reasoningContent += textToEmit;
+                      agent.onEvent({ type: "reasoning", content: textToEmit });
+                      streamBuffer = streamBuffer.substring(ltIdx);
                       continue;
                     }
                     

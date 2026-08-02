@@ -10,7 +10,11 @@ function hasPythonVisionDependencies(): { available: boolean; cmd: string } {
   const commands = ["python", "py", "python3"];
   for (const cmd of commands) {
     try {
-      execSync(`${cmd} -c "import sys, torch, huggingface_hub, rfdetr, PIL, numpy"`, { stdio: "ignore" });
+      // 1. Fast sanity check: does the command exist and respond quickly?
+      execSync(`${cmd} --version`, { stdio: "ignore", timeout: 800 });
+      
+      // 2. Heavy check: can it import dependencies? Add strict timeout to prevent hangs.
+      execSync(`${cmd} -c "import sys, torch, huggingface_hub, rfdetr, PIL, numpy"`, { stdio: "ignore", timeout: 5000 });
       return { available: true, cmd };
     } catch {
       continue;

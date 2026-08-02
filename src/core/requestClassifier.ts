@@ -874,7 +874,13 @@ export async function warmUpClassifier(onProgress?: (event: any) => void): Promi
         if (cb) progressCb = cb;
       } catch {}
     }
-    const { pipeline } = await import("@huggingface/transformers");
+    const { pipeline, env } = await import("@huggingface/transformers");
+    if (env?.backends?.onnx) {
+      (env.backends.onnx as any).logLevel = 'error';
+    }
+    if (env) {
+      (env as any).logLevel = 'error';
+    }
     const isMocked = (pipeline as any).mock || (pipeline as any)._isMockFunction || typeof (pipeline as any).mockImplementation === "function";
     if (process.env.NODE_ENV === "test" && !isMocked) {
       return;
@@ -883,6 +889,9 @@ export async function warmUpClassifier(onProgress?: (event: any) => void): Promi
       let downloadStarted = false;
       localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
         model_file_name: "model_int8",
+        session_options: {
+          logSeverityLevel: 3,
+        } as any,
         progress_callback: (data: any) => {
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;
@@ -950,7 +959,13 @@ export async function classifyWithLLM(
         if (cb) progressCb = cb;
       } catch {}
     }
-    const { pipeline } = await import("@huggingface/transformers");
+    const { pipeline, env } = await import("@huggingface/transformers");
+    if (env?.backends?.onnx) {
+      (env.backends.onnx as any).logLevel = 'error';
+    }
+    if (env) {
+      (env as any).logLevel = 'error';
+    }
     const isMocked = (pipeline as any).mock || (pipeline as any)._isMockFunction || typeof (pipeline as any).mockImplementation === "function";
     if (process.env.NODE_ENV === "test" && !isMocked) {
       return {
@@ -966,6 +981,9 @@ export async function classifyWithLLM(
       let downloadStarted = false;
       localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
         model_file_name: "model_int8",
+        session_options: {
+          logSeverityLevel: 3,
+        } as any,
         progress_callback: (data: any) => {
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;

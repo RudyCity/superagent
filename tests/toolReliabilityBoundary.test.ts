@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 import { readTool, writeTool } from "../src/core/tools/systemTools.js";
+import * as sharedMemoryModule from "../src/core/storage/sharedMemory.js";
+
+beforeEach(() => {
+  vi.spyOn(sharedMemoryModule, "checkFileLock").mockReturnValue({ locked: false });
+});
 import path from "path";
 import fs from "fs/promises";
 

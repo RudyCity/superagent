@@ -6,9 +6,13 @@ import { agentLocalStorage } from "../src/core/agent.js";
 import { getGlobalConfigDir, saveSessionToDb, deleteSessionFromDb } from "../src/core/config.js";
 import * as configModule from "../src/core/config.js";
 import * as execaModule from "execa";
+import * as sharedMemoryModule from "../src/core/storage/sharedMemory.js";
 
 beforeEach(() => {
   vi.restoreAllMocks();
+
+  // Mock file locking to avoid conflicts during test execution
+  vi.spyOn(sharedMemoryModule, "checkFileLock").mockReturnValue({ locked: false });
 
   // Spy on getConfig to return empty apiKey so searchHistory uses offline fuzzy search
   // instead of hitting the AI API from model-config.json (causes timeouts).

@@ -200,6 +200,29 @@ export class LoopIterationProcessor {
                         continue;
                       }
                       
+                      const ltIdx = streamBuffer.indexOf("<");
+                      if (ltIdx === -1) {
+                        const textToEmit = streamBuffer;
+                        textContent += textToEmit;
+                        if (xmlFilter) {
+                          xmlFilter.push(textToEmit);
+                        } else {
+                          agent.onEvent({ type: "text", content: textToEmit });
+                        }
+                        streamBuffer = "";
+                        break;
+                      } else if (ltIdx > 0) {
+                        const textToEmit = streamBuffer.substring(0, ltIdx);
+                        textContent += textToEmit;
+                        if (xmlFilter) {
+                          xmlFilter.push(textToEmit);
+                        } else {
+                          agent.onEvent({ type: "text", content: textToEmit });
+                        }
+                        streamBuffer = streamBuffer.substring(ltIdx);
+                        continue;
+                      }
+                      
                       let isPrefix = false;
                       const tags = ["<think>", "<thought>", "<reasoning>", "<thinking>"];
                       for (const t of tags) {
@@ -226,6 +249,23 @@ export class LoopIterationProcessor {
                         inThinkTagState = false;
                         currentThinkTagType = "";
                         streamBuffer = streamBuffer.substring(closeMatch[1].length);
+                        continue;
+                      }
+                      
+                      const ltIdx = streamBuffer.indexOf("<");
+                      if (ltIdx === -1) {
+                        const textToEmit = streamBuffer;
+                        if (reasoningContent === undefined) reasoningContent = "";
+                        reasoningContent += textToEmit;
+                        agent.onEvent({ type: "reasoning", content: textToEmit });
+                        streamBuffer = "";
+                        break;
+                      } else if (ltIdx > 0) {
+                        const textToEmit = streamBuffer.substring(0, ltIdx);
+                        if (reasoningContent === undefined) reasoningContent = "";
+                        reasoningContent += textToEmit;
+                        agent.onEvent({ type: "reasoning", content: textToEmit });
+                        streamBuffer = streamBuffer.substring(ltIdx);
                         continue;
                       }
                       

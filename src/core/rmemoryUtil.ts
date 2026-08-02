@@ -100,7 +100,13 @@ export class OptimizedLocalTextEmbeddingProvider {
 
   private async getExtractor() {
     if (!this.extractor) {
-      const { pipeline } = await import("@huggingface/transformers");
+      const { pipeline, env } = await import("@huggingface/transformers");
+      if (env?.backends?.onnx) {
+        (env.backends.onnx as any).logLevel = 'error';
+      }
+      if (env) {
+        (env as any).logLevel = 'error';
+      }
       const isMocked = (pipeline as any).mock || (pipeline as any)._isMockFunction || typeof (pipeline as any).mockImplementation === "function";
       if (process.env.NODE_ENV === "test" && !isMocked) {
         this.extractor = async () => {
@@ -123,7 +129,8 @@ export class OptimizedLocalTextEmbeddingProvider {
         session_options: {
           intraOpNumThreads: 2,
           interOpNumThreads: 1,
-        },
+          logSeverityLevel: 3,
+        } as any,
         progress_callback: (data: any) => {
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;

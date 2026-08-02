@@ -1,3 +1,10 @@
+## [1.2.692] - 2026-08-02
+
+### Fix: ONNX Logging Suppression & Test Reliability
+- **ONNX Logging**: Suppressed ONNX runtime verbosity and handled safely when transformers library is mocked in test environments.
+- **Reasoning Stream Handling**: Refined stream buffer processing for reasoning tags in FastPath and LoopIterationProcessor.
+- **Test Reliability**: Added mock file locking and timeouts to prevent hanging during vitest execution.
+
 ## [1.2.691] - 2026-08-02
 
 ### Fix: Task Continuation Classification & Fast-Path Bypass
