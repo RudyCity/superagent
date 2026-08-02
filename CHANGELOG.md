@@ -6,6 +6,7 @@
 - **SSH Routing Bypass**: File tools (`read`, `write`, `write_to_file`, `replace_file_content`, `multi_replace_file_content`) automatically bypass remote SSH routing if the path points to the local config or session directories.
 - **`transfer_ssh_file` Tool**: Introduced a new tool to copy/transfer files (upload/download) between the local session history/scratch directory and the remote SSH workspace.
 - **Test Coverage**: Added `tests/sshTransfer.test.ts` to verify the local path detection, routing bypass, and transfer tool behaviors.
+- **Agent Prompts Updated**: Updated Master Agent, Superagent, researcher, coder, and general subagent system prompts in `prompts.ts` with rules (`SCRATCH_AND_TRANSFER_RULE`) instructing them on the usage of the local scratch workspace and file transfer tool capabilities.
 
 ## [1.2.699] - 2026-08-02
 

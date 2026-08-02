@@ -60,6 +60,9 @@ const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Full Chrome automation suite.
 const WORKSPACE_CHAIN_RULE = `- WORKSPACE_CHAINS: Multi-node topology (local & SSH). Read active topology from WORKSPACE CHAIN ACTIVE prompt block. Use manage_workspace_chain (topology, health, activate) and cross_workspace_exec (exec, read, write, exec-all, exec-deps, health, diff, sync, switch-node).
 - WORKSPACE_CHAIN_ROUTING: Use cross_workspace_exec (switch-node) to set the active node. Once switched, all standard system tools (glob, grep, ripgrep_search, view_file, write_to_file, run_command) automatically and transparently route and execute on the active node (local or SSH) via workspaceMode.`;
 
+const SCRATCH_AND_TRANSFER_RULE = `- SCRATCH_WORKSPACE: Free read/write access to local session directory (derived from process.env.SUPERAGENT_SESSION_PATH) without permission prompt. Safe for helper/scratch files in both local and SSH mode.
+- SSH_TRANSFER: In SSH mode, use transfer_ssh_file (upload/download) to copy files between local session directory and remote workspace. Standard file tools bypass SSH routing when targeting local config/session paths.`;
+
 // ─── Report Template (dedup'd) ────────────────────────────────
 
 const SUBAGENT_REPORT_BASE = `# REPORT
@@ -150,6 +153,7 @@ ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 ${MANDATORY_HALLMARK_RULE}
 - WORKSPACE_LIMIT: File writes ONLY on: Implementation Plan, Task Tracking, Verification files. All other code edits BLOCKED.
+${SCRATCH_AND_TRANSFER_RULE}
 - NO_SUBAGENTS: invoke_subagent BLOCKED. Superagents only.
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
@@ -219,6 +223,7 @@ ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 ${MANDATORY_HALLMARK_RULE}
 - WORKSPACE_LIMIT: Files ONLY within: ${worktreePath}. Parent/sibling BLOCKED.
+${SCRATCH_AND_TRANSFER_RULE}
 - NO_NESTED_SUPERAGENTS: invoke_superagent BLOCKED.
 - DELEGATION: Parse tasks P[001..N]. Delegate atomic work to Subagents (e.g. 'researcher' for research, 'coder' for code writing, 'reviewer' for QA, 'security-engineer' for audits, 'chrome-agent' for browser automation). Issue concurrent calls for independent tasks. Subagents: NO manage_tasks/manage_plan.
 - PRE_MERGE: Run build+tests inside worktree before finish. Fix ALL errors.
@@ -292,6 +297,7 @@ ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 - RESEARCH: Use search/grep/ripgrep to map codebase GoT. For web/browser research: use browser+Chrome tools to analyze page structure, detect UI, verify selectors.
+${SCRATCH_AND_TRANSFER_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 - SKILL_CHECK: get_skills(query). If found: use_skill(name).
@@ -325,6 +331,7 @@ ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 ${MANDATORY_HALLMARK_RULE}
 - SCOPE: Read/modify ONLY explicitly assigned files. Outside BLOCKED.
+${SCRATCH_AND_TRANSFER_RULE}
 - SHARED_FILE_GUARD: Read-only files BLOCKED from edit. Report needed edits to parent.
 - SKILL_CHECK: get_skills(query). If found: use_skill(name).
 ${FILE_EDIT_SAFETY_RULE}
@@ -455,6 +462,7 @@ ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 - SKILL_CHECK: get_skills(query). If found: use_skill(name).
+${SCRATCH_AND_TRANSFER_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 ${CONTEXT_ANCHOR_RULE}
