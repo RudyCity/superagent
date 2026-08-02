@@ -21,6 +21,33 @@ function isRetryableError(err: unknown): boolean {
   return isRetryableErrorHelper(err);
 }
 
+function cleanThinkingTags(text: string, existingReasoning = ""): { cleanText: string; reasoning: string } {
+  let rawText = text || "";
+  let reasoning = existingReasoning || "";
+
+  const thinkRegex = /<(think|thought|reasoning|thinking)>([\s\S]*?)<\/\1>/gi;
+  let match;
+  while ((match = thinkRegex.exec(rawText)) !== null) {
+    const innerText = match[2].trim();
+    if (innerText) {
+      reasoning = (reasoning + "\n" + innerText).trim();
+    }
+  }
+  rawText = rawText.replace(thinkRegex, "").trim();
+
+  const unclosedRegex = /<(think|thought|reasoning|thinking)>([\s\S]*)$/i;
+  const unclosedMatch = unclosedRegex.exec(rawText);
+  if (unclosedMatch) {
+    const innerText = unclosedMatch[2].trim();
+    if (innerText) {
+      reasoning = (reasoning + "\n" + innerText).trim();
+    }
+    rawText = rawText.replace(unclosedRegex, "").trim();
+  }
+
+  return { cleanText: rawText, reasoning };
+}
+
 export class LoopIterationProcessor {
   public static async processIteration(
     agent: Agent,
@@ -150,6 +177,10 @@ export class LoopIterationProcessor {
                 agent.writeToLogFile("WARN", `Failed to initialize StreamXmlFilter: ${err.message}`);
               }
 
+              let inThinkTagState = false;
+              let currentThinkTagType = "";
+              let streamBuffer = "";
+
               for await (const delta of resultStream.fullStream) {
                 if (signal?.aborted) {
                   const err = new Error("AbortError");
@@ -157,14 +188,65 @@ export class LoopIterationProcessor {
                   throw err;
                 }
                 if (delta.type === "text-delta") {
-                  textContent += delta.textDelta;
-                  if (xmlFilter) {
-                    xmlFilter.push(delta.textDelta);
-                  } else {
-                    agent.onEvent({ type: "text", content: delta.textDelta });
+                  streamBuffer += delta.textDelta;
+                  
+                  while (streamBuffer.length > 0) {
+                    if (!inThinkTagState) {
+                      const openMatch = /^(<(think|thought|reasoning|thinking)>)/i.exec(streamBuffer);
+                      if (openMatch) {
+                        inThinkTagState = true;
+                        currentThinkTagType = openMatch[2];
+                        streamBuffer = streamBuffer.substring(openMatch[1].length);
+                        continue;
+                      }
+                      
+                      let isPrefix = false;
+                      const tags = ["<think>", "<thought>", "<reasoning>", "<thinking>"];
+                      for (const t of tags) {
+                        if (t.startsWith(streamBuffer)) {
+                          isPrefix = true;
+                          break;
+                        }
+                      }
+                      if (isPrefix && streamBuffer.length < "<reasoning>".length) {
+                        break;
+                      }
+                      
+                      const char = streamBuffer[0];
+                      textContent += char;
+                      if (xmlFilter) {
+                        xmlFilter.push(char);
+                      } else {
+                        agent.onEvent({ type: "text", content: char });
+                      }
+                      streamBuffer = streamBuffer.substring(1);
+                    } else {
+                      const closeMatch = new RegExp(`^((?:<\\/${currentThinkTagType}>))`, "i").exec(streamBuffer);
+                      if (closeMatch) {
+                        inThinkTagState = false;
+                        currentThinkTagType = "";
+                        streamBuffer = streamBuffer.substring(closeMatch[1].length);
+                        continue;
+                      }
+                      
+                      let isPrefix = false;
+                      const closeTag = `</${currentThinkTagType}>`;
+                      if (closeTag.startsWith(streamBuffer)) {
+                        isPrefix = true;
+                      }
+                      if (isPrefix && streamBuffer.length < closeTag.length) {
+                        break;
+                      }
+                      
+                      const char = streamBuffer[0];
+                      if (reasoningContent === undefined) reasoningContent = "";
+                      reasoningContent += char;
+                      agent.onEvent({ type: "reasoning", content: char });
+                      streamBuffer = streamBuffer.substring(1);
+                    }
                   }
                 } else if ((delta.type as string) === "reasoning" || (delta.type as string) === "reasoning-delta") {
-                  const reasoningText = (delta as any).reasoning || (delta as any).reasoningDelta || (delta as any).delta || "";
+                  const reasoningText = (delta as any).textDelta || (delta as any).text || (delta as any).reasoning || (delta as any).reasoningDelta || (delta as any).delta || "";
                   if (reasoningText) {
                     if (reasoningContent === undefined) reasoningContent = "";
                     reasoningContent += reasoningText;
@@ -179,6 +261,21 @@ export class LoopIterationProcessor {
                   toolCalls.push(tc);
                 } else if (delta.type === "error") {
                   throw delta.error instanceof Error ? delta.error : new Error(formatError(delta.error));
+                }
+              }
+
+              if (streamBuffer.length > 0) {
+                if (inThinkTagState) {
+                  if (reasoningContent === undefined) reasoningContent = "";
+                  reasoningContent += streamBuffer;
+                  agent.onEvent({ type: "reasoning", content: streamBuffer });
+                } else {
+                  textContent += streamBuffer;
+                  if (xmlFilter) {
+                    xmlFilter.push(streamBuffer);
+                  } else {
+                    agent.onEvent({ type: "text", content: streamBuffer });
+                  }
                 }
               }
 
@@ -340,11 +437,13 @@ export class LoopIterationProcessor {
                 }),
               });
 
-              textContent = result.text || "";
+               const cleaned = cleanThinkingTags(result.text || "", (result as any).reasoning || "");
+              textContent = cleaned.cleanText;
+              reasoningContent = cleaned.reasoning;
+
               if (textContent) {
                 agent.onEvent({ type: "text", content: textContent });
               }
-              reasoningContent = (result as any).reasoning || "";
               if (reasoningContent) {
                 agent.onEvent({ type: "reasoning", content: reasoningContent });
               }
@@ -508,8 +607,10 @@ export class LoopIterationProcessor {
               }),
             });
 
-            textContent = result.text || "";
-            reasoningContent = (result as any).reasoning || "";
+             const cleaned = cleanThinkingTags(result.text || "", (result as any).reasoning || "");
+            textContent = cleaned.cleanText;
+            reasoningContent = cleaned.reasoning;
+
             if (reasoningContent) {
               agent.onEvent({ type: "reasoning", content: reasoningContent });
             }

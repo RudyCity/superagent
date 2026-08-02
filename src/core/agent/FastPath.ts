@@ -3,6 +3,33 @@ import { contentToString } from "../conversation.js";
 import { HistoryCompactor } from "./HistoryCompactor.js";
 import type { Agent } from "../agent.js";
 
+function cleanThinkingTags(text: string, existingReasoning = ""): { cleanText: string; reasoning: string } {
+  let rawText = text || "";
+  let reasoning = existingReasoning || "";
+
+  const thinkRegex = /<(think|thought|reasoning|thinking)>([\s\S]*?)<\/\1>/gi;
+  let match;
+  while ((match = thinkRegex.exec(rawText)) !== null) {
+    const innerText = match[2].trim();
+    if (innerText) {
+      reasoning = (reasoning + "\n" + innerText).trim();
+    }
+  }
+  rawText = rawText.replace(thinkRegex, "").trim();
+
+  const unclosedRegex = /<(think|thought|reasoning|thinking)>([\s\S]*)$/i;
+  const unclosedMatch = unclosedRegex.exec(rawText);
+  if (unclosedMatch) {
+    const innerText = unclosedMatch[2].trim();
+    if (innerText) {
+      reasoning = (reasoning + "\n" + innerText).trim();
+    }
+    rawText = rawText.replace(unclosedRegex, "").trim();
+  }
+
+  return { cleanText: rawText, reasoning };
+}
+
 export class FastPath {
   /**
    * Lightweight response path for high-confidence conversational messages.
@@ -110,6 +137,11 @@ export class FastPath {
               abortSignal: signal,
             });
 
+            let inThinkTagState = false;
+            let currentThinkTagType = "";
+            let streamBuffer = "";
+            let reasoningContent = "";
+
             for await (const delta of result.fullStream) {
               if (signal?.aborted) {
                 const err = new Error("AbortError");
@@ -117,8 +149,74 @@ export class FastPath {
                 throw err;
               }
               if (delta.type === "text-delta") {
-                textContent += delta.textDelta;
-                agent.onEvent({ type: "text", content: delta.textDelta });
+                streamBuffer += delta.textDelta;
+                
+                while (streamBuffer.length > 0) {
+                  if (!inThinkTagState) {
+                    const openMatch = /^(<(think|thought|reasoning|thinking)>)/i.exec(streamBuffer);
+                    if (openMatch) {
+                      inThinkTagState = true;
+                      currentThinkTagType = openMatch[2];
+                      streamBuffer = streamBuffer.substring(openMatch[1].length);
+                      continue;
+                    }
+                    
+                    let isPrefix = false;
+                    const tags = ["<think>", "<thought>", "<reasoning>", "<thinking>"];
+                    for (const t of tags) {
+                      if (t.startsWith(streamBuffer)) {
+                        isPrefix = true;
+                        break;
+                      }
+                    }
+                    if (isPrefix && streamBuffer.length < "<reasoning>".length) {
+                      break;
+                    }
+                    
+                    const char = streamBuffer[0];
+                    textContent += char;
+                    agent.onEvent({ type: "text", content: char });
+                    streamBuffer = streamBuffer.substring(1);
+                  } else {
+                    const closeMatch = new RegExp(`^((?:<\\/${currentThinkTagType}>))`, "i").exec(streamBuffer);
+                    if (closeMatch) {
+                      inThinkTagState = false;
+                      currentThinkTagType = "";
+                      streamBuffer = streamBuffer.substring(closeMatch[1].length);
+                      continue;
+                    }
+                    
+                    let isPrefix = false;
+                    const closeTag = `</${currentThinkTagType}>`;
+                    if (closeTag.startsWith(streamBuffer)) {
+                      isPrefix = true;
+                    }
+                    if (isPrefix && streamBuffer.length < closeTag.length) {
+                      break;
+                    }
+                    
+                    const char = streamBuffer[0];
+                    reasoningContent += char;
+                    agent.onEvent({ type: "reasoning", content: char });
+                    streamBuffer = streamBuffer.substring(1);
+                  }
+                }
+              } else if ((delta.type as string) === "reasoning" || (delta.type as string) === "reasoning-delta") {
+                const reasoningText = (delta as any).textDelta || (delta as any).text || (delta as any).reasoning || (delta as any).reasoningDelta || (delta as any).delta || "";
+                if (reasoningText) {
+                  reasoningContent += reasoningText;
+                  agent.onEvent({ type: "reasoning", content: reasoningText });
+                }
+              }
+            }
+
+            if (streamBuffer.length > 0) {
+              if (inThinkTagState) {
+                reasoningContent += streamBuffer;
+                agent.onEvent({ type: "reasoning", content: streamBuffer });
+              } else {
+                textContent += streamBuffer;
+                agent.onEvent({ type: "text", content: streamBuffer });
               }
             }
 
@@ -154,9 +252,13 @@ export class FastPath {
               messages: coreMessages,
               abortSignal: signal,
             });
-            textContent = result.text || "";
+            const cleaned = cleanThinkingTags(result.text || "", (result as any).reasoning || "");
+            textContent = cleaned.cleanText;
             if (textContent) {
               agent.onEvent({ type: "text", content: textContent });
+            }
+            if (cleaned.reasoning) {
+              agent.onEvent({ type: "reasoning", content: cleaned.reasoning });
             }
 
             // Emit token usage (non-streaming path)
