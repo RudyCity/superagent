@@ -127,7 +127,7 @@ describe("Superagent Proposed Enhancements Tests", () => {
       agent.tier = "master";
 
       await agent.sendMessage("fix spelling in README");
-      expect(agent.planState).toBe("APPROVED");
+      expect(agent.simpleTaskApproved).toBe(true);
     });
 
     it("should check pre-approval for 'lanjut' and set simpleTaskApproved to true", async () => {

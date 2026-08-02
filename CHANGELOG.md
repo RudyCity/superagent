@@ -1,3 +1,9 @@
+## [1.2.691] - 2026-08-02
+
+### Fix: Task Continuation Classification & Fast-Path Bypass
+- **Bypass Classifier for Task Continuation**: Bypassed classification when a continuation keyword (e.g., 'lanjut', 'proceed') is input and the session history already contains tool calls, classifying the request as 'complex_task' to keep all tools available.
+- **Fast-Path History Guard**: Prevented conversational fast-path from triggering when the conversation has previous tool calls/results, ensuring the agent uses the full tool-using loop.
+
 ## [1.2.690] - 2026-08-02
 
 ### Fix: RMemory and Remote Chrome Bridge Loop Prevention
