@@ -309,7 +309,8 @@ export async function sendRemoteCommand(
   let client = getActiveClient();
   if (!client) {
     const startTime = Date.now();
-    while (!client && Date.now() - startTime < 6000) {
+    const maxWait = process.env.VITEST ? 500 : 6000;
+    while (!client && Date.now() - startTime < maxWait) {
       await new Promise((resolve) => setTimeout(resolve, 250));
       client = getActiveClient();
     }

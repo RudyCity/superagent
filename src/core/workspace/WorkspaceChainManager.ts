@@ -311,7 +311,15 @@ class WorkspaceChainManagerClass {
         normalized !== normalizedBase &&
         !normalized.startsWith(normalizedBase + "/")
       ) {
-        throw new Error(`Access denied: Path "${filePath}" escapes remote workspace boundary "${posixBase}"`);
+        // Check additionalAllowedPaths before throwing
+        const extraPaths = node.sshConfig?.additionalAllowedPaths ?? [];
+        const isUnderExtra = extraPaths.some(p => {
+          const ep = p.replace(/\/+$/, "");
+          return ep && (normalized === ep || normalized.startsWith(ep + "/"));
+        });
+        if (!isUnderExtra) {
+          throw new Error(`Access denied: Path "${filePath}" escapes remote workspace boundary "${posixBase}"`);
+        }
       }
       return normalized;
     } else {

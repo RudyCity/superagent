@@ -11,6 +11,10 @@ export class HistoryManager {
     await agent.conversation.loadFromFile(resolved);
     if (agent.conversation.loadedPlanState) {
       agent.planState = agent.conversation.loadedPlanState;
+      // Reset stale APPROVED state if plan file no longer exists on disk (deleted between sessions).
+      if (agent.planState === "APPROVED" && typeof (agent as any).hasRealPlanContent === "function" && !(agent as any).hasRealPlanContent()) {
+        agent.planState = "IDLE";
+      }
     }
   }
 

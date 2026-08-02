@@ -46,10 +46,16 @@ function tryResolveSshPath(raw: string, cwd: string): string | null {
   }, []);
   posix = "/" + parts.join("/");
 
-  // Boundary enforcement: reject paths that escape remoteCwd.
+  // Boundary enforcement: reject paths that escape remoteCwd or the extra allowed paths.
   const normalizedBase = "/" + remoteCwd.split("/").filter((p: string) => p && p !== ".").join("/");
-  if (normalizedBase !== "/" && posix !== normalizedBase && !posix.startsWith(normalizedBase + "/")) {
-    throw new Error('Path "' + raw + '" violates SSH workspace boundary. Operations must remain within "' + remoteCwd + '". To access external files, ask for user permission via ask_question or copy the file into the workspace directory.');
+  const isUnderBase = normalizedBase === "/" || posix === normalizedBase || posix.startsWith(normalizedBase + "/");
+  const extraPaths = sshCfg?.additionalAllowedPaths ?? [];
+  const isUnderExtra = extraPaths.some((ep: string) => {
+    const cleanEp = ep.replace(/\/+$/, "");
+    return cleanEp && (posix === cleanEp || posix.startsWith(cleanEp + "/"));
+  });
+  if (!isUnderBase && !isUnderExtra) {
+    throw new Error('Path "' + raw + '" violates SSH workspace boundary. Operations must remain within "' + remoteCwd + '". To access external files, use `/ssh expand <path>` to whitelist the directory, or copy the file into the workspace directory.');
   }
   return posix;
 }

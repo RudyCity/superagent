@@ -81,6 +81,8 @@ export class Agent {
   public subagentType?: string;
   public workingDirectory: string;
   public planState: "IDLE" | "PLANNING_PENDING" | "APPROVED" = "IDLE";
+  /** True when approvePlan() was explicitly called this session; prevents stale-state resets. */
+  public _planApprovedExplicitly: boolean = false;
   public isSimpleTask: boolean = false;
   public simpleTaskApproved: boolean = false;
   /** Multi-category classification result from the request classifier */
@@ -135,6 +137,7 @@ export class Agent {
     // Always set APPROVED on explicit call. ContextBuilder.buildContext already
     // resets stale APPROVED states when no plan file exists on disk.
     this.planState = "APPROVED";
+    this._planApprovedExplicitly = true;
   }
 
   public dispose(): void {

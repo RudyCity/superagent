@@ -330,7 +330,16 @@ export class SshProxyService {
       normalized !== normalizedBase &&
       !normalized.startsWith(normalizedBase + "/")
     ) {
-      throw new Error(`Access denied: Path "${targetPath}" escapes remote workspace boundary "${posixBase}"`);
+      // Check additionalAllowedPaths before throwing
+      const cfg = workspaceMode.isSsh() ? workspaceMode.getConfig() : this.config;
+      const extraPaths = cfg?.additionalAllowedPaths ?? [];
+      const isUnderExtra = extraPaths.some(p => {
+        const ep = p.replace(/\/+$/, "");
+        return ep && (normalized === ep || normalized.startsWith(ep + "/"));
+      });
+      if (!isUnderExtra) {
+        throw new Error(`Access denied: Path "${targetPath}" escapes remote workspace boundary "${posixBase}"`);
+      }
     }
 
     return normalized;

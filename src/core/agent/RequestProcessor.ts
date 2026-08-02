@@ -256,24 +256,20 @@ export class RequestProcessor {
     (agent as any).tasksJustArchived = false;
     (agent as any).archivedTaskCount = 0;
     if (agent.planState === "APPROVED") {
-      if (typeof (agent as any).hasRealPlanContent === "function" && !(agent as any).hasRealPlanContent()) {
-        agent.planState = "IDLE";
-      } else {
-        try {
-          const taskPath = agent.getTaskFilePath();
-          const allDone = await allTasksCompleted(taskPath);
-          if (allDone) {
-            const archived = await archiveCompletedTasks(taskPath);
-            if (archived.length > 0) {
-              (agent as any).tasksJustArchived = true;
-              (agent as any).archivedTaskCount = archived.length;
-              agent.writeToLogFile("INFO", `Auto-archived ${archived.length} completed tasks to history. Ready for new task creation.`);
-            }
-            agent.planState = "IDLE";
+      try {
+        const taskPath = agent.getTaskFilePath();
+        const allDone = await allTasksCompleted(taskPath);
+        if (allDone) {
+          const archived = await archiveCompletedTasks(taskPath);
+          if (archived.length > 0) {
+            (agent as any).tasksJustArchived = true;
+            (agent as any).archivedTaskCount = archived.length;
+            agent.writeToLogFile("INFO", `Auto-archived ${archived.length} completed tasks to history. Ready for new task creation.`);
           }
-        } catch (err: any) {
-          agent.writeToLogFile("WARN", `Failed to auto-archive completed tasks: ${err.message}`);
+          agent.planState = "IDLE";
         }
+      } catch (err: any) {
+        agent.writeToLogFile("WARN", `Failed to auto-archive completed tasks: ${err.message}`);
       }
     }
 

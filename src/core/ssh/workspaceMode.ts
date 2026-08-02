@@ -15,6 +15,8 @@ export interface SshWorkspaceConfig {
   proxyJump?: string;
   /** Bandwidth throttle limit in bytes/sec (0 = unlimited) */
   bandwidthLimit?: number;
+  /** Extra absolute paths allowed in addition to remoteCwd (e.g. ["/var/www/html"]) */
+  additionalAllowedPaths?: string[];
 }
 
 import { sshLogger } from "./sshLogger.js";
@@ -50,6 +52,32 @@ class WorkspaceModeManager {
 
   public isSsh(): boolean {
     return this.mode === "ssh-proxy";
+  }
+
+  /**
+   * Add an extra absolute path to the SSH allowed-paths list at runtime.
+   * Paths added here bypass the remoteCwd boundary check in all tool layers.
+   * Call via `/ssh expand <path>` command or programmatically.
+   */
+  public addAllowedPath(p: string): void {
+    if (!this.config) return;
+    const normalizedPath = p.replace(/\/+$/, "").replace(/\\/g, "/") || "/";
+    if (!normalizedPath.startsWith("/")) {
+      sshLogger.warn("workspace.mode", "addAllowedPath: path must be absolute", { path: p });
+      return;
+    }
+    if (!this.config.additionalAllowedPaths) {
+      this.config.additionalAllowedPaths = [];
+    }
+    if (!this.config.additionalAllowedPaths.includes(normalizedPath)) {
+      this.config.additionalAllowedPaths.push(normalizedPath);
+      sshLogger.info("workspace.mode", "added allowed path", { path: normalizedPath });
+    }
+  }
+
+  /** Return the current list of extra allowed paths (read-only copy). */
+  public getAllowedPaths(): string[] {
+    return this.config?.additionalAllowedPaths ? [...this.config.additionalAllowedPaths] : [];
   }
 
   public parseSshTarget(target: string): SshWorkspaceConfig | null {
@@ -103,6 +131,8 @@ class WorkspaceModeManager {
       let proxyJump: string | undefined;
       let bandwidthLimit: number | undefined;
 
+      let additionalAllowedPaths: string[] | undefined;
+
       if (remotePath.includes("?")) {
         const [basePath, queryString] = remotePath.split("?");
         remotePath = basePath;
@@ -126,6 +156,16 @@ class WorkspaceModeManager {
         if (params.has("bwlimit")) {
           const bw = parseInt(params.get("bwlimit")!, 10);
           if (!isNaN(bw) && bw >= 0) bandwidthLimit = bw;
+        }
+        // Parse `?allow=` — comma-separated extra allowed paths
+        // e.g. ubuntu@host:/home/ubuntu?allow=/var/www/html,/etc/nginx
+        if (params.has("allow")) {
+          const rawAllow = params.get("allow") || "";
+          const parsed = rawAllow
+            .split(",")
+            .map(p => p.trim().replace(/\/+$/, ""))
+            .filter(p => p.startsWith("/"));
+          if (parsed.length > 0) additionalAllowedPaths = parsed;
         }
       }
 
@@ -158,6 +198,7 @@ class WorkspaceModeManager {
         agentForward,
         proxyJump,
         bandwidthLimit,
+        ...(additionalAllowedPaths ? { additionalAllowedPaths } : {}),
       };
     } catch {
       return null;

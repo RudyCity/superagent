@@ -9,6 +9,7 @@ import "./mcpCommand.js";
 import "./workspaceCommand.js";
 import "./macroCommand.js";
 import "./mpCommand.js";
+import "./sshCommand.js";
 
 
 export { registry } from "./registry.js";

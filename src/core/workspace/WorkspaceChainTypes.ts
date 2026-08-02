@@ -32,6 +32,8 @@ export interface WorkspaceNodeSshConfig {
   agentForward?: boolean;
   proxyJump?: string;
   bandwidthLimit?: number;
+  /** Extra absolute paths allowed in addition to remoteCwd */
+  additionalAllowedPaths?: string[];
 }
 
 /** A single workspace node in a chain */

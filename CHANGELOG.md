@@ -1,3 +1,13 @@
+## [1.2.697] - 2026-08-02
+
+### Added: SSH Workspace Expansion
+
+- **Multi-path SSH workspace boundary**: Added `additionalAllowedPaths?: string[]` to `SshWorkspaceConfig` and `WorkspaceNodeSshConfig`, allowing tools to access absolute paths beyond the initial `remoteCwd` (e.g. `/var/www/html`, `/etc/nginx`).
+- **Three-layer boundary update**: All SSH boundary checks updated consistently across `sshProxy.normalizePosixPath()`, `pathHelpers.tryResolveSshPath()`, and `WorkspaceChainManager.normalizeAndVerifyPath()` to validate against both `remoteCwd` and extra allowed paths.
+- **`/ssh expand <path>` command**: New `/ssh` slash command with subcommands `expand`, `allowed`, and `status` — lets users whitelist additional server paths at runtime without reconnecting.
+- **`?allow=` URL parameter**: SSH target URLs now accept `?allow=/path1,/path2` to declare extra allowed paths at connection time (e.g. `ubuntu@host:/home/ubuntu?allow=/var/www/html`).
+- **Error hint updated**: Boundary violation error messages now suggest `/ssh expand <path>` as the resolution step.
+
 ## [1.2.696] - 2026-08-02
 
 ### Added: Article Writing Skill & System Improvements
