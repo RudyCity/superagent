@@ -288,7 +288,7 @@ export const crossWorkspaceExecTool: Tool = {
           "Operation: 'exec' (run command on node), 'read' (read file from node), 'write' (write file to node), " +
           "'exec-all' (run command on all nodes), 'exec-deps' (run on dependency nodes), " +
           "'connect' (connect SSH node), 'disconnect' (disconnect SSH node), 'switch-node' (change active node), " +
-          "'health' (monitoring dashboard), 'diff' (compare file between nodes), 'sync' (copy file from source node to target node)",
+          "'health' (monitoring dashboard), 'diff' (compare file between nodes), 'sync' (copy file or directory from source node to target node)",
       },
       nodeId: {
         type: "string",
@@ -304,7 +304,7 @@ export const crossWorkspaceExecTool: Tool = {
       },
       targetPath: {
         type: "string",
-        description: "Destination file path on target node (optional for sync, defaults to filePath)",
+        description: "Destination file or directory path on target node (optional for sync, defaults to filePath)",
       },
       command: {
         type: "string",
@@ -312,7 +312,7 @@ export const crossWorkspaceExecTool: Tool = {
       },
       filePath: {
         type: "string",
-        description: "File path (for read, write)",
+        description: "File or directory path (for read, write, sync)",
       },
       content: {
         type: "string",
@@ -325,6 +325,19 @@ export const crossWorkspaceExecTool: Tool = {
       timeoutMs: {
         type: "number",
         description: "Timeout in ms (optional, default 600000)",
+      },
+      dryRun: {
+        type: "boolean",
+        description: "Simulation mode for sync: preview file transfer list without writing to disk",
+      },
+      checksumCheck: {
+        type: "boolean",
+        description: "Enable SHA-256 checksum delta calculation to skip unchanged files during sync (default: true)",
+      },
+      direction: {
+        type: "string",
+        enum: ["push", "pull"],
+        description: "Sync direction: 'push' (local/source -> remote/target, default) or 'pull' (remote/target -> local/source)",
       },
     },
     required: ["operation"],
@@ -369,7 +382,14 @@ export const crossWorkspaceExecTool: Tool = {
           sourceNodeId,
           targetNodeId,
           filePath,
-          args.targetPath as string | undefined
+          args.targetPath as string | undefined,
+          {
+            ignorePatterns: args.ignorePatterns as string[] | undefined,
+            maxConcurrency: args.maxConcurrency as number | undefined,
+            dryRun: args.dryRun as boolean | undefined,
+            checksumCheck: args.checksumCheck as boolean | undefined,
+            direction: args.direction as "push" | "pull" | undefined,
+          }
         );
       }
 

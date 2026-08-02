@@ -418,14 +418,14 @@ class WorkspaceChainManagerClass {
     throw new Error(`Unknown node type: ${node.type}`);
   }
 
-  /** Read a file from a specific node */
-  public async readFileFromNode(nodeId: string, filePath: string): Promise<string> {
+  /** Read a file from a specific node as Buffer (binary safe) */
+  public async readFileBufferFromNode(nodeId: string, filePath: string): Promise<Buffer> {
     const node = this.getNode(nodeId);
     if (!node) throw new Error(`Node not found: ${nodeId}`);
 
     if (node.type === "local") {
       const verifiedPath = this.normalizeAndVerifyPath(node, filePath);
-      return fs.readFileSync(verifiedPath, "utf-8");
+      return fs.readFileSync(verifiedPath);
     }
 
     let conn = this.getSshConnection(nodeId);
@@ -437,22 +437,28 @@ class WorkspaceChainManagerClass {
 
     const remotePath = this.normalizeAndVerifyPath(node, filePath);
     const buffer = await conn.sftp.get(remotePath);
-    if (Buffer.isBuffer(buffer)) {
-      return buffer.toString("utf-8");
-    }
-    return String(buffer);
+    if (Buffer.isBuffer(buffer)) return buffer;
+    return Buffer.from(buffer as any);
   }
 
-  /** Write a file to a specific node */
-  public async writeFileToNode(nodeId: string, filePath: string, content: string): Promise<void> {
+  /** Read a file from a specific node */
+  public async readFileFromNode(nodeId: string, filePath: string): Promise<string> {
+    const buf = await this.readFileBufferFromNode(nodeId, filePath);
+    return buf.toString("utf-8");
+  }
+
+  /** Write a file to a specific node (supports string or Buffer for binary safety) */
+  public async writeFileToNode(nodeId: string, filePath: string, content: string | Buffer): Promise<void> {
     const node = this.getNode(nodeId);
     if (!node) throw new Error(`Node not found: ${nodeId}`);
+
+    const buffer = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf-8");
 
     if (node.type === "local") {
       const verifiedPath = this.normalizeAndVerifyPath(node, filePath);
       const dir = path.dirname(verifiedPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(verifiedPath, content, "utf-8");
+      fs.writeFileSync(verifiedPath, buffer);
       return;
     }
 
@@ -466,7 +472,7 @@ class WorkspaceChainManagerClass {
     const remotePath = this.normalizeAndVerifyPath(node, filePath);
     const dir = path.posix.dirname(remotePath);
     try { await conn.sftp.mkdir(dir, true); } catch {}
-    await conn.sftp.put(Buffer.from(content, "utf-8"), remotePath);
+    await conn.sftp.put(buffer, remotePath);
   }
 
   /** Execute a command across all nodes in the chain */
@@ -734,24 +740,188 @@ class WorkspaceChainManagerClass {
     ].join("\n");
   }
 
-  /** Sync a file from source node to target node */
+  /** Helper to load dynamic ignore patterns from .gitignore and .superagentignore */
+  private loadIgnorePatterns(dirPath: string, customIgnores?: string[]): string[] {
+    const defaultIgnores = ["node_modules", ".git", "dist", ".ds_store", "thumbs.db", "coverage"];
+    const patterns = new Set<string>([...defaultIgnores, ...(customIgnores || [])]);
+
+    const ignoreFiles = [".gitignore", ".superagentignore"];
+    for (const ignoreFile of ignoreFiles) {
+      const fullPath = path.join(dirPath, ignoreFile);
+      if (fs.existsSync(fullPath)) {
+        try {
+          const lines = fs.readFileSync(fullPath, "utf-8").split("\n");
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith("#")) {
+              patterns.add(trimmed.replace(/^\/+/, "").replace(/\/+$/, ""));
+            }
+          }
+        } catch {}
+      }
+    }
+    return Array.from(patterns);
+  }
+
+  /** Calculate SHA-256 checksum of Buffer */
+  private getBufferChecksum(buffer: Buffer): string {
+    return crypto.createHash("sha256").update(buffer).digest("hex");
+  }
+
+  /** Sync a file or directory from source node to target node */
   public async syncNodes(
     sourceNodeId: string,
     targetNodeId: string,
     sourcePath: string,
-    targetPath?: string
+    targetPath?: string,
+    options?: {
+      ignorePatterns?: string[];
+      maxConcurrency?: number;
+      dryRun?: boolean;
+      checksumCheck?: boolean;
+      direction?: "push" | "pull";
+    }
   ): Promise<string> {
-    const destPath = targetPath || sourcePath;
-    const sourceNode = this.getNode(sourceNodeId);
-    const targetNode = this.getNode(targetNodeId);
-    if (!sourceNode) throw new Error(`Source node not found: ${sourceNodeId}`);
-    if (!targetNode) throw new Error(`Target node not found: ${targetNodeId}`);
+    let effectiveSourceNodeId = sourceNodeId;
+    let effectiveTargetNodeId = targetNodeId;
+    let effectiveSourcePath = sourcePath;
+    let effectiveTargetPath = targetPath || sourcePath;
 
-    sshLogger.info("chain.sync", `syncing ${sourcePath} from ${sourceNodeId} to ${targetNodeId}:${destPath}`);
-    const content = await this.readFileFromNode(sourceNodeId, sourcePath);
-    await this.writeFileToNode(targetNodeId, destPath, content);
+    // Support bidirectional sync (pull mode reverses source and target)
+    if (options?.direction === "pull") {
+      effectiveSourceNodeId = targetNodeId;
+      effectiveTargetNodeId = sourceNodeId;
+      effectiveSourcePath = targetPath || sourcePath;
+      effectiveTargetPath = sourcePath;
+    }
 
-    return `✅ Successfully synced file "${sourcePath}" (${content.length} bytes)\nFrom: ${sourceNode.label} (${sourceNodeId})\nTo:   ${targetNode.label} (${targetNodeId}:${destPath})`;
+    const sourceNode = this.getNode(effectiveSourceNodeId);
+    const targetNode = this.getNode(effectiveTargetNodeId);
+    if (!sourceNode) throw new Error(`Source node not found: ${effectiveSourceNodeId}`);
+    if (!targetNode) throw new Error(`Target node not found: ${effectiveTargetNodeId}`);
+
+    const isDryRun = !!options?.dryRun;
+    const useChecksum = !!options?.checksumCheck;
+    const maxConcurrency = options?.maxConcurrency || 5;
+
+    sshLogger.info(
+      "chain.sync",
+      `syncing ${effectiveSourcePath} from ${effectiveSourceNodeId} to ${effectiveTargetNodeId}:${effectiveTargetPath} (dryRun=${isDryRun})`
+    );
+
+    // Check if source path is a local directory
+    if (sourceNode.type === "local") {
+      const verifiedSource = this.normalizeAndVerifyPath(sourceNode, effectiveSourcePath);
+      if (fs.existsSync(verifiedSource) && fs.statSync(verifiedSource).isDirectory()) {
+        const ignores = this.loadIgnorePatterns(verifiedSource, options?.ignorePatterns);
+
+        const shouldIgnore = (relPath: string) => {
+          const lower = relPath.toLowerCase();
+          return ignores.some((pat) => lower === pat.toLowerCase() || lower.startsWith(`${pat.toLowerCase()}/`));
+        };
+
+        const fileTasks: Array<{ localPath: string; destPath: string; relPath: string }> = [];
+
+        const scanRecursive = (currentLocalDir: string, currentRelativePath: string) => {
+          const entries = fs.readdirSync(currentLocalDir, { withFileTypes: true });
+          for (const entry of entries) {
+            const entryRelPath = currentRelativePath ? `${currentRelativePath}/${entry.name}` : entry.name;
+            if (shouldIgnore(entryRelPath) || shouldIgnore(entry.name)) continue;
+
+            const entryLocalPath = path.join(currentLocalDir, entry.name);
+            const entryDestPath = effectiveTargetPath
+              ? `${effectiveTargetPath.replace(/\\/g, "/").replace(/\/$/, "")}/${entryRelPath}`
+              : entryRelPath;
+
+            if (entry.isDirectory()) {
+              scanRecursive(entryLocalPath, entryRelPath);
+            } else if (entry.isFile()) {
+              fileTasks.push({ localPath: entryLocalPath, destPath: entryDestPath, relPath: entryRelPath });
+            }
+          }
+        };
+
+        scanRecursive(verifiedSource, "");
+
+        let copiedFiles = 0;
+        let skippedFiles = 0;
+        let totalBytes = 0;
+        const transferredList: string[] = [];
+
+        // Process file transfers in parallel batches (maxConcurrency)
+        for (let i = 0; i < fileTasks.length; i += maxConcurrency) {
+          const chunk = fileTasks.slice(i, i + maxConcurrency);
+          await Promise.all(
+            chunk.map(async (task) => {
+              const srcBuffer = fs.readFileSync(task.localPath);
+              const srcHash = useChecksum ? this.getBufferChecksum(srcBuffer) : "";
+
+              let skip = false;
+              if (useChecksum && !isDryRun) {
+                try {
+                  const destBuffer = await this.readFileBufferFromNode(effectiveTargetNodeId, task.destPath);
+                  if (this.getBufferChecksum(destBuffer) === srcHash) {
+                    skip = true;
+                  }
+                } catch {}
+              }
+
+              if (skip) {
+                skippedFiles++;
+                return;
+              }
+
+              if (!isDryRun) {
+                await this.writeFileToNode(effectiveTargetNodeId, task.destPath, srcBuffer);
+              }
+              copiedFiles++;
+              totalBytes += srcBuffer.length;
+              transferredList.push(task.relPath);
+            })
+          );
+        }
+
+        const modeLabel = isDryRun ? "[DRY RUN PREVIEW] " : "";
+        const dirLabel = options?.direction === "pull" ? "PULLED (Remote -> Local)" : "PUSHED (Local -> Remote)";
+
+        return (
+          `✅ ${modeLabel}Successfully synced directory (${dirLabel})\n` +
+          `Source Node: ${sourceNode.label} (${effectiveSourceNodeId})\n` +
+          `Target Node: ${targetNode.label} (${effectiveTargetNodeId})\n` +
+          `Directory:   ${effectiveSourcePath} -> ${effectiveTargetPath}\n` +
+          `Files Transferred: ${copiedFiles}\n` +
+          `Files Skipped (Unchanged Delta): ${skippedFiles}\n` +
+          `Total Size: ${totalBytes} bytes\n` +
+          `Ignored Rules Count: ${ignores.length}`
+        );
+      }
+    }
+
+    const buf = await this.readFileBufferFromNode(effectiveSourceNodeId, effectiveSourcePath);
+
+    let skipped = false;
+    if (useChecksum && !isDryRun) {
+      try {
+        const destBuf = await this.readFileBufferFromNode(effectiveTargetNodeId, effectiveTargetPath);
+        if (this.getBufferChecksum(buf) === this.getBufferChecksum(destBuf)) {
+          skipped = true;
+        }
+      } catch {}
+    }
+
+    if (!skipped && !isDryRun) {
+      await this.writeFileToNode(effectiveTargetNodeId, effectiveTargetPath, buf);
+    }
+
+    const modeLabel = isDryRun ? "[DRY RUN PREVIEW] " : "";
+    const statusMsg = skipped ? "SKIPPED (Unchanged)" : "TRANSFERRED";
+
+    return (
+      `✅ ${modeLabel}Sync File (${statusMsg})\n` +
+      `Source Node: ${sourceNode.label} (${effectiveSourceNodeId}:${effectiveSourcePath})\n` +
+      `Target Node: ${targetNode.label} (${effectiveTargetNodeId}:${effectiveTargetPath})\n` +
+      `Size: ${buf.length} bytes`
+    );
   }
 }
 

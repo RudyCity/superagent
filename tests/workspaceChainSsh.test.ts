@@ -161,4 +161,82 @@ describe("WorkspaceChainManager SSH and Boundaries", () => {
       workspaceChainManager.execOnNode("local-node", "ls", "../../etc")
     ).rejects.toThrow(/escapes local workspace boundary/);
   });
+
+  it("should sync file as Buffer from local to SSH node", async () => {
+    const dummyBuffer = Buffer.from([0x00, 0x01, 0x02, 0xff]);
+    vi.spyOn(workspaceChainManager as any, "readFileBufferFromNode").mockResolvedValue(dummyBuffer);
+    const writeSpy = vi.spyOn(workspaceChainManager as any, "writeFileToNode").mockResolvedValue(undefined as any);
+
+    const result = await workspaceChainManager.syncNodes("local-node", "ssh-node", "config.bin", "remote-config.bin");
+
+    expect(writeSpy).toHaveBeenCalledWith("ssh-node", "remote-config.bin", dummyBuffer);
+    expect(result).toContain("Sync File");
+  });
+
+  it("should sync directory recursively and filter ignored files/folders", async () => {
+    const tempDir = path.join("/tmp/local-workspace", "temp_test_sync_dir");
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    fs.writeFileSync(path.join(tempDir, "file1.txt"), "hello world");
+    
+    // Create ignored folder node_modules
+    const nodeModulesDir = path.join(tempDir, "node_modules");
+    if (!fs.existsSync(nodeModulesDir)) fs.mkdirSync(nodeModulesDir, { recursive: true });
+    fs.writeFileSync(path.join(nodeModulesDir, "ignored.js"), "console.log('ignore me')");
+
+    const writeSpy = vi.spyOn(workspaceChainManager as any, "writeFileToNode").mockResolvedValue(undefined as any);
+
+    const result = await workspaceChainManager.syncNodes("local-node", "ssh-node", "temp_test_sync_dir", "remote_dest_dir");
+
+    expect(writeSpy).toHaveBeenCalledWith("ssh-node", "remote_dest_dir/file1.txt", expect.any(Buffer));
+    expect(writeSpy).not.toHaveBeenCalledWith("ssh-node", expect.stringContaining("node_modules"), expect.any(Buffer));
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("should support dryRun simulation mode without writing files", async () => {
+    const tempDir = path.join("/tmp/local-workspace", "dry_run_test_dir");
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    fs.writeFileSync(path.join(tempDir, "preview.txt"), "sample dry run content");
+
+    const writeSpy = vi.spyOn(workspaceChainManager as any, "writeFileToNode").mockResolvedValue(undefined as any);
+
+    const result = await workspaceChainManager.syncNodes("local-node", "ssh-node", "dry_run_test_dir", "remote_dry_dir", { dryRun: true });
+
+    expect(writeSpy).not.toHaveBeenCalled();
+    expect(result).toContain("DRY RUN PREVIEW");
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("should dynamically parse .gitignore and skip ignored entries", async () => {
+    const tempDir = path.join("/tmp/local-workspace", "git_ignore_test_dir");
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    fs.writeFileSync(path.join(tempDir, ".gitignore"), "custom_ignored_dir/\n*.log\n");
+    fs.writeFileSync(path.join(tempDir, "app.log"), "log entries");
+    fs.writeFileSync(path.join(tempDir, "main.ts"), "console.log('valid')");
+
+    const customIgnoredDir = path.join(tempDir, "custom_ignored_dir");
+    if (!fs.existsSync(customIgnoredDir)) fs.mkdirSync(customIgnoredDir, { recursive: true });
+    fs.writeFileSync(path.join(customIgnoredDir, "temp.txt"), "skip me");
+
+    const writeSpy = vi.spyOn(workspaceChainManager as any, "writeFileToNode").mockResolvedValue(undefined as any);
+
+    const result = await workspaceChainManager.syncNodes("local-node", "ssh-node", "git_ignore_test_dir", "remote_dest_dir");
+
+    expect(writeSpy).toHaveBeenCalledWith("ssh-node", "remote_dest_dir/main.ts", expect.any(Buffer));
+    expect(writeSpy).not.toHaveBeenCalledWith("ssh-node", expect.stringContaining("custom_ignored_dir"), expect.any(Buffer));
+    expect(result).toContain("Successfully synced directory");
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("should support bidirectional pull sync from SSH to Local", async () => {
+    const remoteBuf = Buffer.from("pulled remote content");
+    vi.spyOn(workspaceChainManager as any, "readFileBufferFromNode").mockResolvedValue(remoteBuf);
+    const writeSpy = vi.spyOn(workspaceChainManager as any, "writeFileToNode").mockResolvedValue(undefined as any);
+
+    const result = await workspaceChainManager.syncNodes("local-node", "ssh-node", "local_file.txt", "remote_file.txt", { direction: "pull" });
+
+    expect(writeSpy).toHaveBeenCalledWith("local-node", "local_file.txt", remoteBuf);
+    expect(result).toContain("Sync File");
+  });
 });

@@ -1,3 +1,9 @@
+"## [1.2.686] - 2026-08-02
+
+### Feature: Workspace Chain Buffer Read & Sync Operations
+- **Binary-Safe File Syncing**: Updated `WorkspaceChainManager` to read files as binary buffers (`readFileBufferFromNode`), enabling robust transfer of binary and text files across workspace chain nodes.
+- **Buffer Support in Tools**: Updated `workspaceChainTools.ts` to consume buffer-backed node reads for accurate cross-workspace node file operations.
+
 ## [1.2.685] - 2026-08-02
 
 ### Fix: Workspace Path Display Indicator & Chain Lookup Scope
