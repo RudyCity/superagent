@@ -1,4 +1,9 @@
-"## [1.2.681] - 2026-08-02
+"## [1.2.682] - 2026-08-02
+
+### Feature: ONNX Local Translation Model Preload on Startup
+- **Startup Warmup & Download**: Triggered lightweight ONNX translation transformer (`Xenova/opus-mt-id-en` INT8) preloading in background upon application launch (`cliMain.tsx` and `server.ts`).
+
+## [1.2.681] - 2026-08-02
 
 ### Feature: Pre-Processing Pipeline — ONNX Local Translation, Secret Alias Vault & Noise Trimming
 - **ONNX Local Translation Pipeline**: Integrated lightweight (< 100MB RAM) local transformer model (`Xenova/opus-mt-id-en` INT8) with async fallback for high-accuracy Indonesian-to-English translation (`analyzePromptIntentAsync`).

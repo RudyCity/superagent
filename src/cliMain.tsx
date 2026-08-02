@@ -10,6 +10,7 @@ import { isDirectoryTrusted, addTrustedDirectory, ensureDirectoryTrusted } from 
 import { backgroundTasks, isTaskInWorkspace, subagentInstances, superagentInstances, masterAgentRef } from "./core/tools/state.js";
 import { killProcessTree } from "./core/tools/shellTools.js";
 import { closeMcpServers } from "./core/mcp/McpManager.js";
+import { initONNXTranslationPipeline } from "./core/promptClarification.js";
 
 function cleanupBackgroundTasks() {
   try {
@@ -83,6 +84,9 @@ function abortAllAgents() {
 let sigintCount = 0;
 
 export async function runCli() {
+  // Preload lightweight local ONNX translation model (<100MB RAM) in background on startup
+  initONNXTranslationPipeline().catch(() => {});
+
   // Check for -w / --workspace flag
   const workspaceIndex = process.argv.findIndex(arg => arg === "--workspace" || arg === "-w");
   let workspaceVal: string | undefined = undefined;
