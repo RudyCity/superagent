@@ -109,6 +109,7 @@ function stopPingHeartbeat() {
 
 // Maintain a registry of active WebSocketServer instances per port to prevent EADDRINUSE cycles
 const activeServers = new Map<number, WebSocketServer>();
+const lastFailureTime = new Map<number, number>();
 
 /**
  * Initializes a serverless WebSocket server on port 9223 for Superagent CLI remote control.
@@ -122,6 +123,13 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
       setBrowserControlHandler(sendRemoteCommand);
     }
     return Promise.resolve(true);
+  }
+
+  // If we recently failed to start the server (within the last 10 seconds),
+  // don't try again immediately to avoid EADDRINUSE spam.
+  const lastFail = lastFailureTime.get(port) || 0;
+  if (process.env.NODE_ENV !== "test" && Date.now() - lastFail < 10000) {
+    return Promise.resolve(false);
   }
 
   if (wss) {
@@ -225,6 +233,7 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
 
       server.on("error", (err: any) => {
         activeServers.delete(port);
+        lastFailureTime.set(port, Date.now());
         if (wss === server) {
           wss = null;
         }
@@ -234,8 +243,9 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
         logBridgeEvent("Server Socket Error", err?.message || String(err));
         resolve(false);
       });
-    } catch {
+    } catch (err: any) {
       activeServers.delete(port);
+      lastFailureTime.set(port, Date.now());
       if (!browserControlHandler) {
         setBrowserControlHandler(sendRemoteCommand);
       }

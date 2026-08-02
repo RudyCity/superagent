@@ -2,7 +2,7 @@ import { generateText } from "ai";
 import { getContextWindowLimit, getSettings, getConfig } from "../config.js";
 import { rateLimiter, concurrencyLimiter } from "../rateLimiter.js";
 import { contentToString, type Message } from "../conversation.js";
-import { getRMemoryClient, getRMemorySessionKey } from "../rmemoryUtil.js";
+import { getRMemoryClient, getRMemorySessionKey, isRmemoryActive } from "../rmemoryUtil.js";
 import type { Agent } from "../agent.js";
 
 export class HistoryCompactor {
@@ -219,8 +219,7 @@ ${formatted}`;
     if (hasMemoryContext) return;
 
     // Fetch the memories
-    const settings = getSettings();
-    if (!settings.enableRmemory) return;
+    if (!(await isRmemoryActive())) return;
 
     const client = getRMemoryClient(2000); // 2s timeout for fast startup check
 

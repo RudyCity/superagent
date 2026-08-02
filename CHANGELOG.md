@@ -1,3 +1,10 @@
+## [1.2.690] - 2026-08-02
+
+### Fix: RMemory and Remote Chrome Bridge Loop Prevention
+- **RMemory Initialization Failure Cache**: Cached initialization failures in `getRMemory` to disable further loading attempts and prevent log warnings from printing on every step when `onnxruntime-node` fails to load.
+- **RMemory Active Verification**: Switched `HistoryManager`, `HistoryCompactor`, `RMemoryStrategy`, and `memoryCommand` to check `isRmemoryActive` / `isRmemoryActiveSync` to bypass RMemory actions when it is failed or disabled.
+- **Remote Chrome Bridge Cooldown**: Added a 10-second connection failure cooldown for WebSocket server startup in `remoteChromeBridge.ts` to prevent tight `EADDRINUSE` port binding retry loops and log spam when port 9223 is occupied (bypassed in test environment).
+
 ## [1.2.689] - 2026-08-02
 
 ### Fix: Default Iteration Limits (500 Normal / 1000 Goal)

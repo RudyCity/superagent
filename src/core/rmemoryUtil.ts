@@ -284,86 +284,104 @@ export function checkAndPerformDbMigration(targetDir: string, currentModelName: 
 let rMemoryInstance: any = null;
 let cachedRMemoryModelName: string = "";
 let cachedRMemoryDimensions: number = 0;
+let rMemoryInitFailed = false;
+let rMemoryInitError: any = null;
+let hasLoggedInitError = false;
 
 async function getRMemory(): Promise<any> {
-  const { RMemory, OpenAIEmbeddingProvider } = await import("r-memory");
-  const settings = getSettings();
-  
-  const localModelName = settings.rmemoryEmbeddingModel || DEFAULT_LOCAL_EMBEDDING_MODEL;
-  let provider: any;
-  if (settings.rmemoryEmbeddingProvider === "openai") {
-    const activeProvider = getConfiguredProviders().find(p => p.isActive);
-    const isOpenAICompatible = activeProvider && (
-      activeProvider.type === "openai" ||
-      activeProvider.type === "openrouter" ||
-      activeProvider.type === "custom" ||
-      activeProvider.type === "ollama" ||
-      activeProvider.type === "lmstudio"
-    );
-    
-    // Determine an API key only when a real one exists — never fall back to "".
-    let apiKey = "";
-    if (isOpenAICompatible && activeProvider?.apiKey && activeProvider.apiKey.trim() !== "") {
-      apiKey = activeProvider.apiKey.trim();
-    } else if (isOpenAICompatible) {
-      throw new Error(
-        `Embedding API key missing for active provider '${activeProvider?.name || "unknown"}' (type: ${activeProvider?.type}). Configure an OpenAI-compatible provider in /login, or switch rmemoryEmbeddingProvider away from "openai".`
-      );
-    } else {
-      throw new Error(
-        `RMemory embedding provider is set to "openai" but active provider type '${activeProvider?.type || "none"}' is not OpenAI-compatible. Switch rmemoryEmbeddingProvider to a local model or configure an OpenAI-compatible active provider.`
-      );
-    }
-    const baseURL = isOpenAICompatible ? activeProvider.baseUrl : undefined;
-
-    provider = new OpenAIEmbeddingProvider({
-      apiKey,
-      baseURL,
-      model: settings.rmemoryEmbeddingModel || "text-embedding-3-small",
-      dimensions: settings.rmemoryEmbeddingDimensions || 1536,
-    });
-  } else {
-    provider = new OptimizedLocalTextEmbeddingProvider({
-      modelName: localModelName,
-      dtype: "q8",
-      device: "cpu",
-    });
+  if (rMemoryInitFailed) {
+    throw rMemoryInitError || new Error("RMemory initialization previously failed.");
   }
-  
-  const currentModelName = settings.rmemoryEmbeddingProvider === "openai"
-    ? (settings.rmemoryEmbeddingModel || "text-embedding-3-small")
-    : localModelName;
-  const currentDimensions = provider.dimensions;
 
-  if (rMemoryInstance && (cachedRMemoryModelName !== currentModelName || cachedRMemoryDimensions !== currentDimensions)) {
-    try {
-      if (typeof rMemoryInstance.close === "function") {
-        rMemoryInstance.close();
-      } else if (rMemoryInstance.db && typeof rMemoryInstance.db.close === "function") {
-        rMemoryInstance.db.close();
+  try {
+    const { RMemory, OpenAIEmbeddingProvider } = await import("r-memory");
+    const settings = getSettings();
+    
+    const localModelName = settings.rmemoryEmbeddingModel || DEFAULT_LOCAL_EMBEDDING_MODEL;
+    let provider: any;
+    if (settings.rmemoryEmbeddingProvider === "openai") {
+      const activeProvider = getConfiguredProviders().find(p => p.isActive);
+      const isOpenAICompatible = activeProvider && (
+        activeProvider.type === "openai" ||
+        activeProvider.type === "openrouter" ||
+        activeProvider.type === "custom" ||
+        activeProvider.type === "ollama" ||
+        activeProvider.type === "lmstudio"
+      );
+      
+      // Determine an API key only when a real one exists — never fall back to "".
+      let apiKey = "";
+      if (isOpenAICompatible && activeProvider?.apiKey && activeProvider.apiKey.trim() !== "") {
+        apiKey = activeProvider.apiKey.trim();
+      } else if (isOpenAICompatible) {
+        throw new Error(
+          `Embedding API key missing for active provider '${activeProvider?.name || "unknown"}' (type: ${activeProvider?.type}). Configure an OpenAI-compatible provider in /login, or switch rmemoryEmbeddingProvider away from "openai".`
+        );
+      } else {
+        throw new Error(
+          `RMemory embedding provider is set to "openai" but active provider type '${activeProvider?.type || "none"}' is not OpenAI-compatible. Switch rmemoryEmbeddingProvider to a local model or configure an OpenAI-compatible active provider.`
+        );
       }
-    } catch {}
-    rMemoryInstance = null;
-  }
+      const baseURL = isOpenAICompatible ? activeProvider.baseUrl : undefined;
 
-  if (!rMemoryInstance) {
-    if (!fs.existsSync(globalDataDir)) {
-      fs.mkdirSync(globalDataDir, { recursive: true });
+      provider = new OpenAIEmbeddingProvider({
+        apiKey,
+        baseURL,
+        model: settings.rmemoryEmbeddingModel || "text-embedding-3-small",
+        dimensions: settings.rmemoryEmbeddingDimensions || 1536,
+      });
+    } else {
+      provider = new OptimizedLocalTextEmbeddingProvider({
+        modelName: localModelName,
+        dtype: "q8",
+        device: "cpu",
+      });
     }
-    const dbPath = path.join(globalDataDir, "vectors.db");
     
-    checkAndPerformDbMigration(globalDataDir, currentModelName, currentDimensions);
+    const currentModelName = settings.rmemoryEmbeddingProvider === "openai"
+      ? (settings.rmemoryEmbeddingModel || "text-embedding-3-small")
+      : localModelName;
+    const currentDimensions = provider.dimensions;
 
-    rMemoryInstance = new RMemory({
-      dbPath,
-      collectionName: "memories",
-      embeddingProvider: provider,
-    });
-    cachedRMemoryModelName = currentModelName;
-    cachedRMemoryDimensions = currentDimensions;
+    if (rMemoryInstance && (cachedRMemoryModelName !== currentModelName || cachedRMemoryDimensions !== currentDimensions)) {
+      try {
+        if (typeof rMemoryInstance.close === "function") {
+          rMemoryInstance.close();
+        } else if (rMemoryInstance.db && typeof rMemoryInstance.db.close === "function") {
+          rMemoryInstance.db.close();
+        }
+      } catch {}
+      rMemoryInstance = null;
+    }
+
+    if (!rMemoryInstance) {
+      if (!fs.existsSync(globalDataDir)) {
+        fs.mkdirSync(globalDataDir, { recursive: true });
+      }
+      const dbPath = path.join(globalDataDir, "vectors.db");
+      
+      checkAndPerformDbMigration(globalDataDir, currentModelName, currentDimensions);
+
+      rMemoryInstance = new RMemory({
+        dbPath,
+        collectionName: "memories",
+        embeddingProvider: provider,
+      });
+      cachedRMemoryModelName = currentModelName;
+      cachedRMemoryDimensions = currentDimensions;
+    }
+    return rMemoryInstance;
+  } catch (err: any) {
+    rMemoryInitFailed = true;
+    rMemoryInitError = err;
+    if (!hasLoggedInitError) {
+      hasLoggedInitError = true;
+      console.warn(`[WARN] RMemory failed to initialize (will be disabled for this session): ${err.message || String(err)}`);
+    }
+    throw err;
   }
-  return rMemoryInstance;
 }
+
 
 export class MemoryClient {
   private endpoint: string;
@@ -647,6 +665,12 @@ export function getRMemorySessionKey(historyPath: string | null): string {
 }
 
 export async function isRmemoryActive(forceRefresh = false): Promise<boolean> {
+  if (rMemoryInitFailed) return false;
+  return !!getSettings().enableRmemory;
+}
+
+export function isRmemoryActiveSync(): boolean {
+  if (rMemoryInitFailed) return false;
   return !!getSettings().enableRmemory;
 }
 

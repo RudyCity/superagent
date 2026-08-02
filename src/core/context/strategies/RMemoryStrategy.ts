@@ -8,7 +8,7 @@ import {
 import { Message, contentToString } from "../../conversation.js";
 import { getSettings } from "../../config.js";
 import { SummarizationStrategy } from "./SummarizationStrategy.js";
-import { getRMemoryClient, getRMemorySessionKey } from "../../rmemoryUtil.js";
+import { getRMemoryClient, getRMemorySessionKey, isRmemoryActiveSync } from "../../rmemoryUtil.js";
 
 export class RMemoryStrategy implements CompactionStrategy {
   name = "rmemory";
@@ -21,8 +21,7 @@ export class RMemoryStrategy implements CompactionStrategy {
   constructor() {}
 
   canHandle(context: CompactionContext): boolean {
-    const settings = getSettings();
-    return !!settings.enableRmemory && context.messages.length > 5;
+    return isRmemoryActiveSync() && context.messages.length > 5;
   }
 
   async execute(

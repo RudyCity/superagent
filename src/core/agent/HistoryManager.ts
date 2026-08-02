@@ -1,5 +1,5 @@
 import { clearHistoryCache, getSettings, getCurrentWorkspaceIdentifier } from "../config.js";
-import { getRMemoryClient, getRMemorySessionKey } from "../rmemoryUtil.js";
+import { getRMemoryClient, getRMemorySessionKey, isRmemoryActive } from "../rmemoryUtil.js";
 import { contentToString } from "../conversation.js";
 import type { Agent } from "../agent.js";
 
@@ -66,8 +66,7 @@ export class HistoryManager {
   }
 
   public static async syncConversationToRmemory(agent: Agent): Promise<void> {
-    const settings = getSettings();
-    if (!settings.enableRmemory) return;
+    if (!(await isRmemoryActive())) return;
 
     const client = getRMemoryClient(3000);
     const historyPath = agent.getCurrentHistoryFilePath();

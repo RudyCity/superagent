@@ -1,7 +1,7 @@
 import { SlashCommand } from "./types.js";
 import { registry } from "./registry.js";
 import { getSettings } from "../config.js";
-import { getRMemoryClient, getRMemorySessionKey, getActiveRMemoryEmbeddingInfo } from "../rmemoryUtil.js";
+import { getRMemoryClient, getRMemorySessionKey, getActiveRMemoryEmbeddingInfo, isRmemoryActiveSync } from "../rmemoryUtil.js";
 
 export const memoryCommand: SlashCommand = {
   name: "memory",
@@ -11,11 +11,10 @@ export const memoryCommand: SlashCommand = {
     const parts = trimmed.split(/\s+/);
     const subcommand = parts[0]?.toLowerCase() || "help";
 
-    const settings = getSettings();
-    if (!settings.enableRmemory) {
+    if (!isRmemoryActiveSync()) {
       ctx.addLine({
         type: "error",
-        content: "RMemory memory is currently disabled. Enable it in settings first.",
+        content: "RMemory memory is currently disabled or failed to initialize. Enable it in settings first, or check for startup errors.",
         timestamp: Date.now(),
       });
       return;
