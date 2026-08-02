@@ -501,6 +501,16 @@ describe("classifyHeuristic Enhancements", () => {
       const result = classifyHeuristic("jalankan tes");
       expect(result.category).toBe("command");
     });
+
+    it("should classify 'perbaiki bug di classifier' as debug", () => {
+      const result = classifyHeuristic("perbaiki bug di classifier");
+      expect(result.category).toBe("debug");
+    });
+
+    it("should classify 'tolong benerin error compile' as debug", () => {
+      const result = classifyHeuristic("tolong benerin error compile");
+      expect(result.category).toBe("debug");
+    });
   });
 });
 
@@ -655,6 +665,25 @@ describe("mapSupraTelemetryToCategory", () => {
     const result = mapSupraTelemetryToCategory("Domain: general | Complexity: 1 | Route: small model", "question");
     expect(result).toBe("question");
   });
+
+  it("should fall back to heuristic category on invalid/degenerated telemetry", () => {
+    const result = mapSupraTelemetryToCategory("dx or dx are potential for consideration", "debug");
+    expect(result).toBe("debug");
+  });
+
+  it("should preserve action-oriented categories and not downgrade them to question/research when Code is False", () => {
+    const debugRes = mapSupraTelemetryToCategory("Domain: general | Complexity: 2 | Math: False | Code: False | Route: small model", "debug");
+    expect(debugRes).toBe("debug");
+
+    const editRes = mapSupraTelemetryToCategory("Domain: general | Complexity: 2 | Math: False | Code: False | Route: small model", "simple_edit");
+    expect(editRes).toBe("simple_edit");
+
+    const commandRes = mapSupraTelemetryToCategory("Domain: general | Complexity: 2 | Math: False | Code: False | Route: small model", "command");
+    expect(commandRes).toBe("command");
+
+    const complexRes = mapSupraTelemetryToCategory("Domain: general | Complexity: 2 | Math: False | Code: False | Route: small model", "complex_task");
+    expect(complexRes).toBe("simple_edit");
+  });
 });
 
 describe("warmUpClassifier", () => {
@@ -721,7 +750,7 @@ describe("optimizations (Jaro-Winkler, Trie, Soundex, TF-IDF)", () => {
 
     it("should populate secondaryCategory when scores are close", () => {
       // Input has matches for both command (jalankan) and debug (error)
-      const res = classifyHeuristic("jalankan perbaikan error");
+      const res = classifyHeuristic("jalankan error");
       expect(res.category).toBeDefined();
       expect(res.secondaryCategory).toBeDefined();
     });

@@ -353,7 +353,7 @@ const DEBUG_KW = splitKeywords([
   "debug", "diagnose", "troubleshoot",
   "typeerror", "referenceerror", "syntaxerror",
   "compiler", "compile",
-  "gagal", "rusak", "salah", "bermasalah",
+  "gagal", "rusak", "salah", "bermasalah", "perbaiki", "perbaikan", "benerin", "betulkan", "eror",
 ]);
 
 /** Research/exploration indicator keywords — split into words + phrases */
@@ -790,6 +790,14 @@ export function mapSupraTelemetryToCategory(
 ): RequestCategory {
   const lower = telemetry.toLowerCase();
 
+  // Gibberish / Degeneration Check:
+  // If the telemetry does not contain any of the expected key format labels,
+  // it is likely degenerated or invalid. Fall back to heuristicCategory immediately.
+  const hasFormat = lower.includes("complexity:") || lower.includes("route:") || lower.includes("code:") || lower.includes("domain:");
+  if (!hasFormat) {
+    return heuristicCategory;
+  }
+
   const isCode = lower.includes("code: true") || lower.includes("domain: programming") || lower.includes("domain: code");
   const isMath = lower.includes("math: true");
   const isBigModel = lower.includes("route: big model") || lower.includes("route: cloud");
@@ -814,18 +822,35 @@ export function mapSupraTelemetryToCategory(
 
   // 2. If high complexity or math-intensive task
   if (isBigModel || complexity >= 3) {
+    // Only map to research if the heuristic agreed it was research or it's a research domain
     if (heuristicCategory === "research" || lower.includes("domain: research") || lower.includes("domain: search")) {
       return "research";
+    }
+    // If the heuristic was action-oriented, preserve it rather than downgrading to research
+    if (heuristicCategory === "debug" || heuristicCategory === "complex_task" || heuristicCategory === "simple_edit" || heuristicCategory === "command") {
+      return heuristicCategory;
     }
     return "research";
   }
 
-  // 3. Keep conversation classification if heuristic is conversation but confidence is low/medium
+  // 3. Keep conversation classification if heuristic is conversation
   if (heuristicCategory === "conversation") {
     return "conversation";
   }
 
-  // 4. Default to question for low complexity read-only queries
+  // 4. If the heuristic was action-oriented, do not downgrade to question
+  if (
+    heuristicCategory === "debug" ||
+    heuristicCategory === "simple_edit" ||
+    heuristicCategory === "command" ||
+    heuristicCategory === "complex_task"
+  ) {
+    if (heuristicCategory === "command") return "command";
+    if (heuristicCategory === "debug") return "debug";
+    return "simple_edit";
+  }
+
+  // 5. Default to question for low complexity read-only queries
   return "question";
 }
 

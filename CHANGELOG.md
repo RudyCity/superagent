@@ -1,4 +1,12 @@
-"## [1.2.679] - 2026-08-02
+"## [1.2.680] - 2026-08-02
+
+### Fix: Request Classifier Indonesian Keyword Support & Degeneration Fallback
+- **Indonesian Debug Keywords**: Added Indonesian debug/fix keywords ("perbaiki", "perbaikan", "benerin", "betulkan", "eror") to the heuristic pre-filter.
+- **Gibberish / Degeneration Fallback**: Added format detection to mapSupraTelemetryToCategory. If the local classifier outputs degenerated, repeating (e.g. "dx or dx"), or unstructured telemetry, it immediately falls back to the heuristicCategory.
+- **Preserve Action-Oriented Categories**: Prevented mapSupraTelemetryToCategory from downgrading action-oriented categories ("debug", "simple_edit", "command", "complex_task") to read-only categories ("question", "research") when the local model returns Code: False or low complexity.
+- **Files Modified**: `src/core/requestClassifier.ts`, `tests/requestClassifier.test.ts`, `package.json`, `CHANGELOG.md`.
+
+## [1.2.679] - 2026-08-02
 
 ### Fix: Guard Against Empty Plan Approval Loop
 - **Agent Approval Guard**: Added `hasRealPlanContent()` validation check before marking `planState` as `APPROVED` to prevent infinite nudge loops when plan files are missing or contain only stubs.
