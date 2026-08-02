@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { filterSuggestions, getActiveCommandContext } from "./text.js";
-import { getCachedModelIds, getInstalledSkills, listHistorySessions, getTrustedDirectories } from "../core/config.js";
+import { getCachedModelIds, getInstalledSkills, getModelPresets, listHistorySessions, getTrustedDirectories } from "../core/config.js";
 import { registry } from "../core/commands/registry.js";
 import { backgroundTasks } from "../core/tools.js";
 
@@ -83,14 +83,23 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
     const mainCommand = parts[0].toLowerCase();
     
     if (parts.length === 1) {
+      // Handle /mp-<preset-name> shortcut for quick model preset switching
+      const mpShortcutMatch = parts[0].toLowerCase().match(/^\/mp-(.*)$/);
+      if (mpShortcutMatch) {
+        const presets = getModelPresets();
+        const presetSuggestions = presets.length > 0
+          ? presets.map(p => `/mp-${p.name}`)
+          : ["/mp-fast", "/mp-default", "/mp-balanced"];
+        return filterSuggestions(presetSuggestions, query);
+      }
       return filterSuggestions(commands, query);
     }
     
     if (mainCommand === "/mp") {
-      const presetSuggestions = [
-        "/mp fast",
-        "/mp default",
-      ];
+      const presets = getModelPresets();
+      const presetSuggestions = presets.length > 0
+        ? presets.map(p => `/mp ${p.name}`)
+        : ["/mp fast", "/mp default", "/mp balanced"];
       const searchTerm = query.replace(/^\/mp\s*/i, "").trim();
       return searchTerm
         ? filterSuggestions(presetSuggestions, query)
@@ -361,6 +370,13 @@ export function getSuggestionDescriptions(): Record<string, string> {
   for (const s of getInstalledSkills()) {
     const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     desc[`/${slug}`] = s.description;
+  }
+  // Add descriptions for model preset suggestions (/mp <name> and /mp-<name>)
+  for (const p of getModelPresets()) {
+    const modeLabel = p.mode === "single" ? "Single-Agent" : "Multi-Agent";
+    const presetDesc = `Switch to model preset "${p.name}" [${modeLabel}] — ${p.description}`;
+    desc[`/mp ${p.name}`] = presetDesc;
+    desc[`/mp-${p.name}`] = presetDesc;
   }
   return desc;
 }

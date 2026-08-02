@@ -1,3 +1,12 @@
+## [1.2.674] - 2026-08-02
+
+### Feature: Dynamic Model Preset Suggestions for `/mp` and `/mp-*`
+- **Dynamic Preset Autocomplete**: The `/mp <preset-name>` and `/mp-<preset-name>` slash commands now display dynamic autocomplete suggestions populated from the user's saved model presets in `model-presets.json` (via `getModelPresets()`), replacing the previous hardcoded `/mp fast` and `/mp default` suggestions.
+- **Shortcut Suggestions**: Typing `/mp-` now triggers fuzzy-filtered suggestions of all available presets in `/mp-<name>` shortcut form (e.g. `/mp-fast`, `/mp-default`, `/mp-balanced`).
+- **Preset Descriptions**: `getSuggestionDescriptions()` now includes descriptions for each dynamic preset suggestion, showing the preset name, mode label (Single-Agent/Multi-Agent), and preset description text.
+- **Empty Preset Fallback**: When no presets are saved, a sensible fallback list (`fast`, `default`, `balanced`) is shown so the autocomplete is never empty.
+- **Files Modified**: `src/utils/dashboardSuggestions.ts`.
+
 ## [1.2.673] - 2026-08-02
 
 ### Feature: Comprehensive Lock Audit Logging for Multi-Terminal Work
