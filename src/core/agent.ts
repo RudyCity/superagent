@@ -132,11 +132,9 @@ export class Agent {
   });
 
   public approvePlan(): void {
-    if (this.hasRealPlanContent()) {
-      this.planState = "APPROVED";
-    } else {
-      this.planState = "IDLE";
-    }
+    // Always set APPROVED on explicit call. ContextBuilder.buildContext already
+    // resets stale APPROVED states when no plan file exists on disk.
+    this.planState = "APPROVED";
   }
 
   public dispose(): void {

@@ -1,3 +1,9 @@
+## [1.2.696] - 2026-08-02
+
+### Added: Article Writing Skill & System Improvements
+- **Article Writing Skill**: Added `article-writing` skill to skill registry and lockfile.
+- **Context & Agent Enhancements**: Refined context building and prompt handling for agent execution workflow.
+
 ## [1.2.695] - 2026-08-02
 
 ### Added: Playwright Screenshot Tool & Workspace Session Filtering

@@ -20,8 +20,11 @@ export class ContextBuilder {
     supportsNativeTools: boolean;
     dynamicContext: string;
   }> {
-    // Reset stale APPROVED planState if no real plan content exists on disk
-    if (agent.planState === "APPROVED" && typeof (agent as any).hasRealPlanContent === "function" && !(agent as any).hasRealPlanContent()) {
+    // Reset stale APPROVED planState if no real plan content exists on disk,
+    // but only when there is existing conversation history (indicating a resumed session).
+    // A fresh agent with planState set programmatically (e.g., in tests) should not be reset.
+    const hasConversationHistory = agent.conversation.getMessages().length > 0;
+    if (hasConversationHistory && agent.planState === "APPROVED" && typeof (agent as any).hasRealPlanContent === "function" && !(agent as any).hasRealPlanContent()) {
       agent.planState = "IDLE";
     }
     const isGoalMode = !!agent.goalMode;
