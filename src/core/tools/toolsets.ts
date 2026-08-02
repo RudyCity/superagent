@@ -39,6 +39,7 @@ import {
   scheduleTool,
   gitActionTool,
   screenshotTool,
+  playwrightScreenshotTool,
   androidCliTool,
   searchHistoryTool,
   loadPinnedSessionTool,
@@ -136,6 +137,7 @@ export const masterToolset: Tool[] = [
   multiReplaceFileContentTool, // for planning files
   runCommandTool,        // for running validation / test commands
   bashTool,              // for running validation / test commands
+  playwrightScreenshotTool,
   rmemorySearchTool,
   rmemoryConversationSearchTool,
   rmemoryReadCosTool,
@@ -189,6 +191,7 @@ export const superagentToolset: Tool[] = [
   loadPinnedSessionTool,
   searchPinnedKnowledgeTool,
   androidCliTool,
+  playwrightScreenshotTool,
   readPeerSuperagentFileTool, // read files from peer Superagent worktrees
   rmemorySearchTool,
   rmemoryConversationSearchTool,
@@ -392,6 +395,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     simulateVirtualCursorTool,
     controlIsolatedCdpTool,
     screenshotTool,
+    playwrightScreenshotTool,
     readTool,
     globTool,
     grepTool,

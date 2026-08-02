@@ -333,6 +333,133 @@ export const screenshotTool: Tool = {
   },
 };
 
+export const playwrightScreenshotTool: Tool = {
+  name: "playwright_screenshot",
+  description: "Capture a web page screenshot using Playwright CLI (npx playwright screenshot). Supports custom viewports, full page scroll, browser engine, wait timeout, color scheme, and element selectors.",
+  parameters: {
+    type: "object",
+    properties: {
+      url: {
+        type: "string",
+        description: "The web page URL to capture (e.g., 'https://example.com' or 'http://localhost:3000').",
+      },
+      outputPath: {
+        type: "string",
+        description: "Optional output file path or filename for the screenshot PNG/JPEG. Defaults to 'playwright_screenshot_<timestamp>.png' in current workspace.",
+      },
+      fullPage: {
+        type: "boolean",
+        description: "Whether to capture full scrollable page. Defaults to false.",
+      },
+      viewportWidth: {
+        type: "number",
+        description: "Viewport width in pixels (e.g. 1280 or 1920). Defaults to 1280.",
+      },
+      viewportHeight: {
+        type: "number",
+        description: "Viewport height in pixels (e.g. 720 or 1080). Defaults to 720.",
+      },
+      waitMs: {
+        type: "number",
+        description: "Wait time in milliseconds before taking screenshot (e.g. 2000). Defaults to 0.",
+      },
+      waitForSelector: {
+        type: "string",
+        description: "Wait for a specific CSS selector to appear before taking screenshot.",
+      },
+      browser: {
+        type: "string",
+        enum: ["chromium", "firefox", "webkit"],
+        description: "Browser engine to use. Defaults to 'chromium'.",
+      },
+      colorScheme: {
+        type: "string",
+        enum: ["light", "dark"],
+        description: "Emulate color scheme. Defaults to 'light'.",
+      },
+      ignoreHttpsErrors: {
+        type: "boolean",
+        description: "Ignore HTTPS/SSL certificate errors. Defaults to false.",
+      },
+    },
+    required: ["url"],
+  },
+  async execute(args, cwd, signal) {
+    const rawUrl = (args.url as string)?.trim();
+    if (!rawUrl) {
+      return "Error: URL parameter is required.";
+    }
+
+    let targetUrl = rawUrl;
+    if (!/^https?:\/\//i.test(targetUrl)) {
+      targetUrl = `http://${targetUrl}`;
+    }
+
+    const defaultFilename = `playwright_screenshot_${Date.now()}.png`;
+    const targetOutputPath = args.outputPath
+      ? path.resolve(cwd, args.outputPath as string)
+      : path.resolve(cwd, defaultFilename);
+
+    const cmdArgs = ["playwright", "screenshot"];
+
+    if (args.fullPage) {
+      cmdArgs.push("--full-page");
+    }
+
+    const width = typeof args.viewportWidth === "number" ? args.viewportWidth : 1280;
+    const height = typeof args.viewportHeight === "number" ? args.viewportHeight : 720;
+    cmdArgs.push("--viewport-size", `${width}, ${height}`);
+
+    if (typeof args.waitMs === "number" && args.waitMs > 0) {
+      cmdArgs.push("--wait-for-timeout", String(args.waitMs));
+    }
+
+    if (args.waitForSelector && typeof args.waitForSelector === "string") {
+      cmdArgs.push("--wait-for-selector", args.waitForSelector.trim());
+    }
+
+    if (args.browser && typeof args.browser === "string") {
+      cmdArgs.push("-b", args.browser.trim());
+    }
+
+    if (args.colorScheme && typeof args.colorScheme === "string") {
+      cmdArgs.push("--color-scheme", args.colorScheme.trim());
+    }
+
+    if (args.ignoreHttpsErrors) {
+      cmdArgs.push("--ignore-https-errors");
+    }
+
+    cmdArgs.push(targetUrl, targetOutputPath);
+
+    try {
+      await execa("npx", cmdArgs, { cwd, cancelSignal: signal });
+      return `Playwright screenshot successfully captured and saved to: ${targetOutputPath}`;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (
+        message.includes("playwright install") ||
+        message.includes("Executable doesn't exist") ||
+        message.includes("Looks like Playwright was just installed") ||
+        message.includes("browser has not been downloaded")
+      ) {
+        try {
+          const browserType = (args.browser as string)?.trim() || "chromium";
+          await execa("npx", ["playwright", "install", browserType], { cwd, cancelSignal: signal });
+          await execa("npx", cmdArgs, { cwd, cancelSignal: signal });
+          return `Playwright screenshot successfully captured and saved to: ${targetOutputPath}`;
+        } catch (installErr: unknown) {
+          const installMessage = installErr instanceof Error ? installErr.message : String(installErr);
+          return `Failed to capture Playwright screenshot (auto-install failed): ${installMessage}`;
+        }
+      }
+      return `Failed to capture Playwright screenshot: ${message}`;
+    }
+  },
+};
+
+
+
 export const androidCliTool: Tool = {
   name: "android_cli",
   description: "Execute an Android CLI command (e.g., 'sdk list', 'emulator list', 'run'). Returns the output.",

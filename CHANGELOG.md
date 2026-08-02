@@ -1,3 +1,9 @@
+## [1.2.695] - 2026-08-02
+
+### Added: Playwright Screenshot Tool & Workspace Session Filtering
+- **Playwright Screenshot Tool**: Integrated `playwright_screenshot` tool (`playwrightScreenshotTool`) into master, superagent, and browser subagent toolsets with complete unit test coverage.
+- **Workspace Session Filtering**: Updated session listing logic in `/resume` wizard and keyboard handlers to filter sessions based on active workspace directory.
+
 ## [1.2.694] - 2026-08-02
 
 ### Fix: ONNX Runtime Startup Warning Suppression

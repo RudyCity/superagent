@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs";
-import { ensureGlobalConfigDir, getGlobalConfigDir, generateSessionId, getCurrentWorkspaceIdentifier } from "../config.js";
+import { ensureGlobalConfigDir, getGlobalConfigDir, generateSessionId, getCurrentWorkspaceIdentifier, listHistorySessions } from "../config.js";
 import { normalizeAndCheckSubpath } from "../permissions.js";
 import { getTaskHistoryPath } from "../taskChecklist.js";
 import type { Agent } from "../agent.js";
@@ -62,6 +62,13 @@ export class PathResolver {
       if (fs.existsSync(possibleFile)) {
         return possibleFile;
       }
+      try {
+        const allSessions = listHistorySessions(agent.isMultiAgent, true);
+        const matched = allSessions.find(s => s.id === val || s.id.endsWith("_" + val) || s.id.endsWith(val));
+        if (matched) {
+          return matched.filePath;
+        }
+      } catch {}
       if (fs.existsSync(historyDir)) {
         const dirs = fs.readdirSync(historyDir);
         const match = dirs.find(d => d.toLowerCase() === val.toLowerCase() || d.toLowerCase().endsWith("_" + val.toLowerCase()));
@@ -79,49 +86,9 @@ export class PathResolver {
 
     if (autoResume) {
       try {
-        if (fs.existsSync(historyDir)) {
-          const dirs = fs.readdirSync(historyDir);
-          const matchedDirs = dirs.filter(d => {
-            const nameLower = d.toLowerCase();
-            const cleanNameLower = nameLower.replace(/_\d+$/, "");
-            return cleanNameLower === sanitizedPath.toLowerCase() || cleanNameLower.startsWith(sanitizedPath.toLowerCase() + "_");
-          });
-
-          if (matchedDirs.length > 0) {
-            const sorted = matchedDirs.map(d => {
-              const dirPath = path.join(historyDir, d);
-              const filePath = path.join(dirPath, `${d}.json`);
-              const match = d.match(/_(\d+)$/);
-              let mtime = match ? parseInt(match[1], 10) : 0;
-              if (mtime === 0) {
-                try {
-                  mtime = fs.statSync(filePath).mtime.getTime();
-                } catch {
-                  try {
-                    mtime = fs.statSync(dirPath).mtime.getTime();
-                  } catch {}
-                }
-              }
-              return { filePath, mtime };
-            }).sort((a, b) => b.mtime - a.mtime);
-
-            for (const item of sorted) {
-              try {
-                const content = fs.readFileSync(item.filePath, "utf-8");
-                const parsed = JSON.parse(content);
-                if (parsed && parsed.workingDirectory) {
-                  if (normalizeAndCheckSubpath(parsed.workingDirectory, agent.workingDirectory || "")) {
-                    return item.filePath;
-                  }
-                } else {
-                  const cleanNameLower = path.basename(item.filePath, ".json").toLowerCase().replace(/_\d+$/, "");
-                  if (cleanNameLower === sanitizedPath.toLowerCase()) {
-                     return item.filePath;
-                  }
-                }
-              } catch {}
-            }
-          }
+        const sessions = listHistorySessions(agent.isMultiAgent, false, agent.workingDirectory);
+        if (sessions.length > 0) {
+          return sessions[0].filePath;
         }
       } catch {}
     }

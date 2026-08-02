@@ -27,6 +27,23 @@ function parseSshUrl(url: string): { prefix: string; path: string } | null {
 }
 
 export function getCurrentWorkspaceIdentifier(workingDir?: string): string {
+  try {
+    if (workspaceMode.isSsh()) {
+      const config = workspaceMode.getConfig();
+      if (config) {
+        if (workingDir) {
+          const trimmed = workingDir.trim();
+          if (trimmed.startsWith("ssh:") || trimmed.startsWith("ssh://") || trimmed.startsWith("chain:")) {
+            return trimmed;
+          }
+          const remotePath = trimmed.startsWith("/") ? trimmed : "/" + trimmed;
+          return `ssh://${config.username}@${config.host}:${config.port}${remotePath}`;
+        }
+        return `ssh://${config.username}@${config.host}:${config.port}${config.remoteCwd}`;
+      }
+    }
+  } catch {}
+
   if (workingDir) {
     const trimmed = workingDir.trim();
     if (trimmed.startsWith("ssh:") || trimmed.startsWith("ssh://") || trimmed.startsWith("chain:")) {
@@ -39,15 +56,6 @@ export function getCurrentWorkspaceIdentifier(workingDir?: string): string {
     const activeChain = workspaceChainManager.getActiveChain();
     if (activeChain) {
       return `chain:${activeChain.id}`;
-    }
-  } catch {}
-
-  try {
-    if (workspaceMode.isSsh()) {
-      const config = workspaceMode.getConfig();
-      if (config) {
-        return `ssh://${config.username}@${config.host}:${config.port}${config.remoteCwd}`;
-      }
     }
   } catch {}
 
@@ -80,6 +88,22 @@ export function normalizeAndCheckSubpath(childPath: string, parentPath: string):
     const cPath = childSsh.path.replace(/\/+$/, "") || "/";
     const pPath = parentSsh.path.replace(/\/+$/, "") || "/";
     return cPath === pPath || cPath.startsWith(pPath + "/") || pPath.startsWith(cPath + "/");
+  }
+  if (childSsh && !parentSsh) {
+    if (workspaceMode.isSsh()) {
+      const cPath = childSsh.path.replace(/\/+$/, "") || "/";
+      const pPath = parentPath.replace(/\\/g, "/").replace(/\/+$/, "") || "/";
+      return cPath === pPath || cPath.startsWith(pPath + "/") || pPath.startsWith(cPath + "/");
+    }
+    return false;
+  }
+  if (parentSsh && !childSsh) {
+    if (workspaceMode.isSsh()) {
+      const pPath = parentSsh.path.replace(/\/+$/, "") || "/";
+      const cPath = childPath.replace(/\\/g, "/").replace(/\/+$/, "") || "/";
+      return cPath === pPath || cPath.startsWith(pPath + "/") || pPath.startsWith(cPath + "/");
+    }
+    return false;
   }
   if (childSsh || parentSsh) return false;
 

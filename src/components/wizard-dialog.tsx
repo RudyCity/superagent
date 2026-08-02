@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useInput } from "ink";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
 import { getSettings } from "../core/config.js";
 
@@ -10,6 +10,7 @@ interface WizardDialogProps {
   options: string[];
   selectedIndex: number;
   maxVisible?: number;
+  maxDescriptionLines?: number;
   isMultiSelect?: boolean;
   selectedSet?: Set<number>;
   marginY?: number;
@@ -74,6 +75,7 @@ export function WizardDialog({
   options = [],
   selectedIndex = 0,
   maxVisible = 10,
+  maxDescriptionLines = 8,
   isMultiSelect = false,
   selectedSet,
   marginY,
@@ -85,6 +87,30 @@ export function WizardDialog({
   terminalWidth,
   onHeaderRowsChange,
 }: WizardDialogProps) {
+  const [descOffset, setDescOffset] = useState(0);
+
+  useEffect(() => {
+    setDescOffset(0);
+  }, [description]);
+
+  useInput((_inputChar, key) => {
+    if (!description) return;
+    const widthVal = terminalWidth || (process.stdout.columns || 110);
+    const maxTextWidth = Math.max(10, widthVal - 4);
+    const descLines = wrapTextForDisplay(description, maxTextWidth);
+    const totalDesc = descLines.length;
+    if (totalDesc <= maxDescriptionLines) return;
+
+    const maxOffset = Math.max(0, totalDesc - maxDescriptionLines);
+    const scrollStep = Math.max(1, Math.floor(maxDescriptionLines / 2));
+
+    if (key.pageDown || (key.ctrl && key.downArrow) || (key.shift && key.downArrow)) {
+      setDescOffset((prev) => Math.min(maxOffset, prev + scrollStep));
+    } else if (key.pageUp || (key.ctrl && key.upArrow) || (key.shift && key.upArrow)) {
+      setDescOffset((prev) => Math.max(0, prev - scrollStep));
+    }
+  });
+
   const finalMarginTop = marginTop !== undefined ? marginTop : (marginY !== undefined ? marginY : 1);
   const finalMarginBottom = marginBottom !== undefined ? marginBottom : (marginY !== undefined ? marginY : 0);
   const actualOptions = Array.isArray(options) ? options : [];
@@ -122,7 +148,18 @@ export function WizardDialog({
       const widthVal = terminalWidth || (process.stdout.columns || 110);
       const maxTextWidth = Math.max(10, widthVal - 4);
       const descLines = wrapTextForDisplay(description, maxTextWidth);
-      headerRows += descLines.length + 1; // descLines + spacer
+      const totalDesc = descLines.length;
+      if (maxDescriptionLines && totalDesc > maxDescriptionLines) {
+        const visibleCount = maxDescriptionLines;
+        let indicators = 0;
+        const maxOffset = Math.max(0, totalDesc - maxDescriptionLines);
+        const clampedOffset = Math.min(descOffset, maxOffset);
+        if (clampedOffset > 0) indicators += 1;
+        if (clampedOffset + maxDescriptionLines < totalDesc) indicators += 1;
+        headerRows += visibleCount + indicators + 1;
+      } else {
+        headerRows += totalDesc + 1;
+      }
     }
     
     // 3. search bar
@@ -141,7 +178,7 @@ export function WizardDialog({
     }
     
     finalOnHeaderRowsChange(headerRows);
-  }, [description, searchQuery, isLoading, start, terminalWidth, finalOnHeaderRowsChange]);
+  }, [description, searchQuery, isLoading, start, terminalWidth, maxDescriptionLines, descOffset, finalOnHeaderRowsChange]);
 
   const hideTimeline = getSettings().hideTimeline ?? false;
   const marginPrefix = hideTimeline ? "  " : "│ ";
@@ -160,14 +197,44 @@ export function WizardDialog({
         const widthVal = terminalWidth || (process.stdout.columns || 110);
         const maxTextWidth = Math.max(10, widthVal - 4);
         const descLines = wrapTextForDisplay(description, maxTextWidth);
+        const totalDesc = descLines.length;
+
+        let startDesc = 0;
+        let endDesc = totalDesc;
+        if (maxDescriptionLines && totalDesc > maxDescriptionLines) {
+          const maxOffset = Math.max(0, totalDesc - maxDescriptionLines);
+          startDesc = Math.min(descOffset, maxOffset);
+          endDesc = startDesc + maxDescriptionLines;
+        }
+
+        const visibleDescLines = descLines.slice(startDesc, endDesc);
+        const hasMoreDescAbove = startDesc > 0;
+        const hasMoreDescBelow = endDesc < totalDesc;
+
         return (
           <>
-            {descLines.map((line, idx) => (
-              <Box key={idx} flexDirection="row" width="100%">
+            {hasMoreDescAbove && (
+              <Box flexDirection="row" width="100%">
+                <Text color={borderColor}>{marginPrefix}</Text>
+                <Text color="yellow" wrap="truncate-end">
+                  ▲ ... ({startDesc} description lines above, press PageUp/Shift+Up to scroll) ...
+                </Text>
+              </Box>
+            )}
+            {visibleDescLines.map((line, idx) => (
+              <Box key={startDesc + idx} flexDirection="row" width="100%">
                 <Text color={borderColor}>{marginPrefix}</Text>
                 <Text color="white">{renderDialogBodyText(line)}</Text>
               </Box>
             ))}
+            {hasMoreDescBelow && (
+              <Box flexDirection="row" width="100%">
+                <Text color={borderColor}>{marginPrefix}</Text>
+                <Text color="yellow" wrap="truncate-end">
+                  ▼ ... ({totalDesc - endDesc} description lines below, press PageDown/Shift+Down to scroll) ...
+                </Text>
+              </Box>
+            )}
             <Box flexDirection="row">
               <Text color={borderColor}>{marginPrefix}</Text>
             </Box>

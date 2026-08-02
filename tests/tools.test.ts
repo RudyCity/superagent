@@ -845,4 +845,25 @@ patched line
       } catch {}
     }
   }, 15000);
+
+  it("should capture screenshot using playwrightScreenshotTool", async () => {
+    const tool = getToolByName("playwright_screenshot");
+    expect(tool).toBeDefined();
+
+    const result = await tool?.execute(
+      {
+        url: "https://example.com",
+        fullPage: true,
+        viewportWidth: 1920,
+        viewportHeight: 1080,
+        waitMs: 1000,
+        browser: "chromium",
+      },
+      process.cwd()
+    );
+
+    expect(result).toContain("Playwright screenshot successfully captured");
+    expect(result).toContain("playwright_screenshot_");
+  });
 });
+
