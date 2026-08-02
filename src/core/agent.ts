@@ -87,7 +87,7 @@ export class Agent {
   public currentClassification: import("./requestClassifier.js").ClassificationResult | null = null;
   public lastSpeed: number | null = null;
   public goalMode: string | null = null;
-  public goalMaxIterations: number = Infinity;
+  public goalMaxIterations: number = 1000;
   public wasRunningBeforeAbort = false;
   public allowSessionOutOfBounds = false;
   /** Separate flag — file write tools (write_to_file, replace_file_content, etc.) are NEVER granted session-wide bypass. */
@@ -493,7 +493,7 @@ export class Agent {
     this.advisor.syncSettings(getSettings());
     const signal = this.abortController?.signal;
     const isGoalMode = !!this.goalMode;
-    const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 50);
+    const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 500);
     const maxIterations = isGoalMode ? this.goalMaxIterations : defaultMax;
     const maxIterationsStr = maxIterations === Infinity ? "unlimited" : maxIterations.toString();
     let continueCount = 0;

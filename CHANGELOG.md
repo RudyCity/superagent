@@ -1,4 +1,10 @@
-"## [1.2.686] - 2026-08-02
+## [1.2.689] - 2026-08-02
+
+### Fix: Default Iteration Limits (500 Normal / 1000 Goal)
+- **Normal Mode Iterations**: Updated default fallback `maxIterations` from 50 to 500 steps in `Agent` and `ContextBuilder`.
+- **Goal Mode Iterations**: Updated `goalMaxIterations` default to 1000 steps and refreshed UI notices in `/goal` commands and wizards.
+
+"
 
 ### Feature: Workspace Chain Buffer Read & Sync Operations
 - **Binary-Safe File Syncing**: Updated `WorkspaceChainManager` to read files as binary buffers (`readFileBufferFromNode`), enabling robust transfer of binary and text files across workspace chain nodes.

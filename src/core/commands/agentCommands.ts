@@ -403,7 +403,7 @@ export const goalCommand: SlashCommand = {
       content: [
         "🎯 GOAL MODE ACTIVATED",
         `   Objective : ${args}`,
-        "   Iterations: up to 200 steps (auto-continue enabled)",
+        "   Iterations: up to 1000 steps (auto-continue enabled)",
         "   The agent will not stop until the goal is achieved.",
         "   Use Ctrl+C to abort at any time.",
       ].join("\n"),

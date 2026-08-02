@@ -341,7 +341,7 @@ export class ContextBuilder {
       toolRestrictionNotice = `\n\n⚠️ Terminal/shell execution DISABLED for this request. Do NOT use run_command or similar tools.`;
     }
 
-    const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 300);
+    const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 500);
     const maxIterations = agent.goalMode ? agent.goalMaxIterations : defaultMax;
     const maxIterationsStr = maxIterations === Infinity ? "unlimited" : maxIterations.toString();
     const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}\n\nEXECUTION CONTEXT:\n- Step limit: ${maxIterationsStr} iterations. Be efficient.\n- Spawn subagents in parallel for independent tasks (>3 files, >2 domains, broad research).\n${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}${workspaceChainNotice}`;
