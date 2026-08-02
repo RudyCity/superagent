@@ -1,3 +1,13 @@
+## [1.2.677] - 2026-08-02
+
+### Feature: Prompt Intent Analysis, Multi-Language Auto-Translation & Desktop UI Badge
+- **Prompt Intent Analysis & Ambiguity Gate**: Added 2-tier prompt ambiguity detection and intent rewriting middleware (`src/core/promptClarification.ts`). Automatically triggers confirmation/clarification before destructive file modifications when prompt context is ambiguous.
+- **Multi-Language Auto-Translation**: Added language detection and automatic translation for 7 languages (Indonesian, Chinese, Japanese, Spanish, French, German, English), including typo tolerance (e.g. `ptrompt`, `yranslate`, `englosih`).
+- **Persistent Intent Memory & Auto-Learning**: Saved user shorthand mapping to disk (`~/.superagent-r/intent-memory.json`) and added automatic learning from user corrections (`"bukan X, maksud saya Y"`).
+- **Desktop UI Badge Event Bridge**: Implemented `translationBadgeEmitter` to stream visual translation badges directly to connected `t-line` Desktop Client UI connections.
+- **High Performance & Non-Blocking I/O**: Added word-boundary token matching, flexible numeric multi-turn selection (`"pilih 2"`, `"nomor 1"`), and async non-blocking disk persistence.
+- **Files Modified**: `src/core/promptClarification.ts`, `src/core/agent/RequestProcessor.ts`, `tests/promptClarification.test.ts`, `package.json`, `CHANGELOG.md`.
+
 ## [1.2.676] - 2026-08-02
 
 ### Fix: Session-Isolated (In-Memory) Preset Switching & Unified `/mp` and `/model` Behavior

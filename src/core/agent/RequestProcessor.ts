@@ -5,6 +5,8 @@ import { captureGitSnapshot } from "./GitUtils.js";
 import { contentToString } from "../conversation.js";
 import type { Agent } from "../agent.js";
 
+import { analyzePromptIntent, translationBadgeEmitter } from "../promptClarification.js";
+
 export class RequestProcessor {
   public static async processRequest(
     agent: Agent,
@@ -14,6 +16,14 @@ export class RequestProcessor {
       ? agent.worktreePath
       : agent.workingDirectory;
     (agent as any).gitStartSnapshot = await captureGitSnapshot(currentCwd);
+
+    const onBadge = (badge: any) => {
+      agent.writeToLogFile("INFO", `[🌐 Desktop Badge UI] [${badge.detectedLanguage.toUpperCase()}] "${badge.originalPrompt}" -> "${badge.translatedPrompt}"`);
+      if (typeof (agent as any).emit === "function") {
+        (agent as any).emit("translationBadge", badge);
+      }
+    };
+    translationBadgeEmitter.once("badge", onBadge);
 
     const isTestEnv = process.env.VITEST && process.env.SUPERAGENT_TEST_SIMPLE_TASK !== "true";
     if (!isTestEnv) {
