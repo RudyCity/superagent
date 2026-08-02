@@ -14,7 +14,6 @@ import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/c
 import { execSync } from "child_process";
 import { handleServerRoute } from "./serverRoutes.js";
 import { lockEventEmitter } from "./core/storage/sharedMemory.js";
-import { initONNXTranslationPipeline } from "./core/promptClarification.js";
 
 // Forward lock events to connected t-line desktop clients
 lockEventEmitter.on("tline_bridge_sync", (syncPayload) => {
@@ -709,9 +708,6 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       const { ensureRemoteChromeBridge } = await import("./core/tools/remoteChromeBridge.js");
       ensureRemoteChromeBridge().catch(() => {});
     } catch {}
-
-    // Preload lightweight local ONNX translation model (<100MB RAM) in background on startup
-    initONNXTranslationPipeline().catch(() => {});
   }
 
   return server;

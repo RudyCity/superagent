@@ -1,3 +1,13 @@
+## [1.2.694] - 2026-08-02
+
+### Fix: ONNX Runtime Startup Warning Suppression
+- **Lazy ONNX Translation Preloading**: Removed eager background preloading of `initONNXTranslationPipeline` during startup in `cliMain.tsx`, `server.ts`, and `RequestProcessor.ts`, making translation model loading purely on-demand and eliminating ONNX runtime `CleanUnusedInitializersAndNodeArgs` C++ graph warnings on application startup.
+
+## [1.2.693] - 2026-08-02
+
+### Added: Playwright Screenshot Tool
+- **Playwright Screenshot Tool**: Introduced `playwright_screenshot` tool (`playwrightScreenshotTool`) to capture web page screenshots using `npx playwright screenshot` with customizable viewports, full-page scrolling, browser selection, wait timeout, color scheme, and element selector support.
+
 ## [1.2.692] - 2026-08-02
 
 ### Fix: ONNX Logging Suppression & Test Reliability
