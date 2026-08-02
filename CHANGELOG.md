@@ -1,3 +1,13 @@
+## [1.2.673] - 2026-08-02
+
+### Feature: Comprehensive Lock Audit Logging for Multi-Terminal Work
+- **Full Lock Event Audit Trail (SQLite)**: The `file_lock_events` table schema has been expanded with new columns: `project_path`, `line_range`, `ttl_ms`, `is_intent_soft_lock`, `remote_node_id`, `locked_at`, `released_at`, `force_unlock`, and `details`. Every lock lifecycle event now records exactly who locked the file (`session_id` + `terminal_type`), when (`locked_at`), on what line range, and with what TTL.
+- **Enhanced `recordLockEvent()`**: Accepts `LockEventDetails` options object with full lock metadata. New event types: `lock_updated` (heartbeat renewal) and `deadlock_recovered` (stale lock cleanup). Added `getLockEventHistoryFromDb()` query function to retrieve the complete audit trail.
+- **Schema Migration**: Automatic `ALTER TABLE` migrations add the new columns to existing databases, so older `history.db` installations upgrade seamlessly.
+- **Detailed `[LOCK]` logs in `superagent.log`**: Every lock operation (acquire, soft-lock, renew, release, force-release, conflict-block, deadlock recovery) now writes a structured `[LOCK]` log line via `logE2E()` with full metadata including file path, project path, session ID, terminal type, line range, TTL, and timestamps.
+- **`generate_lock_report` includes Audit Trail**: The lock report tool now appends a "Recent Lock Event Audit Trail" markdown table showing the last 20 lock events (time, event type, file, session, terminal, line range, force flag) so agents/users can see exactly when a lock was taken and by whom.
+- **Tool Invocation Logging**: All lock tools (`unlock_file`, `get_lock_stats`, `resolve_lock_conflict`, `generate_lock_report`) now log their invocation and result (success/failure) to `[LOCK-TOOL]` entries in `superagent.log`.
+
 ## [1.2.672] - 2026-08-02
 
 ### Feature: Optimistic Concurrency & Lock Status UI (Poin 3 & 4)

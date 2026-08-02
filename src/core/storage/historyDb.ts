@@ -251,7 +251,16 @@ function initDatabaseSchema(db: any): void {
       session_id TEXT NOT NULL,
       terminal_type TEXT,
       event_type TEXT NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      project_path TEXT,
+      line_range TEXT,
+      ttl_ms INTEGER,
+      is_intent_soft_lock INTEGER NOT NULL DEFAULT 0,
+      remote_node_id TEXT,
+      locked_at INTEGER,
+      released_at INTEGER,
+      force_unlock INTEGER NOT NULL DEFAULT 0,
+      details TEXT
     );
 
     CREATE TABLE IF NOT EXISTS workspace_tasks (
@@ -327,6 +336,26 @@ function initDatabaseSchema(db: any): void {
     for (const col of workspacesCols) {
       try {
         db.exec(`ALTER TABLE workspaces ADD COLUMN ${col.name} ${col.type};`);
+      } catch {}
+    }
+  } catch {}
+
+  // Schema migrations for file_lock_events table (comprehensive lock audit fields)
+  try {
+    const lockEventCols = [
+      { name: "project_path", type: "TEXT" },
+      { name: "line_range", type: "TEXT" },
+      { name: "ttl_ms", type: "INTEGER" },
+      { name: "is_intent_soft_lock", type: "INTEGER NOT NULL DEFAULT 0" },
+      { name: "remote_node_id", type: "TEXT" },
+      { name: "locked_at", type: "INTEGER" },
+      { name: "released_at", type: "INTEGER" },
+      { name: "force_unlock", type: "INTEGER NOT NULL DEFAULT 0" },
+      { name: "details", type: "TEXT" },
+    ];
+    for (const col of lockEventCols) {
+      try {
+        db.exec(`ALTER TABLE file_lock_events ADD COLUMN ${col.name} ${col.type};`);
       } catch {}
     }
   } catch {}
@@ -1767,14 +1796,101 @@ export function migrateLegacyTrustedDirs(db: any): void {
   } catch {}
 }
 
-export function recordLockEvent(filePath: string, sessionId: string, terminalType: string = "cli", eventType: "acquired" | "conflict_blocked" | "released" | "soft_locked") {
+export interface LockEventDetails {
+  projectPath?: string;
+  lineRange?: { startLine: number; endLine: number } | null;
+  ttlMs?: number;
+  isIntentSoftLock?: boolean;
+  remoteNodeId?: string;
+  lockedAt?: number;
+  releasedAt?: number;
+  forceUnlock?: boolean;
+  details?: string;
+}
+
+export function recordLockEvent(
+  filePath: string,
+  sessionId: string,
+  terminalType: string = "cli",
+  eventType: "acquired" | "conflict_blocked" | "released" | "soft_locked" | "lock_updated" | "deadlock_recovered",
+  opts: LockEventDetails = {}
+) {
   try {
     const db = getHistoryDb();
+    const now = Date.now();
+    const lineRangeStr = opts.lineRange ? `${opts.lineRange.startLine}-${opts.lineRange.endLine}` : null;
     db.prepare(`
-      INSERT INTO file_lock_events (file_path, session_id, terminal_type, event_type, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(filePath, sessionId, terminalType, eventType, Date.now());
+      INSERT INTO file_lock_events (
+        file_path, session_id, terminal_type, event_type, created_at,
+        project_path, line_range, ttl_ms, is_intent_soft_lock, remote_node_id,
+        locked_at, released_at, force_unlock, details
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      filePath,
+      sessionId,
+      terminalType,
+      eventType,
+      now,
+      opts.projectPath || null,
+      lineRangeStr,
+      opts.ttlMs ?? null,
+      opts.isIntentSoftLock ? 1 : 0,
+      opts.remoteNodeId || null,
+      opts.lockedAt ?? null,
+      opts.releasedAt ?? null,
+      opts.forceUnlock ? 1 : 0,
+      opts.details || null
+    );
   } catch {}
+}
+
+export function getLockEventHistoryFromDb(limit: number = 100): Array<{
+  id: number;
+  filePath: string;
+  sessionId: string;
+  terminalType: string | null;
+  eventType: string;
+  createdAt: number;
+  projectPath: string | null;
+  lineRange: string | null;
+  ttlMs: number | null;
+  isIntentSoftLock: boolean;
+  remoteNodeId: string | null;
+  lockedAt: number | null;
+  releasedAt: number | null;
+  forceUnlock: boolean;
+  details: string | null;
+}> {
+  try {
+    const db = getHistoryDb();
+    const rows = db.prepare(`
+      SELECT id, file_path as filePath, session_id as sessionId, terminal_type as terminalType,
+             event_type as eventType, created_at as createdAt, project_path as projectPath,
+             line_range as lineRange, ttl_ms as ttlMs, is_intent_soft_lock as isIntentSoftLock,
+             remote_node_id as remoteNodeId, locked_at as lockedAt, released_at as releasedAt,
+             force_unlock as forceUnlock, details
+      FROM file_lock_events ORDER BY id DESC LIMIT ?
+    `).all(limit) || [];
+    return rows.map((row: any) => ({
+      id: row.id,
+      filePath: row.filePath,
+      sessionId: row.sessionId,
+      terminalType: row.terminalType,
+      eventType: row.eventType,
+      createdAt: row.createdAt,
+      projectPath: row.projectPath,
+      lineRange: row.lineRange,
+      ttlMs: row.ttlMs,
+      isIntentSoftLock: row.isIntentSoftLock === 1,
+      remoteNodeId: row.remoteNodeId,
+      lockedAt: row.lockedAt,
+      releasedAt: row.releasedAt,
+      forceUnlock: row.forceUnlock === 1,
+      details: row.details,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 

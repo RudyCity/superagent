@@ -3,7 +3,8 @@ import path from "path";
 import { EventEmitter } from "events";
 import { getRootConfigDir } from "../config/paths.js";
 import { getNormalizedProjectPath } from "../tools/helpers.js";
-import { recordLockEvent } from "./historyDb.js";
+import { recordLockEvent, LockEventDetails } from "./historyDb.js";
+import { logE2E } from "../utils/unifiedLogger.js";
 
 export interface LineRange {
   startLine: number;
@@ -213,10 +214,45 @@ export function lockFile(
         if (lineRange) conflicting.lineRange = lineRange;
         persistLocksToDisk(locks);
         lockEventEmitter.emit("lock_updated", conflicting);
-        recordLockEvent(absPath, sessionId, terminalType, isIntentSoftLock ? "soft_locked" : "acquired");
+        const updateDetails: LockEventDetails = {
+          projectPath,
+          lineRange: lineRange || null,
+          ttlMs,
+          isIntentSoftLock: !!isIntentSoftLock,
+          remoteNodeId,
+          lockedAt: now,
+          details: `Lock renewed by same session ${sessionId} (${terminalType}) on ${path.basename(absPath)}`,
+        };
+        recordLockEvent(absPath, sessionId, terminalType, isIntentSoftLock ? "soft_locked" : "lock_updated", updateDetails);
+        logE2E("SUPERAGENT-SERVER", `[LOCK] lock_updated: ${path.basename(absPath)} by session ${sessionId} (${terminalType})`, {
+          filePath: absPath,
+          projectPath,
+          lineRange: lineRange ? `${lineRange.startLine}-${lineRange.endLine}` : "full",
+          ttlMs,
+          isIntentSoftLock: !!isIntentSoftLock,
+          remoteNodeId: remoteNodeId || null,
+        });
         return { success: true, owner: conflicting };
       }
-      recordLockEvent(absPath, sessionId, terminalType, "conflict_blocked");
+      const blockDetails: LockEventDetails = {
+        projectPath,
+        lineRange: lineRange || null,
+        ttlMs,
+        isIntentSoftLock: !!isIntentSoftLock,
+        remoteNodeId,
+        lockedAt: now,
+        details: `Lock conflict blocked: file locked by ${conflicting.terminalType || "another"} session (${conflicting.sessionId})`,
+      };
+      recordLockEvent(absPath, sessionId, terminalType, "conflict_blocked", blockDetails);
+      logE2E("SUPERAGENT-SERVER", `[LOCK] conflict_blocked: ${path.basename(absPath)} by session ${sessionId} (${terminalType})`, {
+        filePath: absPath,
+        projectPath,
+        lineRange: lineRange ? `${lineRange.startLine}-${lineRange.endLine}` : "full",
+        conflictingSessionId: conflicting.sessionId,
+        conflictingTerminalType: conflicting.terminalType || "unknown",
+        conflictingLockedAt: conflicting.lockedAt,
+        conflictingTtlMs: conflicting.ttlMs,
+      });
       return {
         success: false,
         owner: conflicting,
@@ -239,7 +275,25 @@ export function lockFile(
 
     locks.push(newLock);
     persistLocksToDisk(locks, true);
-    recordLockEvent(absPath, sessionId, terminalType, isIntentSoftLock ? "soft_locked" : "acquired");
+    const acquireDetails: LockEventDetails = {
+      projectPath,
+      lineRange: lineRange || null,
+      ttlMs: isIntentSoftLock ? INTENT_SOFT_LOCK_TTL_MS : ttlMs,
+      isIntentSoftLock: !!isIntentSoftLock,
+      remoteNodeId,
+      lockedAt: now,
+      details: `Lock acquired by session ${sessionId} (${terminalType}) on ${path.basename(absPath)}`,
+    };
+    recordLockEvent(absPath, sessionId, terminalType, isIntentSoftLock ? "soft_locked" : "acquired", acquireDetails);
+    logE2E("SUPERAGENT-SERVER", `[LOCK] ${isIntentSoftLock ? "soft_locked" : "acquired"}: ${path.basename(absPath)} by session ${sessionId} (${terminalType})`, {
+      filePath: absPath,
+      projectPath,
+      lineRange: lineRange ? `${lineRange.startLine}-${lineRange.endLine}` : "full",
+      ttlMs: isIntentSoftLock ? INTENT_SOFT_LOCK_TTL_MS : ttlMs,
+      isIntentSoftLock: !!isIntentSoftLock,
+      remoteNodeId: remoteNodeId || null,
+      lockedAt: now,
+    });
     lockEventEmitter.emit("lock_acquired", newLock);
     lockEventEmitter.emit("tline_bridge_sync", { event: "lock_acquired", lock: newLock });
     if (remoteNodeId) {
@@ -333,7 +387,31 @@ export function releaseFile(
         )
     );
     persistLocksToDisk(filtered, true);
-    recordLockEvent(absPath, sessionId || targetLock.sessionId, targetLock.terminalType || "cli", "released");
+    const releaseDetails: LockEventDetails = {
+      projectPath,
+      lineRange: targetLock.lineRange || null,
+      ttlMs: targetLock.ttlMs,
+      isIntentSoftLock: !!targetLock.isIntentSoftLock,
+      remoteNodeId: targetLock.remoteNodeId,
+      lockedAt: targetLock.lockedAt,
+      releasedAt: Date.now(),
+      forceUnlock,
+      details: `Lock released by session ${sessionId || targetLock.sessionId} (${targetLock.terminalType || "cli"})${forceUnlock ? " [FORCE UNLOCK]" : ""} on ${path.basename(absPath)}`,
+    };
+    recordLockEvent(absPath, sessionId || targetLock.sessionId, targetLock.terminalType || "cli", "released", releaseDetails);
+    logE2E("SUPERAGENT-SERVER", `[LOCK] released${forceUnlock ? " (force)" : ""}: ${path.basename(absPath)} by session ${sessionId || targetLock.sessionId} (${targetLock.terminalType || "cli"})`, {
+      filePath: absPath,
+      projectPath,
+      lineRange: targetLock.lineRange ? `${targetLock.lineRange.startLine}-${targetLock.lineRange.endLine}` : "full",
+      ttlMs: targetLock.ttlMs,
+      isIntentSoftLock: !!targetLock.isIntentSoftLock,
+      remoteNodeId: targetLock.remoteNodeId || null,
+      lockedAt: targetLock.lockedAt,
+      releasedAt: Date.now(),
+      forceUnlock,
+      originalOwnerSessionId: targetLock.sessionId,
+      originalOwnerTerminalType: targetLock.terminalType || "cli",
+    });
     lockEventEmitter.emit("lock_released", targetLock);
     lockEventEmitter.emit("tline_bridge_sync", { event: "lock_released", lock: targetLock });
     lockEventEmitter.emit("os_notification_toast", {
@@ -362,7 +440,27 @@ export function releaseAllSessionLocks(sessionId: string, cwd?: string): number 
 
     persistLocksToDisk(filtered, true);
     released.forEach(r => {
-      recordLockEvent(r.filePath, sessionId, r.terminalType || "cli", "released");
+      const releaseAllDetails: LockEventDetails = {
+        projectPath,
+        lineRange: r.lineRange || null,
+        ttlMs: r.ttlMs,
+        isIntentSoftLock: !!r.isIntentSoftLock,
+        remoteNodeId: r.remoteNodeId,
+        lockedAt: r.lockedAt,
+        releasedAt: Date.now(),
+        details: `All session locks released for session ${sessionId} (${r.terminalType || "cli"}) on ${path.basename(r.filePath)}`,
+      };
+      recordLockEvent(r.filePath, sessionId, r.terminalType || "cli", "released", releaseAllDetails);
+      logE2E("SUPERAGENT-SERVER", `[LOCK] release_all: ${path.basename(r.filePath)} for session ${sessionId} (${r.terminalType || "cli"})`, {
+        filePath: r.filePath,
+        projectPath,
+        lineRange: r.lineRange ? `${r.lineRange.startLine}-${r.lineRange.endLine}` : "full",
+        ttlMs: r.ttlMs,
+        isIntentSoftLock: !!r.isIntentSoftLock,
+        remoteNodeId: r.remoteNodeId || null,
+        lockedAt: r.lockedAt,
+        releasedAt: Date.now(),
+      });
       lockEventEmitter.emit("lock_released", r);
       lockEventEmitter.emit("tline_bridge_sync", { event: "lock_released", lock: r });
     });
@@ -408,10 +506,35 @@ export function startDeadlockRecoveryDaemon(checkIntervalMs: number = 5000) {
       const now = Date.now();
       let locks = loadLocksFromDisk();
       const active = locks.filter(l => now - l.lockedAt < l.ttlMs);
-      const staleCount = locks.length - active.length;
+      const stale = locks.filter(l => now - l.lockedAt >= l.ttlMs);
+      const staleCount = stale.length;
       if (staleCount > 0) {
         staleLocksCleanedCount += staleCount;
         persistLocksToDisk(active, true);
+        for (const staleLock of stale) {
+          const staleDetails: LockEventDetails = {
+            projectPath: staleLock.projectPath,
+            lineRange: staleLock.lineRange || null,
+            ttlMs: staleLock.ttlMs,
+            isIntentSoftLock: !!staleLock.isIntentSoftLock,
+            remoteNodeId: staleLock.remoteNodeId,
+            lockedAt: staleLock.lockedAt,
+            releasedAt: now,
+            details: `Stale lock cleaned by deadlock recovery daemon (TTL expired after ${staleLock.ttlMs}ms)`,
+          };
+          recordLockEvent(staleLock.filePath, staleLock.sessionId, staleLock.terminalType || "cli", "deadlock_recovered", staleDetails);
+          logE2E("SUPERAGENT-SERVER", `[LOCK] deadlock_recovered: ${path.basename(staleLock.filePath)} (stale, TTL expired)`, {
+            filePath: staleLock.filePath,
+            projectPath: staleLock.projectPath,
+            sessionId: staleLock.sessionId,
+            terminalType: staleLock.terminalType || "cli",
+            lineRange: staleLock.lineRange ? `${staleLock.lineRange.startLine}-${staleLock.lineRange.endLine}` : "full",
+            ttlMs: staleLock.ttlMs,
+            lockedAt: staleLock.lockedAt,
+            cleanedAt: now,
+            ageMs: now - staleLock.lockedAt,
+          });
+        }
         lockEventEmitter.emit("deadlock_recovered", { count: staleCount });
       }
     });
