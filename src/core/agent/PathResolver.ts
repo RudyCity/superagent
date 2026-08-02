@@ -62,13 +62,24 @@ export class PathResolver {
       if (fs.existsSync(possibleFile)) {
         return possibleFile;
       }
+
+      // Check alternate mode's history directory
+      const otherMode = mode === "multi" ? "single" : "multi";
+      const otherHistoryDir = path.join(getGlobalConfigDir(), "history", otherMode);
+      const otherPossibleDir = path.join(otherHistoryDir, val);
+      const otherPossibleFile = path.join(otherPossibleDir, `${val}.json`);
+      if (fs.existsSync(otherPossibleFile)) {
+        return otherPossibleFile;
+      }
+
       try {
-        const allSessions = listHistorySessions(agent.isMultiAgent, true);
+        const allSessions = listHistorySessions(agent.isMultiAgent, true, undefined, undefined, undefined, "all");
         const matched = allSessions.find(s => s.id === val || s.id.endsWith("_" + val) || s.id.endsWith(val));
         if (matched) {
           return matched.filePath;
         }
       } catch {}
+
       if (fs.existsSync(historyDir)) {
         const dirs = fs.readdirSync(historyDir);
         const match = dirs.find(d => d.toLowerCase() === val.toLowerCase() || d.toLowerCase().endsWith("_" + val.toLowerCase()));
@@ -79,6 +90,18 @@ export class PathResolver {
           }
         }
       }
+
+      if (fs.existsSync(otherHistoryDir)) {
+        const dirs = fs.readdirSync(otherHistoryDir);
+        const match = dirs.find(d => d.toLowerCase() === val.toLowerCase() || d.toLowerCase().endsWith("_" + val.toLowerCase()));
+        if (match) {
+          const matchFile = path.join(otherHistoryDir, match, `${match}.json`);
+          if (fs.existsSync(matchFile)) {
+            return matchFile;
+          }
+        }
+      }
+
       if (!val.includes("/") && !val.includes("\\")) {
         return possibleFile;
       }

@@ -28,4 +28,51 @@ describe("Session Continuation Integration Tests", () => {
     const resolvedFolder = path.basename(path.dirname(resolvedPath));
     expect(resolvedFolder).toBe(customSessionId);
   });
+
+  it("should resolve explicit session ID in alternative history mode directory if not found in current mode", () => {
+    const dummyWorkspace = path.join(process.cwd(), "temp-test-workspace-" + Date.now());
+    
+    const singleAgent = new Agent(
+      () => {},
+      async () => true,
+      async () => {},
+      "System prompt",
+      [],
+      dummyWorkspace
+    );
+    singleAgent.isMultiAgent = false; // single mode
+
+    const multiAgent = new Agent(
+      () => {},
+      async () => true,
+      async () => {},
+      "System prompt",
+      [],
+      dummyWorkspace
+    );
+    multiAgent.isMultiAgent = true; // multi mode
+
+    const customSessionId = "session_mock_mode_cross_" + Date.now();
+    
+    // Let's mock the existence of the file in the multi-agent directory
+    const multiPath = PathResolver.resolveHistoryFilePath(multiAgent, customSessionId);
+    
+    const fs = require("fs");
+    fs.mkdirSync(path.dirname(multiPath), { recursive: true });
+    fs.writeFileSync(multiPath, "");
+
+    try {
+      // Now, try to resolve the same customSessionId on the SINGLE-agent instance.
+      // It should check the multi-agent mode directory and find the existing path!
+      const resolvedFromSingle = PathResolver.resolveHistoryFilePath(singleAgent, customSessionId);
+      
+      expect(resolvedFromSingle).toBe(multiPath);
+    } finally {
+      // Cleanup
+      try {
+        fs.unlinkSync(multiPath);
+        fs.rmdirSync(path.dirname(multiPath));
+      } catch {}
+    }
+  });
 });

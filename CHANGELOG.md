@@ -1,3 +1,10 @@
+## [1.2.703] - 2026-08-03
+
+### Fix: Cross-Mode Session Continuation Search
+
+- **`PathResolver.ts`**: Fall back to checking the alternative agent mode's history directory and database records when resolving an explicit session ID via `autoResume`. This ensures a session originally started in multi-agent mode can be resumed when starting single-agent mode (and vice versa) instead of starting a blank new session.
+- **Test Coverage**: Added cross-mode session resolution test to `tests/integration/sessionContinuation.test.ts`.
+
 ## [1.2.702] - 2026-08-03
 
 ### Fix: SSH Proxy Connection Health Check Infinite Recursion
