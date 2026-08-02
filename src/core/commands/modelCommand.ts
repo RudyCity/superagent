@@ -130,7 +130,7 @@ export const modelCommand: SlashCommand = {
             // Auto-apply after save
             applyModelPreset(presetName, presetMode, true);
             const info = getActiveModelInfo(isMulti);
-            const nextModel = (isMulti ? info.master : info.superagent) || "gpt-4o";
+            const nextModel = getEffectiveMasterModel(presetMode) || getDefaultModel();
             const limit = getContextWindowLimit(nextModel);
 
             if (ctx.setContextLimit) ctx.setContextLimit(limit);
@@ -153,9 +153,9 @@ export const modelCommand: SlashCommand = {
             const presetName = parts.slice(1).join(" ");
             applyModelPreset(presetName, presetMode, persist);
             const info = getActiveModelInfo(isMulti);
-            const nextModel = (isMulti ? info.master : info.superagent) || "gpt-4o";
+            const nextModel = getEffectiveMasterModel(presetMode) || getDefaultModel();
             const limit = getContextWindowLimit(nextModel);
-            
+
             if (ctx.setContextLimit) ctx.setContextLimit(limit);
             if (ctx.setActiveModel) ctx.setActiveModel(nextModel);
 

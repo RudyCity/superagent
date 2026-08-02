@@ -81,20 +81,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
     ];
     const parts = query.split(/\s+/);
     const mainCommand = parts[0].toLowerCase();
-    
-    if (parts.length === 1) {
-      // Handle /mp-<preset-name> shortcut for quick model preset switching
-      const mpShortcutMatch = parts[0].toLowerCase().match(/^\/mp-(.*)$/);
-      if (mpShortcutMatch) {
-        const presets = getModelPresets();
-        const presetSuggestions = presets.length > 0
-          ? presets.map(p => `/mp-${p.name}`)
-          : ["/mp-fast", "/mp-default", "/mp-balanced"];
-        return filterSuggestions(presetSuggestions, query);
-      }
-      return filterSuggestions(commands, query);
-    }
-    
+
     if (mainCommand === "/mp") {
       const presets = getModelPresets();
       const presetSuggestions = presets.length > 0
@@ -104,6 +91,18 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       return searchTerm
         ? filterSuggestions(presetSuggestions, query)
         : presetSuggestions;
+    }
+
+    if (mainCommand.startsWith("/mp-")) {
+      const presets = getModelPresets();
+      const presetSuggestions = presets.length > 0
+        ? presets.map(p => `/mp-${p.name}`)
+        : ["/mp-fast", "/mp-default", "/mp-balanced"];
+      return filterSuggestions(presetSuggestions, query);
+    }
+
+    if (parts.length === 1) {
+      return filterSuggestions(commands, query);
     }
 
     if (mainCommand === "/model") {

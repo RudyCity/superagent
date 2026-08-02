@@ -1075,6 +1075,25 @@ export function App({
       const parts = trimmed.split(/\s+/);
       const mainCommand = parts[0];
 
+      if (mainCommand === "/mp") {
+        const presets = getModelPresets();
+        const presetSuggestions = presets.length > 0
+          ? presets.map(p => `/mp ${p.name}`)
+          : ["/mp fast", "/mp default", "/mp balanced"];
+        const searchTerm = currentInput.replace(/^\/mp\s*/i, "").trim();
+        return searchTerm
+          ? filterSuggestions(presetSuggestions, currentInput)
+          : presetSuggestions;
+      }
+
+      if (mainCommand.startsWith("/mp-")) {
+        const presets = getModelPresets();
+        const presetSuggestions = presets.length > 0
+          ? presets.map(p => `/mp-${p.name}`)
+          : ["/mp-fast", "/mp-default", "/mp-balanced"];
+        return filterSuggestions(presetSuggestions, currentInput);
+      }
+
       if (!currentInput.includes(" ")) {
         return filterSuggestions(commands, currentInput);
       }

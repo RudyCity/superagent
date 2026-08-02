@@ -103,4 +103,14 @@ describe("Bang (!) Shortcut Suggestions and Tab Completion", () => {
     expect(setQueryMock).toHaveBeenCalledWith("!init");
     unmount();
   });
+
+  it("should return preset suggestions when query is /mp or starts with /mp", () => {
+    const mpSuggestions = getDashboardSuggestions("/mp");
+    expect(mpSuggestions.length).toBeGreaterThan(0);
+    expect(mpSuggestions.some(s => s.startsWith("/mp"))).toBe(true);
+
+    const mpDashSuggestions = getDashboardSuggestions("/mp-");
+    expect(mpDashSuggestions.length).toBeGreaterThan(0);
+    expect(mpDashSuggestions.some(s => s.startsWith("/mp-"))).toBe(true);
+  });
 });

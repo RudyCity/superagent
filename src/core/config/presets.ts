@@ -296,7 +296,7 @@ export function saveModelPreset(name: string, description: string, models?: Reco
  * - mode is REQUIRED to know which section to search.
  *   Defaults to "multi" if not provided.
  */
-export function applyModelPreset(name: string, mode?: PresetMode, persist?: boolean): void {
+export function applyModelPreset(name: string, mode?: PresetMode, persist: boolean = false): void {
   const targetMode: PresetMode = mode || "multi";
   const fileData = readPresetsFile();
   const targetName = name.toLowerCase().trim();
@@ -309,7 +309,7 @@ export function applyModelPreset(name: string, mode?: PresetMode, persist?: bool
       (p: any) => p.id?.toLowerCase() === targetName || p.name?.toLowerCase() === targetName
     );
     if (configPreset) {
-      if (persist ?? true) {
+      if (persist) {
         savePreset(targetMode, configPreset);
         setActivePresetId(targetMode, targetName);
       } else {
@@ -387,7 +387,7 @@ export function applyModelPreset(name: string, mode?: PresetMode, persist?: bool
     description: preset.description || "",
     models: newPreset,
   };
-  const shouldPersist = persist ?? true;
+  const shouldPersist = persist ?? false;
   if (shouldPersist) {
     savePreset(targetMode, jsonPreset);
     setActivePresetId(targetMode, targetName);

@@ -229,7 +229,7 @@ export async function handlePresetStep(
       try {
         const savedPath = saveModelPreset(presetName, presetDescription, models, presetMode);
 
-        applyModelPreset(presetName, presetMode, false);
+        applyModelPreset(presetName, presetMode, true);
         const isSingle = !isMulti;
         const nextActiveModel = getEffectiveMasterModel(presetMode) || getDefaultModel();
         const limit = getContextWindowLimit(nextActiveModel);

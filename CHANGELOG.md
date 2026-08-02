@@ -1,3 +1,11 @@
+## [1.2.676] - 2026-08-02
+
+### Fix: Session-Isolated (In-Memory) Preset Switching & Unified `/mp` and `/model` Behavior
+- **In-Memory Session Isolation**: Updated `applyModelPreset` to default to `persist = false` (`setActivePreset`), ensuring preset switches affect only the active terminal session in-memory without overwriting global `model-config.json` on disk. Allows multiple terminal instances to run different presets independently.
+- **Global Save Option**: Added support for `--global` / `--save` flags (e.g. `/mp fast --global` or `/model preset fast --save`) to persist presets globally across disk when explicitly requested.
+- **Unified Model Resolution & Autocomplete**: Fixed `/mp` autocomplete suggestions in terminal dashboard and aligned model resolution via `getEffectiveMasterModel` and `getTierModelWithProvider` across `/mp`, `/model preset`, and `/model` UI wizard.
+- **Files Modified**: `src/app.tsx`, `src/core/commands/mpCommand.ts`, `src/core/commands/modelCommand.ts`, `src/core/config/presets.ts`, `src/hooks/wizard/useModelPresets.ts`, `src/utils/dashboardSuggestions.ts`, `tests/bangSuggestions.test.ts`.
+
 ## [1.2.675] - 2026-08-02
 
 ### Fix: Context Window Percentage Display Stuck at 0%

@@ -1,67 +1,50 @@
 import { registry } from "./registry.js";
-import { SlashCommand } from "./types.js";
+import { SlashCommand, getDefaultModel } from "./types.js";
 import {
   applyModelPreset,
   getContextWindowLimit,
   fetchAndCacheModels,
+  getEffectiveMasterModel,
+  getTierModelWithProvider,
+  getAllTierModels,
 } from "../config.js";
 import type { PresetMode } from "../config.js";
-import { getActivePreset } from "../config/jsonConfig.js";
-import { getTierModelConfig } from "../config/providers.js";
 
-function formatModelWithProvider(tier: any): string {
-  if (!tier?.model) return "(use default)";
-  if (tier.providerProfileId) {
-    return `${tier.providerProfileId}@${tier.model}`;
-  }
-  return tier.model;
-}
+function buildUpdatedModelsList(mode: PresetMode): string {
+  const isSingle = mode === "single";
+  let updatedList = "";
+  if (isSingle) {
+    const singleModel = getEffectiveMasterModel("single") || getDefaultModel();
+    const subagentModel = getTierModelWithProvider("single", "subagent") || "(use default)";
+    updatedList += `  Single Agent Model: ${singleModel}\n` +
+      `  Subagent (depth 2): ${subagentModel}`;
 
-function getActiveModelInfo(isMulti: boolean) {
-  const mode = isMulti ? "multi" : "single";
-  const preset = getActivePreset<any>(mode);
-  const models = preset.models;
-
-  if (isMulti) {
-    return {
-      master: formatModelWithProvider(models.master),
-      superagent: formatModelWithProvider(models.superagent),
-      subagentDefault: formatModelWithProvider(models.subagentDefault),
-      subagentDetails: models.subagentDetails || {},
-    };
+    const allModelsSingle = getAllTierModels("single");
+    for (const [key, val] of Object.entries(allModelsSingle)) {
+      if (key.startsWith("subagent_") || key.startsWith("subagentDetails_")) {
+        const subName = key.replace(/^(subagent_|subagentDetails_)/, "");
+        const tierVal = getTierModelWithProvider("single", key) || val;
+        updatedList += `\n  Subagent [${subName}]: ${tierVal}`;
+      }
+    }
   } else {
-    return {
-      superagent: formatModelWithProvider(models.superagent),
-      subagentDefault: formatModelWithProvider(models.subagentDefault),
-      subagentDetails: models.subagentDetails || {},
-    };
-  }
-}
+    const masterModel = getTierModelWithProvider("multi", "master") || "(use default)";
+    const superagentModel = getTierModelWithProvider("multi", "superagent") || "(use default)";
+    const subagentModel = getTierModelWithProvider("multi", "subagent") || "(use default)";
+    updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
+      `  Superagent (depth 1): ${superagentModel}\n` +
+      `  Subagent (depth 2): ${subagentModel}`;
 
-function formatModelList(info: ReturnType<typeof getActiveModelInfo>, isMulti: boolean): string {
-  let list = "";
-  if (isMulti) {
-    list += `  Master Agent (depth 0): ${info.master}\n`;
-    list += `  Superagent (depth 1): ${info.superagent}\n`;
-    list += `  Subagent (depth 2): ${info.subagentDefault}`;
-  } else {
-    const singleTierCfg = getTierModelConfig("single", "superagent");
-    const visionTag = singleTierCfg?.supportsVision === true
-      ? " [👁 Vision: ON]"
-      : singleTierCfg?.supportsVision === false
-      ? " [Vision: OFF]"
-      : "";
-    list += `  Single Agent: ${info.superagent}${visionTag}`;
-    if (info.subagentDefault !== "(use default)") {
-      list += `\n  Subagent (depth 2): ${info.subagentDefault}`;
+    const allModelsMulti = getAllTierModels("multi");
+    for (const [key, val] of Object.entries(allModelsMulti)) {
+      if (key.startsWith("subagent_") || key.startsWith("subagentDetails_")) {
+        const subName = key.replace(/^(subagent_|subagentDetails_)/, "");
+        const tierVal = getTierModelWithProvider("multi", key) || val;
+        updatedList += `\n  Subagent [${subName}]: ${tierVal}`;
+      }
     }
   }
-  for (const [name, cfg] of Object.entries(info.subagentDetails)) {
-    if (cfg && typeof cfg === "object" && "model" in cfg) {
-      list += `\n  Subagent "${name}": ${formatModelWithProvider(cfg)}`;
-    }
-  }
-  return list;
+  return updatedList;
 }
 
 export const mpCommand: SlashCommand = {
@@ -85,33 +68,36 @@ export const mpCommand: SlashCommand = {
       const presetMode: PresetMode = isMulti ? "multi" : "single";
       const modeLabel = isMulti ? "Multi-Agent" : "Single-Agent";
 
-      // Apply the preset (persist globally by default)
-      applyModelPreset(presetName, presetMode, true);
+      const hasGlobal = args.includes("--global") || args.includes("--save");
+      const cleanPresetName = args.replace(/--(global|save)/gi, "").trim();
 
-      const info = getActiveModelInfo(isMulti);
-      const nextModel = (isMulti ? info.master : info.superagent) || "gpt-4o";
-      const limit = getContextWindowLimit(nextModel);
+      // Apply preset in-memory for this session (unless --global / --save is specified)
+      applyModelPreset(cleanPresetName, presetMode, hasGlobal);
+
+      const nextActiveModel = getEffectiveMasterModel(presetMode) || getDefaultModel();
+      const limit = getContextWindowLimit(nextActiveModel);
 
       if (ctx.setContextLimit) ctx.setContextLimit(limit);
-      if (ctx.setActiveModel) ctx.setActiveModel(nextModel);
+      if (ctx.setActiveModel) ctx.setActiveModel(nextActiveModel);
 
       // Update ContextManager if it exists
       const cm = ctx.agent?.getContextManager?.();
       if (cm) {
-        cm.setModel(nextModel);
+        cm.setModel(nextActiveModel);
         cm.setThreshold(limit);
       }
 
+      const scopeLabel = hasGlobal ? " (Saved Globally)" : " (Session In-Memory)";
       ctx.addLine({
         type: "system",
-        content: `⚡ Switched to model preset "${presetName}" [${modeLabel}]\nUpdated Models:\n${formatModelList(info, isMulti)}`,
+        content: `Model preset "${cleanPresetName}" applied successfully! [${modeLabel}]${scopeLabel}\n\nUpdated Models:\n${buildUpdatedModelsList(presetMode)}`,
         timestamp: now,
       });
 
       // Fetch and cache models in background for accurate context limit
       fetchAndCacheModels()
         .then(() => {
-          const newLimit = getContextWindowLimit(nextModel);
+          const newLimit = getContextWindowLimit(nextActiveModel);
           if (ctx.setContextLimit) ctx.setContextLimit(newLimit);
           if (cm) cm.setThreshold(newLimit);
         })
