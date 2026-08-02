@@ -61,7 +61,8 @@ const WORKSPACE_CHAIN_RULE = `- WORKSPACE_CHAINS: Multi-node topology (local & S
 - WORKSPACE_CHAIN_ROUTING: Use cross_workspace_exec (switch-node) to set the active node. Once switched, all standard system tools (glob, grep, ripgrep_search, view_file, write_to_file, run_command) automatically and transparently route and execute on the active node (local or SSH) via workspaceMode.`;
 
 const SCRATCH_AND_TRANSFER_RULE = `- SCRATCH_WORKSPACE: Free read/write access to local session directory (derived from process.env.SUPERAGENT_SESSION_PATH) without permission prompt. Safe for helper/scratch files in both local and SSH mode.
-- SSH_TRANSFER: In SSH mode, use transfer_ssh_file (upload/download) to copy files between local session directory and remote workspace. Standard file tools bypass SSH routing when targeting local config/session paths.`;
+- SSH_TRANSFER: In SSH mode, use transfer_ssh_file (upload/download) to copy files between local session directory and remote workspace. Standard file tools bypass SSH routing when targeting local config/session paths.
+- SSH_WORKSPACE_SKILLS: In SSH workspace mode, you MUST identify all relevant skills and read/use their instructions from the available skills before planning or executing tasks.`;
 
 // ─── Report Template (dedup'd) ────────────────────────────────
 

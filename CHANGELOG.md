@@ -1,3 +1,9 @@
+## [1.2.704] - 2026-08-03
+
+### Updated: System Prompts for Mandatory Skill Usage in SSH Workspaces
+
+- **`prompts.ts`**: Updated `SCRATCH_AND_TRANSFER_RULE` to include the `SSH_WORKSPACE_SKILLS` rule. This explicitly instructs all agents (Master Agent, Superagent, researcher, coder, and general subagents) to identify relevant skills and read/use their instructions before executing tasks in SSH workspace mode.
+
 ## [1.2.703] - 2026-08-03
 
 ### Fix: Cross-Mode Session Continuation Search
