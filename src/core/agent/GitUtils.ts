@@ -6,6 +6,7 @@ import fs from "fs";
 interface GitFileDiff {
   added: number;
   deleted: number;
+  mtime?: number;
 }
 
 export type GitSnapshot = Record<string, GitFileDiff>;
@@ -19,8 +20,17 @@ export async function captureGitSnapshot(cwd: string): Promise<GitSnapshot | nul
 
     const snapshot: GitSnapshot = {};
 
-    // Get tracked changes relative to HEAD
-    const { stdout: numstat } = await execa("git", ["diff", "HEAD", "--numstat"], { cwd, reject: false });
+    // Get tracked changes relative to HEAD (or fallback to working/staged diff if no HEAD)
+    let numstat = "";
+    const headResult = await execa("git", ["diff", "HEAD", "--numstat"], { cwd, reject: false });
+    if (headResult.exitCode === 0 && headResult.stdout) {
+      numstat = headResult.stdout;
+    } else {
+      const diffWorking = await execa("git", ["diff", "--numstat"], { cwd, reject: false });
+      const diffStaged = await execa("git", ["diff", "--cached", "--numstat"], { cwd, reject: false });
+      numstat = [diffWorking.stdout, diffStaged.stdout].filter(Boolean).join("\n");
+    }
+
     const lines = numstat.split("\n");
     for (const line of lines) {
       const trimmed = line.trim();
@@ -30,18 +40,28 @@ export async function captureGitSnapshot(cwd: string): Promise<GitSnapshot | nul
         const added = parts[0] === "-" ? 0 : parseInt(parts[0], 10);
         const deleted = parts[1] === "-" ? 0 : parseInt(parts[1], 10);
         const filepath = parts.slice(2).join(" ");
-        snapshot[filepath] = { added, deleted };
+        let mtime: number | undefined;
+        try {
+          const stat = fs.statSync(path.resolve(cwd, filepath));
+          mtime = stat.mtimeMs;
+        } catch {}
+        snapshot[filepath] = { added, deleted, mtime };
       }
     }
 
     // Get untracked files
     const { stdout: untracked } = await execa("git", ["ls-files", "--others", "--exclude-standard"], { cwd, reject: false });
     const untrackedFiles = untracked.split("\n").map(f => f.trim()).filter(Boolean);
-    
+
     if (untrackedFiles.length > 100) {
       // Avoid parallel disk reads on massive untracked files lists (e.g. build directories)
       for (const filepath of untrackedFiles) {
-        snapshot[filepath] = { added: 0, deleted: 0 };
+        let mtime: number | undefined;
+        try {
+          const stat = fs.statSync(path.resolve(cwd, filepath));
+          mtime = stat.mtimeMs;
+        } catch {}
+        snapshot[filepath] = { added: 0, deleted: 0, mtime };
       }
     } else {
       // Read files concurrently to avoid serial disk I/O bottlenecks
@@ -55,9 +75,9 @@ export async function captureGitSnapshot(cwd: string): Promise<GitSnapshot | nul
               if (stat.size < 1024 * 1024) {
                 const content = await fs.promises.readFile(fullPath, "utf-8");
                 const linesCount = content.split(/\r?\n/).length;
-                snapshot[filepath] = { added: linesCount, deleted: 0 };
+                snapshot[filepath] = { added: linesCount, deleted: 0, mtime: stat.mtimeMs };
               } else {
-                snapshot[filepath] = { added: 0, deleted: 0 };
+                snapshot[filepath] = { added: 0, deleted: 0, mtime: stat.mtimeMs };
               }
             }
           } catch {
@@ -113,6 +133,8 @@ export function getGitDiffSummary(start: GitSnapshot | null, end: GitSnapshot | 
         parts.push(deletedDiff > 0 ? `-${deletedDiff}` : `+${-deletedDiff}`);
       }
       summaryLines.push(`- ${file}: ${parts.join(", ")}`);
+    } else if (startVal.mtime !== undefined && endVal.mtime !== undefined && startVal.mtime !== endVal.mtime) {
+      summaryLines.push(`- ${file}: modified`);
     }
   }
 

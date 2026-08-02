@@ -1,4 +1,11 @@
-"## [1.2.683] - 2026-08-02
+"## [1.2.684] - 2026-08-02
+
+### Fix: Git Edits Changes Summary Pipeline
+- **Initial Commit / No-HEAD Fallback**: Added fallback to `git diff --numstat` and `git diff --cached --numstat` when `git diff HEAD` fails in initial git repositories without a `HEAD` commit.
+- **In-Place Modification Tracking**: Tracked file `mtime` to detect in-place content modifications when net line additions and deletions relative to HEAD are zero, ensuring `- file: modified` is formatted correctly.
+- **Unconditional Summary Execution**: Moved snapshot comparison logic out of `if (textContent.trim())` block in `LoopIterationProcessor.ts` so `Changes summary:` is processed even when tool calls produce empty text outputs.
+
+## [1.2.683] - 2026-08-02
 
 ### Fix: Suppress ONNX Runtime Warning Logs
 - **ONNX Log Level**: Set `env.backends.onnx.logLevel = 'error'` on `@xenova/transformers` initialization to suppress internal graph optimization warning messages.

@@ -668,6 +668,17 @@ export class LoopIterationProcessor {
     }
 
     if (toolCalls.length === 0) {
+      const currentCwd = (agent.tier === "superagent" && agent.worktreePath)
+        ? agent.worktreePath
+        : agent.workingDirectory;
+      const endSnapshot = await captureGitSnapshot(currentCwd);
+      const gitSummary = getGitDiffSummary(agent.gitStartSnapshot, endSnapshot);
+      if (gitSummary) {
+        const summaryHeader = (textContent.trim() ? "\n\n" : "") + "Changes summary:\n" + gitSummary;
+        textContent += summaryHeader;
+        agent.onEvent({ type: "text", content: summaryHeader });
+      }
+
       if (textContent.trim()) {
         const isEarlyIteration = i < 2;
         const category = agent.currentClassification?.category || "complex_task";
@@ -694,18 +705,10 @@ export class LoopIterationProcessor {
           return { shouldBreak: false };
         }
 
-        const currentCwd = (agent.tier === "superagent" && agent.worktreePath)
-          ? agent.worktreePath
-          : agent.workingDirectory;
-        const endSnapshot = await captureGitSnapshot(currentCwd);
-        const gitSummary = getGitDiffSummary(agent.gitStartSnapshot, endSnapshot);
-        if (gitSummary) {
-          const summaryHeader = "\n\nChanges summary:\n" + gitSummary;
-          textContent += summaryHeader;
-          agent.onEvent({ type: "text", content: summaryHeader });
-        }
-
         agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
+        await agent.saveHistory();
+      } else {
+        agent.conversation.addAssistantMessage(textContent || "Completed task.", undefined, undefined, reasoningContent);
         await agent.saveHistory();
       }
       return { shouldBreak: true };
