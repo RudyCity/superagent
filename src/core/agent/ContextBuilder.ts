@@ -20,6 +20,10 @@ export class ContextBuilder {
     supportsNativeTools: boolean;
     dynamicContext: string;
   }> {
+    // Reset stale APPROVED planState if no real plan content exists on disk
+    if (agent.planState === "APPROVED" && typeof (agent as any).hasRealPlanContent === "function" && !(agent as any).hasRealPlanContent()) {
+      agent.planState = "IDLE";
+    }
     const isGoalMode = !!agent.goalMode;
     const category = agent.currentClassification?.category || "complex_task";
     let baseSystemPrompt = (agent as any).customSystemPrompt || (agent as any).config.systemPrompt || "";
@@ -133,7 +137,7 @@ export class ContextBuilder {
     let planStateAddendum = "";
     if (agent.planState === "PLANNING_PENDING") {
       planStateAddendum = `\n\n⚠️ IMPORTANT PLAN STATE NOTICE:\nAn implementation plan has been written to '${agent.getPlanFilePath()}' and is currently pending user approval.\nYou are temporarily in a READ-ONLY mode.\n- DO NOT attempt to write/edit/modify any codebase files.\n- DO NOT run terminal commands that modify files, add packages, or check out git branches.\n- Focus on explaining your proposed plan to the user, answering any questions, or waiting for them to approve via the interactive approval wizard.`;
-    } else if (agent.planState === "APPROVED") {
+    } else if (agent.planState === "APPROVED" && typeof (agent as any).hasRealPlanContent === "function" && (agent as any).hasRealPlanContent()) {
       planStateAddendum = `\n\n✓ PLAN STATE NOTICE:\nThe user has APPROVED your implementation plan. You are now fully authorized to modify codebase files and run commands to execute the plan.`;
     }
 
@@ -337,7 +341,7 @@ export class ContextBuilder {
       toolRestrictionNotice = `\n\n⚠️ Terminal/shell execution DISABLED for this request. Do NOT use run_command or similar tools.`;
     }
 
-    const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 50);
+    const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 300);
     const maxIterations = agent.goalMode ? agent.goalMaxIterations : defaultMax;
     const maxIterationsStr = maxIterations === Infinity ? "unlimited" : maxIterations.toString();
     const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}\n\nEXECUTION CONTEXT:\n- Step limit: ${maxIterationsStr} iterations. Be efficient.\n- Spawn subagents in parallel for independent tasks (>3 files, >2 domains, broad research).\n${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}${workspaceChainNotice}`;

@@ -1,3 +1,9 @@
+"## [1.2.679] - 2026-08-02
+
+### Fix: Guard Against Empty Plan Approval Loop
+- **Agent Approval Guard**: Added `hasRealPlanContent()` validation check before marking `planState` as `APPROVED` to prevent infinite nudge loops when plan files are missing or contain only stubs.
+- **Unit Tests**: Added test coverage in `tests/agentPlanContent.test.ts` to verify `hasRealPlanContent()` logic.
+
 ## [1.2.678] - 2026-08-02
 
 ### Feature: Interactive Checkpoint & Rollback UI Wizard

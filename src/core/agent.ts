@@ -132,7 +132,11 @@ export class Agent {
   });
 
   public approvePlan(): void {
-    this.planState = "APPROVED";
+    if (this.hasRealPlanContent()) {
+      this.planState = "APPROVED";
+    } else {
+      this.planState = "IDLE";
+    }
   }
 
   public dispose(): void {
@@ -318,6 +322,22 @@ export class Agent {
 
   public getPlanFilePath(): string {
     return PathResolver.getPlanFilePath(this);
+  }
+
+  /**
+   * Verifies a real, non-trivial plan exists on disk.
+   * Prevents the "plan approved" auto-nudge from looping endlessly when
+   * planState is APPROVED but no actual plan file/content was ever written.
+   */
+  public hasRealPlanContent(): boolean {
+    try {
+      const planPath = this.getPlanFilePath();
+      if (!planPath || !fs.existsSync(planPath)) return false;
+      const content = fs.readFileSync(planPath, "utf-8").trim();
+      return content.length > 40 && /(implementation|plan|task|feature|fix|refactor|phase|\n#{1,6}\s)/i.test(content);
+    } catch {
+      return false;
+    }
   }
 
 

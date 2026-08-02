@@ -58,7 +58,7 @@ export class RequestProcessor {
             const skipPlanningCategories = ["conversation", "question", "research"];
             if (skipPlanningCategories.includes(classification.category)) {
               agent.isSimpleTask = true;
-              agent.planState = "APPROVED";
+              agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
               agent.simpleTaskApproved = true;
             } else if (classification.category === "complex_task") {
               const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
@@ -72,13 +72,13 @@ export class RequestProcessor {
                   agent.isSimpleTask = false;
                 } else {
                   agent.isSimpleTask = true;
-                  agent.planState = "APPROVED";
+                  agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
                   agent.simpleTaskApproved = true;
                 }
               }
             } else if (classification.category === "simple_edit" || classification.category === "command" || classification.category === "debug") {
               agent.isSimpleTask = true;
-              agent.planState = "APPROVED";
+              agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
               agent.simpleTaskApproved = true;
             }
           } else if (agent.planState === "PLANNING_PENDING") {
@@ -93,7 +93,7 @@ export class RequestProcessor {
             const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
             const isConfirmation = confirmationWords.some(w => words.includes(w) || lowerInput.includes(w));
             if (isConfirmation) {
-              agent.planState = "APPROVED";
+              agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
               agent.simpleTaskApproved = true;
               // Reset current classification to complex_task (full toolset) so execution is not constrained by conversation category tools
               agent.currentClassification = {
@@ -224,19 +224,24 @@ export class RequestProcessor {
     (agent as any).tasksJustArchived = false;
     (agent as any).archivedTaskCount = 0;
     if (agent.planState === "APPROVED") {
-      try {
-        const taskPath = agent.getTaskFilePath();
-        const allDone = await allTasksCompleted(taskPath);
-        if (allDone) {
-          const archived = await archiveCompletedTasks(taskPath);
-          if (archived.length > 0) {
-            (agent as any).tasksJustArchived = true;
-            (agent as any).archivedTaskCount = archived.length;
-            agent.writeToLogFile("INFO", `Auto-archived ${archived.length} completed tasks to history. Ready for new task creation.`);
+      if (typeof (agent as any).hasRealPlanContent === "function" && !(agent as any).hasRealPlanContent()) {
+        agent.planState = "IDLE";
+      } else {
+        try {
+          const taskPath = agent.getTaskFilePath();
+          const allDone = await allTasksCompleted(taskPath);
+          if (allDone) {
+            const archived = await archiveCompletedTasks(taskPath);
+            if (archived.length > 0) {
+              (agent as any).tasksJustArchived = true;
+              (agent as any).archivedTaskCount = archived.length;
+              agent.writeToLogFile("INFO", `Auto-archived ${archived.length} completed tasks to history. Ready for new task creation.`);
+            }
+            agent.planState = "IDLE";
           }
+        } catch (err: any) {
+          agent.writeToLogFile("WARN", `Failed to auto-archive completed tasks: ${err.message}`);
         }
-      } catch (err: any) {
-        agent.writeToLogFile("WARN", `Failed to auto-archive completed tasks: ${err.message}`);
       }
     }
 
