@@ -338,7 +338,7 @@ export class SshProxyService {
         return ep && (normalized === ep || normalized.startsWith(ep + "/"));
       });
       if (!isUnderExtra) {
-        throw new Error(`Access denied: Path "${targetPath}" escapes remote workspace boundary "${posixBase}"`);
+        throw new Error(`Access denied: Path "${targetPath}" escapes remote workspace boundary "${posixBase}". Use /ssh expand <directory> to allow access to paths outside the workspace.`);
       }
     }
 

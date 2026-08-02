@@ -1,3 +1,12 @@
+## [1.2.699] - 2026-08-02
+
+### Fix: SSH Workspace — Complete Boundary Coverage
+
+- **`officeCliTools.ts`**: Updated `isInsideRemote()` to check `additionalAllowedPaths`, so Office files outside `remoteCwd` are accessible after `/ssh expand`. Error message now suggests the exact `/ssh expand` command.
+- **`sshProxy.ts`**: Boundary error message now hints `Use /ssh expand <directory>` as the resolution.
+- **`WorkspaceChainManager.ts`**: Same hint added to chain node boundary error message.
+- All 4 boundary enforcement points now consistently support `additionalAllowedPaths` and guide users to `/ssh expand`.
+
 ## [1.2.698] - 2026-08-02
 
 ### Added: /ssh Command — Suggestions & Help

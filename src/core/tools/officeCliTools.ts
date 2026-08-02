@@ -42,17 +42,22 @@ export const officeCliTool: Tool = {
       try {
         const { sshProxy } = await import("../ssh/sshProxy.js");
         const remoteCwd = (workspaceMode.getConfig()?.remoteCwd || cwd || "").replace(/\\/g, "/").replace(/\/+$/, "");
+        const extraPaths = workspaceMode.getConfig()?.additionalAllowedPaths ?? [];
         // Boundary enforcement: scan args for absolute paths that escape remoteCwd.
         const normalizedBase = "/" + remoteCwd.split("/").filter((p) => p && p !== ".").join("/");
         const isInsideRemote = (posix: string) => {
           if (!normalizedBase || normalizedBase === "/") return true;
-          return posix === normalizedBase || posix.startsWith(normalizedBase + "/");
+          if (posix === normalizedBase || posix.startsWith(normalizedBase + "/")) return true;
+          return extraPaths.some(ep => {
+            const cleanEp = ep.replace(/\/+$/, "");
+            return cleanEp && (posix === cleanEp || posix.startsWith(cleanEp + "/"));
+          });
         };
         for (const token of cleanParts) {
           if (typeof token === "string" && token.includes("/")) {
             const posix = token.replace(/\\/g, "/");
             if (posix.startsWith("/") && !isInsideRemote(posix)) {
-              return `Error: Path "${token}" violates SSH workspace boundary. Operations must remain within "${remoteCwd}".`;
+              return `Error: Path "${token}" violates SSH workspace boundary. Use \`/ssh expand ${posix.split("/").slice(0, 3).join("/")}\` to allow access, or move the file into "${remoteCwd}".`;
             }
           }
         }
