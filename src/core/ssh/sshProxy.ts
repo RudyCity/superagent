@@ -84,6 +84,7 @@ export class SshProxyService {
   // Q4: Connection health monitoring
   private lastActivityTime = 0;
   private readonly healthCheckIntervalMs = 60000; // Check if idle > 60s
+  private isCheckingHealth = false;
 
   public setPasswordHandler(handler: () => Promise<string>) {
     this.passwordHandler = handler;
@@ -279,18 +280,22 @@ export class SshProxyService {
 
     // Q4: Connection health monitoring — check if session is still alive after idle period
     const idleTime = Date.now() - this.lastActivityTime;
-    if (idleTime > this.healthCheckIntervalMs) {
+    if (idleTime > this.healthCheckIntervalMs && !this.isCheckingHealth) {
+      this.isCheckingHealth = true;
       try {
         await this.exec("true", ".", 5000);
         sshLogger.debug("health", "keepalive check passed");
       } catch (err) {
         sshLogger.warn("health", `keepalive check failed — reconnecting: ${(err as Error).message}`);
-        if (this.config) {
+        const reconnectConfig = activeConfig || this.config;
+        if (reconnectConfig) {
           await this.disconnect();
-          await this.connect(this.config);
+          await this.connect(reconnectConfig);
         } else {
           throw new Error("SSH Proxy is not connected");
         }
+      } finally {
+        this.isCheckingHealth = false;
       }
     }
     this.lastActivityTime = Date.now();

@@ -1,3 +1,11 @@
+## [1.2.702] - 2026-08-03
+
+### Fix: SSH Proxy Connection Health Check Infinite Recursion
+
+- **`sshProxy.ts`**: Introduced `isCheckingHealth` flag to protect the keepalive check from initiating recursive health checks when `exec("true")` calls `ensureConnected()`.
+- **Active Config Fallback**: Updated the keepalive reconnection logic to use `activeConfig` if `this.config` has been cleared during disconnection.
+- **Test Coverage**: Added recursion-prevention keepalive checks to the `sshImprovements.test.ts` test suite.
+
 ## [1.2.701] - 2026-08-03
 
 ### Added: Local Session Workspace & SSH File Transfer Tool

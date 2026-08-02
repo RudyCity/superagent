@@ -157,6 +157,57 @@ describe("SSH Improvements — Audit Findings Implementation", () => {
         expect(result.error.length).toBeGreaterThan(0);
       }
     });
+
+    it("keepalive check executes true command without infinite recursion", async () => {
+      const origExec = sshProxy.exec;
+      const origConnect = sshProxy.connect;
+      const origDisconnect = sshProxy.disconnect;
+
+      // Mock configuration
+      const config = {
+        host: "test-host",
+        port: 22,
+        username: "test-user",
+        remoteCwd: "/home/ubuntu",
+      };
+      workspaceMode.setSshMode(config);
+
+      // Set internal mock state
+      (sshProxy as any).config = config;
+      (sshProxy as any).sshClient = { _sock: { destroyed: false, closed: false } } as any;
+      (sshProxy as any).sftpClient = {} as any;
+      (sshProxy as any).lastActivityTime = Date.now() - 1000000; // Force health check
+
+      let execCallCount = 0;
+      let trueCmdCalled = false;
+
+      sshProxy.exec = async (command: string, cwd?: string, timeoutMs?: number, signal?: AbortSignal) => {
+        execCallCount++;
+        if (command === "true") {
+          trueCmdCalled = true;
+          // When executing the keepalive check, it will call ensureConnected() internally.
+          // Because ensureConnected() uses isCheckingHealth, this nested call should bypass the health check and not call exec recursively.
+          await (sshProxy as any).ensureConnected();
+          return { stdout: "", stderr: "", exitCode: 0 };
+        }
+        return { stdout: "whoami-or-pwd", stderr: "", exitCode: 0 };
+      };
+
+      try {
+        const result = await sshProxy.diagnose();
+        expect(result.ok).toBe(true);
+        expect(trueCmdCalled).toBe(true);
+        expect(execCallCount).toBe(3); // 1 for "true", 1 for "pwd", 1 for "whoami"
+      } finally {
+        sshProxy.exec = origExec;
+        sshProxy.connect = origConnect;
+        sshProxy.disconnect = origDisconnect;
+        (sshProxy as any).config = null;
+        (sshProxy as any).sshClient = null;
+        (sshProxy as any).sftpClient = null;
+        workspaceMode.setLocalMode();
+      }
+    });
   });
 
   // ─── Shell escaping regression ─────────────────────────────────────────────
