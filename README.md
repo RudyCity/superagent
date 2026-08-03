@@ -31,8 +31,8 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 - **🖥️ Native Desktop Integration**: Automatic connection with [t-line](https://github.com/RudyCity/t-line) desktop GUI app without manual configuration.
 - **🧠 Smart Context Management**: Automatic token tracking, LLM summarization, strategy-based pruning, and message pinning.
 - **🛡️ Local Git Checkpoints**: Automatic branch checkpoints and safety rollbacks during active sessions.
-- **🛠️ Integrated Tooling**: Built-in file search, regex ripgrep, background command runners, and terminal presets.
-- **🌐 Chrome Extension *(Experimental)***: Browser automation, console/network log inspection, and DOM text extraction.
+- **🛠️ Integrated Tooling**: Built-in file search, regex ripgrep, background command runners, terminal presets, system-level screenshots, and Playwright web page screenshots.
+- **🌐 Remote SSH Workspaces**: Secure connection to remote hosts with active boundary protection, interactive path expansion, local-to-remote file transfer, and workspace-based session continuation.
 - **🤖 3-Tier Multi-Agent Mode *(Experimental)***: Master Agent orchestrating isolated Superagents across parallel Git worktrees (`--multi`).
 
 ---
@@ -145,6 +145,7 @@ No manual server configuration or extra CLI arguments are required—simply laun
 |---|---|
 | `/workspace` `/w` | Manage local, remote (SSH) workspaces, and workspace chains |
 | `/worktrees` `/worktree` | Manage Git worktrees: list, prune, remove |
+| `/ssh` | Manage active SSH workspace boundary (only available in SSH mode) |
 
 `/workspace` subcommands:
 - `status` — Show current workspace info & SSH remote status
@@ -152,6 +153,7 @@ No manual server configuration or extra CLI arguments are required—simply laun
 - `use <path\|index>` — Switch to a registered workspace
 
 SSH remote format: `ssh://user@host:port/path?key=/path/key.pem`
+Declaring extra allowed paths: `ssh://user@host:port/path?key=/path/key.pem&allow=/var/www/html,/etc/nginx`
 
 **SSH workspace example:**
 
@@ -165,6 +167,24 @@ SSH remote format: `ssh://user@host:port/path?key=/path/key.pem`
 # Check remote status
 /workspace status
 ```
+
+`/ssh` subcommands:
+- `status` — Show current SSH host, workspace path, and allowed paths
+- `expand <path>` — Whitelist an extra absolute path (e.g. `/var/www/html`)
+- `allowed` — List all currently whitelisted extra paths
+
+#### 🔒 SSH Workspace Boundary Expansion & Allowed Paths
+
+Superagent enforces strict boundary protection on SSH remote workspaces to prevent unauthorized file read/write operations. You can expand access to additional paths:
+- **Automatic Boundary Expansion**: If a tool attempts to access a path outside the remote workspace, Superagent will pop up an interactive confirmation dialog. Once approved, the boundary is dynamically expanded.
+- **Allowed Paths via URL**: Specify additional directories during connection using the `?allow=` parameter.
+- **Runtime Command**: Whitelist a directory at any time using `/ssh expand <path>`.
+
+#### 📂 Local Session Scratch & File Transfer
+
+When operating in an SSH remote workspace, you can still leverage local workspace operations:
+- **Local Routing Bypass**: File reads and writes under the current local session history directory (`~/.superagent-r/history/<mode>/<sessionId>/`) automatically bypass remote SSH routing.
+- **File Transfer Tool (`transfer_ssh_file`)**: Use this tool to upload files from your local session scratch directory to the remote workspace, or download results from the remote workspace to the local session scratch directory.
 
 #### 🔗 Workspace Chaining (Cross-Workspace Development)
 
