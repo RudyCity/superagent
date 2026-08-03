@@ -1,3 +1,11 @@
+## [1.2.707] - 2026-08-03
+
+### Changed: Bypass Strict Implementation Plan Structure Checks on Approval
+
+- **`useWizardSubmit.ts`**: Removed strict structure validation check (`checkPlanStructure`) on plan approval, enabling direct approval and continuing the plan execution without forcing user feedback redirect loop.
+- **`LoopIterationProcessor.ts`**: Cleaned up the unused `checkPlanStructure` import.
+- **`enhancedFeatures.test.ts`**: Updated plan approval test to assert direct approval behavior.
+
 ## [1.2.706] - 2026-08-03
 
 ### Updated: System Prompts for Direct Tool Usage in SSH Workspace Modes

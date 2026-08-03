@@ -209,11 +209,14 @@ describe("Superagent Proposed Enhancements Tests", () => {
       expect(checkPlanStructure(plan)).toBe(false);
     });
 
-    it("should defer plan validation to useWizardSubmit and redirect on failure", () => {
+    it("should approve the plan directly without validating structure", () => {
       const addLine = vi.fn();
       const setActiveWizard = vi.fn();
       const setWizardOptions = vi.fn();
       const setWizardSelectedIndex = vi.fn();
+
+      const approvePlan = vi.fn();
+      const sendMessage = vi.fn().mockResolvedValue(true);
 
       const agent = new Agent(
         vi.fn(),
@@ -221,7 +224,13 @@ describe("Superagent Proposed Enhancements Tests", () => {
         vi.fn()
       );
       agent.tier = "superagent";
+      agent.approvePlan = approvePlan;
+      agent.sendMessage = sendMessage;
       agent.planFileContent = "invalid plan without headers";
+
+      let planState = "PLANNING_PENDING";
+      const setPlanState = (val: string) => { planState = val; };
+      const setIsProcessing = vi.fn();
 
       const context: any = {
         activeWizard: { type: "plan_approve", step: 1, data: {} },
@@ -232,21 +241,23 @@ describe("Superagent Proposed Enhancements Tests", () => {
         wizardSelectedIndex: 0,
         addLine,
         agentRef: { current: agent },
-        planState: "PLANNING_PENDING",
+        planState,
+        setPlanState,
+        setIsProcessing,
+        streamBufferRef: { current: "" },
+        setStreamDisplay: vi.fn(),
       };
 
       const handleSubmit = useWizardSubmit(context);
       handleSubmit("approve");
 
+      expect(approvePlan).toHaveBeenCalled();
+      expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining("approved"));
+      expect(planState).toBe("APPROVED");
       expect(addLine).toHaveBeenCalledWith(expect.objectContaining({
-        type: "error",
-        content: expect.stringContaining("invalid or lacks structure"),
+        type: "system",
+        content: expect.stringContaining("approved! Continuing with the approved plan now."),
       }));
-      expect(setActiveWizard).toHaveBeenCalledWith({
-        type: "plan_approve",
-        step: 2,
-        data: {},
-      });
     });
   });
 

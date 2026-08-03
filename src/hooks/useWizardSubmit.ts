@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ToolCall } from "../core/conversation.js";
-import { checkPlanStructure, type Agent, type QuestionItem } from "../core/agent.js";
+import { type Agent, type QuestionItem } from "../core/agent.js";
 import type { Checkpoint } from "../core/checkpoints.js";
 
 // Import sub-wizards
@@ -229,34 +229,6 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
       const approved = value === "approve";
       if (approved && planState === "APPROVED") return;
       if (approved) {
-        let isPlanValid = true;
-        if (agentRef.current) {
-          const planFilePath = agentRef.current.getPlanFilePath();
-          try {
-            if (fs.existsSync(planFilePath)) {
-              const content = fs.readFileSync(planFilePath, "utf8");
-              isPlanValid = checkPlanStructure(content);
-            } else {
-              isPlanValid = false;
-            }
-          } catch {
-            isPlanValid = false;
-          }
-        }
-
-        if (!isPlanValid) {
-          addLine({
-            type: "error",
-            content: "⚠️ The implementation plan is invalid or lacks structure. A plan must match one of the template structures (full, quick, or refactor). Redirecting to request revision...",
-            timestamp: now,
-          });
-          setActiveWizard({
-            type: "plan_approve",
-            step: 2,
-            data: activeWizard.data,
-          });
-          return;
-        }
 
         if (agentRef.current) {
           agentRef.current.approvePlan();

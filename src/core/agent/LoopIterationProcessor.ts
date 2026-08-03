@@ -8,7 +8,6 @@ import { getConfig, getSettings } from "../config.js";
 import { rateLimiter, concurrencyLimiter } from "../rateLimiter.js";
 import type { ToolCall, ToolResult } from "../conversation.js";
 import { contentToString } from "../conversation.js";
-import { checkPlanStructure } from "./PlanValidator.js";
 import { MessageBuilder } from "./MessageBuilder.js";
 import { HistoryCompactor } from "./HistoryCompactor.js";
 import { ToolExecutor } from "./ToolExecutor.js";
