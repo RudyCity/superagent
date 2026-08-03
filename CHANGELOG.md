@@ -1,3 +1,10 @@
+## [1.2.708] - 2026-08-04
+
+### Added: Workspace Chain Skill Sharing
+
+- **`skills.ts`**: Modified `getInstalledSkills()` to check the active workspace chain and dynamically append the candidate skill subdirectories (`skills`, `.superagent/skills`, `.agents/skills`, `.claude/skills`) of sibling local workspaces in the chain. Excluded SSH/remote nodes from the scan to prevent network latency.
+- **`workspaceChainSkills.test.ts`**: Created a new test file asserting that skills are dynamically resolved and deduplicated (prioritizing the current active workspace) across local workspace nodes.
+
 ## [1.2.707] - 2026-08-03
 
 ### Changed: Bypass Strict Implementation Plan Structure Checks on Approval

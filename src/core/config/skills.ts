@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import os from "os";
 import { getRootConfigDir, getPackageRootDir } from "./paths.js";
+import { workspaceChainManager } from "../workspace/WorkspaceChainManager.js";
 
 export function normalizePath(p: string): string {
   const resolved = path.resolve(p);
@@ -266,6 +267,26 @@ export function getInstalledSkills(): LoadedSkill[] {
       }
     } catch {}
   }
+
+  // Append other local nodes in the active workspace chain (lower priority than current workspace-local)
+  try {
+    const activeChain = workspaceChainManager.getActiveChain(process.cwd());
+    if (activeChain) {
+      for (const node of activeChain.nodes) {
+        if (node.type === "local" && node.path) {
+          const resolvedPath = path.resolve(node.path);
+          if (resolvedPath !== path.resolve(process.cwd())) {
+            searchDirs.push(
+              path.join(resolvedPath, "skills"),
+              path.join(resolvedPath, ".superagent", "skills"),
+              path.join(resolvedPath, ".agents", "skills"),
+              path.join(resolvedPath, ".claude", "skills")
+            );
+          }
+        }
+      }
+    }
+  } catch {}
 
   // Workspace-local dirs (highest priority)
   searchDirs.push(
