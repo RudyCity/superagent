@@ -58,7 +58,8 @@ const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Full Chrome automation suite.
   - Diagnostics: get_browser_console_logs|network_logs, manage_chrome_bookmarks|history|downloads, list_chrome_extensions`;
 
 const WORKSPACE_CHAIN_RULE = `- WORKSPACE_CHAINS: Multi-node topology (local & SSH). Read active topology from WORKSPACE CHAIN ACTIVE prompt block. Use manage_workspace_chain (topology, health, activate) and cross_workspace_exec (exec, read, write, exec-all, exec-deps, health, diff, sync, switch-node).
-- WORKSPACE_CHAIN_ROUTING: Use cross_workspace_exec (switch-node) to set the active node. Once switched, all standard system tools (glob, grep, ripgrep_search, view_file, write_to_file, run_command) automatically and transparently route and execute on the active node (local or SSH) via workspaceMode.`;
+- WORKSPACE_CHAIN_ROUTING: Use cross_workspace_exec (switch-node) to set the active node. Once switched, all standard system tools (glob, grep, ripgrep_search, view_file, write_to_file, run_command) automatically and transparently route and execute on the active node (local or SSH) via workspaceMode.
+- SSH_DIRECT_TOOLS: When switched to a remote SSH node, use standard system tools (such as run_command, view_file, write_to_file, glob, grep, list_dir) directly to interact with the remote files/commands instead of cross_workspace_exec. Standard tools automatically and transparently run on the active remote SSH node.`;
 
 const SCRATCH_AND_TRANSFER_RULE = `- SCRATCH_WORKSPACE: Free read/write access to local session directory (derived from process.env.SUPERAGENT_SESSION_PATH) without permission prompt. Safe for helper/scratch files in both local and SSH mode.
 - SSH_TRANSFER: In SSH mode, use transfer_ssh_file (upload/download) to copy files between local session directory and remote workspace. Standard file tools bypass SSH routing when targeting local config/session paths.

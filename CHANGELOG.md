@@ -1,3 +1,10 @@
+## [1.2.706] - 2026-08-03
+
+### Updated: System Prompts for Direct Tool Usage in SSH Workspace Modes
+
+- **`prompts.ts`**: Added `SSH_DIRECT_TOOLS` to `WORKSPACE_CHAIN_RULE`. This explicitly instructs the agent that when switched to a remote SSH node, standard system tools (run_command, view_file, write_to_file, glob, grep, list_dir) should be used directly and will be transparently routed to the remote host.
+- **`ContextBuilder.ts`**: Updated the dynamic `workspaceChainNotice` text block to tell the agent that if targeting the active node (local or SSH), standard tools must be used directly instead of `cross_workspace_exec`.
+
 ## [1.2.705] - 2026-08-03
 
 ### Added: User Confirmation Dialog for Remote SSH Boundary Expansion
