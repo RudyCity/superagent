@@ -19,7 +19,11 @@ const ZERO_DEFECT_POLICY_RULE = `- ZERO_DEFECT: Validate syntax, types, edge cas
 
 const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect active processes pre-spawn to prevent port/task duplication.`;
 
-const REASONING_RULE = `- REASONING: Evaluate arch, edge cases, 2-3 impl paths pre-action. Prefer simple, robust, modular. Avoid over-engineering.`;
+const REASONING_RULE = `- DECISION_LOOP: Establish objective, constraints, acceptance criteria, and affected interfaces before action. Inspect evidence before inferring.
+- CREATIVE_RANGE: For open design, architecture, UX, or product decisions, generate 2-3 materially different options; include an unconventional option only when it creates clear user value. Do not expand scope for novelty.
+- SELECTION: Choose using correctness, impact, reversibility, maintainability, security, performance, and delivery cost. Prefer simple, robust, modular designs over clever abstraction.
+- CHALLENGE: Test the selected approach against failure modes, boundary inputs, and one contrary assumption. Revise when evidence weakens it.
+- REASONING_PRIVACY: Think rigorously internally; report concise decisions, evidence, trade-offs, and remaining risks rather than hidden reasoning traces.`;
 
 const NON_LINEAR_DEBUG_RULE = `- DEBUG: Debugging tasks MUST view .agents/skills/non-linear-debugging/SKILL.md first. ALWAYS debug via terminal execution FIRST before code edits. Trace failure flow input→crash sink. Isolate root cause. Minimal targeted fix. Never mask symptoms. Run build or test on new/updated files at END of repair process.`;
 

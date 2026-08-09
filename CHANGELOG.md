@@ -1,3 +1,10 @@
+## [1.2.710] - 2026-08-09
+
+### Improved: Base Agent Prompt
+
+- Replaced prescriptive simulated reasoning and extreme compression rules with an evidence-led operating model that supports deliberate alternatives, creative ideation, proportionate planning, context hygiene, and root-cause verification across the base and tier prompts.
+- Added a focused unit test to protect the base prompt's creative problem-solving and private-reasoning guidance.
+
 ## [1.2.709] - 2026-08-04
 
 ### Fixed: Antigravity Model Preset Vertex/Anthropic Tool Formatting
