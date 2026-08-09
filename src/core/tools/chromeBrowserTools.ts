@@ -80,27 +80,46 @@ export const chromeExtensionStatusTool: Tool = {
     properties: {},
   },
   execute: async () => {
+    // Check if sidepanel UI client mode is active
+    const isSidepanelClient = Boolean(browserControlHandler && browserControlHandler !== sendRemoteCommand);
+
+    if (isSidepanelClient) {
+      try {
+        const instances = await browserControlHandler!("list_instances", "");
+        return [
+          "### Superagent Chrome Extension Sidepanel Status",
+          "**Status**: 🟢 Connected (Direct Sidepanel UI Client Mode)",
+          "**Client Mode**: Superagent Chrome Extension Sidepanel (`chrome-extension/`)",
+          "\n**Active Sidepanel Instance / Open Tabs:**",
+          instances || "Direct sidepanel UI active. No active tab list reported yet.",
+        ].join("\n");
+      } catch (err: any) {
+        return `### Superagent Chrome Extension Sidepanel Status\n**Status**: 🟢 Connected (Direct Sidepanel UI Client Mode)\n**Info**: Sidepanel UI active. (${err.message || String(err)})`;
+      }
+    }
+
     await ensureRemoteChromeBridge();
     
-    // Connected if WebSocket client is open or custom mock control handler is registered
-    const isMockHandler = Boolean(browserControlHandler && browserControlHandler !== sendRemoteCommand);
-    let connected = isRemoteChromeConnected() || isMockHandler;
+    let connected = isRemoteChromeConnected();
     if (!connected) {
+      const isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+      const maxWait = isTest ? 50 : 1500;
+      const interval = isTest ? 10 : 150;
       const start = Date.now();
-      while (!connected && Date.now() - start < 1500) {
-        await new Promise((res) => setTimeout(res, 150));
-        connected = isRemoteChromeConnected() || isMockHandler;
+      while (!connected && Date.now() - start < maxWait) {
+        await new Promise((res) => setTimeout(res, interval));
+        connected = isRemoteChromeConnected();
       }
     }
 
     if (!connected) {
       return [
-        "### Chrome Extension Connection Status",
+        "### Remote Chrome Extension (chrome-extension-remote) Status",
         "**Status**: 🔴 Disconnected",
         "**Bridge Port**: 9223 (WebSocket Server Listening)",
-        "\n**Troubleshooting:**",
-        "1. Open Google Chrome and ensure Superagent Remote Bridge extension is enabled.",
-        "2. Click on the extension icon in Chrome toolbar to trigger WebSocket connection (ws://127.0.0.1:9223).",
+        "\n**Troubleshooting (for Remote Control mode):**",
+        "1. Ensure Remote Chrome Control Extension (`chrome-extension-remote`) is installed in Chrome.",
+        "2. Click the extension icon in Chrome toolbar to trigger WebSocket connection (ws://127.0.0.1:9223).",
       ].join("\n");
     }
 
@@ -119,7 +138,7 @@ export const chromeExtensionStatusTool: Tool = {
       }
 
       return [
-        "### Chrome Extension Connection Status",
+        "### Remote Chrome Extension (chrome-extension-remote) Status",
         "**Status**: 🟢 Connected",
         "**Bridge Port**: 9223 (WebSocket Server Listening)",
         metaLines.length > 0 ? "\n**Client Metadata:**\n" + metaLines.map((l) => `- ${l}`).join("\n") : "",
@@ -129,7 +148,7 @@ export const chromeExtensionStatusTool: Tool = {
         .filter(Boolean)
         .join("\n");
     } catch (err: any) {
-      return `### Chrome Extension Connection Status\n**Status**: 🟡 Connected (Error listing instances: ${err.message || String(err)})`;
+      return `### Remote Chrome Extension (chrome-extension-remote) Status\n**Status**: 🟡 Connected (Error listing instances: ${err.message || String(err)})`;
     }
   },
 };
