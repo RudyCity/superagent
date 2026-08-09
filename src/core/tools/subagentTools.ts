@@ -332,7 +332,7 @@ export const invokeSubagentTool: Tool = {
     let optimizedGuidelines = "";
     try {
       const { PromptOptimizer } = await import("../agent/promptOptimizer.js");
-      optimizedGuidelines = PromptOptimizer.loadOptimizedGuidelines(typeName);
+      optimizedGuidelines = PromptOptimizer.loadOptimizedGuidelines(typeName, prompt);
     } catch {}
     const baseSystemPrompt = optimizedGuidelines
       ? `${originalBasePrompt}\n\n## TRACE-OPTIMIZED GUIDELINES (Learned from past runs)\n${optimizedGuidelines}`

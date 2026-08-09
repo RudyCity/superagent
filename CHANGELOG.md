@@ -1,3 +1,11 @@
+## [1.2.711] - 2026-08-09
+
+### Improved: Prompt Context and Tier Governance
+
+- Added an 8,000-token default budget for optional skills, memories, process state, workspace context, scratchpads, and planning notices, with deterministic priority-based truncation.
+- Hardened learned subagent guidelines with a 14-day TTL, task-family isolation, deduplication, bounded length, and filtering for instruction-override attempts.
+- Defined decision rights for Master orchestration, Superagent implementation, and atomic Subagent work to reduce tier conflicts.
+
 ## [1.2.710] - 2026-08-09
 
 ### Improved: Base Agent Prompt

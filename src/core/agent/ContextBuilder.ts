@@ -6,6 +6,7 @@ import { contentToString, type Message } from "../conversation.js";
 import { getToolDefinitions, backgroundTasks, isTaskInWorkspace } from "../tools.js";
 import { isRmemoryActive } from "../rmemoryUtil.js";
 import { HistoryCompactor } from "./HistoryCompactor.js";
+import { buildBudgetedPromptContext } from "./PromptContextBudget.js";
 import type { Agent } from "../agent.js";
 
 export class ContextBuilder {
@@ -340,7 +341,18 @@ export class ContextBuilder {
     const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 500);
     const maxIterations = agent.goalMode ? agent.goalMaxIterations : defaultMax;
     const maxIterationsStr = maxIterations === Infinity ? "unlimited" : maxIterations.toString();
-    const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}\n\nEXECUTION CONTEXT:\n- Step limit: ${maxIterationsStr} iterations. Be efficient.\n- Spawn subagents in parallel for independent tasks (>3 files, >2 domains, broad research).\n${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}${workspaceChainNotice}`;
+    const promptContextBudget = Math.max(1_000, getSettings().promptContextBudget ?? 8_000);
+    const systemContextBudget = Math.round(promptContextBudget * 0.65);
+    const dynamicContextBudget = promptContextBudget - systemContextBudget;
+    const budgetedSystemContext = buildBudgetedPromptContext([
+      { id: "guidelines", content: guidelinesText, maxTokens: 3_200 },
+      { id: "workspace-chain", content: workspaceChainNotice, maxTokens: 900 },
+      { id: "pinned-knowledge", content: pinnedKnowledgeNotice, maxTokens: 700 },
+      { id: "shared-memory", content: sharedMemoryNotice, maxTokens: 500 },
+      { id: "running-processes", content: processNotice, maxTokens: 300 },
+      { id: "developer-hook", content: devHookNotice, maxTokens: 150 },
+    ], systemContextBudget);
+    const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}\n\nEXECUTION CONTEXT:\n- Step limit: ${maxIterationsStr} iterations. Be efficient.\n- Spawn subagents in parallel for independent tasks (>3 files, >2 domains, broad research).\n${singleModeSubagentDirective}${goalModeAddendum}${budgetedSystemContext.text ? `\n${budgetedSystemContext.text}` : ""}`;
 
     const stepsRemaining = maxIterations === Infinity ? Infinity : (maxIterations - 1);
     const stepNotice = stepsRemaining <= 5
@@ -387,7 +399,16 @@ export class ContextBuilder {
     const effectivePlanStateNotice = classifierSkipPlan ? "" : planStateNotice;
     const effectivePlanStateAddendum = classifierSkipPlan ? "" : planStateAddendum;
 
-    const dynamicContext = `\n\n<system_context_do_not_echo_or_repeat>\n${stepNotice}${classifierPromptAddendum}${scratchpadText ? `\nSCRATCHPAD:\n${scratchpadText}` : ""}${workspaceStateText}${workspaceBoundaryNotice}${effectivePlanStateNotice}${effectivePlanStateAddendum}${followUpTaskAddendum}\n</system_context_do_not_echo_or_repeat>`;
+    const budgetedDynamicContext = buildBudgetedPromptContext([
+      { id: "workspace-boundary", content: workspaceBoundaryNotice, maxTokens: 250 },
+      { id: "plan-state", content: effectivePlanStateAddendum, maxTokens: 900 },
+      { id: "plan-files", content: effectivePlanStateNotice, maxTokens: 500 },
+      { id: "workspace-state", content: workspaceStateText, maxTokens: 500 },
+      { id: "classifier", content: `${stepNotice}${classifierPromptAddendum}`, maxTokens: 250 },
+      { id: "scratchpad", content: scratchpadText ? `SCRATCHPAD:\n${scratchpadText}` : "", maxTokens: 300 },
+      { id: "task-reset", content: followUpTaskAddendum, maxTokens: 100 },
+    ], Math.max(0, dynamicContextBudget - 20));
+    const dynamicContext = `\n\n<system_context_do_not_echo_or_repeat>\n${budgetedDynamicContext.text}\n</system_context_do_not_echo_or_repeat>`;
 
     const injectDynamicContext = (msgs: CoreMessage[]) => {
       if (msgs.length > 0) {

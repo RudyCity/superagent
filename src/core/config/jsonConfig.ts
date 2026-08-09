@@ -45,6 +45,8 @@ export interface SystemSettings {
   rateLimitCapacity: number;
   disableStreaming: boolean;
   contextWindowLimit: number;
+  /** Estimated token budget reserved for optional skills, memories, and runtime context. */
+  promptContextBudget?: number;
   maxIterations: number;
   simpleTaskFileThreshold?: number;
   simpleTaskKeywords?: string[];
@@ -110,6 +112,7 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     rateLimitCapacity: 60,
     disableStreaming: false,
     contextWindowLimit: 0,
+    promptContextBudget: 8000,
     maxIterations: 0,
     simpleTaskFileThreshold: 3,
     simpleTaskKeywords: ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
@@ -816,6 +819,7 @@ export function getSettings(): SystemSettings {
       rateLimitCapacity: s.rateLimitCapacity ?? 60,
       disableStreaming: s.disableStreaming ?? false,
       contextWindowLimit: s.contextWindowLimit ?? 0,
+      promptContextBudget: s.promptContextBudget ?? 8000,
       maxIterations: s.maxIterations ?? 0,
       simpleTaskFileThreshold: s.simpleTaskFileThreshold ?? 3,
       simpleTaskKeywords: s.simpleTaskKeywords ?? ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],

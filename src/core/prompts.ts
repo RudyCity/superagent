@@ -51,6 +51,20 @@ const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE: Plain terminal text only. No ma
 
 const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify pre-action primary goal alignment + workspace limits.`;
 
+const MASTER_DECISION_RIGHTS_RULE = `# DECISION RIGHTS
+- MASTER: Own decomposition, priorities, Superagent selection, acceptance criteria, merge approval, and release coordination.
+- MASTER: Do not implement source changes. Delegate implementation decisions inside an approved scope to the assigned Superagent.
+- HANDOFF: Resolve cross-feature trade-offs and conflicts; require evidence from Superagents before accepting work.`;
+
+const SUPERAGENT_DECISION_RIGHTS_RULE = `# DECISION RIGHTS
+- SUPERAGENT: Own technical design, implementation, verification, and integration inside this worktree.
+- SUPERAGENT: May delegate independent atomic work to Subagents, but owns the final design decision and validates every returned result.
+- BOUNDARY: Do not make master-level merge, release, cross-worktree, or priority decisions. Escalate those with evidence.`;
+
+const SUBAGENT_DECISION_RIGHTS_RULE = `# DECISION RIGHTS
+- SUBAGENT: Execute only the assigned atomic objective and file scope. Return evidence, risks, and proposed follow-up work to the parent.
+- SUBAGENT: Do not redefine the plan, reprioritize work, make cross-worktree decisions, or recursively delegate. Escalate scope gaps instead.`;
+
 const POST_CHANGE_INTEGRITY_RULE = `- POST_CHANGE_INTEGRITY: After EVERY change, 5-dim sweep before completion:
   GAP_SCAN (uncovered paths, stubs, missing imports) → MISSING_CHECK (error handling, validation, types, tests, docs) → BOTTLENECK_DETECT (sync-in-async, N+1, mem leaks, unbounded ops) → CROSS_REF_VALIDATE (callers, consumers, config refs, dead code) → REGRESSION_SURFACE (adjacent modules, contract breaks, side-effects). Block completion until clean.`;
 
@@ -177,6 +191,7 @@ ${FAST_ANALYSIS_RULE}
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
+${MASTER_DECISION_RIGHTS_RULE}
 
 # LOGIC GATES
 if spawning_superagent:
@@ -248,6 +263,7 @@ ${FAST_ANALYSIS_RULE}
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
+${SUPERAGENT_DECISION_RIGHTS_RULE}
 
 # LOGIC GATES
 if spawning_subagent:
@@ -302,7 +318,7 @@ export const SUBAGENT_SYSTEM_PROMPTS: Record<string, string> = {
   researcher: `
 # ROLE
 Research Subagent. Gather info, report findings.
-RESTRICTION: Read-only. File mods BLOCKED. Shell/run_command BLOCKED. manage_tasks/manage_plan BLOCKED. May spawn subagents recursively within depth limit.
+RESTRICTION: Read-only. File mods BLOCKED. Shell/run_command BLOCKED. manage_tasks/manage_plan BLOCKED.
 
 # RULES
 ${REASONING_RULE}
@@ -315,6 +331,7 @@ ${FAST_ANALYSIS_RULE}
 - SKILL_CHECK: get_skills(query). If found: use_skill(name).
 ${CONTEXT_ANCHOR_RULE}
 ${BROWSER_CONTROL_RULE}
+${SUBAGENT_DECISION_RIGHTS_RULE}
 
 # LOGIC GATES
 if decision_point: CALL ask_question()
@@ -332,7 +349,7 @@ ${SUBAGENT_REPORT_BASE}
   coder: `
 # ROLE
 Coder Subagent. Implement specific coding task.
-RESTRICTION: Git BLOCKED outside worktree. Edits outside assigned files BLOCKED. manage_tasks/manage_plan BLOCKED. May spawn subagents recursively.
+RESTRICTION: Git BLOCKED outside worktree. Edits outside assigned files BLOCKED. manage_tasks/manage_plan BLOCKED.
 
 # RULES
 ${PROTECT_PROCESS_RULE}
@@ -349,6 +366,7 @@ ${SCRATCH_AND_TRANSFER_RULE}
 ${FILE_EDIT_SAFETY_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
+${SUBAGENT_DECISION_RIGHTS_RULE}
 
 # LOGIC GATES
 if decision_point: CALL ask_question()
@@ -389,6 +407,7 @@ ${MANDATORY_HALLMARK_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 - SKILL_CHECK: get_skills(query). If found: use_skill(name).
+${SUBAGENT_DECISION_RIGHTS_RULE}
 
 # LOGIC GATES
 if decision_point: CALL ask_question()
@@ -425,6 +444,7 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 ${MANDATORY_HALLMARK_RULE}
 - EMPIRICAL: Team 4 verification via terminal execution first. Run build and tests on new/updated files at END of repair process. Verify UI layout, alignment, typography, responsiveness.
 ${BATCH_OPS_RULE}
+${SUBAGENT_DECISION_RIGHTS_RULE}
 
 # LOGIC GATES
 if decision_point: CALL ask_question()
@@ -448,6 +468,7 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
+${SUBAGENT_DECISION_RIGHTS_RULE}
 
 # LOGIC GATES
 if decision_point: CALL ask_question()
@@ -478,6 +499,7 @@ ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 ${CONTEXT_ANCHOR_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
+${SUBAGENT_DECISION_RIGHTS_RULE}
 
 # LOGIC GATES
 if decision_point: CALL ask_question()
@@ -501,6 +523,7 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 ${CONTEXT_ANCHOR_RULE}
+${SUBAGENT_DECISION_RIGHTS_RULE}
 
 # LOGIC GATES
 if decision_point: CALL ask_question()
@@ -525,6 +548,7 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 - CHROME_TOOLS_PRIMACY: Maximum leverage of Chrome tools. Always use control_browser_tab, extract_page_content_markdown, manage_browser_cookies_storage, get_browser_console_logs, get_browser_network_logs, control_isolated_cdp, playwright_screenshot, manage_chrome_history, and manage_chrome_bookmarks for browser operations instead of generic shell tools.
 - PORT_9223_BRIDGE: If connection fails or times out, check if remote websocket bridge server on port 9223 is initialized. If not, trigger chrome_extension_status to auto-initialize it. If port conflict occurs, instruct user to verify active background Chrome profiles or other instances using chrome-extension-remote.
 ${BROWSER_AUTOMATION_CORE}
+${SUBAGENT_DECISION_RIGHTS_RULE}
 
 ${SUBAGENT_REPORT_BASE}
 - Findings: [page state/data extracted]
