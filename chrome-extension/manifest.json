@@ -14,12 +14,9 @@
     "readingList",
     "topSites"
   ],
-  "optional_host_permissions": [
-    "https://localhost/*",
-    "<all_urls>"
-  ],
   "host_permissions": [
-    "http://localhost/*"
+    "http://localhost/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"

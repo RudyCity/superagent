@@ -7,6 +7,7 @@ import { setBrowserControlHandler, browserControlHandler } from "./browserMacroT
 const DEFAULT_REMOTE_WS_PORT = 9223;
 
 export interface ClientMetadata {
+  profileId?: string;
   userAgent?: string;
   platform?: string;
   extensionVersion?: string;
@@ -152,7 +153,9 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
       activeServers.set(port, server);
 
       server.on("listening", () => {
-        setBrowserControlHandler(sendRemoteCommand);
+        if (!browserControlHandler) {
+          setBrowserControlHandler(sendRemoteCommand);
+        }
         startPingHeartbeat();
         logBridgeEvent("Server Started", `WebSocket server listening on port ${port}`);
         resolve(true);
@@ -162,6 +165,9 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
         connectedClients.add(ws);
         activeClient = ws;
         clientMetadataMap.set(ws, { connectedAt: Date.now(), commandCount: 0 });
+        if (!browserControlHandler || browserControlHandler === sendRemoteCommand) {
+          setBrowserControlHandler(sendRemoteCommand);
+        }
         logBridgeEvent("Client Connected", `Active clients: ${connectedClients.size}`);
 
         ws.on("pong", () => {
@@ -172,20 +178,21 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
           try {
             const data = JSON.parse(raw.toString());
 
-            // Handle metadata hello packet
-            if (data.type === "hello") {
+            // Handle metadata hello packet or tab_state update
+            if (data.type === "hello" || data.type === "tab_state") {
               const currentMeta = clientMetadataMap.get(ws) || { connectedAt: Date.now(), commandCount: 0 };
               clientMetadataMap.set(ws, {
                 ...currentMeta,
-                userAgent: data.userAgent,
-                platform: data.platform,
-                extensionVersion: data.extensionVersion,
-                tabsCount: data.tabsCount,
-                activeTab: data.activeTab || null,
+                ...(data.profileId ? { profileId: data.profileId } : {}),
+                ...(data.userAgent ? { userAgent: data.userAgent } : {}),
+                ...(data.platform ? { platform: data.platform } : {}),
+                ...(data.extensionVersion ? { extensionVersion: data.extensionVersion } : {}),
+                tabsCount: data.tabsCount !== undefined ? data.tabsCount : currentMeta.tabsCount,
+                activeTab: data.activeTab !== undefined ? data.activeTab : currentMeta.activeTab,
               });
               logBridgeEvent(
-                "Client Metadata",
-                `Version: ${data.extensionVersion || "N/A"}.. Platform: ${data.platform || "N/A"}, Tabs: ${data.tabsCount || 0}, ActiveTab: ${data.activeTab?.title || "N/A"}`
+                data.type === "tab_state" ? "Tab State Update" : "Client Metadata",
+                `Profile: ${data.profileId || currentMeta.profileId || "Default"}, Tabs: ${data.tabsCount ?? currentMeta.tabsCount ?? 0}, ActiveTab: ${data.activeTab?.title || "N/A"} (${data.activeTab?.url || "N/A"})`
               );
               return;
             }
@@ -319,8 +326,8 @@ export async function sendRemoteCommand(
   if (!client) {
     return Promise.reject(
       new Error(
-        "Superagent Remote Chrome Extension is not connected. " +
-          "Ensure Superagent Remote Bridge extension is installed in Chrome and active on port 9223."
+        "Remote Chrome Control Extension (chrome-extension-remote) is not connected. " +
+          "Ensure Remote Chrome Extension (chrome-extension-remote) is installed in Chrome and active on port 9223."
       )
     );
   }

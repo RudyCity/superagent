@@ -107,6 +107,7 @@ const btnHeaderSettings = document.getElementById("btn-header-settings");
 const settingsOverlay = document.getElementById("settings-overlay");
 const btnCloseSettings = document.getElementById("btn-close-settings");
 const btnSaveSettings = document.getElementById("btn-save-settings");
+const btnShutdownServer = document.getElementById("btn-shutdown-server");
 
 const tabWorkspace = document.getElementById("tab-workspace");
 const tabHistory = document.getElementById("tab-history");
@@ -261,6 +262,31 @@ document.addEventListener("DOMContentLoaded", () => {
   btnSubmitAnswer.addEventListener("click", submitAnswer);
   btnApprovePlan.addEventListener("click", () => resolvePlanApproval("approve"));
   btnRejectPlan.addEventListener("click", () => resolvePlanApproval("reject"));
+
+  if (btnShutdownServer) {
+    btnShutdownServer.addEventListener("click", async () => {
+      if (!confirm("Are you sure you want to stop the Superagent backend server?")) return;
+      try {
+        btnShutdownServer.disabled = true;
+        btnShutdownServer.textContent = "Stopping...";
+        const res = await fetch(`${BASE_URL}/api/shutdown`, { method: "POST" });
+        if (res.ok) {
+          alert("Superagent backend server is shutting down.");
+          if (settingsOverlay) settingsOverlay.classList.remove("active");
+          setConnectionStatus(false);
+        } else {
+          alert("Failed to stop server.");
+        }
+      } catch (err) {
+        // Server likely shut down already
+        setConnectionStatus(false);
+        if (settingsOverlay) settingsOverlay.classList.remove("active");
+      } finally {
+        btnShutdownServer.disabled = false;
+        btnShutdownServer.textContent = "⏹ Stop Server";
+      }
+    });
+  }
 
   // Persistent tasks header expand/collapse listener
   const tasksHeader = document.getElementById("persistent-tasks-header");
@@ -567,23 +593,52 @@ async function checkServerStatus() {
       }
 
 
-      // Auto reconnect view if server is running session
-      if (data.sessionId && workspaceScreen.className.indexOf("active") === -1) {
-        window.currentSessionId = data.sessionId;
-        activeWorkspaceText.textContent = data.workspace;
+      // Auto sync workspace and load active chat history on extension open / connect
+      if (data.workspace || data.sessionId) {
+        let stateChanged = false;
 
-        activeModeText.textContent = data.mode;
-        setupScreen.classList.remove("active");
-        workspaceScreen.classList.add("active");
-        setupSSE();
-        startPolling();
-        await loadChatHistory();
-        
-        if (typeof pollMonitorData === "function") {
-          pollMonitorData();
+        if (data.sessionId && window.currentSessionId !== data.sessionId) {
+          window.currentSessionId = data.sessionId;
+          stateChanged = true;
         }
-        if (typeof pollWorkspaceFiles === "function") {
-          pollWorkspaceFiles();
+
+        if (data.workspace && activeWorkspaceText.textContent !== data.workspace) {
+          activeWorkspaceText.textContent = data.workspace;
+          activeWorkspaceText.title = data.workspace;
+          stateChanged = true;
+          if (typeof renderWorkspaceListOnly === "function") {
+            renderWorkspaceListOnly();
+          }
+        }
+
+        if (workspaceScreen.className.indexOf("active") === -1) {
+          if (data.mode) activeModeText.textContent = data.mode;
+          setupScreen.classList.remove("active");
+          workspaceScreen.classList.add("active");
+          setupSSE();
+          startPolling();
+          stateChanged = true;
+        }
+
+        const chatMsgsEl = document.getElementById("chat-messages");
+        const isChatEmpty = chatMsgsEl && chatMsgsEl.querySelectorAll(".msg").length === 0;
+
+        if (stateChanged || isChatEmpty) {
+          if (typeof loadChatHistory === "function") {
+            await loadChatHistory(window.currentSessionId);
+          }
+          if (typeof loadChatHistorySessions === "function") {
+            loadChatHistorySessions();
+          }
+          if (typeof renderWorkspaceListOnly === "function") {
+            renderWorkspaceListOnly();
+          }
+          if (typeof pollMonitorData === "function") {
+            pollMonitorData();
+          }
+          if (typeof pollWorkspaceFiles === "function") {
+            pollWorkspaceFiles();
+          }
         }
       }
 
@@ -679,21 +734,35 @@ async function launchWelcomeSession() {
       body: JSON.stringify(configUpdate)
     });
 
-    activeWorkspaceText.textContent = "Not Selected";
-    activeWorkspaceText.title = "Not Selected";
-    activeModeText.textContent = mode;
-
-    await renderWorkspaceListOnly();
-
-    setupScreen.classList.remove("active");
-    workspaceScreen.classList.add("active");
-
-    if (typeof window.updateWorkspaceRequiredUI === "function") {
-      window.updateWorkspaceRequiredUI();
+    // Check if server or storage has an existing active workspace
+    const statusRes = await fetch(`${BASE_URL}/api/status`).catch(() => null);
+    const statusData = statusRes && statusRes.ok ? await statusRes.json().catch(() => null) : null;
+    
+    let targetWs = statusData?.workspace;
+    if (!targetWs) {
+      const storageData = await new Promise((res) => chrome.storage.local.get(["lastWorkspacePath"], res));
+      targetWs = storageData?.lastWorkspacePath;
     }
 
-    clearChatMessages();
-    appendMessage("system", "Engine initialized. Please select a workspace from Saved Workspaces below or enter a path above to start your session.");
+    if (targetWs) {
+      await switchToWorkspace(targetWs, mode);
+    } else {
+      activeWorkspaceText.textContent = "Not Selected";
+      activeWorkspaceText.title = "Not Selected";
+      activeModeText.textContent = mode;
+
+      await renderWorkspaceListOnly();
+
+      setupScreen.classList.remove("active");
+      workspaceScreen.classList.add("active");
+
+      if (typeof window.updateWorkspaceRequiredUI === "function") {
+        window.updateWorkspaceRequiredUI();
+      }
+
+      clearChatMessages();
+      appendMessage("system", "Engine initialized. Please select a workspace from the header dropdown to start your session.");
+    }
   } catch (err) {
     alert("Failed to connect to local server: " + err.message);
   } finally {
@@ -1508,45 +1577,21 @@ function renderAgentsTree(subagents, superagents) {
 
 
 
-// Fetch and Render Chat History
-async function loadChatHistory() {
-  try {
-    const res = await fetch(`${BASE_URL}/api/history`);
-    const data = await res.json().catch(() => null);
-    if (res.ok && data && data.success && Array.isArray(data.messages)) {
-      clearChatMessages();
-      renderChatHistory(data.messages);
-    }
-  } catch (err) {
-    console.error("Failed to load chat history:", err);
-  }
-}
-
-// [History rendering moved to sidepanel-history.js]
+// [History rendering handled in sidepanel-history.js]
 
 function updateSetupRecentWorkspaces() {
   renderWorkspaceListOnly();
 }
 
 // Tab Switching and Sidebar Navigation Logic
-let activeSidebarTab = "workspace";
+let activeSidebarTab = "history";
 
 function switchSidebarTab(tabId) {
   const leftSidebar = document.getElementById("left-sidebar");
   const sidebarTitle = document.getElementById("left-sidebar-title");
-  const btnShowAddWorkspace = document.getElementById("btn-show-add-workspace");
   
   if (leftSidebar) {
     leftSidebar.classList.remove("hidden");
-  }
-  
-  // Toggle the "+" button depending on sidebar view
-  if (btnShowAddWorkspace) {
-    if (tabId === "workspace") {
-      btnShowAddWorkspace.classList.remove("hidden");
-    } else {
-      btnShowAddWorkspace.classList.add("hidden");
-    }
   }
   
   // Reset tab button active states
@@ -1561,15 +1606,10 @@ function switchSidebarTab(tabId) {
   if (viewMacros) viewMacros.classList.add("hidden");
   if (viewVision) viewVision.classList.add("hidden");
   
-  if (tabId === "workspace") {
-    if (tabWorkspace) tabWorkspace.classList.add("active");
-    if (viewWorkspace) viewWorkspace.classList.remove("hidden");
-    if (sidebarTitle) sidebarTitle.textContent = "Workspace";
-    activeSidebarTab = "workspace";
-  } else if (tabId === "history") {
+  if (tabId === "history") {
     if (tabHistory) tabHistory.classList.add("active");
     if (viewHistory) viewHistory.classList.remove("hidden");
-    if (sidebarTitle) sidebarTitle.textContent = "History";
+    if (sidebarTitle) sidebarTitle.textContent = "Saved Sessions";
     activeSidebarTab = "history";
     loadChatHistorySessions();
   } else if (tabId === "macros") {
@@ -1588,7 +1628,7 @@ function switchSidebarTab(tabId) {
 
 function handleSidebarTabClick(tabId) {
   const leftSidebar = document.getElementById("left-sidebar");
-  const tabButton = tabId === "workspace" ? tabWorkspace : tabId === "history" ? tabHistory : tabId === "macros" ? tabMacros : tabVision;
+  const tabButton = tabId === "history" ? tabHistory : tabId === "macros" ? tabMacros : tabVision;
   
   if (leftSidebar && !leftSidebar.classList.contains("hidden") && activeSidebarTab === tabId) {
     // Toggle off

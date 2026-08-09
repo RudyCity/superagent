@@ -54,7 +54,7 @@ export const controlBrowserTabTool: Tool = {
   async execute(args, cwd, signal) {
     await ensureRemoteChromeBridge();
     if (!browserControlHandler) {
-      return "Error: Browser control handler is not active. Please launch the Superagent Chrome Extension and connect to activate browser control.";
+      return "Error: Browser control handler is not active. Please ensure the Superagent Chrome Extension sidepanel or Remote Chrome Extension (chrome-extension-remote) is active.";
     }
     const handler = browserControlHandler!;
     const action = args.action as string;
@@ -279,7 +279,7 @@ export const controlBrowserMacroRunTool: Tool = {
     }
 
     if (!browserControlHandler) {
-      return "Error: Browser control handler is not active. Please launch the Chrome Extension and connect to activate browser control.";
+      return "Error: Browser control handler is not active. Please ensure the Superagent Chrome Extension sidepanel or Remote Chrome Extension (chrome-extension-remote) is active.";
     }
 
     const results: StepRunResult[] = [];

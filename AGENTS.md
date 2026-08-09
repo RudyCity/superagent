@@ -41,7 +41,7 @@ Master Agent  (orchestrator)
 - `src/core/context/strategies/PinningStrategy.ts` — Preserve critical pinned messages during compaction
 - `src/core/context/SemanticAnalyzer.ts` — Topic boundary detection, importance scoring, key point extraction
 - `chrome-extension-remote/` — Standalone lightweight Chrome Extension (Manifest V3) for remote-controlling any Chrome profile/browser from Superagent CLI via serverless WebSocket bridge (port 9223). No sidepanel GUI; minimal footprint, multi-profile capable.
-- `chrome-extension/` — Full Superagent AI assistant Chrome Extension (Manifest V3) with sidepanel GUI for browser control, tab/DOM management, text/markdown extraction, console/network logs, storage/cookies management, device emulation, and more. Installed directly in target browser it controls.
+- `chrome-extension/` — Full Superagent AI assistant Chrome Extension (Manifest V3) with sidepanel GUI for browser control, tab/DOM management, text/markdown extraction, console/network logs, storage/cookies management, device emulation, and more. Installed directly in target browser it controls (`clientMode = "chrome-extension"`). Must NOT be confused with `chrome-extension-remote/` or port 9223.
 - `src/core/tools/remoteChromeBridge.ts` — Serverless WebSocket server (port 9223) auto-initialized on-demand by Superagent CLI; communication backbone for `chrome-extension-remote/`.
 
 ## Coding Guidelines & Constraints

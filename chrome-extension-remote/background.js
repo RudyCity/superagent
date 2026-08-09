@@ -140,6 +140,10 @@ function connectWebSocket(force = false) {
         if (event.data) {
           try {
             const message = JSON.parse(event.data);
+            if (message.type === "ping") {
+              socket.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+              return;
+            }
             socket.send(
               JSON.stringify({
                 id: message.id,
@@ -312,7 +316,10 @@ async function handleAction(action, target, value, instanceId) {
       if (!activeTab) throw new Error("No active tab found.");
       const [{ result }] = await chrome.scripting.executeScript({
         target: { tabId: activeTab.id },
-        func: () => document.body ? document.body.innerText : "",
+        func: () => {
+          const raw = document.body ? document.body.innerText : "";
+          return raw.slice(0, 30000); // Clean cap at 30k chars
+        },
       });
       return result || "";
     }
@@ -780,6 +787,29 @@ async function handleAction(action, target, value, instanceId) {
               try {
                 const resolveSelector = (sel) => {
                   if (!sel) return null;
+                  const queryDeep = (root, s) => {
+                    let el = root.querySelector ? root.querySelector(s) : null;
+                    if (el) return el;
+                    const allNodes = root.querySelectorAll ? Array.from(root.querySelectorAll("*")) : [];
+                    for (const node of allNodes) {
+                      if (node.shadowRoot) {
+                        const found = queryDeep(node.shadowRoot, s);
+                        if (found) return found;
+                      }
+                    }
+                    return null;
+                  };
+                  const queryAllDeep = (root, s) => {
+                    let results = root.querySelectorAll ? Array.from(root.querySelectorAll(s)) : [];
+                    const allNodes = root.querySelectorAll ? Array.from(root.querySelectorAll("*")) : [];
+                    for (const node of allNodes) {
+                      if (node.shadowRoot) {
+                        results = results.concat(queryAllDeep(node.shadowRoot, s));
+                      }
+                    }
+                    return results;
+                  };
+
                   const parts = sel.split(/,(?![^()]*\))/);
                   for (const part of parts) {
                     const trimmed = part.trim();
@@ -791,20 +821,14 @@ async function handleAction(action, target, value, instanceId) {
                           (searchText.startsWith("'") && searchText.endsWith("'"))) {
                         searchText = searchText.slice(1, -1);
                       }
-                      if (searchText.startsWith("\\\"") && searchText.endsWith("\\\"")) {
-                        searchText = searchText.slice(2, -2);
-                      }
-                      if (searchText.startsWith("\\'") && searchText.endsWith("\\'")) {
-                        searchText = searchText.slice(2, -2);
-                      }
                       try {
-                        const elements = Array.from(document.querySelectorAll(baseSelector));
+                        const elements = queryAllDeep(document, baseSelector);
                         const found = elements.find(el => el.textContent.includes(searchText));
                         if (found) return found;
                       } catch (e) {}
                     } else {
                       try {
-                        const found = document.querySelector(trimmed);
+                        const found = queryDeep(document, trimmed);
                         if (found) return found;
                       } catch (e) {}
                     }
@@ -815,7 +839,12 @@ async function handleAction(action, target, value, instanceId) {
                 const el = resolveSelector(selector);
                 if (el) {
                   clearInterval(timer);
-                  el.click();
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  // Dispatch stealth mouse events for anti-bot resilience
+                  ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+                    el.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+                  });
+                  if (typeof el.click === 'function') el.click();
                   resolve(`Clicked element matching '${selector}'`);
                 } else if (Date.now() - start > timeout) {
                   clearInterval(timer);
@@ -989,11 +1018,13 @@ async function handleAction(action, target, value, instanceId) {
 
 // Keep service worker alive and ensure persistent WebSocket bridge connection with watchdog alarm
 try {
-  chrome.alarms.create("superagentKeepAlive", { periodInMinutes: 0.25 });
+  chrome.alarms.create("superagentKeepAlive", { periodInMinutes: 0.15 });
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === "superagentKeepAlive") {
       if (!socket || socket.readyState !== WebSocket.OPEN) {
         connectWebSocket(true);
+      } else {
+        try { socket.send(JSON.stringify({ type: "ping", source: "remote" })); } catch {}
       }
     }
   });
@@ -1010,14 +1041,26 @@ try {
   console.warn("onStartup listener setup failed:", e);
 }
 
-// Attach Chrome DevTools Protocol listener for console, exception & network streaming
+// Attach Chrome DevTools Protocol listener for console, exception & network streaming with safe error fallback
 async function attachCDPListeners(tabId) {
+  if (!tabId) return;
   try {
+    const targets = await new Promise((res) => chrome.debugger.getTargets((t) => res(t || [])));
+    const target = targets.find((t) => t.tabId === tabId);
+    if (target && target.attached) return; // Already attached elsewhere
+
     await chrome.debugger.attach({ tabId }, "1.3");
-    await chrome.debugger.sendCommand({ tabId }, "Console.enable");
-    await chrome.debugger.sendCommand({ tabId }, "Runtime.enable");
-    await chrome.debugger.sendCommand({ tabId }, "Network.enable");
-  } catch {}
+    if (chrome.runtime.lastError) {
+      console.warn("CDP Attach warning:", chrome.runtime.lastError.message);
+      return;
+    }
+    await chrome.debugger.sendCommand({ tabId }, "Console.enable").catch(() => {});
+    await chrome.debugger.sendCommand({ tabId }, "Runtime.enable").catch(() => {});
+    await chrome.debugger.sendCommand({ tabId }, "Network.enable").catch(() => {});
+  } catch (err) {
+    // Non-fatal: user might have F12 inspect active on this tab
+    console.debug("CDP attach skipped:", err?.message || err);
+  }
 }
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
@@ -1035,8 +1078,31 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   }
 });
 
+async function notifyTabState() {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  try {
+    const tabs = await chrome.tabs.query({});
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    socket.send(
+      JSON.stringify({
+        type: "tab_state",
+        source: "remote",
+        tabsCount: tabs.length,
+        activeTab: activeTab ? { id: activeTab.id, title: activeTab.title, url: activeTab.url } : null,
+      })
+    );
+  } catch {}
+}
+
 chrome.tabs.onActivated.addListener((activeInfo) => {
   attachCDPListeners(activeInfo.tabId);
+  notifyTabState();
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (tab.active && (changeInfo.status === "complete" || changeInfo.url || changeInfo.title)) {
+    notifyTabState();
+  }
 });
 
 // Connect immediately on service worker start

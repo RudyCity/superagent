@@ -902,168 +902,52 @@ async function executeBrowserControl(controlId, action, target, value) {
                }
              };
 
-            const typeTextHumanLike = async (element, text) => {
-              const isInput = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
-              const isEditable = element.isContentEditable || element.closest("[contenteditable='true']");
-              
-              if (!isInput && !isEditable) {
-                try {
-                  element.value = text;
-                } catch (e) {
-                  element.innerText = text;
-                }
-                element.dispatchEvent(new Event("input", { bubbles: true }));
-                element.dispatchEvent(new Event("change", { bubbles: true }));
-                return;
-              }
+             const typeTextHumanLike = async (element, text) => {
+               const isInput = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
+               const isEditable = element.isContentEditable || element.closest("[contenteditable='true']");
+               
+               if (!isInput && !isEditable) {
+                 try {
+                   element.value = text;
+                 } catch (e) {
+                   element.innerText = text;
+                 }
+                 element.dispatchEvent(new Event("input", { bubbles: true }));
+                 element.dispatchEvent(new Event("change", { bubbles: true }));
+                 return;
+               }
 
-              // Focus element first
-              if (typeof element.focus === "function") {
-                element.focus();
-              }
-              const editableContainer = element.closest("[contenteditable='true']") || (element.isContentEditable ? element : null);
-              if (editableContainer && typeof editableContainer.focus === "function") {
-                editableContainer.focus();
-              }
+               // Focus element first
+               if (typeof element.focus === "function") {
+                 element.focus();
+               }
+               const editableContainer = element.closest("[contenteditable='true']") || (element.isContentEditable ? element : null);
+               if (editableContainer && typeof editableContainer.focus === "function") {
+                 editableContainer.focus();
+               }
 
-              // Initialize caret position for contenteditable if not already focused
-              if (isEditable && editableContainer) {
-                const sel = window.getSelection();
-                if (sel.rangeCount === 0 || !editableContainer.contains(sel.anchorNode)) {
-                  const range = document.createRange();
-                  range.selectNodeContents(editableContainer);
-                  range.collapse(false); // Position at the end
-                  sel.removeAllRanges();
-                  sel.addRange(range);
-                }
-              }
-
-              const typoChance = 0.03;
-              const keyboardNeighbors = {
-                'a': 'qwsz', 'b': 'vghn', 'c': 'xdfv', 'd': 'ersfxc', 'e': 'wsdr',
-                'f': 'rtgvcd', 'g': 'tyhbvf', 'h': 'yujnbg', 'i': 'ujko', 'j': 'uikmnh',
-                'k': 'ijlm', 'l': 'okp', 'm': 'njk', 'n': 'bhjm', 'o': 'iklp',
-                'p': 'ol', 'q': 'wa', 'r': 'edft', 's': 'wedxza', 't': 'rfgy',
-                'u': 'yhji', 'v': 'cfgb', 'w': 'qase', 'x': 'zsdc', 'y': 'tghu', 'z': 'asx'
-              };
-
-              const insertChar = (char) => {
-                if (isInput) {
-                  const start = element.selectionStart;
-                  const end = element.selectionEnd;
-                  const val = element.value;
-                  const newVal = val.substring(0, start) + char + val.substring(end);
-                  
-                  // Use native setter if available to bypass React/Vue setters
-                  const proto = element instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
-                  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-                  if (nativeInputValueSetter) {
-                    nativeInputValueSetter.call(element, newVal);
-                  } else {
-                    element.value = newVal;
-                  }
-                  
-                  element.setSelectionRange(start + 1, start + 1);
-                  element.dispatchEvent(new Event("input", { bubbles: true }));
-                } else if (isEditable && editableContainer) {
-                  const sel = window.getSelection();
-                  if (sel.rangeCount > 0) {
-                    const range = sel.getRangeAt(0);
-                    range.deleteContents();
-                    const textNode = document.createTextNode(char);
-                    range.insertNode(textNode);
-                    range.setStartAfter(textNode);
-                    range.setEndAfter(textNode);
-                    sel.removeAllRanges();
-                    sel.addRange(range);
-                  }
-                  editableContainer.dispatchEvent(new Event("input", { bubbles: true }));
-                }
-              };
-
-              const deleteChar = () => {
-                if (isInput) {
-                  const start = element.selectionStart;
-                  const end = element.selectionEnd;
-                  if (start > 0 || start !== end) {
-                    const val = element.value;
-                    const deleteStart = start === end ? start - 1 : start;
-                    const newVal = val.substring(0, deleteStart) + val.substring(end);
-                    
-                    const proto = element instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
-                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-                    if (nativeInputValueSetter) {
-                      nativeInputValueSetter.call(element, newVal);
-                    } else {
-                      element.value = newVal;
-                    }
-                    
-                    element.setSelectionRange(deleteStart, deleteStart);
-                    element.dispatchEvent(new Event("input", { bubbles: true }));
-                  }
-                } else if (isEditable && editableContainer) {
-                  const sel = window.getSelection();
-                  if (sel.rangeCount > 0) {
-                    const range = sel.getRangeAt(0);
-                    if (range.collapsed) {
-                      const node = range.startContainer;
-                      const offset = range.startOffset;
-                      if (node.nodeType === Node.TEXT_NODE && offset > 0) {
-                        node.deleteData(offset - 1, 1);
-                        range.setStart(node, offset - 1);
-                        range.setEnd(node, offset - 1);
-                        sel.removeAllRanges();
-                        sel.addRange(range);
-                      }
-                    } else {
-                      range.deleteContents();
-                    }
-                  }
-                  editableContainer.dispatchEvent(new Event("input", { bubbles: true }));
-                }
-              };
-
-              for (let i = 0; i < text.length; i++) {
-                const char = text[i];
-                
-                // Typos simulation (only for letters)
-                if (Math.random() < typoChance && keyboardNeighbors[char.toLowerCase()]) {
-                  const neighbors = keyboardNeighbors[char.toLowerCase()];
-                  const typoChar = neighbors[Math.floor(Math.random() * neighbors.length)];
-                  const realTypoChar = (char === char.toUpperCase() ? typoChar.toUpperCase() : typoChar);
-                  
-                  insertChar(realTypoChar);
-                  element.dispatchEvent(new KeyboardEvent("keydown", { key: realTypoChar, bubbles: true }));
-                  element.dispatchEvent(new KeyboardEvent("keypress", { key: realTypoChar, bubbles: true }));
-                  element.dispatchEvent(new KeyboardEvent("keyup", { key: realTypoChar, bubbles: true }));
-                  
-                  // Typo pause (human realization of error)
-                  await new Promise(r => setTimeout(r, 80 + Math.random() * 80));
-                  
-                  // Backspace
-                  deleteChar();
-                  element.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", keyCode: 8, bubbles: true }));
-                  element.dispatchEvent(new KeyboardEvent("keyup", { key: "Backspace", keyCode: 8, bubbles: true }));
-                  
-                  // Correction pause (re-typing correct key)
-                  await new Promise(r => setTimeout(r, 100 + Math.random() * 100));
-                }
-
-                insertChar(char);
-                element.dispatchEvent(new KeyboardEvent("keydown", { key: char, bubbles: true }));
-                element.dispatchEvent(new KeyboardEvent("keypress", { key: char, bubbles: true }));
-                element.dispatchEvent(new KeyboardEvent("keyup", { key: char, bubbles: true }));
-
-                // Delay between key presses (approx. 50ms to 150ms per key)
-                await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
-              }
-
-              if (isInput) {
-                element.dispatchEvent(new Event("change", { bubbles: true }));
-              } else if (isEditable && editableContainer) {
-                editableContainer.dispatchEvent(new Event("change", { bubbles: true }));
-              }
-            };
+               if (isInput) {
+                 // Fast instant injection using native property setter (bypasses React/Vue/Angular wrappers)
+                 const proto = element instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
+                 const nativeInputValueSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+                 if (nativeInputValueSetter) {
+                   nativeInputValueSetter.call(element, text);
+                 } else {
+                   element.value = text;
+                 }
+                 element.dispatchEvent(new Event("input", { bubbles: true }));
+                 element.dispatchEvent(new Event("change", { bubbles: true }));
+               } else if (isEditable && editableContainer) {
+                 try {
+                   document.execCommand("selectAll", false, null);
+                   document.execCommand("insertText", false, text);
+                 } catch (e) {
+                   editableContainer.innerText = text;
+                 }
+                 editableContainer.dispatchEvent(new Event("input", { bubbles: true }));
+                 editableContainer.dispatchEvent(new Event("change", { bubbles: true }));
+               }
+             };
 
             const animateCursorTo = async (elementOrCoords) => {
               try {

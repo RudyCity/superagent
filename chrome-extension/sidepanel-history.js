@@ -1,9 +1,21 @@
 // Chat History and Sessions management for Superagent Chrome Extension
 
 // Fetch and Render Chat History
-async function loadChatHistory() {
+async function loadChatHistory(sessionId) {
   try {
-    const res = await fetch(`${BASE_URL}/api/history`);
+    const targetId = sessionId || window.currentSessionId;
+    const activeWorkspaceText = document.getElementById("active-workspace-text");
+    const workspace = activeWorkspaceText ? activeWorkspaceText.textContent : "";
+    const headers = {};
+    if (workspace && workspace !== "Not Selected") {
+      headers["x-workspace-path"] = workspace;
+    }
+
+    const url = targetId
+      ? `${BASE_URL}/api/history?sessionId=${encodeURIComponent(targetId)}`
+      : `${BASE_URL}/api/history`;
+
+    const res = await fetch(url, { headers });
     const data = await res.json().catch(() => null);
     if (res.ok && data && data.success && Array.isArray(data.messages)) {
       clearChatMessages();

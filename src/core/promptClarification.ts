@@ -336,6 +336,11 @@ function loadPersistentMemory(): Record<string, string> {
     "perbaiki ui": "chrome-extension/sidepanel.html",
     "fix ui": "chrome-extension/sidepanel.html",
     "perbaiki prompt": "src/core/prompts.ts",
+    "extensi chrome": "chrome-extension/",
+    "chrome extension": "chrome-extension/",
+    "extensi remote": "chrome-extension-remote/",
+    "remote extension": "chrome-extension-remote/",
+    "chrome extension remote": "chrome-extension-remote/",
   };
 }
 

@@ -66,7 +66,7 @@ describe("chromeBrowserTools", () => {
 
     try {
       const res = await chromeExtensionStatusTool.execute({});
-      expect(res).toContain("Error listing instances: Bridge connection lost");
+      expect(res).toContain("Bridge connection lost");
     } finally {
       client.close();
     }

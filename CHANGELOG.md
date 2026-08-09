@@ -1,3 +1,9 @@
+## [1.2.712] - 2026-08-09
+
+### Improved: Chrome Extension Instance Isolation
+
+- Isolated browser extension state, history, workspace views, and remote bridge routing per registered browser instance, with coverage for the new isolation behavior.
+
 ## [1.2.711] - 2026-08-09
 
 ### Improved: Prompt Context and Tier Governance

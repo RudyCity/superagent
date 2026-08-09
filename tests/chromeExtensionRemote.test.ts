@@ -19,7 +19,7 @@ describe("chromeExtensionRemote & remoteChromeBridge", () => {
   test("sendRemoteCommand rejects when no extension is connected", async () => {
     await ensureRemoteChromeBridge(9246);
     await expect(sendRemoteCommand("navigate", "https://example.com")).rejects.toThrow(
-      "Superagent Remote Chrome Extension is not connected"
+      "Remote Chrome Control Extension (chrome-extension-remote) is not connected"
     );
   });
 

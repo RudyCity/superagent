@@ -1,4 +1,4 @@
-// ─── Workspace Left Sidebar Management ────────────────────────────────────────
+// ─── Workspace Header Dropdown Management ────────────────────────────────────────
 
 async function loadSavedWorkspaces() {
   return new Promise((resolve) => {
@@ -9,6 +9,7 @@ async function loadSavedWorkspaces() {
 }
 
 async function saveWorkspace(workspacePath) {
+  if (!workspacePath) return;
   const saved = await loadSavedWorkspaces();
   const filtered = saved.filter(w => w !== workspacePath);
   filtered.unshift(workspacePath);
@@ -21,81 +22,42 @@ async function saveWorkspace(workspacePath) {
 }
 
 async function renderWorkspaceListOnly() {
+  const selectEl = document.getElementById("quick-workspace-select");
+  if (!selectEl) return;
+
   const saved = await loadSavedWorkspaces();
-  const currentPath = activeWorkspaceText.textContent;
+  const currentPath = activeWorkspaceText ? activeWorkspaceText.textContent : "";
 
-  savedWorkspacesList.innerHTML = "";
+  selectEl.innerHTML = "";
 
-  if (saved.length === 0) {
-    savedWorkspacesList.innerHTML = '<p class="ws-empty text-[10px] text-vscode-muted italic p-2">No saved workspaces yet.</p>';
-    return;
+  if (saved.length === 0 && !currentPath) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "(No Workspace)";
+    selectEl.appendChild(opt);
+  } else {
+    // Add active path if not in saved list yet
+    let allWorkspaces = [...saved];
+    if (currentPath && currentPath !== "Not Selected" && !allWorkspaces.includes(currentPath)) {
+      allWorkspaces.unshift(currentPath);
+    }
+
+    allWorkspaces.forEach(ws => {
+      const wsName = ws.split(/[\\/]/).filter(Boolean).pop() || ws;
+      const opt = document.createElement("option");
+      opt.value = ws;
+      opt.textContent = wsName;
+      opt.title = ws;
+      if (ws === currentPath) {
+        opt.selected = true;
+      }
+      selectEl.appendChild(opt);
+    });
   }
-
-  saved.forEach(ws => {
-    const isActive = ws === currentPath;
-    const item = document.createElement("div");
-    item.className = "workspace-item flex items-center gap-2.5 p-2 rounded-lg cursor-pointer border transition-all duration-150 " + 
-      (isActive 
-        ? "active bg-vscode-inner border-vscode-dim shadow-sm" 
-        : "border-transparent hover:bg-vscode-hover");
-    item.title = ws;
-    
-    // Extract workspace name (last component of path)
-    const wsName = ws.split(/[\\/]/).filter(Boolean).pop() || ws;
-    
-    // Get first 1-2 letters of workspace name as initials
-    const cleanName = wsName.replace(/[^a-zA-Z0-9\s-_]/g, '');
-    const words = cleanName.split(/[-_\s]+/).filter(Boolean);
-    let initials = '';
-    if (words.length >= 2) {
-      initials = (words[0][0] + words[1][0]).toUpperCase();
-    } else if (words.length === 1 && words[0].length >= 2) {
-      initials = words[0].slice(0, 2).toUpperCase();
-    } else if (wsName.length > 0) {
-      initials = wsName.slice(0, Math.min(2, wsName.length)).toUpperCase();
-    } else {
-      initials = 'WS';
-    }
-
-    // Dynamic color index based on hash of workspace name
-    let hash = 0;
-    for (let i = 0; i < wsName.length; i++) {
-      hash = wsName.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const colorIndex = Math.abs(hash) % 5;
-    const colorClass = `ws-avatar-color-${colorIndex}`;
-
-    // Get parent path for clean rendering
-    let parentPath = ws;
-    const normalized = ws.replace(/\\/g, '/');
-    const lastSlash = normalized.lastIndexOf('/');
-    if (lastSlash !== -1) {
-      parentPath = ws.slice(0, lastSlash);
-    }
-    let displayPath = parentPath;
-    if (displayPath.length > 25) {
-      displayPath = "..." + displayPath.slice(-22);
-    }
-
-    item.innerHTML = `
-      <div class="ws-avatar ${colorClass}">${initials}</div>
-      <div class="flex flex-col min-w-0 flex-1 gap-0.5">
-        <span class="ws-name text-[11px] font-semibold tracking-wide truncate ${isActive ? 'text-vscode-bright' : 'text-vscode-primary'}">${wsName}</span>
-        <span class="ws-path font-mono text-[8.5px] text-vscode-muted truncate">${displayPath}</span>
-      </div>
-      ${isActive ? '<span class="ws-active-badge text-[8.5px] px-1.5 py-0.5 rounded-full font-medium shrink-0">Active</span>' : ''}
-    `;
-    
-    if (!isActive) {
-      item.addEventListener("click", () => {
-        switchToWorkspace(ws, currentMode);
-      });
-    }
-    savedWorkspacesList.appendChild(item);
-  });
 }
 
 async function switchToWorkspace(workspacePath, mode) {
+  if (!workspacePath) return;
   try {
     const res = await fetch(`${BASE_URL}/api/switch-workspace`, {
       method: "POST",
@@ -105,9 +67,16 @@ async function switchToWorkspace(workspacePath, mode) {
     const data = await res.json();
 
     if (data.success) {
-      activeWorkspaceText.textContent = data.workspace;
-      activeWorkspaceText.title = data.workspace;
-      activeModeText.textContent = data.mode;
+      if (data.sessionId) {
+        window.currentSessionId = data.sessionId;
+      }
+      if (activeWorkspaceText) {
+        activeWorkspaceText.textContent = data.workspace;
+        activeWorkspaceText.title = data.workspace;
+      }
+      if (activeModeText) {
+        activeModeText.textContent = data.mode;
+      }
       currentMode = data.mode;
 
       if (typeof window.updateWorkspaceRequiredUI === "function") {
@@ -118,10 +87,9 @@ async function switchToWorkspace(workspacePath, mode) {
       await renderWorkspaceListOnly();
 
       clearChatMessages();
-      await loadChatHistory();
-      if (chatMessages.querySelectorAll(".msg").length === 0) {
-        appendMessage("system", `Switched to workspace: ${data.workspace}`);
-        appendMessage("system", `Mode: ${data.mode}`);
+      await loadChatHistory(data.sessionId);
+      if (typeof loadChatHistorySessions === "function") {
+        await loadChatHistorySessions();
       }
 
       stopPolling();
@@ -152,6 +120,34 @@ async function switchToWorkspace(workspacePath, mode) {
     alert("Error switching workspace: " + err.message);
   }
 }
+
+function promptAddNewWorkspace() {
+  const newPath = prompt("Enter full absolute path to target workspace directory:");
+  if (newPath && newPath.trim()) {
+    const trimmedPath = newPath.trim();
+    switchToWorkspace(trimmedPath, currentMode || "single");
+  }
+}
+
+// Attach event listeners for header workspace selection
+document.addEventListener("DOMContentLoaded", () => {
+  const selectEl = document.getElementById("quick-workspace-select");
+  if (selectEl) {
+    selectEl.addEventListener("change", (e) => {
+      const selectedValue = e.target.value;
+      if (selectedValue) {
+        switchToWorkspace(selectedValue, currentMode || "single");
+      }
+    });
+  }
+
+  const btnAdd = document.getElementById("btn-header-add-workspace");
+  if (btnAdd) {
+    btnAdd.addEventListener("click", () => {
+      promptAddNewWorkspace();
+    });
+  }
+});
 
 function goToSetupScreen() {
   stopPolling();

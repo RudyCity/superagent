@@ -178,11 +178,18 @@ export async function handleServerRoute(
 
   // Get chat history
   if (pathname === "/api/history" && req.method === "GET") {
-    const targetSessionId = parsedUrl.searchParams.get("sessionId") || parsedUrl.searchParams.get("id");
+    let targetSessionId = parsedUrl.searchParams.get("sessionId") || parsedUrl.searchParams.get("id");
     const limitParam = parsedUrl.searchParams.get("limit");
     const offsetParam = parsedUrl.searchParams.get("offset");
     const limit = limitParam ? parseInt(limitParam, 10) : undefined;
     const offset = offsetParam ? parseInt(offsetParam, 10) : 0;
+
+    if (!targetSessionId) {
+      const activeSession = resolveSession(req);
+      if (activeSession) {
+        targetSessionId = activeSession.sessionId;
+      }
+    }
 
     logE2E("SUPERAGENT-SERVER", `GET /api/history`, { targetSessionId, limit, offset });
     if (targetSessionId) {

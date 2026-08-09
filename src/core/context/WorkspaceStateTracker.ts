@@ -234,6 +234,16 @@ export function buildWorkspaceStateBlock(opts: WorkspaceStateOptions): Workspace
     }
   }
 
+  // ── Active Chrome Browser Tab ─────────────────────────────
+  try {
+    const { getRemoteChromeClientMetadata } = require("../tools/remoteChromeBridge.js");
+    const meta = getRemoteChromeClientMetadata();
+    if (meta?.activeTab?.url) {
+      const tabTitle = meta.activeTab.title || "Untitled Tab";
+      parts.push(`🌐 ACTIVE CHROME TAB: ${tabTitle} (${meta.activeTab.url})`);
+    }
+  } catch {}
+
   // Always at least the workspace identity line exists, so parts.length >= 1
   const text = `\n\n⚡ LIVE WORKSPACE STATE:\n${parts.join("\n")}`;
   return { text, charCount: text.length };
