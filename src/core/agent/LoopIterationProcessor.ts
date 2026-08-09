@@ -376,7 +376,7 @@ export class LoopIterationProcessor {
                 await agent.saveHistory();
                 return { shouldBreak: false };
               }
-              const isRetryable = isRetryableError(err) || rawMsg.toLowerCase().includes("empty response");
+              const isRetryable = isRetryableError(err);
               const isPayloadTooLarge = err.status === 413 || /payload too large/i.test(err.message) || /request entity too large/i.test(err.message);
               const isOverloaded = err.status === 429 || err.status === 503 || /overloaded/i.test(err.message) || /rate limit/i.test(err.message);
 

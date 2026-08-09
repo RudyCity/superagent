@@ -237,6 +237,9 @@ export class FastPath {
                   reasoningContent += reasoningText;
                   agent.onEvent({ type: "reasoning", content: reasoningText });
                 }
+              } else if (delta.type === "error") {
+                const { formatError } = await import("./AgentEvents.js");
+                throw delta.error instanceof Error ? delta.error : new Error(formatError(delta.error));
               }
             }
 
@@ -248,6 +251,10 @@ export class FastPath {
                 textContent += streamBuffer;
                 agent.onEvent({ type: "text", content: streamBuffer });
               }
+            }
+
+            if (!textContent.trim()) {
+              throw new Error("Empty response from model. Check your endpoint/model config.");
             }
 
             // Emit token usage (streaming path)
@@ -291,6 +298,10 @@ export class FastPath {
               agent.onEvent({ type: "reasoning", content: cleaned.reasoning });
             }
 
+            if (!textContent.trim()) {
+              throw new Error("Empty response from model. Check your endpoint/model config.");
+            }
+
             // Emit token usage (non-streaming path)
             const usage = result.usage;
             if (usage) {
@@ -328,6 +339,7 @@ export class FastPath {
       } else {
         const message = formatError(err);
         agent.writeToLogFile("AGENT_ERROR", message);
+        agent.onEvent({ type: "text", content: `\n\n❌ [ERROR] ${message}\n` });
         agent.onEvent({ type: "error", message });
         agent.conversation.addMessage({
           role: "system",

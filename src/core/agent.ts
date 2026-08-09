@@ -459,6 +459,7 @@ export class Agent {
       } else {
         const message = `Fatal error: ${formatError(err)}`;
         this.writeToLogFile("AGENT_ERROR", message);
+        this.onEvent({ type: "text", content: `\n\n❌ [ERROR] ${message}\n` });
         this.onEvent({ type: "error", message });
         this.conversation.addMessage({
           role: "system",

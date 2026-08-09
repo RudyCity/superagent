@@ -1,3 +1,11 @@
+## [1.2.713] - 2026-08-09
+
+### Fixed: CLI Thinking Freeze and Non-Retryable API Error Handling
+
+- **`AgentUtils.ts`**: Expanded `isRetryableError` non-retryable checks to include HTTP 403, 401, 404 status codes and endpoint restriction phrases like "only available via", preventing infinite retry loops on non-retryable API errors.
+- **`FastPath.ts`**: Added `delta.type === "error"` handling in the `fullStream` loop, enforced non-empty `textContent` checks, and added text event emission for errors so terminal CLI UI displays error messages instead of remaining stuck on "thinking...".
+- **`agent.ts`**: Added text error event emission on fatal agent errors so errors render directly in live chat UI.
+
 ## [1.2.712] - 2026-08-09
 
 ### Improved: Chrome Extension Instance Isolation

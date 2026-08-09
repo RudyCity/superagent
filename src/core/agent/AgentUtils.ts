@@ -34,7 +34,7 @@ export function isRetryableError(err: unknown): boolean {
 
   msg = msg.toLowerCase();
   
-  if (statusCode === 401 || statusCode === 403 || statusCode === 400 || statusCode === 402) {
+  if (statusCode === 401 || statusCode === 403 || statusCode === 400 || statusCode === 402 || statusCode === 404) {
     return false;
   }
 
@@ -52,8 +52,17 @@ export function isRetryableError(err: unknown): boolean {
     msg.includes("payment required") ||
     msg.includes("status 400") ||
     msg.includes("status: 400") ||
+    msg.includes("status 401") ||
+    msg.includes("status: 401") ||
+    msg.includes("status 403") ||
+    msg.includes("status: 403") ||
+    msg.includes("status 404") ||
+    msg.includes("status: 404") ||
+    msg.includes("only available via") ||
+    msg.includes("not available via") ||
     msg.includes("invalid_request_error") ||
-    msg.includes("empty response from model") ||
+    msg.includes("invalid model") ||
+    msg.includes("model not found") ||
     msg.includes("tried to call unavailable tool") ||
     msg.includes("tried to call tool that is not available")
   ) {
