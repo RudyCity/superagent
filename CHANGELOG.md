@@ -1,3 +1,11 @@
+## [1.2.709] - 2026-08-04
+
+### Fixed: Antigravity Model Preset Vertex/Anthropic Tool Formatting
+
+- **`models.ts`**: Modified `isAnthropicCompatible()` and `isAnthropic` resolution in `getModelInstanceForString()` to recognize the `antigravity` model name and provider suffix. This forces the use of Vercel AI SDK's Anthropic provider wrapper, ensuring that tool execution results are formatted with `tool_use_id` as required by the Vertex AI/Anthropic endpoint, resolving the "tool_use_id: Field required" API error.
+- **`ContextBuilder.ts`**: Updated context window token calculation `isAnthropic` check to also check for `antigravity` in the model name.
+- **`config.test.ts`**: Added unit tests to verify that `isAnthropicCompatible()` correctly identifies `antigravity` models and endpoints.
+
 ## [1.2.708] - 2026-08-04
 
 ### Added: Workspace Chain Skill Sharing

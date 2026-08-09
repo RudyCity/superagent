@@ -456,7 +456,9 @@ export class ContextBuilder {
 
     {
       const modelLimit = getContextWindowLimit(getConfig().model);
-      const isAnthropic = getConfig().provider === "anthropic" || (typeof getConfig().provider === "string" && getConfig().provider.includes("anthropic"));
+      const isAnthropic = getConfig().provider === "anthropic" ||
+                          (typeof getConfig().provider === "string" && getConfig().provider.includes("anthropic")) ||
+                          getConfig().model.toLowerCase().includes("antigravity");
       const safetyMax = Math.floor(modelLimit * (isAnthropic || modelLimit >= 100000 ? 0.80 : 0.70));
       
       let estSysTokens = 0;

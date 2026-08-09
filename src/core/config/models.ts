@@ -156,7 +156,7 @@ export function getContextWindowLimit(model: string): number {
 export function isAnthropicCompatible(baseUrl: string, modelName: string): boolean {
   const urlLower = baseUrl.toLowerCase();
   const modelLower = modelName.toLowerCase();
-  if (urlLower.includes("anthropic")) return true;
+  if (urlLower.includes("anthropic") || urlLower.includes("antigravity")) return true;
   if (
     urlLower.includes("openrouter.ai") ||
     urlLower.includes("openai.com") ||
@@ -168,7 +168,7 @@ export function isAnthropicCompatible(baseUrl: string, modelName: string): boole
   ) {
     return false;
   }
-  return modelLower.includes("claude");
+  return modelLower.includes("claude") || modelLower.includes("antigravity");
 }
 
 export function extractJSON(text: string): string {
@@ -514,7 +514,12 @@ export function getModelInstanceForString(modelStr: string) {
   const isAnthropic = provider === "anthropic" || (
     provider === "custom" &&
     isAnthropicCompatible(baseUrl || "", modelName) &&
-    (baseUrl || "").toLowerCase().includes("anthropic")
+    (
+      (baseUrl || "").toLowerCase().includes("anthropic") ||
+      (baseUrl || "").toLowerCase().includes("antigravity") ||
+      modelName.toLowerCase().includes("antigravity") ||
+      modelStr.toLowerCase().includes("antigravity")
+    )
   );
 
   if (isAnthropic) {

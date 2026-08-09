@@ -822,6 +822,7 @@ describe("config", () => {
       expect(isAnthropicCompatible("https://openrouter.ai/api/v1", "anthropic/claude-3.5-sonnet")).toBe(false);
       expect(isAnthropicCompatible("http://localhost:11434/v1", "llama3")).toBe(false);
       expect(isAnthropicCompatible("https://api.litellm.ai", "claude-3-haiku")).toBe(false);
+      expect(isAnthropicCompatible("http://localhost:9000", "server_antigravity_preset_antigravity/gemini-3.6-flash-high")).toBe(true);
     });
   });
 });
