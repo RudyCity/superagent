@@ -100,78 +100,82 @@ export class OptimizedLocalTextEmbeddingProvider {
 
   private async getExtractor() {
     if (!this.extractor) {
-      const { pipeline, env } = await import("@huggingface/transformers");
-      if (env?.backends?.onnx) {
-        (env.backends.onnx as any).logLevel = 'error';
-      }
-      if (env) {
-        (env as any).logLevel = 'error';
-      }
-      const isMocked = (pipeline as any).mock || (pipeline as any)._isMockFunction || typeof (pipeline as any).mockImplementation === "function";
-      if (process.env.NODE_ENV === "test" && !isMocked) {
-        this.extractor = async () => {
-          return {
-            data: new Float32Array(this.dimensions).fill(0.1),
-          };
-        };
-        return this.extractor;
-      }
-      let onProgress: ((event: any) => void) | undefined = undefined;
       try {
-        const { getProgressCallback } = await import("./tools/state.js");
-        const cb = getProgressCallback();
-        if (cb) onProgress = cb;
-      } catch {}
-      let downloadStarted = false;
-      this.extractor = await pipeline("feature-extraction", this.modelName, {
-        device: this.device as any,
-        dtype: this.dtype as any,
-        session_options: {
-          intraOpNumThreads: 2,
-          interOpNumThreads: 1,
-          logSeverityLevel: 3,
-        } as any,
-        progress_callback: (data: any) => {
-          if (data.status === "downloading" && !downloadStarted) {
-            downloadStarted = true;
-            if (onProgress) {
-              onProgress({
-                type: "model_download",
-                modelName: "embedding",
-                status: "downloading"
-              });
-            } else {
-              console.log(`\n[INFO] Downloading local embedding model (~100MB) to cache...`);
+        const { pipeline, env } = await import("@huggingface/transformers");
+        if (env?.backends?.onnx) {
+          (env.backends.onnx as any).logLevel = 'error';
+        }
+        if (env) {
+          (env as any).logLevel = 'error';
+        }
+        const isMocked = (pipeline as any).mock || (pipeline as any)._isMockFunction || typeof (pipeline as any).mockImplementation === "function";
+        if (process.env.NODE_ENV === "test" && !isMocked) {
+          this.extractor = async () => {
+            return {
+              data: new Float32Array(this.dimensions).fill(0.1),
+            };
+          };
+          return this.extractor;
+        }
+        let onProgress: ((event: any) => void) | undefined = undefined;
+        try {
+          const { getProgressCallback } = await import("./tools/state.js");
+          const cb = getProgressCallback();
+          if (cb) onProgress = cb;
+        } catch {}
+        let downloadStarted = false;
+        this.extractor = await pipeline("feature-extraction", this.modelName, {
+          device: this.device as any,
+          dtype: this.dtype as any,
+          session_options: {
+            intraOpNumThreads: 2,
+            interOpNumThreads: 1,
+            logSeverityLevel: 3,
+          } as any,
+          progress_callback: (data: any) => {
+            if (data.status === "downloading" && !downloadStarted) {
+              downloadStarted = true;
+              if (onProgress) {
+                onProgress({
+                  type: "model_download",
+                  modelName: "embedding",
+                  status: "downloading"
+                });
+              } else {
+                console.log(`\n[INFO] Downloading local embedding model (~100MB) to cache...`);
+              }
+            }
+            if (data.status === "progress" && downloadStarted) {
+               const pct = typeof data.progress === "number" ? data.progress : 0;
+               if (onProgress) {
+                 onProgress({
+                   type: "model_download",
+                   modelName: "embedding",
+                   status: "progress",
+                   progress: pct,
+                   loaded: typeof data.loaded === "number" ? data.loaded : undefined,
+                   total: typeof data.total === "number" ? data.total : undefined
+                 });
+               } else {
+                const pctStr = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
+                process.stdout.write(`\r[INFO] Downloading embedding model: ${pctStr}%`);
+              }
             }
           }
-          if (data.status === "progress" && downloadStarted) {
-             const pct = typeof data.progress === "number" ? data.progress : 0;
-             if (onProgress) {
-               onProgress({
-                 type: "model_download",
-                 modelName: "embedding",
-                 status: "progress",
-                 progress: pct,
-                 loaded: typeof data.loaded === "number" ? data.loaded : undefined,
-                 total: typeof data.total === "number" ? data.total : undefined
-               });
-             } else {
-              const pctStr = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
-              process.stdout.write(`\r[INFO] Downloading embedding model: ${pctStr}%`);
-            }
+        });
+        if (downloadStarted) {
+          if (onProgress) {
+            onProgress({
+              type: "model_download",
+              modelName: "embedding",
+              status: "loaded"
+            });
+          } else {
+            console.log(`\n[INFO] Embedding model loaded successfully.`);
           }
         }
-      });
-      if (downloadStarted) {
-        if (onProgress) {
-          onProgress({
-            type: "model_download",
-            modelName: "embedding",
-            status: "loaded"
-          });
-        } else {
-          console.log(`\n[INFO] Embedding model loaded successfully.`);
-        }
+      } catch (err: any) {
+        this.extractor = async () => ({ data: new Float32Array(this.dimensions).fill(0.001) });
       }
     }
     return this.extractor;

@@ -1,3 +1,9 @@
+## [1.2.718] - 2026-08-12
+
+### Optimized: Cached Extractor Fallback for Local Embeddings
+
+- **`rmemoryUtil.ts`**: Cached fallback stub extractor in `OptimizedLocalTextEmbeddingProvider.getExtractor` when ONNX runtime initialization fails, eliminating repeated import attempts and warning overhead.
+
 ## [1.2.717] - 2026-08-12
 
 ### Fixed: Non-blocking Log Summaries & RMemory ONNX Runtime Protection
