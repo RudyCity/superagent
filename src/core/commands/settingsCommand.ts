@@ -465,7 +465,8 @@ export const settingContextLimitCommand: SlashCommand = {
 
       // Update UI context limit display
       if (ctx.setContextLimit) {
-        ctx.setContextLimit(num > 0 ? num : 256000);
+        const currentModel = getEffectiveMasterModel("auto") || "gpt-4o";
+        ctx.setContextLimit(num > 0 ? num : getContextWindowLimit(currentModel));
       }
     } catch (err: any) {
       ctx.addLine({

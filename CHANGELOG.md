@@ -1,3 +1,12 @@
+## [1.2.715] - 2026-08-12
+
+### Fixed: Context Limits & Autocontext Resolution
+
+- **`model_limits.ts`**: Added 1,000,000 token (1M context) limits and fallback matching logic for `deepseek-v4-flash-0731` and Qwen 3.8 models (`qwen3.8-max`, `qwen3.8-plus`, `qwen3.8-flash`).
+- **`settingsCommand.ts`**: Fixed auto mode (`/setting-context-limit 0`) UI context limit display resolution to dynamically retrieve active model limit instead of using a hardcoded 256,000 fallback.
+- **`app.tsx`**: Updated initial state for `contextLimit` to dynamically resolve from active model limit via `getContextWindowLimit()`.
+- **`config.test.ts`**: Added unit tests verifying 1M token limit resolution for `deepseek-v4-flash-0731` and `qwen3.8-max`.
+
 ## [1.2.714] - 2026-08-12
 
 ### Fixed: Test Suite Maintenance and Build Outputs

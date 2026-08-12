@@ -152,7 +152,14 @@ export function App({
   const [tokensDown, setTokensDown] = useState(0);
   const [lastPromptTokens, setLastPromptTokens] = useState(0);
   const [lastSpeed, setLastSpeed] = useState<number | null>(null);
-  const [contextLimit, setContextLimit] = useState(256000);
+  const [contextLimit, setContextLimit] = useState(() => {
+    try {
+      const modelName = getEffectiveMasterModel("single") || getDefaultModel();
+      return getContextWindowLimit(modelName);
+    } catch {
+      return 256000;
+    }
+  });
   const [activeLocks, setActiveLocks] = useState(0);
   
   const streamBufferRef = useRef("");

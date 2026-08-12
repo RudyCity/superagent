@@ -90,6 +90,7 @@ export const MODEL_LIMITS: Record<string, number> = {
   "deepseek/deepseek-v3.2": 131072,
   "deepseek/deepseek-v3.2-exp": 163840,
   "deepseek/deepseek-v4-flash": 1048576,
+  "deepseek/deepseek-v4-flash-0731": 1048576,
   "deepseek/deepseek-v4-pro": 1048576,
 
   // Google Models
@@ -393,6 +394,9 @@ export const MODEL_LIMITS: Record<string, number> = {
   "qwen/qwen3.6-plus": 1000000,
   "qwen/qwen3.7-max": 1000000,
   "qwen/qwen3.7-plus": 1000000,
+  "qwen/qwen3.8-flash": 1000000,
+  "qwen/qwen3.8-max": 1000000,
+  "qwen/qwen3.8-plus": 1000000,
 
   // Rekaai Models
   "rekaai/reka-edge": 16384,
@@ -544,6 +548,7 @@ export function getStaticModelLimit(model: string): number | null {
   if (m.includes("gpt-3.5-turbo")) return 16385;
   if (m.includes("gpt-5")) return 400000;
 
+  if (m.includes("deepseek-v4")) return 1048576;
   if (m.includes("deepseek-r1")) return 163840;
   if (m.includes("deepseek")) return 131072;
 
@@ -551,6 +556,7 @@ export function getStaticModelLimit(model: string): number | null {
   if (m.includes("llama-3.3") || m.includes("llama-3.2") || m.includes("llama-3.1")) return 131072;
   if (m.includes("llama-3")) return 8192;
 
+  if (m.includes("qwen3.8") || m.includes("qwen3.7")) return 1000000;
   if (m.includes("qwen3")) return 262144;
   if (m.includes("qwen2.5-coder") || m.includes("qwen-2.5-coder")) return 128000;
   if (m.includes("qwen")) return 1000000; // Qwen-Plus default is 1M

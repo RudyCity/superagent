@@ -219,6 +219,8 @@ describe("config", () => {
   it("should fallback to rich static lookups if not cached", () => {
     expect(getContextWindowLimit("google/gemini-2.5-flash")).toBe(1048576);
     expect(getContextWindowLimit("deepseek-chat")).toBe(131072);
+    expect(getContextWindowLimit("deepseek-v4-flash-0731")).toBe(1048576);
+    expect(getContextWindowLimit("deepseek/deepseek-v4-flash-0731")).toBe(1048576);
     expect(getContextWindowLimit("meta-llama/llama-3.3-70b-instruct")).toBe(131072);
     
     // Claude Sonnet 4.5 1M tests
@@ -241,6 +243,8 @@ describe("config", () => {
     expect(getContextWindowLimit("google/gemma-4-26b-a4b-it:free")).toBe(262144);
     expect(getContextWindowLimit("meta-llama/llama-3.3-70b-instruct:free")).toBe(131072);
     expect(getContextWindowLimit("qwen/qwen3-coder:free")).toBe(1048576);
+    expect(getContextWindowLimit("qwen3.8-max")).toBe(1000000);
+    expect(getContextWindowLimit("qwen/qwen3.8-max")).toBe(1000000);
   });
 
   it("should fetch and cache models from provider correctly", async () => {
