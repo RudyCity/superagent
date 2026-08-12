@@ -271,14 +271,22 @@ export class ToolExecutor {
             planContent = existing.replace(target, replacement);
           } else if (tc.name === "multi_replace_file_content") {
             let existing = fs.existsSync(planFilePath) ? fs.readFileSync(planFilePath, "utf8") : "";
-            const chunksVal = tc.args.ReplacementChunks;
-            const chunks = Array.isArray(chunksVal)
-              ? chunksVal
-              : (chunksVal !== undefined && chunksVal !== null ? [chunksVal] : []);
+            let chunks: any[] = [];
+            if (Array.isArray(tc.args.files)) {
+              for (const file of tc.args.files) {
+                const fc = file?.chunks || file?.ReplacementChunks || file?.replacementChunks || file?.replacements || [];
+                if (Array.isArray(fc)) chunks.push(...fc);
+              }
+            } else {
+              const chunksVal = tc.args.ReplacementChunks ?? tc.args.chunks ?? tc.args.replacementChunks ?? tc.args.replacements;
+              chunks = Array.isArray(chunksVal)
+                ? chunksVal
+                : (chunksVal !== undefined && chunksVal !== null ? [chunksVal] : []);
+            }
             for (const chunk of chunks) {
-              const target = chunk.TargetContent as string || "";
-              const replacement = chunk.ReplacementContent as string || "";
-              existing = existing.replace(target, replacement);
+              const target = (chunk.TargetContent ?? chunk.targetContent ?? chunk.oldContent) as string || "";
+              const replacement = (chunk.ReplacementContent ?? chunk.replacementContent ?? chunk.newContent) as string || "";
+              if (target) existing = existing.replace(target, replacement);
             }
             planContent = existing;
           } else {
@@ -317,14 +325,22 @@ export class ToolExecutor {
             taskContent = existing.replace(target, replacement);
           } else if (tc.name === "multi_replace_file_content") {
             let existing = fs.existsSync(taskFilePath) ? fs.readFileSync(taskFilePath, "utf8") : "";
-            const chunksVal = tc.args.ReplacementChunks;
-            const chunks = Array.isArray(chunksVal)
-              ? chunksVal
-              : (chunksVal !== undefined && chunksVal !== null ? [chunksVal] : []);
+            let chunks: any[] = [];
+            if (Array.isArray(tc.args.files)) {
+              for (const file of tc.args.files) {
+                const fc = file?.chunks || file?.ReplacementChunks || file?.replacementChunks || file?.replacements || [];
+                if (Array.isArray(fc)) chunks.push(...fc);
+              }
+            } else {
+              const chunksVal = tc.args.ReplacementChunks ?? tc.args.chunks ?? tc.args.replacementChunks ?? tc.args.replacements;
+              chunks = Array.isArray(chunksVal)
+                ? chunksVal
+                : (chunksVal !== undefined && chunksVal !== null ? [chunksVal] : []);
+            }
             for (const chunk of chunks) {
-              const target = chunk.TargetContent as string || "";
-              const replacement = chunk.ReplacementContent as string || "";
-              existing = existing.replace(target, replacement);
+              const target = (chunk.TargetContent ?? chunk.targetContent ?? chunk.oldContent) as string || "";
+              const replacement = (chunk.ReplacementContent ?? chunk.replacementContent ?? chunk.newContent) as string || "";
+              if (target) existing = existing.replace(target, replacement);
             }
             taskContent = existing;
           } else {

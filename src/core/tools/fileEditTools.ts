@@ -1331,6 +1331,19 @@ export const multiReplaceFileContentTool: Tool = {
     const terminalType = (currentAgent as any)?.terminalType || "cli";
     const targetPath = (args.filePath as string) || ((args.files as any[])?.[0]?.filePath);
     if (workspaceMode.isSsh() && !isLocalConfigOrSessionPath(targetPath)) {
+      if (args.files && Array.isArray(args.files) && args.files.length > 0) {
+        const sshResults: string[] = [];
+        for (const f of args.files) {
+          const rawChunks = f.chunks || (f as any).ReplacementChunks || (f as any).replacementChunks || (f as any).replacements || [];
+          if (!f.filePath || !Array.isArray(rawChunks) || rawChunks.length === 0) {
+            sshResults.push(`Error: Missing filePath or chunks for SSH multi_replace_file_content for ${f.filePath || "unknown file"}`);
+            continue;
+          }
+          const res = await sshMultiEditToolExecute(f.filePath, rawChunks);
+          sshResults.push(res);
+        }
+        return sshResults.join("\n\n");
+      }
       const chunks = (args.chunks as any[]) || ((args.files as any[])?.[0]?.chunks);
       if (!targetPath || !Array.isArray(chunks) || chunks.length === 0) {
         return "Error: Missing filePath or chunks for SSH multi_replace_file_content";
@@ -1389,7 +1402,7 @@ export const multiReplaceFileContentTool: Tool = {
 
         for (const file of sortedFiles) {
           try {
-            const rawChunks = file.chunks || (file as any).replacements || [];
+            const rawChunks = file.chunks || (file as any).ReplacementChunks || (file as any).replacementChunks || (file as any).replacements || [];
             const chunks: Chunk[] = [];
             for (const c of rawChunks as any[]) {
               if (!c || typeof c !== "object") {
@@ -1406,8 +1419,8 @@ export const multiReplaceFileContentTool: Tool = {
               if (!targetContent) {
                 throw new Error("targetContent in chunk cannot be empty.");
               }
-              const startLineVal = c.startLine ?? c.StartLine;
-              const endLineVal = c.endLine ?? c.EndLine;
+              const startLineVal = c.startLine ?? c.StartLine ?? c.start_line;
+              const endLineVal = c.endLine ?? c.EndLine ?? c.end_line;
               if (startLineVal === undefined || startLineVal === null) {
                 throw new Error("Missing required parameter 'startLine' in chunk.");
               }

@@ -1,3 +1,12 @@
+## [1.2.721] - 2026-08-13
+
+### Fixed: multi_replace_file_content Multi-File Tool Description & Chunk Parsing
+
+- **`permissions.ts`**: Prioritized `args.files` over single `args.filePath` in `getToolDescription()` when `args.files` contains multiple files, and pluralized description string (`Replacing multiple blocks in files: ...`) for multi-file operations.
+- **`ToolExecutor.ts`**: Expanded `multi_replace_file_content` chunk parsing for implementation plans and task checklists to extract chunks from `tc.args.ReplacementChunks`, `tc.args.chunks`, or `tc.args.files`.
+- **`fileEditTools.ts`**: Enhanced `multiReplaceFileContentTool` SSH mode for `files` array batching, added support for `ReplacementChunks`/`replacementChunks` inside `files` items, and supported `start_line`/`end_line` aliases.
+- **`tests/permissions.test.ts`**: Added test assertions for multi-file replace descriptions and `files` prioritization over single `filePath`.
+
 ## [1.2.720] - 2026-08-12
 
 ### Added: Subagent and Superagent Status Action Support

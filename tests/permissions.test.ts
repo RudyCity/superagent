@@ -347,7 +347,21 @@ describe("isToolCallOutOfBounds", () => {
           ]
         }
       };
-      expect(getToolDescription(toolCall as any)).toBe("Replacing multiple blocks in file: src/app.ts and 1 more files");
+      expect(getToolDescription(toolCall as any)).toBe("Replacing multiple blocks in files: src/app.ts and 1 more files");
+    });
+
+    it("should prioritize files array over single filePath in getToolDescription when files.length > 1", () => {
+      const toolCall = {
+        name: "multi_replace_file_content",
+        args: {
+          filePath: "src/app.ts",
+          files: [
+            { filePath: "src/app.ts", chunks: [] },
+            { filePath: "src/config.ts", chunks: [] }
+          ]
+        }
+      };
+      expect(getToolDescription(toolCall as any)).toBe("Replacing multiple blocks in files: src/app.ts and 1 more files");
     });
 
     it("should block out of bounds edit calls using edits array", () => {

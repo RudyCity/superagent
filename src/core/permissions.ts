@@ -593,14 +593,13 @@ export function getToolDescription(
   toolCall: ToolCall
 ): string {
   const args = toolCall.args;
-  /** Safely resolve file path from common LLM aliases (filePath, file_path, path, TargetFile, file, AbsolutePath, absolutePath, filePaths) */
-  let fp = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile ?? args.file ?? args.AbsolutePath ?? args.absolutePath) as string | undefined;
-  if (!fp && args.filePaths && Array.isArray(args.filePaths) && args.filePaths.length > 0) {
-    const firstPath = extractFilePath(args.filePaths[0]) ?? "(invalid)";
-    if (args.filePaths.length === 1) {
-      fp = firstPath;
-    } else {
-      fp = `${firstPath} and ${args.filePaths.length - 1} more files`;
+  let fp: string | undefined;
+  if (args.files && Array.isArray(args.files) && args.files.length > 0) {
+    const uniquePaths = Array.from(new Set(args.files.map((f: any) => f.filePath ?? f.path).filter(Boolean)));
+    if (uniquePaths.length === 1) {
+      fp = uniquePaths[0] as string;
+    } else if (uniquePaths.length > 1) {
+      fp = `${uniquePaths[0]} and ${uniquePaths.length - 1} more files`;
     }
   }
   if (!fp && args.edits && Array.isArray(args.edits) && args.edits.length > 0) {
@@ -611,12 +610,12 @@ export function getToolDescription(
       fp = `${uniquePaths[0]} and ${uniquePaths.length - 1} more files`;
     }
   }
-  if (!fp && args.files && Array.isArray(args.files) && args.files.length > 0) {
-    const uniquePaths = Array.from(new Set(args.files.map((f: any) => f.filePath ?? f.path).filter(Boolean)));
-    if (uniquePaths.length === 1) {
-      fp = uniquePaths[0] as string;
-    } else if (uniquePaths.length > 1) {
-      fp = `${uniquePaths[0]} and ${uniquePaths.length - 1} more files`;
+  if (!fp && args.filePaths && Array.isArray(args.filePaths) && args.filePaths.length > 0) {
+    const firstPath = extractFilePath(args.filePaths[0]) ?? "(invalid)";
+    if (args.filePaths.length === 1) {
+      fp = firstPath;
+    } else {
+      fp = `${firstPath} and ${args.filePaths.length - 1} more files`;
     }
   }
   if (!fp && args.patches && Array.isArray(args.patches) && args.patches.length > 0) {
@@ -626,6 +625,9 @@ export function getToolDescription(
     } else if (uniquePaths.length > 1) {
       fp = `${uniquePaths[0]} and ${args.patches.length - 1} more files`;
     }
+  }
+  if (!fp) {
+    fp = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile ?? args.file ?? args.AbsolutePath ?? args.absolutePath) as string | undefined;
   }
   if (!fp) {
     fp = "(missing)";
@@ -657,8 +659,10 @@ export function getToolDescription(
       return `Writing file: ${fp}`;
     case "replace_file_content":
       return `Replacing content in file: ${fp}`;
-    case "multi_replace_file_content":
-      return `Replacing multiple blocks in file: ${fp}`;
+    case "multi_replace_file_content": {
+      const isMultiFile = (args.files && Array.isArray(args.files) && args.files.length > 1) || (fp && fp.includes("more files"));
+      return isMultiFile ? `Replacing multiple blocks in files: ${fp}` : `Replacing multiple blocks in file: ${fp}`;
+    }
     case "run_command":
       return `Running command: ${truncateCommand(s(args.command ?? args.cmd))}${args.cwd ? ` (in ${args.cwd})` : ""}`;
     case "manage_background_process":
