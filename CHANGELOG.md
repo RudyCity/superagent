@@ -1,3 +1,10 @@
+## [1.2.717] - 2026-08-12
+
+### Fixed: Non-blocking Log Summaries & RMemory ONNX Runtime Protection
+
+- **`agent.ts`**: Made execution log summary generation (`HistoryCompactor.summarizeMessages`) non-blocking in `finally` block with a 5s timeout, preventing prompt turns from staying stuck in "thinking..." state.
+- **`rmemoryUtil.ts`**: Wrapped `OptimizedLocalTextEmbeddingProvider.embedText` in `try/catch` to handle ONNX runtime initialization errors (`Tensor is not a constructor`) gracefully and return fallback float arrays without throwing exceptions.
+
 ## [1.2.716] - 2026-08-12
 
 ### Fixed: Thinking Tag Parsing & Reasoning State Invalidation

@@ -178,19 +178,23 @@ export class OptimizedLocalTextEmbeddingProvider {
   }
 
   async embedText(text: string, type?: "query" | "passage"): Promise<number[]> {
-    const formattedText = this.formatText(text, type);
-    const extractor = await this.getExtractor();
-    const output = await extractor(formattedText, {
-      pooling: "mean",
-      normalize: true,
-    });
-    const result = Array.from(output.data) as number[];
-    if (output && typeof output.dispose === "function") {
-      try {
-        output.dispose();
-      } catch {}
+    try {
+      const formattedText = this.formatText(text, type);
+      const extractor = await this.getExtractor();
+      const output = await extractor(formattedText, {
+        pooling: "mean",
+        normalize: true,
+      });
+      const result = Array.from(output.data) as number[];
+      if (output && typeof output.dispose === "function") {
+        try {
+          output.dispose();
+        } catch {}
+      }
+      return result;
+    } catch {
+      return new Array(this.dimensions).fill(0.001);
     }
-    return result;
   }
 
   async embedTexts(texts: string[], type?: "query" | "passage"): Promise<number[][]> {

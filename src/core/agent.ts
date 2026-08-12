@@ -555,8 +555,14 @@ export class Agent {
             const lastUserIdx = messages.map(m => m.role).lastIndexOf("user");
             const sessionMsgs = lastUserIdx >= 0 ? messages.slice(lastUserIdx) : messages;
             this.writeToLogFile("INFO", "Generating execution summary for log...");
-            finalSummary = await HistoryCompactor.summarizeMessages(this, sessionMsgs, signal);
-            this.writeToLogFile("SUMMARY", finalSummary);
+            const sumSignal = AbortSignal.timeout(5000);
+            HistoryCompactor.summarizeMessages(this, sessionMsgs, sumSignal)
+              .then(summary => {
+                this.writeToLogFile("SUMMARY", summary);
+              })
+              .catch(sumErr => {
+                this.writeToLogFile("WARN", `Failed to generate execution summary for log: ${sumErr.message}`);
+              });
           }
         } catch (sumErr: any) {
           this.writeToLogFile("WARN", `Failed to generate execution summary for log: ${sumErr.message}`);
