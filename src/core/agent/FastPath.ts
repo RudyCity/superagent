@@ -7,7 +7,7 @@ function cleanThinkingTags(text: string, existingReasoning = ""): { cleanText: s
   let rawText = text || "";
   let reasoning = existingReasoning || "";
 
-  const thinkRegex = /<(think|thought|reasoning|thinking)>([\s\S]*?)<\/\1>/gi;
+  const thinkRegex = /<(think|thought|reasoning|thinking)(?:\s+[^>]*)?>([\s\S]*?)<\/\1\s*>/gi;
   let match;
   while ((match = thinkRegex.exec(rawText)) !== null) {
     const innerText = match[2].trim();
@@ -17,7 +17,10 @@ function cleanThinkingTags(text: string, existingReasoning = ""): { cleanText: s
   }
   rawText = rawText.replace(thinkRegex, "").trim();
 
-  const unclosedRegex = /<(think|thought|reasoning|thinking)>([\s\S]*)$/i;
+  const looseCloseRegex = /<\/(think|thought|reasoning|thinking)\s*>/gi;
+  rawText = rawText.replace(looseCloseRegex, "").trim();
+
+  const unclosedRegex = /<(think|thought|reasoning|thinking)(?:\s+[^>]*)?>([\s\S]*)$/i;
   const unclosedMatch = unclosedRegex.exec(rawText);
   if (unclosedMatch) {
     const innerText = unclosedMatch[2].trim();
@@ -153,7 +156,7 @@ export class FastPath {
                 
                 while (streamBuffer.length > 0) {
                   if (!inThinkTagState) {
-                    const openMatch = /^(<(think|thought|reasoning|thinking)>)/i.exec(streamBuffer);
+                    const openMatch = /^(<(think|thought|reasoning|thinking)(?:\s+[^>]*)?>)/i.exec(streamBuffer);
                     if (openMatch) {
                       inThinkTagState = true;
                       currentThinkTagType = openMatch[2];
@@ -193,7 +196,7 @@ export class FastPath {
                     agent.onEvent({ type: "text", content: char });
                     streamBuffer = streamBuffer.substring(1);
                   } else {
-                    const closeMatch = new RegExp(`^((?:<\\/${currentThinkTagType}>))`, "i").exec(streamBuffer);
+                    const closeMatch = new RegExp(`^((?:<\\/(?:${currentThinkTagType || "think|thought|reasoning|thinking"})\\s*>))`, "i").exec(streamBuffer);
                     if (closeMatch) {
                       inThinkTagState = false;
                       currentThinkTagType = "";
@@ -254,7 +257,12 @@ export class FastPath {
             }
 
             if (!textContent.trim()) {
-              throw new Error("Empty response from model. Check your endpoint/model config.");
+              if (reasoningContent.trim()) {
+                textContent = reasoningContent.trim();
+                agent.onEvent({ type: "text", content: textContent });
+              } else {
+                throw new Error("Empty response from model. Check your endpoint/model config.");
+              }
             }
 
             // Emit token usage (streaming path)
@@ -299,7 +307,12 @@ export class FastPath {
             }
 
             if (!textContent.trim()) {
-              throw new Error("Empty response from model. Check your endpoint/model config.");
+              if (cleaned.reasoning.trim()) {
+                textContent = cleaned.reasoning.trim();
+                agent.onEvent({ type: "text", content: textContent });
+              } else {
+                throw new Error("Empty response from model. Check your endpoint/model config.");
+              }
             }
 
             // Emit token usage (non-streaming path)

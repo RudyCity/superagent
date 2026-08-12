@@ -24,7 +24,7 @@ function cleanThinkingTags(text: string, existingReasoning = ""): { cleanText: s
   let rawText = text || "";
   let reasoning = existingReasoning || "";
 
-  const thinkRegex = /<(think|thought|reasoning|thinking)>([\s\S]*?)<\/\1>/gi;
+  const thinkRegex = /<(think|thought|reasoning|thinking)(?:\s+[^>]*)?>([\s\S]*?)<\/\1\s*>/gi;
   let match;
   while ((match = thinkRegex.exec(rawText)) !== null) {
     const innerText = match[2].trim();
@@ -34,7 +34,10 @@ function cleanThinkingTags(text: string, existingReasoning = ""): { cleanText: s
   }
   rawText = rawText.replace(thinkRegex, "").trim();
 
-  const unclosedRegex = /<(think|thought|reasoning|thinking)>([\s\S]*)$/i;
+  const looseCloseRegex = /<\/(think|thought|reasoning|thinking)\s*>/gi;
+  rawText = rawText.replace(looseCloseRegex, "").trim();
+
+  const unclosedRegex = /<(think|thought|reasoning|thinking)(?:\s+[^>]*)?>([\s\S]*)$/i;
   const unclosedMatch = unclosedRegex.exec(rawText);
   if (unclosedMatch) {
     const innerText = unclosedMatch[2].trim();
@@ -191,7 +194,7 @@ export class LoopIterationProcessor {
                   
                   while (streamBuffer.length > 0) {
                     if (!inThinkTagState) {
-                      const openMatch = /^(<(think|thought|reasoning|thinking)>)/i.exec(streamBuffer);
+                      const openMatch = /^(<(think|thought|reasoning|thinking)(?:\s+[^>]*)?>)/i.exec(streamBuffer);
                       if (openMatch) {
                         inThinkTagState = true;
                         currentThinkTagType = openMatch[2];
@@ -243,7 +246,7 @@ export class LoopIterationProcessor {
                       }
                       streamBuffer = streamBuffer.substring(1);
                     } else {
-                      const closeMatch = new RegExp(`^((?:<\\/${currentThinkTagType}>))`, "i").exec(streamBuffer);
+                      const closeMatch = new RegExp(`^((?:<\\/(?:${currentThinkTagType || "think|thought|reasoning|thinking"})\\s*>))`, "i").exec(streamBuffer);
                       if (closeMatch) {
                         inThinkTagState = false;
                         currentThinkTagType = "";
@@ -339,12 +342,20 @@ export class LoopIterationProcessor {
               } catch {}
 
               if (!textContent.trim() && toolCalls.length === 0) {
-                throw new Error("Empty response from model. Check your endpoint/model config.");
+                if (reasoningContent && reasoningContent.trim()) {
+                  textContent = reasoningContent.trim();
+                  agent.onEvent({ type: "text", content: textContent });
+                } else {
+                  throw new Error("Empty response from model. Check your endpoint/model config.");
+                }
               }
 
               break; // Success
             } catch (err: any) {
-              const rawMsg = err.message || String(err);
+              let rawMsg = err.message || String(err);
+              if (!rawMsg || rawMsg.trim() === "" || rawMsg.trim() === "Cannot connect to API:") {
+                rawMsg = `Cannot connect to API (${err.name || "ConnectionFailed"})`;
+              }
               const isUnavailableTool = rawMsg.toLowerCase().includes("tried to call unavailable tool") || rawMsg.toLowerCase().includes("tried to call tool that is not available");
               if (isUnavailableTool) {
                 const match = rawMsg.match(/(?:tried to call unavailable tool|tool that is not available|tool) ['"]([^'"]+)['"]/i);
@@ -511,12 +522,20 @@ export class LoopIterationProcessor {
               }
 
               if (!textContent.trim() && toolCalls.length === 0) {
-                throw new Error("Empty response from model. Check your endpoint/model config.");
+                if (reasoningContent && reasoningContent.trim()) {
+                  textContent = reasoningContent.trim();
+                  agent.onEvent({ type: "text", content: textContent });
+                } else {
+                  throw new Error("Empty response from model. Check your endpoint/model config.");
+                }
               }
 
               break;
             } catch (err: any) {
-              const rawMsg = err.message || String(err);
+              let rawMsg = err.message || String(err);
+              if (!rawMsg || rawMsg.trim() === "" || rawMsg.trim() === "Cannot connect to API:") {
+                rawMsg = `Cannot connect to API (${err.name || "ConnectionFailed"})`;
+              }
               const isUnavailableTool = rawMsg.toLowerCase().includes("tried to call unavailable tool") || rawMsg.toLowerCase().includes("tried to call tool that is not available");
               if (isUnavailableTool) {
                 const match = rawMsg.match(/(?:tried to call unavailable tool|tool that is not available|tool) ['"]([^'"]+)['"]/i);

@@ -1,3 +1,11 @@
+## [1.2.716] - 2026-08-12
+
+### Fixed: Thinking Tag Parsing & Reasoning State Invalidation
+
+- **`LoopIterationProcessor.ts` & `FastPath.ts`**: Updated open/close thinking tag regexes (`<think>`, `<thought>`, `<reasoning>`, `<thinking>`) to support optional attributes and trailing spaces, preventing `inThinkTagState` from remaining stuck in thinking mode indefinitely.
+- **`LoopIterationProcessor.ts` & `FastPath.ts`**: Fallback reasoning content to text response when text is empty instead of throwing false-positive empty response errors.
+- **`LoopIterationProcessor.ts`**: Clarified blank/truncated API connection error messages (`Cannot connect to API: `).
+
 ## [1.2.715] - 2026-08-12
 
 ### Fixed: Context Limits & Autocontext Resolution
