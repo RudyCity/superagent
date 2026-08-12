@@ -72,7 +72,9 @@ describe("Tool Calling Robustness - Tier validation on executeToolCall", () => {
     } else {
       delete process.env.SUPERAGENT_CONFIG_DIR;
     }
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    try {
+      fs.rmSync(tempHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch {}
     clearModelConfigCache();
   });
 

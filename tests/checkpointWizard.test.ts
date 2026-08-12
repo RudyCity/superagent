@@ -281,8 +281,8 @@ describe("Checkpoint: /checkpoint <name> creates checkpoint", () => {
 });
 
 describe("Checkpoint wizard search filtering", () => {
-  it("should correctly filter checkpoint options using filterSuggestions", () => {
-    const { filterSuggestions } = require("../src/utils/text.js");
+  it("should correctly filter checkpoint options using filterSuggestions", async () => {
+    const { filterSuggestions } = await import("../src/utils/text.js");
     const options = [
       "📌 feature-auth  |  5 msgs  |  1m ago",
       "📌 bugfix-login  |  3 msgs  |  5m ago",

@@ -1,3 +1,12 @@
+## [1.2.714] - 2026-08-12
+
+### Fixed: Test Suite Maintenance and Build Outputs
+
+- **`tests/textToImage.test.ts`**: Removed obsolete test file for cleaned up auto vision text-to-image prompt feature.
+- **`tests/checkpointWizard.test.ts`**: Updated module import for `filterSuggestions` utility to support dynamic import in Vitest test runner.
+- **`tests/toolCallingRobustness.test.ts`**: Added Windows `EBUSY` retry options and exception handling during test home directory cleanup.
+- **Build**: Rebuilt TypeScript distribution outputs and verified build clean compilation.
+
 ## [1.2.713] - 2026-08-09
 
 ### Fixed: CLI Thinking Freeze and Non-Retryable API Error Handling
