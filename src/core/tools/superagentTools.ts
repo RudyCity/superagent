@@ -12,7 +12,7 @@ import fs from "fs";
 import fsAsync from "fs/promises";
 import { execa } from "execa";
 import { killProcessTree } from "./shellTools.js";
-import { detectInteractivePrompt } from "./helpers.js";
+import { detectInteractivePrompt, formatUnknownActionError } from "./helpers.js";
 import { Tool } from "./types.js";
 import { resolveCarriageReturns } from "../../utils/text.js";
 import {
@@ -1075,19 +1075,19 @@ async function cleanupWorktreeRobust(worktreePath: string, logs: string[], cwd: 
 
 export const manageSuperagentsTool: Tool = {
   name: "manage_superagents",
-  description: "List active Superagents, check logs, retrieve reports, or terminate them.",
+  description: "List active Superagents, check status/logs, retrieve reports, or terminate them.",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["list", "logs", "report", "violations", "kill", "kill_all"],
+        enum: ["list", "status", "logs", "report", "violations", "kill", "kill_all"],
         description: "Action to perform",
       },
       superagentIds: {
         type: "array",
         items: { type: "string" },
-        description: "List of Superagent IDs to kill or read logs/reports from",
+        description: "List of Superagent IDs to check status, kill, or read logs/reports from",
       },
     },
     required: ["action"],
@@ -1106,6 +1106,44 @@ export const manageSuperagentsTool: Tool = {
 
     if (action === "list") {
       const lines: string[] = ["Active Superagent Instances:"];
+      if (superagentInstances.size === 0) lines.push("  None");
+      for (const [id, inst] of superagentInstances.entries()) {
+        let line = `  - ID: ${id} | Role: ${inst.role} | Branch: ${inst.branch} | Status: ${inst.status}`;
+        if (inst.violations && inst.violations.length > 0) {
+          line += ` | Violations: ${inst.violations.length}`;
+        }
+        if (inst.status === "completed" && inst.result) {
+          const snippet = inst.result.length > 120 ? inst.result.slice(0, 120) + "..." : inst.result;
+          line += `\n    Report: ${snippet.replace(/\n/g, "\n    ")}`;
+        }
+        lines.push(line);
+      }
+      return lines.join("\n");
+    }
+
+    if (action === "status") {
+      if (superagentIds.length > 0) {
+        const lines: string[] = [];
+        for (const id of superagentIds) {
+          const inst = superagentInstances.get(id);
+          if (!inst) {
+            lines.push(`Error: Superagent instance "${id}" not found.`);
+          } else {
+            let line = `Superagent Status for "${id}": ID: ${id} | Role: ${inst.role} | Branch: ${inst.branch} | Status: ${inst.status}`;
+            if (inst.violations && inst.violations.length > 0) {
+              line += ` | Violations: ${inst.violations.length}`;
+            }
+            if (inst.status === "completed" && inst.result) {
+              const snippet = inst.result.length > 120 ? inst.result.slice(0, 120) + "..." : inst.result;
+              line += `\n  Report: ${snippet.replace(/\n/g, "\n  ")}`;
+            }
+            lines.push(line);
+          }
+        }
+        return lines.join("\n\n");
+      }
+
+      const lines: string[] = ["Active Superagent Statuses:"];
       if (superagentInstances.size === 0) lines.push("  None");
       for (const [id, inst] of superagentInstances.entries()) {
         let line = `  - ID: ${id} | Role: ${inst.role} | Branch: ${inst.branch} | Status: ${inst.status}`;
@@ -1201,7 +1239,7 @@ export const manageSuperagentsTool: Tool = {
       return `All running Superagent instances terminated. Terminated: ${terminated.join(", ")}`;
     }
 
-    return `Error: Unknown action "${action}"`;
+    return formatUnknownActionError(action, ["list", "status", "logs", "report", "violations", "kill", "kill_all"], "Use \"report\" (singular), not \"reports\".");
   },
 };
 

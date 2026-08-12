@@ -1,3 +1,12 @@
+## [1.2.720] - 2026-08-12
+
+### Added: Subagent and Superagent Status Action Support
+
+- **`subagentTools.ts`**: Added `status` action to `manage_subagents` tool schema, enabling querying of status for specific subagents via `conversationIds` or all active subagents.
+- **`superagentTools.ts`**: Added `status` action to `manage_superagents` tool schema for inspecting active Superagents.
+- **`advisor.ts`**: Added `status` to `POLLING_STATUS_ACTIONS` to prevent false positive loop warnings during subagent status checks.
+- **`tests/tools.test.ts` & `tests/toolReliability.test.ts`**: Added test coverage for `status` action in `manage_subagents` and updated valid action error message assertions.
+
 ## [1.2.719] - 2026-08-12
 
 ### Fixed: Tool Call & Result Sequence Sanitization for Bedrock / Anthropic / Kiro Proxy

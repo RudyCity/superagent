@@ -27,7 +27,7 @@ interface AgentState {
   patternWarningHits: number;
 }
 
-const POLLING_STATUS_ACTIONS = new Set(["list", "report", "logs", "violations"]);
+const POLLING_STATUS_ACTIONS = new Set(["list", "status", "report", "logs", "violations"]);
 const BG_PROCESS_ACTIONS = new Set(["list", "status", "stream"]);
 
 export class RealtimeAdvisor {

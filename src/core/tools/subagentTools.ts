@@ -930,19 +930,19 @@ export const sendMessageTool: Tool = {
 
 export const manageSubagentsTool: Tool = {
   name: "manage_subagents",
-  description: "List subagent types/instances, check logs, retrieve reports, or terminate them.",
+  description: "List subagent types/instances, check status/logs, retrieve reports, or terminate them.",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["list", "logs", "report", "violations", "kill", "kill_all"],
+        enum: ["list", "status", "logs", "report", "violations", "kill", "kill_all"],
         description: "Action to perform",
       },
       conversationIds: {
         type: "array",
         items: { type: "string" },
-        description: "List of conversation IDs or role/type names (e.g. 'researcher', 'coder') to kill or read logs/reports from",
+        description: "List of conversation IDs or role/type names (e.g. 'researcher', 'coder') to check status, kill, or read logs/reports from",
       },
     },
     required: ["action"],
@@ -959,6 +959,44 @@ export const manageSubagentsTool: Tool = {
         lines.push(`  - ${name}: ${t.description}`);
       }
       lines.push("\nActive Subagent Instances:");
+      if (subagentInstances.size === 0) lines.push("  None");
+      for (const [id, inst] of subagentInstances.entries()) {
+        let line = `  - ID: ${id} | Type: ${inst.typeName} | Role: ${inst.role} | Status: ${inst.status}`;
+        if (inst.violations && inst.violations.length > 0) {
+          line += ` | Violations: ${inst.violations.length}`;
+        }
+        if (inst.status === "completed" && inst.result) {
+          const snippet = inst.result.length > 120 ? inst.result.slice(0, 120) + "..." : inst.result;
+          line += `\n    Report: ${snippet.replace(/\n/g, "\n    ")}`;
+        }
+        lines.push(line);
+      }
+      return lines.join("\n");
+    }
+
+    if (action === "status") {
+      if (conversationIds.length > 0) {
+        const lines: string[] = [];
+        for (const id of conversationIds) {
+          const inst = resolveSubagentInstance(id);
+          if (!inst) {
+            lines.push(`Error: Subagent instance "${id}" not found. Use 'list' action to see available IDs and role names.`);
+          } else {
+            let line = `Subagent Status for "${id}": ID: ${inst.id} | Type: ${inst.typeName} | Role: ${inst.role} | Status: ${inst.status}`;
+            if (inst.violations && inst.violations.length > 0) {
+              line += ` | Violations: ${inst.violations.length}`;
+            }
+            if (inst.status === "completed" && inst.result) {
+              const snippet = inst.result.length > 120 ? inst.result.slice(0, 120) + "..." : inst.result;
+              line += `\n  Report: ${snippet.replace(/\n/g, "\n  ")}`;
+            }
+            lines.push(line);
+          }
+        }
+        return lines.join("\n\n");
+      }
+
+      const lines: string[] = ["Active Subagent Statuses:"];
       if (subagentInstances.size === 0) lines.push("  None");
       for (const [id, inst] of subagentInstances.entries()) {
         let line = `  - ID: ${id} | Type: ${inst.typeName} | Role: ${inst.role} | Status: ${inst.status}`;
@@ -1040,7 +1078,7 @@ export const manageSubagentsTool: Tool = {
       return "All subagent instances terminated.";
     }
 
-    return formatUnknownActionError(action, ["list", "logs", "report", "violations", "kill", "kill_all"], "Use \"report\" (singular), not \"reports\".");
+    return formatUnknownActionError(action, ["list", "status", "logs", "report", "violations", "kill", "kill_all"], "Use \"report\" (singular), not \"reports\".");
   },
 };
 

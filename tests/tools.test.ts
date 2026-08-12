@@ -694,6 +694,12 @@ describe("Scheduler and Subagent tools", () => {
     const listRes = await manageSubs?.execute({ action: "list" }, process.cwd());
     expect(listRes).toBeDefined();
 
+    const statusAllRes = await manageSubs?.execute({ action: "status" }, process.cwd());
+    expect(statusAllRes).toContain("Active Subagent Statuses");
+
+    const statusSpecificErr = await manageSubs?.execute({ action: "status", conversationIds: ["nonexistent_subagent"] }, process.cwd());
+    expect(statusSpecificErr).toContain('Subagent instance "nonexistent_subagent" not found');
+
     // Test fallback parsing of singular conversation_id parameter
     const logErrRes = await manageSubs?.execute({ action: "logs", conversation_id: "nonexistent_subagent" }, process.cwd());
     expect(logErrRes).toContain('Subagent instance "nonexistent_subagent" not found');
