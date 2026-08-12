@@ -128,10 +128,27 @@ export class BudgetedPruningStrategy implements CompactionStrategy {
     // Preserve original conversation order: pinned messages keep their positions,
     // pruned messages are dropped, kept messages remain in their original sequence.
     const prunedSet = new Set(toPrune);
-    const result: Message[] = [];
+    const rawResult: Message[] = [];
     for (const msg of messages) {
       if (prunedSet.has(msg)) continue;
+      rawResult.push(msg);
+    }
+
+    // Ensure pruning does not leave orphaned tool messages
+    const result: Message[] = [];
+    for (let i = 0; i < rawResult.length; i++) {
+      const msg = rawResult[i];
+      if (msg.role === "tool") {
+        const prev = result[result.length - 1];
+        if (!prev || prev.role !== "assistant" || !prev.toolCalls || prev.toolCalls.length === 0) {
+          continue; // Drop orphaned tool message whose assistant call was pruned
+        }
+      }
       result.push(msg);
+    }
+
+    while (result.length > 0 && result[0].role === "tool") {
+      result.shift();
     }
 
     const tokensBefore = estimateTokensCached(messages, modelName);

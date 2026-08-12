@@ -1,3 +1,11 @@
+## [1.2.719] - 2026-08-12
+
+### Fixed: Tool Call & Result Sequence Sanitization for Bedrock / Anthropic / Kiro Proxy
+
+- **`MessageBuilder.ts`**: Updated `cleanMessageSequence` to absorb tool results into user messages when converting leading assistant tool-call messages to user messages, avoiding orphaned tool messages at the start of the request payload. Added a final sanitization pass to enforce strict tool call and tool result pairing for Bedrock / Anthropic / Kiro API compatibility (`TOOL_USE_RESULT_MISMATCH` prevention).
+- **`BudgetedPruningStrategy.ts`**: Added tool result filtering after pruning to ensure pruned message sequences do not contain orphaned tool messages.
+- **`tests/messageBuilderToolSanitization.test.ts`**: Added unit tests verifying tool sequence sanitization and orphaned tool message cleanup.
+
 ## [1.2.718] - 2026-08-12
 
 ### Optimized: Cached Extractor Fallback for Local Embeddings

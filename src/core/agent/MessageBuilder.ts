@@ -192,12 +192,6 @@ export class MessageBuilder {
       if (result.length > 0 && result[result.length - 1].role === msg.role) {
         result[result.length - 1] = mergeMessages(result[result.length - 1], msg);
       } else {
-        if (result.length > 0 && result[result.length - 1].role === "tool" && msg.role === "user") {
-          result.push({
-            role: "assistant",
-            content: "Continuing...",
-          });
-        }
         result.push(msg);
       }
     }
@@ -209,19 +203,81 @@ export class MessageBuilder {
       }
     }
 
+    const coreContentToString = (content: any): string => {
+      if (!content) return "";
+      if (typeof content === "string") return content;
+      if (!Array.isArray(content)) return String(content);
+      return content
+        .map((p: any) => {
+          if (!p) return "";
+          if (typeof p === "string") return p;
+          if (p.type === "text") return p.text || "";
+          if (p.type === "tool-call") return `[Tool Call: ${p.toolName}(${JSON.stringify(p.args || {})})]`;
+          if (p.type === "tool-result") {
+            const resStr = typeof p.result === "string" ? p.result : JSON.stringify(p.result);
+            return `[Tool Result ${p.toolName}]: ${resStr}`;
+          }
+          if (p.type === "image") return "[image]";
+          return String(p);
+        })
+        .filter(Boolean)
+        .join("\n");
+    };
+
     while (result.length > 0 && result[0].role !== "user") {
       const first = result[0];
       if (first.role === "assistant") {
+        let textContent = coreContentToString(first.content);
+        if (result.length > 1 && result[1].role === "tool") {
+          const toolMsg = result[1];
+          const toolText = coreContentToString(toolMsg.content);
+          textContent += `\n[Tool Results]:\n${toolText}`;
+          result.splice(1, 1);
+        }
         result[0] = {
           role: "user",
-          content: `[Previous Assistant Message]:\n${typeof first.content === "string" ? first.content : contentToString(first.content as any)}`,
+          content: `[Previous Assistant Message]:\n${textContent}`,
         };
       } else {
         result.shift();
       }
     }
 
-    return result;
+    // Final sanitization pass to enforce strict Bedrock/Anthropic tool call & result pairing rules:
+    // 1. Any 'tool' message must be immediately preceded by an 'assistant' message with matching tool calls.
+    // 2. Any 'assistant' message with tool calls must be immediately followed by a 'tool' message with matching results.
+    const sanitized: CoreMessage[] = [];
+    for (let i = 0; i < result.length; i++) {
+      const curr = result[i];
+      if (curr.role === "assistant" && hasToolCalls(curr)) {
+        const next = result[i + 1];
+        if (next && next.role === "tool") {
+          sanitized.push(curr);
+          sanitized.push(next);
+          i++; // skip next since it's consumed as matching tool result
+        } else {
+          // Assistant message has tool calls but no matching tool result follows -> strip tool calls
+          sanitized.push(stripToolCalls(curr));
+        }
+      } else if (curr.role === "tool") {
+        // Orphaned tool message without preceding assistant tool call -> drop it
+        continue;
+      } else {
+        sanitized.push(curr);
+      }
+    }
+
+    // Merge adjacent user messages or assistant text messages created during sanitization
+    const finalResult: CoreMessage[] = [];
+    for (const msg of sanitized) {
+      if (finalResult.length > 0 && finalResult[finalResult.length - 1].role === msg.role) {
+        finalResult[finalResult.length - 1] = mergeMessages(finalResult[finalResult.length - 1], msg);
+      } else {
+        finalResult.push(msg);
+      }
+    }
+
+    return finalResult;
   }
 
   private addCacheControlToMessages(agent: Agent, coreMessages: CoreMessage[]): void {
