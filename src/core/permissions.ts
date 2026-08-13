@@ -6,6 +6,19 @@ import { runEventHooks } from "./tools/dynamicHooks.js";
 import { workspaceMode } from "./ssh/workspaceMode.js";
 import { workspaceChainManager } from "./workspace/WorkspaceChainManager.js";
 
+// ── Cached module loaders (avoid repeated dynamic import overhead) ────────
+let _toolsModule: { getToolByName: (name: string) => any } | null = null;
+let _stateModule: { appendMasterLog: (msg: string) => void; appendToolsErrorLog: (...args: any[]) => void } | null = null;
+
+async function getToolsModule() {
+  if (!_toolsModule) _toolsModule = await import("./tools.js");
+  return _toolsModule;
+}
+async function getStateModule() {
+  if (!_stateModule) _stateModule = await import("./tools/state.js");
+  return _stateModule;
+}
+
 export const MODIFYING_TOOLS = [
   "write",
   "write_to_file",
@@ -772,16 +785,17 @@ function isErrorLikeToolResult(result: string): boolean {
 export async function executeToolCall(
   toolCall: ToolCall,
   cwd: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  cachedActiveTools?: any[]
 ): Promise<ToolResult> {
-  const { getToolByName } = await import("./tools.js");
+  const { getToolByName } = await getToolsModule();
   const tool = getToolByName(toolCall.name);
   const currentAgent = agentLocalStorage.getStore();
   const tier = currentAgent ? currentAgent.tier : "unknown";
   const depth = currentAgent ? currentAgent.delegationDepth : 0;
   if (!tool) {
     try {
-      const { appendMasterLog, appendToolsErrorLog } = await import("./tools/state.js");
+      const { appendMasterLog, appendToolsErrorLog } = await getStateModule();
       appendMasterLog(`[ERROR] Unknown tool called: ${toolCall.name}`);
       appendToolsErrorLog(tier, depth, toolCall.name, `Unknown tool called: ${toolCall.name}`);
     } catch {}
@@ -796,11 +810,11 @@ export async function executeToolCall(
   // Tier-level tool access validation (Layer 2 business logic guard)
   if (currentAgent) {
     try {
-      const activeTools = await currentAgent.getActiveTools();
+      const activeTools = cachedActiveTools || await currentAgent.getActiveTools();
       const isAllowed = activeTools.some((t: any) => t.name === toolCall.name);
       if (!isAllowed) {
         try {
-          const { appendMasterLog, appendToolsErrorLog } = await import("./tools/state.js");
+          const { appendMasterLog, appendToolsErrorLog } = await getStateModule();
           const subTypeSuffix = currentAgent.subagentType ? ` / ${currentAgent.subagentType}` : "";
           appendMasterLog(`[ERROR] Unauthorized tool called by ${tier}${subTypeSuffix}: ${toolCall.name}`);
           appendToolsErrorLog(tier, depth, toolCall.name, `Unauthorized tool called: ${toolCall.name}`);
@@ -824,7 +838,7 @@ export async function executeToolCall(
     const isError = isErrorLikeToolResult(result);
     if (isError) {
       try {
-        const { appendMasterLog, appendToolsErrorLog } = await import("./tools/state.js");
+        const { appendMasterLog, appendToolsErrorLog } = await getStateModule();
         appendMasterLog(`[ERROR] Tool returned error: ${toolCall.name} | ${String(result).slice(0, 2000)}`);
         appendToolsErrorLog(tier, depth, toolCall.name, String(result).slice(0, 2000), { cwd });
       } catch {}
@@ -843,7 +857,7 @@ export async function executeToolCall(
     }
     const message = err instanceof Error ? err.message : String(err);
     try {
-      const { appendMasterLog, appendToolsErrorLog } = await import("./tools/state.js");
+      const { appendMasterLog, appendToolsErrorLog } = await getStateModule();
       appendMasterLog(`[ERROR] Tool execution failed: ${toolCall.name} | ${message}`);
       appendToolsErrorLog(tier, depth, toolCall.name, message, { cwd });
     } catch {}

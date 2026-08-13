@@ -121,6 +121,10 @@ export class Agent {
   private lastAutoCheckpointAt: number = 0;
   /** Minimum interval between auto-checkpoints in ms */
   private static readonly AUTO_CHECKPOINT_COOLDOWN_MS = 10_000;
+  /** Cached active tools to avoid repeated dynamic imports */
+  private _activeToolsCache: { tools: Tool[]; cachedAt: number } | null = null;
+  /** TTL for active tools cache */
+  private static readonly ACTIVE_TOOLS_CACHE_TTL = 5_000;
   private skillContentCache: Map<string, string> = new Map();
   /** Keys of skills that were successfully preloaded into guidelinesText */
   private preloadedSkillKeys: Set<string> = new Set();
@@ -343,6 +347,12 @@ export class Agent {
 
 
   public async getActiveTools(): Promise<Tool[]> {
+    // Return cached tools if within TTL
+    const now = Date.now();
+    if (this._activeToolsCache && (now - this._activeToolsCache.cachedAt) < Agent.ACTIVE_TOOLS_CACHE_TTL) {
+      return [...this._activeToolsCache.tools];
+    }
+
     let tools: Tool[] = [];
     if (this.customTools) {
       tools = [...this.customTools];
@@ -369,6 +379,9 @@ export class Agent {
 
     const { browserControlHandler } = await import("./tools/browserMacroTools.js");
     // Removed isServerMode check so normal CLI can use control_browser_ tools.
+
+    // Cache the resolved tools
+    this._activeToolsCache = { tools: [...tools], cachedAt: now };
     return tools;
   }
 
@@ -719,6 +732,7 @@ export class Agent {
     this.tasksJustArchived = false;
     this.archivedTaskCount = 0;
     this.lastAutoCheckpointAt = 0;
+    this._activeToolsCache = null;
   }
 
   public async prepopulateRmemoryContext(): Promise<void> {

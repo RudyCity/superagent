@@ -214,6 +214,15 @@ function buildEditSummary(before: string, after: string, filePath: string, exist
   const afterLines = after.length > 0 ? after.split(/\r?\n/) : [];
   const m = beforeLines.length;
   const n = afterLines.length;
+
+  // Fast path: skip full LCS diff for very large files to avoid O(m*n) allocation
+  if (m * n > 2_000_000) {
+    const action = existedBefore ? "Changed" : "Created";
+    const delta = n - m;
+    const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
+    return `${action}: ~${Math.abs(delta)} lines ${delta >= 0 ? "added" : "removed"} (${deltaStr} net)\nFile: ${filePath}\n(diff preview skipped — file too large for inline diff)`;
+  }
+
   const dp = Array.from({ length: m + 1 }, () => Array<number>(n + 1).fill(0));
 
   for (let i = m - 1; i >= 0; i--) {

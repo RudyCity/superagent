@@ -25,6 +25,18 @@ export class ToolExecutor {
   ): Promise<ToolResult[]> {
     const toolResults: ToolResult[] = [];
 
+    // Pre-resolve active tools once for the batch (avoids per-tool dynamic imports)
+    let cachedActiveTools: any[] | undefined;
+    try {
+      cachedActiveTools = await agent.getActiveTools();
+    } catch {}
+
+    // Deduplicate autoCheckpoint: run once per batch if any tool is modifying
+    const hasModifyingTool = toolCalls.some(tc => MODIFYING_TOOLS.includes(tc.name));
+    if (hasModifyingTool) {
+      (agent as any).autoCheckpoint("Pre-edit");
+    }
+
     for (const tc of toolCalls) {
       if (signal?.aborted) {
         const err = new Error("AbortError");
@@ -521,14 +533,11 @@ export class ToolExecutor {
         ? agent.worktreePath
         : agent.workingDirectory;
 
-      if (MODIFYING_TOOLS.includes(tc.name)) {
-        (agent as any).autoCheckpoint(`Pre-${tc.name}`);
-      }
-
       const toolResult = await executeToolCall(
         tc,
         effectiveCwd,
-        signal
+        signal,
+        cachedActiveTools
       );
       if (signal?.aborted) {
         const err = new Error("AbortError");

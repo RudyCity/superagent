@@ -349,13 +349,25 @@ Error: ${errorMsg}
   return dynamicTools;
 }
 
+// ── Cached hooks directory existence check (avoid filesystem scan per tool call) ──
+const _hooksRootExistsCache: Map<string, { exists: boolean; checkedAt: number }> = new Map();
+const HOOKS_CACHE_TTL = 30_000; // 30 seconds
+
 export async function runEventHooks(
   event: "pre_tool" | "post_tool" | "pre_command" | "post_command",
   contextData: any
 ): Promise<void> {
   const hooksRoot = path.join(process.cwd(), "internal-hooks");
-  if (!fs.existsSync(hooksRoot)) {
-    return;
+
+  // Use cached existence check to avoid fs.existsSync on every tool call
+  const now = Date.now();
+  const cached = _hooksRootExistsCache.get(hooksRoot);
+  if (cached && (now - cached.checkedAt) < HOOKS_CACHE_TTL) {
+    if (!cached.exists) return;
+  } else {
+    const exists = fs.existsSync(hooksRoot);
+    _hooksRootExistsCache.set(hooksRoot, { exists, checkedAt: now });
+    if (!exists) return;
   }
 
   const projectPath = process.cwd();
