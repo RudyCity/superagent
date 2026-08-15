@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Superagent Technical Architecture Wiki</title>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+  <meta name="description" content="Interactive terminal-based AI coding assistant technical architecture wiki">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.css">
+  <style>
+    :root {
+      --theme-color: #0284c7;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #1e293b;
+    }
+    .sidebar {
+      background: #f8fafc;
+      border-right: 1px solid #e2e8f0 !important;
+    }
+    .sidebar-nav strong {
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      color: #0f172a;
+    }
+    .markdown-section pre>code {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+    .markdown-section table {
+      border-collapse: collapse;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .markdown-section th {
+      background: #f1f5f9;
+      color: #0f172a;
+      font-weight: 700;
+      border: 1px solid #cbd5e1;
+      padding: 10px 14px;
+    }
+    .markdown-section td {
+      border: 1px solid #e2e8f0;
+      padding: 8px 14px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">Loading Superagent Technical Wiki...</div>
+  <script>
+    window.$docsify = {
+      name: '⚡ Superagent Wiki',
+      repo: '',
+      loadSidebar: true,
+      homepage: '00-index.md',
+      auto2top: true,
+      search: {
+        placeholder: 'Search documentation...',
+        noData: 'No results found!',
+        depth: 3
+      },
+      mermaidConfig: {
+        querySelector: ".mermaid"
+      }
+    }
+  </script>
+  <!-- Docsify v4 -->
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify/lib/plugins/search.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify-copy-code/dist/docsify-copy-code.min.js"></script>
+  <!-- Mermaid -->
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: 'default' });
+    window.mermaid = mermaid;
+  </script>
+  <script src="https://unpkg.com/docsify-mermaid@2.0.1/dist/docsify-mermaid.js"></script>
+</body>
+</html>

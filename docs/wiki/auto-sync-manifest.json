@@ -1,0 +1,66 @@
+{
+  "projectName": "superagent",
+  "generatedAt": "2026-08-15T02:09:41.857Z",
+  "targetDir": "docs/wiki",
+  "trackedFiles": {},
+  "wikiPages": {
+    "00-index.md": {
+      "hash": "7ae7e115104197e4b422903a379dd017415e08dff5df10dd2f9f15cc83a428eb",
+      "updatedAt": "2026-08-15T02:09:41.892Z"
+    },
+    "01-architecture-overview.md": {
+      "hash": "5ee65de2665d8d4939da43fab4aecb9c3c5ad273b12a671b6da4614e96a614de",
+      "updatedAt": "2026-08-15T02:09:41.918Z"
+    },
+    "02-domain-models-and-data.md": {
+      "hash": "509c4fc398491ac92302751ff7c81cf8df35de276d21af06718245e747522e77",
+      "updatedAt": "2026-08-15T02:09:41.939Z"
+    },
+    "03-api-and-contracts.md": {
+      "hash": "e635bcfd8d2bc35b2a4566986624631c13f68a8fc5aa60d7542f5aa8425bba5c",
+      "updatedAt": "2026-08-15T02:09:41.973Z"
+    },
+    "04-features-and-workflows.md": {
+      "hash": "1a7a64e61d383b87cc70c2aecc89787696419f9c341d63418df5ab04ef164533",
+      "updatedAt": "2026-08-15T02:09:42.000Z"
+    },
+    "05-infrastructure-and-devops.md": {
+      "hash": "e76a89380cf705902bf783a5625c87d6abc11e37da4a990d37269d81f9c790a0",
+      "updatedAt": "2026-08-15T02:09:42.036Z"
+    },
+    "06-developer-onboarding.md": {
+      "hash": "1b6031c882a9078785a0692466ed51565539c76a0f366dd2d965197a76c27f27",
+      "updatedAt": "2026-08-15T02:09:42.071Z"
+    },
+    "07-adrs-and-decisions.md": {
+      "hash": "b7ea6ec3b1d12f4fe630150a85d99ebb39931376cb54e792430a5297725d4c39",
+      "updatedAt": "2026-08-15T02:09:42.094Z"
+    }
+  },
+  "lastSync": "2026-08-15T02:16:23.709Z",
+  "workspaces": [
+    {
+      "name": "superagent",
+      "path": "D:\\backup from pc asus\\Documents Development\\superagent"
+    },
+    {
+      "name": "t-line",
+      "path": "d:\\backup from pc asus\\Documents Development\\t-line"
+    }
+  ],
+  "lastModifiedFiles": [
+    "[superagent] package.json",
+    "[superagent] .agents/skills/codebase-wiki-generator/",
+    "[superagent] docs/wiki/",
+    "[t-line] src/core/"
+  ],
+  "impactSummary": {
+    "architecture": true,
+    "domainData": false,
+    "apiContracts": false,
+    "features": false,
+    "devops": false,
+    "onboarding": false,
+    "index": true
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "wikiDir": "docs/wiki",
+  "title": "Superagent Technical Architecture Wiki",
+  "primaryWorkspace": {
+    "name": "superagent",
+    "displayName": "Superagent (Interactive Terminal AI Coding Assistant)",
+    "path": ".",
+    "routes": ["src/core/tools", "src/core"],
+    "schemas": ["src/core/storage", "src/core/config"]
+  },
+  "federatedWorkspaces": [
+    {
+      "name": "t-line",
+      "displayName": "t-line (Desktop Client for Superagent)",
+      "path": "d:/backup from pc asus/Documents Development/t-line",
+      "routes": ["src/client", "src/main"],
+      "schemas": []
+    }
+  ]
+}

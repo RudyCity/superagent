@@ -1,3 +1,12 @@
+## [1.2.722] - 2026-08-15
+
+### Added: Comprehensive Codebase Architecture Wiki & Docsify Web Viewer
+
+- **`docs/wiki/`**: Generated 7-chapter codebase architecture documentation suite (`00-index.md` through `07-adrs-and-decisions.md`) covering the 3-tier multi-agent hierarchy, C4 architecture diagrams, SQLite persistence schema with FTS5, JSON configuration model, tool contracts, context compaction workflows, and ADRs.
+- **`docs/wiki/index.html` & `_sidebar.md`**: Created interactive Docsify SPA web viewer with Mermaid diagram rendering, full-text search, copy-code plugins, and multi-chapter navigation tree (`http://localhost:3333`).
+- **`.agents/skills/codebase-wiki-generator/`**: Integrated the codebase wiki generator suite and automation scripts (`generate-wiki-scaffold.cjs`, `extract-api-catalog.cjs`, `extract-db-erd.cjs`, `sync-wiki-on-change.cjs`, `watch-and-sync.cjs`, `validate-wiki-links.cjs`).
+- **`package.json`**: Added npm/bun scripts (`wiki:serve`, `wiki:sync`, `wiki:watch`, `wiki:validate`).
+
 ## [1.2.721] - 2026-08-13
 
 ### Fixed: multi_replace_file_content Multi-File Tool Description & Chunk Parsing

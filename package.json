@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.2.721",
+  "version": "1.2.722",
   "description": "Interactive terminal-based AI coding assistant",
   "type": "module",
   "bin": {
@@ -16,7 +16,11 @@
     "verify:all": "bun run build && bun run verify:extension-js && bun run test",
     "ext:css": "tailwindcss -i chrome-extension/sidepanel.src.css -o chrome-extension/sidepanel.css",
     "ext:css:watch": "tailwindcss -i chrome-extension/sidepanel.src.css -o chrome-extension/sidepanel.css --watch",
-    "postinstall": "bun x patch-package"
+    "postinstall": "bun x patch-package",
+    "wiki:serve": "bun --bun x serve docs/wiki -p 3333",
+    "wiki:sync": "node .agents/skills/codebase-wiki-generator/scripts/sync-wiki-on-change.cjs",
+    "wiki:watch": "node .agents/skills/codebase-wiki-generator/scripts/watch-and-sync.cjs",
+    "wiki:validate": "node .agents/skills/codebase-wiki-generator/scripts/validate-wiki-links.cjs --wiki-dir docs/wiki"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
