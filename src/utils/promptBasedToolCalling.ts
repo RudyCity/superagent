@@ -5,6 +5,7 @@ import {
   saveToolSupportCacheToDb,
   getToolSupportCacheFromDb,
   loadAllToolSupportCacheFromDb,
+  deleteAllToolSupportCacheFromDb,
 } from "../core/storage/historyDb.js";
 
 export interface ToolDefinition {
@@ -159,7 +160,6 @@ export function clearToolCallSupportCache(): void {
   toolCallSupportCache.clear();
   diskCacheLoaded = false;
   try {
-    const { deleteAllToolSupportCacheFromDb } = require("../core/storage/historyDb.js");
     deleteAllToolSupportCacheFromDb();
   } catch {}
 }

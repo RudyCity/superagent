@@ -17,7 +17,8 @@ import {
   deletePinnedKnowledgeByPinFromDb,
   updatePinnedKnowledgeTagInDb,
   deleteSessionFromPinnedKnowledgeDb,
-  getAllPinnedKnowledgeFromDb
+  getAllPinnedKnowledgeFromDb,
+  getHistoryDb
 } from "./storage/historyDb.js";
 
 export interface KnowledgeEntry {
@@ -97,12 +98,11 @@ function generateId(): string {
 
 function enforceMaxEntriesLimit(): void {
   try {
-    const { getHistoryDb } = require("./storage/historyDb.js");
     const db = getHistoryDb();
-    const countRow = db.prepare("SELECT count(*) as cnt FROM pinned_knowledge").get();
+    const countRow = db.prepare("SELECT count(*) as cnt FROM pinned_knowledge").get() as { cnt: number } | undefined;
     if (countRow && countRow.cnt > MAX_ENTRIES) {
       const excess = countRow.cnt - MAX_ENTRIES;
-      const oldestRows = db.prepare("SELECT id FROM pinned_knowledge ORDER BY pinned_at ASC LIMIT ?").all(excess);
+      const oldestRows = db.prepare("SELECT id FROM pinned_knowledge ORDER BY pinned_at ASC LIMIT ?").all(excess) as Array<{ id: string }>;
       if (Array.isArray(oldestRows)) {
         for (const row of oldestRows) {
           deletePinnedKnowledgeFromDb(row.id);

@@ -122,3 +122,20 @@ When Superagent is launched with `--server 3000 --client-mode tline`, it exposes
 - **`GET /api/stream`**: Server-Sent Events (SSE) or WebSocket streaming LLM token chunks and tool status updates.
 - **`GET /api/history`**: Retrieves session transcripts from SQLite.
 - **`POST /api/models`**: Updates provider configurations and active presets in `model-config.json`.
+
+
+## Automated Route Inventory
+
+<!-- API_CATALOG_START -->
+### 🌐 Superagent (Interactive Terminal AI Coding Assistant)
+
+| Method | Endpoint Route | Auth Guard | Description | Source File |
+|:---|:---|:---|:---|:---|
+
+### 🌐 t-line (Desktop Client for Superagent)
+
+| Method | Endpoint Route | Auth Guard | Description | Source File |
+|:---|:---|:---|:---|:---|
+
+<!-- API_CATALOG_END -->
+

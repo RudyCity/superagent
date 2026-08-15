@@ -490,7 +490,7 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
 
     db.exec("COMMIT;");
     try {
-      const { clearHistoryCache } = require("../config/history");
+      const { clearHistoryCache } = require("../config/history.js");
       clearHistoryCache();
     } catch {}
     logE2E("SQL", `saveSessionToDb: ${session.id}`, { messageCount: messages.length, workingDirectory: session.workingDirectory });

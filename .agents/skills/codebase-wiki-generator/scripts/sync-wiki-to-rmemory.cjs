@@ -16,7 +16,7 @@ const crypto = require('crypto');
 
 const args = process.argv.slice(2);
 let wikiDir = 'docs/wiki';
-let outputJson = 'apps/api/data/wiki-rmemory-chunks.json';
+let outputJson = 'docs/wiki/wiki-rmemory-chunks.json';
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--wiki-dir' || args[i] === '-w') {

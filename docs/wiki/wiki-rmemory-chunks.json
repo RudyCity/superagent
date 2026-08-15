@@ -4,552 +4,566 @@
     "document": "00-index.md",
     "section": "Superagent Technical Architecture Wiki",
     "content": "Welcome to the comprehensive technical architecture wiki and developer documentation for **Superagent**.\n\nSuperagent is an interactive, terminal-based AI coding assistant featuring a cyberpunk style terminal UI, real-time context token tracking, and a 3-tier multi-agent orchestration system (Master Agent $\\rightarrow$ Superagent $\\rightarrow$ Subagent). It seamlessly bridges local development with desktop clients ([t-line](file:///d:/backup%20from%20pc%20asus/Documents%20Development/t-line)) and remote browser automation via lightweight Chrome extensions.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.806Z"
+    "updatedAt": "2026-08-15T02:33:26.219Z"
   },
   {
     "id": "wiki-9edf942fd6a8e08e",
     "document": "00-index.md",
     "section": "Architecture Quick Map",
     "content": "```mermaid\ngraph TD\n    classDef master fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff;\n    classDef super fill:#0f172a,stroke:#818cf8,stroke-width:2px,color:#fff;\n    classDef sub fill:#111827,stroke:#34d399,stroke-width:2px,color:#fff;\n    classDef ext fill:#1f2937,stroke:#fbbf24,stroke-width:2px,color:#fff;\n\n    Client[\"💻 Terminal UI / t-line Client / Chrome Extension\"]:::ext\n\n    subgraph Tier1[\"Tier 1: Master Agent\"]\n        MA[\"👑 Master Agent Orchestrator\"]:::master\n        CM[\"🧠 Context Manager & Token Tracker\"]:::master\n        DB[(\"🗄️ SQLite History & FTS5\")]:::master\n    end\n\n    subgraph Tier2[\"Tier 2: Superagents (Isolated Worktrees)\"]\n        SA1[\"🚀 Superagent (Feature A: Branch)\"]:::super\n        SA2[\"🚀 Superagent (Feature B: Branch)\"]:::super\n    end\n\n    subgraph Tier3[\"Tier 3: Ephemeral Subagents\"]\n        SUB1[\"🔍 Researcher Agent\"]:::sub\n        SUB2[\"⚡ Coder Agent\"]:::sub\n        SUB3[\"🧪 Tester Agent\"]:::sub\n        SUB4[\"🌐 Chrome Remote Agent\"]:::sub\n    end\n\n    Client --> MA\n    MA --> CM\n    MA --> DB\n    MA --> SA1\n    MA --> SA2\n    SA1 --> SUB1\n    SA1 --> SUB2\n    SA2 --> SUB3\n    SA2 --> SUB4\n```\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.807Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-de32c8d0e04bf34a",
     "document": "00-index.md",
     "section": "Wiki Chapters",
     "content": "| Chapter | File | Core Content |\n|---|---|---|\n| **00** | [00-index.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/00-index.md) | Table of contents, tech stack badges, system map, and key principles |\n| **01** | [01-architecture-overview.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/01-architecture-overview.md) | 3-tier multi-agent hierarchy, C4 context & container diagrams, execution loops, client bridge modes |\n| **02** | [02-domain-models-and-data.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/02-domain-models-and-data.md) | SQLite schema (`history.db`), `model-config.json` schema, context & token tracking models, state machines |\n| **03** | [03-api-and-contracts.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/03-api-and-contracts.md) | CLI flags, slash commands, tool interface definitions, WebSocket bridge (port 9223), desktop bridge |\n| **04** | [04-features-and-workflows.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/04-features-and-workflows.md) | Orchestration lifecycles, worktree branching & merging, context compaction, browser automation |\n| **05** | [05-infrastructure-and-devops.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/05-infrastructure-and-devops.md) | Node/Bun runtime, TypeScript build pipeline, ~/.superagent-r/ storage layout, logging, error handling |\n| **06** | [06-developer-onboarding.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/06-developer-onboarding.md) | Setup instructions, development commands, testing guidelines, prompt authoring rules (Concepts A, B, C) |\n| **07** | [07-adrs-and-decisions.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/07-adrs-and-decisions.md) | Architecture Decision Records (ADRs) on multi-tier isolation, SQLite transcripts, JSON config, and WebSockets |\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.807Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-2c529952e9e6df2f",
     "document": "00-index.md",
     "section": "Technology Stack",
     "content": "| Layer | Technology | Key Details |\n|---|---|---|\n| **Runtime & Execution** | Node.js (v20+ / v22+) & Bun | High-performance CLI runtime, TypeScript execution with `tsx` |\n| **Terminal UI Framework** | React 18 & Ink | Cyberpunk terminal styling, ANSI styling, interactive widgets |\n| **AI SDK & Model Providers** | Vercel AI SDK (`ai`), `@ai-sdk/*` | Multi-provider support: Anthropic Claude, Google Gemini, OpenAI, OpenRouter, DeepSeek, Ollama, Custom API |\n| **Tokenization & Context** | `tiktoken`, `@anthropic-ai/tokenizer` | Model-specific context window tracking, compaction strategies, semantic analysis |\n| **Storage & Persistence** | SQLite (`better-sqlite3` / raw SQL) | `~/.superagent-r/history.db` single source of truth, FTS5 full-text transcript search |\n| **Configuration** | JSON-only (`model-config.json`) | Zero `process.env` pollution, profile switching, tiered model assignments |\n| **Process & Worktrees** | Execa & Git Worktrees | Isolated per-feature branches under `~/.superagent-r/worktrees/` |\n| **Remote Browser Bridge** | WebSocket (`ws`) | Port 9223 serverless bridge connecting CLI with Chrome extension |\n| **Testing** | Vitest | Unit, integration, and anti-regression testing suite in `tests/` |\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.807Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-9b276366d7bfb4bb",
     "document": "00-index.md",
     "section": "Core Design Principles",
     "content": "1. **Strict 3-Tier Multi-Agent Separation**: Master Agent plans and orchestrates without directly editing code; Superagents execute feature development in isolated Git worktrees; Subagents perform atomic, ephemeral tasks.\n2. **Zero `process.env` Dependency**: All configurations, API keys, presets, and tier models reside exclusively in `~/.superagent-r/model-config.json`.\n3. **SQLite Single Source of Truth**: Chat transcripts, messages, and session metadata are stored and searched in SQLite (`history.db`) with FTS5. The historical `.json` files are 0-byte structural identifiers.\n4. **Dynamic Context Engine**: Active token tracking prevents context window overflows through predictive summarization, pinning preservation, and semantic pruning.\n5. **English-Only Standard**: All user-facing text, UI labels, log entries, comments, documentation, and prompt strings are strictly written in English.",
-    "updatedAt": "2026-08-15T02:16:23.807Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
-    "id": "wiki-241594b1ae42fdd0",
+    "id": "wiki-4d2f30df5eba89ec",
     "document": "00-index.md",
-    "section": "🕒 Last Sync Event: 2026-08-15 02:16:23 UTC (Multi-Workspace: superagent, t-line)",
-    "content": "| Modified Source File | Impacted Wiki Section | Change Trigger |\n|:---|:---|:---|\n| `[superagent] package.json` | [01-architecture-overview.md](./01-architecture-overview.md) | Dependencies or Workspace Structure modified |\n<!-- RECENT_SYNC_LOG_END -->",
-    "updatedAt": "2026-08-15T02:16:23.807Z"
+    "section": "🕒 Last Sync Event: 2026-08-15 02:33:26 UTC (Multi-Workspace: superagent, t-line)",
+    "content": "| Modified Source File | Impacted Wiki Section | Change Trigger |\n|:---|:---|:---|\n| `[superagent] apps/api/data/wiki-rmemory-chunks.json` | [03-api-and-contracts.md](./03-api-and-contracts.md) | API Endpoint Route Handler modified |\n<!-- RECENT_SYNC_LOG_END -->",
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-451c413d83686fd8",
     "document": "01-architecture-overview.md",
     "section": "01. Architecture Overview",
     "content": "Superagent is designed around a multi-tier agent architecture, strict filesystem isolation, model-agnostic provider abstractions, and an interactive cyberpunk terminal user interface.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.807Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-5eac8d48d0ae926e",
     "document": "01-architecture-overview.md",
     "section": "1. 3-Tier Multi-Agent Hierarchy",
     "content": "When running in multi-agent mode (`superagent --multi`), the system distributes responsibilities across three distinct tiers:\n\n```\nMaster Agent  (Orchestrator & Strategy Engine)\n  └── Superagent  (Per-Feature Developer, Isolated in Git Worktree)\n        └── Subagent  (Atomic & Ephemeral Worker: Researcher, Coder, Reviewer, Tester, Chrome-Agent)\n```",
-    "updatedAt": "2026-08-15T02:16:23.807Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-40730be39f2de8b8",
     "document": "01-architecture-overview.md",
     "section": "Tier Responsibilities and Toolset Mapping",
     "content": "| Tier | Primary Role | Isolation Scope | Toolset (`src/core/tools/toolsets.ts`) |\n|---|---|---|---|\n| **Master Agent** | Orchestration, high-level planning, worktree lifecycle, progress monitoring, and branch merging. Cannot modify code files directly. | Main Repository Root | `invokeSuperagentTool`, `awaitSuperagentsTool`, `mergeSuperagentsTool`, `manageSuperagentsTool`, `manageSubagentsTool`, `gitWorktreeTool` |\n| **Superagent** | Feature-level implementation, multi-step code refactoring, test execution, subagent dispatching, and branch committing. | Isolated Git Worktree (`~/.superagent-r/worktrees/<name>`) | Shell Tools + File Tools + `invokeSubagentTool`, `manageSubagentsTool`, `gitWorktreeTool` |\n| **Subagent** | Ephemeral, specialized atomic tasks (researching codebase, writing targeted patches, code review, test verification, browser automation). | Current Parent Worktree (Ephemeral) | Targeted tools based on subagent type (e.g. `researcher`, `coder`, `reviewer`, `software-tester`, `chrome-agent`) |\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.807Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-6560224e2d9beb38",
     "document": "01-architecture-overview.md",
     "section": "C4 Level 1: System Context Diagram",
     "content": "```mermaid\ngraph TD\n    classDef actor fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff;\n    classDef system fill:#0f172a,stroke:#818cf8,stroke-width:2px,color:#fff;\n    classDef external fill:#1f2937,stroke:#fbbf24,stroke-width:2px,color:#fff;\n    classDef db fill:#111827,stroke:#34d399,stroke-width:2px,color:#fff;\n\n    Developer[\"👨‍💻 Developer / User\"]:::actor\n    Desktop[\"🖥️ Desktop Client (t-line)\"]:::actor\n    Browser[\"🌐 Web Browser (Chrome Profile)\"]:::actor\n\n    subgraph SuperagentEngine[\"Superagent Core Engine\"]\n        CLI[\"📟 Terminal CLI & Ink React UI\"]:::system\n        Master[\"👑 Master Agent Orchestrator\"]:::system\n        ContextEngine[\"🧠 Context Manager & Token Tracker\"]:::system\n    end\n\n    subgraph StorageLayer[\"Persistence & Workspaces\"]\n        SQLiteDB[(\"🗄️ SQLite Database (~/.superagent-r/history.db)\")]:::db\n        JSONConfig[\"⚙️ Model & Provider Config (~/.superagent-r/model-config.json)\"]:::db\n        GitWorktrees[\"🌿 Git Worktrees (~/.superagent-r/worktrees/)\"]:::db\n    end\n\n    subgraph Providers[\"External AI Models & Bridges\"]\n        AIProviders[\"☁️ AI Providers (Anthropic / OpenAI / Gemini / Ollama / DeepSeek)\"]:::external\n        RemoteBridge[\"🔌 WebSocket Chrome Bridge (Port 9223)\"]:::external\n    end\n\n    Developer -->|Interactive CLI Commands| CLI\n    Desktop -->|HTTP / WebSocket Client Mode| CLI\n    CLI --> Master\n    Master --> ContextEngine\n    Master --> SQLiteDB\n    Master --> JSONConfig\n    Master --> GitWorktrees\n    Master --> AIProviders\n    Master --> RemoteBridge\n    RemoteBridge --> Browser\n```",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-e5c36554a5efaad6",
     "document": "01-architecture-overview.md",
     "section": "C4 Level 2: Container & Subsystem Architecture",
     "content": "```mermaid\ngraph TB\n    classDef core fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff;\n    classDef tool fill:#0f172a,stroke:#818cf8,stroke-width:2px,color:#fff;\n    classDef store fill:#111827,stroke:#34d399,stroke-width:2px,color:#fff;\n\n    subgraph CoreEngine[\"src/core/\"]\n        MasterAgent[\"masterAgent.ts<br/>(Loop & Dispatcher)\"]:::core\n        ContextMgr[\"context/ContextManager.ts<br/>(Compaction & Token State)\"]:::core\n        TokenTracker[\"context/TokenTracker.ts<br/>(tiktoken Model Counters)\"]:::core\n        Prompts[\"tools/prompts.ts<br/>(Dynamic System Prompts)\"]:::core\n    end\n\n    subgraph ToolEcosystem[\"src/core/tools/\"]\n        SuperTools[\"superagentTools.ts<br/>(invoke/await/merge)\"]:::tool\n        SubTools[\"subagentTools.ts<br/>(ephemeral spawners)\"]:::tool\n        FileTools[\"fileTools.ts & systemTools.ts<br/>(execa, read, write, patch)\"]:::tool\n        ChromeBridge[\"remoteChromeBridge.ts<br/>(WS Port 9223 Server)\"]:::tool\n        Toolsets[\"toolsets.ts<br/>(Tier Permissions Map)\"]:::tool\n    end\n\n    subgraph StorageSubsystem[\"src/core/storage/ & config/\"]\n        HistoryDB[\"historyDb.ts<br/>(SQLite FTS5 Transcripts)\"]:::store\n        JsonConfig[\"config/jsonConfig.ts & providers.ts<br/>(Zero env config)\"]:::store\n    end\n\n    MasterAgent --> ContextMgr\n    ContextMgr --> TokenTracker\n    MasterAgent --> Toolsets\n    Toolsets --> SuperTools\n    Toolsets --> SubTools\n    Toolsets --> FileTools\n    Toolsets --> ChromeBridge\n    MasterAgent --> Prompts\n    MasterAgent --> HistoryDB\n    MasterAgent --> JsonConfig\n```\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-b94d07b3f7ae9853",
     "document": "01-architecture-overview.md",
     "section": "3. Core Execution Lifecycle",
     "content": "1. **Initialization & Configuration Loading**:\n   - `src/cli.tsx` bootstraps the application and reads configuration directly from `~/.superagent-r/model-config.json` via `getEffectiveMasterModel()` and `getConfiguredProviders()`.\n   - SQLite connection to `~/.superagent-r/history.db` initializes tables (`sessions`, `messages`, `messages_fts`, `artifacts`).\n2. **Context Engine Initialization**:\n   - `ContextManager` binds with the chosen model tokenizer (`tiktoken` for OpenAI/Gemini/Anthropic equivalents).\n   - Dynamic prompt generation builds the tier-specific instructions from `src/core/tools/prompts.ts`.\n3. **Execution Loop (`masterAgent.ts`)**:\n   - The user query is recorded to SQLite history.\n   - Master Agent constructs the request, streams LLM output, and evaluates tool calls.\n   - When feature work is required, Master Agent invokes `invokeSuperagentTool` to spin up a git worktree and branch.\n   - Superagents work within their dedicated worktrees, utilizing subagents for atomic tasks.\n   - Master Agent merges completed branches back to the main branch via `mergeSuperagentsTool`.\n4. **Context Compaction & Token Maintenance**:\n   - Before each iteration, `ContextManager` checks token consumption against the model limit.\n   - If threshold is exceeded, pluggable compaction strategies (`SummarizationStrategy`, `PinningStrategy`, `PruningStrategy`) condense the transcript without data loss.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-413fa775b7a400fd",
     "document": "01-architecture-overview.md",
     "section": "4. Worktree Isolation System",
     "content": "To guarantee that concurrent feature development does not cause git branch pollution or file race conditions:\n- Each Superagent receives an isolated directory: `~/.superagent-r/worktrees/<feature-name>/`.\n- A dedicated git branch (e.g. `feature/<feature-name>`) is created automatically.\n- All file reads, writes, and test commands executed by the Superagent and its subagents occur inside this isolated worktree.\n- Upon successful feature completion and verification, the Master Agent issues a merge operation back into the target branch.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-ff2819a7819f8bba",
     "document": "01-architecture-overview.md",
     "section": "5. Client Bridge Modes",
     "content": "Superagent supports multiple external integration modes:\n1. **Desktop Client Bridge (`t-line`)**:\n   - Superagent runs in server mode: `superagent --server 3000 --client-mode tline`.\n   - Desktop frontend connects via HTTP/WebSocket protocol, rendering UI with terminal-grade performance.\n2. **Remote Chrome Extension Bridge (`chrome-extension-remote`)**:\n   - Serverless WebSocket server auto-binds on `ws://127.0.0.1:9223`.\n   - Lightweight Chrome extension connects from any browser profile, enabling automated tab management, DOM inspection, screenshot capture, and navigation without launching bulky Puppeteer/Playwright instances.",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-0bbc4e8fc5d8e410",
     "document": "02-domain-models-and-data.md",
     "section": "02. Domain Models & Data Architecture",
     "content": "This document describes the data persistence models, SQLite database schemas, configuration schemas, and context window state machines in Superagent.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-03c03288c5f804ad",
     "document": "02-domain-models-and-data.md",
     "section": "1. Entity-Relationship Diagram (Mermaid ERD)",
     "content": "```mermaid\nerDiagram\n    SESSIONS ||--o{ MESSAGES : \"contains\"\n    SESSIONS ||--o{ ARTIFACTS : \"generates\"\n    SESSIONS ||--o{ WORKTREES : \"provisions\"\n    MESSAGES ||--o{ TOOL_CALLS : \"executes\"\n    PROVIDERS ||--o{ PRESETS : \"configures\"\n\n    SESSIONS {\n        string id PK \"Unique UUID session identifier\"\n        string mode \"Session execution mode (single | multi | auto)\"\n        string title \"Auto-generated session summary title\"\n        timestamp created_at \"Session initialization timestamp\"\n        timestamp updated_at \"Last interaction timestamp\"\n        string working_dir \"Target codebase working directory\"\n        string git_branch \"Target git branch at session creation\"\n        string model_name \"Effective Master Agent model identifier\"\n        string provider_id \"Active AI provider profile ID\"\n        integer total_tokens \"Aggregated token consumption\"\n    }\n\n    MESSAGES {\n        string id PK \"Message UUID\"\n        string session_id FK \"References SESSIONS.id\"\n        string role \"user | assistant | system | tool\"\n        string content \"Textual prompt or completion content\"\n        json tool_calls \"Serialized tool invocation objects\"\n        json tool_results \"Serialized execution outputs\"\n        integer token_count \"Calculated tiktoken token count\"\n        boolean is_pinned \"Flag preventing compaction pruning\"\n        boolean is_compacted \"Flag indicating summary replacement\"\n        timestamp created_at \"Message creation timestamp\"\n    }\n\n    ARTIFACTS {\n        string id PK \"Artifact UUID\"\n        string session_id FK \"References SESSIONS.id\"\n        string file_path \"Absolute path to artifact markdown\"\n        string artifact_type \"plan | task | walkthrough | scratch\"\n        string content \"Markdown body content\"\n        timestamp updated_at \"Last modified timestamp\"\n    }\n\n    WORKTREES {\n        string name PK \"Feature worktree branch name\"\n        string session_id FK \"References SESSIONS.id\"\n        string path \"Absolute path (~/.superagent-r/worktrees/<name>)\"\n        string status \"active | merged | abandoned\"\n        timestamp created_at \"Creation timestamp\"\n    }\n\n    PROVIDERS {\n        string id PK \"Provider profile identifier (e.g. anthropic-main)\"\n        string name \"Human readable provider label\"\n        string type \"anthropic | openai | google | openrouter | ollama | custom\"\n        string api_key \"Encrypted / local API key credential\"\n        string base_url \"Custom base endpoint URL\"\n    }\n\n    PRESETS {\n        string id PK \"Preset identifier\"\n        string provider_id FK \"References PROVIDERS.id\"\n        string mode \"single | multi | auto\"\n        string master_model \"Model string for Master Agent\"\n        string superagent_model \"Model string for Superagents\"\n        string subagent_model \"Model string for Subagents\"\n    }\n```\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-3e90183512690dce",
     "document": "02-domain-models-and-data.md",
     "section": "2. SQLite Database Schema (`~/.superagent-r/history.db`)",
     "content": "SQLite is the **single source of truth** for all session transcripts, messages, and cross-session search indexing.",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-d34df1169d1651df",
     "document": "02-domain-models-and-data.md",
     "section": "`sessions` Table",
     "content": "Stores high-level metadata for every interaction session.\n\n```sql\nCREATE TABLE IF NOT EXISTS sessions (\n    id TEXT PRIMARY KEY,\n    mode TEXT NOT NULL,\n    title TEXT NOT NULL,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    working_dir TEXT NOT NULL,\n    git_branch TEXT,\n    model_name TEXT NOT NULL,\n    provider_id TEXT NOT NULL,\n    total_tokens INTEGER DEFAULT 0\n);\n```",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-d8f15a48960c7201",
     "document": "02-domain-models-and-data.md",
     "section": "`messages` Table & FTS5 Index",
     "content": "Stores individual dialogue turns, tool calls, and compaction metadata.\n\n```sql\nCREATE TABLE IF NOT EXISTS messages (\n    id TEXT PRIMARY KEY,\n    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,\n    role TEXT NOT NULL,\n    content TEXT,\n    tool_calls TEXT,\n    tool_results TEXT,\n    token_count INTEGER DEFAULT 0,\n    is_pinned INTEGER DEFAULT 0,\n    is_compacted INTEGER DEFAULT 0,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n\n-- Full-Text Search Virtual Table\nCREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(\n    session_id UNINDEXED,\n    content,\n    tool_calls,\n    tool_results,\n    content='messages',\n    content_rowid='rowid'\n);\n```",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-a4c3265dd14fb51e",
     "document": "02-domain-models-and-data.md",
     "section": "`artifacts` Table",
     "content": "Stores structured design documents, implementation plans, and walkthrough reports.\n\n```sql\nCREATE TABLE IF NOT EXISTS artifacts (\n    id TEXT PRIMARY KEY,\n    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,\n    file_path TEXT NOT NULL,\n    artifact_type TEXT NOT NULL,\n    content TEXT NOT NULL,\n    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n```\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-7512a0f13f361671",
     "document": "02-domain-models-and-data.md",
     "section": "3. Configuration Model (`~/.superagent-r/model-config.json`)",
     "content": "All runtime settings and provider configurations are strictly defined in `model-config.json`. There are **no** environment variable overrides (`process.env` is prohibited).\n\n```json\n{\n  \"activeProvider\": \"anthropic-primary\",\n  \"providers\": [\n    {\n      \"id\": \"anthropic-primary\",\n      \"name\": \"Anthropic Claude\",\n      \"type\": \"anthropic\",\n      \"apiKey\": \"sk-ant-...\",\n      \"baseUrl\": \"https://api.anthropic.com/v1\",\n      \"models\": [\"claude-3-7-sonnet-20250219\", \"claude-3-5-sonnet-20241022\", \"claude-3-5-haiku-20241022\"]\n    },\n    {\n      \"id\": \"google-gemini\",\n      \"name\": \"Google Gemini\",\n      \"type\": \"google\",\n      \"apiKey\": \"AIzaSy...\",\n      \"models\": [\"gemini-2.5-pro\", \"gemini-2.5-flash\"]\n    }\n  ],\n  \"presets\": {\n    \"multi\": {\n      \"master\": \"claude-3-7-sonnet-20250219\",\n      \"superagent\": \"claude-3-7-sonnet-20250219\",\n      \"subagent\": \"claude-3-5-haiku-20241022\",\n      \"tiers\": {\n        \"researcher\": \"gemini-2.5-flash\",\n        \"coder\": \"claude-3-7-sonnet-20250219\",\n        \"reviewer\": \"claude-3-7-sonnet-20250219\",\n        \"software-tester\": \"gemini-2.5-flash\",\n        \"chrome-agent\": \"gemini-2.5-flash\"\n      }\n    }\n  },\n  \"settings\": {\n    \"maxConcurrency\": 4,\n    \"rateLimitRps\": 10,\n    \"disableStreaming\": false,\n    \"contextWindowLimit\": 200000,\n    \"maxIterations\": 50\n  }\n}\n```\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-a3730f15365f7f4a",
     "document": "02-domain-models-and-data.md",
     "section": "4. Context Engine State Machine",
     "content": "The context window manager (`src/core/context/ContextManager.ts`) tracks tokens and executes compaction strategies through a state machine:\n\n```mermaid\nstateDiagram-v2\n    [*] --> Idle\n\n    Idle --> Monitoring: User Prompt Received\n    Monitoring --> Safe: Token Usage < 60% Context Limit\n    Monitoring --> Warning: Token Usage between 60% and 80%\n    Monitoring --> Critical: Token Usage > 80%\n\n    Safe --> ReadyForInference: Pass Full Transcript\n    Warning --> ReadyForInference: Log Token Advisory\n\n    Critical --> CompactionPipeline: Trigger Auto-Compaction\n    \n    state CompactionPipeline {\n        [*] --> PinningCheck: Identify is_pinned messages\n        PinningCheck --> SemanticSummarization: Summarize intermediate dialogue\n        SemanticSummarization --> EmergencyPruning: Prune old tool outputs (if needed)\n        EmergencyPruning --> RecomputeTokens: Update token_count & SQLite\n    }\n\n    CompactionPipeline --> ReadyForInference: Resume LLM Loop with Compacted Context\n    ReadyForInference --> Idle: Stream Completed & State Saved\n```",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-9a9b5cd9d94ed44e",
     "document": "03-api-and-contracts.md",
     "section": "03. API & External Contracts",
     "content": "This document catalogs all user interfaces, CLI commands, tool interfaces, WebSocket bridge contracts, and external client integrations.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-503720bb4c9ea7dd",
     "document": "03-api-and-contracts.md",
     "section": "Launch in Single Agent Mode",
     "content": "superagent --single\n```\n\n| Flag | Type | Description | Default |\n|---|---|---|---|\n| `--multi` | boolean | Enables 3-tier Master $\\rightarrow$ Superagent $\\rightarrow$ Subagent orchestration | `false` |\n| `--single` | boolean | Direct single-agent execution without worktrees | `true` |\n| `--server [port]` | number | Starts Superagent as an IPC/WebSocket server | `3000` |\n| `--client-mode [mode]` | string | External client adapter (`tline` \\| `chrome-extension`) | none |\n| `--version` / `-v` | boolean | Displays current version | - |\n| `--help` / `-h` | boolean | Displays command-line help | - |\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-7804f96d4f871e73",
     "document": "03-api-and-contracts.md",
     "section": "2. Interactive Slash Commands",
     "content": "Superagent features built-in terminal wizard commands:\n\n| Slash Command | Handler | Description |\n|---|---|---|\n| `/login` | `src/core/config/providers.ts` | Multi-provider credential wizard (add/switch Anthropic, Google, OpenAI, OpenRouter, Ollama) |\n| `/model` | `src/core/config/providers.ts` | Configure tier models, presets, and subagent assignments |\n| `/settings` | `src/core/config/jsonConfig.ts` | Adjust concurrency, streaming, max iterations, and token thresholds |\n| `/clear` | `src/cli.tsx` | Reset session context window while preserving SQLite history |\n| `/compact` | `src/core/context/ContextManager.ts` | Manually trigger LLM-driven context summarization and pruning |\n| `/history` | `src/core/storage/historyDb.ts` | Search previous conversation transcripts using SQLite FTS5 |\n| `/terminal [preset]` | `src/core/tools/systemTools.ts` | Run or initialize terminal automation presets |\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-ffe4acd0ae53f359",
     "document": "03-api-and-contracts.md",
     "section": "3. Tier Toolset Contracts",
     "content": "Tools are defined in `src/core/tools/` and mapped to agent tiers in `src/core/tools/toolsets.ts`:",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-90504c33856879e8",
     "document": "03-api-and-contracts.md",
     "section": "Master Agent Toolset (`masterToolset`)",
     "content": "| Tool Name | Parameters | Description |\n|---|---|---|\n| `invokeSuperagentTool` | `{ featureName: string, role: string, instructions: string }` | Spawns a new Superagent in a dedicated Git worktree (`~/.superagent-r/worktrees/<featureName>`). |\n| `awaitSuperagentsTool` | `{ timeoutSeconds?: number }` | Awaits completion of running Superagents and collects their execution reports. |\n| `mergeSuperagentsTool` | `{ featureName: string, targetBranch?: string }` | Verifies and merges a completed Superagent git branch back into the main branch. |\n| `manageSuperagentsTool`| `{ action: 'list' \\| 'kill' \\| 'status', featureName?: string }` | Inspects status or cancels running Superagent processes. |\n| `gitWorktreeTool` | `{ action: 'list' \\| 'prune' \\| 'clean' }` | Inspects and cleans active git worktrees. |",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-9afb293a2220a85b",
     "document": "03-api-and-contracts.md",
     "section": "Superagent Toolset (`superagentToolsets`)",
     "content": "| Tool Name | Parameters | Description |\n|---|---|---|\n| `invokeSubagentTool` | `{ subagentType: string, task: string, files?: string[] }` | Spawns an ephemeral subagent (`researcher`, `coder`, `reviewer`, `tester`, `chrome-agent`). |\n| `manageSubagentsTool` | `{ action: 'list' \\| 'kill', subagentId?: string }` | Monitors or terminates running ephemeral subagents. |\n| `runCommandTool` | `{ command: string, cwd?: string }` | Executes a shell command via `execa` in the isolated worktree directory. |\n| `readFileTool` | `{ filePath: string, startLine?: number, endLine?: number }` | Reads text or code file contents. |\n| `writeToFileTool` | `{ filePath: string, content: string, overwrite?: boolean }` | Creates or writes files in the worktree. |\n| `replaceFileContentTool` | `{ filePath: string, targetContent: string, replacement: string }` | Performs surgical single-block replacements. |\n| `applyPatchTool` | `{ patch: string }` | Applies unified git diff patches. |\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-f4efb467d42b6b79",
     "document": "03-api-and-contracts.md",
     "section": "4. Remote Chrome WebSocket Bridge API (`Port 9223`)",
     "content": "Superagent incorporates a serverless WebSocket server (`src/core/tools/remoteChromeBridge.ts`) listening on `ws://127.0.0.1:9223`. Lightweight Chrome extensions connect to this bridge to execute automated browser tasks.",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-e351f822eab18e8c",
     "document": "03-api-and-contracts.md",
     "section": "Message Envelope Specification",
     "content": "All WebSocket frames follow a JSON-RPC 2.0 styled contract:\n\n```typescript\ninterface ChromeBridgeRequest {\n  id: string;             // Unique message UUID\n  action: ChromeAction;   // Action verb\n  params: Record<string, any>;\n}\n\ninterface ChromeBridgeResponse {\n  id: string;\n  success: boolean;\n  data?: any;\n  error?: string;\n}\n```",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-eaaf03b052b29868",
     "document": "03-api-and-contracts.md",
     "section": "Supported Actions",
     "content": "| Action | Parameters | Response Payload | Description |\n|---|---|---|---|\n| `get_tabs` | `{}` | `{ tabs: Array<{ id: number, url: string, title: string }> }` | Lists all active browser tabs. |\n| `navigate` | `{ tabId: number, url: string }` | `{ status: 'loaded', url: string }` | Navigates a tab to target URL. |\n| `get_dom` | `{ tabId: number, selector?: string }` | `{ html: string, text: string }` | Extracts serialized DOM or text content. |\n| `click` | `{ tabId: number, selector: string }` | `{ clicked: true }` | Dispatches native click event to DOM element. |\n| `type` | `{ tabId: number, selector: string, text: string }` | `{ typed: true }` | Fills input field with text value. |\n| `screenshot` | `{ tabId: number, format?: 'png' \\| 'jpeg' }` | `{ base64Image: string }` | Captures viewport screenshot. |\n| `evaluate_js` | `{ tabId: number, script: string }` | `{ result: any }` | Evaluates arbitrary JavaScript in tab context. |\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-d1caee2fe9325d43",
     "document": "03-api-and-contracts.md",
     "section": "5. Desktop Bridge Protocol (`t-line`)",
     "content": "When Superagent is launched with `--server 3000 --client-mode tline`, it exposes HTTP endpoints and WebSocket streams for the desktop application:\n\n- **`POST /api/chat`**: Dispatches a new user turn to the active session.\n- **`GET /api/stream`**: Server-Sent Events (SSE) or WebSocket streaming LLM token chunks and tool status updates.\n- **`GET /api/history`**: Retrieves session transcripts from SQLite.\n- **`POST /api/models`**: Updates provider configurations and active presets in `model-config.json`.",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.220Z"
+  },
+  {
+    "id": "wiki-856e249eb22d74e0",
+    "document": "03-api-and-contracts.md",
+    "section": "🌐 Superagent (Interactive Terminal AI Coding Assistant)",
+    "content": "| Method | Endpoint Route | Auth Guard | Description | Source File |\n|:---|:---|:---|:---|:---|",
+    "updatedAt": "2026-08-15T02:33:26.220Z"
+  },
+  {
+    "id": "wiki-e3a259821a8f117b",
+    "document": "03-api-and-contracts.md",
+    "section": "🌐 t-line (Desktop Client for Superagent)",
+    "content": "| Method | Endpoint Route | Auth Guard | Description | Source File |\n|:---|:---|:---|:---|:---|\n\n<!-- API_CATALOG_END -->",
+    "updatedAt": "2026-08-15T02:33:26.220Z"
   },
   {
     "id": "wiki-d26f5281ae3adce9",
     "document": "04-features-and-workflows.md",
     "section": "04. Features & Core Workflows",
     "content": "This document provides detailed sequence diagrams and workflow logic for the primary capabilities of Superagent.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-364ba4c1221aad10",
     "document": "04-features-and-workflows.md",
     "section": "1. 3-Tier Multi-Agent Orchestration Flow",
     "content": "When a complex feature request is received in multi-agent mode, the Master Agent decomposes the goal, provisions isolated Superagents in git worktrees, collects atomic subagent reports, and merges the verified code.\n\n```mermaid\nsequenceDiagram\n    autonumber\n    actor User as Developer / User\n    participant CLI as Terminal / React Ink UI\n    participant Master as Master Agent (Tier 1)\n    participant Context as Context Manager\n    participant DB as SQLite history.db\n    participant Super as Superagent (Tier 2 Worktree)\n    participant Sub as Ephemeral Subagent (Tier 3)\n\n    User->>CLI: \"Implement user authentication with JWT\"\n    CLI->>DB: Save User Turn to SQLite\n    CLI->>Master: Process Turn with Active Provider\n    Master->>Context: Verify Token Budget\n    Context-->>Master: Token Count OK (12,400 / 200,000)\n\n    Master->>Master: Formulate Plan (Feature: auth-jwt)\n    Master->>Super: invokeSuperagentTool(featureName: \"auth-jwt\")\n    Note over Super: Creates worktree at ~/.superagent-r/worktrees/auth-jwt<br/>Checks out branch feature/auth-jwt\n\n    Super->>Sub: invokeSubagentTool(type: \"researcher\", task: \"Locate auth entrypoints\")\n    Sub-->>Super: Report: Found src/routes/auth.ts and src/core/auth/\n    \n    Super->>Sub: invokeSubagentTool(type: \"coder\", task: \"Write JWT signing middleware\")\n    Sub-->>Super: Written src/core/auth/jwt.ts & updated routes\n    \n    Super->>Sub: invokeSubagentTool(type: \"software-tester\", task: \"Run vitest on auth suite\")\n    Sub-->>Super: Tests Passed: 8 passed, 0 failed\n\n    Super-->>Master: Execution Report: auth-jwt Ready & Verified\n    Master->>Master: mergeSuperagentsTool(featureName: \"auth-jwt\")\n    Note over Master: Merges feature/auth-jwt into main repo branch<br/>Cleans worktree\n    Master->>DB: Save Assistant Summary & Artifacts\n    Master-->>CLI: Render Cyberpunk Completion Card\n    CLI-->>User: \"JWT authentication implemented and verified.\"\n```\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-c322a8fb890a1602",
     "document": "04-features-and-workflows.md",
     "section": "2. Context Window Compaction & Semantic Pruning",
     "content": "Superagent continuously monitors prompt and completion tokens. When token usage exceeds 80% of the active model's context window limit, the system executes an automated compaction pipeline.\n\n```mermaid\nsequenceDiagram\n    autonumber\n    participant Engine as Execution Engine\n    participant CM as ContextManager\n    participant TT as TokenTracker (tiktoken)\n    participant LLM as Provider Model\n    participant DB as SQLite history.db\n\n    Engine->>CM: preparePrompt(messages)\n    CM->>TT: countTokens(messages)\n    TT-->>CM: 168,000 tokens (>80% of 200k limit)\n\n    Note over CM: Trigger Compaction Pipeline\n    CM->>DB: Fetch is_pinned messages\n    Note over CM: Pinned architectural specs and core constraints are preserved\n    \n    CM->>LLM: Request Semantic Summarization of unpinned dialogue\n    LLM-->>CM: Condensed 500-token Structured Architecture Summary\n    \n    CM->>CM: Replace unpinned turns with Summary Marker\n    CM->>DB: Flag original messages with is_compacted = 1\n    CM->>DB: Store updated token counts\n    \n    CM->>TT: recomputeTokens(compactedMessages)\n    TT-->>CM: New Token Count: 18,200 tokens\n    CM-->>Engine: Compacted Context Window Ready\n```\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-bdc4fbe6ff7ee58e",
     "document": "04-features-and-workflows.md",
     "section": "3. Remote Browser Control via Serverless WebSocket Bridge",
     "content": "Superagent can inspect web applications, take screenshots, and interact with the DOM using any existing Chrome profile without launching automated browser processes like Puppeteer.\n\n```mermaid\nsequenceDiagram\n    autonumber\n    actor Dev as Developer\n    participant Agent as Superagent / Chrome Subagent\n    participant Bridge as WebSocket Bridge (Port 9223)\n    participant Ext as Chrome Remote Extension (MV3)\n    participant Chrome as Chrome Browser Tab\n\n    Dev->>Agent: \"Inspect login page at localhost:5173\"\n    Agent->>Bridge: Send Action: get_tabs\n    Bridge->>Ext: Dispatch { action: \"get_tabs\" }\n    Ext->>Chrome: chrome.tabs.query()\n    Chrome-->>Ext: [{ id: 101, url: \"http://localhost:5173/login\" }]\n    Ext-->>Bridge: Tabs List\n    Bridge-->>Agent: Tab 101 Found\n\n    Agent->>Bridge: Send Action: screenshot { tabId: 101 }\n    Bridge->>Ext: Dispatch { action: \"screenshot\", tabId: 101 }\n    Ext->>Chrome: chrome.tabs.captureVisibleTab()\n    Chrome-->>Ext: Base64 PNG Image\n    Ext-->>Bridge: Payload with screenshot\n    Bridge-->>Agent: Render Visual Inspection Artifact\n```\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-d760e0f3346696e3",
     "document": "04-features-and-workflows.md",
     "section": "4. Session Persistence & Cross-Session Search",
     "content": "1. **SQLite Single Source of Truth**:\n   - Every user input, assistant streaming block, and tool execution is atomically committed to `~/.superagent-r/history.db`.\n   - The `.json` files in `~/.superagent-r/history/<mode>/<sessionId>/sess_*.json` act as structural key references and do not store transcript contents.\n2. **FTS5 Full-Text Search**:\n   - Running `/history <query>` executes a BM25-ranked full-text search across all past sessions.\n   - Code snippets, error messages, and tool invocations from previous days or weeks can be loaded back into the active context window.",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-0a44aff1656e2a09",
     "document": "05-infrastructure-and-devops.md",
     "section": "05. Infrastructure, Storage & DevOps",
     "content": "This document details the filesystem layout, runtime configuration, build pipeline, and process management for Superagent.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-250a43fe50afc170",
     "document": "05-infrastructure-and-devops.md",
     "section": "1. Filesystem & Storage Topology (`~/.superagent-r/`)",
     "content": "Superagent isolates all user state, models, logs, worktrees, and databases in the user's home directory under `~/.superagent-r/`.\n\n```text\n~/.superagent-r/\n├── history.db                     # SQLite database (single source of truth for all sessions & messages)\n├── history.db-wal                 # SQLite Write-Ahead Log\n├── history.db-shm                 # SQLite shared memory index\n├── model-config.json              # Provider credentials, tier assignments, and system settings\n├── superagent.log                 # Rolling process execution log\n├── terminal-presets.json          # User-defined terminal execution shortcuts\n├── worktrees/                     # Git worktrees allocated for Superagents\n│   ├── auth-jwt/                  # Worktree directory for feature/auth-jwt branch\n│   └── ui-dark-theme/             # Worktree directory for feature/ui-dark-theme branch\n└── history/                       # Session workspace artifact directories\n    └── multi/\n        └── sess_1740000000000/\n            ├── plan.md            # Master Agent implementation plan\n            ├── task.md            # Bite-sized task breakdown\n            └── walkthrough.md     # Verification walkthrough summary\n```\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-92d6c29f79a9201f",
     "document": "05-infrastructure-and-devops.md",
     "section": "2. Build & Packaging Pipeline",
     "content": "Superagent is written in TypeScript and compiled to standard CommonJS/ESM executable bundles:\n\n```powershell",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-acb69cbe7747d09a",
     "document": "05-infrastructure-and-devops.md",
     "section": "Build Scripts in `package.json`",
     "content": "| Script | Command | Purpose |\n|---|---|---|\n| `dev` | `tsx src/cli.tsx` | Run CLI directly with TypeScript on-the-fly execution |\n| `build` | `tsc` | Compile all `src/` TypeScript sources to `dist/` |\n| `test` | `vitest run` | Run all test suites in `tests/` directory |\n| `verify:extension-js` | `node scripts/verify-extension-js.mjs` | Validate Chrome extension bundle integrity |\n| `verify:all` | `bun run build && bun run verify:extension-js && bun run test` | Full pre-commit release verification gate |\n| `ext:css` | `tailwindcss -i chrome-extension/sidepanel.src.css -o chrome-extension/sidepanel.css` | Compile Tailwind CSS for Chrome Extension sidepanel |\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-188e4df942494729",
     "document": "05-infrastructure-and-devops.md",
     "section": "3. Storage Rules & Constraints",
     "content": "1. **Zero `process.env` Rule**:\n   - Environment variables (`process.env.OPENAI_API_KEY`, `process.env.MODEL`, etc.) MUST NEVER be read or written in production code.\n   - All configurations are loaded through `src/core/config/jsonConfig.ts` and `src/core/config/providers.ts`.\n2. **SQLite Transcript Storage**:\n   - Transcripts must only be loaded via `loadSessionFromDb()` and saved via `saveSessionToDb()` in `src/core/storage/historyDb.ts`.\n   - Never write conversation transcripts into `.json` session placeholder files.\n3. **Worktree Directory Management**:\n   - Worktree paths are automatically managed under `~/.superagent-r/worktrees/`.\n   - Stale worktrees are automatically pruned via `gitWorktreeTool(action: \"prune\")`.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-f54b663edcbc9a4e",
     "document": "05-infrastructure-and-devops.md",
     "section": "4. Logging & Diagnostics",
     "content": "- **Log File**: `~/.superagent-r/superagent.log`\n- Log format: ISO timestamp, process ID, execution tier (`[MASTER]`, `[SUPERAGENT]`, `[SUBAGENT]`), message severity, and payload.\n- Error events are captured with full stack traces and sanitized before rendering user-facing error boxes.",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-7ef1cd2199a4919d",
     "document": "06-developer-onboarding.md",
     "section": "06. Developer Onboarding & Contribution Guide",
     "content": "This guide contains everything new developers and contributing AI agents need to know to set up, build, test, and write code for the Superagent codebase.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-28787b214a9a2455",
     "document": "06-developer-onboarding.md",
     "section": "1. Prerequisites & Environment Setup",
     "content": "- **Node.js**: v20.x or v22.x LTS\n- **Package Manager**: [Bun](https://bun.sh) (preferred) or `npm` / `pnpm`\n- **Git**: Git 2.30+ (required for git worktree operations)\n- **Shell**: Git Bash or Windows PowerShell",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-efad67d736200bf8",
     "document": "06-developer-onboarding.md",
     "section": "Clone repository",
     "content": "git clone https://github.com/RudyCity/superagent.git\ncd superagent",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-6abcf544a30b1ae1",
     "document": "06-developer-onboarding.md",
     "section": "2. Core Development Commands",
     "content": "| Command | Description |\n|---|---|\n| `bun run dev` | Launch local Superagent CLI using `tsx` on `src/cli.tsx` |\n| `bun run build` | Compile TypeScript source code to `dist/` |\n| `bun test` | Execute Vitest unit test suite across `tests/` |\n| `bun run verify:all` | Run complete validation gate (`build` + extension check + `test`) |\n| `bun run wiki:serve` | Launch local Docsify wiki viewer at `http://localhost:3333` |\n| `bun run wiki:sync` | Incremental wiki documentation sync on changed codebase files |\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-4e0905dd5c22d59f",
     "document": "06-developer-onboarding.md",
     "section": "1. English Only Standard",
     "content": "All user-facing text, UI labels, log entries, code comments, variable and function names, documentation, and prompt strings **MUST** be written in English.",
-    "updatedAt": "2026-08-15T02:16:23.808Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-143d5ac2d0b3d14b",
     "document": "06-developer-onboarding.md",
     "section": "2. Zero `process.env` Configuration",
     "content": "Never use `process.env.MODEL`, `process.env.OPENAI_API_KEY`, or `process.env.ACTIVE_PROVIDER`. All configuration flows through JSON helper functions:\n- `getEffectiveMasterModel(mode)`\n- `getTierModel(mode, tier)`\n- `getSettings()` / `updateSettings()`\n- `getConfiguredProviders()` / `addProvider()`",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-149fcd0c0ae0944f",
     "document": "06-developer-onboarding.md",
     "section": "3. Test Location Rule",
     "content": "All test files **MUST** be placed in the `tests/` root directory (e.g. `tests/contextManager.test.ts`, `tests/tools.test.ts`). **Never** create test files inside the `src/` folder.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-0e0bcc354f2efc71",
     "document": "06-developer-onboarding.md",
     "section": "4. Circular Dependency Prevention",
     "content": "`toolsets.ts` and `prompts.ts` are imported by multiple tools. Any tool file in `src/core/tools/` needing to import from `toolsets.ts` or `prompts.ts` **MUST** use dynamic `import()` inside the `execute()` function body rather than top-level static imports.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-44fe826152ef8202",
     "document": "06-developer-onboarding.md",
     "section": "5. File Size Limit",
     "content": "Keep all source code files strictly under **1000 lines** to maintain readability, modularity, and maintainability.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-46451a2364802966",
     "document": "06-developer-onboarding.md",
     "section": "6. Shell Command Separation on Windows",
     "content": "- In PowerShell, use `;` to separate multiple commands (e.g., `bun run build ; bun test`).\n- In Git Bash, `&&` is supported normally.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-16eab71cbbb1cf74",
     "document": "06-developer-onboarding.md",
     "section": "4. System Prompt Design Guidelines",
     "content": "All system prompts in `src/core/tools/prompts.ts` must follow three core design principles:",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-973c823a66765b94",
     "document": "06-developer-onboarding.md",
     "section": "Concept A: Telegraphic English (Minified Prose)",
     "content": "- Eliminate polite filler, unnecessary conversational pronouns, and verbose descriptions.\n- Use direct imperative verbs (`FETCH`, `EVALUATE`, `DISPATCH`, `VERIFY`).",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-c194b2754f7a100c",
     "document": "06-developer-onboarding.md",
     "section": "Concept B: Clean Markdown Structure",
     "content": "- Organize instructions under clear Markdown headers (`# ROLE`, `# CRITICAL RULES`, `# WORKFLOW`).\n- Use single-level bullet points for crisp readability.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-d28d04c00ac7de1a",
     "document": "06-developer-onboarding.md",
     "section": "Concept C: Pseudocode & Logic Gates",
     "content": "- Formulate conditional decisions and branching routines using programming-style logic gates:\n\n```text\nif token_usage > 0.80 * context_limit:\n    CALL compact_context()\nif branch_dirty:\n    CALL commit_changes(message)\n    CALL mergeSuperagentsTool(feature_name)\n```",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-b2d92fcf0c1ebf00",
     "document": "07-adrs-and-decisions.md",
     "section": "07. Architecture Decision Records (ADRs)",
     "content": "This document records the foundational architectural decisions made in Superagent following the MADR (Markdown Architecture Decision Record) standard.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-20335aaf536c578b",
     "document": "07-adrs-and-decisions.md",
     "section": "ADR-001: 3-Tier Multi-Agent Hierarchy & Git Worktree Isolation",
     "content": "- **Status**: Accepted & Implemented\n- **Date**: 2026-03-01\n- **Deciders**: Architecture Core Team",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-47ee9ec9f48691ef",
     "document": "07-adrs-and-decisions.md",
     "section": "Context & Problem Statement",
     "content": "Direct LLM multi-file modifications in a single workspace often lead to file contention, broken intermediate builds, lost changes during rollback, and context window bloat when attempting complex features with multiple parallel roles.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-abb8974768c51e4d",
     "document": "07-adrs-and-decisions.md",
     "section": "Decision",
     "content": "Implement a strict 3-tier hierarchy:\n1. **Master Agent (Tier 1)**: Acts as the high-level planner and orchestrator in the main repository. Prohibited from editing files directly.\n2. **Superagent (Tier 2)**: Allocated a dedicated Git worktree (`~/.superagent-r/worktrees/<name>`) and feature branch (`feature/<name>`) to build, run, and verify features in isolation.\n3. **Subagent (Tier 3)**: Ephemeral agents (`researcher`, `coder`, `reviewer`, `tester`) that execute atomic sub-tasks inside the parent Superagent's worktree.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-7a84869780aa56ee",
     "document": "07-adrs-and-decisions.md",
     "section": "Consequences",
     "content": "- **Positive**: Complete filesystem and git branch isolation between concurrent features. Zero risk of dirtying the main working tree.\n- **Positive**: Clean context boundaries per tier.\n- **Negative**: Requires Git 2.30+ worktree support on the host machine.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-c60be12e0ff2396d",
     "document": "07-adrs-and-decisions.md",
     "section": "ADR-002: SQLite as Single Source of Truth for Session Transcripts",
     "content": "- **Status**: Accepted & Implemented\n- **Date**: 2026-04-15\n- **Deciders**: Storage & Performance Team",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-d4bbcacbadd90add",
     "document": "07-adrs-and-decisions.md",
     "section": "Context & Problem Statement",
     "content": "Storing conversation transcripts as large JSON files causes excessive disk I/O on every turn, makes cross-session full-text search inefficient, and risks data corruption on abrupt process exits.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.221Z"
   },
   {
     "id": "wiki-759da3284ca72eb1",
     "document": "07-adrs-and-decisions.md",
     "section": "Decision",
     "content": "Migrate all chat transcripts, dialogue turns, tool calls, and execution metadata to SQLite (`~/.superagent-r/history.db`) with Write-Ahead Logging (WAL) and an FTS5 full-text search virtual table. Historical `.json` files are preserved as 0-byte markers solely for path resolution and artifact anchoring.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-7f7b6737a4b5af76",
     "document": "07-adrs-and-decisions.md",
     "section": "Consequences",
     "content": "- **Positive**: ACID compliance prevents corrupted transcripts.\n- **Positive**: Instant BM25 full-text search across millions of tokens via FTS5.\n- **Positive**: Sub-millisecond turn persistence and indexing.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-70ecc2f6158cf352",
     "document": "07-adrs-and-decisions.md",
     "section": "ADR-003: Zero `process.env` Dependency for Configuration",
     "content": "- **Status**: Accepted & Implemented\n- **Date**: 2026-05-10\n- **Deciders**: Security & Runtime Team",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-5d9dbd6d63985aef",
     "document": "07-adrs-and-decisions.md",
     "section": "Context & Problem Statement",
     "content": "Relying on `.env` files and `process.env` variables created severe issues with credential leakage, multi-provider collision, tier model overrides, and background subagent state desynchronization.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-9b916b674609f6b3",
     "document": "07-adrs-and-decisions.md",
     "section": "Decision",
     "content": "Completely eliminate `process.env` for all AI providers, API keys, presets, tier models, and system settings. Store all runtime configuration exclusively in `~/.superagent-r/model-config.json` accessed through typed helper functions in `src/core/config/jsonConfig.ts` and `src/core/config/providers.ts`.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-00d568c0c5705dd9",
     "document": "07-adrs-and-decisions.md",
     "section": "Consequences",
     "content": "- **Positive**: Clear multi-provider profiles with instant switching without restarting the process.\n- **Positive**: Per-tier model assignments (e.g. Master uses Sonnet, Subagents use Haiku or Flash).\n- **Positive**: Absolute security and isolation against accidental environment variable exposure.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-e8db25974dc39312",
     "document": "07-adrs-and-decisions.md",
     "section": "ADR-004: Serverless WebSocket Bridge for Remote Chrome Control",
     "content": "- **Status**: Accepted & Implemented\n- **Date**: 2026-06-20\n- **Deciders**: Integrations Team",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-c004953b43aa9407",
     "document": "07-adrs-and-decisions.md",
     "section": "Context & Problem Statement",
     "content": "Automating browser tasks typically requires heavy Puppeteer or Playwright instances that consume gigabytes of RAM, cannot access existing user sessions/logins, and frequently encounter anti-bot bot-detection challenges.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-e189fdedd007d3d5",
     "document": "07-adrs-and-decisions.md",
     "section": "Decision",
     "content": "Implement a serverless WebSocket server (`src/core/tools/remoteChromeBridge.ts`) listening on `ws://127.0.0.1:9223`. Pair this with a lightweight Manifest V3 Chrome extension (`chrome-extension-remote/`) that developers install in their normal Chrome browser profile.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-c498d6c656af7671",
     "document": "07-adrs-and-decisions.md",
     "section": "Consequences",
     "content": "- **Positive**: Zero overhead; connects directly to the developer's active browser profile with pre-authenticated sessions.\n- **Positive**: Fast DOM extraction, clicks, navigation, and screenshots without spawning headless processes.\n- **Negative**: Requires the developer to have Chrome open with the remote extension installed when running browser tasks.\n\n---",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-cc07933e1f77c11a",
     "document": "07-adrs-and-decisions.md",
     "section": "ADR-005: Pluggable Context Window Compaction Architecture",
     "content": "- **Status**: Accepted & Implemented\n- **Date**: 2026-07-12\n- **Deciders**: Context Engine Team",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-422de7ebff069753",
     "document": "07-adrs-and-decisions.md",
     "section": "Context & Problem Statement",
     "content": "Long-running multi-agent coding sessions easily exceed 128k/200k token context limits. Uncontrolled truncation causes catastrophic loss of original user constraints and architectural plans.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-a57637667d706351",
     "document": "07-adrs-and-decisions.md",
     "section": "Decision",
     "content": "Build a centralized `ContextManager` with pluggable strategies:\n1. **`PinningStrategy`**: Automatically detects and locks crucial architectural requirements and pinned items (`is_pinned = 1`).\n2. **`SummarizationStrategy`**: Prompts the LLM (or uses heuristic fallback) to create structured semantic checkpoints for completed milestones.\n3. **`PruningStrategy`**: Selectively strips large obsolete tool outputs while retaining summaries.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-54cfeee49d775da9",
     "document": "07-adrs-and-decisions.md",
     "section": "Consequences",
     "content": "- **Positive**: Sessions can run indefinitely without hitting context limits or losing core instructions.\n- **Positive**: Real-time token tracking calibrated to specific model tokenizers via `tiktoken`.",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   },
   {
     "id": "wiki-aaea718ead4601ba",
     "document": "_sidebar.md",
     "section": "_sidebar",
     "content": "* **Core Documentation**\n  * [📖 Master Index & Overview](00-index.md)\n  * [🏛️ Architecture & C4 Design](01-architecture-overview.md)\n  * [🗄️ Domain Models & Data Architecture](02-domain-models-and-data.md)\n  * [🔌 API Catalog & Contracts](03-api-and-contracts.md)\n  * [🔄 Features & Core Workflows](04-features-and-workflows.md)\n  * [🚢 Infrastructure, Storage & DevOps](05-infrastructure-and-devops.md)\n  * [🚀 Developer Onboarding Guide](06-developer-onboarding.md)\n  * [📜 Architecture Decision Records](07-adrs-and-decisions.md)",
-    "updatedAt": "2026-08-15T02:16:23.809Z"
+    "updatedAt": "2026-08-15T02:33:26.222Z"
   }
 ]

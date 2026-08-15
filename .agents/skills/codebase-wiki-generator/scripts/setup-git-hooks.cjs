@@ -53,12 +53,21 @@ node .agents/skills/codebase-wiki-generator/scripts/sync-wiki-on-change.cjs --wi
 
 let installedPath = '';
 
+let resolvedGitDir = gitDir;
+if (fs.existsSync(gitDir) && fs.statSync(gitDir).isFile()) {
+  const content = fs.readFileSync(gitDir, 'utf8').trim();
+  const match = content.match(/^gitdir:\s*(.+)$/i);
+  if (match) {
+    resolvedGitDir = path.resolve(rootDir, match[1]);
+  }
+}
+
 if (fs.existsSync(huskyDir)) {
   const huskyHook = path.join(huskyDir, hookType);
   fs.writeFileSync(huskyHook, hookScriptContent, { encoding: 'utf8', mode: 0o755 });
   installedPath = huskyHook;
-} else if (fs.existsSync(gitDir)) {
-  const hooksDir = path.join(gitDir, 'hooks');
+} else if (fs.existsSync(resolvedGitDir)) {
+  const hooksDir = path.join(resolvedGitDir, 'hooks');
   if (!fs.existsSync(hooksDir)) {
     fs.mkdirSync(hooksDir, { recursive: true });
   }

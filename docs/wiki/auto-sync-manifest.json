@@ -37,7 +37,7 @@
       "updatedAt": "2026-08-15T02:09:42.094Z"
     }
   },
-  "lastSync": "2026-08-15T02:16:23.709Z",
+  "lastSync": "2026-08-15T02:33:26.019Z",
   "workspaces": [
     {
       "name": "superagent",
@@ -49,15 +49,20 @@
     }
   ],
   "lastModifiedFiles": [
-    "[superagent] package.json",
-    "[superagent] .agents/skills/codebase-wiki-generator/",
-    "[superagent] docs/wiki/",
+    "[superagent] .agents/skills/codebase-wiki-generator/scripts/setup-git-hooks.cjs",
+    "[superagent] .agents/skills/codebase-wiki-generator/scripts/sync-wiki-to-rmemory.cjs",
+    "[superagent] apps/api/data/wiki-rmemory-chunks.json",
+    "[superagent] src/core/context/WorkspaceStateTracker.ts",
+    "[superagent] src/core/pinnedKnowledge.ts",
+    "[superagent] src/core/ssh/sshConfig.ts",
+    "[superagent] src/core/storage/historyDb.ts",
+    "[superagent] src/utils/promptBasedToolCalling.ts",
     "[t-line] src/core/"
   ],
   "impactSummary": {
-    "architecture": true,
+    "architecture": false,
     "domainData": false,
-    "apiContracts": false,
+    "apiContracts": true,
     "features": false,
     "devops": false,
     "onboarding": false,

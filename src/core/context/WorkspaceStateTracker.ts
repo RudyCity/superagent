@@ -11,6 +11,7 @@ import path from "path";
 import os from "os";
 import { execSync } from "child_process";
 import { getActiveChainId, getWorkspaceChain } from "../workspace/WorkspaceChainConfig.js";
+import { getRemoteChromeClientMetadata } from "../tools/remoteChromeBridge.js";
 
 export interface WorkspaceStateOptions {
   /** Absolute path to active task file */
@@ -236,7 +237,6 @@ export function buildWorkspaceStateBlock(opts: WorkspaceStateOptions): Workspace
 
   // ── Active Chrome Browser Tab ─────────────────────────────
   try {
-    const { getRemoteChromeClientMetadata } = require("../tools/remoteChromeBridge.js");
     const meta = getRemoteChromeClientMetadata();
     if (meta?.activeTab?.url) {
       const tabTitle = meta.activeTab.title || "Untitled Tab";

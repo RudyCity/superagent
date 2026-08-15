@@ -1,3 +1,15 @@
+## [1.2.723] - 2026-08-15
+
+### Fixed: ESM Runtime Module Resolution & Git Hook Worktree Support
+
+- **`sshConfig.ts`**: Replaced inline `require("ssh2")` in `tryLoadKey()` with static `import { utils } from "ssh2"` to prevent ReferenceError in ESM runtime and restore default private key detection.
+- **`WorkspaceStateTracker.ts`**: Replaced inline `require("../tools/remoteChromeBridge.js")` with static import to restore active Chrome tab metadata injection into context state.
+- **`pinnedKnowledge.ts`**: Replaced inline `require("./storage/historyDb.js")` with static `getHistoryDb` import to ensure max pinned entries limit enforcement.
+- **`promptBasedToolCalling.ts`**: Replaced inline `require("../core/storage/historyDb.js")` with static `deleteAllToolSupportCacheFromDb` import in `clearToolCallSupportCache()`.
+- **`historyDb.ts`**: Fixed relative require path `require("../config/history.js")` with proper `.js` extension.
+- **`setup-git-hooks.cjs`**: Added worktree `gitdir` file pointer resolution for Git worktree environments.
+- **`sync-wiki-to-rmemory.cjs`**: Defaulted RAG memory chunk output to `docs/wiki/wiki-rmemory-chunks.json`.
+
 ## [1.2.722] - 2026-08-15
 
 ### Added: Comprehensive Codebase Architecture Wiki & Docsify Web Viewer
