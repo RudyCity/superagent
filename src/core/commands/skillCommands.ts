@@ -1,7 +1,7 @@
 import { execa } from "execa";
 import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
-import { getInstalledSkills } from "../config.js";
+import { getInstalledSkills, filterSkillsByMode } from "../config.js";
 
 // /install command
 export const installCommand: SlashCommand = {
@@ -91,7 +91,9 @@ export const skillsCommand: SlashCommand = {
   description: "List all installed agent skills and templates",
   execute(args, ctx) {
     const now = Date.now();
-    const skills = getInstalledSkills();
+    const isMulti = ctx.agent?.isMultiAgent || false;
+    const allSkills = getInstalledSkills();
+    const skills = filterSkillsByMode(allSkills, isMulti);
     if (skills.length === 0) {
       ctx.addLine({
         type: "system",
@@ -102,7 +104,8 @@ export const skillsCommand: SlashCommand = {
     }
     const options = skills.map(s => {
       const provider = s.author || "local";
-      return `• ${provider}/${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`;
+      const groupTag = isMulti && s.mode === "multi" ? "[Multi-Agent] " : "";
+      return `• ${groupTag}${provider}/${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`;
     });
     ctx.setActiveWizard?.({
       type: "skills",

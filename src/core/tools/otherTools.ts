@@ -1642,7 +1642,7 @@ export const managePlanTool: Tool = {
 
 export const getSkillsTool: Tool = {
   name: "get_skills",
-  description: "List installed skills relevant to a specific task or query. Always provide a descriptive query so the AI can return the most relevant skills. If no query is given, returns all skills.",
+  description: "List installed skills relevant to a specific task or query. Always provide a descriptive query so the AI can return the most relevant skills. If no query is given, returns all skills available in the current mode.",
   parameters: {
     type: "object",
     properties: {
@@ -1655,8 +1655,13 @@ export const getSkillsTool: Tool = {
   },
   async execute(args, cwd, signal) {
     try {
-      const { getInstalledSkills } = await import("../config.js");
-      const skills = getInstalledSkills();
+      const { getInstalledSkills, filterSkillsByMode } = await import("../config.js");
+      const { agentLocalStorage } = await import("../agent.js");
+      const currentAgent = agentLocalStorage.getStore();
+      const isMultiAgent = currentAgent ? Boolean(currentAgent.isMultiAgent && currentAgent.tier !== "single") : false;
+
+      const allSkills = getInstalledSkills();
+      const skills = filterSkillsByMode(allSkills, isMultiAgent);
       const query = typeof args.query === "string" ? args.query.trim().toLowerCase() : undefined;
 
       let filtered = skills;
@@ -1756,6 +1761,34 @@ export const getSkillsTool: Tool = {
       }
 
       let output = "Installed Skills:\n";
+      if (!query && isMultiAgent) {
+        const multiSkills = filtered.filter((s) => s.mode === "multi");
+        const generalSkills = filtered.filter((s) => s.mode !== "multi");
+
+        if (multiSkills.length > 0) {
+          output += "\nMulti-Agent Orchestration Skills:\n";
+          for (const s of multiSkills) {
+            const author = s.author || "local";
+            output += `- name: ${s.name}\n`;
+            output += `  author: ${author}\n`;
+            output += `  description: ${s.description}\n`;
+            output += `  path: ${s.path}\n\n`;
+          }
+        }
+
+        if (generalSkills.length > 0) {
+          output += "\nGeneral & Development Skills:\n";
+          for (const s of generalSkills) {
+            const author = s.author || "local";
+            output += `- name: ${s.name}\n`;
+            output += `  author: ${author}\n`;
+            output += `  description: ${s.description}\n`;
+            output += `  path: ${s.path}\n\n`;
+          }
+        }
+        return output.trim();
+      }
+
       for (const s of filtered) {
         const author = s.author || "local";
         output += `- name: ${s.name}\n`;
@@ -1813,7 +1846,11 @@ export const useSkillTool: Tool = {
   },
   async execute(args, cwd, signal) {
     try {
-      const { getInstalledSkills } = await import("../config.js");
+      const { getInstalledSkills, isMultiModeSkill } = await import("../config.js");
+      const { agentLocalStorage } = await import("../agent.js");
+      const currentAgent = agentLocalStorage.getStore();
+      const isMultiAgent = currentAgent ? Boolean(currentAgent.isMultiAgent && currentAgent.tier !== "single") : false;
+
       const skills = getInstalledSkills();
       const skillName = typeof args.skillName === "string" ? args.skillName.trim() : undefined;
       const skillPath = typeof args.path === "string" ? args.path.trim() : undefined;
@@ -1850,8 +1887,13 @@ export const useSkillTool: Tool = {
       }
 
       if (!foundSkill) {
-        const availableNames = skills.map(s => `"${s.name}"`).join(", ");
+        const availableSkills = skills.filter(s => isMultiAgent || !isMultiModeSkill(s));
+        const availableNames = availableSkills.map(s => `"${s.name}"`).join(", ");
         return `Error: Skill "${skillName || skillPath}" not found. Available skills: ${availableNames}`;
+      }
+
+      if (!isMultiAgent && isMultiModeSkill(foundSkill)) {
+        return `Error: Skill "${foundSkill.name}" is a multi-agent orchestration skill and is not available in single-agent mode. To use multi-agent skills, start Superagent in multi-agent mode (--multi) or use single-agent skills such as "single-agent-cognitive-scaleup" or "systematic-debugging".`;
       }
 
       if (!fsSync.existsSync(foundSkill.path)) {

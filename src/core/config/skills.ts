@@ -18,6 +18,50 @@ export interface LoadedSkill {
   description: string;
   path: string;
   author?: string;
+  mode?: "multi" | "single" | "all";
+  category?: string;
+}
+
+export const MULTI_MODE_SKILLS = new Set<string>([
+  "master-agent-orchestration",
+  "dispatching-parallel-agents",
+  "subagent-driven-development",
+  "preventing-subagent-collisions",
+  "testing-skills-with-subagents",
+  "parallel-feature-development",
+  "parallel-debugging",
+  "multi-reviewer-patterns",
+  "task-coordination-strategies",
+  "team-communication-protocols",
+  "team-composition-patterns",
+  "team-composition-analysis",
+  "review-agent-setup",
+  "requesting-code-review",
+  "using-git-worktrees",
+]);
+
+// OPT-4: Helper extracted, eliminates 3+ duplicate regex chains
+function toKebabCase(str: string): string {
+  return str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+export function isMultiModeSkill(skill: { name: string; path?: string; mode?: string }): boolean {
+  if (skill.mode === "multi") return true;
+  if (skill.mode === "single") return false;
+  const nameKebab = toKebabCase(skill.name);
+  if (MULTI_MODE_SKILLS.has(nameKebab)) return true;
+  if (skill.path) {
+    const folderKebab = toKebabCase(path.basename(path.dirname(skill.path)));
+    if (MULTI_MODE_SKILLS.has(folderKebab)) return true;
+  }
+  return false;
+}
+
+export function filterSkillsByMode(skills: LoadedSkill[], isMultiAgent: boolean): LoadedSkill[] {
+  if (isMultiAgent) {
+    return skills;
+  }
+  return skills.filter((skill) => !isMultiModeSkill(skill));
 }
 
 const OBRA_SKILLS = new Set([
@@ -53,11 +97,6 @@ const OBRA_SKILLS = new Set([
   "writing-plans",
   "writing-skills"
 ]);
-
-// OPT-4: Helper extracted, eliminates 3+ duplicate regex chains
-function toKebabCase(str: string): string {
-  return str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-}
 
 // OPT-2: LockMap cache with 60s TTL — avoids re-reading skills-lock.json every 5s
 let cachedLockMap: Map<string, string> | null = null;
@@ -118,6 +157,8 @@ function processSkillFile(
     let name = folderName;
     let description = "No description provided.";
     let author = defaultAuthor;
+    let mode: "multi" | "single" | "all" = "all";
+    let category = "General";
 
     const fmMatch = content.match(/^---[\r\n]+([\s\S]*?)[\r\n]+---/);
     let hasAuthorInFm = false;
@@ -126,15 +167,37 @@ function processSkillFile(
       const nameMatch = fm.match(/^\s*name:\s*(.*)$/m);
       const descMatch = fm.match(/^\s*description:\s*(.*)$/m);
       const authorMatch = fm.match(/^\s*(author|provider|owner):\s*(.*)$/m);
+      const modeMatch = fm.match(/^\s*(mode|tier):\s*(.*)$/m);
+      const catMatch = fm.match(/^\s*(category|group|type):\s*(.*)$/m);
       if (nameMatch) name = nameMatch[1].trim();
       if (descMatch) description = descMatch[1].trim();
       if (authorMatch) {
         author = authorMatch[2].trim();
         hasAuthorInFm = true;
       }
+      if (modeMatch) {
+        const m = modeMatch[2].trim().toLowerCase();
+        if (m === "multi" || m === "multi-agent" || m === "master" || m === "superagent") {
+          mode = "multi";
+        } else if (m === "single" || m === "single-agent") {
+          mode = "single";
+        }
+      }
+      if (catMatch) {
+        category = catMatch[2].trim();
+      }
     } else {
       const headingMatch = content.match(/^#\s*(.*)$/m);
       if (headingMatch) name = headingMatch[1].trim();
+    }
+
+    if (mode === "all" && isMultiModeSkill({ name, path: skillMdPath, mode })) {
+      mode = "multi";
+      if (category === "General") {
+        category = "Multi-Agent Orchestration";
+      }
+    } else if (mode === "multi" && category === "General") {
+      category = "Multi-Agent Orchestration";
     }
 
     if (!hasAuthorInFm) {
@@ -156,7 +219,7 @@ function processSkillFile(
            (s.author || "").toLowerCase() === (author || "").toLowerCase()
     );
 
-    const entry = { name, description, path: skillMdPath, author };
+    const entry: LoadedSkill = { name, description, path: skillMdPath, author, mode, category };
     if (existingIndex !== -1) {
       skills[existingIndex] = entry;
     } else {
@@ -309,11 +372,20 @@ export function getInstalledSkills(): LoadedSkill[] {
 }
 
 export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?: string, isMultiAgent?: boolean): string {
+  const isMulti = Boolean(isMultiAgent && tier !== "single");
+  const preloadedExamples = isMulti
+    ? "(e.g. karpathy-guidelines, systematic-debugging, superagent-planning, writing-plans, executing-plans, track-management, subagent-driven-development, verification-before-completion, master-agent-orchestration)"
+    : "(e.g. karpathy-guidelines, systematic-debugging, superagent-planning, writing-plans, executing-plans, track-management, single-agent-cognitive-scaleup, verification-before-completion)";
+
+  const planExample = isMulti
+    ? '    - "plan implementation for multi-agent orchestration feature"'
+    : '    - "plan implementation for architecture refactoring"';
+
   return `
 
 # SKILL DISCOVERY
 - RULE: call get_skills(query) BEFORE coding, planning, or executing any command.
-  - EXCEPT: Do NOT call get_skills(query) or use_skill() if the current mode is 'ask' (lightweight Q&A) or if the relevant skill is already preloaded/defined in your system prompt context (e.g. karpathy-guidelines, systematic-debugging, superagent-planning, writing-plans, executing-plans, track-management, subagent-driven-development, verification-before-completion, master-agent-orchestration, single-agent-cognitive-scaleup).
+  - EXCEPT: Do NOT call get_skills(query) or use_skill() if the current mode is 'ask' (lightweight Q&A) or if the relevant skill is already preloaded/defined in your system prompt context ${preloadedExamples}.
 - QUERY CONSTRUCTION (critical for accurate results):
   - Build query from: [task_type] + [technology] + [goal]
   - Examples:
@@ -321,7 +393,7 @@ export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?
     - "write TDD tests for async Node.js service"
     - "deploy Next.js app to Vercel with environment variables"
     - "refactor PostgreSQL schema for performance"
-    - "plan implementation for multi-agent orchestration feature"
+${planExample}
   - NEVER call get_skills() with an empty or single-word query.
   - Use the user's actual request as the basis for the query — include tech stack, action, and goal.
 - LEARNING & PROBLEM DISCOVERY:

@@ -1,3 +1,12 @@
+## [1.2.724] - 2026-08-18
+
+### Added & Enhanced: Multi-Mode Skills Grouping & Single-Mode Filtering
+
+- **`skills.ts`**: Introduced `MULTI_MODE_SKILLS` set, `isMultiModeSkill()`, `filterSkillsByMode()`, and enhanced `LoadedSkill` metadata (`mode` and `category`). Updated `processSkillFile` to classify multi-agent orchestration skills and `loadAgentSkills` to dynamically tailor preloaded skill discovery guidance based on `isMultiAgent`.
+- **`otherTools.ts` (`get_skills` & `use_skill`)**: Made `get_skills` mode-aware using `agentLocalStorage.getStore()` so multi-agent orchestration skills are never returned or searched in single-agent mode. Categorized skills into Multi-Agent Orchestration Skills and General Skills in multi-agent mode. Updated `use_skill` to block multi-mode skill activation when in single-agent mode.
+- **`skillCommands.ts` (`/skills`)**: Filtered out multi-mode skills when running `/skills` in single-agent mode, and tagged multi-agent skills in multi-agent mode.
+- **`tests/skillsMultiModeFiltering.test.ts`**: Added comprehensive test suite covering multi-mode classification, single vs multi mode filtering, `get_skills` tool output and search, and `use_skill` mode enforcement.
+
 ## [1.2.723] - 2026-08-15
 
 ### Fixed: ESM Runtime Module Resolution & Git Hook Worktree Support
