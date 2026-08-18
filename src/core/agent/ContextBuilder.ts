@@ -324,8 +324,8 @@ export class ContextBuilder {
     }
 
     const MODE_INSTRUCTIONS: Record<string, string> = {
-      ask: `- Lightweight Q&A mode. Respond concisely. No plan/task files, no subagents, no build/test commands.`,
-      research: `- Read-only research mode. Do NOT modify files or run build/test commands.`,
+      ask: `- Q&A mode. Use read/search tools (grep, ripgrep_search, glob, view_file) immediately to inspect codebase content when answering questions. No file write tools, no subagents, no modifying commands.`,
+      research: `- Read-only research mode. Use search/read tools to explore codebase. Do NOT modify files or run mutating commands.`,
       plan: `- Propose implementation plan via 'manage_plan'. Do NOT edit source files before user approval.`,
       implement: `- Implement code changes. Plan mandatory only for complex/risky changes. Run build+test if shell available.`,
       debug: `- Investigate and fix bugs. Debug via terminal execution first. Trace root cause. Run build or test on new/updated files at END of repair process.`,

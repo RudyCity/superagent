@@ -839,25 +839,26 @@ export class LoopIterationProcessor {
       }
 
       if (textContent.trim()) {
-        const isEarlyIteration = i < 2;
+        const isEarlyIteration = i < 3;
         const category = agent.currentClassification?.category || "complex_task";
+        const hasActionNarration = /\b(let me|i will|i'll|going to|will check|will search|will look|will inspect|will find|checking|searching|inspecting|examining|scanning|investigating|mencari|memeriksa|mengecek|saya akan|mari kita|mari periksa|sedang mencari)\b/i.test(textContent);
         const skipPlanningCategories = ["conversation", "question"];
         const isPlanningText =
           isEarlyIteration &&
-          !skipPlanningCategories.includes(category) &&
+          (!skipPlanningCategories.includes(category) || hasActionNarration) &&
           textContent.trim().length > 0 &&
-          textContent.trim().length < 500 &&
+          textContent.trim().length < 600 &&
           !/\?$/.test(textContent.trim());
 
         if (isPlanningText) {
           agent.writeToLogFile(
             "INFO",
-            `Text-only response on iteration ${i} (likely planning narration). Auto-continuing with nudge.`
+            `Text-only response on iteration ${i} (action/planning narration). Auto-continuing with nudge.`
           );
           agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
           agent.conversation.addMessage({
             role: "user",
-            content: "[SYS] Continue. Use the available tools to execute the plan you described.",
+            content: "[SYS] Continue immediately. Use the available tools to perform the search, inspection, or actions you described and provide the result.",
             timestamp: Date.now(),
           });
           await agent.saveHistory();

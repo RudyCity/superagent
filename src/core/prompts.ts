@@ -42,7 +42,8 @@ const MANDATORY_HALLMARK_RULE = `- HALLMARK: UI/layout/web tasks MUST view .agen
 
 const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE: Plain terminal text only. No markdown headings, bold, italic, underline, or nested bullets.
 - CHANGES: ALWAYS list changed/created/deleted files at response end.
-- GATE: Output completion summary in same turn as tool calls BLOCKED.
+- TOOL_FIRST: When queries require inspecting files, templates, or codebase state, INVOKE tools (grep, ripgrep, glob, view_file, run_command) immediately. Do NOT emit conversational promises ('Let me check...') without executing tools.
+- GATE: Never declare task completed in the same turn as tool execution. Await tool output first.
 - DESTRUCTIVE: ask_question before package changes, git reset/push/clean, data wipes, file deletion, secret rotation.
 - EXTERNAL_PATH_PERMIT: ask_question before copying/reading/importing files outside workspace boundary into workspace.
 - OS_SEP: PowerShell ";" | Git Bash "&&". Respect active shell.

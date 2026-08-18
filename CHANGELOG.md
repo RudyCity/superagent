@@ -1,3 +1,11 @@
+## [1.2.727] - 2026-08-18
+
+### Fixed & Enhanced: Action Narration Auto-Continuation & Tool First Execution
+
+- **`LoopIterationProcessor.ts`**: Added action-intent narration detection (`hasActionNarration`) for preliminary responses like "Let me check...", "I will search...", "Mencari info...", or "Checking...". When models narrate an action on early iterations without invoking tools in the same turn, the agent automatically nudges the model to continue the loop and execute the required tools instead of halting prematurely.
+- **`prompts.ts`**: Added `TOOL_FIRST` rule to `AESTHETIC_AND_GATEWAY_RULES` instructing models to invoke read/search tools immediately without preliminary conversational promises. Clarified `GATE` rule to prevent confusion with tool execution.
+- **`ContextBuilder.ts`**: Updated `MODE_INSTRUCTIONS` for `ask` mode to explicitly encourage using read/search tools (grep, ripgrep_search, glob, view_file) to inspect files when answering content or codebase questions.
+
 ## [1.2.726] - 2026-08-18
 
 ### Fixed: Node.js ESM Compatibility for ssh2 Import
