@@ -122,3 +122,15 @@ sequenceDiagram
 2. **FTS5 Full-Text Search**:
    - Running `/history <query>` executes a BM25-ranked full-text search across all past sessions.
    - Code snippets, error messages, and tool invocations from previous days or weeks can be loaded back into the active context window.
+
+---
+
+## 5. Mode-Aware Skill Classification & Filtering
+
+Superagent dynamically classifies and filters skills based on the active execution mode (`single`, `multi`, or `auto`):
+1. **Single-Agent Mode**:
+   - Multi-agent orchestration skills (such as `master-agent-orchestration`, `dispatching-parallel-agents`, `subagent-driven-development`, `preventing-subagent-collisions`, and `testing-skills-with-subagents`) are excluded from `get_skills`, prompt injections, and `/skills` listings.
+   - Prevents invalid delegation tool use and keeps context token usage minimal.
+2. **Multi-Agent Mode**:
+   - Skills are grouped into Multi-Agent Orchestration Skills and General Skills, enabling the Master Agent and Superagents to access orchestration strategies while preventing subagents from exceeding their scope.
+
