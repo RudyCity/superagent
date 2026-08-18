@@ -282,9 +282,9 @@ export const writeTool: Tool = {
     const currentAgent = agentLocalStorage.getStore();
     const sessionId = currentAgent?.sessionId;
     const terminalType = (currentAgent as any)?.terminalType || "cli";
-    const rawFilePath = (args.filePath || args.path) as string;
+    const rawFilePath = (args.filePath || args.path || args.TargetFile || args.targetFile || args.target_file || args.file) as string;
     if (workspaceMode.isSsh() && !isLocalConfigOrSessionPath(rawFilePath)) {
-      const content = args.content as string;
+      const content = (args.content ?? (args as any).CodeContent ?? (args as any).codeContent) as string;
       if (!rawFilePath || content === undefined) return "Error: Missing filePath or content";
       return await sshWriteToolExecute(rawFilePath, content);
     }
@@ -423,10 +423,28 @@ export const editTool: Tool = {
         editAutoLockPaths.push(checkPath);
       }
     }
-    const targetPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
+    const targetPath = (args.filePath || args.path || args.TargetFile || args.targetFile || args.target_file || args.file as string) ||
+      ((args.edits as any[])?.[0]?.filePath || (args.edits as any[])?.[0]?.TargetFile || (args.edits as any[])?.[0]?.targetFile || (args.edits as any[])?.[0]?.path || (args.edits as any[])?.[0]?.file);
     if (workspaceMode.isSsh() && !isLocalConfigOrSessionPath(targetPath)) {
-      const oldStr = (args.oldString as string) || ((args.edits as any[])?.[0]?.oldString);
-      const newStr = (args.newString as string) || ((args.edits as any[])?.[0]?.newString);
+      sshLogger.toolUse("edit", "routing edit tool to SSH remote", { meta: { batch: !!args.edits } });
+      const rawEdits = (args.edits || (args as any).Edits) as any[] | undefined;
+      if (rawEdits && Array.isArray(rawEdits) && rawEdits.length > 0) {
+        const results: string[] = [];
+        for (const edit of rawEdits) {
+          const editPath = (edit.filePath || edit.TargetFile || edit.targetFile || edit.target_file || edit.path || edit.file || targetPath) as string;
+          const oldStr = (edit.oldString ?? edit.old_string ?? edit.oldText ?? edit.old_text ?? edit.targetContent ?? edit.TargetContent ?? edit.target_content) as string;
+          const newStr = (edit.newString ?? edit.new_string ?? edit.newText ?? edit.new_text ?? edit.replacementContent ?? edit.ReplacementContent ?? edit.replacement_content) as string;
+          if (!editPath || oldStr === undefined || newStr === undefined) {
+            results.push(`Error: Missing filePath, oldString, or newString for SSH edit on ${editPath || "unknown file"}`);
+            continue;
+          }
+          const res = await sshEditToolExecute(editPath, oldStr, newStr);
+          results.push(res);
+        }
+        return results.join("\n");
+      }
+      const oldStr = (args.oldString ?? (args as any).old_string ?? (args as any).oldText ?? (args as any).old_text ?? args.targetContent ?? (args as any).TargetContent ?? (args as any).target_content) as string;
+      const newStr = (args.newString ?? (args as any).new_string ?? (args as any).newText ?? (args as any).new_text ?? args.replacementContent ?? (args as any).ReplacementContent ?? (args as any).replacement_content) as string;
       if (!targetPath || oldStr === undefined || newStr === undefined) {
         return "Error: Missing filePath, oldString, or newString for SSH edit";
       }
@@ -726,20 +744,22 @@ export const writeToFileTool: Tool = {
       }
     }
     const isTargetLocal = (): boolean => {
-      const single = args.filePath as string | undefined;
-      const multiple = args.files as any[] | undefined;
+      const single = (args.filePath || args.path || args.TargetFile || args.targetFile || args.target_file || args.file) as string | undefined;
+      const multiple = (args.files || (args as any).Files) as any[] | undefined;
       if (single && isLocalConfigOrSessionPath(single)) return true;
       if (multiple && multiple.length > 0) {
-        const first = typeof multiple[0] === "string" ? multiple[0] : multiple[0]?.filePath;
+        const first = typeof multiple[0] === "string" ? multiple[0] : (multiple[0]?.filePath || multiple[0]?.TargetFile || multiple[0]?.targetFile || multiple[0]?.target_file || multiple[0]?.path || multiple[0]?.file);
         if (first && isLocalConfigOrSessionPath(first)) return true;
       }
       return false;
     };
 
     if (workspaceMode.isSsh() && !isTargetLocal()) {
-      const targets = args.files || args.filePath;
+      sshLogger.toolUse("write_to_file", "routing write_to_file tool to SSH remote", { meta: { batch: !!args.files } });
+      const targets = args.files || (args as any).Files || args.filePath || args.path || args.TargetFile || args.targetFile || args.target_file || args.file;
+      const content = (args.content ?? (args as any).CodeContent ?? (args as any).codeContent) as string | undefined;
       if (!targets) return "Error: Missing filePath or files for SSH write";
-      return await sshWriteToolExecute(targets as any, args.content as string | undefined);
+      return await sshWriteToolExecute(targets as any, content);
     }
     const files = args.files as Array<{ filePath: string; content: string; overwrite?: boolean }> | undefined;
     if (files && Array.isArray(files)) {
@@ -967,11 +987,28 @@ export const replaceFileContentTool: Tool = {
         replaceAutoLockPaths.push(checkPath);
       }
     }
-    const targetPath = (args.filePath as string) || ((args.edits as any[])?.[0]?.filePath);
+    const targetPath = (args.filePath || args.path || args.TargetFile || args.targetFile || args.target_file || args.file as string) ||
+      ((args.edits as any[])?.[0]?.filePath || (args.edits as any[])?.[0]?.TargetFile || (args.edits as any[])?.[0]?.targetFile || (args.edits as any[])?.[0]?.target_file || (args.edits as any[])?.[0]?.path || (args.edits as any[])?.[0]?.file);
     if (workspaceMode.isSsh() && !isLocalConfigOrSessionPath(targetPath)) {
       sshLogger.toolUse("replace_file_content", "routing replace_file_content tool to SSH remote", { meta: { batch: !!args.edits } });
-      const targetContent = (args.targetContent as string) || ((args.edits as any[])?.[0]?.targetContent);
-      const replacementContent = (args.replacementContent as string) || ((args.edits as any[])?.[0]?.replacementContent);
+      const rawEdits = (args.edits || (args as any).Edits) as any[] | undefined;
+      if (rawEdits && Array.isArray(rawEdits) && rawEdits.length > 0) {
+        const results: string[] = [];
+        for (const edit of rawEdits) {
+          const editPath = (edit.filePath || edit.TargetFile || edit.targetFile || edit.target_file || edit.path || edit.file || targetPath) as string;
+          const targetContent = (edit.targetContent ?? edit.TargetContent ?? edit.target_content ?? edit.oldString ?? edit.old_string ?? edit.oldText ?? edit.old_text) as string;
+          const replacementContent = (edit.replacementContent ?? edit.ReplacementContent ?? edit.replacement_content ?? edit.newString ?? edit.new_string ?? edit.newText ?? edit.new_text) as string;
+          if (!editPath || targetContent === undefined || replacementContent === undefined) {
+            results.push(`Error: Missing filePath, targetContent, or replacementContent for SSH replace_file_content on ${editPath || "unknown file"}`);
+            continue;
+          }
+          const res = await sshEditToolExecute(editPath, targetContent, replacementContent);
+          results.push(res);
+        }
+        return results.join("\n");
+      }
+      const targetContent = (args.targetContent ?? (args as any).TargetContent ?? (args as any).target_content ?? (args as any).oldString ?? (args as any).old_string ?? (args as any).oldText ?? (args as any).old_text) as string;
+      const replacementContent = (args.replacementContent ?? (args as any).ReplacementContent ?? (args as any).replacement_content ?? (args as any).newString ?? (args as any).new_string ?? (args as any).newText ?? (args as any).new_text) as string;
       if (!targetPath || targetContent === undefined || replacementContent === undefined) {
         return "Error: Missing filePath, targetContent, or replacementContent for SSH replace_file_content";
       }
@@ -1338,26 +1375,38 @@ export const multiReplaceFileContentTool: Tool = {
     const currentAgent = agentLocalStorage.getStore();
     const sessionId = currentAgent?.sessionId;
     const terminalType = (currentAgent as any)?.terminalType || "cli";
-    const targetPath = (args.filePath as string) || ((args.files as any[])?.[0]?.filePath);
+    const targetPath = (args.filePath || args.path || args.TargetFile || args.targetFile || args.target_file || args.file as string) ||
+      ((args.files as any[])?.[0]?.filePath || (args.files as any[])?.[0]?.TargetFile || (args.files as any[])?.[0]?.targetFile || (args.files as any[])?.[0]?.target_file || (args.files as any[])?.[0]?.path || (args.files as any[])?.[0]?.file);
     if (workspaceMode.isSsh() && !isLocalConfigOrSessionPath(targetPath)) {
-      if (args.files && Array.isArray(args.files) && args.files.length > 0) {
+      sshLogger.toolUse("multi_replace_file_content", "routing multi_replace_file_content tool to SSH remote", { meta: { batch: !!args.files } });
+      const rawFiles = args.files || (args as any).Files;
+      if (rawFiles && Array.isArray(rawFiles) && rawFiles.length > 0) {
         const sshResults: string[] = [];
-        for (const f of args.files) {
-          const rawChunks = f.chunks || (f as any).ReplacementChunks || (f as any).replacementChunks || (f as any).replacements || [];
-          if (!f.filePath || !Array.isArray(rawChunks) || rawChunks.length === 0) {
-            sshResults.push(`Error: Missing filePath or chunks for SSH multi_replace_file_content for ${f.filePath || "unknown file"}`);
+        for (const f of rawFiles) {
+          const filePath = (f.filePath || f.TargetFile || f.targetFile || f.target_file || f.path || f.file) as string;
+          const rawChunks = f.chunks || f.Chunks || f.ReplacementChunks || f.replacementChunks || f.replacements || [];
+          if (!filePath || !Array.isArray(rawChunks) || rawChunks.length === 0) {
+            sshResults.push(`Error: Missing filePath or chunks for SSH multi_replace_file_content for ${filePath || "unknown file"}`);
             continue;
           }
-          const res = await sshMultiEditToolExecute(f.filePath, rawChunks);
+          const normalizedChunks = rawChunks.map((c: any) => ({
+            targetContent: c.targetContent ?? c.TargetContent ?? c.target_content ?? c.oldString ?? c.old_string ?? c.oldText ?? c.old_text ?? "",
+            replacementContent: c.replacementContent ?? c.ReplacementContent ?? c.replacement_content ?? c.newString ?? c.new_string ?? c.newText ?? c.new_text ?? "",
+          }));
+          const res = await sshMultiEditToolExecute(filePath, normalizedChunks);
           sshResults.push(res);
         }
         return sshResults.join("\n\n");
       }
-      const chunks = (args.chunks as any[]) || ((args.files as any[])?.[0]?.chunks);
-      if (!targetPath || !Array.isArray(chunks) || chunks.length === 0) {
+      const rawChunks = (args.chunks || (args as any).Chunks || (args as any).ReplacementChunks || (args as any).replacementChunks || (args as any).replacements || ((args.files as any[])?.[0]?.chunks)) as any[];
+      if (!targetPath || !Array.isArray(rawChunks) || rawChunks.length === 0) {
         return "Error: Missing filePath or chunks for SSH multi_replace_file_content";
       }
-      return await sshMultiEditToolExecute(targetPath, chunks);
+      const normalizedChunks = rawChunks.map((c: any) => ({
+        targetContent: c.targetContent ?? c.TargetContent ?? c.target_content ?? c.oldString ?? c.old_string ?? c.oldText ?? c.old_text ?? "",
+        replacementContent: c.replacementContent ?? c.ReplacementContent ?? c.replacement_content ?? c.newString ?? c.new_string ?? c.newText ?? c.new_text ?? "",
+      }));
+      return await sshMultiEditToolExecute(targetPath, normalizedChunks);
     }
     const targetMultiReplacePath = (args.filePath as string) || ((args.files as any[])?.[0]?.filePath);
     if (targetMultiReplacePath) {

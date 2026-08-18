@@ -1,3 +1,11 @@
+## [1.2.729] - 2026-08-18
+
+### Fixed & Enhanced: SSH File Edit Batch Routing & Parameter Alias Normalization
+
+- **`fileEditTools.ts`**: Supported batch arrays (`edits`, `files`, `chunks`, `ReplacementChunks`) and comprehensive parameter aliases (`TargetFile`, `targetFile`, `target_file`, `TargetContent`, `target_content`, `ReplacementContent`, `replacement_content`, `oldString`, `old_string`, `oldText`, `newString`, `new_string`, `newText`, `CodeContent`, `codeContent`) in `replaceFileContentTool`, `editTool`, `writeToFileTool`, and `multiReplaceFileContentTool` when running over SSH remote mode.
+- **`sshCommands.ts`**: Enhanced `sshWriteToolExecute`, `sshEditToolExecute`, and `sshMultiEditToolExecute` with CRLF/LF line ending normalization fallbacks and alias resolution, preventing failed replacements and syntax retries when client and remote SSH host have differing line ending styles.
+- **`sshToolsFull.test.ts` & `sshFileEditRobustness.test.ts`**: Added automated unit tests verifying SSH file editing, batch replacements, alias resolution, and cross-platform line ending normalization.
+
 ## [1.2.728] - 2026-08-18
 
 ### Enhanced: Real-Time Ongoing Task Progress Tracking

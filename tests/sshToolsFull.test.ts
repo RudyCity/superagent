@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { workspaceMode } from "../src/core/ssh/workspaceMode.js";
 import { sshProxy, escapeShellArg } from "../src/core/ssh/sshProxy.js";
 import { sshRunCommandExecute, sshGlobToolExecute, sshGrepToolExecute } from "../src/core/ssh/sshCommands.js";
-import { editTool, writeTool, writeToFileTool, multiReplaceFileContentTool } from "../src/core/tools/fileEditTools.js";
+import { editTool, writeTool, writeToFileTool, multiReplaceFileContentTool, replaceFileContentTool } from "../src/core/tools/fileEditTools.js";
 import { readTool, globTool, grepTool, ripgrepSearchTool } from "../src/core/tools/fileReadTools.js";
 import {
   bashTool,
@@ -24,9 +24,15 @@ describe("Full SSH Tool Suite Interception", () => {
       username: "mock-user",
       remoteCwd: "/mock/remote",
     });
+    vi.spyOn(sshProxy, "readFile").mockImplementation(async (filePath) => {
+      return "const one = 'foo'; const two = 'baz';\n";
+    });
+    vi.spyOn(sshProxy, "writeFile").mockImplementation(async (filePath, content) => {});
+    vi.spyOn(sshProxy, "exec").mockImplementation(async (command) => ({ stdout: "mock stdout", stderr: "", exitCode: 0 }));
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     workspaceMode.setLocalMode();
   });
 
@@ -39,6 +45,16 @@ describe("Full SSH Tool Suite Interception", () => {
     expect(res).toContain("SSH remote file");
   });
 
+  it("should intercept editTool with batch edits and aliases in SSH mode", async () => {
+    const res = await editTool.execute({
+      edits: [
+        { TargetFile: "src/a.ts", old_string: "foo", new_string: "bar" },
+        { TargetFile: "src/b.ts", targetContent: "baz", replacementContent: "qux" },
+      ],
+    }, "/mock/local");
+    expect(res).toContain("SSH remote file");
+  });
+
   it("should intercept writeTool and route to SSH", async () => {
     const res = await writeTool.execute({
       filePath: "src/main.ts",
@@ -47,12 +63,60 @@ describe("Full SSH Tool Suite Interception", () => {
     expect(res).toContain("SSH");
   });
 
+  it("should intercept writeTool with aliases in SSH mode", async () => {
+    const res = await writeTool.execute({
+      TargetFile: "src/alias.ts",
+      CodeContent: "console.log('alias');",
+    }, "/mock/local");
+    expect(res).toContain("SSH");
+  });
+
+  it("should intercept writeToFileTool with aliases in SSH mode", async () => {
+    const res = await writeToFileTool.execute({
+      TargetFile: "src/written.ts",
+      CodeContent: "export const x = 1;",
+    }, "/mock/local");
+    expect(res).toContain("SSH");
+  });
+
+  it("should intercept replaceFileContentTool and route to SSH", async () => {
+    const res = await replaceFileContentTool.execute({
+      filePath: "src/app.ts",
+      targetContent: "foo",
+      replacementContent: "bar",
+      startLine: 1,
+      endLine: 10,
+    }, "/mock/local");
+    expect(res).toContain("SSH remote file");
+  });
+
+  it("should intercept replaceFileContentTool with batch edits and aliases in SSH mode", async () => {
+    const res = await replaceFileContentTool.execute({
+      edits: [
+        { TargetFile: "src/one.ts", TargetContent: "foo", ReplacementContent: "bar", startLine: 1, endLine: 5 },
+        { filePath: "src/two.ts", target_content: "alpha", replacement_content: "beta", startLine: 1, endLine: 5 },
+      ],
+    }, "/mock/local");
+    expect(res).toContain("SSH remote file");
+  });
+
   it("should intercept multiReplaceFileContentTool and route to SSH", async () => {
     const res = await multiReplaceFileContentTool.execute({
       filePath: "src/app.ts",
       chunks: [
         { targetContent: "one", replacementContent: "1" },
         { targetContent: "two", replacementContent: "2" },
+      ],
+    }, "/mock/local");
+    expect(res).toContain("SSH");
+  });
+
+  it("should intercept multiReplaceFileContentTool with ReplacementChunks alias in SSH mode", async () => {
+    const res = await multiReplaceFileContentTool.execute({
+      TargetFile: "src/chunks.ts",
+      ReplacementChunks: [
+        { TargetContent: "one", ReplacementContent: "1" },
+        { target_content: "two", replacement_content: "2" },
       ],
     }, "/mock/local");
     expect(res).toContain("SSH");
@@ -83,7 +147,7 @@ describe("Full SSH Tool Suite Interception", () => {
     const res = await bashTool.execute({
       command: "ls -la",
     }, "/mock/local");
-    expect(res).toContain("SSH");
+    expect(res).toBe("mock stdout");
   });
 
   it("should intercept runBackgroundProcessTool and route to SSH", async () => {
@@ -104,7 +168,7 @@ describe("Full SSH Tool Suite Interception", () => {
     const res = await viewBackgroundProcessesTool.execute({
       processId: "12345",
     }, "/mock/local");
-    expect(res).toContain("SSH");
+    expect(res).toContain("Remote Process PID");
   });
 
   it("should intercept manageBackgroundProcessTool and route to SSH", async () => {

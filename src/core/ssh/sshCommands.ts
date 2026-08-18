@@ -63,7 +63,7 @@ export async function sshReadToolExecute(
 }
 
 export async function sshWriteToolExecute(
-  filePath: string | Array<{ filePath: string; content: string }>,
+  filePath: string | Array<{ filePath?: string; TargetFile?: string; targetFile?: string; path?: string; file?: string; content?: string; CodeContent?: string; codeContent?: string }>,
   content?: string
 ): Promise<string> {
   const start = Date.now();
@@ -73,11 +73,17 @@ export async function sshWriteToolExecute(
     if (Array.isArray(filePath)) {
       const results: string[] = [];
       for (const file of filePath) {
+        const targetPath = file.filePath || file.TargetFile || file.targetFile || file.path || file.file;
+        const targetContent = file.content ?? file.CodeContent ?? file.codeContent;
+        if (!targetPath || targetContent === undefined) {
+          results.push(`Error: Missing filePath or content for SSH write on ${targetPath || "unknown file"}`);
+          continue;
+        }
         try {
-          await sshProxy.writeFile(file.filePath, file.content);
-          results.push(`Successfully wrote remote SSH file: ${file.filePath}`);
+          await sshProxy.writeFile(targetPath, targetContent);
+          results.push(`Successfully wrote remote SSH file: ${targetPath}`);
         } catch (err: any) {
-          results.push(`Error writing SSH remote file ${file.filePath}: ${err.message}`);
+          results.push(`Error writing SSH remote file ${targetPath}: ${err.message}`);
         }
       }
       logToolExit("ssh.write", { files: fileCount, durationMs: Date.now() - start, status: "ok" });
@@ -101,14 +107,27 @@ export async function sshEditToolExecute(filePath: string, oldString: string, ne
   logToolEntry("ssh.edit", { filePath });
   try {
     const original = await sshProxy.readFile(filePath);
-    if (!original.includes(oldString)) {
-      logToolExit("ssh.edit", { path: filePath, durationMs: Date.now() - start, status: "error", error: "target string not found" });
-      return `Error: target string not found in SSH remote file ${filePath}`;
+    if (original.includes(oldString)) {
+      const updated = original.replace(oldString, newString);
+      await sshProxy.writeFile(filePath, updated);
+      logToolExit("ssh.edit", { path: filePath, durationMs: Date.now() - start, status: "ok" });
+      return `Successfully updated SSH remote file: ${filePath}`;
     }
-    const updated = original.replace(oldString, newString);
-    await sshProxy.writeFile(filePath, updated);
-    logToolExit("ssh.edit", { path: filePath, durationMs: Date.now() - start, status: "ok" });
-    return `Successfully updated SSH remote file: ${filePath}`;
+
+    // CRLF vs LF line ending normalization fallback
+    const normOriginal = original.replace(/\r\n/g, "\n");
+    const normOld = oldString.replace(/\r\n/g, "\n");
+    if (normOriginal.includes(normOld)) {
+      const isCrlf = original.includes("\r\n");
+      const normNew = newString.replace(/\r\n/g, "\n");
+      const updated = normOriginal.replace(normOld, normNew);
+      await sshProxy.writeFile(filePath, isCrlf ? updated.replace(/\n/g, "\r\n") : updated);
+      logToolExit("ssh.edit", { path: filePath, durationMs: Date.now() - start, status: "ok" });
+      return `Successfully updated SSH remote file: ${filePath}`;
+    }
+
+    logToolExit("ssh.edit", { path: filePath, durationMs: Date.now() - start, status: "error", error: "target string not found" });
+    return `Error: target string not found in SSH remote file ${filePath}`;
   } catch (err: any) {
     logToolExit("ssh.edit", { path: filePath, durationMs: Date.now() - start, status: "error", error: err.message });
     return `Error editing SSH remote file ${filePath}: ${err.message}`;
@@ -117,20 +136,33 @@ export async function sshEditToolExecute(filePath: string, oldString: string, ne
 
 export async function sshMultiEditToolExecute(
   filePath: string,
-  chunks: Array<{ targetContent: string; replacementContent: string }>
+  chunks: Array<{ targetContent?: string; TargetContent?: string; target_content?: string; oldString?: string; old_string?: string; oldText?: string; replacementContent?: string; ReplacementContent?: string; replacement_content?: string; newString?: string; new_string?: string; newText?: string }>
 ): Promise<string> {
   const start = Date.now();
   logToolEntry("ssh.multi_edit", { filePath, chunks: chunks.length });
   try {
     let content = await sshProxy.readFile(filePath);
+    const isCrlf = content.includes("\r\n");
     let appliedCount = 0;
     for (const chunk of chunks) {
-      if (!content.includes(chunk.targetContent)) {
-        logToolExit("ssh.multi_edit", { path: filePath, durationMs: Date.now() - start, status: "error", error: "target string not found", appliedCount });
-        return `Error: target string "${chunk.targetContent.slice(0, 40)}..." not found in SSH remote file ${filePath}`;
+      const target = chunk.targetContent ?? chunk.TargetContent ?? chunk.target_content ?? chunk.oldString ?? chunk.old_string ?? chunk.oldText ?? "";
+      const replacement = chunk.replacementContent ?? chunk.ReplacementContent ?? chunk.replacement_content ?? chunk.newString ?? chunk.new_string ?? chunk.newText ?? "";
+      if (content.includes(target)) {
+        content = content.replace(target, replacement);
+        appliedCount++;
+      } else {
+        const normContent = content.replace(/\r\n/g, "\n");
+        const normTarget = target.replace(/\r\n/g, "\n");
+        if (normContent.includes(normTarget)) {
+          const normReplacement = replacement.replace(/\r\n/g, "\n");
+          content = normContent.replace(normTarget, normReplacement);
+          if (isCrlf) content = content.replace(/\n/g, "\r\n");
+          appliedCount++;
+        } else {
+          logToolExit("ssh.multi_edit", { path: filePath, durationMs: Date.now() - start, status: "error", error: "target string not found", appliedCount });
+          return `Error: target string "${target.slice(0, 40)}..." not found in SSH remote file ${filePath}`;
+        }
       }
-      content = content.replace(chunk.targetContent, chunk.replacementContent);
-      appliedCount++;
     }
     await sshProxy.writeFile(filePath, content);
     logToolExit("ssh.multi_edit", { path: filePath, durationMs: Date.now() - start, status: "ok", appliedCount });
