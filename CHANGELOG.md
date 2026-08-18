@@ -1,3 +1,9 @@
+## [1.2.728] - 2026-08-18
+
+### Enhanced: Real-Time Ongoing Task Progress Tracking
+
+- **`ContextBuilder.ts`**: Reinforced `PLAN_MANAGEMENT` and `TASK_MANAGEMENT` prompt rules to mandate marking active tasks in-progress (`status: '/'`) and completed (`status: 'x'`) via `manage_tasks(action: 'update')` in real-time as work proceeds.
+
 ## [1.2.727] - 2026-08-18
 
 ### Fixed & Enhanced: Action Narration Auto-Continuation & Tool First Execution

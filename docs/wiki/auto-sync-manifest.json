@@ -37,7 +37,7 @@
       "updatedAt": "2026-08-15T02:09:42.094Z"
     }
   },
-  "lastSync": "2026-08-18T01:55:04.365Z",
+  "lastSync": "2026-08-18T02:45:20.691Z",
   "workspaces": [
     {
       "name": "superagent",
@@ -52,8 +52,6 @@
     "[superagent] CHANGELOG.md",
     "[superagent] package.json",
     "[superagent] src/core/agent/ContextBuilder.ts",
-    "[superagent] src/core/agent/LoopIterationProcessor.ts",
-    "[superagent] src/core/prompts.ts",
     "[t-line] src/core/"
   ],
   "impactSummary": {

@@ -126,8 +126,8 @@ export class ContextBuilder {
       const walkthroughPath = agent.getWalkthroughFilePath();
       const isMasterOrSingle = agent.tier === "master" || agent.tier === "single";
       const planToolRule = isMasterOrSingle
-        ? `- PLAN_MANAGEMENT: Use manage_plan (create|edit|sync) for Implementation Plan; manage_tasks for checklist.`
-        : `- TASK_MANAGEMENT: Use manage_tasks for checklist.`;
+        ? `- PLAN_MANAGEMENT: Use manage_plan (create|edit|sync) for Implementation Plan; manage_tasks for checklist. ALWAYS mark active tasks in-progress ('/') and completed ('x') via manage_tasks(action:'update') in real-time as work proceeds.`
+        : `- TASK_MANAGEMENT: Use manage_tasks for checklist. ALWAYS mark active tasks in-progress ('/') and completed ('x') via manage_tasks(action:'update') in real-time as work proceeds.`;
       planStateNotice = `\n\n# PLANNING & VERIFICATION FILES\n- Plan: ${planPath} ${fileStatus(planPath)}\n- Tasks: ${taskPath} ${fileStatus(taskPath)}\n- History: ${taskHistoryPath} ${fileStatus(taskHistoryPath)}\n- Walkthrough: ${walkthroughPath} ${fileStatus(walkthroughPath)}\n\n# RULES\n${planToolRule}\n- Direct file write edits to Plan/Task files BLOCKED.\n- Walkthrough: use write_to_file.\n- Always use absolute paths.`;
     }
 
