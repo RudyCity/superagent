@@ -149,14 +149,22 @@ export class RequestProcessor {
               } else {
                 const model = agent.getModel();
                 const threshold = settings.simpleTaskFileThreshold ?? 3;
-                const classificationPrompt = `You are a helper that classifies if a user request is a "simple task" or a general chat/conversation.
-  Reply with "chat" if the request is a general greeting, discussion/conversation, or simple question/acknowledgment that does not require executing tools or making code changes.
-  Reply with "yes" if it is a simple task that expects modification or creation of fewer than ${threshold} files and does NOT introduce any new architecture, major system changes, or complex orchestration (e.g. simple refactoring, adding a simple helper, fixing a simple bug).
-  Reply with "no" if it is a complex task requiring extensive work, multiple files, or planning.
+                const classificationPrompt = `# ROLE
+Request Classifier. Classify user request into: "chat", "yes", or "no".
 
-  User request: "${userInput}"
+# LOGIC GATES
+if request is greeting / general discussion / simple question without code or tool changes:
+    RETURN "chat"
+if request is simple task (modifying/creating <${threshold} files, no new architecture or complex orchestration):
+    RETURN "yes"
+if request is complex (multiple files, extensive refactor, planning needed):
+    RETURN "no"
 
-  Reply with EXACTLY "chat", "yes", or "no". Reply with nothing else.`;
+# USER REQUEST
+"${userInput}"
+
+# OUTPUT REQUIREMENT
+Reply with EXACTLY "chat", "yes", or "no" ONLY.`;
 
                 try {
                   const { logPrompt } = await import("./PromptLogger.js");

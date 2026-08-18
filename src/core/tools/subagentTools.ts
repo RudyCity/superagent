@@ -26,32 +26,24 @@ function subagentReportPath(subagentId: string): string {
 }
 
 const SUBAGENT_REPORT_INSTRUCTION = (subagentId: string): string => `
-CRITICAL INSTRUCTION FOR SUBAGENT REPORTING:
-When you have completed your assigned task, or if you are blocked and cannot proceed, you MUST do TWO things:
-
-1. Write a structured JSON report file to: ${subagentReportPath(subagentId)}
-   Use write_to_file (or equivalent) with this exact JSON schema:
-   {
-     "subagentId": "${subagentId}",
-     "goal": "<brief description of what you were asked to do>",
-     "status": "completed" | "blocked" | "error",
-     "actionsTaken": ["<action 1>", "<action 2>", ...],
-     "keyFindings": ["<finding 1>", "<finding 2>", ...],
-     "nextSteps": "<optional: recommendations for the parent agent>",
-     "verificationPassed": true | false
-   }
-
-2. Also include a summary in your final response using Markdown:
-### SUBAGENT TASK REPORT
-- **Goal / Objective**: [Brief description of what you were asked to do]
-- **Actions Taken**:
-  - [Action 1]
-  - [Action 2]
-- **Key Findings / Outcomes**:
-  - [Detail what you discovered or accomplished]
-- **Status & Next Steps**: [Completed / Blocked / Unresolved issues]
-
-IMPORTANT: Writing the JSON file is MANDATORY. The parent agent reads it to track your progress reliably.
+# MANDATORY SUBAGENT REPORTING
+When complete or blocked:
+1. Write JSON report via write_to_file to: ${subagentReportPath(subagentId)}
+{
+  "subagentId": "${subagentId}",
+  "goal": "<brief goal>",
+  "status": "completed" | "blocked" | "error",
+  "actionsTaken": ["<action 1>", ...],
+  "keyFindings": ["<finding 1>", ...],
+  "nextSteps": "<optional recommendations>",
+  "verificationPassed": true | false
+}
+2. Include summary in final response:
+SUBAGENT TASK REPORT
+- Goal: [goal]
+- Actions: [actions taken]
+- Findings: [discoveries or changes]
+- Status: [Completed / Blocked / Next]
 `;
 
 /**

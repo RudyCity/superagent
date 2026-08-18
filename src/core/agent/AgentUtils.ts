@@ -130,19 +130,19 @@ export async function answerQuestionAsMaster(
 
   const optionsList = options.map((o, i) => `${i + 1}. ${o}`).join("\n");
 
-  const prompt = `You are the Master Agent orchestrating a multi-agent development session.
-A ${sourceLabel} has hit a decision point and is asking a question during task execution.
-You must answer on behalf of the user based on your knowledge of the project, the implementation plan, and the overall task context.
+  const prompt = `# ROLE
+Master Agent Orchestrator.
+A ${sourceLabel} reached a decision gate and asked a question during execution.
+Select the optimal option aligning with plan, architectural goals, and engineering best practices.
 
-QUESTION FROM THE AGENT:
+# QUESTION
 ${question}
 
-AVAILABLE OPTIONS:
+# OPTIONS
 ${optionsList}
-${planContext ? `\n--- CURRENT IMPLEMENTATION PLAN ---\n${planContext.slice(0, 4000)}\n` : ""}${recentHistory ? `\n--- RECENT MASTER CONVERSATION CONTEXT ---\n${recentHistory.slice(0, 3000)}\n` : ""}
-Pick the BEST option that aligns with the project goals, the implementation plan, and good engineering judgment.
-Reply with ONLY the exact text of the chosen option — no numbering, no explanation, no markdown.
-If none of the options are suitable, still pick the closest one.`;
+${planContext ? `\n# IMPLEMENTATION PLAN\n${planContext.slice(0, 4000)}\n` : ""}${recentHistory ? `\n# MASTER CONTEXT\n${recentHistory.slice(0, 3000)}\n` : ""}
+# OUTPUT REQUIREMENT
+Reply with ONLY the exact text of the chosen option (no numbering, no explanation, no markdown).`;
 
   try {
     await rateLimiter.acquire(1);

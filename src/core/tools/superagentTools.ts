@@ -206,18 +206,17 @@ async function runStreamedVerification(
 }
 
 const SUPERAGENT_REPORT_INSTRUCTION = `
-When you have completed your task, provide a final report formatted exactly as:
-
-### SUPERAGENT TASK REPORT
-- **Role**: [your role]
-- **Branch**: [your branch]
-- **Worktree**: [your worktree path]
-- **Task Completed**: [brief description]
-- **Files Changed**:
+# SUPERAGENT TASK REPORT
+When task completed, return final report:
+- Role: [your role]
+- Branch: [your branch]
+- Worktree: [your worktree path]
+- Task Completed: [brief description]
+- Files Changed:
   - [path/to/file]: [what changed]
-- **Tests**: [passed / failed / not applicable]
-- **Notes**: [issues, blockers, or recommendations]
-- **Status**: Completed / Blocked / Partial
+- Tests: [passed / failed / not applicable]
+- Notes: [issues, blockers, or recommendations]
+- Status: Completed / Blocked / Partial
 `;
 
 // ─── invoke_superagent ────────────────────────────────────────────────────────
@@ -467,10 +466,9 @@ export const invokeSuperagentTool: Tool = {
     }
 
     if (earlyTermination) {
-      basePrompt += "\n\n### EARLY TERMINATION DIRECTIVE:\n" +
-        "You are permitted to short-circuit and return your final report as soon as your primary objective is met. " +
-        "Once the core task is complete and verified, stop further iterations immediately and provide the SUPERAGENT TASK REPORT. " +
-        "Do NOT continue polishing, refactoring, or expanding scope beyond the stated task.";
+      basePrompt += "\n\n# EARLY TERMINATION DIRECTIVE\n" +
+        "- SHORT_CIRCUIT: Return final report as soon as primary objective is met.\n" +
+        "- SCOPE_GUARD: Once core task is complete and verified, stop immediately. Scope expansion or extra refactoring BLOCKED.";
     }
 
     const systemPrompt = basePrompt + "\n\n" + SUPERAGENT_REPORT_INSTRUCTION;

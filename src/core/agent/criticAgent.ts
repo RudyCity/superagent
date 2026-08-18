@@ -50,10 +50,12 @@ export class CriticAgent {
 
     // 4. LLM qualitative critique
     if (this.model) {
-      const prompt = `You are a Senior Code Reviewer and Quality Assurance Agent.
-Review the following code changes and test execution outputs against the implementation plan (if provided).
-Determine if the implementation is correct, handles edge cases, avoids security bugs, and matches requirements.
+      const prompt = `# ROLE
+Senior Code Reviewer & QA Agent.
+Evaluate code changes against implementation plan and execution outputs.
+Criteria: correctness, edge cases, security, invariant safety.
 
+# CONTEXT
 --- IMPLEMENTATION PLAN ---
 ${planText || "None provided"}
 
@@ -66,15 +68,14 @@ ${buildOutput}
 --- TEST OUTPUT ---
 ${testOutput}
 
-Provide your critique.
-Your response MUST be in JSON format conforming EXACTLY to this schema:
+# OUTPUT SCHEMA (RAW JSON ONLY)
 {
   "valid": true,
   "errors": [],
   "warnings": [],
   "critiqueText": "Detailed summary explaining the review decision"
 }
-Output ONLY the raw JSON string. Do not include markdown code block formatting (like \`\`\`), preamble, or explanations.`;
+Output ONLY raw JSON string. No markdown block formatting (\`\`\`), preamble, or explanations.`;
 
       let concurrencyAcquired = false;
       try {

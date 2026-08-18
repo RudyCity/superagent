@@ -126,21 +126,21 @@ export class ContextBuilder {
       const walkthroughPath = agent.getWalkthroughFilePath();
       const isMasterOrSingle = agent.tier === "master" || agent.tier === "single";
       const planToolRule = isMasterOrSingle
-        ? `1. Use 'manage_plan' tool (action: 'create', 'edit', or 'sync') to manage the Implementation Plan.\n2. Use 'manage_tasks' tool to manage checklist tasks ('add', 'add_bulk', 'update', 'update_bulk', 'remove', 'remove_bulk', 'list').`
-        : `1. Use 'manage_tasks' tool to manage checklist tasks ('add', 'add_bulk', 'update', 'update_bulk', 'remove', 'remove_bulk', 'list').`;
-      planStateNotice = `\n\nPLANNING, TASKS & VERIFICATION FILES:\n- Plan: ${planPath} ${fileStatus(planPath)}\n- Tasks: ${taskPath} ${fileStatus(taskPath)}\n- History: ${taskHistoryPath} ${fileStatus(taskHistoryPath)}\n- Walkthrough: ${walkthroughPath} ${fileStatus(walkthroughPath)}\n\nPLANNING RULES:\n${planToolRule}\n- DO NOT use file write tools to modify Plan or Task files directly.\n- Walkthrough File: use 'write_to_file' directly.\n- Always use absolute paths when referencing these files.`;
+        ? `- PLAN_MANAGEMENT: Use manage_plan (create|edit|sync) for Implementation Plan; manage_tasks for checklist.`
+        : `- TASK_MANAGEMENT: Use manage_tasks for checklist.`;
+      planStateNotice = `\n\n# PLANNING & VERIFICATION FILES\n- Plan: ${planPath} ${fileStatus(planPath)}\n- Tasks: ${taskPath} ${fileStatus(taskPath)}\n- History: ${taskHistoryPath} ${fileStatus(taskHistoryPath)}\n- Walkthrough: ${walkthroughPath} ${fileStatus(walkthroughPath)}\n\n# RULES\n${planToolRule}\n- Direct file write edits to Plan/Task files BLOCKED.\n- Walkthrough: use write_to_file.\n- Always use absolute paths.`;
     }
 
     let planStateAddendum = "";
     if (agent.planState === "PLANNING_PENDING") {
-      planStateAddendum = `\n\n⚠️ IMPORTANT PLAN STATE NOTICE:\nAn implementation plan has been written to '${agent.getPlanFilePath()}' and is currently pending user approval.\nYou are temporarily in a READ-ONLY mode.\n- DO NOT attempt to write/edit/modify any codebase files.\n- DO NOT run terminal commands that modify files, add packages, or check out git branches.\n- Focus on explaining your proposed plan to the user, answering any questions, or waiting for them to approve via the interactive approval wizard.`;
+      planStateAddendum = `\n\n# PLAN STATE: PENDING_APPROVAL\nPlan written to '${agent.getPlanFilePath()}'. Status: READ-ONLY.\n- Code/file modifications BLOCKED.\n- Mutating terminal commands BLOCKED.\n- Explain proposed plan and await user approval.`;
     } else if (agent.planState === "APPROVED" && typeof (agent as any).hasRealPlanContent === "function" && (agent as any).hasRealPlanContent()) {
-      planStateAddendum = `\n\n✓ PLAN STATE NOTICE:\nThe user has APPROVED your implementation plan. You are now fully authorized to modify codebase files and run commands to execute the plan.`;
+      planStateAddendum = `\n\n# PLAN STATE: APPROVED\nPlan APPROVED by user. File modification and command execution AUTHORIZED.`;
     }
 
     let followUpTaskAddendum = "";
     if ((agent as any).tasksJustArchived) {
-      followUpTaskAddendum = `\n\n🔄 TASK RESET: ${(agent as any).archivedTaskCount} tasks archived. Use 'manage_tasks' (add/add_bulk) or 'manage_plan' (create) for new tasks.`;
+      followUpTaskAddendum = `\n\n# TASK RESET: ${(agent as any).archivedTaskCount} tasks archived. Use 'manage_tasks' (add/add_bulk) or 'manage_plan' (create) for new tasks.`;
       (agent as any).tasksJustArchived = false;
     }
 
@@ -150,7 +150,7 @@ export class ContextBuilder {
       .map(([id, t]) => `- Process ID: ${id}, Command: "${t.command}"`)
       .join("\n");
     const processNotice = runningProcesses
-      ? `\n\n⚙️ RUNNING PROCESSES:\n${runningProcesses}`
+      ? `\n\n# RUNNING PROCESSES\n${runningProcesses}`
       : "";
 
     let pinnedKnowledgeNotice = "";
@@ -162,7 +162,7 @@ export class ContextBuilder {
       }
     } catch {}
 
-    const singleModeSubagentDirective = agent.tier === "single" ? `\n\nSINGLE MODE SUBAGENT DISPATCH:\n- Perform small/simple operations directly. Spawn subagents for: broad research (researcher), multi-file changes (coder), large feature review (reviewer), security audits (security-engineer), browser automation (chrome-agent), or parallel independent subtasks.\n- Run build + test after code changes. Only report completion when both pass.` : "";
+    const singleModeSubagentDirective = agent.tier === "single" ? `\n\n# SINGLE MODE SUBAGENT DISPATCH\n- Perform atomic operations directly. Spawn subagents for: broad research (researcher), multi-file changes (coder), feature review (reviewer), security audits (security-engineer), browser automation (chrome-agent), or independent parallel subtasks.\n- Run build+test after code changes. Report completion only when 100% pass.` : "";
 
     let activeSystemPrompt = baseSystemPrompt;
     if (agent.workspaceCache) {

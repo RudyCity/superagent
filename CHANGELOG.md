@@ -1,3 +1,12 @@
+## [1.2.725] - 2026-08-18
+
+### Enhanced: System Prompt Optimization & Minification
+
+- **`prompts.ts`**: Applied Concept A (Telegraphic minification), Concept B (Structured Markdown), and Concept C (Pseudocode logic gates) to shared rules (`REASONING_RULE`, `FILE_EDIT_SAFETY_RULE`, `AESTHETIC_AND_GATEWAY_RULES`, `WORKSPACE_CHAIN_RULE`), `MASTER_AGENT_SYSTEM_PROMPT`, `SUPERAGENT_SYSTEM_PROMPT`, and all specialized subagents (`researcher`, `coder`, `reviewer`, `software-tester`, `security-engineer`, `writer`, `chrome-agent`).
+- **`subagentTools.ts` & `superagentTools.ts`**: Streamlined report instructions (`SUBAGENT_REPORT_INSTRUCTION` and `SUPERAGENT_REPORT_INSTRUCTION`) and early termination directive to minimize token usage while maintaining structured JSON/plain-text reporting contracts.
+- **`ContextBuilder.ts`**: Minified plan state notices (`planStateNotice`, `planStateAddendum`), background process notice, and single mode subagent dispatch directive.
+- **`criticAgent.ts`, `RequestProcessor.ts`, `AgentUtils.ts`**: Standardized secondary agent prompts (review critique, simple task classifier, master answer question fallback) to telegraphic Markdown structured formats with explicit logic gates.
+
 ## [1.2.724] - 2026-08-18
 
 ### Added & Enhanced: Multi-Mode Skills Grouping & Single-Mode Filtering
