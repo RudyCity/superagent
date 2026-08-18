@@ -1,7 +1,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { utils } from "ssh2";
+import ssh2 from "ssh2";
 import { sshLogger } from "./sshLogger.js";
 
 export interface SshConfigEntry {
@@ -99,7 +99,8 @@ export function findDefaultPrivateKey(): Buffer | undefined {
   const tryLoadKey = (filePath: string): Buffer | undefined => {
     try {
       const buf = fs.readFileSync(filePath);
-      const parsed = utils.parseKey(buf);
+      const utils = ssh2.utils || (ssh2 as any).default?.utils;
+      const parsed = utils ? utils.parseKey(buf) : undefined;
       if (parsed && !(parsed instanceof Error)) {
         return buf;
       }

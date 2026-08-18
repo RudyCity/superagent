@@ -37,7 +37,7 @@
       "updatedAt": "2026-08-15T02:09:42.094Z"
     }
   },
-  "lastSync": "2026-08-18T01:39:52.041Z",
+  "lastSync": "2026-08-18T01:44:53.152Z",
   "workspaces": [
     {
       "name": "superagent",
@@ -49,14 +49,13 @@
     }
   ],
   "lastModifiedFiles": [
-    "[superagent] docs/wiki/00-index.md",
-    "[superagent] docs/wiki/04-features-and-workflows.md",
-    "[superagent] docs/wiki/auto-sync-manifest.json",
-    "[superagent] docs/wiki/wiki-rmemory-chunks.json",
+    "[superagent] CHANGELOG.md",
+    "[superagent] package.json",
+    "[superagent] src/core/ssh/sshConfig.ts",
     "[t-line] src/core/"
   ],
   "impactSummary": {
-    "architecture": false,
+    "architecture": true,
     "domainData": false,
     "apiContracts": false,
     "features": false,

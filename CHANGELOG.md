@@ -1,3 +1,9 @@
+## [1.2.726] - 2026-08-18
+
+### Fixed: Node.js ESM Compatibility for ssh2 Import
+
+- **`sshConfig.ts`**: Changed `import { utils } from "ssh2"` to default import `import ssh2 from "ssh2"` and safely access `ssh2.utils || (ssh2 as any).default?.utils` in `tryLoadKey()`, preventing `SyntaxError: The requested module 'ssh2' does not provide an export named 'utils'` in Node.js ESM runtime.
+
 ## [1.2.725] - 2026-08-18
 
 ### Enhanced: System Prompt Optimization & Minification
