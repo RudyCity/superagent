@@ -20,21 +20,23 @@ export function getConfiguredProviders(): ConfiguredProvider[] {
   const tierConfig = mode === "multi" ? activePreset.models.master : activePreset.models.superagent;
   const activeProfileId = tierConfig?.providerProfileId || "";
 
-  // Return ALL providers — including those with empty/missing keys —
-  // so callers can distinguish "provider exists but needs key" from "no provider configured".
-  // hasValidKey flags whether the credential is actually usable.
-  const list = providers.map((p) => {
-    const hasValidKey = !!(p.apiKey && p.apiKey.trim() !== "");
-    return {
-      id: p.id,
-      name: p.name,
-      type: p.provider,
-      apiKey: p.apiKey,
-      baseUrl: p.baseUrl,
-      isActive: p.id === activeProfileId,
-      hasValidKey,
-    };
-  });
+  // Return all user-configured providers, excluding unconfigured default placeholders
+  // (e.g. default-anthropic with empty apiKey and empty baseUrl).
+  // Profiles created by the user (even with empty keys, e.g. local endpoints) are preserved.
+  const list = providers
+    .filter((p) => !(p.id.startsWith("default-") && (!p.apiKey || p.apiKey.trim() === "") && (!p.baseUrl || p.baseUrl.trim() === "")))
+    .map((p) => {
+      const hasValidKey = !!(p.apiKey && p.apiKey.trim() !== "");
+      return {
+        id: p.id,
+        name: p.name,
+        type: p.provider,
+        apiKey: p.apiKey,
+        baseUrl: p.baseUrl,
+        isActive: p.id === activeProfileId,
+        hasValidKey,
+      };
+    });
 
   // Sort: usable providers first (valid key), active provider pinned to top,
   // then by insertion order. This keeps the wizard UI focused on working options.

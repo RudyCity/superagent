@@ -1,3 +1,13 @@
+## [1.2.730] - 2026-08-20
+
+### Fixed: Provider Profile List Synchronization Between /login and /model Wizards
+
+- **`providers.ts` & `loginWizardLogic.ts`**: Removed asymmetric `hasValidKey` filtering that previously hid custom or empty-key profiles (e.g. local endpoints or user-created profiles) from `/login` list, edit, and delete flows, while still cleanly excluding untouched default placeholders.
+- **`useLoginWizard.ts` & `useDashboardWizard.ts`**: Unified provider list retrieval across all steps (List, Edit, Delete, Test) to use `getConfiguredProviders()`, eliminating array indexing mismatches and ensuring all user-configured profiles can be viewed, edited, and deleted in `/login`.
+- **`useModelWizard.ts` & `useModelPresets.ts`**: Updated profile pickers to use `getConfiguredProviders()` and `formatProviderForPicker()`, guaranteeing 100% synchronization between `/login` and `/model` credential profiles.
+- **`useKeyboardHandler.ts` & `useDashboardKeyboard.ts`**: Fixed Step 1 menu navigation and Esc handlers to use unified provider lists and restore the "Edit an Existing Provider" option.
+- **`providerProfileSync.test.ts`**: Added automated unit tests verifying bidirectional synchronization and instant profile deletion reflection between `/login` and `/model`.
+
 ## [1.2.729] - 2026-08-18
 
 ### Fixed & Enhanced: SSH File Edit Batch Routing & Parameter Alias Normalization

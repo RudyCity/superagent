@@ -590,7 +590,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint", "6. Google Gemini"]);
               setWizardSelectedIndex(0);
             } else if (selectedOption.includes("Delete / Remove")) {
-              const providers = getProviders().filter((p: any) => p.apiKey && p.apiKey.trim() !== "");
+              const providers = getConfiguredProviders();
               if (providers.length === 0) {
                 addLine({ type: "system", content: "No providers configured yet.", timestamp: now });
                 setActiveWizard(null);
@@ -598,14 +598,14 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 setWizardSelectedIndex(0);
               } else {
                 const providerOptions = providers.map(
-                  (p: any, i: number) => `${i + 1}. ${p.name} [${p.provider}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+                  (p: any, i: number) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
                 );
                 setActiveWizard({ type: "login", step: 14, data: {} });
                 setWizardOptions(providerOptions);
                 setWizardSelectedIndex(0);
               }
             } else if (selectedOption.includes("Edit")) {
-              const providers = getProviders().filter((p: any) => p.apiKey && p.apiKey.trim() !== "");
+              const providers = getConfiguredProviders();
               if (providers.length === 0) {
                 addLine({ type: "system", content: "No providers configured yet.", timestamp: now });
                 setActiveWizard(null);
@@ -613,14 +613,14 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 setWizardSelectedIndex(0);
               } else {
                 const providerOptions = providers.map(
-                  (p: any, i: number) => `${i + 1}. ${p.name} [${p.provider}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+                  (p: any, i: number) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
                 );
                 setActiveWizard({ type: "login", step: 17, data: {} });
                 setWizardOptions(providerOptions);
                 setWizardSelectedIndex(0);
               }
             } else {
-              const providers = getProviders().filter((p: any) => p.apiKey && p.apiKey.trim() !== "");
+              const providers = getConfiguredProviders();
               if (providers.length === 0) {
                 addLine({ type: "system", content: "No providers configured yet. Use /login to create one.", timestamp: now });
                 setActiveWizard(null);
@@ -628,7 +628,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 setWizardSelectedIndex(0);
               } else {
                 const providerOptions = providers.map(
-                  (p: any, i: number) => `${i + 1}. ${p.name} [${p.provider}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+                  (p: any, i: number) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
                 );
                 setActiveWizard({ type: "login", step: 6, data: {} });
                 setWizardOptions(providerOptions);

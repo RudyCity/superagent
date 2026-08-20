@@ -8,7 +8,7 @@ import {
   getContextWindowLimit,
   getAllTierModels,
   getTierModelWithProvider,
-  getProviders,
+  getConfiguredProviders,
 } from "../../core/config.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import type { PresetMode } from "../../core/config.js";
@@ -500,7 +500,7 @@ export async function handlePresetStep(
       return true;
     }
 
-    const found = resolveProfileFromPicker(value, providerType, getProviders());
+    const found = resolveProfileFromPicker(value, providerType, getConfiguredProviders());
     const profileName = found ? found.name : value.replace(/^\d+\.\s*/, "").split(" (key:")[0].trim();
     const resolvedApiKey = found?.apiKey || "";
     const resolvedBaseUrl = found?.baseUrl || "";

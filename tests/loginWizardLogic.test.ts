@@ -31,7 +31,7 @@ describe("loginWizardLogic", () => {
   });
 
   describe("buildProviderOptions", () => {
-    it("builds numbered options and skips providers without api keys", () => {
+    it("builds numbered options for all providers including those without api keys", () => {
       const providers = [
         { id: "p1", name: "prod", provider: "openai", apiKey: "sk-123" },
         { id: "p2", name: "dev", provider: "custom", apiKey: "", baseUrl: "http://localhost:11434/v1" },
@@ -39,7 +39,8 @@ describe("loginWizardLogic", () => {
       ];
       expect(buildProviderOptions(providers)).toEqual([
         "1. prod [openai]",
-        "2. legacy [openrouter]",
+        "2. dev [custom] (http://localhost:11434/v1)",
+        "3. legacy [openrouter]",
       ]);
     });
   });

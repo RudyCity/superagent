@@ -117,22 +117,16 @@ export function useModelWizard(ctx: ModelWizardContext) {
     };
 
     const getProfilePickerOptions = (providerType: string): string[] => {
-      const providers = getProviders().filter(p => {
+      const providers = getConfiguredProviders().filter(p => {
         if (providerType === "anthropic") {
-          return p.provider === "anthropic" && !p.baseUrl;
+          return p.type === "anthropic" && !p.baseUrl;
         }
         if (providerType === "custom-anthropic") {
-          return p.provider === "anthropic" && !!p.baseUrl;
+          return p.type === "anthropic" && !!p.baseUrl;
         }
-        return p.provider === providerType;
+        return p.type === providerType;
       });
-      return providers.map(p => {
-        const apiKey = p.apiKey || "";
-        const maskedKey = apiKey
-          ? (apiKey.length > 8 ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "...")
-          : "(no key)";
-        return `${p.name} (key: ${maskedKey})`;
-      });
+      return formatProviderForPicker(providers);
     };
 
     const getPresetOptionsList = (models: Record<string, string>): string[] => {

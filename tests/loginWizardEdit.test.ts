@@ -100,18 +100,22 @@ describe("Login Wizard Provider Edition", () => {
     isLoadingModels = false;
     inputCallbacks = [];
 
-    if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
-    }
+    try {
+      if (fs.existsSync(tempHome)) {
+        fs.rmSync(tempHome, { recursive: true, force: true });
+      }
+    } catch {}
     ensureGlobalConfigDir();
     clearModelConfigCache();
   });
 
   afterEach(() => {
     process.env = originalEnv;
-    if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
-    }
+    try {
+      if (fs.existsSync(tempHome)) {
+        fs.rmSync(tempHome, { recursive: true, force: true });
+      }
+    } catch {}
     clearModelConfigCache();
   });
 

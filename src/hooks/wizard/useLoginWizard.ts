@@ -69,7 +69,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
         ]);
         setWizardSelectedIndex(0);
       } else if (choice.includes("delete") || choice.includes("remove") || choice === "3") {
-        const list = getConfiguredProviders().filter((p) => p.hasValidKey);
+        const list = getConfiguredProviders();
         if (list.length > 0) {
           setActiveWizard({ type: "login", step: 14, data: {} });
           setWizardOptions(list.map(
@@ -87,7 +87,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           setWizardSelectedIndex(0);
         }
       } else if (choice.includes("edit") || choice === "4") {
-        const list = getConfiguredProviders().filter((p) => p.hasValidKey);
+        const list = getConfiguredProviders();
         if (list.length > 0) {
           setActiveWizard({ type: "login", step: 17, data: {} });
           setWizardOptions(list.map(
@@ -105,7 +105,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           setWizardSelectedIndex(0);
         }
       } else {
-        const list = getConfiguredProviders().filter((p) => p.hasValidKey);
+        const list = getConfiguredProviders();
         if (list.length > 0) {
           setActiveWizard({ type: "login", step: 6, data: {} });
           setWizardOptions(list.map(
@@ -498,7 +498,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       setWizardSelectedIndex(0);
     } else if (step === 6) {
       // Step 6: Select provider from list (from /login → List)
-      const providers = getProviders().filter(p => p.apiKey && p.apiKey.trim() !== "");
+      const providers = getConfiguredProviders();
       const idx = parseInt(value, 10) - 1;
       const selectedProvider = providers[idx];
       if (!selectedProvider) {
@@ -510,14 +510,14 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
       addLine({
         type: "system",
-        content: `Provider selected: ${selectedProvider.name} [${selectedProvider.provider}]`,
+        content: `Provider selected: ${selectedProvider.name} [${selectedProvider.type}]`,
         timestamp: now,
       });
       // Activate the selected provider in ALL preset tiers (both modes)
       switchActiveProvider(selectedProvider.id);
       const selBaseUrl = selectedProvider.baseUrl || "";
       const selApiKey = selectedProvider.apiKey || "";
-      const selType = selectedProvider.provider || "";
+      const selType = selectedProvider.type || "";
       setActiveWizard({
         type: "login",
         step: 7,
@@ -772,7 +772,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       setWizardSelectedIndex(0);
     } else if (step === 14) {
       // Step 14: Select provider to delete
-      const providers = getConfiguredProviders().filter((p) => p.hasValidKey);
+      const providers = getConfiguredProviders();
       const idx = parseInt(value, 10) - 1;
       const selectedProvider = providers[idx];
       if (!selectedProvider) {
@@ -802,7 +802,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
       if (!confirmDelete) {
         // No (Cancel) → back to step 14 delete list
-        const list = getConfiguredProviders().filter((p) => p.hasValidKey);
+        const list = getConfiguredProviders();
         setActiveWizard({ type: "login", step: 14, data: {} });
         setWizardOptions(list.map(
           (p, i) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
@@ -827,7 +827,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
 
       // After deletion: reload list and go back to step 14
-      const remaining = getConfiguredProviders().filter((p) => p.hasValidKey);
+      const remaining = getConfiguredProviders();
       if (remaining.length > 0) {
         setActiveWizard({ type: "login", step: 14, data: {} });
         setWizardOptions(remaining.map(
@@ -842,7 +842,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
     } else if (step === 17) {
       // Step 17: Select provider to edit
-      const providers = getConfiguredProviders().filter((p) => p.hasValidKey);
+      const providers = getConfiguredProviders();
       const idx = parseInt(value, 10) - 1;
       const selectedProvider = providers[idx];
       if (!selectedProvider) {

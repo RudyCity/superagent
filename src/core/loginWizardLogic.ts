@@ -23,13 +23,11 @@ export function resolveProviderType(choice: string): ProviderType | null {
 }
 
 export function buildProviderOptions(providers: ConfiguredProvider[]): string[] {
-  return providers
-    .filter((p) => p.apiKey && p.apiKey.trim() !== "")
-    .map((p, i) => {
-      const label = p.provider || p.type || "unknown";
-      const urlPart = p.baseUrl ? ` (${p.baseUrl})` : "";
-      return `${i + 1}. ${p.name} [${label}]${urlPart}`;
-    });
+  return providers.map((p, i) => {
+    const label = p.provider || p.type || "unknown";
+    const urlPart = p.baseUrl ? ` (${p.baseUrl})` : "";
+    return `${i + 1}. ${p.name} [${label}]${urlPart}`;
+  });
 }
 
 export function getFallbackModels(providerType: ProviderType): string[] {

@@ -172,14 +172,16 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
   });
 
   const getProfilePickerOptions = (providerType: string): string[] => {
-    const providers = getProviders().filter(p => p.provider === providerType);
-    return providers.map(p => {
-      const apiKey = p.apiKey || "";
-      const maskedKey = apiKey
-        ? (apiKey.length > 8 ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "...")
-        : "(no key)";
-      return `${p.name} (key: ${maskedKey})`;
+    const providers = getConfiguredProviders().filter(p => {
+      if (providerType === "anthropic") {
+        return p.type === "anthropic" && !p.baseUrl;
+      }
+      if (providerType === "custom-anthropic") {
+        return p.type === "anthropic" && !!p.baseUrl;
+      }
+      return p.type === providerType;
     });
+    return formatProviderForPicker(providers);
   };
 
   const getTierOptionsList = (
@@ -662,7 +664,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           setWizardSelectedIndex(0);
         }
       } else if (activeWizard.step === 6) {
-        const providers = getProviders().filter(p => p.apiKey && p.apiKey.trim() !== "");
+        const providers = getConfiguredProviders();
         const idx = parseInt(value, 10) - 1;
         const selectedProvider = providers[idx];
         if (!selectedProvider) {
@@ -672,12 +674,12 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           setWizardSelectedIndex(0);
           return;
         }
-        setMasterLogs((prev) => [...prev, `[MASTER] Provider selected: ${selectedProvider.name} [${selectedProvider.provider}]`].slice(-500));
+        setMasterLogs((prev) => [...prev, `[MASTER] Provider selected: ${selectedProvider.name} [${selectedProvider.type}]`].slice(-500));
         // Activate the selected provider in ALL preset tiers (both modes)
         switchActiveProvider(selectedProvider.id);
         const selBaseUrl = selectedProvider.baseUrl || "";
         const selApiKey = selectedProvider.apiKey || "";
-        const selType = selectedProvider.provider || "";
+        const selType = selectedProvider.type || "";
         setActiveWizard({
           type: "login",
           step: 7,

@@ -547,13 +547,13 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         if (activeWizard && activeWizard.type === "login") {
           if (activeWizard.step === 2) {
             setActiveWizard({ type: "login", step: 1, data: {} });
-            setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider"]);
+            setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider", "4. Edit an Existing Provider"]);
             setWizardSelectedIndex(0);
             setQuery("");
             return;
           } else if (activeWizard.step === 14) {
             setActiveWizard({ type: "login", step: 1, data: {} });
-            setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider"]);
+            setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider", "4. Edit an Existing Provider"]);
             setWizardSelectedIndex(0);
             setQuery("");
             return;
