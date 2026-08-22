@@ -1,3 +1,39 @@
+## [1.3.0] - 2026-08-22
+
+### Security: Server Mode & Chrome Bridge Lockdown (Audit Remediation)
+
+- **`serverSecurity.ts` (new), `server.ts`, `serverRoutes.ts`**: `--server` mode now requires a per-process auth token (`Authorization: Bearer` / `x-auth-token` / `?token=`, logged at startup) on every `/api/*` route; wildcard CORS replaced with localhost-origin echo only; client-supplied `x-workspace-path` values outside registered workspace roots are rejected with 403.
+- **`serverRoutes.ts`**: Fixed path-traversal prefix bypass (`C:\proj` matching `C:\proj-evil`) via `isPathInsideOrEqual` containment checks on file read/open routes; `/api/config` GET and provider mutations now mask API keys and preserve stored keys on write round-trips; t-line session resume failures surface a warning in the response instead of being silently swallowed into an empty-context session.
+- **`remoteChromeBridge.ts`**: WebSocket bridge binds `127.0.0.1` instead of `0.0.0.0`; handshakes carrying non-`chrome-extension://` Origins are rejected; the active browser-control client can no longer be hijacked by extra connections.
+
+### Fixed: Multi-Agent Lifecycle Integrity
+
+- **`superagentTools.ts`**: Dependent Superagents no longer deadlock when a dependency fails (gate opens with `[DEPENDENCY WARNING]`); conflicted dependency-branch merges are aborted cleanly with notice to the dependent agent; kill/kill_all now deletes the feature branch, not just the worktree; new `manage_superagents` action `retry_failed` re-runs failed/terminated Superagents in their intact worktree with the original task.
+- **`superagentRegistry.ts` (new)**: Worktree registry journal persisted to `~/.superagent-r/worktree-registry.json`; crash-orphaned instances are reconciled on next run so completed work stays mergeable and failed work retryable; new `cleanup_orphans` action removes stale entries.
+- **`state.ts`**: TTL cleanup no longer evicts `completed` Superagents before they can be merged.
+
+### Performance: UI Hot-Path Bottleneck Removal
+
+- **`historyDb.ts`**: Session saves use an incremental append fast path (count + anchor check) instead of full DELETE+INSERT + FTS reindex of the whole transcript per turn.
+- **`app.tsx`, `multi-agent-dashboard.tsx`**: Token breakdown memoized against last-message identity instead of recounting the entire transcript every stream tick/keystroke; dashboard git polling converted from blocking `execSync` to async `execa`.
+- **`TokenTracker.ts`**: Message hashing no longer materializes full text joins.
+- **`presets.ts`, `dashboardSuggestions.ts`, `config/history.ts`**: mtime-cached preset reads; cached + 150ms-debounced `/resume` suggestions with scan capped at 100 sessions.
+
+### Changed: Cleanup Sweep & Tier Enforcement
+
+- **`toolsets.ts`**: Orchestration tools removed from subagent toolsets per tier rules (runtime depth guard unchanged).
+- **`subagentTools.ts`**: Caller-provided `timeoutMs` honored (30s floor, 24h cap) including real timeout timers for background spawns.
+- **`McpManager.ts`**: Transport close/error handlers mark MCP connections disconnected instead of showing stale "Connected".
+- **`checkpoints.ts`**: Cancelled subagents recorded as `terminated`, not `completed`.
+- **`rmemoryUtil.ts`, `jsonConfig.ts`**: Placeholder gateway key default removed; clear configuration error surfaced when unset; placebo settings (`focus`, `focusBudget`, `maxConcurrentWorkspaceTasks`) removed.
+- **`uiHelpers.ts` et al.**: Duplicated paste/SGR/subagent-action helpers consolidated to single sources of truth.
+- **`package.json`**: Removed unused `@anthropic-ai/tokenizer`; moved `@napi-rs/canvas` and `@types/pdf-parse` to devDependencies.
+- **`server.ts`**: Idle session harvest performs best-effort teardown (agent abort + background process kill) before removal.
+
+### Tests
+
+- Added `tests/serverAuth.test.ts` (20), `tests/superagentLifecycle.test.ts` (19), `tests/perfHotPath.test.ts` (5), `tests/cleanupSweep.test.ts`; existing suites updated where they encoded pre-fix behavior. Full suite: 1648 passing.
+
 ## [1.2.730] - 2026-08-20
 
 ### Fixed: Provider Profile List Synchronization Between /login and /model Wizards
