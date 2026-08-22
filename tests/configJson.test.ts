@@ -164,15 +164,12 @@ describe("JSON-based model-config.json storage", () => {
     expect(config.settings?.rateLimitCapacity).toBe(150);
   });
 
-  it("should have correct defaults for focus and focusBudget and persist updates", () => {
+  it("should ignore removed legacy settings keys without failing", () => {
+    updateSettings({ focus: "medium", focusBudget: 8000 } as any);
     const settings = getSettings();
-    expect(settings.focus).toBe("off");
-    expect(settings.focusBudget).toBe(4000);
-
-    updateSettings({ focus: "medium", focusBudget: 8000 });
-    const updated = getSettings();
-    expect(updated.focus).toBe("medium");
-    expect(updated.focusBudget).toBe(8000);
+    expect((settings as any).focus).toBeUndefined();
+    expect((settings as any).focusBudget).toBeUndefined();
+    expect((settings as any).maxConcurrentWorkspaceTasks).toBeUndefined();
   });
 
   it("should handle trusted directories operations correctly", () => {

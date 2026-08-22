@@ -67,8 +67,6 @@ export interface SystemSettings {
   maxChecklistVisible?: number;
   maxHistoryVisible?: number;
   maxProcsVisible?: number;
-  focus?: "off" | "low" | "medium" | "high" | "xhigh" | "max" | "custom";
-  focusBudget?: number;
   forcePromptBasedToolCalling?: boolean;
   hideTimeline?: boolean;
   enableAdvisor?: boolean;
@@ -77,7 +75,6 @@ export interface SystemSettings {
   advisorErrorThreshold?: number;
   advisorAdaptiveScaling?: boolean;
   advisorPatternMemory?: boolean;
-  maxConcurrentWorkspaceTasks?: number;
   /** Log level for prompt logging: off | metadata (no messages) | full (all content) */
   promptLogLevel?: "off" | "metadata" | "full";
 }
@@ -119,8 +116,6 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     maxChecklistVisible: 3,
     maxHistoryVisible: 3,
     maxProcsVisible: 3,
-    focus: "off",
-    focusBudget: 4000,
     forcePromptBasedToolCalling: false,
     enableRmemory: false,
     rmemoryEmbeddingProvider: "local",
@@ -827,7 +822,7 @@ export function getSettings(): SystemSettings {
       classifierConfidenceThreshold: s.classifierConfidenceThreshold ?? "high",
       classifierKeywords: s.classifierKeywords ?? {},
       rmemoryGatewayUrl: s.rmemoryGatewayUrl ?? "http://127.0.0.1:8420",
-      rmemoryGatewayApiKey: s.rmemoryGatewayApiKey ?? "sk-xxxx",
+      rmemoryGatewayApiKey: s.rmemoryGatewayApiKey ?? "",
       rmemoryServiceId: s.rmemoryServiceId ?? "default",
       enableRmemory: s.enableRmemory ?? true,
       rmemoryEmbeddingProvider: rmemoryProvider,
@@ -836,8 +831,6 @@ export function getSettings(): SystemSettings {
     maxChecklistVisible: s.maxChecklistVisible ?? 3,
     maxHistoryVisible: s.maxHistoryVisible ?? 3,
     maxProcsVisible: s.maxProcsVisible ?? 3,
-    focus: s.focus ?? "off",
-    focusBudget: s.focusBudget ?? 4000,
     hideTimeline: s.hideTimeline ?? false,
     enableAdvisor: s.enableAdvisor ?? true,
     advisorWarningThreshold: s.advisorWarningThreshold ?? 3,
@@ -845,7 +838,6 @@ export function getSettings(): SystemSettings {
     advisorErrorThreshold: s.advisorErrorThreshold ?? 5,
     advisorAdaptiveScaling: s.advisorAdaptiveScaling ?? true,
     advisorPatternMemory: s.advisorPatternMemory ?? true,
-    maxConcurrentWorkspaceTasks: s.maxConcurrentWorkspaceTasks ?? 5,
   };
 }
 

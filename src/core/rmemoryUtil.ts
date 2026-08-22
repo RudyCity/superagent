@@ -660,18 +660,36 @@ export class MemoryClient {
   }
 }
 
+const RMEMORY_GATEWAY_KEY_MISSING_ERROR =
+  "rmemory gateway API key is not configured. Set it via /settings.";
+
 export function getRMemoryClient(timeoutMs = 3000): MemoryClient {
   const settings = getSettings();
   const endpoint = settings.rmemoryGatewayUrl || "http://127.0.0.1:8420";
-  const apiKey = settings.rmemoryGatewayApiKey || "sk-xxxx";
+  const apiKey = settings.rmemoryGatewayApiKey || "";
   const serviceId = settings.rmemoryServiceId || "default";
 
-  return new MemoryClient({
+  const client = new MemoryClient({
     endpoint,
     apiKey,
     serviceId,
     timeout: timeoutMs,
   });
+
+  if (!apiKey.trim()) {
+    return new Proxy(client, {
+      get(target, prop, receiver) {
+        const value = Reflect.get(target, prop, receiver);
+        if (typeof value === "function") {
+          return (...callArgs: unknown[]) =>
+            Promise.reject(new Error(RMEMORY_GATEWAY_KEY_MISSING_ERROR));
+        }
+        return value;
+      },
+    }) as MemoryClient;
+  }
+
+  return client;
 }
 
 export function getRMemorySessionKey(historyPath: string | null): string {

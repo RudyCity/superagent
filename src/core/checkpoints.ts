@@ -286,7 +286,7 @@ export function terminateActiveTasksAndSubagents(workspacePath: string = process
   for (const [id, inst] of subagentInstances.entries()) {
     if (inst.status === "running") {
       try { inst.agent.abort(); } catch {}
-      inst.status = "completed";
+      inst.status = "terminated";
       inst.result = "[Cancelled due to checkpoint restore]";
     }
   }

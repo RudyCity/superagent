@@ -4,47 +4,6 @@ import { contentToString } from "../core/conversation.js";
 import { getToolDescription } from "../core/permissions.js";
 import { formatArgs } from "./text.js";
 
-/**
- * Strip SGR-style mouse escape sequences that may leak into text input
- * when the user clicks on the terminal.
- *
- * Handles:
- *   - SGR format: \x1b[<btn;col;rowM  (or with \x1b stripped by Ink)
- *   - Variable parameter count: [<0;48;30M, [<0;3;18M
- *   - Partial/fragmented at end of string: [<0;48;30 (missing terminator)
- */
-export function stripSgrMouseSequences(value: string): string {
-  return value
-    // Full SGR mouse sequences with or without leading ESC
-    .replace(/(?:\x1b)?\[<\d+(?:;\d+)*[Mm]/g, "")
-    // Partial sequences at end of string (data might be fragmented)
-    .replace(/(?:\x1b)?\[<\d+(?:;\d+)*$/gm, "");
-}
-
-export function getInsertion(oldVal: string, newVal: string): { prefix: string; inserted: string; suffix: string } {
-  let start = 0;
-  while (start < oldVal.length && start < newVal.length && oldVal[start] === newVal[start]) {
-    start++;
-  }
-  let endOld = oldVal.length - 1;
-  let endNew = newVal.length - 1;
-  while (endOld >= start && endNew >= start && oldVal[endOld] === newVal[endNew]) {
-    endOld--;
-    endNew--;
-  }
-  const prefix = oldVal.slice(0, start);
-  const inserted = newVal.slice(start, endNew + 1);
-  const suffix = oldVal.slice(endOld + 1);
-  return { prefix, inserted, suffix };
-}
-
-export function getPasteSplit(currentInput: string, prefixLen: number, suffixLen: number) {
-  const prefix = currentInput.slice(0, Math.min(currentInput.length, prefixLen));
-  const suffix = suffixLen > 0 ? currentInput.slice(Math.max(prefix.length, currentInput.length - suffixLen)) : "";
-  const inserted = currentInput.slice(prefix.length, currentInput.length - suffix.length);
-  return { prefix, inserted, suffix };
-}
-
 export function getLatestSubagentAction(logs: string[], prompt?: string): string {
   if (!logs || logs.length === 0) return prompt ? prompt : "Initializing...";
   for (let i = logs.length - 1; i >= 0; i--) {
@@ -119,27 +78,6 @@ export function getLatestSuperagentAction(logs: string[], task?: string): string
     }
   }
   return task ? task : "Processing...";
-}
-
-export function truncateStreamDisplay(text: string, maxLines: number, width: number): string {
-  const rawLines = text.split("\n");
-  let accumulated = 0;
-  const resultLines: string[] = [];
-
-  for (let i = rawLines.length - 1; i >= 0; i--) {
-    const wrappedCount = Math.max(1, Math.ceil(rawLines[i].length / width));
-    if (accumulated + wrappedCount > maxLines) {
-      if (resultLines.length === 0) {
-        resultLines.unshift(rawLines[i]);
-      } else {
-        resultLines.unshift("... [older output hidden to fit screen] ...");
-      }
-      break;
-    }
-    accumulated += wrappedCount;
-    resultLines.unshift(rawLines[i]);
-  }
-  return resultLines.join("\n");
 }
 
 export function reconstructChatLines(msgs: Message[]): ChatLine[] {

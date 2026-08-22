@@ -120,6 +120,21 @@ function extractSubagentReport(agentInstance: any, subagentId?: string): string 
 }
 
 /**
+ * Resolve the caller-provided subagent timeout to a finite millisecond value.
+ * Honors caller-provided values with a 30s minimum floor and a 24h maximum cap.
+ * Returns undefined for missing/invalid values (no timeout).
+ */
+export const SUBAGENT_TIMEOUT_MIN_MS = 30_000;
+export const SUBAGENT_TIMEOUT_MAX_MS = 24 * 60 * 60 * 1000;
+
+export function resolveSubagentTimeoutMs(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) {
+    return undefined;
+  }
+  return Math.min(Math.max(raw, SUBAGENT_TIMEOUT_MIN_MS), SUBAGENT_TIMEOUT_MAX_MS);
+}
+
+/**
  * Resolve a subagent instance by ID first, then by typeName or role.
  * Returns undefined if no match found.
  */
@@ -199,7 +214,9 @@ export const invokeSubagentTool: Tool = {
       },
       timeoutMs: {
         type: "integer",
-        description: "Timeout in milliseconds for inline execution. If execution exceeds this limit, the subagent is aborted.",
+        description:
+          "Timeout in milliseconds for subagent execution (applies to both inline/wait=true and background modes). " +
+          "When exceeded, the subagent is aborted and marked as errored. Values below 30000 are raised to 30000; values above 86400000 (24h) are capped.",
       },
       inheritContext: {
         type: "boolean",
@@ -550,18 +567,14 @@ export const invokeSubagentTool: Tool = {
     notifySubagentsChanged();
     appendMasterLog(`[INFO] Spawning Subagent "${typeName}" (Role: ${role}) [ID: ${subagentId}]...`);
 
-    let timeoutMs = args.timeoutMs as number | undefined;
-    if (timeoutMs !== undefined && timeoutMs > 0 && timeoutMs < 600000 && process.env.VITEST !== "true") {
-      // Enforce a minimum timeout of 10 minutes to prevent premature timeouts on slow local models/routers
-      timeoutMs = 600000;
-    }
+    const timeoutMs = resolveSubagentTimeoutMs(args.timeoutMs);
     if (wait) {
       try {
-        if (timeoutMs !== undefined && timeoutMs > 0) {
+        if (timeoutMs !== undefined) {
           const timeoutPromise = new Promise<never>((_, reject) => {
             const timer = setTimeout(() => {
               (agentInstance as any).abortController?.abort();
-              reject(new Error(`Timeout: Subagent execution exceeded ${timeoutMs}ms limit.`));
+              reject(new Error(`Subagent timed out after ${timeoutMs}ms`));
             }, timeoutMs);
             timer.unref?.();
           });
@@ -598,7 +611,20 @@ export const invokeSubagentTool: Tool = {
         return `Subagent failed: ${err.message}`;
       }
     } else {
-      agentInstance.sendMessage(prompt).then(() => {
+      let settled = false;
+      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+
+      const clearTimer = () => {
+        if (timeoutTimer !== undefined) {
+          clearTimeout(timeoutTimer);
+          timeoutTimer = undefined;
+        }
+      };
+
+      const finalizeSuccess = () => {
+        if (settled) return;
+        settled = true;
+        clearTimer();
         closeThinkingNode();
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
@@ -608,19 +634,39 @@ export const invokeSubagentTool: Tool = {
         instance.agent = undefined;
         notifySubagentsChanged();
         appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
-      }).catch((err: any) => {
+      };
+
+      const finalizeError = (message: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimer();
         closeThinkingNode();
-        logs.push(`[ERROR] Subagent failed: ${err.message || err}\n`);
+        logs.push(`[ERROR] Subagent failed: ${message}\n`);
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "error";
         instance.completedAt = Date.now();
         runSubagentPromptOptimization(typeName, baseSystemPrompt, prompt, agentInstance).catch(() => {});
         notifySubagentsChanged();
-        appendMasterLog(`[ERROR] Subagent "${typeName}" [ID: ${subagentId}] failed: ${err.message || err}`);
+        appendMasterLog(`[ERROR] Subagent "${typeName}" [ID: ${subagentId}] failed: ${message}`);
         if (instance.agent) {
-          instance.agent.writeToLogFile("SUBAGENT_FAILED", err.message || String(err));
+          instance.agent.writeToLogFile("SUBAGENT_FAILED", message);
         }
         instance.agent = undefined;
+      };
+
+      if (timeoutMs !== undefined) {
+        const limit = timeoutMs;
+        timeoutTimer = setTimeout(() => {
+          try { (agentInstance as any).abortController?.abort(); } catch {}
+          finalizeError(`Subagent timed out after ${limit}ms`);
+        }, timeoutMs);
+        timeoutTimer.unref?.();
+      }
+
+      agentInstance.sendMessage(prompt).then(() => {
+        finalizeSuccess();
+      }).catch((err: any) => {
+        finalizeError(err.message || String(err));
       });
 
       return `Invoked subagent "${typeName}" (Role: ${role}) in background. Conversation ID: ${subagentId}`;

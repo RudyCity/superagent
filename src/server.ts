@@ -551,6 +551,26 @@ function isPortInUse(port: number): Promise<boolean> {
   });
 }
 
+// Best-effort teardown of an idle harvested session: abort any in-flight agent
+// work and kill background processes owned by its workspace before removal.
+async function teardownIdleSession(session: AgentSession): Promise<void> {
+  try {
+    session.agent.abort();
+  } catch {}
+  try {
+    const { backgroundTasks, isTaskInWorkspace } = await import("./core/tools/state.js");
+    const { killProcessTree } = await import("./core/tools/shellTools.js");
+    for (const [id, task] of backgroundTasks.entries()) {
+      if (isTaskInWorkspace(task.cwd, session.workspace)) {
+        try {
+          killProcessTree(task.process.pid);
+        } catch {}
+        backgroundTasks.delete(id);
+      }
+    }
+  } catch {}
+}
+
 export async function runServer(port: number, silent = false, defaultClientMode: ClientMode = "tline") {
   // Override console methods to write server logs to file
   const originalLog = console.log;
@@ -600,7 +620,9 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       if (!session.isCliSession && !session.agent.isAgentRunning()) {
         const lastActive = session.lastActiveTime || now;
         if (now - lastActive > IDLE_TIMEOUT_MS) {
-          activeSessions.delete(key);
+          void teardownIdleSession(session).finally(() => {
+            activeSessions.delete(key);
+          });
         }
       }
     }

@@ -5,6 +5,8 @@ import { getCachedModelIds, getInstalledSkills, getModelPresets, listHistorySess
 import { registry } from "../core/commands/registry.js";
 import { backgroundTasks } from "../core/tools.js";
 
+const DASHBOARD_DISABLED_COMMANDS = new Set(["/goal"]);
+
 const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/internal-hooks": "Manage custom internal hook tools — init, dev, or select active hooks",
   "/ih": "Manage custom internal hook tools — init, dev, or select active hooks",
@@ -33,7 +35,6 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/init": "Run project system audit and setup",
   "/terminal": "Spawn a visible terminal window or run presets",
   "/help": "Show available commands and usage",
-  "/goal": "Activate Goal Mode for long-running overnight tasks",
   "/settings": "Show current rate limit & concurrency settings",
   "/setting-concurrency": "Set LLM concurrency limit (0 or 1)",
   "/setting-rpm": "Set rate limit RPM",
@@ -44,8 +45,6 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-checklist-limit": "Set checklist visible limit",
   "/setting-history-limit": "Set checklist history visible limit",
   "/setting-procs-limit": "Set processes visible limit",
-  "/setting-focus": "Set reasoning focus depth level (alias: /focus)",
-  "/setting-focus-budget": "Set reasoning focus custom budget tokens",
   "/setting-hide-timeline": "Hide or show the timeline lines connecting turns (on or off)",
   "/setting-classifier": "Enable or disable multi-category request classifier (on or off)",
   "/setting-classifier-threshold": "Set classifier heuristic confidence threshold (high, medium, low)",
@@ -122,7 +121,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         })
       ),
       ...skillCommands
-    ];
+    ].filter(name => !DASHBOARD_DISABLED_COMMANDS.has(name.toLowerCase()));
     const parts = query.split(/\s+/);
     const mainCommand = parts[0].toLowerCase();
 
@@ -267,20 +266,6 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       ];
       return filterSuggestions(possibilities, query);
     }
-
-    if (mainCommand === "/setting-focus" || mainCommand === "/focus") {
-      const possibilities = [
-        `${parts[0]} off`,
-        `${parts[0]} low`,
-        `${parts[0]} medium`,
-        `${parts[0]} high`,
-        `${parts[0]} xhigh`,
-        `${parts[0]} max`,
-        `${parts[0]} custom`,
-      ];
-      return filterSuggestions(possibilities, query);
-    }
-
 
     if (mainCommand === "/setting-hide-timeline") {
       const possibilities = [

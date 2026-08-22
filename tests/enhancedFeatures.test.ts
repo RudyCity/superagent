@@ -393,7 +393,7 @@ describe("Superagent Proposed Enhancements Tests", () => {
   });
 
   describe("5. Subagent Timeout Execution", () => {
-    it("should abort subagent execution when timeout limit is exceeded", async () => {
+    it("should abort subagent execution when timeout limit is exceeded (30s minimum floor applied)", async () => {
       const { defineSubagentTool } = await import("../src/core/tools/subagentTools.js");
       await defineSubagentTool.execute({ name: "researcher-timeout", description: "desc", systemPrompt: "system" }, process.cwd());
 
@@ -401,21 +401,23 @@ describe("Superagent Proposed Enhancements Tests", () => {
         return new Promise(() => {});
       });
 
-      const promise = invokeSubagentTool.execute({
-        typeName: "researcher-timeout",
-        role: "researcher",
-        prompt: "do research",
-        mode: "inline",
-        timeoutMs: 1000,
-      }, process.cwd());
+      vi.useFakeTimers();
+      try {
+        const promise = invokeSubagentTool.execute({
+          typeName: "researcher-timeout",
+          role: "researcher",
+          prompt: "do research",
+          mode: "inline",
+          timeoutMs: 1000,
+        }, process.cwd()) as Promise<string>;
 
-      // Wait 1100ms using real timers to allow the subagent 1000ms timeout to fire
-      await new Promise(resolve => setTimeout(resolve, 1100));
-
-      const res = await promise;
-      expect(res).toContain("Timeout: Subagent execution exceeded 1000ms limit.");
-
-      vi.restoreAllMocks();
+        const assertion = expect(promise).resolves.toContain("Subagent timed out after 30000ms");
+        await vi.advanceTimersByTimeAsync(30000);
+        await assertion;
+      } finally {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+      }
     });
   });
 });

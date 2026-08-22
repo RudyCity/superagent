@@ -650,40 +650,6 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(getSettings().rmemoryEmbeddingDimensions).toBe(512);
   });
 
-  it("should configure focus level when running /setting-focus", () => {
-    // Show usage when empty
-    handleSlashCommand("/setting-focus", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-focus");
-
-    // Invalid value
-    handleSlashCommand("/setting-focus invalid", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].type).toBe("error");
-
-    // Valid values
-    handleSlashCommand("/setting-focus medium", mockCtx as any);
-    expect(getSettings().focus).toBe("medium");
-    expect(addedLines[addedLines.length - 1].content).toContain("Focus depth set to: MEDIUM");
-
-    handleSlashCommand("/setting-focus off", mockCtx as any);
-    expect(getSettings().focus).toBe("off");
-    expect(addedLines[addedLines.length - 1].content).toContain("Focus depth set to: OFF");
-  });
-
-  it("should configure focus budget when running /setting-focus-budget", () => {
-    // Show usage when empty
-    handleSlashCommand("/setting-focus-budget", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-focus-budget");
-
-    // Invalid value (less than 1024)
-    handleSlashCommand("/setting-focus-budget 500", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].type).toBe("error");
-
-    // Valid value
-    handleSlashCommand("/setting-focus-budget 8000", mockCtx as any);
-    expect(getSettings().focusBudget).toBe(8000);
-    expect(addedLines[addedLines.length - 1].content).toContain("Focus custom budget set to: 8000 tokens");
-  });
-
   it("should configure max agent loop iterations when running /setting-max-iterations", () => {
     // Show usage when empty
     handleSlashCommand("/setting-max-iterations", mockCtx as any);

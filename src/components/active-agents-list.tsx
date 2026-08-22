@@ -1,48 +1,7 @@
 import React, { memo, useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import { superagentInstances, subagentInstances, backgroundTasks, isTaskInWorkspace } from "../core/tools.js";
-import { getSubagentActionStreams } from "../utils/uiHelpers.js";
-
-function getLatestSubagentAction(logs: string[], prompt?: string): string {
-  if (!logs || logs.length === 0) return prompt ? prompt : "Initializing...";
-  for (let i = logs.length - 1; i >= 0; i--) {
-    const raw = logs[i].replace(/\r/g, "").trim();
-    if (raw) {
-      let clean = raw
-        .replace(/^.*?───\[\s*/, "")
-        .replace(/\s*\]$/, "")
-        .replace(/^[│┌├└─\s]+/, "")
-        .trim();
-      clean = clean.replace(/^Description:\s*/i, "");
-      clean = clean.replace(/^Args:\s*/i, "");
-      if (clean) {
-        return clean;
-      }
-    }
-  }
-  return prompt ? prompt : "Processing...";
-}
-
-function getLatestSuperagentAction(logs: string[], task?: string): string {
-  if (!logs || logs.length === 0) return task ? task : "Initializing...";
-  for (let i = logs.length - 1; i >= 0; i--) {
-    const raw = logs[i].replace(/\r/g, "").trim();
-    if (raw) {
-      let clean = raw
-        .replace(/^\[THINK\]\s*/i, "")
-        .replace(/^\[TOOL:START\]\s*/i, "")
-        .replace(/^\[TOOL:SUCCESS\]\s*/i, "")
-        .replace(/^\[TOOL:FAILED\]\s*/i, "")
-        .replace(/^\[ERROR\]\s*/i, "")
-        .replace(/^[│┌├└─\s]+/, "")
-        .trim();
-      if (clean) {
-        return clean;
-      }
-    }
-  }
-  return task ? task : "Processing...";
-}
+import { getSubagentActionStreams, getLatestSubagentAction, getLatestSuperagentAction } from "../utils/uiHelpers.js";
 
 interface ActiveAgentsListProps {
   focusMode: string;

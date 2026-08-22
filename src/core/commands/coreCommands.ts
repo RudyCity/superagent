@@ -196,8 +196,6 @@ export const helpCommand: SlashCommand = {
         "  /setting-checklist-limit <number> - Set task checklist visible limit",
         "  /setting-history-limit <number> - Set checklist history visible limit",
         "  /setting-procs-limit <number> - Set processes panel visible limit",
-        "  /setting-focus <off|low|medium|high|xhigh|max|custom> - Set reasoning focus depth level (alias: /focus)",
-        "  /setting-focus-budget <number> - Set reasoning focus custom budget tokens",
         "  /setting-classifier <on|off> - Enable or disable multi-category request classifier",
         "  /setting-classifier-threshold <high|medium|low> - Set classifier heuristic confidence threshold",
         "  /setting-rmemory - Configure RMemory settings",

@@ -308,10 +308,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemoryConversationAddTool,
     saveSharedMemoryTool,
     readSharedMemoryTool,
-    defineSubagentTool,
-    invokeSubagentTool,
     sendMessageTool,
-    manageSubagentsTool,
   ],
 
   coder: [
@@ -343,10 +340,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     readSharedMemoryTool,
     unlockFileTool,
     getLockStatsTool,
-    defineSubagentTool,
-    invokeSubagentTool,
     sendMessageTool,
-    manageSubagentsTool,
   ],
 
   reviewer: [
@@ -432,10 +426,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     askQuestionTool,
     getSkillsTool,
     useSkillTool,
-    defineSubagentTool,
-    invokeSubagentTool,
     sendMessageTool,
-    manageSubagentsTool,
   ],
 };
 
@@ -449,8 +440,5 @@ export const defaultSubagentToolset: Tool[] = [
   askQuestionTool,
   getSkillsTool,
   useSkillTool,
-  defineSubagentTool,
-  invokeSubagentTool,
   sendMessageTool,
-  manageSubagentsTool,
 ];

@@ -9,7 +9,7 @@ export interface ConnectedMcpServer {
   client: Client;
   transport: StdioClientTransport;
   tools: string[];
-  status: "connected" | "connecting" | "error";
+  status: "connected" | "connecting" | "error" | "disconnected";
   error?: string;
 }
 
@@ -66,6 +66,21 @@ export async function initMcpServers(): Promise<void> {
       status: "connecting",
     };
     connectedServers.set(serverName, connectionRecord);
+
+    // Detect MCP server death: mark the record disconnected so /mcp list
+    // stops reporting stale "connected" status. No auto-reconnect.
+    const markDisconnected = (detail: string) => {
+      connectionRecord.status = "disconnected";
+      if (detail) {
+        connectionRecord.error = detail;
+      }
+    };
+    transport.onclose = () => {
+      markDisconnected("MCP server process exited.");
+    };
+    transport.onerror = (error: Error) => {
+      markDisconnected(error.message || String(error));
+    };
 
     // Accumulate piped stderr from the MCP subprocess (installation logs, boot messages, etc.)
     // so it is available for error reporting without leaking to the Superagent terminal.

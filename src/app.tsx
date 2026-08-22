@@ -272,7 +272,6 @@ export function App({
       setContextLimit(256000);
     }
   }, [activeModel]);
-  const [activeFocus, setActiveFocus] = useState(() => getSettings().focus || "off");
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
   const [completedHistory, setCompletedHistory] = useState<{ status: string; text: string; remainingSeconds?: number }[]>([]);
   const [rawCompletedHistory, setRawCompletedHistory] = useState<{ status: string; text: string }[]>([]);
@@ -878,7 +877,6 @@ export function App({
           setPlanState,
           setContextLimit,
           setActiveModel,
-          setFocusLevel: setActiveFocus,
           setInputHistory: setHistory,
           clearLines: () => {
             setLines([]);
@@ -1327,19 +1325,6 @@ export function App({
           `${mainCommand} status`
         ];
         return filterSuggestions(sshSuggestions, currentInput);
-      }
-
-      if (mainCommand === "/setting-focus" || mainCommand === "/focus") {
-        const focusSuggestions = [
-          `${parts[0]} off`,
-          `${parts[0]} low`,
-          `${parts[0]} medium`,
-          `${parts[0]} high`,
-          `${parts[0]} xhigh`,
-          `${parts[0]} max`,
-          `${parts[0]} custom`,
-        ];
-        return filterSuggestions(focusSuggestions, currentInput);
       }
 
       return [];
@@ -3053,7 +3038,6 @@ export function App({
         rmemoryStatus={rmemoryStatus}
         activeDevHook={activeDevHook}
         workspace={workspacePath}
-        focus={activeFocus}
         isProcessing={isProcessing}
         activeChainName={activeChain?.name || null}
         activeChainNodeCount={activeChain?.nodes.length}

@@ -200,8 +200,6 @@ export const settingsCommand: SlashCommand = {
         `│ • Checklist Limit    : ${s.maxChecklistVisible} items`,
         `│ • History Limit      : ${s.maxHistoryVisible} items`,
         `│ • Processes Limit    : ${s.maxProcsVisible} items`,
-        `│ • Focus Level (Depth): ${s.focus?.toUpperCase() ?? "OFF"}`,
-        `│ • Focus Custom Budget: ${s.focusBudget} tokens`,
         `│ • Force Prompt Tools : ${s.forcePromptBasedToolCalling ? "ENABLED" : "DISABLED"}`,
         `│ • Hide Timeline Line : ${s.hideTimeline ? "ENABLED" : "DISABLED"}`,
         `│ • Request Classifier : ${s.classifierEnabled !== false ? "ENABLED" : "DISABLED"}`,
@@ -231,8 +229,6 @@ export const settingsCommand: SlashCommand = {
         "  /setting-checklist-limit <number>",
         "  /setting-history-limit <number>",
         "  /setting-procs-limit <number>",
-        "  /setting-focus <off|low|medium|high|xhigh|max|custom>",
-        "  /setting-focus-budget <number>",
         "  /setting-force-prompt-tools <on|off>",
         "  /setting-hide-timeline <on|off>",
         "  /setting-advisor <on|off>",
@@ -813,92 +809,6 @@ export const settingRmemoryCommand: SlashCommand = {
   }
 };
 
-// /setting-focus command
-export const settingFocusCommand: SlashCommand = {
-  name: "setting-focus",
-  aliases: ["focus"],
-  description: "Set reasoning focus depth level",
-  execute(args, ctx) {
-    const val = args.trim().toLowerCase();
-    const now = Date.now();
-    const validLevels = ["off", "low", "medium", "high", "xhigh", "max", "custom"];
-    if (!val) {
-      ctx.addLine({
-        type: "system",
-        content: `Usage: /setting-focus <off|low|medium|high|xhigh|max|custom>\nCurrent value: ${getSettings().focus?.toUpperCase() ?? "OFF"}`,
-        timestamp: now,
-      });
-      return;
-    }
-    if (!validLevels.includes(val)) {
-      ctx.addLine({
-        type: "error",
-        content: `Invalid value. Must be one of: ${validLevels.join(", ")}`,
-        timestamp: now,
-      });
-      return;
-    }
-    try {
-      updateSettings({ focus: val as any });
-      if (ctx.setFocusLevel) {
-        ctx.setFocusLevel(val);
-      }
-      ctx.addLine({
-        type: "system",
-        content: `✓ Focus depth set to: ${val.toUpperCase()}`,
-        timestamp: now,
-      });
-    } catch (err: any) {
-      ctx.addLine({
-        type: "error",
-        content: `Failed to save setting: ${err.message}`,
-        timestamp: now,
-      });
-    }
-  }
-};
-
-// /setting-focus-budget command
-export const settingFocusBudgetCommand: SlashCommand = {
-  name: "setting-focus-budget",
-  description: "Set reasoning focus custom budget tokens",
-  execute(args, ctx) {
-    const val = args.trim();
-    const now = Date.now();
-    if (!val) {
-      ctx.addLine({
-        type: "system",
-        content: `Usage: /setting-focus-budget <number>\nCurrent value: ${getSettings().focusBudget} tokens`,
-        timestamp: now,
-      });
-      return;
-    }
-    const num = parseInt(val, 10);
-    if (isNaN(num) || num < 1024) {
-      ctx.addLine({
-        type: "error",
-        content: "Invalid value. Must be an integer >= 1024 (Anthropic minimum budget).",
-        timestamp: now,
-      });
-      return;
-    }
-    try {
-      updateSettings({ focusBudget: num });
-      ctx.addLine({
-        type: "system",
-        content: `✓ Focus custom budget set to: ${num} tokens`,
-        timestamp: now,
-      });
-    } catch (err: any) {
-      ctx.addLine({
-        type: "error",
-        content: `Failed to save setting: ${err.message}`,
-        timestamp: now,
-      });
-    }
-  }
-};
-
 // /setting-force-prompt-tools command
 export const settingForcePromptToolsCommand: SlashCommand = {
   name: "setting-force-prompt-tools",
@@ -1193,8 +1103,6 @@ registry.register(settingChecklistLimitCommand);
 registry.register(settingHistoryLimitCommand);
 registry.register(settingProcsLimitCommand);
 registry.register(settingRmemoryCommand);
-registry.register(settingFocusCommand);
-registry.register(settingFocusBudgetCommand);
 registry.register(settingForcePromptToolsCommand);
 registry.register(settingHideTimelineCommand);
 registry.register(settingClassifierCommand);

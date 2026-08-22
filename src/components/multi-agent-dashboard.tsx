@@ -61,6 +61,7 @@ import {
   updatePasteState,
   getActiveCommandContext
 } from "../utils/text.js";
+import { getLatestSubagentAction, getLatestSuperagentAction } from "../utils/uiHelpers.js";
 import { WizardDialog } from "./wizard-dialog.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint } from "../core/checkpoints.js";
@@ -1586,43 +1587,3 @@ export function MultiAgentDashboard({
   );
 }
 
-function getLatestSubagentAction(logs: string[], prompt?: string): string {
-  if (!logs || logs.length === 0) return prompt ? prompt : "Initializing...";
-  for (let i = logs.length - 1; i >= 0; i--) {
-    const raw = logs[i].trim();
-    if (raw) {
-      let clean = raw
-        .replace(/^.*?───\[\s*/, "")
-        .replace(/\s*\]$/, "")
-        .replace(/^[│┌├└─\s]+/, "")
-        .trim();
-      clean = clean.replace(/^Description:\s*/i, "");
-      clean = clean.replace(/^Args:\s*/i, "");
-      if (clean) {
-        return clean;
-      }
-    }
-  }
-  return prompt ? prompt : "Processing...";
-}
-
-function getLatestSuperagentAction(logs: string[], task?: string): string {
-  if (!logs || logs.length === 0) return task ? task : "Initializing...";
-  for (let i = logs.length - 1; i >= 0; i--) {
-    const raw = logs[i].replace(/\r/g, "").trim();
-    if (raw) {
-      let clean = raw
-        .replace(/^\[THINK\]\s*/i, "")
-        .replace(/^\[TOOL:START\]\s*/i, "")
-        .replace(/^\[TOOL:SUCCESS\]\s*/i, "")
-        .replace(/^\[TOOL:FAILED\]\s*/i, "")
-        .replace(/^\[ERROR\]\s*/i, "")
-        .replace(/^[│┌├└─\s]+/, "")
-        .trim();
-      if (clean) {
-        return clean;
-      }
-    }
-  }
-  return task ? task : "Processing...";
-}

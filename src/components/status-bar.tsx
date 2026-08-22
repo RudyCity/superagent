@@ -20,7 +20,6 @@ export interface StatusBarProps {
   rmemoryStatus?: "online" | "offline" | "checking" | "disabled";
   activeDevHook?: string | null;
   workspace?: string;
-  focus?: string;
   isProcessing?: boolean;
   activeChainName?: string | null;
   activeChainNodeCount?: number;
