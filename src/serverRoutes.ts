@@ -44,6 +44,8 @@ import { subagentInstances, superagentInstances, backgroundTasks } from "./core/
 import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/config/browserMacros.js";
 import { getRMemoryClient, isRmemoryActive } from "./core/rmemoryUtil.js";
 import { getRootConfigDir } from "./core/config/paths.js";
+import { buildCorsHeaders, isPathInsideOrEqual } from "./core/utils/serverSecurity.js";
+import { maskApiKey, isMaskedApiKey } from "./core/config.js";
 
 export async function handleServerRoute(
   req: http.IncomingMessage,
@@ -63,7 +65,7 @@ export async function handleServerRoute(
     pendingQuestions: Map<string, (answer: any) => void>;
     pendingBrowserControls: Map<string, { resolve: (val: string) => void; reject: (err: any) => void }>;
     resolveSession: (req: http.IncomingMessage, sessionId?: string) => any;
-    resolveWorkspacePath: (req: http.IncomingMessage) => string;
+    resolveWorkspacePath: (req: http.IncomingMessage) => string | null;
     resolveClientMode: (req: http.IncomingMessage, body?: any, defaultMode?: any) => any;
     createAgentForMode: (targetWorkspace: string, targetMode: "single" | "multi", targetClientMode: any) => Promise<Agent>;
     broadcastEvent: (event: any) => void;
@@ -100,7 +102,7 @@ export async function handleServerRoute(
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
+      ...buildCorsHeaders(req),
     });
     try { (res.socket as any)?.setNoDelay(true); } catch {}
     sseClients.add(res);
@@ -255,7 +257,7 @@ export async function handleServerRoute(
 
   // Get list of previous history sessions
   if (pathname === "/api/history/sessions" && req.method === "GET") {
-    const workspacePath = resolveWorkspacePath(req) || parsedUrl.searchParams.get("workspace") || undefined;
+    const workspacePath = resolveWorkspacePath(req) || lastActiveWorkspace || parsedUrl.searchParams.get("workspace") || undefined;
     const queryMode = parsedUrl.searchParams.get("mode") || "all";
     const crossSession = parsedUrl.searchParams.get("crossSession") === "true";
     const limitParam = parsedUrl.searchParams.get("limit");
@@ -279,7 +281,7 @@ export async function handleServerRoute(
   // Search history messages via FTS5 / LIKE search
   if (pathname === "/api/history/search" && req.method === "GET") {
     const query = parsedUrl.searchParams.get("q") || parsedUrl.searchParams.get("query") || "";
-    const workspacePath = resolveWorkspacePath(req) || parsedUrl.searchParams.get("workspace") || undefined;
+    const workspacePath = resolveWorkspacePath(req) || lastActiveWorkspace || parsedUrl.searchParams.get("workspace") || undefined;
     const limitParam = parsedUrl.searchParams.get("limit");
     const limit = limitParam ? parseInt(limitParam, 10) : 50;
 
@@ -348,7 +350,7 @@ export async function handleServerRoute(
         sendJSON(res, 400, { error: "Session metadata with id is required" });
         return true;
       }
-      const workspacePath = resolveWorkspacePath(req);
+      const workspacePath = resolveWorkspacePath(req) || lastActiveWorkspace;
       const sessionId = session.id;
       
       const { saveSessionToDb, loadSessionFromDb, clearHistoryCache } = await import("./core/config.js");
@@ -511,8 +513,14 @@ export async function handleServerRoute(
     const agent = await createAgentForMode(targetWorkspace, targetMode, targetClientMode);
     agent.sessionId = sessionId;
 
+    let resumeWarning: string | undefined;
     if (resume) {
-      try { await agent.loadHistory(resume); } catch {}
+      try {
+        await agent.loadHistory(resume);
+      } catch (err: any) {
+        resumeWarning = `Failed to restore history for session '${resume}': ${err?.message || String(err)}. Session starts with empty context.`;
+        console.warn(`[WARN] ${resumeWarning}`);
+      }
     }
 
     activeSessions.set(sessionKey, {
@@ -531,7 +539,8 @@ export async function handleServerRoute(
       sessionId,
       workspace: targetWorkspace,
       mode: targetMode,
-      clientMode: targetClientMode
+      clientMode: targetClientMode,
+      ...(resumeWarning ? { warning: resumeWarning } : {})
     });
 
     if (initialPrompt && initialPrompt.trim()) {
@@ -756,7 +765,7 @@ export async function handleServerRoute(
         if (typeof result === "string" && result.startsWith("data:image/png;base64,")) {
           try {
             const base64Data = result.replace(/^data:image\/png;base64,/, "");
-            const wsPath = resolveWorkspacePath(req);
+            const wsPath = resolveWorkspacePath(req) || lastActiveWorkspace;
             const outputPath = path.join(wsPath, "chrome_screenshot.png");
             fs.writeFileSync(outputPath, base64Data, "base64");
             resolver.resolve(`Screenshot saved to workspace at: ${outputPath}`);
@@ -799,7 +808,7 @@ export async function handleServerRoute(
         fs.writeFileSync(screenshotPath, screenshotBase64, "base64");
       } else {
         const match = screenshotResult.match(/Screenshot saved to workspace at: (.+)/);
-        screenshotPath = match ? match[1].trim() : path.join(wsPath, "chrome_screenshot.png");
+            screenshotPath = match ? match[1].trim() : path.join(wsPath || lastActiveWorkspace, "chrome_screenshot.png");
       }
       
       const response = await fetch("http://127.0.0.1:8095/detect", {
@@ -1003,7 +1012,7 @@ export async function handleServerRoute(
       return true;
     }
     const fullPath = path.resolve(wsPath, filepath);
-    if (!fullPath.startsWith(path.resolve(wsPath))) {
+    if (!isPathInsideOrEqual(wsPath, fullPath)) {
       sendJSON(res, 403, { error: "Access denied (path traversal)" });
       return true;
     }
@@ -1037,7 +1046,7 @@ export async function handleServerRoute(
     let fullPath = filepath;
     if (!path.isAbsolute(filepath)) fullPath = path.resolve(wsPath, filepath);
 
-    if (!fullPath.startsWith(path.resolve(wsPath))) {
+    if (!isPathInsideOrEqual(wsPath, fullPath)) {
       sendJSON(res, 403, { error: "Access denied (outside workspace)" });
       return true;
     }
@@ -1349,7 +1358,7 @@ export async function handleServerRoute(
     sendJSON(res, 200, {
       settings,
       superagentVersion: getSuperAgentVersion(),
-      providers: config.providers,    // ALL providers, not filtered by apiKey
+      providers: (config.providers || []).map((p: any) => ({ ...p, apiKey: maskApiKey(p.apiKey) })),    // ALL providers with masked keys
       presets: { single: singlePresets, multi: multiPresets },
       activePresetId: { single: activeSinglePresetId, multi: activeMultiPresetId },
       activeProviderProfileId: deriveActiveProviderId(),
@@ -1494,17 +1503,23 @@ export async function handleServerRoute(
         sendJSON(res, 400, { error: "provider.id and provider.name are required" });
         return true;
       }
+      let apiKey = (provider.apiKey || "").trim();
+      if (apiKey && isMaskedApiKey(apiKey)) {
+        // Client echoed a masked key back — preserve the stored real key
+        const existing = (loadModelConfig().providers || []).find((p: any) => p.id === provider.id);
+        apiKey = existing?.apiKey || "";
+      }
       addProvider({
         id: provider.id,
         name: provider.name,
         provider: provider.type || provider.provider || "openai",
-        apiKey: provider.apiKey || "",
+        apiKey,
         baseUrl: provider.baseUrl || ""
       });
       const config = loadModelConfig();
       sendJSON(res, 200, {
         success: true,
-        providers: config.providers,
+        providers: (config.providers || []).map((p: any) => ({ ...p, apiKey: maskApiKey(p.apiKey) })),
         activeProviderProfileId: deriveActiveProviderId()
       });
     } catch (err: any) {
@@ -1525,7 +1540,7 @@ export async function handleServerRoute(
       const config = loadModelConfig();
       sendJSON(res, 200, {
         success: true,
-        providers: config.providers,
+        providers: (config.providers || []).map((p: any) => ({ ...p, apiKey: maskApiKey(p.apiKey) })),
         activeProviderProfileId: (config as any).activeProviderProfileId || ""
       });
     } catch (err: any) {
@@ -1897,7 +1912,7 @@ export async function handleServerRoute(
   // --- Workspace Chain Endpoints ---
   if (pathname === "/api/workspace/chains" && req.method === "GET") {
     try {
-      const workspace = resolveWorkspacePath(req);
+      const workspace = resolveWorkspacePath(req) || lastActiveWorkspace;
       const { getWorkspaceChains } = await import("./core/workspace/WorkspaceChainConfig.js");
       const filterStr = parsedUrl.searchParams.get("filter");
       const filterByWorkspace = filterStr !== "false";
@@ -1911,7 +1926,7 @@ export async function handleServerRoute(
 
   if (pathname === "/api/workspace/chains/active" && req.method === "GET") {
     try {
-      const workspace = resolveWorkspacePath(req);
+      const workspace = resolveWorkspacePath(req) || lastActiveWorkspace;
       const { getActiveChainId, getWorkspaceChains } = await import("./core/workspace/WorkspaceChainConfig.js");
       const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
       const matchingChains = getWorkspaceChains(workspace, true);
@@ -1953,7 +1968,7 @@ export async function handleServerRoute(
 
   if (pathname === "/api/workspace/chains/active" && req.method === "POST") {
     try {
-      const workspace = resolveWorkspacePath(req);
+      const workspace = resolveWorkspacePath(req) || lastActiveWorkspace;
       const bodyStr = await readBody(req);
       const { chainId } = JSON.parse(bodyStr || "{}");
       const { setActiveChainId } = await import("./core/workspace/WorkspaceChainConfig.js");

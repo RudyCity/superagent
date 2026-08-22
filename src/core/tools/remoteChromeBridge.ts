@@ -148,7 +148,16 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
 
   return new Promise((resolve) => {
     try {
-      const server = new WebSocketServer({ port, host: "0.0.0.0" });
+      const server = new WebSocketServer({
+        port,
+        host: "127.0.0.1",
+        verifyClient: (info: { origin?: string }) => {
+          // Browser drive-by protection: only Chrome extensions may connect with an Origin header.
+          const origin = info.origin || "";
+          if (!origin) return true;
+          return origin.startsWith("chrome-extension://");
+        }
+      });
       wss = server;
       activeServers.set(port, server);
 
@@ -163,7 +172,11 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
 
       server.on("connection", (ws: WebSocket) => {
         connectedClients.add(ws);
-        activeClient = ws;
+        if (!activeClient || activeClient.readyState !== WebSocket.OPEN) {
+          activeClient = ws;
+        } else {
+          logBridgeEvent("Rejected extra client — active client already connected.");
+        }
         clientMetadataMap.set(ws, { connectedAt: Date.now(), commandCount: 0 });
         if (!browserControlHandler || browserControlHandler === sendRemoteCommand) {
           setBrowserControlHandler(sendRemoteCommand);

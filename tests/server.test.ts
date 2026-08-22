@@ -29,7 +29,9 @@ import {
   sharedPort,
   setSharedPort,
   apiUrl,
+  authHeaders,
 } from "./serverTestHelper.js";
+import { ensureServerAuthToken } from "../src/core/utils/serverSecurity.js";
 
 // ─── Server lifecycle ─────────────────────────────────────────────────────────
 let port: number;
@@ -63,9 +65,50 @@ describe("OPTIONS — CORS preflight", () => {
   it("returns 204 with CORS headers", async () => {
     const r = await optionsReq(port, "/api/status");
     expect(r.status).toBe(204);
-    expect(r.headers.get("access-control-allow-origin")).toBe("*");
+    expect(r.headers.get("access-control-allow-origin")).toBeNull();
     expect(r.headers.get("access-control-allow-methods")).toContain("GET");
     expect(r.headers.get("access-control-allow-methods")).toContain("POST");
+  });
+
+  it("echoes localhost origins and includes x-auth-token in allowed headers", async () => {
+    const res = await fetch(apiUrl(port, "/api/status"), {
+      method: "OPTIONS",
+      headers: { Origin: "http://localhost:3000", "Access-Control-Request-Headers": "x-auth-token" },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:3000");
+    expect(res.headers.get("access-control-allow-headers")).toContain("x-auth-token");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Auth token enforcement
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("Auth token enforcement", () => {
+  it("returns 401 Unauthorized without a token", async () => {
+    const res = await fetch(apiUrl(port, "/api/status"));
+    expect(res.status).toBe(401);
+    const body = await res.json() as any;
+    expect(body.error).toBe("Unauthorized");
+  });
+
+  it("returns 401 for an invalid token", async () => {
+    const res = await fetch(apiUrl(port, "/api/status"), {
+      headers: { Authorization: "Bearer wrong-token" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("accepts a valid Bearer token", async () => {
+    const res = await fetch(apiUrl(port, "/api/status"), {
+      headers: { Authorization: `Bearer ${ensureServerAuthToken()}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("accepts a valid ?token= query parameter", async () => {
+    const res = await fetch(apiUrl(port, `/api/status?token=${ensureServerAuthToken()}`));
+    expect(res.status).toBe(200);
   });
 });
 
@@ -82,17 +125,26 @@ describe("GET /api/status", () => {
 
   it("returns workspace from x-workspace-path header", async () => {
     const { body } = await getJSON(port, "/api/status", {
-      "x-workspace-path": testWorkspace,
+      "x-workspace-path": process.cwd(),
     });
-    expect(body.workspace).toBe(path.resolve(testWorkspace));
+    expect(body.workspace).toBe(path.resolve(process.cwd()));
   });
 
   it("returns workspace from ?workspace query param", async () => {
     const { body } = await getJSON(
       port,
-      `/api/status?workspace=${encodeURIComponent(testWorkspace)}`
+      `/api/status?workspace=${encodeURIComponent(process.cwd())}`
     );
-    expect(body.workspace).toBe(path.resolve(testWorkspace));
+    expect(body.workspace).toBe(path.resolve(process.cwd()));
+  });
+
+  it("rejects a client-supplied workspace outside registered roots with 403", async () => {
+    const res = await fetch(apiUrl(port, "/api/status"), {
+      headers: authHeaders({ "x-workspace-path": path.join(os.tmpdir(), "never-registered-ws") }),
+    });
+    expect(res.status).toBe(403);
+    const body = await res.json() as any;
+    expect(body.error).toBe("Forbidden workspace");
   });
 });
 
@@ -114,7 +166,7 @@ describe("GET /api/workspaces", () => {
 describe("GET /api/history", () => {
   it("returns empty messages when no session exists", async () => {
     const { status, body } = await getJSON(port, "/api/history", {
-      "x-workspace-path": testWorkspace,
+      "x-workspace-path": process.cwd(),
     });
     expect(status).toBe(200);
     expect(body.success).toBe(true);
@@ -129,7 +181,7 @@ describe("GET /api/history", () => {
 describe("GET /api/history/sessions", () => {
   it("returns sessions array for a workspace path", async () => {
     const { status, body } = await getJSON(port, "/api/history/sessions", {
-      "x-workspace-path": testWorkspace,
+      "x-workspace-path": process.cwd(),
     });
     expect(status).toBe(200);
     expect(body.success).toBe(true);
@@ -146,7 +198,7 @@ describe("GET /api/history/sessions", () => {
   it("accepts ?mode=multi query param", async () => {
     const { status, body } = await getJSON(
       port,
-      `/api/history/sessions?mode=multi&workspace=${encodeURIComponent(testWorkspace)}`
+      `/api/history/sessions?mode=multi&workspace=${encodeURIComponent(process.cwd())}`
     );
     expect(status).toBe(200);
     expect(body.success).toBe(true);
@@ -160,7 +212,7 @@ describe("DELETE /api/history/session/:id", () => {
   it("returns 200 for a non-existent session (silently succeeds)", async () => {
     const res = await fetch(
       apiUrl(port, `/api/history/session/${encodeURIComponent("nonexistent-session-id")}`),
-      { method: "DELETE" }
+      { method: "DELETE", headers: authHeaders() }
     );
     const body = await res.json() as any;
     expect([200, 500]).toContain(res.status);
@@ -168,7 +220,7 @@ describe("DELETE /api/history/session/:id", () => {
   });
 
   it("returns 404 when session path is missing (empty segment)", async () => {
-    const res = await fetch(apiUrl(port, "/api/history/session/"), { method: "DELETE" });
+    const res = await fetch(apiUrl(port, "/api/history/session/"), { method: "DELETE", headers: authHeaders() });
     expect([400, 404]).toContain(res.status);
   });
 
@@ -184,7 +236,7 @@ describe("DELETE /api/history/session/:id", () => {
 
       const res = await fetch(
         apiUrl(port, `/api/history/session/${encodeURIComponent(sid)}`),
-        { method: "DELETE" }
+        { method: "DELETE", headers: authHeaders() }
       );
       const delBody = await res.json() as any;
       expect(delBody.success).toBe(true);
@@ -211,7 +263,7 @@ describe("GET /api/input-history", () => {
 
   it("returns history array for known workspace", async () => {
     const { status, body } = await getJSON(port, "/api/input-history", {
-      "x-workspace-path": testWorkspace,
+      "x-workspace-path": process.cwd(),
     });
     expect(status).toBe(200);
     expect(body.success).toBe(true);
@@ -223,6 +275,11 @@ describe("GET /api/input-history", () => {
 // POST /api/input-history
 // ═══════════════════════════════════════════════════════════════════════════════
 describe("POST /api/input-history", () => {
+  beforeAll(async () => {
+    // Register testWorkspace as a valid root before sending it via headers
+    await postJSON(port, "/api/init", { workspace: testWorkspace, mode: "single" });
+  }, 15000);
+
   it("falls back to lastActiveWorkspace when no explicit workspace given", async () => {
     const { status } = await postJSON(port, "/api/input-history", { command: "ls" });
     expect([200, 500]).toContain(status);
@@ -389,8 +446,8 @@ describe("POST /api/chat", () => {
       { message: "hello" },
       { "x-workspace-path": unknownWs }
     );
-    expect(status).toBe(400);
-    expect(body.error).toBe("Session not initialized");
+    expect([400, 403]).toContain(status);
+    expect(body.error).toBeDefined();
   });
 
   it("returns 400 when message is empty", async () => {
@@ -476,8 +533,8 @@ describe("POST /api/plan/approve", () => {
       { action: "approve" },
       { "x-workspace-path": unknownWs }
     );
-    expect(status).toBe(400);
-    expect(body.error).toBe("Session not initialized");
+    expect([400, 403]).toContain(status);
+    expect(body.error).toBeDefined();
   });
 
   it("returns 400 for invalid action", async () => {

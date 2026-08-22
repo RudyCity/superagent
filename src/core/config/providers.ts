@@ -149,6 +149,25 @@ export function getResolvedModelWithProvider(rawVal: string, isDefault: boolean,
 }
 
 /**
+ * Mask an API key for safe display over the HTTP API.
+ * Produces a stable, detectable sentinel (e.g. "sk-abcd...wxyz") so clients
+ * round-tripping config edits never overwrite real keys with masked values.
+ */
+export function maskApiKey(apiKey: string | null | undefined): string {
+  if (!apiKey) return "";
+  return apiKey.length > 8 ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "*".repeat(apiKey.length);
+}
+
+/**
+ * Detect whether a value is an already-masked API key produced by maskApiKey().
+ */
+export function isMaskedApiKey(value: string | null | undefined): boolean {
+  if (!value) return false;
+  if (/^\*+$/.test(value)) return true;
+  return /^[A-Za-z0-9_-]{1,6}\.\.\.[A-Za-z0-9_-]{4}$/.test(value) && value.includes("...");
+}
+
+/**
  * Format provider list for wizard profile picker (with masked API key + [Active]).
  */
 export function formatProviderForPicker(list: ConfiguredProvider[]): string[] {

@@ -372,7 +372,7 @@ describe("GET /api/git/changes", () => {
 
   it("returns changes array for a workspace path", async () => {
     const { status, body } = await getJSON(port, "/api/git/changes", {
-      "x-workspace-path": testWorkspace,
+      "x-workspace-path": process.cwd(),
     });
     expect(status).toBe(200);
     expect(body.success).toBe(true);

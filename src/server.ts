@@ -14,6 +14,7 @@ import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/c
 import { execSync } from "child_process";
 import { handleServerRoute } from "./serverRoutes.js";
 import { lockEventEmitter } from "./core/storage/sharedMemory.js";
+import { buildCorsHeaders, ensureServerAuthToken, isRequestAuthorized, isPathInsideOrEqual } from "./core/utils/serverSecurity.js";
 
 // Forward lock events to connected t-line desktop clients
 lockEventEmitter.on("tline_bridge_sync", (syncPayload) => {
@@ -194,13 +195,42 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
   return null;
 }
 
-function resolveWorkspacePath(req: http.IncomingMessage): string {
+function isRemoteWorkspaceTarget(p: string): boolean {
+  return p.startsWith("ssh:") || p.startsWith("ssh://") || p.startsWith("chain:");
+}
+
+function getValidWorkspaceRoots(): string[] {
+  const roots = new Set<string>([path.resolve(process.cwd())]);
+  const candidates: string[] = [lastActiveWorkspace];
+  for (const session of activeSessions.values()) {
+    candidates.push(session.workspace);
+    const agentWs = (session.agent as any)?.workingDirectory;
+    if (typeof agentWs === "string") candidates.push(agentWs);
+  }
+  for (const c of candidates) {
+    if (c && !isRemoteWorkspaceTarget(c)) {
+      roots.add(path.resolve(c));
+    }
+  }
+  return Array.from(roots);
+}
+
+export function resolveWorkspacePath(req: http.IncomingMessage): string | null {
   const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
   const headerWs = req.headers["x-workspace-path"] as string;
   const paramWs = parsedUrl.searchParams.get("workspace");
-  if (headerWs) return (headerWs.startsWith("ssh:") || headerWs.startsWith("ssh://") || headerWs.startsWith("chain:")) ? headerWs : path.resolve(headerWs);
-  if (paramWs) return (paramWs.startsWith("ssh:") || paramWs.startsWith("ssh://") || paramWs.startsWith("chain:")) ? paramWs : path.resolve(paramWs);
-  
+  const supplied = headerWs || paramWs;
+  if (supplied) {
+    if (isRemoteWorkspaceTarget(supplied)) return supplied;
+    const resolved = path.resolve(supplied);
+    const validRoots = getValidWorkspaceRoots();
+    if (!validRoots.some((root) => isPathInsideOrEqual(root, resolved))) {
+      logToSuperAgentServerFile(`[Security] Rejected workspace path outside registered roots: ${resolved}`);
+      return null;
+    }
+    return resolved;
+  }
+
   const session = resolveSession(req);
   return session ? session.workspace : lastActiveWorkspace;
 }
@@ -339,9 +369,7 @@ function sendJSON(res: http.ServerResponse, status: number, data: any) {
   logToSuperAgentServerFile(`[Response] Status: ${status}`);
   res.writeHead(status, {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-workspace-path",
+    ...buildCorsHeaders(res.req),
   });
   res.end(JSON.stringify(data));
 }
@@ -545,6 +573,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   };
 
   logToSuperAgentServerFile(`Initializing SuperAgent Server on port ${port}...`);
+  const serverAuthToken = ensureServerAuthToken();
 
   const inUse = await isPortInUse(port);
   if (inUse) {
@@ -579,20 +608,35 @@ export async function runServer(port: number, silent = false, defaultClientMode:
 
   // Start the Python Vision Server in the background
 
-  try {
-    const { execa } = await import("execa");
-    const scriptPath = path.join(getPackageRootDir(), "scripts", "vision_server.py");
-    visionServerProcess = execa("python", [scriptPath, "8095"]);
-    if (!silent) {
-      console.log("🚀 Starting Python UI-DETR-1 Vision Server on port 8095...");
-    }
-    
-    visionServerProcess.catch((err: any) => {
+  if (process.env.VITEST || process.env.NODE_ENV === "test") {
+    const cleanup = () => {
+      clearInterval(harvestTimer);
+      try {
+        closeHistoryDb();
+      } catch {}
+    };
+    process.on("exit", cleanup);
+    process.on("SIGINT", () => { cleanup(); process.exit(0); });
+    process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+  } else {
+    try {
+      const { execa } = await import("execa");
+      const scriptPath = path.join(getPackageRootDir(), "scripts", "vision_server.py");
+      visionServerProcess = execa("python", [scriptPath, "8095"]);
       if (!silent) {
-        console.error("[Vision Server Process Terminated/Failed]", err.message);
+        console.log("🚀 Starting Python UI-DETR-1 Vision Server on port 8095...");
       }
-    });
 
+      visionServerProcess.catch((err: any) => {
+        if (!silent) {
+          console.error("[Vision Server Process Terminated/Failed]", err.message);
+        }
+      });
+    } catch (err: any) {
+      if (!silent) {
+        console.error("Failed to spawn Python Vision Server:", err.message);
+      }
+    }
     const cleanup = () => {
       clearInterval(harvestTimer);
       killVisionServerProcess();
@@ -603,10 +647,6 @@ export async function runServer(port: number, silent = false, defaultClientMode:
     process.on("exit", cleanup);
     process.on("SIGINT", () => { cleanup(); process.exit(0); });
     process.on("SIGTERM", () => { cleanup(); process.exit(0); });
-  } catch (err: any) {
-    if (!silent) {
-      console.error("Failed to spawn Python Vision Server:", err.message);
-    }
   }
   const server = http.createServer(async (req, res) => {
     const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
@@ -614,8 +654,24 @@ export async function runServer(port: number, silent = false, defaultClientMode:
 
     logToSuperAgentServerFile(`[Request] ${req.method} ${req.url} (Workspace: ${req.headers["x-workspace-path"] || "none"})`);
 
+    // Auth gate for the HTTP API (OPTIONS preflight passes through)
+    const isApiRoute = pathname === "/api" || pathname.startsWith("/api/");
+    if (isApiRoute && req.method === "OPTIONS") {
+      res.writeHead(204, buildCorsHeaders(req));
+      res.end();
+      return;
+    }
+    if (isApiRoute && !isRequestAuthorized(req, parsedUrl)) {
+      sendJSON(res, 401, { error: "Unauthorized" });
+      return;
+    }
+
     // Dynamically configure workspace mode based on the request's workspace path
     const targetWorkspace = resolveWorkspacePath(req);
+    if (targetWorkspace === null) {
+      sendJSON(res, 403, { error: "Forbidden workspace" });
+      return;
+    }
     if (targetWorkspace) {
       try {
         const { workspaceMode } = await import("./core/ssh/workspaceMode.js");
@@ -641,13 +697,9 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       }
     }
 
-    // CORS preflight
+    // CORS preflight for non-API routes (none mutate state today)
     if (req.method === "OPTIONS") {
-      res.writeHead(204, {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-workspace-path",
-      });
+      res.writeHead(204, buildCorsHeaders(req));
       res.end();
       return;
     }
@@ -694,11 +746,14 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   });
 
   server.listen(port, '127.0.0.1', () => {
+    logToSuperAgentServerFile(`[SERVER] Auth token: ${serverAuthToken}`);
     if (!silent) {
       console.log(`\n🚀 SuperAgent Server v${getSuperAgentVersion()} is running at http://localhost:${port}`);
       console.log(`💡 Mode: REST API & Server-Sent Events (SSE)`);
       console.log(`🎯 Default Client Mode: ${serverDefaultClientMode}`);
-      console.log(`📂 Current Workspace: ${lastActiveWorkspace}\n`);
+      console.log(`📂 Current Workspace: ${lastActiveWorkspace}`);
+      console.log(`[SERVER] Auth token: ${serverAuthToken}`);
+      console.log(`💡 Clients must send this token via "Authorization: Bearer <token>", "x-auth-token" header, or "?token=" query parameter (for SSE).\n`);
     }
   });
 

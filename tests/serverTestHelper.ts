@@ -13,6 +13,7 @@ import net from "net";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { ensureServerAuthToken } from "../src/core/utils/serverSecurity.js";
 
 // ─── Isolated config dir (set before any config module loads) ─────────────────
 export const tmpConfigDir = path.join(os.tmpdir(), `sa-server-test-${Date.now()}`);
@@ -44,12 +45,16 @@ export function getFreePort(): Promise<number> {
 }
 
 // ─── Fetch helpers ────────────────────────────────────────────────────────────
+export function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { "x-auth-token": ensureServerAuthToken(), ...extra };
+}
+
 export function apiUrl(port: number, urlPath: string) {
   return `http://127.0.0.1:${port}${urlPath}`;
 }
 
 export async function getJSON(port: number, urlPath: string, headers: Record<string, string> = {}) {
-  const res = await fetch(apiUrl(port, urlPath), { headers });
+  const res = await fetch(apiUrl(port, urlPath), { headers: authHeaders(headers) });
   const body = await res.json();
   return { status: res.status, body };
 }
@@ -62,7 +67,7 @@ export async function postJSON(
 ) {
   const res = await fetch(apiUrl(port, urlPath), {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
+    headers: authHeaders({ "Content-Type": "application/json", ...headers }),
     body: JSON.stringify(data),
   });
   const body = await res.json();
@@ -77,7 +82,7 @@ export async function deleteJSON(
 ) {
   const res = await fetch(apiUrl(port, urlPath), {
     method: "DELETE",
-    headers: { "Content-Type": "application/json", ...headers },
+    headers: authHeaders({ "Content-Type": "application/json", ...headers }),
     body: JSON.stringify(data),
   });
   const body = await res.json();
