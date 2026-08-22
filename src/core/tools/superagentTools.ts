@@ -13,7 +13,7 @@ import fsAsync from "fs/promises";
 import { execa } from "execa";
 import { killProcessTree } from "./shellTools.js";
 import { detectInteractivePrompt, formatUnknownActionError } from "./helpers.js";
-import { Tool } from "./types.js";
+import { Tool, SuperagentInstance } from "./types.js";
 import { resolveCarriageReturns } from "../../utils/text.js";
 import {
   superagentInstances,
@@ -24,7 +24,14 @@ import {
   appendMasterLog,
   appendActiveToolOutput,
   clearActiveToolOutput,
+  appendCapped,
 } from "./state.js";
+import {
+  loadRegistry,
+  upsertEntry,
+  removeEntries,
+  reconcileRegistry,
+} from "./superagentRegistry.js";
 import { agentLocalStorage } from "../agent.js";
 import { MasterAgent } from "../masterAgent.js";
 import { ensureGitIgnore, pruneWorktrees } from "../workspaceIsolation.js";
@@ -219,6 +226,55 @@ When task completed, return final report:
 - Status: Completed / Blocked / Partial
 `;
 
+// ─── Worktree Registry (crash-orphan recovery) ────────────────────────────────
+
+let registryReconciled = false;
+
+/** Lazily rehydrates crash-orphaned Superagents from the persisted worktree registry once per process. */
+function ensureRegistryReconciled(): void {
+  if (registryReconciled) return;
+  registryReconciled = true;
+  try {
+    const result = reconcileRegistry(superagentInstances);
+    for (const id of result.rehydratedIds) {
+      const inst = superagentInstances.get(id);
+      if (inst) {
+        appendMasterLog(`[INFO] Restored Superagent "${inst.role}" (${inst.branch}) from worktree registry (status: ${inst.status}).`);
+      }
+    }
+    for (const id of result.droppedIds) {
+      appendMasterLog(`[INFO] Dropped stale worktree registry entry ${id} (worktree directory missing).`);
+    }
+  } catch {
+    // Reconciliation is best-effort
+  }
+}
+
+/** Write-through journaling of an instance status transition to the registry. */
+function persistRegistryEntry(inst: SuperagentInstance): void {
+  try {
+    upsertEntry({
+      id: inst.id,
+      name: inst.customTypeName || inst.role,
+      role: inst.role,
+      branch: inst.branch,
+      worktreePath: inst.worktreePath,
+      status: inst.status,
+      updatedAt: Date.now(),
+    });
+  } catch {
+    // Best-effort
+  }
+}
+
+function removeRegistryEntries(ids: string[]): void {
+  try {
+    removeEntries(ids);
+  } catch {
+    // Best-effort
+  }
+}
+
 // ─── invoke_superagent ────────────────────────────────────────────────────────
 
 export const invokeSuperagentTool: Tool = {
@@ -315,6 +371,7 @@ export const invokeSuperagentTool: Tool = {
       return `Error: invoke_superagent can only be called by the Master Agent (depth 0). ` +
              `You are at depth ${parentDepth}. Use invoke_subagent instead.`;
     }
+    ensureRegistryReconciled();
 
     if (parentAgent && parentAgent.planState !== "APPROVED") {
       if (parentAgent.planState === "PLANNING_PENDING") {
@@ -484,18 +541,18 @@ export const invokeSuperagentTool: Tool = {
           notifySuperagentsChanged();
         } else if (event.type === "error") {
           closeThinkingNode();
-          logs.push(`[ERROR] ${event.message}\n`);
+          appendCapped(logs, `[ERROR] ${event.message}\n`);
           agentInstance.writeToLogFile("SUPERAGENT_ERROR", event.message);
           notifySuperagentsChanged();
         } else if (event.type === "tool_start") {
           closeThinkingNode();
-          logs.push(`[TOOL:START] ${event.toolCall.name} — ${event.description}\n`);
+          appendCapped(logs, `[TOOL:START] ${event.toolCall.name} — ${event.description}\n`);
           notifySuperagentsChanged();
         } else if (event.type === "tool_end") {
           closeThinkingNode();
           const status = event.toolResult.isError ? "FAIL" : "OK";
           const resultSnippet = event.toolResult.result.slice(0, 120).replace(/\n/g, " ");
-          logs.push(`[TOOL:${status}] ${event.toolResult.name} → ${resultSnippet}\n`);
+          appendCapped(logs, `[TOOL:${status}] ${event.toolResult.name} → ${resultSnippet}\n`);
           notifySuperagentsChanged();
         } else if (event.type === "token_usage") {
           const inst = superagentInstances.get(superagentId);
@@ -514,7 +571,7 @@ export const invokeSuperagentTool: Tool = {
           const v = event.violation;
           const icon = v.severity === "critical" ? "🚨" : "⚠️";
           closeThinkingNode();
-          logs.push(`[ILLEGAL_OP] ${icon} ${v.reason} — ${v.toolName}: ${v.description}\n`);
+          appendCapped(logs, `[ILLEGAL_OP] ${icon} ${v.reason} — ${v.toolName}: ${v.description}\n`);
           const inst = superagentInstances.get(superagentId);
           if (inst) {
             if (!inst.violations) inst.violations = [];
@@ -611,11 +668,13 @@ export const invokeSuperagentTool: Tool = {
       earlyTermination,
     };
     superagentInstances.set(superagentId, instance);
+    persistRegistryEntry(instance);
     notifySuperagentsChanged();
     appendMasterLog(`[INFO] Spawning Superagent "${role}" on branch ${branch}...`);
 
     const run = async (): Promise<string> => {
       try {
+        let effectiveTask = task;
         if (dependsOn && dependsOn.length > 0) {
           appendMasterLog(`[INFO] Superagent "${role}" is waiting for dependencies: ${dependsOn.join(", ")}...`);
           const inst = superagentInstances.get(superagentId);
@@ -624,19 +683,36 @@ export const invokeSuperagentTool: Tool = {
             notifySuperagentsChanged();
           }
 
+          // Track peers that ended in a terminal failure so we never deadlock
+          // waiting for "completed" status that will never arrive.
+          const failedPeers: { name: string; status: string }[] = [];
+
           while (true) {
             if (signal?.aborted) throw new Error("Aborted while waiting for dependencies.");
 
-            const allDone = dependsOn.every((dep) => {
+            const pending = dependsOn.some((dep) => {
               const peer = [...superagentInstances.values()].find(
                 (p) => p.role === dep || p.branch === dep || p.id === dep
               );
-              if (!peer) return true; // not tracked anymore (e.g. merged & deleted), so assumed completed
-              return peer.status === "completed";
+              if (!peer) return false; // not tracked anymore (e.g. merged & deleted), so assumed completed
+              if (peer.status === "error" || peer.status === "terminated") {
+                if (!failedPeers.some((f) => f.name === peer.role)) {
+                  failedPeers.push({ name: peer.role, status: peer.status });
+                }
+                return false;
+              }
+              return peer.status !== "completed";
             });
 
-            if (allDone) break;
+            if (failedPeers.length > 0 || !pending) break;
             await new Promise((r) => setTimeout(r, 2000));
+          }
+
+          for (const f of failedPeers) {
+            appendMasterLog(`[WARN] Dependency "${f.name}" of Superagent "${role}" failed (${f.status}). Proceeding without its work.`);
+            effectiveTask =
+              `[DEPENDENCY WARNING] Superagent '${f.name}' failed (${f.status}). Its work is unavailable/incomplete; adapt your task accordingly or report blocked status.\n\n` +
+              effectiveTask;
           }
 
           if (inst) {
@@ -645,23 +721,38 @@ export const invokeSuperagentTool: Tool = {
           }
           appendMasterLog(`[INFO] Dependencies resolved for Superagent "${role}". Proceeding to execute.`);
 
-          // Integrate dependency branches into this Superagent's worktree
+          // Integrate dependency branches into this Superagent's worktree.
+          // On conflict the in-progress merge is aborted to leave the worktree
+          // clean instead of stuck with MERGE_HEAD and a conflicted index.
+          const dependencyConflicts: { branch: string; peerName: string }[] = [];
           for (const dep of dependsOn) {
             const peer = [...superagentInstances.values()].find(
               (p) => p.role === dep || p.branch === dep || p.id === dep
             );
-            if (peer) {
+            if (peer && !failedPeers.some((f) => f.name === peer.role)) {
               appendMasterLog(`[INFO] Merging dependency branch "${peer.branch}" into "${branch}" for Superagent "${role}"...`);
               try {
                 await execa("git", ["merge", "--no-commit", peer.branch], { cwd: worktreePath });
               } catch (mergeErr: any) {
-                appendMasterLog(`[WARN] Merge of dependency branch "${peer.branch}" into "${branch}" had conflicts. Superagent must resolve them.`);
+                try {
+                  await execa("git", ["merge", "--abort"], { cwd: worktreePath });
+                } catch {
+                  // Best-effort abort; nothing to restore if no merge was in progress
+                }
+                appendMasterLog(`[WARN] Merge of dependency branch "${peer.branch}" into "${branch}" produced conflicts and was aborted.`);
+                dependencyConflicts.push({ branch: peer.branch, peerName: peer.role });
               }
             }
           }
+
+          for (const c of dependencyConflicts.reverse()) {
+            effectiveTask =
+              `[DEPENDENCY CONFLICT] Merging dependency branch '${c.branch}' produced conflicts and was aborted. Coordinate with '${c.peerName}' output or resolve manually before integrating.\n\n` +
+              effectiveTask;
+          }
         }
 
-        await agentInstance.sendMessage(task);
+        await agentInstance.sendMessage(effectiveTask);
         closeThinkingNode();
 
         // Capture final report from last assistant message
@@ -729,13 +820,15 @@ export const invokeSuperagentTool: Tool = {
 
         const existing = superagentInstances.get(superagentId);
         if (existing) {
-          superagentInstances.set(superagentId, {
+          const completedInstance: SuperagentInstance = {
             ...existing,
             status: "completed",
             result,
             completedAt: Date.now(),
             agent: undefined,
-          });
+          };
+          superagentInstances.set(superagentId, completedInstance);
+          persistRegistryEntry(completedInstance);
         }
         notifySuperagentsChanged();
         appendMasterLog(`[INFO] Superagent "${role}" (branch: ${branch}) completed successfully.`);
@@ -745,16 +838,18 @@ export const invokeSuperagentTool: Tool = {
         closeThinkingNode();
         const inst = superagentInstances.get(superagentId);
         if (inst) {
-          inst.logs.push(`[ERROR] Superagent failed: ${err.message}\n`);
+          appendCapped(inst.logs, `[ERROR] Superagent failed: ${err.message}\n`);
           if (inst.agent) {
             inst.agent.writeToLogFile("SUPERAGENT_FAILED", err.message);
           }
-          superagentInstances.set(superagentId, {
+          const failedInstance: SuperagentInstance = {
             ...inst,
             status: "error",
             completedAt: Date.now(),
             agent: undefined,
-          });
+          };
+          superagentInstances.set(superagentId, failedInstance);
+          persistRegistryEntry(failedInstance);
         }
         notifySuperagentsChanged();
         appendMasterLog(`[ERROR] Superagent "${role}" (branch: ${branch}) failed: ${err.message}`);
@@ -842,6 +937,7 @@ export const awaitSuperagentsTool: Tool = {
         if (!redundant) continue;
         inst.status = "terminated";
         inst.completedAt = Date.now();
+        persistRegistryEntry(inst);
         try {
           inst.agent?.abort?.();
         } catch (_e) { /* abort best-effort */ }
@@ -944,6 +1040,7 @@ export const mergeSuperagentsTool: Tool = {
 
   async execute(args, cwd, signal) {
     const cleanup = args.cleanupWorktrees !== false;
+    ensureRegistryReconciled();
 
     // Only Master Agent may merge
     const parentAgent = agentLocalStorage.getStore();
@@ -990,7 +1087,9 @@ export const mergeSuperagentsTool: Tool = {
           results.push(`  ⛔ Skipped merge: ${inst.branch} (${inst.role}) — pre-merge check: ${reason}`);
           results.push(`     The Superagent's own report indicates this branch is not ready to merge.`);
           results.push(`     Fix the issues in worktree at: ${inst.worktreePath || "unknown"}`);
-          superagentInstances.set(inst.id, { ...inst, status: "error" });
+          const skippedInstance = { ...inst, status: "error" as const };
+          superagentInstances.set(inst.id, skippedInstance);
+          persistRegistryEntry(skippedInstance);
           notifySuperagentsChanged();
           continue;
         }
@@ -1028,8 +1127,9 @@ export const mergeSuperagentsTool: Tool = {
           }
         }
 
-        // Remove from tracking
+        // Remove from tracking (consumed post-merge) and from the registry journal
         superagentInstances.delete(inst.id);
+        removeRegistryEntries([inst.id]);
         notifySuperagentsChanged();
       } else {
         results.push(`  ❌ Merge failed: ${inst.branch} (${inst.role})`);
@@ -1040,7 +1140,9 @@ export const mergeSuperagentsTool: Tool = {
           results.push(`     Reason: manual resolution required`);
         }
         // Mark as error so it shows in dashboard
-        superagentInstances.set(inst.id, { ...inst, status: "error" });
+        const mergeFailedInstance = { ...inst, status: "error" as const };
+        superagentInstances.set(inst.id, mergeFailedInstance);
+        persistRegistryEntry(mergeFailedInstance);
         notifySuperagentsChanged();
       }
     }
@@ -1049,22 +1151,41 @@ export const mergeSuperagentsTool: Tool = {
   },
 };
 
-async function cleanupWorktreeRobust(worktreePath: string, logs: string[], cwd: string) {
+async function cleanupWorktreeRobust(worktreePath: string, logs: string[], cwd: string, branch?: string) {
+  let removed = false;
   if (worktreePath && fs.existsSync(worktreePath)) {
     try {
       // Cooldown delay for Windows file handles
       await new Promise((resolve) => setTimeout(resolve, 200));
       await execa("git", ["worktree", "remove", worktreePath, "--force"], { cwd });
       logs.push(`[CLEANUP] Worktree removed successfully: ${worktreePath}\n`);
+      removed = true;
     } catch (err: any) {
       logs.push(`[CLEANUP] git worktree remove failed: ${err.message}. Trying filesystem force remove...\n`);
       try {
         fs.rmSync(worktreePath, { recursive: true, force: true });
-        await execa("git", ["worktree", "prune"], { cwd });
-        logs.push(`[CLEANUP] Worktree directory force removed and pruned.\n`);
+        removed = true;
       } catch (fsErr: any) {
         logs.push(`[CLEANUP] Filesystem force remove failed: ${fsErr.message}\n`);
       }
+      if (removed) {
+        try {
+          await execa("git", ["worktree", "prune"], { cwd });
+          logs.push(`[CLEANUP] Worktree directory force removed and pruned.\n`);
+        } catch {
+          // Prune is best-effort; the directory itself was already removed
+          logs.push(`[CLEANUP] Worktree directory force removed (prune skipped).\n`);
+        }
+      }
+    }
+  }
+  if (removed && branch) {
+    try {
+      await execa("git", ["branch", "-D", branch], { cwd });
+      logs.push(`[CLEANUP] Branch deleted: ${branch}\n`);
+      appendMasterLog(`[INFO] Deleted orphaned feature branch "${branch}".`);
+    } catch (branchErr: any) {
+      logs.push(`[CLEANUP] Branch deletion skipped for "${branch}": ${branchErr.message}\n`);
     }
   }
 }
@@ -1073,19 +1194,24 @@ async function cleanupWorktreeRobust(worktreePath: string, logs: string[], cwd: 
 
 export const manageSuperagentsTool: Tool = {
   name: "manage_superagents",
-  description: "List active Superagents, check status/logs, retrieve reports, or terminate them.",
+  description:
+    "List active Superagents, check status/logs, retrieve reports, or terminate them. " +
+    "Action \"retry_failed\" restarts a failed/terminated Superagent from its existing worktree using its original task " +
+    "(pass superagentIds with one ID to retry a specific Superagent; omit it to retry the most recent failed one). " +
+    "Action \"cleanup_orphans\" removes worktree registry entries whose worktree directories no longer exist on disk.",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["list", "status", "logs", "report", "violations", "kill", "kill_all"],
+        enum: ["list", "status", "logs", "report", "violations", "kill", "kill_all", "retry_failed", "cleanup_orphans"],
         description: "Action to perform",
       },
       superagentIds: {
         type: "array",
         items: { type: "string" },
-        description: "List of Superagent IDs to check status, kill, or read logs/reports from",
+        description:
+          "List of Superagent IDs to check status, kill, read logs/reports from, or (for retry_failed) the single ID of a specific failed Superagent to retry",
       },
     },
     required: ["action"],
@@ -1101,6 +1227,7 @@ export const manageSuperagentsTool: Tool = {
     if (parentDepth > 0) {
       return `Error: manage_superagents can only be called by the Master Agent (depth 0).`;
     }
+    ensureRegistryReconciled();
 
     if (action === "list") {
       const lines: string[] = ["Active Superagent Instances:"];
@@ -1209,9 +1336,11 @@ export const manageSuperagentsTool: Tool = {
           inst.agent.abort();
           inst.status = "error";
           inst.completedAt = Date.now();
-          inst.logs.push("[TERMINATED] Superagent terminated by Master Agent.\n");
+          appendCapped(inst.logs, "[TERMINATED] Superagent terminated by Master Agent.\n");
+          persistRegistryEntry(inst);
           if (inst.worktreePath) {
-            await cleanupWorktreeRobust(inst.worktreePath, inst.logs, cwd);
+            await cleanupWorktreeRobust(inst.worktreePath, inst.logs, cwd, inst.branch);
+            removeRegistryEntries([inst.id]);
           }
         }
       }
@@ -1226,9 +1355,11 @@ export const manageSuperagentsTool: Tool = {
           inst.agent.abort();
           inst.status = "error";
           inst.completedAt = Date.now();
-          inst.logs.push("[TERMINATED] Superagent terminated by Master Agent.\n");
+          appendCapped(inst.logs, "[TERMINATED] Superagent terminated by Master Agent.\n");
+          persistRegistryEntry(inst);
           if (inst.worktreePath) {
-            await cleanupWorktreeRobust(inst.worktreePath, inst.logs, cwd);
+            await cleanupWorktreeRobust(inst.worktreePath, inst.logs, cwd, inst.branch);
+            removeRegistryEntries([inst.id]);
           }
           terminated.push(id);
         }
@@ -1237,7 +1368,104 @@ export const manageSuperagentsTool: Tool = {
       return `All running Superagent instances terminated. Terminated: ${terminated.join(", ")}`;
     }
 
-    return formatUnknownActionError(action, ["list", "status", "logs", "report", "violations", "kill", "kill_all"], "Use \"report\" (singular), not \"reports\".");
+    if (action === "retry_failed") {
+      const eligible: SuperagentInstance[] = [];
+      if (superagentIds.length > 0) {
+        for (const id of superagentIds) {
+          const inst = superagentInstances.get(id);
+          if (!inst) continue;
+          if (inst.status === "error" || inst.status === "terminated") {
+            eligible.push(inst);
+          }
+        }
+        if (eligible.length === 0) {
+          return `Error: No failed/terminated Superagent found among IDs: ${superagentIds.join(", ")}. Use action "list" to check statuses.`;
+        }
+      } else {
+        const candidates = [...superagentInstances.values()]
+          .filter(
+            (i) =>
+              (i.status === "error" || i.status === "terminated") &&
+              i.worktreePath &&
+              fs.existsSync(i.worktreePath)
+          )
+          .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
+        if (candidates[0]) {
+          eligible.push(candidates[0]);
+        }
+      }
+
+      const retried: string[] = [];
+      const skipped: string[] = [];
+      for (const inst of eligible) {
+        if (!inst.worktreePath || !fs.existsSync(inst.worktreePath)) {
+          skipped.push(`${inst.id} (worktree missing)`);
+          continue;
+        }
+        const lastErrorLine = [...(inst.logs || [])].reverse().find((l) => l.startsWith("[ERROR]"));
+        const lastError = lastErrorLine ? lastErrorLine.replace("[ERROR]", "").trim() : "unknown error";
+        const retryMessage =
+          `${inst.task}\n\n` +
+          `[RETRY] Previous attempt failed: ${lastError}. Continue the task from current worktree state.`;
+
+        // Route through the same resume path used by send_message_to_superagent:
+        // marking as "paused" makes it reconstruct a fresh agent bound to the
+        // existing worktree and re-send the original task prompt.
+        inst.result = undefined;
+        inst.completedAt = undefined;
+        inst.status = "paused";
+        notifySuperagentsChanged();
+        await sendMessageToSuperagentTool.execute(
+          { superagentId: inst.id, message: retryMessage },
+          cwd,
+          signal
+        );
+        retried.push(inst.id);
+      }
+
+      if (retried.length === 0) {
+        return `Error: No eligible failed Superagents to retry.${skipped.length > 0 ? ` Skipped: ${skipped.join(", ")}.` : ""}`;
+      }
+      return (
+        `Retry initiated for Superagent(s): ${retried.join(", ")}. They are resuming in the background with their original task.` +
+        (skipped.length > 0 ? `\nSkipped: ${skipped.join(", ")}.` : "")
+      );
+    }
+
+    if (action === "cleanup_orphans") {
+      const entries = loadRegistry();
+      if (entries.length === 0) {
+        return "No worktree registry entries found. Nothing to clean up.";
+      }
+      const removedIds: string[] = [];
+      const kept: string[] = [];
+      for (const entry of entries) {
+        if (fs.existsSync(entry.worktreePath)) {
+          kept.push(entry.id);
+          continue;
+        }
+        removedIds.push(entry.id);
+      }
+
+      removeRegistryEntries(removedIds);
+
+      try {
+        await execa("git", ["worktree", "prune"], { cwd });
+      } catch {
+        // Prune is best-effort (may not be inside a git repo)
+      }
+
+      const lines: string[] = ["Worktree registry orphan cleanup:"];
+      if (removedIds.length > 0) {
+        lines.push(`  Removed ${removedIds.length} stale entr(y/ies): ${removedIds.join(", ")}`);
+      } else {
+        lines.push("  No stale entries — all worktree directories still exist.");
+      }
+      lines.push(`  Kept ${kept.length} valid entr(y/ies).`);
+      return lines.join("\n");
+    }
+
+    return formatUnknownActionError(action, ["list", "status", "logs", "report", "violations", "kill", "kill_all", "retry_failed", "cleanup_orphans"], "Use \"report\" (singular), not \"reports\".");
   },
 };
 
@@ -1398,17 +1626,17 @@ export const sendMessageToSuperagentTool: Tool = {
             notifySuperagentsChanged();
           } else if (event.type === "error") {
             closeThinkingNode();
-            logsList.push(`[ERROR] ${event.message}\n`);
+            appendCapped(logsList, `[ERROR] ${event.message}\n`);
             notifySuperagentsChanged();
           } else if (event.type === "tool_start") {
             closeThinkingNode();
-            logsList.push(`[TOOL:START] ${event.toolCall.name} — ${event.description}\n`);
+            appendCapped(logsList, `[TOOL:START] ${event.toolCall.name} — ${event.description}\n`);
             notifySuperagentsChanged();
           } else if (event.type === "tool_end") {
             closeThinkingNode();
             const status = event.toolResult.isError ? "FAIL" : "OK";
             const resultSnippet = event.toolResult.result.slice(0, 120).replace(/\n/g, " ");
-            logsList.push(`[TOOL:${status}] ${event.toolResult.name} → ${resultSnippet}\n`);
+            appendCapped(logsList, `[TOOL:${status}] ${event.toolResult.name} → ${resultSnippet}\n`);
             notifySuperagentsChanged();
           } else if (event.type === "token_usage") {
             const currentInst = superagentInstances.get(superagentId);
@@ -1427,7 +1655,7 @@ export const sendMessageToSuperagentTool: Tool = {
             const v = event.violation;
             const icon = v.severity === "critical" ? "🚨" : "⚠️";
             closeThinkingNode();
-            logsList.push(`[ILLEGAL_OP] ${icon} ${v.reason} — ${v.toolName}: ${v.description}\n`);
+            appendCapped(logsList, `[ILLEGAL_OP] ${icon} ${v.reason} — ${v.toolName}: ${v.description}\n`);
             const violInst = superagentInstances.get(superagentId);
             if (violInst) {
               if (!violInst.violations) violInst.violations = [];
@@ -1589,13 +1817,15 @@ export const sendMessageToSuperagentTool: Tool = {
 
         const existingInst = superagentInstances.get(superagentId);
         if (existingInst) {
-          superagentInstances.set(superagentId, {
+          const completedInstance: SuperagentInstance = {
             ...existingInst,
             status: "completed",
             result,
             completedAt: Date.now(),
             agent: undefined,
-          });
+          };
+          superagentInstances.set(superagentId, completedInstance);
+          persistRegistryEntry(completedInstance);
         }
         notifySuperagentsChanged();
         appendMasterLog(`[INFO] Superagent "${inst.role}" (branch: ${inst.branch}) completed successfully.`);
@@ -1604,16 +1834,18 @@ export const sendMessageToSuperagentTool: Tool = {
       } catch (err: any) {
         const superagentInst = superagentInstances.get(superagentId);
         if (superagentInst) {
-          superagentInst.logs.push(`[ERROR] Superagent failed: ${err.message}\n`);
+          appendCapped(superagentInst.logs, `[ERROR] Superagent failed: ${err.message}\n`);
           if (superagentInst.agent) {
             superagentInst.agent.writeToLogFile("SUPERAGENT_FAILED", err.message);
           }
-          superagentInstances.set(superagentId, {
+          const failedInstance: SuperagentInstance = {
             ...superagentInst,
             status: "error",
             completedAt: Date.now(),
             agent: undefined,
-          });
+          };
+          superagentInstances.set(superagentId, failedInstance);
+          persistRegistryEntry(failedInstance);
         }
         notifySuperagentsChanged();
         appendMasterLog(`[ERROR] Superagent "${inst.role}" (branch: ${inst.branch}) failed: ${err.message}`);

@@ -21,11 +21,12 @@ import {
   sshViewBackgroundProcessesExecute,
   sshManageBackgroundProcessExecute
 } from "../ssh/sshCommands.js";
-import { 
-  backgroundTasks, 
-  notifyTasksChanged, 
-  clearActiveToolOutput, 
-  appendActiveToolOutput 
+import {
+  backgroundTasks,
+  notifyTasksChanged,
+  clearActiveToolOutput,
+  appendActiveToolOutput,
+  appendCapped
 } from "./state.js";
 import net from "net";
 
@@ -576,10 +577,7 @@ export const runBackgroundProcessTool: Tool = {
 
       currentProc.all?.on("data", (data: any) => {
         const text = data.toString();
-        currentTask.output.push(text);
-        if (currentTask.output.length > 1000) {
-          currentTask.output.shift();
-        }
+        appendCapped(currentTask.output, text);
         try {
           fs.appendFileSync(logPath, text);
         } catch {
@@ -593,7 +591,7 @@ export const runBackgroundProcessTool: Tool = {
         currentTask.hasExited = true;
         currentTask.exitCode = code;
         const exitMsg = `\n[Process exited with code ${code}]`;
-        currentTask.output.push(exitMsg);
+        appendCapped(currentTask.output, exitMsg);
         try {
           fs.appendFileSync(logPath, exitMsg);
         } catch {
@@ -605,11 +603,36 @@ export const runBackgroundProcessTool: Tool = {
           if (onExit === "restart" && restartAttempts < maxRestarts) {
             restartAttempts++;
             const restartMsg = `\n[System: Restarting background process (attempt ${restartAttempts}/${maxRestarts})...]\n`;
-            currentTask.output.push(restartMsg);
+            appendCapped(currentTask.output, restartMsg);
             try {
               fs.appendFileSync(logPath, restartMsg);
             } catch {}
-            startProcess();
+            try {
+              await startProcess();
+            } catch (restartErr: any) {
+              const failMsg = `\n[System: Restart failed: ${restartErr?.message || String(restartErr)}. Marking task as stopped.]\n`;
+              appendCapped(currentTask.output, failMsg);
+              try {
+                fs.appendFileSync(logPath, failMsg);
+              } catch {}
+              currentTask.hasExited = true;
+              currentTask.exitCode = currentTask.exitCode ?? -1;
+              try {
+                const { agentLocalStorage: restartLocalStorage } = await import("../agent.js");
+                const activeAgent = restartLocalStorage.getStore();
+                if (activeAgent && typeof activeAgent.getHistory === "function") {
+                  activeAgent.getHistory().addMessage({
+                    role: "system",
+                    content: `[NOTIFICATION] Background process "${taskId}" (${commandToRun}) could not be restarted after exit with code ${code}: ${restartErr?.message || String(restartErr)}. The task is marked stopped.`,
+                    timestamp: Date.now(),
+                  });
+                  await activeAgent.saveHistory();
+                }
+              } catch {
+                // Ignored
+              }
+              notifyTasksChanged();
+            }
             return;
           }
 

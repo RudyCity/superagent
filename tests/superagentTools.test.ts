@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll, mock } from "vitest";
 import fs from "fs";
+import os from "os";
 import path from "path";
 const originalExistsSync = fs.existsSync;
 const originalMkdirSync = fs.mkdirSync;
@@ -106,6 +107,9 @@ import {
 } from "../src/core/tools/superagentTools.js";
 
 describe("superagentTools", () => {
+  const isolatedConfigDir = path.join(os.tmpdir(), `superagent-tools-test-${process.pid}`);
+  let originalConfigDir: string | undefined;
+
   beforeEach(async () => {
     vi.restoreAllMocks();
     vi.spyOn(execaModule, "execa").mockResolvedValue({ stdout: "" } as any);
@@ -113,11 +117,25 @@ describe("superagentTools", () => {
     superagentTypes.clear();
     const { Agent } = await import("../src/core/agent.js");
     (Agent as any).constructorArgs = [];
+    // Isolate the worktree registry journal so tests never touch the real config dir
+    originalConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
+    process.env.SUPERAGENT_CONFIG_DIR = isolatedConfigDir;
+    try {
+      fs.rmSync(isolatedConfigDir, { recursive: true, force: true });
+    } catch {}
   });
 
   afterEach(() => {
     superagentInstances.clear();
     superagentTypes.clear();
+    if (originalConfigDir !== undefined) {
+      process.env.SUPERAGENT_CONFIG_DIR = originalConfigDir;
+    } else {
+      delete process.env.SUPERAGENT_CONFIG_DIR;
+    }
+    try {
+      fs.rmSync(isolatedConfigDir, { recursive: true, force: true });
+    } catch {}
   });
 
   describe("invokeSuperagentTool", () => {

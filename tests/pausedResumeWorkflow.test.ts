@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import path from "path";
+import os from "os";
+import fs from "fs";
 
 // ── Break circular dependency chain ──────────────────────────────────────────
 vi.mock("../src/core/tools.js", async (importOriginal) => {
@@ -27,6 +29,8 @@ const { sendMessageTool } = await import("../src/core/tools/subagentTools.js");
 const { Agent, agentLocalStorage } = await import("../src/core/agent.js");
 
 describe("Paused Resume Workflow", () => {
+  const isolatedConfigDir = path.join(os.tmpdir(), `superagent-paused-resume-test-${process.pid}`);
+  let originalConfigDir: string | undefined;
   let loadHistorySpy: any;
   let sendMessageSpy: any;
 
@@ -34,6 +38,13 @@ describe("Paused Resume Workflow", () => {
     superagentInstances.clear();
     subagentInstances.clear();
     vi.restoreAllMocks();
+
+    // Isolate the worktree registry journal so tests never touch the real config dir
+    originalConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
+    process.env.SUPERAGENT_CONFIG_DIR = isolatedConfigDir;
+    try {
+      fs.rmSync(isolatedConfigDir, { recursive: true, force: true });
+    } catch {}
 
     loadHistorySpy = vi.spyOn(Agent.prototype, "loadHistoryFromPath").mockResolvedValue(undefined as any);
     sendMessageSpy = vi.spyOn(Agent.prototype, "sendMessage").mockImplementation(async function(this: any) {
@@ -44,6 +55,14 @@ describe("Paused Resume Workflow", () => {
   afterEach(() => {
     superagentInstances.clear();
     subagentInstances.clear();
+    if (originalConfigDir !== undefined) {
+      process.env.SUPERAGENT_CONFIG_DIR = originalConfigDir;
+    } else {
+      delete process.env.SUPERAGENT_CONFIG_DIR;
+    }
+    try {
+      fs.rmSync(isolatedConfigDir, { recursive: true, force: true });
+    } catch {}
   });
 
   describe("sendMessageToSuperagentTool with paused state", () => {

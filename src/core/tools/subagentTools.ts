@@ -7,7 +7,8 @@ import {
   notifySubagentsChanged,
   getMasterAgent,
   getActiveQuestionHandler,
-  appendMasterLog
+  appendMasterLog,
+  appendCapped
 } from "./state.js";
 import { Agent, agentLocalStorage } from "../agent.js";
 import { resolveCarriageReturns } from "../../utils/text.js";
@@ -413,34 +414,34 @@ export const invokeSubagentTool: Tool = {
           notifySubagentsChanged();
         } else if (event.type === "error") {
           closeThinkingNode();
-          logs.push(`${isFirstNode ? "┌" : "├"}───[ 🚨 ERROR ]\n`);
+          appendCapped(logs, `${isFirstNode ? "┌" : "├"}───[ 🚨 ERROR ]\n`);
           isFirstNode = false;
           const lines = event.message.split("\n");
           for (const line of lines) {
-            logs.push(`│   ${line}\n`);
+            appendCapped(logs, `│   ${line}\n`);
           }
           logs.push(`│\n`);
           instance.agent.writeToLogFile("SUBAGENT_ERROR", event.message);
           notifySubagentsChanged();
         } else if (event.type === "tool_start") {
           closeThinkingNode();
-          logs.push(`${isFirstNode ? "┌" : "├"}───[ ⚙️ TOOL CALL: ${event.toolCall.name} ]\n`);
+          appendCapped(logs, `${isFirstNode ? "┌" : "├"}───[ ⚙️ TOOL CALL: ${event.toolCall.name} ]\n`);
           isFirstNode = false;
-          logs.push(`│   Description: ${event.description}\n`);
+          appendCapped(logs, `│   Description: ${event.description}\n`);
           const argLines = formatSubagentArgs(event.toolCall.args);
-          logs.push(`│   Args: ${argLines}\n`);
+          appendCapped(logs, `│   Args: ${argLines}\n`);
           logs.push(`│\n`);
           notifySubagentsChanged();
         } else if (event.type === "tool_end") {
           closeThinkingNode();
           const r = event.toolResult;
           const status = r.isError ? "🔴 FAILED" : "🟢 SUCCESS";
-          logs.push(`│   └───[ ${status} ]\n`);
+          appendCapped(logs, `│   └───[ ${status} ]\n`);
           const resultStr = typeof r.result === "string" ? r.result : JSON.stringify(r.result);
           const truncated = resultStr.slice(0, 2000) + (resultStr.length > 2000 ? "..." : "");
           const resultLines = truncated.split("\n");
           for (const line of resultLines) {
-            logs.push(`│       ${line}\n`);
+            appendCapped(logs, `│       ${line}\n`);
           }
           logs.push(`│\n`);
           notifySubagentsChanged();
@@ -460,11 +461,11 @@ export const invokeSubagentTool: Tool = {
           const v = event.violation;
           const icon = v.severity === "critical" ? "🚨" : "⚠️";
           closeThinkingNode();
-          logs.push(`${isFirstNode ? "┌" : "├"}───[ ${icon} ILLEGAL OPERATION ]\n`);
+          appendCapped(logs, `${isFirstNode ? "┌" : "├"}───[ ${icon} ILLEGAL OPERATION ]\n`);
           isFirstNode = false;
-          logs.push(`│   Reason: ${v.reason}\n`);
-          logs.push(`│   Tool: ${v.toolName}\n`);
-          logs.push(`│   Detail: ${v.description}\n`);
+          appendCapped(logs, `│   Reason: ${v.reason}\n`);
+          appendCapped(logs, `│   Tool: ${v.toolName}\n`);
+          appendCapped(logs, `│   Detail: ${v.description}\n`);
           logs.push(`│\n`);
           const inst = subagentInstances.get(subagentId);
           if (inst) {
@@ -732,36 +733,36 @@ export const sendMessageTool: Tool = {
             notifySubagentsChanged();
           } else if (event.type === "error") {
             closeThinkingNode();
-            logsList.push(`${isFirstNode ? "┌" : "├"}───[ 🚨 ERROR ]\n`);
+            appendCapped(logsList, `${isFirstNode ? "┌" : "├"}───[ 🚨 ERROR ]\n`);
             isFirstNode = false;
             const lines = event.message.split("\n");
             for (const line of lines) {
-              logsList.push(`│   ${line}\n`);
+              appendCapped(logsList, `│   ${line}\n`);
             }
             logsList.push(`│\n`);
             agentInstance.writeToLogFile("SUBAGENT_ERROR", event.message);
             notifySubagentsChanged();
           } else if (event.type === "tool_start") {
             closeThinkingNode();
-            logsList.push(`${isFirstNode ? "┌" : "├"}───[ ⚙️ TOOL CALL: ${event.toolCall.name} ]\n`);
+            appendCapped(logsList, `${isFirstNode ? "┌" : "├"}───[ ⚙️ TOOL CALL: ${event.toolCall.name} ]\n`);
             isFirstNode = false;
-            logsList.push(`│   Description: ${event.description}\n`);
+            appendCapped(logsList, `│   Description: ${event.description}\n`);
             // Format args
             const entries = Object.entries(event.toolCall.args);
             const formatted = entries.map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ");
-            logsList.push(`│   Args: { ${formatted} }\n`);
+            appendCapped(logsList, `│   Args: { ${formatted} }\n`);
             logsList.push(`│\n`);
             notifySubagentsChanged();
           } else if (event.type === "tool_end") {
             closeThinkingNode();
             const r = event.toolResult;
             const status = r.isError ? "🔴 FAILED" : "🟢 SUCCESS";
-            logsList.push(`│   └───[ ${status} ]\n`);
+            appendCapped(logsList, `│   └───[ ${status} ]\n`);
             const resultStr = typeof r.result === "string" ? r.result : JSON.stringify(r.result);
             const truncated = resultStr.slice(0, 2000) + (resultStr.length > 2000 ? "..." : "");
             const resultLines = truncated.split("\n");
             for (const line of resultLines) {
-              logsList.push(`│       ${line}\n`);
+              appendCapped(logsList, `│       ${line}\n`);
             }
             logsList.push(`│\n`);
             notifySubagentsChanged();
@@ -781,11 +782,11 @@ export const sendMessageTool: Tool = {
             const v = event.violation;
             const icon = v.severity === "critical" ? "🚨" : "⚠️";
             closeThinkingNode();
-            logsList.push(`${isFirstNode ? "┌" : "├"}───[ ${icon} ILLEGAL OPERATION ]\n`);
+            appendCapped(logsList, `${isFirstNode ? "┌" : "├"}───[ ${icon} ILLEGAL OPERATION ]\n`);
             isFirstNode = false;
-            logsList.push(`│   Reason: ${v.reason}\n`);
-            logsList.push(`│   Tool: ${v.toolName}\n`);
-            logsList.push(`│   Detail: ${v.description}\n`);
+            appendCapped(logsList, `│   Reason: ${v.reason}\n`);
+            appendCapped(logsList, `│   Tool: ${v.toolName}\n`);
+            appendCapped(logsList, `│   Detail: ${v.description}\n`);
             logsList.push(`│\n`);
             const inst = subagentInstances.get(recipientId);
             if (inst) {

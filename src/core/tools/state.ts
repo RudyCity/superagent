@@ -487,13 +487,37 @@ export function appendToolsErrorLog(tier: string, depth: number, toolName: strin
 
 // ─── TTL Cleanup ─────────────────────────────────────────────────────────────
 
-const INSTANCE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+export const INSTANCE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-export function cleanupStaleInstances(): void {
-  const now = Date.now();
+/** Maximum number of log/output entries retained per agent instance or background task. */
+export const MAX_LOG_ENTRIES = 500;
+
+/**
+ * Appends an item to an array while capping its length at `max` entries.
+ * When the cap is exceeded, the oldest entries are dropped from the front,
+ * so consumers doing `.join("")` keep working on the most recent output.
+ */
+export function appendCapped<T>(arr: T[], item: T, max: number = MAX_LOG_ENTRIES): void {
+  arr.push(item);
+  if (arr.length > max) {
+    arr.splice(0, arr.length - max);
+  }
+}
+
+/**
+ * Evicts stale instances from shared state.
+ *
+ * Superagent instances: ONLY "error"/"terminated" instances older than `ttlMs`
+ * are evicted. "completed" instances are NEVER evicted here — their branches
+ * are still pending consumption by merge_superagents. "running"/"waiting"/
+ * "paused" instances are always preserved.
+ */
+export function cleanupStaleInstances(opts?: { now?: number; ttlMs?: number }): void {
+  const now = opts?.now ?? Date.now();
+  const ttlMs = opts?.ttlMs ?? INSTANCE_TTL_MS;
   for (const [id, inst] of superagentInstances.entries()) {
-    if (inst.status !== "running" && inst.completedAt) {
-      if (now - inst.completedAt > INSTANCE_TTL_MS) {
+    if ((inst.status === "error" || inst.status === "terminated") && inst.completedAt) {
+      if (now - inst.completedAt > ttlMs) {
         superagentInstances.delete(id);
       }
     }
