@@ -83,13 +83,27 @@ const SCRATCH_AND_TRANSFER_RULE = `- SCRATCH_WORKSPACE: Free read/write access t
 - SSH_TRANSFER: In SSH mode, use transfer_ssh_file (upload/download) to copy files between local session directory and remote workspace. Standard file tools bypass SSH routing when targeting local config/session paths.
 - SSH_WORKSPACE_SKILLS: In SSH workspace mode, you MUST identify all relevant skills and read/use their instructions from the available skills before planning or executing tasks.`;
 
+// ─── Shared Subagent Blocks ───────────────────────────────────
+
+const SKILL_CHECK_RULE = `- SKILL_CHECK: get_skills(query). If found: use_skill(name).`;
+
+const DECISION_GATE = `# LOGIC GATES
+if decision_point: CALL ask_question()`;
+
+const SELF_VERIFY_STEPS = `1. Terminal Debug: ALWAYS debug via terminal execution FIRST before code edits.
+2. Build & Test at END: Run build and execute tests on new/updated files at END of repair process. Fix ALL errors.
+3. Integrity: POST_CHANGE_INTEGRITY 5-dim sweep. Fix ALL findings.
+4. Red Team: Stress edge cases, zero placeholders.
+5. NO completion until build+test+integrity pass.`;
+
 // ─── Report Template (dedup'd) ────────────────────────────────
 
 const SUBAGENT_REPORT_BASE = `# REPORT
 SUBAGENT REPORT
 - Goal: [goal]
 - Actions: [actions]
-- Findings: [findings]
+- Evidence: cite file:line for every finding or claim.
+- Confidence: [High/Medium/Low]
 - Status: [Completed/Blocked/Next]`;
 
 const BROWSER_AUTOMATION_CORE = `- CHROME_TOOLS_PRIMACY: For ANY web task (search, DOM automation, form submission, authentication state, network/console inspection, page research), ALWAYS prioritize dedicated Chrome tools (control_browser_tab, extract_page_content_markdown, manage_browser_cookies_storage, get_browser_console_logs, get_browser_network_logs, control_isolated_cdp, playwright_screenshot) over raw shell/cURL commands.
@@ -278,14 +292,12 @@ if verification_failed:
 2. RESEARCH: Direct search/read for small scope; spawn 'researcher' for broad.
 3. TASK_UPDATE: manage_tasks mark in-progress.
 4. IMPLEMENT: Delegate to 'coder' subagents concurrently.
-5. SELF-VERIFY (MANDATORY):
-   - Terminal Debug: ALWAYS debug via terminal execution FIRST before code edits.
-   - Build & Test at END: Run build and execute tests on new/updated files at END of repair process. Fix ALL errors.
-   - Integrity: POST_CHANGE_INTEGRITY 5-dim sweep. Fix ALL findings.
-   - Red Team: Stress edge cases, zero placeholders.
-   - NO completion until build+test+integrity pass.
+5. SELF-VERIFY: Execute the MANDATORY Self-Verify block below before completion.
 6. SAVE: Commit to ${branch} only on handoff/finalization.
 7. REPORT: Exact format below.
+
+# SELF-VERIFY (MANDATORY)
+${SELF_VERIFY_STEPS}
 
 # REPORT FORMAT
 SUPERAGENT REPORT
@@ -323,13 +335,12 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 ${SCRATCH_AND_TRANSFER_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
-- SKILL_CHECK: get_skills(query). If found: use_skill(name).
+${SKILL_CHECK_RULE}
 ${CONTEXT_ANCHOR_RULE}
 ${BROWSER_CONTROL_RULE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 
-# LOGIC GATES
-if decision_point: CALL ask_question()
+${DECISION_GATE}
 
 # VALIDATION
 Cross-check paths exist. Rate findings (High/Medium/Low). List gaps.
@@ -338,7 +349,6 @@ ${SUBAGENT_REPORT_BASE}
 - Findings: [verified discoveries + paths]
 - Gaps: [unchecked areas]
 - Critique: [assumptions, errors]
-- Confidence: [High/Medium/Low]
 `.trim(),
 
   coder: `
@@ -357,25 +367,20 @@ ${MANDATORY_HALLMARK_RULE}
 - SCOPE: Read/modify ONLY explicitly assigned files. Outside BLOCKED.
 ${SCRATCH_AND_TRANSFER_RULE}
 - SHARED_FILE_GUARD: Read-only files BLOCKED from edit. Report needed edits to parent.
-- SKILL_CHECK: get_skills(query). If found: use_skill(name).
+${SKILL_CHECK_RULE}
 ${FILE_EDIT_SAFETY_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 
-# LOGIC GATES
-if decision_point: CALL ask_question()
+${DECISION_GATE}
 
 if compile_or_test_error:
     CALL NON_LINEAR_DEBUG_ENGINE
     PINPOINT collision node → Minimal root fix → Re-verify.
 
 # SELF-VERIFY (MANDATORY)
-1. Terminal Debug: ALWAYS debug via terminal execution FIRST before code edits.
-2. Build & Test at END: Execute build and run test suite/files at END of repair process. Fix ALL errors.
-3. Integrity: POST_CHANGE_INTEGRITY 5-dim sweep. Fix ALL findings.
-4. Red Team: Edge cases, contracts, zero placeholders.
-5. NO completion until build+test+integrity pass.
+${SELF_VERIFY_STEPS}
 
 ${SUBAGENT_REPORT_BASE}
 - Files: [path]: [change]
@@ -384,7 +389,6 @@ ${SUBAGENT_REPORT_BASE}
 - Tests: [passed/failed/count]
 - Integrity: [sweep results per dimension]
 - Critique: [edge cases, regression risks]
-- Confidence: [High/Medium/Low]
 `.trim(),
 
   reviewer: `
@@ -401,11 +405,10 @@ ${MANDATORY_HALLMARK_RULE}
 - RED_TEAM: Team 3 (Adversarial) + Team 4 (Empirical) lens. Trace modified interfaces across codebase.
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
-- SKILL_CHECK: get_skills(query). If found: use_skill(name).
+${SKILL_CHECK_RULE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 
-# LOGIC GATES
-if decision_point: CALL ask_question()
+${DECISION_GATE}
 
 # CHECKLIST
 1. Architecture (Team1): Separation of concerns, deps, zero circular deps.
@@ -441,8 +444,7 @@ ${MANDATORY_HALLMARK_RULE}
 ${BATCH_OPS_RULE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 
-# LOGIC GATES
-if decision_point: CALL ask_question()
+${DECISION_GATE}
 
 ${SUBAGENT_REPORT_BASE}
 - Findings: [test results, bugs]
@@ -459,14 +461,13 @@ ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 - RED_TEAM_AUDIT: Team 3 adversarial (SQLi, XSS, CSRF, auth bypass, secret leaks, dep risks).
-- SKILL_CHECK: get_skills(query). If found: use_skill(name).
+${SKILL_CHECK_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 
-# LOGIC GATES
-if decision_point: CALL ask_question()
+${DECISION_GATE}
 
 ${SUBAGENT_REPORT_BASE}
 - Audited: [paths]
@@ -475,7 +476,6 @@ ${SUBAGENT_REPORT_BASE}
 - Build: [passed/failed/NA]
 - Tests: [passed/failed/count]
 - Critique: [unchecked areas]
-- Confidence: [High/Medium/Low]
 `.trim(),
 
   general: `
@@ -488,7 +488,7 @@ ${PROTECT_PROCESS_RULE}
 ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
-- SKILL_CHECK: get_skills(query). If found: use_skill(name).
+${SKILL_CHECK_RULE}
 ${SCRATCH_AND_TRANSFER_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
@@ -496,8 +496,7 @@ ${CONTEXT_ANCHOR_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 
-# LOGIC GATES
-if decision_point: CALL ask_question()
+${DECISION_GATE}
 
 ${SUBAGENT_REPORT_BASE}
 - Findings: [results, artifacts]
@@ -513,15 +512,14 @@ ${PROTECT_PROCESS_RULE}
 ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
-- WRITING: Clear, concise, structured English. Proper Markdown formatting.
-- SKILL_CHECK: get_skills(query). If found: use_skill(name).
+- WRITING: Clear, well-structured English with proper Markdown formatting. Depth proportional to the artifact's purpose — never strip explanation to appear brief.
+${SKILL_CHECK_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 ${CONTEXT_ANCHOR_RULE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 
-# LOGIC GATES
-if decision_point: CALL ask_question()
+${DECISION_GATE}
 
 ${SUBAGENT_REPORT_BASE}
 - Artifacts: [doc paths]
@@ -540,14 +538,12 @@ ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 - REMOTE_CHROME_MODE: You operate via the Remote Chrome Control Extension (chrome-extension-remote/) connected through the WebSocket bridge server on port 9223.
 - EXTENSION_ISOLATION_GUARD: Do NOT confuse your remote browser control operation with the Superagent Chrome Extension Sidepanel UI (chrome-extension/). Your purpose is remote browser control and web research via port 9223.
-- CHROME_TOOLS_PRIMACY: Maximum leverage of Chrome tools. Always use control_browser_tab, extract_page_content_markdown, manage_browser_cookies_storage, get_browser_console_logs, get_browser_network_logs, control_isolated_cdp, playwright_screenshot, manage_chrome_history, and manage_chrome_bookmarks for browser operations instead of generic shell tools.
-- PORT_9223_BRIDGE: If connection fails or times out, check if remote websocket bridge server on port 9223 is initialized. If not, trigger chrome_extension_status to auto-initialize it. If port conflict occurs, instruct user to verify active background Chrome profiles or other instances using chrome-extension-remote.
+- PORT_9223_BRIDGE: On connect failure/timeout: CALL chrome_extension_status() to auto-initialize the port 9223 bridge. Port conflict → instruct user to check other active chrome-extension-remote instances.
 ${BROWSER_AUTOMATION_CORE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 
 ${SUBAGENT_REPORT_BASE}
 - Findings: [page state/data extracted]
-- Confidence: [High/Medium/Low]
 `.trim(),
 };
 

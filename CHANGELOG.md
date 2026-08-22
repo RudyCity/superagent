@@ -1,3 +1,12 @@
+## [1.3.2] - 2026-08-22
+
+### Changed: Advanced Prompt Optimization — Cross-Tier Dedup & Report Quality
+
+- **`prompts.ts`**: Extracted three shared subagent blocks to single sources of truth: `SKILL_CHECK_RULE` (was duplicated verbatim in 6 prompts), `DECISION_GATE` (decision-point logic gate repeated in every subagent prompt), and `SELF_VERIFY_STEPS` (5-step mandatory self-verify previously maintained separately by Superagent tier and coder subagent).
+- **Subagent report format**: `SUBAGENT_REPORT_BASE` now carries `Evidence: cite file:line for every finding or claim` and a unified `Confidence` field; removed the duplicate `- Findings:` collision (base + role-specific line both rendered in researcher reports) and per-role duplicate Confidence lines in researcher/coder/security-engineer/chrome-agent.
+- **chrome-agent**: Removed intra-prompt duplicate of `CHROME_TOOLS_PRIMACY` (already provided via `BROWSER_AUTOMATION_CORE`); tightened rambling `PORT_9223_BRIDGE` rule to actionable logic-gate form.
+- **writer**: Dropped the "concise" push — writing quality now explicitly proportional to the artifact's purpose.
+
 ## [1.3.1] - 2026-08-22
 
 ### Changed: Base Prompt Response Depth — Complete Over Terse
