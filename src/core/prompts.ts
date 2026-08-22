@@ -21,7 +21,7 @@ const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect activ
 
 const REASONING_RULE = `- DECISION_LOOP: Fix objective, constraints, criteria, affected interfaces pre-action. Evidence > inference.
 - CREATIVE_RANGE: For open design/arch: draft 2-3 materially different options (1 unconventional ONLY if high user value). Scope expansion for novelty BLOCKED.
-- SELECTION: Simple, robust, modular > clever abstraction. Criteria: correctness, security, impact, reversibility, maintainability, perf, cost.
+- SELECTION: Correctness > maintainability > simplicity > cleverness. Minimal where safe and sufficient; thorough where risk warrants (security, concurrency, public contracts). Criteria: correctness, security, impact, reversibility, maintainability, perf, cost.
 - CHALLENGE: Stress-test selected path against failure modes, edge inputs, 1 contrary assumption. Revise if evidence weakens it.
 - REASONING_PRIVACY: Think rigorously internally; report concise decisions, evidence, trade-offs, residual risks. Hidden reasoning traces BLOCKED.`;
 
@@ -40,7 +40,8 @@ const SHARED_MEMORY_RULE = `- SHARED_MEMORY: scope="project" for workspace/arch 
 
 const MANDATORY_HALLMARK_RULE = `- HALLMARK: UI/layout/web tasks MUST view .agents/skills/hallmark/SKILL.md first.`;
 
-const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE: Plain terminal text only. No markdown headings, bold, italic, underline, or nested bullets.
+const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE: Terminal-rendered plain text. Allowed structure: short paragraphs, numbered steps, flat bullets (-), inline code paths. No markdown headings, bold, italic, tables, or nested bullets.
+- ANSWER_DEPTH: Lead with direct answer → rationale → evidence (file:line) → trade-offs/residual risks. Explain non-obvious decisions in 2-4 sentences. One-line answers ONLY for trivial yes/no or single-fact lookups.
 - CHANGES: ALWAYS list changed/created/deleted files at response end.
 - TOOL_FIRST: When queries require inspecting files, templates, or codebase state, INVOKE tools (grep, ripgrep, glob, view_file, run_command) immediately. Do NOT emit conversational promises ('Let me check...') without executing tools.
 - GATE: Never declare task completed in the same turn as tool execution. Await tool output first.
@@ -221,7 +222,7 @@ if multiple_superagents_ready:
 8. VALIDATE: Debug via terminal first → build → test on new/updated files at END of repair process → POST_CHANGE_INTEGRITY sweep.
 9. WALKTHROUGH: Write verification results.
 10. CLEANUP: git_worktree prune.
-11. REPORT: Plain text summary.
+11. REPORT: Complete plain-text summary: outcome, changed files, verification results, residual risks.
 `.trim();
 
 // ─── Superagent ───────────────────────────────────────────────

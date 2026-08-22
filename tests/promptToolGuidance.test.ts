@@ -36,7 +36,8 @@ describe("prompt and command guidance", () => {
     expect(prompts).toContain("Target PID ONLY");
     expect(prompts).not.toContain("taskkill /F /IM bun.exe");
     expect(prompts).not.toContain("## Rencana Perubahan");
-    expect(prompts).toContain("Plain terminal text only");
+    expect(prompts).toContain("Terminal-rendered plain text");
+    expect(prompts).toContain("ANSWER_DEPTH");
     expect(prompts).toContain("spawn 'researcher' for broad");
   });
 

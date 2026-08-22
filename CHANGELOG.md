@@ -1,3 +1,10 @@
+## [1.3.1] - 2026-08-22
+
+### Changed: Base Prompt Response Depth — Complete Over Terse
+
+- **`config/base.ts`**: `COMMUNICATION` rule rewritten from "be concise by default" to complete-over-terse: lead with the direct answer, then explain reasoning, trade-offs, and evidence for non-obvious decisions; one-line replies reserved for trivial yes/no or single-fact lookups. `OPERATING PRINCIPLES` and `EXECUTION LOOP` report steps now require rationale and explanation, not just conclusions.
+- **`prompts.ts`**: `RESPONSE` rule now explicitly allows structured terminal output (short paragraphs, numbered steps, flat bullets, inline code paths) instead of forbidding everything plain-text; new `ANSWER_DEPTH` rule enforces answer → rationale → evidence (file:line) → trade-offs structure with 2-4 sentence explanations for non-obvious decisions. `SELECTION` criteria rebalanced from "simple > clever" minimalism to correctness-first with thoroughness where risk warrants (security, concurrency, public contracts). Master Agent workflow report step expanded to require outcome, changed files, verification results, and residual risks.
+
 ## [1.3.0] - 2026-08-22
 
 ### Security: Server Mode & Chrome Bridge Lockdown (Audit Remediation)
