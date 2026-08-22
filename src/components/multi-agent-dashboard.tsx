@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { execSync } from "child_process";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { execa } from "execa";
 import { Box, Text, useInput, useApp } from "ink";
 import ChatTextInput, { ChatTextInputRef } from "./ChatTextInput.js";
 import fs from "fs/promises";
@@ -110,6 +110,26 @@ export interface AgentSession {
   worktreePath?: string;
   speed?: number;
   parentId?: string;
+}
+
+/** Cheap size signal for memoizing token recounts: measures only the last message content. */
+function lastContentLength(m?: { content?: unknown }): number {
+  if (!m) return 0;
+  const c = m.content as any;
+  if (typeof c === "string") return c.length;
+  if (Array.isArray(c)) {
+    const lastPart = c[c.length - 1];
+    if (!lastPart) return 0;
+    if (lastPart.type === "text") return typeof lastPart.text === "string" ? lastPart.text.length : 0;
+    if (lastPart.type === "image") return typeof lastPart.image === "string" ? lastPart.image.length : 0;
+    return 0;
+  }
+  return 0;
+}
+
+function getContextRecountKey(messages: { content?: unknown }[]): string {
+  const last = messages[messages.length - 1];
+  return `${messages.length}:${lastContentLength(last)}`;
 }
 
 export function MultiAgentDashboard({
@@ -487,44 +507,47 @@ export function MultiAgentDashboard({
   const suggestionDescs = getSuggestionDescriptions();
 
   useEffect(() => {
-    const fetchGitData = () => {
+    const mountedRef = { current: true };
+    let inFlight = false;
+
+    const fetchGitData = async () => {
+      if (inFlight || !mountedRef.current) return;
+      inFlight = true;
       const targetCwd = agent?.workingDirectory || process.cwd();
       try {
-        let branch = execSync("git branch --show-current", {
-          encoding: "utf-8",
-          cwd: targetCwd,
-          stdio: ["ignore", "pipe", "ignore"],
-        }).trim();
+        const [branchRes, worktreeRes] = await Promise.all([
+          execa("git", ["branch", "--show-current"], { cwd: targetCwd, reject: false }).catch(() => ({ stdout: "" })),
+          execa("git", ["worktree", "list"], { cwd: targetCwd, reject: false }).catch(() => ({ stdout: "" })),
+        ]);
+        if (!mountedRef.current) return;
+
+        let branch = branchRes.stdout?.trim() || "";
         if (!branch) {
-          branch = execSync("git rev-parse --short HEAD", {
-            encoding: "utf-8",
-            cwd: targetCwd,
-            stdio: ["ignore", "pipe", "ignore"],
-          }).trim();
+          const shaRes = await execa("git", ["rev-parse", "--short", "HEAD"], { cwd: targetCwd, reject: false }).catch(() => ({ stdout: "" }));
+          if (!mountedRef.current) return;
+          branch = shaRes.stdout?.trim() || "";
         }
         if (branch) setGitBranch(branch);
-      } catch {}
 
-      try {
-        const output = execSync("git worktree list", {
-          encoding: "utf-8",
-          cwd: targetCwd,
-          stdio: ["ignore", "pipe", "ignore"],
-        }).trim();
-        if (output) {
-          const lines = output.split("\n").filter(Boolean);
+        if (worktreeRes.stdout) {
+          const lines = worktreeRes.stdout.split("\n").filter(Boolean);
           setWorktreeCount(lines.length);
         } else {
           setWorktreeCount(0);
         }
       } catch {
-        setWorktreeCount(0);
+        if (mountedRef.current) setWorktreeCount(0);
+      } finally {
+        inFlight = false;
       }
     };
 
     fetchGitData();
     const timer = setInterval(fetchGitData, 5000);
-    return () => clearInterval(timer);
+    return () => {
+      mountedRef.current = false;
+      clearInterval(timer);
+    };
   }, [agent, agent?.workingDirectory]);
 
   useEffect(() => {
@@ -1293,19 +1316,21 @@ export function MultiAgentDashboard({
 
   // Use ContextManager's TokenTracker for accurate context usage if available,
   // falling back to lastMasterPromptTokens from API responses.
-  let activeContextUsage = 0;
-  const cm = agent?.getContextManager?.();
-  if (cm && agent) {
-    try {
-      const messages = agent.getHistory().getMessages();
-      const breakdown = cm.estimateTokensForAll(messages);
-      activeContextUsage = breakdown.total;
-    } catch {
-      activeContextUsage = lastMasterPromptTokens;
+  const historyMessages = agent ? agent.getHistory().getMessages() : [];
+  const tokenRecountKey = getContextRecountKey(historyMessages);
+  const estimatedContextTotal = useMemo(() => {
+    const cm = agent?.getContextManager?.();
+    if (cm && agent) {
+      try {
+        return cm.estimateTokensForAll(agent.getHistory().getMessages()).total;
+      } catch {
+        return null;
+      }
     }
-  } else {
-    activeContextUsage = lastMasterPromptTokens;
-  }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent, tokenRecountKey]);
+  let activeContextUsage = estimatedContextTotal !== null ? estimatedContextTotal : lastMasterPromptTokens;
   const contextPercentage = contextLimit > 0 ? ((activeContextUsage / contextLimit) * 100).toFixed(2) : "0.00";
 
   return (

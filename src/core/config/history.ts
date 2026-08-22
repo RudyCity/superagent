@@ -256,7 +256,8 @@ export function listHistorySessions(
   workspaceDir?: string,
   limit?: number,
   offset?: number,
-  modeFilter?: "single" | "multi" | "all"
+  modeFilter?: "single" | "multi" | "all",
+  dbScanLimit: number = 1000
 ): HistorySession[] {
   const { sessions } = listHistorySessionsPaginated({
     isMulti,
@@ -265,6 +266,7 @@ export function listHistorySessions(
     limit,
     offset,
     modeFilter,
+    dbScanLimit,
   });
   return sessions;
 }
@@ -276,6 +278,8 @@ export function listHistorySessionsPaginated(options: {
   limit?: number;
   offset?: number;
   modeFilter?: "single" | "multi" | "all";
+  /** Max rows scanned from SQLite before filtering. Defaults to 1000. */
+  dbScanLimit?: number;
 }): { sessions: HistorySession[]; totalCount: number; hasMore: boolean } {
   const isMulti = options.isMulti ?? false;
   const crossSession = options.crossSession ?? false;
@@ -283,12 +287,13 @@ export function listHistorySessionsPaginated(options: {
   const limit = options.limit;
   const offset = options.offset ?? 0;
   const modeFilter = options.modeFilter ?? (isMulti ? "multi" : "single");
+  const dbScanLimit = options.dbScanLimit ?? 1000;
 
   const currentDir = getCurrentWorkspaceIdentifier(workspaceDir);
 
   const sessions: HistorySession[] = [];
   try {
-    const dbSessions = listSessionsFromDb(1000);
+    const dbSessions = listSessionsFromDb(dbScanLimit);
     for (const s of dbSessions) {
       const normalizedPath = s.filePath.replace(/\\/g, "/");
 

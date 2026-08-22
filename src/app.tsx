@@ -49,6 +49,26 @@ import { useRmemoryStatus } from "./hooks/useRmemoryStatus.js";
 
 export { stripSgrMouseSequences } from "./utils/text.js";
 
+/** Cheap size signal for memoizing token recounts: measures only the last message content. */
+function lastContentLength(m?: { content?: unknown }): number {
+  if (!m) return 0;
+  const c = m.content as any;
+  if (typeof c === "string") return c.length;
+  if (Array.isArray(c)) {
+    const lastPart = c[c.length - 1];
+    if (!lastPart) return 0;
+    if (lastPart.type === "text") return typeof lastPart.text === "string" ? lastPart.text.length : 0;
+    if (lastPart.type === "image") return typeof lastPart.image === "string" ? lastPart.image.length : 0;
+    return 0;
+  }
+  return 0;
+}
+
+function getContextRecountKey(messages: { content?: unknown }[]): string {
+  const last = messages[messages.length - 1];
+  return `${messages.length}:${lastContentLength(last)}`;
+}
+
 function getWizardBorderColor(activeWizard: any): "yellow" | "cyan" | "blue" | "gray" | "red" {
   if (!activeWizard) return "cyan";
   switch (activeWizard.type) {
@@ -2493,12 +2513,24 @@ export function App({
   const liveStreamTokens = Math.ceil(streamDisplay.length / 4);
   
   // Use ContextManager's TokenTracker for accurate context usage if available
-  const cm = agentRef.current?.getContextManager?.();
+  const historyMessages = agentRef.current?.getHistory ? agentRef.current.getHistory().getMessages() : [];
+  const tokenRecountKey = getContextRecountKey(historyMessages);
+  const baseContextUsage = useMemo(() => {
+    const cm = agentRef.current?.getContextManager?.();
+    if (cm && agentRef.current) {
+      try {
+        const breakdown = cm.estimateTokensForAll(agentRef.current.getHistory().getMessages());
+        return breakdown.total;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokenRecountKey]);
   let activeContextUsage = 0;
-  if (cm && agentRef.current) {
-    const messages = agentRef.current.getHistory().getMessages();
-    const breakdown = cm.estimateTokensForAll(messages);
-    activeContextUsage = breakdown.total + liveStreamTokens;
+  if (baseContextUsage !== null) {
+    activeContextUsage = baseContextUsage + liveStreamTokens;
   } else if (lastPromptTokens > 0) {
     activeContextUsage = lastPromptTokens + liveStreamTokens;
   }

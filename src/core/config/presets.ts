@@ -27,6 +27,9 @@ export const BUILT_IN_PRESETS: ModelPreset[] = [];
 
 const EMPTY_FILE: ModelPresetsFile = { multi: [], single: [] };
 
+/** mtime+size based cache so repeated reads in hot UI paths skip disk I/O + JSON parse. */
+let presetsFileCache: { path: string; mtimeMs: number; size: number; data: ModelPresetsFile } | null = null;
+
 /**
  * Read the model-presets.json file.
  * - Handles new format: { multi: [...], single: [...] }
@@ -37,10 +40,22 @@ const EMPTY_FILE: ModelPresetsFile = { multi: [], single: [] };
 function readPresetsFile(): ModelPresetsFile {
   const customPath = getCustomPresetsPath();
   if (!fs.existsSync(customPath)) {
+    presetsFileCache = null;
     return { ...EMPTY_FILE, multi: [], single: [] };
   }
 
   try {
+    let stat = fs.statSync(customPath);
+    if (
+      presetsFileCache &&
+      presetsFileCache.path === customPath &&
+      presetsFileCache.mtimeMs === stat.mtimeMs &&
+      presetsFileCache.size === stat.size
+    ) {
+      return presetsFileCache.data;
+    }
+
+    let wroteBack = false;
     const data = JSON.parse(fs.readFileSync(customPath, "utf-8"));
 
     // New format: { multi: [...], single: [...] }
@@ -56,7 +71,10 @@ function readPresetsFile(): ModelPresetsFile {
       if (migrated) {
         ensureGlobalConfigDir();
         fs.writeFileSync(customPath, JSON.stringify(result, null, 2), "utf-8");
+        wroteBack = true;
       }
+      if (wroteBack) stat = fs.statSync(customPath);
+      presetsFileCache = { path: customPath, mtimeMs: stat.mtimeMs, size: stat.size, data: result };
       return result;
     }
 
@@ -83,10 +101,13 @@ function readPresetsFile(): ModelPresetsFile {
       // Write migrated file back
       ensureGlobalConfigDir();
       fs.writeFileSync(customPath, JSON.stringify(result, null, 2), "utf-8");
+      stat = fs.statSync(customPath);
+      presetsFileCache = { path: customPath, mtimeMs: stat.mtimeMs, size: stat.size, data: result };
       return result;
     }
   } catch {
-    // Ignore corruption
+    // Ignore corruption — invalidate any stale cache entry
+    presetsFileCache = null;
   }
 
   return { multi: [], single: [] };
@@ -177,6 +198,11 @@ function writePresetsFile(data: ModelPresetsFile): void {
       throw err;
     }
   }
+  // Refresh cache so the next read reflects the freshly written data
+  try {
+    const stat = fs.statSync(customPath);
+    presetsFileCache = { path: customPath, mtimeMs: stat.mtimeMs, size: stat.size, data };
+  } catch {}
 }
 
 /**

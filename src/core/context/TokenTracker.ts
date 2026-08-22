@@ -226,16 +226,45 @@ export class TokenTracker {
   }
 
   /**
-   * Stable hash that includes a content prefix to prevent collisions between
-   * messages sharing the same role, timestamp, and content length but differing
-   * in actual text (e.g., two user messages sent at the same millisecond).
+   * Stable hash computed WITHOUT materializing the full joined content string.
+   * Walks content parts accumulating total length plus 64-char head/tail slices,
+   * mirroring contentToString's join(" ") semantics for identity purposes.
    */
   private hashMessage(message: Message): string {
-    const text = contentToString(message.content);
-    const contentLen = text.length;
-    let contentPrefix = text.length <= 64 ? text : text.substring(0, 64);
-    contentPrefix = contentPrefix.replace(/\s+/g, " ");
-    return `${message.role}:${contentLen}:${message.timestamp || 0}:${message.toolCalls?.length || 0}:${message.toolResults?.length || 0}:${contentPrefix}`;
+    const segments =
+      typeof message.content === "string"
+        ? [message.content]
+        : Array.isArray(message.content)
+          ? message.content.map((p) => (p && p.type === "text" ? p.text : "[image]"))
+          : [];
+
+    let contentLen = 0;
+    let head = "";
+    let tail = "";
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (i > 0) {
+        contentLen += 1;
+        if (head.length < 64) head += " ";
+      }
+      contentLen += seg.length;
+      if (head.length < 64) head += seg.slice(0, 64 - head.length);
+    }
+    let remaining = 64;
+    for (let i = segments.length - 1; i >= 0 && remaining > 0; i--) {
+      const seg = segments[i];
+      const take = Math.min(remaining, seg.length);
+      tail = seg.slice(seg.length - take) + tail;
+      remaining -= take;
+      if (remaining > 0 && i > 0) {
+        tail = " " + tail;
+        remaining -= 1;
+      }
+    }
+
+    const normalizedHead = head.replace(/\s+/g, " ");
+    const normalizedTail = tail.replace(/\s+/g, " ");
+    return `${message.role}:${contentLen}:${message.timestamp || 0}:${message.toolCalls?.length || 0}:${message.toolResults?.length || 0}:${normalizedHead}:${normalizedTail}`;
   }
 }
 

@@ -455,8 +455,27 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
       now
     );
 
-    const deleteMessagesStmt = db.prepare("DELETE FROM messages WHERE session_id = ?");
-    deleteMessagesStmt.run(session.id);
+    // Incremental append fast path: only rewrite rows when history actually changed.
+    // Falls back to a full DELETE + re-INSERT on truncation/compaction or any ambiguity.
+    const existingCountRow = db.prepare(
+      "SELECT COUNT(*) as count FROM messages WHERE session_id = ?"
+    ).get(session.id) as any;
+    const existingCount = Number(existingCountRow?.count || 0);
+
+    let appendFrom = 0;
+    if (existingCount > 0 && messages.length >= existingCount) {
+      const lastExisting = db.prepare(
+        "SELECT role, content FROM messages WHERE session_id = ? ORDER BY sequence_order DESC, id DESC LIMIT 1"
+      ).get(session.id) as any;
+      const anchor = messages[existingCount - 1];
+      if (lastExisting && anchor && lastExisting.role === anchor.role && lastExisting.content === anchor.content) {
+        appendFrom = existingCount;
+      }
+    }
+
+    if (appendFrom === 0) {
+      db.prepare("DELETE FROM messages WHERE session_id = ?").run(session.id);
+    }
 
     const insertMessageStmt = db.prepare(`
       INSERT INTO messages (
@@ -464,7 +483,7 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    for (let i = 0; i < messages.length; i++) {
+    for (let i = appendFrom; i < messages.length; i++) {
       const msg = messages[i];
       insertMessageStmt.run(
         session.id,

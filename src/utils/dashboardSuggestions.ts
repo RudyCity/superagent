@@ -52,6 +52,50 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
 };
 
+const RESUME_SCAN_LIMIT = 100;
+const RESUME_SUGGESTIONS_TTL_MS = 5000;
+const RESUME_REFRESH_DEBOUNCE_MS = 150;
+
+let resumeSuggestionsCache: { isMulti: boolean; possibilities: string[]; fetchedAt: number } | null = null;
+let resumeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function computeResumePossibilities(isMulti: boolean): string[] {
+  const sessionsList = listHistorySessions(isMulti, false, undefined, 20, undefined, undefined, RESUME_SCAN_LIMIT).slice(0, 10);
+  return sessionsList.map((s, idx) => `/resume ${idx + 1}`);
+}
+
+function scheduleResumeRefresh(isMulti: boolean): void {
+  if (resumeRefreshTimer) clearTimeout(resumeRefreshTimer);
+  resumeRefreshTimer = setTimeout(() => {
+    resumeRefreshTimer = null;
+    try {
+      resumeSuggestionsCache = {
+        isMulti,
+        possibilities: computeResumePossibilities(isMulti),
+        fetchedAt: Date.now(),
+      };
+    } catch {}
+  }, RESUME_REFRESH_DEBOUNCE_MS);
+}
+
+/** Cached /resume suggestions: repeated keystrokes return the cached list instantly
+ * and coalesce stale-data refreshes behind a trailing debounce. */
+function getResumePossibilities(): string[] {
+  const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+  if (!resumeSuggestionsCache || resumeSuggestionsCache.isMulti !== isMulti) {
+    resumeSuggestionsCache = {
+      isMulti,
+      possibilities: computeResumePossibilities(isMulti),
+      fetchedAt: Date.now(),
+    };
+    return resumeSuggestionsCache.possibilities;
+  }
+  if (Date.now() - resumeSuggestionsCache.fetchedAt >= RESUME_SUGGESTIONS_TTL_MS) {
+    scheduleResumeRefresh(isMulti);
+  }
+  return resumeSuggestionsCache.possibilities;
+}
+
 export function getDashboardSuggestions(originalQuery: string, cursorPosition: number = originalQuery.length): string[] {
   const context = getActiveCommandContext(originalQuery, cursorPosition);
   if (!context) return [];
@@ -162,10 +206,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
     }
     
     if (mainCommand === "/resume") {
-      const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
-      const sessionsList = listHistorySessions(isMulti, false, undefined, 20).slice(0, 10);
-      const possibilities = sessionsList.map((s, idx) => `/resume ${idx + 1}`);
-      return filterSuggestions(possibilities, query);
+      return filterSuggestions(getResumePossibilities(), query);
     }
 
     if (mainCommand === "/terminal") {
