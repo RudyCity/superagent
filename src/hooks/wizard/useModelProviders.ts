@@ -281,6 +281,8 @@ export async function handleProviderStep(
       providerType = "custom-anthropic";
     } else if (choice.includes("gemini") || choice.includes("google") || choice === "6") {
       providerType = "gemini";
+    } else if (choice.includes("opencode") || choice.includes("zen") || choice === "8") {
+      providerType = "opencode";
     } else {
       addLine({
         type: "error",
@@ -335,6 +337,7 @@ export async function handleProviderStep(
         "5. Custom Anthropic Endpoint",
         "6. Google Gemini",
         "7. Not Set (Clear Override)",
+        "8. OpenCode Zen (Free Models)",
         "< Back"
       ]);
       setWizardSelectedIndex(0);
@@ -526,7 +529,11 @@ export async function handleProviderStep(
         name: profileName,
         provider: providerType === "custom-anthropic" ? "anthropic" : providerType,
         apiKey: apiKey,
-        baseUrl: baseUrl || (providerType === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
+        baseUrl: baseUrl || (providerType === "openrouter"
+          ? "https://openrouter.ai/api/v1"
+          : providerType === "opencode"
+          ? "https://opencode.ai/zen/v1"
+          : undefined),
       });
       // Activate the newly created provider in all preset tiers
       switchActiveProvider(newProviderId);

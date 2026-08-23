@@ -1,4 +1,6 @@
-export type ProviderType = "openrouter" | "openai" | "anthropic" | "gemini" | "custom" | "custom-anthropic";
+export type ProviderType = "openrouter" | "openai" | "anthropic" | "gemini" | "custom" | "custom-anthropic" | "opencode";
+
+export const OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/v1";
 import { ensureProtocol } from "./config/paths.js";
 
 export interface ConfiguredProvider {
@@ -17,6 +19,7 @@ export function resolveProviderType(choice: string): ProviderType | null {
   if (lc === "2" || (lc.includes("openai") && !lc.includes("custom"))) return "openai";
   if (lc === "3" || (lc.includes("anthropic") && !lc.includes("custom"))) return "anthropic";
   if (lc === "6" || lc.includes("gemini") || lc.includes("google")) return "gemini";
+  if (lc === "7" || lc.includes("opencode") || lc.includes("zen")) return "opencode";
   if (lc.includes("custom anthropic") || lc === "5") return "custom-anthropic";
   if (lc.includes("custom openai") || lc.includes("custom") || lc === "4") return "custom";
   return null;
@@ -58,6 +61,15 @@ export function getFallbackModels(providerType: ProviderType): string[] {
         "gemini-2.0-flash-lite",
         "gemini-1.5-flash",
         "gemini-1.5-pro",
+      ];
+    case "opencode":
+      return [
+        "x-preview-f-free",
+        "big-pickle",
+        "mimo-v2.5-free",
+        "hy3-free",
+        "nemotron-3-ultra-free",
+        "nemotron-3.5-lightning-free",
       ];
     default:
       return ["gpt-4o", "gpt-4o-mini"];
@@ -169,6 +181,9 @@ export async function fetchModelsForProvider(
   } else if (providerType === "openai") {
     url = cleanBase ? `${cleanBase}/models` : "https://api.openai.com/v1/models";
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  } else if (providerType === "opencode") {
+    url = cleanBase ? `${cleanBase}/models` : `${OPENCODE_ZEN_BASE_URL}/models`;
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   } else if (providerType === "gemini") {
     if (!apiKey) return [];
     url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
@@ -238,6 +253,7 @@ export async function fetchModelsForProvider(
 export function resolveTestModel(providerType: string, baseUrl: string): string {
   if (providerType === "gemini") return "gemini-2.5-flash";
   if (providerType === "anthropic" || providerType === "custom-anthropic") return "claude-3-haiku-20240307";
+  if (providerType === "opencode") return "x-preview-f-free";
   if (providerType === "openrouter" || (baseUrl && baseUrl.includes("openrouter.ai"))) {
     return "openai/gpt-4o-mini";
   }

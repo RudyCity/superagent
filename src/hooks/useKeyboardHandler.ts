@@ -587,7 +587,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 step: 2,
                 data: {},
               });
-              setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint", "6. Google Gemini"]);
+              setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint", "6. Google Gemini", "7. OpenCode Zen (Free Models)"]);
               setWizardSelectedIndex(0);
             } else if (selectedOption.includes("Delete / Remove")) {
               const providers = getConfiguredProviders();
@@ -641,7 +641,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           } else if (activeWizard.step === 2) {
             const choice = selectedOption.toLowerCase();
             let provider = "";
-            if (choice.includes("openrouter")) provider = "openrouter";
+            if (choice.includes("opencode") || choice.includes("zen")) provider = "opencode";
+            else if (choice.includes("openrouter")) provider = "openrouter";
             else if (choice.includes("custom") && choice.includes("anthropic")) provider = "custom-anthropic";
             else if (choice.includes("custom") && choice.includes("openai")) provider = "custom";
             else if (choice.includes("custom")) provider = "custom";
@@ -2007,7 +2008,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           } else if (activeWizard.step === 3) {
             // Back to step 2: Select provider template
             setActiveWizard({ type: "login", step: 2, data: {} });
-            setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint", "6. Google Gemini"]);
+            setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint", "6. Google Gemini", "7. OpenCode Zen (Free Models)"]);
             setWizardSelectedIndex(0);
             setInput("");
             return;

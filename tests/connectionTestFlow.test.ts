@@ -43,31 +43,34 @@ describe("loginWizardLogic — pure helper functions", () => {
       expect(resolveProviderType("gemini")).toBe("gemini");
     });
 
+    it("should resolve opencode from number or text", () => {
+      expect(resolveProviderType("7")).toBe("opencode");
+      expect(resolveProviderType("OpenCode Zen (Free Models)")).toBe("opencode");
+    });
+
     it("should return null for invalid input", () => {
       expect(resolveProviderType("invalid")).toBeNull();
-      expect(resolveProviderType("7")).toBeNull();
+      expect(resolveProviderType("8")).toBeNull();
     });
   });
 
   describe("buildProviderOptions", () => {
-    it("should filter out providers without apiKey", () => {
+    it("should include all providers, including those without apiKey (e.g. local endpoints)", () => {
       const providers = [
         { id: "p1", name: "P1", provider: "openai", apiKey: "sk-123", baseUrl: undefined, isActive: false },
         { id: "p2", name: "P2", provider: "anthropic", apiKey: "", baseUrl: undefined, isActive: false },
         { id: "p3", name: "P3", provider: "custom", apiKey: "sk-456", baseUrl: "http://localhost:8080/v1", isActive: true },
       ];
       const options = buildProviderOptions(providers);
-      expect(options).toHaveLength(2);
+      expect(options).toHaveLength(3);
       expect(options[0]).toContain("P1");
-      expect(options[1]).toContain("P3");
-      expect(options[1]).toContain("http://localhost:8080/v1");
+      expect(options[1]).toContain("P2");
+      expect(options[2]).toContain("P3");
+      expect(options[2]).toContain("http://localhost:8080/v1");
     });
 
-    it("should return empty array when no providers have keys", () => {
-      const providers = [
-        { id: "p1", name: "P1", provider: "openai", apiKey: "", baseUrl: undefined, isActive: false },
-      ];
-      expect(buildProviderOptions(providers)).toHaveLength(0);
+    it("should return empty array when no providers exist", () => {
+      expect(buildProviderOptions([])).toHaveLength(0);
     });
   });
 

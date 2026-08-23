@@ -13,6 +13,7 @@ describe("loginWizardLogic", () => {
       expect(resolveProviderType("4")).toBe("custom");
       expect(resolveProviderType("5")).toBe("custom-anthropic");
       expect(resolveProviderType("6")).toBe("gemini");
+      expect(resolveProviderType("7")).toBe("opencode");
     });
 
     it("resolves name choices case-insensitively", () => {
@@ -22,10 +23,11 @@ describe("loginWizardLogic", () => {
       expect(resolveProviderType("Custom Endpoint")).toBe("custom");
       expect(resolveProviderType("Custom Anthropic Endpoint")).toBe("custom-anthropic");
       expect(resolveProviderType("Google Gemini")).toBe("gemini");
+      expect(resolveProviderType("OpenCode Zen (Free Models)")).toBe("opencode");
     });
 
     it("returns null for invalid choices", () => {
-      expect(resolveProviderType("7")).toBeNull();
+      expect(resolveProviderType("8")).toBeNull();
       expect(resolveProviderType("foo")).toBeNull();
     });
   });
@@ -72,6 +74,17 @@ describe("loginWizardLogic", () => {
       ]);
     });
 
+    it("returns opencode fallback models when cache is empty", () => {
+      expect(getModelOptions("opencode", [])).toEqual([
+        "x-preview-f-free",
+        "big-pickle",
+        "mimo-v2.5-free",
+        "hy3-free",
+        "nemotron-3-ultra-free",
+        "nemotron-3.5-lightning-free",
+      ]);
+    });
+
     it("returns filtered cached models for gemini", () => {
       const cached = ["gemini-1.5-flash", "gpt-4o", "gemini-2.0-pro"];
       expect(getModelOptions("gemini", cached)).toEqual([
@@ -109,6 +122,10 @@ describe("loginWizardLogic", () => {
 
     it("resolves gemini test model", () => {
       expect(resolveTestModel("gemini", "")).toBe("gemini-2.5-flash");
+    });
+
+    it("resolves opencode test model", () => {
+      expect(resolveTestModel("opencode", "https://opencode.ai/zen/v1")).toBe("x-preview-f-free");
     });
 
     it("defaults to openai gpt-4o-mini", () => {
@@ -204,6 +221,21 @@ describe("loginWizardLogic", () => {
       vi.unstubAllGlobals();
     });
 
+    it("uses the default OpenCode Zen models URL when no baseUrl is provided", async () => {
+      (globalThis.fetch as any).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: [{ id: "x-preview-f-free" }, { id: "big-pickle" }] }),
+      });
+      const models = await fetchModelsForProvider("opencode", "oc-test", "");
+      expect(models).toEqual(["x-preview-f-free", "big-pickle"]);
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "https://opencode.ai/zen/v1/models",
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: "Bearer oc-test" }),
+        })
+      );
+    });
+
     it("should use first model from endpoint for custom provider", async () => {
       (globalThis.fetch as any).mockResolvedValueOnce({
         ok: true,
@@ -248,7 +280,7 @@ describe("loginWizardLogic", () => {
   });
 
   describe("getProviderOptionsList", () => {
-    it("should return all 6 default templates without filtering out configured providers", () => {
+    it("should return all 7 default templates without filtering out configured providers", () => {
       const list = [
         { id: "openai-profile", name: "openai", type: "openai", apiKey: "sk-123", isActive: true },
         { id: "gemini-profile", name: "gemini", type: "gemini", apiKey: "gemini-123", isActive: false },
@@ -262,6 +294,7 @@ describe("loginWizardLogic", () => {
       expect(result).toContain("4. Custom OpenAI Endpoint");
       expect(result).toContain("5. Custom Anthropic Endpoint");
       expect(result).toContain("6. Google Gemini");
+      expect(result).toContain("7. OpenCode Zen (Free Models)");
       expect(result).toContain("< Back");
     });
   });

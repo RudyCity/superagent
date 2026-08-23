@@ -35,7 +35,7 @@ export const loginCommand: SlashCommand = {
           content: [
             "Usage:",
             "  /login add <api_key> (auto-detects OpenRouter, Anthropic, OpenAI, Gemini)",
-            "  /login add <provider> <api_key> (providers: openrouter, anthropic, openai, gemini)",
+            "  /login add <provider> <api_key> (providers: openrouter, anthropic, openai, gemini, opencode)",
             "  /login add custom <base_url> <api_key>",
             "  /login list",
             "  /login remove <provider_id>",
@@ -71,7 +71,7 @@ export const loginCommand: SlashCommand = {
     } else {
       // Backward compatibility fallback
       if (
-        ["openrouter", "anthropic", "openai", "custom"].includes(actionArg) ||
+        ["openrouter", "anthropic", "openai", "custom", "opencode"].includes(actionArg) ||
         actionArg.startsWith("sk-")
       ) {
         action = "add";
@@ -225,6 +225,8 @@ export const loginCommand: SlashCommand = {
           defaultModel = "claude-3-5-sonnet-20241022";
         } else if (target.provider === "gemini") {
           defaultModel = "gemini-2.5-flash";
+        } else if (target.provider === "opencode") {
+          defaultModel = "x-preview-f-free";
         }
 
         const baseUrlInfo = newBaseUrl ? `\nBase URL: ${newBaseUrl}` : "";
@@ -288,7 +290,7 @@ export const loginCommand: SlashCommand = {
         provider = "custom";
         baseUrl = subParts[1];
         apiKey = subParts[2];
-      } else if (["openrouter", "anthropic", "openai", "gemini"].includes(subParts[0].toLowerCase())) {
+      } else if (["openrouter", "anthropic", "openai", "gemini", "opencode"].includes(subParts[0].toLowerCase())) {
         if (subParts.length < 2) {
           ctx.addLine({
             type: "error",
@@ -320,7 +322,11 @@ export const loginCommand: SlashCommand = {
           name: provider,
           provider: provider,
           apiKey: apiKey,
-          baseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
+          baseUrl: baseUrl || (provider === "openrouter"
+            ? "https://openrouter.ai/api/v1"
+            : provider === "opencode"
+            ? "https://opencode.ai/zen/v1"
+            : undefined),
         });
 
         // Switch active preset to use this provider
@@ -334,9 +340,11 @@ export const loginCommand: SlashCommand = {
           defaultModel = "claude-3-5-sonnet-20241022";
         } else if (provider === "gemini") {
           defaultModel = "gemini-2.5-flash";
+        } else if (provider === "opencode") {
+          defaultModel = "x-preview-f-free";
         }
 
-        const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");
+        const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : provider === "opencode" ? `\nBase URL: https://opencode.ai/zen/v1` : "");
 
         ctx.addLine({
           type: "system",

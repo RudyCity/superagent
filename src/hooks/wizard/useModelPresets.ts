@@ -331,6 +331,7 @@ export async function handlePresetStep(
       "5. Custom Anthropic Endpoint",
       "6. Google Gemini",
       "7. Not Set (Clear Override)",
+      "8. OpenCode Zen (Free Models)",
       "< Back"
     ]);
     setWizardSelectedIndex(0);
@@ -431,6 +432,8 @@ export async function handlePresetStep(
       providerType = "custom-anthropic";
     } else if (choice.includes("gemini") || choice.includes("google") || choice === "6") {
       providerType = "gemini";
+    } else if (choice.includes("opencode") || choice.includes("zen") || choice === "8") {
+      providerType = "opencode";
     } else {
       addLine({
         type: "error",
@@ -474,6 +477,7 @@ export async function handlePresetStep(
         "5. Custom Anthropic Endpoint",
         "6. Google Gemini",
         "7. Not Set (Clear Override)",
+        "8. OpenCode Zen (Free Models)",
         "< Back"
       ]);
       setWizardSelectedIndex(0);

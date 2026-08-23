@@ -32,6 +32,8 @@ export async function fetchAndCacheModels(): Promise<void> {
       url = "https://openrouter.ai/api/v1/models";
     } else if (provider.type === "openai") {
       url = baseUrl ? `${baseUrl.replace(/\/+$/, "")}/models` : "https://api.openai.com/v1/models";
+    } else if (provider.type === "opencode") {
+      url = `${(baseUrl || "https://opencode.ai/zen/v1").replace(/\/+$/, "")}/models`;
     } else if (provider.type === "gemini") {
       // Google Gemini: use the generativelanguage REST API models endpoint
       url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
@@ -424,6 +426,14 @@ export function getModelInstanceForString(modelStr: string) {
           if (!baseUrl) {
             baseUrl = "https://openrouter.ai/api/v1";
           }
+        } else if (typeLower === "opencode") {
+          // OpenCode Zen gateway (https://opencode.ai/zen) — OpenAI-compatible
+          // /chat/completions for most models; Claude/Qwen Plus are served via
+          // the Anthropic-format /messages API and detected below.
+          provider = "custom";
+          if (!baseUrl) {
+            baseUrl = "https://opencode.ai/zen/v1";
+          }
         } else if (typeLower === "gemini") {
           provider = "gemini";
           baseUrl = undefined;
@@ -501,7 +511,7 @@ export function getModelInstanceForString(modelStr: string) {
     baseUrl = ensureProtocol(baseUrl);
   }
 
-  const isCloud = !baseUrl || baseUrl.includes("openrouter.ai") || baseUrl.includes("openai.com") || baseUrl.includes("anthropic.com");
+  const isCloud = !baseUrl || baseUrl.includes("openrouter.ai") || baseUrl.includes("openai.com") || baseUrl.includes("anthropic.com") || baseUrl.includes("opencode.ai");
   const isMissingKey = !apiKey || apiKey.trim() === "" || apiKey === "dummy";
   const isTest = (process.env.VITEST || process.env.NODE_ENV === "test") && !process.env.SUPERAGENT_FORCE_VAL_CHECK;
   if (!isTest && isCloud && isMissingKey) {
@@ -511,7 +521,12 @@ export function getModelInstanceForString(modelStr: string) {
   // If the resolved provider is "custom", it represents a Custom OpenAI Endpoint (or OpenRouter).
   // We should only treat it as Anthropic-compatible if the baseUrl explicitly indicates Anthropic (e.g. contains "anthropic").
   // This allows Custom OpenAI Endpoints to serve Claude models (like claude-sonnet-4-6) via OpenAI-compatible APIs.
-  const isAnthropic = provider === "anthropic" || (
+  // Exception: OpenCode Zen serves Claude/Qwen Plus models via the Anthropic-format /messages API
+  // (https://opencode.ai/zen/v1/messages), so route those to the Anthropic SDK.
+  const isOpenCodeZenAnthropicModel =
+    (baseUrl || "").toLowerCase().includes("opencode.ai") &&
+    /^(claude|qwen[\d.]*-plus)/i.test(modelName);
+  const isAnthropic = provider === "anthropic" || isOpenCodeZenAnthropicModel || (
     provider === "custom" &&
     isAnthropicCompatible(baseUrl || "", modelName) &&
     (

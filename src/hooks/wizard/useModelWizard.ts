@@ -330,6 +330,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
             "5. Custom Anthropic Endpoint",
             "6. Google Gemini",
             "7. Not Set (Clear Override)",
+            "8. OpenCode Zen (Free Models)",
             "< Back"
           ]);
         }
@@ -447,6 +448,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         "5. Custom Anthropic Endpoint",
         "6. Google Gemini",
         "7. Not Set (Clear Override)",
+        "8. OpenCode Zen (Free Models)",
         "< Back"
       ]);
       setWizardSelectedIndex(0);

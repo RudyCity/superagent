@@ -531,7 +531,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             "3. Anthropic",
             "4. Custom OpenAI Endpoint",
             "5. Custom Anthropic Endpoint",
-            "6. Google Gemini"
+            "6. Google Gemini",
+            "7. OpenCode Zen (Free Models)"
           ]);
           setWizardSelectedIndex(0);
         } else {
@@ -552,7 +553,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
       } else if (activeWizard.step === 2) {
         const provider = resolveProviderType(value);
         if (!provider) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Invalid choice. Please select 1, 2, 3, 4, 5, or 6.`].slice(-500));
+          setMasterLogs((prev) => [...prev, `[ERROR] Invalid choice. Please select 1, 2, 3, 4, 5, 6, or 7.`].slice(-500));
           return;
         }
 
@@ -627,14 +628,18 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             name: profileName,
             provider: provider === "custom-anthropic" ? "anthropic" : provider,
             apiKey: apiKey,
-            baseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
+            baseUrl: baseUrl || (provider === "openrouter"
+              ? "https://openrouter.ai/api/v1"
+              : provider === "opencode"
+              ? "https://opencode.ai/zen/v1"
+              : undefined),
           });
 
           // Set provider ini sebagai aktif di preset JSON
           switchActiveProvider(providerId);
 
-          const effectiveBaseUrl = baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : "");
-          const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");
+          const effectiveBaseUrl = baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : provider === "opencode" ? "https://opencode.ai/zen/v1" : "");
+          const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : provider === "opencode" ? `\nBase URL: https://opencode.ai/zen/v1` : "");
 
           setMasterLogs((prev) => [
             ...prev,

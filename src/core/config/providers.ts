@@ -113,6 +113,7 @@ export function getProviderOptionsList(list: ConfiguredProvider[]): string[] {
     "4. Custom OpenAI Endpoint",
     "5. Custom Anthropic Endpoint",
     "6. Google Gemini",
+    "7. OpenCode Zen (Free Models)",
   ];
   return [...options, ...defaultTemplates, "< Back"];
 }

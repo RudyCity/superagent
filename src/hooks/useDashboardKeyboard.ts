@@ -568,7 +568,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
             return;
           } else if (activeWizard.step === 3) {
             setActiveWizard({ type: "login", step: 2, data: {} });
-            setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint", "6. Google Gemini"]);
+            setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint", "6. Google Gemini", "7. OpenCode Zen (Free Models)"]);
             setWizardSelectedIndex(0);
             setQuery("");
             return;

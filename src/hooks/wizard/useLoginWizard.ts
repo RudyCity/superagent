@@ -65,7 +65,8 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           "3. Anthropic",
           "4. Custom OpenAI Endpoint",
           "5. Custom Anthropic Endpoint",
-          "6. Google Gemini"
+          "6. Google Gemini",
+          "7. OpenCode Zen (Free Models)"
         ]);
         setWizardSelectedIndex(0);
       } else if (choice.includes("delete") || choice.includes("remove") || choice === "3") {
@@ -128,7 +129,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       if (!provider) {
         addLine({
           type: "error",
-          content: "Invalid choice. Please select 1, 2, 3, 4, 5, or 6.",
+          content: "Invalid choice. Please select 1, 2, 3, 4, 5, 6, or 7.",
           timestamp: now,
         });
         return;
@@ -209,7 +210,11 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           name: profileName,
           provider: provider === "custom-anthropic" ? "anthropic" : provider,
           apiKey: apiKey,
-          baseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
+          baseUrl: baseUrl || (provider === "openrouter"
+            ? "https://openrouter.ai/api/v1"
+            : provider === "opencode"
+            ? "https://opencode.ai/zen/v1"
+            : undefined),
         });
 
         // Set this provider as active in preset JSON
@@ -221,8 +226,8 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           clearToolCallSupportCache();
         } catch {}
 
-        const effectiveBaseUrl = baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : "");
-        const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");
+        const effectiveBaseUrl = baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : provider === "opencode" ? "https://opencode.ai/zen/v1" : "");
+        const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : provider === "opencode" ? `\nBase URL: https://opencode.ai/zen/v1` : "");
 
         addLine({
           type: "system",

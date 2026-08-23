@@ -1,3 +1,14 @@
+## [1.3.3] - 2026-08-23
+
+### Added: OpenCode Zen Provider
+
+- **New first-class provider `opencode`** (OpenCode Zen gateway, `https://opencode.ai/zen/v1`, OpenAI-compatible with free models such as `x-preview-f-free`, `big-pickle`, `mimo-v2.5-free`):
+  - **`loginWizardLogic.ts`**: New `ProviderType` `"opencode"` (menu choice `7. OpenCode Zen (Free Models)`), fallback model list (`getFallbackModels`), `/models` discovery via `https://opencode.ai/zen/v1/models` (`fetchModelsForProvider`), and connection-test model resolution.
+  - **`config/models.ts`**: `getModelInstanceForString` resolves `typeLower === "opencode"` profiles to the OpenAI-compatible client with the Zen base URL; Claude/Qwen Plus models on Zen are routed through the Anthropic SDK (`/v1/messages` format); model-cache fetch covers `opencode`; `opencode.ai` treated as a cloud endpoint for API-key validation.
+  - **`loginCommand.ts`**: `/login add opencode <api_key>` supported with automatic default base URL + default model; edit flow sets matching defaults; usage text updated.
+  - **Wizards**: Provider template menus updated across `/login` wizard (`useLoginWizard`, `useKeyboardHandler`, `useDashboardKeyboard`, `useDashboardWizard`) and model wizards (`useModelProviders`, `useModelPresets`, `useModelWizard`, option `8.` where "Not Set" occupies slot 7); new-profile save flows persist the Zen base URL automatically.
+  - **Tests**: `tests/loginWizardLogic.test.ts` extended (type resolution, fallbacks, test model, default Zen `/models` URL); stale assertions in `tests/connectionTestFlow.test.ts` aligned with current behavior.
+
 ## [1.3.2] - 2026-08-22
 
 ### Changed: Advanced Prompt Optimization — Cross-Tier Dedup & Report Quality
