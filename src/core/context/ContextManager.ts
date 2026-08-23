@@ -84,9 +84,17 @@ export class ContextManager {
       abortSignal: config.abortSignal,
     });
 
+    const pinningStrategy = new PinningStrategy({
+      model: config.llmModel,
+      abortSignal: config.abortSignal,
+    });
+
     this.strategies = [
-      new PinningStrategy(),
-      new RMemoryStrategy(),
+      pinningStrategy,
+      new RMemoryStrategy({
+        model: config.llmModel,
+        abortSignal: config.abortSignal,
+      }),
       summarizationStrategy,
       new PruningStrategy(),
     ];
@@ -99,11 +107,16 @@ export class ContextManager {
   }
 
   setLLMModel(model: any, abortSignal?: AbortSignal): void {
-    const summarizationStrategy = this.strategies.find(
-      (s) => s.name === "summarization"
-    ) as SummarizationStrategy;
-    if (summarizationStrategy) {
-      summarizationStrategy.setConfig({ model, abortSignal });
+    for (const s of this.strategies) {
+      if (s.name === "summarization" && typeof (s as any).setConfig === "function") {
+        (s as SummarizationStrategy).setConfig({ model, abortSignal });
+      }
+      if (s.name === "pinning" && typeof (s as any).setConfig === "function") {
+        (s as any).setConfig({ model, abortSignal });
+      }
+      if (s.name === "rmemory" && typeof (s as any).setConfig === "function") {
+        (s as any).setConfig({ model, abortSignal });
+      }
     }
   }
 
@@ -266,6 +279,12 @@ export class ContextManager {
   setThreshold(threshold: number | "auto"): void {
     if (threshold !== "auto") {
       this.config.contextWindowLimit = threshold;
+      // Keep budgeted pruning's derived budget in sync with live limit
+      if (this.budgetedPruningStrategy && typeof (this.budgetedPruningStrategy as any).setContextWindowLimit === "function") {
+        (this.budgetedPruningStrategy as any).setContextWindowLimit(threshold);
+      } else if (this.budgetedPruningStrategy) {
+        (this.budgetedPruningStrategy as any).contextWindowLimit = threshold;
+      }
     }
   }
 
@@ -380,12 +399,13 @@ export class ContextManager {
   private selectStrategy(messages: Message[]): CompactionStrategy {
     const context = this.buildCompactionContext(messages);
 
-    // Pre-emptive band: estimated tokens exceed 0.65 * threshold but are still
-    // below the emergency threshold. Use budgeted pruning to proactively
-    // shrink the thought-DAG rather than waiting for reactive compaction.
+    // Pre-emptive band: only trigger budgeted pruning very close to the threshold
+    // (0.85–1.0) to avoid premature heuristic pruning when AI summarization
+    // ("smart compact") would be preferred. Normal threshold-exceeded path
+    // (>= threshold) goes to pinning/summarization with AI, not pruning.
     const totalTokens = this.tokenTracker.estimateTokensForAll(messages).total;
     const threshold = this.calculateThreshold();
-    if (totalTokens > threshold * 0.65 && totalTokens < threshold) {
+    if (totalTokens > threshold * 0.85 && totalTokens < threshold) {
       return this.budgetedPruningStrategy;
     }
 

@@ -10,6 +10,11 @@ import { getSettings } from "../../config.js";
 import { SummarizationStrategy } from "./SummarizationStrategy.js";
 import { getRMemoryClient, getRMemorySessionKey, isRmemoryActiveSync } from "../../rmemoryUtil.js";
 
+export interface RMemoryConfig {
+  model?: any;
+  abortSignal?: AbortSignal;
+}
+
 export class RMemoryStrategy implements CompactionStrategy {
   name = "rmemory";
   private lastCapturedTimestamp = 0;
@@ -17,8 +22,15 @@ export class RMemoryStrategy implements CompactionStrategy {
   private gatewayOffline = false;
   private recallCache: { key: string; ts: number; value: any } | null = null;
   private static RECALL_TTL = 60 * 1000;
+  private config?: RMemoryConfig;
 
-  constructor() {}
+  constructor(config?: RMemoryConfig) {
+    this.config = config;
+  }
+
+  setConfig(config: RMemoryConfig): void {
+    this.config = config;
+  }
 
   canHandle(context: CompactionContext): boolean {
     return isRmemoryActiveSync() && context.messages.length > 5;
@@ -32,7 +44,10 @@ export class RMemoryStrategy implements CompactionStrategy {
 
     // Silent fallback if gateway is known to be offline (cooldown for 5 minutes)
     if (this.gatewayOffline && now - this.lastConnectAttempt < 5 * 60 * 1000) {
-      const fallback = new SummarizationStrategy();
+      const fallback = new SummarizationStrategy({
+        model: this.config?.model ?? (options as any).model,
+        abortSignal: this.config?.abortSignal ?? options.abortSignal,
+      });
       return fallback.execute(messages, options);
     }
 
@@ -190,8 +205,11 @@ Do NOT automatically resume or reference these past sessions, previous code modi
         this.gatewayOffline = true;
       }
       
-      // Fallback to SummarizationStrategy
-      const fallback = new SummarizationStrategy();
+      // Fallback to SummarizationStrategy with AI model when available (smart compact)
+      const fallback = new SummarizationStrategy({
+        model: this.config?.model ?? (options as any).model,
+        abortSignal: this.config?.abortSignal ?? options.abortSignal,
+      });
       return fallback.execute(messages, options);
     }
   }

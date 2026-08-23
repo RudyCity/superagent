@@ -1,3 +1,12 @@
+## [1.3.5] - 2026-08-23
+
+### Fixed: Auto-Compact Now Uses Smart AI Summarization
+
+- **`agent/HistoryCompactor.ts`**: `contextManagerCompact` now always injects the current LLM model into the ContextManager before compaction. Previously the model was only injected when an `AbortSignal` was present, so `RequestProcessor`/`FastPath` auto-compact paths (no signal) silently fell back to heuristic pruning instead of AI summarization.
+- **`context/ContextManager.ts`**: Constructor now wires `llmModel` into `PinningStrategy` and `RMemoryStrategy`; `setLLMModel` propagates to `summarization`, `pinning`, and `rmemory` alike. Pre-emptive `BudgetedPruningStrategy` band tightened from `0.65×` to `0.85×` threshold to avoid premature heuristic pruning when AI compact would be preferred. `setThreshold` now keeps the budgeted strategy's limit in sync. Added `setContextWindowLimit` setter on `BudgetedPruningStrategy`.
+- **`context/strategies/PinningStrategy.ts`**: Reworked into smart AI compact — uses `generateText` LLM summarization when a model is available (with retry and prompt-logging), falling back to the heuristic `buildPruneSummary` only when offline. Added `PinningConfig`/`setConfig` and corrected `estimateCost` to report `apiCalls: 0` when no model.
+- **`context/strategies/RMemoryStrategy.ts`**: Added `RMemoryConfig`/`setConfig` and fixed both offline-cooldown and error fallbacks to forward the current model to the fallback `SummarizationStrategy`, so the fallback is AI-based ("smart compact") rather than heuristic.
+
 ## [1.3.4] - 2026-08-23
 
 ### Fixed: Context Window Misreport Guard

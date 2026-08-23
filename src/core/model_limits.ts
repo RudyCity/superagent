@@ -556,6 +556,7 @@ export function getStaticModelLimit(model: string): number | null {
   if (m.includes("llama-3.3") || m.includes("llama-3.2") || m.includes("llama-3.1")) return 131072;
   if (m.includes("llama-3")) return 8192;
 
+  if (m.includes("selfcode") || m.includes("3.8-4b") || m.includes("qwen3.8-4b")) return 8192;
   if (m.includes("qwen3.8") || m.includes("qwen3.7")) return 1000000;
   if (m.includes("qwen3")) return 262144;
   if (m.includes("qwen2.5-coder") || m.includes("qwen-2.5-coder")) return 128000;

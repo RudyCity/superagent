@@ -9,9 +9,24 @@ import {
 import { Message, contentToString } from "../../conversation.js";
 import { SemanticAnalyzer } from "../SemanticAnalyzer.js";
 import { TokenTracker } from "../TokenTracker.js";
+import { generateText } from "ai";
+
+export interface PinningConfig {
+  model?: any;
+  abortSignal?: AbortSignal;
+}
 
 export class PinningStrategy implements CompactionStrategy {
   name = "pinning";
+  private config?: PinningConfig;
+
+  constructor(config?: PinningConfig) {
+    this.config = config;
+  }
+
+  setConfig(config: PinningConfig): void {
+    this.config = config;
+  }
 
   canHandle(context: CompactionContext): boolean {
     return context.hasPinnedMessages && context.pinnedMessageIds !== undefined;
@@ -77,7 +92,14 @@ export class PinningStrategy implements CompactionStrategy {
       toSummarize.push(moved);
     }
 
-    const summary = this.buildPruneSummary(toSummarize);
+    // Smart AI compact: use LLM summary when model is available, otherwise heuristic fallback.
+    const abortSignal = options.abortSignal ?? this.config?.abortSignal;
+    let summary: string;
+    if (this.config?.model) {
+      summary = await this.generateLLMSummary(toSummarize, abortSignal);
+    } else {
+      summary = this.buildPruneSummary(toSummarize);
+    }
 
     const summaryMessage: Message = {
       role: "user",
@@ -116,8 +138,73 @@ export class PinningStrategy implements CompactionStrategy {
     return {
       tokens: inputTokens + 500,
       time: 2000,
-      apiCalls: 1,
+      apiCalls: this.config?.model ? 1 : 0,
     };
+  }
+
+  private async generateLLMSummary(messages: Message[], abortSignal?: AbortSignal): Promise<string> {
+    if (messages.length === 0) return "No messages pruned.";
+    const MAX_FORMATTED_CHARS = 80_000;
+    const formatted = messages
+      .map((m) => {
+        const role = m.role.toUpperCase();
+        let details = contentToString(m.content) || "";
+        if (m.toolCalls && m.toolCalls.length > 0) {
+          details += `\n[Tool Calls]: ${m.toolCalls.map((tc) => tc.name).join(", ")}`;
+        }
+        return `[${role}]: ${details}`;
+      })
+      .join("\n\n");
+    const truncated = formatted.length > MAX_FORMATTED_CHARS
+      ? formatted.slice(0, MAX_FORMATTED_CHARS) + "\n[... truncated for brevity ...]"
+      : formatted;
+    const prompt = `You are a helper system node. Summarize the following past coding assistant chat history turns into a clean, human-readable format.
+
+Structure:
+### 🎯 User Goal
+- What the user requested.
+
+### 🛠️ Key Actions Taken
+- Files created, edited, or commands executed.
+
+### 🔍 Workspace Status
+- Final state, test/build status, and unresolved issues if any.
+
+Keep the summary natural, clear, direct, and formatted with clean Markdown bullet points. Preserve key file paths, function names, and technical decisions.
+
+---
+PAST CHAT HISTORY:
+${truncated}`;
+
+    let attempt = 0;
+    const maxRetries = 3;
+    const baseDelay = 2000;
+    while (true) {
+      try {
+        try {
+          const { logPrompt } = await import("../../agent/PromptLogger.js");
+          logPrompt(
+            "PinningStrategy:summarizeMessages",
+            this.config?.model?.modelId || (typeof this.config?.model === "string" ? this.config?.model : undefined),
+            "You are a helpful system agent that summarizes conversation history logs to save token context window space.",
+            prompt
+          );
+        } catch {}
+        const result = await generateText({
+          model: this.config!.model,
+          system: "You are a helpful system agent that summarizes conversation history logs to save token context window space.",
+          prompt,
+          abortSignal: abortSignal ?? this.config!.abortSignal,
+        });
+        return result.text;
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") throw err;
+        attempt++;
+        if (attempt > maxRetries) return this.buildPruneSummary(messages);
+        if (abortSignal?.aborted) throw err as Error;
+        await new Promise((resolve) => setTimeout(resolve, baseDelay * Math.pow(2, attempt - 1)));
+      }
+    }
   }
 
   /**

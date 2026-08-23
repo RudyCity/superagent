@@ -40,6 +40,10 @@ export class BudgetedPruningStrategy implements CompactionStrategy {
     this.contextWindowLimit = opts?.contextWindowLimit ?? 0;
   }
 
+  setContextWindowLimit(limit: number): void {
+    this.contextWindowLimit = limit;
+  }
+
   canHandle(_context: CompactionContext): boolean {
     // Pre-emptive strategy: always available; selection is gated by ContextManager.
     return true;

@@ -14,9 +14,11 @@ export class HistoryCompactor {
     byteBudget?: number
   ): Promise<void> {
     const contextManager = agent.conversation.getContextManager()!;
-    if (signal) {
-      await agent.conversation.updateContextManagerLLM(agent.getModel(), signal);
-    }
+    // Always inject the current LLM model so Summarization/Pinning use AI
+    // ("smart compact") instead of heuristic fallback. Previously only injected
+    // when a signal was present, so RequestProcessor/FastPath auto-compact
+    // (no signal) silently fell back to heuristic pruning.
+    await agent.conversation.updateContextManagerLLM(agent.getModel(), signal);
     const messages = agent.conversation.getMessages();
     const decision = contextManager.shouldCompact(messages);
 
