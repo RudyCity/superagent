@@ -365,7 +365,8 @@ export function loadModelConfig(): GlobalModelConfig {
     for (let attempt = 0; attempt < maxLoadAttempts; attempt++) {
       try {
         if (fs.existsSync(configPath)) {
-          const data = fs.readFileSync(configPath, "utf-8");
+          const rawData = fs.readFileSync(configPath, "utf-8");
+          const data = rawData.replace(/^\uFEFF/, "");
           if (!data || data.trim() === "") {
             throw new Error("Config file is empty or blank");
           }
@@ -561,7 +562,8 @@ function recoverConfigFromBackups(configPath: string): GlobalModelConfig | null 
       .sort((a, b) => b.mtime - a.mtime);
     for (const c of candidates) {
       try {
-        const parsed = JSON.parse(fs.readFileSync(c.full, "utf-8"));
+        const raw = fs.readFileSync(c.full, "utf-8").replace(/^\uFEFF/, "");
+        const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.providers) && parsed.providers.length > 0) {
           return parsed;
         }
@@ -596,7 +598,8 @@ function recoverProvidersFromBackups(configPath: string): ProviderProfile[] | nu
       .sort((a, b) => b.mtime - a.mtime);
     for (const c of candidates) {
       try {
-        const parsed = JSON.parse(fs.readFileSync(c.full, "utf-8"));
+        const raw = fs.readFileSync(c.full, "utf-8").replace(/^\uFEFF/, "");
+        const parsed = JSON.parse(raw);
         if (Array.isArray(parsed?.providers) && parsed.providers.length > 0) {
           return parsed.providers;
         }
@@ -622,7 +625,8 @@ function recoverProvidersFromBackups(configPath: string): ProviderProfile[] | nu
 function mergeProvidersWithDisk(config: GlobalModelConfig, configPath: string): void {
   try {
     if (!fs.existsSync(configPath)) return;
-    const onDisk = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    const raw = fs.readFileSync(configPath, "utf-8").replace(/^\uFEFF/, "");
+    const onDisk = JSON.parse(raw);
     if (!Array.isArray(onDisk?.providers)) return;
     const inMemoryIds = new Set((config.providers || []).map((p) => p.id));
     for (const diskProvider of onDisk.providers as ProviderProfile[]) {
@@ -646,7 +650,8 @@ function mergeProvidersWithDisk(config: GlobalModelConfig, configPath: string): 
 function mergePresetsWithDisk(config: GlobalModelConfig, configPath: string): void {
   try {
     if (!fs.existsSync(configPath)) return;
-    const onDisk = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    const raw = fs.readFileSync(configPath, "utf-8").replace(/^\uFEFF/, "");
+    const onDisk = JSON.parse(raw);
     if (!onDisk?.presets) return;
     for (const mode of ["multi", "single"] as const) {
       const diskList = onDisk.presets?.[mode];

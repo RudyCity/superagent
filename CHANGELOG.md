@@ -1,3 +1,9 @@
+## [1.3.6] - 2026-08-23
+
+### Fixed: BOM Corruption in model-config.json
+
+- **`config/jsonConfig.ts`**: All `model-config.json` reads now strip a leading UTF-8 BOM (`\uFEFF` / `EF BB BF`) before `JSON.parse`. Affects `loadModelConfig`, `recoverConfigFromBackups`, `recoverProvidersFromBackups`, `mergeProvidersWithDisk`, `mergePresetsWithDisk`. Root cause was PowerShell / Notepad saving `model-config.json` with BOM, producing `SyntaxError: Unexpected token '﻿'` on every startup and triggering repeated `.corrupt-*` backups. Existing BOM-corrupted file at `~/.superagent-r/model-config.json` was repaired in-place.
+
 ## [1.3.5] - 2026-08-23
 
 ### Fixed: Auto-Compact Now Uses Smart AI Summarization
