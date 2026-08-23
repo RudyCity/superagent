@@ -1,3 +1,10 @@
+## [1.3.4] - 2026-08-23
+
+### Fixed: Context Window Misreport Guard
+
+- **`config/models.ts`**: `getContextWindowLimit` no longer trusts cached context limits below `16384` tokens (`MIN_TRUSTED_CONTEXT_LIMIT`). Provider `/models` endpoints occasionally misreport tiny `context_length` values (e.g. `x-preview-f-free` cached at `8192`, causing the status bar to show `Ctx: 711% (58.3K/8.2K)`); such values now fall back to the static model limit table, or the `256000` default when the model is unknown. Cached values at or above the threshold (and explicit JSON `contextWindowLimit` overrides) are unaffected.
+- **`tests/config.test.ts`**: Updated `should prioritize static limits over cache for known models` — a cached `5000` for `claude-sonnet-5` now resolves to its static `1000000` limit instead of the misreport; added regression test `should guard against suspiciously small cached context limits` covering unknown-model (`8192` → `256000`) and known-model (`4096` → static `128000`) misreports.
+
 ## [1.3.3] - 2026-08-23
 
 ### Added: OpenCode Zen Provider

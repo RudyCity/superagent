@@ -12,6 +12,11 @@ import { saveModelCachesToDb, getModelCachesFromDb } from "../storage/historyDb.
 
 let legacyCacheMigrated = false;
 
+/** Cached context limits below this are treated as provider misreports. */
+const MIN_TRUSTED_CONTEXT_LIMIT = 16384;
+/** Fallback context window when no reliable data exists. */
+const DEFAULT_CONTEXT_WINDOW_LIMIT = 256000;
+
 export async function fetchAndCacheModels(): Promise<void> {
   const providers = getConfiguredProviders();
   const cache: Record<string, number> = {};
@@ -136,6 +141,12 @@ export function getContextWindowLimit(model: string): number {
     if (cache && typeof cache[cleanModel] === "number") {
       const cachedVal = cache[cleanModel];
       const staticLimit = getStaticModelLimit(cleanModel);
+      // Guard against unreasonably small cached values (e.g. 8192 misreported
+      // by a provider's /models endpoint). Prefer static lookup or the 256K
+      // default over a cached value below the minimum trusted threshold.
+      if (cachedVal < MIN_TRUSTED_CONTEXT_LIMIT) {
+        return staticLimit ?? DEFAULT_CONTEXT_WINDOW_LIMIT;
+      }
       if ((cachedVal === 128000 || cachedVal === 200000) && staticLimit !== null) {
         return staticLimit;
       }
@@ -152,7 +163,7 @@ export function getContextWindowLimit(model: string): number {
   }
 
   // Default fallback
-  return 256000;
+  return DEFAULT_CONTEXT_WINDOW_LIMIT;
 }
 
 export function isAnthropicCompatible(baseUrl: string, modelName: string): boolean {

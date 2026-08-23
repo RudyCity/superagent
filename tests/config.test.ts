@@ -205,13 +205,33 @@ describe("config", () => {
       
       expect(getContextWindowLimit("server_zenmuxglmn_preset_zenmux/x-ai/grok-4.5-free")).toBe(500000);
       expect(getContextWindowLimit("zenmux-anthropic/claude-fable-5-free")).toBe(1000000);
-      expect(getContextWindowLimit("claude-sonnet-5")).toBe(5000);
+      // Cached values below the trusted threshold (16384) are treated as
+      // provider misreports and fall back to the static limit.
+      expect(getContextWindowLimit("claude-sonnet-5")).toBe(1000000);
     } finally {
       deleteModelCachesFromDb([
         "server_zenmuxglmn_preset_zenmux/x-ai/grok-4.5-free",
         "zenmux-anthropic/claude-fable-5-free",
         "claude-sonnet-5"
       ]);
+      saveModelCachesToDb(existingCache);
+    }
+  });
+
+  it("should guard against suspiciously small cached context limits", () => {
+    const existingCache = getModelCachesFromDb();
+
+    try {
+      // Simulate a provider /models endpoint misreporting 8192 for an
+      // unknown model — must fall back to the 256K default, not 8.2K.
+      saveModelCachesToDb({ "x-preview-f-free": 8192 });
+      expect(getContextWindowLimit("x-preview-f-free")).toBe(256000);
+
+      // Known model with a small misreport falls back to its static limit.
+      saveModelCachesToDb({ "gpt-4o": 4096 });
+      expect(getContextWindowLimit("gpt-4o")).toBe(128000);
+    } finally {
+      deleteModelCachesFromDb(["x-preview-f-free", "gpt-4o"]);
       saveModelCachesToDb(existingCache);
     }
   });
