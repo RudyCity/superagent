@@ -6,6 +6,7 @@ import {
   stopRemoteChromeBridge,
   isRemoteChromeConnected,
   getRemoteChromeClientMetadata,
+  getBridgeToken,
 } from "../src/core/tools/remoteChromeBridge.js";
 import fs from "fs";
 import path from "path";
@@ -19,9 +20,16 @@ describe("remoteChromeBridge comprehensive test suite", () => {
   test("tracks client metadata when hello packet is received", async () => {
     const port = 9260;
     await ensureRemoteChromeBridge(port);
+    const authToken = getBridgeToken();
 
     const client = new WebSocket(`ws://127.0.0.1:${port}`);
     await new Promise((res) => client.on("open", res));
+
+    // Complete the post-connect handshake first.
+    client.send(
+      JSON.stringify({ type: "bridge_handshake_v1", token: authToken })
+    );
+    await new Promise((res) => setTimeout(res, 100));
 
     client.send(
       JSON.stringify({
@@ -49,9 +57,15 @@ describe("remoteChromeBridge comprehensive test suite", () => {
   test("rejects pending requests instantly when client disconnects", async () => {
     const port = 9261;
     await ensureRemoteChromeBridge(port);
+    const authToken = getBridgeToken();
 
     const client = new WebSocket(`ws://127.0.0.1:${port}`);
     await new Promise((res) => client.on("open", res));
+    // Complete the post-connect handshake first.
+    client.send(
+      JSON.stringify({ type: "bridge_handshake_v1", token: authToken })
+    );
+    await new Promise((res) => setTimeout(res, 100));
 
     const commandPromise = sendRemoteCommand("navigate", "https://example.com");
 
@@ -64,9 +78,14 @@ describe("remoteChromeBridge comprehensive test suite", () => {
   test("enforces command rate limit when exceeding max requests per second", async () => {
     const port = 9262;
     await ensureRemoteChromeBridge(port);
+    const authToken = getBridgeToken();
 
     const client = new WebSocket(`ws://127.0.0.1:${port}`);
     await new Promise((res) => client.on("open", res));
+    client.send(
+      JSON.stringify({ type: "bridge_handshake_v1", token: authToken })
+    );
+    await new Promise((res) => setTimeout(res, 100));
 
     // Respond immediately to requests so they resolve quickly
     client.on("message", (raw) => {

@@ -4,7 +4,7 @@ import path from "path";
 import { createHash } from "crypto";
 import { Tool } from "./types.js";
 import { normalizeForMatching, verifySyntax, mapNormToOrigIndices, countOccurrences, fileLockManager } from "./helpers.js";
-import { normalizePath, resolveFilePathFromArgs, isLocalConfigOrSessionPath } from "./pathHelpers.js";
+import { normalizePath, resolveFilePathFromArgs, isLocalConfigOrSessionPath, enforceMasterWriteAllowlist } from "./pathHelpers.js";
 import { checkFileLock, lockFile, releaseFile } from "../storage/sharedMemory.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { sshWriteToolExecute, sshEditToolExecute, sshMultiEditToolExecute } from "../ssh/sshCommands.js";
@@ -761,6 +761,20 @@ export const writeToFileTool: Tool = {
       if (!targets) return "Error: Missing filePath or files for SSH write";
       return await sshWriteToolExecute(targets as any, content);
     }
+    // Tier-aware allowlist: Master Agent cannot write to codebase files.
+    // The check is duplicated for both single-file and batch (files[]) modes.
+    const tier = (currentAgent as any)?.tier;
+    {
+      const singleTarget = args.filePath as string | undefined;
+      const blockedSingle = enforceMasterWriteAllowlist(singleTarget, tier);
+      if (blockedSingle) return blockedSingle;
+      if (args.files && Array.isArray(args.files)) {
+        for (const f of args.files as any[]) {
+          const blocked = enforceMasterWriteAllowlist(f?.filePath, tier);
+          if (blocked) return blocked;
+        }
+      }
+    }
     const files = args.files as Array<{ filePath: string; content: string; overwrite?: boolean }> | undefined;
     if (files && Array.isArray(files)) {
       if (files.length === 0) {
@@ -1013,6 +1027,21 @@ export const replaceFileContentTool: Tool = {
         return "Error: Missing filePath, targetContent, or replacementContent for SSH replace_file_content";
       }
       return await sshEditToolExecute(targetPath, targetContent, replacementContent);
+    }
+    // Tier-aware allowlist: Master Agent cannot edit codebase files.
+    const tier = (currentAgent as any)?.tier;
+    {
+      const blockedSingle = enforceMasterWriteAllowlist(targetPath, tier);
+      if (blockedSingle) return blockedSingle;
+      if (args.edits && Array.isArray(args.edits)) {
+        for (const e of args.edits as any[]) {
+          const blocked = enforceMasterWriteAllowlist(
+            e?.filePath || e?.TargetFile || e?.targetFile || e?.target_file || e?.path || e?.file,
+            tier
+          );
+          if (blocked) return blocked;
+        }
+      }
     }
     const edits = args.edits as Array<{ filePath: string; targetContent: string; replacementContent: string; startLine: number; endLine: number; allowMultiple?: boolean; AllowMultiple?: boolean }> | undefined;
     if (edits && Array.isArray(edits)) {

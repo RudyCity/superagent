@@ -106,40 +106,49 @@ import { unlockFileTool, getLockStatsTool, resolveConflictTool, generateLockRepo
 import { transferSshFileTool } from "./sshTransferTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
-// Focused on orchestration. Does NOT write code itself.
+// Orchestration only. The Master Agent MUST NOT directly modify code or
+// run arbitrary shell — those are the Superagent's job. This was previously
+// violated (writeToFileTool, bashTool, etc. were in the master toolset).
+// See: AGENTS.md §"Master Agent Planning" + the security audit in
+// sess_1787733100811_xetwt4_walkthrough.md (C3).
 export const masterToolset: Tool[] = [
-  transferSshFileTool,
+  // ── Superagent orchestration (the core job of the Master) ──
   askQuestionTool,
-  invokeSuperagentTool,  // spawn superagent in worktree
-  awaitSuperagentsTool,  // wait for all superagents to finish
-  mergeSuperagentsTool,  // merge all completed branches
-  manageSuperagentsTool, // list/logs/report/kill superagents
-  defineSuperagentTool,  // define custom superagent types
-  sendMessageToSuperagentTool, // send follow-up message to superagent
-  manageSubagentsTool,   // monitor/kill subagents if needed
-  scheduleTool,
+  invokeSuperagentTool,
+  awaitSuperagentsTool,
+  mergeSuperagentsTool,
+  manageSuperagentsTool,
+  defineSuperagentTool,
+  sendMessageToSuperagentTool,
+  manageSubagentsTool,
+  // ── Read-only inspection ──
+  readTool,
+  readDocumentTool,
+  globTool,
+  grepTool,
+  ripgrepSearchTool,
+  webSearchTool,
+  searchJournalTool,
+  fetchUrlTool,
   searchHistoryTool,
   loadPinnedSessionTool,
   searchPinnedKnowledgeTool,
-  webSearchTool,
-  searchJournalTool,
-  readDocumentTool,
   officeCliTool,
-  manageMcpTool,
-  readTool,              // read-only: inspect results
-  globTool,
-  grepTool,
-  gitWorktreeTool,
+  // ── Planning & session management (writes only to ~/.superagent-r/) ──
+  scheduleTool,
   manageTasksTool,
   managePlanTool,
   getSkillsTool,
   useSkillTool,
-  writeToFileTool,       // for planning files
-  replaceFileContentTool,// for planning files
-  multiReplaceFileContentTool, // for planning files
-  runCommandTool,        // for running validation / test commands
-  bashTool,              // for running validation / test commands
-  playwrightScreenshotTool,
+  // The three write tools below ARE allowed in the master toolset because
+  // the Master owns its own plan/task/walkthrough artifacts. The runtime
+  // path-allowlist in the write tools' .execute() blocks writes to the
+  // codebase for tier==="master" callers, so the Master cannot directly
+  // edit source files. Codebase edits MUST be delegated to Superagents.
+  writeToFileTool,
+  replaceFileContentTool,
+  multiReplaceFileContentTool,
+  // ── Long-term memory & shared state (read+write, scoped to memory store) ──
   rmemorySearchTool,
   rmemoryConversationSearchTool,
   rmemoryReadCosTool,
@@ -147,12 +156,26 @@ export const masterToolset: Tool[] = [
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
-  unlockFileTool,
+  // ── Lock visibility (read-only stats; unlock/cross-workspace tools
+  //    are intentionally NOT here — the Master delegates file edits to
+  //    Superagents, which own their worktree's locks). ──
   getLockStatsTool,
   generateLockReportTool,
-  manageWorkspaceChainTool,
-  crossWorkspaceExecTool,
+  // ── Worktree topology (read+add, NOT cross-workspace exec) ──
+  gitWorktreeTool,
+  // ── MCP is a master-tier concern (cross-tool integration setup) ──
+  manageMcpTool,
 ];
+
+// Defense-in-depth runtime allowlist. The MasterAgent runner consults
+// this set before executing any tool call. If a tool name is not in
+// ORCHESTRATION_TOOL_NAMES, the call is rejected with a clear error —
+// even if the model is prompt-injected into trying to call it. This
+// closes the gap between the static masterToolset (which may drift) and
+// the intent in AGENTS.md.
+export const ORCHESTRATION_TOOL_NAMES: ReadonlySet<string> = new Set(
+  masterToolset.map((t) => t.name)
+);
 
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────
 // Full development toolset. Scoped to own worktree at runtime via permission layer.
@@ -203,9 +226,7 @@ export const superagentToolset: Tool[] = [
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
-  unlockFileTool,
   getLockStatsTool,
-  resolveConflictTool,
   generateLockReportTool,
   manageWorkspaceChainTool,
   crossWorkspaceExecTool,
@@ -252,9 +273,7 @@ export const chromeExtensionToolset: Tool[] = [
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
-  unlockFileTool,
   getLockStatsTool,
-  resolveConflictTool,
   generateLockReportTool,
   // ─── Chrome & Browser Control Tools ───
   controlBrowserTabTool,
@@ -338,7 +357,6 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemoryConversationAddTool,
     saveSharedMemoryTool,
     readSharedMemoryTool,
-    unlockFileTool,
     getLockStatsTool,
     sendMessageTool,
   ],
@@ -350,8 +368,6 @@ export const subagentToolsets: Record<string, Tool[]> = {
     globTool,
     grepTool,
     ripgrepSearchTool,
-    runCommandTool,
-    bashTool,
     webSearchTool,
     searchJournalTool,
     askQuestionTool,
@@ -360,6 +376,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemorySearchTool,
     rmemoryConversationSearchTool,
     rmemoryReadCosTool,
+    readSharedMemoryTool,
   ],
 
   "software-tester": [
@@ -383,8 +400,6 @@ export const subagentToolsets: Record<string, Tool[]> = {
     globTool,
     grepTool,
     ripgrepSearchTool,
-    runCommandTool,
-    bashTool,
     webSearchTool,
     askQuestionTool,
     getSkillsTool,
@@ -392,6 +407,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemorySearchTool,
     rmemoryConversationSearchTool,
     rmemoryReadCosTool,
+    readSharedMemoryTool,
   ],
 
   "chrome-agent": [

@@ -5,6 +5,41 @@ import { workspaceMode } from "../ssh/workspaceMode.js";
 import { workspaceChainManager } from "../workspace/WorkspaceChainManager.js";
 
 /**
+ * Tier-aware path-allowlist enforcement for the write tools.
+ *
+ * The Master Agent (tier === "master") MUST NOT directly edit codebase
+ * files. It owns its plan/task/walkthrough artifacts (paths under
+ * `~/.superagent-r/`, also known as the local config/session root), but
+ * every write to a path outside that root must be delegated to a
+ * Superagent (tier === "superagent" or "single"), which owns a worktree
+ * and can apply the change through the normal PR-style workflow.
+ *
+ * Subagent tiers (researcher, reviewer, coder, etc.) are not restricted
+ * by this helper — they are scoped to their parent's worktree by the
+ * Superagent that spawned them.
+ *
+ * Returns null when the write is allowed, or a string with the rejection
+ * reason when it is blocked. The caller should short-circuit and return
+ * the rejection string as the tool result.
+ */
+export function enforceMasterWriteAllowlist(
+  rawPath: string | undefined,
+  tier: string | undefined
+): string | null {
+  if (tier !== "master") return null;
+  if (!rawPath || typeof rawPath !== "string") return null;
+  // Master can always write to the local config/session root (plans, tasks,
+  // walkthroughs, history, etc.).
+  if (isLocalConfigOrSessionPath(rawPath)) return null;
+  return (
+    "Master Agent cannot directly edit codebase files. " +
+    "Delegate the edit to a Superagent (use invoke_superagent) so the change " +
+    "is applied inside an isolated worktree and reviewed via the merge step. " +
+    `Blocked write target: ${rawPath}`
+  );
+}
+
+/**
  * Helper to determine if a path refers to a local configuration or session directory.
  */
 export function isLocalConfigOrSessionPath(rawPath: string): boolean {

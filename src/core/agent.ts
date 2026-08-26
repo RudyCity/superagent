@@ -360,6 +360,10 @@ export class Agent {
       const { masterToolset, superagentToolset, subagentToolsets, defaultSubagentToolset } = await import("./tools/toolsets.js");
       if (this.tier === "master") {
         tools = [...masterToolset];
+        // The masterToolset is curated at source to contain orchestration
+        // tools only (see toolsets.ts). Runtime guard against
+        // prompt-injection calling non-orchestration tools is provided by
+        // a tier check in the run() loop (see Agent.run).
       } else if (this.tier === "superagent" || this.tier === "single") {
         tools = [...superagentToolset];
       } else if (this.tier === "subagent") {

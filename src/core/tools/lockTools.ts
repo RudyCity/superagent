@@ -7,7 +7,11 @@ import { logE2E } from "../utils/unifiedLogger.js";
 
 export const unlockFileTool: Tool = {
   name: "unlock_file",
-  description: "Manually unlock or override a locked file across terminal sessions.",
+  description:
+    "Manually unlock a locked file across terminal sessions. By default, the unlock only " +
+    "succeeds when the calling session owns the lock. To force-override a lock held by a " +
+    "different session, set `force: true` and provide a non-empty `reason`. Force-override " +
+    "is audit-logged and visible to the lock owner.",
   parameters: {
     type: "object",
     properties: {
@@ -17,14 +21,34 @@ export const unlockFileTool: Tool = {
       },
       force: {
         type: "boolean",
-        description: "Force unlock regardless of owner session ID (default: true)",
+        description:
+          "Force unlock regardless of owner session ID. Defaults to false. " +
+          "Requires `reason` to be non-empty when true.",
+        default: false,
+      },
+      reason: {
+        type: "string",
+        description:
+          "Required when `force` is true. Free-text justification recorded in the " +
+          "lock event audit trail.",
       },
     },
     required: ["filePath"],
   },
   async execute(args, cwd) {
     const filePath = args.filePath as string;
-    const force = args.force !== false;
+    // Default to false (safe) instead of true. Pre-1.5.0 this defaulted to
+    // true, which let any model-driven call silently take another agent's lock.
+    const force = args.force === true;
+    if (force) {
+      const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+      if (reason.length === 0) {
+        return "Failed to unlock file: `reason` is required when `force: true`.";
+      }
+      logE2E("SUPERAGENT-SERVER", `[LOCK-TOOL] unlock_file force-override: ${filePath}`, {
+        reason, cwd: cwd || process.cwd(),
+      });
+    }
 
     logE2E("SUPERAGENT-SERVER", `[LOCK-TOOL] unlock_file invoked: ${filePath}`, { force, cwd: cwd || process.cwd() });
     const res = releaseFile(filePath, undefined, cwd, force);
@@ -69,10 +93,22 @@ export const resolveConflictTool: Tool = {
       resolutionStrategy: {
         type: "string",
         enum: ["force_override", "take_ours", "take_theirs", "merge_adjacent"],
-        description: "Strategy to resolve the lock conflict",
+        // Default to the least-destructive strategy. Pre-1.5.0 this
+        // defaulted to `force_override` which silently took any lock.
+        default: "merge_adjacent",
+        description:
+          "Strategy to resolve the lock conflict. Defaults to 'merge_adjacent' " +
+          "(least-destructive; the other session keeps its lock until ranges " +
+          "are merged). 'force_override' and 'take_*' are destructive.",
+      },
+      reason: {
+        type: "string",
+        description:
+          'Required when the strategy is destructive ("force_override", "take_ours", "take_theirs"). ' +
+          "Free-text justification recorded in the lock event audit trail.",
       },
     },
-    required: ["filePath", "resolutionStrategy"],
+    required: ["filePath"],
   },
   async execute(args, cwd) {
     const filePath = args.filePath as string;

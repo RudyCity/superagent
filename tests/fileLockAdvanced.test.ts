@@ -43,7 +43,10 @@ describe("Advanced Cross-Session Lock & Conflict Features", () => {
     lockFile(testFile, sessionCLI, "cli", 5000);
     expect(checkFileLock(testFile, sessionTline).locked).toBe(true);
 
-    const toolRes = await unlockFileTool.execute({ filePath: testFile, force: true }, process.cwd());
+    const toolRes = await unlockFileTool.execute(
+      { filePath: testFile, force: true, reason: "test force-override of CLI lock" },
+      process.cwd()
+    );
     expect(toolRes).toContain("Successfully unlocked");
     expect(checkFileLock(testFile, sessionTline).locked).toBe(false);
   });

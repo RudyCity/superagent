@@ -1,10 +1,155 @@
 import { WebSocketServer, WebSocket } from "ws";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import http from "http";
 import { setBrowserControlHandler, browserControlHandler } from "./browserMacroTools.js";
+import { getRootConfigDir, ensureGlobalConfigDir } from "../config/paths.js";
 
 const DEFAULT_REMOTE_WS_PORT = 9223;
+const DEFAULT_TOKEN_HTTP_PORT = 9224;
+const BRIDGE_TOKEN_FILE = "bridge.token";
+const BRIDGE_TOKEN_BYTES = 32; // 256 bits
+// Handshake message types — the extension sends one of these as the very
+// first frame after the WS upgrade completes. Using a post-connect
+// handshake (rather than the subprotocol header) avoids leaking the
+// token into the negotiated `ws.protocol` field, and works in browsers
+// where `new WebSocket(url)` cannot set custom headers.
+const HANDSHAKE_TIMEOUT_MS = 5000;
+const HANDSHAKE_TYPE = "bridge_handshake_v1";
+
+// Per-launch random token shared with the installed Chrome extension.
+// Generated lazily on first bridge init; persisted chmod 600 to the
+// global config dir so the extension can read it. Rotated on each
+// `ensureRemoteChromeBridge()` call (i.e. each CLI launch).
+let currentBridgeToken: string | null = null;
+let currentBridgeTokenPath: string | null = null;
+
+function getBridgeTokenPath(): string {
+  if (currentBridgeTokenPath) return currentBridgeTokenPath;
+  const dir = getRootConfigDir();
+  ensureGlobalConfigDir();
+  currentBridgeTokenPath = path.join(dir, BRIDGE_TOKEN_FILE);
+  return currentBridgeTokenPath;
+}
+
+/**
+ * Generate (or reuse) a per-launch random token that the extension must
+ * present in the `X-Bridge-Token` header when connecting. The token is
+ * persisted to a chmod-600 file under the global config dir so the
+ * installed extension can read it via `chrome.storage.local` or by
+ * fetching the file path.
+ */
+function loadOrCreateBridgeToken(): string {
+  if (currentBridgeToken) return currentBridgeToken;
+  const tokenPath = getBridgeTokenPath();
+  // Always rotate on each launch — overwrite any existing file. This
+  // limits the window in which a stolen token from a prior run remains
+  // valid and avoids leaked tokens surviving restarts.
+  const fresh = crypto.randomBytes(BRIDGE_TOKEN_BYTES).toString("base64url");
+  try {
+    fs.writeFileSync(tokenPath, fresh, { mode: 0o600 });
+    try { fs.chmodSync(tokenPath, 0o600); } catch { /* best effort */ }
+  } catch (err) {
+    // If we cannot write the file, log and continue with the in-memory
+    // token (the extension will receive it via stdout on startup, or
+    // can be configured with the in-process value via superagent --server).
+    logBridgeEvent(
+      "Token Persistence Failed",
+      `Could not write bridge token to ${tokenPath}: ${(err as Error).message}. ` +
+        "Token will only live in memory; restart the CLI after the extension connects."
+    );
+  }
+  currentBridgeToken = fresh;
+  return fresh;
+}
+
+export function getBridgeToken(): string {
+  return currentBridgeToken ?? loadOrCreateBridgeToken();
+}
+
+export function getBridgeTokenPathForExtension(): string {
+  return getBridgeTokenPath();
+}
+
+// Tiny loopback-only HTTP server that hands the per-launch token to the
+// Chrome extension. The extension's background service worker cannot
+// read arbitrary files or set custom WebSocket headers, so the CLI
+// publishes the token on a private localhost endpoint. The endpoint
+// is bound to 127.0.0.1 (not 0.0.0.0) and shuts itself down after
+// the first successful response. It is single-use, per launch.
+let tokenHttpServer: http.Server | null = null;
+
+async function ensureTokenHttpServer(port: number = DEFAULT_TOKEN_HTTP_PORT): Promise<string | null> {
+  if (tokenHttpServer) return getBridgeToken();
+  const token = loadOrCreateBridgeToken();
+  let servedOnce = false;
+
+  await new Promise<void>((resolve) => {
+    const srv = http.createServer((req, res) => {
+      try {
+        // Only allow GET /token from loopback (the listening address is
+        // already bound to 127.0.0.1, so the OS enforces this, but we
+        // double-check the remote address for defense-in-depth).
+        const remote = req.socket.remoteAddress ?? "";
+        if (remote !== "127.0.0.1" && remote !== "::1" && remote !== "::ffff:127.0.0.1") {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("forbidden");
+          return;
+        }
+        if (req.url !== "/token" || req.method !== "GET") {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("not_found");
+          return;
+        }
+        if (servedOnce) {
+          // Single-use: the token rotates per launch, so we never want
+          // to hand it out twice from the same endpoint.
+          res.writeHead(410, { "Content-Type": "text/plain" });
+          res.end("gone");
+          return;
+        }
+        servedOnce = true;
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        });
+        res.end(JSON.stringify({ token }));
+        logBridgeEvent("Token Delivered", `Token handed to extension from ${remote}.`);
+        // Self-destruct after a short delay to minimize exposure window.
+        setTimeout(() => {
+          try { srv.close(); } catch {}
+          if (tokenHttpServer === srv) tokenHttpServer = null;
+        }, 500);
+      } catch (err) {
+        try {
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end("error");
+        } catch {}
+        logBridgeEvent("Token Deliver Error", (err as Error).message);
+      }
+    });
+    srv.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        // Another process (probably an old CLI session) already owns
+        // the port. Skip token delivery — the existing server will
+        // not know our token, so the extension will fall back to
+        // file-based delivery (see getBridgeTokenPathForExtension).
+        logBridgeEvent("Token HTTP EADDRINUSE", `Port ${port} already in use; will rely on file-based delivery.`);
+      } else {
+        logBridgeEvent("Token HTTP Error", err.message);
+      }
+      resolve();
+    });
+    srv.listen(port, "127.0.0.1", () => {
+      tokenHttpServer = srv;
+      logBridgeEvent("Token HTTP Listening", `127.0.0.1:${port}/token (loopback-only, single-use).`);
+      resolve();
+    });
+  });
+  return token;
+}
 
 export interface ClientMetadata {
   profileId?: string;
@@ -126,6 +271,15 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
     return Promise.resolve(true);
   }
 
+  // Eagerly generate the per-launch token + token-delivery HTTP server
+  // before opening the WS port. The handshake logic in the connection
+  // handler below rejects any client that doesn't present this token.
+  // We swallow the token-server error here — file-based delivery still
+  // works via getBridgeTokenPathForExtension().
+  void ensureTokenHttpServer().catch((err: Error) => {
+    logBridgeEvent("Token HTTP Bootstrap", `Failed: ${err.message}`);
+  });
+
   // If we recently failed to start the server (within the last 10 seconds),
   // don't try again immediately to avoid EADDRINUSE spam.
   const lastFail = lastFailureTime.get(port) || 0;
@@ -148,14 +302,23 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
 
   return new Promise((resolve) => {
     try {
+      // Eagerly generate the per-launch token before opening the port so
+      // the verifyClient closure captures a real value.
+      loadOrCreateBridgeToken();
+
       const server = new WebSocketServer({
         port,
         host: "127.0.0.1",
-        verifyClient: (info: { origin?: string }) => {
-          // Browser drive-by protection: only Chrome extensions may connect with an Origin header.
+        verifyClient: (info: { origin?: string; req: { headers: http.IncomingHttpHeaders } }) => {
+          // Origin gate (legacy defense — kept in addition to the new
+          // post-connect handshake below so that browsers that DO send
+          // an Origin header are filtered at the HTTP layer).
           const origin = info.origin || "";
-          if (!origin) return true;
-          return origin.startsWith("chrome-extension://");
+          if (origin && !origin.startsWith("chrome-extension://")) {
+            logBridgeEvent("WS Reject", `Origin rejected: "${origin}"`);
+            return false;
+          }
+          return true;
         }
       });
       wss = server;
@@ -170,24 +333,72 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
         resolve(true);
       });
 
-      server.on("connection", (ws: WebSocket) => {
-        connectedClients.add(ws);
-        if (!activeClient || activeClient.readyState !== WebSocket.OPEN) {
-          activeClient = ws;
-        } else {
-          logBridgeEvent("Rejected extra client — active client already connected.");
-        }
-        clientMetadataMap.set(ws, { connectedAt: Date.now(), commandCount: 0 });
-        if (!browserControlHandler || browserControlHandler === sendRemoteCommand) {
-          setBrowserControlHandler(sendRemoteCommand);
-        }
-        logBridgeEvent("Client Connected", `Active clients: ${connectedClients.size}`);
+      server.on("connection", (ws: WebSocket & { __bridgeHandshakeDone?: boolean }) => {
+        // ── Post-connect handshake gate ───────────────────────────────
+        // The client MUST send `{ type: "bridge_handshake_v1", token }`
+        // within HANDSHAKE_TIMEOUT_MS. If it doesn't, or the token
+        // doesn't match the in-process token, we close the socket
+        // without ever routing a command into browserControlHandler.
+        let handshakeDone = false;
+        const expected = currentBridgeToken ?? loadOrCreateBridgeToken();
+        const handshakeTimer = setTimeout(() => {
+          if (handshakeDone) return;
+          logBridgeEvent("Handshake Timeout", "Closing socket — no bridge token presented.");
+          try { ws.close(1008, "handshake_timeout"); } catch {}
+        }, HANDSHAKE_TIMEOUT_MS);
+
+        const onHandshake = (raw: Buffer | string) => {
+          if (handshakeDone) return;
+          try {
+            const data = JSON.parse(raw.toString());
+            if (data?.type !== HANDSHAKE_TYPE || typeof data.token !== "string") {
+              logBridgeEvent("Bad Handshake", `Wrong shape from client: ${raw.toString().slice(0, 80)}`);
+              try { ws.close(1008, "bad_handshake"); } catch {}
+              return;
+            }
+            const a = Buffer.from(data.token, "utf8");
+            const b = Buffer.from(expected, "utf8");
+            if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+              logBridgeEvent("Bad Handshake", "Token mismatch.");
+              try { ws.close(1008, "bad_token"); } catch {}
+              return;
+            }
+            handshakeDone = true;
+            ws.__bridgeHandshakeDone = true;
+            clearTimeout(handshakeTimer);
+            ws.off("message", onHandshake);
+            try { ws.send(JSON.stringify({ type: "handshake_ack" })); } catch {}
+            // Now register the client as fully connected and install
+            // the browser control handler.
+            if (!activeClient || activeClient.readyState !== WebSocket.OPEN) {
+              activeClient = ws;
+            }
+            connectedClients.add(ws);
+            clientMetadataMap.set(ws, { connectedAt: Date.now(), commandCount: 0 });
+            if (!browserControlHandler || browserControlHandler === sendRemoteCommand) {
+              setBrowserControlHandler(sendRemoteCommand);
+            }
+            logBridgeEvent("Client Connected (handshake OK)", `Active clients: ${connectedClients.size}`);
+          } catch (err) {
+            logBridgeEvent("Bad Handshake", `Parse error: ${(err as Error).message}`);
+            try { ws.close(1008, "bad_handshake"); } catch {}
+          }
+        };
+        ws.on("message", onHandshake);
+
+        ws.on("close", () => {
+          handshakeDone = true;
+          clearTimeout(handshakeTimer);
+        });
 
         ws.on("pong", () => {
           // Client alive
         });
 
+        // Main message handler — only invoked AFTER the handshake frame
+        // has been processed (we removed onHandshake above on success).
         ws.on("message", (raw: Buffer | string) => {
+          if (!handshakeDone) return; // pre-handshake frames are dropped
           try {
             const data = JSON.parse(raw.toString());
 

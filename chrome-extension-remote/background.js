@@ -5,6 +5,52 @@
 
 const WS_PORT = 9223;
 const WS_URL = `ws://127.0.0.1:${WS_PORT}`;
+const TOKEN_HTTP_URL = `http://127.0.0.1:9224/token`;
+const HANDSHAKE_TYPE = "bridge_handshake_v1";
+const HANDSHAKE_TIMEOUT_MS = 5000;
+
+// Cached per-launch token from the CLI. The CLI serves it once at
+// `http://127.0.0.1:9224/token` (single-use, loopback-only) and writes
+// it to `~/.superagent-r/bridge.token` for the duration of the launch.
+// We prefer the HTTP endpoint; if it's unavailable (e.g., the CLI is
+// not running yet), we fall back to reading the file via the extension's
+// `chrome.runtime.connectNative` (not implemented in the remote variant)
+// — and finally to cached chrome.storage.local as a last resort.
+let cachedBridgeToken = null;
+let cachedBridgeTokenFetchedAt = 0;
+const BRIDGE_TOKEN_CACHE_TTL_MS = 60_000; // 1 minute
+
+async function fetchBridgeToken() {
+  const now = Date.now();
+  if (cachedBridgeToken && now - cachedBridgeTokenFetchedAt < BRIDGE_TOKEN_CACHE_TTL_MS) {
+    return cachedBridgeToken;
+  }
+  // Try the CLI's HTTP token-delivery endpoint first.
+  try {
+    const res = await fetch(TOKEN_HTTP_URL, { method: "GET", cache: "no-store" });
+    if (res.ok) {
+      const body = await res.json();
+      if (body && typeof body.token === "string" && body.token.length > 0) {
+        cachedBridgeToken = body.token;
+        cachedBridgeTokenFetchedAt = now;
+        return cachedBridgeToken;
+      }
+    }
+  } catch (e) {
+    // Expected when the CLI is not running. Fall through.
+  }
+  // Last resort: chrome.storage.local (populated by the user via the
+  // popup, see `setBridgeToken` in popup.js).
+  try {
+    const stored = await chrome.storage.local.get(["bridgeToken", "bridgeTokenAt"]);
+    if (stored && typeof stored.bridgeToken === "string" && stored.bridgeToken.length > 0) {
+      cachedBridgeToken = stored.bridgeToken;
+      cachedBridgeTokenFetchedAt = stored.bridgeTokenAt || now;
+      return cachedBridgeToken;
+    }
+  } catch {}
+  return null;
+}
 
 let socket = null;
 let currentReconnectDelay = 1000;
@@ -95,31 +141,75 @@ function connectWebSocket(force = false) {
     socket = new WebSocket(WS_URL);
 
     socket.onopen = async () => {
-      chrome.storage.local.set({ remoteStatus: "connected", lastConnected: Date.now() });
-      updateBadge("connected");
-      showNotification("Superagent Bridge Connected", "WebSocket connected to CLI server on port 9223.");
+      chrome.storage.local.set({ remoteStatus: "connecting" });
+      updateBadge("connecting");
       currentReconnectDelay = 1000;
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
 
-      // Send client metadata hello packet
+      // ── Bridge token handshake (v1) ─────────────────────────────
+      // The CLI requires us to present the per-launch token within
+      // HANDSHAKE_TIMEOUT_MS. If we can't produce one, we close the
+      // socket and let the reconnect loop back off.
+      const token = await fetchBridgeToken();
+      if (!token) {
+        chrome.storage.local.set({ remoteStatus: "error" });
+        updateBadge("disconnected");
+        try { socket.close(1008, "no_token"); } catch {}
+        return;
+      }
       try {
-        const tabs = await chrome.tabs.query({});
-        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        socket.send(
-          JSON.stringify({
-            type: "hello",
-            source: "remote",
-            userAgent: navigator.userAgent,
-            platform: navigator.platform,
-            extensionVersion: chrome.runtime.getManifest().version,
-            tabsCount: tabs.length,
-            activeTab: activeTab ? { id: activeTab.id, title: activeTab.title, url: activeTab.url } : null,
-          })
-        );
-      } catch {}
+        socket.send(JSON.stringify({ type: HANDSHAKE_TYPE, token }));
+      } catch (err) {
+        chrome.storage.local.set({ remoteStatus: "error" });
+        updateBadge("disconnected");
+        try { socket.close(1011, "send_failed"); } catch {}
+        return;
+      }
+
+      // Wait for `handshake_ack` from the CLI before promoting the
+      // connection to "connected" and sending the hello packet.
+      const realOnMessage = socket.onmessage;
+      let postHandshakeDone = false;
+      const handshakeAckListener = async (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg && msg.type === "handshake_ack") {
+            postHandshakeDone = true;
+            chrome.storage.local.set({ remoteStatus: "connected", lastConnected: Date.now() });
+            updateBadge("connected");
+            showNotification("Superagent Bridge Connected", "WebSocket connected to CLI server on port 9223.");
+            socket.onmessage = realOnMessage;
+            // Send client metadata hello packet
+            try {
+              const tabs = await chrome.tabs.query({});
+              const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+              socket.send(
+                JSON.stringify({
+                  type: "hello",
+                  source: "remote",
+                  userAgent: navigator.userAgent,
+                  platform: navigator.platform,
+                  extensionVersion: chrome.runtime.getManifest().version,
+                  tabsCount: tabs.length,
+                  activeTab: activeTab ? { id: activeTab.id, title: activeTab.title, url: activeTab.url } : null,
+                })
+              );
+            } catch {}
+          } else if (!postHandshakeDone) {
+            // Pre-handshake frame we don't recognize — the CLI will
+            // close us with 1008 if it's not a valid handshake.
+          }
+        } catch {}
+      };
+      socket.onmessage = handshakeAckListener;
+      // Safety net: if the CLI doesn't ack within the timeout, close.
+      setTimeout(() => {
+        if (postHandshakeDone) return;
+        try { socket.close(1008, "handshake_timeout"); } catch {}
+      }, HANDSHAKE_TIMEOUT_MS);
     };
 
     socket.onmessage = async (event) => {

@@ -85,7 +85,10 @@ describe("Comprehensive Master Edge-Case & Integration Suite (Phases 1-5 Final)"
     expect(resolveRes).toContain("Conflict resolved");
 
     // Unlock Tool
-    const unlockRes = await unlockFileTool.execute({ filePath: fileA, force: true }, process.cwd());
+    const unlockRes = await unlockFileTool.execute(
+      { filePath: fileA, force: true, reason: "test force-override after resolve" },
+      process.cwd()
+    );
     expect(unlockRes).toContain("Successfully unlocked");
   });
 
