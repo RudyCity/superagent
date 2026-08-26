@@ -468,6 +468,19 @@ export function getModelInstanceForString(modelStr: string) {
           if (!baseUrl) {
             baseUrl = "https://opencode.ai/zen/v1";
           }
+        } else if (
+          typeLower === "tokenrouter" ||
+          typeLower === "commandcode" ||
+          typeLower === "zenmux"
+        ) {
+          // OpenAI-compatible LLM gateways — routed through the generic custom
+          // client path with the gateway's default baseUrl.
+          provider = "custom";
+          if (!baseUrl) {
+            if (typeLower === "tokenrouter") baseUrl = "https://tokenrouter.me/v1";
+            else if (typeLower === "commandcode") baseUrl = "https://api.commandcode.ai/v1";
+            else baseUrl = "https://zenmux.ai/api/v1";
+          }
         } else if (typeLower === "deepseek") {
           provider = "deepseek";
           baseUrl = undefined;

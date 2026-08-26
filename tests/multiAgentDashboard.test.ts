@@ -280,6 +280,73 @@ describe("MultiAgentDashboard UI Component", () => {
     process.stdout.write = originalWrite;
   });
 
+  it("should NOT move wizard selection when clicking a permission dialog option (focus-only)", async () => {
+    const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
+
+    const originalOn = process.stdin.on;
+    const originalOff = process.stdin.off;
+    const originalWrite = process.stdout.write;
+
+    let mouseHandler: any = null;
+    process.stdin.on = vi.fn((event, cb) => {
+      if (event === "data") mouseHandler = cb;
+      return process.stdin;
+    }) as any;
+    process.stdin.off = vi.fn() as any;
+    process.stdout.write = vi.fn() as any;
+
+    const mockHandleWizardSubmit = vi.fn();
+    const mockSetWizardSelectedIndex = vi.fn();
+    const mockSetFocusArea = vi.fn();
+
+    // Permission dialog with two options ("Allow", "Deny")
+    const TestComponent = () => {
+      useDashboardMouse({
+        wrappedLines: [],
+        logsCount: 10,
+        terminalSize: { width: 100, height: 40 },
+        activeWizard: { type: "permission", step: 0, data: {} },
+        setActiveWizard: vi.fn(),
+        wizardOptions: ["Allow", "Deny"],
+        wizardSelectedIndex: 1, // "Deny" currently selected
+        setWizardSelectedIndex: mockSetWizardSelectedIndex,
+        wizardSelectedSet: new Set(),
+        setWizardSelectedSet: vi.fn(),
+        setWizardOptions: vi.fn(),
+        pendingQuestion: null,
+        handleWizardSubmit: mockHandleWizardSubmit,
+        query: "",
+        setQuery: vi.fn(),
+        wizardAllOptions: [],
+        workspaceHeight: 15,
+        leftTopHeight: 10,
+        wizardIsLoadingModels: false,
+        agent: null,
+        focusArea: "input",
+        setFocusArea: mockSetFocusArea,
+        setLogScrollOffset: vi.fn(),
+      } as any);
+      return null;
+    };
+
+    const { unmount } = render(React.createElement(TestComponent));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Click on the first option row ("Allow") — must only focus, never select
+    // (permission dialog has no description block, so option rows start at
+    // 6 + workspaceHeight + 2 = 23)
+    mouseHandler(Buffer.from("\x1b[<0;10;23M"));
+    expect(mockSetWizardSelectedIndex).not.toHaveBeenCalled();
+    expect(mockHandleWizardSubmit).not.toHaveBeenCalled();
+    expect(mockSetFocusArea).toHaveBeenCalledWith("input");
+
+    unmount();
+
+    process.stdin.on = originalOn;
+    process.stdin.off = originalOff;
+    process.stdout.write = originalWrite;
+  });
+
   it("should focus input area and select suggestion on click", async () => {
     const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
 

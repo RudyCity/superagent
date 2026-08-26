@@ -1587,7 +1587,10 @@ export async function handleServerRoute(
         groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "deepseek-r1-distill-llama-70b"],
         mistral: ["mistral-large-latest", "mistral-small-latest", "codestral-latest"],
         ollama: ["llama3.2", "qwen2.5-coder", "deepseek-r1", "mistral", "phi4", "codellama"],
-        azure: ["gpt-4o", "gpt-4o-mini"]
+        azure: ["gpt-4o", "gpt-4o-mini"],
+        tokenrouter: ["gpt-4o-mini", "claude-3-5-haiku-20241022"],
+        commandcode: ["gpt-4o-mini", "claude-3-5-haiku-20241022"],
+        zenmux: ["gpt-4o-mini", "claude-3-5-haiku-20241022"]
       };
 
       if (!provider) {
@@ -1629,6 +1632,9 @@ export async function handleServerRoute(
               else if (providerType === "openrouter") baseUrl = "https://openrouter.ai/api/v1";
               else if (providerType === "groq") baseUrl = "https://api.groq.com/openai/v1";
               else if (providerType === "mistral") baseUrl = "https://api.mistral.ai/v1";
+              else if (providerType === "tokenrouter") baseUrl = "https://tokenrouter.me/v1";
+              else if (providerType === "commandcode") baseUrl = "https://api.commandcode.ai/v1";
+              else if (providerType === "zenmux") baseUrl = "https://zenmux.ai/api/v1";
             }
             if (baseUrl) {
               const url = baseUrl.endsWith("/models") ? baseUrl : `${baseUrl}/models`;

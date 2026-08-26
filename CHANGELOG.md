@@ -1,3 +1,23 @@
+## [1.4.3] - 2026-08-26
+
+### Added: TokenRouter, CommandCode, and ZenMux Providers
+
+- **New providers**: TokenRouter (`https://tokenrouter.me/v1`), CommandCode (`https://api.commandcode.ai/v1`), and ZenMux (`https://zenmux.ai/api/v1`) — OpenAI-compatible LLM gateways, now selectable in `/login`, the dashboard wizard, and the model wizard (options 20/21/22).
+- **`core/loginWizardLogic.ts`**: `ProviderType` union extended; template options, default base URLs, fallback models, live `/models` fetch list, and static/async test-model resolution all extended for the three gateways. `resolveProviderType` resolves `zenmux` **before** opencode's `"zen"` keyword rule to prevent substring capture.
+- **`core/config/base.ts`**: `Provider` union extended with the three gateway types.
+- **`core/config/models.ts`**: profile-type resolution maps the new types onto the generic custom/OpenAI-compatible client path with their default base URLs (same pattern as `opencode`).
+- **`serverRoutes.ts`**: dashboard model-list endpoint gained default model lists for the new types plus baseUrl defaults in its generic fetch branch.
+- **Tests**: `tests/loginWizardLogic.test.ts` updated for the 22-entry template list and new resolution cases (including zenmux-vs-opencode precedence regression guard); `tests/connectionTestFlow.test.ts` invalid-choice assertion moved from `"20"` to `"99"`.
+- **Verification**: `npx tsc --noEmit` clean; targeted suites pass (81 tests); full-suite failures are pre-existing (verified identical on a clean tree via stash) — zero regressions.
+
+### Fixed: Permission Dialog Click No Longer Moves Selection
+
+- **Behavior**: Clicking anywhere on a permission dialog option row now only focuses the input area — it never moves the highlighted selection or submits the answer. Selection changes remain keyboard-driven (arrow keys + Enter), which is the intended interaction for permission prompts.
+- **`hooks/useDashboardMouse.ts`** (multi-agent dashboard): clicks inside the wizard option region for `activeWizard.type === "permission"` now skip the `setWizardSelectedIndex` call and fall through to focus-only handling.
+- **`hooks/useMouseScroll.ts`** (single mode): identical guard applied at its wizard click branch.
+- **Tests**: new regression test in `tests/multiAgentDashboard.test.ts` ("should NOT move wizard selection when clicking a permission dialog option") asserts `setWizardSelectedIndex` and `handleWizardSubmit` are never called on click while focus is applied.
+- **Verification**: `npx tsc --noEmit` clean; all 11 tests in `tests/multiAgentDashboard.test.ts` pass.
+
 ## [1.4.2] - 2026-08-26
 
 ### Changed: Remove "(Recommended)" Suffix from OpenRouter Login Wizard Label

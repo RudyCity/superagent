@@ -349,14 +349,19 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
 
               if (y >= optStartRow && y <= optEndRow) {
                 setFocusArea("input");
-                const idx = y - optStartRow;
-                const targetIndex = start + idx;
-                if (
-                  targetIndex >= 0 &&
-                  targetIndex < total &&
-                  options[targetIndex] !== "(no results — try different search)"
-                ) {
-                  setWizardSelectedIndex(targetIndex);
+                // Permission dialogs: clicking an option must NOT move the
+                // selection (prevents accidental approve/deny from a stray
+                // mouse click). Focus-only behavior.
+                if (activeWizard.type !== "permission") {
+                  const idx = y - optStartRow;
+                  const targetIndex = start + idx;
+                  if (
+                    targetIndex >= 0 &&
+                    targetIndex < total &&
+                    options[targetIndex] !== "(no results — try different search)"
+                  ) {
+                    setWizardSelectedIndex(targetIndex);
+                  }
                 }
                 return; // Handled wizard option click
               }

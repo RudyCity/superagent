@@ -393,9 +393,14 @@ export function useMouseScroll(
                   const optEndRow = optStartRow + visibleCount - 1;
 
                   if (y >= optStartRow && y <= optEndRow) {
-                    const idx = start + (y - optStartRow);
-                    if (idx >= 0 && idx < total) {
-                      ctx.setWizardSelectedIndex?.(idx);
+                    // Permission dialogs: clicking an option must NOT move the
+                    // selection (prevents accidental approve/deny from a stray
+                    // mouse click). Focus-only behavior.
+                    if (ctx.activeWizard.type !== "permission") {
+                      const idx = start + (y - optStartRow);
+                      if (idx >= 0 && idx < total) {
+                        ctx.setWizardSelectedIndex?.(idx);
+                      }
                     }
                   }
                 }

@@ -19,6 +19,9 @@ export type Provider =
   | "lmstudio"
   | "openrouter"
   | "opencode"
+  | "tokenrouter"
+  | "commandcode"
+  | "zenmux"
   | "custom";
 
 export interface Config {

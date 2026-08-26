@@ -17,7 +17,10 @@ export type ProviderType =
   | "together"
   | "fireworks"
   | "ollama"
-  | "lmstudio";
+  | "lmstudio"
+  | "tokenrouter"
+  | "commandcode"
+  | "zenmux";
 
 // User-facing list shown in the provider picker (CLI wizard + dashboard wizard).
 // Adding a provider here is a single-source-of-truth change; the UI sites
@@ -47,6 +50,9 @@ export const PROVIDER_TEMPLATE_OPTIONS: ReadonlyArray<{
   { key: "17", label: "Fireworks AI",                type: "fireworks" },
   { key: "18", label: "Ollama (Local)",              type: "ollama" },
   { key: "19", label: "LM Studio (Local)",           type: "lmstudio" },
+  { key: "20", label: "TokenRouter",                 type: "tokenrouter" },
+  { key: "21", label: "CommandCode",                 type: "commandcode" },
+  { key: "22", label: "ZenMux",                      type: "zenmux" },
 ];
 
 export const PROVIDER_TEMPLATE_OPTION_KEYS: ReadonlySet<string> = new Set(
@@ -116,6 +122,9 @@ export const PROVIDER_DEFAULT_BASE_URLS: Readonly<Record<ProviderType, string>> 
   fireworks:       "https://api.fireworks.ai/inference/v1",
   ollama:          "http://localhost:11434/v1",
   lmstudio:        "http://localhost:1234/v1",
+  tokenrouter:     "https://tokenrouter.me/v1",
+  commandcode:     "https://api.commandcode.ai/v1",
+  zenmux:          "https://zenmux.ai/api/v1",
 };
 
 /**
@@ -230,6 +239,10 @@ export function getDefaultModels(providerType: ProviderType): string[] {
         "llama-3.1-8b-instruct",
         "qwen2.5-7b-instruct",
       ];
+    case "tokenrouter":
+    case "commandcode":
+    case "zenmux":
+      return ["gpt-4o-mini", "claude-3-5-haiku-20241022"];
     case "custom":
     default:
       return ["gpt-4o-mini"];
@@ -254,6 +267,11 @@ export function resolveProviderType(choice: string): ProviderType | null {
   if (lc === "1" || lc.includes("openrouter")) return "openrouter";
   if (lc === "2" || (lc.includes("openai") && !lc.includes("custom"))) return "openai";
   if (lc === "3" || (lc.includes("anthropic") && !lc.includes("custom"))) return "anthropic";
+  // NOTE: zenmux MUST be resolved before opencode — "zenmux" contains "zen",
+  // which would otherwise be captured by the opencode keyword rule below.
+  if (lc === "20" || lc.includes("tokenrouter")) return "tokenrouter";
+  if (lc === "21" || lc.includes("commandcode")) return "commandcode";
+  if (lc === "22" || lc.includes("zenmux")) return "zenmux";
   if (lc === "7" || lc.includes("opencode") || lc.includes("zen")) return "opencode";
   if (lc === "8" || lc.includes("deepseek")) return "deepseek";
   if (lc === "9" || (lc.includes("xai") || lc.includes("grok") || lc.includes("x.ai"))) return "xai";
@@ -351,6 +369,12 @@ export function getFallbackModels(providerType: ProviderType): string[] {
       return ["llama3.2", "qwen2.5"];
     case "lmstudio":
       return ["llama-3.1-8b-instruct", "qwen2.5-7b-instruct"];
+    // Gateway providers: the live /models fetch supersedes these offline
+    // fallbacks whenever the endpoint responds.
+    case "tokenrouter":
+    case "commandcode":
+    case "zenmux":
+      return ["gpt-4o-mini", "claude-3-5-haiku-20241022"];
     default:
       return ["gpt-4o", "gpt-4o-mini"];
   }
@@ -476,7 +500,10 @@ export async function fetchModelsForProvider(
     providerType === "kimi" ||
     providerType === "cerebras" ||
     providerType === "together" ||
-    providerType === "fireworks"
+    providerType === "fireworks" ||
+    providerType === "tokenrouter" ||
+    providerType === "commandcode" ||
+    providerType === "zenmux"
   ) {
     // All new OpenAI-compatible cloud providers expose /v1/models.
     const fallbackBase = PROVIDER_DEFAULT_BASE_URLS[providerType as ProviderType] || "";
@@ -574,6 +601,9 @@ export function resolveTestModel(providerType: string, baseUrl: string): string 
     case "cerebras": return "llama-3.1-8b";
     case "together": return "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo";
     case "fireworks": return "accounts/fireworks/models/llama-v3p1-8b-instruct";
+    case "tokenrouter":
+    case "commandcode":
+    case "zenmux": return "gpt-4o-mini";
     case "ollama": return "llama3.2";
     case "lmstudio": return "llama-3.1-8b-instruct";
     default:
@@ -838,6 +868,9 @@ export async function resolveTestModelAsync(
     providerType === "cerebras" ||
     providerType === "together" ||
     providerType === "fireworks" ||
+    providerType === "tokenrouter" ||
+    providerType === "commandcode" ||
+    providerType === "zenmux" ||
     (baseUrl &&
       !baseUrl.includes("openrouter.ai") &&
       !baseUrl.includes("api.openai.com") &&
