@@ -411,7 +411,59 @@ export async function isRmemoryInstalled(): Promise<boolean> {
   }
 }
 
+/**
+ * Build the locally installed r-memory package if its dist/ output is missing.
+ *
+ * r-memory is installed from a git tarball that ships no "prepare" script, so
+ * npm/bun never compile it: package.json points main/types at dist/index.js,
+ * which does not exist until someone runs tsc inside the package. That breaks
+ * both runtime imports (isRmemoryInstalled always false) and TypeScript
+ * compilation of this project (TS2307). Idempotent: skips when dist exists.
+ */
+async function buildRmemoryDist(projectRoot: string): Promise<void> {
+  const pkgDir = path.join(projectRoot, "node_modules", "r-memory");
+  const distEntry = path.join(pkgDir, "dist", "index.js");
+  try {
+    await fs.access(distEntry);
+    await logSetupDebug("r-memory dist/ already present; skipping build.");
+    return;
+  } catch {
+    // dist/ missing — proceed with build below.
+  }
+
+  // The package's own declarations cover pdf-parse/mammoth but not
+  // better-sqlite3, so its tsc build fails without this ambient module.
+  const declPath = path.join(pkgDir, "src", "declarations.d.ts");
+  let declContent = "";
+  try {
+    declContent = await fs.readFile(declPath, "utf8");
+  } catch {
+    // Missing declarations file — start fresh.
+  }
+  if (!declContent.includes("declare module 'better-sqlite3'")) {
+    declContent += "\ndeclare module 'better-sqlite3' {\n  const Database: any;\n  export default Database;\n}\n";
+    await fs.writeFile(declPath, declContent, "utf8");
+    await logSetupDebug("Patched r-memory declarations with better-sqlite3 module.");
+  }
+
+  await logSetupDebug("Building r-memory (tsc) to produce dist/ entrypoint and types...");
+  await execa("npx", ["tsc"], { cwd: pkgDir });
+  await logSetupDebug("r-memory build finished.");
+}
+
 export async function ensureRmemoryInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
+  const filename = fileURLToPath(import.meta.url);
+  const dirname = path.dirname(filename);
+  const projectRoot = path.resolve(dirname, "..", "..");
+
+  // A git-installed r-memory may exist on disk yet fail to import because its
+  // dist/ was never built. Repair that state instead of reinstalling.
+  try {
+    await buildRmemoryDist(projectRoot);
+  } catch (err: any) {
+    await logSetupDebug(`Warning: Failed to build r-memory dist: ${err.message || err}`);
+  }
+
   try {
     await logSetupDebug("Starting RMemory Package installation check...");
     if (await isRmemoryInstalled()) {
@@ -427,19 +479,15 @@ export async function ensureRmemoryInstalled(onProgress?: DownloadProgressCallba
       console.log("\n⚡ [SYSTEM] r-memory package not found. Installing from repository... Please wait.");
     }
 
-    const isWin = process.platform === "win32";
     let hasBun = false;
     try {
-      await execa(isWin ? "where.exe" : "which", ["bun"]);
+      await execa(process.platform === "win32" ? "where.exe" : "which", ["bun"]);
       hasBun = true;
     } catch {
       hasBun = false;
     }
     await logSetupDebug(`Package manager detection: ${hasBun ? "Bun" : "npm"} will be used.`);
 
-    const filename = fileURLToPath(import.meta.url);
-    const dirname = path.dirname(filename);
-    const projectRoot = path.resolve(dirname, "..", "..");
     await logSetupDebug(`Resolved project root path: ${projectRoot}`);
 
     if (hasBun) {
@@ -449,6 +497,9 @@ export async function ensureRmemoryInstalled(onProgress?: DownloadProgressCallba
       await logSetupDebug("Executing: npm install git+https://github.com/RudyCity/r-memory.git");
       await execa("npm", ["install", "git+https://github.com/RudyCity/r-memory.git"], { cwd: projectRoot });
     }
+
+    // Fresh installs ship without dist/ too — build immediately.
+    await buildRmemoryDist(projectRoot);
 
     await logSetupDebug("r-memory package installation finished successfully.");
     if (onProgress) {

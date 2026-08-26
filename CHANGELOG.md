@@ -1,3 +1,12 @@
+## [1.4.1] - 2026-08-26
+
+### Fixed: r-memory Git Install Ships Without dist/ (TS2307 + Runtime Import Failure)
+
+- **Root cause**: `r-memory` is installed from a git tarball with no `prepare` script, so npm/bun never compile it. Its `package.json` points `main`/`types` at `dist/index.js`, which does not exist — breaking runtime imports (`isRmemoryInstalled()` always false) and producing 3 `TS2307: Cannot find module 'r-memory'` errors on every build.
+- **Immediate repair**: built the installed package in place (`tsc` inside `node_modules/r-memory`) after patching its `src/declarations.d.ts` with an ambient module for `better-sqlite3` (its own declarations cover pdf-parse/mammoth but not better-sqlite3).
+- **Durable fix** (`core/androidSetup.ts`): new idempotent `buildRmemoryDist()` helper that (1) skips when `dist/index.js` exists, (2) patches missing `better-sqlite3` ambient declaration, (3) runs `tsc` inside the package. Invoked at the start of `ensureRmemoryInstalled()` (repairs broken on-disk state without reinstalling) and again after a fresh install.
+- Build is now fully clean: `npx tsc --noEmit` exits with zero errors.
+
 ## [1.4.0] - 2026-08-23
 
 ### Added: 12 New Providers as First-Class Options
