@@ -77,6 +77,12 @@ export interface SystemSettings {
   advisorPatternMemory?: boolean;
   /** Log level for prompt logging: off | metadata (no messages) | full (all content) */
   promptLogLevel?: "off" | "metadata" | "full";
+  /**
+   * Force single-agent mode (suppress Master/Superagent/Subagent
+   * orchestration). Previously stored in `process.env.SINGLE_AGENT_MODE`
+   * — migrated to JSON config in v1.5.0 (audit finding H4).
+   */
+  singleAgentMode?: boolean;
 }
 
 export interface McpServerConfig {
@@ -843,6 +849,7 @@ export function getSettings(): SystemSettings {
     advisorErrorThreshold: s.advisorErrorThreshold ?? 5,
     advisorAdaptiveScaling: s.advisorAdaptiveScaling ?? true,
     advisorPatternMemory: s.advisorPatternMemory ?? true,
+    singleAgentMode: s.singleAgentMode,
   };
 }
 
@@ -860,6 +867,40 @@ export function updateSettings(updates: Partial<SystemSettings>): void {
   }
   config.settings = nextSettings;
   saveModelConfig(config);
+}
+
+/**
+ * Whether the CLI should run in single-agent mode (suppressing the
+ * multi-agent Master/Superagent/Subagent orchestration even when
+ * `--multi` is passed).
+ *
+ * Previously this flag was stored in `process.env.SINGLE_AGENT_MODE`,
+ * which violated the project rule that ALL config must live in
+ * `~/.superagent-r/model-config.json` (no process.env for settings).
+ * Use `getSingleAgentMode()` / `setSingleAgentMode()` instead.
+ *
+ * Backward-compat fallback: if the JSON flag has never been set
+ * (undefined), the legacy env-var value is returned so existing
+ * scripts and CI pipelines that still set `SINGLE_AGENT_MODE` keep
+ * working. New code should call setSingleAgentMode() to persist the
+ * choice to the JSON file.
+ */
+export function getSingleAgentMode(): boolean {
+  const settings = loadModelConfig().settings;
+  const v = settings?.singleAgentMode;
+  if (v === undefined || v === null) {
+    // Legacy fallback — only consulted if the JSON field is unset.
+    // Treat common truthy values ("1", "true", "yes", "on") as on;
+    // everything else (including "0", "false", "") as off.
+    const raw = process.env.SINGLE_AGENT_MODE?.toLowerCase().trim();
+    if (!raw) return false;
+    return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+  }
+  return !!v;
+}
+
+export function setSingleAgentMode(value: boolean): void {
+  updateSettings({ singleAgentMode: value });
 }
 
 export function getPresets(mode: "multi" | "single") {

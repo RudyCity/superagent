@@ -3,7 +3,8 @@ import crypto from "crypto";
 import {
   getTierModel,
   getSettings,
-  getTierModelConfig
+  getTierModelConfig,
+  getSingleAgentMode,
 } from "../config.js";
 import { contentToString } from "../conversation.js";
 import type { Agent } from "../agent.js";
@@ -40,7 +41,7 @@ export class MessageBuilder {
     // Check configuration for custom/other models
     if (agent) {
       try {
-        const mode = (agent.isMultiAgent && !process.env.SINGLE_AGENT_MODE) ? "multi" : "single";
+        const mode = (agent.isMultiAgent && !getSingleAgentMode()) ? "multi" : "single";
         const tierConfig = getTierModelConfig(mode, agent.subagentType || agent.tier);
         if (tierConfig && tierConfig.supportsVision !== undefined) {
           return tierConfig.supportsVision;
@@ -59,7 +60,7 @@ export class MessageBuilder {
     let modelName = "";
     let supportsVision = true;
     try {
-      const mode = (agent.isMultiAgent && !process.env.SINGLE_AGENT_MODE) ? "multi" : "single";
+      const mode = (agent.isMultiAgent && !getSingleAgentMode()) ? "multi" : "single";
       modelName = getTierModel(mode, agent.subagentType || agent.tier);
       supportsVision = this.modelSupportsVision(modelName, agent);
     } catch (e) {

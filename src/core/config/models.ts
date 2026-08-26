@@ -12,7 +12,7 @@ import { getStaticModelLimit } from "../model_limits.js";
 import { getRootConfigDir, ensureProtocol } from "./paths.js";
 import { getConfig } from "./base.js";
 import { getConfiguredProviders, getEffectiveMasterModel } from "./providers.js";
-import { loadModelConfig, getActivePreset, TierModelConfig, getSettings } from "./jsonConfig.js";
+import { loadModelConfig, getActivePreset, TierModelConfig, getSettings, getSingleAgentMode } from "./jsonConfig.js";
 import { saveModelCachesToDb, getModelCachesFromDb } from "../storage/historyDb.js";
 
 let legacyCacheMigrated = false;
@@ -886,7 +886,7 @@ export function getModelConnectionDetailsForTier(
   subagentType?: string,
   isSingleMode?: boolean
 ): ModelConnectionDetails {
-  const isMulti = !isSingleMode && !process.env.SINGLE_AGENT_MODE && (process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true");
+  const isMulti = !isSingleMode && !getSingleAgentMode() && (process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true");
   const mode = isMulti ? "multi" : "single";
 
   const config = loadModelConfig();
