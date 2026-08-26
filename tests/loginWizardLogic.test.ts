@@ -32,7 +32,7 @@ describe("loginWizardLogic", () => {
     });
 
     it("resolves name choices case-insensitively", () => {
-      expect(resolveProviderType("OpenRouter (Recommended)")).toBe("openrouter");
+      expect(resolveProviderType("OpenRouter")).toBe("openrouter");
       expect(resolveProviderType("OPENAI")).toBe("openai");
       expect(resolveProviderType("anthropic")).toBe("anthropic");
       expect(resolveProviderType("Custom Endpoint")).toBe("custom");
@@ -303,7 +303,7 @@ describe("loginWizardLogic", () => {
       const result = getProviderOptionsList(list);
       expect(result).toContain("openai (openai) [Active]");
       expect(result).toContain("gemini (gemini)");
-      expect(result).toContain("1. OpenRouter (Recommended)");
+      expect(result).toContain("1. OpenRouter");
       expect(result).toContain("2. OpenAI");
       expect(result).toContain("3. Anthropic");
       expect(result).toContain("4. Custom OpenAI Endpoint");
@@ -425,7 +425,7 @@ describe("loginWizardLogic", () => {
   describe("shared provider template lists", () => {
     it("PROVIDER_TEMPLATE_LABELS covers all 19 providers in order", () => {
       expect(PROVIDER_TEMPLATE_LABELS).toHaveLength(19);
-      expect(PROVIDER_TEMPLATE_LABELS[0]).toBe("1. OpenRouter (Recommended)");
+      expect(PROVIDER_TEMPLATE_LABELS[0]).toBe("1. OpenRouter");
       expect(PROVIDER_TEMPLATE_LABELS[6]).toBe("7. OpenCode Zen (Free Models)");
       expect(PROVIDER_TEMPLATE_LABELS[12]).toBe("13. Z.AI (GLM)");
       expect(PROVIDER_TEMPLATE_LABELS[18]).toBe("19. LM Studio (Local)");
@@ -434,7 +434,7 @@ describe("loginWizardLogic", () => {
     it("MODEL_OVERRIDE_TEMPLATE_LABELS appends Not Set and Back without renumbering", () => {
       expect(MODEL_OVERRIDE_TEMPLATE_LABELS).toHaveLength(21);
       // Provider numbering stays aligned with PROVIDER_TEMPLATE_OPTIONS keys
-      expect(MODEL_OVERRIDE_TEMPLATE_LABELS[0]).toBe("1. OpenRouter (Recommended)");
+      expect(MODEL_OVERRIDE_TEMPLATE_LABELS[0]).toBe("1. OpenRouter");
       expect(MODEL_OVERRIDE_TEMPLATE_LABELS[18]).toBe("19. LM Studio (Local)");
       expect(MODEL_OVERRIDE_TEMPLATE_LABELS[19]).toBe("Not Set (Clear Override)");
       expect(MODEL_OVERRIDE_TEMPLATE_LABELS[20]).toBe("< Back");

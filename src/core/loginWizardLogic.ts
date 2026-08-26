@@ -28,7 +28,7 @@ export const PROVIDER_TEMPLATE_OPTIONS: ReadonlyArray<{
   label: string;
   type: ProviderType;
 }> = [
-  { key: "1", label: "OpenRouter (Recommended)",     type: "openrouter" },
+  { key: "1", label: "OpenRouter",                   type: "openrouter" },
   { key: "2", label: "OpenAI",                       type: "openai" },
   { key: "3", label: "Anthropic",                    type: "anthropic" },
   { key: "4", label: "Custom OpenAI Endpoint",       type: "custom" },
@@ -53,7 +53,7 @@ export const PROVIDER_TEMPLATE_OPTION_KEYS: ReadonlySet<string> = new Set(
   PROVIDER_TEMPLATE_OPTIONS.map((p) => p.key)
 );
 
-// UI-ready labels: "1. OpenRouter (Recommended)", "2. OpenAI", ...
+// UI-ready labels: "1. OpenRouter", "2. OpenAI", ...
 // Single source of truth consumed by every wizard UI surface.
 export const PROVIDER_TEMPLATE_LABELS: readonly string[] =
   PROVIDER_TEMPLATE_OPTIONS.map((p) => `${p.key}. ${p.label}`);

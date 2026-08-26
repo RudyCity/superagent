@@ -1,3 +1,12 @@
+## [1.4.2] - 2026-08-26
+
+### Changed: Remove "(Recommended)" Suffix from OpenRouter Login Wizard Label
+
+- **What changed**: The OpenRouter option in the `/login` provider wizard no longer displays the "(Recommended)" suffix; its label is now simply "OpenRouter".
+- **Why**: Keeps the provider list neutral and consistent now that 12+ providers are offered as first-class options — singling one out as "recommended" is a product decision that should not be hardcoded in the UI.
+- **Scope**: `src/core/loginWizardLogic.ts` (label only — `type`, ordering, and selection keys unchanged) and its test expectations in `tests/loginWizardLogic.test.ts`.
+- **Verification**: All 44 tests in `tests/loginWizardLogic.test.ts` pass.
+
 ## [1.4.1] - 2026-08-26
 
 ### Fixed: r-memory Git Install Ships Without dist/ (TS2307 + Runtime Import Failure)
