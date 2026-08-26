@@ -3,6 +3,7 @@ import { useRef, useCallback } from "react";
 import type { ChatLinePosition } from "./useMouseScroll.js";
 import path from "path";
 import fs from "fs";
+import { PROVIDER_TEMPLATE_LABELS, resolveProviderTemplateChoice } from "../core/loginWizardLogic.js";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/responseScroll.js";
 import { getPasteSplit, filterSuggestions, getInsertion, getActiveCommandContext } from "../utils/text.js";
 import { reconstructChatLines } from "../utils/uiHelpers.js";
@@ -587,7 +588,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 step: 2,
                 data: {},
               });
-              setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint", "6. Google Gemini", "7. OpenCode Zen (Free Models)"]);
+              setWizardOptions([...PROVIDER_TEMPLATE_LABELS]);
               setWizardSelectedIndex(0);
             } else if (selectedOption.includes("Delete / Remove")) {
               const providers = getConfiguredProviders();
@@ -639,16 +640,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             handleWizardSubmit(selectedOption);
             return;
           } else if (activeWizard.step === 2) {
-            const choice = selectedOption.toLowerCase();
-            let provider = "";
-            if (choice.includes("opencode") || choice.includes("zen")) provider = "opencode";
-            else if (choice.includes("openrouter")) provider = "openrouter";
-            else if (choice.includes("custom") && choice.includes("anthropic")) provider = "custom-anthropic";
-            else if (choice.includes("custom") && choice.includes("openai")) provider = "custom";
-            else if (choice.includes("custom")) provider = "custom";
-            else if (choice.includes("openai")) provider = "openai";
-            else if (choice.includes("anthropic")) provider = "anthropic";
-            else if (choice.includes("gemini") || choice.includes("google")) provider = "gemini";
+            // Resolve the selected option label back to its ProviderType via the
+            // shared template list (single source of truth) — no hard-coded chains.
+            const provider = resolveProviderTemplateChoice(selectedOption) ?? "";
 
             addLine({
               type: "system",
@@ -2008,7 +2002,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           } else if (activeWizard.step === 3) {
             // Back to step 2: Select provider template
             setActiveWizard({ type: "login", step: 2, data: {} });
-            setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint", "6. Google Gemini", "7. OpenCode Zen (Free Models)"]);
+            setWizardOptions([...PROVIDER_TEMPLATE_LABELS]);
             setWizardSelectedIndex(0);
             setInput("");
             return;

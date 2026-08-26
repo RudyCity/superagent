@@ -1,7 +1,25 @@
 import { loadAgentSkills } from "./skills.js";
 import { resolveWindowsShell } from "../tools/helpers.js";
 
-export type Provider = "anthropic" | "openai" | "gemini" | "custom";
+export type Provider =
+  | "anthropic"
+  | "openai"
+  | "gemini"
+  | "deepseek"
+  | "xai"
+  | "mistral"
+  | "groq"
+  | "azure"
+  | "zai"
+  | "kimi"
+  | "cerebras"
+  | "together"
+  | "fireworks"
+  | "ollama"
+  | "lmstudio"
+  | "openrouter"
+  | "opencode"
+  | "custom";
 
 export interface Config {
   apiKey: string;

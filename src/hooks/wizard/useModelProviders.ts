@@ -18,7 +18,7 @@ import {
 import type { PresetMode } from "../../core/config.js";
 import { getTierModelConfig } from "../../core/config/providers.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
-import { resolveProfileFromPicker, fetchModelsForProvider, getFallbackModels } from "../../core/loginWizardLogic.js";
+import { resolveProfileFromPicker, fetchModelsForProvider, getFallbackModels, resolveProviderTemplateChoice, MODEL_OVERRIDE_TEMPLATE_LABELS } from "../../core/loginWizardLogic.js";
 
 interface ModelWizardContext {
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
@@ -197,7 +197,9 @@ export async function handleProviderStep(
       return true;
     }
 
-    if (value.toLowerCase().includes("not set") || value === "5" || value === "6" || value === "7") {
+    // "Not Set" is an unnumbered action in MODEL_OVERRIDE_TEMPLATE_LABELS;
+    // legacy numeric shortcuts removed to avoid colliding with provider keys.
+    if (value.toLowerCase().includes("not set")) {
       const tier = data.tier || "";
       let targetLabel = "";
       let didClear = false;
@@ -268,22 +270,10 @@ export async function handleProviderStep(
     }
 
     const choice = value.toLowerCase();
-    let providerType = "";
-    if (choice.includes("openrouter") || choice === "1") {
-      providerType = "openrouter";
-    } else if ((choice.includes("openai") && !choice.includes("custom")) || choice === "2") {
-      providerType = "openai";
-    } else if ((choice.includes("anthropic") && !choice.includes("custom")) || choice === "3") {
-      providerType = "anthropic";
-    } else if ((choice.includes("custom") && choice.includes("openai")) || choice === "4") {
-      providerType = "custom";
-    } else if ((choice.includes("custom") && choice.includes("anthropic")) || choice === "5") {
-      providerType = "custom-anthropic";
-    } else if (choice.includes("gemini") || choice.includes("google") || choice === "6") {
-      providerType = "gemini";
-    } else if (choice.includes("opencode") || choice.includes("zen") || choice === "8") {
-      providerType = "opencode";
-    } else {
+    // Resolve via shared template list (single source of truth). The override
+    // wizard shows the same provider list, so numeric keys map 1:1.
+    const providerType = resolveProviderTemplateChoice(value) ?? "";
+    if (!providerType) {
       addLine({
         type: "error",
         content: "Invalid provider type choice.",
@@ -329,17 +319,7 @@ export async function handleProviderStep(
         step: 2,
         data: { ...data },
       });
-      setWizardOptions([
-        "1. OpenRouter (Recommended)",
-        "2. OpenAI",
-        "3. Anthropic",
-        "4. Custom OpenAI Endpoint",
-        "5. Custom Anthropic Endpoint",
-        "6. Google Gemini",
-        "7. Not Set (Clear Override)",
-        "8. OpenCode Zen (Free Models)",
-        "< Back"
-      ]);
+      setWizardOptions([...MODEL_OVERRIDE_TEMPLATE_LABELS]);
       setWizardSelectedIndex(0);
       setInput("");
       return true;

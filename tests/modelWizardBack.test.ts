@@ -409,7 +409,7 @@ describe("Model Wizard Back Navigation", () => {
 
     // Step 2 should now be active
     expect(activeWizard.step).toBe(2);
-    expect(wizardOptions).toContain("7. Not Set (Clear Override)");
+    expect(wizardOptions).toContain("Not Set (Clear Override)");
     expect(wizardOptions).toContain("< Back");
   });
 

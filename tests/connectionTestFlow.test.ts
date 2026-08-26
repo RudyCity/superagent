@@ -50,7 +50,7 @@ describe("loginWizardLogic — pure helper functions", () => {
 
     it("should return null for invalid input", () => {
       expect(resolveProviderType("invalid")).toBeNull();
-      expect(resolveProviderType("8")).toBeNull();
+      expect(resolveProviderType("20")).toBeNull();
     });
   });
 

@@ -1,3 +1,15 @@
+## [1.4.0] - 2026-08-23
+
+### Added: 12 New Providers as First-Class Options
+
+- **New providers**: DeepSeek, xAI (Grok), Mistral, Groq, Azure OpenAI, Z.AI (GLM), Kimi (Moonshot), Cerebras, Together AI, Fireworks AI, Ollama (Local), LM Studio (Local) — all reachable from `/login`, the dashboard wizard, and the model wizard with a single numeric choice.
+- **`core/config/base.ts`**: `Provider` type union extended with the 12 new provider types.
+- **`core/config/models.ts`**: Native model resolution branches for each new provider plus cloud-provider whitelist updates.
+- **`core/loginWizardLogic.ts`**: `PROVIDER_TEMPLATE_OPTIONS` is now the single source of truth for the full 19-entry provider list; added `PROVIDER_TEMPLATE_LABELS`, `MODEL_OVERRIDE_TEMPLATE_LABELS`, `PROVIDER_DEFAULT_BASE_URLS`, and hardened `resolveProviderType`. Wizard step validation: custom/Azure endpoints require a baseUrl; API key required for every cloud provider, optional for local servers.
+- **Wizard UI deduplication**: hard-coded provider lists removed from `config/providers.ts`, `hooks/useKeyboardHandler.ts`, `hooks/useDashboardKeyboard.ts`, `hooks/useDashboardWizard.ts`, `hooks/wizard/useLoginWizard.ts`, `hooks/wizard/useModelPresets.ts`, `hooks/wizard/useModelProviders.ts`, and `hooks/wizard/useModelWizard.ts` — every surface now renders from the shared template constants, so future providers are a one-line addition.
+- **`core/model_limits.ts`**: static context-window limits for the new providers' models.
+- **Tests**: `tests/loginWizardLogic.test.ts` extended to cover label lists, round-trip label→type resolution, default base URLs per provider class (cloud https / local localhost / custom empty), and override-list layout.
+
 ## [1.3.6] - 2026-08-23
 
 ### Fixed: BOM Corruption in model-config.json

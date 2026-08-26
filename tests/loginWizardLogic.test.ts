@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, fetchModelsFromEndpoint, resolveTestModelAsync, resolveProfileFromPicker, fetchModelsForProvider, checkEndpointCompatibility } from "../src/core/loginWizardLogic.js";
+import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, fetchModelsFromEndpoint, resolveTestModelAsync, resolveProfileFromPicker, fetchModelsForProvider, checkEndpointCompatibility, PROVIDER_TEMPLATE_LABELS, MODEL_OVERRIDE_TEMPLATE_LABELS, PROVIDER_DEFAULT_BASE_URLS } from "../src/core/loginWizardLogic.js";
 import { getProviderOptionsList } from "../src/core/config/providers.js";
 import { fetchAndCacheModels, getCachedModelIds, getContextWindowLimit } from "../src/core/config/models.js";
 import { addProvider, clearModelConfigCache } from "../src/core/config/jsonConfig.js";
@@ -16,6 +16,21 @@ describe("loginWizardLogic", () => {
       expect(resolveProviderType("7")).toBe("opencode");
     });
 
+    it("resolves new native providers by numeric choice (8-19)", () => {
+      expect(resolveProviderType("8")).toBe("deepseek");
+      expect(resolveProviderType("9")).toBe("xai");
+      expect(resolveProviderType("10")).toBe("mistral");
+      expect(resolveProviderType("11")).toBe("groq");
+      expect(resolveProviderType("12")).toBe("azure");
+      expect(resolveProviderType("13")).toBe("zai");
+      expect(resolveProviderType("14")).toBe("kimi");
+      expect(resolveProviderType("15")).toBe("cerebras");
+      expect(resolveProviderType("16")).toBe("together");
+      expect(resolveProviderType("17")).toBe("fireworks");
+      expect(resolveProviderType("18")).toBe("ollama");
+      expect(resolveProviderType("19")).toBe("lmstudio");
+    });
+
     it("resolves name choices case-insensitively", () => {
       expect(resolveProviderType("OpenRouter (Recommended)")).toBe("openrouter");
       expect(resolveProviderType("OPENAI")).toBe("openai");
@@ -27,7 +42,7 @@ describe("loginWizardLogic", () => {
     });
 
     it("returns null for invalid choices", () => {
-      expect(resolveProviderType("8")).toBeNull();
+      expect(resolveProviderType("20")).toBeNull();
       expect(resolveProviderType("foo")).toBeNull();
     });
   });
@@ -404,6 +419,70 @@ describe("loginWizardLogic", () => {
       const res = await checkEndpointCompatibility("http://localhost:11434/v1", "");
       expect(res.ok).toBe(true);
       expect(res.models).toEqual(["llama3:latest", "mistral:latest"]);
+    });
+  });
+
+  describe("shared provider template lists", () => {
+    it("PROVIDER_TEMPLATE_LABELS covers all 19 providers in order", () => {
+      expect(PROVIDER_TEMPLATE_LABELS).toHaveLength(19);
+      expect(PROVIDER_TEMPLATE_LABELS[0]).toBe("1. OpenRouter (Recommended)");
+      expect(PROVIDER_TEMPLATE_LABELS[6]).toBe("7. OpenCode Zen (Free Models)");
+      expect(PROVIDER_TEMPLATE_LABELS[12]).toBe("13. Z.AI (GLM)");
+      expect(PROVIDER_TEMPLATE_LABELS[18]).toBe("19. LM Studio (Local)");
+    });
+
+    it("MODEL_OVERRIDE_TEMPLATE_LABELS appends Not Set and Back without renumbering", () => {
+      expect(MODEL_OVERRIDE_TEMPLATE_LABELS).toHaveLength(21);
+      // Provider numbering stays aligned with PROVIDER_TEMPLATE_OPTIONS keys
+      expect(MODEL_OVERRIDE_TEMPLATE_LABELS[0]).toBe("1. OpenRouter (Recommended)");
+      expect(MODEL_OVERRIDE_TEMPLATE_LABELS[18]).toBe("19. LM Studio (Local)");
+      expect(MODEL_OVERRIDE_TEMPLATE_LABELS[19]).toBe("Not Set (Clear Override)");
+      expect(MODEL_OVERRIDE_TEMPLATE_LABELS[20]).toBe("< Back");
+    });
+
+    it("every template label resolves back to its ProviderType", () => {
+      for (const label of PROVIDER_TEMPLATE_LABELS) {
+        const resolved = resolveProviderType(label);
+        expect(resolved, `label '${label}' should resolve`).not.toBeNull();
+      }
+    });
+
+    it("PROVIDER_DEFAULT_BASE_URLS covers every ProviderType", () => {
+      const expectedTypes = [
+        "openrouter", "openai", "anthropic", "custom", "custom-anthropic",
+        "gemini", "opencode", "deepseek", "xai", "mistral", "groq",
+        "azure", "zai", "kimi", "cerebras", "together", "fireworks",
+        "ollama", "lmstudio",
+      ];
+      for (const type of expectedTypes) {
+        expect(PROVIDER_DEFAULT_BASE_URLS).toHaveProperty(type);
+      }
+    });
+
+    it("cloud providers have valid https default base URLs", () => {
+      const cloudTypes = [
+        "openrouter", "opencode", "deepseek", "xai", "mistral", "groq",
+        "zai", "kimi", "cerebras", "together", "fireworks",
+      ] as const;
+      for (const type of cloudTypes) {
+        const url = PROVIDER_DEFAULT_BASE_URLS[type];
+        expect(url, `${type} default baseUrl`).toMatch(/^https:\/\/.+/);
+      }
+      // Azure is resource-specific: no usable global default.
+      // openai / anthropic / gemini rely on SDK defaults.
+      expect(PROVIDER_DEFAULT_BASE_URLS.azure).toBe("");
+      expect(PROVIDER_DEFAULT_BASE_URLS.openai).toBe("");
+      expect(PROVIDER_DEFAULT_BASE_URLS.anthropic).toBe("");
+      expect(PROVIDER_DEFAULT_BASE_URLS.gemini).toBe("");
+    });
+
+    it("local servers ship localhost defaults; custom endpoints stay empty", () => {
+      // Local defaults let the wizard accept an empty baseUrl input.
+      expect(PROVIDER_DEFAULT_BASE_URLS.ollama).toMatch(/^http:\/\/localhost:\d+\/v1$/);
+      expect(PROVIDER_DEFAULT_BASE_URLS.lmstudio).toMatch(/^http:\/\/localhost:\d+\/v1$/);
+      // Custom endpoints are always user-supplied.
+      expect(PROVIDER_DEFAULT_BASE_URLS.custom).toBe("");
+      expect(PROVIDER_DEFAULT_BASE_URLS["custom-anthropic"]).toBe("");
     });
   });
 });

@@ -39,7 +39,7 @@ import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint, deleteCheckpointById } from "../core/checkpoints.js";
 import { allTools } from "../core/tools.js";
 import type { Agent, QuestionItem } from "../core/agent.js";
-import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility, testCustomProviderMessage } from "../core/loginWizardLogic.js";
+import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility, testCustomProviderMessage, PROVIDER_TEMPLATE_LABELS, PROVIDER_DEFAULT_BASE_URLS } from "../core/loginWizardLogic.js";
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 import { contentToString } from "../core/conversation.js";
 import { attachmentToImagePart, type ImageAttachment } from "../utils/imageUtils.js";
@@ -525,15 +525,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             step: 2,
             data: {},
           });
-          setWizardOptions([
-            "1. OpenRouter (Recommended)",
-            "2. OpenAI",
-            "3. Anthropic",
-            "4. Custom OpenAI Endpoint",
-            "5. Custom Anthropic Endpoint",
-            "6. Google Gemini",
-            "7. OpenCode Zen (Free Models)"
-          ]);
+          setWizardOptions([...PROVIDER_TEMPLATE_LABELS]);
           setWizardSelectedIndex(0);
         } else {
         const list = getConfiguredProviders();
@@ -553,7 +545,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
       } else if (activeWizard.step === 2) {
         const provider = resolveProviderType(value);
         if (!provider) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Invalid choice. Please select 1, 2, 3, 4, 5, 6, or 7.`].slice(-500));
+          setMasterLogs((prev) => [...prev, `[ERROR] Invalid choice. Please select a valid provider number.`].slice(-500));
           return;
         }
 
@@ -574,7 +566,17 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         const nameInput = value.trim().replace(/[^a-zA-Z0-9_-]/g, "");
         const profileName = nameInput || provider;
 
-        if (provider === "custom" || provider === "custom-anthropic") {
+        // Step 4 collects baseUrl for providers that need user input:
+        //   - custom / custom-anthropic: always
+        //   - ollama / lmstudio: localhost default but user-overridable
+        //   - azure: deployment URL differs per resource
+        const needsBaseUrlStep =
+          provider === "custom" ||
+          provider === "custom-anthropic" ||
+          provider === "ollama" ||
+          provider === "lmstudio" ||
+          provider === "azure";
+        if (needsBaseUrlStep) {
           setMasterLogs((prev) => [
             ...prev,
             `[MASTER] Config Name: ${profileName}`
@@ -602,14 +604,27 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         const profileName = activeWizard.data.name;
         const baseUrl = value.trim();
 
+        const effectiveBaseUrl =
+          baseUrl ||
+          (provider === "ollama" || provider === "lmstudio"
+            ? PROVIDER_DEFAULT_BASE_URLS[provider] || ""
+            : "");
+        if (!effectiveBaseUrl) {
+          setMasterLogs((prev) => [
+            ...prev,
+            `[ERROR] Base URL is required for ${provider}. Please enter the full endpoint URL.`
+          ].slice(-500));
+          return;
+        }
+
         setMasterLogs((prev) => [
           ...prev,
-          `[MASTER] Entered Base URL: ${baseUrl}`
+          `[MASTER] Entered Base URL: ${effectiveBaseUrl}`
         ].slice(-500));
         setActiveWizard({
           type: "login",
           step: 5,
-          data: { provider, name: profileName, baseUrl },
+          data: { provider, name: profileName, baseUrl: effectiveBaseUrl },
         });
         setWizardOptions([]);
         setWizardSelectedIndex(0);
@@ -618,6 +633,15 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         const profileName = activeWizard.data.name;
         const baseUrl = activeWizard.data.baseUrl;
         const apiKey = value.trim();
+
+        const isLocal = provider === "ollama" || provider === "lmstudio";
+        if (!isLocal && !apiKey) {
+          setMasterLogs((prev) => [
+            ...prev,
+            `[ERROR] API key is required for ${provider}. Please paste your key.`
+          ].slice(-500));
+          return;
+        }
 
         const providerId = profileName.toLowerCase().replace(/[^a-z0-9_-]/g, "");
 
@@ -628,18 +652,15 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             name: profileName,
             provider: provider === "custom-anthropic" ? "anthropic" : provider,
             apiKey: apiKey,
-            baseUrl: baseUrl || (provider === "openrouter"
-              ? "https://openrouter.ai/api/v1"
-              : provider === "opencode"
-              ? "https://opencode.ai/zen/v1"
-              : undefined),
+            baseUrl: baseUrl || (PROVIDER_DEFAULT_BASE_URLS[provider as keyof typeof PROVIDER_DEFAULT_BASE_URLS] ?? undefined),
           });
 
           // Set provider ini sebagai aktif di preset JSON
           switchActiveProvider(providerId);
 
-          const effectiveBaseUrl = baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : provider === "opencode" ? "https://opencode.ai/zen/v1" : "");
-          const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : provider === "opencode" ? `\nBase URL: https://opencode.ai/zen/v1` : "");
+          const providerDefaultBase = PROVIDER_DEFAULT_BASE_URLS[provider as keyof typeof PROVIDER_DEFAULT_BASE_URLS] || "";
+          const effectiveBaseUrl = baseUrl || providerDefaultBase;
+          const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (providerDefaultBase ? `\nBase URL: ${providerDefaultBase}` : "");
 
           setMasterLogs((prev) => [
             ...prev,

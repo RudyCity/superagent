@@ -1,4 +1,240 @@
-export type ProviderType = "openrouter" | "openai" | "anthropic" | "gemini" | "custom" | "custom-anthropic" | "opencode";
+export type ProviderType =
+  | "openrouter"
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "custom"
+  | "custom-anthropic"
+  | "opencode"
+  | "deepseek"
+  | "xai"
+  | "mistral"
+  | "groq"
+  | "azure"
+  | "zai"
+  | "kimi"
+  | "cerebras"
+  | "together"
+  | "fireworks"
+  | "ollama"
+  | "lmstudio";
+
+// User-facing list shown in the provider picker (CLI wizard + dashboard wizard).
+// Adding a provider here is a single-source-of-truth change; the UI sites
+// (useLoginWizard, useDashboardWizard, useKeyboardHandler, useDashboardKeyboard)
+// all consume this array.
+export const PROVIDER_TEMPLATE_OPTIONS: ReadonlyArray<{
+  key: string;
+  label: string;
+  type: ProviderType;
+}> = [
+  { key: "1", label: "OpenRouter (Recommended)",     type: "openrouter" },
+  { key: "2", label: "OpenAI",                       type: "openai" },
+  { key: "3", label: "Anthropic",                    type: "anthropic" },
+  { key: "4", label: "Custom OpenAI Endpoint",       type: "custom" },
+  { key: "5", label: "Custom Anthropic Endpoint",    type: "custom-anthropic" },
+  { key: "6", label: "Google Gemini",                type: "gemini" },
+  { key: "7", label: "OpenCode Zen (Free Models)",   type: "opencode" },
+  { key: "8",  label: "DeepSeek",                    type: "deepseek" },
+  { key: "9",  label: "xAI (Grok)",                  type: "xai" },
+  { key: "10", label: "Mistral",                     type: "mistral" },
+  { key: "11", label: "Groq",                        type: "groq" },
+  { key: "12", label: "Azure OpenAI",                type: "azure" },
+  { key: "13", label: "Z.AI (GLM)",                  type: "zai" },
+  { key: "14", label: "Kimi (Moonshot)",             type: "kimi" },
+  { key: "15", label: "Cerebras",                    type: "cerebras" },
+  { key: "16", label: "Together AI",                 type: "together" },
+  { key: "17", label: "Fireworks AI",                type: "fireworks" },
+  { key: "18", label: "Ollama (Local)",              type: "ollama" },
+  { key: "19", label: "LM Studio (Local)",           type: "lmstudio" },
+];
+
+export const PROVIDER_TEMPLATE_OPTION_KEYS: ReadonlySet<string> = new Set(
+  PROVIDER_TEMPLATE_OPTIONS.map((p) => p.key)
+);
+
+// UI-ready labels: "1. OpenRouter (Recommended)", "2. OpenAI", ...
+// Single source of truth consumed by every wizard UI surface.
+export const PROVIDER_TEMPLATE_LABELS: readonly string[] =
+  PROVIDER_TEMPLATE_OPTIONS.map((p) => `${p.key}. ${p.label}`);
+
+/**
+ * Resolve a wizard option string (e.g. "4. Custom OpenAI Endpoint" or a typed
+ * number) back to its ProviderType. Resolution order:
+ *   1. Exact numeric key match ("4" or prefix "4.") — authoritative.
+ *   2. Longest label substring match (so "Custom OpenAI Endpoint" wins over
+ *      the shorter "OpenAI" label).
+ * Returns null when nothing matches.
+ */
+export function resolveProviderTemplateChoice(option: string): ProviderType | null {
+  const trimmed = option.trim();
+  const numericMatch = trimmed.match(/^(\d+)/);
+  if (numericMatch) {
+    const byKey = PROVIDER_TEMPLATE_OPTIONS.find((p) => p.key === numericMatch[1]);
+    if (byKey) return byKey.type;
+  }
+  const lc = trimmed.toLowerCase();
+  let best: (typeof PROVIDER_TEMPLATE_OPTIONS)[number] | undefined;
+  for (const p of PROVIDER_TEMPLATE_OPTIONS) {
+    if (lc.includes(p.label.toLowerCase())) {
+      if (!best || p.label.length > best.label.length) best = p;
+    }
+  }
+  return best ? best.type : null;
+}
+
+// Model-override wizard shows the full provider list (numeric keys stay aligned
+// with PROVIDER_TEMPLATE_OPTIONS.key so typed numbers resolve correctly), plus
+// an unnumbered "Not Set" action and "< Back".
+export const MODEL_OVERRIDE_TEMPLATE_LABELS: readonly string[] = [
+  ...PROVIDER_TEMPLATE_LABELS,
+  "Not Set (Clear Override)",
+  "< Back",
+];
+
+/**
+ * Default baseUrl for each provider (cloud-hosted). Empty string means
+ * the provider is local / variable and the user must supply the URL.
+ */
+export const PROVIDER_DEFAULT_BASE_URLS: Readonly<Record<ProviderType, string>> = {
+  openrouter:      "https://openrouter.ai/api/v1",
+  openai:          "",
+  anthropic:       "",
+  gemini:          "",
+  custom:          "",
+  "custom-anthropic": "",
+  opencode:        "https://opencode.ai/zen/v1",
+  deepseek:        "https://api.deepseek.com",
+  xai:             "https://api.x.ai/v1",
+  mistral:         "https://api.mistral.ai/v1",
+  groq:            "https://api.groq.com/openai/v1",
+  azure:           "",
+  zai:             "https://api.z.ai/v1",
+  kimi:            "https://api.moonshot.cn/v1",
+  cerebras:        "https://api.cerebras.ai/v1",
+  together:        "https://api.together.xyz/v1",
+  fireworks:       "https://api.fireworks.ai/inference/v1",
+  ollama:          "http://localhost:11434/v1",
+  lmstudio:        "http://localhost:1234/v1",
+};
+
+/**
+ * Returns the default test model used by the wizard when fetching the model
+ * list from the endpoint fails. Returns `null` for providers whose model
+ * list should be queried before any fallback is shown.
+ */
+export function getDefaultModels(providerType: ProviderType): string[] {
+  switch (providerType) {
+    case "openrouter":
+      return [
+        "google/gemini-2.5-flash",
+        "meta-llama/llama-3.3-70b-instruct",
+        "deepseek/deepseek-chat",
+        "anthropic/claude-3.5-sonnet",
+        "openai/gpt-4o",
+        "openai/gpt-4o-mini",
+      ];
+    case "anthropic":
+    case "custom-anthropic":
+      return [
+        "claude-3-5-sonnet-20241022",
+        "claude-3-5-haiku-20241022",
+        "claude-3-opus-20240229",
+      ];
+    case "openai":
+      return [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "o1",
+        "o1-mini",
+        "o3-mini",
+        "gpt-4-turbo",
+      ];
+    case "gemini":
+      return [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+      ];
+    case "opencode":
+      return [
+        "x-preview-f-free",
+        "claude-sonnet-4-5",
+        "gpt-5",
+      ];
+    case "deepseek":
+      return [
+        "deepseek-chat",
+        "deepseek-coder",
+        "deepseek-reasoner",
+      ];
+    case "xai":
+      return [
+        "grok-2",
+        "grok-2-mini",
+        "grok-beta",
+      ];
+    case "mistral":
+      return [
+        "mistral-large-latest",
+        "mistral-small-latest",
+        "codestral-latest",
+      ];
+    case "groq":
+      return [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768",
+      ];
+    case "azure":
+      // Azure deployments are user-named; supply reasonable starters.
+      return [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4-turbo",
+      ];
+    case "zai":
+      return [
+        "glm-4.6",
+        "glm-4.5",
+      ];
+    case "kimi":
+      return [
+        "kimi-k2-instruct",
+        "moonshot-v1-128k",
+        "moonshot-v1-32k",
+      ];
+    case "cerebras":
+      return [
+        "llama-3.3-70b",
+        "llama-3.1-8b",
+      ];
+    case "together":
+      return [
+        "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+      ];
+    case "fireworks":
+      return [
+        "accounts/fireworks/models/llama-v3p3-70b-instruct",
+        "accounts/fireworks/models/llama-v3p1-8b-instruct",
+      ];
+    case "ollama":
+      return [
+        "llama3.2",
+        "qwen2.5",
+      ];
+    case "lmstudio":
+      return [
+        "llama-3.1-8b-instruct",
+        "qwen2.5-7b-instruct",
+      ];
+    case "custom":
+    default:
+      return ["gpt-4o-mini"];
+  }
+}
 
 export const OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/v1";
 import { ensureProtocol } from "./config/paths.js";
@@ -18,8 +254,20 @@ export function resolveProviderType(choice: string): ProviderType | null {
   if (lc === "1" || lc.includes("openrouter")) return "openrouter";
   if (lc === "2" || (lc.includes("openai") && !lc.includes("custom"))) return "openai";
   if (lc === "3" || (lc.includes("anthropic") && !lc.includes("custom"))) return "anthropic";
-  if (lc === "6" || lc.includes("gemini") || lc.includes("google")) return "gemini";
   if (lc === "7" || lc.includes("opencode") || lc.includes("zen")) return "opencode";
+  if (lc === "8" || lc.includes("deepseek")) return "deepseek";
+  if (lc === "9" || (lc.includes("xai") || lc.includes("grok") || lc.includes("x.ai"))) return "xai";
+  if (lc === "10" || (lc.includes("mistral") || lc.includes("codestral"))) return "mistral";
+  if (lc === "11" || lc.includes("groq")) return "groq";
+  if (lc === "12" || (lc.includes("azure") && lc.includes("openai")) || lc === "azure") return "azure";
+  if (lc === "13" || lc.includes("z.ai") || lc.includes("zai") || lc.includes("glm")) return "zai";
+  if (lc === "14" || lc.includes("kimi") || lc.includes("moonshot")) return "kimi";
+  if (lc === "15" || lc.includes("cerebras")) return "cerebras";
+  if (lc === "16" || (lc.includes("together") && lc.includes("ai"))) return "together";
+  if (lc === "17" || lc.includes("fireworks")) return "fireworks";
+  if (lc === "18" || lc.includes("ollama")) return "ollama";
+  if (lc === "19" || (lc.includes("lmstudio") || lc.includes("lm studio"))) return "lmstudio";
+  if (lc === "6" || lc.includes("gemini") || lc.includes("google")) return "gemini";
   if (lc.includes("custom anthropic") || lc === "5") return "custom-anthropic";
   if (lc.includes("custom openai") || lc.includes("custom") || lc === "4") return "custom";
   return null;
@@ -71,6 +319,38 @@ export function getFallbackModels(providerType: ProviderType): string[] {
         "nemotron-3-ultra-free",
         "nemotron-3.5-lightning-free",
       ];
+    // New native SDK providers
+    case "deepseek":
+      return ["deepseek-chat", "deepseek-coder", "deepseek-reasoner"];
+    case "xai":
+      return ["grok-2", "grok-2-mini", "grok-beta"];
+    case "mistral":
+      return ["mistral-large-latest", "mistral-small-latest", "codestral-latest"];
+    case "groq":
+      return ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"];
+    case "azure":
+      return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
+    // OpenAI-compatible first-class providers
+    case "zai":
+      return ["glm-4.6", "glm-4.5"];
+    case "kimi":
+      return ["kimi-k2-instruct", "moonshot-v1-128k", "moonshot-v1-32k"];
+    case "cerebras":
+      return ["llama-3.3-70b", "llama-3.1-8b"];
+    case "together":
+      return [
+        "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+      ];
+    case "fireworks":
+      return [
+        "accounts/fireworks/models/llama-v3p3-70b-instruct",
+        "accounts/fireworks/models/llama-v3p1-8b-instruct",
+      ];
+    case "ollama":
+      return ["llama3.2", "qwen2.5"];
+    case "lmstudio":
+      return ["llama-3.1-8b-instruct", "qwen2.5-7b-instruct"];
     default:
       return ["gpt-4o", "gpt-4o-mini"];
   }
@@ -187,6 +467,31 @@ export async function fetchModelsForProvider(
   } else if (providerType === "gemini") {
     if (!apiKey) return [];
     url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+  } else if (
+    providerType === "deepseek" ||
+    providerType === "xai" ||
+    providerType === "mistral" ||
+    providerType === "groq" ||
+    providerType === "zai" ||
+    providerType === "kimi" ||
+    providerType === "cerebras" ||
+    providerType === "together" ||
+    providerType === "fireworks"
+  ) {
+    // All new OpenAI-compatible cloud providers expose /v1/models.
+    const fallbackBase = PROVIDER_DEFAULT_BASE_URLS[providerType as ProviderType] || "";
+    url = cleanBase ? `${cleanBase}/models` : (fallbackBase ? `${fallbackBase.replace(/\/$/, "")}/models` : "");
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  } else if (providerType === "azure") {
+    // Azure OpenAI requires a deployment name rather than a model name in
+    // /chat/completions, so /models is not directly queryable in the same
+    // way. Defer to caller; return empty so the wizard shows fallback list.
+    return [];
+  } else if (providerType === "ollama" || providerType === "lmstudio") {
+    // Local servers often expose /models. Some (LM Studio) require no auth.
+    const localFallback = PROVIDER_DEFAULT_BASE_URLS[providerType as ProviderType];
+    url = cleanBase ? `${cleanBase}/models` : `${localFallback.replace(/\/$/, "")}/models`;
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   } else if (cleanBase) {
     url = `${cleanBase}/models`;
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
@@ -251,9 +556,29 @@ export async function fetchModelsForProvider(
 }
 
 export function resolveTestModel(providerType: string, baseUrl: string): string {
-  if (providerType === "gemini") return "gemini-2.5-flash";
-  if (providerType === "anthropic" || providerType === "custom-anthropic") return "claude-3-haiku-20240307";
-  if (providerType === "opencode") return "x-preview-f-free";
+  // Test-connection model = cheapest/fastest known-good model per provider
+  // (NOT the recommended default, which may be expensive). Keep in sync with
+  // getFallbackModels() ordering.
+  switch (providerType) {
+    case "gemini": return "gemini-2.5-flash";
+    case "anthropic":
+    case "custom-anthropic": return "claude-3-haiku-20240307";
+    case "opencode": return "x-preview-f-free";
+    case "deepseek": return "deepseek-chat";
+    case "xai": return "grok-2-mini";
+    case "mistral": return "mistral-small-latest";
+    case "groq": return "llama-3.1-8b-instant";
+    case "azure": return "gpt-4o-mini";
+    case "zai": return "glm-4.5";
+    case "kimi": return "moonshot-v1-32k";
+    case "cerebras": return "llama-3.1-8b";
+    case "together": return "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo";
+    case "fireworks": return "accounts/fireworks/models/llama-v3p1-8b-instruct";
+    case "ollama": return "llama3.2";
+    case "lmstudio": return "llama-3.1-8b-instruct";
+    default:
+      break; // fall through to openrouter/generic handling below
+  }
   if (providerType === "openrouter" || (baseUrl && baseUrl.includes("openrouter.ai"))) {
     return "openai/gpt-4o-mini";
   }
@@ -506,13 +831,30 @@ export async function resolveTestModelAsync(
   // For custom / unknown endpoints, try to fetch models from the endpoint
   if (
     providerType === "custom" ||
+    providerType === "ollama" ||
+    providerType === "lmstudio" ||
+    providerType === "zai" ||
+    providerType === "kimi" ||
+    providerType === "cerebras" ||
+    providerType === "together" ||
+    providerType === "fireworks" ||
     (baseUrl &&
       !baseUrl.includes("openrouter.ai") &&
-      !baseUrl.includes("openai.com") &&
-      !baseUrl.includes("anthropic.com"))
+      !baseUrl.includes("api.openai.com") &&
+      !baseUrl.includes("anthropic.com") &&
+      !baseUrl.includes("api.deepseek.com") &&
+      !baseUrl.includes("api.x.ai") &&
+      !baseUrl.includes("api.mistral.ai") &&
+      !baseUrl.includes("api.groq.com"))
   ) {
-    if (baseUrl) {
-      const models = await fetchModelsFromEndpoint(baseUrl, apiKey);
+    // Use effective baseUrl: explicit, or per-provider default.
+    let effectiveBaseUrl = baseUrl;
+    if (!effectiveBaseUrl) {
+      const preset = PROVIDER_DEFAULT_BASE_URLS[providerType as ProviderType];
+      if (preset) effectiveBaseUrl = preset;
+    }
+    if (effectiveBaseUrl) {
+      const models = await fetchModelsFromEndpoint(effectiveBaseUrl, apiKey);
       if (models.length > 0) {
         return models[0];
       }

@@ -554,6 +554,8 @@ export function getStaticModelLimit(model: string): number | null {
 
   if (m.includes("llama-4")) return 1048576;
   if (m.includes("llama-3.3") || m.includes("llama-3.2") || m.includes("llama-3.1")) return 131072;
+  // Ollama-style "llama3.2" and Fireworks-style "llama-v3p3" naming variants
+  if (/llama3\.[0-9]/.test(m) || /llama-v3p[0-9]/.test(m)) return 131072;
   if (m.includes("llama-3")) return 8192;
 
   if (m.includes("selfcode") || m.includes("3.8-4b") || m.includes("qwen3.8-4b")) return 8192;
@@ -578,6 +580,21 @@ export function getStaticModelLimit(model: string): number | null {
   if (m.includes("grok-4.20")) return 2000000;
   if (m.includes("grok-4")) return 1000000;
   if (m.includes("grok")) return 500000;
+
+  // Z.AI (GLM) — native provider models (glm-4.6, glm-4.5)
+  if (m.includes("glm-4.6")) return 202752;
+  if (m.includes("glm-4.5")) return 131072;
+  if (m.includes("glm")) return 131072;
+
+  // Kimi (Moonshot) — native provider models
+  if (m.includes("kimi-k2")) return 262144;
+  if (m.includes("kimi")) return 131072;
+  if (m.includes("moonshot-v1-128k")) return 131072;
+  if (m.includes("moonshot-v1-32k")) return 32768;
+  if (m.includes("moonshot")) return 131072;
+
+  // Cerebras / Together / Fireworks serve Llama models; llama rules above cover them.
+  // Ollama local models vary by user install; llama/qwen/gemma rules above cover common ones.
 
   return null;
 }

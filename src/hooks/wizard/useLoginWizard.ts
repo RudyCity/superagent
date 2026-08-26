@@ -19,7 +19,7 @@ import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
 import type { Agent } from "../../core/agent.js";
 import type { ChatLine } from "../../core/slash-commands.js";
-import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility, testCustomProviderMessage, fetchModelsForProvider, getFallbackModels } from "../../core/loginWizardLogic.js";
+import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility, testCustomProviderMessage, fetchModelsForProvider, getFallbackModels, PROVIDER_TEMPLATE_LABELS, PROVIDER_DEFAULT_BASE_URLS } from "../../core/loginWizardLogic.js";
 
 interface LoginWizardContext {
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
@@ -59,15 +59,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           step: 2,
           data: {},
         });
-        setWizardOptions([
-          "1. OpenRouter (Recommended)",
-          "2. OpenAI",
-          "3. Anthropic",
-          "4. Custom OpenAI Endpoint",
-          "5. Custom Anthropic Endpoint",
-          "6. Google Gemini",
-          "7. OpenCode Zen (Free Models)"
-        ]);
+        setWizardOptions([...PROVIDER_TEMPLATE_LABELS]);
         setWizardSelectedIndex(0);
       } else if (choice.includes("delete") || choice.includes("remove") || choice === "3") {
         const list = getConfiguredProviders();
@@ -129,7 +121,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       if (!provider) {
         addLine({
           type: "error",
-          content: "Invalid choice. Please select 1, 2, 3, 4, 5, 6, or 7.",
+          content: "Invalid choice. Please select a valid provider number.",
           timestamp: now,
         });
         return;
@@ -154,7 +146,18 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       const nameInput = value.trim().replace(/[^a-zA-Z0-9_-]/g, "");
       const profileName = nameInput || provider;
 
-      if (provider === "custom" || provider === "custom-anthropic") {
+      // Step 4 collects baseUrl for providers that need user input:
+      //   - custom / custom-anthropic: always
+      //   - ollama / lmstudio: localhost default but user-overridable
+      //   - azure: deployment URL differs per resource
+      const needsBaseUrlStep =
+        provider === "custom" ||
+        provider === "custom-anthropic" ||
+        provider === "ollama" ||
+        provider === "lmstudio" ||
+        provider === "azure";
+
+      if (needsBaseUrlStep) {
         addLine({
           type: "system",
           content: `Config Name: ${profileName}`,
@@ -184,15 +187,32 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       const profileName = data.name;
       const baseUrl = value.trim();
 
+      // ollama / lmstudio have a sensible localhost default; the user can
+      // override if their server runs on a different host/port.
+      // Azure has no useful default — require an explicit URL.
+      const effectiveBaseUrl =
+        baseUrl ||
+        (provider === "ollama" || provider === "lmstudio"
+          ? PROVIDER_DEFAULT_BASE_URLS[provider] || ""
+          : "");
+      if (!effectiveBaseUrl) {
+        addLine({
+          type: "error",
+          content: `Base URL is required for ${provider}. Please enter the full endpoint URL.`,
+          timestamp: now,
+        });
+        return;
+      }
+
       addLine({
         type: "system",
-        content: `Entered Base URL: ${baseUrl}`,
+        content: `Entered Base URL: ${effectiveBaseUrl}`,
         timestamp: now,
       });
       setActiveWizard({
         type: "login",
         step: 5,
-        data: { provider, name: profileName, baseUrl },
+        data: { provider, name: profileName, baseUrl: effectiveBaseUrl },
       });
       setInput("");
     } else if (step === 5) {
@@ -200,6 +220,18 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       const profileName = data.name;
       const baseUrl = data.baseUrl;
       const apiKey = value;
+
+      // ollama / lmstudio usually run without auth; allow empty apiKey.
+      // Cloud providers require a key (or Azure's resource endpoint API key).
+      const isLocal = provider === "ollama" || provider === "lmstudio";
+      if (!isLocal && !apiKey.trim()) {
+        addLine({
+          type: "error",
+          content: `API key is required for ${provider}. Please paste your key.`,
+          timestamp: now,
+        });
+        return;
+      }
 
       const providerId = profileName.toLowerCase().replace(/[^a-z0-9_-]/g, "");
 
@@ -210,11 +242,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           name: profileName,
           provider: provider === "custom-anthropic" ? "anthropic" : provider,
           apiKey: apiKey,
-          baseUrl: baseUrl || (provider === "openrouter"
-            ? "https://openrouter.ai/api/v1"
-            : provider === "opencode"
-            ? "https://opencode.ai/zen/v1"
-            : undefined),
+          baseUrl: baseUrl || (PROVIDER_DEFAULT_BASE_URLS[provider as keyof typeof PROVIDER_DEFAULT_BASE_URLS] ?? undefined),
         });
 
         // Set this provider as active in preset JSON
@@ -226,8 +254,9 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           clearToolCallSupportCache();
         } catch {}
 
-        const effectiveBaseUrl = baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : provider === "opencode" ? "https://opencode.ai/zen/v1" : "");
-        const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : provider === "opencode" ? `\nBase URL: https://opencode.ai/zen/v1` : "");
+        const providerDefaultBase = PROVIDER_DEFAULT_BASE_URLS[provider as keyof typeof PROVIDER_DEFAULT_BASE_URLS] || "";
+        const effectiveBaseUrl = baseUrl || providerDefaultBase;
+        const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (providerDefaultBase ? `\nBase URL: ${providerDefaultBase}` : "");
 
         addLine({
           type: "system",

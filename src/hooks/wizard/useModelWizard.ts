@@ -30,6 +30,7 @@ import { getDefaultModel } from "../../core/slash-commands.js";
 import type { ChatLine } from "../../core/slash-commands.js";
 import { handlePresetStep } from "./useModelPresets.js";
 import { handleProviderStep } from "./useModelProviders.js";
+import { PROVIDER_TEMPLATE_LABELS, MODEL_OVERRIDE_TEMPLATE_LABELS } from "../../core/loginWizardLogic.js";
 
 function cleanFetchUrl(url: string | undefined): string {
   if (!url) return "";
@@ -322,17 +323,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
             step: 2,
             data: { tier: "single" },
           });
-          setWizardOptions([
-            "1. OpenRouter (Recommended)",
-            "2. OpenAI",
-            "3. Anthropic",
-            "4. Custom OpenAI Endpoint",
-            "5. Custom Anthropic Endpoint",
-            "6. Google Gemini",
-            "7. Not Set (Clear Override)",
-            "8. OpenCode Zen (Free Models)",
-            "< Back"
-          ]);
+          setWizardOptions([...MODEL_OVERRIDE_TEMPLATE_LABELS]);
         }
         setWizardSelectedIndex(0);
         setInput("");
@@ -440,17 +431,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         data: { tier },
       });
 
-      setWizardOptions([
-        "1. OpenRouter (Recommended)",
-        "2. OpenAI",
-        "3. Anthropic",
-        "4. Custom OpenAI Endpoint",
-        "5. Custom Anthropic Endpoint",
-        "6. Google Gemini",
-        "7. Not Set (Clear Override)",
-        "8. OpenCode Zen (Free Models)",
-        "< Back"
-      ]);
+      setWizardOptions([...MODEL_OVERRIDE_TEMPLATE_LABELS]);
       setWizardSelectedIndex(0);
       setInput("");
     } else {

@@ -7,6 +7,7 @@ import { getConfiguredProviders, getProviders } from "../core/config.js";
 import { listCheckpointsForSession } from "../core/checkpoints.js";
 import type { Agent } from "../core/agent.js";
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
+import { PROVIDER_TEMPLATE_LABELS } from "../core/loginWizardLogic.js";
 
 export interface DashboardKeyboardContext {
   exit: () => void;
@@ -568,7 +569,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
             return;
           } else if (activeWizard.step === 3) {
             setActiveWizard({ type: "login", step: 2, data: {} });
-            setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint", "6. Google Gemini", "7. OpenCode Zen (Free Models)"]);
+            setWizardOptions([...PROVIDER_TEMPLATE_LABELS]);
             setWizardSelectedIndex(0);
             setQuery("");
             return;

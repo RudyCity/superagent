@@ -3,6 +3,11 @@ import path from "path";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createXai } from "@ai-sdk/xai";
+import { createMistral } from "@ai-sdk/mistral";
+import { createGroq } from "@ai-sdk/groq";
+import { createAzure } from "@ai-sdk/azure";
 import { getStaticModelLimit } from "../model_limits.js";
 import { getRootConfigDir, ensureProtocol } from "./paths.js";
 import { getConfig } from "./base.js";
@@ -178,6 +183,24 @@ export function isAnthropicCompatible(baseUrl: string, modelName: string): boole
     urlLower.includes("groq") ||
     urlLower.includes("deepinfra") ||
     urlLower.includes("together")
+  ) {
+    return false;
+  }
+  if (
+    urlLower.includes("deepseek.com") ||
+    urlLower.includes("api.deepseek") ||
+    urlLower.includes("x.ai") ||
+    urlLower.includes("mistral.ai") ||
+    urlLower.includes("groq.com") ||
+    urlLower.includes("cerebras.ai") ||
+    urlLower.includes("cerebras.cloud") ||
+    urlLower.includes("fireworks.ai") ||
+    urlLower.includes("fireworks.ai/api") ||
+    urlLower.includes("z.ai") ||
+    urlLower.includes("moonshot") ||
+    urlLower.includes("kimi.com") ||
+    urlLower.includes("azure.com") ||
+    urlLower.includes("openai.azure.com")
   ) {
     return false;
   }
@@ -445,6 +468,42 @@ export function getModelInstanceForString(modelStr: string) {
           if (!baseUrl) {
             baseUrl = "https://opencode.ai/zen/v1";
           }
+        } else if (typeLower === "deepseek") {
+          provider = "deepseek";
+          baseUrl = undefined;
+        } else if (typeLower === "xai") {
+          provider = "xai";
+          baseUrl = undefined;
+        } else if (typeLower === "mistral") {
+          provider = "mistral";
+          baseUrl = undefined;
+        } else if (typeLower === "groq") {
+          provider = "groq";
+          baseUrl = undefined;
+        } else if (typeLower === "azure") {
+          provider = "azure";
+          baseUrl = undefined;
+        } else if (typeLower === "zai") {
+          provider = "zai";
+          baseUrl = undefined;
+        } else if (typeLower === "kimi") {
+          provider = "kimi";
+          baseUrl = undefined;
+        } else if (typeLower === "cerebras") {
+          provider = "cerebras";
+          baseUrl = undefined;
+        } else if (typeLower === "together") {
+          provider = "together";
+          baseUrl = undefined;
+        } else if (typeLower === "fireworks") {
+          provider = "fireworks";
+          baseUrl = undefined;
+        } else if (typeLower === "ollama") {
+          provider = "ollama";
+          baseUrl = undefined;
+        } else if (typeLower === "lmstudio") {
+          provider = "lmstudio";
+          baseUrl = undefined;
         } else if (typeLower === "gemini") {
           provider = "gemini";
           baseUrl = undefined;
@@ -522,7 +581,21 @@ export function getModelInstanceForString(modelStr: string) {
     baseUrl = ensureProtocol(baseUrl);
   }
 
-  const isCloud = !baseUrl || baseUrl.includes("openrouter.ai") || baseUrl.includes("openai.com") || baseUrl.includes("anthropic.com") || baseUrl.includes("opencode.ai");
+  const isCloud = !baseUrl
+    || baseUrl.includes("openrouter.ai")
+    || baseUrl.includes("openai.com")
+    || baseUrl.includes("anthropic.com")
+    || baseUrl.includes("opencode.ai")
+    || baseUrl.includes("api.deepseek.com")
+    || baseUrl.includes("api.x.ai")
+    || baseUrl.includes("api.mistral.ai")
+    || baseUrl.includes("api.groq.com")
+    || baseUrl.includes("openai.azure.com")
+    || baseUrl.includes("api.z.ai")
+    || baseUrl.includes("api.moonshot")
+    || baseUrl.includes("api.cerebras.ai")
+    || baseUrl.includes("api.together.xyz")
+    || baseUrl.includes("api.fireworks.ai");
   const isMissingKey = !apiKey || apiKey.trim() === "" || apiKey === "dummy";
   const isTest = (process.env.VITEST || process.env.NODE_ENV === "test") && !process.env.SUPERAGENT_FORCE_VAL_CHECK;
   if (!isTest && isCloud && isMissingKey) {
@@ -560,6 +633,69 @@ export function getModelInstanceForString(modelStr: string) {
   if (provider === "gemini") {
     const google = createGoogleGenerativeAI({ apiKey });
     return google(modelName);
+  }
+
+  // Native @ai-sdk/* providers (official SDKs)
+  if (provider === "deepseek") {
+    const ds = createDeepSeek({ apiKey });
+    return ds(modelName);
+  }
+  if (provider === "xai") {
+    const xaiSdk = createXai({ apiKey });
+    return xaiSdk(modelName);
+  }
+  if (provider === "mistral") {
+    const m = createMistral({ apiKey });
+    return m(modelName);
+  }
+  if (provider === "groq") {
+    const g = createGroq({ apiKey });
+    return g(modelName);
+  }
+  if (provider === "azure") {
+    // Azure OpenAI requires { resourceName } + apiKey (deployments are
+    // handled via the @ai-sdk/azure implementation by deployment name).
+    // We pass resourceName via baseURL fallback for ad-hoc compatibility.
+    const az = createAzure({
+      apiKey,
+      ...(baseUrl ? { baseURL: baseUrl } : {}),
+    });
+    return az(modelName);
+  }
+
+  // OpenAI-compatible first-class providers (no official SDK; routed via
+  // createOpenAI with the provider's base URL). Ollama / LM Studio are
+  // local servers that may have no API key.
+  const openaiCompatPrefixes: Record<string, { baseURL: string }> = {
+    zai:       { baseURL: "https://api.z.ai/v1" },
+    kimi:      { baseURL: "https://api.moonshot.cn/v1" },
+    cerebras:  { baseURL: "https://api.cerebras.ai/v1" },
+    together:  { baseURL: "https://api.together.xyz/v1" },
+    fireworks: { baseURL: "https://api.fireworks.ai/inference/v1" },
+  };
+  if (provider in openaiCompatPrefixes) {
+    const preset = openaiCompatPrefixes[provider];
+    const oa = createOpenAI({
+      apiKey: apiKey || "no-key-required",
+      baseURL: baseUrl || preset.baseURL,
+    });
+    return oa(modelName);
+  }
+
+  if (provider === "ollama" || provider === "lmstudio") {
+    // Local servers default to http://localhost:<port>/v1 when no baseUrl
+    // is configured. Ollama defaults to 11434, LM Studio to 1234.
+    const defaultPort = provider === "ollama" ? "11434" : "1234";
+    const fallbackBase = `http://localhost:${defaultPort}/v1`;
+    const oa = createOpenAI({
+      apiKey: apiKey || "no-key-required",
+      baseURL: baseUrl || fallbackBase,
+    });
+    // Ollama's OpenAI-compatible endpoint exposes /v1, but its native
+    // model identifiers may not include a prefix. We do not prefix here
+    // because users can name their models freely; downstream providers
+    // must handle bare names like "llama3" or "qwen2.5-coder".
+    return oa(modelName);
   }
 
   const openai = createOpenAI({

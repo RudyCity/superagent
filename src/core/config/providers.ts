@@ -1,4 +1,5 @@
 import { getProviders, loadModelConfig, getActivePreset, mutateModelConfig, TierModelConfig } from "./jsonConfig.js";
+import { PROVIDER_TEMPLATE_LABELS } from "../loginWizardLogic.js";
 
 export interface ConfiguredProvider {
   id: string;
@@ -106,16 +107,7 @@ export function getProviderOptionsList(list: ConfiguredProvider[]): string[] {
         p.isActive ? " [Active]" : ""
       }`
   );
-  const defaultTemplates = [
-    "1. OpenRouter (Recommended)",
-    "2. OpenAI",
-    "3. Anthropic",
-    "4. Custom OpenAI Endpoint",
-    "5. Custom Anthropic Endpoint",
-    "6. Google Gemini",
-    "7. OpenCode Zen (Free Models)",
-  ];
-  return [...options, ...defaultTemplates, "< Back"];
+  return [...options, ...PROVIDER_TEMPLATE_LABELS, "< Back"];
 }
 
 /**
