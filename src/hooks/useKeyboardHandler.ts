@@ -9,6 +9,7 @@ import { getPasteSplit, filterSuggestions, getInsertion, getActiveCommandContext
 import { reconstructChatLines } from "../utils/uiHelpers.js";
 import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders, getResolvedModelWithProvider, getTierModel, getEffectiveMasterModel, getSettings } from "../core/config.js";
 import { getDefaultModel } from "../core/slash-commands.js";
+import { readFileTail } from "../utils/logTail.js";
 import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, deleteCheckpointById, type Checkpoint } from "../core/checkpoints.js";
 import { getToolDescription } from "../core/permissions.js";
 import { registerSubagentType, allTools, backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifySubagentsChanged, isTaskInWorkspace } from "../core/tools.js";
@@ -388,9 +389,13 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           let logContent = "";
           if (task.logPath && fs.existsSync(task.logPath)) {
             try {
-              const fullLog = fs.readFileSync(task.logPath, "utf-8");
-              const logLines = fullLog.split("\n");
+              // Read only the most recent 16 KB of the log to avoid blocking the
+              // UI on multi-megabyte files. readFileTail drops a torn first line
+              // when the offset lands mid-line, so the result stays readable.
+              const tail = readFileTail(task.logPath, 16 * 1024);
+              const logLines = tail.split("\n");
               logContent = logLines.slice(-40).join("\n");
+              if (!logContent) logContent = "(log file is empty)";
             } catch (e) {
               logContent = `Error reading log file: ${e instanceof Error ? e.message : String(e)}`;
             }

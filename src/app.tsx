@@ -28,6 +28,7 @@ import { TaskChecklist } from "./components/task-checklist.js";
 import { HistoryPanel } from "./components/history-panel.js";
 import { execa } from "execa";
 import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions, getInsertion, getPasteSplit, stripSgrMouseSequences, updatePasteState, getActiveCommandContext } from "./utils/text.js";
+import { createIncrementalStreamCleaner } from "./utils/streamText.js";
 import { reconstructChatLines } from "./utils/uiHelpers.js";
 import { getTruncatedAssistantIndexes } from "./utils/responseScroll.js";
 import { wrapTextForDisplay } from "./utils/responseScroll.js";
@@ -120,6 +121,17 @@ function cleanXmlForDisplay(text: string): string {
 
   return cleaned;
 }
+
+/**
+ * Shared incremental cleaners for the streaming display buffers.
+ *
+ * cleanXmlForDisplay runs ~25 regexes over its input; calling it on the
+ * growing buffer every 40ms is O(n²) over a long response. The wrappers
+ * freeze already-settled plain-prose content and only re-clean the volatile
+ * tail. Final messages still go through a full clean via cleanFinal.
+ */
+const textStreamCleaner = createIncrementalStreamCleaner(cleanXmlForDisplay);
+const reasoningStreamCleaner = createIncrementalStreamCleaner(cleanXmlForDisplay);
 
 export function App({
   autoResume = false,
@@ -541,7 +553,7 @@ export function App({
     const rawContent = streamBufferRef.current.trim();
     const reasoning = reasoningBufferRef.current.trim();
     if (rawContent || reasoning) {
-      const content = cleanXmlForDisplay(rawContent).trim();
+      const content = textStreamCleaner.cleanFinal(rawContent).trim();
       addLine({
         type: "assistant",
         content,
@@ -551,6 +563,8 @@ export function App({
     }
     streamBufferRef.current = "";
     reasoningBufferRef.current = "";
+    textStreamCleaner.reset();
+    reasoningStreamCleaner.reset();
     setStreamDisplay("");
     setReasoningDisplay("");
   }, [addLine]);
@@ -977,6 +991,8 @@ export function App({
       setIsProcessing(true);
       streamBufferRef.current = "";
       reasoningBufferRef.current = "";
+      textStreamCleaner.reset();
+      reasoningStreamCleaner.reset();
       setStreamDisplay("");
       setReasoningDisplay("");
 
@@ -1710,12 +1726,12 @@ export function App({
             clearTimeout(streamTimeoutRef.current);
             streamTimeoutRef.current = null;
           }
-          streamBufferRef.current = resolveCarriageReturns(streamBufferRef.current + event.content);
-          
+          streamBufferRef.current += event.content;
+
           // Throttle state updates to at most once every 40ms to prevent Ink render overload.
           const now = Date.now();
           if (now - lastStreamUpdateRef.current > 40) {
-            setStreamDisplay(cleanXmlForDisplay(streamBufferRef.current));
+            setStreamDisplay(textStreamCleaner.clean(streamBufferRef.current));
             lastStreamUpdateRef.current = now;
             if (deferredStreamTimeoutRef.current) {
               clearTimeout(deferredStreamTimeoutRef.current);
@@ -1725,7 +1741,7 @@ export function App({
             // Schedule a deferred update for the trailing characters if not already scheduled.
             if (!deferredStreamTimeoutRef.current) {
               deferredStreamTimeoutRef.current = setTimeout(() => {
-                setStreamDisplay(cleanXmlForDisplay(streamBufferRef.current));
+                setStreamDisplay(textStreamCleaner.clean(streamBufferRef.current));
                 lastStreamUpdateRef.current = Date.now();
                 deferredStreamTimeoutRef.current = null;
               }, 40);
@@ -1738,7 +1754,7 @@ export function App({
             clearTimeout(streamTimeoutRef.current);
             streamTimeoutRef.current = null;
           }
-          reasoningBufferRef.current = resolveCarriageReturns(reasoningBufferRef.current + event.content);
+          reasoningBufferRef.current += event.content;
           
           const now = Date.now();
           if (now - lastReasoningUpdateRef.current > 40) {
@@ -1771,6 +1787,8 @@ export function App({
           } else {
             streamBufferRef.current = "";
             reasoningBufferRef.current = "";
+            textStreamCleaner.reset();
+            reasoningStreamCleaner.reset();
             setStreamDisplay("");
             setReasoningDisplay("");
           }
@@ -1940,6 +1958,8 @@ export function App({
           flushBuffer();
           streamBufferRef.current = "";
           reasoningBufferRef.current = "";
+          textStreamCleaner.reset();
+          reasoningStreamCleaner.reset();
           setStreamDisplay("");
           setReasoningDisplay("");
           addLine({
@@ -1956,6 +1976,8 @@ export function App({
           flushBuffer();
           streamBufferRef.current = "";
           reasoningBufferRef.current = "";
+          textStreamCleaner.reset();
+          reasoningStreamCleaner.reset();
           setStreamDisplay("");
           setReasoningDisplay("");
           setIsExecutingTool(false);
@@ -2223,6 +2245,8 @@ export function App({
         setIsProcessing(true);
          streamBufferRef.current = "";
          reasoningBufferRef.current = "";
+         textStreamCleaner.reset();
+         reasoningStreamCleaner.reset();
          setStreamDisplay("");
          setReasoningDisplay("");
         agent.sendMessage(prompt).then(() => {

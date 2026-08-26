@@ -1,3 +1,15 @@
+## [1.4.4] - 2026-08-26
+
+### Performance: Streaming O(n²) → O(n), async logger, bounded log reads
+
+- **`utils/streamText.ts`** (new): `createIncrementalStreamCleaner` wraps the existing `cleanXmlForDisplay` with a stable-prefix cache. The settled prefix (everything before the last newline) is cleaned once and frozen; only the new settled bytes (appended verbatim for plain prose) and the volatile tail are processed on each flush. Markup arrival forces a one-shot re-snapshot of the affected region. Total work for prose streams drops from O(n²) to O(n) while final-output correctness is preserved by `cleanFinal()` and per-turn hygiene is preserved by `reset()` (called at all 5 buffer-clear sites in `app.tsx`).
+- **`utils/logTail.ts`** (new): `readFileTail(path, maxBytes = 16 KB)` uses `openSync` + `fstatSync` + positional `readSync` to read only the tail of a file and drops a torn first line for readability. Replaces the multi-megabyte `readFileSync` in the log viewer that fired on every Enter keypress.
+- **`core/utils/unifiedLogger.ts`**: dir-ensured flag cached once per process; appends serialized per file via fire-and-forget promise chains, eliminating the 4–5 blocking syscalls per `logE2E` call. Trade-off: last lines may be lost on abrupt process exit (acceptable for diagnostic logs).
+- **`components/plan-approval-dialog.tsx`**: module-level mtime-cached plan file reader shared by `planLines` (memo) and `totalLines`, replacing two independent `readFileSync` calls.
+- **`server.ts`**: idle session harvest now includes `isCliSession` entries with a 2 h grace period (vs 30 min for remote sessions), preventing unbounded growth of `activeSessions` in long-running server deployments while still protecting paused-at-terminal sessions. Sessions with a running agent are still skipped.
+- **Tests**: `tests/streamText.test.ts` (7 tests) covers correctness against the full cleaner, markup fallback, `reset()`, buffer-shrink self-heal, and an asymptotic-complexity bound (≥10× faster than naive on 2000 streaming chunks); `tests/logTail.test.ts` (5 tests) covers small/large files, mid-line offset, missing files, and empty files.
+- **Verification**: `npx tsc --noEmit` clean; 12/12 new tests pass; full-suite failures (7 in `requestClassifier`, `pdfOcr`, `nudgeSkip`, `orphanedToolMessages`, `payloadRetrier`, `promptToolGuidance`) are pre-existing and reproduce on a clean tree (verified via `git stash` + re-run) — zero regressions from this change.
+
 ## [1.4.3] - 2026-08-26
 
 ### Added: TokenRouter, CommandCode, and ZenMux Providers

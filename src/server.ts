@@ -612,18 +612,23 @@ export async function runServer(port: number, silent = false, defaultClientMode:
     purgeEmptySessions(24);
   } catch {}
 
-  // Idle workspace session harvesting (30 min inactivity timeout)
+  // Idle workspace session harvesting. Non-CLI sessions are reclaimed after
+  // 30 min of inactivity; CLI-attached sessions get a longer 2h grace window
+  // because they may simply be paused by a human at the terminal, but they
+  // are still reaped eventually to keep the session map bounded in long-
+  // running server deployments.
   const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+  const CLI_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
   const harvestTimer = setInterval(() => {
     const now = Date.now();
     for (const [key, session] of activeSessions.entries()) {
-      if (!session.isCliSession && !session.agent.isAgentRunning()) {
-        const lastActive = session.lastActiveTime || now;
-        if (now - lastActive > IDLE_TIMEOUT_MS) {
-          void teardownIdleSession(session).finally(() => {
-            activeSessions.delete(key);
-          });
-        }
+      if (session.agent.isAgentRunning()) continue;
+      const lastActive = session.lastActiveTime || now;
+      const timeout = session.isCliSession ? CLI_IDLE_TIMEOUT_MS : IDLE_TIMEOUT_MS;
+      if (now - lastActive > timeout) {
+        void teardownIdleSession(session).finally(() => {
+          activeSessions.delete(key);
+        });
       }
     }
   }, 5 * 60 * 1000);

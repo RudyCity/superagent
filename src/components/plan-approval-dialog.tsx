@@ -3,6 +3,36 @@ import { Box, Text, useInput } from "ink";
 import fs from "fs";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
 
+// Module-level cache: plan file content shared by planLines + totalLines
+// computation, invalidated by mtime. Plan files rarely change mid-dialog,
+// so this avoids reading the same file twice and keeps the dialog snappy
+// when the plan is large.
+const planReadCache: { key: string | null; mtimeMs: number; lines: string[] } = {
+  key: null,
+  mtimeMs: 0,
+  lines: [],
+};
+
+function readPlanLines(planFilePath: string): string[] {
+  try {
+    const stat = fs.statSync(planFilePath);
+    if (
+      planReadCache.key === planFilePath &&
+      planReadCache.mtimeMs === stat.mtimeMs
+    ) {
+      return planReadCache.lines;
+    }
+    const raw = fs.readFileSync(planFilePath, "utf8");
+    const lines = raw.split("\n");
+    planReadCache.key = planFilePath;
+    planReadCache.mtimeMs = stat.mtimeMs;
+    planReadCache.lines = lines;
+    return lines;
+  } catch {
+    return ["(Plan file not found or unreadable)"];
+  }
+}
+
 interface PlanApprovalDialogProps {
   planFilePath: string;
   selectedIndex: number;
@@ -44,15 +74,8 @@ export function PlanApprovalDialog({
     }
   };
 
-  // Read plan content (memoised on file path)
-  const planLines = useMemo(() => {
-    try {
-      const raw = fs.readFileSync(planFilePath, "utf8");
-      return raw.split("\n");
-    } catch {
-      return ["(Plan file not found or unreadable)"];
-    }
-  }, [planFilePath]);
+  // Read plan content (memoised on file path, mtime-cached across the module)
+  const planLines = useMemo(() => readPlanLines(planFilePath), [planFilePath]);
 
   const totalLines = planLines.length;
 
