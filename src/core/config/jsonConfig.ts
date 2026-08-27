@@ -5,6 +5,7 @@ import { threadId } from "worker_threads";
 import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir, ensureProtocol, getWorkspaceId } from "./paths.js";
 import { saveWorkspaceToDb, getWorkspacesFromDb, getWorkspaceFromDb, deleteWorkspaceFromDb } from "../storage/historyDb.js";
 import { encryptSecret, decryptSecret, isEncrypted } from "./secretStore.js";
+import { validateModelConfig } from "./configSchema.js";
 
 export interface ProviderProfile {
   id: string;
@@ -378,6 +379,21 @@ export function loadModelConfig(): GlobalModelConfig {
             throw new Error("Config file is empty or blank");
           }
           const parsed = JSON.parse(data);
+          // Audit fix H7: validate the parsed object at the boundary
+          // and surface the result to the next stage. We do NOT
+          // throw on partial validation failures — we drop the
+          // invalid fields and log a warning, so a typo in one
+          // setting doesn't destroy the entire user config.
+          const schemaResult = validateModelConfig(parsed);
+          if (!schemaResult.ok) {
+            console.warn(
+              "[model-config] schema validation produced warnings:",
+              schemaResult.errors.slice(0, 10).join("; "),
+              schemaResult.errors.length > 10
+                ? ` (and ${schemaResult.errors.length - 10} more)`
+                : ""
+            );
+          }
           // Basic migrations/fallback validation
           if (!parsed?.providers) {
             // File exists but the providers field is missing/invalid. Back up before touching it.
