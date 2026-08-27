@@ -520,6 +520,114 @@ export class SshProxyService {
     });
   }
 
+  /**
+   * Audit fix C4: argv-style command execution.
+   *
+   * `exec(command: string, ...)` is kept for backwards compat with
+   * the 13 existing callers in sshCommands.ts. New code should
+   * prefer this argv form, which bypasses the remote shell so
+   * user-controlled arguments cannot be reinterpreted as shell
+   * metacharacters.
+   *
+   * The working directory is set by prepending `cd <cwd> &&` to
+   * the program, which is the smallest unavoidable shell
+   * interpolation. The command and its arguments are passed
+   * verbatim — ssh2 launches the program directly.
+   */
+  public async execCommand(
+    argv: string[],
+    cwd?: string,
+    timeoutMs: number = 600000,
+    signal?: AbortSignal
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    if (!Array.isArray(argv) || argv.length === 0) {
+      throw new Error("execCommand: argv must be a non-empty string[]");
+    }
+    for (const a of argv) {
+      if (typeof a !== "string") {
+        throw new Error("execCommand: every argv element must be a string");
+      }
+      if (a.includes("\0")) {
+        throw new Error("execCommand: argv element contains NUL byte");
+      }
+    }
+    await this.verifyAndExpandBoundary(cwd);
+    await this.ensureConnected();
+    const workingDir = this.normalizePosixPath(cwd || ".");
+    const remoteCommand: string[] = ["cd", workingDir, "&&", ...argv];
+
+    let sshStream: any = null;
+    const execPromise = new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+      // ssh2 accepts string|string[] at runtime; the bundled @types
+      // ssh2 package only declares the string overload. We cast to
+      // any here because the array form is the entire point of this
+      // method (C4 audit fix).
+      (this.sshClient as any).exec(remoteCommand, (err: any, stream: any) => {
+        if (err) return reject(err);
+        sshStream = stream;
+        let stdout = "";
+        let stderr = "";
+        let streamError: Error | null = null;
+        const settle = (result: { stdout: string; stderr: string; exitCode: number }) => {
+          if (streamError) {
+            reject(streamError);
+            return;
+          }
+          resolve(result);
+        };
+        stream.on("error", (streamErr: Error) => { streamError = streamErr; });
+        stream.on("data", (data: Buffer) => { stdout += data.toString(); });
+        stream.on("close", (code: number | null) => {
+          const finalExit = (code !== null && code !== undefined && !isNaN(Number(code)))
+            ? Number(code)
+            : (streamError ? -1 : 0);
+          if (streamError && !stderr) {
+            stderr += (stderr ? "\n" : "") + `[stream error] ${streamError.message}`;
+          }
+          settle({ stdout, stderr, exitCode: finalExit });
+        });
+        stream.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
+      });
+    });
+
+    if (timeoutMs <= 0) return execPromise;
+
+    let timer: NodeJS.Timeout;
+    const timeoutPromise = new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {
+      timer = setTimeout(() => {
+        try { if (sshStream) sshStream.close(); } catch { /* best-effort */ }
+        resolve({ stdout: "", stderr: `[timeout after ${timeoutMs}ms]`, exitCode: 124 });
+      }, timeoutMs);
+    });
+
+    let signalHandler: (() => void) | null = null;
+    const abortPromise = signal
+      ? new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve) => {
+          if (signal.aborted) {
+            try { if (sshStream) sshStream.close(); } catch { /* noop */ }
+            resolve({ stdout: "", stderr: "[aborted]", exitCode: 130 });
+            return;
+          }
+          signalHandler = () => {
+            try { if (sshStream) sshStream.close(); } catch { /* noop */ }
+            resolve({ stdout: "", stderr: "[aborted]", exitCode: 130 });
+          };
+          signal.addEventListener("abort", signalHandler);
+        })
+      : null;
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      if (signal && signalHandler) signal.removeEventListener("abort", signalHandler);
+    };
+
+    return Promise.race([
+      execPromise.finally(cleanup),
+      timeoutPromise,
+      ...(abortPromise ? [abortPromise] : []),
+    ]);
+  }
+
   public async execBackground(command: string, logFile: string = ".superagent-bg.log", cwd?: string): Promise<string> {
     await this.verifyAndExpandBoundary(cwd);
     await this.verifyAndExpandBoundary(logFile);
