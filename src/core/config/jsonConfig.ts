@@ -4,6 +4,7 @@ import { execa } from "execa";
 import { threadId } from "worker_threads";
 import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir, ensureProtocol, getWorkspaceId } from "./paths.js";
 import { saveWorkspaceToDb, getWorkspacesFromDb, getWorkspaceFromDb, deleteWorkspaceFromDb } from "../storage/historyDb.js";
+import { encryptSecret, decryptSecret, isEncrypted } from "./secretStore.js";
 
 export interface ProviderProfile {
   id: string;
@@ -461,6 +462,21 @@ export function loadModelConfig(): GlobalModelConfig {
             cachedConfig = parsed;
             cachedConfigMtimeMs = safeMtimeMs(configPath);
 
+            // Audit fix C2: decrypt any `apiKey` that was encrypted at
+            // rest. We do this AFTER parse and BEFORE the cache is
+            // returned to callers, so every downstream reader sees
+            // plaintext and never has to think about encryption.
+            // Backwards compat: plaintext values pass through untouched.
+            if (cachedConfig && Array.isArray(cachedConfig.providers)) {
+              for (const p of cachedConfig.providers) {
+                if (p && typeof (p as ProviderProfile).apiKey === "string") {
+                  (p as ProviderProfile).apiKey = decryptSecret(
+                    (p as ProviderProfile).apiKey
+                  );
+                }
+              }
+            }
+
             // Repair provider baseUrls missing protocol prefix (e.g. "ai.genzx.id/v1" → "https://ai.genzx.id/v1")
             let baseUrlRepaired = false;
             for (const p of (parsed.providers || [])) {
@@ -679,7 +695,25 @@ function mergePresetsWithDisk(config: GlobalModelConfig, configPath: string): vo
 
 function writeConfigAtomically(configPath: string, config: GlobalModelConfig): void {
   ensureGlobalConfigDir();
-  const serialized = JSON.stringify(config, null, 2);
+  // Audit fix C2: encrypt every `apiKey` before it touches disk.
+  // We clone the providers list so we never mutate the caller's
+  // in-memory config (which currently holds plaintext keys after the
+  // read path's decrypt step). Re-serializing the clone is safe
+  // because the rest of the config is unchanged.
+  const toWrite: GlobalModelConfig = {
+    ...config,
+    providers: Array.isArray(config.providers)
+      ? config.providers.map((p) => {
+          if (!p || typeof (p as ProviderProfile).apiKey !== "string") {
+            return p;
+          }
+          const raw = (p as ProviderProfile).apiKey;
+          if (!raw || isEncrypted(raw)) return p;
+          return { ...p, apiKey: encryptSecret(raw) };
+        })
+      : config.providers,
+  };
+  const serialized = JSON.stringify(toWrite, null, 2);
   const tmpPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
 
   fs.writeFileSync(tmpPath, serialized, "utf-8");
