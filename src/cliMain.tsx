@@ -238,7 +238,13 @@ export async function runCli() {
   }
 
   const { Agent } = await import("./core/agent.js");
-  const { registerQuestionHandler, addMasterTokens, subscribeToMasterLogs, registerMasterAgent } = await import("./core/tools/index.js");
+  const { registerQuestionHandler, addMasterTokens, subscribeToMasterLogs, registerMasterAgent, bootstrapSubagentTypes } = await import("./core/tools/index.js");
+
+  // Audit fix H2+H8: load subagent system prompts (which are defined
+  // in `./core/prompts.js`) and register the default subagent types
+  // BEFORE any subagent is spawned. Doing this lazily keeps tools/
+  // index.ts free of the static import cycle.
+  await bootstrapSubagentTypes();
 
   if (process.stdin.isTTY) {
     // Confirm directory trust before starting the application

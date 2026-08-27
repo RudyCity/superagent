@@ -2,7 +2,6 @@ import fs from "fs";
 import path from "path";
 import { Tool } from "./types.js";
 import { registerSubagentType } from "./state.js";
-import { SUBAGENT_SYSTEM_PROMPTS } from "../prompts.js";
 import {
   masterToolset,
   superagentToolset,
@@ -12,13 +11,36 @@ import {
 } from "./toolsets.js";
 import { loadDynamicHooks } from "./dynamicHooks.js";
 
-import { 
-  readTool, 
-  editTool, 
+// ─── H2+H8 (audit fix) ─────────────────────────────────────────────────
+//
+// We must NOT statically import `../prompts.js` here. The prompts
+// module depends on the tools registry (or on toolsets.js, which in
+// turn lazily imports prompts.js), so a top-level import of
+// SUBAGENT_SYSTEM_PROMPTS would create a circular dependency that
+// resolves with an empty `{}` at module load time and silently breaks
+// subagent system prompts.
+//
+// We instead lazily import prompts.js inside a tiny async bootstrap
+// helper, and defer `registerSubagentType(...)` calls until the
+// registry is asked for the first time. This preserves the public
+// shape of the module while breaking the cycle.
+let _promptsReady: Promise<{ SUBAGENT_SYSTEM_PROMPTS: Record<string, string> }> | null = null;
+async function loadPrompts() {
+  if (!_promptsReady) {
+    _promptsReady = import("../prompts.js").then((m) => ({
+      SUBAGENT_SYSTEM_PROMPTS: m.SUBAGENT_SYSTEM_PROMPTS as Record<string, string>,
+    }));
+  }
+  return _promptsReady;
+}
+
+import {
+  readTool,
+  editTool,
   globTool,
   grepTool,
   ripgrepSearchTool,
-  writeToFileTool, 
+  writeToFileTool,
   replaceFileContentTool, 
   multiReplaceFileContentTool, 
   applyPatchTool 
@@ -246,54 +268,56 @@ export * from "./state.js";
 export * from "./toolsets.js";
 export { killProcessTree } from "./shellTools.js";
 
-// Register default subagent types
-registerSubagentType(
-  "researcher",
-  "Specialized in codebase research, file analysis, web searching, and gathering context/information without modifications.",
-  SUBAGENT_SYSTEM_PROMPTS.researcher
-);
-
-registerSubagentType(
-  "coder",
-  "Specialized in writing code, editing files, implementing features, and refactoring codebase files.",
-  SUBAGENT_SYSTEM_PROMPTS.coder
-);
-
-registerSubagentType(
-  "reviewer",
-  "Specialized in code review, quality checks, debugging, testing, and finding bugs/flaws.",
-  SUBAGENT_SYSTEM_PROMPTS.reviewer
-);
-
-registerSubagentType(
-  "software-tester",
-  "Specialized in browser testing (Playwright), analyzing console logs/errors, and visual UI/UX design taste checks.",
-  SUBAGENT_SYSTEM_PROMPTS["software-tester"]
-);
-
-registerSubagentType(
-  "security-engineer",
-  "Specialized in identifying vulnerabilities, performing threat modeling, auditing code, and security architecture review.",
-  SUBAGENT_SYSTEM_PROMPTS["security-engineer"]
-);
-
-registerSubagentType(
-  "general",
-  "General purpose subagent for multi-disciplinary tasks, versatile execution, and general problem solving.",
-  SUBAGENT_SYSTEM_PROMPTS.general
-);
-
-registerSubagentType(
-  "writer",
-  "Specialized in technical writing, documentation, blog posts, articles, release notes, and copy creation.",
-  SUBAGENT_SYSTEM_PROMPTS.writer
-);
-
-registerSubagentType(
-  "chrome-agent",
-  "Specialized subagent for browser automation, web research, Chrome profiles, DOM automation, and handling all Chrome-related tools.",
-  SUBAGENT_SYSTEM_PROMPTS["chrome-agent"]
-);
+// Register default subagent types — performed lazily to break the
+// static `../prompts.js` import cycle (audit fix H2+H8). The CLI
+// entry point awaits `bootstrapSubagentTypes()` before any subagent
+// is invoked.
+let _defaultTypesRegistered = false;
+export async function bootstrapSubagentTypes(): Promise<void> {
+  if (_defaultTypesRegistered) return;
+  const { SUBAGENT_SYSTEM_PROMPTS } = await loadPrompts();
+  registerSubagentType(
+    "researcher",
+    "Specialized in codebase research, file analysis, web searching, and gathering context/information without modifications.",
+    SUBAGENT_SYSTEM_PROMPTS.researcher
+  );
+  registerSubagentType(
+    "coder",
+    "Specialized in writing code, editing files, implementing features, and refactoring codebase files.",
+    SUBAGENT_SYSTEM_PROMPTS.coder
+  );
+  registerSubagentType(
+    "reviewer",
+    "Specialized in code review, quality checks, debugging, testing, and finding bugs/flaws.",
+    SUBAGENT_SYSTEM_PROMPTS.reviewer
+  );
+  registerSubagentType(
+    "software-tester",
+    "Specialized in browser testing (Playwright), analyzing console logs/errors, and visual UI/UX design taste checks.",
+    SUBAGENT_SYSTEM_PROMPTS["software-tester"]
+  );
+  registerSubagentType(
+    "security-engineer",
+    "Specialized in identifying vulnerabilities, performing threat modeling, auditing code, and security architecture review.",
+    SUBAGENT_SYSTEM_PROMPTS["security-engineer"]
+  );
+  registerSubagentType(
+    "general",
+    "General purpose subagent for multi-disciplinary tasks, versatile execution, and general problem solving.",
+    SUBAGENT_SYSTEM_PROMPTS.general
+  );
+  registerSubagentType(
+    "writer",
+    "Specialized in technical writing, documentation, blog posts, articles, release notes, and copy creation.",
+    SUBAGENT_SYSTEM_PROMPTS.writer
+  );
+  registerSubagentType(
+    "chrome-agent",
+    "Specialized subagent for browser automation, web research, Chrome profiles, DOM automation, and handling all Chrome-related tools.",
+    SUBAGENT_SYSTEM_PROMPTS["chrome-agent"]
+  );
+  _defaultTypesRegistered = true;
+}
 
 let loadedDynamicTools: Tool[] = [];
 let watcher: fs.FSWatcher | null = null;

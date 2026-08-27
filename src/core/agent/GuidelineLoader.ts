@@ -64,9 +64,14 @@ export class GuidelineLoader {
     preloadedSkillKeys: Set<string>;
   }): string {
     let text = "";
+    // We accept both the legacy lowercase `agents.md` and the
+    // conventional `AGENTS.md` (uppercase, AGENTS.md-spec). Lowercase
+    // wins if both exist, to preserve existing behavior.
     const searchPaths = [
       path.join(process.cwd(), "agents.md"),
+      path.join(process.cwd(), "AGENTS.md"),
       path.join(opts.workingDirectory, "agents.md"),
+      path.join(opts.workingDirectory, "AGENTS.md"),
     ];
     if (!opts.workspaceCacheAgentsMd) {
       for (const p of searchPaths) {
