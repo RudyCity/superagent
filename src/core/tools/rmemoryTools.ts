@@ -201,6 +201,23 @@ export const rmemorySaveTool: Tool = {
     const rawContent = String(args.content || "");
     const type = args.type ? String(args.type) : undefined;
     const scope = args.scope === "global" ? "global" : "project";
+
+    // Tier guard (audit fix M4): only Master Agent and Superagent may
+    // write to long-term rmemory. Subagents MUST be read-only so a
+    // single subagent cannot poison the L1 atomic-memory store.
+    // The toolset already filters these tools out of subagent
+    // definitions; this is the runtime belt-and-suspenders check.
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+    if (
+      currentAgent &&
+      currentAgent.tier !== "master" &&
+      currentAgent.tier !== "superagent" &&
+      currentAgent.tier !== "single"
+    ) {
+      return `Error: rmemory_save is restricted to Master Agent and Superagent tiers. Current tier: ${currentAgent.tier}. Return findings to your parent Superagent and let it decide what to persist.`;
+    }
+
     const client = getClient();
 
     const scopePrefix = scope === "global" ? "[global]" : `[project]`;
@@ -244,6 +261,23 @@ export const rmemoryConversationAddTool: Tool = {
     const role = String(args.role || "") as "user" | "assistant" | "system";
     const rawContent = String(args.content || "").trim();
     const content = rawContent.length > 0 ? rawContent : "[empty message]";
+
+    // Tier guard (audit fix M4): only Master Agent and Superagent may
+    // add to conversation history. Subagents MUST be read-only so a
+    // single subagent cannot pollute cross-session L0 history. The
+    // toolset already filters these tools out of subagent definitions;
+    // this is the runtime belt-and-suspenders check.
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+    if (
+      currentAgent &&
+      currentAgent.tier !== "master" &&
+      currentAgent.tier !== "superagent" &&
+      currentAgent.tier !== "single"
+    ) {
+      return `Error: rmemory_conversation_add is restricted to Master Agent and Superagent tiers. Current tier: ${currentAgent.tier}.`;
+    }
+
     const client = getClient();
 
     try {

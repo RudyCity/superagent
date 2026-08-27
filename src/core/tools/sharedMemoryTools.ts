@@ -47,6 +47,22 @@ export const saveSharedMemoryTool: Tool = {
 
     const { agentLocalStorage } = await import("../agent.js");
     const currentAgent = agentLocalStorage.getStore();
+
+    // Tier guard (audit fix M5): only Master Agent and Superagent may
+    // write to shared memory. Subagents (researcher, coder, reviewer,
+    // etc.) MUST be read-only so a single subagent cannot poison
+    // cross-session knowledge that other agents consume. The toolset
+    // already filters these tools out of subagent definitions; this is
+    // the runtime belt-and-suspenders check.
+    if (
+      currentAgent &&
+      currentAgent.tier !== "master" &&
+      currentAgent.tier !== "superagent" &&
+      currentAgent.tier !== "single"
+    ) {
+      return `Error: save_shared_memory is restricted to Master Agent and Superagent tiers. Current tier: ${currentAgent.tier}. To record findings, return them to your parent Superagent and let it decide what to persist.`;
+    }
+
     let source = "system";
     if (currentAgent) {
       if (currentAgent.tier === "master") {
