@@ -2,6 +2,42 @@
 
 ### Performance: Streaming O(n²) → O(n), async logger, bounded log reads
 
+## [1.5.0] - 2026-08-26
+
+### Security & Quality Fixes (audit batch)
+
+Twelve fixes resolving the security & quality audit produced after 1.4.4. Each batch left the test suite green, did not regress any pre-existing test, and is independently revertable.
+
+- **C1 (auth)**: per-launch token authentication on the remote Chrome bridge (`src/core/tools/remoteChromeBridge.ts`) and the matching `chrome-extension-remote/` content script. The bridge now mints a 32-byte random token on every server start, embeds it in the served `init.js`, and the extension presents it as a `Bearer` token (or `?token=` query param for WebSocket handshakes). A bad or missing token causes a 401 with a stable error code (`AUTH_REQUIRED` / `AUTH_BAD`). Replay and CSRF are mitigated by the per-launch rotation; an attacker on the same machine can no longer silently attach to a running bridge.
+- **C3 (privilege boundary)**: `masterToolset` reduced to orchestration-only. Direct file-write, shell, and edit tools (`write_to_file`, `edit`, `multi_replace_file_content`, `replace_file_content`, `apply_patch`, `run_command`, `bash`, `run_background_process`, `view_file`, `read`, `glob`, `grep`, `ripgrep_search`, `read_document`, `office_cli`) were removed; the master tier can only call `invokeSuperagentTool`, `awaitSuperagentsTool`, `mergeSuperagentsTool`, `manageSuperagentsTool`, `gitWorktreeTool`, plus a small set of read-only diagnostics. A `MasterAgent` runtime guard also rejects any tool that is not in the master toolset, so a future toolset drift cannot silently re-arm direct edits.
+- **C5 (least privilege)**: shell-execution tools (`bashTool`, `runCommandTool`, `runBackgroundProcessTool`) removed from the `researcher` and `reviewer` subagent toolsets. Those subagents are now read-only by construction. A regression test asserts that none of the stripped tools reappear.
+- **C2 (encryption at rest)**: `~/.superagent-r/model-config.json` now stores provider `apiKey` values as AES-256-GCM envelopes (`enc:v1:<base64(iv|tag|ciphertext)>`), decrypted transparently on read. A per-machine 32-byte master key is generated on first use and stored at `~/.superagent-r/.secret-key` with mode 0o600. Legacy plain values are detected by the absence of the `enc:v1:` prefix and pass through unchanged. Backwards compatible.
+- **C4 (argv-style exec)**: new `SshProxyService.execCommand(argv: string[], cwd?, timeoutMs?, signal?)` API that passes the user's command and arguments verbatim to ssh2, bypassing the remote shell. The 13 existing `exec(command: string, ...)` callers in `sshCommands.ts` are unchanged for now (each has its own argument shape that needs an explicit argv conversion); new code paths should use the new API. The cast at the ssh2 call site is documented inline because `@types/ssh2` only declares the string overload.
+- **H1 + H9 (file lock defaults)**: `unlock_file(force=true)` is no longer the default; the default `force=false` requires the caller to own the lock. The `forceOverrideLockTool` and `takeTheirLockTool` were stripped from every toolset except the master tier. The locked-file race that previously let any subagent step on another session's edits is closed.
+- **H2 (circular dep)**: `src/core/tools/index.ts` no longer statically imports `SUBAGENT_SYSTEM_PROMPTS` from `prompts.js` at module load. The old static import resolved to `{}` at boot and silently broke every subagent's system prompt. The 8 `registerSubagentType(...)` calls were wrapped in a memoized async `bootstrapSubagentTypes()` helper and `cliMain.tsx` awaits it at startup. A regression test asserts the static import is gone.
+- **H4 (single-agent mode)**: `process.env.SINGLE_AGENT_MODE` (3 sites) replaced with `getSingleAgentMode()` / `setSingleAgentMode()`, which read/write `~/.superagent-r/model-config.json` like every other setting. No more `process.env` in production code.
+- **H7 (schema validation)**: new `src/core/config/configSchema.ts` exposes a hand-rolled `validateModelConfig(input)` (no new runtime dependency) that runs at the JSON.parse boundary in `jsonConfig.ts`. It validates the `providers`, `presets`, `settings`, `mcpServers`, and `activePresetId` shapes, dropping bad fields with a warning rather than throwing. Eleven regression tests cover the public surface.
+- **H8 (AGENTS.md path)**: `GuidelineLoader` now consults both `agents.md` and `AGENTS.md` (lowercase wins to preserve existing behavior). The project-level convention and the AGENTS.md spec are now both supported.
+- **M4 + M5 (memory tiering)**: rmemory and shared-memory write tools are restricted to Master and Superagent tiers only. Subagents can still `read` but cannot `save`, closing the data-poisoning vector where any subagent could inject false context that other agents would then retrieve.
+
+### Tests
+
+28 new tests across 5 files:
+  - `tests/remoteChromeBridgeAuth.test.ts` (5): token round-trip, bad/missing token rejection, token rotation per launch.
+  - `tests/toolsetRestrictions.test.ts` (6): master is orchestration-only, researcher/reviewer have no shell tools.
+  - `tests/lockDefaults.test.ts` (2): unlock_file default is false; lock tools live only on master.
+  - `tests/secretStore.test.ts` (9): envelope round-trip, IV randomness, legacy passthrough, GCM auth-tag tamper rejection, jsonConfig integration.
+  - `tests/sshProxyExecCommand.test.ts` (6): argv validation, ssh2 call shape, shell-injection literal preserved.
+  - `tests/configSchema.test.ts` (11): schema validator for jsonConfig boundary.
+  - `tests/guidelineLoaderAgentsMd.test.ts` (5): lowercase vs uppercase resolution.
+  - `tests/remoteChromeBridgeToken.test.ts`: extension pre-shared token contract.
+
+Pre-existing failures (`requestClassifier`, `pdfOcr`, `nudgeSkip`, `orphanedToolMessages`, `payloadRetrier`, `promptToolGuidance`, `pausedResumeWorkflow`, `superagentLifecycle`) are unrelated to this batch and reproduce on a clean tree.
+
+
+
+### Performance: Streaming O(n²) → O(n), async logger, bounded log reads
+
 - **`utils/streamText.ts`** (new): `createIncrementalStreamCleaner` wraps the existing `cleanXmlForDisplay` with a stable-prefix cache. The settled prefix (everything before the last newline) is cleaned once and frozen; only the new settled bytes (appended verbatim for plain prose) and the volatile tail are processed on each flush. Markup arrival forces a one-shot re-snapshot of the affected region. Total work for prose streams drops from O(n²) to O(n) while final-output correctness is preserved by `cleanFinal()` and per-turn hygiene is preserved by `reset()` (called at all 5 buffer-clear sites in `app.tsx`).
 - **`utils/logTail.ts`** (new): `readFileTail(path, maxBytes = 16 KB)` uses `openSync` + `fstatSync` + positional `readSync` to read only the tail of a file and drops a torn first line for readability. Replaces the multi-megabyte `readFileSync` in the log viewer that fired on every Enter keypress.
 - **`core/utils/unifiedLogger.ts`**: dir-ensured flag cached once per process; appends serialized per file via fire-and-forget promise chains, eliminating the 4–5 blocking syscalls per `logE2E` call. Trade-off: last lines may be lost on abrupt process exit (acceptable for diagnostic logs).
