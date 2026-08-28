@@ -302,8 +302,29 @@ export function validateModelConfig(input: unknown): ValidationResult<Partial<Gl
     else for (const e of r.errors) errors.push(e);
   }
   if (input.activePresetId !== undefined) {
-    if (!isString(input.activePresetId)) errors.push("activePresetId: string required");
-    else out.activePresetId = { multi: input.activePresetId, single: input.activePresetId };
+    // Accept two on-disk shapes for backwards compatibility:
+    //   1. String form (canonical): "preset-name" — same preset for both modes.
+    //   2. Object form (legacy, written by older app versions):
+    //      { "multi": "...", "single": "..." } — per-mode selection.
+    // The in-memory shape is always the object form; the string form is just a
+    // convenience for the common case where both modes share the same preset.
+    if (isString(input.activePresetId)) {
+      out.activePresetId = {
+        multi: input.activePresetId,
+        single: input.activePresetId,
+      };
+    } else if (isObject(input.activePresetId)) {
+      const obj = input.activePresetId;
+      const multi = obj.multi;
+      const single = obj.single;
+      if (!isString(multi) || !isString(single)) {
+        errors.push("activePresetId: object form requires both 'multi' and 'single' strings");
+      } else {
+        out.activePresetId = { multi, single };
+      }
+    } else {
+      errors.push("activePresetId: string or { multi, single } object required");
+    }
   }
   if (input.settings !== undefined) {
     const r = validateSettings(input.settings);

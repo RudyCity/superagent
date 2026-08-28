@@ -163,4 +163,74 @@ describe("validateModelConfig (H7)", () => {
       expect(r.value.baseUrl).toBe("https://api.openai.com/v1");
     }
   });
+
+  it("accepts activePresetId as a string (canonical form)", async () => {
+    const { validateModelConfig } = await import(
+      "../src/core/config/configSchema.js"
+    );
+    const r = validateModelConfig({
+      providers: [],
+      presets: { multi: [], single: [] },
+      activePresetId: "default",
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.activePresetId) {
+      expect(r.value.activePresetId).toEqual({
+        multi: "default",
+        single: "default",
+      });
+    }
+  });
+
+  it("accepts activePresetId as { multi, single } object (legacy form)", async () => {
+    const { validateModelConfig } = await import(
+      "../src/core/config/configSchema.js"
+    );
+    const r = validateModelConfig({
+      providers: [],
+      presets: { multi: [], single: [] },
+      activePresetId: { multi: "default-multi", single: "openrouter" },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.activePresetId) {
+      expect(r.value.activePresetId).toEqual({
+        multi: "default-multi",
+        single: "openrouter",
+      });
+    }
+  });
+
+  it("rejects activePresetId object missing 'multi' or 'single'", async () => {
+    const { validateModelConfig } = await import(
+      "../src/core/config/configSchema.js"
+    );
+    const r1 = validateModelConfig({
+      providers: [],
+      presets: { multi: [], single: [] },
+      activePresetId: { multi: "only-multi" },
+    });
+    expect(r1.ok).toBe(false);
+    if (!r1.ok) expect(r1.errors.join(" ")).toMatch(/activePresetId/);
+
+    const r2 = validateModelConfig({
+      providers: [],
+      presets: { multi: [], single: [] },
+      activePresetId: { single: "only-single" },
+    });
+    expect(r2.ok).toBe(false);
+    if (!r2.ok) expect(r2.errors.join(" ")).toMatch(/activePresetId/);
+  });
+
+  it("rejects activePresetId with a non-string, non-object type", async () => {
+    const { validateModelConfig } = await import(
+      "../src/core/config/configSchema.js"
+    );
+    const r = validateModelConfig({
+      providers: [],
+      presets: { multi: [], single: [] },
+      activePresetId: 42,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join(" ")).toMatch(/activePresetId/);
+  });
 });
