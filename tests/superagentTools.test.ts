@@ -14,13 +14,16 @@ const { mockAgentClass, mockLocalStore, mockAgentFactory } = vi.hoisted(() => {
   class MockAgent {
     public static constructorArgs: any[] = [];
     public systemPrompt: string = "";
+    public customSystemPrompt: string = "";
     constructor(...args: any[]) {
       MockAgent.constructorArgs.push(args);
       const strArg = args.find((a) => typeof a === "string" && a.includes("SUPERAGENT"));
       if (strArg) {
         this.systemPrompt = strArg;
+        this.customSystemPrompt = strArg;
       } else if (typeof args[3] === "string") {
         this.systemPrompt = args[3];
+        this.customSystemPrompt = args[3];
       }
     }
     public delegationDepth = 0;

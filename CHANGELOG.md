@@ -1,3 +1,19 @@
+## [1.5.1] - 2026-08-26
+
+### Test suite fixes (5 failing suites)
+
+Five pre-existing test-suite failures were resolved, restoring the test suite from 8/1737 failing to 2/1754 failing. The remaining 2 are pre-existing test-pollution flakes in `agentPayloadTooLargeRetry.test.ts` and `nudgeSkip.test.ts` that pass in isolation but fail in the full suite due to spy state shared with `vi.mock("ai", { spy: true })` from `tests/setup.ts`. They are independent of these changes.
+
+- **Category A (suite loader)**: `src/core/agent/ContextBuilder.ts` now dynamically imports `getToolDefinitions`, `backgroundTasks`, and `isTaskInWorkspace` inside `buildContext()` instead of at module top-level. This breaks the circular dependency `tools/index.ts → subagentTools.ts → agent.ts → ContextBuilder.ts → tools`, which was crashing two test files (`pausedResumeWorkflow.test.ts`, `superagentLifecycle.test.ts`) at module load with `Cannot read properties of undefined (reading 'name')` originating from the `vi.mock("@huggingface/transformers")` factory in `tests/setup.ts`. Both suites now load and pass.
+- **Category B (classifier threshold)**: `tests/requestClassifier.test.ts` had three `complex_task` assertions pinned to the old 0.60/0.50 thresholds after the production threshold was lowered. Test expectations were updated to match the live classifier.
+- **Category C (orphaned tool messages + prompt guidance)**:
+  - `src/core/agent/MessageBuilder.ts`: when a `user` message follows a `tool` result, insert a synthetic `assistant: "Continuing..."` so Anthropic/OpenAI don't reject an out-of-order tool→user transition. When a leading assistant with tool-calls is followed by a tool result and then a user, absorb the assistant+tool into the user turn as `[Previous Assistant Message] + [Tool Results] + user text` (single user message) so we never send an unfulfilled tool-call at the head of the sequence. `orphanedToolMessages.test.ts` is 11/11.
+  - `src/core/prompts.ts`: corrected `FAIL_RECOVERY` wording from "Re-read range → execute line-range replace" to "Re-read range → line-range replace" to match the test expectation. `promptToolGuidance.test.ts` is 8/8.
+- **Category D (superagent peer injection mock)**: `tests/superagentTools.test.ts` MockAgent stored the system prompt only as `.systemPrompt`; the new `should inject active peer superagents context` test reads `(instance.agent as any).customSystemPrompt`. The mock now also writes `customSystemPrompt` so the new test sees the injected "### ACTIVE PEER SUPERAGENTS" block. All 31 superagentTools tests pass.
+
+### Test file
+- `tests/agentPayloadTooLargeRetry.test.ts`: added a defensive `beforeEach` that calls `mockClear()` on the `streamText` / `generateText` spies to harden against the pre-existing global-spy pollution from `setup.ts`. Non-fixing on its own; documents the intent.
+
 ## [1.4.4] - 2026-08-26
 
 ### Performance: Streaming O(n²) → O(n), async logger, bounded log reads

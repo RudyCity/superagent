@@ -40,6 +40,14 @@ describe("Agent - Payload Too Large (413) Retry", () => {
     compactSpy = vi.spyOn(Agent.prototype, "compactHistoryIfNeeded").mockResolvedValue(undefined);
   });
 
+  // Defensive: ensure spy call history is cleared between tests in this
+  // file to prevent pollution from auto-spies installed by setup.ts
+  // (`vi.mock("ai", { spy: true })`).
+  beforeEach(() => {
+    streamTextSpy?.mockClear();
+    generateTextSpy?.mockClear();
+  });
+
   afterEach(() => {
     if (fs.existsSync(tempHome)) {
       fs.rmSync(tempHome, { recursive: true, force: true });

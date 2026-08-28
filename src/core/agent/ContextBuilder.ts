@@ -3,7 +3,12 @@ import path from "path";
 import { type CoreMessage } from "ai";
 import { getSettings, getContextWindowLimit, getModelConnectionDetailsForTier, loadAgentSkills, getConfig } from "../config.js";
 import { contentToString, type Message } from "../conversation.js";
-import { getToolDefinitions, backgroundTasks, isTaskInWorkspace } from "../tools.js";
+// NOTE: `getToolDefinitions`, `backgroundTasks`, `isTaskInWorkspace` are imported
+// DYNAMICALLY inside `buildContext` to break the circular dependency cycle:
+//   tools/index.ts → subagentTools.ts → agent.ts → ContextBuilder.ts → tools.js
+// A static import here would cause `toolsets.ts` to receive a partial module
+// snapshot during evaluation, leaving `manageSubagentsTool` / `defineSubagentTool`
+// in TDZ and crashing the `masterToolset.map((t) => t.name)` runtime allowlist.
 import { isRmemoryActive } from "../rmemoryUtil.js";
 import { HistoryCompactor } from "./HistoryCompactor.js";
 import { buildBudgetedPromptContext } from "./PromptContextBudget.js";
@@ -21,6 +26,10 @@ export class ContextBuilder {
     supportsNativeTools: boolean;
     dynamicContext: string;
   }> {
+    // Dynamic import to break circular dep (see import note above). Loading
+    // `../tools.js` synchronously here would deadlock during module init.
+    const { getToolDefinitions, backgroundTasks, isTaskInWorkspace } = await import("../tools.js");
+
     const isGoalMode = !!agent.goalMode;
     const category = agent.currentClassification?.category || "complex_task";
     let baseSystemPrompt = (agent as any).customSystemPrompt || (agent as any).config.systemPrompt || "";

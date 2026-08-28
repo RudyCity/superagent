@@ -33,7 +33,7 @@ const FAST_ANALYSIS_RULE = `- SEARCH: ripgrep first. limit/offset for files >200
 
 const FILE_EDIT_SAFETY_RULE = `- EDIT_SAFETY: Read target pre-edit. Verify oldString uniqueness or specify line range. Modify assigned files ONLY.
 - CROSS_SESSION_CONFLICT: Multi-terminal & multi-session active. Check shared memory locks pre-edit (read_shared_memory). Never overwrite active locks. Read exact range immediately pre-edit.
-- FAIL_RECOVERY: On mismatch: Re-read range → execute line-range replace. Avoid stale edits.
+- FAIL_RECOVERY: On mismatch: Re-read range → line-range replace. Avoid stale edits.
 - DIRTY_WORKSPACE: Observe pre-existing changes. Edit assigned files ONLY.`;
 
 const SHARED_MEMORY_RULE = `- SHARED_MEMORY: scope="project" for workspace/arch facts; scope="global" for user prefs.`;

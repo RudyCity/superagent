@@ -31,6 +31,32 @@ export const mockClassifierPipeline = vi.fn();
 vi.mock("@huggingface/transformers", () => {
   return {
     pipeline: vi.fn().mockResolvedValue((prompt: string) => mockClassifierPipeline(prompt)),
+    // `env` is exported by the real module and destructured by the
+    // production code; provide a minimal stub so the destructure in
+    // warmUpClassifier() / classifyWithLLM() does not throw under vitest.
+    env: { logLevel: "error", backends: { onnx: { logLevel: "error" } } },
+  };
+});
+
+// Mock jsonConfig so `getSettings()` returns classifierEnabled=true for the
+// Optimized Pipeline tests. The default in jsonConfig.ts is `false`, which
+// would short-circuit `warmUpClassifier()` and skip the LLM path in
+// `classifyRequest()` — defeating the purpose of these tests.
+//
+// We resolve the mocked module via Vitest's `vi.importActual` so all other
+// exports from jsonConfig.js remain intact.
+vi.mock("../src/core/config/jsonConfig.js", async () => {
+  const actual = await vi.importActual<any>("../src/core/config/jsonConfig.js");
+  return {
+    ...actual,
+    getSettings: () => ({
+      ...actual.getSettings(),
+      classifierEnabled: true,
+    }),
+    updateSettings: async (patch: any) => {
+      const cur = actual.getSettings();
+      actual.updateSettings({ ...cur, ...patch });
+    },
   };
 });
 

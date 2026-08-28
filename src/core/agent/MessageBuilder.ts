@@ -183,6 +183,62 @@ export class MessageBuilder {
         }
       }
 
+      // Leading assistant-with-tool-calls: if the first kept message is
+      // an assistant that contains a tool-call and is followed by its
+      // tool result and then a user message, convert the entire
+      // assistant+tool sequence into a synthetic user message that is
+      // merged with the real user turn. This avoids sending an
+      // unfulfilled tool-call to providers at the head of the sequence.
+      if (
+        msg.role === "user" &&
+        result.length === 2 &&
+        hasToolCalls(result[0]) &&
+        result[1].role === "tool"
+      ) {
+        const leadAssistant = result[0];
+        const leadTool = result[1];
+        const textPart = (Array.isArray(leadAssistant.content)
+          ? leadAssistant.content
+              .filter((p: any) => p.type === "text")
+              .map((p: any) => p.text)
+              .join("\n")
+          : typeof leadAssistant.content === "string"
+            ? leadAssistant.content
+            : ""
+        ).trim();
+        const toolResultsText = (Array.isArray(leadTool.content)
+          ? leadTool.content
+              .map((p: any) => {
+                const r = p.result;
+                if (r === undefined) return "";
+                if (typeof r === "string") return r;
+                try { return JSON.stringify(r); } catch { return String(r); }
+              })
+              .join("\n")
+          : typeof leadTool.content === "string"
+            ? leadTool.content
+            : ""
+        ).trim();
+        const userText = typeof msg.content === "string"
+          ? msg.content
+          : contentToString(msg.content as any);
+        const merged =
+          `[Previous Assistant Message]\n${textPart}\n\n` +
+          `[Tool Results]\n${toolResultsText}\n\n` +
+          `${userText}`;
+        result.length = 0;
+        result.push({ role: "user", content: merged } as CoreMessage);
+        continue;
+      }
+
+      // If the previous kept message is a tool result and the incoming
+      // message is a user turn, insert a synthetic assistant message so
+      // the conversation alternates user/assistant/tool and downstream
+      // LLM providers (Anthropic, OpenAI) don't reject the sequence.
+      if (msg.role === "user" && result.length > 0 && result[result.length - 1].role === "tool") {
+        result.push({ role: "assistant", content: "Continuing..." } as CoreMessage);
+      }
+
       if (result.length > 0) {
         const last = result[result.length - 1];
         if (last.role === "assistant" && hasToolCalls(last) && msg.role !== "tool") {
