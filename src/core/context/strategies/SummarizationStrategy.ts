@@ -74,10 +74,15 @@ export class SummarizationStrategy implements CompactionStrategy {
     }
 
     let summary: string;
+    let usedFallback = false;
     if (this.config?.model) {
       summary = await this.generateLLMSummary(toSummarize, abortSignal);
     } else {
+      // No LLM available — fall back to heuristic so compaction still proceeds.
+      // The metadata flag below makes this silent degradation visible to the
+      // UI/event listeners.
       summary = this.createHeuristicSummary(toSummarize);
+      usedFallback = true;
     }
 
     const summaryMessage: Message = {
@@ -96,6 +101,11 @@ export class SummarizationStrategy implements CompactionStrategy {
         messagesAfter: result.length,
         summary,
         summaryTokens: Math.ceil(summary.length / 4),
+        // Indicates compaction ran via heuristic fallback (no LLM). Lets
+        // UI/dashboards surface "low-quality compaction" warnings to the user
+        // instead of silently degrading.
+        usedFallback,
+        usedLLM: !usedFallback,
       },
     };
   }

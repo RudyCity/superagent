@@ -237,7 +237,16 @@ export class ContextManager {
       });
 
       this.setState("IDLE");
-      this.emit("compaction:complete", result);
+      // Emit with rich payload so UI/agents can show "compacted X → Y tokens
+      // via <strategy>" without re-querying internal state.
+      this.emit("compaction:complete", {
+        strategy: selectedStrategy.name,
+        tokensBefore,
+        tokensAfter,
+        messagesBefore: messages.length,
+        messagesAfter: result.messages.length,
+        metadata: result.metadata,
+      });
 
       if (result.metadata.summary) {
         import("../workspaceSummary.js")

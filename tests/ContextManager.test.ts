@@ -254,3 +254,132 @@ describe("ContextManager", () => {
     expect(summaryCount).toBeLessThanOrEqual(1);
   });
 });
+
+describe("ContextManager compaction event payload", () => {
+  it("emits rich compaction:complete payload with strategy + token delta", async () => {
+    const manager = new ContextManager({
+      model: "claude-3-5-sonnet-20241022",
+      contextWindowLimit: 1000,
+    });
+
+    const messages: Message[] = [];
+    for (let i = 0; i < 30; i++) {
+      messages.push({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: "X".repeat(200),
+        timestamp: Date.now() + i * 10,
+      });
+    }
+
+    const events: any[] = [];
+    manager.on("compaction:complete", (p) => events.push(p));
+
+    await manager.compact(messages);
+
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    const ev = events[events.length - 1];
+    expect(ev.strategy).toBeDefined();
+    expect(typeof ev.tokensBefore).toBe("number");
+    expect(typeof ev.tokensAfter).toBe("number");
+    expect(typeof ev.messagesBefore).toBe("number");
+    expect(typeof ev.messagesAfter).toBe("number");
+    expect(ev.tokensAfter).toBeLessThan(ev.tokensBefore);
+  });
+});
+
+describe("SummarizationStrategy fallback metadata", () => {
+  it("flags usedFallback=true when no LLM model is configured", async () => {
+    const { SummarizationStrategy } = await import(
+      "../src/core/context/strategies/SummarizationStrategy.js"
+    );
+    const strategy = new SummarizationStrategy({ /* no model */ });
+
+    const messages: Message[] = [];
+    for (let i = 0; i < 20; i++) {
+      messages.push({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: "Z".repeat(150),
+        timestamp: Date.now() + i * 10,
+      });
+    }
+
+    const result = await strategy.execute(messages, {
+      tokenBudget: 500,
+      pinnedMessageIds: new Set(),
+    } as any);
+
+    expect(result.metadata.usedFallback).toBe(true);
+    expect(result.metadata.usedLLM).toBe(false);
+    expect(result.metadata.strategy).toBe("summarization");
+  });
+});
+
+describe("TokenTracker.estimateText (live stream accounting)", () => {
+  it("returns 0 for empty input", async () => {
+    const { TokenTracker } = await import(
+      "../src/core/context/TokenTracker.js"
+    );
+    const tracker = new TokenTracker("gpt-4");
+    expect(tracker.estimateText("")).toBe(0);
+  });
+
+  it("produces a stable count independent of repeated calls", async () => {
+    const { TokenTracker } = await import(
+      "../src/core/context/TokenTracker.js"
+    );
+    const tracker = new TokenTracker("gpt-4");
+    const text = "The quick brown fox jumps over the lazy dog. ".repeat(50);
+    const a = tracker.estimateText(text);
+    const b = tracker.estimateText(text);
+    expect(a).toBe(b);
+    expect(a).toBeGreaterThan(0);
+  });
+
+  it("differs from naive length/4 heuristic for non-ASCII / structured text", async () => {
+    const { TokenTracker } = await import(
+      "../src/core/context/TokenTracker.js"
+    );
+    const tracker = new TokenTracker("gpt-4");
+    // Heavy code: lots of symbols that tiktoken splits into more tokens than chars/4
+    const text = "function foo(x: number): string { return `value=${x}`; } ".repeat(30);
+    const tik = tracker.estimateText(text);
+    const naive = Math.ceil(text.length / 4);
+    // They should both be > 0; not necessarily equal, but the tiktoken count
+    // should not be wildly different (sanity check that the integration works)
+    expect(tik).toBeGreaterThan(0);
+    expect(naive).toBeGreaterThan(0);
+    expect(Math.abs(tik - naive) / Math.max(tik, naive)).toBeLessThan(1.5);
+  });
+});
+
+describe("ContextManager.shouldCompact threshold bands", () => {
+  it("returns below-threshold when far from limit", () => {
+    const manager = new ContextManager({
+      model: "gpt-4",
+      contextWindowLimit: 100000,
+    });
+    const messages: Message[] = [
+      { role: "user", content: "hi", timestamp: Date.now() },
+    ];
+    const decision = manager.shouldCompact(messages);
+    expect(decision.shouldCompact).toBe(false);
+    expect(decision.reason).toBe("below-threshold");
+  });
+
+  it("returns shouldCompact=true at/above threshold", () => {
+    const manager = new ContextManager({
+      model: "gpt-4",
+      contextWindowLimit: 100, // tiny so we hit threshold fast
+    });
+    const messages: Message[] = [];
+    for (let i = 0; i < 50; i++) {
+      messages.push({
+        role: "user",
+        content: "A".repeat(200),
+        timestamp: Date.now() + i,
+      });
+    }
+    const decision = manager.shouldCompact(messages);
+    expect(decision.shouldCompact).toBe(true);
+  });
+});

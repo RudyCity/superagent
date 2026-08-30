@@ -128,9 +128,44 @@ function lastContentLength(m?: { content?: unknown }): number {
   return 0;
 }
 
-function getContextRecountKey(messages: { content?: unknown }[]): string {
-  const last = messages[messages.length - 1];
-  return `${messages.length}:${lastContentLength(last)}`;
+/** FNV-1a (32-bit) string hash — fast, no deps, deterministic. */
+function fnv1a(str: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * Content-aware recount key.
+ *
+ * Catches mid-history mutations (tool result updates, in-place edits) that
+ * the previous `length:lastLength` key missed. See app.tsx for full rationale.
+ */
+function getContextRecountKey(messages: { role?: string; content?: unknown; toolCalls?: unknown[]; toolResults?: unknown[] }[]): string {
+  if (messages.length === 0) return "0:";
+  let totalLen = 0;
+  const samples: string[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    const len = lastContentLength(m);
+    totalLen += len;
+    const role = m.role || "?";
+    const c = m.content as any;
+    let textSample = "";
+    if (typeof c === "string") {
+      textSample = c.length > 16 ? c.slice(0, 8) + c.slice(-8) : c;
+    } else if (Array.isArray(c) && c.length > 0) {
+      const first = c[0];
+      if (first?.type === "text") textSample = first.text?.slice(0, 16) || "";
+    }
+    const tcCount = Array.isArray(m.toolCalls) ? m.toolCalls.length : 0;
+    const trCount = Array.isArray(m.toolResults) ? m.toolResults.length : 0;
+    samples.push(`${role}:${len}:${tcCount}:${trCount}:${textSample}`);
+  }
+  return `${messages.length}:${totalLen}:${fnv1a(samples.join("|"))}`;
 }
 
 export function MultiAgentDashboard({

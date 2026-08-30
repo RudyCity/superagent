@@ -1,3 +1,64 @@
+## [1.5.10] - 2026-08-30
+
+### Fix: context-window count accuracy & AI auto-compaction visibility
+
+Addressed four issues found during a focused audit of the context /
+compaction subsystem. The auto-compaction pipeline itself was already
+working (5 strategies, AI-backed summarization, 80/90/100% thresholds);
+this release tightens the *counting* and *visibility* around it.
+
+#### 1. Stale `Ctx:%` bar after mid-history mutations
+- `getContextRecountKey()` in `src/app.tsx` and
+  `src/components/multi-agent-dashboard.tsx` only invalidated the token
+  recount memo when the *last* message's content length changed. Edits
+  to earlier messages (e.g. tool result updates) left the percentage
+  display stuck until the next user turn.
+- Now computes a content-aware FNV-1a fingerprint over every message's
+  role, length, tool-call/result counts, and a 16-char text sample. The
+  Ctx:% bar updates whenever any message mutates, not just the tail.
+
+#### 2. Silent auto-compaction (no user feedback)
+- `ContextManager.compact()` was emitting `compaction:complete` with the
+  raw strategy result, but no UI component was listening. The user had
+  no idea context was being compacted.
+- The emitted payload now includes `strategy`, `tokensBefore`,
+  `tokensAfter`, `messagesBefore`, and `messagesAfter`.
+- `src/app.tsx` now subscribes to both `compaction:start` and
+  `compaction:complete` and writes a system line:
+  - `⚙️ Compacting context via "<strategy>" strategy…`
+  - `🧹 Context auto-compacted via "<strategy>": N→M messages,
+    12,345→6,789 tokens (saved 5,556 / 45%)`
+
+#### 3. `liveStreamTokens` estimator mismatch
+- The Ctx:% bar added streaming output via `Math.ceil(length/4)`, a
+  crude heuristic. This drifted from the tiktoken-backed token count
+  used for everything else, making the displayed percentage diverge
+  from real API usage during streaming.
+- Added a public `TokenTracker.estimateText(text: string)` helper and
+  use it for `liveStreamTokens` in `src/app.tsx`. Falls back to the
+  old heuristic if the tracker is unavailable.
+
+#### 4. Silent heuristic fallback in `SummarizationStrategy`
+- When the LLM model is unavailable (subagent tier, configuration
+  mismatch), summarization quietly fell back to a heuristic summary.
+  The user had no signal that compaction was running in a degraded
+  mode.
+- The returned `CompactionResult.metadata` now includes `usedFallback`
+  and `usedLLM` flags. The UI notification reads them and appends a
+  `⚠️ heuristic fallback — lower quality, LLM unavailable` warning.
+
+### Tests
+- Added 5 new tests in `tests/ContextManager.test.ts`:
+  - `ContextManager compaction event payload` (verifies rich event)
+  - `SummarizationStrategy fallback metadata` (verifies `usedFallback`)
+  - `TokenTracker.estimateText` (3 cases: empty, stable, non-ASCII)
+  - `ContextManager.shouldCompact threshold bands` (2 cases: below
+    threshold, at threshold)
+- All 18 ContextManager tests pass; all 27 context-related tests pass
+  when run together. The 3 pre-existing flakes in
+  `tests/agentPayloadTooLargeRetry.test.ts` are unrelated test-isolation
+  issues — they fail on `main` as well and are not caused by this PR.
+
 ## [1.5.4] - 2026-08-30
 
 ### Fix: `releaseFile()` consistency — dead/stale locks can now be evicted by any session

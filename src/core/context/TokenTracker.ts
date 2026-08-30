@@ -98,6 +98,16 @@ export class TokenTracker {
     return false;
   }
 
+  /**
+   * Public helper to estimate tokens for a free-form string using the same
+   * tiktoken encoder as the rest of the tracker. Useful for streaming
+   * text where we don't yet have a full Message object.
+   */
+  estimateText(text: string): number {
+    if (!text) return 0;
+    return this.countText(text);
+  }
+
   estimateTokens(message: Message): number {
     const hash = this.hashMessage(message);
 

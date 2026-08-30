@@ -66,9 +66,56 @@ function lastContentLength(m?: { content?: unknown }): number {
   return 0;
 }
 
-function getContextRecountKey(messages: { content?: unknown }[]): string {
-  const last = messages[messages.length - 1];
-  return `${messages.length}:${lastContentLength(last)}`;
+/**
+ * FNV-1a (32-bit) string hash. Fast, no dependencies, deterministic.
+ * Used for content-aware memoization key so mid-history edits (e.g. tool
+ * result updates) trigger token recount, not just last-message changes.
+ */
+function fnv1a(str: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * Content-aware recount key.
+ *
+ * Previous version only checked `messages.length` + `lastContentLength(last)`.
+ * That misses mid-history mutations: a tool result update, an in-place edit
+ * to an earlier assistant message, or a re-issued system prompt would all
+ * leave the Ctx:% bar stale until the *next* user turn.
+ *
+ * Now we hash a compact fingerprint of every message's content length + role
+ * + first/last character sample. FNV-1a over this fingerprint stays cheap
+ * (O(total chars)) but is collision-resistant enough for memo invalidation.
+ */
+function getContextRecountKey(messages: { role?: string; content?: unknown; toolCalls?: unknown[]; toolResults?: unknown[] }[]): string {
+  if (messages.length === 0) return "0:";
+  let totalLen = 0;
+  const samples: string[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    const len = lastContentLength(m);
+    totalLen += len;
+    const role = m.role || "?";
+    // Sample first 8 chars and last 8 chars of content to detect in-place edits
+    const c = m.content as any;
+    let textSample = "";
+    if (typeof c === "string") {
+      textSample = c.length > 16 ? c.slice(0, 8) + c.slice(-8) : c;
+    } else if (Array.isArray(c) && c.length > 0) {
+      const first = c[0];
+      if (first?.type === "text") textSample = first.text?.slice(0, 16) || "";
+    }
+    // Include tool call/result counts to detect tool-related changes
+    const tcCount = Array.isArray(m.toolCalls) ? m.toolCalls.length : 0;
+    const trCount = Array.isArray(m.toolResults) ? m.toolResults.length : 0;
+    samples.push(`${role}:${len}:${tcCount}:${trCount}:${textSample}`);
+  }
+  return `${messages.length}:${totalLen}:${fnv1a(samples.join("|"))}`;
 }
 
 function getWizardBorderColor(activeWizard: any): "yellow" | "cyan" | "blue" | "gray" | "red" {
@@ -2352,6 +2399,62 @@ export function App({
     };
   }, [workspacePath]);
 
+  // Subscribe to ContextManager compaction events so the user sees when
+  // auto-compaction runs (previously silent). Re-subscribes when the agent
+  // reference changes (multi-agent mode, mode switch, etc).
+  useEffect(() => {
+    const cm = agentRef.current?.getContextManager?.();
+    if (!cm || typeof cm.on !== "function") return;
+
+    const handleCompactionComplete = (payload: {
+      strategy?: string;
+      tokensBefore?: number;
+      tokensAfter?: number;
+      messagesBefore?: number;
+      messagesAfter?: number;
+      metadata?: Record<string, unknown>;
+    }) => {
+      const strategy = payload.strategy || "unknown";
+      const before = payload.tokensBefore ?? 0;
+      const after = payload.tokensAfter ?? 0;
+      const saved = Math.max(0, before - after);
+      const msgBefore = payload.messagesBefore ?? 0;
+      const msgAfter = payload.messagesAfter ?? 0;
+      const reducedPct = before > 0 ? Math.round((saved / before) * 100) : 0;
+      const usedFallback = (payload.metadata as any)?.usedFallback === true;
+      const usedLLM = (payload.metadata as any)?.usedLLM === true;
+      const fallbackNote = usedFallback
+        ? " (⚠️ heuristic fallback — lower quality, LLM unavailable)"
+        : usedLLM
+          ? ""
+          : " (quality unknown)";
+      addLine({
+        type: "system",
+        content: `🧹 Context auto-compacted via "${strategy}": ${msgBefore}→${msgAfter} messages, ${before.toLocaleString()}→${after.toLocaleString()} tokens (saved ${saved.toLocaleString()} / ${reducedPct}%)${fallbackNote}`,
+        timestamp: Date.now(),
+      });
+    };
+
+    const handleCompactionStart = (payload: { strategy?: string }) => {
+      addLine({
+        type: "system",
+        content: `⚙️ Compacting context via "${payload.strategy || "selected"}" strategy…`,
+        timestamp: Date.now(),
+      });
+    };
+
+    cm.on("compaction:start", handleCompactionStart);
+    cm.on("compaction:complete", handleCompactionComplete);
+    return () => {
+      if (typeof cm.off === "function") {
+        cm.off("compaction:start", handleCompactionStart);
+        cm.off("compaction:complete", handleCompactionComplete);
+      }
+    };
+    // Re-subscribe when the underlying agent changes; re-resolve the CM each run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeModel]);
+
   // Sync scroll offsets on list length change
   useEffect(() => {
     if (checklistScrollOffset >= checklistTasks.length && checklistTasks.length > 0) {
@@ -2520,7 +2623,22 @@ export function App({
 
   // Setup layouts & heights calculation
   const messageCount = lines.filter((l) => l.type === "user" || l.type === "assistant").length;
-  const liveStreamTokens = Math.ceil(streamDisplay.length / 4);
+  // Use the same tiktoken-backed estimator as the rest of the context
+  // accounting, so the Ctx:% bar doesn't drift from the actual API usage
+  // when streaming text is being displayed.
+  const liveStreamTokens = useMemo(() => {
+    if (!streamDisplay) return 0;
+    const cm = agentRef.current?.getContextManager?.();
+    if (cm) {
+      try {
+        return cm.getTokenTracker().estimateText(streamDisplay);
+      } catch {
+        // fall through to heuristic
+      }
+    }
+    return Math.ceil(streamDisplay.length / 4);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamDisplay, agentRef.current?.getContextManager?.()]);
   
   // Use ContextManager's TokenTracker for accurate context usage if available
   const historyMessages = agentRef.current?.getHistory ? agentRef.current.getHistory().getMessages() : [];
