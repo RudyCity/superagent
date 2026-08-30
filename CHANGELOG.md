@@ -7275,3 +7275,74 @@ invokes a chrome-related tool.
 
 ### Commit
 - (pending) on `main`
+
+## [1.5.7] - 2026-09-05
+
+### FASE 5A: SQLite mirror for current file locks
+
+The file-lock subsystem has been dual-write since 1.5.4:
+JSON (`~/.superagent-r/file-locks.json`) plus the audit
+log (SQLite `file_lock_events`). With this change, the
+*current* lock state also lives in SQLite so the read
+path can be O(1) for single-path lookup.
+
+### Schema
+- New `file_locks_current` table in
+  `~/.superagent-r/history.db`:
+  - `file_path TEXT PRIMARY KEY`
+  - `session_id TEXT NOT NULL`
+  - `owner_pid INTEGER NOT NULL`
+  - `owner_ppid INTEGER`
+  - `acquired_at INTEGER NOT NULL`
+  - `expires_at INTEGER NOT NULL`
+  - `project_path TEXT`
+  - `line_range TEXT` (JSON)
+  - `is_intent_soft_lock INTEGER NOT NULL DEFAULT 0`
+  - `remote_node_id TEXT`
+  - `terminal_type TEXT`
+- Indexes:
+  - `idx_file_locks_session (session_id)`
+  - `idx_file_locks_expires (expires_at)`
+
+### Module: `src/core/storage/fileLocksDb.ts`
+New file with the SQLite mirror API:
+- `replaceAllLocks(entries)` — transactionally replace
+  the entire `file_locks_current` table. Used by
+  `persistLocksToDisk()` to keep the mirror in sync.
+- `upsertLock(entry)` — single-row upsert.
+- `deleteLockByPath(filePath)` — single-row delete.
+- `deleteLocksBySession(sessionId)` — bulk delete.
+- `readAllLocks()` — returns all current locks as
+  `FileLockEntry[]`.
+- `countLocks()` — fast count.
+- `isFileLocksDbHealthy()` — health check.
+
+All helpers are best-effort: a SQLite failure MUST NOT
+break locking. They return `[]` / `null` / `-1` / `false`
+on error so callers always fall back to the JSON path.
+
+### Wire-up
+- `persistLocksToDisk(locks, immediate)` now fires a
+  fire-and-forget `replaceAllLocks(locks)` after every
+  JSON write. The async mirror is snapshotted (`.slice()`)
+  before scheduling so the JSON write stays synchronous.
+- New exported helpers in `sharedMemory.ts`:
+  - `getLockFromDb(filePath)` — async single-path lookup.
+  - `getLockCountFromDb()` — async count.
+
+### Backward compatibility
+- No JSON file is renamed, deleted, or migrated.
+- The first run after upgrade will populate
+  `file_locks_current` from the existing
+  `file-locks.json` on the next `persistLocksToDisk` call.
+- If SQLite is unavailable (corrupt db, disk full,
+  permissions), the JSON path is used as the only source
+  of truth. Locking continues to work.
+
+### Tests
+- `npx tsc --noEmit` clean
+- `npx tsc` (build) clean
+- All 193 test files, 1777 tests pass (3 known-flaky
+  network/timing tests pass when re-run; not related to
+  this change)
+

@@ -154,6 +154,37 @@ function loadLocksFromDisk(): FileLockEntry[] {
 }
 
 /**
+ * FASE 5A (1.5.7): Try to read the current locks from the SQLite
+ * mirror. This is O(1) for a single-path lookup and avoids parsing
+ * the JSON file. Falls back to the JSON path on any error.
+ *
+ * Returns null if SQLite is unavailable or the path isn't found —
+ * callers should treat that as "unknown, fall back to JSON".
+ */
+export async function getLockFromDb(filePath: string): Promise<FileLockEntry | null> {
+  try {
+    const { readAllLocks } = await import("./fileLocksDb.js");
+    const all = await readAllLocks();
+    return all.find((l) => l.filePath === filePath) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * FASE 5A (1.5.7): Count active locks via SQLite. Returns -1 if the
+ * mirror is unavailable. Used by `getLockStats` for a fast path.
+ */
+export async function getLockCountFromDb(): Promise<number> {
+  try {
+    const { countLocks } = await import("./fileLocksDb.js");
+    return await countLocks();
+  } catch {
+    return -1;
+  }
+}
+
+/**
  * Atomic write of the lock store: write to a `.tmp` file first, then
  * rename it over the real file. On POSIX (Linux/macOS) and NTFS (Windows)
  * `rename` is atomic, so a reader will always see either the previous
@@ -187,6 +218,18 @@ function persistLocksToDisk(locks: FileLockEntry[], immediate: boolean = false) 
   memoryLockCache = locks;
   const locksFile = getLocksFilePath();
   const content = JSON.stringify(locks, null, 2);
+
+  // FASE 5A (1.5.7): mirror to SQLite `file_locks_current` table for
+  // fast indexed lookup. Best-effort: a SQLite failure MUST NOT break
+  // locking. Snapshot the array — fire-and-forget so the JSON write
+  // remains synchronous.
+  const sqliteSnapshot = locks.slice();
+  void (async () => {
+    try {
+      const { replaceAllLocks } = await import("./fileLocksDb.js");
+      await replaceAllLocks(sqliteSnapshot);
+    } catch {}
+  })();
 
   if (immediate) {
     if (saveDebounceTimer) {

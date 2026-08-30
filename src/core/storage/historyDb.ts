@@ -213,6 +213,24 @@ function initDatabaseSchema(db: any): void {
       updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
     );
 
+    CREATE TABLE IF NOT EXISTS file_locks_current (
+      file_path TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      owner_pid INTEGER NOT NULL,
+      owner_ppid INTEGER,
+      acquired_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      project_path TEXT,
+      line_range TEXT,
+      is_intent_soft_lock INTEGER NOT NULL DEFAULT 0,
+      remote_node_id TEXT,
+      terminal_type TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_file_locks_session
+      ON file_locks_current(session_id);
+    CREATE INDEX IF NOT EXISTS idx_file_locks_expires
+      ON file_locks_current(expires_at);
+
     CREATE TABLE IF NOT EXISTS tool_support_cache (
       model_id TEXT PRIMARY KEY,
       supported INTEGER NOT NULL,
