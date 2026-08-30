@@ -1,3 +1,49 @@
+## [1.5.2] - 2026-08-30
+
+### Fix: False "file locked" detection in single-session mode
+
+The cross-session file-locking system was incorrectly reporting files as
+`locked: true` even when only one chat session was running, blocking the
+user from editing their own workspace for up to 30 seconds after a previous
+session crashed, was force-killed, or lost its heartbeat. This is the
+"hanya satu sesi chat tapi file locked" bug.
+
+**Root cause** — `checkFileLock` only trusted the TTL window
+(`now - lockedAt < ttlMs`). When a session died but its lock entry
+remained on disk within that window, every subsequent session inherited
+a phantom conflict that did not correspond to any live peer.
+
+**Fix** — `src/core/storage/sharedMemory.ts` now also verifies the
+lock-owner's liveness before treating a lock as active:
+
+1. **PID probe (`isProcessAlive`)** — uses `process.kill(pid, 0)` to
+   check whether the recorded owner PID is still alive. A lock whose
+   owner has been killed / Ctrl+C'd / crashed is now treated as stale
+   and ignored.
+2. **Heartbeat probe (`isLockStaleByHeartbeat`)** — even when the PID
+   happens to be alive (e.g. PID was reused), a heartbeat that hasn't
+   pinged within 2× the declared interval is treated as dead.
+3. **Legacy compat** — entries without `pid` / `heartbeatPingAt`
+   keep their old TTL-only behavior so on-disk locks from older
+   versions remain valid until they expire.
+4. **Deadlock recovery daemon** now also drops dead-PID and
+   stale-heartbeat locks (not just TTL-expired ones), so the lock
+   file is self-healing even if `checkFileLock` is never called.
+5. **Lock acquisition (`lockFile`)** now records `pid: process.pid`
+   and `heartbeatMs: intervalMs` on the new lock entry, and the
+   renewal path inside `startLockHeartbeat` keeps those fields
+   fresh so a long-lived heartbeat never appears dead.
+
+### Tests
+- New `tests/sharedMemoryLiveness.test.ts` covers: live peer is still
+  blocked, self-lock is not blocked, dead-PID lock is not blocked
+  (the primary bug), stale-heartbeat lock is not blocked, legacy
+  entries (no `pid`) still work, and a real child process used as a
+  peer still produces a blocking lock. 9/9 tests pass, stable across
+  5 consecutive runs.
+- All 12 pre-existing file-lock test files (43 tests total) still
+  pass; `tsc --noEmit` and `tsc` both succeed.
+
 ## [1.5.1] - 2026-08-26
 
 ### Test suite fixes (5 failing suites)

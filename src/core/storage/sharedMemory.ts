@@ -20,6 +20,13 @@ export interface FileLockEntry {
   projectPath: string;
   isIntentSoftLock?: boolean;
   heartbeatPingAt?: number;
+  heartbeatMs?: number;
+  /**
+   * PID of the process that acquired the lock. Used to detect a dead owner
+   * (e.g. killed session, Ctrl+C, crash) even within the TTL window.
+   * Optional for backward compatibility with legacy on-disk lock entries.
+   */
+  pid?: number;
   lineRange?: LineRange;
   remoteNodeId?: string;
 }
@@ -111,6 +118,60 @@ function persistLocksToDisk(locks: FileLockEntry[], immediate: boolean = false) 
   }, 100);
 }
 
+/**
+ * Check whether a process with the given PID is still alive.
+ *
+ * Uses `process.kill(pid, 0)` which is the canonical cross-platform probe
+ * for "does this PID exist?":
+ *   - Returns without error  -> process is alive.
+ *   - Throws ESRCH           -> no such process (dead).
+ *   - Throws EPERM           -> process exists but is owned by another user
+ *                              (we still consider it alive).
+ *   - Throws EINVAL          -> invalid signal (e.g. Windows); treat as dead.
+ *
+ * Returns `true` only when we have high confidence the process is still
+ * running. Any unexpected error falls back to "dead" so that stale locks
+ * are eventually released instead of blocking the user forever.
+ */
+function isProcessAlive(pid: number | undefined): boolean {
+  if (!pid || !Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err: any) {
+    if (!err) return false;
+    if (err.code === "EPERM") return true; // exists but no access
+    return false; // ESRCH, EINVAL, etc. -> treat as dead
+  }
+}
+
+/**
+ * Determine whether a lock entry should still be considered held by an
+ * active process. A lock is considered STALE (and therefore safe to
+ * ignore) when ALL of the following hold:
+ *   1. The entry carries a PID (new-format lock).
+ *   2. The PID is no longer alive.
+ *
+ * Legacy entries (no PID) keep their old TTL-only behavior so that
+ * pre-existing on-disk locks continue to work without a migration.
+ */
+function isLockStaleByLiveness(lock: FileLockEntry): boolean {
+  if (lock.pid === undefined) return false; // legacy entry, trust TTL
+  return !isProcessAlive(lock.pid);
+}
+
+/**
+ * Determine whether a lock entry is stale because its heartbeat stopped
+ * pinging. The lock holder is expected to refresh `heartbeatPingAt` every
+ * `heartbeatMs` (default 10 s). If the gap exceeds 2× the heartbeat
+ * interval we assume the holder died without releasing the lock.
+ */
+function isLockStaleByHeartbeat(lock: FileLockEntry, now: number): boolean {
+  if (lock.heartbeatPingAt === undefined) return false;
+  const interval = lock.heartbeatMs && lock.heartbeatMs > 0 ? lock.heartbeatMs : 10000;
+  return now - lock.heartbeatPingAt > interval * 2;
+}
+
 // Process Exit & Signal Graceful Cleanup Lifecycle Hooks
 function flushPendingLocksOnExit() {
   if (memoryLockCache) {
@@ -188,7 +249,13 @@ export function lockFile(
   cwd?: string,
   isIntentSoftLock?: boolean,
   lineRange?: LineRange,
-  remoteNodeId?: string
+  remoteNodeId?: string,
+  /**
+   * Heartbeat interval (ms) the lock owner will ping at. Used to detect
+   * a silently crashed owner even if the OS PID probe is unavailable.
+   * Defaults to 10s, matching `startLockHeartbeat`.
+   */
+  intervalMs: number = 10000
 ): { success: boolean; owner?: FileLockEntry; message?: string } {
   const projectPath = getNormalizedProjectPath(cwd || process.cwd());
   const absPath = path.resolve(cwd || process.cwd(), filePath);
@@ -196,7 +263,12 @@ export function lockFile(
 
   return withLock(() => {
     let locks = loadLocksFromDisk();
-    locks = locks.filter(l => now - l.lockedAt < l.ttlMs);
+    // Drop expired locks (TTL) AND locks held by dead processes (liveness).
+    // This prevents the "false locked file" bug where a previously killed
+    // session leaves a lock on disk that blocks the new single session.
+    locks = locks.filter(
+      l => now - l.lockedAt < l.ttlMs && !isLockStaleByLiveness(l)
+    );
 
     const conflicting = locks.find(
       l =>
@@ -210,6 +282,8 @@ export function lockFile(
         conflicting.lockedAt = now;
         conflicting.ttlMs = ttlMs;
         conflicting.heartbeatPingAt = now;
+        conflicting.heartbeatMs = intervalMs;
+        conflicting.pid = process.pid;
         conflicting.isIntentSoftLock = !!isIntentSoftLock;
         if (lineRange) conflicting.lineRange = lineRange;
         persistLocksToDisk(locks);
@@ -269,6 +343,12 @@ export function lockFile(
       projectPath,
       isIntentSoftLock: !!isIntentSoftLock,
       heartbeatPingAt: now,
+      heartbeatMs: intervalMs,
+      // Record the lock-owner's PID so future `checkFileLock` calls can
+      // verify the owner is still alive. This is the cornerstone of the
+      // "false locked file" fix: a lock whose owner PID is dead (or a
+      // heartbeat that stopped pinging) is treated as stale and ignored.
+      pid: process.pid,
       lineRange,
       remoteNodeId,
     };
@@ -317,7 +397,10 @@ export function startLockHeartbeat(
   if (activeHeartbeats.has(key)) return;
 
   const timer = setInterval(() => {
-    lockFile(filePath, sessionId, terminalType, DEFAULT_TTL_MS, cwd, false, lineRange);
+    // Renew with the same `intervalMs` so the on-disk entry keeps a
+    // fresh `pid` and `heartbeatPingAt`. Without this, a long-held lock
+    // could outlive the owning process and end up flagged as "dead".
+    lockFile(filePath, sessionId, terminalType, DEFAULT_TTL_MS, cwd, false, lineRange, undefined, intervalMs);
   }, intervalMs);
 
   activeHeartbeats.set(key, timer);
@@ -480,11 +563,27 @@ export function checkFileLock(
 
   try {
     const locks = loadLocksFromDisk();
-    const valid = locks.find(
+    // ─────────────────────────────────────────────────────────────────
+    // False-Locked-File Fix:
+    // 1. Drop locks whose TTL has expired (original behavior).
+    // 2. Drop locks whose owning PID is dead (the lock holder crashed
+    //    / was killed / the session was force-closed). This is the
+    //    primary fix for the "single session, file still reported as
+    //    locked" bug.
+    // 3. Drop locks whose heartbeat stopped pinging (2× interval).
+    // Legacy entries (no `pid`/`heartbeatPingAt`) keep their TTL-only
+    // behavior so existing on-disk locks remain backward compatible.
+    // ─────────────────────────────────────────────────────────────────
+    const liveLocks = locks.filter(
+      l =>
+        now - l.lockedAt < l.ttlMs &&
+        !isLockStaleByLiveness(l) &&
+        !isLockStaleByHeartbeat(l, now)
+    );
+    const valid = liveLocks.find(
       l =>
         path.resolve(l.filePath) === absPath &&
         l.projectPath === projectPath &&
-        now - l.lockedAt < l.ttlMs &&
         isOverlappingRange(l.lineRange, lineRange)
     );
     if (valid) {
@@ -505,13 +604,33 @@ export function startDeadlockRecoveryDaemon(checkIntervalMs: number = 5000) {
     withLock(() => {
       const now = Date.now();
       let locks = loadLocksFromDisk();
-      const active = locks.filter(l => now - l.lockedAt < l.ttlMs);
-      const stale = locks.filter(l => now - l.lockedAt >= l.ttlMs);
+      // A lock is "active" when it has not expired AND its owner is
+      // still alive AND its heartbeat is still fresh. Any other lock
+      // is treated as stale and is reclaimed by the daemon.
+      const active = locks.filter(
+        l =>
+          now - l.lockedAt < l.ttlMs &&
+          !isLockStaleByLiveness(l) &&
+          !isLockStaleByHeartbeat(l, now)
+      );
+      const stale = locks.filter(
+        l =>
+          now - l.lockedAt >= l.ttlMs ||
+          isLockStaleByLiveness(l) ||
+          isLockStaleByHeartbeat(l, now)
+      );
       const staleCount = stale.length;
       if (staleCount > 0) {
         staleLocksCleanedCount += staleCount;
         persistLocksToDisk(active, true);
         for (const staleLock of stale) {
+          const isDead = isLockStaleByLiveness(staleLock);
+          const isHeartbeatStale = isLockStaleByHeartbeat(staleLock, now);
+          const reason = isDead
+            ? "owner PID is no longer alive"
+            : isHeartbeatStale
+            ? "heartbeat stopped pinging"
+            : `TTL expired after ${staleLock.ttlMs}ms`;
           const staleDetails: LockEventDetails = {
             projectPath: staleLock.projectPath,
             lineRange: staleLock.lineRange || null,
@@ -520,10 +639,10 @@ export function startDeadlockRecoveryDaemon(checkIntervalMs: number = 5000) {
             remoteNodeId: staleLock.remoteNodeId,
             lockedAt: staleLock.lockedAt,
             releasedAt: now,
-            details: `Stale lock cleaned by deadlock recovery daemon (TTL expired after ${staleLock.ttlMs}ms)`,
+            details: `Stale lock cleaned by deadlock recovery daemon (${reason})`,
           };
           recordLockEvent(staleLock.filePath, staleLock.sessionId, staleLock.terminalType || "cli", "deadlock_recovered", staleDetails);
-          logE2E("SUPERAGENT-SERVER", `[LOCK] deadlock_recovered: ${path.basename(staleLock.filePath)} (stale, TTL expired)`, {
+          logE2E("SUPERAGENT-SERVER", `[LOCK] deadlock_recovered: ${path.basename(staleLock.filePath)} (${reason})`, {
             filePath: staleLock.filePath,
             projectPath: staleLock.projectPath,
             sessionId: staleLock.sessionId,
@@ -533,6 +652,9 @@ export function startDeadlockRecoveryDaemon(checkIntervalMs: number = 5000) {
             lockedAt: staleLock.lockedAt,
             cleanedAt: now,
             ageMs: now - staleLock.lockedAt,
+            reason,
+            pid: staleLock.pid,
+            heartbeatPingAt: staleLock.heartbeatPingAt,
           });
         }
         lockEventEmitter.emit("deadlock_recovered", { count: staleCount });
@@ -553,7 +675,13 @@ export function getLockStats(cwd?: string): LockStats {
   const now = Date.now();
 
   const locks = loadLocksFromDisk();
-  const activeLocks = locks.filter(l => l.projectPath === projectPath && now - l.lockedAt < l.ttlMs);
+  const activeLocks = locks.filter(
+    l =>
+      l.projectPath === projectPath &&
+      now - l.lockedAt < l.ttlMs &&
+      !isLockStaleByLiveness(l) &&
+      !isLockStaleByHeartbeat(l, now)
+  );
 
   const locksByTerminal: Record<string, number> = {};
   activeLocks.forEach(l => {
