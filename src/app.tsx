@@ -42,6 +42,7 @@ import { lockEventEmitter, getLockStats } from "./core/storage/sharedMemory.js";
 import { StatusBar } from "./components/status-bar.js";
 import { WizardPanels } from "./components/wizard-panels.js";
 import { PLAN_APPROVAL_OPTIONS, planApprovalChromeHeight } from "./components/plan-approval-dialog.js";
+import { MessageSubmitDialog, type MessageSubmitChoice } from "./components/message-submit-dialog.js";
 import { ChatArea, computeWrappedLines } from "./components/chat-area.js";
 import { WizardHeaderRowsContext } from "./components/wizard-dialog.js";
 import { useWizardSubmit } from "./hooks/useWizardSubmit.js";
@@ -208,6 +209,10 @@ export function App({
   const [pastePrefixLength, setPastePrefixLength] = useState(0);
   const [pasteSuffixLength, setPasteSuffixLength] = useState(0);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  const [pendingSubmitMessage, setPendingSubmitMessage] = useState<{
+    text: string;
+    attachments: ImageAttachment[];
+  } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isExecutingTool, setIsExecutingTool] = useState(false);
   const [streamDisplay, setStreamDisplay] = useState("");
@@ -724,6 +729,9 @@ export function App({
       if (isProcessing && !activeWizard) {
         if (!trimmed && attachments.length === 0) return;
 
+        // While the AI is still processing, show a dialog (Queue / Insert / Back)
+        // so the user can decide what to do with the new message instead of
+        // silently aborting the current run.
         setHistory((prev) => {
           if (prev.length > 0 && prev[prev.length - 1] === trimmed) {
             return prev;
@@ -741,6 +749,7 @@ export function App({
           return [...prev, trimmed].slice(-200);
         });
 
+        const submittedAttachments = attachments;
         setInput("");
         setIsPasted(false);
         setPastePrefixLength(0);
@@ -748,31 +757,12 @@ export function App({
         setLastTabPrefix(null);
         setHistoryIndex(-1);
         setScrollOffset(0);
-
-        let messageContent: MessageContent = trimmed;
-        if (attachments.length > 0) {
-          const parts: import("./core/conversation.js").MessageContent = [
-            ...(trimmed ? [{ type: "text" as const, text: trimmed }] : []),
-            ...attachments.map(attachmentToImagePart),
-          ];
-          messageContent = parts;
-        }
-
-        const displayText = trimmed || (attachments.length > 0 ? `[${attachments.length} image${attachments.length > 1 ? "s" : ""}]` : "");
-        addLine({
-          type: "user",
-          content: attachments.length > 0
-            ? `❯ ${displayText} 📎×${attachments.length}`
-            : `❯ ${trimmed}`,
-          timestamp: Date.now(),
-        });
-
         setAttachments([]);
 
-        if (agentRef.current) {
-          agentRef.current.abort();
-          agentRef.current.queueMessage(messageContent);
-        }
+        setPendingSubmitMessage({
+          text: trimmed,
+          attachments: submittedAttachments,
+        });
         return;
       }
 
@@ -1079,6 +1069,78 @@ export function App({
       }
     },
     [isProcessing, activeWizard, handleWizardSubmit, addLine, exit, wizardSelectedIndex, wizardOptions, attachments]
+  );
+
+  // ── MessageSubmitDialog handlers ──────────────────────────────────────────
+  // When the user submits a message while the AI is still processing, we show
+  // a dialog with three options: Queue (wait), Insert (stop now), Back (cancel).
+  // These handlers implement the three choices.
+
+  const buildUserLineContent = (
+    text: string,
+    attachmentsForLine: ImageAttachment[]
+  ): string => {
+    if (attachmentsForLine.length === 0) {
+      return `❯ ${text}`;
+    }
+    const displayText = text || `[${attachmentsForLine.length} image${attachmentsForLine.length > 1 ? "s" : ""}]`;
+    return `❯ ${displayText} 📎×${attachmentsForLine.length}`;
+  };
+
+  const buildMessageContent = (
+    text: string,
+    attachmentsForMessage: ImageAttachment[]
+  ): MessageContent => {
+    if (attachmentsForMessage.length === 0) return text;
+    const textParts: Array<{ type: "text"; text: string }> = text
+      ? [{ type: "text" as const, text }]
+      : [{ type: "text" as const, text: "I've attached an image for you to analyze." }];
+    return [
+      ...textParts,
+      ...attachmentsForMessage.map(attachmentToImagePart),
+    ];
+  };
+
+  const handleMessageSubmitChoice = useCallback(
+    (choice: MessageSubmitChoice) => {
+      const pending = pendingSubmitMessage;
+      if (!pending) return;
+
+      const { text, attachments: submittedAttachments } = pending;
+      setPendingSubmitMessage(null);
+
+      if (choice === "back") {
+        // Restore the typed text and attachments back into the input.
+        setInput(text);
+        setAttachments(submittedAttachments);
+        return;
+      }
+
+      // Both Queue and Insert paths need to record the user line and build
+      // the multimodal content payload.
+      addLine({
+        type: "user",
+        content: buildUserLineContent(text, submittedAttachments),
+        timestamp: Date.now(),
+      });
+
+      const messageContent = buildMessageContent(text, submittedAttachments);
+
+      if (!agentRef.current) return;
+
+      if (choice === "insert") {
+        // Stop the current run first (this also clears the pending queue),
+        // then enqueue the new message so it runs immediately after abort.
+        agentRef.current.abort();
+        agentRef.current.queueMessage(messageContent);
+        return;
+      }
+
+      // choice === "queue": enqueue without aborting; the agent will drain the
+      // queue automatically when the current run finishes.
+      agentRef.current.queueMessage(messageContent);
+    },
+    [pendingSubmitMessage, addLine]
   );
 
   const installedSkills = getInstalledSkills();
@@ -3104,6 +3166,19 @@ export function App({
               />
             </WizardHeaderRowsContext.Provider>
 
+            {/* MessageSubmitDialog — shown when the user submits a new message
+                while the AI is still processing. Offers Queue / Insert / Back. */}
+            {pendingSubmitMessage && (
+              <MessageSubmitDialog
+                messagePreview={pendingSubmitMessage.text}
+                attachmentCount={pendingSubmitMessage.attachments.length}
+                queuedCount={
+                  (agentRef.current as any)?.pendingMessagesQueue?.length ?? 0
+                }
+                onChoose={handleMessageSubmitChoice}
+              />
+            )}
+
             {/* CommandLine Input — hidden for selection-only wizard steps */}
             {!isSelectionOnlyStep && (
             <Box flexDirection="column">
@@ -3137,10 +3212,10 @@ export function App({
                   )}
                   <ChatTextInput
                     ref={chatTextInputRef}
-                    focus={focusMode === "input"}
+                    focus={focusMode === "input" && !pendingSubmitMessage}
                     value={input}
                     onChange={handleInputChange}
-                    onSubmit={handleSubmit}
+                    onSubmit={pendingSubmitMessage ? () => {} : handleSubmit}
                     placeholder={getWizardPlaceholder()}
                     onAttachImage={handleAttachImage}
                     onPasteImage={handlePasteImage}

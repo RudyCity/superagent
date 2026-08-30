@@ -1,3 +1,53 @@
+## [1.5.11] - 2026-08-31
+
+### Feature: Queue / Insert / Back dialog when submitting during AI processing
+
+Previously, pressing **Enter** on a new message while the AI was still
+streaming would silently abort the current run and immediately start
+processing the new message — losing whatever the AI was doing and giving
+the user no way to preserve the in-flight result.
+
+A new `MessageSubmitDialog` now appears whenever the user submits a new
+message while `isProcessing` is true. It offers three explicit choices:
+
+| Choice   | Behavior                                                                 |
+|----------|--------------------------------------------------------------------------|
+| Queue    | Enqueue the new message; current run finishes, then the new one runs.    |
+| Insert   | Abort the current run now and start the new message immediately.         |
+| Back     | Discard the new message; restore its text and attachments to the input.  |
+
+#### Changes
+- **New file:** `src/components/message-submit-dialog.tsx` — Ink dialog
+  component mirroring the style of `TrustPrompt`. Supports ↑/↓, 1/2/3
+  shortcut keys, Enter, and Esc (= Back). Shows a live preview of the
+  submitted message (first 5 lines, 60-char wrap) and the current
+  `pendingMessagesQueue` length next to the **Queue** option.
+- **`src/app.tsx`:**
+  - Added `pendingSubmitMessage` state and a guard around `ChatTextInput`
+    so the input is unfocused and its `onSubmit` is a no-op while the
+    dialog is open.
+  - Refactored the `isProcessing && !activeWizard` branch of
+    `handleSubmit` to defer agent decisions: it now stashes the message
+    and clears the input instead of calling `agent.abort() +
+    agent.queueMessage()`.
+  - New `handleMessageSubmitChoice()` implements the three behaviors
+    using the existing `agent.queueMessage()` (Queue) and
+    `agent.abort() → agent.queueMessage()` (Insert) primitives. No
+    `src/core/agent.ts` changes were required.
+- All UI strings in the dialog are in English. No brand names or
+  forbidden terminology were introduced.
+
+#### Behavior preserved
+- `agent.ts` public API is unchanged.
+- The agent's own `pendingMessagesQueue` is still drained automatically
+  when the current run completes, so queued messages run in order.
+- All existing test files still pass: `pnpm vitest run` reports
+  1794 / 1802 passing (the 3 remaining failures are pre-existing
+  test-ordering / DB-locking flakes in `agentPayloadTooLargeRetry.test.ts`
+  and `loadTest.bench.test.ts` that fail with or without this change).
+
+---
+
 ## [1.5.10] - 2026-08-30
 
 ### Fix: context-window count accuracy & AI auto-compaction visibility
