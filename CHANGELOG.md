@@ -1,3 +1,29 @@
+## [1.5.3] - 2026-08-30
+
+### Fix: `lockFile()` consistency with `checkFileLock()` on stale heartbeats
+
+The 1.5.2 fix to `checkFileLock` covered dead-PID and stale-heartbeat
+locks, but the same filter was missing inside `lockFile()` itself. This
+caused a subtle inconsistency: `checkFileLock()` would correctly report
+"not locked" for a path with a stale-heartbeat lock, but `lockFile()`
+would then refuse the acquisition with `LOCK_CONFLICT`, because it only
+filtered on TTL + PID liveness, not heartbeat freshness.
+
+**Fix** — `lockFile()` now applies the exact same triple filter
+(`!isLockStaleByLiveness(l) && !isLockStaleByHeartbeat(l, now)`) that
+`checkFileLock`, `getLockStats`, and `startDeadlockRecoveryDaemon` use.
+A comment in the source pins the invariant so the two functions cannot
+drift apart again in future refactors.
+
+### Tests
+- New case in `tests/sharedMemoryLiveness.test.ts` (`lockFile() and
+  checkFileLock() agree on a lock with stale heartbeat (consistency)`)
+  pins the contract: a live PID + stale heartbeat must be considered
+  unlocked by **both** functions. 10/10 tests pass, stable across 5
+  consecutive runs.
+- All 12 pre-existing file-lock suites (44 tests total) still pass;
+  `tsc` and `tsc --noEmit` both succeed.
+
 ## [1.5.2] - 2026-08-30
 
 ### Fix: False "file locked" detection in single-session mode

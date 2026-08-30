@@ -213,6 +213,46 @@ describe("False Locked-File Detection (liveness-aware locks)", () => {
   });
 
   // ───────────────────────────────────────────────────────────────────
+  // 5b. Consistency between lockFile() and checkFileLock().
+  //    The previous version of lockFile() only checked liveness (PID
+  //    alive), not heartbeat freshness. This caused a confusing UX
+  //    where checkFileLock() would say "not locked" but lockFile()
+  //    would then refuse to acquire with `LOCK_CONFLICT` — because the
+  //    on-disk lock had a live PID but a stale heartbeat.
+  //
+  //    This test pins the contract: the two functions MUST agree.
+  // ───────────────────────────────────────────────────────────────────
+  it("lockFile() and checkFileLock() agree on a lock with stale heartbeat (consistency)", async () => {
+    const now = Date.now();
+    // Lock with a *live* PID (this very test process) but a heartbeat
+    // that hasn't pinged in 60s — way past 2x the 10s interval.
+    await writeRawLocks([
+      {
+        filePath: path.resolve(process.cwd(), testFile),
+        sessionId: "sess_heartbeat_stale_previous",
+        terminalType: "cli",
+        lockedAt: now - 5_000, // 5s ago, well within 60s TTL
+        ttlMs: 60_000,
+        projectPath,
+        heartbeatPingAt: now - 60_000, // 60s ago -> stale
+        heartbeatMs: 10_000,
+        pid: process.pid, // alive! but heartbeat is the truth
+      },
+    ]);
+
+    // (a) checkFileLock() should see no conflict.
+    const check = checkFileLock(testFile, sessionA);
+    expect(check.locked).toBe(false);
+
+    // (b) lockFile() must also accept the acquisition (the bug was
+    //     that it refused because the heartbeat check was missing
+    //     from its filter).
+    const result = lockFile(testFile, sessionA, "cli", 30_000);
+    expect(result.success).toBe(true);
+    expect(result.owner?.sessionId).toBe(sessionA);
+  });
+
+  // ───────────────────────────────────────────────────────────────────
   // 6. A truly live peer session is still respected (no over-eager
   //    cleanup that would corrupt multi-session behavior).
   // ───────────────────────────────────────────────────────────────────

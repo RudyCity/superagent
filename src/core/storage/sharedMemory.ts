@@ -263,11 +263,22 @@ export function lockFile(
 
   return withLock(() => {
     let locks = loadLocksFromDisk();
-    // Drop expired locks (TTL) AND locks held by dead processes (liveness).
-    // This prevents the "false locked file" bug where a previously killed
+    // Drop expired locks (TTL) AND locks held by dead processes (liveness)
+    // AND locks whose heartbeat stopped pinging. This prevents the "false
+    // locked file" bug where a previously killed / silently-disconnected
     // session leaves a lock on disk that blocks the new single session.
+    //
+    // The triple filter MUST stay in sync with `checkFileLock`,
+    // `getLockStats`, and `startDeadlockRecoveryDaemon` so that
+    // `lockFile()` and `checkFileLock()` always agree on whether a given
+    // path is locked. Otherwise we get a confusing UX where the user is
+    // told "file is not locked" but `lockFile()` then refuses to acquire
+    // with `LOCK_CONFLICT`.
     locks = locks.filter(
-      l => now - l.lockedAt < l.ttlMs && !isLockStaleByLiveness(l)
+      l =>
+        now - l.lockedAt < l.ttlMs &&
+        !isLockStaleByLiveness(l) &&
+        !isLockStaleByHeartbeat(l, now)
     );
 
     const conflicting = locks.find(
