@@ -454,7 +454,22 @@ export function releaseFile(
   stopLockHeartbeat(filePath, forceUnlock ? undefined : sessionId, cwd, lineRange);
 
   return withLock(() => {
+    const now = Date.now();
     let locks = loadLocksFromDisk();
+    // A lock whose owner is dead or whose heartbeat stopped pinging is
+    // no longer "owned" by anyone. We must NOT block `releaseFile` from
+    // cleaning it up just because the caller is a different session
+    // (e.g. an admin tool trying to evict a crashed session's lock).
+    //
+    // Without this filter, the previous "Cannot unlock file locked by
+    // session X" error would fire even when session X is provably dead
+    // — which contradicts `checkFileLock` (which correctly says "not
+    // locked" in the same situation) and leaks the phantom lock on disk
+    // until the recovery daemon sweeps it (which is on a 5s timer).
+    const isStale = (l: FileLockEntry) =>
+      now - l.lockedAt >= l.ttlMs ||
+      isLockStaleByLiveness(l) ||
+      isLockStaleByHeartbeat(l, now);
     const targetLock = locks.find(
       l =>
         path.resolve(l.filePath) === absPath &&
@@ -464,7 +479,12 @@ export function releaseFile(
 
     if (!targetLock) return { success: true };
 
-    if (!forceUnlock && sessionId && targetLock.sessionId !== sessionId) {
+    // If the matching lock is already dead/stale, treat it as if there
+    // is no owner — allow any caller (including a different session) to
+    // release it. This is the only sensible behavior: a dead session
+    // cannot object.
+    const targetIsStale = isStale(targetLock);
+    if (!forceUnlock && sessionId && !targetIsStale && targetLock.sessionId !== sessionId) {
       return {
         success: false,
         message: `Cannot unlock file locked by session ${targetLock.sessionId} without forceUnlock flag.`,
@@ -477,7 +497,7 @@ export function releaseFile(
           path.resolve(l.filePath) === absPath &&
           l.projectPath === projectPath &&
           isOverlappingRange(l.lineRange, lineRange) &&
-          (forceUnlock || l.sessionId === (sessionId || targetLock.sessionId))
+          (forceUnlock || isStale(l) || l.sessionId === (sessionId || targetLock.sessionId))
         )
     );
     persistLocksToDisk(filtered, true);

@@ -1,3 +1,35 @@
+## [1.5.4] - 2026-08-30
+
+### Fix: `releaseFile()` consistency — dead/stale locks can now be evicted by any session
+
+The 1.5.2/1.5.3 liveness filters were applied to `checkFileLock`,
+`getLockStats`, `startDeadlockRecoveryDaemon`, and `lockFile`, but
+`releaseFile` was missed. The previous behavior was:
+
+- `checkFileLock(testFile, "sess_legit")` correctly said
+  `"locked: false"` for a lock whose owner was a dead PID.
+- `releaseFile(testFile, "sess_legit")` then refused with
+  `"Cannot unlock file locked by session sess_crashed"`, because the
+  session-id guard didn't know the lock was dead.
+- Result: the phantom lock stayed on disk until the 5s recovery
+  daemon sweep — meaning a `checkFileLock → releaseFile` round-trip
+  from an admin tool or a recovery flow would be falsely denied.
+
+**Fix** — `releaseFile()` now applies the same triple filter
+(`isLockStaleByLiveness` + `isLockStaleByHeartbeat` + TTL) to both
+the early-return guard and the delete filter. A dead / stale lock
+is treated as ownerless, so any caller (including a different
+session) can release it. Live locks are still guarded — the
+session-id check still applies when the owner is provably alive.
+
+### Tests
+- New cases in `tests/sharedMemoryLiveness.test.ts`:
+  1. `allows a different session to release a lock whose owner is dead`
+  2. `allows a different session to release a lock with a stale heartbeat`
+  3. `still refuses a cross-session release of a live lock (no over-relaxation)`
+- 47/47 tests pass across 14 lock test files. `tsc` and
+  `tsc --noEmit` both succeed.
+
 ## [1.5.3] - 2026-08-30
 
 ### Fix: `lockFile()` consistency with `checkFileLock()` on stale heartbeats

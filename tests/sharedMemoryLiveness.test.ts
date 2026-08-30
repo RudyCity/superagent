@@ -298,4 +298,98 @@ describe("False Locked-File Detection (liveness-aware locks)", () => {
     const check = checkFileLock(testFile, sessionB);
     expect(check.locked).toBe(false);
   });
+
+  // ───────────────────────────────────────────────────────────────────
+  // 8. releaseFile() consistency: a different session MUST be able to
+  //    release a lock whose owner is provably dead. The previous version
+  //    of `releaseFile` would refuse with "Cannot unlock file locked by
+  //    session X" even when session X was a dead PID — which left the
+  //    phantom lock on disk for up to 5s until the recovery daemon
+  //    swept it. This test pins the fix: dead locks are ownerless, so
+  //    anyone (including a different session) can release them.
+  // ───────────────────────────────────────────────────────────────────
+  it("allows a different session to release a lock whose owner is dead", async () => {
+    const now = Date.now();
+    await writeRawLocks([
+      {
+        filePath: path.resolve(process.cwd(), testFile),
+        sessionId: "sess_crashed_owner",
+        terminalType: "cli",
+        lockedAt: now - 5_000,
+        ttlMs: 60_000,
+        projectPath,
+        heartbeatPingAt: now - 5_000,
+        heartbeatMs: 10_000,
+        pid: 2_147_483_647, // dead PID (Windows reserved sentinel)
+      },
+    ]);
+
+    // sessionA (different from the dead owner) tries to release.
+    const result = releaseFile(testFile, sessionA);
+    expect(result.success).toBe(true);
+
+    // The dead lock must be gone from disk.
+    const check = checkFileLock(testFile, sessionB);
+    expect(check.locked).toBe(false);
+  });
+
+  // ───────────────────────────────────────────────────────────────────
+  // 9. releaseFile() consistency: a different session MUST be able to
+  //    release a lock whose owner has a live PID but a stale heartbeat.
+  //    Same root cause as test 8 but for the heartbeat path.
+  // ───────────────────────────────────────────────────────────────────
+  it("allows a different session to release a lock with a stale heartbeat", async () => {
+    const now = Date.now();
+    await writeRawLocks([
+      {
+        filePath: path.resolve(process.cwd(), testFile),
+        sessionId: "sess_heartbeat_lost_owner",
+        terminalType: "cli",
+        lockedAt: now - 5_000,
+        ttlMs: 60_000,
+        projectPath,
+        heartbeatPingAt: now - 60_000, // stale
+        heartbeatMs: 10_000,
+        pid: process.pid, // live (current process), but heartbeat is dead
+      },
+    ]);
+
+    const result = releaseFile(testFile, sessionA);
+    expect(result.success).toBe(true);
+
+    const check = checkFileLock(testFile, sessionB);
+    expect(check.locked).toBe(false);
+  });
+
+  // ───────────────────────────────────────────────────────────────────
+  // 10. releaseFile() guard: a different session MUST still NOT be
+  //     able to release a lock whose owner is genuinely alive and
+  //     actively heartbeating — we only relax the cross-session
+  //     release for dead / stale locks, not live ones.
+  // ───────────────────────────────────────────────────────────────────
+  it("still refuses a cross-session release of a live lock (no over-relaxation)", async () => {
+    const now = Date.now();
+    await writeRawLocks([
+      {
+        filePath: path.resolve(process.cwd(), testFile),
+        sessionId: "sess_live_owner",
+        terminalType: "cli",
+        lockedAt: now,
+        ttlMs: 30_000,
+        projectPath,
+        heartbeatPingAt: now, // fresh
+        heartbeatMs: 10_000,
+        pid: process.pid, // live
+      },
+    ]);
+
+    const result = releaseFile(testFile, sessionA);
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/Cannot unlock/i);
+
+    // The live lock must remain.
+    const check = checkFileLock(testFile, sessionB);
+    expect(check.locked).toBe(true);
+    expect(check.owner?.sessionId).toBe("sess_live_owner");
+  });
 });
