@@ -34,7 +34,11 @@ async function getDb() {
     // history subsystem on lock operations.
     const { getHistoryDb } = await import("./historyDb.js");
     _db = getHistoryDb();
-    if (!_db) return null;
+    if (!_db) {
+      // eslint-disable-next-line no-console
+      console.error("[fileLocksDb] getHistoryDb() returned null");
+      return null;
+    }
     _stmts.upsert = _db.prepare(`
       INSERT INTO file_locks_current
         (file_path, session_id, owner_pid, owner_ppid, acquired_at,
@@ -106,7 +110,14 @@ export async function replaceAllLocks(entries: FileLockEntry[]): Promise<boolean
   try {
     const db = await getDb();
     if (!db) return false;
-    const tx = db.transaction((rows: FileLockEntry[]) => {
+    // We support both `bun:sqlite` and `node:sqlite`. Neither has
+    // better-sqlite3's `db.transaction(fn)` helper, so we drive the
+    // transaction with explicit BEGIN/COMMIT. Both libs serialise
+    // statements synchronously, so the BEGIN / DELETE / 100x INSERT
+    // / COMMIT sequence is atomic as long as no async awaits happen
+    // between BEGIN and COMMIT.
+    db.exec(`BEGIN`);
+    try {
       db.exec(`DELETE FROM file_locks_current`);
       const ins = db.prepare(`
         INSERT INTO file_locks_current
@@ -115,7 +126,7 @@ export async function replaceAllLocks(entries: FileLockEntry[]): Promise<boolean
            remote_node_id, terminal_type)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      for (const r of rows) {
+      for (const r of entries) {
         ins.run(
           r.filePath,
           r.sessionId,
@@ -130,10 +141,15 @@ export async function replaceAllLocks(entries: FileLockEntry[]): Promise<boolean
           r.terminalType || null
         );
       }
-    });
-    tx(entries);
+      db.exec(`COMMIT`);
+    } catch (innerErr) {
+      try { db.exec(`ROLLBACK`); } catch {}
+      throw innerErr;
+    }
     return true;
-  } catch {
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[fileLocksDb] replaceAllLocks failed:", err);
     return false;
   }
 }

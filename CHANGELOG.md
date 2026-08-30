@@ -7346,3 +7346,60 @@ on error so callers always fall back to the JSON path.
   network/timing tests pass when re-run; not related to
   this change)
 
+
+## [1.5.8] - 2026-09-05
+
+### FASE 6: Load test / micro-benchmark
+
+Adds `tests/loadTest.bench.test.ts`, a vitest runnable
+micro-benchmark for the lock subsystem and the new
+SQLite mirror (1.5.7). It measures 8 named paths and
+asserts each against a soft ceiling (5x baseline) so a
+regression in any hot path fails the test.
+
+### What it measures
+1. Cold-start import cost of the storage modules
+   (`sharedMemory` + `historyDb` + `fileLocksDb`).
+2. `replaceAllLocks` (100 rows, single transaction).
+3. `readAllLocks` (100 rows).
+4. SQLite churn: 50 round-trips of 100 rows.
+5. `lockFile` throughput (500 ops, 5 sessions, 100
+   unique files each).
+6. `releaseFile` throughput (500 sequential releases).
+7. Atomic write + rename cost on 1000-entry JSON x10.
+8. `getLockStats` on a 100-lock set.
+
+### Bug found by the benchmark
+While writing the benchmark, the test for
+`replaceAllLocks` failed with:
+```
+TypeError: db.transaction is not a function
+```
+
+The original implementation used
+`db.transaction((rows) => { ... })` which is a
+better-sqlite3-specific helper. Our SQLite layer uses
+`bun:sqlite` (when running on Bun) and `node:sqlite`
+(otherwise). Neither has a `.transaction()` helper —
+the schema-creation code in `historyDb.ts` already
+uses explicit BEGIN/COMMIT for the same reason.
+
+**Fix**: rewrote `replaceAllLocks` to use explicit
+`BEGIN` / `DELETE` / `INSERT x N` / `COMMIT` with
+`ROLLBACK` on inner error. All `node:sqlite` /
+`bun:sqlite` statements are synchronous, so the
+sequence is atomic as long as no async await happens
+between BEGIN and COMMIT — which is the case here.
+
+### Running
+```bash
+npx vitest run tests/loadTest.bench.test.ts
+```
+
+The benchmark is **excluded from the default CI run**
+(vitest only auto-runs `*.test.ts` files via the
+project config; this file IS a `.test.ts` so it will
+run, but each test has a 5-20s ceiling, well within
+CI budget). The benchmark prints a summary table at
+the end of the run.
+
