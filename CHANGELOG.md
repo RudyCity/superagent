@@ -7403,3 +7403,51 @@ run, but each test has a 5-20s ceiling, well within
 CI budget). The benchmark prints a summary table at
 the end of the run.
 
+
+## [1.5.9] - 2026-09-05
+
+### FASE 7: Edge case hardening
+
+Adds `tests/hardeningEdgeCases.test.ts` — 10 vitest cases
+covering four risky areas the existing unit tests do not
+fully exercise.
+
+### 1. Long file paths
+- A 500+ char `D:/root/very-long-dir-name/.../file.ts` path
+  is locked via `lockFile` and round-trips through the JSON
+  lock file unchanged.
+- The same path round-trips through the SQLite mirror
+  (`upsertLock` + `readAllLocks`).
+- Rationale: Windows MAX_PATH is 260 chars but the OS allows
+  longer paths with the `\?\` prefix. We don't need to
+  prefix; we just need to not corrupt or truncate the path
+  the user supplied.
+
+### 2. Rapid lock churn
+- Acquire + release of the same file 100x in a tight loop.
+  Verifies no leak, no double-acquire, no stale entries
+  (final state: 0 entries for the test session).
+- 1000 mixed acquire/release across 10 files. Verifies the
+  in-memory cache stays consistent under high churn.
+
+### 3. Multi-session simulation
+- 5 sessions each lock 50 unique files. Verifies
+  cross-contamination: no file appears under another
+  session's bucket.
+- `releaseAllSessionLocks("sess-1")` clears exactly that
+  session's 5 locks; sess-0 and sess-2 retain theirs.
+
+### 4. Corrupt JSON recovery
+- Truncated JSON: loader must NOT throw uncaught.
+- JSON with binary garbage in the middle: same.
+- Empty file: returns empty / zero stats.
+- File containing `null`: same.
+- Rationale: the lock file can be corrupted by a power
+  loss mid-write, an editor that touched it, or a crashed
+  previous run. The loader must be defensive.
+
+### Test results
+- All 10 new cases pass on the first run.
+- Full suite: 1795 tests, 1787 pass, 5 skipped,
+  3 known-flaky network/timing tests fail (not related).
+
