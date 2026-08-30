@@ -5,8 +5,34 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { Tool } from "./types.js";
 import { getChromeUserDataPath, detectChromeProfiles } from "./chromeProfileTools.js";
-import { browserControlHandler } from "./browserMacroTools.js";
-import { ensureRemoteChromeBridge, isRemoteChromeConnected, getRemoteChromeClientMetadata, sendRemoteCommand } from "./remoteChromeBridge.js";
+// PERF: `remoteChromeBridge` pulls in the `ws` websocket library and a
+// per-module HTTP server. It is only needed when a tool *actually* runs
+// — not at module-import time, when we are just constructing the
+// tool list. Lazy-import the symbols we use inside the execute bodies
+// so sessions that never invoke a chrome tool never pay the cost.
+type RemoteBridge = {
+  ensureRemoteChromeBridge: () => Promise<void>;
+  isRemoteChromeConnected: () => boolean;
+  getRemoteChromeClientMetadata: () => any;
+  sendRemoteCommand: (action: string, payload: any, instanceId?: string) => Promise<any>;
+};
+let _remoteBridge: RemoteBridge | null = null;
+async function getRemoteBridge(): Promise<RemoteBridge> {
+  if (!_remoteBridge) {
+    _remoteBridge = (await import("./remoteChromeBridge.js")) as unknown as RemoteBridge;
+  }
+  return _remoteBridge;
+}
+type BrowserMacro = {
+  browserControlHandler: ((action: string, payload: any, tabId?: any, instanceId?: string) => Promise<any>) | null;
+};
+let _browserMacro: BrowserMacro | null = null;
+async function getBrowserMacro(): Promise<BrowserMacro> {
+  if (!_browserMacro) {
+    _browserMacro = (await import("./browserMacroTools.js")) as unknown as BrowserMacro;
+  }
+  return _browserMacro;
+}
 
 const execAsync = promisify(exec);
 
@@ -58,6 +84,8 @@ export const getActiveBrowserTabsTool: Tool = {
     properties: {},
   },
   execute: async () => {
+    const { ensureRemoteChromeBridge } = await getRemoteBridge();
+    const { browserControlHandler } = await getBrowserMacro();
     await ensureRemoteChromeBridge();
     if (!browserControlHandler) {
       return "No active browser control connection. Ensure `superagent --server` is running and Superagent Chrome Extension is active.";
@@ -80,6 +108,8 @@ export const chromeExtensionStatusTool: Tool = {
     properties: {},
   },
   execute: async () => {
+    const { browserControlHandler } = await getBrowserMacro();
+    const { ensureRemoteChromeBridge, isRemoteChromeConnected, getRemoteChromeClientMetadata, sendRemoteCommand } = await getRemoteBridge();
     // Check if sidepanel UI client mode is active
     const isSidepanelClient = Boolean(browserControlHandler && browserControlHandler !== sendRemoteCommand);
 
@@ -99,7 +129,7 @@ export const chromeExtensionStatusTool: Tool = {
     }
 
     await ensureRemoteChromeBridge();
-    
+
     let connected = isRemoteChromeConnected();
     if (!connected) {
       const isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
@@ -258,6 +288,7 @@ export const extractPageContentMarkdownTool: Tool = {
     },
   },
   execute: async ({ instanceId }: { instanceId?: string }) => {
+    const { browserControlHandler } = await getBrowserMacro();
     if (!browserControlHandler) {
       return "No active browser control connection. Ensure `superagent --server` is running and Superagent Chrome Extension is active.";
     }
@@ -289,6 +320,7 @@ export const captureTabFullpagePdfTool: Tool = {
     },
   },
   execute: async ({ mode = "screenshot", instanceId }: { mode?: "screenshot" | "html"; instanceId?: string }) => {
+    const { browserControlHandler } = await getBrowserMacro();
     if (!browserControlHandler) {
       return "No active browser control connection. Ensure `superagent --server` is running and Superagent Chrome Extension is active.";
     }

@@ -7232,3 +7232,46 @@ scheduled).
   a clean `main` checkout — same 3 failures, identical
   count). Not caused by these changes.
 - `npx tsc --noEmit` and `npx tsc` (build) both clean.
+
+## [1.5.6] - 2026-09-05
+
+### Perf: Lazy-load heavy chrome/bridge modules (FASE 5B)
+
+`remoteChromeBridge` pulls in the `ws` websocket library
+and creates a module-level WebSocket server / HTTP server.
+It was previously imported eagerly from three different
+tool files, which meant every session — even one that
+never uses Chrome — paid the websocket + http cost at
+module-load time (i.e. CLI startup).
+
+Lazy-imported in three places:
+
+- `src/core/tools/chromeBrowserTools.ts` — wrapped
+  `ensureRemoteChromeBridge` / `isRemoteChromeConnected` /
+  `getRemoteChromeClientMetadata` / `sendRemoteCommand` in
+  `getRemoteBridge()` (one-time per module), and
+  `browserControlHandler` in `getBrowserMacro()`. Each
+  tool's `execute` body now does the dynamic import on
+  first use.
+- `src/core/tools/browserMacroTools.ts` — replaced the
+  top-level `import { ensureRemoteChromeBridge } from
+  "./remoteChromeBridge.js"` with an inline
+  `ensureRemoteChromeBridge()` helper that does the
+  dynamic import + memoizes the function reference.
+- `src/core/tools/advancedAutomationTools.ts` — same
+  pattern via `getBridge()` / `getMacro()`.
+
+Net effect: any tool that *isn't* a chrome tool (i.e. the
+vast majority of tools, and the entire shell / file /
+edit / lock toolchain) no longer causes the `ws` module to
+load during boot. Modules only load when the user actually
+invokes a chrome-related tool.
+
+### Tests
+- `npx tsc --noEmit` and `npx tsc` (build) both clean
+- 27 chrome-related tests pass (4 files: chromeBrowserTools,
+  chromeAdvancedTools, chromeExtensionIsolation,
+  chromeProfileTools)
+
+### Commit
+- (pending) on `main`

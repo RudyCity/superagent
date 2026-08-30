@@ -1,6 +1,22 @@
 import { Tool } from "./types.js";
-import { ensureRemoteChromeBridge } from "./remoteChromeBridge.js";
-import { browserControlHandler } from "./browserMacroTools.js";
+// PERF: `remoteChromeBridge` and `browserMacroTools` both pull in heavy
+// modules (ws, http server, browser macro registry). Lazy-load them so
+// the cost is paid only when a headless-automation tool actually runs.
+let _bridge: { ensureRemoteChromeBridge: () => Promise<boolean> } | null = null;
+async function getBridge() {
+  if (!_bridge) {
+    _bridge = (await import("./remoteChromeBridge.js")) as unknown as { ensureRemoteChromeBridge: () => Promise<boolean> };
+  }
+  return _bridge;
+}
+type BrowserMacro = { browserControlHandler: ((action: string, target: string, value?: string, instanceId?: string) => Promise<string>) | null };
+let _macro: BrowserMacro | null = null;
+async function getMacro() {
+  if (!_macro) {
+    _macro = (await import("./browserMacroTools.js")) as BrowserMacro;
+  }
+  return _macro;
+}
 
 /**
  * 1. Headless Browser Automation Tool
@@ -31,6 +47,8 @@ export const runHeadlessBrowserTool: Tool = {
     const url = String(args.url || "");
     const action = String(args.action || "");
     const script = args.script ? String(args.script) : undefined;
+    const { ensureRemoteChromeBridge } = await getBridge();
+    const { browserControlHandler } = await getMacro();
 
     await ensureRemoteChromeBridge();
     if (!browserControlHandler) {
@@ -86,6 +104,8 @@ export const simulateVirtualCursorTool: Tool = {
     const targetSelector = String(args.targetSelector || "");
     const action = String(args.action || "");
     const textValue = args.textValue ? String(args.textValue) : undefined;
+    const { ensureRemoteChromeBridge } = await getBridge();
+    const { browserControlHandler } = await getMacro();
 
     await ensureRemoteChromeBridge();
     if (!browserControlHandler) {
@@ -138,6 +158,8 @@ export const controlIsolatedCdpTool: Tool = {
     const command = String(args.command || "");
     const payload = args.payload ? String(args.payload) : undefined;
     const targetSelector = args.targetSelector ? String(args.targetSelector) : undefined;
+    const { ensureRemoteChromeBridge } = await getBridge();
+    const { browserControlHandler } = await getMacro();
 
     await ensureRemoteChromeBridge();
     if (!browserControlHandler) {

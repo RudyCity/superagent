@@ -1,7 +1,17 @@
 import fs from "fs/promises";
 import path from "path";
 import { Tool } from "./types.js";
-import { ensureRemoteChromeBridge } from "./remoteChromeBridge.js";
+// PERF: `remoteChromeBridge` is heavy (pulls in `ws` + http server).
+// Lazy-import the single symbol we use so just *loading* this file
+// (which happens whenever any tool list is materialized) doesn't
+// pay the websocket cost until a tool actually executes.
+let _ensureRemoteChromeBridge: (() => Promise<unknown>) | null = null;
+async function ensureRemoteChromeBridge(): Promise<unknown> {
+  if (!_ensureRemoteChromeBridge) {
+    _ensureRemoteChromeBridge = (await import("./remoteChromeBridge.js")).ensureRemoteChromeBridge;
+  }
+  return _ensureRemoteChromeBridge();
+}
 import {
   getBrowserMacros,
   saveBrowserMacro,
