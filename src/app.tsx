@@ -30,6 +30,7 @@ import { execa } from "execa";
 import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions, getInsertion, getPasteSplit, stripSgrMouseSequences, updatePasteState, getActiveCommandContext } from "./utils/text.js";
 import { createIncrementalStreamCleaner } from "./utils/streamText.js";
 import { reconstructChatLines } from "./utils/uiHelpers.js";
+import { tryStatSync } from "./core/tools/helpers.js";
 import { getTruncatedAssistantIndexes } from "./utils/responseScroll.js";
 import { wrapTextForDisplay } from "./utils/responseScroll.js";
 import type { ChatLine } from "./core/slash-commands.js";
@@ -1226,7 +1227,7 @@ export function App({
         if (parts.length >= 3 && parts[1].toLowerCase() === "dev") {
           const hooksRoot = path.join(process.cwd(), "internal-hooks");
           let hookDirs: string[] = [];
-          if (fsSync.existsSync(hooksRoot)) {
+          if (tryStatSync(hooksRoot)?.isDirectory()) {
             try {
               hookDirs = fsSync.readdirSync(hooksRoot, { withFileTypes: true })
                 .filter(item => item.isDirectory())

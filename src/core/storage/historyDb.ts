@@ -1863,6 +1863,55 @@ export function recordLockEvent(
   } catch {}
 }
 
+/**
+ * Batched version of `recordLockEvent`. Inserts all events in a
+ * single transaction so a heartbeat tick (which produces N events
+ * for N held locks) results in 1 SQLite write instead of N.
+ *
+ * `events` is an array of tuples matching the `recordLockEvent`
+ * argument order. The function is a no-op for an empty array.
+ */
+export function recordLockEventBatch(
+  events: Array<Parameters<typeof recordLockEvent>>
+): void {
+  if (events.length === 0) return;
+  try {
+    const db = getHistoryDb();
+    const insert = db.prepare(`
+      INSERT INTO file_lock_events (
+        file_path, session_id, terminal_type, event_type, created_at,
+        project_path, line_range, ttl_ms, is_intent_soft_lock,
+        remote_node_id, locked_at, released_at, force_unlock, details
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const tx = db.transaction((rows: Array<Parameters<typeof recordLockEvent>>) => {
+      const now = Date.now();
+      for (const [filePath, sessionId, terminalType, eventType, opts] of rows) {
+        const lineRangeStr = opts?.lineRange
+          ? `${opts.lineRange.startLine}-${opts.lineRange.endLine}`
+          : null;
+        insert.run(
+          filePath,
+          sessionId,
+          terminalType,
+          eventType,
+          now,
+          opts?.projectPath || null,
+          lineRangeStr,
+          opts?.ttlMs ?? null,
+          opts?.isIntentSoftLock ? 1 : 0,
+          opts?.remoteNodeId || null,
+          opts?.lockedAt ?? null,
+          opts?.releasedAt ?? null,
+          opts?.forceUnlock ? 1 : 0,
+          opts?.details || null
+        );
+      }
+    });
+    tx(events);
+  } catch { /* lock events are advisory; never crash callers */ }
+}
+
 export function getLockEventHistoryFromDb(limit: number = 100): Array<{
   id: number;
   filePath: string;

@@ -3,6 +3,7 @@ import net from "net";
 import { URL } from "url";
 import fs from "fs";
 import path from "path";
+import { tryStatSync } from "./core/tools/helpers.js";
 import os from "os";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
@@ -31,10 +32,14 @@ export function logToSuperAgentServerFile(message: string) {
   const logLine = `[${timestamp}] ${message}\n`;
   try {
     const dir = path.dirname(SUPERAGENT_SERVER_LOG_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    if (fs.existsSync(SUPERAGENT_SERVER_LOG_FILE) && fs.statSync(SUPERAGENT_SERVER_LOG_FILE).size > 5 * 1024 * 1024) {
+    // 1 syscall instead of 2: `mkdirSync({ recursive: true })` is a
+    // no-op when the directory already exists, so we don't need the
+    // existsSync guard.
+    fs.mkdirSync(dir, { recursive: true });
+    // 1 syscall via statSync to check size threshold (skip the read
+    // itself — we just need the size from the stat result).
+    const logStat = tryStatSync(SUPERAGENT_SERVER_LOG_FILE);
+    if (logStat && logStat.size > 5 * 1024 * 1024) {
       fs.writeFileSync(SUPERAGENT_SERVER_LOG_FILE, `[${timestamp}] [INFO] Log file rotated (exceeded 5MB limit)\n`);
     }
     fs.appendFile(SUPERAGENT_SERVER_LOG_FILE, logLine, () => {});

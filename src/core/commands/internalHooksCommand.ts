@@ -4,7 +4,7 @@ import path from "path";
 import { execa } from "execa";
 import { SlashCommand, SlashCommandContext } from "./types.js";
 import { registry } from "./registry.js";
-import { resolveWindowsShell, formatCommandForPowerShell } from "../tools/helpers.js";
+import { resolveWindowsShell, formatCommandForPowerShell, tryStatSync } from "../tools/helpers.js";
 import { getActiveQuestionHandler, setActiveDevHookGlobal } from "../tools/state.js";
 import { getAvailableHooks, getActiveHooksForProject, saveActiveHooksForProject } from "../tools/dynamicHooks.js";
 
@@ -58,9 +58,13 @@ export const internalHooksCommand: SlashCommand = {
           
           const agentsSkillsDir = path.join(hookDir, ".agents", "skills");
           const skillsDir = path.join(hookDir, "skills");
+          // 1 syscall per path via `tryStatSync` (helper that
+          // returns null instead of throwing) instead of the old
+          // `existsSync + statSync` pair (2 syscalls each, plus a
+          // TOCTOU race window between them).
           if (
-            (fsSync.existsSync(agentsSkillsDir) && fsSync.statSync(agentsSkillsDir).isDirectory()) ||
-            (fsSync.existsSync(skillsDir) && fsSync.statSync(skillsDir).isDirectory())
+            tryStatSync(agentsSkillsDir)?.isDirectory() ||
+            tryStatSync(skillsDir)?.isDirectory()
           ) {
             features.push("Dynamic Skills");
           }
@@ -267,7 +271,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
     if (subCommand === "dev") {
       const isClearKeyword = ["off", "stop", "clear", "none"].includes(hookName.toLowerCase());
-      const hookExists = fsSync.existsSync(hookDir) && fsSync.existsSync(path.join(hookDir, "hook.json"));
+      // 1 syscall per path instead of 2 (existsSync + statSync).
+      const hookExists = !!tryStatSync(hookDir)?.isDirectory()
+        && !!tryStatSync(path.join(hookDir, "hook.json"))?.isFile();
 
       if (isClearKeyword && !hookExists) {
         if (ctx.setActiveDevHook) {

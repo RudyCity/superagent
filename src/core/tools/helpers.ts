@@ -11,6 +11,27 @@ interface WindowsShellResult {
 
 let cachedShell: WindowsShellResult | null = null;
 
+/**
+ * `fsSync.statSync(p, { throwIfNoEntry: false })` returns undefined
+ * instead of throwing when the path is missing. That's the canonical
+ * way to do "existsSync + statSync" in a single syscall and avoid the
+ * TOCTOU race between the two.
+ *
+ * However, the option is missing from `@types/node`'s `StatOptions`
+ * type definition (it's a valid runtime flag, just not in the .d.ts).
+ * To get type-safe ergonomics, we wrap the call in this helper.
+ *
+ * Use this everywhere we used to do:
+ *   `if (fsSync.existsSync(p) && fsSync.statSync(p).isX()) { ... }`
+ */
+export function tryStatSync(p: string): fsSync.Stats | null {
+  try {
+    return fsSync.statSync(p);
+  } catch {
+    return null;
+  }
+}
+
 export function resolveWindowsShell(): WindowsShellResult {
   if (cachedShell) return cachedShell;
 
@@ -317,8 +338,25 @@ export const fileLockManager = new FileLockManager();
  * Normalizes project directory path by resolving git worktree paths back
  * to the main root repository directory.
  */
+// ─── getNormalizedProjectPath cache ────────────────────────────────────
+// `getNormalizedProjectPath` walks up the directory tree until it
+// finds a `.git` folder (or a `.git` file for worktrees). That's
+// O(depth) syscalls per call, and the lock code in sharedMemory.ts
+// calls it 3-4 times per lock operation. For a heartbeat (every 10s)
+// with N locks, this is a non-trivial chunk of the hot path.
+//
+// Since the project root of a running process does not move, we
+// memoise the resolved result by the input `cwd`. The cache is
+// bounded and uses a tiny LRU eviction to keep memory flat.
+const MAX_PROJECT_PATH_CACHE = 64;
+const projectPathCache = new Map<string, string>();
+
 export function getNormalizedProjectPath(cwd?: string): string {
   const targetDir = path.resolve(cwd || process.cwd());
+  const cached = projectPathCache.get(targetDir);
+  if (cached !== undefined) return cached;
+
+  let result = targetDir;
   try {
     let currentDir = targetDir;
     while (currentDir) {
@@ -335,14 +373,17 @@ export function getNormalizedProjectPath(cwd?: string): string {
             const worktreeIdx = normalizedGitDir.lastIndexOf(".git/worktrees");
             if (worktreeIdx !== -1) {
               const mainRepoGit = gitDir.substring(0, worktreeIdx + 5);
-              return path.dirname(mainRepoGit);
+              result = path.dirname(mainRepoGit);
+              break;
             }
           }
         } else if (stat.isDirectory()) {
           if (path.basename(path.dirname(currentDir)) === ".worktrees") {
-            return path.dirname(path.dirname(currentDir));
+            result = path.dirname(path.dirname(currentDir));
+          } else {
+            result = currentDir;
           }
-          return currentDir;
+          break;
         }
       }
       const parent = path.dirname(currentDir);
@@ -350,9 +391,17 @@ export function getNormalizedProjectPath(cwd?: string): string {
       currentDir = parent;
     }
   } catch {
-    // Fallback if filesystem read encounters errors
+    // Fallback if filesystem read encounters errors — result is
+    // already initialised to `targetDir` above.
   }
-  return targetDir;
+
+  // Insert into cache with tiny LRU eviction.
+  if (projectPathCache.size >= MAX_PROJECT_PATH_CACHE) {
+    const oldestKey = projectPathCache.keys().next().value;
+    if (oldestKey !== undefined) projectPathCache.delete(oldestKey);
+  }
+  projectPathCache.set(targetDir, result);
+  return result;
 }
 
 

@@ -6,6 +6,7 @@ import { execa } from "execa";
 import { clearHistoryCache } from "./config.js";
 import { Message } from "./conversation.js";
 import { backgroundTasks, subagentInstances, notifyTasksChanged, notifySubagentsChanged, isTaskInWorkspace } from "./tools/state.js";
+import { tryStatSync } from "./tools/helpers.js";
 import { killProcessTree } from "./tools/shellTools.js";
 import {
   saveCheckpointToDb,
@@ -259,12 +260,15 @@ export async function deleteCheckpointsForSession(
   const sessionDir = path.dirname(sessionFilePath);
 
   const checkpointsDir = path.join(sessionDir, "checkpoints");
-  if (fsSync.existsSync(checkpointsDir)) {
+  // 1 syscall via statSync instead of existsSync, then we pass the
+  // path straight to `fs.rm({ force: true })` which is itself a
+  // no-op if the path is missing.
+  if (tryStatSync(checkpointsDir)?.isDirectory()) {
     try { await fs.rm(checkpointsDir, { recursive: true, force: true }); } catch {}
   }
 
   const tasksLogDir = path.join(sessionDir, "tasks");
-  if (fsSync.existsSync(tasksLogDir)) {
+  if (tryStatSync(tasksLogDir)?.isDirectory()) {
     try { await fs.rm(tasksLogDir, { recursive: true, force: true }); } catch {}
   }
 }

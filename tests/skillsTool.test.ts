@@ -6,6 +6,7 @@ import fs from "fs";
 
 const origExists = fs.existsSync.bind(fs);
 const origRead = fs.readFileSync.bind(fs);
+const origStat = fs.statSync.bind(fs);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -15,6 +16,17 @@ beforeEach(() => {
       return true;
     }
     return origExists(filePath);
+  });
+
+  // Production code now uses `tryStatSync` (which wraps `statSync`)
+  // in many places where it used to use `existsSync`. Mock
+  // `statSync` for the same path patterns so the test stays in
+  // sync with the production code path.
+  vi.spyOn(fs, "statSync").mockImplementation((filePath: any) => {
+    if (typeof filePath === "string" && (filePath.includes("SKILL.md") || filePath.includes("skills") || filePath.includes("mock-skill") || filePath.includes("debug"))) {
+      return { isDirectory: () => false, isFile: () => true, size: 0 } as any;
+    }
+    return origStat(filePath);
   });
 
   vi.spyOn(fs, "readFileSync").mockImplementation((filePath: any, options?: any) => {

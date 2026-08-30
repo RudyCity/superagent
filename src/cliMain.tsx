@@ -1,6 +1,7 @@
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import { tryStatSync } from "./core/tools/helpers.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -96,7 +97,10 @@ export async function runCli() {
   if (workspaceVal) {
     const resolvedPath = path.resolve(workspaceVal);
     try {
-      if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
+      // 1 syscall instead of 2 (existsSync + statSync). The
+      // `tryStatSync` helper returns null instead of throwing when
+      // the path is missing, so we don't need the existsSync guard.
+      if (tryStatSync(resolvedPath)?.isDirectory()) {
         process.chdir(resolvedPath);
       } else {
         console.error(`Workspace directory does not exist or is not a directory: ${resolvedPath}`);

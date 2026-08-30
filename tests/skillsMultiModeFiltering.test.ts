@@ -143,6 +143,11 @@ describe("getSkillsTool and useSkillTool Mode Enforcement", () => {
     vi.clearAllMocks();
     vi.spyOn(configModule, "getInstalledSkills").mockReturnValue(mockSkills);
     vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    // Production now uses `tryStatSync` (wraps `statSync`) in many
+    // places where it used `existsSync`. Mock `statSync` too so
+    // tests that exercised the old existsSync path still see the
+    // file as present.
+    vi.spyOn(fs, "statSync").mockReturnValue({ isDirectory: () => false, isFile: () => true, size: 0 } as any);
     vi.spyOn(fs, "readFileSync").mockImplementation((p: any) => `Mock content of ${p}`);
   });
 

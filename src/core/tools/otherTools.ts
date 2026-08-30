@@ -6,7 +6,7 @@ import { Tool } from "./types.js";
 import { appendActiveToolOutput, clearActiveToolOutput } from "./state.js";
 import { killProcessTree } from "./shellTools.js";
 import { ensureAndroidCliInstalled } from "../androidSetup.js";
-import { formatUnknownActionError, detectInteractivePrompt } from "./helpers.js";
+import { formatUnknownActionError, detectInteractivePrompt, tryStatSync } from "./helpers.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 
 export { askQuestionTool, scheduleTool } from "./interactionTools.js";
@@ -1798,7 +1798,8 @@ export const getSkillsTool: Tool = {
 
         if (query) {
           try {
-            if (fsSync.existsSync(s.path)) {
+            // 1 syscall via `tryStatSync` instead of `existsSync`.
+            if (tryStatSync(s.path)) {
               const content = fsSync.readFileSync(s.path, "utf-8");
               const indented = content
                 .split("\n")
@@ -1896,7 +1897,7 @@ export const useSkillTool: Tool = {
         return `Error: Skill "${foundSkill.name}" is a multi-agent orchestration skill and is not available in single-agent mode. To use multi-agent skills, start Superagent in multi-agent mode (--multi) or use single-agent skills such as "single-agent-cognitive-scaleup" or "systematic-debugging".`;
       }
 
-      if (!fsSync.existsSync(foundSkill.path)) {
+      if (!tryStatSync(foundSkill.path)) {
         return `Error: Skill instruction file not found at path: ${foundSkill.path}`;
       }
 
