@@ -118,7 +118,7 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     disableStreaming: false,
     contextWindowLimit: 0,
     promptContextBudget: 8000,
-    maxIterations: 0,
+    maxIterations: 500,
     simpleTaskFileThreshold: 3,
     simpleTaskKeywords: ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
     maxChecklistVisible: 3,
