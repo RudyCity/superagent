@@ -104,6 +104,7 @@ import { saveSharedMemoryTool, readSharedMemoryTool } from "./sharedMemoryTools.
 import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../workspace/workspaceChainTools.js";
 import { unlockFileTool, getLockStatsTool, resolveConflictTool, generateLockReportTool } from "./lockTools.js";
 import { transferSshFileTool } from "./sshTransferTools.js";
+import { cliBridgeTool } from "./cliBridgeTool.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Orchestration only. The Master Agent MUST NOT directly modify code or
@@ -230,6 +231,7 @@ export const superagentToolset: Tool[] = [
   generateLockReportTool,
   manageWorkspaceChainTool,
   crossWorkspaceExecTool,
+  cliBridgeTool,           // delegate tasks to external AI CLIs (codex/claude/agy)
 ];
 
 // ─── Chrome Extension Toolset (depth 1) ──────────────────────────────────────
