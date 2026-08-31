@@ -83,6 +83,12 @@ const SCRATCH_AND_TRANSFER_RULE = `- SCRATCH_WORKSPACE: Free read/write access t
 - SSH_TRANSFER: In SSH mode, use transfer_ssh_file (upload/download) to copy files between local session directory and remote workspace. Standard file tools bypass SSH routing when targeting local config/session paths.
 - SSH_WORKSPACE_SKILLS: In SSH workspace mode, you MUST identify all relevant skills and read/use their instructions from the available skills before planning or executing tasks.`;
 
+const CLI_BRIDGE_RULE = `- CLI_BRIDGE: Delegate tasks to external AI CLI assistants (Codex, Claude Code, AGY, or custom binaries).
+  - Discovery & Profiles: cli_bridge(action:'list') | cli_bridge(action:'profile.list').
+  - One-Shot Execution: cli_bridge(action:'delegate', cli:'agy'|'codex'|'claude', prompt:'...').
+  - Interactive Subprocess Sessions: cli_bridge(action:'session.create'|'session.send'|'session.tail'|'session.detach'|'session.kill', sessionId:'...', prompt:'...').
+  - Session Lifecycle: Auto-detects workspace skills (AGENTS.md, etc.). Handle prompt/confirmation via session.respond or session.send.`;
+
 // ─── Shared Subagent Blocks ───────────────────────────────────
 
 const SKILL_CHECK_RULE = `- SKILL_CHECK: get_skills(query). If found: use_skill(name).`;
@@ -201,6 +207,7 @@ ${FAST_ANALYSIS_RULE}
 - POST_MERGE: (1)build→(2)test→(3)bump package→(4)prepend CHANGELOG→(5)update AGENTS.md→(6)commit→(7)prune worktrees.
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
+- CLI_BRIDGE_DELEGATION: Superagents possess 'cli_bridge' to delegate sub-tasks to external AI CLIs (Codex, Claude Code, AGY, or custom binaries).
 ${POST_CHANGE_INTEGRITY_RULE}
 ${MASTER_DECISION_RIGHTS_RULE}
 
@@ -271,10 +278,20 @@ ${SCRATCH_AND_TRANSFER_RULE}
 ${FILE_EDIT_SAFETY_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
+${CLI_BRIDGE_RULE}
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
 ${SUPERAGENT_DECISION_RIGHTS_RULE}
+
+# LOGIC GATES
+if delegating_to_external_cli:
+    CALL cli_bridge(action:'list')
+    if interactive_or_multi_turn:
+        CALL cli_bridge(action:'session.create', cli:name, prompt:initialPrompt)
+    else:
+        CALL cli_bridge(action:'delegate', cli:name, prompt:taskPrompt)
+
 if spawning_subagent:
     CALL manage_tasks(action:'add'/'add_bulk') FIRST.
     COLLISION_GUARD: Assign disjoint fileScope per subagent. Mark [/] on spawn, [x] on completion.

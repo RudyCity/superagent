@@ -1,3 +1,19 @@
+## [1.5.18] - 2026-09-03
+
+### Feature: System Prompt Awareness & Skill Guide for `cli_bridge`
+
+Integrated comprehensive system prompt awareness, delegation logic gates, and dedicated agent skill instructions for the `cli_bridge` tool.
+
+- **System Prompts (`src/core/prompts.ts`)**:
+  - Added `CLI_BRIDGE_RULE` covering tool discovery (`list`, `profile.list`), one-shot task delegation (`delegate`), interactive subprocess session lifecycle (`session.create`, `session.send`, `session.tail`, `session.detach`, `session.kill`), and prompt detection.
+  - Injected `CLI_BRIDGE_RULE` and `delegating_to_external_cli` logic gate into `SUPERAGENT_SYSTEM_PROMPT`.
+  - Added CLI bridge delegation notes to `MASTER_AGENT_SYSTEM_PROMPT`.
+- **Single-Agent Base Prompt (`src/core/config/base.ts`)**:
+  - Added `# CLI BRIDGE (EXTERNAL AI CLI ASSISTANTS)` section to `getSystemPrompt()` documenting one-shot execution, interactive sessions, and skill auto-detection.
+  - Added `cli_bridge` under `# TOOL USAGE GUIDELINES` -> `Delegation & Timers`.
+- **New Skill (`.agents/skills/cli-bridge/SKILL.md`)**:
+  - Created complete CLI Bridge skill reference covering all 14 tool actions, interactive prompt handling (`session.respond`), stdout/stderr buffer management, streaming/tailing, and auto-detection of workspace guidance (`AGENTS.md`, `CLAUDE.md`, etc.).
+
 ## [1.5.17] - 2026-09-02
 
 ### Feature: `cli_bridge` v4 — Session lifecycle, streaming, auto-send, detach

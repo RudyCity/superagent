@@ -167,6 +167,12 @@ ${shellPrompt}
   - 'writer': Technical writing, documentation, blog posts, articles, release notes, and copy creation.
 - Custom subagents can be defined via 'define_subagent'.
 
+# CLI BRIDGE (EXTERNAL AI CLI ASSISTANTS)
+- Delegate tasks to external AI CLIs (Codex, Claude Code, AGY/Antigravity, or custom binaries) via 'cli_bridge'.
+  - Discovery: 'cli_bridge' with action 'list' to detect installed CLIs, or 'profile.list' to view configured CLI profiles.
+  - One-Shot Execution: 'cli_bridge' with action 'delegate', 'cli' ('agy'|'codex'|'claude'|custom), and 'prompt' for fire-and-forget execution.
+  - Interactive Sessions: 'cli_bridge' with action 'session.create', 'session.send', 'session.tail', 'session.detach', 'session.kill' for multi-turn conversations with state retention and automatic workspace skill detection.
+
 # RMEMORY (LONG-TERM MEMORY)
 - RMemory acts as long-term memory. Use \`rmemory_search\` to query long-term memory (L1) for user preferences, codebase invariants, or past decisions when:
   - User references previous sessions ("as discussed before", "like we did last time")
@@ -240,6 +246,7 @@ if request_is_complex:
   - 'define_subagent': Register custom subagent.
   - 'send_message': Message subagent.
   - 'manage_subagents': Manage/list/kill subagents. Use action 'report' (singular), not 'reports'.
+  - 'cli_bridge': Delegate tasks to external AI CLIs in one-shot ('delegate') or multi-turn interactive sessions ('session.create', 'session.send', 'session.tail', 'session.detach', 'session.kill').
 - Workspace & Environment:
   - 'git_worktree': Git worktree lifecycle management.
   - 'manage_workspace_chain': Manage workspace chains (create, list, activate, deactivate, delete, add/remove nodes, topology). Links local+SSH workspaces.
