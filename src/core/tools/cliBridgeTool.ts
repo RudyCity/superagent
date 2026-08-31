@@ -103,6 +103,11 @@ export const cliBridgeTool: Tool = {
     "Delegate a task to an external AI CLI assistant (Codex, Claude Code, AGY, or any custom binary). " +
     "Two modes: (1) `delegate` for one-shot prompts, (2) `session.*` for multi-turn interactive sessions. " +
     "Use `list` to discover installed CLIs, `delegate` for simple asks, and `session.create`+`session.send`+`session.kill` for ongoing collaboration with a separate AI. " +
+    "v1.5.17: `session.create` can auto-send an initial prompt the moment the session is ready, " +
+    "sessions auto-kill after an idle TTL (idleTimeoutMs, default 30 min), " +
+    "stdout/stderr buffers are capped per-session (maxBufferLines, default 2000), " +
+    "live events stream via `session.tail` (with optional `setIdleTimeoutMs` to extend the TTL), " +
+    "and `session.detach` releases a session without killing the child process. " +
     "v1.5.15: handles interactive TUI prompts (yes/no, password, choice) via session.respond, supports per-CLI profiles (resume, skills, env), plus session.resume, session.export, and profile.list.",
   parameters: {
     type: "object",
@@ -113,9 +118,13 @@ export const cliBridgeTool: Tool = {
         description:
           "Operation: 'list'/'profile.list' to discover CLIs/profiles, " +
           "'delegate' for 1-shot prompt, " +
-          "'session.create' to start an interactive session, 'session.send' to message it, " +
-          "'session.respond' to answer a pending prompt, 'session.resume' to re-attach, " +
-          "'session.list' to see active sessions, 'session.get' to inspect one, " +
+          "'session.create' to start an interactive session (optionally with initial `message` to auto-send once ready), " +
+          "'session.send' to message it, " +
+          "'session.respond' to answer a pending prompt, " +
+          "'session.tail' to stream/read the session's event log (with optional `setIdleTimeoutMs`), " +
+          "'session.detach' to release the session without killing the child process, " +
+          "'session.resume' to re-attach, " +
+          "'session.list' to see active and detached sessions, 'session.get' to inspect one, " +
           "'session.export' to dump state, 'session.config' to see the profile, " +
           "'session.kill' to terminate.",
       },
@@ -564,7 +573,11 @@ async function handleSessionCreate(
     );
   }
   if (initialPrompt) {
-    lines.push("", `Note: an initial 'message' was provided (${initialPrompt.length} chars). v1.5.16 records it but does not auto-send yet — use action=session.send.`);
+    const autoFlag = s.autoSendInitial === false ? "NOT " : "";
+    lines.push(
+      "",
+      `Note: initial 'message' (${initialPrompt.length} chars) is recorded. v1.5.17 will ${autoFlag}auto-send it to the CLI as soon as the session becomes ready (using the profile's defaultPromptTemplate).`
+    );
   }
   return lines.join("\n");
 }
