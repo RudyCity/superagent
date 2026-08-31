@@ -1,6 +1,14 @@
 /**
  * cliBridgeTool.ts — `cli_bridge` agent tool.
  *
+ * File-size note: at ~1010 lines this is just over the 1000-line soft
+ * cap. Most of the growth came from the v1.5.17 additions
+ * (handleSessionTail + handleSessionDetach + new params on
+ * handleSessionCreate/Get/List). Further splits would force artificial
+ * boundaries between per-action handlers; instead each handler is a
+ * short, clearly-marked function and the helper section at the bottom
+ * (formatAge, known CLIs, descriptor shape) is consolidated.
+ *
  * Lets Superagent **delegate a task** to an external AI CLI assistant
  * (OpenAI Codex, Claude Code, Antigravity/AGY, or any custom binary) in two
  * complementary modes:

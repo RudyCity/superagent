@@ -2,6 +2,15 @@
  * cliBridgeSession.ts — In-process subprocess session manager for the
  * `cli_bridge` tool.
  *
+ * File-size note: this module is intentionally over the 1000-line soft
+ * cap. The v1.5.17 events subsystem (types, ring buffer, subscribers,
+ * idle-scanner handle) has already been extracted into
+ * `cliBridgeSessionEvents.ts`; further splits would create circular
+ * imports between the subprocess-lifecycle code and the observation
+ * code, so we keep them in one cohesive file. Sections below are
+ * clearly marked (// ─── v1.5.17: …).
+ *
+ *
  * Each session holds:
  *  - a long-running subprocess (e.g. `agy`, `claude`, `codex`)
  *  - rolling stdout/stderr buffers (capped)
@@ -126,39 +135,46 @@ export interface SendResult {
 
 export type SessionError = { error: string; code: string };
 
-// ─── v1.5.17: Session events ─────────────────────────────────────────────
+// ─── v1.5.17: Session events (state/types live in cliBridgeSessionEvents.ts) ──
 
-export type SessionEventType = "stdout" | "stderr" | "prompt" | "exit" | "status";
+import {
+  emitEvent,
+  ensureEmitter,
+  setIdleScanHandle,
+  getIdleScanHandle,
+  sessionEmitters,
+  sessionEventBuffers,
+  sessionSeqCounters,
+  sessionSubscribers,
+  MAX_EVENT_BUFFER,
+  IDLE_SCAN_INTERVAL_MS,
+  type SessionEvent,
+  type SessionEventType,
+  type SessionEventListener,
+  type SessionSubscription,
+} from "./cliBridgeSessionEvents.js";
 
-export interface SessionEvent {
-  /** Monotonically increasing per session, starting at 1. */
-  seq: number;
-  type: SessionEventType;
-  /** Wall-clock timestamp (ms). */
-  at: number;
-  /** Event payload. */
-  data: {
-    line?: string;
-    isPrompt?: boolean;
-    prompt?: DetectedPrompt;
-    code?: number | null;
-    signal?: string | null;
-    status?: CliSession["status"];
-  };
-}
-
-export type SessionEventListener = (ev: SessionEvent) => void;
-
-// ─── v1.5.17: Subscribe API ─────────────────────────────────────────────
-
-export interface SessionSubscription {
-  /** Stop receiving events. Safe to call multiple times. */
-  unsubscribe(): void;
-  /** Buffer of past events received so far (for late subscribers). */
-  replay: SessionEvent[];
-  /** Last delivered seq (so a fresh subscriber can request `since`). */
-  lastSeq: number;
-}
+export {
+  // types
+  type SessionEvent,
+  type SessionEventType,
+  type SessionEventListener,
+  type SessionSubscription,
+  // functions
+  emitEvent,
+  ensureEmitter,
+  setIdleScanHandle,
+  getIdleScanHandle,
+  __resetEventStateForTests,
+  // state maps (re-exported so existing tests/imports still work)
+  sessionEmitters,
+  sessionEventBuffers,
+  sessionSeqCounters,
+  sessionSubscribers,
+  // constants (re-exported so existing imports still work)
+  MAX_EVENT_BUFFER,
+  IDLE_SCAN_INTERVAL_MS,
+} from "./cliBridgeSessionEvents.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────
 
@@ -168,8 +184,6 @@ const DEFAULT_SEND_TIMEOUT_MS = 2 * 60 * 1000;     // 2 min
 const READY_TIMEOUT_MS = 30 * 1000;                // 30 s
 const MAX_BUFFER_LINES = 2000;                     // soft cap per session (default; overridable per-session in v1.5.17)
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;    // 30 min (v1.5.17)
-const IDLE_SCAN_INTERVAL_MS = 60 * 1000;           // 60 s (v1.5.17)
-const MAX_EVENT_BUFFER = 500;                      // v1.5.17: events kept per session for replay
 const PROMPT_END_MARKERS = [
   ">", // agy, generic REPL
   ">>>", // python-style
@@ -187,72 +201,22 @@ const sessions = new Map<string, CliSession>();
 const detachedSessions = new Map<string, CliSession>();
 const procHandles = new Map<string, any>();
 
-/** v1.5.17: Per-session event emitter + ring buffer for replay. */
-const sessionEmitters = new Map<string, EventEmitter>();
-const sessionEventBuffers = new Map<string, SessionEvent[]>();
-const sessionSeqCounters = new Map<string, number>();
-const sessionSubscribers = new Map<string, Set<SessionEventListener>>();
-
-/** v1.5.17: Lazy idle scanner — started on first session, stopped when last dies. */
-let idleScanHandle: NodeJS.Timeout | null = null;
-
 function ensureIdleScannerRunning(): void {
-  if (idleScanHandle) return;
-  idleScanHandle = setInterval(() => {
+  if (getIdleScanHandle()) return;
+  const h = setInterval(() => {
     scanIdleSessions().catch(() => {
       // Never let the interval throw — the next pass will retry.
     });
   }, IDLE_SCAN_INTERVAL_MS);
   // Don't keep the process alive solely for the scanner.
-  if (typeof idleScanHandle.unref === "function") idleScanHandle.unref();
+  if (typeof h.unref === "function") h.unref();
+  setIdleScanHandle(h);
 }
 
 function maybeStopIdleScanner(): void {
-  if (idleScanHandle && sessions.size === 0 && detachedSessions.size === 0) {
-    clearInterval(idleScanHandle);
-    idleScanHandle = null;
+  if (sessions.size === 0 && detachedSessions.size === 0) {
+    setIdleScanHandle(null);
   }
-}
-
-// ─── v1.5.17: Event helpers ──────────────────────────────────────────────
-
-function emitEvent(session: CliSession, type: SessionEventType, data: SessionEvent["data"]): void {
-  const seq = (sessionSeqCounters.get(session.sessionId) ?? 0) + 1;
-  sessionSeqCounters.set(session.sessionId, seq);
-  const ev: SessionEvent = { seq, type, at: Date.now(), data };
-
-  // Append to ring buffer.
-  const buf = sessionEventBuffers.get(session.sessionId) ?? [];
-  buf.push(ev);
-  if (buf.length > MAX_EVENT_BUFFER) buf.shift();
-  sessionEventBuffers.set(session.sessionId, buf);
-
-  // Notify subscribers (if any).
-  const subs = sessionSubscribers.get(session.sessionId);
-  if (subs && subs.size > 0) {
-    for (const fn of subs) {
-      try {
-        fn(ev);
-      } catch {
-        // Listener errors must not break other listeners.
-      }
-    }
-  }
-
-  // Also fire the EventEmitter (for any external listeners — mostly tests).
-  const em = sessionEmitters.get(session.sessionId);
-  if (em) em.emit(type, ev);
-}
-
-/** Lazy emitter per session so subscribers don't see cross-session events. */
-function ensureEmitter(sessionId: string): EventEmitter {
-  let em = sessionEmitters.get(sessionId);
-  if (!em) {
-    em = new EventEmitter();
-    em.setMaxListeners(50);
-    sessionEmitters.set(sessionId, em);
-  }
-  return em;
 }
 
 /** Lazy directory ensure (one-time, best-effort). */
@@ -1154,10 +1118,7 @@ export function __resetForTests(): void {
   sessionEventBuffers.clear();
   sessionSeqCounters.clear();
   sessionSubscribers.clear();
-  if (idleScanHandle) {
-    clearInterval(idleScanHandle);
-    idleScanHandle = null;
-  }
+  setIdleScanHandle(null);
   logDirEnsured = false;
 }
 
