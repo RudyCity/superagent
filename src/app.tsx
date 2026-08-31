@@ -569,6 +569,10 @@ export function App({
 
   // Toggle collapsible section
   const toggleCollapse = useCallback((section: string) => {
+    // The "checklist" section is always expanded — collapse/hide is
+    // intentionally disabled so users always see plan progress. Treat
+    // any toggle on it as a no-op.
+    if (section === "checklist") return;
     setCollapsedSections((prev) => ({
       ...prev,
       [section]: !prev[section as keyof typeof prev],
@@ -2814,15 +2818,14 @@ export function App({
   }
   const totalAgentsHeight = saSectionHeight + subSectionHeight + procSectionHeight;
 
-  // Checklist height
+  // Checklist height — the ACTIVE TASK CHECKLIST is always expanded, so
+  // we no longer honor collapsedSections.checklist when computing height.
   let checklistSectionHeight = 0;
   if (planState === "APPROVED" && checklistTasks.length > 0) {
-    checklistSectionHeight = collapsedSections.checklist
-      ? 1
-      : 1 + Math.min(checklistTasks.length, maxChecklistVisible);
+    checklistSectionHeight = 1 + Math.min(checklistTasks.length, maxChecklistVisible);
   }
   // Account for completed history section height
-  if (planState === "APPROVED" && completedHistory.length > 0 && !collapsedSections.checklist) {
+  if (planState === "APPROVED" && completedHistory.length > 0) {
     const historyVisible = Math.min(completedHistory.length, 3);
     checklistSectionHeight += 1 + historyVisible + (completedHistory.length > 3 ? 1 : 0);
   }

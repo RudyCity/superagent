@@ -1,3 +1,34 @@
+## [1.5.13] - 2026-08-31
+
+### Feature: ACTIVE TASK CHECKLIST is always expanded (no hide/collapse)
+
+Previously, the "ACTIVE TASK CHECKLIST" section at the top of the
+terminal UI could be collapsed/hidden via the clickable header or the
+collapse toggle — leaving the user with no visual progress indicator
+while a plan was being executed. This was a common source of
+"where is my plan progress?" confusion.
+
+The collapse/hide behavior is now **disabled for the checklist
+section**:
+
+- The checklist always renders in its expanded view whenever a plan
+  is `APPROVED` (the only condition under which the checklist is
+  visible in the first place).
+- The `▼` indicator is shown permanently on the checklist header.
+- Clicking the checklist header is a no-op (no longer toggles
+  collapse).
+- Other collapsible sections (superagents, subagents, procs) are
+  unaffected and continue to honor their toggle state.
+
+Implementation:
+
+- `src/components/task-checklist.tsx` — hardcoded `isCollapsed = false`
+  and `collapseIcon = "▼"`, ignoring the `collapsedSections.checklist`
+  prop.
+- `src/app.tsx` — `toggleCollapse("checklist")` short-circuits to a
+  no-op. Height calculation for the checklist now always uses the
+  expanded height (no longer branches on `collapsedSections.checklist`).
+
 ## [1.5.12] - 2026-08-31
 
 ### Feature: Show approved plan content in the chat sheet / master dashboard

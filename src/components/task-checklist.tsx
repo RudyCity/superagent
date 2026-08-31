@@ -33,8 +33,12 @@ export const TaskChecklist = memo(function TaskChecklist({
     return null;
   }
 
-  const isCollapsed = collapsedSections?.checklist || false;
-  const collapseIcon = isCollapsed ? "▶" : "▼";
+  // The ACTIVE TASK CHECKLIST is always expanded — collapse/hide is
+  // intentionally disabled per product request so users can always see
+  // the current plan progress. We keep the prop signature for backward
+  // compatibility, but ignore it for the checklist section.
+  const isCollapsed = false;
+  const collapseIcon = "▼";
   // Map dynamic task status overrides to count completed and ongoing tasks
   const resolvedTasks = checklistTasks.map((task) => {
     let status = task.status;
