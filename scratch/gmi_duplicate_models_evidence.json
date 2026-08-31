@@ -1,0 +1,87 @@
+{
+  "endpoint": "https://api.gmi-serving.com/v1/models",
+  "totalModels": 81,
+  "duplicateIds": [
+    {
+      "id": "MiniMaxAI/MiniMax-M3",
+      "indices": [
+        20,
+        21
+      ],
+      "entries": [
+        {
+          "index": 20,
+          "internal_id": "3c25d31e-d652-4d0b-bb0f-24476766da32",
+          "is_free": false,
+          "pricing": {
+            "prompt": "0.000000600",
+            "completion": "0.000002400",
+            "request": "0",
+            "image": "0",
+            "input_cache_read": "0.000000120",
+            "input_cache_write": "0",
+            "overrides": [
+              {
+                "min_prompt_tokens": 512000,
+                "prompt": "0.000001200",
+                "completion": "0.000004800",
+                "input_cache_read": "0.000000240",
+                "input_cache_write": "0"
+              }
+            ]
+          }
+        },
+        {
+          "index": 21,
+          "internal_id": "3c25d31e-d652-4d0b-bb0f-24476766da32",
+          "is_free": true,
+          "pricing": {
+            "prompt": "0",
+            "completion": "0",
+            "request": "0",
+            "image": "0",
+            "input_cache_read": "0",
+            "input_cache_write": "0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "MiniMaxAI/MiniMax-M2.7",
+      "indices": [
+        33,
+        34
+      ],
+      "entries": [
+        {
+          "index": 33,
+          "internal_id": "b55d47ed-0d1e-467e-ae93-f1500402d184",
+          "is_free": false,
+          "pricing": {
+            "prompt": "0.000000300",
+            "completion": "0.000001200",
+            "request": "0",
+            "image": "0",
+            "input_cache_read": "0.000000060",
+            "input_cache_write": "0"
+          }
+        },
+        {
+          "index": 34,
+          "internal_id": "b55d47ed-0d1e-467e-ae93-f1500402d184",
+          "is_free": true,
+          "pricing": {
+            "prompt": "0",
+            "completion": "0",
+            "request": "0",
+            "image": "0",
+            "input_cache_read": "0",
+            "input_cache_write": "0"
+          }
+        }
+      ]
+    }
+  ],
+  "userPresetModel": "MiniMaxAI/MiniMax-M3",
+  "uniqueModelAlternatives": []
+}

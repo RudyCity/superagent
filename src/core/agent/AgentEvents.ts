@@ -90,12 +90,111 @@ export function formatError(err: unknown): string {
       if (bodyText && typeof bodyText === "string") {
         const trimmed = bodyText.trim();
         if (trimmed) {
-          const snippet = trimmed.length > 150 ? trimmed.substring(0, 150) + "..." : trimmed;
+          // Some OpenAI-compatible providers (e.g. proxies that wrap a backend)
+          // re-wrap upstream errors as a stringified JSON inside `error.details`.
+          // The outer wrapper message is almost always just
+          // "Backend request failed with status 4xx", which hides the real
+          // cause. Try to unwrap one level to surface the actual error message.
+          //
+          // Recognized shapes (in order of preference):
+          //   1. { error: { details: "<stringified JSON with .error.message>" } }
+          //   2. { error: { message: "real cause" } }
+          //   3. { details: "<stringified JSON with .error.message>" }
+          //   4. { error: "raw string" }
+          let innerMessage: string | undefined;
+          let hasDetailsBlob = false;
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (parsed && typeof parsed === "object") {
+              const errObj = (parsed as any).error;
+              const detailsField = (parsed as any).details;
+
+              // (1) Preferred: error.details is a stringified JSON blob.
+              if (
+                errObj && typeof errObj === "object" &&
+                typeof errObj.details === "string"
+              ) {
+                hasDetailsBlob = true;
+                try {
+                  const innerParsed = JSON.parse(errObj.details);
+                  if (innerParsed && typeof innerParsed === "object") {
+                    const innerErr = (innerParsed as any).error ?? innerParsed;
+                    if (innerErr && typeof innerErr === "object" && typeof innerErr.message === "string") {
+                      innerMessage = innerErr.message;
+                    } else if (typeof innerErr === "string") {
+                      innerMessage = innerErr;
+                    }
+                  }
+                } catch {
+                  // details wasn't JSON — fall through to direct message.
+                }
+              }
+
+              // (2) Fallback: error.message looks like the real cause
+              // (only when no details blob was present).
+              if (
+                !innerMessage &&
+                errObj && typeof errObj === "object" &&
+                typeof errObj.message === "string" &&
+                !hasDetailsBlob
+              ) {
+                innerMessage = errObj.message;
+              }
+
+              // (3) Top-level details blob.
+              if (!innerMessage && typeof detailsField === "string") {
+                try {
+                  const innerParsed = JSON.parse(detailsField);
+                  if (innerParsed && typeof innerParsed === "object") {
+                    const innerErr = (innerParsed as any).error ?? innerParsed;
+                    if (innerErr && typeof innerErr === "object" && typeof innerErr.message === "string") {
+                      innerMessage = innerErr.message;
+                    } else if (typeof innerErr === "string") {
+                      innerMessage = innerErr;
+                    }
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+
+              // (4) Top-level error is a plain string.
+              if (!innerMessage && typeof errObj === "string") {
+                innerMessage = errObj;
+              }
+            }
+          } catch {
+            // body wasn't JSON — leave innerMessage undefined.
+          }
+
+          const maxSnippet = 600;
+          const snippet = trimmed.length > maxSnippet ? trimmed.substring(0, maxSnippet) + "..." : trimmed;
           const cleanSnippet = snippet.replace(/\r?\n|\r/g, " ");
           extra += ` - response body snippet: "${cleanSnippet}"`;
+
+          // If we extracted a more informative upstream message than the
+          // generic AI-SDK wrapper, surface it as a separate field.
+          if (
+            innerMessage &&
+            baseMessage &&
+            innerMessage !== baseMessage &&
+            /backend request failed/i.test(baseMessage)
+          ) {
+            extra += ` [upstream: ${innerMessage}]`;
+          }
+
+          // Friendly hint when the upstream complains about a model id.
+          if (
+            status === 400 &&
+            innerMessage &&
+            /model/i.test(innerMessage) &&
+            /(duplicate|ambig|not found|unknown|invalid|multiple|exist)/i.test(innerMessage)
+          ) {
+            extra += " [hint: check the active preset's model name — if the upstream lists it more than once in /v1/models, switch to a uniquely-identified model]";
+          }
         }
       }
-      
+
       if (currentCause) {
         const causeMsg = currentCause instanceof Error ? currentCause.message : String(currentCause);
         if (causeMsg && causeMsg !== baseMessage) {

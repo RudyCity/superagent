@@ -1,3 +1,33 @@
+## [1.5.19] - 2026-09-03
+
+### Fix: Better visibility into 4xx backend errors
+
+`formatError` in `src/core/agent/AgentEvents.ts` previously truncated the
+upstream response body to 150 characters, which hid the actual cause of
+HTTP 400/4xx errors from OpenAI-compatible providers that re-wrap the
+real reason as a stringified JSON inside `error.details` (e.g.
+`api.gmi-serving.com` returning `"Backend request failed with status 400"`
+as the outer wrapper while burying the real model-id complaint in
+`error.details`).
+
+Improvements:
+
+- **Snippet length extended from 150 → 600 chars** so the actual error
+  body is visible.
+- **One-level unwrap of `error.details`** (and a second level when
+  `details` is itself a stringified JSON) to surface the real upstream
+  message as `[upstream: …]` in the formatted error.
+- **Friendly hint** appended when a 400 mentions a model and a
+  duplicate / ambiguous / not-found / unknown / invalid / multiple /
+  exist token: "[hint: check the active preset's model name — if the
+  upstream lists it more than once in /v1/models, switch to a
+  uniquely-identified model]".
+
+Tests:
+
+- `tests/formatError.test.ts` — 3 new cases (nested-blob unwrap,
+  600-char snippet, no-hint on unrelated 400). All 7 tests pass.
+
 ## [1.5.18] - 2026-09-03
 
 ### Feature: System Prompt Awareness & Skill Guide for `cli_bridge`
