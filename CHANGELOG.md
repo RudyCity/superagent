@@ -1,3 +1,346 @@
+## [1.5.17] - 2026-09-02
+
+### Feature: `cli_bridge` v4 — Session lifecycle, streaming, auto-send, detach
+
+Round out the session lifecycle so long-running `cli_bridge` sessions are
+safer to keep around, easier to monitor in real time, and cheaper to
+create-then-fire into. Five new capabilities, all opt-in:
+
+#### 1. Initial prompt auto-send
+
+`session.create` now accepts a `message` (or new `initialMessage`) field.
+When the CLI process is ready, the prompt is automatically composed with
+the profile's `defaultPromptTemplate` and sent to the CLI. The tool call
+returns immediately with the `sessionId`; the auto-send happens in the
+background.
+
+```
+action=session.create cli=codex binary=codex
+  initialMessage="Implement the OAuth flow in src/auth/oauth.ts"
+```
+
+The LLM no longer needs to chain `session.create` → wait for ready →
+`session.send` in three separate tool calls.
+
+#### 2. Idle TTL + auto-kill
+
+Each session tracks the time of the last stdout/stderr chunk. A lazy
+background interval (60 s, unref'd so it never blocks process exit)
+scans active sessions and kills any whose silence exceeds
+`idleTimeoutMs` (default: **30 min**). Set `idleTimeoutMs=0` to disable
+the TTL entirely.
+
+`session.create` accepts `idleTimeoutMs` to configure at creation. The
+new `session.tail` action accepts `setIdleTimeoutMs` so the LLM can
+extend a session on demand:
+
+```
+action=session.tail sessionId=clb_abc setIdleTimeoutMs=3600000
+```
+
+Sessions killed by the TTL are marked `autoKilled: true` and have
+`status: "exited"` so the LLM can distinguish them from natural exits.
+
+#### 3. Configurable output buffer cap
+
+`session.create` accepts `maxBufferLines` (default: 2000). The cap
+applies to both `stdoutBuffer` and `stderrBuffer` independently. When
+the cap is exceeded, the oldest lines are dropped. Useful for sessions
+that produce very chatty output (e.g. long compile logs) where the
+default 2000-line cap would still be too much.
+
+#### 4. Session events + streaming
+
+Every session now emits a typed event stream on its
+`EventEmitter` and keeps a ring buffer of the last 500 events (per
+session, in memory) for replay. Events:
+
+| Type | When | Payload |
+|------|------|---------|
+| `stdout` | one per logical line of stdout | `{ line }` |
+| `stderr` | one per logical line of stderr | `{ line }` |
+| `prompt` | interactive TUI prompt detected | `{ prompt: DetectedPrompt, isPrompt: true }` |
+| `status` | status changed | `{ status }` |
+| `exit` | process exited | `{ code, signal }` |
+
+Each event has a monotonically increasing `seq` number so subscribers
+can resume after a disconnect.
+
+Two new surfaces:
+
+- **Programmatic**: `subscribeSession(sessionId, listener)` from
+  `cliBridgeSession.js` returns a `SessionSubscription` whose
+  `unsubscribe()` stops delivery.
+- **Tool-level**: `action=session.tail sessionId=… since=<seq> tailLimit=<n>`
+  reads the buffered events (with optional `setIdleTimeoutMs` to extend
+  the TTL in the same call). Returns a formatted table of events with
+  type, seq, and payload.
+
+#### 5. Session detach
+
+`action=session.detach sessionId=…` releases the session from the
+manager **without terminating the child process**. The process keeps
+running; the session moves to a "detached" bucket visible in
+`session.list` and still killable via `session.kill`.
+
+Use case: hand off a long-running CLI task to the user's terminal — the
+LLM-managed session ends, but the user's interactive session is
+untouched.
+
+#### Schema additions
+
+```jsonc
+// session.create / session.send
+message:        string  // alias for initialMessage on session.create
+initialMessage: string  // v1.5.17
+maxBufferLines: number  // v1.5.17
+idleTimeoutMs:  number  // v1.5.17
+autoSendInitial:boolean // v1.5.17
+
+// session.tail
+sessionId:      string
+since:          number  // v1.5.17
+tailLimit:      number  // v1.5.17
+setIdleTimeoutMs:number // v1.5.17
+
+// new actions
+action="session.tail"
+action="session.detach"
+```
+
+#### Backwards compatibility
+
+- All v1.5.16 params still work. New params are optional.
+- `message` on `session.send` is unchanged; on `session.create` it now
+  triggers auto-send.
+- `session.list` text format extended with a `(detached: N)` suffix.
+- `session.get` text format extended with `detached`, `maxBuffer`,
+  `idleTimeout`, `lastOutput` lines.
+- 35 v1.5.16 tests still pass. 12 new v1.5.17 tests added.
+
+## [1.5.16] - 2026-08-31
+
+### Feature: `cli_bridge` v3 — System prompt, skill registry, auto-detect, prompt templates
+
+Builds on v1.5.15's profile+skills foundation. The tool now supports
+named skills, a global skill registry, project-root auto-detect, per-profile
+prompt templates, and a `system` prompt that gets prepended to every
+message sent to the external CLI.
+
+#### System prompt
+
+`delegate`, `session.create`, and `session.resume` all accept a new
+optional `system` parameter. The system prompt is applied to every
+message using the profile's `defaultPromptTemplate`:
+
+| Profile | Template |
+|---|---|
+| codex / claude / agy | `"{system}\n\n{prompt}"` |
+
+Set the template per-profile via
+`~/.superagent-r/cli-bridge/profiles.json` — useful for e.g.
+`"codex": { "defaultPromptTemplate": "Output only JSON. {system}\n\n{prompt}" }`.
+
+For multi-turn sessions, the system prompt is **stamped on the session**
+and re-applied on every `session.send`. To bypass for one specific call
+(when the LLM already composed a full message), set `skipSystem: true`.
+
+#### Skill registry
+
+Skills can now be **named**. Two layers:
+
+1. **Profile-local** (`~/.superagent-r/cli-bridge/profiles.json`):
+   ```json
+   { "agy": { "skillsRegistry": { "security": { "path": "C:/skills/sec", "autoLoad": true } } } }
+   ```
+2. **Global** (`~/.superagent-r/cli-bridge/skills.json`):
+   ```json
+   { "frontend": { "path": "C:/skills/fe", "description": "Frontend guides" } }
+   ```
+
+Resolution order (first match per item):
+1. If the item is a path → use as-is.
+2. Profile-local registry → look up name.
+3. Global registry → look up name.
+4. Else → added to `unresolved` (no throw).
+
+Entries with `autoLoad: true` are added to every session that uses the
+owning profile. The `unresolved` list is recorded on the session and
+visible in `session.get` / `session.export`.
+
+#### Auto-detect
+
+When the session is created, the tool scans the cwd for these standard
+agent files and adds them automatically:
+
+| File | Purpose |
+|---|---|
+| `AGENTS.md` | Universal agent guidance (AGY/Codex/Claude all read) |
+| `AGENTS.local.md` | Gitignored local overrides |
+| `CLAUDE.md` | Claude Code convention |
+| `AGY.md` | AGY-specific |
+| `CODEX.md` | Codex-specific |
+
+Disable per-call with `skillAutoDetect: false`, or per-profile with
+`"autoDetect": false` in `profiles.json`.
+
+The scan is non-recursive (root only) — registering nested skills is
+done via `skills.json` with explicit paths.
+
+#### Tests
+
+- All 14 v1.5.14 + 12 v1.5.15 tests still pass (after minor regex/string
+  updates for new fields)
+- 9 new v1.5.16 tests cover: `applyPromptTemplate` substitution/cleanup/typo
+  safety, `autoDetectSkillFiles`, `resolveSkills` (profile-registry lookup,
+  unresolved, autoLoad), and end-to-end `system` recording + `skipSystem`.
+
+Total: **35 tests, 95 expect() calls, all green**.
+
+#### Files
+
+- `src/core/tools/cliBridgeSkills.ts` (new, ~235 lines)
+- `src/core/tools/cliBridgeProfiles.ts` (extended, now ~340 lines)
+- `src/core/tools/cliBridgeSession.ts` (extended, now ~960 lines)
+- `src/core/tools/cliBridgeTool.ts` (extended, now ~830 lines)
+- `tests/cliBridgeTool.test.ts` (extended, now ~715 lines, 35 tests)
+
+## [1.5.15] - 2026-08-31
+
+### Feature: `cli_bridge` v2 — Full control with profiles, skills, resume, and interactive prompts
+
+Builds on v1.5.14 (basic 1-shot + session). The tool can now drive external
+AI CLIs (Codex, Claude Code, AGY) with the same fidelity as a human at a
+terminal — including answering TUI prompts, attaching skill directories,
+resuming a conversation, and persisting state across restarts.
+
+#### New actions
+
+| Action | Purpose |
+|---|---|
+| `session.resume` | Re-spawn the CLI with its profile's resume flag (`claude --continue`, `agy --continue`, `codex resume <id>`) plus a previous `conversationId` if known |
+| `session.respond` | Feed an answer into a pending interactive prompt (yes/no, password, choice, text) |
+| `session.export` | Dump the session state (status, last N lines, profile, conversationId, pending prompt) as JSON for debugging or handoff |
+| `session.config` | Show the resolved profile used by an active session |
+| `profile.list` | List all loaded profiles (built-in + user overrides) |
+
+#### Per-CLI profiles
+
+`src/core/tools/cliBridgeProfiles.ts` — new module that ships sane defaults
+for the three built-in CLIs and merges user overrides from
+`~/.superagent-r/cli-bridge/profiles.json` (deep-merge, file's mtime is
+watched so changes are picked up on next tool call).
+
+Each profile controls:
+
+| Field | Example (AGY) | Used for |
+|---|---|---|
+| `defaultArgs` | `[]` | Flags prepended to every invocation |
+| `resumeFlag` | `continue` | `--continue` (or `codex resume <id>`) for `session.resume` |
+| `resumeArgStyle` | `value` / `equals` | Whether the flag takes a separate value or uses `--flag=val` |
+| `skillsArg` | `add-dir` | Flag to register a skill directory |
+| `skillsRepeatable` | `true` | If true, the skill flag is repeated per skill; if false, only the first is used |
+| `interactiveFlag` | `i` | `-i` / `--interactive` to start the CLI in TUI mode |
+| `envPassthrough` | `[ANTIGRAVITY_API_KEY, AGY_HOME]` | Env vars the subprocess needs from `process.env` |
+
+#### Interactive prompt detection
+
+`detectPrompt()` in `cliBridgeSession.ts` scans the last 2 KB of a session's
+stdout for common TUI patterns and classifies them as one of:
+
+- `yesno` — `(y/n)`, `Allow … (Y/N)`, etc.
+- `password` — `Enter password:`, `Enter API key:`
+- `choice` — `Select [1/2/3]:` (parses options)
+- `enter` — `Press Enter to continue`
+- `text` — `Type your message:`, anything ending in `?`
+
+When detected, the session status flips to `awaiting_input` and the
+`pendingPrompt` is surfaced in the response. The LLM then calls
+`session.respond sessionId=… answer="…"` to feed the answer back. This
+unblocks permission prompts, OTPs, multi-choice menus, and any other TUI
+question the CLI emits.
+
+#### Skills support
+
+`session.create` and `session.resume` now accept a `skills` array
+(e.g. `["/abs/path/skills/frontend", "/abs/path/skills/db"]`). The profile
+decides how to translate them:
+
+- AGY / Claude Code → repeated `--add-dir <path>` flags
+- Codex → single `--cd <path>` (Codex only takes one)
+
+#### Resume flow
+
+```
+# 1. Start a session
+result = cli_bridge session.create cli=agy conversationId=…
+# Get the conversationId from session.export
+result = cli_bridge session.export sessionId=clb_…
+# Later (or after restart): re-attach
+result = cli_bridge session.resume cli=agy conversationId=… skills=[…]
+```
+
+The CLI itself restores the conversation context (each CLI has its own
+storage). Superagent's job is just to spawn it with the right resume flag.
+
+#### Tests
+
+- All 14 v1.5.14 tests still pass
+- 12 new tests cover: profile loader, `buildSessionArgv` for skills/resume,
+  `profile.list` action, `detectPrompt` for yesno/password/choice,
+  `session.create` with skills, validation errors for `session.respond` /
+  `session.export` / `session.config` / `session.resume`
+
+Total: **26 tests, 74 expect() calls, all green**.
+
+#### Files
+
+- `src/core/tools/cliBridgeProfiles.ts` (new, ~280 lines)
+- `src/core/tools/cliBridgeSession.ts` (extended, now ~910 lines)
+- `src/core/tools/cliBridgeTool.ts` (extended, now ~715 lines)
+- `tests/cliBridgeTool.test.ts` (extended, now ~545 lines, 26 tests)
+
+## [1.5.14] - 2026-08-31
+
+### Feature: `cli_bridge` tool — delegate tasks to external AI CLIs
+
+Superagent can now offload sub-tasks to a *separate* AI assistant running
+in its own CLI process (OpenAI Codex, Claude Code, Antigravity/AGY, or
+any user-supplied binary). This unlocks multi-model collaboration without
+the user ever leaving the terminal UI.
+
+A single tool, `cli_bridge`, supports two complementary modes:
+
+- **1-shot delegation** — `action=delegate cli=<alias> prompt="..."`. Spawns
+  the target CLI, waits for it to exit, returns the captured output (with
+  a full log file at `~/.superagent-r/logs/cli-bridge/`).
+- **Interactive session** — `action=session.create` then `session.send` /
+  `session.list` / `session.get` / `session.kill`. Spawns the CLI as a
+  long-lived subprocess, sends multiple messages, and reads responses
+  asynchronously.
+
+Supported out of the box (auto-detected on PATH):
+
+| Alias    | CLI                       | Install hint                              |
+|----------|---------------------------|-------------------------------------------|
+| `codex`  | OpenAI Codex CLI          | `npm i -g @openai/codex`                  |
+| `claude` | Claude Code CLI           | `npm i -g @anthropic-ai/claude-code`      |
+| `agy`    | Antigravity CLI           | https://antigravity.google                |
+| `custom` | any user-supplied binary  | pass `binary="<absolute path>"`           |
+
+Use `action=list` to discover which CLIs are installed; the tool returns
+a structured JSON block the LLM can parse.
+
+Tier availability: registered in `singleToolset` and `superagentToolset`.
+The Master Agent toolset does *not* include it, per AGENTS.md
+"Master Agent Planning" rule.
+
+Files added:
+- `src/core/tools/cliBridgeSession.ts` — in-process subprocess session manager
+- `src/core/tools/cliBridgeTool.ts` — tool definition with 7 actions
+- `tests/cliBridgeTool.test.ts` — 14 unit tests covering registration,
+  validation, list/delegate/session lifecycle, and tier enforcement
+
 ## [1.5.13] - 2026-08-31
 
 ### Feature: ACTIVE TASK CHECKLIST is always expanded (no hide/collapse)
