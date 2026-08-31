@@ -194,6 +194,14 @@ describe("cli_bridge tool registration", () => {
     expect(superagentToolset).toContain(cliBridgeTool);
     expect(masterToolset).not.toContain(cliBridgeTool);
   }, 30_000);
+
+  it("is registered in allTools and retrievable via getToolByName in tools/index.ts", async () => {
+    const { getToolByName, allTools } = await import("../src/core/tools/index.js");
+    const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
+
+    expect(allTools).toContain(cliBridgeTool);
+    expect(getToolByName("cli_bridge")).toBe(cliBridgeTool);
+  });
 });
 
 // ─── 2. Action validation ───────────────────────────────────────────────

@@ -11,6 +11,10 @@ Integrated comprehensive system prompt awareness, delegation logic gates, and de
 - **Single-Agent Base Prompt (`src/core/config/base.ts`)**:
   - Added `# CLI BRIDGE (EXTERNAL AI CLI ASSISTANTS)` section to `getSystemPrompt()` documenting one-shot execution, interactive sessions, and skill auto-detection.
   - Added `cli_bridge` under `# TOOL USAGE GUIDELINES` -> `Delegation & Timers`.
+- **Tool Registration & Resolution (`src/core/tools/index.ts`)**:
+  - Registered `cliBridgeTool` in `allTools` and `getToolByName()` registry, resolving the issue where Single Agent execution reported `Unknown tool "cli_bridge"`.
+- **Windows Binary Resolution (`src/core/tools/cliBridgeSession.ts`)**:
+  - Updated `detectAvailableClis` to probe alias, `.cmd`, `.exe`, and `.bat` candidates on Windows for resilient detection of CLI tools like `agy` and `claude`.
 - **New Skill (`.agents/skills/cli-bridge/SKILL.md`)**:
   - Created complete CLI Bridge skill reference covering all 14 tool actions, interactive prompt handling (`session.respond`), stdout/stderr buffer management, streaming/tailing, and auto-detection of workspace guidance (`AGENTS.md`, `CLAUDE.md`, etc.).
 

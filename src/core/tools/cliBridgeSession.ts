@@ -426,11 +426,25 @@ export async function detectAvailableClis(): Promise<CliDescriptor[]> {
   await Promise.all(
     descriptors.map(async (d) => {
       try {
-        const { stdout } = await execa(cmd, [d.binary], { reject: false });
-        const found = (stdout || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0];
+        const candidateNames = isWin
+          ? Array.from(new Set([d.binary, d.alias, `${d.alias}.cmd`, `${d.alias}.exe`, `${d.alias}.bat`]))
+          : Array.from(new Set([d.binary, d.alias]));
+        let found: string | undefined;
+        for (const cand of candidateNames) {
+          try {
+            const { stdout } = await execa(cmd, [cand], { reject: false });
+            const line = (stdout || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0];
+            if (line) {
+              found = line;
+              break;
+            }
+          } catch {}
+        }
         if (found) {
           d.available = true;
           d.binary = found;
+        } else {
+          d.available = false;
         }
       } catch {
         d.available = false;
