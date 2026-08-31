@@ -1,3 +1,47 @@
+## [1.5.12] - 2026-08-31
+
+### Feature: Show approved plan content in the chat sheet / master dashboard
+
+Previously, when a plan was approved via the interactive approval wizard,
+the chat sheet (single-agent mode) and the master dashboard log
+(multi-agent mode) only displayed a short confirmation line:
+
+> ✅ Implementation plan approved! Continuing with the approved plan now.
+
+The actual plan markdown body that the agent had produced was never
+surfaced to the user — making it hard to recall *what* was approved
+without opening the plan file manually.
+
+Now, immediately after the confirmation line, the full plan markdown
+content is rendered in the same view, wrapped in visual dividers:
+
+```
+─── Approved Plan ─────────────────────────────────
+<full plan markdown body>
+─── End of Plan ──────────────────────────────────
+```
+
+This applies to:
+
+- **Single-agent mode** (`src/hooks/useWizardSubmit.ts`) — appended as
+  a `system` chat line via `addLine(...)` so it appears in the main
+  chat sheet like any other agent output.
+- **Multi-agent master dashboard** (`src/hooks/useDashboardWizard.ts`) —
+  appended to `setMasterLogs(...)` so it shows in the master log panel
+  alongside the existing approval confirmation.
+
+Implementation details:
+
+- Reads plan body from the existing plan file via
+  `agent.getPlanFilePath()` + `fs.readFileSync(...)`. The plan file is
+  the same file the agent wrote during planning, so the displayed body
+  is always byte-identical to what the agent produced.
+- All file I/O is wrapped in a `try/catch` so a missing or unreadable
+  plan file falls back gracefully to the existing short confirmation
+  line — never breaks the approval flow.
+- Empty / whitespace-only plan bodies are skipped (no divider lines are
+  emitted for an empty plan).
+
 ## [1.5.11] - 2026-08-31
 
 ### Feature: Queue / Insert / Back dialog when submitting during AI processing

@@ -1558,6 +1558,27 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         agent.approvePlan();
         setPlanState("APPROVED");
         setMasterLogs((prev) => [...prev, "✅ Implementation plan approved! Continuing with the approved plan now."].slice(-500));
+        // Surface the approved plan content in the master dashboard so the
+        // user can see what was approved. Read directly from the plan file
+        // using the agent's PathResolver path.
+        try {
+          const planPath = (agent as any).getPlanFilePath?.();
+          if (planPath && fsSync.existsSync(planPath)) {
+            const planBody = fsSync.readFileSync(planPath, "utf-8").trim();
+            if (planBody.length > 0) {
+              const divider = "─".repeat(48);
+              const planLines = [
+                `─── Approved Plan ───${divider}`,
+                planBody,
+                `─── End of Plan ────${divider}`,
+              ];
+              setMasterLogs((prev) => [...prev, ...planLines].slice(-500));
+            }
+          }
+        } catch (e) {
+          // Non-fatal — plan file could not be read; the approval log line
+          // above is enough to convey the action to the user.
+        }
         setIsProcessing(true);
         agent.sendMessage("Implementation plan approved via interactive approval wizard. Continue with the approved plan now.")
           .then(() => {

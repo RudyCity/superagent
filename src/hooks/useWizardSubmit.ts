@@ -246,6 +246,25 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           content: "✅ Implementation plan approved! Continuing with the approved plan now.",
           timestamp: now,
         });
+        // Surface the approved plan content in the chat sheet so the user
+        // can see what was approved. The plan markdown body is rendered as
+        // a single system line wrapped with visual dividers.
+        try {
+          const planPath = agentRef.current?.getPlanFilePath?.();
+          if (planPath && fs.existsSync(planPath)) {
+            const planBody = fs.readFileSync(planPath, "utf-8").trim();
+            if (planBody.length > 0) {
+              addLine({
+                type: "system",
+                content: `─── Approved Plan ─────────────────────────────────\n${planBody}\n─── End of Plan ──────────────────────────────────`,
+                timestamp: now,
+              });
+            }
+          }
+        } catch (e) {
+          // Non-fatal — plan file could not be read; the approval message
+          // above is enough to convey the action to the user.
+        }
       } else {
         // Reject — stop the agent process
         if (agentRef.current) {
