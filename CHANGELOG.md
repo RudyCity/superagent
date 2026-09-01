@@ -1,3 +1,17 @@
+## [1.5.20] - 2026-09-01
+
+### Fix: Guard Against False Data URI Matches in Tool Results & Validate Base64 Images
+
+- **Image Extraction Validation (`src/core/agent/MessageBuilder.ts` & `src/utils/imageUtils.ts`)**:
+  - Added `isValidBase64Image` validator that checks data URI minimum length (>= 64 chars), character set, and binary magic bytes (PNG, JPEG, GIF, WebP, SVG, BMP) before treating tool result text as a vision image.
+  - Prevents mock and test code snippets containing data URLs (such as `toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,fake-qr')`) from being falsely extracted as invalid base64 image blocks and injected into user messages.
+  - Enforced `supportsVision` check in `buildPlaintextMessages` so non-vision models do not receive attached image parts from tool results.
+  - Resolves backend HTTP 400 `invalid_request_error` caused by sending malformed image parts to LLM providers.
+
+- **Tests (`tests/visionSerialization.test.ts`)**:
+  - Added test cases verifying mock/stub data URIs in tool results are not extracted as images.
+  - Added test cases verifying valid high-entropy base64 images from screenshot tools are correctly attached for vision-capable models.
+
 ## [1.5.19] - 2026-09-03
 
 ### Fix: Better visibility into 4xx backend errors

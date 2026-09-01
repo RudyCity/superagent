@@ -7,6 +7,7 @@ import {
   getSingleAgentMode,
 } from "../config.js";
 import { contentToString } from "../conversation.js";
+import { isValidBase64Image } from "../../utils/imageUtils.js";
 import type { Agent } from "../agent.js";
 
 export class MessageBuilder {
@@ -67,7 +68,7 @@ export class MessageBuilder {
       // Default to true to keep original behavior if model config loading/resolution fails
     }
 
-    this.buildPlaintextMessages(agent, coreMessages, supportsNativeTools, modelName);
+    this.buildPlaintextMessages(agent, coreMessages, supportsNativeTools, modelName, supportsVision);
 
     const cleanedMessages = this.cleanMessageSequence(coreMessages, agent);
 
@@ -387,7 +388,8 @@ export class MessageBuilder {
     agent: Agent,
     coreMessages: CoreMessage[],
     supportsNativeTools: boolean,
-    modelName: string
+    modelName: string,
+    supportsVision: boolean = true
   ): void {
     const messages = agent.conversation.getMessages();
     for (const m of messages) {
@@ -516,29 +518,35 @@ export class MessageBuilder {
           }
           const resultStr = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
           
-          // Check for data:image/xxx;base64,... pattern in the result
-          const dataUriRegex = /data:(image\/[a-zA-Z+.-]+);base64,([a-zA-Z0-9+/=]+(?:\r?\n)?[a-zA-Z0-9+/=]*)/g;
-          let match;
           let cleanedResult = resultStr;
-          let hasImages = false;
-          
-          dataUriRegex.lastIndex = 0;
-          while ((match = dataUriRegex.exec(resultStr)) !== null) {
-            const mimeType = match[1];
-            const base64Data = match[2].replace(/\s/g, ""); // strip whitespace/newlines
-            
-            pendingImagesToAppend.push({
-              toolName: tr.name,
-              base64List: [base64Data],
-              mimeType,
-            });
-            hasImages = true;
-          }
 
-          if (hasImages) {
-            cleanedResult = resultStr.replace(dataUriRegex, (fullMatch, mimeType) => {
-              return `[Image (${mimeType}) attached as a vision image part]`;
-            });
+          // Only scan and extract images if the model supports vision
+          if (supportsVision) {
+            // Check for data:image/xxx;base64,... pattern in the result
+            const dataUriRegex = /data:(image\/[a-zA-Z+.-]+);base64,([a-zA-Z0-9+/=]+(?:\r?\n)?[a-zA-Z0-9+/=]*)/g;
+            let match;
+            const validMatches: Array<{ mimeType: string; base64Data: string; fullMatch: string }> = [];
+            
+            dataUriRegex.lastIndex = 0;
+            while ((match = dataUriRegex.exec(resultStr)) !== null) {
+              const mimeType = match[1];
+              const base64Data = match[2].replace(/\s/g, ""); // strip whitespace/newlines
+              
+              if (isValidBase64Image(base64Data, mimeType)) {
+                validMatches.push({ mimeType, base64Data, fullMatch: match[0] });
+              }
+            }
+
+            if (validMatches.length > 0) {
+              for (const vm of validMatches) {
+                pendingImagesToAppend.push({
+                  toolName: tr.name,
+                  base64List: [vm.base64Data],
+                  mimeType: vm.mimeType,
+                });
+                cleanedResult = cleanedResult.replace(vm.fullMatch, `[Image (${vm.mimeType}) attached as a vision image part]`);
+              }
+            }
           }
 
           contentParts.push({
@@ -559,7 +567,7 @@ export class MessageBuilder {
           content: contentParts,
         });
 
-        if (pendingImagesToAppend.length > 0) {
+        if (pendingImagesToAppend.length > 0 && supportsVision) {
           const appendParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [];
           for (const item of pendingImagesToAppend) {
             if (item.mimeType) {

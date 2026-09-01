@@ -69,6 +69,63 @@ export function mimeForExtension(ext: string): string | null {
   return MIME_MAP[ext.toLowerCase()] ?? null;
 }
 
+/**
+ * Validates if a base64 string actually represents valid image binary data.
+ * Protects against treating mock data, code fixtures, or short stubs (e.g. "data:image/png;base64,fake-qr")
+ * as real images which would cause 400 Bad Request errors from LLM APIs.
+ */
+export function isValidBase64Image(base64Data: string, mimeType?: string): boolean {
+  if (!base64Data || typeof base64Data !== "string") return false;
+  const clean = base64Data.replace(/\s+/g, "");
+  // Minimum length check: Real images are at least ~64 base64 chars
+  if (clean.length < 64) return false;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(clean)) return false;
+
+  try {
+    const buffer = Buffer.from(clean.slice(0, 64), "base64");
+    if (buffer.length < 4) return false;
+
+    // PNG: 89 50 4E 47
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+      return true;
+    }
+    // JPEG: FF D8 FF
+    if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+      return true;
+    }
+    // GIF: 47 49 46 (GIF87a or GIF89a)
+    if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
+      return true;
+    }
+    // WebP: RIFF ... WEBP
+    if (
+      buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46
+    ) {
+      const fullHeader = Buffer.from(clean.slice(0, 32), "base64").toString("ascii");
+      if (fullHeader.includes("WEBP")) {
+        return true;
+      }
+    }
+    // BMP: 42 4D
+    if (buffer[0] === 0x42 && buffer[1] === 0x4d) {
+      return true;
+    }
+    // SVG: <svg or <?xml
+    const asciiPrefix = buffer.toString("utf8").trimStart().toLowerCase();
+    if (asciiPrefix.startsWith("<svg") || asciiPrefix.startsWith("<?xml")) {
+      return true;
+    }
+
+    if (mimeType && (mimeType.includes("icon") || mimeType.includes("tiff") || mimeType.includes("heic"))) {
+      return buffer.length >= 16;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // isImageFilePath
 // ---------------------------------------------------------------------------
