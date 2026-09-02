@@ -410,9 +410,37 @@ async function handleDelegate(
 
   const extraArgs = (args.args as string[] | undefined) ?? [];
   const timeoutMs = args.timeoutMs ? Number(args.timeoutMs) : undefined;
+  const delegateCwd = args.cwd ? String(args.cwd) : cwd;
+
+  // Resolve skills directories/profiles for 1-shot execution:
+  const profile = getProfile(desc.alias);
+  const skillsRequested = (args.skills as string[] | undefined) ?? undefined;
+  const autoDetect = args.skillAutoDetect !== false;
+  const skillResolution = profile
+    ? resolveSkills({
+        requested: skillsRequested,
+        profileRegistry: profile.skillsRegistry,
+        autoDetect,
+        cwd: delegateCwd,
+      })
+    : resolveSkills({
+        requested: skillsRequested,
+        autoDetect,
+        cwd: delegateCwd,
+      });
+
+  const skillsArgs: string[] = [];
+  if (skillResolution.paths.length > 0 && profile?.skillsArg) {
+    if (profile.skillsRepeatable) {
+      for (const p of skillResolution.paths) {
+        skillsArgs.push(`--${profile.skillsArg}`, p);
+      }
+    } else {
+      skillsArgs.push(`--${profile.skillsArg}`, skillResolution.paths[0]);
+    }
+  }
 
   // v1.5.16: Apply the profile's prompt template with system (if any).
-  const profile = getProfile(desc.alias);
   const systemPrompt = args.system ? String(args.system) : undefined;
   const tpl = profile?.defaultPromptTemplate ?? "{system}\n\n{prompt}";
   const composedPrompt = applyPromptTemplate(tpl, { system: systemPrompt ?? "", prompt });
@@ -423,13 +451,16 @@ async function handleDelegate(
   const autoFlags = desc.alias === "agy" && !extraArgs.includes("--dangerously-skip-permissions")
     ? ["--dangerously-skip-permissions"]
     : [];
-  const combinedArgs = Array.from(new Set([...defaultFlags, ...autoFlags, ...extraArgs, ...promptSub]));
+  
+  // Note: promptSub (e.g. -p or --print) MUST be placed at the end so it immediately precedes the prompt
+  const baseArgs = Array.from(new Set([...defaultFlags, ...autoFlags, ...skillsArgs, ...extraArgs]));
+  const combinedArgs = [...baseArgs, ...promptSub];
 
   const result: DelegateResult = await runDelegate({
     cliAlias: desc.alias,
     binary: desc.binary,
     prompt: composedPrompt,
-    cwd,
+    cwd: delegateCwd,
     extraArgs: combinedArgs,
     timeoutMs,
     signal,

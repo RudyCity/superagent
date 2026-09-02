@@ -507,13 +507,13 @@ export function buildDelegateArgv(
   extraArgs: string[] = []
 ): string[] {
   const argv: string[] = [];
-  if (desc.promptSubcommand && desc.promptSubcommand.length > 0) {
-    argv.push(...desc.promptSubcommand);
-  }
   if (desc.defaultArgs && desc.defaultArgs.length > 0) {
     argv.push(...desc.defaultArgs);
   }
   argv.push(...extraArgs);
+  if (desc.promptSubcommand && desc.promptSubcommand.length > 0) {
+    argv.push(...desc.promptSubcommand);
+  }
   if (desc.promptAsArg !== false) {
     argv.push(prompt);
   }
