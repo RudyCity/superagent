@@ -430,8 +430,8 @@ describe("cli_bridge v1.5.15 — profiles, skills, interactive, resume, export",
     const { getProfile, buildSessionArgv } = await import("../src/core/tools/cliBridgeProfiles.js");
     const agy = getProfile("agy")!;
     const argv = buildSessionArgv(agy, { skills: ["/a", "/b"], extraArgs: ["--effort", "high"] });
-    // For AGY: --add-dir is repeated; --effort high comes from extraArgs.
-    expect(argv).toEqual(["--add-dir", "/a", "--add-dir", "/b", "--effort", "high"]);
+    // For AGY: defaultArg --dangerously-skip-permissions is prepended; --add-dir is repeated; --effort high comes from extraArgs.
+    expect(argv).toEqual(["--dangerously-skip-permissions", "--add-dir", "/a", "--add-dir", "/b", "--effort", "high"]);
 
     const codex = getProfile("codex")!;
     const argv2 = buildSessionArgv(codex, { skills: ["/a", "/b"] });

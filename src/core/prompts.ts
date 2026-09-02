@@ -85,9 +85,8 @@ const SCRATCH_AND_TRANSFER_RULE = `- SCRATCH_WORKSPACE: Free read/write access t
 
 const CLI_BRIDGE_RULE = `- CLI_BRIDGE: Delegate tasks to external AI CLI assistants (Codex, Claude Code, AGY, or custom binaries).
   - Discovery & Profiles: cli_bridge(action:'list') | cli_bridge(action:'profile.list').
-  - One-Shot Execution: cli_bridge(action:'delegate', cli:'agy'|'codex'|'claude', prompt:'...').
-  - Interactive Subprocess Sessions: cli_bridge(action:'session.create'|'session.send'|'session.tail'|'session.detach'|'session.kill', sessionId:'...', prompt:'...').
-  - Session Lifecycle: Auto-detects workspace skills (AGENTS.md, etc.). Handle prompt/confirmation via session.respond or session.send.`;
+  - One-Shot Task Delegation (PRIMARY): cli_bridge(action:'delegate', cli:'agy'|'codex'|'claude', prompt:'...', cwd:'...', skills:['...']). One-shot auto-skips permissions, streams live output, and executes immediately.
+  - Interactive Subprocess Sessions: cli_bridge(action:'session.create'|'session.send'|'session.tail'|'session.detach'|'session.kill', sessionId:'...', message:'...'). For autonomous code generation/rewrites, ALWAYS prefer action:'delegate'.`;
 
 // ─── Shared Subagent Blocks ───────────────────────────────────
 
@@ -287,10 +286,10 @@ ${SUPERAGENT_DECISION_RIGHTS_RULE}
 # LOGIC GATES
 if delegating_to_external_cli:
     CALL cli_bridge(action:'list')
-    if interactive_or_multi_turn:
-        CALL cli_bridge(action:'session.create', cli:name, prompt:initialPrompt)
-    else:
-        CALL cli_bridge(action:'delegate', cli:name, prompt:taskPrompt)
+    if standalone_task_or_code_work:
+        CALL cli_bridge(action:'delegate', cli:name, prompt:taskPrompt, skills:referenceDirs)
+    else if interactive_multi_turn:
+        CALL cli_bridge(action:'session.create', cli:name, message:initialPrompt)
 
 if spawning_subagent:
     CALL manage_tasks(action:'add'/'add_bulk') FIRST.
