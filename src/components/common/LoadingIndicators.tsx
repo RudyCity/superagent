@@ -86,6 +86,31 @@ export function ToolLoadingIndicator({
         cleanDesc = cleanDesc.slice(29).trim();
       }
       displayMsg = cleanDesc ? `Running: ${cleanDesc}` : `Running ${toolName}...`;
+    } else if (toolName === "cli_bridge") {
+      let action = "delegate";
+      let cliName = "CLI";
+      let summary = "";
+      if (toolDesc) {
+        try {
+          const match = toolDesc.match(/parameters\s+(\{.*\})/s);
+          if (match) {
+            const parsed = JSON.parse(match[1]);
+            action = parsed.action || action;
+            cliName = parsed.cli ? String(parsed.cli).toUpperCase() : cliName;
+            summary = parsed.prompt || parsed.message || parsed.initialMessage || parsed.sessionId || "";
+            summary = summary.replace(/\r?\n/g, " ").trim();
+          }
+        } catch {}
+      }
+      if (action === "delegate") {
+        displayMsg = summary ? `Delegating to ${cliName}: ${summary}` : `Delegating task to ${cliName}...`;
+      } else if (action === "session.create") {
+        displayMsg = `Starting ${cliName} session${summary ? ` (${summary})` : "..."}`;
+      } else if (action === "session.send") {
+        displayMsg = summary ? `Sending to ${cliName}: ${summary}` : `Sending to ${cliName}...`;
+      } else {
+        displayMsg = `CLI Bridge [${action}]: ${cliName}`;
+      }
     } else {
       displayMsg = `Invoking tool: ${toolName}`;
       if (toolDesc) {
