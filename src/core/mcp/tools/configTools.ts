@@ -244,3 +244,37 @@ export async function handleRemoteChrome(args: any): Promise<McpToolResult> {
     return { content: [{ type: "text", text: `Remote Chrome error: ${err.message}` }], isError: true };
   }
 }
+
+export async function handleExportSession(args: any): Promise<McpToolResult> {
+  const sessionId = String(args.sessionId || args.id || "");
+  const format = String(args.format || "markdown").toLowerCase();
+
+  if (!sessionId) {
+    return { content: [{ type: "text", text: "Error: 'sessionId' is required to export." }], isError: true };
+  }
+
+  const record = loadSessionFromDb(sessionId);
+  if (!record) {
+    return { content: [{ type: "text", text: `Session '${sessionId}' not found in SQLite database.` }], isError: true };
+  }
+
+  if (format === "json") {
+    return { content: [{ type: "text", text: JSON.stringify(record, null, 2) }] };
+  }
+
+  const lines = [
+    `# Superagent Session Transcript: ${sessionId}`,
+    `Working Directory: ${record.session?.workingDirectory || "unknown"}`,
+    `Total Messages: ${(record.messages || []).length}`,
+    `Exported At: ${new Date().toISOString()}`,
+    `\n---\n`,
+  ];
+
+  for (const m of record.messages || []) {
+    const role = (m.role || "unknown").toUpperCase();
+    const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content, null, 2);
+    lines.push(`## [${role}]\n\n${content}\n`);
+  }
+
+  return { content: [{ type: "text", text: lines.join("\n") }] };
+}

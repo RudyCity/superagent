@@ -1,5 +1,5 @@
 /**
- * workspaceTools.ts — Workspace switching, worktree operations, command execution, file tools, and checklist tools for MCP.
+ * workspaceTools.ts — Workspace switching, worktree operations, command execution, file tools, search, and checklist tools for MCP.
  */
 
 import fs from "fs";
@@ -7,7 +7,7 @@ import path from "path";
 import { execa } from "execa";
 import { McpToolResult } from "../types.js";
 import { callServerApi } from "./processTools.js";
-import { loadRegistry } from "../../tools/superagentRegistry.js";
+import { loadRegistry, removeEntries } from "../../tools/superagentRegistry.js";
 import { addTrustedDirectory, ensureDirectoryTrusted } from "../../config.js";
 
 export async function handleSwitchWorkspace(args: any): Promise<McpToolResult> {
@@ -166,6 +166,83 @@ export async function handleListFiles(args: any): Promise<McpToolResult> {
   } catch (err: any) {
     return { content: [{ type: "text", text: `Error listing directory: ${err.message}` }], isError: true };
   }
+}
+
+export async function handleGrepSearch(args: any): Promise<McpToolResult> {
+  const query = String(args.query || args.pattern || args.search || "");
+  const searchPath = args.path ? path.resolve(String(args.path)) : process.cwd();
+  if (!query) {
+    return { content: [{ type: "text", text: "Error: 'query' is required for grep search." }], isError: true };
+  }
+
+  const { grepTool } = await import("../../tools/fileReadTools.js");
+  const result = await grepTool.execute(
+    {
+      query,
+      path: searchPath,
+      include: args.include || args.includes,
+      exclude: args.exclude || args.excludes,
+      isRegex: args.isRegex,
+      caseSensitive: args.caseSensitive,
+    },
+    searchPath
+  );
+  return { content: [{ type: "text", text: String(result) }] };
+}
+
+export async function handleFindFiles(args: any): Promise<McpToolResult> {
+  const pattern = String(args.pattern || args.query || args.name || "*");
+  const searchPath = args.path ? path.resolve(String(args.path)) : process.cwd();
+
+  const { globTool } = await import("../../tools/fileReadTools.js");
+  const result = await globTool.execute(
+    {
+      pattern,
+      path: searchPath,
+    },
+    searchPath
+  );
+  return { content: [{ type: "text", text: String(result) }] };
+}
+
+export async function handleManageWorktrees(args: any): Promise<McpToolResult> {
+  const action = String(args.action || "list");
+  const registry = loadRegistry();
+
+  if (action === "list") {
+    if (registry.length === 0) {
+      return { content: [{ type: "text", text: "No feature worktrees currently registered." }] };
+    }
+    const lines = ["=== Registered Git Feature Worktrees ==="];
+    for (const r of registry) {
+      const exists = fs.existsSync(r.worktreePath);
+      lines.push(`- ID: ${r.id} | Role: ${r.role} | Branch: ${r.branch} | Status: ${r.status}`);
+      lines.push(`  Path: ${r.worktreePath} [${exists ? "Active on Disk" : "Removed"}]`);
+    }
+    return { content: [{ type: "text", text: lines.join("\n") }] };
+  }
+
+  if (action === "remove" || action === "delete") {
+    const id = String(args.id || args.superagentId || "");
+    if (!id) {
+      return { content: [{ type: "text", text: "Error: 'id' is required to remove a worktree." }], isError: true };
+    }
+    const entry = registry.find((r) => r.id === id);
+    if (entry) {
+      try {
+        if (fs.existsSync(entry.worktreePath)) {
+          fs.rmSync(entry.worktreePath, { recursive: true, force: true });
+        }
+        removeEntries([id]);
+        return { content: [{ type: "text", text: `Successfully removed worktree for Superagent '${id}' (${entry.branch}).` }] };
+      } catch (err: any) {
+        return { content: [{ type: "text", text: `Error removing worktree: ${err.message}` }], isError: true };
+      }
+    }
+    return { content: [{ type: "text", text: `No worktree entry found with ID: ${id}` }], isError: true };
+  }
+
+  return { content: [{ type: "text", text: `Unknown worktree action: ${action}` }], isError: true };
 }
 
 export async function handleGetPlanAndTasks(args: any): Promise<McpToolResult> {

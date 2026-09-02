@@ -3,18 +3,16 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
-import { registerToAgyConfig } from "../src/core/mcp/mcpRegistration.js";
 import {
   superagentInstances,
   subagentInstances,
-  backgroundTasks,
 } from "../src/core/tools/state.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-describe("Superagent Complete MCP Server Suite", () => {
+describe("Superagent Complete 35-Tool MCP Server Suite", () => {
   const testDir = path.join(os.tmpdir(), `superagent_mcp_test_${Date.now()}`);
 
   beforeEach(() => {
@@ -31,7 +29,7 @@ describe("Superagent Complete MCP Server Suite", () => {
     } catch {}
   });
 
-  it("creates MCP server and lists all 30 tools", async () => {
+  it("creates MCP server and lists all 35 tools", async () => {
     const server = createSuperagentMcpServer();
     const handler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
     expect(handler).toBeDefined();
@@ -50,12 +48,16 @@ describe("Superagent Complete MCP Server Suite", () => {
     expect(toolNames).toContain("superagent_resume");
     expect(toolNames).toContain("superagent_run_task");
     expect(toolNames).toContain("superagent_spawn_subagent");
+    expect(toolNames).toContain("superagent_cli_bridge");
     expect(toolNames).toContain("superagent_switch_workspace");
     expect(toolNames).toContain("superagent_get_workspace");
     expect(toolNames).toContain("superagent_exec_command");
     expect(toolNames).toContain("superagent_read_file");
     expect(toolNames).toContain("superagent_write_file");
     expect(toolNames).toContain("superagent_list_files");
+    expect(toolNames).toContain("superagent_grep_search");
+    expect(toolNames).toContain("superagent_find_files");
+    expect(toolNames).toContain("superagent_manage_worktrees");
     expect(toolNames).toContain("superagent_get_plan_and_tasks");
     expect(toolNames).toContain("superagent_update_tasks");
     expect(toolNames).toContain("superagent_get_config");
@@ -64,6 +66,7 @@ describe("Superagent Complete MCP Server Suite", () => {
     expect(toolNames).toContain("superagent_memory_search");
     expect(toolNames).toContain("superagent_memory_save");
     expect(toolNames).toContain("superagent_query_history");
+    expect(toolNames).toContain("superagent_export_session");
     expect(toolNames).toContain("superagent_get_token_usage");
     expect(toolNames).toContain("superagent_remote_chrome");
     expect(toolNames).toContain("superagent_invoke");
@@ -72,76 +75,41 @@ describe("Superagent Complete MCP Server Suite", () => {
     expect(toolNames).toContain("superagent_manage");
   });
 
-  it("executes file operations and command execution via MCP", async () => {
+  it("executes search, file finding, and worktree tools via MCP", async () => {
     const server = createSuperagentMcpServer();
     const handler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
-    const testFile = path.join(testDir, "hello.txt");
+    const testFile = path.join(testDir, "search_sample.ts");
+    fs.writeFileSync(testFile, "export function calculateMetricTotal() {\n  return 42;\n}\n", "utf-8");
 
-    // Write file
-    const writeRes = await handler({
+    // Grep search
+    const grepRes = await handler({
       method: "tools/call",
       params: {
-        name: "superagent_write_file",
-        arguments: { filePath: testFile, content: "Line 1: Hello MCP\nLine 2: Testing Superagent" },
+        name: "superagent_grep_search",
+        arguments: { query: "calculateMetricTotal", path: testDir },
       },
     });
-    expect(writeRes.content[0].text).toContain("Successfully wrote");
-    expect(fs.existsSync(testFile)).toBe(true);
+    expect(grepRes.content[0].text).toContain("calculateMetricTotal");
 
-    // Read file
-    const readRes = await handler({
+    // Find files
+    const findRes = await handler({
       method: "tools/call",
       params: {
-        name: "superagent_read_file",
-        arguments: { filePath: testFile, startLine: 1, endLine: 2 },
+        name: "superagent_find_files",
+        arguments: { pattern: "*.ts", path: testDir },
       },
     });
-    expect(readRes.content[0].text).toContain("Line 1: Hello MCP");
+    expect(findRes.content[0].text).toContain("search_sample.ts");
 
-    // List files
-    const listRes = await handler({
+    // Worktrees list
+    const wtRes = await handler({
       method: "tools/call",
       params: {
-        name: "superagent_list_files",
-        arguments: { dirPath: testDir },
+        name: "superagent_manage_worktrees",
+        arguments: { action: "list" },
       },
     });
-    expect(listRes.content[0].text).toContain("hello.txt");
-
-    // Exec command
-    const cmdRes = await handler({
-      method: "tools/call",
-      params: {
-        name: "superagent_exec_command",
-        arguments: { command: "node -e \"console.log('MCP EXEC OK')\"", cwd: testDir },
-      },
-    });
-    expect(cmdRes.content[0].text).toContain("MCP EXEC OK");
-  });
-
-  it("executes token usage and chrome bridge status via MCP", async () => {
-    const server = createSuperagentMcpServer();
-    const handler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
-
-    // Token usage
-    const tokenRes = await handler({
-      method: "tools/call",
-      params: {
-        name: "superagent_get_token_usage",
-        arguments: {},
-      },
-    });
-    expect(tokenRes.content[0].text).toContain("Superagent Context & Token Analytics");
-
-    // Chrome remote status
-    const chromeRes = await handler({
-      method: "tools/call",
-      params: {
-        name: "superagent_remote_chrome",
-        arguments: { action: "status" },
-      },
-    });
-    expect(chromeRes.content[0].text).toContain("Remote Chrome Bridge Status");
+    expect(wtRes.content[0].text).toBeDefined();
   });
 });

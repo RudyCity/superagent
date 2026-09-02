@@ -1,9 +1,9 @@
 /**
- * superagentMcpServer.ts — Complete, modular MCP Server for Superagent.
+ * superagentMcpServer.ts — Complete, modular 35-Tool MCP Server for Superagent.
  *
  * Exposes full AI process inspection, live interruption/control, subagent delegation,
- * workspace switching, file tools, command execution, presets, task checklists,
- * persistent memory, token analytics, and remote browser control to external MCP clients.
+ * CLI bridge, workspace switching, file tools, search, command execution, presets,
+ * task checklists, persistent memory, token analytics, session export, and remote browser control.
  */
 
 import fs from "fs";
@@ -35,6 +35,7 @@ import {
   handleMerge,
   handleManage,
   handleGetStatus,
+  handleCliBridge,
 } from "./tools/executionTools.js";
 import {
   handleSwitchWorkspace,
@@ -43,6 +44,9 @@ import {
   handleReadFile,
   handleWriteFile,
   handleListFiles,
+  handleGrepSearch,
+  handleFindFiles,
+  handleManageWorktrees,
   handleGetPlanAndTasks,
   handleUpdateTasks,
 } from "./tools/workspaceTools.js";
@@ -55,6 +59,7 @@ import {
   handleQueryHistory,
   handleGetTokenUsage,
   handleRemoteChrome,
+  handleExportSession,
 } from "./tools/configTools.js";
 
 const MCP_LOG_FILE = path.join(os.homedir(), ".superagent-r", "superagent-mcp.log");
@@ -73,7 +78,7 @@ export function createSuperagentMcpServer(): Server {
   const server = new Server(
     {
       name: "superagent-mcp-server",
-      version: version || "1.5.24",
+      version: version || "1.5.25",
     },
     {
       capabilities: {
@@ -136,6 +141,11 @@ export function createSuperagentMcpServer(): Server {
           inputSchema: { type: "object", properties: { type: { type: "string" }, prompt: { type: "string" }, role: { type: "string" } }, required: ["type", "prompt"] },
         },
         {
+          name: "superagent_cli_bridge",
+          description: "Delegate tasks to external AI CLIs (Codex, Claude Code, AGY, Gemini) via 1-shot execution or multi-turn sessions.",
+          inputSchema: { type: "object", properties: { action: { type: "string" }, cli: { type: "string" }, prompt: { type: "string" }, wait: { type: "boolean" } }, required: ["action"] },
+        },
+        {
           name: "superagent_switch_workspace",
           description: "Switch active working directory / workspace of Superagent.",
           inputSchema: { type: "object", properties: { workspacePath: { type: "string" } }, required: ["workspacePath"] },
@@ -164,6 +174,21 @@ export function createSuperagentMcpServer(): Server {
           name: "superagent_list_files",
           description: "List files and directories in the workspace or a specific subfolder.",
           inputSchema: { type: "object", properties: { dirPath: { type: "string" } } },
+        },
+        {
+          name: "superagent_grep_search",
+          description: "Fast ripgrep pattern searching across files in workspace or worktrees.",
+          inputSchema: { type: "object", properties: { query: { type: "string" }, path: { type: "string" }, include: { type: "string" }, exclude: { type: "string" }, isRegex: { type: "boolean" } }, required: ["query"] },
+        },
+        {
+          name: "superagent_find_files",
+          description: "Search for files and directories by name glob or extension.",
+          inputSchema: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string" }, extension: { type: "string" }, maxDepth: { type: "number" } } },
+        },
+        {
+          name: "superagent_manage_worktrees",
+          description: "List, inspect, and remove Git feature worktrees.",
+          inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "remove"] }, id: { type: "string" } }, required: ["action"] },
         },
         {
           name: "superagent_get_plan_and_tasks",
@@ -204,6 +229,11 @@ export function createSuperagentMcpServer(): Server {
           name: "superagent_query_history",
           description: "Search or retrieve conversation history, transcripts, and session records from SQLite.",
           inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list_sessions", "get_messages", "search"] }, query: { type: "string" }, sessionId: { type: "string" }, limit: { type: "number" } }, required: ["action"] },
+        },
+        {
+          name: "superagent_export_session",
+          description: "Export full chat transcript to Markdown or JSON format.",
+          inputSchema: { type: "object", properties: { sessionId: { type: "string" }, format: { type: "string", enum: ["markdown", "json"] } }, required: ["sessionId"] },
         },
         {
           name: "superagent_get_token_usage",
@@ -265,6 +295,8 @@ export function createSuperagentMcpServer(): Server {
           return await handleRunTask(args);
         case "superagent_spawn_subagent":
           return await handleSpawnSubagent(args);
+        case "superagent_cli_bridge":
+          return await handleCliBridge(args);
         case "superagent_switch_workspace":
           return await handleSwitchWorkspace(args);
         case "superagent_get_workspace":
@@ -277,6 +309,12 @@ export function createSuperagentMcpServer(): Server {
           return await handleWriteFile(args);
         case "superagent_list_files":
           return await handleListFiles(args);
+        case "superagent_grep_search":
+          return await handleGrepSearch(args);
+        case "superagent_find_files":
+          return await handleFindFiles(args);
+        case "superagent_manage_worktrees":
+          return await handleManageWorktrees(args);
         case "superagent_get_plan_and_tasks":
           return await handleGetPlanAndTasks(args);
         case "superagent_update_tasks":
@@ -293,6 +331,8 @@ export function createSuperagentMcpServer(): Server {
           return await handleMemorySave(args);
         case "superagent_query_history":
           return await handleQueryHistory(args);
+        case "superagent_export_session":
+          return await handleExportSession(args);
         case "superagent_get_token_usage":
           return await handleGetTokenUsage();
         case "superagent_remote_chrome":

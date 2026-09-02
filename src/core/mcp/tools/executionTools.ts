@@ -271,3 +271,9 @@ export async function handleGetStatus(args: any): Promise<McpToolResult> {
   const res = await manageSuperagentsTool.execute({ action: "status", superagentIds: ids }, process.cwd());
   return { content: [{ type: "text", text: String(res) }] };
 }
+
+export async function handleCliBridge(args: any): Promise<McpToolResult> {
+  const { cliBridgeTool } = await import("../../tools/cliBridgeTool.js");
+  const result = await cliBridgeTool.execute(args, process.cwd());
+  return { content: [{ type: "text", text: String(result) }] };
+}

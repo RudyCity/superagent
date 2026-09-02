@@ -1,3 +1,23 @@
+## [1.5.25] - 2026-09-02
+
+### Feat & Opt: 35-Tool Superagent MCP Suite, CLI Bridge Delegation, Grep & Glob Search, Worktrees & Session Exports
+
+- **CLI Bridge Integration over MCP (`src/core/mcp/tools/executionTools.ts`)**:
+  - Added `superagent_cli_bridge`: Offload tasks and collaborate with external AI CLI assistants (OpenAI Codex, Claude Code, Antigravity/AGY, Gemini) via 1-shot execution or multi-turn sessions directly through MCP.
+
+- **Fast Codebase Search & File Discovery (`src/core/mcp/tools/workspaceTools.ts`)**:
+  - Added `superagent_grep_search`: Fast pattern searching across workspace and worktrees with regex, include, and exclude filters.
+  - Added `superagent_find_files`: Glob-based file and directory searching.
+
+- **Git Feature Worktree Management (`src/core/mcp/tools/workspaceTools.ts`)**:
+  - Added `superagent_manage_worktrees`: List, inspect, and remove isolated Git feature worktree folders and registry entries.
+
+- **Session Export Tool (`src/core/mcp/tools/configTools.ts`)**:
+  - Added `superagent_export_session`: Export SQLite chat session history to structured Markdown or JSON.
+
+- **Tests (`tests/mcpServer.test.ts`)**:
+  - Added tests for search, glob matching, worktrees management, and verified all 35 MCP tools.
+
 ## [1.5.24] - 2026-09-02
 
 ### Feat & Opt: Modular Architecture, Worktree File Tools, Remote Chrome Bridge & Full 30-Tool MCP Suite
