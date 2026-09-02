@@ -29,6 +29,7 @@ import { execa } from "execa";
 import { spawn } from "child_process";
 import { EventEmitter } from "events";
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
 import crypto from "crypto";
 import { getRootConfigDir } from "../config/paths.js";
@@ -458,6 +459,30 @@ export async function detectAvailableClis(): Promise<CliDescriptor[]> {
               break;
             }
           } catch {}
+        }
+        if (!found) {
+          const home = process.env.USERPROFILE || process.env.HOME || "";
+          const localAppData = process.env.LOCALAPPDATA || (home ? path.join(home, "AppData", "Local") : "");
+          const appData = process.env.APPDATA || (home ? path.join(home, "AppData", "Roaming") : "");
+          const fallbacks: string[] = [];
+          if (d.alias === "agy") {
+            if (localAppData) fallbacks.push(path.join(localAppData, "agy", "bin", "agy.exe"));
+            if (home) fallbacks.push(path.join(home, ".agy", "bin", "agy.exe"), path.join(home, ".agy", "bin", "agy"));
+            fallbacks.push("/usr/local/bin/agy", "/opt/agy/bin/agy");
+          } else if (d.alias === "claude") {
+            if (appData) fallbacks.push(path.join(appData, "npm", "claude.cmd"));
+            fallbacks.push("C:\\Program Files\\nodejs\\claude.cmd", "/usr/local/bin/claude");
+          } else if (d.alias === "codex") {
+            if (appData) fallbacks.push(path.join(appData, "npm", "codex.cmd"));
+          }
+          for (const fb of fallbacks) {
+            try {
+              if (fsSync.existsSync(fb)) {
+                found = fb;
+                break;
+              }
+            } catch {}
+          }
         }
         if (found) {
           d.available = true;
