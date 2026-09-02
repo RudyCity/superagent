@@ -1,3 +1,27 @@
+## [1.5.24] - 2026-09-02
+
+### Feat & Opt: Modular Architecture, Worktree File Tools, Remote Chrome Bridge & Full 30-Tool MCP Suite
+
+- **Modular MCP Architecture (`src/core/mcp/tools/`)**:
+  - Decoupled MCP tool implementations into focused, modular domains kept strictly under 300 lines each:
+    - `src/core/mcp/tools/processTools.ts`: Real-time AI status, active instances, logging, pause, resume, and interruption.
+    - `src/core/mcp/tools/executionTools.ts`: Subagent task delegation, specialized atomic subagent spawner, invocation, merge, and lifecycle management.
+    - `src/core/mcp/tools/workspaceTools.ts`: Workspace switching, command execution (`superagent_exec_command`), worktree file read/write/list (`superagent_read_file`, `superagent_write_file`, `superagent_list_files`), and implementation plan/checklist tracking.
+    - `src/core/mcp/tools/configTools.ts`: Preset switching, provider management, memory search/save, SQLite history, token analytics (`superagent_get_token_usage`), and remote Chrome bridge (`superagent_remote_chrome`).
+
+- **Worktree Command & File Operations (`src/core/mcp/tools/workspaceTools.ts`)**:
+  - `superagent_exec_command`: Safely executes shell commands in the active workspace or any feature worktree with stdout/stderr capture and timeout controls.
+  - `superagent_read_file`, `superagent_write_file`, `superagent_list_files`: Enables direct inspection and editing of codebase and worktree files over MCP.
+
+- **Remote Chrome Bridge Integration (`src/core/mcp/tools/configTools.ts`)**:
+  - `superagent_remote_chrome`: Directly communicates with the standalone Chrome extension bridge on port 9223 for browser automation, DOM inspection, clicking, and status monitoring.
+
+- **Context & Token Analytics (`src/core/mcp/tools/configTools.ts`)**:
+  - `superagent_get_token_usage`: Returns real-time token metrics across tiers and active sessions.
+
+- **Tests (`tests/mcpServer.test.ts`)**:
+  - Verified all 30 MCP tools, command execution, file operations, token usage, and Chrome bridge status.
+
 ## [1.5.23] - 2026-09-02
 
 ### Feat: Comprehensive Superagent Process Control, Interruption, Subagent Delegation & Workspace Management over MCP
