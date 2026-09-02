@@ -912,6 +912,9 @@ export async function sendToSession(opts: {
 
   try {
     proc.stdin.write(opts.message + "\n");
+    if (session.cliAlias === "agy") {
+      proc.stdin.end();
+    }
   } catch (err) {
     session.status = "errored";
     session.currentStage = `Stdin write failed: ${err instanceof Error ? err.message : String(err)}`;
@@ -919,9 +922,10 @@ export async function sendToSession(opts: {
     return { code: "STDIN_WRITE_FAILED", error: `Failed to write to session stdin: ${msg}` };
   }
 
-  // Wait for the prompt to "stabilize": no new output for `idleMs`.
+  // Wait for the prompt to "stabilize": output begins, then no new output for `idleMs`.
   const idleMs = 1500;
   const deadline = start + timeout;
+  let hasReceivedNewOutput = false;
   let lastLen = captureFromBytes;
   let lastChangeAt = Date.now();
 
@@ -954,10 +958,11 @@ export async function sendToSession(opts: {
         return;
       }
       if (session.stdoutBuffer.length !== lastLen) {
+        hasReceivedNewOutput = true;
         lastLen = session.stdoutBuffer.length;
         lastChangeAt = now;
       }
-      if (now - lastChangeAt >= idleMs) {
+      if (hasReceivedNewOutput && now - lastChangeAt >= idleMs) {
         clearInterval(tick);
         // If a prompt was detected just before idle, surface it instead
         // of marking the session ready.
