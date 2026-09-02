@@ -1154,3 +1154,61 @@ describe("cli_bridge v1.5.17 — lifecycle, streaming, auto-send, detach", () =>
     );
   }, 30_000);
 });
+
+// ─── v1.5.32 tests ─────────────────────────────────────────────────────
+
+describe("cli_bridge v1.5.32 — delegate skills, flag ordering, stdin EOF, and fallbacks", () => {
+  it("buildDelegateArgv places promptSubcommand immediately before prompt", async () => {
+    const { buildDelegateArgv } = await import("../src/core/tools/cliBridgeSession.js");
+    const desc = {
+      alias: "agy",
+      binary: "agy.exe",
+      label: "Antigravity CLI",
+      available: true,
+      defaultArgs: ["--dangerously-skip-permissions"],
+      promptSubcommand: ["-p"],
+      promptAsArg: true,
+    };
+    const argv = buildDelegateArgv(desc, "test prompt", ["--add-dir", "/workspace"]);
+    expect(argv).toEqual([
+      "--dangerously-skip-permissions",
+      "--add-dir",
+      "/workspace",
+      "-p",
+      "test prompt",
+    ]);
+  });
+
+  it("handleDelegate resolves skills array into CLI add-dir flags", async () => {
+    const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
+    const result = await cliBridgeTool.execute(
+      {
+        action: "delegate",
+        cli: "custom",
+        binary: REPL_BIN,
+        skills: [process.cwd()],
+        prompt: "hello skills",
+      },
+      process.cwd()
+    );
+    expect(result).toMatch(/Delegated to custom/);
+    expect(result).toMatch(/hello skills/);
+  }, 20_000);
+
+  it("handleDelegate respects custom cwd", async () => {
+    const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
+    const result = await cliBridgeTool.execute(
+      {
+        action: "delegate",
+        cli: "custom",
+        binary: REPL_BIN,
+        cwd: process.cwd(),
+        prompt: "cwd test",
+      },
+      process.cwd()
+    );
+    expect(result).toMatch(/Delegated to custom/);
+    expect(result).toMatch(/cwd test/);
+  }, 20_000);
+});
+

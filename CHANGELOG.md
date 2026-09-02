@@ -1,3 +1,20 @@
+## [1.5.32] - 2026-09-02
+
+### Feat & Fix: CLI Bridge Autonomous Delegation, Skills Resolution & Stdin Lifecycle
+
+- **Autonomous Delegate Mode with Full Skills Resolution (`src/core/tools/cliBridgeTool.ts`)**:
+  - Enhanced `handleDelegate` to resolve and inject attached `skills` directories (e.g. `--add-dir <path>`) into external AI CLIs (AGY, Claude Code, Codex).
+  - Added support for custom `cwd` in `delegate` mode.
+  - Enforced strict CLI argument ordering in `buildDelegateArgv` and `handleDelegate` so `promptSubcommand` (`-p` / `--print`) immediately precedes the prompt text, preventing flag misalignment.
+
+- **Subprocess Stdin Lifecycle & Stream Idle Fix (`src/core/tools/cliBridgeSession.ts`)**:
+  - Updated `sendToSession` to require active stream output (`hasReceivedNewOutput`) before idle stabilization triggers, eliminating false `(empty)` responses during LLM thinking phases.
+  - Automatically sends `EOF` (`proc.stdin.end()`) to AGY subprocess sessions so non-interactive agents immediately execute turns without stalling on open pipes.
+  - Added filesystem fallback path auto-detection for AGY, Claude Code, and Codex across Windows, Linux, and macOS.
+
+- **System Prompts & Skills Alignment (`src/core/config/base.ts`, `src/core/prompts.ts`, `.agents/skills/cli-bridge/SKILL.md`)**:
+  - Updated CLI Bridge tool schemas, logic gates, and skill documentation to prioritize `action: "delegate"` for all autonomous coding, refactoring, and test execution tasks.
+
 ## [1.5.31] - 2026-09-02
 
 ### Feat & Fix: Real-time Shell Command Output Streaming & Live Progress Indicator
