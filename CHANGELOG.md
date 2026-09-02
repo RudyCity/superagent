@@ -1,3 +1,15 @@
+## [1.5.33] - 2026-09-02
+
+### Feat & Fix: CLI Bridge Persistent Session Disk Storage & Multi-Turn Stream Fix
+
+- **Persistent Session Disk Storage (`src/core/tools/cliBridgeSessionStorage.ts`, `src/core/tools/cliBridgeSession.ts`)**:
+  - Added dedicated disk persistence (`~/.superagent-r/cli-bridge/sessions.json`) for all CLI Bridge sessions, enabling session inspection, history tracking, and context recovery across Superagent restarts.
+  - Enhanced `session.resume` in `cliBridgeTool.ts` to automatically restore `cliAlias`, `conversationId`, `cwd`, `skills`, and `systemPrompt` directly from a persisted `sessionId`.
+  - Added automatic extraction of server-side conversation IDs and session IDs from CLI stdout streams.
+
+- **Multi-Turn Persistent Stdin Bug Fix (`src/core/tools/cliBridgeSession.ts`)**:
+  - Removed premature `proc.stdin.end()` on `agy` in `sendToSession`, preventing `SESSION_DEAD` (no writable stdin) crashes during interactive multi-turn REPL sessions.
+
 ## [1.5.32] - 2026-09-02
 
 ### Feat & Fix: CLI Bridge Autonomous Delegation, Skills Resolution & Stdin Lifecycle

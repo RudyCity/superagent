@@ -34,6 +34,14 @@ import path from "path";
 import crypto from "crypto";
 import { getRootConfigDir } from "../config/paths.js";
 import { appendActiveToolOutput } from "./state.js";
+import {
+  saveSessionRecord,
+  saveSessionRecordSync,
+  loadAllSessionRecords,
+  getPersistedSession,
+  deleteSessionRecord,
+  clearAllSessionRecords,
+} from "./cliBridgeSessionStorage.js";
 
 // ─── Public types ────────────────────────────────────────────────────────
 
@@ -747,6 +755,7 @@ export async function createSession(opts: {
   session.pid = proc.pid ?? null;
   sessions.set(sessionId, session);
   procHandles.set(sessionId, proc);
+  await saveSessionRecord(session);
 
   proc.stdout?.on("data", async (data: Buffer) => {
     const rawText = data.toString();
@@ -754,6 +763,16 @@ export async function createSession(opts: {
     session.stdoutBuffer = appendLines(session.stdoutBuffer, cleanText, session.maxBufferLines);
     session.lastActivityAt = Date.now();
     session.lastOutputAt = Date.now();
+
+    // Auto-extract server-side conversation ID / session ID from CLI stdout if present
+    if (!session.conversationId) {
+      const convMatch = cleanText.match(/(?:conversation[ _-]?id|session[ _-]?id)\s*[:=]\s*([a-zA-Z0-9_\-\.]+)/i)
+        || cleanText.match(/\b(sess_[a-zA-Z0-9_]+)\b/);
+      if (convMatch && convMatch[1]) {
+        session.conversationId = convMatch[1];
+        saveSessionRecord(session).catch(() => {});
+      }
+    }
 
     const lines = cleanText.split(/\r?\n/).filter((l) => l.trim().length > 0);
     if (lines.length > 0) {
@@ -782,6 +801,7 @@ export async function createSession(opts: {
       session.status = "ready";
       session.currentStage = "Ready for input";
       emitEvent(session, "status", { status: session.status });
+      saveSessionRecord(session).catch(() => {});
       // v1.5.17: now that the session is ready, fire the queued initial message.
       if (session.pendingInitialMessage) {
         // Don't await — we want stdout listener to keep going.
@@ -805,6 +825,7 @@ export async function createSession(opts: {
           session.currentStage = `Awaiting user input (${prompt.kind}): ${prompt.question}`;
           emitEvent(session, "status", { status: session.status });
           emitEvent(session, "prompt", { prompt, isPrompt: true });
+          saveSessionRecord(session).catch(() => {});
           await appendToLog(logPath, "prompt", `[${prompt.kind}] ${prompt.question}\n`);
         }
       }
@@ -840,6 +861,7 @@ export async function createSession(opts: {
     procHandles.delete(sessionId);
     emitEvent(session, "exit", { code, signal: null });
     emitEvent(session, "status", { status: session.status });
+    saveSessionRecord(session).catch(() => {});
   });
 
   proc.on("error", (err: Error) => {
@@ -853,6 +875,7 @@ export async function createSession(opts: {
     procHandles.delete(sessionId);
     emitEvent(session, "exit", { code: null, signal: "spawn-error" });
     emitEvent(session, "status", { status: session.status });
+    saveSessionRecord(session).catch(() => {});
   });
 
   // Best-effort ready probe: if the CLI doesn't print a prompt marker,
@@ -861,6 +884,7 @@ export async function createSession(opts: {
     if (session.status === "starting") {
       session.status = "ready";
       emitEvent(session, "status", { status: session.status });
+      saveSessionRecord(session).catch(() => {});
       // v1.5.17: fire the auto-send if a prompt marker never came.
       if (session.pendingInitialMessage) {
         maybeAutoSendInitial(session).catch(() => {
@@ -914,12 +938,10 @@ export async function sendToSession(opts: {
 
   try {
     proc.stdin.write(opts.message + "\n");
-    if (session.cliAlias === "agy") {
-      proc.stdin.end();
-    }
   } catch (err) {
     session.status = "errored";
     session.currentStage = `Stdin write failed: ${err instanceof Error ? err.message : String(err)}`;
+    saveSessionRecord(session).catch(() => {});
     const msg = err instanceof Error ? err.message : String(err);
     return { code: "STDIN_WRITE_FAILED", error: `Failed to write to session stdin: ${msg}` };
   }
@@ -936,6 +958,7 @@ export async function sendToSession(opts: {
       const now = Date.now();
       if (session.status === "exited" || session.status === "errored") {
         clearInterval(tick);
+        saveSessionRecord(session).catch(() => {});
         resolve({
           response: session.stdoutBuffer.slice(captureFromBytes).trim(),
           durationMs: now - start,
@@ -950,6 +973,7 @@ export async function sendToSession(opts: {
       if (session.status === "awaiting_input" && session.pendingPrompt) {
         clearInterval(tick);
         session.currentStage = `Awaiting user input (${session.pendingPrompt.kind}): ${session.pendingPrompt.question}`;
+        saveSessionRecord(session).catch(() => {});
         resolve({
           response: session.stdoutBuffer.slice(captureFromBytes).trim(),
           durationMs: now - start,
@@ -970,6 +994,7 @@ export async function sendToSession(opts: {
         // of marking the session ready.
         if (session.pendingPrompt && session.status === "awaiting_input") {
           session.currentStage = `Awaiting user input (${session.pendingPrompt.kind}): ${session.pendingPrompt.question}`;
+          saveSessionRecord(session).catch(() => {});
           resolve({
             response: session.stdoutBuffer.slice(captureFromBytes).trim(),
             durationMs: now - start,
@@ -981,6 +1006,7 @@ export async function sendToSession(opts: {
         }
         session.status = "ready";
         session.currentStage = "Ready for input";
+        saveSessionRecord(session).catch(() => {});
         resolve({
           response: session.stdoutBuffer.slice(captureFromBytes).trim(),
           durationMs: now - start,
@@ -995,6 +1021,7 @@ export async function sendToSession(opts: {
         const finalStatus: CliSession["status"] = session.pendingPrompt ? "awaiting_input" : "ready";
         session.status = finalStatus;
         session.currentStage = session.pendingPrompt ? `Awaiting input: ${session.pendingPrompt.question}` : "Ready (timed out waiting for prompt)";
+        saveSessionRecord(session).catch(() => {});
         resolve({
           response: session.stdoutBuffer.slice(captureFromBytes).trim(),
           durationMs: now - start,
@@ -1026,25 +1053,28 @@ export function listSessions(): CliSession[] {
 }
 
 /**
- * Inspect one session (including its buffers). Used by the LLM to debug.
+ * Inspect one session (including its buffers if active). Used by the LLM to debug.
  */
 export function getSession(sessionId: string): CliSession | undefined {
-  return sessions.get(sessionId);
+  return sessions.get(sessionId) ?? getPersistedSession(sessionId) ?? undefined;
 }
 
 /**
  * Kill a session and remove it from the manager.
  */
 export function killSession(sessionId: string): { ok: boolean; reason?: string } {
-  // v1.5.17: search both active and detached maps.
-  const session = sessions.get(sessionId) ?? detachedSessions.get(sessionId);
+  // v1.5.17: search both active, detached, and persisted records.
+  const session = sessions.get(sessionId) ?? detachedSessions.get(sessionId) ?? getPersistedSession(sessionId);
   if (!session) return { ok: false, reason: "not_found" };
   const proc = procHandles.get(sessionId);
   killHandle(proc as any);
+  session.status = "exited";
+  session.pid = null;
   sessions.delete(sessionId);
   detachedSessions.delete(sessionId);
   procHandles.delete(sessionId);
   maybeStopIdleScanner();
+  saveSessionRecord(session).catch(() => {});
   return { ok: true };
 }
 
@@ -1237,6 +1267,7 @@ export function __resetForTests(): void {
   sessionSeqCounters.clear();
   sessionSubscribers.clear();
   setIdleScanHandle(null);
+  clearAllSessionRecords();
   logDirEnsured = false;
 }
 
@@ -1304,6 +1335,7 @@ export async function scanIdleSessions(): Promise<string[]> {
       s.autoKilled = true;
       s.status = "exited";
       emitEvent(s, "status", { status: s.status });
+      saveSessionRecord(s).catch(() => {});
       // Best-effort: actually kill the process.
       const handle = procHandles.get(s.sessionId);
       if (handle && typeof handle.kill === "function") {
@@ -1330,6 +1362,7 @@ export function setIdleTimeout(sessionId: string, ms: number): boolean {
   if (!s) return false;
   if (!Number.isFinite(ms) || ms < 0) return false;
   s.idleTimeoutMs = ms;
+  saveSessionRecord(s).catch(() => {});
   return true;
 }
 
@@ -1349,12 +1382,13 @@ export function detachSession(sessionId: string): boolean {
   sessions.delete(sessionId);
   detachedSessions.set(sessionId, s);
   emitEvent(s, "status", { status: s.status });
+  saveSessionRecord(s).catch(() => {});
   return true;
 }
 
-/** Get a session from either the active or detached map. */
+/** Get a session from either the active, detached, or persisted records. */
 export function getSessionAny(sessionId: string): CliSession | null {
-  return sessions.get(sessionId) ?? detachedSessions.get(sessionId) ?? null;
+  return sessions.get(sessionId) ?? detachedSessions.get(sessionId) ?? getPersistedSession(sessionId) ?? null;
 }
 
 /** List detached session IDs. */

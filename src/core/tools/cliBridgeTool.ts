@@ -682,11 +682,16 @@ async function handleSessionRespond(args: Record<string, unknown>): Promise<stri
  * flag and the previous conversationId (if any).
  */
 async function handleSessionResume(args: Record<string, unknown>): Promise<string> {
-  const cliAlias = String(args.cli ?? "").trim();
-  if (!cliAlias) {
-    return "Error: 'cli' is required for action=session.resume.";
+  const sessionId = String(args.sessionId ?? "").trim();
+  const pastSession = sessionId ? getSessionAny(sessionId) : null;
+  let cliAlias = String(args.cli ?? "").trim();
+  if (!cliAlias && pastSession) {
+    cliAlias = pastSession.cliAlias;
   }
-  const desc = await resolveDescriptor(cliAlias, args.binary);
+  if (!cliAlias) {
+    return "Error: 'cli' or 'sessionId' is required for action=session.resume.";
+  }
+  const desc = await resolveDescriptor(cliAlias, args.binary ?? pastSession?.binary);
   if (!desc) {
     return `Error: CLI '${cliAlias}' is not available. Run action=list to see what's installed.`;
   }
@@ -697,8 +702,12 @@ async function handleSessionResume(args: Record<string, unknown>): Promise<strin
   if (!profile.resumeFlag) {
     return `Error: Profile '${cliAlias}' has no resumeFlag defined. This CLI cannot be resumed.`;
   }
-  const conversationId = args.conversationId ? String(args.conversationId) : undefined;
-  const sessionCwd = args.cwd ? String(args.cwd) : process.cwd();
+  const conversationId = args.conversationId
+    ? String(args.conversationId)
+    : pastSession?.conversationId;
+  const sessionCwd = args.cwd ? String(args.cwd) : (pastSession?.cwd ?? process.cwd());
+  const skills = (args.skills as string[] | undefined) ?? pastSession?.skills;
+  const systemPrompt = args.system ? String(args.system) : pastSession?.systemPrompt;
   const envOverrides = (args.env as Record<string, string> | undefined) ?? undefined;
   const env = buildSessionEnv(profile, envOverrides);
   const created = await resumeSession({
@@ -708,10 +717,10 @@ async function handleSessionResume(args: Record<string, unknown>): Promise<strin
     cwd: sessionCwd,
     conversationId,
     resume: true,
-    skills: (args.skills as string[] | undefined) ?? undefined,
+    skills,
     env,
     args: (args.args as string[] | undefined) ?? undefined,
-    systemPrompt: args.system ? String(args.system) : undefined,
+    systemPrompt,
   });
   if (!created.ok) {
     return `Error: ${created.error.error} (${created.error.code})`;

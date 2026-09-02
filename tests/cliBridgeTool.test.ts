@@ -1210,5 +1210,39 @@ describe("cli_bridge v1.5.32 — delegate skills, flag ordering, stdin EOF, and 
     expect(result).toMatch(/Delegated to custom/);
     expect(result).toMatch(/cwd test/);
   }, 20_000);
+
+  it("persists sessions to disk and allows retrieving/resuming via sessionId", async () => {
+    const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
+    const { __resetForTests, getSessionAny } = await import("../src/core/tools/cliBridgeSession.js");
+    const { loadAllSessionRecords } = await import("../src/core/tools/cliBridgeSessionStorage.js");
+    __resetForTests();
+
+    const created = await cliBridgeTool.execute(
+      {
+        action: "session.create",
+        cli: "custom",
+        binary: REPL_BIN,
+        args: [],
+        system: "System prompt test",
+        skillAutoDetect: false,
+      },
+      process.cwd()
+    );
+    expect(created).toMatch(/Session created: (clb_[\w]+)/);
+    const sessionId = created.match(/Session created: (clb_[\w]+)/)![1];
+
+    // Check that disk record was saved
+    const persisted = loadAllSessionRecords();
+    expect(persisted.has(sessionId)).toBe(true);
+    expect(persisted.get(sessionId)?.systemPrompt).toBe("System prompt test");
+
+    // Session can be retrieved via getSessionAny even from storage
+    const s = getSessionAny(sessionId);
+    expect(s).toBeDefined();
+    expect(s?.sessionId).toBe(sessionId);
+
+    // Cleanup
+    await cliBridgeTool.execute({ action: "session.kill", sessionId }, process.cwd());
+  }, 30_000);
 });
 
