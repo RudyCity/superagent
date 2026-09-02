@@ -63,6 +63,7 @@ import {
   handleRemoteChrome,
   handleExportSession,
   handleCompactContext,
+  handleServerHealth,
 } from "./tools/configTools.js";
 
 const MCP_LOG_FILE = path.join(os.homedir(), ".superagent-r", "superagent-mcp.log");
@@ -278,6 +279,11 @@ export function createSuperagentMcpServer(): Server {
           description: "Manage Superagent lifecycle: check status, reports, violations, kill, or retry failed ones.",
           inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "status", "logs", "report", "violations", "kill", "kill_all", "retry_failed", "cleanup_orphans"] }, superagentIds: { type: "array", items: { type: "string" } } }, required: ["action"] },
         },
+        {
+          name: "superagent_server_health",
+          description: "Check health of the Superagent background HTTP server, all active CLI sessions, and Remote Chrome bridge. Use to diagnose connectivity issues.",
+          inputSchema: { type: "object", properties: {} },
+        },
       ],
     };
   });
@@ -360,6 +366,8 @@ export function createSuperagentMcpServer(): Server {
           return await handleMerge(args);
         case "superagent_manage":
           return await handleManage(args);
+        case "superagent_server_health":
+          return await handleServerHealth();
         default:
           throw new McpError(ErrorCode.MethodNotFound, `Tool '${name}' not recognized.`);
       }

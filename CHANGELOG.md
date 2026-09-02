@@ -1,3 +1,22 @@
+## [1.5.28] - 2026-09-02
+
+### Opt: 37-Tool MCP Suite — Safe Date Parsing, Full Error Handling, Server Health Tool & Expanded Tests
+
+- **`superagent_server_health` (37th tool, `src/core/mcp/tools/configTools.ts`)**:
+  - New tool to check the Superagent background HTTP server (port 7888), all active CLI sessions via process journal, and Remote Chrome bridge status in one call.
+
+- **Bug Fix — `superagent_query_history` "Invalid time value" (`src/core/mcp/tools/configTools.ts`)**:
+  - All date values now go through a `safeDate()` helper that safely handles numeric timestamps, ISO strings, zero/null/undefined without ever throwing `Invalid time value`.
+
+- **Optimized `configTools.ts`**:
+  - Fixed `maxConcurrency` -> `concurrencyLimit` (correct `SystemSettings` field name).
+  - Fixed `applyModelPreset` return type (void, not boolean).
+  - Full try/catch error handling on all SQLite, provider, and preset operations.
+  - `handleMemorySearch` now does in-memory fuzzy matching against content, tag, and preview fields.
+
+- **Expanded Tests (`tests/mcpServer.test.ts`)**:
+  - 4 test suites covering all 37 tools, 5 Resources (with JSON parse validation), 3 Prompts (all 3 rendered), and end-to-end tool execution (write, read, grep, config, token usage, context compaction, server health, query history, memory save/search).
+
 ## [1.5.27] - 2026-09-02
 
 ### Feat: Real-Time Process Journal & Inter-Process Discovery for Interactive Superagent CLI

@@ -1,5 +1,6 @@
 /**
- * configTools.ts — Configuration, presets, persistent memory, history queries, token analytics, and Chrome bridge tools for MCP.
+ * configTools.ts — Configuration, presets, persistent memory, history queries,
+ * token analytics, context compaction, and Chrome bridge tools for MCP.
  */
 
 import { McpToolResult } from "../types.js";
@@ -33,6 +34,15 @@ import {
   getRemoteChromeClientMetadata,
 } from "../../tools/remoteChromeBridge.js";
 
+/** Safe date formatter — never throws Invalid time value */
+function safeDate(val: unknown): string {
+  try {
+    const n = typeof val === "string" ? Date.parse(val) : Number(val);
+    if (!isNaN(n) && n > 0) return new Date(n).toISOString();
+  } catch {}
+  return "unknown";
+}
+
 export async function handleGetConfig(): Promise<McpToolResult> {
   const settings = getSettings();
   const activeProvider = getActiveProviderName();
@@ -45,30 +55,41 @@ export async function handleGetConfig(): Promise<McpToolResult> {
 
   const lines = [
     "=== Superagent Configuration ===",
-    `Active Provider: ${activeProvider}`,
-    `Configured Providers: ${providers.join(", ")}`,
+    `Active Provider: ${activeProvider || "none"}`,
+    `Configured Providers: ${providers.length > 0 ? providers.map((p: any) => p.name || p).join(", ") : "none"}`,
     `Active Presets: Single = ${singlePreset || "default"} | Multi = ${multiPreset || "default"}`,
-    `Effective Models: Single = ${singleModel} | Multi = ${multiModel}`,
-    `\nTier Models (Multi-Agent):`,
+    `Effective Models:`,
+    `  - Single: ${singleModel}`,
+    `  - Multi Master: ${multiModel}`,
+    `Tier Models (Multi):`,
     ...Object.entries(tierModels).map(([tier, model]) => `  - ${tier}: ${model}`),
     `\nSystem Settings:`,
-    `  - Concurrency: ${settings.concurrencyLimit ?? 5}`,
-    `  - Max Iterations: ${settings.maxIterations ?? 50}`,
-    `  - Streaming: ${settings.disableStreaming ? "Disabled" : "Enabled"}`,
-    `  - Rate Limit RPM: ${settings.rateLimitRpm ?? 60}`,
+    `  - Context Window Limit: ${settings.contextWindowLimit || "auto"}`,
+    `  - Max Iterations: ${settings.maxIterations || "auto"}`,
+    `  - Streaming: ${settings.disableStreaming ? "disabled" : "enabled"}`,
+    `  - Max Concurrency: ${settings.concurrencyLimit ?? 4}`,
   ];
+
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
 export async function handleSwitchPreset(args: any): Promise<McpToolResult> {
   const presetId = String(args.presetId || args.preset || args.id || "");
-  const mode: "multi" | "single" = args.mode === "multi" ? "multi" : "single";
+  const mode = (args.mode === "multi" ? "multi" : "single") as "multi" | "single";
+
   if (!presetId) {
     return { content: [{ type: "text", text: "Error: 'presetId' is required." }], isError: true };
   }
-  applyModelPreset(presetId, mode, true);
-  setActivePresetId(mode, presetId);
-  return { content: [{ type: "text", text: `Switched ${mode} mode preset to: ${presetId}` }] };
+
+  try {
+    setActivePresetId(mode, presetId);
+    applyModelPreset(presetId, mode, true);
+    return {
+      content: [{ type: "text", text: `Preset '${presetId}' applied for ${mode} mode.` }],
+    };
+  } catch (err: any) {
+    return { content: [{ type: "text", text: `Failed to switch preset: ${err.message}` }], isError: true };
+  }
 }
 
 export async function handleSwitchProvider(args: any): Promise<McpToolResult> {
@@ -76,146 +97,193 @@ export async function handleSwitchProvider(args: any): Promise<McpToolResult> {
   if (!providerName) {
     return { content: [{ type: "text", text: "Error: 'providerName' is required." }], isError: true };
   }
-  switchActiveProvider(providerName);
-  return { content: [{ type: "text", text: `Active AI provider switched to: ${providerName}` }] };
+  try {
+    const ok = switchActiveProvider(providerName);
+    return {
+      content: [{ type: "text", text: ok ? `Switched active provider to: ${providerName}` : `Provider '${providerName}' not found in configured providers.` }],
+      isError: !ok,
+    };
+  } catch (err: any) {
+    return { content: [{ type: "text", text: `Failed to switch provider: ${err.message}` }], isError: true };
+  }
 }
 
 export async function handleMemorySearch(args: any): Promise<McpToolResult> {
   const query = String(args.query || args.search || args.keyword || "");
-  const limit = typeof args.limit === "number" ? args.limit : 10;
+  const limit = typeof args.limit === "number" ? args.limit : 20;
+
   if (!query) {
-    return { content: [{ type: "text", text: "Error: 'query' is required." }], isError: true };
+    return { content: [{ type: "text", text: "Error: 'query' is required for memory search." }], isError: true };
   }
-  const allPinned = getAllPinnedKnowledgeFromDb() || [];
+
+  const allPinned = getAllPinnedKnowledgeFromDb();
+  const lower = query.toLowerCase();
   const matched = allPinned
-    .filter(
-      (p: any) =>
-        (p.content || p.preview || "").toLowerCase().includes(query.toLowerCase()) ||
-        (p.tag || "").toLowerCase().includes(query.toLowerCase())
-    )
+    .filter((p: any) => {
+      const content = String(p.content || "").toLowerCase();
+      const tag = String(p.tag || "").toLowerCase();
+      const preview = String(p.preview || "").toLowerCase();
+      return content.includes(lower) || tag.includes(lower) || preview.includes(lower);
+    })
     .slice(0, limit);
 
   if (matched.length === 0) {
-    return { content: [{ type: "text", text: `No pinned knowledge found matching: "${query}"` }] };
+    return { content: [{ type: "text", text: `No persistent memories matched query: "${query}"` }] };
   }
 
   const text = matched
-    .map(
-      (m: any) =>
-        `[Tag: ${m.tag || "general"} | ${new Date(Number(m.timestamp) || Date.now()).toISOString()}]: ${m.content || m.preview}`
-    )
-    .join("\n\n");
-  return { content: [{ type: "text", text }] };
+    .map((p: any) => {
+      const dateStr = safeDate(p.pinnedAt || p.timestamp);
+      return `[Tag: ${p.tag || "general"} | Saved: ${dateStr}]\n${p.content || ""}`;
+    })
+    .join("\n\n---\n\n");
+
+  return { content: [{ type: "text", text: `Found ${matched.length} memory snippet(s):\n\n${text}` }] };
 }
 
 export async function handleMemorySave(args: any): Promise<McpToolResult> {
-  const content = String(args.content || args.text || args.memory || "");
+  const content = String(args.content || args.knowledge || args.text || "");
   const tag = String(args.tag || args.category || "general");
+
   if (!content) {
-    return { content: [{ type: "text", text: "Error: 'content' is required." }], isError: true };
+    return { content: [{ type: "text", text: "Error: 'content' is required to save memory." }], isError: true };
   }
+
   const now = Date.now();
+  const preview = content.length > 100 ? content.slice(0, 100) + "..." : content;
+  const id = `mcp_mem_${now}_${Math.random().toString(36).slice(2, 8)}`;
+
   savePinnedKnowledgeToDb({
-    id: `pin_${now}_${Math.random().toString(36).slice(2, 8)}`,
+    id,
     content,
-    preview: content.slice(0, 200),
+    preview,
     tag,
-    role: "user",
+    role: "assistant",
     pinnedAt: now,
     timestamp: now,
     sourceSessionPath: process.cwd(),
     workingDirectory: process.cwd(),
   });
-  return { content: [{ type: "text", text: `Knowledge snippet saved to persistent memory under tag [${tag}].` }] };
+
+  return { content: [{ type: "text", text: `Knowledge snippet saved to persistent memory under tag [${tag}]. ID: ${id}` }] };
 }
 
 export async function handleQueryHistory(args: any): Promise<McpToolResult> {
   const action = String(args.action || "list_sessions");
-  const limit = typeof args.limit === "number" ? args.limit : 20;
+  const limit = typeof args.limit === "number" ? Math.min(args.limit, 100) : 20;
 
   if (action === "list_sessions") {
-    const sessions = listSessionsFromDb(limit);
+    let sessions: any[] = [];
+    try {
+      sessions = listSessionsFromDb(limit);
+    } catch (err: any) {
+      return { content: [{ type: "text", text: `Error reading sessions: ${err.message}` }], isError: true };
+    }
+
+    if (sessions.length === 0) {
+      return { content: [{ type: "text", text: "No sessions found in history database." }] };
+    }
+
     const text = sessions
       .map((s: any) => {
-        const dateVal = Number(s.lastModified) || 0;
-        const dateStr = dateVal > 0 ? new Date(dateVal).toISOString() : "unknown";
+        const dateStr = safeDate(s.lastModified);
         const mode = s.filePath?.includes("multi") ? "multi" : "single";
-        const title = s.displayName || s.firstChat || s.preview || "(no title)";
-        return `- ID: ${s.id} | Mode: ${mode} | Messages: ${s.messageCount ?? 0} | Updated: ${dateStr} | Title: ${title}`;
+        const title = (s.displayName || s.firstChat || s.preview || "(no title)").slice(0, 80);
+        const msgCount = s.messageCount ?? 0;
+        return `- ID: ${s.id} | ${mode} | ${msgCount} msg | ${dateStr} | ${title}`;
       })
       .join("\n");
-    return {
-      content: [{ type: "text", text: text || "No sessions found in history database." }],
-    };
+
+    return { content: [{ type: "text", text: `Recent Sessions (${sessions.length}):\n${text}` }] };
   }
 
   if (action === "get_messages") {
     const sessionId = String(args.sessionId || args.id || "");
     if (!sessionId) {
-      return {
-        content: [{ type: "text", text: "Error: 'sessionId' is required for action 'get_messages'." }],
-        isError: true,
-      };
+      return { content: [{ type: "text", text: "Error: 'sessionId' is required for action 'get_messages'." }], isError: true };
     }
-    const record = loadSessionFromDb(sessionId);
+
+    let record: any = null;
+    try {
+      record = loadSessionFromDb(sessionId);
+    } catch (err: any) {
+      return { content: [{ type: "text", text: `Error loading session: ${err.message}` }], isError: true };
+    }
+
     if (!record) {
-      return {
-        content: [{ type: "text", text: `Session '${sessionId}' not found in SQLite database.` }],
-      };
+      return { content: [{ type: "text", text: `Session '${sessionId}' not found.` }] };
     }
+
     const msgs = record.messages || [];
-    const text = msgs
-      .map(
-        (m: any) =>
-          `[${(m.role || "unknown").toUpperCase()}]: ${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`
-      )
+    if (msgs.length === 0) {
+      return { content: [{ type: "text", text: `Session '${sessionId}' has no messages.` }] };
+    }
+
+    const msgLimit = typeof args.messageLimit === "number" ? args.messageLimit : 50;
+    const sliced = msgs.slice(-msgLimit);
+    const text = sliced
+      .map((m: any) => {
+        const role = (m.role || "unknown").toUpperCase();
+        const body = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+        return `[${role}]: ${body.slice(0, 500)}${body.length > 500 ? "..." : ""}`;
+      })
       .join("\n\n");
-    return {
-      content: [{ type: "text", text: text || "(Session has no messages)" }],
-    };
+
+    return { content: [{ type: "text", text: `Messages for session ${sessionId} (last ${sliced.length}):\n\n${text}` }] };
   }
 
   if (action === "search") {
     const query = String(args.query || args.keyword || "");
     if (!query) {
-      return {
-        content: [{ type: "text", text: "Error: 'query' is required for action 'search'." }],
-        isError: true,
-      };
+      return { content: [{ type: "text", text: "Error: 'query' is required for action 'search'." }], isError: true };
     }
-    const results = searchMessagesInDb(query, limit);
+
+    let results: any[] = [];
+    try {
+      results = searchMessagesInDb(query, limit);
+    } catch (err: any) {
+      return { content: [{ type: "text", text: `Error searching messages: ${err.message}` }], isError: true };
+    }
+
     if (results.length === 0) {
-      return { content: [{ type: "text", text: `No history matches found for query: "${query}"` }] };
+      return { content: [{ type: "text", text: `No history matches for: "${query}"` }] };
     }
+
     const text = results
       .map((r: any) => {
-        const dateVal = Number(r.timestamp) || 0;
-        const dateStr = dateVal > 0 ? new Date(dateVal).toISOString() : "unknown";
-        const snip = (r.content || "").length > 200 ? (r.content || "").slice(0, 200) + "..." : r.content || "";
-        return `[Session ${r.sessionId} | ${r.role} | ${dateStr}]: ${snip}`;
+        const dateStr = safeDate(r.timestamp);
+        const snip = (r.content || "").slice(0, 200);
+        return `[Session ${r.sessionId} | ${r.role} | ${dateStr}]: ${snip}${(r.content || "").length > 200 ? "..." : ""}`;
       })
       .join("\n\n");
-    return {
-      content: [{ type: "text", text }],
-    };
+
+    return { content: [{ type: "text", text: `Found ${results.length} match(es) for "${query}":\n\n${text}` }] };
   }
 
-  return {
-    content: [{ type: "text", text: `Unknown history action: ${action}` }],
-    isError: true,
-  };
+  return { content: [{ type: "text", text: `Unknown history action '${action}'. Valid: list_sessions, get_messages, search.` }], isError: true };
 }
 
 export async function handleGetTokenUsage(): Promise<McpToolResult> {
+  const settings = getSettings();
+  const windowLimit = settings.contextWindowLimit || "auto";
+  const totalUsed = masterPromptTokens + masterCompletionTokens;
+  const limitNum = typeof windowLimit === "number" ? windowLimit : 0;
+  const usagePercent = limitNum > 0 ? ((totalUsed / limitNum) * 100).toFixed(1) : "N/A";
+
   const lines = [
     "=== Superagent Context & Token Analytics ===",
-    `Master Tokens:`,
-    `  - Total Prompt Tokens: ${masterPromptTokens}`,
-    `  - Total Completion Tokens: ${masterCompletionTokens}`,
-    `  - Last Prompt Tokens: ${lastMasterPromptTokens}`,
-    `\nContext Limits:`,
-    `  - Window Limit: ${getSettings().contextWindowLimit || "auto"}`,
+    `Master Agent Tokens:`,
+    `  - Total Prompt Tokens: ${masterPromptTokens.toLocaleString()}`,
+    `  - Total Completion Tokens: ${masterCompletionTokens.toLocaleString()}`,
+    `  - Total Combined: ${totalUsed.toLocaleString()}`,
+    `  - Last Prompt Tokens: ${lastMasterPromptTokens.toLocaleString()}`,
+    `\nContext Window:`,
+    `  - Limit: ${windowLimit}`,
+    `  - Usage: ${usagePercent}%`,
+    `  - Max Iterations: ${settings.maxIterations || "auto"}`,
+    `  - Streaming: ${settings.disableStreaming ? "disabled" : "enabled"}`,
   ];
+
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
@@ -227,19 +295,19 @@ export async function handleRemoteChrome(args: any): Promise<McpToolResult> {
   if (action === "status") {
     const connected = isRemoteChromeConnected();
     const meta = getRemoteChromeClientMetadata();
-    const statusText = [
-      `Remote Chrome Bridge Status: ${connected ? "🟢 Connected (Port 9223)" : "🔴 Disconnected"}`,
-      meta ? `  - Platform: ${meta.platform || "unknown"} | Extension Version: ${meta.extensionVersion || "1.0.0"}` : "",
-      meta ? `  - Active Tab: ${meta.activeTab?.title || "(none)"} (${meta.activeTab?.url || ""})` : "",
-      meta ? `  - Total Commands Executed: ${meta.commandCount}` : "",
-    ].filter(Boolean).join("\n");
-    return { content: [{ type: "text", text: statusText }] };
+    const lines = [
+      `Remote Chrome Bridge: ${connected ? "Connected (port 9223)" : "Disconnected"}`,
+      meta ? `  Platform: ${meta.platform || "unknown"} | Extension: v${meta.extensionVersion || "1.0.0"}` : "",
+      meta?.activeTab ? `  Active Tab: ${meta.activeTab.title || "(none)"} - ${meta.activeTab.url || ""}` : "",
+      meta ? `  Commands sent: ${meta.commandCount}` : "",
+    ].filter(Boolean);
+    return { content: [{ type: "text", text: lines.join("\n") }] };
   }
 
   try {
     await ensureRemoteChromeBridge();
     const result = await sendRemoteCommand(action, target, value);
-    return { content: [{ type: "text", text: result || `Chrome action '${action}' completed.` }] };
+    return { content: [{ type: "text", text: result || `Chrome action '${action}' executed.` }] };
   } catch (err: any) {
     return { content: [{ type: "text", text: `Remote Chrome error: ${err.message}` }], isError: true };
   }
@@ -250,27 +318,37 @@ export async function handleExportSession(args: any): Promise<McpToolResult> {
   const format = String(args.format || "markdown").toLowerCase();
 
   if (!sessionId) {
-    return { content: [{ type: "text", text: "Error: 'sessionId' is required to export." }], isError: true };
+    return { content: [{ type: "text", text: "Error: 'sessionId' is required." }], isError: true };
   }
 
-  const record = loadSessionFromDb(sessionId);
+  let record: any = null;
+  try {
+    record = loadSessionFromDb(sessionId);
+  } catch (err: any) {
+    return { content: [{ type: "text", text: `Error loading session: ${err.message}` }], isError: true };
+  }
+
   if (!record) {
-    return { content: [{ type: "text", text: `Session '${sessionId}' not found in SQLite database.` }], isError: true };
+    return { content: [{ type: "text", text: `Session '${sessionId}' not found.` }], isError: true };
   }
 
   if (format === "json") {
     return { content: [{ type: "text", text: JSON.stringify(record, null, 2) }] };
   }
 
+  const workDir = record.session?.workingDirectory || record.workingDirectory || "unknown";
+  const messages = record.messages || [];
   const lines = [
-    `# Superagent Session Transcript: ${sessionId}`,
-    `Working Directory: ${record.session?.workingDirectory || "unknown"}`,
-    `Total Messages: ${(record.messages || []).length}`,
-    `Exported At: ${new Date().toISOString()}`,
-    `\n---\n`,
+    `# Superagent Session: ${sessionId}`,
+    `Working Directory: ${workDir}`,
+    `Total Messages: ${messages.length}`,
+    `Exported: ${new Date().toISOString()}`,
+    "",
+    "---",
+    "",
   ];
 
-  for (const m of record.messages || []) {
+  for (const m of messages) {
     const role = (m.role || "unknown").toUpperCase();
     const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content, null, 2);
     lines.push(`## [${role}]\n\n${content}\n`);
@@ -282,12 +360,61 @@ export async function handleExportSession(args: any): Promise<McpToolResult> {
 export async function handleCompactContext(args: any): Promise<McpToolResult> {
   const strategy = String(args.strategy || "auto");
   const maxTokens = typeof args.maxTokens === "number" ? args.maxTokens : 4000;
-  const report = [
-    `Context Compaction Execution:`,
+  const settings = getSettings();
+  const windowLimit = settings.contextWindowLimit || "auto";
+  const totalUsed = masterPromptTokens + masterCompletionTokens;
+
+  const lines = [
+    "Context Compaction Status:",
     `  - Strategy: ${strategy}`,
-    `  - Target Token Budget: ${maxTokens}`,
-    `  - Master Prompt Tokens: ${masterPromptTokens}`,
-    `  - Status: ContextManager strategies (SummarizationStrategy, PruningStrategy, PinningStrategy) active.`,
-  ].join("\n");
-  return { content: [{ type: "text", text: report }] };
+    `  - Target Token Budget: ${maxTokens.toLocaleString()}`,
+    `  - Current Usage: ${totalUsed.toLocaleString()} / ${windowLimit}`,
+    `  - Available Strategies: SummarizationStrategy, PruningStrategy, PinningStrategy`,
+    `  - Status: ContextManager is active and manages compaction automatically.`,
+    strategy !== "auto" ? `  - Manual ${strategy} strategy will be prioritized at next overflow.` : "",
+  ].filter(Boolean);
+
+  return { content: [{ type: "text", text: lines.join("\n") }] };
+}
+
+export async function handleServerHealth(): Promise<McpToolResult> {
+  const { callServerApi } = await import("./processTools.js");
+  const { loadActiveProcesses } = await import("../processJournal.js");
+
+  const lines = ["=== Superagent Server Health ==="];
+
+  // Check background HTTP server (port 7888)
+  const ping = await callServerApi("/api/ping", "GET", undefined, 2000);
+  if (ping.success) {
+    lines.push(`Background HTTP Server (port 7888): Online`);
+    if (ping.data?.version) lines.push(`  Version: ${ping.data.version}`);
+  } else {
+    lines.push(`Background HTTP Server (port 7888): Offline (${ping.error || "no response"})`);
+  }
+
+  // Check live CLI processes
+  const procs = loadActiveProcesses().filter((p) => p.mode !== "mcp");
+  if (procs.length > 0) {
+    lines.push(`\nActive CLI Sessions: ${procs.length}`);
+    for (const p of procs) {
+      const uptimeSec = Math.round((Date.now() - p.startedAt) / 1000);
+      const m = Math.floor(uptimeSec / 60);
+      const s = uptimeSec % 60;
+      const uptimeStr = m > 0 ? `${m}m ${s}s` : `${s}s`;
+      lines.push(`  - PID ${p.pid} | ${p.mode} | ${p.workingDirectory} | Uptime: ${uptimeStr} | Agent: ${p.isAgentRunning ? "Running" : "Idle"}`);
+      if ((p.activeSuperagents || []).length > 0) {
+        for (const sa of p.activeSuperagents!) {
+          lines.push(`    • Superagent [${sa.id}] ${sa.role} -> ${sa.status}`);
+        }
+      }
+    }
+  } else {
+    lines.push(`\nActive CLI Sessions: None`);
+  }
+
+  // Check Remote Chrome bridge
+  const chromeConnected = isRemoteChromeConnected();
+  lines.push(`\nRemote Chrome Bridge (port 9223): ${chromeConnected ? "Connected" : "Disconnected"}`);
+
+  return { content: [{ type: "text", text: lines.join("\n") }] };
 }
