@@ -1,3 +1,31 @@
+## [1.5.22] - 2026-09-02
+
+### Feat: Superagent Model Context Protocol (MCP) Server & Bidirectional Communication
+
+- **Superagent MCP Server (`src/core/mcp/superagentMcpServer.ts`, `src/cli.tsx`)**:
+  - Implemented an MCP Server using `@modelcontextprotocol/sdk` (Stdio transport) to expose Superagent to external AI assistants (Antigravity/AGY, Claude Desktop, Cursor).
+  - Added MCP tools for monitoring and orchestrating Superagent:
+    - `superagent_list_active`: Inspect currently running and completed Superagents, subagents, and background processes in real time.
+    - `superagent_get_status`: Retrieve detailed status, worktree paths, acceptance criteria, constraints, violations, and reports.
+    - `superagent_get_logs`: Fetch live output and step logs for specific agent instances.
+    - `superagent_send_message`: Two-way interactive communication tool to send follow-up instructions, clarifications, and feedback to active or paused Superagents.
+    - `superagent_invoke`: Spawn new feature-level Superagents in isolated Git worktrees.
+    - `superagent_await`: Wait for running Superagents to complete tasks.
+    - `superagent_merge`: Merge completed feature branches into main workspace branch with conflict resolution.
+    - `superagent_manage`: Control Superagent lifecycle (`kill`, `report`, `violations`, `retry_failed`, `cleanup_orphans`).
+    - `superagent_query_history`: Query chat transcripts, session records, and full-text search directly from the SQLite database.
+  - Added dynamic bridging: Automatically communicates with the local background Superagent server on port 7888 if running, and falls back to direct SQLite database and worktree registry inspection.
+
+- **Antigravity (AGY) Registration (`src/core/mcp/mcpRegistration.ts`)**:
+  - Added auto-registration helper and CLI command `superagent mcp register` to configure `~/.gemini/config/mcp_config.json` with decoded OS file paths.
+
+- **HTTP API Server Routes (`src/serverRoutes.ts`, `src/server.ts`)**:
+  - Added `/api/superagents/message`, `/api/superagents/invoke`, and `/api/superagents/manage` endpoints.
+  - Automatically records `server-info.json` upon startup for local port/auth token discovery.
+
+- **Tests (`tests/mcpServer.test.ts`)**:
+  - Added comprehensive test suite validating all MCP tool schemas, tool execution, and AGY configuration registration.
+
 ## [1.5.21] - 2026-09-02
 
 ### Fix: Real-time CLI Bridge Progress & File Edit Tool Safety

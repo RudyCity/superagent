@@ -20,6 +20,25 @@ if (process.argv[2] === "session") {
   process.exit(0);
 }
 
+if (process.argv[2] === "mcp" && process.argv[3] === "register") {
+  const { registerToAgyConfig } = await import("./core/mcp/mcpRegistration.js");
+  const res = registerToAgyConfig();
+  console.log(res.message);
+  process.exit(res.success ? 0 : 1);
+}
+
+if (
+  process.argv.includes("--mcp") ||
+  process.argv.includes("--mcp-server") ||
+  process.argv[2] === "mcp-server" ||
+  (process.argv[2] === "mcp" && !["register", "list", "add", "remove"].includes(process.argv[3]))
+) {
+  const { startSuperagentMcpServer } = await import("./core/mcp/superagentMcpServer.js");
+  await startSuperagentMcpServer();
+  // Keep process alive while Stdio transport runs
+  await new Promise(() => {});
+}
+
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
   const { getSuperAgentVersion } = await import("./core/config/paths.js");
   console.log(getSuperAgentVersion());
@@ -32,17 +51,21 @@ Usage: superagent [command/options] [prompt]
 
 Commands:
   session           Manage conversation sessions (list, export, clear --empty, import)
+  mcp register      Register Superagent MCP Server to Antigravity (AGY) configuration
 
 Options:
   -r, --resume            Resume the last active session
   -w, --workspace <path>  Target workspace directory path
   --multi                 Start in Multi Superagent master orchestrator mode
+  --mcp, --mcp-server     Start Superagent as an MCP (Model Context Protocol) server
   -s, --server [P]        Start API server (default port: 7888)
   -m, --client-mode <M>   Client mode for server: 'chrome-extension' or 'tline' (default: tline)
   -h, --help              Show this help message and exit
 
 Examples:
   superagent
+  superagent --mcp
+  superagent mcp register
   superagent session list -w ./my-project
   superagent session export sess_123 -o output.md
   superagent session clear --empty

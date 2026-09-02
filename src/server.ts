@@ -7,7 +7,7 @@ import { tryStatSync } from "./core/tools/helpers.js";
 import os from "os";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
-import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb, generateSessionId, purgeEmptySessions, getPackageRootDir, getInstalledSkills, getSuperAgentVersion } from "./core/config.js";
+import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb, generateSessionId, purgeEmptySessions, getPackageRootDir, getInstalledSkills, getSuperAgentVersion, getRootConfigDir } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents, registerQuestionHandler } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
@@ -778,6 +778,15 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   });
 
   server.listen(port, '127.0.0.1', () => {
+    try {
+      const serverInfoPath = path.join(getRootConfigDir(), "server-info.json");
+      fs.writeFileSync(serverInfoPath, JSON.stringify({
+        port,
+        pid: process.pid,
+        authToken: serverAuthToken,
+        startedAt: Date.now()
+      }, null, 2), "utf-8");
+    } catch {}
     logToSuperAgentServerFile(`[SERVER] Auth token: ${serverAuthToken}`);
     if (!silent) {
       console.log(`\n🚀 SuperAgent Server v${getSuperAgentVersion()} is running at http://localhost:${port}`);

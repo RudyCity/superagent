@@ -979,6 +979,81 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Send message to Superagent (two-way communication)
+  if (pathname === "/api/superagents/message" && req.method === "POST") {
+    const bodyStr = await readBody(req);
+    const body = JSON.parse(bodyStr || "{}");
+    const { superagentId, message, wait } = body;
+
+    if (!superagentId || !message) {
+      sendJSON(res, 400, { error: "Both superagentId and message are required" });
+      return true;
+    }
+
+    try {
+      const { sendMessageToSuperagentTool } = await import("./core/tools/superagentTools.js");
+      const targetWorkspace = resolveWorkspacePath(req) || lastActiveWorkspace;
+      const result = await sendMessageToSuperagentTool.execute(
+        { superagentId, message, wait: wait === true },
+        targetWorkspace
+      );
+      sendJSON(res, 200, { success: true, result });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Invoke a new Superagent
+  if (pathname === "/api/superagents/invoke" && req.method === "POST") {
+    const bodyStr = await readBody(req);
+    const body = JSON.parse(bodyStr || "{}");
+    const { role, task, branch, wait, constraints, acceptanceCriteria } = body;
+
+    if (!role || !task) {
+      sendJSON(res, 400, { error: "Both role and task are required" });
+      return true;
+    }
+
+    try {
+      const { invokeSuperagentTool } = await import("./core/tools/superagentTools.js");
+      const targetWorkspace = resolveWorkspacePath(req) || lastActiveWorkspace;
+      const result = await invokeSuperagentTool.execute(
+        { role, task, branch, wait: wait === true, constraints, acceptanceCriteria },
+        targetWorkspace
+      );
+      sendJSON(res, 200, { success: true, result });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Manage Superagents (kill, report, status, list, etc.)
+  if (pathname === "/api/superagents/manage" && req.method === "POST") {
+    const bodyStr = await readBody(req);
+    const body = JSON.parse(bodyStr || "{}");
+    const { action, superagentIds } = body;
+
+    if (!action) {
+      sendJSON(res, 400, { error: "Action is required" });
+      return true;
+    }
+
+    try {
+      const { manageSuperagentsTool } = await import("./core/tools/superagentTools.js");
+      const targetWorkspace = resolveWorkspacePath(req) || lastActiveWorkspace;
+      const result = await manageSuperagentsTool.execute(
+        { action, superagentIds },
+        targetWorkspace
+      );
+      sendJSON(res, 200, { success: true, result });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message || String(err) });
+    }
+    return true;
+  }
+
   // Fetch workspace files
   if (pathname === "/api/workspace/files" && req.method === "GET") {
     const wsPath = resolveWorkspacePath(req);
