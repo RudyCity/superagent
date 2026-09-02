@@ -1,3 +1,29 @@
+## [1.5.23] - 2026-09-02
+
+### Feat: Comprehensive Superagent Process Control, Interruption, Subagent Delegation & Workspace Management over MCP
+
+- **Real-time Process Inspection & Monitoring (`src/core/mcp/superagentMcpServer.ts`)**:
+  - Added `superagent_get_process_status`: Streams live AI processing metrics (Master Agent status, loop iterations, prompt/completion token usage, running Superagents with real-time logs, running subagents hierarchy, background tasks, and active tool output stream).
+
+- **Execution Control & Interruption (`src/core/mcp/superagentMcpServer.ts`)**:
+  - Added `superagent_interrupt`: Immediately aborts and cancels running agent loops, Superagents, subagents, or background shell process trees.
+  - Added `superagent_pause`: Pauses running Superagent execution.
+  - Added `superagent_resume`: Resumes paused Superagents with optional new guidance or instructions.
+
+- **Subagent Delegation (`src/core/mcp/superagentMcpServer.ts`)**:
+  - Added `superagent_run_task`: Allows external assistants (such as Antigravity / AGY) to delegate full engineering tasks to Superagent as a powerful subagent, returning complete execution results, tool runs, and file modifications.
+  - Added `superagent_spawn_subagent`: Directly launches specialized atomic Subagents (`researcher`, `coder`, `reviewer`, `software-tester`, `chrome-agent`) and retrieves their structured reports.
+
+- **Workspace Navigation & Configuration (`src/core/mcp/superagentMcpServer.ts`)**:
+  - Added `superagent_switch_workspace`: Switches active workspace directory with trust persistence.
+  - Added `superagent_get_workspace`: Returns current working directory, git branch, and worktree list.
+  - Added `superagent_get_plan_and_tasks` & `superagent_update_tasks`: Reads and updates implementation plans and task checklists.
+  - Added `superagent_get_config`, `superagent_switch_preset`, and `superagent_switch_provider`: Inspects and switches model presets and AI providers.
+  - Added `superagent_memory_search` & `superagent_memory_save`: Searches and persists knowledge into SQLite database.
+
+- **Tests (`tests/mcpServer.test.ts`)**:
+  - Added comprehensive test cases covering process inspection, pause/interrupt, workspace switching, config inspection, and memory save/search.
+
 ## [1.5.22] - 2026-09-02
 
 ### Feat: Superagent Model Context Protocol (MCP) Server & Bidirectional Communication

@@ -1,19 +1,9 @@
 /**
- * superagentMcpServer.ts — MCP Server implementation for Superagent.
+ * superagentMcpServer.ts — Comprehensive MCP Server implementation for Superagent.
  *
- * Exposes Superagent inspection, monitoring, bidirectional communication,
- * and orchestration tools to external MCP clients (e.g. Antigravity / AGY, Claude Desktop).
- *
- * Implements tools:
- *   - superagent_list_active     : List running/completed Superagents, subagents, and background processes
- *   - superagent_get_status      : Get detailed status, reports, criteria, and violations for Superagents
- *   - superagent_get_logs        : Get live/recent logs for a Superagent or Subagent
- *   - superagent_send_message    : Send follow-up instruction/message to an active or paused Superagent (two-way communication)
- *   - superagent_invoke          : Spawn a new Superagent on a feature branch/worktree
- *   - superagent_await           : Wait for active Superagents to complete
- *   - superagent_merge           : Merge completed Superagent branches with conflict resolution
- *   - superagent_manage          : Manage Superagent lifecycle (status, kill, retry_failed, etc.)
- *   - superagent_query_history   : Query sessions and chat transcripts from SQLite database
+ * Exposes full Superagent inspection, monitoring, bidirectional communication,
+ * live interruption/control, subagent delegation, workspace switching, presets,
+ * plan/task checklist management, and persistent memory to external MCP clients (Antigravity/AGY, Claude, Cursor).
  */
 
 import fs from "fs";
@@ -30,8 +20,38 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { getRootConfigDir, getSuperAgentVersion } from "../config/paths.js";
 import { loadRegistry, reconcileRegistry } from "../tools/superagentRegistry.js";
-import { superagentInstances, subagentInstances, backgroundTasks } from "../tools/state.js";
-import { listSessionsFromDb, loadSessionFromDb, searchMessagesInDb } from "../storage/historyDb.js";
+import {
+  superagentInstances,
+  subagentInstances,
+  backgroundTasks,
+  activeToolOutput,
+  masterAgentRef,
+  masterPromptTokens,
+  masterCompletionTokens,
+  lastMasterPromptTokens,
+} from "../tools/state.js";
+import {
+  listSessionsFromDb,
+  loadSessionFromDb,
+  searchMessagesInDb,
+  savePinnedKnowledgeToDb,
+  getAllPinnedKnowledgeFromDb,
+} from "../storage/historyDb.js";
+import {
+  getSettings,
+  getPresets,
+  getActivePresetId,
+  setActivePresetId,
+  applyModelPreset,
+  switchActiveProvider,
+  getActiveProviderName,
+  getConfiguredProviders,
+  getEffectiveMasterModel,
+  getAllTierModels,
+  addTrustedDirectory,
+  ensureDirectoryTrusted,
+} from "../config.js";
+import { killProcessTree } from "../tools/shellTools.js";
 
 const MCP_LOG_FILE = path.join(os.homedir(), ".superagent-r", "superagent-mcp.log");
 
@@ -67,7 +87,7 @@ export function getServerInfo(): ServerInfo | null {
 }
 
 /**
- * Attempt to query the running Superagent HTTP API server if available.
+ * Query the running Superagent HTTP API server if available.
  */
 async function callServerApi(
   apiPath: string,
@@ -142,7 +162,6 @@ async function callServerApi(
  * Format a list of active Superagents, subagents, and background tasks.
  */
 async function listActiveInstances(): Promise<{ formatted: string; data: any }> {
-  // Try remote server API first
   const serverRes = await callServerApi("/api/instances", "GET");
   if (serverRes.success && serverRes.data) {
     const { superagents = [], subagents = [], procs = [] } = serverRes.data;
@@ -199,7 +218,6 @@ async function listActiveInstances(): Promise<{ formatted: string; data: any }> 
     });
   }
 
-  // Add registry entries not already in memory
   for (const entry of registryEntries) {
     if (!superagentList.some((s) => s.id === entry.id)) {
       superagentList.push({
@@ -290,7 +308,7 @@ export function createSuperagentMcpServer(): Server {
   const server = new Server(
     {
       name: "superagent-mcp-server",
-      version: version || "1.5.21",
+      version: version || "1.5.22",
     },
     {
       capabilities: {
@@ -299,7 +317,6 @@ export function createSuperagentMcpServer(): Server {
     }
   );
 
-  // List Tools handler
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
       tools: [
@@ -315,6 +332,15 @@ export function createSuperagentMcpServer(): Server {
                 description: "Whether to include completed or terminated instances (defaults to true)",
               },
             },
+          },
+        },
+        {
+          name: "superagent_get_process_status",
+          description:
+            "Get deep real-time process details of Superagent AI execution: Master Agent status, active loop iterations, active thinking/reasoning stages, active tool outputs, token usage, subagent hierarchy, and background processes.",
+          inputSchema: {
+            type: "object",
+            properties: {},
           },
         },
         {
@@ -373,6 +399,243 @@ export function createSuperagentMcpServer(): Server {
               },
             },
             required: ["superagentId", "message"],
+          },
+        },
+        {
+          name: "superagent_interrupt",
+          description:
+            "Interrupt / abort the AI processing immediately. Stops running agent loops, terminates background tasks, and cleans up execution safely.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              target: {
+                type: "string",
+                enum: ["all", "master", "superagent", "subagent", "task"],
+                description: "Target to interrupt: 'all' (stops everything), 'master', 'superagent', 'subagent', or 'task'",
+              },
+              id: {
+                type: "string",
+                description: "Specific instance ID or background task ID to interrupt (optional if target is 'all')",
+              },
+            },
+          },
+        },
+        {
+          name: "superagent_pause",
+          description: "Pause a running Superagent to halt execution until resumed.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              superagentId: {
+                type: "string",
+                description: "The ID of the Superagent to pause",
+              },
+            },
+            required: ["superagentId"],
+          },
+        },
+        {
+          name: "superagent_resume",
+          description: "Resume a paused Superagent with an optional new instruction/prompt.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              superagentId: {
+                type: "string",
+                description: "The ID of the paused Superagent to resume",
+              },
+              message: {
+                type: "string",
+                description: "Optional instruction or guidance to provide upon resuming",
+              },
+              wait: {
+                type: "boolean",
+                description: "Whether to wait synchronously for completion",
+              },
+            },
+            required: ["superagentId"],
+          },
+        },
+        {
+          name: "superagent_run_task",
+          description:
+            "Delegate a task to Superagent to execute as a powerful subagent for Antigravity, and return the complete generated result, tool executions, and file modifications.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              task: {
+                type: "string",
+                description: "The task prompt or instruction to execute",
+              },
+              role: {
+                type: "string",
+                description: "Optional role/job title (e.g. 'fullstack-engineer', 'bug-investigator')",
+              },
+              mode: {
+                type: "string",
+                enum: ["single", "multi"],
+                description: "Execution mode: 'single' (direct development) or 'multi' (Master orchestrator)",
+              },
+              workspace: {
+                type: "string",
+                description: "Target workspace path (defaults to current working directory)",
+              },
+            },
+            required: ["task"],
+          },
+        },
+        {
+          name: "superagent_spawn_subagent",
+          description:
+            "Directly launch a specialized atomic Subagent (e.g. 'researcher', 'coder', 'reviewer', 'software-tester', 'chrome-agent') and get its report.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                description: "The subagent type name (e.g. 'researcher', 'coder', 'reviewer', 'software-tester', 'chrome-agent')",
+              },
+              prompt: {
+                type: "string",
+                description: "The atomic task instruction for the subagent",
+              },
+              role: {
+                type: "string",
+                description: "Optional human-readable role name",
+              },
+            },
+            required: ["type", "prompt"],
+          },
+        },
+        {
+          name: "superagent_switch_workspace",
+          description: "Switch the active working directory/workspace of Superagent.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspacePath: {
+                type: "string",
+                description: "Absolute or relative path to the new target workspace",
+              },
+            },
+            required: ["workspacePath"],
+          },
+        },
+        {
+          name: "superagent_get_workspace",
+          description: "Get current workspace directory, active git branch, and worktree information.",
+          inputSchema: {
+            type: "object",
+            properties: {},
+          },
+        },
+        {
+          name: "superagent_get_plan_and_tasks",
+          description: "Read the current implementation plan objective and task checklist.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: {
+                type: "string",
+                description: "Optional workspace directory (defaults to current)",
+              },
+            },
+          },
+        },
+        {
+          name: "superagent_update_tasks",
+          description: "Update or modify items in the current task checklist.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              action: {
+                type: "string",
+                enum: ["mark_completed", "mark_in_progress", "add_task", "get_status"],
+                description: "Checklist action to perform",
+              },
+              taskText: {
+                type: "string",
+                description: "The text/description of the task to update or add",
+              },
+            },
+            required: ["action"],
+          },
+        },
+        {
+          name: "superagent_get_config",
+          description: "Retrieve Superagent configuration: active provider, model presets, tier models, and settings.",
+          inputSchema: {
+            type: "object",
+            properties: {},
+          },
+        },
+        {
+          name: "superagent_switch_preset",
+          description: "Switch the active model preset for Superagent.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              presetId: {
+                type: "string",
+                description: "The preset ID or name to activate (e.g. 'qwen3.8-27b', 'openrouter', 'claude-3.5-sonnet')",
+              },
+              mode: {
+                type: "string",
+                enum: ["single", "multi", "auto"],
+                description: "Target mode (defaults to 'single')",
+              },
+            },
+            required: ["presetId"],
+          },
+        },
+        {
+          name: "superagent_switch_provider",
+          description: "Switch the active AI provider.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              providerName: {
+                type: "string",
+                description: "The provider profile ID or name to switch to",
+              },
+            },
+            required: ["providerName"],
+          },
+        },
+        {
+          name: "superagent_memory_search",
+          description: "Search persistent knowledge, facts, and memories stored in Superagent.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              query: {
+                type: "string",
+                description: "The search query to look up in persistent memory",
+              },
+              limit: {
+                type: "number",
+                description: "Max results to return (default: 10)",
+              },
+            },
+            required: ["query"],
+          },
+        },
+        {
+          name: "superagent_memory_save",
+          description: "Save a snippet or knowledge fact into Superagent's persistent memory.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              content: {
+                type: "string",
+                description: "The memory content or fact to save",
+              },
+              tag: {
+                type: "string",
+                description: "Optional category tag for indexing",
+              },
+            },
+            required: ["content"],
           },
         },
         {
@@ -507,7 +770,6 @@ export function createSuperagentMcpServer(): Server {
     };
   });
 
-  // Call Tool handler
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
     logMcp(`Handling tool call: ${name} with args: ${JSON.stringify(args)}`);
@@ -517,20 +779,436 @@ export function createSuperagentMcpServer(): Server {
         case "superagent_list_active": {
           const result = await listActiveInstances();
           return {
-            content: [
-              {
-                type: "text",
-                text: result.formatted,
-              },
-            ],
+            content: [{ type: "text", text: result.formatted }],
           };
+        }
+
+        case "superagent_get_process_status": {
+          const isMasterRunning = masterAgentRef ? (masterAgentRef.isAgentRunning?.() ?? false) : false;
+          const activeSuperagents = [...superagentInstances.values()].filter((i) => i.status === "running" || i.status === "waiting");
+          const activeSubagents = [...subagentInstances.values()].filter((i) => i.status === "running" || i.status === "waiting");
+          const runningProcs = [...backgroundTasks.values()].filter((t) => !t.hasExited && !t.isHidden);
+
+          const lines: string[] = ["=== Real-time Superagent AI Process Status ==="];
+          lines.push(`Master Agent: ${isMasterRunning ? "🟢 RUNNING" : "⚪ IDLE"}`);
+          lines.push(`  - Master Tokens: ${masterPromptTokens} prompt / ${masterCompletionTokens} completion (last: ${lastMasterPromptTokens})`);
+
+          lines.push(`\nRunning Superagents (${activeSuperagents.length}):`);
+          if (activeSuperagents.length === 0) {
+            lines.push("  None");
+          } else {
+            for (const s of activeSuperagents) {
+              const latestLog = (s.logs || []).slice(-3).join(" ").trim();
+              lines.push(`  - [${s.id}] Role: ${s.role} | Branch: ${s.branch} | Status: ${s.status}`);
+              lines.push(`    Task: ${s.task}`);
+              if (latestLog) lines.push(`    Recent Activity: ${latestLog.slice(0, 150)}...`);
+            }
+          }
+
+          lines.push(`\nRunning Subagents (${activeSubagents.length}):`);
+          if (activeSubagents.length === 0) {
+            lines.push("  None");
+          } else {
+            for (const sub of activeSubagents) {
+              lines.push(`  - [${sub.id}] Type: ${sub.typeName} | Role: ${sub.role} | Status: ${sub.status}`);
+              if (sub.prompt) lines.push(`    Prompt: ${sub.prompt.slice(0, 120)}...`);
+            }
+          }
+
+          lines.push(`\nRunning Background Processes (${runningProcs.length}):`);
+          if (runningProcs.length === 0) {
+            lines.push("  None");
+          } else {
+            for (const p of runningProcs) {
+              lines.push(`  - [${p.id}] PID: ${p.process?.pid || "unknown"} | Cmd: ${p.command}`);
+            }
+          }
+
+          if (activeToolOutput && activeToolOutput.trim()) {
+            lines.push(`\nLive Tool Output Stream:`);
+            lines.push(activeToolOutput.slice(-300));
+          }
+
+          return {
+            content: [{ type: "text", text: lines.join("\n") }],
+          };
+        }
+
+        case "superagent_interrupt": {
+          const target = String(args.target || "all");
+          const id = args.id ? String(args.id) : undefined;
+          const stopped: string[] = [];
+
+          // Forward to running server endpoint if active
+          await callServerApi("/api/abort", "POST", { target, id });
+
+          if (target === "all" || target === "master") {
+            if (masterAgentRef?.isAgentRunning?.()) {
+              masterAgentRef.abort();
+              stopped.push("Master Agent");
+            }
+          }
+
+          if (target === "all" || target === "superagent") {
+            for (const [sId, inst] of superagentInstances.entries()) {
+              if (!id || id === sId) {
+                if (inst.status === "running" || inst.status === "waiting" || inst.status === "paused") {
+                  inst.agent?.abort?.();
+                  inst.status = "terminated";
+                  inst.result = "[Interrupted via MCP]";
+                  stopped.push(`Superagent ${sId} (${inst.role})`);
+                }
+              }
+            }
+          }
+
+          if (target === "all" || target === "subagent") {
+            for (const [subId, inst] of subagentInstances.entries()) {
+              if (!id || id === subId) {
+                if (inst.status === "running" || inst.status === "waiting" || inst.status === "paused") {
+                  inst.agent?.abort?.();
+                  inst.status = "terminated";
+                  inst.result = "[Interrupted via MCP]";
+                  stopped.push(`Subagent ${subId} (${inst.role})`);
+                }
+              }
+            }
+          }
+
+          if (target === "all" || target === "task") {
+            for (const [taskId, task] of backgroundTasks.entries()) {
+              if (!id || id === taskId) {
+                if (!task.hasExited && task.process?.pid) {
+                  try {
+                    killProcessTree(task.process.pid);
+                    task.hasExited = true;
+                    task.completedAt = Date.now();
+                    stopped.push(`Task ${taskId} (PID: ${task.process.pid})`);
+                  } catch {}
+                }
+              }
+            }
+          }
+
+          const msg = stopped.length > 0
+            ? `Successfully interrupted: ${stopped.join(", ")}`
+            : "No active agents or processes were running.";
+          return { content: [{ type: "text", text: msg }] };
+        }
+
+        case "superagent_pause": {
+          const superagentId = String(args.superagentId || args.id || "");
+          if (!superagentId) {
+            return {
+              content: [{ type: "text", text: "Error: 'superagentId' is required to pause." }],
+              isError: true,
+            };
+          }
+          const inst = superagentInstances.get(superagentId);
+          if (!inst) {
+            return {
+              content: [{ type: "text", text: `Superagent '${superagentId}' not found.` }],
+              isError: true,
+            };
+          }
+          inst.agent?.abort?.();
+          inst.status = "paused";
+          return {
+            content: [{ type: "text", text: `Superagent '${superagentId}' (${inst.role}) has been paused.` }],
+          };
+        }
+
+        case "superagent_resume": {
+          const superagentId = String(args.superagentId || args.id || "");
+          const message = String(args.message || "Resume and continue working.");
+          const wait = args.wait === true;
+
+          if (!superagentId) {
+            return {
+              content: [{ type: "text", text: "Error: 'superagentId' is required to resume." }],
+              isError: true,
+            };
+          }
+
+          const { sendMessageToSuperagentTool } = await import("../tools/superagentTools.js");
+          const result = await sendMessageToSuperagentTool.execute(
+            { superagentId, message, wait },
+            process.cwd()
+          );
+          return {
+            content: [{ type: "text", text: String(result) }],
+          };
+        }
+
+        case "superagent_run_task": {
+          const task = String(args.task || "");
+          const role = String(args.role || "assistant");
+          const mode = args.mode === "multi" ? "multi" : "single";
+          const targetWs = args.workspace ? path.resolve(String(args.workspace)) : process.cwd();
+
+          if (!task) {
+            return {
+              content: [{ type: "text", text: "Error: 'task' is required." }],
+              isError: true,
+            };
+          }
+
+          // Forward to running server if active
+          const serverRes = await callServerApi("/api/chat", "POST", {
+            message: task,
+            workspace: targetWs,
+            mode,
+          }, 300000);
+          if (serverRes.success) {
+            return {
+              content: [{ type: "text", text: typeof serverRes.data === "string" ? serverRes.data : JSON.stringify(serverRes.data, null, 2) }],
+            };
+          }
+
+          // Direct standalone execution
+          const { Agent } = await import("../agent.js");
+          const { superagentToolset, masterToolset } = await import("../tools/toolsets.js");
+          const { MASTER_AGENT_SYSTEM_PROMPT } = await import("../prompts.js");
+
+          let collectedOutput = "";
+          let reasoningText = "";
+          const toolCallsRun: string[] = [];
+
+          const agent = new Agent(
+            (event: any) => {
+              if (event.type === "text") collectedOutput += event.content;
+              if (event.type === "reasoning") reasoningText += event.content;
+              if (event.type === "tool_start") toolCallsRun.push(`⚡ ${event.description}`);
+              if (event.type === "tool_end") {
+                const r = event.toolResult;
+                toolCallsRun.push(`${r.isError ? "✗ Failed" : "✓ Done"}: ${event.description}`);
+              }
+            },
+            async () => true, // auto-approve
+            async (q, opts) => (Array.isArray(q) ? q.map(i => i.options?.[0] || "") : (opts?.[0] || "")),
+            mode === "multi" ? MASTER_AGENT_SYSTEM_PROMPT : undefined,
+            mode === "multi" ? masterToolset : superagentToolset,
+            targetWs
+          );
+
+          agent.tier = mode === "multi" ? "master" : "single";
+          await agent.sendMessage(task);
+
+          const summary = [
+            `Task completed by Superagent (${role}):`,
+            toolCallsRun.length > 0 ? `\nTools Executed:\n${toolCallsRun.join("\n")}\n` : "",
+            `\nFinal Result:\n${collectedOutput || "(No output emitted)"}`,
+          ].join("\n");
+
+          return { content: [{ type: "text", text: summary }] };
+        }
+
+        case "superagent_spawn_subagent": {
+          const typeName = String(args.type || args.typeName || "researcher");
+          const prompt = String(args.prompt || "");
+          const role = String(args.role || typeName);
+
+          if (!prompt) {
+            return {
+              content: [{ type: "text", text: "Error: 'prompt' is required to spawn a subagent." }],
+              isError: true,
+            };
+          }
+
+          const { invokeSubagentTool } = await import("../tools/subagentTools.js");
+          const result = await invokeSubagentTool.execute(
+            { typeName, role, prompt, wait: true },
+            process.cwd()
+          );
+          return { content: [{ type: "text", text: String(result) }] };
+        }
+
+        case "superagent_switch_workspace": {
+          const ws = String(args.workspacePath || "");
+          if (!ws) {
+            return { content: [{ type: "text", text: "Error: 'workspacePath' is required." }], isError: true };
+          }
+          const resolved = path.resolve(ws);
+          if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+            return { content: [{ type: "text", text: `Directory not found: ${resolved}` }], isError: true };
+          }
+          addTrustedDirectory(resolved);
+          await ensureDirectoryTrusted(resolved);
+          process.chdir(resolved);
+
+          // Notify running server if active
+          await callServerApi("/api/switch-workspace", "POST", { workspace: resolved });
+
+          return { content: [{ type: "text", text: `Switched active Superagent workspace to: ${resolved}` }] };
+        }
+
+        case "superagent_get_workspace": {
+          const cwd = process.cwd();
+          let branch = "unknown";
+          try {
+            const { execSync } = await import("child_process");
+            branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd, encoding: "utf-8" }).trim();
+          } catch {}
+
+          const registry = loadRegistry();
+          const lines = [
+            `Current Workspace: ${cwd}`,
+            `Git Branch: ${branch}`,
+            `Registered Feature Worktrees (${registry.length}):`,
+          ];
+          for (const r of registry) {
+            lines.push(`  - [${r.id}] ${r.role} -> ${r.branch} (${r.status}) at ${r.worktreePath}`);
+          }
+          return { content: [{ type: "text", text: lines.join("\n") }] };
+        }
+
+        case "superagent_get_plan_and_tasks": {
+          const ws = args.workspace ? path.resolve(String(args.workspace)) : process.cwd();
+          const { readChecklistTasks } = await import("../taskChecklist.js");
+          const taskFiles = [
+            path.join(ws, "_task.md"),
+            path.join(ws, "task.md"),
+            path.join(ws, "tasks.md"),
+          ];
+          let foundTasks: any[] = [];
+          for (const tf of taskFiles) {
+            if (fs.existsSync(tf)) {
+              const res = await readChecklistTasks(tf);
+              if (res.tasks && res.tasks.length > 0) {
+                foundTasks = res.tasks;
+                break;
+              }
+            }
+          }
+
+          const planFiles = [
+            path.join(ws, "_plan.md"),
+            path.join(ws, "plan.md"),
+            path.join(ws, "implementation_plan.md"),
+          ];
+          let planContent = "(No plan document found)";
+          for (const pf of planFiles) {
+            if (fs.existsSync(pf)) {
+              planContent = fs.readFileSync(pf, "utf-8");
+              break;
+            }
+          }
+
+          const lines = ["=== Implementation Plan ===", planContent.slice(0, 1000), "\n=== Task Checklist ==="];
+          if (foundTasks.length === 0) {
+            lines.push("  No checklist tasks found.");
+          } else {
+            for (const t of foundTasks) {
+              const check = t.status === "x" ? "[x]" : (t.status === "/" ? "[/]" : "[ ]");
+              lines.push(`  - ${check} ${t.text}`);
+            }
+          }
+
+          return { content: [{ type: "text", text: lines.join("\n") }] };
+        }
+
+        case "superagent_update_tasks": {
+          const action = String(args.action || "get_status");
+          const taskText = String(args.taskText || "");
+          const { managePlanTool } = await import("../tools/otherTools.js");
+          const result = await managePlanTool.execute({ action, task: taskText }, process.cwd());
+          return { content: [{ type: "text", text: String(result) }] };
+        }
+
+        case "superagent_get_config": {
+          const settings = getSettings();
+          const activeProvider = getActiveProviderName();
+          const providers = getConfiguredProviders();
+          const singlePreset = getActivePresetId("single");
+          const multiPreset = getActivePresetId("multi");
+          const singleModel = getEffectiveMasterModel("single");
+          const multiModel = getEffectiveMasterModel("multi");
+          const tierModels = getAllTierModels("multi");
+
+          const lines = [
+            "=== Superagent Configuration ===",
+            `Active Provider: ${activeProvider}`,
+            `Configured Providers: ${providers.join(", ")}`,
+            `Active Presets: Single = ${singlePreset || "default"} | Multi = ${multiPreset || "default"}`,
+            `Effective Models: Single = ${singleModel} | Multi = ${multiModel}`,
+            `\nTier Models (Multi-Agent):`,
+            ...Object.entries(tierModels).map(([tier, model]) => `  - ${tier}: ${model}`),
+            `\nSystem Settings:`,
+            `  - Concurrency: ${settings.concurrencyLimit ?? 5}`,
+            `  - Max Iterations: ${settings.maxIterations ?? 50}`,
+            `  - Streaming: ${settings.disableStreaming ? "Disabled" : "Enabled"}`,
+            `  - Rate Limit RPM: ${settings.rateLimitRpm ?? 60}`,
+          ];
+          return { content: [{ type: "text", text: lines.join("\n") }] };
+        }
+
+        case "superagent_switch_preset": {
+          const presetId = String(args.presetId || "");
+          const mode: "multi" | "single" = args.mode === "multi" ? "multi" : "single";
+          if (!presetId) {
+            return { content: [{ type: "text", text: "Error: 'presetId' is required." }], isError: true };
+          }
+          applyModelPreset(presetId, mode, true);
+          setActivePresetId(mode, presetId);
+          return { content: [{ type: "text", text: `Switched ${mode} mode preset to: ${presetId}` }] };
+        }
+
+        case "superagent_switch_provider": {
+          const providerName = String(args.providerName || "");
+          if (!providerName) {
+            return { content: [{ type: "text", text: "Error: 'providerName' is required." }], isError: true };
+          }
+          switchActiveProvider(providerName);
+          return { content: [{ type: "text", text: `Active AI provider switched to: ${providerName}` }] };
+        }
+
+        case "superagent_memory_search": {
+          const query = String(args.query || "");
+          const limit = typeof args.limit === "number" ? args.limit : 10;
+          if (!query) {
+            return { content: [{ type: "text", text: "Error: 'query' is required." }], isError: true };
+          }
+          const allPinned = getAllPinnedKnowledgeFromDb() || [];
+          const matched = allPinned.filter((p: any) =>
+            (p.content || p.content_preview || "").toLowerCase().includes(query.toLowerCase()) ||
+            (p.tag || "").toLowerCase().includes(query.toLowerCase())
+          ).slice(0, limit);
+
+          if (matched.length === 0) {
+            return { content: [{ type: "text", text: `No pinned knowledge found matching: "${query}"` }] };
+          }
+
+          const text = matched
+            .map((m: any) => `[Tag: ${m.tag || "general"} | ${new Date(m.timestamp).toISOString()}]: ${m.content || m.content_preview}`)
+            .join("\n\n");
+          return { content: [{ type: "text", text }] };
+        }
+
+        case "superagent_memory_save": {
+          const content = String(args.content || "");
+          const tag = String(args.tag || "general");
+          if (!content) {
+            return { content: [{ type: "text", text: "Error: 'content' is required." }], isError: true };
+          }
+          const now = Date.now();
+          savePinnedKnowledgeToDb({
+            id: `pin_${now}_${Math.random().toString(36).slice(2, 8)}`,
+            content,
+            preview: content.slice(0, 200),
+            tag,
+            role: "user",
+            pinnedAt: now,
+            timestamp: now,
+            sourceSessionPath: process.cwd(),
+            workingDirectory: process.cwd(),
+          });
+          return { content: [{ type: "text", text: `Knowledge snippet saved to persistent memory under tag [${tag}].` }] };
         }
 
         case "superagent_get_status": {
           const rawIds = args.superagentIds ?? args.superagent_ids ?? args.id ?? args.superagentId;
           const ids = Array.isArray(rawIds) ? (rawIds as string[]) : (rawIds ? [String(rawIds)] : []);
           
-          // Try server API first
           if (ids.length > 0) {
             const serverRes = await callServerApi("/api/instances", "GET");
             if (serverRes.success && serverRes.data?.superagents) {
@@ -544,7 +1222,6 @@ export function createSuperagentMcpServer(): Server {
             }
           }
 
-          // Fallback to local tool execution
           const { manageSuperagentsTool } = await import("../tools/superagentTools.js");
           const res = await manageSuperagentsTool.execute(
             { action: "status", superagentIds: ids },
@@ -563,7 +1240,6 @@ export function createSuperagentMcpServer(): Server {
             };
           }
 
-          // Try server API first
           const serverRes = await callServerApi("/api/instances", "GET");
           if (serverRes.success && serverRes.data) {
             const all = [
@@ -580,7 +1256,6 @@ export function createSuperagentMcpServer(): Server {
             }
           }
 
-          // Fallback to local state
           const inst = superagentInstances.get(id) || subagentInstances.get(id);
           if (inst && Array.isArray(inst.logs)) {
             const recent = inst.logs.slice(-limit).join("");
@@ -620,7 +1295,6 @@ export function createSuperagentMcpServer(): Server {
             };
           }
 
-          // Forward to running server endpoint if active
           const serverRes = await callServerApi(
             "/api/superagents/message",
             "POST",
@@ -638,7 +1312,6 @@ export function createSuperagentMcpServer(): Server {
             };
           }
 
-          // Local in-process execution fallback
           const { sendMessageToSuperagentTool } = await import("../tools/superagentTools.js");
           const result = await sendMessageToSuperagentTool.execute(
             { superagentId, message, wait },
@@ -666,7 +1339,6 @@ export function createSuperagentMcpServer(): Server {
             };
           }
 
-          // Forward to server if active
           const serverRes = await callServerApi(
             "/api/superagents/invoke",
             "POST",
@@ -684,7 +1356,6 @@ export function createSuperagentMcpServer(): Server {
             };
           }
 
-          // Local fallback
           const { invokeSuperagentTool } = await import("../tools/superagentTools.js");
           const result = await invokeSuperagentTool.execute(
             { role, task, branch, wait, constraints, acceptanceCriteria },
@@ -725,7 +1396,6 @@ export function createSuperagentMcpServer(): Server {
           const action = String(args.action || "list");
           const superagentIds = Array.isArray(args.superagentIds) ? (args.superagentIds as string[]) : undefined;
 
-          // Forward to server if active
           const serverRes = await callServerApi(
             "/api/superagents/manage",
             "POST",
@@ -742,7 +1412,6 @@ export function createSuperagentMcpServer(): Server {
             };
           }
 
-          // Local fallback
           const { manageSuperagentsTool } = await import("../tools/superagentTools.js");
           const result = await manageSuperagentsTool.execute(
             { action, superagentIds },
@@ -761,9 +1430,8 @@ export function createSuperagentMcpServer(): Server {
             const sessions = listSessionsFromDb(limit);
             const text = sessions
               .map((s: any) => {
-                const dateStr = s.lastModified
-                  ? new Date(typeof s.lastModified === "number" ? s.lastModified : Number(s.lastModified) || s.lastModified).toISOString()
-                  : "unknown";
+                const dateVal = Number(s.lastModified) || 0;
+                const dateStr = dateVal > 0 ? new Date(dateVal).toISOString() : "unknown";
                 const mode = s.filePath?.includes("multi") ? "multi" : "single";
                 const title = s.displayName || s.firstChat || s.preview || "(no title)";
                 return `- ID: ${s.id} | Mode: ${mode} | Messages: ${s.messageCount ?? 0} | Updated: ${dateStr} | Title: ${title}`;
@@ -811,9 +1479,8 @@ export function createSuperagentMcpServer(): Server {
             }
             const text = results
               .map((r: any) => {
-                const dateStr = r.timestamp
-                  ? new Date(typeof r.timestamp === "number" ? r.timestamp : Number(r.timestamp) || r.timestamp).toISOString()
-                  : "unknown";
+                const dateVal = Number(r.timestamp) || 0;
+                const dateStr = dateVal > 0 ? new Date(dateVal).toISOString() : "unknown";
                 const snip = (r.content || "").length > 200 ? (r.content || "").slice(0, 200) + "..." : r.content || "";
                 return `[Session ${r.sessionId} | ${r.role} | ${dateStr}]: ${snip}`;
               })
