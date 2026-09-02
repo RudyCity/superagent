@@ -124,6 +124,13 @@ export async function runCli() {
     runServer(7888, true).catch(() => {});
   } catch {}
 
+  // Register live process in global journal for MCP discovery
+  try {
+    const { registerCurrentProcess } = await import("./core/mcp/processJournal.js");
+    const isMulti = process.argv.includes("--multi");
+    registerCurrentProcess(isMulti ? "multi" : "single");
+  } catch {}
+
   // Check for --workspace-ssh flag
   const sshFlagIdx = process.argv.findIndex((arg) => arg === "--workspace-ssh" || arg === "-ws");
   if (sshFlagIdx !== -1 && process.argv[sshFlagIdx + 1]) {

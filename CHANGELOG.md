@@ -1,3 +1,20 @@
+## [1.5.27] - 2026-09-02
+
+### Feat: Real-Time Process Journal & Inter-Process Discovery for Interactive Superagent CLI
+
+- **Persistent Process Journal (`src/core/mcp/processJournal.ts`)**:
+  - Implemented real-time JSON process registry (`~/.superagent-r/active-processes.json`) with auto-heartbeat (every 3s) and OS PID liveliness verification.
+  - Automatically registers interactive Superagent CLI sessions (`single` and `multi` modes) and background servers on startup, making them immediately discoverable by external MCP clients.
+
+- **Enhanced Process Discovery (`src/core/mcp/tools/processTools.ts`)**:
+  - `superagent_list_active` and `superagent_get_process_status` now detect running Superagent CLI terminal sessions across the OS, reporting working directory, PID, uptime, active superagents, and agent execution loop status.
+
+- **CLI Integration (`src/cliMain.tsx`)**:
+  - Automatically records process PID and active mode during CLI boot.
+
+- **Tests (`tests/mcpServer.test.ts`)**:
+  - Verified 3-pillar MCP suite and process discovery across sessions.
+
 ## [1.5.26] - 2026-09-02
 
 ### Feat & Opt: Complete 3-Pillar MCP Architecture (Tools, Resources, Prompts) & Context Compaction

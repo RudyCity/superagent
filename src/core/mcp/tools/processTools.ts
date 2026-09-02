@@ -8,6 +8,7 @@ import http from "http";
 import { McpToolResult, ServerInfo } from "../types.js";
 import { getRootConfigDir } from "../../config/paths.js";
 import { loadRegistry, reconcileRegistry } from "../../tools/superagentRegistry.js";
+import { loadActiveProcesses } from "../processJournal.js";
 import {
   superagentInstances,
   subagentInstances,
@@ -105,40 +106,55 @@ export async function callServerApi(
 }
 
 export async function handleListActive(args: any): Promise<McpToolResult> {
+  const lines: string[] = ["=== Active Superagent Instances & Processes ==="];
+
+  // 1. Check live active processes across machine
+  const processes = loadActiveProcesses();
+  const nonMcpProcs = processes.filter((p) => p.mode !== "mcp");
+  if (nonMcpProcs.length > 0) {
+    lines.push(`\nRunning Superagent CLI / Server Processes (${nonMcpProcs.length}):`);
+    for (const p of nonMcpProcs) {
+      const ageSec = Math.round((Date.now() - p.startedAt) / 1000);
+      lines.push(`  - PID: ${p.pid} | Mode: ${p.mode} | Workspace: ${p.workingDirectory} | Uptime: ${ageSec}s | Agent Loop: ${p.isAgentRunning ? "🟢 Active" : "⚪ Idle"}`);
+      if (p.activeSuperagents && p.activeSuperagents.length > 0) {
+        for (const s of p.activeSuperagents) {
+          lines.push(`      • Superagent [${s.id}] (${s.role}) -> ${s.status}${s.task ? ` | Task: ${s.task}` : ""}`);
+        }
+      }
+    }
+  }
+
+  // 2. Query running server API if active
   const serverRes = await callServerApi("/api/instances", "GET");
   if (serverRes.success && serverRes.data) {
     const { superagents = [], subagents = [], procs = [] } = serverRes.data;
-    const lines: string[] = ["Active Superagent Instances (via Running Server):"];
-    if (superagents.length === 0) {
-      lines.push("  Superagents: None");
-    } else {
-      lines.push("  Superagents:");
+    if (superagents.length > 0) {
+      lines.push("\nSuperagents (via Server):");
       for (const s of superagents) {
-        lines.push(`    - ID: ${s.id} | Role: ${s.role} | Status: ${s.status} | Task: ${s.prompt || "(none)"}`);
+        lines.push(`  - ID: ${s.id} | Role: ${s.role} | Status: ${s.status} | Task: ${s.prompt || "(none)"}`);
         if (s.result) {
           const snip = s.result.length > 120 ? s.result.slice(0, 120) + "..." : s.result;
-          lines.push(`      Report: ${snip}`);
+          lines.push(`    Report: ${snip}`);
         }
       }
     }
 
     if (subagents.length > 0) {
-      lines.push("\n  Subagents:");
+      lines.push("\nSubagents (via Server):");
       for (const sub of subagents) {
-        lines.push(`    - ID: ${sub.id} | Type: ${sub.typeName} | Role: ${sub.role} | Status: ${sub.status}`);
+        lines.push(`  - ID: ${sub.id} | Type: ${sub.typeName} | Role: ${sub.role} | Status: ${sub.status}`);
       }
     }
 
     if (procs.length > 0) {
-      lines.push("\n  Background Tasks:");
+      lines.push("\nBackground Tasks (via Server):");
       for (const p of procs) {
-        lines.push(`    - ID: ${p.id} | PID: ${p.pid} | Command: ${p.commandLine} | Status: ${p.status}`);
+        lines.push(`  - ID: ${p.id} | PID: ${p.pid} | Command: ${p.commandLine} | Status: ${p.status}`);
       }
     }
-
-    return { content: [{ type: "text", text: lines.join("\n") }] };
   }
 
+  // 3. Check local in-memory state
   reconcileRegistry(superagentInstances);
   const registryEntries = loadRegistry();
   const superagentList: any[] = [];
@@ -150,8 +166,6 @@ export async function handleListActive(args: any): Promise<McpToolResult> {
       worktreePath: inst.worktreePath,
       status: inst.status,
       task: inst.task,
-      result: inst.result,
-      violations: inst.violations || [],
     });
   }
 
@@ -163,58 +177,19 @@ export async function handleListActive(args: any): Promise<McpToolResult> {
         branch: entry.branch,
         worktreePath: entry.worktreePath,
         status: entry.status,
-        task: "",
-        result: "",
-        violations: [],
       });
     }
   }
 
-  const subagentList: any[] = [];
-  for (const [id, inst] of subagentInstances.entries()) {
-    subagentList.push({
-      id,
-      typeName: inst.typeName,
-      role: inst.role,
-      status: inst.status,
-      prompt: inst.prompt,
-    });
-  }
-
-  const taskList: any[] = [];
-  for (const [id, task] of backgroundTasks.entries()) {
-    if (!task.isHidden) {
-      taskList.push({
-        id: task.id,
-        pid: task.process?.pid || 0,
-        command: task.command,
-        hasExited: !!task.hasExited,
-      });
-    }
-  }
-
-  const lines: string[] = ["Active Superagent Instances (Local State):"];
-  if (superagentList.length === 0) {
-    lines.push("  Superagents: None");
-  } else {
-    lines.push("  Superagents:");
+  if (superagentList.length > 0) {
+    lines.push(`\nRegistered Feature Worktrees (${superagentList.length}):`);
     for (const s of superagentList) {
-      lines.push(`    - ID: ${s.id} | Role: ${s.role} | Branch: ${s.branch} | Status: ${s.status}${s.task ? ` | Task: ${s.task}` : ""}`);
+      lines.push(`  - [${s.id}] Role: ${s.role} | Branch: ${s.branch} | Status: ${s.status}`);
     }
   }
 
-  if (subagentList.length > 0) {
-    lines.push("\n  Subagents:");
-    for (const sub of subagentList) {
-      lines.push(`    - ID: ${sub.id} | Type: ${sub.typeName} | Role: ${sub.role} | Status: ${sub.status}`);
-    }
-  }
-
-  if (taskList.length > 0) {
-    lines.push("\n  Background Tasks:");
-    for (const t of taskList) {
-      lines.push(`    - ID: ${t.id} | PID: ${t.pid} | Command: ${t.command} | Exited: ${t.hasExited}`);
-    }
+  if (nonMcpProcs.length === 0 && superagentList.length === 0) {
+    lines.push("\nNo active Superagent processes or worktree instances found.");
   }
 
   return { content: [{ type: "text", text: lines.join("\n") }] };
@@ -226,8 +201,16 @@ export async function handleGetProcessStatus(): Promise<McpToolResult> {
   const activeSubagents = [...subagentInstances.values()].filter((i) => i.status === "running" || i.status === "waiting");
   const runningProcs = [...backgroundTasks.values()].filter((t) => !t.hasExited && !t.isHidden);
 
+  const processes = loadActiveProcesses();
+  const nonMcpProcs = processes.filter((p) => p.mode !== "mcp");
+
   const lines: string[] = ["=== Real-time Superagent AI Process Status ==="];
-  lines.push(`Master Agent: ${isMasterRunning ? "🟢 RUNNING" : "⚪ IDLE"}`);
+  lines.push(`Active CLI Processes: ${nonMcpProcs.length > 0 ? `${nonMcpProcs.length} Process(es) Running` : "None"}`);
+  for (const p of nonMcpProcs) {
+    lines.push(`  - PID ${p.pid} (${p.mode}) in ${p.workingDirectory} -> ${p.isAgentRunning ? "🟢 RUNNING" : "⚪ IDLE"}`);
+  }
+
+  lines.push(`\nMaster Agent: ${isMasterRunning ? "🟢 RUNNING" : "⚪ IDLE"}`);
   lines.push(`  - Master Tokens: ${masterPromptTokens} prompt / ${masterCompletionTokens} completion (last: ${lastMasterPromptTokens})`);
 
   lines.push(`\nRunning Superagents (${activeSuperagents.length}):`);
