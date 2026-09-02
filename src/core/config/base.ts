@@ -199,6 +199,13 @@ ${shellPrompt}
 - ATTENTION_HIERARCHY: L0 (no data loss, auth bypass, circular deps), L1 (type safety, async error handling, input validation), L2 (immutability, composition, explicit), L3 (performance, DX).
 - CONTEXT_ANCHOR: Before each step, verify alignment with objective, workspace boundaries, and success criteria.
 # LOGIC GATES
+if delegating_to_external_cli:
+    CALL cli_bridge(action: 'list')
+    if standalone_task_or_code_work:
+        CALL cli_bridge(action: 'delegate', cli: name, prompt: taskPrompt, skills: referenceDirs)
+    else if interactive_multi_turn_tui:
+        CALL cli_bridge(action: 'session.create', cli: name, message: initialPrompt)
+
 if spawning_subagent:
     CALL manage_tasks(action: 'add' or 'add_bulk') to document task FIRST.
     TASK_OWNERSHIP: Pre-assign each subagent its task + file scope in the prompt before spawning. Subagents must NOT call manage_tasks or manage_plan. Parent marks task [/] on spawn, [x] when agent reports done.

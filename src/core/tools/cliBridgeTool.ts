@@ -102,8 +102,8 @@ export const cliBridgeTool: Tool = {
   name: "cli_bridge",
   description:
     "Delegate a task to an external AI CLI assistant (Codex, Claude Code, AGY, or any custom binary). " +
-    "Two modes: (1) `delegate` for one-shot prompts, (2) `session.*` for multi-turn interactive sessions. " +
-    "Use `list` to discover installed CLIs, `delegate` for simple asks, and `session.create`+`session.send`+`session.kill` for ongoing collaboration with a separate AI. " +
+    "Two modes: (1) `delegate` for autonomous task delegation (code writing, refactoring, analysis, building, testing — RECOMMENDED), (2) `session.*` for interactive multi-turn sessions. " +
+    "Use `list` to discover installed CLIs, `delegate` for all autonomous coding/analysis tasks, and `session.create`+`session.send`+`session.kill` only when interactive step-by-step TUI dialog is required. " +
     "v1.5.17: `session.create` can auto-send an initial prompt the moment the session is ready, " +
     "sessions auto-kill after an idle TTL (idleTimeoutMs, default 30 min), " +
     "stdout/stderr buffers are capped per-session (maxBufferLines, default 2000), " +
@@ -118,8 +118,8 @@ export const cliBridgeTool: Tool = {
         enum: [...ACTIONS],
         description:
           "Operation: 'list'/'profile.list' to discover CLIs/profiles, " +
-          "'delegate' for 1-shot prompt, " +
-          "'session.create' to start an interactive session (optionally with initial `message` to auto-send once ready), " +
+          "'delegate' for autonomous task execution (PRIMARY: coding, refactoring, testing, analysis — auto-handles permissions, streams live output, and returns full result), " +
+          "'session.create' to start an interactive multi-turn session (optionally with initial `message` to auto-send once ready), " +
           "'session.send' to message it, " +
           "'session.respond' to answer a pending prompt, " +
           "'session.tail' to stream/read the session's event log (with optional `setIdleTimeoutMs`), " +
