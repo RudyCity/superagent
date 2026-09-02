@@ -76,6 +76,8 @@ import {
 } from "./cliBridgeSkills.js";
 import { formatUnknownActionError } from "./helpers.js";
 import { createRequire } from "node:module";
+import fs from "fs";
+import path from "path";
 
 // ─── Tool definition ─────────────────────────────────────────────────────
 
@@ -431,12 +433,23 @@ async function handleDelegate(
 
   const skillsArgs: string[] = [];
   if (skillResolution.paths.length > 0 && profile?.skillsArg) {
+    const dirPaths = Array.from(
+      new Set(
+        skillResolution.paths.map((p) => {
+          try {
+            return fs.statSync(p).isDirectory() ? p : path.dirname(p);
+          } catch {
+            return p;
+          }
+        })
+      )
+    );
     if (profile.skillsRepeatable) {
-      for (const p of skillResolution.paths) {
+      for (const p of dirPaths) {
         skillsArgs.push(`--${profile.skillsArg}`, p);
       }
-    } else {
-      skillsArgs.push(`--${profile.skillsArg}`, skillResolution.paths[0]);
+    } else if (dirPaths.length > 0) {
+      skillsArgs.push(`--${profile.skillsArg}`, dirPaths[0]);
     }
   }
 
@@ -453,8 +466,16 @@ async function handleDelegate(
     : [];
   
   // Note: promptSub (e.g. -p or --print) MUST be placed at the end so it immediately precedes the prompt
-  const baseArgs = Array.from(new Set([...defaultFlags, ...autoFlags, ...skillsArgs, ...extraArgs]));
-  const combinedArgs = [...baseArgs, ...promptSub];
+  // Do NOT dedupe skillsArgs via Set as it strips repeated flags like `--add-dir`.
+  const flagSet = new Set<string>();
+  const baseFlags: string[] = [];
+  for (const f of [...defaultFlags, ...autoFlags]) {
+    if (!flagSet.has(f)) {
+      flagSet.add(f);
+      baseFlags.push(f);
+    }
+  }
+  const combinedArgs = [...baseFlags, ...skillsArgs, ...extraArgs, ...promptSub];
 
   const result: DelegateResult = await runDelegate({
     cliAlias: desc.alias,
