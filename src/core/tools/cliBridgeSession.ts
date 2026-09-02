@@ -98,6 +98,12 @@ export interface CliSession {
   pendingInitialMessage?: string;
   /** v1.5.17: True if the session is detached (no longer managed but process still alive). */
   detached: boolean;
+  /** Real-time progress stage (e.g. 'Running prompt', 'Executing tool', 'Ready'). */
+  currentStage?: string;
+  /** Most recent stdout/stderr line emitted. */
+  lastOutputLine?: string;
+  /** Total count of output lines emitted since spawn. */
+  totalLinesEmitted: number;
 }
 
 /** Structured representation of a TUI prompt we detected. */
@@ -352,7 +358,15 @@ export function stripAnsi(s: string): string {
 
 async function appendToLog(logPath: string, prefix: string, chunk: string): Promise<void> {
   try {
-    await fs.appendFile(logPath, `[${prefix}] ${chunk}`, "utf8");
+    const timestamp = new Date().toISOString();
+    const cleanChunk = stripAnsi(chunk);
+    if (!cleanChunk) return;
+    const lines = cleanChunk.split(/\r?\n/);
+    const tagged = lines
+      .filter((l, i) => i < lines.length - 1 || l.length > 0)
+      .map((l) => `[${timestamp}] [${prefix.toUpperCase()}] ${l}`)
+      .join("\n") + "\n";
+    await fs.appendFile(logPath, tagged, "utf8");
   } catch {
     // best-effort
   }
@@ -401,6 +415,8 @@ export function knownCliDescriptors(): CliDescriptor[] {
       label: "Claude Code CLI",
       available: false,
       installHint: "Install: npm i -g @anthropic-ai/claude-code",
+      defaultArgs: [],
+      promptSubcommand: ["--print"],
       promptAsArg: true,
     },
     {
@@ -409,6 +425,8 @@ export function knownCliDescriptors(): CliDescriptor[] {
       label: "Antigravity CLI",
       available: false,
       installHint: "Visit https://antigravity.google for installation",
+      defaultArgs: [],
+      promptSubcommand: ["-p"],
       promptAsArg: true,
     },
   ];
@@ -540,18 +558,26 @@ export async function runDelegate(opts: {
   }
 
   proc.all?.on("data", async (data: Buffer | string) => {
-    const text = data.toString();
-    stdoutBuf = appendLines(stdoutBuf, text, MAX_BUFFER_LINES);
-    await appendToLog(logPath, "stdout", text);
+    const raw = data.toString();
+    const clean = stripAnsi(raw);
+    stdoutBuf = appendLines(stdoutBuf, clean, MAX_BUFFER_LINES);
+    await appendToLog(logPath, "stdout", raw);
   });
 
   try {
     const result = await proc;
     if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
     if (result.timedOut) timedOut = true;
+    const finalOutput = stripAnsi((result.all ?? stdoutBuf).toString()).trim();
+    const finalStderr = stripAnsi(result.stderr ?? "").trim();
+    await appendToLog(
+      logPath,
+      "exit",
+      `code=${result.exitCode ?? "?"} duration=${Date.now() - start}ms timedOut=${timedOut}`
+    );
     return {
-      output: (result.all ?? stdoutBuf).toString().trim(),
-      stderr: result.stderr ?? "",
+      output: finalOutput,
+      stderr: finalStderr,
       exitCode: result.exitCode ?? null,
       durationMs: Date.now() - start,
       logPath,
@@ -561,9 +587,16 @@ export async function runDelegate(opts: {
   } catch (err) {
     if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
     const msg = err instanceof Error ? err.message : String(err);
+    const finalOutput = stripAnsi(stdoutBuf).trim();
+    const finalStderr = stripAnsi(stderrBuf || msg).trim();
+    await appendToLog(
+      logPath,
+      "error",
+      `error=${msg} duration=${Date.now() - start}ms`
+    );
     return {
-      output: stdoutBuf.trim(),
-      stderr: stderrBuf || msg,
+      output: finalOutput,
+      stderr: finalStderr,
       exitCode: -1,
       durationMs: Date.now() - start,
       logPath,
@@ -637,6 +670,8 @@ export async function createSession(opts: {
     autoSendInitial: opts.autoSendInitial !== false && !!opts.initialMessage,
     pendingInitialMessage: opts.initialMessage,
     detached: false,
+    currentStage: "Starting subprocess",
+    totalLinesEmitted: 0,
   };
 
   ensureEmitter(sessionId);
@@ -687,19 +722,38 @@ export async function createSession(opts: {
   procHandles.set(sessionId, proc);
 
   proc.stdout?.on("data", async (data: Buffer) => {
-    const text = data.toString();
-    session.stdoutBuffer = appendLines(session.stdoutBuffer, text, session.maxBufferLines);
+    const rawText = data.toString();
+    const cleanText = stripAnsi(rawText);
+    session.stdoutBuffer = appendLines(session.stdoutBuffer, cleanText, session.maxBufferLines);
     session.lastActivityAt = Date.now();
     session.lastOutputAt = Date.now();
+
+    const lines = cleanText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length > 0) {
+      session.lastOutputLine = lines[lines.length - 1];
+      session.totalLinesEmitted += lines.length;
+
+      const latest = session.lastOutputLine.toLowerCase();
+      if (latest.includes("thinking") || latest.includes("thought")) {
+        session.currentStage = "Thinking / Reasoning";
+      } else if (latest.includes("tool") || latest.includes("reading") || latest.includes("executing") || latest.includes("running")) {
+        session.currentStage = `Executing action: ${session.lastOutputLine.slice(0, 80)}`;
+      } else if (latest.includes("writing") || latest.includes("modifying") || latest.includes("replacing") || latest.includes("editing")) {
+        session.currentStage = `Modifying files: ${session.lastOutputLine.slice(0, 80)}`;
+      } else if (session.status === "busy") {
+        session.currentStage = `Streaming output (${session.totalLinesEmitted} lines): ${session.lastOutputLine.slice(0, 60)}`;
+      }
+    }
+
     // v1.5.17: emit per-chunk events. We split on newlines so subscribers
     // get a "line" event per logical line, not per raw chunk.
-    const lines = text.split(/\r?\n/);
-    for (const line of lines) {
+    for (const line of cleanText.split(/\r?\n/)) {
       if (line.length === 0) continue;
       emitEvent(session, "stdout", { line });
     }
-    if (session.status === "starting" && looksLikeReadyPrompt(text)) {
+    if (session.status === "starting" && looksLikeReadyPrompt(cleanText)) {
       session.status = "ready";
+      session.currentStage = "Ready for input";
       emitEvent(session, "status", { status: session.status });
       // v1.5.17: now that the session is ready, fire the queued initial message.
       if (session.pendingInitialMessage) {
@@ -712,7 +766,7 @@ export async function createSession(opts: {
     // v1.5.15: detect interactive prompts (yes/no, password, etc.)
     // Only trigger after the session is past "starting" to avoid false
     // positives on banner/loading screens.
-    if (session.status === "ready" || session.status === "awaiting_input") {
+    if (session.status === "ready" || session.status === "awaiting_input" || session.status === "busy") {
       const prompt = detectPrompt(session.stdoutBuffer);
       if (prompt) {
         // Throttle: if a recent prompt is still unanswered, do not re-emit
@@ -721,38 +775,47 @@ export async function createSession(opts: {
         if (!prev || prev.question !== prompt.question || prev.kind !== prompt.kind) {
           session.pendingPrompt = prompt;
           session.status = "awaiting_input";
+          session.currentStage = `Awaiting user input (${prompt.kind}): ${prompt.question}`;
           emitEvent(session, "status", { status: session.status });
           emitEvent(session, "prompt", { prompt, isPrompt: true });
           await appendToLog(logPath, "prompt", `[${prompt.kind}] ${prompt.question}\n`);
         }
       }
     }
-    await appendToLog(logPath, "stdout", text);
+    await appendToLog(logPath, "stdout", rawText);
   });
 
   proc.stderr?.on("data", async (data: Buffer) => {
-    const text = data.toString();
-    session.stderrBuffer = appendLines(session.stderrBuffer, text, session.maxBufferLines);
+    const rawText = data.toString();
+    const cleanText = stripAnsi(rawText);
+    session.stderrBuffer = appendLines(session.stderrBuffer, cleanText, session.maxBufferLines);
     session.lastActivityAt = Date.now();
     session.lastOutputAt = Date.now();
-    const lines = text.split(/\r?\n/);
-    for (const line of lines) {
+    const lines = cleanText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length > 0) {
+      session.lastOutputLine = `[stderr] ${lines[lines.length - 1]}`;
+      session.totalLinesEmitted += lines.length;
+    }
+    for (const line of cleanText.split(/\r?\n/)) {
       if (line.length === 0) continue;
       emitEvent(session, "stderr", { line });
     }
-    await appendToLog(logPath, "stderr", text);
+    await appendToLog(logPath, "stderr", rawText);
   });
 
   proc.on("exit", (code: number | null) => {
     session.status = code === 0 ? "exited" : "errored";
     session.exitCode = code;
     session.pid = null;
+    session.currentStage = code === 0 ? "Exited cleanly (code 0)" : `Exited with error (code ${code})`;
     procHandles.delete(sessionId);
     emitEvent(session, "exit", { code, signal: null });
+    emitEvent(session, "status", { status: session.status });
   });
 
   proc.on("error", (err: Error) => {
     session.status = "errored";
+    session.currentStage = `Spawn/Process error: ${err.message}`;
     session.stderrBuffer = appendLines(
       session.stderrBuffer,
       `\n[spawn error] ${err.message}\n`,
@@ -760,6 +823,7 @@ export async function createSession(opts: {
     );
     procHandles.delete(sessionId);
     emitEvent(session, "exit", { code: null, signal: "spawn-error" });
+    emitEvent(session, "status", { status: session.status });
   });
 
   // Best-effort ready probe: if the CLI doesn't print a prompt marker,
@@ -814,6 +878,7 @@ export async function sendToSession(opts: {
   const captureFromBytes = session.stdoutBuffer.length;
 
   session.status = "busy";
+  session.currentStage = `Processing message: ${opts.message.slice(0, 60)}${opts.message.length > 60 ? "…" : ""}`;
   session.lastActivityAt = Date.now();
 
   await appendToLog(session.logPath, "user", `\n>>> ${opts.message}\n`);
@@ -822,6 +887,7 @@ export async function sendToSession(opts: {
     proc.stdin.write(opts.message + "\n");
   } catch (err) {
     session.status = "errored";
+    session.currentStage = `Stdin write failed: ${err instanceof Error ? err.message : String(err)}`;
     const msg = err instanceof Error ? err.message : String(err);
     return { code: "STDIN_WRITE_FAILED", error: `Failed to write to session stdin: ${msg}` };
   }
@@ -850,6 +916,7 @@ export async function sendToSession(opts: {
       // and stop waiting. The LLM will call `session.respond` to continue.
       if (session.status === "awaiting_input" && session.pendingPrompt) {
         clearInterval(tick);
+        session.currentStage = `Awaiting user input (${session.pendingPrompt.kind}): ${session.pendingPrompt.question}`;
         resolve({
           response: session.stdoutBuffer.slice(captureFromBytes).trim(),
           durationMs: now - start,
@@ -868,6 +935,7 @@ export async function sendToSession(opts: {
         // If a prompt was detected just before idle, surface it instead
         // of marking the session ready.
         if (session.pendingPrompt && session.status === "awaiting_input") {
+          session.currentStage = `Awaiting user input (${session.pendingPrompt.kind}): ${session.pendingPrompt.question}`;
           resolve({
             response: session.stdoutBuffer.slice(captureFromBytes).trim(),
             durationMs: now - start,
@@ -878,6 +946,7 @@ export async function sendToSession(opts: {
           return;
         }
         session.status = "ready";
+        session.currentStage = "Ready for input";
         resolve({
           response: session.stdoutBuffer.slice(captureFromBytes).trim(),
           durationMs: now - start,
@@ -891,6 +960,7 @@ export async function sendToSession(opts: {
         clearInterval(tick);
         const finalStatus: CliSession["status"] = session.pendingPrompt ? "awaiting_input" : "ready";
         session.status = finalStatus;
+        session.currentStage = session.pendingPrompt ? `Awaiting input: ${session.pendingPrompt.question}` : "Ready (timed out waiting for prompt)";
         resolve({
           response: session.stdoutBuffer.slice(captureFromBytes).trim(),
           durationMs: now - start,

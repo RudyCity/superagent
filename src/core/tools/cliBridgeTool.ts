@@ -416,17 +416,25 @@ async function handleDelegate(
   const tpl = profile?.defaultPromptTemplate ?? "{system}\n\n{prompt}";
   const composedPrompt = applyPromptTemplate(tpl, { system: systemPrompt ?? "", prompt });
 
+  // Resolve default args and prompt subcommands for 1-shot execution:
+  const defaultFlags = profile?.defaultArgs ?? desc.defaultArgs ?? [];
+  const promptSub = profile?.promptSubcommand ?? desc.promptSubcommand ?? [];
+  const autoFlags = desc.alias === "agy" && !extraArgs.includes("--dangerously-skip-permissions")
+    ? ["--dangerously-skip-permissions"]
+    : [];
+  const combinedArgs = Array.from(new Set([...defaultFlags, ...autoFlags, ...extraArgs, ...promptSub]));
+
   const result: DelegateResult = await runDelegate({
     cliAlias: desc.alias,
     binary: desc.binary,
     prompt: composedPrompt,
     cwd,
-    extraArgs,
+    extraArgs: combinedArgs,
     timeoutMs,
     signal,
   });
 
-  return formatDelegateResult(result, composedPrompt, extraArgs);
+  return formatDelegateResult(result, composedPrompt, combinedArgs);
 }
 
 function formatDelegateResult(
@@ -790,20 +798,22 @@ function handleSessionTail(args: Record<string, unknown>): string {
   const events = tailEvents(sessionId, Number.isFinite(since) ? since : 0, Number.isFinite(limit) ? limit : 200);
   const lastSeq = getLastEventSeq(sessionId);
   const lines: string[] = [];
-  lines.push(`Session ${sessionId} (${s.status}, detached=${s.detached})`);
+  lines.push(`Session ${sessionId} (${s.status}, stage=${s.currentStage ?? s.status}, detached=${s.detached})`);
   lines.push(`  idle:           ${s.idleTimeoutMs === 0 ? "disabled" : `${Math.round(s.idleTimeoutMs / 1000)}s TTL`}${s.autoKilled ? " [auto-killed]" : ""}`);
+  lines.push(`  lastActive:     ${formatAge(Date.now() - s.lastOutputAt)} ago`);
   lines.push(`  buffer cap:     ${s.maxBufferLines} lines`);
   lines.push(`  lastEventSeq:   ${lastSeq}`);
   lines.push(`  events returned: ${events.length} (since=${since}, limit=${limit})`);
   if (events.length > 0) {
     lines.push("");
     for (const ev of events) {
+      const timeStr = new Date(ev.at).toISOString().slice(11, 23);
       let payload = "";
-      if (ev.type === "stdout" || ev.type === "stderr") payload = JSON.stringify(ev.data.line);
+      if (ev.type === "stdout" || ev.type === "stderr") payload = ev.data.line ?? "";
       else if (ev.type === "prompt") payload = `[${ev.data.prompt?.kind}] ${ev.data.prompt?.question}`;
       else if (ev.type === "status") payload = `status=${ev.data.status}`;
       else if (ev.type === "exit") payload = `code=${ev.data.code} signal=${ev.data.signal}`;
-      lines.push(`  #${ev.seq}  ${ev.type.padEnd(6)}  ${payload}`);
+      lines.push(`  [${timeStr}] #${ev.seq} [${ev.type.padEnd(6)}] ${payload}`);
     }
   }
   return lines.join("\n");
@@ -910,8 +920,11 @@ function handleSessionList(): string {
   }
   const lines: string[] = [`Active sessions: ${list.length} (detached: ${detached.length})`, ""];
   for (const s of list) {
+    const age = formatAge(Date.now() - s.createdAt);
+    const lastActive = formatAge(Date.now() - s.lastOutputAt);
+    const stage = s.currentStage ? ` stage=${s.currentStage.slice(0, 40)}` : "";
     lines.push(
-      `  • ${s.sessionId}  cli=${s.cliAlias}  pid=${s.pid ?? "?"}  status=${s.status}  age=${formatAge(Date.now() - s.createdAt)}  idle=${s.idleTimeoutMs === 0 ? "off" : formatAge(s.idleTimeoutMs) + " TTL"}`
+      `  • ${s.sessionId}  cli=${s.cliAlias}  pid=${s.pid ?? "?"}  status=${s.status}${stage}  age=${age}  lastActive=${lastActive} ago  lines=${s.totalLinesEmitted ?? 0}`
     );
   }
   for (const id of detached) {
@@ -934,13 +947,20 @@ function handleSessionGet(sessionId: string): string {
   }
   const s = getSessionAny(sessionId);
   if (!s) return `Error: Session '${sessionId}' not found.`;
+  const elapsedMs = Date.now() - s.createdAt;
+  const idleMs = Date.now() - s.lastOutputAt;
   const lines = [
     `Session ${s.sessionId}`,
     `  cli:           ${s.cliAlias}`,
     `  binary:        ${s.binary}`,
-    `  pid:           ${s.pid ?? "?"}`,
+    `  pid:           ${s.pid ?? "(not running)"}`,
     `  status:        ${s.status}`,
-    `  exitCode:      ${s.exitCode ?? "?"}`,
+    `  stage:         ${s.currentStage ?? (s.status === "ready" ? "Ready" : s.status)}`,
+    `  exitCode:      ${s.exitCode !== null ? s.exitCode : "(running)"}`,
+    `  duration:      ${formatAge(elapsedMs)} (started ${new Date(s.createdAt).toISOString()})`,
+    `  lastActive:    ${formatAge(idleMs)} ago (${new Date(s.lastOutputAt).toISOString()})`,
+    `  linesEmitted:  ${s.totalLinesEmitted ?? s.stdoutBuffer.split("\n").length}`,
+    `  lastOutput:    ${s.lastOutputLine ? JSON.stringify(s.lastOutputLine) : "(none)"}`,
     `  profile:       ${s.profileAlias ?? "(none)"}`,
     `  conversation:  ${s.conversationId ?? "(none)"}`,
     `  skills:        ${JSON.stringify(s.skills ?? [])}`,
@@ -948,10 +968,7 @@ function handleSessionGet(sessionId: string): string {
     `  detached:      ${s.detached}`,
     `  maxBuffer:     ${s.maxBufferLines} lines`,
     `  idleTimeout:   ${s.idleTimeoutMs === 0 ? "disabled" : `${Math.round(s.idleTimeoutMs / 1000)}s`}${s.autoKilled ? " [auto-killed]" : ""}`,
-    `  lastOutput:    ${new Date(s.lastOutputAt).toISOString()}`,
     `  cwd:           ${s.cwd}`,
-    `  created:       ${new Date(s.createdAt).toISOString()}`,
-    `  lastActivity:  ${new Date(s.lastActivityAt).toISOString()}`,
     `  log:           ${s.logPath}`,
   ];
   if (s.unresolvedSkills && s.unresolvedSkills.length > 0) {
@@ -970,12 +987,14 @@ function handleSessionGet(sessionId: string): string {
       `Use action=session.respond sessionId=${s.sessionId} answer="<value>" to answer.`
     );
   }
+  const stdoutLines = s.stdoutBuffer ? s.stdoutBuffer.split("\n") : [];
+  const stderrLines = s.stderrBuffer ? s.stderrBuffer.split("\n") : [];
   lines.push(
     "",
-    "Stdout buffer (last " + s.stdoutBuffer.split("\n").length + " lines):",
+    `Stdout buffer (last ${stdoutLines.length} lines):`,
     s.stdoutBuffer || "(empty)",
     "",
-    "Stderr buffer (last " + s.stderrBuffer.split("\n").length + " lines):",
+    `Stderr buffer (last ${stderrLines.length} lines):`,
     s.stderrBuffer || "(empty)"
   );
   return lines.join("\n");

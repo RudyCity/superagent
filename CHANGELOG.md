@@ -1,3 +1,21 @@
+## [1.5.21] - 2026-09-02
+
+### Fix: Real-time CLI Bridge Progress & File Edit Tool Safety
+
+- **CLI Bridge Real-time Output & Progress (`src/core/tools/cliBridgeTool.ts`, `src/core/tools/cliBridgeSession.ts`, `src/core/tools/cliBridgeProfiles.ts`)**:
+  - Automatically configured non-interactive flags (`-p` / `--print` and `--dangerously-skip-permissions`) for 1-shot delegation with Antigravity (`agy`), Claude Code, and Codex CLIs to prevent hanging in interactive TUI modes and capture clean terminal output.
+  - Added ANSI escape code stripping to produce clean, legible terminal stdout and stderr for AI models.
+  - Enhanced real-time subprocess logging in `appendToLog` with ISO timestamps and structured tags (`[STDOUT]`, `[STDERR]`, `[PROMPT]`, `[EXIT]`, `[ERROR]`).
+  - Added real-time progress stage tracking (`currentStage`, `lastOutputLine`, `totalLinesEmitted`, `lastActive`) to `CliSession`, surfaced immediately via `session.get`, `session.list`, and `session.tail` so models can see what stage the external CLI has reached in real time.
+
+- **File Edit Tools Robustness & Parameter Normalization (`src/core/tools/fileEditTools.ts`, `src/core/tools/otherTools.ts`)**:
+  - Normalized parameter aliases (`replacement`, `newString`, `new_string`, `replacementContent`, `oldString`, `old_string`, `targetContent`, `search`, `target`) across all edit tools (`edit`, `replace_file_content`, `multi_replace_file_content`, `write_to_file`, `write`, `manage_plan`).
+  - Added strict parameter assertions to prevent `undefined` values from converting to string `"undefined"` and corrupting source files.
+  - Added post-write verification to `editTool` with automatic rollback to original content if replacement is missing after write.
+
+- **Tests (`tests/fileEditToolAliasesAndGuards.test.ts`, `tests/cliBridgeTool.test.ts`)**:
+  - Added comprehensive test suite verifying argument normalization, undefined prevention, and rollback safety.
+
 ## [1.5.20] - 2026-09-01
 
 ### Fix: Guard Against False Data URI Matches in Tool Results & Validate Base64 Images

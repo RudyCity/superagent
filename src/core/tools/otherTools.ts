@@ -1336,9 +1336,9 @@ export const managePlanTool: Tool = {
     if (!validActions.includes(action)) {
       return formatUnknownActionError(action, validActions);
     }
-    const planContentInput = args?.planContent as string | undefined;
-    const targetContent = args?.targetContent as string | undefined;
-    const replacementContent = args?.replacementContent as string | undefined;
+    const planContentInput = (args?.planContent ?? args?.plan_content ?? args?.content ?? args?.PlanContent ?? args?.text) as string | undefined;
+    const targetContent = (args?.targetContent ?? args?.TargetContent ?? args?.target_content ?? args?.oldString ?? args?.old_string ?? args?.oldText ?? args?.old_text ?? args?.target ?? args?.search) as string | undefined;
+    const replacementContent = (args?.replacementContent ?? args?.ReplacementContent ?? args?.replacement_content ?? args?.newString ?? args?.new_string ?? args?.newText ?? args?.new_text ?? args?.replacement ?? args?.replace) as string | undefined;
     const sessionId = args?.sessionId as string | undefined;
 
     const { agentLocalStorage } = await import("../agent.js");

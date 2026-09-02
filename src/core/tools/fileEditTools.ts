@@ -308,7 +308,7 @@ export const writeTool: Tool = {
     } catch (boundaryErr: any) {
       return `Error: ${boundaryErr.message}`;
     }
-    const content = args.content as string | undefined;
+    const content = (args.content ?? (args as any).CodeContent ?? (args as any).codeContent ?? (args as any).text ?? (args as any).fileContent) as string | undefined;
     if (content === undefined || content === null) {
       return "Error: Missing required parameter 'content'. Provide the content to write to the file.";
     }
@@ -432,8 +432,8 @@ export const editTool: Tool = {
         const results: string[] = [];
         for (const edit of rawEdits) {
           const editPath = (edit.filePath || edit.TargetFile || edit.targetFile || edit.target_file || edit.path || edit.file || targetPath) as string;
-          const oldStr = (edit.oldString ?? edit.old_string ?? edit.oldText ?? edit.old_text ?? edit.targetContent ?? edit.TargetContent ?? edit.target_content) as string;
-          const newStr = (edit.newString ?? edit.new_string ?? edit.newText ?? edit.new_text ?? edit.replacementContent ?? edit.ReplacementContent ?? edit.replacement_content) as string;
+          const oldStr = (edit.oldString ?? edit.old_string ?? edit.oldText ?? edit.old_text ?? edit.targetContent ?? edit.TargetContent ?? edit.target_content ?? edit.search ?? edit.target) as string;
+          const newStr = (edit.newString ?? edit.new_string ?? edit.newText ?? edit.new_text ?? edit.replacement ?? edit.Replacement ?? edit.replacementContent ?? edit.ReplacementContent ?? edit.replacement_content ?? edit.replace ?? edit.replacement_text ?? edit.new_content) as string;
           if (!editPath || oldStr === undefined || newStr === undefined) {
             results.push(`Error: Missing filePath, oldString, or newString for SSH edit on ${editPath || "unknown file"}`);
             continue;
@@ -443,8 +443,8 @@ export const editTool: Tool = {
         }
         return results.join("\n");
       }
-      const oldStr = (args.oldString ?? (args as any).old_string ?? (args as any).oldText ?? (args as any).old_text ?? args.targetContent ?? (args as any).TargetContent ?? (args as any).target_content) as string;
-      const newStr = (args.newString ?? (args as any).new_string ?? (args as any).newText ?? (args as any).new_text ?? args.replacementContent ?? (args as any).ReplacementContent ?? (args as any).replacement_content) as string;
+      const oldStr = (args.oldString ?? (args as any).old_string ?? (args as any).oldText ?? (args as any).old_text ?? args.targetContent ?? (args as any).TargetContent ?? (args as any).target_content ?? (args as any).search ?? (args as any).target) as string;
+      const newStr = (args.newString ?? (args as any).new_string ?? (args as any).newText ?? (args as any).new_text ?? args.replacement ?? (args as any).Replacement ?? args.replacementContent ?? (args as any).ReplacementContent ?? (args as any).replacement_content ?? (args as any).replace ?? (args as any).replacement_text ?? (args as any).new_content) as string;
       if (!targetPath || oldStr === undefined || newStr === undefined) {
         return "Error: Missing filePath, oldString, or newString for SSH edit";
       }
@@ -484,8 +484,16 @@ export const editTool: Tool = {
             const expectedHash = computeContentHash(content);
             const originalContent = content;
             for (const edit of fileEdits) {
-              const oldStr = edit.oldString;
-              const newStr = edit.newString;
+              const oldStr = (edit.oldString ?? (edit as any).old_string ?? (edit as any).oldText ?? (edit as any).old_text ?? (edit as any).targetContent ?? (edit as any).TargetContent ?? (edit as any).target_content ?? (edit as any).search ?? (edit as any).target) as string;
+              const newStr = (edit.newString ?? (edit as any).new_string ?? (edit as any).newText ?? (edit as any).new_text ?? (edit as any).replacement ?? (edit as any).Replacement ?? (edit as any).replacementContent ?? (edit as any).ReplacementContent ?? (edit as any).replacement_content ?? (edit as any).replace ?? (edit as any).replacement_text ?? (edit as any).new_content) as string;
+
+              if (oldStr === undefined || oldStr === null) {
+                throw new Error(`Missing required parameter 'oldString' (or 'targetContent') in edit entry for ${edit.filePath}`);
+              }
+              if (newStr === undefined || newStr === null) {
+                throw new Error(`Missing required parameter 'newString' (or 'replacement') in edit entry for ${edit.filePath}`);
+              }
+
               const startLine = edit.startLine ? Math.max(1, edit.startLine) : undefined;
               const endLine = edit.endLine ? edit.endLine : undefined;
 
@@ -556,6 +564,16 @@ export const editTool: Tool = {
               throw new Error(`[LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${filePath}" has been modified by another process since it was read.`);
             }
             await fs.writeFile(filePath, content, "utf-8");
+            const writtenContent = await fs.readFile(filePath, "utf-8");
+            const normWritten = normalizeForMatching(writtenContent);
+            for (const edit of fileEdits) {
+              const newStr = (edit.newString ?? (edit as any).new_string ?? (edit as any).newText ?? (edit as any).new_text ?? (edit as any).replacement ?? (edit as any).Replacement ?? (edit as any).replacementContent ?? (edit as any).ReplacementContent ?? (edit as any).replacement_content ?? (edit as any).replace ?? (edit as any).replacement_text ?? (edit as any).new_content) as string;
+              const normReplacement = normalizeForMatching(newStr);
+              if (newStr && !normWritten.includes(normReplacement)) {
+                await fs.writeFile(filePath, originalContent, "utf-8");
+                throw new Error(`Post-write verification failed for ${edit.filePath} (replacement not found after write). Changes rolled back.`);
+              }
+            }
             const summary = buildEditSummary(originalContent, content, filePath);
             const syntaxError = await verifySyntax(filePath);
             if (syntaxError) {
@@ -588,8 +606,16 @@ export const editTool: Tool = {
       const content = await fs.readFile(filePath, "utf-8");
       const expectedHash = computeContentHash(content);
       const originalContent = content;
-      const oldStr = args.oldString as string;
-      const newStr = args.newString as string;
+      const oldStr = (args.oldString ?? (args as any).old_string ?? (args as any).oldText ?? (args as any).old_text ?? args.targetContent ?? (args as any).TargetContent ?? (args as any).target_content ?? (args as any).search ?? (args as any).target) as string;
+      const newStr = (args.newString ?? (args as any).new_string ?? (args as any).newText ?? (args as any).new_text ?? args.replacement ?? (args as any).Replacement ?? args.replacementContent ?? (args as any).ReplacementContent ?? (args as any).replacement_content ?? (args as any).replace ?? (args as any).replacement_text ?? (args as any).new_content) as string;
+
+      if (oldStr === undefined || oldStr === null) {
+        return "Error: Missing required parameter 'oldString' (or 'targetContent') for edit tool.";
+      }
+      if (newStr === undefined || newStr === null) {
+        return "Error: Missing required parameter 'newString' (or 'replacement') for edit tool.";
+      }
+
       const startLine = args.startLine ? Math.max(1, args.startLine as number) : undefined;
       const endLine = args.endLine ? args.endLine as number : undefined;
 
@@ -658,6 +684,13 @@ export const editTool: Tool = {
         return `Error: [LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${filePath}" has been modified by another process since it was read.`;
       }
       await fs.writeFile(filePath, updated, "utf-8");
+      const writtenContent = await fs.readFile(filePath, "utf-8");
+      const normWritten = normalizeForMatching(writtenContent);
+      const normReplacement = normalizeForMatching(newStr);
+      if (newStr && !normWritten.includes(normReplacement)) {
+        await fs.writeFile(filePath, originalContent, "utf-8");
+        return `Error: Post-write verification failed (replacement not found after write). Changes rolled back to original. Please retry.`;
+      }
       const summary = buildEditSummary(originalContent, updated, filePath);
       
       const syntaxError = await verifySyntax(filePath);
@@ -796,8 +829,8 @@ export const writeToFileTool: Tool = {
         if (sessionId) releases.push(() => { for (const p of writeAutoLockPaths) releaseFile(p, sessionId!, cwd); });
 
         for (const file of sortedFiles) {
-          const overwrite = !!file.overwrite;
-          const nextContent = file.content;
+          const overwrite = !!(file.overwrite ?? (file as any).Overwrite);
+          const nextContent = (file.content ?? (file as any).CodeContent ?? (file as any).codeContent ?? (file as any).text ?? (file as any).fileContent);
           if (nextContent === undefined || nextContent === null) {
             results.push(`Error: Missing 'content' for file ${file.filePath}`);
             continue;
@@ -853,8 +886,8 @@ export const writeToFileTool: Tool = {
     if (!filePath) {
       return "Error: Missing required parameter 'filePath' or 'files'. Provide the path to the file to write to.";
     }
-    const overwrite = !!args.overwrite;
-    const nextContent = args.content as string | undefined;
+    const overwrite = !!(args.overwrite ?? (args as any).Overwrite);
+    const nextContent = (args.content ?? (args as any).CodeContent ?? (args as any).codeContent ?? (args as any).text ?? (args as any).fileContent) as string | undefined;
     if (nextContent === undefined || nextContent === null) {
       return "Error: Missing required parameter 'content'. Provide the content to write to the file.";
     }
@@ -1010,8 +1043,8 @@ export const replaceFileContentTool: Tool = {
         const results: string[] = [];
         for (const edit of rawEdits) {
           const editPath = (edit.filePath || edit.TargetFile || edit.targetFile || edit.target_file || edit.path || edit.file || targetPath) as string;
-          const targetContent = (edit.targetContent ?? edit.TargetContent ?? edit.target_content ?? edit.oldString ?? edit.old_string ?? edit.oldText ?? edit.old_text) as string;
-          const replacementContent = (edit.replacementContent ?? edit.ReplacementContent ?? edit.replacement_content ?? edit.newString ?? edit.new_string ?? edit.newText ?? edit.new_text) as string;
+          const targetContent = (edit.targetContent ?? edit.TargetContent ?? edit.target_content ?? edit.oldString ?? edit.old_string ?? edit.oldText ?? edit.old_text ?? edit.search ?? edit.target) as string;
+          const replacementContent = (edit.replacementContent ?? edit.ReplacementContent ?? edit.replacement_content ?? edit.newString ?? edit.new_string ?? edit.newText ?? edit.new_text ?? edit.replacement ?? edit.Replacement ?? edit.replace ?? edit.replacement_text ?? edit.new_content) as string;
           if (!editPath || targetContent === undefined || replacementContent === undefined) {
             results.push(`Error: Missing filePath, targetContent, or replacementContent for SSH replace_file_content on ${editPath || "unknown file"}`);
             continue;
@@ -1021,8 +1054,8 @@ export const replaceFileContentTool: Tool = {
         }
         return results.join("\n");
       }
-      const targetContent = (args.targetContent ?? (args as any).TargetContent ?? (args as any).target_content ?? (args as any).oldString ?? (args as any).old_string ?? (args as any).oldText ?? (args as any).old_text) as string;
-      const replacementContent = (args.replacementContent ?? (args as any).ReplacementContent ?? (args as any).replacement_content ?? (args as any).newString ?? (args as any).new_string ?? (args as any).newText ?? (args as any).new_text) as string;
+      const targetContent = (args.targetContent ?? (args as any).TargetContent ?? (args as any).target_content ?? (args as any).oldString ?? (args as any).old_string ?? (args as any).oldText ?? (args as any).old_text ?? (args as any).search ?? (args as any).target) as string;
+      const replacementContent = (args.replacementContent ?? (args as any).ReplacementContent ?? (args as any).replacement_content ?? (args as any).newString ?? (args as any).new_string ?? (args as any).newText ?? (args as any).new_text ?? args.replacement ?? (args as any).Replacement ?? (args as any).replace ?? (args as any).replacement_text ?? (args as any).new_content) as string;
       if (!targetPath || targetContent === undefined || replacementContent === undefined) {
         return "Error: Missing filePath, targetContent, or replacementContent for SSH replace_file_content";
       }
@@ -1080,8 +1113,16 @@ export const replaceFileContentTool: Tool = {
             const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
 
             for (const edit of sortedFileEdits) {
-               const targetContent = edit.targetContent;
-               const replacementContent = edit.replacementContent;
+               const targetContent = (edit.targetContent ?? (edit as any).TargetContent ?? (edit as any).target_content ?? (edit as any).oldString ?? (edit as any).old_string ?? (edit as any).oldText ?? (edit as any).old_text ?? (edit as any).search ?? (edit as any).target) as string;
+               const replacementContent = (edit.replacementContent ?? (edit as any).ReplacementContent ?? (edit as any).replacement_content ?? (edit as any).newString ?? (edit as any).new_string ?? (edit as any).newText ?? (edit as any).new_text ?? (edit as any).replacement ?? (edit as any).Replacement ?? (edit as any).replace ?? (edit as any).replacement_text ?? (edit as any).new_content) as string;
+
+               if (targetContent === undefined || targetContent === null || targetContent === "") {
+                 throw new Error(`targetContent cannot be empty for ${edit.filePath}`);
+               }
+               if (replacementContent === undefined || replacementContent === null) {
+                 throw new Error(`Missing required parameter 'replacementContent' for ${edit.filePath}`);
+               }
+
                let startLine = Math.max(1, Number(edit.startLine));
                let endLine = Math.max(startLine, Number(edit.endLine));
                const allowMultiple = !!(edit.allowMultiple ?? edit.AllowMultiple);
@@ -1189,14 +1230,17 @@ export const replaceFileContentTool: Tool = {
     if (!filePath) {
       return "Error: Missing required parameter 'filePath' or 'edits'. Provide the path to the file to edit.";
     }
-    const targetContent = (args.targetContent ?? args.TargetContent ?? "") as string;
-    const replacementContent = (args.replacementContent ?? args.ReplacementContent ?? "") as string;
+    const targetContent = (args.targetContent ?? args.TargetContent ?? (args as any).target_content ?? args.oldString ?? (args as any).old_string ?? (args as any).oldText ?? (args as any).old_text ?? (args as any).search ?? (args as any).target) as string;
+    const replacementContent = (args.replacementContent ?? args.ReplacementContent ?? (args as any).replacement_content ?? args.newString ?? (args as any).new_string ?? (args as any).newText ?? (args as any).new_text ?? args.replacement ?? (args as any).Replacement ?? (args as any).replace ?? (args as any).replacement_text ?? (args as any).new_content) as string;
     let startLine = Math.max(1, Number(args.startLine ?? args.StartLine ?? 0));
     let endLine = Math.max(startLine, Number(args.endLine ?? args.EndLine ?? 0));
     const allowMultiple = !!(args.allowMultiple ?? args.AllowMultiple);
 
-    if (!targetContent) {
+    if (targetContent === undefined || targetContent === null || targetContent === "") {
       return "Error: targetContent cannot be empty.";
+    }
+    if (replacementContent === undefined || replacementContent === null) {
+      return "Error: Missing required parameter 'replacementContent' (or 'replacement' / 'newString').";
     }
 
     const release = await fileLockManager.acquire(filePath);
@@ -1495,8 +1539,8 @@ export const multiReplaceFileContentTool: Tool = {
               if (!c || typeof c !== "object") {
                 throw new Error("Invalid chunk element: expected an object.");
               }
-              const targetContent = c.targetContent ?? c.TargetContent ?? c.oldContent ?? c.oldString ?? c.originalContent;
-              const replacementContent = c.replacementContent ?? c.ReplacementContent ?? c.newContent ?? c.newString ?? c.updatedContent;
+              const targetContent = c.targetContent ?? c.TargetContent ?? c.target_content ?? c.oldContent ?? c.oldString ?? c.old_string ?? c.oldText ?? c.old_text ?? c.originalContent ?? c.search ?? c.target;
+              const replacementContent = c.replacementContent ?? c.ReplacementContent ?? c.replacement_content ?? c.newContent ?? c.newString ?? c.new_string ?? c.newText ?? c.new_text ?? c.replacement ?? c.Replacement ?? c.updatedContent ?? c.replace ?? c.replacement_text ?? c.new_content;
               if (typeof targetContent !== "string") {
                 throw new Error(`Missing or invalid 'targetContent' in chunk.`);
               }
@@ -1741,8 +1785,8 @@ export const multiReplaceFileContentTool: Tool = {
       if (!c || typeof c !== "object") {
         return `Error: Invalid chunk element: expected an object, got ${typeof c}.`;
       }
-      const targetContent = c.targetContent ?? c.TargetContent ?? c.oldContent ?? c.oldString ?? c.originalContent;
-      const replacementContent = c.replacementContent ?? c.ReplacementContent ?? c.newContent ?? c.newString ?? c.updatedContent;
+      const targetContent = c.targetContent ?? c.TargetContent ?? c.target_content ?? c.oldContent ?? c.oldString ?? c.old_string ?? c.oldText ?? c.old_text ?? c.originalContent ?? c.search ?? c.target;
+      const replacementContent = c.replacementContent ?? c.ReplacementContent ?? c.replacement_content ?? c.newContent ?? c.newString ?? c.new_string ?? c.newText ?? c.new_text ?? c.replacement ?? c.Replacement ?? c.updatedContent ?? c.replace ?? c.replacement_text ?? c.new_content;
       if (typeof targetContent !== "string") {
         return `Error: Missing or invalid 'targetContent' in chunk. Expected string, got ${typeof targetContent}.`;
       }
