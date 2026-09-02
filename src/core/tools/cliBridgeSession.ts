@@ -809,6 +809,7 @@ export async function createSession(opts: {
         }
       }
     }
+    appendActiveToolOutput(rawText);
     await appendToLog(logPath, "stdout", rawText);
   });
 
@@ -827,6 +828,7 @@ export async function createSession(opts: {
       if (line.length === 0) continue;
       emitEvent(session, "stderr", { line });
     }
+    appendActiveToolOutput(rawText);
     await appendToLog(logPath, "stderr", rawText);
   });
 
