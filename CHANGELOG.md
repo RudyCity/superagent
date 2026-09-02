@@ -1,3 +1,11 @@
+## [1.5.30] - 2026-09-02
+
+### Fix & Opt: Complete Tool Call & Result Rendering in Chat Session Transcripts
+
+- **Full Tool & Reasoning Transcript Formatter (`src/core/mcp/tools/configTools.ts`)**:
+  - Implemented `formatMessageDetails()` to parse and display all reasoning (`[Reasoning]`), tool calls with argument JSON (`[Tool Call: <name>]`), and tool execution results/errors (`[Tool Result: <name> (<status>)]`).
+  - Fixed empty `## [TOOL]` blocks in `superagent_export_session` and `superagent_query_history` where `m.content` was empty but `tool_results` / `tool_calls` contained data.
+
 ## [1.5.29] - 2026-09-02
 
 ### Feat & Opt: Deep Runtime Process Activity Tracking & Live Inter-Process Visibility

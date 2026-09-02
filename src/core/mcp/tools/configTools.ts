@@ -43,6 +43,60 @@ function safeDate(val: unknown): string {
   return "unknown";
 }
 
+/**
+ * Formats a message record into rich readable text including reasoning,
+ * tool calls (with arguments), and tool results (with outputs/errors).
+ */
+export function formatMessageDetails(m: any, isDetailed: boolean = false): string {
+  const role = (m.role || "unknown").toUpperCase();
+  const parts: string[] = [];
+
+  if (m.reasoning && String(m.reasoning).trim()) {
+    const r = String(m.reasoning).trim();
+    parts.push(`[Reasoning]\n${isDetailed ? r : (r.length > 300 ? r.slice(0, 300) + "..." : r)}`);
+  }
+
+  if (m.content && typeof m.content === "string" && m.content.trim()) {
+    const c = m.content.trim();
+    parts.push(isDetailed ? c : (c.length > 500 ? c.slice(0, 500) + "..." : c));
+  } else if (m.content && typeof m.content !== "string") {
+    parts.push(JSON.stringify(m.content, null, 2));
+  }
+
+  // Tool calls (usually attached to assistant message)
+  let toolCalls = m.toolCalls;
+  if (typeof toolCalls === "string" && toolCalls.trim()) {
+    try { toolCalls = JSON.parse(toolCalls); } catch {}
+  }
+  if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+    for (const tc of toolCalls) {
+      const name = tc.name || tc.toolName || "tool";
+      const argsStr = tc.args ? (typeof tc.args === "string" ? tc.args : JSON.stringify(tc.args, null, isDetailed ? 2 : undefined)) : "";
+      const argsPreview = isDetailed ? argsStr : (argsStr.length > 300 ? argsStr.slice(0, 300) + "..." : argsStr);
+      parts.push(`[Tool Call: ${name}]\nArgs: ${argsPreview}`);
+    }
+  }
+
+  // Tool results (in tool messages or attached to tool_end)
+  let toolResults = m.toolResults;
+  if (typeof toolResults === "string" && toolResults.trim()) {
+    try { toolResults = JSON.parse(toolResults); } catch {}
+  }
+  if (Array.isArray(toolResults) && toolResults.length > 0) {
+    for (const tr of toolResults) {
+      const name = tr.name || tr.toolName || "tool";
+      const resVal = tr.result !== undefined ? tr.result : tr.output;
+      const resStr = typeof resVal === "string" ? resVal : (resVal !== undefined ? JSON.stringify(resVal, null, isDetailed ? 2 : undefined) : "");
+      const resPreview = isDetailed ? resStr : (resStr.length > 400 ? resStr.slice(0, 400) + "..." : resStr);
+      const status = tr.isError ? "Error" : "Success";
+      parts.push(`[Tool Result: ${name} (${status})]\n${resPreview}`);
+    }
+  }
+
+  const body = parts.join("\n\n") || "(empty message)";
+  return `## [${role}]\n\n${body}\n`;
+}
+
 export async function handleGetConfig(): Promise<McpToolResult> {
   const settings = getSettings();
   const activeProvider = getActiveProviderName();
@@ -222,12 +276,8 @@ export async function handleQueryHistory(args: any): Promise<McpToolResult> {
     const msgLimit = typeof args.messageLimit === "number" ? args.messageLimit : 50;
     const sliced = msgs.slice(-msgLimit);
     const text = sliced
-      .map((m: any) => {
-        const role = (m.role || "unknown").toUpperCase();
-        const body = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
-        return `[${role}]: ${body.slice(0, 500)}${body.length > 500 ? "..." : ""}`;
-      })
-      .join("\n\n");
+      .map((m: any) => formatMessageDetails(m, false))
+      .join("\n");
 
     return { content: [{ type: "text", text: `Messages for session ${sessionId} (last ${sliced.length}):\n\n${text}` }] };
   }
@@ -349,9 +399,7 @@ export async function handleExportSession(args: any): Promise<McpToolResult> {
   ];
 
   for (const m of messages) {
-    const role = (m.role || "unknown").toUpperCase();
-    const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content, null, 2);
-    lines.push(`## [${role}]\n\n${content}\n`);
+    lines.push(formatMessageDetails(m, true));
   }
 
   return { content: [{ type: "text", text: lines.join("\n") }] };
