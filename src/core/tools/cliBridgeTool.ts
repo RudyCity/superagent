@@ -497,9 +497,12 @@ async function handleSessionCreate(
   const systemPrompt = args.system ? String(args.system) : undefined;
 
   // v1.5.16: optional initial prompt (the first message to send after the
-  // session is ready). Currently we just record it; future work could
-  // pipe it through sendToSession once status flips to "ready".
-  const initialPrompt = args.message ? String(args.message) : undefined;
+  // session is ready).
+  const initialPrompt = args.initialMessage
+    ? String(args.initialMessage)
+    : args.message
+    ? String(args.message)
+    : undefined;
 
   const interactive = args.interactive === true;
   const profileArgv = profile
