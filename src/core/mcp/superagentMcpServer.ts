@@ -1,9 +1,10 @@
 /**
- * superagentMcpServer.ts — Complete, modular 35-Tool MCP Server for Superagent.
+ * superagentMcpServer.ts — Complete 3-Pillar (Tools, Resources, Prompts) MCP Server for Superagent.
  *
  * Exposes full AI process inspection, live interruption/control, subagent delegation,
  * CLI bridge, workspace switching, file tools, search, command execution, presets,
- * task checklists, persistent memory, token analytics, session export, and remote browser control.
+ * task checklists, persistent memory, token analytics, session export, context compaction,
+ * remote browser control, and standard MCP Resources & Prompts.
  */
 
 import fs from "fs";
@@ -18,6 +19,7 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import { getSuperAgentVersion } from "../config/paths.js";
+import { registerResourcesAndPrompts } from "./resourcesAndPrompts.js";
 import {
   handleListActive,
   handleGetProcessStatus,
@@ -60,6 +62,7 @@ import {
   handleGetTokenUsage,
   handleRemoteChrome,
   handleExportSession,
+  handleCompactContext,
 } from "./tools/configTools.js";
 
 const MCP_LOG_FILE = path.join(os.homedir(), ".superagent-r", "superagent-mcp.log");
@@ -78,14 +81,19 @@ export function createSuperagentMcpServer(): Server {
   const server = new Server(
     {
       name: "superagent-mcp-server",
-      version: version || "1.5.25",
+      version: version || "1.5.26",
     },
     {
       capabilities: {
         tools: {},
+        resources: {},
+        prompts: {},
       },
     }
   );
+
+  // Register Standard MCP Resources & Prompts
+  registerResourcesAndPrompts(server);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
@@ -236,6 +244,11 @@ export function createSuperagentMcpServer(): Server {
           inputSchema: { type: "object", properties: { sessionId: { type: "string" }, format: { type: "string", enum: ["markdown", "json"] } }, required: ["sessionId"] },
         },
         {
+          name: "superagent_compact_context",
+          description: "Trigger or simulate context compaction and review context optimization status.",
+          inputSchema: { type: "object", properties: { strategy: { type: "string" }, maxTokens: { type: "number" } } },
+        },
+        {
           name: "superagent_get_token_usage",
           description: "Get comprehensive token consumption and context window analytics across tiers and sessions.",
           inputSchema: { type: "object", properties: {} },
@@ -333,6 +346,8 @@ export function createSuperagentMcpServer(): Server {
           return await handleQueryHistory(args);
         case "superagent_export_session":
           return await handleExportSession(args);
+        case "superagent_compact_context":
+          return await handleCompactContext(args);
         case "superagent_get_token_usage":
           return await handleGetTokenUsage();
         case "superagent_remote_chrome":

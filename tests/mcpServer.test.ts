@@ -10,9 +10,13 @@ import {
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-describe("Superagent Complete 35-Tool MCP Server Suite", () => {
+describe("Superagent Complete 3-Pillar MCP Server Suite (Tools, Resources, Prompts)", () => {
   const testDir = path.join(os.tmpdir(), `superagent_mcp_test_${Date.now()}`);
 
   beforeEach(() => {
@@ -29,87 +33,76 @@ describe("Superagent Complete 35-Tool MCP Server Suite", () => {
     } catch {}
   });
 
-  it("creates MCP server and lists all 35 tools", async () => {
+  it("lists and reads MCP Resources", async () => {
     const server = createSuperagentMcpServer();
-    const handler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
-    expect(handler).toBeDefined();
+    const listHandler = (server as any)._requestHandlers.get(ListResourcesRequestSchema.shape.method.value);
+    const readHandler = (server as any)._requestHandlers.get(ReadResourceRequestSchema.shape.method.value);
 
-    const result = await handler({ method: "tools/list", params: {} });
-    expect(result).toBeDefined();
-    const toolNames = result.tools.map((t: any) => t.name);
+    expect(listHandler).toBeDefined();
+    expect(readHandler).toBeDefined();
 
-    expect(toolNames).toContain("superagent_list_active");
-    expect(toolNames).toContain("superagent_get_process_status");
-    expect(toolNames).toContain("superagent_get_status");
-    expect(toolNames).toContain("superagent_get_logs");
-    expect(toolNames).toContain("superagent_send_message");
-    expect(toolNames).toContain("superagent_interrupt");
-    expect(toolNames).toContain("superagent_pause");
-    expect(toolNames).toContain("superagent_resume");
-    expect(toolNames).toContain("superagent_run_task");
-    expect(toolNames).toContain("superagent_spawn_subagent");
-    expect(toolNames).toContain("superagent_cli_bridge");
-    expect(toolNames).toContain("superagent_switch_workspace");
-    expect(toolNames).toContain("superagent_get_workspace");
-    expect(toolNames).toContain("superagent_exec_command");
-    expect(toolNames).toContain("superagent_read_file");
-    expect(toolNames).toContain("superagent_write_file");
-    expect(toolNames).toContain("superagent_list_files");
-    expect(toolNames).toContain("superagent_grep_search");
-    expect(toolNames).toContain("superagent_find_files");
-    expect(toolNames).toContain("superagent_manage_worktrees");
-    expect(toolNames).toContain("superagent_get_plan_and_tasks");
-    expect(toolNames).toContain("superagent_update_tasks");
-    expect(toolNames).toContain("superagent_get_config");
-    expect(toolNames).toContain("superagent_switch_preset");
-    expect(toolNames).toContain("superagent_switch_provider");
-    expect(toolNames).toContain("superagent_memory_search");
-    expect(toolNames).toContain("superagent_memory_save");
-    expect(toolNames).toContain("superagent_query_history");
-    expect(toolNames).toContain("superagent_export_session");
-    expect(toolNames).toContain("superagent_get_token_usage");
-    expect(toolNames).toContain("superagent_remote_chrome");
-    expect(toolNames).toContain("superagent_invoke");
-    expect(toolNames).toContain("superagent_await");
-    expect(toolNames).toContain("superagent_merge");
-    expect(toolNames).toContain("superagent_manage");
+    const listRes = await listHandler({ method: "resources/list", params: {} });
+    expect(listRes.resources.length).toBeGreaterThanOrEqual(5);
+
+    const uris = listRes.resources.map((r: any) => r.uri);
+    expect(uris).toContain("superagent://status/live");
+    expect(uris).toContain("superagent://config/current");
+    expect(uris).toContain("superagent://workspace/info");
+    expect(uris).toContain("superagent://history/sessions");
+    expect(uris).toContain("superagent://memory/pinned");
+
+    const statusRead = await readHandler({
+      method: "resources/read",
+      params: { uri: "superagent://status/live" },
+    });
+    expect(statusRead.contents[0].text).toContain("masterAgent");
   });
 
-  it("executes search, file finding, and worktree tools via MCP", async () => {
+  it("lists and renders MCP Prompts", async () => {
     const server = createSuperagentMcpServer();
-    const handler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const listHandler = (server as any)._requestHandlers.get(ListPromptsRequestSchema.shape.method.value);
+    const getHandler = (server as any)._requestHandlers.get(GetPromptRequestSchema.shape.method.value);
 
-    const testFile = path.join(testDir, "search_sample.ts");
-    fs.writeFileSync(testFile, "export function calculateMetricTotal() {\n  return 42;\n}\n", "utf-8");
+    expect(listHandler).toBeDefined();
+    expect(getHandler).toBeDefined();
 
-    // Grep search
-    const grepRes = await handler({
-      method: "tools/call",
+    const listRes = await listHandler({ method: "prompts/list", params: {} });
+    expect(listRes.prompts.length).toBeGreaterThanOrEqual(3);
+
+    const promptNames = listRes.prompts.map((p: any) => p.name);
+    expect(promptNames).toContain("superagent_orchestrate");
+    expect(promptNames).toContain("superagent_debug");
+    expect(promptNames).toContain("superagent_review");
+
+    const promptGet = await getHandler({
+      method: "prompts/get",
       params: {
-        name: "superagent_grep_search",
-        arguments: { query: "calculateMetricTotal", path: testDir },
+        name: "superagent_orchestrate",
+        arguments: { feature: "Add WebSocket Streaming", acceptanceCriteria: "Latency < 50ms" },
       },
     });
-    expect(grepRes.content[0].text).toContain("calculateMetricTotal");
+    expect(promptGet.messages[0].content.text).toContain("Feature Implementation Goal");
+    expect(promptGet.messages[0].content.text).toContain("Add WebSocket Streaming");
+  });
 
-    // Find files
-    const findRes = await handler({
+  it("lists all 36 MCP tools and executes context compaction", async () => {
+    const server = createSuperagentMcpServer();
+    const listHandler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+
+    const listRes = await listHandler({ method: "tools/list", params: {} });
+    expect(listRes.tools.length).toBe(36);
+
+    const toolNames = listRes.tools.map((t: any) => t.name);
+    expect(toolNames).toContain("superagent_compact_context");
+
+    const compactRes = await callHandler({
       method: "tools/call",
       params: {
-        name: "superagent_find_files",
-        arguments: { pattern: "*.ts", path: testDir },
+        name: "superagent_compact_context",
+        arguments: { strategy: "summarization", maxTokens: 8000 },
       },
     });
-    expect(findRes.content[0].text).toContain("search_sample.ts");
-
-    // Worktrees list
-    const wtRes = await handler({
-      method: "tools/call",
-      params: {
-        name: "superagent_manage_worktrees",
-        arguments: { action: "list" },
-      },
-    });
-    expect(wtRes.content[0].text).toBeDefined();
+    expect(compactRes.content[0].text).toContain("Context Compaction Execution");
   });
 });

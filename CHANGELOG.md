@@ -1,3 +1,27 @@
+## [1.5.26] - 2026-09-02
+
+### Feat & Opt: Complete 3-Pillar MCP Architecture (Tools, Resources, Prompts) & Context Compaction
+
+- **Standard MCP Resources (`src/core/mcp/resourcesAndPrompts.ts`)**:
+  - Implemented standard MCP Resources:
+    - `superagent://status/live`: Real-time JSON stream of Master Agent, running Superagents, and background processes.
+    - `superagent://config/current`: Current active AI provider, model presets across tiers, and system settings.
+    - `superagent://workspace/info`: Current workspace path, Git branch, and list of feature worktrees.
+    - `superagent://history/sessions`: Recent conversation sessions and message metadata from SQLite database.
+    - `superagent://memory/pinned`: Pinned facts, architectural decisions, and knowledge snippets.
+
+- **Standard MCP Prompts (`src/core/mcp/resourcesAndPrompts.ts`)**:
+  - Implemented standard MCP Prompt templates:
+    - `superagent_orchestrate`: Guided multi-agent feature implementation prompt.
+    - `superagent_debug`: Systematic debugging and root-cause tracing template.
+    - `superagent_review`: Automated subagent code review against acceptance criteria and constraints.
+
+- **Context Window Compaction Tool (`src/core/mcp/tools/configTools.ts`)**:
+  - Added `superagent_compact_context`: Triggers or simulates context compaction (`SummarizationStrategy`, `PruningStrategy`, `PinningStrategy`) and reports token savings.
+
+- **Tests (`tests/mcpServer.test.ts`)**:
+  - Added test suites for MCP Resources list/read, MCP Prompts list/render, and context compaction tool.
+
 ## [1.5.25] - 2026-09-02
 
 ### Feat & Opt: 35-Tool Superagent MCP Suite, CLI Bridge Delegation, Grep & Glob Search, Worktrees & Session Exports

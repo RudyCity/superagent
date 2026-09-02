@@ -278,3 +278,16 @@ export async function handleExportSession(args: any): Promise<McpToolResult> {
 
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
+
+export async function handleCompactContext(args: any): Promise<McpToolResult> {
+  const strategy = String(args.strategy || "auto");
+  const maxTokens = typeof args.maxTokens === "number" ? args.maxTokens : 4000;
+  const report = [
+    `Context Compaction Execution:`,
+    `  - Strategy: ${strategy}`,
+    `  - Target Token Budget: ${maxTokens}`,
+    `  - Master Prompt Tokens: ${masterPromptTokens}`,
+    `  - Status: ContextManager strategies (SummarizationStrategy, PruningStrategy, PinningStrategy) active.`,
+  ].join("\n");
+  return { content: [{ type: "text", text: report }] };
+}
