@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import http from "http";
 import { McpToolResult, ServerInfo } from "../types.js";
-import { getRootConfigDir } from "../../config/paths.js";
+import { getRootConfigDir, getGlobalConfigDir } from "../../config/paths.js";
 import { loadRegistry, reconcileRegistry } from "../../tools/superagentRegistry.js";
 import { loadActiveProcesses } from "../processJournal.js";
 import {
@@ -18,6 +18,7 @@ import {
   masterPromptTokens,
   masterCompletionTokens,
   lastMasterPromptTokens,
+  getProcessActivity,
 } from "../../tools/state.js";
 import { killProcessTree } from "../../tools/shellTools.js";
 
@@ -108,17 +109,39 @@ export async function callServerApi(
 export async function handleListActive(args: any): Promise<McpToolResult> {
   const lines: string[] = ["=== Active Superagent Instances & Processes ==="];
 
-  // 1. Check live active processes across machine
+  // 1. Check live active processes across machine via process journal
   const processes = loadActiveProcesses();
   const nonMcpProcs = processes.filter((p) => p.mode !== "mcp");
   if (nonMcpProcs.length > 0) {
     lines.push(`\nRunning Superagent CLI / Server Processes (${nonMcpProcs.length}):`);
     for (const p of nonMcpProcs) {
       const ageSec = Math.round((Date.now() - p.startedAt) / 1000);
-      lines.push(`  - PID: ${p.pid} | Mode: ${p.mode} | Workspace: ${p.workingDirectory} | Uptime: ${ageSec}s | Agent Loop: ${p.isAgentRunning ? "🟢 Active" : "⚪ Idle"}`);
+      const m = Math.floor(ageSec / 60);
+      const s = ageSec % 60;
+      const uptimeStr = m > 0 ? `${m}m ${s}s` : `${s}s`;
+
+      lines.push(`  - PID: ${p.pid} | Mode: ${p.mode} | Workspace: ${p.workingDirectory} | Uptime: ${uptimeStr}`);
+      lines.push(`    Status: ${p.isAgentRunning ? "🟢 RUNNING" : "⚪ IDLE"} (${p.currentStatus || (p.isAgentRunning ? "Active" : "Idle")})`);
+      if (p.currentTask) {
+        const taskPreview = p.currentTask.length > 100 ? p.currentTask.slice(0, 100) + "..." : p.currentTask;
+        lines.push(`    Current Task: ${taskPreview}`);
+      }
+      if (p.currentTool) {
+        lines.push(`    Active Tool: ${p.currentTool}`);
+      }
+      if (p.model) {
+        lines.push(`    Model: ${p.model}`);
+      }
       if (p.activeSuperagents && p.activeSuperagents.length > 0) {
+        lines.push(`    Active Superagents (${p.activeSuperagents.length}):`);
         for (const s of p.activeSuperagents) {
-          lines.push(`      • Superagent [${s.id}] (${s.role}) -> ${s.status}${s.task ? ` | Task: ${s.task}` : ""}`);
+          lines.push(`      • [${s.id}] (${s.role}) -> ${s.status}${s.task ? ` | Task: ${s.task}` : ""}`);
+        }
+      }
+      if (p.activeSubagents && p.activeSubagents.length > 0) {
+        lines.push(`    Active Subagents (${p.activeSubagents.length}):`);
+        for (const sub of p.activeSubagents) {
+          lines.push(`      • [${sub.id}] (${sub.role || sub.typeName}) -> ${sub.status}`);
         }
       }
     }
@@ -129,7 +152,7 @@ export async function handleListActive(args: any): Promise<McpToolResult> {
   if (serverRes.success && serverRes.data) {
     const { superagents = [], subagents = [], procs = [] } = serverRes.data;
     if (superagents.length > 0) {
-      lines.push("\nSuperagents (via Server):");
+      lines.push("\nSuperagents (via Server API):");
       for (const s of superagents) {
         lines.push(`  - ID: ${s.id} | Role: ${s.role} | Status: ${s.status} | Task: ${s.prompt || "(none)"}`);
         if (s.result) {
@@ -140,14 +163,14 @@ export async function handleListActive(args: any): Promise<McpToolResult> {
     }
 
     if (subagents.length > 0) {
-      lines.push("\nSubagents (via Server):");
+      lines.push("\nSubagents (via Server API):");
       for (const sub of subagents) {
         lines.push(`  - ID: ${sub.id} | Type: ${sub.typeName} | Role: ${sub.role} | Status: ${sub.status}`);
       }
     }
 
     if (procs.length > 0) {
-      lines.push("\nBackground Tasks (via Server):");
+      lines.push("\nBackground Tasks (via Server API):");
       for (const p of procs) {
         lines.push(`  - ID: ${p.id} | PID: ${p.pid} | Command: ${p.commandLine} | Status: ${p.status}`);
       }
@@ -207,7 +230,26 @@ export async function handleGetProcessStatus(): Promise<McpToolResult> {
   const lines: string[] = ["=== Real-time Superagent AI Process Status ==="];
   lines.push(`Active CLI Processes: ${nonMcpProcs.length > 0 ? `${nonMcpProcs.length} Process(es) Running` : "None"}`);
   for (const p of nonMcpProcs) {
-    lines.push(`  - PID ${p.pid} (${p.mode}) in ${p.workingDirectory} -> ${p.isAgentRunning ? "🟢 RUNNING" : "⚪ IDLE"}`);
+    const ageSec = Math.round((Date.now() - p.startedAt) / 1000);
+    const m = Math.floor(ageSec / 60);
+    const s = ageSec % 60;
+    const uptimeStr = m > 0 ? `${m}m ${s}s` : `${s}s`;
+
+    lines.push(`\n[Process PID ${p.pid} — ${p.mode.toUpperCase()}]`);
+    lines.push(`  - Workspace: ${p.workingDirectory}`);
+    lines.push(`  - Uptime: ${uptimeStr}`);
+    lines.push(`  - State: ${p.isAgentRunning ? "🟢 RUNNING" : "⚪ IDLE"} (${p.currentStatus || (p.isAgentRunning ? "Active" : "Idle")})`);
+    if (p.currentTask) lines.push(`  - Current Task: ${p.currentTask}`);
+    if (p.currentTool) lines.push(`  - Current Tool: ${p.currentTool}`);
+    if (p.model) lines.push(`  - Model: ${p.model}`);
+    if (p.promptTokens || p.completionTokens) lines.push(`  - Tokens: ${p.promptTokens || 0} prompt / ${p.completionTokens || 0} completion`);
+    if (p.sessionId) lines.push(`  - Session ID: ${p.sessionId}`);
+    if (p.recentLogs && p.recentLogs.length > 0) {
+      lines.push(`  - Recent Activity Logs (last 3):`);
+      for (const log of p.recentLogs.slice(-3)) {
+        lines.push(`      ${log}`);
+      }
+    }
   }
 
   lines.push(`\nMaster Agent: ${isMasterRunning ? "🟢 RUNNING" : "⚪ IDLE"}`);
@@ -235,7 +277,7 @@ export async function handleGetProcessStatus(): Promise<McpToolResult> {
     }
   }
 
-  lines.push(`\nRunning Background Processes (${runningProcs.length}):`);
+  lines.push(`\nRunning Background Tasks (${runningProcs.length}):`);
   if (runningProcs.length === 0) {
     lines.push("  None");
   } else {
@@ -321,25 +363,24 @@ export async function handlePause(args: any): Promise<McpToolResult> {
       isError: true,
     };
   }
+
+  await callServerApi("/api/superagents/pause", "POST", { superagentId });
+
   const inst = superagentInstances.get(superagentId);
-  if (!inst) {
+  if (inst) {
+    inst.status = "paused";
     return {
-      content: [{ type: "text", text: `Superagent '${superagentId}' not found.` }],
-      isError: true,
+      content: [{ type: "text", text: `Superagent ${superagentId} (${inst.role}) paused.` }],
     };
   }
-  inst.agent?.abort?.();
-  inst.status = "paused";
+
   return {
-    content: [{ type: "text", text: `Superagent '${superagentId}' (${inst.role}) has been paused.` }],
+    content: [{ type: "text", text: `Superagent ${superagentId} paused (dispatched).` }],
   };
 }
 
 export async function handleResume(args: any): Promise<McpToolResult> {
   const superagentId = String(args.superagentId || args.id || args.target || "");
-  const message = String(args.message || args.prompt || "Resume and continue working.");
-  const wait = args.wait === true;
-
   if (!superagentId) {
     return {
       content: [{ type: "text", text: "Error: 'superagentId' is required to resume." }],
@@ -347,26 +388,160 @@ export async function handleResume(args: any): Promise<McpToolResult> {
     };
   }
 
-  const { sendMessageToSuperagentTool } = await import("../../tools/superagentTools.js");
-  const result = await sendMessageToSuperagentTool.execute(
-    { superagentId, message, wait },
-    process.cwd()
-  );
+  await callServerApi("/api/superagents/resume", "POST", { superagentId });
+
+  const inst = superagentInstances.get(superagentId);
+  if (inst) {
+    inst.status = "running";
+    return {
+      content: [{ type: "text", text: `Superagent ${superagentId} (${inst.role}) resumed.` }],
+    };
+  }
+
   return {
-    content: [{ type: "text", text: String(result) }],
+    content: [{ type: "text", text: `Superagent ${superagentId} resumed (dispatched).` }],
+  };
+}
+
+export async function handleGetStatus(args: any): Promise<McpToolResult> {
+  const id = String(args.id || args.superagentId || args.subagentId || args.taskId || "");
+  if (!id) {
+    return await handleGetProcessStatus();
+  }
+
+  // 1. Check if id is a PID in the process journal
+  const processes = loadActiveProcesses();
+  const matchedProc = processes.find((p) => String(p.pid) === id || p.sessionId === id);
+  if (matchedProc) {
+    const ageSec = Math.round((Date.now() - matchedProc.startedAt) / 1000);
+    const m = Math.floor(ageSec / 60);
+    const s = ageSec % 60;
+    const uptimeStr = m > 0 ? `${m}m ${s}s` : `${s}s`;
+
+    const lines = [
+      `Status for Process PID ${matchedProc.pid} (${matchedProc.mode.toUpperCase()}):`,
+      `  - Workspace: ${matchedProc.workingDirectory}`,
+      `  - State: ${matchedProc.isAgentRunning ? "🟢 RUNNING" : "⚪ IDLE"} (${matchedProc.currentStatus || "Idle"})`,
+      `  - Current Task: ${matchedProc.currentTask || "(none)"}`,
+      `  - Active Tool: ${matchedProc.currentTool || "(none)"}`,
+      `  - Model: ${matchedProc.model || "(default)"}`,
+      `  - Tokens: ${matchedProc.promptTokens || 0} prompt / ${matchedProc.completionTokens || 0} completion`,
+      `  - Uptime: ${uptimeStr}`,
+    ];
+    if (matchedProc.recentLogs && matchedProc.recentLogs.length > 0) {
+      lines.push(`  - Recent Logs:`);
+      for (const log of matchedProc.recentLogs.slice(-5)) {
+        lines.push(`      ${log}`);
+      }
+    }
+    return { content: [{ type: "text", text: lines.join("\n") }] };
+  }
+
+  // 2. Check in server API
+  const serverRes = await callServerApi("/api/instances", "GET");
+  if (serverRes.success && serverRes.data) {
+    const all = [
+      ...(serverRes.data.superagents || []),
+      ...(serverRes.data.subagents || []),
+      ...(serverRes.data.procs || []),
+    ];
+    const found = all.find((item: any) => item.id === id);
+    if (found) {
+      return {
+        content: [{ type: "text", text: `Status for ${id}:\n${JSON.stringify(found, null, 2)}` }],
+      };
+    }
+  }
+
+  // 3. Check in memory
+  const superagent = superagentInstances.get(id);
+  if (superagent) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Superagent [${id}]:\n  Role: ${superagent.role}\n  Branch: ${superagent.branch}\n  Status: ${superagent.status}\n  Task: ${superagent.task}\n  Worktree: ${superagent.worktreePath || "none"}\n  Result: ${superagent.result || "none"}`,
+        },
+      ],
+    };
+  }
+
+  const subagent = subagentInstances.get(id);
+  if (subagent) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Subagent [${id}]:\n  Type: ${subagent.typeName}\n  Role: ${subagent.role}\n  Status: ${subagent.status}\n  Prompt: ${subagent.prompt || "none"}\n  Result: ${subagent.result || "none"}`,
+        },
+      ],
+    };
+  }
+
+  const task = backgroundTasks.get(id);
+  if (task) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Background Task [${id}]:\n  Command: ${task.command}\n  PID: ${task.process?.pid || "unknown"}\n  Exited: ${task.hasExited}\n  ExitCode: ${task.exitCode ?? "none"}`,
+        },
+      ],
+    };
+  }
+
+  return {
+    content: [{ type: "text", text: `No instance, process, or task found with ID: ${id}` }],
+    isError: true,
   };
 }
 
 export async function handleGetLogs(args: any): Promise<McpToolResult> {
-  const id = String(args.id || args.superagentId || args.subagentId || args.taskId || "");
-  const limit = typeof args.limit === "number" ? args.limit : 50;
-  if (!id) {
-    return {
-      content: [{ type: "text", text: "Error: Missing required parameter 'id'." }],
-      isError: true,
-    };
+  const rawId = args.id || args.superagentId || args.subagentId || args.taskId;
+  const id = rawId ? String(rawId).trim() : "";
+  const limit = typeof args.limit === "number" ? Math.min(args.limit, 200) : (typeof args.lines === "number" ? Math.min(args.lines, 200) : 50);
+
+  // 1. If id is empty, "all", "current", "latest", or numeric PID:
+  const processes = loadActiveProcesses();
+  const nonMcpProcs = processes.filter((p) => p.mode !== "mcp");
+
+  if (!id || id === "all" || id === "current" || id === "latest" || /^\d+$/.test(id)) {
+    const targetProc = /^\d+$/.test(id)
+      ? processes.find((p) => String(p.pid) === id)
+      : nonMcpProcs[0];
+
+    if (targetProc && targetProc.recentLogs && targetProc.recentLogs.length > 0) {
+      const recent = targetProc.recentLogs.slice(-limit).join("\n");
+      return {
+        content: [
+          {
+            type: "text",
+            text: `=== Logs for Process PID ${targetProc.pid} (${targetProc.workingDirectory}) ===\n${recent}`,
+          },
+        ],
+      };
+    }
+
+    // Fallback to global superagent.log
+    try {
+      const logFile = path.join(getGlobalConfigDir(), "superagent.log");
+      if (fs.existsSync(logFile)) {
+        const content = fs.readFileSync(logFile, "utf-8");
+        const lines = content.split("\n").filter(Boolean);
+        const sliced = lines.slice(-limit).join("\n");
+        return {
+          content: [
+            {
+              type: "text",
+              text: `=== Global Superagent Logs (last ${Math.min(limit, lines.length)} lines) ===\n${sliced}`,
+            },
+          ],
+        };
+      }
+    } catch {}
   }
 
+  // 2. Check running server API
   const serverRes = await callServerApi("/api/instances", "GET");
   if (serverRes.success && serverRes.data) {
     const all = [
@@ -383,6 +558,7 @@ export async function handleGetLogs(args: any): Promise<McpToolResult> {
     }
   }
 
+  // 3. Check in-memory instances
   const inst = superagentInstances.get(id) || subagentInstances.get(id);
   if (inst && Array.isArray(inst.logs)) {
     const recent = inst.logs.slice(-limit).join("");
@@ -391,6 +567,7 @@ export async function handleGetLogs(args: any): Promise<McpToolResult> {
     };
   }
 
+  // 4. Check background tasks
   const task = backgroundTasks.get(id);
   if (task) {
     let out = task.output || [];
@@ -405,7 +582,16 @@ export async function handleGetLogs(args: any): Promise<McpToolResult> {
     };
   }
 
+  // 5. Check global process activity
+  const activity = getProcessActivity();
+  if (activity.recentLogs && activity.recentLogs.length > 0) {
+    const recent = activity.recentLogs.slice(-limit).join("\n");
+    return {
+      content: [{ type: "text", text: `Process Activity Logs:\n${recent}` }],
+    };
+  }
+
   return {
-    content: [{ type: "text", text: `No instance or task found with ID: ${id}` }],
+    content: [{ type: "text", text: `No instance, task, or process found with ID: ${id}` }],
   };
 }

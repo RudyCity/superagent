@@ -28,6 +28,7 @@ import { AsyncLocalStorage } from "async_hooks";
 import { allTasksCompleted, archiveCompletedTasks, getTaskHistoryPath } from "./taskChecklist.js";
 import { createCheckpoint } from "./checkpoints.js";
 import { RealtimeAdvisor } from "./advisor.js";
+import { updateProcessActivity, appendProcessLog } from "./tools/state.js";
 
 import { PathResolver } from "./agent/PathResolver.js";
 import { HistoryManager } from "./agent/HistoryManager.js";
@@ -216,7 +217,13 @@ export class Agent {
         this.textLogBuffer += event.content;
       } else if (event.type === "tool_start") {
         const argsStr = JSON.stringify(event.toolCall.args);
+        const desc = event.description || event.toolCall.name;
         this.writeToLogFile("TOOL_START", `Tool: ${event.toolCall.name}, Description: ${event.description}, Args: ${argsStr}`);
+        updateProcessActivity({
+          isAgentRunning: true,
+          currentTool: `${event.toolCall.name}: ${desc}`,
+          currentStatus: `Executing tool: ${event.toolCall.name}`,
+        });
       } else if (event.type === "tool_end") {
         const success = !event.toolResult.isError;
         const resultStr = typeof event.toolResult.result === "string"
@@ -224,10 +231,20 @@ export class Agent {
           : JSON.stringify(event.toolResult.result);
         const truncatedResult = resultStr.length > 500 ? resultStr.substring(0, 500) + "... (truncated)" : resultStr;
         this.writeToLogFile("TOOL_END", `Tool: ${event.toolResult.name}, Success: ${success}, Result: ${truncatedResult}`);
+        updateProcessActivity({
+          currentTool: undefined,
+          currentStatus: "Thinking / Generating response...",
+        });
       } else if (event.type === "error") {
         this.writeToLogFile("ERROR", event.message);
+        updateProcessActivity({
+          currentStatus: `Error: ${event.message}`,
+        });
       } else if (event.type === "permission_required") {
         this.writeToLogFile("PERMISSION_REQUIRED", `Tool: ${event.toolCall.name}, Description: ${event.description}`);
+        updateProcessActivity({
+          currentStatus: `Waiting for permission: ${event.description}`,
+        });
       } else if (event.type === "illegal_operation") {
         const v = event.violation;
         this.writeToLogFile("ILLEGAL_OPERATION", `[${v.severity}] ${v.reason} | tool:${v.toolName} | ${v.description}`);
@@ -237,10 +254,19 @@ export class Agent {
           logMsg += `, Duration: ${event.durationMs}ms`;
         }
         this.writeToLogFile("TOKEN_USAGE", logMsg);
+        updateProcessActivity({
+          promptTokens: event.promptTokens,
+          completionTokens: event.completionTokens,
+        });
       } else if (event.type === "goal_done") {
         this.writeToLogFile("GOAL_DONE", `Goal: ${event.goal}\nSummary: ${event.summary}`);
       } else if (event.type === "done") {
         this.writeToLogFile("DONE", "Agent execution iteration/loop done");
+        updateProcessActivity({
+          isAgentRunning: false,
+          currentTool: undefined,
+          currentStatus: "Idle",
+        });
       } else if (event.type === "checkpoint_auto") {
         this.writeToLogFile("CHECKPOINT_AUTO", `ID: ${event.id}, Name: ${event.name}`);
       }
@@ -294,6 +320,7 @@ export class Agent {
       const lines = message.split("\n");
       const formattedLines = lines.map(line => `${prefix} ${line}`).join("\n") + "\n";
       fs.appendFileSync(logPath, formattedLines, "utf-8");
+      appendProcessLog(`[${level}] ${message}`);
     } catch (err) {
       // Ignore log writing errors to prevent crashing the agent
     }
@@ -449,6 +476,16 @@ export class Agent {
     this.isRunning = true;
     this.abortController = new AbortController();
 
+    const taskSummary = typeof userInput === "string" ? userInput : "[multimodal message]";
+    const currentModelName = getTierModel(this.isMultiAgent ? "multi" : "single", this.tier);
+    updateProcessActivity({
+      isAgentRunning: true,
+      currentTask: taskSummary.slice(0, 150),
+      currentStatus: "Thinking / Planning...",
+      sessionId: this.sessionId,
+      model: currentModelName,
+    });
+
     const signal = this.abortController?.signal;
     let onAbort: (() => void) | undefined;
     const abortPromise = new Promise<never>((_, reject) => {
@@ -492,6 +529,11 @@ export class Agent {
       this.flushTextLogBuffer();
       this.isRunning = false;
       this.abortController = null;
+      updateProcessActivity({
+        isAgentRunning: false,
+        currentTool: undefined,
+        currentStatus: "Idle",
+      });
 
       if (this.pendingMessagesQueue.length > 0) {
         const queued = this.pendingMessagesQueue.shift()!;

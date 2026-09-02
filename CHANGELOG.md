@@ -1,3 +1,23 @@
+## [1.5.29] - 2026-09-02
+
+### Feat & Opt: Deep Runtime Process Activity Tracking & Live Inter-Process Visibility
+
+- **Real-Time Process Activity Tracker (`src/core/tools/state.ts`)**:
+  - Added `ProcessActivity` interface, `currentProcessActivity` registry, `updateProcessActivity()`, `getProcessActivity()`, `appendProcessLog()`, and `subscribeToProcessActivity()`.
+  - Captures `isAgentRunning`, `currentTask` (user prompt / goal), `currentTool` (active tool + description), `currentStatus` (e.g. `Executing tool: write_to_file`, `Thinking / Planning...`, `Waiting for permission`), `model`, `promptTokens`, `completionTokens`, `sessionId`, and a rolling 100-line activity log.
+
+- **Enhanced Process Journal (`src/core/mcp/processJournal.ts`)**:
+  - Subscribes to `subscribeToProcessActivity` and `subscribeToSuperagents` for instant zero-latency disk synchronization to `active-processes.json`.
+  - Stores all live process metadata including active subagent prompts, recent logs (last 30), and execution state.
+
+- **Agent Runtime Activity Hooks (`src/core/agent.ts`)**:
+  - Hooked `updateProcessActivity` and `appendProcessLog` into `onEvent` (`tool_start`, `tool_end`, `error`, `permission_required`, `token_usage`, `done`), `writeToLogFile`, and `sendMessage` loop start/finish.
+
+- **Upgraded MCP Process Tools (`src/core/mcp/tools/processTools.ts`)**:
+  - `superagent_list_active`: Displays real-time status (`🟢 RUNNING` vs `⚪ IDLE`), status description, current task preview, active tool, model, and active subagents/superagents.
+  - `superagent_get_process_status`: Provides full multi-process inspection including uptime, model, token usage, and recent logs.
+  - `superagent_get_logs`: Supports querying logs by PID, "current", "latest", or global `superagent.log` fallback without requiring an internal instance ID.
+
 ## [1.5.28] - 2026-09-02
 
 ### Opt: 37-Tool MCP Suite — Safe Date Parsing, Full Error Handling, Server Health Tool & Expanded Tests

@@ -2,13 +2,24 @@
  * processJournal.ts — Real-time persistent process and session registry for Superagent CLI & Server.
  *
  * Allows MCP servers, background daemons, and external tools to discover all live running
- * Superagent interactive CLI sessions, servers, and multi-agent workers across the machine.
+ * Superagent interactive CLI sessions, servers, and multi-agent workers across the machine
+ * with deep runtime visibility (current prompt/task, active tool, status, model, tokens, recent logs).
  */
 
 import fs from "fs";
 import path from "path";
 import { getRootConfigDir } from "../config/paths.js";
-import { superagentInstances, subagentInstances, backgroundTasks, masterAgentRef } from "../tools/state.js";
+import {
+  superagentInstances,
+  subagentInstances,
+  backgroundTasks,
+  masterAgentRef,
+  getProcessActivity,
+  subscribeToProcessActivity,
+  subscribeToSuperagents,
+  masterPromptTokens,
+  masterCompletionTokens,
+} from "../tools/state.js";
 
 export interface ActiveProcessEntry {
   pid: number;
@@ -17,9 +28,17 @@ export interface ActiveProcessEntry {
   startedAt: number;
   lastHeartbeat: number;
   isAgentRunning?: boolean;
+  currentTask?: string;
+  currentTool?: string;
+  currentStatus?: string;
+  sessionId?: string;
+  model?: string;
+  promptTokens?: number;
+  completionTokens?: number;
   activeSuperagents?: Array<{ id: string; role: string; branch: string; status: string; task?: string }>;
-  activeSubagents?: Array<{ id: string; typeName: string; role: string; status: string }>;
+  activeSubagents?: Array<{ id: string; typeName: string; role: string; status: string; prompt?: string }>;
   backgroundTaskCount?: number;
+  recentLogs?: string[];
 }
 
 function getProcessJournalPath(): string {
@@ -49,8 +68,8 @@ export function loadActiveProcesses(): ActiveProcessEntry[] {
 
     for (const item of list) {
       if (item && typeof item.pid === "number") {
-        // Drop processes that died or haven't sent a heartbeat in > 30 seconds
-        if (isPidAlive(item.pid) && now - (item.lastHeartbeat || 0) < 30000) {
+        // Drop processes that died or haven't sent a heartbeat in > 20 seconds
+        if (isPidAlive(item.pid) && now - (item.lastHeartbeat || 0) < 20000) {
           alive.push(item);
         } else {
           dirty = true;
@@ -76,6 +95,13 @@ function saveActiveProcesses(list: ActiveProcessEntry[]): void {
 }
 
 let heartbeatTimer: NodeJS.Timeout | null = null;
+let globalTriggerUpdate: (() => void) | null = null;
+
+export function triggerProcessUpdate(): void {
+  try {
+    globalTriggerUpdate?.();
+  } catch {}
+}
 
 export function registerCurrentProcess(mode: "single" | "multi" | "server" | "mcp" | "cli"): void {
   const pid = process.pid;
@@ -83,44 +109,63 @@ export function registerCurrentProcess(mode: "single" | "multi" | "server" | "mc
   const startedAt = Date.now();
 
   const update = () => {
-    const activeSuperagents = [...superagentInstances.values()].map((i) => ({
-      id: i.id,
-      role: i.role,
-      branch: i.branch,
-      status: i.status,
-      task: i.task,
-    }));
+    try {
+      const activeSuperagents = [...superagentInstances.values()].map((i) => ({
+        id: i.id,
+        role: i.role,
+        branch: i.branch,
+        status: i.status,
+        task: i.task,
+      }));
 
-    const activeSubagents = [...subagentInstances.values()].map((s) => ({
-      id: s.id,
-      typeName: s.typeName,
-      role: s.role,
-      status: s.status,
-    }));
+      const activeSubagents = [...subagentInstances.values()].map((s) => ({
+        id: s.id,
+        typeName: s.typeName,
+        role: s.role,
+        status: s.status,
+        prompt: s.prompt,
+      }));
 
-    const isRunning = masterAgentRef ? (masterAgentRef.isAgentRunning?.() ?? false) : false;
+      const activity = getProcessActivity();
+      const isRunning =
+        activity.isAgentRunning ||
+        (masterAgentRef ? (masterAgentRef.isAgentRunning?.() ?? false) : false);
 
-    const entry: ActiveProcessEntry = {
-      pid,
-      mode,
-      workingDirectory: cwd,
-      startedAt,
-      lastHeartbeat: Date.now(),
-      isAgentRunning: isRunning,
-      activeSuperagents,
-      activeSubagents,
-      backgroundTaskCount: backgroundTasks.size,
-    };
+      const entry: ActiveProcessEntry = {
+        pid,
+        mode,
+        workingDirectory: cwd,
+        startedAt,
+        lastHeartbeat: Date.now(),
+        isAgentRunning: isRunning,
+        currentTask: activity.currentTask,
+        currentTool: activity.currentTool,
+        currentStatus: activity.currentStatus || (isRunning ? "Running" : "Idle"),
+        sessionId: activity.sessionId || masterAgentRef?.sessionId,
+        model: activity.model,
+        promptTokens: activity.promptTokens || masterPromptTokens,
+        completionTokens: activity.completionTokens || masterCompletionTokens,
+        activeSuperagents,
+        activeSubagents,
+        backgroundTaskCount: backgroundTasks.size,
+        recentLogs: (activity.recentLogs || []).slice(-30),
+      };
 
-    const currentList = loadActiveProcesses().filter((p) => p.pid !== pid);
-    currentList.push(entry);
-    saveActiveProcesses(currentList);
+      const currentList = loadActiveProcesses().filter((p) => p.pid !== pid);
+      currentList.push(entry);
+      saveActiveProcesses(currentList);
+    } catch {}
   };
 
+  globalTriggerUpdate = update;
   update();
 
+  // Instant sync whenever process activity or superagents change
+  subscribeToProcessActivity(() => update());
+  subscribeToSuperagents(() => update());
+
   if (!heartbeatTimer) {
-    heartbeatTimer = setInterval(update, 3000);
+    heartbeatTimer = setInterval(update, 2000);
     heartbeatTimer.unref();
   }
 

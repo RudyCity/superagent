@@ -439,7 +439,60 @@ export function notifySuperagentsChanged() {
   }
 }
 
-// ─── Master Log Listeners ───────────────────────────────────────────────────
+// ─── Master Log Listeners & Process Activity ──────────────────────────────────
+
+export interface ProcessActivity {
+  isAgentRunning: boolean;
+  currentTask?: string;
+  currentTool?: string;
+  currentStatus?: string;
+  sessionId?: string;
+  model?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  recentLogs: string[];
+  updatedAt: number;
+}
+
+const currentProcessActivity: ProcessActivity = {
+  isAgentRunning: false,
+  currentStatus: "Idle",
+  recentLogs: [],
+  updatedAt: Date.now(),
+};
+
+export type ProcessActivityListener = (activity: ProcessActivity) => void;
+export const processActivityListeners = new Set<ProcessActivityListener>();
+
+export function subscribeToProcessActivity(listener: ProcessActivityListener) {
+  processActivityListeners.add(listener);
+  return () => {
+    processActivityListeners.delete(listener);
+  };
+}
+
+export function updateProcessActivity(updates: Partial<ProcessActivity>): void {
+  Object.assign(currentProcessActivity, updates);
+  currentProcessActivity.updatedAt = Date.now();
+  for (const listener of processActivityListeners) {
+    try {
+      listener(currentProcessActivity);
+    } catch {}
+  }
+}
+
+export function getProcessActivity(): ProcessActivity {
+  return { ...currentProcessActivity, recentLogs: [...currentProcessActivity.recentLogs] };
+}
+
+export function appendProcessLog(msg: string): void {
+  if (!msg) return;
+  const line = `[${new Date().toISOString()}] ${msg.trim()}`;
+  currentProcessActivity.recentLogs.push(line);
+  if (currentProcessActivity.recentLogs.length > 100) {
+    currentProcessActivity.recentLogs.shift();
+  }
+}
 
 export type MasterLogListener = (msg: string) => void;
 export const masterLogListeners = new Set<MasterLogListener>();
@@ -452,6 +505,7 @@ export function subscribeToMasterLogs(listener: MasterLogListener) {
 }
 
 export function appendMasterLog(msg: string) {
+  appendProcessLog(msg);
   for (const listener of masterLogListeners) {
     listener(msg);
   }
