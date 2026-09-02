@@ -6,7 +6,7 @@ import path from "path";
 import crypto from "crypto";
 import { SshWorkspaceConfig, workspaceMode } from "./workspaceMode.js";
 import { sshLogger } from "./sshLogger.js";
-import { getActiveQuestionHandler } from "../tools/state.js";
+import { getActiveQuestionHandler, clearActiveToolOutput, appendActiveToolOutput } from "../tools/state.js";
 import { sshEvents, SshConnectionState } from "./sshEvents.js";
 import { resolveHostAlias, parseProxyJump, findDefaultPrivateKey } from "./sshConfig.js";
 
@@ -427,6 +427,7 @@ export class SshProxyService {
     const workingDir = this.normalizePosixPath(cwd || ".");
     const fullCommand = `cd ${this.escapeShellArg(workingDir)} && ${command}`;
 
+    clearActiveToolOutput();
     let sshStream: any = null;
 
     const execPromise = new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
@@ -480,7 +481,9 @@ export class SshProxyService {
         });
 
         stream.on("data", (data: Buffer) => {
-          stdout += data.toString();
+          const str = data.toString();
+          stdout += str;
+          appendActiveToolOutput(str);
         });
 
         stream.on("close", (code: number | null) => {
@@ -491,7 +494,9 @@ export class SshProxyService {
         });
 
         stream.stderr.on("data", (data: Buffer) => {
-          stderr += data.toString();
+          const str = data.toString();
+          stderr += str;
+          appendActiveToolOutput(str);
         });
 
         stream.stderr.on("error", (streamErr: Error) => {
@@ -556,6 +561,7 @@ export class SshProxyService {
     const workingDir = this.normalizePosixPath(cwd || ".");
     const remoteCommand: string[] = ["cd", workingDir, "&&", ...argv];
 
+    clearActiveToolOutput();
     let sshStream: any = null;
     const execPromise = new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
       // ssh2 accepts string|string[] at runtime; the bundled @types
@@ -576,7 +582,11 @@ export class SshProxyService {
           resolve(result);
         };
         stream.on("error", (streamErr: Error) => { streamError = streamErr; });
-        stream.on("data", (data: Buffer) => { stdout += data.toString(); });
+        stream.on("data", (data: Buffer) => {
+          const str = data.toString();
+          stdout += str;
+          appendActiveToolOutput(str);
+        });
         stream.on("close", (code: number | null) => {
           const finalExit = (code !== null && code !== undefined && !isNaN(Number(code)))
             ? Number(code)
@@ -586,7 +596,11 @@ export class SshProxyService {
           }
           settle({ stdout, stderr, exitCode: finalExit });
         });
-        stream.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
+        stream.stderr.on("data", (data: Buffer) => {
+          const str = data.toString();
+          stderr += str;
+          appendActiveToolOutput(str);
+        });
       });
     });
 

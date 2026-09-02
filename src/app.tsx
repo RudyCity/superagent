@@ -21,7 +21,7 @@ import { registry } from "./core/commands/index.js";
 import { createCheckpoint, terminateActiveTasksAndSubagents } from "./core/checkpoints.js";
 import { getToolDescription } from "./core/permissions.js";
 import path from "path";
-import { backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, registerMasterAgent, notifyTasksChanged, setActiveDevHookGlobal, isTaskInWorkspace } from "./core/tools.js";
+import { backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, registerMasterAgent, notifyTasksChanged, setActiveDevHookGlobal, isTaskInWorkspace, clearActiveToolOutput, appendActiveToolOutput } from "./core/tools.js";
 import { ProcessingIndicator } from "./components/common/LoadingIndicators.js";
 import { ActiveAgentsList } from "./components/active-agents-list.js";
 import { TaskChecklist } from "./components/task-checklist.js";
@@ -863,6 +863,7 @@ export function App({
         }
         process.stdin.pause();
 
+        clearActiveToolOutput();
         setIsExecutingTool(true);
         setIsProcessing(true);
         setActiveToolName("command");
@@ -885,6 +886,7 @@ export function App({
           if (childProcess.all) {
             childProcess.all.on("data", (chunk: Buffer) => {
               const str = chunk.toString("utf-8");
+              appendActiveToolOutput(str);
               output += str;
               if (onData) {
                 onData(str);
@@ -893,16 +895,19 @@ export function App({
           }
 
           const res = await childProcess;
+          clearActiveToolOutput();
           exitCode = res.exitCode ?? 0;
           if (!output) {
             output = res.all || res.stdout || res.stderr || "";
           }
         } catch (err: any) {
+          clearActiveToolOutput();
           exitCode = err.status ?? err.exitCode ?? 1;
           if (!output) {
             output = err.all || err.stdout || err.stderr || err.message || "";
           }
         } finally {
+          clearActiveToolOutput();
           setIsExecutingTool(false);
           setIsProcessing(false);
           setActiveToolName("");
@@ -2746,10 +2751,6 @@ export function App({
     return count;
   };
 
-  const inputLinesCount = input ? Math.max(1, Math.ceil((input.length + 6) / terminalWidth)) : 1;
-  const activeToolLinesCount = activeToolOutput ? activeToolOutput.trim().split("\n").slice(-8).length : 0;
-  const showBanner = messageCount === 0;
-
   // Determine if current wizard step is a pure selection step (no text input needed)
   const isSelectionOnlyStep = (() => {
     if (!activeWizard) return false;
@@ -2817,6 +2818,10 @@ export function App({
       : 1 + Math.min(runningTasksCount, maxProcsVisible);
   }
   const totalAgentsHeight = saSectionHeight + subSectionHeight + procSectionHeight;
+
+  const inputLinesCount = input ? Math.max(1, Math.ceil((input.length + 6) / terminalWidth)) : 1;
+  const activeToolLinesCount = activeToolOutput ? activeToolOutput.trim().split("\n").slice(-8).length : 0;
+  const showBanner = messageCount === 0;
 
   // Checklist height — the ACTIVE TASK CHECKLIST is always expanded, so
   // we no longer honor collapsedSections.checklist when computing height.
@@ -2938,8 +2943,6 @@ export function App({
     responseLinesCount = wrapTextForDisplay(lines[focusedResponseIndex].content, focusRespWidth).length;
   }
 
-
-
   const wrappedLines = useMemo(() => {
     return computeWrappedLines({
       lines,
@@ -2957,6 +2960,8 @@ export function App({
       activeToolOutput,
       timeLeft,
       formatCompactNumber,
+      activeToolName,
+      activeToolDesc,
     });
   }, [
     lines,
@@ -2972,12 +2977,13 @@ export function App({
     isExecutingTool,
     activeToolOutput,
     timeLeft,
+    activeToolName,
+    activeToolDesc,
   ]);
 
   wrappedLinesLengthRef.current = wrappedLines.length;
   chatHeightLimitRef.current = chatHeightLimit;
 
-  // Adjust scroll offset when wrapped lines length increases during streaming/thinking to pin scroll position
   useEffect(() => {
     const prevLength = lastWrappedLinesLengthRef.current;
     const newLength = wrappedLines.length;

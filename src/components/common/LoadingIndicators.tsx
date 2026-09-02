@@ -46,8 +46,17 @@ export function LoadingIndicator({ text }: { text?: string } = {}) {
   );
 }
 
-export function ToolLoadingIndicator({ toolName, toolDesc }: { toolName?: string; toolDesc?: string } = {}) {
+export function ToolLoadingIndicator({
+  toolName,
+  toolDesc,
+  elapsedSeconds,
+}: {
+  toolName?: string;
+  toolDesc?: string;
+  elapsedSeconds?: number;
+} = {}) {
   const [frame, setFrame] = useState(0);
+  const [localElapsed, setLocalElapsed] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -56,30 +65,47 @@ export function ToolLoadingIndicator({ toolName, toolDesc }: { toolName?: string
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (elapsedSeconds !== undefined) return;
+    const interval = setInterval(() => {
+      setLocalElapsed((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [elapsedSeconds]);
+
+  const currentElapsed = elapsedSeconds !== undefined ? elapsedSeconds : localElapsed;
   const rColor = rPulseColors[frame % rPulseColors.length];
 
   let displayMsg = "Executing system call...";
   if (toolName) {
-    if (toolName === "command") {
-      const cleanDesc = toolDesc ? toolDesc.replace(/\r?\n/g, " ") : "";
-      displayMsg = `Running: ${cleanDesc}`;
+    if (toolName === "command" || toolName === "bash" || toolName === "run_command" || toolName === "run_background_process") {
+      let cleanDesc = toolDesc ? toolDesc.replace(/\r?\n/g, " ").trim() : "";
+      if (cleanDesc.startsWith("Running command: ")) {
+        cleanDesc = cleanDesc.slice(17).trim();
+      } else if (cleanDesc.startsWith("Starting background process: ")) {
+        cleanDesc = cleanDesc.slice(29).trim();
+      }
+      displayMsg = cleanDesc ? `Running: ${cleanDesc}` : `Running ${toolName}...`;
     } else {
       displayMsg = `Invoking tool: ${toolName}`;
       if (toolDesc) {
-        const cleanDesc = toolDesc.replace(/\r?\n/g, " ");
+        const cleanDesc = toolDesc.replace(/\r?\n/g, " ").trim();
         displayMsg += ` (${cleanDesc})`;
       }
     }
   }
 
-  if (displayMsg.length > 70) {
-    displayMsg = displayMsg.substring(0, 67) + "...";
+  const elapsedSuffix = currentElapsed > 0 ? ` (${currentElapsed}s)` : "";
+  const maxLen = 80 - elapsedSuffix.length;
+  if (displayMsg.length > maxLen) {
+    displayMsg = displayMsg.substring(0, maxLen - 3) + "...";
   }
 
   return (
     <Text color="yellow">
       <Text bold color={rColor}>[R]</Text>
       <Text color="gray"> {displayMsg}</Text>
+      {elapsedSuffix ? <Text color="gray" dimColor>{elapsedSuffix}</Text> : null}
     </Text>
   );
 }

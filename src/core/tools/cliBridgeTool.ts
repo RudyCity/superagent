@@ -31,6 +31,7 @@
  */
 
 import { Tool } from "./types.js";
+import { getRootConfigDir } from "../config.js";
 import {
   CliDescriptor,
   DelegateResult,
@@ -876,16 +877,6 @@ function handleProfileList(): string {
   lines.push("Tip: drop a partial profile to override any field (deep-merged on top of defaults).");
   lines.push("Tip: register a named skill in skills.json to refer to it by name in any session.");
   return lines.join("\n");
-}
-
-function getRootConfigDir(): string {
-  // Synchronous require is OK here — this is only called when listing profiles,
-  // and the path module has no side effects. Wrapped to keep ESM smoke tests
-  // working (dist/ emits CJS so this works in tests; ESM callers will
-  // import via createRequire).
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const req = (typeof require === "function" ? require : createRequire(import.meta.url));
-  return req("../config/paths.js").getRootConfigDir();
 }
 
 function formatSendResult(sessionId: string, result: SendResult): string {

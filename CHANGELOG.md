@@ -1,3 +1,16 @@
+## [1.5.31] - 2026-09-02
+
+### Feat & Fix: Real-time Shell Command Output Streaming & Live Progress Indicator
+
+- **Real-Time Shell & SSH Command Progress (`src/components/common/LoadingIndicators.tsx`, `src/app.tsx`)**:
+  - Fixed `ToolLoadingIndicator` in chat area to accurately parse and display shell command descriptions, arguments, and live elapsed timer in seconds (e.g., `(3s)`).
+  - Wired `activeToolName` and `activeToolDesc` props properly in `computeWrappedLines` in `src/app.tsx` so `[R] Executing system call...` dynamically displays the real command name (e.g. `bash: find /g -name "llama.cpp" -type d...`).
+  - Added live streaming of interactive process output to `activeToolOutput` in `runInteractiveProcess`.
+
+- **Comprehensive Tool Streaming Integration (`src/core/ssh/sshProxy.ts`, `src/core/tools/cliBridgeSession.ts`)**:
+  - Added live output streaming via `appendActiveToolOutput` to SSH remote commands (`exec` and `execCommand`).
+  - Added streaming output to `cli_bridge` delegate subprocesses in `cliBridgeSession.ts`.
+
 ## [1.5.30] - 2026-09-02
 
 ### Fix & Opt: Complete Tool Call & Result Rendering in Chat Session Transcripts

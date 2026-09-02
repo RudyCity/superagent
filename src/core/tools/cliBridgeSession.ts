@@ -32,6 +32,7 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { getRootConfigDir } from "../config/paths.js";
+import { appendActiveToolOutput } from "./state.js";
 
 // ─── Public types ────────────────────────────────────────────────────────
 
@@ -561,6 +562,7 @@ export async function runDelegate(opts: {
     const raw = data.toString();
     const clean = stripAnsi(raw);
     stdoutBuf = appendLines(stdoutBuf, clean, MAX_BUFFER_LINES);
+    appendActiveToolOutput(raw);
     await appendToLog(logPath, "stdout", raw);
   });
 
