@@ -868,7 +868,12 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             const result = await generateText({ model: testModel, prompt: message, maxTokens: 512 });
             responseText = result.text;
           }
-          setMasterLogs((prev) => [...prev, `[ASSISTANT] ${responseText}`].slice(-500));
+          const { cleanThinkingTags } = await import("../core/agent/FastPath.js");
+          const cleaned = cleanThinkingTags(responseText);
+          const displayContent = cleaned.cleanText.trim()
+            ? (cleaned.reasoning.trim() ? `[Thinking]:\n${cleaned.reasoning.trim()}\n\n${cleaned.cleanText.trim()}` : cleaned.cleanText.trim())
+            : (cleaned.reasoning.trim() ? cleaned.reasoning.trim() : responseText);
+          setMasterLogs((prev) => [...prev, `[ASSISTANT] ${displayContent}`].slice(-500));
           // Persist the selected model after successful test
           setAllTierModels(isMulti ? "multi" : "single", selectedModel, providerProfileId || undefined);
           const limit = getContextWindowLimit(selectedModel);

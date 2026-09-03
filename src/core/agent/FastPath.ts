@@ -3,7 +3,7 @@ import { contentToString } from "../conversation.js";
 import { HistoryCompactor } from "./HistoryCompactor.js";
 import type { Agent } from "../agent.js";
 
-function cleanThinkingTags(text: string, existingReasoning = ""): { cleanText: string; reasoning: string } {
+export function cleanThinkingTags(text: string, existingReasoning = ""): { cleanText: string; reasoning: string } {
   let rawText = text || "";
   let reasoning = existingReasoning || "";
 

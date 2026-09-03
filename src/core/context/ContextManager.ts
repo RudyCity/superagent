@@ -394,15 +394,27 @@ export class ContextManager {
   }
 
   private calculateThreshold(): number {
-    const modelLimit = this.config.contextWindowLimit;
+    const modelLimit = this.config.contextWindowLimit || 128000;
     const isAnthropic = this.config.model.includes("claude");
-    // Dynamic buffer: 5% of model limit, capped within safe ranges
-    const responseBuffer = Math.max(4000, Math.min(8000, Math.floor(modelLimit * 0.05)));
-    const toolCallBuffer = Math.max(5000, Math.min(10000, Math.floor(modelLimit * 0.05)));
+
+    // Dynamic buffer: allocate at most 35% of modelLimit to buffers so threshold is always positive.
+    const maxBufferTotal = Math.floor(modelLimit * 0.35);
+    const desiredResponseBuffer = Math.min(8000, Math.max(1000, Math.floor(modelLimit * 0.05)));
+    const desiredToolCallBuffer = Math.min(10000, Math.max(1500, Math.floor(modelLimit * 0.05)));
+
+    let responseBuffer = desiredResponseBuffer;
+    let toolCallBuffer = desiredToolCallBuffer;
+    if (responseBuffer + toolCallBuffer > maxBufferTotal) {
+      const scale = maxBufferTotal / (responseBuffer + toolCallBuffer);
+      responseBuffer = Math.floor(responseBuffer * scale);
+      toolCallBuffer = Math.floor(toolCallBuffer * scale);
+    }
+
     const threshold = modelLimit - responseBuffer - toolCallBuffer;
     // For large models (e.g. Claude 200k), cap at 80% of limit, otherwise 70%
     const capRatio = isAnthropic || modelLimit >= 100000 ? 0.80 : 0.70;
-    return Math.min(threshold, Math.floor(modelLimit * capRatio));
+    const safeMin = Math.max(1000, Math.floor(modelLimit * 0.50));
+    return Math.max(safeMin, Math.min(threshold, Math.floor(modelLimit * capRatio)));
   }
 
   private selectStrategy(messages: Message[]): CompactionStrategy {

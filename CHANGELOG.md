@@ -1,3 +1,25 @@
+## [1.5.35] - 2026-09-03
+
+### Fix & Feat: Custom OpenAI-Compatible Endpoints, Streaming Adapter & Context Threshold Safeguard
+
+- **OpenAI SSE Adapter & Non-Streaming Fallback (`src/core/config/openAiSseAdapter.ts`, `src/core/config/models.ts`)**:
+  - Resolved `Empty response from model. Check your endpoint/model config` when querying custom OpenAI-compatible endpoints that return standard `application/json` responses for streaming requests.
+  - Added `synthesizeSseFromChatCompletion` to dynamically synthesize compliant Server-Sent Events (SSE) chunks from non-streaming JSON responses, allowing `@ai-sdk/openai` streaming handlers to receive tokens seamlessly.
+  - Implemented `transformSseText` and `transformSseStream` to map `delta.reasoning_content` (used by local models such as Qwen, DeepSeek-R1, and Ollama/vLLM) into `<think>...</think>` within `delta.content`, preventing `@ai-sdk/openai` from dropping reasoning tokens.
+  - Enhanced `reconstructChatCompletionFromSse` to support `delta.reasoning_content` and `message.reasoning_content` fallbacks.
+
+- **Context Window Threshold Safeguard (`src/core/context/ContextManager.ts`)**:
+  - Fixed context window compaction threshold calculation for models with smaller context limits (e.g. 4k-8k tokens like `qwen3.8-4b`).
+  - Capped dynamic response and tool call buffers to a maximum of 35% of `modelLimit`, eliminating negative thresholds (`-808`) that caused premature compaction on every turn.
+
+- **Agent Reasoning Fallback (`src/core/agent/LoopIterationProcessor.ts`)**:
+  - Added missing fallback to `reasoningContent.trim()` before throwing empty response errors in the XML fallback path, ensuring thoughts are preserved and displayed when models only output reasoning tokens.
+
+- **Setup & Login Wizard Polish (`src/hooks/wizard/useLoginWizard.ts`, `src/hooks/useDashboardWizard.ts`, `src/core/loginWizardLogic.ts`)**:
+  - Added thinking tag cleanup (`cleanThinkingTags`) to test message outputs in `/login` and dashboard setup wizards to avoid raw `<think>` tag leakage in the terminal.
+  - Ensured `setAllTierModels` is invoked in `useLoginWizard.ts` upon successful connection test to persist configured models to the active preset in `model-config.json`.
+  - Added `reasoning_content` extraction to `extractOpenAiMessageText` in `loginWizardLogic.ts`.
+
 ## [1.5.34] - 2026-09-03
 
 ### Feat & Perf: System Prompt Optimization & Token Reduction

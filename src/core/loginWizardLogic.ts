@@ -684,7 +684,13 @@ async function safeReadResponseText(response: Response | { text?: () => Promise<
 
 function extractOpenAiMessageText(json: any): string {
   const choice = Array.isArray(json?.choices) ? json.choices[0] : undefined;
-  const content = choice?.message?.content ?? choice?.text ?? choice?.delta?.content;
+  let content = choice?.message?.content ?? choice?.text ?? choice?.delta?.content;
+  if (!content || (typeof content === "string" && !content.trim())) {
+    const reasoning = choice?.message?.reasoning_content ?? choice?.message?.reasoning ?? choice?.delta?.reasoning_content ?? choice?.delta?.reasoning;
+    if (typeof reasoning === "string" && reasoning.trim()) {
+      content = reasoning;
+    }
+  }
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content

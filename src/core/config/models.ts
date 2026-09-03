@@ -207,154 +207,21 @@ export function isAnthropicCompatible(baseUrl: string, modelName: string): boole
   return modelLower.includes("claude") || modelLower.includes("antigravity");
 }
 
-export function extractJSON(text: string): string {
-  const firstBrace = text.indexOf("{");
-  const firstBracket = text.indexOf("[");
-  let startIdx = -1;
+import {
+  extractJSON,
+  reconstructChatCompletionFromSse,
+  synthesizeSseFromChatCompletion,
+  transformSseText,
+  transformSseStream,
+} from "./openAiSseAdapter.js";
 
-  if (firstBrace !== -1 && firstBracket !== -1) {
-    startIdx = firstBrace < firstBracket ? firstBrace : firstBracket;
-  } else if (firstBrace !== -1) {
-    startIdx = firstBrace;
-  } else if (firstBracket !== -1) {
-    startIdx = firstBracket;
-  }
-
-  if (startIdx === -1) {
-    return text;
-  }
-
-  let braceCount = 0;
-  let bracketCount = 0;
-  let inString = false;
-  let stringChar = "";
-  let escaped = false;
-
-  for (let i = startIdx; i < text.length; i++) {
-    const char = text[i];
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-
-    if (inString) {
-      if (char === stringChar) {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === '"' || char === "'") {
-      inString = true;
-      stringChar = char;
-      continue;
-    }
-
-    if (char === "{") {
-      braceCount++;
-    } else if (char === "}") {
-      braceCount--;
-    } else if (char === "[") {
-      bracketCount++;
-    } else if (char === "]") {
-      bracketCount--;
-    }
-
-    if (braceCount === 0 && bracketCount === 0) {
-      return text.substring(startIdx, i + 1);
-    }
-  }
-
-  return text;
-}
-
-export function reconstructChatCompletionFromSse(rawText: string): any {
-  let accumulatedText = "";
-  const toolCallsMap = new Map<number, { id?: string; type?: string; name?: string; arguments: string }>();
-  let firstChunkJson: any = {};
-
-  for (const line of rawText.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("data:")) continue;
-    const payload = trimmed.slice(5).trim();
-    if (!payload || payload === "[DONE]") continue;
-    try {
-      const json = JSON.parse(payload);
-      if (!firstChunkJson.id && json.id) {
-        firstChunkJson = json;
-      }
-      
-      const choice = Array.isArray(json?.choices) ? json.choices[0] : undefined;
-      if (choice) {
-        const content = choice.delta?.content ?? choice.message?.content ?? choice.text;
-        if (typeof content === "string") {
-          accumulatedText += content;
-        } else if (Array.isArray(content)) {
-          accumulatedText += content
-            .map((part) => part?.text ?? part?.content ?? "")
-            .filter((part) => typeof part === "string" && part.length > 0)
-            .join("");
-        }
-
-        const deltaToolCalls = choice.delta?.tool_calls ?? choice.message?.tool_calls;
-        if (Array.isArray(deltaToolCalls)) {
-          for (const tc of deltaToolCalls) {
-            const idx = typeof tc.index === "number" ? tc.index : 0;
-            if (!toolCallsMap.has(idx)) {
-              toolCallsMap.set(idx, { arguments: "" });
-            }
-            const current = toolCallsMap.get(idx)!;
-            if (tc.id) current.id = tc.id;
-            if (tc.type) current.type = tc.type;
-            if (tc.function?.name) current.name = tc.function.name;
-            if (tc.function?.arguments) current.arguments += tc.function.arguments;
-          }
-        }
-      }
-    } catch {
-      // Ignore parsing errors of individual lines
-    }
-  }
-
-  const choicesMessage: any = {
-    role: "assistant",
-    content: accumulatedText || null,
-  };
-
-  if (toolCallsMap.size > 0) {
-    const toolCalls = Array.from(toolCallsMap.entries())
-      .sort(([a], [b]) => a - b)
-      .map(([_, tc]) => ({
-        id: tc.id || `call_${Math.random().toString(36).substring(2, 11)}`,
-        type: tc.type || "function",
-        function: {
-          name: tc.name || "",
-          arguments: tc.arguments,
-        },
-      }));
-    choicesMessage.tool_calls = toolCalls;
-  }
-
-  return {
-    id: firstChunkJson.id || "chatcmpl-mock",
-    object: "chat.completion",
-    created: firstChunkJson.created || Math.floor(Date.now() / 1000),
-    model: firstChunkJson.model || "custom-model",
-    choices: [
-      {
-        index: 0,
-        message: choicesMessage,
-        finish_reason: toolCallsMap.size > 0 ? "tool_calls" : "stop",
-      },
-    ],
-  };
-}
+export {
+  extractJSON,
+  reconstructChatCompletionFromSse,
+  synthesizeSseFromChatCompletion,
+  transformSseText,
+  transformSseStream,
+};
 
 export function getModelInstance() {
   const config = getConfig();
@@ -811,6 +678,71 @@ export function getModelInstanceForString(modelStr: string) {
           headers.delete("transfer-encoding");
           headers.delete("content-length");
           return new Response(text, {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+          });
+        }
+      } else {
+        // Streaming request: check whether the endpoint actually returned an SSE stream
+        const contentType = response.headers.get("content-type") || "";
+        const isEventStream = contentType.includes("text/event-stream");
+
+        if (!isEventStream) {
+          let rawText = "";
+          try {
+            rawText = await response.text();
+          } catch {
+            return response;
+          }
+
+          // If the text starts with "data:", it's an SSE stream without the text/event-stream header
+          if (rawText.trim().startsWith("data:")) {
+            const headers = new Headers(response.headers);
+            headers.set("content-type", "text/event-stream");
+            headers.delete("transfer-encoding");
+            headers.delete("content-length");
+            const transformed = transformSseText(rawText);
+            return new Response(transformed, {
+              status: response.status,
+              statusText: response.statusText,
+              headers,
+            });
+          }
+
+          // Non-streaming JSON response returned for a streaming request (e.g. 78_openai_server.rdy or simple proxies)
+          try {
+            const cleanedText = extractJSON(rawText);
+            const json = JSON.parse(cleanedText);
+            const sseBody = synthesizeSseFromChatCompletion(json, modelName);
+            const headers = new Headers(response.headers);
+            headers.set("content-type", "text/event-stream");
+            headers.delete("transfer-encoding");
+            headers.delete("content-length");
+
+            return new Response(sseBody, {
+              status: response.status,
+              statusText: response.statusText,
+              headers,
+            });
+          } catch {
+            const headers = new Headers(response.headers);
+            headers.delete("transfer-encoding");
+            headers.delete("content-length");
+            return new Response(rawText, {
+              status: response.status,
+              statusText: response.statusText,
+              headers,
+            });
+          }
+        }
+
+        // Response is text/event-stream: transform SSE stream to map reasoning_content to delta.content
+        if (response.body) {
+          const transformedStream = transformSseStream(response.body);
+          const headers = new Headers(response.headers);
+          headers.delete("content-length");
+          return new Response(transformedStream, {
             status: response.status,
             statusText: response.statusText,
             headers,

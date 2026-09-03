@@ -694,7 +694,12 @@ export class LoopIterationProcessor {
             }
 
             if (!textContent.trim() && toolCalls.length === 0) {
-              throw new Error("Empty response from model. Check your endpoint/model config.");
+              if (reasoningContent && reasoningContent.trim()) {
+                textContent = reasoningContent.trim();
+                agent.onEvent({ type: "text", content: textContent });
+              } else {
+                throw new Error("Empty response from model. Check your endpoint/model config.");
+              }
             }
 
             break;
