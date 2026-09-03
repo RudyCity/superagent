@@ -468,6 +468,21 @@ export function App({
     });
   }, []);
 
+  // Expanded thinking blocks state: Set<lineIndex> (including -1 for live stream)
+  const [expandedThinking, setExpandedThinking] = useState<Set<number>>(new Set());
+
+  const toggleThinkingExpand = useCallback((index: number) => {
+    setExpandedThinking(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }, []);
+
   const settings = getSettings();
   const maxChecklistVisible = settings.maxChecklistVisible ?? 3;
   const maxHistoryVisible = settings.maxHistoryVisible ?? 3;
@@ -1712,6 +1727,7 @@ export function App({
     visibleLinePositions,
     toggleLineExpand,
     toggleChildExpand,
+    toggleThinkingExpand,
     expandCursorRef,
   });
 
@@ -2950,6 +2966,7 @@ export function App({
       maxAssistantResponseLines: 12,
       expandedLines,
       expandedChildren,
+      expandedThinking,
       tokensUp,
       tokensDown,
       modelName: activeModel,
@@ -2968,6 +2985,7 @@ export function App({
     terminalWidth,
     expandedLines,
     expandedChildren,
+    expandedThinking,
     tokensUp,
     tokensDown,
     activeModel,
@@ -3048,6 +3066,7 @@ export function App({
     openResponseAtIndex,
     visibleLinePositions,
     toggleLineExpand,
+    toggleThinkingExpand,
     handleWizardSubmit,
     history,
     historySelectedIndex,
@@ -3111,6 +3130,8 @@ export function App({
             toggleLineExpand={toggleLineExpand}
             expandedChildren={expandedChildren}
             toggleChildExpand={toggleChildExpand}
+            expandedThinking={expandedThinking}
+            toggleThinkingExpand={toggleThinkingExpand}
             wrappedLines={wrappedLines}
             activeToolName={activeToolName}
             activeToolDesc={activeToolDesc}

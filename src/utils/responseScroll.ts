@@ -26,7 +26,7 @@ export function getTruncatedAssistantIndexes(lines: ChatLine[], maxLines: number
 }
 
 // Strip ANSI/SGR escape codes to get the visible character length of a string
-function visibleLength(str: string): number {
+export function visibleLength(str: string): number {
   // eslint-disable-next-line no-control-regex
   return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").length;
 }

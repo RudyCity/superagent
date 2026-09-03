@@ -32,6 +32,7 @@ export interface ChatLinePosition {
   isTruncated: boolean;
   type: string;
   isCollapsible?: boolean;
+  isThinking?: boolean;
   /** If this position represents a nested child line, the parent line index */
   parentIndex?: number;
   /** If this position represents a nested child line, the child index within parent */
@@ -81,6 +82,7 @@ export interface SingleAgentMouseContext {
   openResponseAtIndex: (index: number) => void;
   visibleLinePositions: ChatLinePosition[];
   toggleLineExpand?: (index: number) => void;
+  toggleThinkingExpand?: (index: number) => void;
 
   // Wizard scroll/click support
   activeWizard?: any;
@@ -272,8 +274,16 @@ export function useMouseScroll(
                   if (process.env.DEBUG_MOUSE === "true") {
                     logMouseDebug(`[MOUSE DEBUG] Matched position: index=${pos.index}, type=${pos.type}, isCollapsible=${pos.isCollapsible}, parentIndex=${pos.parentIndex}, childIndex=${pos.childIndex}, length=${pos.length}\n`);
                   }
+                  // Thinking line click → toggle thinking expand/collapse
+                  if (pos.isThinking && ctx.toggleThinkingExpand) {
+                    if (process.env.DEBUG_MOUSE === "true") {
+                      logMouseDebug(`[MOUSE DEBUG] Toggling thinking expand for index=${pos.index}\n`);
+                    }
+                    ctx.toggleThinkingExpand(pos.index);
+                    handledClick = true;
+                  }
                   // Nested child line click → toggle child expand/collapse
-                  if (pos.parentIndex !== undefined && pos.childIndex !== undefined && pos.isCollapsible && ctx.toggleChildExpand) {
+                  else if (pos.parentIndex !== undefined && pos.childIndex !== undefined && pos.isCollapsible && ctx.toggleChildExpand) {
                     if (process.env.DEBUG_MOUSE === "true") {
                       logMouseDebug(`[MOUSE DEBUG] Toggling child expand for parent=${pos.parentIndex}, child=${pos.childIndex}\n`);
                     }

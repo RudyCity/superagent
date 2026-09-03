@@ -1,3 +1,25 @@
+## [1.5.36] - 2026-09-03
+
+### Feat & UI: Thinking Process (<think>...) Display in CLI Chat View
+
+- **Interactive Thinking Display in Chat Sheet (`src/components/chat-thinking.tsx`, `src/components/chat-area.tsx`)**:
+  - Implemented modular `chat-thinking.tsx` with `wrapThinkingToLines` and `extractThinkingAndContent` to render thinking/reasoning processes (`<think>`, `<thought>`, `<reasoning>`, `<thinking>`) in a clean cyberpunk aesthetic with box borders (`┌─── [ 🧠 REASONING PROCESS ]` ... `└─── [ END REASONING ]`).
+  - Added collapsed single-line preview (`▶ 🧠 Thought process (N lines) [click or Ctrl+O to expand]`) and expanded view (`▼ 🧠 Thought process [click or Ctrl+O to collapse]`).
+  - Updated `wrapChatLineToLines` for assistant messages to render thinking processes and fallback-extract embedded thinking tags defensively.
+  - Enhanced live streaming in `computeWrappedLines`: when the model starts answering (`streamDisplay.length > 0`), the active thinking process is preserved above the streaming answer instead of vanishing from view.
+
+- **Mouse & Keyboard Navigation (`src/hooks/useMouseScroll.ts`, `src/hooks/useKeyboardHandler.ts`, `src/app.tsx`)**:
+  - Added `isThinking` flag to `ChatLinePosition` and `WrappedChatLine`.
+  - Added `expandedThinking` state (`Set<number>`) and `toggleThinkingExpand` callback in `src/app.tsx`.
+  - Wired mouse clicks on thinking headers to toggle expand/collapse directly.
+  - Wired `Ctrl+O` cycling to expand/collapse thinking blocks alongside tool call children.
+
+- **FastPath Reasoning Persistence (`src/core/agent/FastPath.ts`)**:
+  - Fixed reasoning persistence in conversational fast path: passed `reasoningContent` to `agent.conversation.addAssistantMessage` so thinking is properly saved to SQLite and preserved across sessions.
+
+- **Unit Testing (`tests/chatReasoningDisplay.test.ts`)**:
+  - Added comprehensive test suite covering tag extraction, collapsed and expanded wrapping, live streaming preservation, and assistant line integration.
+
 ## [1.5.35] - 2026-09-03
 
 ### Fix & Feat: Custom OpenAI-Compatible Endpoints, Streaming Adapter & Context Threshold Safeguard

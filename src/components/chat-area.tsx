@@ -2,8 +2,9 @@ import React, { useMemo, useEffect, memo } from "react";
 import { Box, Text } from "ink";
 import { Banner } from "./banner.js";
 import { ChatLineComponent, renderMarkdown, truncateStreamDisplay, isCollapsibleType } from "./chat-line.js";
+import { extractThinkingAndContent, wrapThinkingToLines } from "./chat-thinking.js";
 import { LoadingIndicator, ToolLoadingIndicator } from "./common/LoadingIndicators.js";
-import { getTruncatedAssistantIndexes, wrapTextForDisplay, renderScrollBar, capDisplayLines } from "../utils/responseScroll.js";
+import { getTruncatedAssistantIndexes, wrapTextForDisplay, renderScrollBar, capDisplayLines, visibleLength } from "../utils/responseScroll.js";
 import { formatCompactNumber, minimizePathInDescription } from "../utils/text.js";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ChatLinePosition } from "../hooks/useMouseScroll.js";
@@ -18,12 +19,8 @@ export interface WrappedChatLine {
   isSeparator?: boolean;
   isCollapsible?: boolean;
   isTruncated?: boolean;
+  isThinking?: boolean;
   length?: number;
-}
-
-function visibleLength(str: string): number {
-  // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").length;
 }
 
 function renderDiffColors(text: string): React.ReactNode {
@@ -667,6 +664,7 @@ export function wrapChatLineToLines({
   isCollapsed,
   expandedChildren,
   hideTimeline,
+  isThinkingExpanded,
 }: {
   line: ChatLine;
   isFirst: boolean;
@@ -680,6 +678,7 @@ export function wrapChatLineToLines({
   isCollapsed: boolean;
   expandedChildren: Set<number>;
   hideTimeline: boolean;
+  isThinkingExpanded?: boolean;
 }): WrappedChatLine[] {
   const result: WrappedChatLine[] = [];
 
@@ -720,9 +719,10 @@ export function wrapChatLineToLines({
       break;
     }
     case "assistant": {
+      const { cleanContent, reasoning } = extractThinkingAndContent(line.content, line.reasoning);
       const capped = isLastAssistant
-        ? { text: line.content, truncated: false }
-        : capDisplayLines(line.content, maxResponseLines || 12, chatWidth || 80);
+        ? { text: cleanContent, truncated: false }
+        : capDisplayLines(cleanContent, maxResponseLines || 12, chatWidth || 80);
 
       const headerNode = (
         <Box flexDirection="row">
@@ -732,6 +732,17 @@ export function wrapChatLineToLines({
         </Box>
       );
       result.push({ node: headerNode, lineIndex, type: "assistant", isHeader: true, isTruncated: capped.truncated });
+
+      if (reasoning && reasoning.trim().length > 0) {
+        const thinkingLines = wrapThinkingToLines({
+          reasoning,
+          isExpanded: isThinkingExpanded || false,
+          lineIndex,
+          chatWidth,
+          hideTimeline,
+        });
+        result.push(...thinkingLines);
+      }
 
       const contentLines = wrapMarkdownToLines(capped.text, "gray", chatWidth, lineIndex, hideTimeline);
       for (const wrappedContentLine of contentLines) {
@@ -1100,11 +1111,13 @@ function getLineCacheKey(
   isCollapsed: boolean,
   childSet: Set<number>,
   isLastAssistant: boolean,
-  hideTimeline: boolean
+  hideTimeline: boolean,
+  isThinkingExpanded: boolean = false
 ): string {
   const childrenKey = line.children
     ? line.children.map((c, i) => `${c.type}:${c.content.length}:${c.mergedResult ? "m" : "n"}:${childSet.has(i)}`).join("|")
     : "";
+  const reasoningKey = (line.reasoning ? `${line.reasoning.length}:` : "") + (isThinkingExpanded ? "te" : "tc");
   return [
     idx,
     chatWidth,
@@ -1115,6 +1128,7 @@ function getLineCacheKey(
     line.timestamp,
     line.mergedResult ? "m" : "n",
     childrenKey,
+    reasoningKey,
     hideTimeline ? "h" : "s"
   ].join(":");
 }
@@ -1125,6 +1139,7 @@ export function computeWrappedLines({
   maxAssistantResponseLines,
   expandedLines,
   expandedChildren,
+  expandedThinking = new Set(),
   tokensUp,
   tokensDown,
   modelName,
@@ -1143,6 +1158,7 @@ export function computeWrappedLines({
   maxAssistantResponseLines: number;
   expandedLines: Set<number>;
   expandedChildren: Map<number, Set<number>>;
+  expandedThinking?: Set<number>;
   tokensUp: number;
   tokensDown: number;
   modelName: string;
@@ -1184,8 +1200,9 @@ export function computeWrappedLines({
       : (isCollapsibleType(lines[idx].type) && !expandedLines.has(idx));
     const childSet = expandedChildren.get(idx) || new Set<number>();
     const isLastAssistant = idx === lastAssistantIdx;
+    const isThinkingExpanded = expandedThinking ? expandedThinking.has(idx) : false;
 
-    const cacheKey = getLineCacheKey(lines[idx], idx, chatWidth, isCollapsed, childSet, isLastAssistant, hideTimeline);
+    const cacheKey = getLineCacheKey(lines[idx], idx, chatWidth, isCollapsed, childSet, isLastAssistant, hideTimeline, isThinkingExpanded);
     let wrapped = lineWrapCache.get(cacheKey);
 
     if (!wrapped) {
@@ -1202,6 +1219,7 @@ export function computeWrappedLines({
         isCollapsed,
         expandedChildren: childSet,
         hideTimeline,
+        isThinkingExpanded,
       });
       lineWrapCache.set(cacheKey, wrapped);
     }
@@ -1216,8 +1234,10 @@ export function computeWrappedLines({
   const connectorPrefix = hideTimeline ? "  [ " : "├─── [ ";
   const connectorPlain = hideTimeline ? "  " : "├───";
 
-  const shouldRenderStream = isProcessing && streamDisplay && streamDisplay.trim().length > 0;
-  if (shouldRenderStream) {
+  const hasReasoning = Boolean(reasoningDisplay && reasoningDisplay.trim().length > 0);
+  const hasStream = Boolean(streamDisplay && streamDisplay.trim().length > 0);
+
+  if (isProcessing && hasStream) {
     const headerNode = (
       <Box flexDirection="row">
         <Text color="gray" dimColor>
@@ -1227,12 +1247,22 @@ export function computeWrappedLines({
     );
     result.push({ node: headerNode, lineIndex: -1, type: "assistant", isHeader: true });
 
+    if (hasReasoning) {
+      const isLiveThinkingExpanded = expandedThinking ? expandedThinking.has(-1) : false;
+      const thinkingLines = wrapThinkingToLines({
+        reasoning: reasoningDisplay!.trim(),
+        isExpanded: isLiveThinkingExpanded,
+        lineIndex: -1,
+        chatWidth,
+        hideTimeline,
+        isStreaming: false,
+      });
+      result.push(...thinkingLines);
+    }
+
     const contentLines = wrapMarkdownToLines(streamDisplay, "gray", chatWidth, -1, hideTimeline);
     result.push(...contentLines);
-  }
-
-  const shouldRenderThinking = isProcessing && (!streamDisplay || streamDisplay.trim().length === 0) && !isExecutingTool;
-  if (shouldRenderThinking) {
+  } else if (isProcessing && !hasStream && !isExecutingTool) {
     const headerNode = (
       <Box flexDirection="row">
         <Text color="gray" dimColor>
@@ -1242,28 +1272,16 @@ export function computeWrappedLines({
     );
     result.push({ node: headerNode, lineIndex: -1, type: "assistant", isHeader: true });
 
-    if (reasoningDisplay && reasoningDisplay.trim().length > 0) {
-      const rLines = reasoningDisplay.trim().split("\n");
-      const reasoningHeader = (
-        <Box flexDirection="row">
-          <Text color="gray" dimColor>{marginSpaces}</Text>
-          <Text color="gray" italic>[Reasoning]</Text>
-        </Box>
-      );
-      result.push({ node: reasoningHeader, lineIndex: -1, type: "assistant" });
-
-      for (const rLine of rLines) {
-        const subLines = wrapTextForDisplay(rLine, chatWidth - marginSpaces.length - 2);
-        for (const subLine of subLines) {
-          const bodyNode = (
-            <Box flexDirection="row">
-              <Text color="gray" dimColor>{marginSpaces}</Text>
-              <Text color="gray" dimColor>  {subLine}</Text>
-            </Box>
-          );
-          result.push({ node: bodyNode, lineIndex: -1, type: "assistant" });
-        }
-      }
+    if (hasReasoning) {
+      const thinkingLines = wrapThinkingToLines({
+        reasoning: reasoningDisplay!.trim(),
+        isExpanded: true,
+        lineIndex: -1,
+        chatWidth,
+        hideTimeline,
+        isStreaming: true,
+      });
+      result.push(...thinkingLines);
     } else {
       const bodyNode = (
         <Box flexDirection="row">
@@ -1354,6 +1372,8 @@ export interface ChatAreaProps {
   toggleLineExpand?: (index: number) => void;
   expandedChildren?: Map<number, Set<number>>;
   toggleChildExpand?: (parentIndex: number, childIndex: number) => void;
+  expandedThinking?: Set<number>;
+  toggleThinkingExpand?: (index: number) => void;
   wrappedLines?: WrappedChatLine[];
   activeToolName?: string;
   activeToolDesc?: string;
@@ -1394,6 +1414,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     toggleLineExpand,
     expandedChildren = new Map(),
     toggleChildExpand,
+    expandedThinking = new Set(),
+    toggleThinkingExpand,
     wrappedLines: passedWrappedLines,
     activeToolName,
     activeToolDesc,
@@ -1409,6 +1431,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       maxAssistantResponseLines,
       expandedLines,
       expandedChildren,
+      expandedThinking,
       tokensUp,
       tokensDown,
       modelName,
@@ -1429,6 +1452,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     maxAssistantResponseLines,
     expandedLines,
     expandedChildren,
+    expandedThinking,
     tokensUp,
     tokensDown,
     modelName,
@@ -1470,10 +1494,13 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       }
 
       const hasChild = line.childIndex !== undefined;
+      const isThinking = line.isThinking || false;
+      const activeIsThinking: boolean = Boolean(activePos && activePos.isThinking);
       const isNewGroup =
         line.lineIndex !== currentBlockIndex ||
         (hasChild && line.childIndex !== currentChildIndex) ||
-        (!hasChild && currentChildIndex !== -1);
+        (!hasChild && currentChildIndex !== -1) ||
+        (isThinking !== activeIsThinking);
 
       if (isNewGroup) {
         if (activePos) {
@@ -1488,6 +1515,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
           isTruncated: line.isTruncated || false,
           type: line.type,
           isCollapsible: line.isCollapsible || false,
+          isThinking,
           length: line.length,
         };
         currentBlockIndex = line.lineIndex;
@@ -1500,6 +1528,9 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
           }
           if (line.isCollapsible) {
             activePos.isCollapsible = true;
+          }
+          if (line.isThinking) {
+            activePos.isThinking = true;
           }
         }
       }

@@ -119,6 +119,7 @@ export interface KeyboardHandlerContext {
   visibleLinePositions: ChatLinePosition[];
   toggleLineExpand: (index: number) => void;
   toggleChildExpand: (parentIndex: number, childIndex: number) => void;
+  toggleThinkingExpand?: (index: number) => void;
   expandCursorRef: React.MutableRefObject<number>;
 }
 
@@ -198,6 +199,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     visibleLinePositions,
     toggleLineExpand,
     toggleChildExpand,
+    toggleThinkingExpand,
     expandCursorRef,
   } = ctx;
 
@@ -505,7 +507,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         const nextCursor = (expandCursorRef.current + 1) % collapsibles.length;
         expandCursorRef.current = nextCursor;
         const target = collapsibles[nextCursor];
-        if (target.parentIndex !== undefined && target.childIndex !== undefined && toggleChildExpand) {
+        if (target.isThinking && toggleThinkingExpand) {
+          toggleThinkingExpand(target.index);
+        } else if (target.parentIndex !== undefined && target.childIndex !== undefined && toggleChildExpand) {
           toggleChildExpand(target.parentIndex, target.childIndex);
         } else if (toggleLineExpand) {
           toggleLineExpand(target.index);

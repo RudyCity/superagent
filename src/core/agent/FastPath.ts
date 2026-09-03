@@ -127,6 +127,7 @@ export class FastPath {
           const startTime = Date.now();
           const useStreaming = !(agent as any).config.disableStreaming;
           let textContent = "";
+          let reasoningContent = "";
 
           if (useStreaming) {
             try {
@@ -143,7 +144,7 @@ export class FastPath {
             let inThinkTagState = false;
             let currentThinkTagType = "";
             let streamBuffer = "";
-            let reasoningContent = "";
+            reasoningContent = "";
 
             for await (const delta of result.fullStream) {
               if (signal?.aborted) {
@@ -299,6 +300,7 @@ export class FastPath {
             });
             const cleaned = cleanThinkingTags(result.text || "", (result as any).reasoning || "");
             textContent = cleaned.cleanText;
+            reasoningContent = cleaned.reasoning;
             if (textContent) {
               agent.onEvent({ type: "text", content: textContent });
             }
@@ -337,7 +339,7 @@ export class FastPath {
 
           // Persist assistant reply
           if (textContent.trim()) {
-            agent.conversation.addAssistantMessage(textContent);
+            agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
           }
           await agent.saveHistory();
           agent.writeToLogFile("ASSISTANT", textContent);
