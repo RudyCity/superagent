@@ -78,6 +78,8 @@ import { formatUnknownActionError } from "./helpers.js";
 import {
   resolveArtifactPaths,
   buildArtifactContextBlock,
+  summarizeTaskChecklist,
+  ArtifactPaths,
 } from "./cliBridgeArtifacts.js";
 import fs from "fs";
 import path from "path";
@@ -478,13 +480,14 @@ async function handleDelegate(
   // v1.5.40: Resolve and inject active artifact paths (task, plan, walkthrough)
   const injectArtifacts = args.injectArtifacts !== false;
   let artifactContext = "";
+  let activeArtifacts: ArtifactPaths | undefined;
   if (injectArtifacts) {
-    const artifacts = resolveArtifactPaths(delegateCwd, {
+    activeArtifacts = resolveArtifactPaths(delegateCwd, {
       taskPath: args.taskPath ? String(args.taskPath) : undefined,
       planPath: args.planPath ? String(args.planPath) : undefined,
       walkthroughPath: args.walkthroughPath ? String(args.walkthroughPath) : undefined,
     });
-    const block = buildArtifactContextBlock(artifacts);
+    const block = buildArtifactContextBlock(activeArtifacts);
     if (block) {
       artifactContext = block;
     }
@@ -527,13 +530,22 @@ async function handleDelegate(
     signal,
   });
 
-  return formatDelegateResult(result, composedPrompt, combinedArgs);
+  // v1.5.41: Notify listeners and UI that tasks may have changed on disk
+  try {
+    const { notifyTasksChanged } = await import("./state.js");
+    notifyTasksChanged();
+  } catch {}
+
+  const taskSummary = activeArtifacts?.taskPath ? summarizeTaskChecklist(activeArtifacts.taskPath) : null;
+
+  return formatDelegateResult(result, composedPrompt, combinedArgs, taskSummary?.formatted);
 }
 
 function formatDelegateResult(
   result: DelegateResult,
   prompt: string,
-  extraArgs: string[]
+  extraArgs: string[],
+  taskSummary?: string
 ): string {
   const lines: string[] = [];
   lines.push(`Delegated to ${result.cliAlias} (exit=${result.exitCode ?? "?"}, ${result.durationMs}ms${result.timedOut ? ", TIMED OUT" : ""})`);
@@ -541,6 +553,9 @@ function formatDelegateResult(
     lines.push(`Extra args: ${JSON.stringify(extraArgs)}`);
   }
   lines.push(`Prompt (${prompt.length} chars): ${prompt.slice(0, 200)}${prompt.length > 200 ? "…" : ""}`);
+  if (taskSummary) {
+    lines.push(`Status: ${taskSummary}`);
+  }
   lines.push("");
   lines.push("Output:");
   lines.push(result.output || "(no stdout)");

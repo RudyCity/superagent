@@ -319,9 +319,46 @@ export async function handleGetPlanAndTasks(args: any): Promise<McpToolResult> {
 }
 
 export async function handleUpdateTasks(args: any): Promise<McpToolResult> {
+  let ws = args.workspace ? path.resolve(String(args.workspace)) : "";
+
+  if (!ws && (args.superagentId || args.id || args.instanceId)) {
+    const targetId = String(args.superagentId || args.id || args.instanceId);
+    const registry = loadRegistry();
+    const entry = registry.find((r) => r.id === targetId || r.name === targetId);
+    if (entry && entry.worktreePath && fs.existsSync(entry.worktreePath)) {
+      ws = entry.worktreePath;
+    } else {
+      const { superagentInstances } = await import("../../tools/state.js");
+      const inst = superagentInstances.get(targetId);
+      if (inst && inst.worktreePath && fs.existsSync(inst.worktreePath)) {
+        ws = inst.worktreePath;
+      } else {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error: Superagent instance '${targetId}' was not found in active instances or worktree registry.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  }
+
+  if (!ws) {
+    ws = process.cwd();
+  }
+
   const action = String(args.action || "get_status");
   const taskText = String(args.taskText || args.task || args.text || "");
   const { managePlanTool } = await import("../../tools/otherTools.js");
-  const result = await managePlanTool.execute({ action, task: taskText }, process.cwd());
+  const result = await managePlanTool.execute({ action, task: taskText }, ws);
+
+  try {
+    const { notifyTasksChanged } = await import("../../tools/state.js");
+    notifyTasksChanged();
+  } catch {}
+
   return { content: [{ type: "text", text: String(result) }] };
 }

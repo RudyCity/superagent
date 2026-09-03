@@ -5,6 +5,7 @@ import os from "os";
 import {
   resolveArtifactPaths,
   buildArtifactContextBlock,
+  summarizeTaskChecklist,
 } from "../src/core/tools/cliBridgeArtifacts.js";
 import { cliBridgeTool } from "../src/core/tools/cliBridgeTool.js";
 
@@ -34,15 +35,18 @@ describe("CLI Bridge Artifact Path Injection", () => {
 
     const paths = resolveArtifactPaths(testDir);
     expect(paths.taskPath).toBe(taskFile);
+    expect(paths.taskExists).toBe(true);
     expect(paths.planPath).toBe(planFile);
+    expect(paths.planExists).toBe(true);
     expect(paths.walkthroughPath).toBe(walkthroughFile);
+    expect(paths.walkthroughExists).toBe(true);
 
     const block = buildArtifactContextBlock(paths);
     expect(block).not.toBeNull();
     expect(block).toContain("=== ACTIVE PROJECT ARTIFACTS ===");
-    expect(block).toContain(`- Task Checklist: ${taskFile}`);
-    expect(block).toContain(`- Implementation Plan: ${planFile}`);
-    expect(block).toContain(`- Walkthrough Document: ${walkthroughFile}`);
+    expect(block).toContain(`- Task Checklist: ${taskFile} [Existing file - please update]`);
+    expect(block).toContain(`- Implementation Plan: ${planFile} [Existing file - please review]`);
+    expect(block).toContain(`- Walkthrough Document: ${walkthroughFile} [Existing file - please append]`);
     expect(block).toContain("• Mark in-progress tasks with ' [/] '");
     expect(block).toContain("• Mark completed tasks with ' [x] '");
   });
@@ -57,6 +61,7 @@ describe("CLI Bridge Artifact Path Injection", () => {
       taskPath: customTask,
     });
     expect(paths.taskPath).toBe(customTask);
+    expect(paths.taskExists).toBe(true);
   });
 
   it("falls back to session path artifacts if workspace lacks artifact files", () => {
@@ -74,22 +79,57 @@ describe("CLI Bridge Artifact Path Injection", () => {
     const emptySubdir = path.join(testDir, "subdir");
     fs.mkdirSync(emptySubdir, { recursive: true });
 
-    const paths = resolveArtifactPaths(emptySubdir);
+    const paths = resolveArtifactPaths(emptySubdir, { provideDefaultTargets: false });
     expect(paths.taskPath).toBe(sessionTask);
+    expect(paths.taskExists).toBe(true);
     expect(paths.planPath).toBe(sessionPlan);
+    expect(paths.planExists).toBe(true);
     expect(paths.walkthroughPath).toBeUndefined();
   });
 
-  it("returns null block when no artifacts exist", () => {
+  it("provides default creation targets when no files exist yet on disk", () => {
     const emptyDir = path.join(testDir, "empty");
     fs.mkdirSync(emptyDir, { recursive: true });
 
     const paths = resolveArtifactPaths(emptyDir);
+    expect(paths.taskPath).toBe(path.join(emptyDir, "task.md"));
+    expect(paths.taskExists).toBe(false);
+    expect(paths.planPath).toBe(path.join(emptyDir, "plan.md"));
+    expect(paths.planExists).toBe(false);
+    expect(paths.walkthroughPath).toBe(path.join(emptyDir, "walkthrough.md"));
+    expect(paths.walkthroughExists).toBe(false);
+
+    const block = buildArtifactContextBlock(paths);
+    expect(block).not.toBeNull();
+    expect(block).toContain("[Target file - create if needed]");
+  });
+
+  it("returns null block when provideDefaultTargets is false and no files exist", () => {
+    const emptyDir = path.join(testDir, "empty2");
+    fs.mkdirSync(emptyDir, { recursive: true });
+
+    const paths = resolveArtifactPaths(emptyDir, { provideDefaultTargets: false });
     expect(paths.taskPath).toBeUndefined();
     expect(paths.planPath).toBeUndefined();
     expect(paths.walkthroughPath).toBeUndefined();
 
     const block = buildArtifactContextBlock(paths);
     expect(block).toBeNull();
+  });
+
+  it("summarizes task checklist completion status correctly", () => {
+    const taskFile = path.join(testDir, "task.md");
+    fs.writeFileSync(
+      taskFile,
+      "- [x] Design schema\n- [X] Write tests\n- [/] Implement handler\n- [ ] Deploy to prod\n- [ ] Verify metrics"
+    );
+
+    const summary = summarizeTaskChecklist(taskFile);
+    expect(summary).not.toBeNull();
+    expect(summary?.completed).toBe(2);
+    expect(summary?.inProgress).toBe(1);
+    expect(summary?.pending).toBe(2);
+    expect(summary?.total).toBe(5);
+    expect(summary?.formatted).toBe("Task Checklist: 2/5 completed, 1 in progress, 2 pending");
   });
 });

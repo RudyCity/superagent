@@ -1,3 +1,25 @@
+## [1.5.41] - 2026-09-04
+
+### Feat: End-to-End Artifact Tracking, Real-Time Task Synchronization & MCP Parity
+
+- **Default Target Creation Paths & Task Status Summary (`src/core/tools/cliBridgeArtifacts.ts`)**:
+  - Enhanced `resolveArtifactPaths` to provide standard target file paths (`task.md`, `plan.md`, `walkthrough.md`) even when no files exist yet on disk, with existence tags (`[Existing file]` / `[Target file - create if needed]`).
+  - Added `summarizeTaskChecklist` helper to parse and report task completion counts (`[x]`, `[/]`, `[ ]`) directly from disk.
+
+- **Real-Time Task Synchronization in CLI Bridge (`src/core/tools/cliBridgeTool.ts`)**:
+  - Automatically calls `notifyTasksChanged()` upon delegation completion to trigger instant UI refresh when an external CLI modifies task checklists.
+  - Formats output with live `Task Checklist: X/Y completed, Z in progress, W pending` status summary.
+
+- **Instance Worktree Support in `superagent_update_tasks` (`src/core/mcp/tools/workspaceTools.ts`, `src/core/mcp/superagentMcpServer.ts`)**:
+  - Enhanced `handleUpdateTasks` to resolve isolated Superagent instance worktrees via `superagentId` or `workspace` path, triggering `notifyTasksChanged()` on update.
+  - Expanded `superagent_cli_bridge` and `superagent_update_tasks` schemas in the MCP server with complete parameter parity.
+
+- **Skills Documentation (`.agents/skills/superagent-mcp/SKILL.md`)**:
+  - Documented `superagentId` and `workspace` parameters for `superagent_update_tasks`.
+
+- **Unit Testing (`tests/cliBridgeArtifacts.test.ts`, `tests/mcpServer.test.ts`)**:
+  - Added tests for default creation targets, task status summary, and `superagent_update_tasks` instance resolution.
+
 ## [1.5.40] - 2026-09-03
 
 ### Feat: Automatic Artifact Path Injection & Task Synchronization in CLI Bridge

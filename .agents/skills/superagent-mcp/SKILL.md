@@ -110,15 +110,18 @@ The output returns:
 
 ### Tool: superagent_update_tasks
 
-Allows clients to update, check off, or add tasks to the checklist:
+Allows clients to update, check off, or add tasks to the checklist in the root workspace or an isolated Superagent instance worktree:
 - action: "mark_completed" with taskText: "<task text>"
 - action: "mark_in_progress" with taskText: "<task text>"
 - action: "add_task" with taskText: "<task description>"
 - action: "get_status" to inspect task status
+- superagentId: optional Superagent instance ID to target its isolated worktree checklist
+- workspace: optional worktree directory path to target
 
-Example call:
+Example updating an instance's checklist:
 ```json
 {
+  "superagentId": "abc1234",
   "action": "mark_completed",
   "taskText": "Set up database schema"
 }

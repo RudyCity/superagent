@@ -282,5 +282,32 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (37 Tools, Resources, Pr
     });
     expect(resNotFound.isError).toBe(true);
     expect(resNotFound.content[0].text).toContain("No active or registered worktree found");
+
+    // 4. Update tasks via superagentId
+    const resUpdate = await callHandler({
+      method: "tools/call",
+      params: {
+        name: "superagent_update_tasks",
+        arguments: {
+          superagentId: "test-instance-123",
+          action: "get_status",
+        },
+      },
+    });
+    expect(resUpdate.content[0].text).toBeDefined();
+
+    // 5. Error updating tasks with non-existent superagentId
+    const resUpdateNotFound = await callHandler({
+      method: "tools/call",
+      params: {
+        name: "superagent_update_tasks",
+        arguments: {
+          superagentId: "non-existent-agent",
+          action: "get_status",
+        },
+      },
+    });
+    expect(resUpdateNotFound.isError).toBe(true);
+    expect(resUpdateNotFound.content[0].text).toContain("was not found in active instances or worktree registry");
   });
 });

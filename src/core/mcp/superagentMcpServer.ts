@@ -151,8 +151,26 @@ export function createSuperagentMcpServer(): Server {
         },
         {
           name: "superagent_cli_bridge",
-          description: "Delegate tasks to external AI CLIs (Codex, Claude Code, AGY, Gemini) via 1-shot execution or multi-turn sessions.",
-          inputSchema: { type: "object", properties: { action: { type: "string" }, cli: { type: "string" }, prompt: { type: "string" }, wait: { type: "boolean" } }, required: ["action"] },
+          description: "Delegate tasks to external AI CLIs (Codex, Claude Code, AGY, Gemini) via 1-shot execution or multi-turn sessions with automatic artifact and task synchronization.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              action: { type: "string", description: "Operation: 'list', 'delegate', 'session.create', 'session.send', etc." },
+              cli: { type: "string", description: "Target CLI alias ('agy', 'claude', 'codex', or 'custom')." },
+              prompt: { type: "string", description: "Prompt text for delegation." },
+              message: { type: "string", description: "Message body for session." },
+              system: { type: "string", description: "Optional system instructions." },
+              cwd: { type: "string", description: "Working directory for execution." },
+              injectArtifacts: { type: "boolean", description: "If true (default), injects task checklist, plan, and walkthrough paths." },
+              taskPath: { type: "string", description: "Optional explicit path to task checklist file." },
+              planPath: { type: "string", description: "Optional explicit path to plan file." },
+              walkthroughPath: { type: "string", description: "Optional explicit path to walkthrough file." },
+              skills: { type: "array", items: { type: "string" }, description: "Skills or directory paths to attach." },
+              timeoutMs: { type: "number", description: "Timeout in milliseconds." },
+              wait: { type: "boolean" },
+            },
+            required: ["action"],
+          },
         },
         {
           name: "superagent_switch_workspace",
@@ -212,8 +230,17 @@ export function createSuperagentMcpServer(): Server {
         },
         {
           name: "superagent_update_tasks",
-          description: "Update, check, or add items to the current task checklist.",
-          inputSchema: { type: "object", properties: { action: { type: "string", enum: ["mark_completed", "mark_in_progress", "add_task", "get_status"] }, taskText: { type: "string" } }, required: ["action"] },
+          description: "Update, check, or add items to the task checklist for the workspace or a specific Superagent instance.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              action: { type: "string", enum: ["mark_completed", "mark_in_progress", "add_task", "get_status"] },
+              taskText: { type: "string", description: "Task description text to mark or add." },
+              workspace: { type: "string", description: "Optional workspace or worktree path." },
+              superagentId: { type: "string", description: "Optional Superagent instance ID to update its isolated worktree checklist." },
+            },
+            required: ["action"],
+          },
         },
         {
           name: "superagent_get_config",
