@@ -70,14 +70,14 @@ const SUBAGENT_DECISION_RIGHTS_RULE = `# DECISION RIGHTS
 const POST_CHANGE_INTEGRITY_RULE = `- POST_CHANGE_INTEGRITY: After EVERY change, 5-dim sweep before completion:
   GAP_SCAN (uncovered paths, stubs, missing imports) → MISSING_CHECK (error handling, validation, types, tests, docs) → BOTTLENECK_DETECT (sync-in-async, N+1, mem leaks, unbounded ops) → CROSS_REF_VALIDATE (callers, consumers, config refs, dead code) → REGRESSION_SURFACE (adjacent modules, contract breaks, side-effects). Block completion until clean.`;
 
-const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Full Chrome automation & browser control suite.
+const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Chrome automation suite.
   - Bridge/Profile: remoteBridge:9223, chrome_extension_status, list_chrome_profiles, launch_chrome_profile
-  - DOM/Navigation: control_browser_tab (list|create|switch|close|navigate|click|type|scroll|detect_ui|execute_chain|eval|fill_form), get_active_browser_tabs, simulate_virtual_cursor
-  - Content Extraction: extract_page_content_markdown, capture_tab_fullpage_pdf, playwright_screenshot
-  - Diagnostics & Monitoring: get_browser_console_logs, get_browser_network_logs, list_chrome_extensions
-  - Cookies & Storage: manage_browser_cookies_storage (cookies|localStorage|sessionStorage)
-  - History, Bookmarks & Downloads: manage_chrome_history, manage_chrome_bookmarks, manage_chrome_downloads
-  - Automation & CDP: control_browser_macro_save|run, run_headless_browser, control_isolated_cdp, set_browser_emulation, set_network_conditions`;
+  - DOM/Nav: control_browser_tab (list|create|switch|close|navigate|click|type|scroll|detect_ui|execute_chain|eval|fill_form), get_active_browser_tabs, simulate_virtual_cursor
+  - Content: extract_page_content_markdown, capture_tab_fullpage_pdf, playwright_screenshot
+  - Diagnostics: get_browser_console_logs, get_browser_network_logs, list_chrome_extensions
+  - Storage: manage_browser_cookies_storage (cookies|localStorage|sessionStorage)
+  - History/Downloads: manage_chrome_history, manage_chrome_bookmarks, manage_chrome_downloads
+  - Automation/CDP: control_browser_macro_save|run, run_headless_browser, control_isolated_cdp, set_browser_emulation, set_network_conditions`;
 
 const SCRATCH_AND_TRANSFER_RULE = `- SCRATCH_WORKSPACE: Free read/write access to local session directory (derived from process.env.SUPERAGENT_SESSION_PATH) without permission prompt. Safe for helper/scratch files in both local and SSH mode.
 - SSH_TRANSFER: In SSH mode, use transfer_ssh_file (upload/download) to copy files between local session directory and remote workspace. Standard file tools bypass SSH routing when targeting local config/session paths.
@@ -111,15 +111,15 @@ SUBAGENT REPORT
 - Confidence: [High/Medium/Low]
 - Status: [Completed/Blocked/Next]`;
 
-const BROWSER_AUTOMATION_CORE = `- CHROME_TOOLS_PRIMACY: For ANY web task (search, DOM automation, form submission, authentication state, network/console inspection, page research), ALWAYS prioritize dedicated Chrome tools (control_browser_tab, extract_page_content_markdown, manage_browser_cookies_storage, get_browser_console_logs, get_browser_network_logs, control_isolated_cdp, playwright_screenshot) over raw shell/cURL commands.
+const BROWSER_AUTOMATION_CORE = `- CHROME_TOOLS_PRIMACY: Prioritize Chrome tools (control_browser_tab, extract_page_content_markdown, manage_browser_cookies_storage, get_browser_console_logs, get_browser_network_logs, control_isolated_cdp, playwright_screenshot) over raw shell/cURL for web tasks.
 - PROFILE_FIRST: Verify connection via chrome_extension_status or get_active_browser_tabs first. If disconnected, check list_chrome_profiles or fallback to run_headless_browser / control_isolated_cdp.
-- DOM_DETECTION: Use control_browser_tab(action:'detect_ui') to discover dynamic interactive elements, attributes, and CSS selectors before interaction.
-- ACTION_CHAINING: For multi-step sequences, bundle operations using control_browser_tab(action:'execute_chain', target:JSON_string_of_steps) or control_browser_macro_save|run.
+- DOM_DETECTION: Use control_browser_tab(action:'detect_ui') to discover dynamic elements, attributes, CSS selectors pre-interaction.
+- ACTION_CHAINING: Bundle multi-step ops using control_browser_tab(action:'execute_chain', target:JSON_string_of_steps) or control_browser_macro_save|run.
 - MACRO_FIRST: CALL control_browser_macro_run(name:'list') before multi-step actions. Match→run. No match→record→save→run.
 - STEALTH_TYPING: Use 'click' & 'type' with human delay emulation for login, CAPTCHA, form inputs.
 - EMULATION/NETWORK: Use set_browser_emulation or set_network_conditions pre-testing (device viewports, throttling, offline state).
 - SESSION_STORAGE: Use manage_browser_cookies_storage to inspect/set auth cookies, localStorage, sessionStorage.
-- DIAGNOSTICS: When page fails or yields unexpected output, ALWAYS inspect get_browser_console_logs and get_browser_network_logs.
+- DIAGNOSTICS: On page failure or unexpected output, ALWAYS inspect get_browser_console_logs and get_browser_network_logs.
 
 # MACRO SYSTEM
 - Save: control_browser_macro_save step onError: retry(flaky), skip(cosmetic), stop(critical).

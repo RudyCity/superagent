@@ -1,3 +1,16 @@
+## [1.5.34] - 2026-09-03
+
+### Feat & Perf: System Prompt Optimization & Token Reduction
+
+- **Base System Prompt Optimization (`src/core/config/base.ts`)**:
+  - Restructured `getSystemPrompt()` following Concept A (Telegraphic English), Concept B (Markdown Structure), and Concept C (Pseudocode & Logic Gates).
+  - Reduced single-mode prompt footprint by ~42% (5,462 characters / ~1,365 tokens saved per query) by minifying verbose prose across Operating Principles, Creative Problem Solving, Context Hygiene, and Tool Usage Guidelines into concise imperative rules and logic gates.
+  - Preserved all runtime shell semantics, cross-session failure recovery directives, and testing assertions.
+
+- **Prompt Engineering Alignment (`src/core/prompts.ts`)**:
+  - Minified and deduplicated browser control rules and automation suites into compact telegraphic directives.
+  - Standardized logic gates and verification flows across subagent execution prompts.
+
 ## [1.5.33] - 2026-09-02
 
 ### Feat & Fix: CLI Bridge Persistent Session Disk Storage & Multi-Turn Stream Fix
