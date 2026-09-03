@@ -1,3 +1,22 @@
+## [1.5.40] - 2026-09-03
+
+### Feat: Automatic Artifact Path Injection & Task Synchronization in CLI Bridge
+
+- **Automated Artifact Path Resolution (`src/core/tools/cliBridgeArtifacts.ts`)**:
+  - Implemented `resolveArtifactPaths` and `buildArtifactContextBlock` to automatically discover active project artifacts (task checklist `_task.md`/`task.md`, implementation plan `_plan.md`/`plan.md`, and walkthrough `_walkthrough.md`/`walkthrough.md`) from the workspace directory or active session directory (`process.env.SUPERAGENT_SESSION_PATH`).
+  - Added formatted context injection block instructing external AI CLIs on exact file locations and task checklist status update syntax (`- [ ]`, `- [/]`, `- [x]`).
+
+- **CLI Bridge Tool Integration (`src/core/tools/cliBridgeTool.ts`)**:
+  - Added parameters `injectArtifacts` (boolean, defaults to `true`), `taskPath`, `planPath`, and `walkthroughPath` to the `cli_bridge` tool schema.
+  - Integrated automatic artifact context block injection into one-shot delegation (`handleDelegate`) and interactive session creation (`handleSessionCreate`).
+  - Allows external CLIs (Claude Code, Antigravity/AGY, Codex) to read the plan and update task checklist items in real-time, synchronizing directly with Superagent.
+
+- **Skills Documentation (`.agents/skills/cli-bridge/SKILL.md`)**:
+  - Updated CLI Bridge skill reference to document artifact path injection, checklist status conventions, and custom path overrides.
+
+- **Unit Testing (`tests/cliBridgeArtifacts.test.ts`)**:
+  - Added unit test suite verifying automatic artifact detection in workspace `cwd`, explicit path overrides, fallback to session paths, and empty state handling.
+
 ## [1.5.39] - 2026-09-03
 
 ### Feat & Skill: Superagent MCP Instance Tracking Skill & Direct Instance Plan Inspection

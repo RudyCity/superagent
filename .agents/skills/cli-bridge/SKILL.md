@@ -123,12 +123,49 @@ If the CLI asks for confirmation:
 ```
 
 #### Step 4: Clean Up Session
+Always kill sessions when done to free system resources:
 ```json
 {
   "action": "session.kill",
   "sessionId": "refactor-auth-service"
 }
 ```
+
+---
+
+### 4. Artifact Path Injection & Task Synchronization (v1.5.40)
+
+By default (`injectArtifacts: true`), CLI Bridge automatically resolves active project artifacts and injects their absolute paths and update instructions into the prompt sent to the external CLI:
+- Task Checklist: `_task.md` or `task.md`
+- Implementation Plan: `_plan.md`, `plan.md`, or `_implementation_plan.md`
+- Walkthrough Document: `_walkthrough.md` or `walkthrough.md`
+
+This enables the external CLI to:
+1. Inspect the implementation plan before making modifications.
+2. Update checklist tasks in real-time (`- [ ]` to `- [/]` for in-progress, `- [x]` for completed).
+3. Document verification command outputs in the walkthrough document.
+
+Example delegating with custom artifact path:
+```json
+{
+  "action": "delegate",
+  "cli": "agy",
+  "prompt": "Implement the auth token rotation feature according to the plan.",
+  "injectArtifacts": true,
+  "taskPath": "tasks/auth_tasks.md"
+}
+```
+
+To disable automatic artifact context injection for simple queries:
+```json
+{
+  "action": "delegate",
+  "cli": "claude",
+  "prompt": "Quick explanation of this regex pattern.",
+  "injectArtifacts": false
+}
+```
+
 
 ---
 

@@ -75,7 +75,10 @@ import {
   GlobalSkillRegistry,
 } from "./cliBridgeSkills.js";
 import { formatUnknownActionError } from "./helpers.js";
-import { createRequire } from "node:module";
+import {
+  resolveArtifactPaths,
+  buildArtifactContextBlock,
+} from "./cliBridgeArtifacts.js";
 import fs from "fs";
 import path from "path";
 
@@ -198,6 +201,25 @@ export const cliBridgeTool: Tool = {
           "defaultPromptTemplate (default: '{system}\\n\\n{prompt}'). " +
           "Use to set role, constraints, or output format for the external CLI " +
           "(e.g. 'You are a senior reviewer. Reply in JSON only.').",
+      },
+      // ─── v1.5.40 ─────────────────────────────────────────────
+      injectArtifacts: {
+        type: "boolean",
+        description:
+          "v1.5.40: If true (default), automatically resolves and injects paths to active task checklist, " +
+          "implementation plan, and walkthrough files into the prompt so the external AI CLI can inspect and update them.",
+      },
+      taskPath: {
+        type: "string",
+        description: "Optional explicit file path to the task checklist (e.g. task.md or _task.md) to override auto-detection.",
+      },
+      planPath: {
+        type: "string",
+        description: "Optional explicit file path to the implementation plan (e.g. plan.md or _plan.md) to override auto-detection.",
+      },
+      walkthroughPath: {
+        type: "string",
+        description: "Optional explicit file path to the walkthrough document (e.g. walkthrough.md or _walkthrough.md) to override auto-detection.",
       },
       // ─── v1.5.17 ─────────────────────────────────────────────
       idleTimeoutMs: {
@@ -453,10 +475,28 @@ async function handleDelegate(
     }
   }
 
+  // v1.5.40: Resolve and inject active artifact paths (task, plan, walkthrough)
+  const injectArtifacts = args.injectArtifacts !== false;
+  let artifactContext = "";
+  if (injectArtifacts) {
+    const artifacts = resolveArtifactPaths(delegateCwd, {
+      taskPath: args.taskPath ? String(args.taskPath) : undefined,
+      planPath: args.planPath ? String(args.planPath) : undefined,
+      walkthroughPath: args.walkthroughPath ? String(args.walkthroughPath) : undefined,
+    });
+    const block = buildArtifactContextBlock(artifacts);
+    if (block) {
+      artifactContext = block;
+    }
+  }
+
   // v1.5.16: Apply the profile's prompt template with system (if any).
-  const systemPrompt = args.system ? String(args.system) : undefined;
+  const rawSystemPrompt = args.system ? String(args.system) : undefined;
+  const fullSystemPrompt = artifactContext
+    ? (rawSystemPrompt ? `${rawSystemPrompt}\n\n${artifactContext}` : artifactContext)
+    : rawSystemPrompt;
   const tpl = profile?.defaultPromptTemplate ?? "{system}\n\n{prompt}";
-  const composedPrompt = applyPromptTemplate(tpl, { system: systemPrompt ?? "", prompt });
+  const composedPrompt = applyPromptTemplate(tpl, { system: fullSystemPrompt ?? "", prompt });
 
   // Resolve default args and prompt subcommands for 1-shot execution:
   const defaultFlags = profile?.defaultArgs ?? desc.defaultArgs ?? [];
@@ -546,7 +586,25 @@ async function handleSessionCreate(
         cwd: sessionCwd,
       });
 
-  const systemPrompt = args.system ? String(args.system) : undefined;
+  // v1.5.40: Resolve and inject active artifact paths (task, plan, walkthrough)
+  const injectArtifacts = args.injectArtifacts !== false;
+  let artifactContext = "";
+  if (injectArtifacts) {
+    const artifacts = resolveArtifactPaths(sessionCwd, {
+      taskPath: args.taskPath ? String(args.taskPath) : undefined,
+      planPath: args.planPath ? String(args.planPath) : undefined,
+      walkthroughPath: args.walkthroughPath ? String(args.walkthroughPath) : undefined,
+    });
+    const block = buildArtifactContextBlock(artifacts);
+    if (block) {
+      artifactContext = block;
+    }
+  }
+
+  const rawSystemPrompt = args.system ? String(args.system) : undefined;
+  const systemPrompt = artifactContext
+    ? (rawSystemPrompt ? `${rawSystemPrompt}\n\n${artifactContext}` : artifactContext)
+    : rawSystemPrompt;
 
   // v1.5.16: optional initial prompt (the first message to send after the
   // session is ready).
