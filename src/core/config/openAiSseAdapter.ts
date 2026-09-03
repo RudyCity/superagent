@@ -170,7 +170,15 @@ export function reconstructChatCompletionFromSse(rawText: string): any {
  * even though stream: true was requested.
  */
 export function synthesizeSseFromChatCompletion(json: any, fallbackModel: string): string {
-  const choice = Array.isArray(json?.choices) ? json.choices[0] : undefined;
+  if (json?.error) {
+    const errMsg = typeof json.error === "string" ? json.error : json.error?.message || "Upstream API error";
+    throw new Error(`Cannot synthesize SSE from error payload: ${errMsg}`);
+  }
+  if (!Array.isArray(json?.choices) || json.choices.length === 0) {
+    throw new Error("Invalid ChatCompletion object: missing choices array");
+  }
+
+  const choice = json.choices[0];
   const message = choice?.message;
   let content = message?.content ?? choice?.text ?? "";
   const reasoning = message?.reasoning_content ?? message?.reasoning ?? "";

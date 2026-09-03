@@ -1,3 +1,22 @@
+## [1.5.42] - 2026-09-04
+
+### Fix: Raw Error Preservation, SSE Synthesis Guarding & 402 Balance Depleted Diagnostics
+
+- **Raw HTTP Error Preservation in Custom Fetch (`src/core/config/models.ts`)**:
+  - Added an early `if (!response.ok) return response;` guard in custom fetch handler. Prevents non-streaming HTTP error responses (e.g. 400, 401, 402, 429, 500) from being erroneously intercepted and synthesized into fake SSE chat completion chunks.
+  - Ensures `@ai-sdk` receives the unmolested HTTP status code and upstream JSON error payload directly.
+
+- **Synthesize SSE Safeguards (`src/core/config/openAiSseAdapter.ts`)**:
+  - Explicitly guards `synthesizeSseFromChatCompletion` against error payloads and missing/empty `choices` arrays, preventing phantom completion chunks (`role: "assistant"`, `finish_reason: "stop"`) when upstream endpoints return failure messages.
+
+- **Payment Required (402) Diagnostics & Hints (`src/core/agent/AgentEvents.ts`)**:
+  - Added explicit user-friendly hint for HTTP 402 status: suggests topping up account balance or switching provider/preset with `/model`.
+  - Relaxed upstream error message extraction condition to surface inner error messages even when outer messages do not match `/backend request failed/`.
+
+- **Unit Testing (`tests/formatError.test.ts`, `tests/openaiStreamingCustomEndpointFix.test.ts`)**:
+  - Added test cases verifying rejection of error payloads and missing choices in `synthesizeSseFromChatCompletion`.
+  - Added test case verifying formatError surfaces HTTP 402 status, upstream error detail, and helpful balance depleted hint.
+
 ## [1.5.41] - 2026-09-04
 
 ### Feat: End-to-End Artifact Tracking, Real-Time Task Synchronization & MCP Parity

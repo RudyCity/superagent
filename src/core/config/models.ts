@@ -614,6 +614,12 @@ export function getModelInstanceForString(modelStr: string) {
 
       const response = await globalThis.fetch(url, options);
       
+      // If the upstream returned an HTTP error (4xx or 5xx), do not attempt response adaptation or SSE synthesis.
+      // Returning the raw response ensures @ai-sdk receives the actual HTTP error status and JSON payload.
+      if (!response.ok) {
+        return response;
+      }
+      
       let isStreamingRequest = false;
       if (options && options.body) {
         try {

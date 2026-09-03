@@ -178,7 +178,7 @@ export function formatError(err: unknown): string {
             innerMessage &&
             baseMessage &&
             innerMessage !== baseMessage &&
-            /backend request failed/i.test(baseMessage)
+            (!baseMessage.includes(innerMessage) || /backend request failed/i.test(baseMessage))
           ) {
             extra += ` [upstream: ${innerMessage}]`;
           }
@@ -191,6 +191,11 @@ export function formatError(err: unknown): string {
             /(duplicate|ambig|not found|unknown|invalid|multiple|exist)/i.test(innerMessage)
           ) {
             extra += " [hint: check the active preset's model name — if the upstream lists it more than once in /v1/models, switch to a uniquely-identified model]";
+          }
+
+          // Friendly hint when provider returns 402 Payment Required
+          if (status === 402) {
+            extra += " [hint: Provider balance or credits depleted. Top up your account balance or switch provider/preset with /model]";
           }
         }
       }

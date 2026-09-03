@@ -88,6 +88,28 @@ describe("synthesizeSseFromChatCompletion", () => {
     expect(sse).toContain("bash");
     expect(sse).toContain("tool_calls");
   });
+
+  it("should throw an error if ChatCompletion contains an error object", () => {
+    const json = {
+      error: {
+        message: "Payment Required: balance depleted",
+        type: "insufficient_quota",
+        code: 402,
+      },
+    };
+    expect(() => synthesizeSseFromChatCompletion(json, "custom")).toThrow(
+      "Cannot synthesize SSE from error payload: Payment Required: balance depleted"
+    );
+  });
+
+  it("should throw an error if choices array is missing or empty", () => {
+    expect(() => synthesizeSseFromChatCompletion({}, "custom")).toThrow(
+      "Invalid ChatCompletion object: missing choices array"
+    );
+    expect(() => synthesizeSseFromChatCompletion({ choices: [] }, "custom")).toThrow(
+      "Invalid ChatCompletion object: missing choices array"
+    );
+  });
 });
 
 describe("transformSseText", () => {

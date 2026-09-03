@@ -98,4 +98,22 @@ describe("formatError", () => {
     // The upstream message should still be surfaced.
     expect(formatted).toMatch(/\[upstream:.*Invalid API key/);
   });
+
+  it("should add a friendly hint and upstream error for status 402 Payment Required", () => {
+    const err = {
+      message: "Payment Required",
+      statusCode: 402,
+      responseBody: JSON.stringify({
+        error: {
+          message: "User balance is insufficient, please top up.",
+          type: "insufficient_balance",
+          code: 402,
+        },
+      }),
+    };
+    const formatted = formatError(err);
+    expect(formatted).toContain("Payment Required (status: 402)");
+    expect(formatted).toContain("[upstream: User balance is insufficient, please top up.]");
+    expect(formatted).toContain("[hint: Provider balance or credits depleted. Top up your account balance or switch provider/preset with /model]");
+  });
 });
