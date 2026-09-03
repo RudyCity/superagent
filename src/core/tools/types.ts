@@ -42,6 +42,9 @@ export interface SubagentType {
   name: string;
   description: string;
   systemPrompt: string;
+  toolset?: string;
+  baseType?: string;
+  enableWriteTools?: boolean;
 }
 
 export interface SuperagentType {

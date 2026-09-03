@@ -454,3 +454,141 @@ export const defaultSubagentToolset: Tool[] = [
   useSkillTool,
   sendMessageTool,
 ];
+
+/**
+ * Options for resolving subagent toolset.
+ */
+export interface ResolveSubagentToolsetOptions {
+  toolset?: string;
+  baseType?: string;
+  enableWriteTools?: boolean;
+}
+
+/**
+ * Determine the base specialization type from a subagent type name.
+ */
+export function resolveBaseTypeFromTypeName(typeName?: string): string | undefined {
+  if (!typeName) return undefined;
+  const normalized = typeName.toLowerCase().trim();
+
+  // Direct match with built-in subagent types
+  if (subagentToolsets[normalized]) return normalized;
+
+  // Coder / file modification patterns
+  if (
+    normalized.includes("coder") ||
+    normalized.includes("coding") ||
+    normalized.includes("developer") ||
+    normalized.includes("dev") ||
+    (normalized.includes("engineer") && !normalized.includes("security")) ||
+    normalized.includes("migration") ||
+    normalized.includes("port") ||
+    normalized.includes("writer") ||
+    normalized.includes("editor") ||
+    normalized.includes("builder") ||
+    normalized.includes("fixer") ||
+    normalized.includes("fix") ||
+    normalized.includes("patch") ||
+    normalized.includes("refactor") ||
+    normalized.includes("creator") ||
+    normalized.includes("generator") ||
+    normalized.includes("dataset") ||
+    normalized.includes("scaffold")
+  ) {
+    return "coder";
+  }
+
+  // Software tester / QA patterns
+  if (
+    normalized.includes("test") ||
+    normalized.includes("qa") ||
+    normalized.includes("cypress") ||
+    normalized.includes("playwright") ||
+    normalized.includes("benchmark")
+  ) {
+    return "software-tester";
+  }
+
+  // Security engineer patterns
+  if (
+    normalized.includes("security") ||
+    normalized.includes("vuln") ||
+    normalized.includes("audit") ||
+    normalized.includes("scanner")
+  ) {
+    return "security-engineer";
+  }
+
+  // Reviewer patterns
+  if (
+    normalized.includes("review") ||
+    normalized.includes("critique") ||
+    normalized.includes("evaluat") ||
+    normalized.includes("checker")
+  ) {
+    return "reviewer";
+  }
+
+  // Chrome agent patterns
+  if (
+    normalized.includes("chrome") ||
+    normalized.includes("browser") ||
+    normalized.includes("web-control") ||
+    normalized.includes("dom")
+  ) {
+    return "chrome-agent";
+  }
+
+  // Researcher patterns
+  if (
+    normalized.includes("research") ||
+    normalized.includes("search") ||
+    normalized.includes("explore") ||
+    normalized.includes("gather") ||
+    normalized.includes("scout") ||
+    normalized.includes("survey")
+  ) {
+    return "researcher";
+  }
+
+  return undefined;
+}
+
+/**
+ * Intelligently resolves the toolset for any subagent type.
+ * Handles exact matches, explicit options (toolset/baseType/enableWriteTools),
+ * and semantic/keyword heuristics so that custom names like "migration-coder"
+ * or "python-developer" automatically receive the appropriate tools (e.g. coder).
+ */
+export function resolveSubagentToolset(
+  typeName?: string,
+  options?: ResolveSubagentToolsetOptions
+): Tool[] {
+  if (!typeName && !options) return defaultSubagentToolset;
+
+  // 1. Explicit options
+  if (options?.enableWriteTools === true) {
+    return subagentToolsets["coder"] || defaultSubagentToolset;
+  }
+  if (options?.toolset && subagentToolsets[options.toolset]) {
+    return subagentToolsets[options.toolset];
+  }
+  if (options?.baseType && subagentToolsets[options.baseType]) {
+    return subagentToolsets[options.baseType];
+  }
+
+  if (!typeName) return defaultSubagentToolset;
+
+  // 2. Exact match in subagentToolsets
+  if (subagentToolsets[typeName]) {
+    return subagentToolsets[typeName];
+  }
+
+  // 3. Resolve base type by keyword/semantic heuristic
+  const baseType = resolveBaseTypeFromTypeName(typeName);
+  if (baseType && subagentToolsets[baseType]) {
+    return subagentToolsets[baseType];
+  }
+
+  return defaultSubagentToolset;
+}

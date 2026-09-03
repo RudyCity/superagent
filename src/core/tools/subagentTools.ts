@@ -172,6 +172,19 @@ export const defineSubagentTool: Tool = {
         type: "string",
         description: "The system prompt defining the subagent's rules and role",
       },
+      toolset: {
+        type: "string",
+        enum: ["coder", "researcher", "reviewer", "software-tester", "security-engineer", "chrome-agent"],
+        description: "Optional toolset category to assign (e.g. 'coder' for code editing/write tools, 'researcher' for read-only research). If omitted, inferred from name or defaults.",
+      },
+      baseType: {
+        type: "string",
+        description: "Optional base subagent type to inherit toolset and behavior from (e.g. 'coder', 'researcher')",
+      },
+      enableWriteTools: {
+        type: "boolean",
+        description: "Explicitly grant file writing and editing tools (writeToFile, replaceFileContent, edit) to this subagent.",
+      },
     },
     required: ["name", "description", "systemPrompt"],
   },
@@ -179,8 +192,11 @@ export const defineSubagentTool: Tool = {
     const name = args.name as string;
     const description = args.description as string;
     const systemPrompt = args.systemPrompt as string;
+    const toolset = args.toolset as string | undefined;
+    const baseType = args.baseType as string | undefined;
+    const enableWriteTools = args.enableWriteTools as boolean | undefined;
 
-    subagentTypes.set(name, { name, description, systemPrompt });
+    subagentTypes.set(name, { name, description, systemPrompt, toolset, baseType, enableWriteTools });
     return `Subagent type "${name}" defined successfully.`;
   },
 };
@@ -235,6 +251,15 @@ export const invokeSubagentTool: Tool = {
           "automatically injected into the subagent system prompt. The subagent must not touch " +
           "files outside this list. If it needs to, it must STOP and report to the parent.",
       },
+      toolset: {
+        type: "string",
+        enum: ["coder", "researcher", "reviewer", "software-tester", "security-engineer", "chrome-agent"],
+        description: "Optional toolset category to force for this subagent instance ('coder', 'researcher', etc.). If omitted, automatically inferred from typeName or registered definition.",
+      },
+      enableWriteTools: {
+        type: "boolean",
+        description: "Explicitly enable file creation and modification tools for this subagent instance.",
+      },
     },
     required: ["typeName", "role", "prompt"],
   },
@@ -242,6 +267,8 @@ export const invokeSubagentTool: Tool = {
     const typeName = (args.typeName ?? args.agent_name ?? args.name) as string;
     const role = (args.role ?? args.agent_role ?? typeName ?? "subagent") as string;
     const prompt = (args.prompt ?? args.initial_message ?? args.message) as string;
+    const explicitToolset = args.toolset as string | undefined;
+    const explicitEnableWrite = args.enableWriteTools as boolean | undefined;
     const mode = args.mode as "inline" | "background" | undefined;
     let wait = false;
     if (mode === "inline") {
@@ -268,9 +295,24 @@ export const invokeSubagentTool: Tool = {
       return `Error: Maximum subagent delegation depth (3) reached. Spawning subagents from this subagent is blocked.`;
     }
 
-    const subType = subagentTypes.get(typeName);
+    let subType = subagentTypes.get(typeName);
     if (!subType) {
-      return `Error: Subagent type "${typeName}" is not defined. Use define_subagent first.`;
+      const { resolveBaseTypeFromTypeName, subagentToolsets } = await import("./toolsets.js");
+      const inferredBase = (explicitToolset && subagentToolsets[explicitToolset])
+        ? explicitToolset
+        : resolveBaseTypeFromTypeName(typeName) || "researcher";
+
+      const { SUBAGENT_SYSTEM_PROMPTS } = await import("../prompts.js");
+      const fallbackPrompt = SUBAGENT_SYSTEM_PROMPTS[inferredBase] || SUBAGENT_SYSTEM_PROMPTS.researcher || "";
+      subType = {
+        name: typeName,
+        description: `Auto-registered ${inferredBase}-specialized subagent for ${typeName}`,
+        systemPrompt: fallbackPrompt,
+        toolset: inferredBase,
+        baseType: inferredBase,
+        enableWriteTools: explicitEnableWrite ?? (inferredBase === "coder"),
+      };
+      subagentTypes.set(typeName, subType);
     }
 
     const subagentId = Math.random().toString(36).substring(2, 9);
@@ -402,10 +444,25 @@ export const invokeSubagentTool: Tool = {
         : rawSnippet;
     }
 
+    const { resolveSubagentToolset } = await import("./toolsets.js");
+    const toolset = resolveSubagentToolset(typeName, {
+      toolset: explicitToolset || subType.toolset,
+      baseType: subType.baseType,
+      enableWriteTools: explicitEnableWrite ?? subType.enableWriteTools,
+    });
+
+    const hasWriteTools = toolset.some(t => t.name === "writeToFile" || t.name === "write_to_file" || t.name === "replaceFileContent" || t.name === "edit");
+    const writeMandate = hasWriteTools
+      ? `\n\n## FILE MODIFICATION MANDATE\n` +
+        `You have file writing and editing tools enabled. When implementing changes, porting, or writing files, ` +
+        `you MUST write and save all files directly to disk using the file tools (e.g. writeToFile, replaceFileContent, edit). ` +
+        `Do NOT merely print code blocks or scripts in your response text without creating or modifying the actual files on disk.\n`
+      : "";
+
     const resolvedPrompt = (() => {
       const withReport = baseSystemPrompt.includes("SUBAGENT TASK REPORT")
-        ? baseSystemPrompt
-        : `${baseSystemPrompt}\n\n${reportInstruction}`;
+        ? `${baseSystemPrompt}${writeMandate}`
+        : `${baseSystemPrompt}${writeMandate}\n\n${reportInstruction}`;
 
       // Inject fileScope block if provided
       const fileScope = args.fileScope as string[] | undefined;
@@ -422,7 +479,6 @@ export const invokeSubagentTool: Tool = {
     })();
     // Ensure report directory exists before subagent starts
     try { fs.mkdirSync(SUBAGENT_REPORTS_DIR, { recursive: true }); } catch {}
-    const toolset = subagentToolsets[typeName] ?? defaultSubagentToolset;
 
     const agentInstance = new Agent(
       (event) => {
@@ -762,15 +818,26 @@ export const sendMessageTool: Tool = {
       };
 
       // Import prompt & toolset
-      const { subagentToolsets, defaultSubagentToolset } = await import("./toolsets.js");
+      const { resolveSubagentToolset } = await import("./toolsets.js");
       const { getSubagentSystemPrompt } = await import("../prompts.js");
       const subType = subagentTypes.get(typeName);
       const baseSystemPrompt = await getSubagentSystemPrompt(typeName, subType?.systemPrompt || "");
       const resumeReportInstruction = SUBAGENT_REPORT_INSTRUCTION(recipientId);
+      const toolset = resolveSubagentToolset(typeName, {
+        toolset: subType?.toolset,
+        baseType: subType?.baseType,
+        enableWriteTools: subType?.enableWriteTools,
+      });
+      const hasWriteTools = toolset.some(t => t.name === "writeToFile" || t.name === "write_to_file" || t.name === "replaceFileContent" || t.name === "edit");
+      const writeMandate = hasWriteTools
+        ? `\n\n## FILE MODIFICATION MANDATE\n` +
+          `You have file writing and editing tools enabled. When implementing changes, porting, or writing files, ` +
+          `you MUST write and save all files directly to disk using the file tools (e.g. writeToFile, replaceFileContent, edit). ` +
+          `Do NOT merely print code blocks or scripts in your response text without creating or modifying the actual files on disk.\n`
+        : "";
       const systemPrompt = baseSystemPrompt.includes("SUBAGENT TASK REPORT")
-        ? baseSystemPrompt
-        : `${baseSystemPrompt}\n\n${resumeReportInstruction}`;
-      const toolset = subagentToolsets[typeName] ?? defaultSubagentToolset;
+        ? `${baseSystemPrompt}${writeMandate}`
+        : `${baseSystemPrompt}${writeMandate}\n\n${resumeReportInstruction}`;
 
       agentInstance = new Agent(
         (event) => {

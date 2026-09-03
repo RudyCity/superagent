@@ -1,3 +1,25 @@
+## [1.5.38] - 2026-09-03
+
+### Fix & Feat: Smart Subagent Toolset Resolution & Write Tools Inheritance
+
+- **Intelligent Subagent Toolset Resolution (`src/core/tools/toolsets.ts`)**:
+  - Implemented `resolveBaseTypeFromTypeName` and `resolveSubagentToolset` to dynamically map custom and compound subagent type names (e.g. `migration-coder`, `python-developer`, `dataset-generator`, `patch-fixer`) to their appropriate base toolsets (`coder`, `researcher`, `reviewer`, `software-tester`, `security-engineer`, `chrome-agent`).
+  - Solved the bug where custom subagents fell back blindly to read-only `defaultSubagentToolset`, causing models to print code in chat logs rather than writing files to disk.
+
+- **Dynamic Subagent Toolset Configuration (`src/core/tools/types.ts`, `src/core/tools/state.ts`, `src/core/tools/subagentTools.ts`)**:
+  - Extended `SubagentType` and `registerSubagentType` with optional `toolset`, `baseType`, and `enableWriteTools` attributes.
+  - Enhanced `define_subagent` and `invoke_subagent` tools to accept `toolset`, `baseType`, and `enableWriteTools` parameters.
+  - Added on-the-fly auto-registration for unregistered subagents in `invokeSubagentTool` to prevent failure interruptions when invoking ad-hoc subagent types.
+
+- **File Modification Mandate System Prompt Injection (`src/core/tools/subagentTools.ts`)**:
+  - Injected an explicit `## FILE MODIFICATION MANDATE` block into the system prompt whenever write tools (`write_to_file`, `replace_file_content`, `edit`) are enabled, strictly instructing subagents to persist code changes to disk rather than echoing raw code blocks in conversation output.
+
+- **Agent Toolset Integration (`src/core/agent.ts`)**:
+  - Updated subagent tier tool resolution to use `resolveSubagentToolset` with type definitions and write tool options.
+
+- **Unit Testing (`tests/subagentToolsetResolution.test.ts`)**:
+  - Added comprehensive test suite covering heuristic type inference, write tool availability, fallback invariants, `define_subagent` integration, and `invoke_subagent` on-the-fly resolution.
+
 ## [1.5.37] - 2026-09-03
 
 ### Fix & Perf: JavaScript Heap OOM Prevention, Statement Caching & Terminal Crash Hygiene

@@ -384,7 +384,7 @@ export class Agent {
     if (this.customTools) {
       tools = [...this.customTools];
     } else {
-      const { masterToolset, superagentToolset, subagentToolsets, defaultSubagentToolset } = await import("./tools/toolsets.js");
+      const { masterToolset, superagentToolset, resolveSubagentToolset } = await import("./tools/toolsets.js");
       if (this.tier === "master") {
         tools = [...masterToolset];
         // The masterToolset is curated at source to contain orchestration
@@ -394,7 +394,15 @@ export class Agent {
       } else if (this.tier === "superagent" || this.tier === "single") {
         tools = [...superagentToolset];
       } else if (this.tier === "subagent") {
-        tools = [...((this.subagentType && subagentToolsets[this.subagentType]) || defaultSubagentToolset)];
+        const { subagentTypes } = await import("./tools/state.js");
+        const subType = this.subagentType ? subagentTypes.get(this.subagentType) : undefined;
+        tools = [
+          ...resolveSubagentToolset(this.subagentType, {
+            toolset: subType?.toolset,
+            baseType: subType?.baseType,
+            enableWriteTools: subType?.enableWriteTools,
+          }),
+        ];
       }
     }
 

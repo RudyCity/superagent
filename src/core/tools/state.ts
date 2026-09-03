@@ -349,8 +349,20 @@ export function notifySubagentsChanged() {
   }
 }
 
-export function registerSubagentType(name: string, description: string, systemPrompt: string) {
-  subagentTypes.set(name, { name, description, systemPrompt });
+export function registerSubagentType(
+  name: string,
+  description: string,
+  systemPrompt: string,
+  options?: { toolset?: string; baseType?: string; enableWriteTools?: boolean }
+) {
+  subagentTypes.set(name, {
+    name,
+    description,
+    systemPrompt,
+    toolset: options?.toolset,
+    baseType: options?.baseType,
+    enableWriteTools: options?.enableWriteTools,
+  });
 }
 
 export function registerSuperagentType(name: string, description: string, systemPrompt: string) {
