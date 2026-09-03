@@ -209,7 +209,7 @@ export function wrapMarkdownToLines(
   const rawLines = cleanContent.split("\n");
   const result: WrappedChatLine[] = [];
 
-  if (streamLineWrapCache.size > 10000) {
+  if (streamLineWrapCache.size > 300) {
     streamLineWrapCache.clear();
   }
 
@@ -1177,7 +1177,7 @@ export function computeWrappedLines({
   if (lines.length === 0) {
     lineWrapCache.clear();
   }
-  if (lineWrapCache.size > 2000) {
+  if (lineWrapCache.size > 300) {
     lineWrapCache.clear();
   }
 

@@ -2712,20 +2712,13 @@ export function App({
   const messageCount = lines.filter((l) => l.type === "user" || l.type === "assistant").length;
   // Use the same tiktoken-backed estimator as the rest of the context
   // accounting, so the Ctx:% bar doesn't drift from the actual API usage
-  // when streaming text is being displayed.
+  // Live streaming updates every 40ms; use lightweight heuristic (chars / 4)
+  // instead of invoking Tiktoken WASM encoding 25x/sec, which allocates
+  // native string buffers and causes GC thrashing during active responses.
   const liveStreamTokens = useMemo(() => {
     if (!streamDisplay) return 0;
-    const cm = agentRef.current?.getContextManager?.();
-    if (cm) {
-      try {
-        return cm.getTokenTracker().estimateText(streamDisplay);
-      } catch {
-        // fall through to heuristic
-      }
-    }
     return Math.ceil(streamDisplay.length / 4);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamDisplay, agentRef.current?.getContextManager?.()]);
+  }, [streamDisplay]);
   
   // Use ContextManager's TokenTracker for accurate context usage if available
   const historyMessages = agentRef.current?.getHistory ? agentRef.current.getHistory().getMessages() : [];

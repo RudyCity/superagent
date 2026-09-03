@@ -35,8 +35,8 @@ function hideCursor() {
   }
 }
 
-// Disable all mouse tracking modes and restore cursor.
-// Must be synchronous — called from signal handlers and exit.
+// Disable all mouse tracking modes, restore raw mode, and restore cursor.
+// Must be synchronous — called from signal handlers, uncaughtException, and exit.
 function restoreTerminal() {
   try {
     if (process.stdout.isTTY) {
@@ -51,6 +51,14 @@ function restoreTerminal() {
     }
   } catch {
     // Ignore if stdout already closed
+  }
+  try {
+    if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
+      process.stdin.setRawMode(false);
+    }
+    process.stdin.pause();
+  } catch {
+    // Ignore if stdin already closed or not supported
   }
 }
 
@@ -213,6 +221,24 @@ export async function runCli() {
   process.on("SIGHUP", () => {
     restoreTerminal();
     cleanupBackgroundTasks();
+    process.exit(1);
+  });
+  process.on("uncaughtException", (err) => {
+    restoreTerminal();
+    cleanupBackgroundTasks();
+    try {
+      closeHistoryDb();
+    } catch {}
+    console.error("\n[FATAL ERROR uncaughtException]:", err);
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    restoreTerminal();
+    cleanupBackgroundTasks();
+    try {
+      closeHistoryDb();
+    } catch {}
+    console.error("\n[FATAL ERROR unhandledRejection]:", reason);
     process.exit(1);
   });
 

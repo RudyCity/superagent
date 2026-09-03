@@ -14,6 +14,7 @@ import { RMemoryStrategy } from "./strategies/RMemoryStrategy.js";
 import { BudgetedPruningStrategy } from "./strategies/BudgetedPruningStrategy.js";
 import { SemanticAnalyzer } from "./SemanticAnalyzer.js";
 import { CompactionHistory } from "./CompactionHistory.js";
+import { getSettings } from "../config/jsonConfig.js";
 
 export type ContextState =
   | "IDLE"
@@ -414,7 +415,19 @@ export class ContextManager {
     // For large models (e.g. Claude 200k), cap at 80% of limit, otherwise 70%
     const capRatio = isAnthropic || modelLimit >= 100000 ? 0.80 : 0.70;
     const safeMin = Math.max(1000, Math.floor(modelLimit * 0.50));
-    return Math.max(safeMin, Math.min(threshold, Math.floor(modelLimit * capRatio)));
+    const calculated = Math.max(safeMin, Math.min(threshold, Math.floor(modelLimit * capRatio)));
+
+    // Memory ceiling safeguard:
+    // Models with massive context windows (e.g. 1M+ tokens like Minimax M3 or Gemini 1.5)
+    // would otherwise postpone compaction until ~840K tokens, causing Node.js to hold
+    // hundreds of thousands of tokens and huge tool results in V8 heap memory until OOM crash.
+    // We enforce an in-memory safety ceiling (128,000 tokens) unless explicitly overridden.
+    let customLimit = 0;
+    try {
+      customLimit = getSettings().contextWindowLimit;
+    } catch {}
+    const maxInMemoryWorkingLimit = customLimit > 0 ? customLimit : 128000;
+    return Math.min(calculated, maxInMemoryWorkingLimit);
   }
 
   private selectStrategy(messages: Message[]): CompactionStrategy {

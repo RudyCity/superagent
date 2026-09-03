@@ -527,11 +527,15 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
       try {
         process.stdin.off("data", handleMouseInput);
         process.stdout.write(disableMouseTracking);
+        if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
+          process.stdin.setRawMode(false);
+        }
       } catch {}
     };
     process.once("exit", emergencyCleanup);
     process.once("SIGINT", emergencyCleanup);
     process.once("SIGTERM", emergencyCleanup);
+    process.once("uncaughtException", emergencyCleanup);
 
     return () => {
       process.stdin.off("data", handleMouseInput);
@@ -539,6 +543,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
       process.off("exit", emergencyCleanup);
       process.off("SIGINT", emergencyCleanup);
       process.off("SIGTERM", emergencyCleanup);
+      process.off("uncaughtException", emergencyCleanup);
     };
   }, [
     wrappedLines.length,

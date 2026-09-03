@@ -1,5 +1,30 @@
 #!/usr/bin/env node
 
+// Emergency terminal cleanup for uncaught crashes in the CLI
+const emergencyRestoreTerminal = () => {
+  try {
+    if (process.stdout.isTTY) {
+      process.stdout.write("\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?25h");
+    }
+  } catch {}
+  try {
+    if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
+      process.stdin.setRawMode(false);
+    }
+    process.stdin.pause();
+  } catch {}
+};
+process.once("uncaughtException", (err) => {
+  emergencyRestoreTerminal();
+  console.error("\n[FATAL ERROR]:", err);
+  process.exit(1);
+});
+process.once("unhandledRejection", (reason) => {
+  emergencyRestoreTerminal();
+  console.error("\n[FATAL REJECTION]:", reason);
+  process.exit(1);
+});
+
 if (process.argv.includes("--sync-history-only")) {
   try {
     const { syncAllHistoryToRMemory } = await import("./core/historySearch.js");

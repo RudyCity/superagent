@@ -78,10 +78,35 @@ function createSqliteDb(dbPath: string): any {
   }
 }
 
+const MAX_STMT_CACHE_SIZE = 500;
+
+function wrapDbWithStatementCache(db: any): any {
+  if (!db || db.__stmtCacheWrapped || typeof db.prepare !== "function") return db;
+  const originalPrepare = db.prepare.bind(db);
+  const cache = new Map<string, any>();
+
+  db.prepare = function (sql: string) {
+    let stmt = cache.get(sql);
+    if (!stmt) {
+      if (cache.size >= MAX_STMT_CACHE_SIZE) {
+        cache.clear();
+      }
+      stmt = originalPrepare(sql);
+      cache.set(sql, stmt);
+    }
+    return stmt;
+  };
+  db.__stmtCacheWrapped = true;
+  db.__clearStmtCache = () => {
+    cache.clear();
+  };
+  return db;
+}
+
 export function getHistoryDb(): any {
   // Check global again in case another module instance initialized it
   if (!dbInstance && (globalThis as any).__superagent_db_instance) {
-    dbInstance = (globalThis as any).__superagent_db_instance;
+    dbInstance = wrapDbWithStatementCache((globalThis as any).__superagent_db_instance);
   }
   if (!dbInstance) {
     const dbPath = getHistoryDbPath();
@@ -89,7 +114,7 @@ export function getHistoryDb(): any {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    dbInstance = createSqliteDb(dbPath);
+    dbInstance = wrapDbWithStatementCache(createSqliteDb(dbPath));
     (globalThis as any).__superagent_db_instance = dbInstance;
     initDatabaseSchema(dbInstance);
   }
@@ -1371,6 +1396,11 @@ export function cleanLegacyInputHistoryFiles(): number {
 export function closeHistoryDb(): void {
   const activeDb = dbInstance || (globalThis as any).__superagent_db_instance;
   if (activeDb) {
+    if (typeof activeDb.__clearStmtCache === "function") {
+      try {
+        activeDb.__clearStmtCache();
+      } catch {}
+    }
     if (typeof activeDb.close === "function") {
       try {
         activeDb.close();

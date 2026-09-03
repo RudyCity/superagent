@@ -1,3 +1,32 @@
+## [1.5.37] - 2026-09-03
+
+### Fix & Perf: JavaScript Heap OOM Prevention, Statement Caching & Terminal Crash Hygiene
+
+- **Terminal Crash Hygiene & Raw Mode Restoration (`src/cliMain.tsx`, `src/cli.tsx`, `src/hooks/useMouseScroll.ts`, `src/hooks/useDashboardMouse.ts`)**:
+  - Fixed terminal pollution (`[34;35M[34;35m...`) by updating `restoreTerminal` to reset raw mode (`process.stdin.setRawMode(false)`) and pause `process.stdin` synchronously.
+  - Added `uncaughtException` and `unhandledRejection` handlers to ensure terminal restoration runs even on fatal Node.js aborts or unexpected errors.
+  - Added `uncaughtException` listener to mouse scroll hooks to ensure mouse tracking is always disabled.
+
+- **SQLite Prepared Statement Caching (`src/core/storage/historyDb.ts`)**:
+  - Implemented `wrapDbWithStatementCache` to transparently cache `StatementSync` instances across all database operations.
+  - Prevents native SQLite handle accumulation and cyclic references in Node 22 (`DatabaseSync`) during long-running sessions and frequent background timer polls.
+  - Cleared statement cache cleanly on database close in `closeHistoryDb`.
+
+- **Live Streaming Token Optimization (`src/app.tsx`)**:
+  - Replaced high-frequency Tiktoken WebAssembly encoding on 40ms stream update ticks with lightweight character heuristic (`chars / 4`).
+  - Completely eliminates intermediate WASM buffer allocations and GC thrashing during live assistant responses.
+
+- **Chat Area Render Tree Caching (`src/components/chat-area.tsx`)**:
+  - Bounded `streamLineWrapCache` from 10,000 to 300 entries and `lineWrapCache` from 2,000 to 300 entries.
+  - Reclaims hundreds of megabytes of React node trees and closure scopes in long sessions.
+
+- **In-Memory Context Compaction Safeguard (`src/core/context/ContextManager.ts`)**:
+  - Added in-memory safety threshold ceiling: for models with massive context windows (e.g. 1M+ tokens like Minimax M3 or Gemini), caps working threshold to 128,000 tokens unless overridden by user configuration.
+  - Triggers compaction and summarization before in-memory conversation history can exhaust Node.js V8 heap limits.
+
+- **Unit Testing (`tests/memoryLeakAndCrashHygiene.test.ts`)**:
+  - Added tests verifying prepared statement object reuse in `historyDb.ts` and in-memory threshold ceiling enforcement for 1M+ token models.
+
 ## [1.5.36] - 2026-09-03
 
 ### Feat & UI: Thinking Process (<think>...) Display in CLI Chat View
