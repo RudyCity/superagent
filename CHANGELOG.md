@@ -1,3 +1,26 @@
+## [1.5.39] - 2026-09-03
+
+### Feat & Skill: Superagent MCP Instance Tracking Skill & Direct Instance Plan Inspection
+
+- **Superagent MCP Instance Tracking Skill (`.agents/skills/superagent-mcp/SKILL.md`)**:
+  - Created dedicated reference skill for external AI clients (Antigravity, Claude Code, t-line, custom MCP clients) to inspect, monitor, and interact with Superagent instances via Model Context Protocol.
+  - Documented discovery methods (`superagent_list_active`, `superagent_manage_worktrees`, and MCP resources `superagent://status/live`, `superagent://workspace/info`).
+  - Documented task and plan inspection workflows (`superagent_get_plan_and_tasks`, `superagent_update_tasks`), execution logs streaming (`superagent_get_logs`), status/reports inspection (`superagent_get_status`, `superagent_manage`), and arbitrary file inspection within worktrees (`superagent_read_file`).
+  - Added practical recipes for monitoring spawned Superagents and providing real-time feedback.
+
+- **Direct Superagent ID Resolution in `superagent_get_plan_and_tasks` (`src/core/mcp/tools/workspaceTools.ts`, `src/core/mcp/superagentMcpServer.ts`)**:
+  - Enhanced `handleGetPlanAndTasks` to accept `superagentId` / `id` / `instanceId` directly, automatically resolving the instance's isolated worktree path from the registry (`loadRegistry`) or active instance map (`superagentInstances`).
+  - Added descriptive error responses when an unknown `superagentId` is supplied, preventing silent fallbacks to the root workspace.
+  - Updated tool input schema in `superagentMcpServer.ts` to document the optional `superagentId` parameter.
+
+- **Session ID Display in Conversation Log Header (`src/components/chat-area.tsx`, `src/app.tsx`)**:
+  - Added real-time chat session ID indicator (`🆔 Session: <sessionId>`) alongside the workspace path in the conversation log header (`ChatArea`).
+  - Synced session identifier from `Agent` instance on startup, history load, and environment state with fallback to `process.env.SUPERAGENT_SESSION_PATH`.
+
+- **Unit Testing (`tests/mcpServer.test.ts`)**:
+  - Added unit test verifying `superagent_get_plan_and_tasks` parses plan files and checklist tasks when queried via explicit `workspace` path and via `superagentId`.
+  - Added test case validating error handling when an unknown `superagentId` is provided.
+
 ## [1.5.38] - 2026-09-03
 
 ### Fix & Feat: Smart Subagent Toolset Resolution & Write Tools Inheritance

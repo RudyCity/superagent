@@ -235,4 +235,52 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (37 Tools, Resources, Pr
     });
     expect(searchRes.content[0].text).toContain("MCP test memory");
   });
+
+  it("reads plan and tasks via workspace path and via superagentId", async () => {
+    const server = createSuperagentMcpServer();
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+
+    // Create a mock instance worktree directory with plan and task files
+    const instanceWorktree = path.join(testDir, "mock_worktree_feature_x");
+    fs.mkdirSync(instanceWorktree, { recursive: true });
+    fs.writeFileSync(path.join(instanceWorktree, "plan.md"), "# Feature X Implementation Plan\nProposed changes for feature X.");
+    fs.writeFileSync(path.join(instanceWorktree, "task.md"), "- [x] Setup database\n- [/] Implement backend API\n- [ ] Add unit tests");
+
+    // 1. Read via explicit workspace path
+    const resByWorkspace = await callHandler({
+      method: "tools/call",
+      params: { name: "superagent_get_plan_and_tasks", arguments: { workspace: instanceWorktree } },
+    });
+    expect(resByWorkspace.content[0].text).toContain("Feature X Implementation Plan");
+    expect(resByWorkspace.content[0].text).toContain("[x] Setup database");
+    expect(resByWorkspace.content[0].text).toContain("[/] Implement backend API");
+    expect(resByWorkspace.content[0].text).toContain("[ ] Add unit tests");
+
+    // 2. Read via superagentId from superagentInstances map
+    superagentInstances.set("test-instance-123", {
+      id: "test-instance-123",
+      role: "coder",
+      branch: "feature-x",
+      worktreePath: instanceWorktree,
+      status: "running",
+      task: "Implement feature X",
+      logs: [],
+    } as any);
+
+    const resById = await callHandler({
+      method: "tools/call",
+      params: { name: "superagent_get_plan_and_tasks", arguments: { superagentId: "test-instance-123" } },
+    });
+    expect(resById.content[0].text).toContain("Feature X Implementation Plan");
+    expect(resById.content[0].text).toContain("[x] Setup database");
+    expect(resById.content[0].text).toContain("[Instance: test-instance-123]");
+
+    // 3. Error when non-existent superagentId is passed
+    const resNotFound = await callHandler({
+      method: "tools/call",
+      params: { name: "superagent_get_plan_and_tasks", arguments: { superagentId: "non-existent-agent" } },
+    });
+    expect(resNotFound.isError).toBe(true);
+    expect(resNotFound.content[0].text).toContain("No active or registered worktree found");
+  });
 });

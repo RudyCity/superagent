@@ -201,8 +201,14 @@ export function createSuperagentMcpServer(): Server {
         },
         {
           name: "superagent_get_plan_and_tasks",
-          description: "Read the current implementation plan objective and task checklist.",
-          inputSchema: { type: "object", properties: { workspace: { type: "string" } } },
+          description: "Read the current implementation plan objective and task checklist for the workspace or a specific Superagent instance.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workspace: { type: "string", description: "Optional workspace or worktree path to inspect." },
+              superagentId: { type: "string", description: "Optional Superagent instance ID to automatically inspect its worktree." },
+            },
+          },
         },
         {
           name: "superagent_update_tasks",

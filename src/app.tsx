@@ -246,6 +246,7 @@ export function App({
     }
   });
   const [activeLocks, setActiveLocks] = useState(0);
+  const [sessionId, setSessionId] = useState<string>("");
   
   const streamBufferRef = useRef("");
   const lastStreamUpdateRef = useRef<number>(0);
@@ -2312,6 +2313,12 @@ export function App({
     agent.tier = "single";
     agentRef.current = agent;
     registerMasterAgent(agent);
+    try {
+      const initPath = agent.getCurrentHistoryFilePath();
+      if (initPath) {
+        setSessionId(path.basename(initPath, ".json"));
+      }
+    } catch {}
 
     // Register with extension server
     import("./server.js").then(({ registerCliAgent }) => {
@@ -2349,7 +2356,11 @@ export function App({
     process.on("SIGINT", handleSigint);
 
     agent.loadHistory(autoResume).then(() => {
-      onSessionPath?.(agent.getCurrentHistoryFilePath());
+      const sessionPath = agent.getCurrentHistoryFilePath();
+      onSessionPath?.(sessionPath);
+      if (sessionPath) {
+        setSessionId(path.basename(sessionPath, ".json"));
+      }
       const msgs = agent.getHistory().getMessages();
       const userInputs: string[] = [];
       for (const m of msgs) {
@@ -3095,6 +3106,7 @@ export function App({
             embeddingStatus={embeddingStatus}
             workspacePath={workspacePath}
             primaryWorkspacePath={primaryWorkspacePath}
+            sessionId={sessionId}
             focusMode={focusMode}
             scrollOffset={scrollOffset}
             focusedResponseIndex={focusedResponseIndex}

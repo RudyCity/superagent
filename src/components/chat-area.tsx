@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, memo } from "react";
+import path from "path";
 import { Box, Text } from "ink";
 import { Banner } from "./banner.js";
 import { ChatLineComponent, renderMarkdown, truncateStreamDisplay, isCollapsibleType } from "./chat-line.js";
@@ -1344,6 +1345,7 @@ export interface ChatAreaProps {
   embeddingStatus?: "offline" | "loading" | "online";
   workspacePath?: string;
   primaryWorkspacePath?: string;
+  sessionId?: string;
   focusMode: string;
   scrollOffset: number;
   focusedResponseIndex: number | null;
@@ -1386,6 +1388,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     embeddingStatus,
     workspacePath,
     primaryWorkspacePath,
+    sessionId,
     focusMode,
     scrollOffset,
     focusedResponseIndex,
@@ -1422,6 +1425,14 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
   } = props;
 
   const chatWidth = Math.max(20, terminalWidth - 6);
+
+  const resolvedSessionId = useMemo(() => {
+    if (sessionId) return sessionId;
+    if (process.env.SUPERAGENT_SESSION_PATH) {
+      return path.basename(process.env.SUPERAGENT_SESSION_PATH, ".json");
+    }
+    return undefined;
+  }, [sessionId]);
 
   const localWrappedLines = useMemo(() => {
     if (passedWrappedLines) return passedWrappedLines;
@@ -1570,10 +1581,15 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
         )}
       </Box>
 
-      {/* Workspace Path Indicator */}
-      <Box paddingX={1} marginLeft={5} marginBottom={0}>
+      {/* Workspace Path & Session ID Indicator */}
+      <Box paddingX={1} marginLeft={5} marginBottom={0} flexDirection="row" flexWrap="wrap">
         <Text color="cyan" dimColor>
           📁 Workspace: <Text bold color="cyan">{workspacePath || primaryWorkspacePath || process.cwd()}</Text>
+          {resolvedSessionId ? (
+            <>
+              {"  "}│  🆔 Session: <Text bold color="cyan">{resolvedSessionId}</Text>
+            </>
+          ) : null}
         </Text>
       </Box>
  
