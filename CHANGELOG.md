@@ -1,3 +1,16 @@
+## [1.5.46] - 2026-09-04
+
+### Feat: Multi-Tier Orchestration & Subagent Report Conclusion Alignment
+
+- **Subagent Mandatory Reporting Instruction (`src/core/tools/subagentTools.ts`)**:
+  - Updated `SUBAGENT_REPORT_INSTRUCTION` JSON schema and `SUBAGENT TASK REPORT` template to include `- Conclusion: [concise completion summary and verified outcome]` field, aligning prompt reporting across subagents.
+
+- **Merge Superagents Next Steps Guidance (`src/core/tools/superagentTools.ts`)**:
+  - Added operational next-steps notification when all feature branches are successfully merged, nudging the Master Agent to run build/test validation, perform release bumps, and output the final project completion conclusion before listing file changes.
+
+- **Master Agent Orchestration Skill Alignment (`.agents/skills/master-agent-orchestration/SKILL.md`)**:
+  - Updated the Merging and Cleanup section to explicitly document post-merge validation and emitting a comprehensive Project Completion Conclusion.
+
 ## [1.5.45] - 2026-09-04
 
 ### Feat: System Prompt Optimization for Mandatory Completion Conclusions

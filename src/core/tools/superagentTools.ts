@@ -1156,6 +1156,12 @@ export const mergeSuperagentsTool: Tool = {
       }
     }
 
+    if (completed.length > 0 && !results.some((r) => r.includes("Merge failed"))) {
+      results.push(
+        "\n[NEXT STEPS] All feature branches merged. Run build/tests validation, perform version bump & CHANGELOG update, and provide the final project completion conclusion before listing file changes."
+      );
+    }
+
     return results.join("\n");
   },
 };

@@ -34,6 +34,7 @@ When complete or blocked:
   "subagentId": "${subagentId}",
   "goal": "<brief goal>",
   "status": "completed" | "blocked" | "error",
+  "conclusion": "<concise completion summary and outcome>",
   "actionsTaken": ["<action 1>", ...],
   "keyFindings": ["<finding 1>", ...],
   "nextSteps": "<optional recommendations>",
@@ -42,6 +43,7 @@ When complete or blocked:
 2. Include summary in final response:
 SUBAGENT TASK REPORT
 - Goal: [goal]
+- Conclusion: [concise completion summary and verified outcome]
 - Actions: [actions taken]
 - Findings: [discoveries or changes]
 - Status: [Completed / Blocked / Next]

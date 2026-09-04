@@ -49,6 +49,9 @@ The **Master Agent (depth 0)** acts as the central orchestrator and coordinator.
 * Once `await_superagents` reports success, review the task reports.
 * Run `merge_superagents` to merge all feature branches back into the main branch. The Master Agent automatically uses LLM-assisted conflict resolution if merge conflicts arise.
 * By default, this will also clean up the `.worktrees/` directory for those branches.
+* Run post-merge validation: execute build and tests to verify the merged codebase.
+* Stage changes, bump package version in `package.json`, prepend `CHANGELOG.md`, and commit.
+* Provide a comprehensive **Project Completion Conclusion** summarizing final outcome, key architectural decisions, verification status, and next steps before listing changed files.
 
 ---
 
