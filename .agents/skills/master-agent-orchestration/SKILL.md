@@ -67,10 +67,11 @@ As a Master Agent, you are restricted from directly modifying codebase files and
 ### ⚙️ Auto-Injection Safeguards
 The `manage_plan` tool contains automatic safeguards for Master Agent plans:
 1. **Delegation Note Injection**: If the plan lacks delegation/worktree references, the tool automatically appends a delegation note.
-2. **Orchestration Tasks Injection**: If the task checklist in the plan lacks orchestration tasks, the tool automatically injects three mandatory tasks:
+2. **Orchestration Tasks Injection**: If the task checklist in the plan lacks orchestration tasks, the tool automatically injects four mandatory tasks:
    - `Spawn Superagents for parallel task execution`
    - `Monitor Superagent progress and await completion`
    - `Merge Superagent branches into main codebase`
+   - `Validate merged changes and provide project completion conclusion`
 
 ---
 

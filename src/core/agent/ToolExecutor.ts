@@ -376,6 +376,7 @@ export class ToolExecutor {
             const hasSpawn = /spawn|invoke|create.*superagent|start.*superagent/i.test(combinedTaskText);
             const hasMonitor = /monitor|await|wait|track|check.*status/i.test(combinedTaskText);
             const hasMerge = /merge|combine|integrate.*superagent/i.test(combinedTaskText);
+            const hasConclusion = /conclusion|summary|walkthrough|final report|verify.*merged/i.test(combinedTaskText);
 
             const injectedTasks: string[] = [];
             if (!hasSpawn) {
@@ -386,6 +387,9 @@ export class ToolExecutor {
             }
             if (!hasMerge) {
               injectedTasks.push("- [ ] Merge Superagent branches into main codebase");
+            }
+            if (!hasConclusion) {
+              injectedTasks.push("- [ ] Validate merged changes and provide project completion conclusion");
             }
 
             if (injectedTasks.length > 0) {

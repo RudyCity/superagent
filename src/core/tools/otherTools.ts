@@ -1405,6 +1405,7 @@ export const managePlanTool: Tool = {
       const hasSpawn = /spawn|invoke|create.*superagent|start.*superagent/i.test(combinedText);
       const hasMonitor = /monitor|await|wait|track|check.*status/i.test(combinedText);
       const hasMerge = /merge|combine|integrate.*superagent/i.test(combinedText);
+      const hasConclusion = /conclusion|summary|walkthrough|final report|verify.*merged/i.test(combinedText);
 
       const injected: string[] = [...tasks];
 
@@ -1416,6 +1417,9 @@ export const managePlanTool: Tool = {
       }
       if (!hasMerge) {
         injected.push("Merge Superagent branches into main codebase");
+      }
+      if (!hasConclusion) {
+        injected.push("Validate merged changes and provide project completion conclusion");
       }
 
       return injected;

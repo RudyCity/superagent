@@ -1,3 +1,14 @@
+## [1.5.47] - 2026-09-04
+
+### Feat: Master Orchestration Plan Auto-Injection for Project Completion Conclusion
+
+- **Plan & Task Auto-Injection Safeguards (`src/core/tools/otherTools.ts`, `src/core/agent/ToolExecutor.ts`)**:
+  - Enhanced `injectMasterAgentTasks` in `managePlanTool` and `ToolExecutor` to automatically check for and inject `- [ ] Validate merged changes and provide project completion conclusion` into Master Agent task checklists when missing.
+  - Ensures the Master Agent plan checklist explicitly tracks post-merge verification and the final completion conclusion as mandatory lifecycle steps.
+
+- **Skill Documentation Alignment (`.agents/skills/master-agent-orchestration/SKILL.md`)**:
+  - Updated Auto-Injection Safeguards section to document all four mandatory orchestration tasks.
+
 ## [1.5.46] - 2026-09-04
 
 ### Feat: Multi-Tier Orchestration & Subagent Report Conclusion Alignment
