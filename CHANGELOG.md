@@ -1,3 +1,12 @@
+## [1.5.49] - 2026-09-04
+
+### Build: Rebuild TypeScript and Extension CSS Assets
+
+- **TypeScript Compilation**:
+  - Recompiled all TypeScript sources into `./dist/` using `tsc` without errors. Verified runtime output and CLI version `1.5.49`.
+- **Extension CSS Build**:
+  - Compiled and updated `chrome-extension/sidepanel.css` from Tailwind CSS v4 source with modern utilities and theme support.
+
 ## [1.5.48] - 2026-09-04
 
 ### Docs: Align Planning & Subagent Development Skills with Completion Conclusions
