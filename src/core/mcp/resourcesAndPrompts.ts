@@ -74,18 +74,29 @@ export function registerResourcesAndPrompts(server: Server): void {
     switch (uri) {
       case "superagent://status/live": {
         const isMasterRunning = masterAgentRef ? (masterAgentRef.isAgentRunning?.() ?? false) : false;
-        const activeSuperagents = [...superagentInstances.values()].map((i) => ({
-          id: i.id,
-          role: i.role,
-          branch: i.branch,
-          status: i.status,
-          task: i.task,
-        }));
+        const { resolveInstanceCurrentTask } = await import("./tools/taskResolver.js");
+        const activeSuperagents = await Promise.all(
+          [...superagentInstances.values()].map(async (i) => {
+            const res = await resolveInstanceCurrentTask({ superagentId: i.id });
+            return {
+              id: i.id,
+              role: i.role,
+              branch: i.branch,
+              status: i.status,
+              task: i.task,
+              currentTask: res.currentTask,
+              currentTaskStatus: res.currentTaskStatus,
+              progress: res.progress,
+            };
+          })
+        );
         const activeSubagents = [...subagentInstances.values()].map((s) => ({
           id: s.id,
           typeName: s.typeName,
           role: s.role,
           status: s.status,
+          prompt: s.prompt,
+          currentTask: s.prompt,
         }));
         const runningProcs = [...backgroundTasks.values()]
           .filter((t) => !t.hasExited && !t.isHidden)

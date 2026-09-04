@@ -245,8 +245,53 @@ export async function handleManageWorktrees(args: any): Promise<McpToolResult> {
   return { content: [{ type: "text", text: `Unknown worktree action: ${action}` }], isError: true };
 }
 
+export async function handleGetCurrentTask(args: any): Promise<McpToolResult> {
+  const { resolveInstanceCurrentTask } = await import("./taskResolver.js");
+  const resolution = await resolveInstanceCurrentTask(args);
+
+  if (!resolution.found && resolution.errorMessage) {
+    return {
+      content: [{ type: "text", text: `Error: ${resolution.errorMessage}` }],
+      isError: true,
+    };
+  }
+
+  const currentOnly = args.currentOnly ?? args.current_only ?? args.currentTaskOnly ?? false;
+  if (currentOnly) {
+    return {
+      content: [{ type: "text", text: resolution.currentTask || "(no active task)" }],
+    };
+  }
+
+  const lines: string[] = [
+    `=== Current Instance Task [${resolution.type.toUpperCase()}${resolution.id ? `: ${resolution.id}` : ""}] ===`,
+  ];
+  if (resolution.role) lines.push(`Role: ${resolution.role}`);
+  if (resolution.typeName && resolution.typeName !== resolution.role) lines.push(`Type: ${resolution.typeName}`);
+  if (resolution.branch) lines.push(`Branch: ${resolution.branch}`);
+  if (resolution.status) lines.push(`Status: ${resolution.status}`);
+  if (resolution.goal && resolution.goal !== resolution.currentTask) lines.push(`Objective: ${resolution.goal}`);
+  lines.push(`Active Task: ${resolution.currentTask}`);
+  lines.push(`Task State: ${resolution.currentTaskStatus.toUpperCase()}`);
+  if (resolution.totalTasks > 0) {
+    lines.push(`Checklist Step: ${resolution.currentTaskIndex} of ${resolution.totalTasks}`);
+    lines.push(`Progress: ${resolution.progress}`);
+  }
+  if (resolution.activeTool) lines.push(`Active Tool: ${resolution.activeTool}`);
+  if (resolution.worktreePath) lines.push(`Worktree / Workspace: ${resolution.worktreePath}`);
+  if (resolution.taskFilePath) lines.push(`Task File: ${resolution.taskFilePath}`);
+
+  return { content: [{ type: "text", text: lines.join("\n") }] };
+}
+
 export async function handleGetPlanAndTasks(args: any): Promise<McpToolResult> {
+  const currentOnly = args.currentOnly ?? args.current_only ?? args.currentTaskOnly ?? false;
+  if (currentOnly) {
+    return await handleGetCurrentTask(args);
+  }
+
   let ws = args.workspace ? path.resolve(String(args.workspace)) : "";
+  let matchedInst: any = null;
 
   if (!ws && (args.superagentId || args.id || args.instanceId)) {
     const targetId = String(args.superagentId || args.id || args.instanceId);
@@ -254,11 +299,18 @@ export async function handleGetPlanAndTasks(args: any): Promise<McpToolResult> {
     const entry = registry.find((r) => r.id === targetId || r.name === targetId);
     if (entry && entry.worktreePath && fs.existsSync(entry.worktreePath)) {
       ws = entry.worktreePath;
+      matchedInst = entry;
     } else {
-      const { superagentInstances } = await import("../../tools/state.js");
+      const { superagentInstances, subagentInstances } = await import("../../tools/state.js");
       const inst = superagentInstances.get(targetId);
       if (inst && inst.worktreePath && fs.existsSync(inst.worktreePath)) {
         ws = inst.worktreePath;
+        matchedInst = inst;
+      } else {
+        const sub = subagentInstances.get(targetId);
+        if (sub) {
+          return await handleGetCurrentTask({ id: targetId });
+        }
       }
     }
     if (!ws) {
@@ -272,12 +324,16 @@ export async function handleGetPlanAndTasks(args: any): Promise<McpToolResult> {
   if (!ws) {
     ws = process.cwd();
   }
-  const { readChecklistTasks } = await import("../../taskChecklist.js");
+  const { readChecklistTasks, getCurrentTaskFromChecklist } = await import("../../taskChecklist.js");
   const taskFiles = [
     path.join(ws, "_task.md"),
     path.join(ws, "task.md"),
     path.join(ws, "tasks.md"),
   ];
+  if (matchedInst?.historyFilePath) {
+    taskFiles.push(matchedInst.historyFilePath.replace(/\.json$/, "_task.md"));
+  }
+
   let foundTasks: any[] = [];
   for (const tf of taskFiles) {
     if (fs.existsSync(tf)) {
@@ -294,6 +350,10 @@ export async function handleGetPlanAndTasks(args: any): Promise<McpToolResult> {
     path.join(ws, "plan.md"),
     path.join(ws, "implementation_plan.md"),
   ];
+  if (matchedInst?.historyFilePath) {
+    planFiles.push(matchedInst.historyFilePath.replace(/\.json$/, "_implementation_plan.md"));
+  }
+
   let planContent = "(No plan document found)";
   for (const pf of planFiles) {
     if (fs.existsSync(pf)) {
@@ -302,10 +362,31 @@ export async function handleGetPlanAndTasks(args: any): Promise<McpToolResult> {
     }
   }
 
+  const taskInfo = getCurrentTaskFromChecklist(foundTasks);
   const header = args.superagentId || args.id || args.instanceId
     ? `=== Implementation Plan [Instance: ${args.superagentId || args.id || args.instanceId}] ===`
     : "=== Implementation Plan ===";
-  const lines = [header, planContent.slice(0, 1500), "\n=== Task Checklist ==="];
+  const lines = [header];
+
+  if (taskInfo.task) {
+    const statusLabel =
+      taskInfo.status === "in_progress"
+        ? "[/] (In Progress)"
+        : taskInfo.status === "pending"
+        ? "[ ] (Pending)"
+        : taskInfo.status === "completed"
+        ? "[x] (Completed)"
+        : "";
+    lines.push(`\n=== Current Active Task ===`);
+    lines.push(`  Task: ${taskInfo.task}`);
+    if (statusLabel) lines.push(`  Status: ${statusLabel}`);
+    if (taskInfo.total > 0) {
+      lines.push(`  Progress: ${taskInfo.completed}/${taskInfo.total} (${taskInfo.percentage}%)`);
+    }
+  }
+
+  lines.push(`\n${planContent.slice(0, 1500)}`);
+  lines.push("\n=== Task Checklist ===");
   if (foundTasks.length === 0) {
     lines.push("  No checklist tasks found.");
   } else {
@@ -351,6 +432,10 @@ export async function handleUpdateTasks(args: any): Promise<McpToolResult> {
   }
 
   const action = String(args.action || "get_status");
+  if (action === "get_current_task" || action === "current_task") {
+    return await handleGetCurrentTask({ ...args, workspace: ws });
+  }
+
   const taskText = String(args.taskText || args.task || args.text || "");
   const { managePlanTool } = await import("../../tools/otherTools.js");
   const result = await managePlanTool.execute({ action, task: taskText }, ws);

@@ -222,6 +222,11 @@ export async function handleManage(args: any): Promise<McpToolResult> {
   const action = String(args.action || "list");
   const superagentIds = Array.isArray(args.superagentIds) ? (args.superagentIds as string[]) : undefined;
 
+  if (action === "current_task") {
+    const { handleGetCurrentTask } = await import("./workspaceTools.js");
+    return await handleGetCurrentTask({ ...args, id: superagentIds?.[0] || args.id });
+  }
+
   const serverRes = await callServerApi("/api/superagents/manage", "POST", {
     action,
     superagentIds,
@@ -251,25 +256,71 @@ export async function handleGetStatus(args: any): Promise<McpToolResult> {
   const rawIds = args.superagentIds ?? args.superagent_ids ?? args.id ?? args.superagentId;
   const ids = Array.isArray(rawIds) ? (rawIds as string[]) : rawIds ? [String(rawIds)] : [];
 
+  const { resolveInstanceCurrentTask } = await import("./taskResolver.js");
+
   if (ids.length > 0) {
-    const serverRes = await callServerApi("/api/instances", "GET");
-    if (serverRes.success && serverRes.data?.superagents) {
-      const matched = serverRes.data.superagents.filter((s: any) => ids.includes(s.id));
-      if (matched.length > 0) {
-        const text = matched
-          .map(
-            (s: any) =>
-              `Superagent ${s.id} (${s.role}):\n  Status: ${s.status}\n  Task: ${s.prompt || "(none)"}\n  Result: ${s.result || "(no result yet)"}`
-          )
-          .join("\n\n");
-        return { content: [{ type: "text", text }] };
+    const lines: string[] = [];
+    for (const id of ids) {
+      const res = await resolveInstanceCurrentTask({ id });
+      if (res.found) {
+        let block = `Status for ${res.type.toUpperCase()} [${id}]:\n  Role: ${res.role || res.typeName || "Agent"}\n  Status: ${res.status}`;
+        if (res.branch) block += `\n  Branch: ${res.branch}`;
+        if (res.goal) block += `\n  Objective: ${res.goal}`;
+        block += `\n  Current Task: ${res.currentTask} (${res.currentTaskStatus.toUpperCase()})`;
+        if (res.totalTasks > 0) {
+          block += `\n  Checklist Step: ${res.currentTaskIndex} of ${res.totalTasks} | Progress: ${res.progress}`;
+        }
+        if (res.worktreePath) block += `\n  Worktree: ${res.worktreePath}`;
+        if (res.activeTool) block += `\n  Active Tool: ${res.activeTool}`;
+        lines.push(block);
+      } else {
+        const serverRes = await callServerApi("/api/instances", "GET");
+        if (serverRes.success && serverRes.data?.superagents) {
+          const matched = serverRes.data.superagents.find((s: any) => s.id === id);
+          if (matched) {
+            lines.push(
+              `Superagent ${matched.id} (${matched.role}):\n  Status: ${matched.status}\n  Task: ${matched.prompt || "(none)"}\n  Result: ${matched.result || "(no result yet)"}`
+            );
+            continue;
+          }
+        }
+        lines.push(`Error: No active Superagent, Subagent, or process found with ID "${id}".`);
       }
+    }
+    return { content: [{ type: "text", text: lines.join("\n\n") }] };
+  }
+
+  const { superagentInstances, subagentInstances } = await import("../../tools/state.js");
+  const lines: string[] = ["=== Superagent & Subagent Instance Statuses ==="];
+
+  if (superagentInstances.size === 0 && subagentInstances.size === 0) {
+    const { handleGetProcessStatus } = await import("./processTools.js");
+    return await handleGetProcessStatus();
+  }
+
+  if (superagentInstances.size > 0) {
+    lines.push("\nSuperagents:");
+    for (const [id, inst] of superagentInstances.entries()) {
+      const res = await resolveInstanceCurrentTask({ superagentId: id });
+      let line = `  - [${id}] ${inst.role} | Status: ${inst.status} | Branch: ${inst.branch}`;
+      line += `\n    Current Task: ${res.currentTask} (${res.currentTaskStatus})`;
+      if (res.totalTasks > 0) {
+        line += ` | Progress: ${res.progress}`;
+      }
+      lines.push(line);
     }
   }
 
-  const { manageSuperagentsTool } = await import("../../tools/superagentTools.js");
-  const res = await manageSuperagentsTool.execute({ action: "status", superagentIds: ids }, process.cwd());
-  return { content: [{ type: "text", text: String(res) }] };
+  if (subagentInstances.size > 0) {
+    lines.push("\nSubagents:");
+    for (const [id, sub] of subagentInstances.entries()) {
+      lines.push(
+        `  - [${id}] ${sub.typeName} (${sub.role}) | Status: ${sub.status}\n    Task / Prompt: ${sub.prompt || "(none)"}`
+      );
+    }
+  }
+
+  return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 
 export async function handleCliBridge(args: any): Promise<McpToolResult> {

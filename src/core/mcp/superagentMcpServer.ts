@@ -51,6 +51,7 @@ import {
   handleManageWorktrees,
   handleGetPlanAndTasks,
   handleUpdateTasks,
+  handleGetCurrentTask,
 } from "./tools/workspaceTools.js";
 import {
   handleGetConfig,
@@ -218,6 +219,19 @@ export function createSuperagentMcpServer(): Server {
           inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "remove"] }, id: { type: "string" } }, required: ["action"] },
         },
         {
+          name: "superagent_get_current_task",
+          description: "Get the current active task, in-progress checklist step, and progress for a Superagent instance, Subagent, or running process.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              instanceId: { type: "string", description: "Optional instance ID (Superagent ID, Subagent ID, or process PID). If omitted, resolves the current active instance." },
+              superagentId: { type: "string", description: "Optional alias for instanceId." },
+              workspace: { type: "string", description: "Optional workspace or worktree path." },
+              currentOnly: { type: "boolean", description: "If true, returns only the current task description string." },
+            },
+          },
+        },
+        {
           name: "superagent_get_plan_and_tasks",
           description: "Read the current implementation plan objective and task checklist for the workspace or a specific Superagent instance.",
           inputSchema: {
@@ -225,6 +239,7 @@ export function createSuperagentMcpServer(): Server {
             properties: {
               workspace: { type: "string", description: "Optional workspace or worktree path to inspect." },
               superagentId: { type: "string", description: "Optional Superagent instance ID to automatically inspect its worktree." },
+              currentOnly: { type: "boolean", description: "Optional: if true, returns only the current active task and progress." },
             },
           },
         },
@@ -234,7 +249,7 @@ export function createSuperagentMcpServer(): Server {
           inputSchema: {
             type: "object",
             properties: {
-              action: { type: "string", enum: ["mark_completed", "mark_in_progress", "add_task", "get_status"] },
+              action: { type: "string", enum: ["mark_completed", "mark_in_progress", "add_task", "get_status", "get_current_task"] },
               taskText: { type: "string", description: "Task description text to mark or add." },
               workspace: { type: "string", description: "Optional workspace or worktree path." },
               superagentId: { type: "string", description: "Optional Superagent instance ID to update its isolated worktree checklist." },
@@ -310,7 +325,7 @@ export function createSuperagentMcpServer(): Server {
         {
           name: "superagent_manage",
           description: "Manage Superagent lifecycle: check status, reports, violations, kill, or retry failed ones.",
-          inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "status", "logs", "report", "violations", "kill", "kill_all", "retry_failed", "cleanup_orphans"] }, superagentIds: { type: "array", items: { type: "string" } } }, required: ["action"] },
+          inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "status", "logs", "report", "violations", "kill", "kill_all", "retry_failed", "cleanup_orphans", "current_task"] }, superagentIds: { type: "array", items: { type: "string" } } }, required: ["action"] },
         },
         {
           name: "superagent_server_health",
@@ -367,6 +382,9 @@ export function createSuperagentMcpServer(): Server {
           return await handleFindFiles(args);
         case "superagent_manage_worktrees":
           return await handleManageWorktrees(args);
+        case "superagent_get_current_task":
+        case "superagent_get_instance_task":
+          return await handleGetCurrentTask(args);
         case "superagent_get_plan_and_tasks":
           return await handleGetPlanAndTasks(args);
         case "superagent_update_tasks":

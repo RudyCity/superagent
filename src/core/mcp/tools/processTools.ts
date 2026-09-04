@@ -207,7 +207,7 @@ export async function handleListActive(args: any): Promise<McpToolResult> {
   if (superagentList.length > 0) {
     lines.push(`\nRegistered Feature Worktrees (${superagentList.length}):`);
     for (const s of superagentList) {
-      lines.push(`  - [${s.id}] Role: ${s.role} | Branch: ${s.branch} | Status: ${s.status}`);
+      lines.push(`  - [${s.id}] Role: ${s.role} | Branch: ${s.branch} | Status: ${s.status}${s.task ? ` | Task: ${s.task}` : ""}`);
     }
   }
 

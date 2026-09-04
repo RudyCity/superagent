@@ -942,6 +942,7 @@ export async function handleServerRoute(
       result: inst.result,
       logs: inst.logs || [],
       prompt: inst.prompt,
+      currentTask: inst.prompt,
       completedAt: inst.completedAt
     }));
     const superagents = Array.from(superagentInstances.entries()).map(([id, inst]) => ({
@@ -951,7 +952,11 @@ export async function handleServerRoute(
       status: inst.status,
       result: inst.result,
       logs: inst.logs || [],
+      task: inst.task,
       prompt: inst.task,
+      currentTask: inst.task,
+      branch: inst.branch,
+      worktreePath: inst.worktreePath,
       completedAt: inst.completedAt
     }));
     const procs = Array.from(backgroundTasks.values())

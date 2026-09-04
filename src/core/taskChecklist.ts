@@ -10,6 +10,18 @@ export interface ReadChecklistResult {
   missing: boolean;
 }
 
+export interface CurrentTaskInfo {
+  task: string;
+  status: "in_progress" | "pending" | "completed" | "none";
+  index: number;
+  total: number;
+  completed: number;
+  inProgress: number;
+  pending: number;
+  percentage: number;
+  tasks: ChecklistTask[];
+}
+
 /** A group of completed tasks from a single archive round. */
 export interface HistoryRound {
   /** The timestamp label from the "## Completed: <label>" header. */
@@ -48,6 +60,91 @@ export function parseChecklistTasks(content: string): ChecklistTask[] {
   }
 
   return items;
+}
+
+/**
+ * Analyze a checklist task list and determine the current active task,
+ * its status (in_progress, pending, completed, or none), and progress metrics.
+ */
+export function getCurrentTaskFromChecklist(tasks: ChecklistTask[]): CurrentTaskInfo {
+  const total = tasks.length;
+  const completed = tasks.filter((t) => t.status === "x").length;
+  const inProgress = tasks.filter((t) => t.status === "/").length;
+  const pending = tasks.filter((t) => t.status === " ").length;
+  const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  if (total === 0) {
+    return {
+      task: "",
+      status: "none",
+      index: 0,
+      total: 0,
+      completed: 0,
+      inProgress: 0,
+      pending: 0,
+      percentage: 0,
+      tasks: [],
+    };
+  }
+
+  // 1. Look for the first in-progress task ('/')
+  const inProgIdx = tasks.findIndex((t) => t.status === "/");
+  if (inProgIdx !== -1) {
+    return {
+      task: tasks[inProgIdx].text,
+      status: "in_progress",
+      index: inProgIdx + 1,
+      total,
+      completed,
+      inProgress,
+      pending,
+      percentage,
+      tasks,
+    };
+  }
+
+  // 2. Look for the first pending task (' ')
+  const pendingIdx = tasks.findIndex((t) => t.status === " ");
+  if (pendingIdx !== -1) {
+    return {
+      task: tasks[pendingIdx].text,
+      status: "pending",
+      index: pendingIdx + 1,
+      total,
+      completed,
+      inProgress,
+      pending,
+      percentage,
+      tasks,
+    };
+  }
+
+  // 3. All tasks completed
+  if (completed === total && total > 0) {
+    return {
+      task: "All tasks completed",
+      status: "completed",
+      index: total,
+      total,
+      completed,
+      inProgress: 0,
+      pending: 0,
+      percentage: 100,
+      tasks,
+    };
+  }
+
+  return {
+    task: "",
+    status: "none",
+    index: 0,
+    total,
+    completed,
+    inProgress,
+    pending,
+    percentage,
+    tasks,
+  };
 }
 
 export async function readChecklistTasks(taskPath: string): Promise<ReadChecklistResult> {

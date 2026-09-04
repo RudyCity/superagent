@@ -106,6 +106,32 @@ The output returns:
 
 ---
 
+### Tool: superagent_get_current_task
+
+Retrieves the currently active task or in-progress checklist step (`[/]` in progress or next pending `[ ]`), task status, and completion progress for a Superagent instance, Subagent, or running process.
+
+#### Parameters:
+- `instanceId` or `superagentId`: Optional ID of the instance to inspect. If omitted, automatically resolves the current active running instance or process.
+- `workspace`: Optional workspace or worktree path.
+- `currentOnly`: If `true`, returns only the concise active task description string. If `false` or omitted, returns structured details including role, objective, active task, checklist step, progress percentage, and worktree path.
+
+Example call:
+```json
+{
+  "instanceId": "abc1234"
+}
+```
+
+Example concise call:
+```json
+{
+  "instanceId": "abc1234",
+  "currentOnly": true
+}
+```
+
+---
+
 ## 3. Modifying Task Checklists via MCP
 
 ### Tool: superagent_update_tasks

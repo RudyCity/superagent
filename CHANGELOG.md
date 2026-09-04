@@ -1,3 +1,31 @@
+## [1.5.43] - 2026-09-04
+
+### Feat: Instance Current Task Tracking & Step Inspection via MCP
+
+- **Checklist Analysis Helper (`src/core/taskChecklist.ts`)**:
+  - Added `CurrentTaskInfo` interface and `getCurrentTaskFromChecklist` function to extract the active in-progress task (`[/]`), next pending task (`[ ]`), or completion status (`[x]`) along with progress metrics (completed, in-progress, pending, percentage).
+
+- **Unified Instance Task Resolver (`src/core/mcp/tools/taskResolver.ts`)**:
+  - Implemented `resolveInstanceCurrentTask` supporting Superagent instances (worktree checklists, session history task files, assigned goals), Subagents (prompts), processes/sessions (journal activity, PIDs), and workspaces.
+  - Automatically auto-discovers active running instances when no identifier is provided.
+
+- **Dedicated MCP Tool `superagent_get_current_task` (`src/core/mcp/tools/workspaceTools.ts`, `src/core/mcp/superagentMcpServer.ts`)**:
+  - Added new tool `superagent_get_current_task` (and alias `superagent_get_instance_task`) supporting `instanceId`, `workspace`, and `currentOnly` parameters.
+
+- **Enhanced Plan & Task Inspection (`src/core/mcp/tools/workspaceTools.ts`)**:
+  - `superagent_get_plan_and_tasks`: Prominently includes `=== Current Active Task ===` with task status and progress before the checklist, supports `currentOnly: true` option, and resolves task files from session history fallback.
+  - `superagent_update_tasks`: Added `action: "get_current_task"` support.
+
+- **Lifecycle & Status Tools Enhanced (`src/core/mcp/tools/executionTools.ts`, `src/core/mcp/tools/processTools.ts`)**:
+  - `superagent_get_status`: Returns instance Goal, Current Task, and Checklist Progress for Superagents, Subagents, and processes.
+  - `superagent_manage`: Added `action: "current_task"` support.
+  - `superagent_list_active`: Includes assigned task objective in worktree instance listings.
+  - `superagent://status/live` MCP resource & `/api/instances` server route: Enriched with `currentTask` and `progress`.
+
+- **Skills Documentation & Unit Testing (`.agents/skills/superagent-mcp/SKILL.md`, `tests/mcpInstanceTask.test.ts`, `tests/mcpServer.test.ts`)**:
+  - Documented `superagent_get_current_task` and current task inspection patterns.
+  - Added comprehensive test suite with 15 test cases covering checklist parsing, MCP tools, and aliases.
+
 ## [1.5.42] - 2026-09-04
 
 ### Fix: Raw Error Preservation, SSE Synthesis Guarding & 402 Balance Depleted Diagnostics

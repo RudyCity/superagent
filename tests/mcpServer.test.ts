@@ -16,9 +16,9 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 37;
+const EXPECTED_TOOL_COUNT = 38;
 
-describe("Superagent Complete 3-Pillar MCP Server Suite (37 Tools, Resources, Prompts)", () => {
+describe("Superagent Complete 3-Pillar MCP Server Suite (38 Tools, Resources, Prompts)", () => {
   const testDir = path.join(os.tmpdir(), `superagent_mcp_test_${Date.now()}`);
 
   beforeEach(() => {
@@ -74,6 +74,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (37 Tools, Resources, Pr
     expect(toolNames).toContain("superagent_manage_worktrees");
 
     // Plans & tasks
+    expect(toolNames).toContain("superagent_get_current_task");
     expect(toolNames).toContain("superagent_get_plan_and_tasks");
     expect(toolNames).toContain("superagent_update_tasks");
 
