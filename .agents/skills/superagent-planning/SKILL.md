@@ -32,6 +32,7 @@ Describe the files to modify/create and the changes to be made.
 
 - [ ] Task 1: Create new component
 - [ ] Task 2: Integrate component into main layout
+- [ ] Task 3: Verify implementation and provide project completion conclusion
 
 ## Verification Plan
 
@@ -52,7 +53,7 @@ Use this template for minor fixes, style tweaks, or tasks that do not warrant co
 Describe the quick changes.
 
 - [ ] Task 1: Fix typo in configuration file
-- [ ] Task 2: Rebuild project to verify
+- [ ] Task 2: Rebuild project, verify, and provide completion conclusion
 ```
 
 ### 3. Refactor Template (For restructuring)
@@ -66,6 +67,7 @@ Describe the code changes.
 
 - [ ] Task 1: Extract helper function
 - [ ] Task 2: Update callers of the helper function
+- [ ] Task 3: Verify regressions and provide project completion conclusion
 
 ## Architecture
 Describe the new design, module boundaries, or architectural shifts.
@@ -80,6 +82,7 @@ The `manage_plan` tool parses your implementation plan for tasks formatted as ch
 - These tasks are extracted and written to `task.md` (or `_task.md` depending on the agent tier).
 - If no tasks are found, a default task (`- [ ] Execute implementation plan`) will be generated.
 - Always include explicit, actionable tasks in the plan so they sync correctly to the task list.
+- Always include a final task for verification and providing the project completion conclusion before listing changed files.
 
 ---
 

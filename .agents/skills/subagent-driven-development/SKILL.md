@@ -103,7 +103,10 @@ After all tasks complete, dispatch final code-reviewer:
 
 ### 7. Complete Development
 
-After final review passes, proceed to integrate the work (e.g. merge the branch locally, push and create a PR, or request feedback).
+After final review passes:
+1. Run final verification suite (build and test commands).
+2. Integrate the work (commit, merge branch, or prepare release).
+3. Output a structured **Project Completion Conclusion** summarizing outcomes, key solutions, test status, and next steps before listing changed files.
 
 ## Example Workflow
 

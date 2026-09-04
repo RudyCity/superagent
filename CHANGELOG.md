@@ -1,3 +1,14 @@
+## [1.5.48] - 2026-09-04
+
+### Docs: Align Planning & Subagent Development Skills with Completion Conclusions
+
+- **Planning Skill Templates Alignment (`.agents/skills/superagent-planning/SKILL.md`)**:
+  - Updated Full, Quick, and Refactor plan templates to include explicit tasks for verification and providing project completion conclusions.
+  - Added checklist integration guidance mandating a final task dedicated to verifying results and concluding the project before displaying file changes.
+
+- **Subagent-Driven Development Alignment (`.agents/skills/subagent-driven-development/SKILL.md`)**:
+  - Updated the Complete Development workflow step to instruct running final verification suites and generating a structured Project Completion Conclusion.
+
 ## [1.5.47] - 2026-09-04
 
 ### Feat: Master Orchestration Plan Auto-Injection for Project Completion Conclusion
