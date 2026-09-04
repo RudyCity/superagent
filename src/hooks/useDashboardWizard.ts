@@ -45,6 +45,7 @@ import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 import { contentToString } from "../core/conversation.js";
 import { attachmentToImagePart, type ImageAttachment } from "../utils/imageUtils.js";
 import { useModelWizard } from "./wizard/useModelWizard.js";
+import { reconstructDashboardLogs } from "../utils/uiHelpers.js";
 
 export interface DashboardWizardContext {
   agent: Agent;
@@ -1151,28 +1152,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       try {
         await agent.loadHistoryFromPath(chosen.filePath);
         const msgs = agent.getHistory().getMessages();
-        const loadedLogs: string[] = [];
-        for (const m of msgs) {
-          const stringContent = m.content ? contentToString(m.content) : "";
-          if (m.role === "user") {
-            const skillPrefixMatch = stringContent.match(/^I would like you to use the following skill:\s*"(.*?)"\.\nPlease read its instruction file at\s*"(.*?)"/);
-            if (skillPrefixMatch) {
-              loadedLogs.push(`[USER] 🛠️ [SKILL USE] ${skillPrefixMatch[1]} (${skillPrefixMatch[2]})`);
-            } else {
-              loadedLogs.push(`[USER] ${stringContent}`);
-            }
-          } else if (m.role === "assistant") {
-            if (stringContent) {
-              loadedLogs.push(`[AGENT] ${stringContent}`);
-            }
-          } else if (m.role === "system") {
-            if (stringContent && stringContent.startsWith("[ERROR]")) {
-              loadedLogs.push(stringContent);
-            } else if (stringContent) {
-              loadedLogs.push(`[MASTER] ${stringContent}`);
-            }
-          }
-        }
+        const loadedLogs = reconstructDashboardLogs(msgs);
         setMasterLogs(loadedLogs.slice(-500));
         setMasterLogs((prev) => [...prev, `[MASTER] Successfully resumed session: ${chosen.displayName}`].slice(-500));
       } catch (err: any) {
@@ -1283,11 +1263,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               .then(async () => {
                 await agent.loadHistoryFromPath(sessionPath);
                 const msgs = agent.getHistory().getMessages();
-                const loadedLogs: string[] = [];
-                for (const m of msgs) {
-                  if (m.role === "user") loadedLogs.push(`[USER] ${m.content}`);
-                  else if (m.role === "assistant" && m.content) loadedLogs.push(`[AGENT] ${m.content}`);
-                }
+                const loadedLogs = reconstructDashboardLogs(msgs);
                 setMasterLogs(loadedLogs.slice(-500));
                 setMasterLogs((prev) => [...prev, `[MASTER] Checkpoint "${targetChk.name}" restored! (${targetChk.messages.length} messages)`].slice(-500));
               })
@@ -1328,11 +1304,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             .then(async () => {
               await agent.loadHistoryFromPath(sessionPath);
               const msgs = agent.getHistory().getMessages();
-              const loadedLogs: string[] = [];
-              for (const m of msgs) {
-                if (m.role === "user") loadedLogs.push(`[USER] ${m.content}`);
-                else if (m.role === "assistant" && m.content) loadedLogs.push(`[AGENT] ${m.content}`);
-              }
+              const loadedLogs = reconstructDashboardLogs(msgs);
               setMasterLogs(loadedLogs.slice(-500));
               setMasterLogs((prev) => [...prev, `[MASTER] Checkpoint "${chosen.name}" restored! (${chosen.messages.length} messages)`].slice(-500));
             })
@@ -1397,26 +1369,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             await restoreCheckpoint(chkPath, sessionPath);
             await agent.loadHistoryFromPath(sessionPath);
             const msgs = agent.getHistory().getMessages();
-            const loadedLogs: string[] = [];
-            for (const m of msgs) {
-              const stringContent = m.content ? contentToString(m.content) : "";
-              if (m.role === "user") {
-                const skillPrefixMatch = stringContent.match(/^I would like you to use the following skill:\s*"(.*?)"\.\nPlease read its instruction file at\s*"(.*?)"/);
-                if (skillPrefixMatch) {
-                  loadedLogs.push(`[USER] 🛠️ [SKILL USE] ${skillPrefixMatch[1]} (${skillPrefixMatch[2]})`);
-                } else {
-                  loadedLogs.push(`[USER] ${stringContent}`);
-                }
-              } else if (m.role === "assistant" && stringContent) {
-                loadedLogs.push(`[AGENT] ${stringContent}`);
-              } else if (m.role === "system") {
-                if (stringContent && stringContent.startsWith("[ERROR]")) {
-                  loadedLogs.push(stringContent);
-                } else if (stringContent) {
-                  loadedLogs.push(`[MASTER] ${stringContent}`);
-                }
-              }
-            }
+            const loadedLogs = reconstructDashboardLogs(msgs);
             setMasterLogs(loadedLogs.slice(-500));
             setMasterLogs((prev) => [...prev, `[MASTER] Checkpoint "${chosen.name}" successfully restored! (${chosen.messages.length} messages)`].slice(-500));
           } catch (err: any) {
@@ -1873,28 +1826,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           try {
             await agent.loadHistoryFromPath(filePath);
             const msgs = agent.getHistory().getMessages();
-            const loadedLogs: string[] = [];
-            for (const m of msgs) {
-              const stringContent = m.content ? contentToString(m.content) : "";
-              if (m.role === "user" && stringContent) {
-                const skillPrefixMatch = stringContent.match(/^I would like you to use the following skill:\s*"(.*?)"\.\nPlease read its instruction file at\s*"(.*?)"/);
-                if (skillPrefixMatch) {
-                  loadedLogs.push(`[USER] 🛠️ [SKILL USE] ${skillPrefixMatch[1]} (${skillPrefixMatch[2]})`);
-                } else {
-                  loadedLogs.push(`[USER] ${stringContent}`);
-                }
-              } else if (m.role === "assistant") {
-                if (stringContent) {
-                  loadedLogs.push(`[AGENT] ${stringContent}`);
-                }
-              } else if (m.role === "system") {
-                if (stringContent && stringContent.startsWith("[ERROR]")) {
-                  loadedLogs.push(stringContent);
-                } else if (stringContent) {
-                  loadedLogs.push(`[MASTER] ${stringContent}`);
-                }
-              }
-            }
+            const loadedLogs = reconstructDashboardLogs(msgs);
             setMasterLogs(loadedLogs.slice(-500));
             setMasterLogs((prev) => [...prev, `[MASTER] Successfully loaded session history from: ${filePath}`].slice(-500));
           } catch (err: any) {

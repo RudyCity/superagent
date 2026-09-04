@@ -745,7 +745,9 @@ export function wrapChatLineToLines({
         result.push(...thinkingLines);
       }
 
-      const contentLines = wrapMarkdownToLines(capped.text, "gray", chatWidth, lineIndex, hideTimeline);
+      const contentLines = cleanContent.trim().length > 0
+        ? wrapMarkdownToLines(capped.text, "gray", chatWidth, lineIndex, hideTimeline)
+        : [];
       for (const wrappedContentLine of contentLines) {
         result.push({
           ...wrappedContentLine,

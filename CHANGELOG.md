@@ -1,3 +1,21 @@
+## [1.5.50] - 2026-09-05
+
+### Fix: Restore Tool Calls and Tool Response History on /resume
+
+- **Single-Agent Chat UI Timeline Reconstruction (`src/utils/uiHelpers.ts`, `src/components/chat-area.tsx`)**:
+  - Enhanced `reconstructChatLines` to index tool results by `toolCallId`, `tool_call_id`, `tool_use_id`, and tool `name`, supporting both parsed arrays and JSON strings.
+  - Added defensive string conversion to prevent `TypeError` when tool results are structured objects.
+  - Added support for bulk tools (`read`, `edit`, `write`, `patch`) formatting and custom skill title extraction.
+  - Ensured standalone `role: "tool"` records are retained and attached as child timeline executions.
+  - Avoided generating unnecessary blank lines for tool-only assistant messages in `chat-area.tsx`.
+
+- **Multi-Agent Dashboard Log Repopulation (`src/utils/uiHelpers.ts`, `src/hooks/useDashboardWizard.ts`, `src/components/multi-agent-dashboard.tsx`)**:
+  - Added `reconstructDashboardLogs` helper to generate paired `[TOOL START]` and `[TOOL END]` events matching live tool execution output.
+  - Updated `/resume` wizard, session path loader, on-mount history restoration, and `/checkpoint` restores to populate complete tool calls and response histories in `masterLogs`.
+
+- **Automated Verification (`tests/resumeHistoryReconstruct.test.ts`)**:
+  - Added comprehensive test suite verifying tool call matching, tool result mapping, non-string result safety, JSON string parsing, and dashboard log pair generation.
+
 ## [1.5.49] - 2026-09-04
 
 ### Build: Rebuild TypeScript and Extension CSS Assets

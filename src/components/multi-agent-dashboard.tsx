@@ -61,7 +61,7 @@ import {
   updatePasteState,
   getActiveCommandContext
 } from "../utils/text.js";
-import { getLatestSubagentAction, getLatestSuperagentAction } from "../utils/uiHelpers.js";
+import { getLatestSubagentAction, getLatestSuperagentAction, reconstructDashboardLogs } from "../utils/uiHelpers.js";
 import { WizardDialog } from "./wizard-dialog.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint } from "../core/checkpoints.js";
@@ -591,24 +591,12 @@ export function MultiAgentDashboard({
       try {
         const msgs = agent.getHistory().getMessages();
         const userInputs: string[] = [];
-        const loadedLogs: string[] = [];
         for (const m of msgs) {
-          const stringContent = m.content ? contentToString(m.content) : "";
           if (m.role === "user") {
+            const stringContent = m.content ? contentToString(m.content) : "";
             const trimmedContent = stringContent.trim();
-            if (trimmedContent) {
+            if (trimmedContent && !trimmedContent.startsWith("[RMemory Agent Memory Context]:")) {
               userInputs.push(trimmedContent);
-            }
-            loadedLogs.push(`[USER] ${stringContent}`);
-          } else if (m.role === "assistant") {
-            if (stringContent) {
-              loadedLogs.push(`[AGENT] ${stringContent}`);
-            }
-          } else if (m.role === "system") {
-            if (stringContent && stringContent.startsWith("[ERROR]")) {
-              loadedLogs.push(stringContent);
-            } else if (stringContent) {
-              loadedLogs.push(`[MASTER] ${stringContent}`);
             }
           }
         }
@@ -621,6 +609,7 @@ export function MultiAgentDashboard({
           }
           setHistory(uniqueUserInputs);
         }
+        const loadedLogs = reconstructDashboardLogs(msgs);
         if (loadedLogs.length > 0) {
           setMasterLogs(loadedLogs.slice(-500));
           setMasterLogs((prev) => [...prev, "[MASTER] Successfully resumed session"].slice(-500));
