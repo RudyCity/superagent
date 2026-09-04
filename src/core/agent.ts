@@ -486,11 +486,28 @@ export class Agent {
 
     const taskSummary = typeof userInput === "string" ? userInput : "[multimodal message]";
     const currentModelName = getTierModel(this.isMultiAgent ? "multi" : "single", this.tier);
+    const taskFilePath = this.getTaskFilePath();
+    const planFilePath = this.getPlanFilePath();
+
+    // Ensure session task file exists immediately so MCP, dashboards, and background processes have live visibility
+    try {
+      if (this.tier === "master" || this.tier === "single" || this.tier === "superagent") {
+        if (!fs.existsSync(taskFilePath) || fs.readFileSync(taskFilePath, "utf-8").trim() === "") {
+          fs.mkdirSync(path.dirname(taskFilePath), { recursive: true });
+          fs.writeFileSync(taskFilePath, `# Tasks\n\n- [/] ${taskSummary.trim()}\n`, "utf-8");
+        }
+      }
+    } catch {}
+
     updateProcessActivity({
       isAgentRunning: true,
       currentTask: taskSummary.slice(0, 150),
+      currentTaskStatus: "in_progress",
       currentStatus: "Thinking / Planning...",
       sessionId: this.sessionId,
+      taskFilePath,
+      planFilePath,
+      workingDirectory: this.workingDirectory || process.cwd(),
       model: currentModelName,
     });
 
@@ -537,6 +554,20 @@ export class Agent {
       this.flushTextLogBuffer();
       this.isRunning = false;
       this.abortController = null;
+
+      try {
+        if (this.tier === "master" || this.tier === "single" || this.tier === "superagent") {
+          const tf = this.getTaskFilePath();
+          if (fs.existsSync(tf)) {
+            const content = fs.readFileSync(tf, "utf-8");
+            const seedLine = `- [/] ${taskSummary.trim()}`;
+            if (content.includes(seedLine)) {
+              fs.writeFileSync(tf, content.replace(seedLine, `- [x] ${taskSummary.trim()}`), "utf-8");
+            }
+          }
+        }
+      } catch {}
+
       updateProcessActivity({
         isAgentRunning: false,
         currentTool: undefined,

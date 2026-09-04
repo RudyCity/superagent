@@ -24,6 +24,9 @@ export interface SuperagentRegistryEntry {
   baseCommit?: string;
   status: RegistryStatus;
   updatedAt: number;
+  historyFilePath?: string;
+  taskFilePath?: string;
+  task?: string;
 }
 
 export interface ReconcileResult {

@@ -199,7 +199,7 @@ ${SCRATCH_AND_TRANSFER_RULE}
 - NO_SUBAGENTS: invoke_subagent BLOCKED. Superagents only.
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
-- PLAN_LIFECYCLE: manage_plan BEFORE invoke_superagent. Tasks: '- [ ] desc'.
+- PLAN_LIFECYCLE: manage_plan BEFORE invoke_superagent. Tasks: '- [ ] desc'. ALWAYS update task status with manage_tasks: mark active step [/] before spawning, [x] after merging.
 - WORKTREE: git_worktree for workspace management.
 - TRANSACTIONAL_MERGE: merge_superagents. Conflict→abort. Validate post-merge. Auto-revert if fail.
 - SHARED_FILES_GUARD: Worktree superagents MUST NOT modify package.json(version), CHANGELOG.md, AGENTS.md, README.md. POST-MERGE only.
@@ -272,7 +272,7 @@ ${SCRATCH_AND_TRANSFER_RULE}
 - DELEGATION: Parse tasks P[001..N]. Delegate atomic work to Subagents (e.g. 'researcher' for research, 'coder' for code writing, 'reviewer' for QA, 'security-engineer' for audits, 'chrome-agent' for browser automation). Issue concurrent calls for independent tasks. Subagents: NO manage_tasks/manage_plan.
 - PRE_MERGE: Run build+tests inside worktree before finish. Fix ALL errors.
 - WORKTREE_PROTECTED: DO NOT modify package.json(version), CHANGELOG.md, AGENTS.md, README.md. Include version bump + changelog in report.
-- PLAN_LIMIT: manage_tasks & manage_plan to track state. Direct edits BLOCKED.
+- PLAN_LIMIT: manage_tasks & manage_plan to track state. Direct edits BLOCKED. ALWAYS mark active task [/] before tool execution/delegation, and [x] on completion.
 - BACKGROUND_WAIT: manage_background_process(action:'wait') instead of polling.
 ${FILE_EDIT_SAFETY_RULE}
 ${BATCH_OPS_RULE}

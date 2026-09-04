@@ -21,6 +21,17 @@ import {
   masterCompletionTokens,
 } from "../tools/state.js";
 
+export interface ActiveProcessSuperagent {
+  id: string;
+  role: string;
+  branch: string;
+  status: string;
+  task?: string;
+  worktreePath?: string;
+  historyFilePath?: string;
+  taskFilePath?: string;
+}
+
 export interface ActiveProcessEntry {
   pid: number;
   mode: "single" | "multi" | "server" | "mcp" | "cli";
@@ -29,13 +40,17 @@ export interface ActiveProcessEntry {
   lastHeartbeat: number;
   isAgentRunning?: boolean;
   currentTask?: string;
+  currentTaskStep?: string;
+  currentTaskStatus?: "in_progress" | "pending" | "completed" | "none";
   currentTool?: string;
   currentStatus?: string;
   sessionId?: string;
+  taskFilePath?: string;
+  planFilePath?: string;
   model?: string;
   promptTokens?: number;
   completionTokens?: number;
-  activeSuperagents?: Array<{ id: string; role: string; branch: string; status: string; task?: string }>;
+  activeSuperagents?: ActiveProcessSuperagent[];
   activeSubagents?: Array<{ id: string; typeName: string; role: string; status: string; prompt?: string }>;
   backgroundTaskCount?: number;
   recentLogs?: string[];
@@ -110,13 +125,24 @@ export function registerCurrentProcess(mode: "single" | "multi" | "server" | "mc
 
   const update = () => {
     try {
-      const activeSuperagents = [...superagentInstances.values()].map((i) => ({
-        id: i.id,
-        role: i.role,
-        branch: i.branch,
-        status: i.status,
-        task: i.task,
-      }));
+      const activeSuperagents = [...superagentInstances.values()].map((i) => {
+        let taskFilePath = i.historyFilePath ? i.historyFilePath.replace(/\.json$/, "_task.md") : undefined;
+        if (i.agent?.getTaskFilePath) {
+          try {
+            taskFilePath = i.agent.getTaskFilePath();
+          } catch {}
+        }
+        return {
+          id: i.id,
+          role: i.role,
+          branch: i.branch,
+          status: i.status,
+          task: i.task,
+          worktreePath: i.worktreePath,
+          historyFilePath: i.historyFilePath,
+          taskFilePath,
+        };
+      });
 
       const activeSubagents = [...subagentInstances.values()].map((s) => ({
         id: s.id,
@@ -131,17 +157,33 @@ export function registerCurrentProcess(mode: "single" | "multi" | "server" | "mc
         activity.isAgentRunning ||
         (masterAgentRef ? (masterAgentRef.isAgentRunning?.() ?? false) : false);
 
+      let resolvedTaskFilePath = activity.taskFilePath;
+      let resolvedPlanFilePath = activity.planFilePath;
+      if (!resolvedTaskFilePath && masterAgentRef?.getTaskFilePath) {
+        try {
+          resolvedTaskFilePath = masterAgentRef.getTaskFilePath();
+        } catch {}
+      }
+      if (!resolvedPlanFilePath && masterAgentRef?.getPlanFilePath) {
+        try {
+          resolvedPlanFilePath = masterAgentRef.getPlanFilePath();
+        } catch {}
+      }
+
       const entry: ActiveProcessEntry = {
         pid,
         mode,
-        workingDirectory: cwd,
+        workingDirectory: activity.workingDirectory || cwd,
         startedAt,
         lastHeartbeat: Date.now(),
         isAgentRunning: isRunning,
         currentTask: activity.currentTask,
+        currentTaskStatus: activity.currentTaskStatus || (isRunning ? "in_progress" : "pending"),
         currentTool: activity.currentTool,
         currentStatus: activity.currentStatus || (isRunning ? "Running" : "Idle"),
         sessionId: activity.sessionId || masterAgentRef?.sessionId,
+        taskFilePath: resolvedTaskFilePath,
+        planFilePath: resolvedPlanFilePath,
         model: activity.model,
         promptTokens: activity.promptTokens || masterPromptTokens,
         completionTokens: activity.completionTokens || masterCompletionTokens,

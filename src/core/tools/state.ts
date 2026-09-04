@@ -456,9 +456,13 @@ export function notifySuperagentsChanged() {
 export interface ProcessActivity {
   isAgentRunning: boolean;
   currentTask?: string;
+  currentTaskStatus?: "in_progress" | "pending" | "completed" | "none";
   currentTool?: string;
   currentStatus?: string;
   sessionId?: string;
+  taskFilePath?: string;
+  planFilePath?: string;
+  workingDirectory?: string;
   model?: string;
   promptTokens?: number;
   completionTokens?: number;

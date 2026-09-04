@@ -253,6 +253,12 @@ function ensureRegistryReconciled(): void {
 /** Write-through journaling of an instance status transition to the registry. */
 function persistRegistryEntry(inst: SuperagentInstance): void {
   try {
+    let taskFilePath = inst.historyFilePath ? inst.historyFilePath.replace(/\.json$/, "_task.md") : undefined;
+    if (inst.agent?.getTaskFilePath) {
+      try {
+        taskFilePath = inst.agent.getTaskFilePath();
+      } catch {}
+    }
     upsertEntry({
       id: inst.id,
       name: inst.customTypeName || inst.role,
@@ -261,6 +267,9 @@ function persistRegistryEntry(inst: SuperagentInstance): void {
       worktreePath: inst.worktreePath,
       status: inst.status,
       updatedAt: Date.now(),
+      historyFilePath: inst.historyFilePath,
+      taskFilePath,
+      task: inst.task,
     });
   } catch {
     // Best-effort

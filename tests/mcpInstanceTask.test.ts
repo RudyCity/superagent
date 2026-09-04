@@ -426,4 +426,144 @@ describe("Instance Current Task Tracking via MCP", () => {
       expect(res.content[0].text).toBe("Managed task step");
     });
   });
+
+  describe("Cross-Process Task Resolution via Process Journal & History", () => {
+    it("resolves active process session task file across processes", async () => {
+      const taskFile = path.join(testDir, "sess_proc_test_task.md");
+      fs.writeFileSync(
+        taskFile,
+        "# Tasks\n\n- [x] Phase 1 done\n- [/] Phase 2: Live cross-process debugging\n- [ ] Phase 3 pending\n"
+      );
+
+      const { resolveInstanceCurrentTask } = await import("../src/core/mcp/tools/taskResolver.js");
+      const { getRootConfigDir } = await import("../src/core/config/paths.js");
+      const journalPath = path.join(getRootConfigDir(), "active-processes.json");
+
+      // Save active process entry simulating external running CLI session
+      const entry = {
+        pid: process.pid,
+        mode: "single",
+        workingDirectory: testDir,
+        startedAt: Date.now() - 5000,
+        lastHeartbeat: Date.now(),
+        isAgentRunning: true,
+        currentTask: "User initial prompt",
+        sessionId: "sess_proc_test",
+        taskFilePath: taskFile,
+      };
+      fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+      fs.writeFileSync(journalPath, JSON.stringify([entry]), "utf-8");
+
+      try {
+        const resolution = await resolveInstanceCurrentTask({ id: String(process.pid) });
+        expect(resolution.found).toBe(true);
+        expect(resolution.type).toBe("process");
+        expect(resolution.currentTask).toBe("Phase 2: Live cross-process debugging");
+        expect(resolution.currentTaskStatus).toBe("in_progress");
+        expect(resolution.currentTaskIndex).toBe(2);
+        expect(resolution.totalTasks).toBe(3);
+        expect(resolution.completedTasks).toBe(1);
+        expect(resolution.progress).toBe("1/3 (33%)");
+      } finally {
+        try { fs.unlinkSync(journalPath); } catch {}
+      }
+    });
+
+    it("resolves Superagents listed in activeSuperagents of process journal", async () => {
+      const saWorktree = path.join(testDir, "sa_worktree");
+      fs.mkdirSync(saWorktree, { recursive: true });
+      const saTaskFile = path.join(saWorktree, "_task.md");
+      fs.writeFileSync(
+        saTaskFile,
+        "# Tasks\n\n- [/] Superagent isolated feature implementation\n"
+      );
+
+      const { resolveInstanceCurrentTask } = await import("../src/core/mcp/tools/taskResolver.js");
+      const { getRootConfigDir } = await import("../src/core/config/paths.js");
+      const journalPath = path.join(getRootConfigDir(), "active-processes.json");
+
+      const entry = {
+        pid: process.pid,
+        mode: "multi",
+        workingDirectory: testDir,
+        startedAt: Date.now() - 5000,
+        lastHeartbeat: Date.now(),
+        isAgentRunning: true,
+        currentTask: "Multi-agent feature orchestrator",
+        sessionId: "sess_multi_test",
+        activeSuperagents: [
+          {
+            id: "sa_cross_proc_sa1",
+            role: "coder",
+            branch: "feature/cross-proc",
+            status: "running",
+            task: "Implement feature in worktree",
+            worktreePath: saWorktree,
+            taskFilePath: saTaskFile,
+          },
+        ],
+      };
+      fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+      fs.writeFileSync(journalPath, JSON.stringify([entry]), "utf-8");
+
+      try {
+        const resolution = await resolveInstanceCurrentTask({ instanceId: "sa_cross_proc_sa1" });
+        expect(resolution.found).toBe(true);
+        expect(resolution.type).toBe("superagent");
+        expect(resolution.role).toBe("coder");
+        expect(resolution.currentTask).toBe("Superagent isolated feature implementation");
+        expect(resolution.currentTaskStatus).toBe("in_progress");
+
+        // superagent_get_plan_and_tasks auto-discovers this running superagent
+        const server = createSuperagentMcpServer();
+        const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+        const planRes = await callHandler({
+          method: "tools/call",
+          params: {
+            name: "superagent_get_plan_and_tasks",
+            arguments: { superagentId: "sa_cross_proc_sa1" },
+          },
+        });
+        expect(planRes.isError).toBeFalsy();
+        expect(planRes.content[0].text).toContain("Superagent isolated feature implementation");
+      } finally {
+        try { fs.unlinkSync(journalPath); } catch {}
+      }
+    });
+
+    it("auto-discovers running process and returns current task when no args provided", async () => {
+      const taskFile = path.join(testDir, "sess_autodiscover_task.md");
+      fs.writeFileSync(
+        taskFile,
+        "# Tasks\n\n- [/] Auto-discovered background task\n"
+      );
+
+      const { resolveInstanceCurrentTask } = await import("../src/core/mcp/tools/taskResolver.js");
+      const { getRootConfigDir } = await import("../src/core/config/paths.js");
+      const journalPath = path.join(getRootConfigDir(), "active-processes.json");
+
+      const entry = {
+        pid: process.pid,
+        mode: "single",
+        workingDirectory: testDir,
+        startedAt: Date.now() - 5000,
+        lastHeartbeat: Date.now(),
+        isAgentRunning: true,
+        currentTask: "Original user request",
+        sessionId: "sess_autodiscover",
+        taskFilePath: taskFile,
+      };
+      fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+      fs.writeFileSync(journalPath, JSON.stringify([entry]), "utf-8");
+
+      try {
+        const resolution = await resolveInstanceCurrentTask({});
+        expect(resolution.found).toBe(true);
+        expect(resolution.currentTask).toBe("Auto-discovered background task");
+        expect(resolution.currentTaskStatus).toBe("in_progress");
+      } finally {
+        try { fs.unlinkSync(journalPath); } catch {}
+      }
+    });
+  });
 });

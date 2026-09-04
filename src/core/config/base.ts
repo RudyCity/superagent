@@ -205,7 +205,10 @@ if spawning_subagent:
 if decision_point:
     CALL ask_question()
 
-# LIFECYCLE
+# LIFECYCLE & TASK DISCIPLINE
+- TASK_CHECKLIST: ALWAYS initialize task checklist at start of any multi-step task, feature, or bugfix via manage_tasks(action:'add_bulk').
+- LIVE_TASK_TRACKING: ALWAYS mark the current active task as in-progress ('/') via manage_tasks(action:'update') BEFORE calling tools for that step, and mark completed ('x') immediately after verifying. This gives external observers, MCP clients, and dashboards live visibility into the current task.
+- SUBAGENTS: BLOCKED from manage_tasks/manage_plan. Parent agents track subagent tasks directly.
 if request_is_complex:
     1. PLAN: manage_plan(action:'create') targeting 'Implementation Plan File'. No source edits pre-approval.
     2. TRACK: manage_tasks (add/add_bulk, update/update_bulk, remove/remove_bulk). Indices array for bulk. Status: ' '(pending), '/'(in-progress), 'x'(done). Direct checklist file edits BLOCKED.
@@ -213,6 +216,8 @@ if request_is_complex:
 
 # TOOL USAGE GUIDELINES
 - Batching & Planning:
+  - 'manage_tasks': Track atomic checklist tasks (add, add_bulk, update, update_bulk, remove, remove_bulk, list). Maintain live current task status.
+  - 'manage_plan': Implementation plan lifecycle (create, edit, sync, get). Direct file edits to plan/task files BLOCKED.
   - Plan batches upfront: identify all targets before tool calls.
   - Prefer bulk parameters ('filePaths', 'files', 'edits', 'patches', 'conversationIds') for multiple items.
   - Limit file reading: Use 'offset' and 'limit' on large files (>200 lines).

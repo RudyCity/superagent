@@ -290,6 +290,9 @@ export async function handleGetPlanAndTasks(args: any): Promise<McpToolResult> {
     return await handleGetCurrentTask(args);
   }
 
+  const { readChecklistTasks, getCurrentTaskFromChecklist } = await import("../../taskChecklist.js");
+  const { resolveInstanceCurrentTask } = await import("./taskResolver.js");
+
   let ws = args.workspace ? path.resolve(String(args.workspace)) : "";
   let matchedInst: any = null;
 
@@ -314,51 +317,107 @@ export async function handleGetPlanAndTasks(args: any): Promise<McpToolResult> {
       }
     }
     if (!ws) {
-      return {
-        content: [{ type: "text", text: `Error: No active or registered worktree found for Superagent instance "${targetId}".` }],
-        isError: true,
-      };
+      const { loadActiveProcesses } = await import("../processJournal.js");
+      const processes = loadActiveProcesses();
+      for (const p of processes) {
+        if (p.activeSuperagents) {
+          const matchedSa = p.activeSuperagents.find((sa) => sa.id === targetId);
+          if (matchedSa && matchedSa.worktreePath && fs.existsSync(matchedSa.worktreePath)) {
+            ws = matchedSa.worktreePath;
+            matchedInst = matchedSa;
+            break;
+          }
+        }
+      }
+    }
+    if (!ws) {
+      const { resolveInstanceCurrentTask } = await import("./taskResolver.js");
+      const resolution = await resolveInstanceCurrentTask(args);
+      if (resolution.found && resolution.worktreePath && fs.existsSync(resolution.worktreePath)) {
+        ws = resolution.worktreePath;
+        matchedInst = resolution;
+      } else if (resolution.found && resolution.tasks.length > 0) {
+        // Return resolved tasks even without a worktree directory
+        const taskInfo = getCurrentTaskFromChecklist(resolution.tasks);
+        const header = `=== Implementation Plan [Instance: ${targetId}] ===`;
+        const lines = [header];
+        if (taskInfo.task) {
+          lines.push(`\n=== Current Active Task ===`);
+          lines.push(`  Task: ${taskInfo.task}`);
+          lines.push(`  Status: ${taskInfo.status === "in_progress" ? "[/] (In Progress)" : "[ ] (Pending)"}`);
+          lines.push(`  Progress: ${taskInfo.completed}/${taskInfo.total} (${taskInfo.percentage}%)`);
+        }
+        lines.push(`\n${resolution.planContent || "(No plan document found)"}`);
+        lines.push("\n=== Task Checklist ===");
+        for (const t of resolution.tasks) {
+          lines.push(`  - [${t.status}] ${t.text}`);
+        }
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } else {
+        return {
+          content: [{ type: "text", text: `Error: No active or registered worktree found for Superagent instance "${targetId}".` }],
+          isError: true,
+        };
+      }
     }
   }
 
   if (!ws) {
     ws = process.cwd();
   }
-  const { readChecklistTasks, getCurrentTaskFromChecklist } = await import("../../taskChecklist.js");
-  const taskFiles = [
-    path.join(ws, "_task.md"),
-    path.join(ws, "task.md"),
-    path.join(ws, "tasks.md"),
-  ];
-  if (matchedInst?.historyFilePath) {
-    taskFiles.push(matchedInst.historyFilePath.replace(/\.json$/, "_task.md"));
-  }
 
   let foundTasks: any[] = [];
-  for (const tf of taskFiles) {
-    if (fs.existsSync(tf)) {
-      const res = await readChecklistTasks(tf);
-      if (res.tasks && res.tasks.length > 0) {
-        foundTasks = res.tasks;
-        break;
+  let planContent = "(No plan document found)";
+
+  const resolution = await resolveInstanceCurrentTask(args);
+  if (resolution.found) {
+    if (resolution.tasks && resolution.tasks.length > 0) {
+      foundTasks = resolution.tasks;
+    }
+    if (resolution.planContent) {
+      planContent = resolution.planContent;
+    }
+    if (resolution.worktreePath && !args.workspace) {
+      ws = resolution.worktreePath;
+    }
+  }
+
+  if (foundTasks.length === 0) {
+    const taskFiles = [
+      path.join(ws, "_task.md"),
+      path.join(ws, "task.md"),
+      path.join(ws, "tasks.md"),
+    ];
+    if (matchedInst?.historyFilePath) {
+      taskFiles.push(matchedInst.historyFilePath.replace(/\.json$/, "_task.md"));
+    }
+
+    for (const tf of taskFiles) {
+      if (fs.existsSync(tf)) {
+        const res = await readChecklistTasks(tf);
+        if (res.tasks && res.tasks.length > 0) {
+          foundTasks = res.tasks;
+          break;
+        }
       }
     }
   }
 
-  const planFiles = [
-    path.join(ws, "_plan.md"),
-    path.join(ws, "plan.md"),
-    path.join(ws, "implementation_plan.md"),
-  ];
-  if (matchedInst?.historyFilePath) {
-    planFiles.push(matchedInst.historyFilePath.replace(/\.json$/, "_implementation_plan.md"));
-  }
+  if (planContent === "(No plan document found)") {
+    const planFiles = [
+      path.join(ws, "_plan.md"),
+      path.join(ws, "plan.md"),
+      path.join(ws, "implementation_plan.md"),
+    ];
+    if (matchedInst?.historyFilePath) {
+      planFiles.push(matchedInst.historyFilePath.replace(/\.json$/, "_implementation_plan.md"));
+    }
 
-  let planContent = "(No plan document found)";
-  for (const pf of planFiles) {
-    if (fs.existsSync(pf)) {
-      planContent = fs.readFileSync(pf, "utf-8");
-      break;
+    for (const pf of planFiles) {
+      if (fs.existsSync(pf)) {
+        planContent = fs.readFileSync(pf, "utf-8");
+        break;
+      }
     }
   }
 

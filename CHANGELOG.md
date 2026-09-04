@@ -1,3 +1,30 @@
+## [1.5.44] - 2026-09-04
+
+### Fix: Cross-Process MCP Task Resolution, Session Task Seeding, and Prompt Base Task Discipline
+
+- **Cross-Process Task Resolution (`src/core/mcp/tools/taskResolver.ts`, `src/core/mcp/tools/workspaceTools.ts`)**:
+  - Upgraded `resolveInstanceCurrentTask` to locate and parse active session task checklists (`<sessionId>_task.md`) across separate stdio MCP processes via `active-processes.json` and `~/.superagent-r/history/<mode>/<sessionId>/`.
+  - Added resolution of running Superagents listed under `activeSuperagents` in the process journal, including worktree task files and session history files.
+  - Added `findLatestSessionTaskFile()` fallback to automatically find the most recently active session task checklist when no explicit ID or workspace is provided.
+  - Upgraded `handleGetPlanAndTasks` to seamlessly leverage `resolveInstanceCurrentTask` so that MCP clients querying without a workspace path immediately see active session tasks rather than empty cwd results.
+
+- **Automatic Task File Seeding & Path Population (`src/core/agent.ts`, `src/core/agent/PathResolver.ts`)**:
+  - `agent.sendMessage`: Automatically initializes `# Tasks\n\n- [/] <taskSummary>` in the session's task file if not yet created, ensuring MCP clients always see an active task from the very start of execution.
+  - Automatically completes auto-seeded tasks (`- [x]`) upon turn finalization in `finally`.
+  - `PathResolver.getCurrentHistoryFilePath`: Ensures `agent.sessionId` is always populated from the resolved history file path in CLI mode so `active-processes.json` never has an empty `sessionId`.
+
+- **Process Journal & Registry Metadata Enrichment (`src/core/mcp/processJournal.ts`, `src/core/tools/superagentRegistry.ts`, `src/core/tools/state.ts`, `src/core/tools/superagentTools.ts`)**:
+  - Added `taskFilePath`, `planFilePath`, `currentTaskStatus`, and `workingDirectory` to `ActiveProcessEntry` and `ProcessActivity`.
+  - Enriched `activeSuperagents` in `active-processes.json` and `worktree-registry.json` with `worktreePath`, `historyFilePath`, and `taskFilePath` so external MCP clients can query Superagents by ID.
+
+- **Prompt Base Task Discipline & Operating Principles (`src/core/config/base.ts`, `src/core/prompts.ts`)**:
+  - `# LIFECYCLE & TASK DISCIPLINE`: Mandated initializing task checklists with `manage_tasks(action:'add_bulk')` and marking active steps as in-progress (`[/]`) before tool calls and completed (`[x]`) after verification.
+  - Added `manage_tasks` and `manage_plan` descriptions to the `TOOL USAGE GUIDELINES` section.
+  - Reinforced task update rules in `MASTER_AGENT_SYSTEM_PROMPT` and `SUPERAGENT_SYSTEM_PROMPT`.
+
+- **Antigravity Tool Schema (`C:\Users\USER\.gemini\antigravity\mcp\superagent\superagent_get_current_task.json`)**:
+  - Registered `superagent_get_current_task` schema in the local Antigravity MCP directory for direct native MCP client invocation.
+
 ## [1.5.43] - 2026-09-04
 
 ### Feat: Instance Current Task Tracking & Step Inspection via MCP
