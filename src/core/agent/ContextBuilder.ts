@@ -171,7 +171,7 @@ export class ContextBuilder {
       }
     } catch {}
 
-    const singleModeSubagentDirective = agent.tier === "single" ? `\n\n# SINGLE MODE SUBAGENT DISPATCH\n- Perform atomic operations directly. Spawn subagents for: broad research (researcher), multi-file changes (coder), feature review (reviewer), security audits (security-engineer), browser automation (chrome-agent), or independent parallel subtasks.\n- Run build+test after code changes. Report completion only when 100% pass.` : "";
+    const singleModeSubagentDirective = agent.tier === "single" ? `\n\n# SINGLE MODE SUBAGENT DISPATCH\n- Perform atomic operations directly. Spawn subagents for: broad research (researcher), multi-file changes (coder), feature review (reviewer), security audits (security-engineer), browser automation (chrome-agent), or independent parallel subtasks.\n- Run build+test after code changes. Report completion only when 100% pass with a structured completion conclusion.` : "";
 
     let activeSystemPrompt = baseSystemPrompt;
     if (agent.workspaceCache) {
@@ -336,8 +336,8 @@ export class ContextBuilder {
       ask: `- Q&A mode. Use read/search tools (grep, ripgrep_search, glob, view_file) immediately to inspect codebase content when answering questions. No file write tools, no subagents, no modifying commands.`,
       research: `- Read-only research mode. Use search/read tools to explore codebase. Do NOT modify files or run mutating commands.`,
       plan: `- Propose implementation plan via 'manage_plan'. Do NOT edit source files before user approval.`,
-      implement: `- Implement code changes. Plan mandatory only for complex/risky changes. Run build+test if shell available.`,
-      debug: `- Investigate and fix bugs. Debug via terminal execution first. Trace root cause. Run build or test on new/updated files at END of repair process.`,
+      implement: `- Implement code changes. Plan mandatory only for complex/risky changes. Run build+test if shell available. On completion, provide a structured conclusion before listing file changes.`,
+      debug: `- Investigate and fix bugs. Debug via terminal execution first. Trace root cause. Run build or test on new/updated files at END of repair process. Conclude with a structured fix summary.`,
       review: `- Code quality/security review. No file edits unless requested. Output issues with severity and file/line refs.`,
     };
     const activeModeNotice = `\n# ACTIVE MODE: '${activeMode}'\n${MODE_INSTRUCTIONS[activeMode] || ""}\n`;

@@ -4,6 +4,7 @@
 
 - **No markdown decoration in AI responses**: Do NOT use `**bold**`, `##` headings, `*italic*`, `__underline__`, or any other markdown formatting syntax in AI-generated responses or tool output intended for the terminal. Plain prose and single-level bullet points (`-`) are allowed. This applies to all agents (Master, Superagent, Subagent) and all user-facing text.
 - **Display File Changes**: In every superagent process, if there are file changes (created, modified, or deleted files), they MUST always be displayed at the end of the response.
+- **Project Completion Conclusion**: Every time a project, feature, or multi-step task is completed, the final response MUST include a clear conclusion/summary outlining the outcome, key changes, verification results, and next steps before listing changed files.
 
 ## Mandatory Skills
 

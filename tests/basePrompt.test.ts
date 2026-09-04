@@ -19,6 +19,13 @@ describe("base system prompt", () => {
     expect(prompt).not.toContain("Mental MCTS & UCB");
     expect(prompt).not.toContain("Maximum Compression Mode");
   });
+
+  it("enforces project completion summary and conclusion rules", () => {
+    const prompt = getSystemPrompt();
+    expect(prompt).toContain("PROJECT_COMPLETION_SUMMARY");
+    expect(prompt).toContain("Final Outcome & Goal Summary");
+    expect(prompt).toContain("4. CONCLUSION: Provide a clear project completion conclusion");
+  });
 });
 
 describe("tier reasoning prompt", () => {
@@ -33,5 +40,16 @@ describe("tier reasoning prompt", () => {
     expect(SUPERAGENT_SYSTEM_PROMPT("feature", "branch", "worktree")).toContain("SUPERAGENT: Own technical design");
     expect(SUBAGENT_SYSTEM_PROMPTS.coder).toContain("SUBAGENT: Execute only the assigned atomic objective");
     expect(SUBAGENT_SYSTEM_PROMPTS.coder).not.toContain("May spawn subagents recursively");
+  });
+
+  it("enforces completion conclusion across Master, Superagent, and Subagent tiers", () => {
+    expect(MASTER_AGENT_SYSTEM_PROMPT).toContain("PROJECT_COMPLETION_SUMMARY");
+    expect(MASTER_AGENT_SYSTEM_PROMPT).toContain("Complete plain-text summary and project completion conclusion");
+    const superagentPrompt = SUPERAGENT_SYSTEM_PROMPT("feature", "branch", "worktree");
+    expect(superagentPrompt).toContain("PROJECT_COMPLETION_SUMMARY");
+    expect(superagentPrompt).toContain("- Conclusion: [structured completion summary");
+    expect(SUBAGENT_SYSTEM_PROMPTS.coder).toContain("PROJECT_COMPLETION_SUMMARY");
+    expect(SUBAGENT_SYSTEM_PROMPTS.coder).toContain("- Conclusion: [concise completion summary");
+    expect(SUBAGENT_SYSTEM_PROMPTS.researcher).toContain("- Conclusion: [concise completion summary");
   });
 });

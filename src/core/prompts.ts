@@ -43,6 +43,7 @@ const MANDATORY_HALLMARK_RULE = `- HALLMARK: UI/layout/web tasks MUST view .agen
 const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE: Terminal-rendered plain text. Allowed structure: short paragraphs, numbered steps, flat bullets (-), inline code paths. No markdown headings, bold, italic, tables, or nested bullets.
 - ANSWER_DEPTH: Lead with direct answer → rationale → evidence (file:line) → trade-offs/residual risks. Explain non-obvious decisions in 2-4 sentences. One-line answers ONLY for trivial yes/no or single-fact lookups.
 - CHANGES: ALWAYS list changed/created/deleted files at response end.
+- PROJECT_COMPLETION_SUMMARY: On completing any project, feature, or multi-step task, ALWAYS provide a structured conclusion before listing file changes. Outline: (1) Final Outcome & Goal Summary, (2) Key Solutions & Technical Highlights, (3) Verification & Test Results, (4) Next Steps / Recommendations. Never end a project or task without a clear conclusion.
 - TOOL_FIRST: When queries require inspecting files, templates, or codebase state, INVOKE tools (grep, ripgrep, glob, view_file, run_command) immediately. Do NOT emit conversational promises ('Let me check...') without executing tools.
 - GATE: Never declare task completed in the same turn as tool execution. Await tool output first.
 - DESTRUCTIVE: ask_question before package changes, git reset/push/clean, data wipes, file deletion, secret rotation.
@@ -106,6 +107,7 @@ const SELF_VERIFY_STEPS = `1. Terminal Debug: ALWAYS debug via terminal executio
 const SUBAGENT_REPORT_BASE = `# REPORT
 SUBAGENT REPORT
 - Goal: [goal]
+- Conclusion: [concise completion summary: goal achieved, key results, next steps]
 - Actions: [actions]
 - Evidence: cite file:line for every finding or claim.
 - Confidence: [High/Medium/Low]
@@ -175,7 +177,7 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 # WORKFLOW
 1. UNDERSTAND: Parse user request from sidepanel.
 2. PLAN & ACT: Execute necessary file edits, shell commands, or web searches.
-3. REPORT: Clear, concise responses directly in sidepanel UI.
+3. REPORT: Clear, concise responses directly in sidepanel UI with a structured completion conclusion summarizing outcome, actions taken, verification, and next steps.
 `.trim();
 
 // ─── Master Agent ─────────────────────────────────────────────
@@ -242,7 +244,7 @@ if multiple_superagents_ready:
 8. VALIDATE: Debug via terminal first → build → test on new/updated files at END of repair process → POST_CHANGE_INTEGRITY sweep.
 9. WALKTHROUGH: Write verification results.
 10. CLEANUP: git_worktree prune.
-11. REPORT: Complete plain-text summary: outcome, changed files, verification results, residual risks.
+11. REPORT: Complete plain-text summary and project completion conclusion: final outcome, key architectural decisions, verification results, changed files, residual risks, next steps.
 `.trim();
 
 // ─── Superagent ───────────────────────────────────────────────
@@ -310,7 +312,7 @@ if verification_failed:
 4. IMPLEMENT: Delegate to 'coder' subagents concurrently.
 5. SELF-VERIFY: Execute the MANDATORY Self-Verify block below before completion.
 6. SAVE: Commit to ${branch} only on handoff/finalization.
-7. REPORT: Exact format below.
+7. REPORT: Exact format below including mandatory completion conclusion.
 
 # SELF-VERIFY (MANDATORY)
 ${SELF_VERIFY_STEPS}
@@ -320,6 +322,7 @@ SUPERAGENT REPORT
 - Role: ${role}
 - Branch: ${branch}
 - Worktree: ${worktreePath}
+- Conclusion: [structured completion summary: goal achieved, key changes, verification results, next steps]
 - Done: [brief description]
 - Files: [path]: [change]
 - Constraints: [Yes/No/Comments]

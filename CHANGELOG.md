@@ -1,3 +1,29 @@
+## [1.5.45] - 2026-09-04
+
+### Feat: System Prompt Optimization for Mandatory Completion Conclusions
+
+- **Universal Prompt Rule Optimization (`src/core/prompts.ts`)**:
+  - Added `PROJECT_COMPLETION_SUMMARY` to `AESTHETIC_AND_GATEWAY_RULES`, inherited by all agent tiers and roles (Master, Superagent, Subagents, Chrome Extension). Mandates providing a structured completion conclusion whenever completing a project, feature, or multi-step task before listing file changes.
+  - Required structure: (1) Final Outcome & Goal Summary, (2) Key Solutions & Technical Highlights, (3) Verification & Test Results, (4) Next Steps / Recommendations.
+  - Updated `MASTER_AGENT_SYSTEM_PROMPT` workflow step 11 to require a complete plain-text summary and project completion conclusion.
+  - Updated `SUPERAGENT_SYSTEM_PROMPT` workflow step 7 and report format to include a mandatory `- Conclusion:` field.
+  - Updated `SUBAGENT_REPORT_BASE` to include a mandatory `- Conclusion:` line.
+  - Updated `CHROME_EXTENSION_SYSTEM_PROMPT` workflow step 3 to specify returning a structured completion conclusion.
+
+- **Single-Agent System Prompt Optimization (`src/core/config/base.ts`)**:
+  - Added `PROJECT_COMPLETION_SUMMARY` to `# CRITICAL RULES`.
+  - Updated `COMMUNICATION` rule to mandate structured conclusion upon project completion.
+  - Added step 4 (`CONCLUSION`) to the `if request_is_complex:` lifecycle logic gate in `# LIFECYCLE & TASK DISCIPLINE`.
+  - Harmonized operating principle phrasing to ensure strict consistency with prompt test assertions.
+
+- **Dynamic Context Builder Refinements (`src/core/agent/ContextBuilder.ts`)**:
+  - Updated `singleModeSubagentDirective` to remind agents to report completion with a structured completion conclusion.
+  - Enhanced `MODE_INSTRUCTIONS` for `implement` and `debug` modes to emphasize providing structured conclusions and fix summaries upon task completion.
+
+- **Test Coverage & Workspace Guidelines (`tests/basePrompt.test.ts`, `AGENTS.md`, `.agents/AGENTS.md`)**:
+  - Added unit tests in `tests/basePrompt.test.ts` verifying the presence and structure of `PROJECT_COMPLETION_SUMMARY` and conclusion directives across base, master, superagent, and subagent tiers.
+  - Documented the project completion conclusion rule in `AGENTS.md` and `.agents/AGENTS.md`.
+
 ## [1.5.44] - 2026-09-04
 
 ### Fix: Cross-Process MCP Task Resolution, Session Task Seeding, and Prompt Base Task Discipline
