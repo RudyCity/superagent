@@ -51,6 +51,13 @@ export const newCommand: SlashCommand = {
       await ctx.agent.clearHistory();
       ctx.agent.planState = "IDLE";
       ctx.agent.goalMode = null;
+      if (ctx.agent.sessionId) {
+        ctx.setSessionId?.(ctx.agent.sessionId);
+        const newPath = ctx.agent.getCurrentHistoryFilePath();
+        if (newPath) {
+          ctx.onSessionPath?.(newPath);
+        }
+      }
     }
 
     // ── 5. Cleanup multi-agent instances and tokens ───────
@@ -76,8 +83,12 @@ export const newCommand: SlashCommand = {
 
     setHistoricalSuperagentTokens(0);
 
-    // ── 6. Clear session environment variable ─────────────
-    delete process.env.SUPERAGENT_SESSION_PATH;
+    // ── 6. Sync session environment variable ─────────────
+    if (ctx.agent) {
+      process.env.SUPERAGENT_SESSION_PATH = ctx.agent.getCurrentHistoryFilePath();
+    } else {
+      delete process.env.SUPERAGENT_SESSION_PATH;
+    }
 
     // ── 7. Write session separator to persistent log ───────
     try {

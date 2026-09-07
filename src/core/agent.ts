@@ -445,6 +445,16 @@ export class Agent {
     return PathResolver.getCurrentHistoryFilePath(this);
   }
 
+  public getSessionId(): string {
+    if (this.sessionId) return this.sessionId;
+    const current = this.getCurrentHistoryFilePath();
+    if (current) {
+      this.sessionId = path.basename(current, ".json");
+      return this.sessionId;
+    }
+    return "";
+  }
+
 
   getConversationMessages(): Message[] {
     return this.conversation.getMessages();

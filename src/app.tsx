@@ -980,6 +980,8 @@ export function App({
             }
             process.chdir(newPath);
           },
+          setSessionId,
+          onSessionPath,
         } as any);
         return;
       }
@@ -1028,6 +1030,8 @@ export function App({
             }
             process.chdir(newPath);
           },
+          setSessionId,
+          onSessionPath,
         } as any);
         return;
       }
@@ -1730,6 +1734,8 @@ export function App({
     toggleChildExpand,
     toggleThinkingExpand,
     expandCursorRef,
+    setSessionId,
+    onSessionPath,
   });
 
   // Handle active outputs and task checklist updates
@@ -3106,7 +3112,7 @@ export function App({
             embeddingStatus={embeddingStatus}
             workspacePath={workspacePath}
             primaryWorkspacePath={primaryWorkspacePath}
-            sessionId={sessionId}
+            sessionId={sessionId || agentRef.current?.sessionId || (process.env.SUPERAGENT_SESSION_PATH ? path.basename(process.env.SUPERAGENT_SESSION_PATH, ".json") : "")}
             focusMode={focusMode}
             scrollOffset={scrollOffset}
             focusedResponseIndex={focusedResponseIndex}

@@ -1,3 +1,24 @@
+## [1.5.57] - 2026-09-07
+
+### Fixed: Active Session Synchronization in Terminal UI Header & Process Journal
+
+- **Issue**: Resuming a previous session via `/resume` or wizard caused the terminal conversation log header to remain stuck on the initial empty session ID created at process launch (e.g. `sess_1788764863868_ex5do1`), instead of switching to the active session ID (e.g. `sess_1788760536381_jqhyir`).
+- **`src/hooks/useKeyboardHandler.ts`**:
+  - Added `setSessionId` and `onSessionPath` callbacks to `KeyboardHandlerContext`.
+  - Dispatched `setSessionId` and `onSessionPath` on session resume (`activeWizard.type === "resume"`) and all checkpoint restore points.
+- **`src/core/agent/HistoryManager.ts` & `PathResolver.ts`**:
+  - Ensured `agent.sessionId` is continuously synchronized with `path.basename(resolved, ".json")` on `loadHistory`, `loadHistoryFromPath`, and `clearHistory`.
+  - Dispatched `updateProcessActivity({ sessionId: agent.sessionId })` so live process registries (`active-processes.json`) and MCP status reflect the active session accurately.
+  - Updated `PathResolver.getCurrentHistoryFilePath` to always sync `agent.sessionId` to the current history path without stale-guard blocking.
+  - Enhanced `autoResume` in `PathResolver` to prioritize non-empty sessions (`s.messageCount > 0`).
+- **`src/app.tsx`**:
+  - Bound `setSessionId` and `onSessionPath` to `useKeyboardHandler` and slash commands execution context.
+  - Provided live fallback to `agentRef.current?.sessionId` and `process.env.SUPERAGENT_SESSION_PATH` in `ChatArea`'s `sessionId` prop.
+- **`src/core/commands/coreCommands.ts`**:
+  - Updated `/clear` to synchronize `ctx.setSessionId` and `ctx.onSessionPath` with the newly generated session.
+- **Tests**:
+  - Added `tests/sessionSwitchSync.test.ts` to assert session ID and history path synchronization across `loadHistoryFromPath`, `getCurrentHistoryFilePath`, and `clearHistory`.
+
 ## [1.5.56] - 2026-09-07
 
 ### Added: Kilo Code (Kilo AI Gateway) Provider

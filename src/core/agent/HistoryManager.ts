@@ -1,3 +1,4 @@
+import path from "path";
 import { clearHistoryCache, getSettings, getCurrentWorkspaceIdentifier } from "../config.js";
 import { getRMemoryClient, getRMemorySessionKey, isRmemoryActive } from "../rmemoryUtil.js";
 import { contentToString } from "../conversation.js";
@@ -8,6 +9,11 @@ export class HistoryManager {
     const resolved = agent.resolveHistoryFilePath(autoResume);
     (agent as any).currentHistoryFilePath = resolved;
     process.env.SUPERAGENT_SESSION_PATH = resolved;
+    agent.sessionId = path.basename(resolved, ".json");
+    try {
+      const { updateProcessActivity } = await import("../tools/state.js");
+      updateProcessActivity({ sessionId: agent.sessionId });
+    } catch {}
     await agent.conversation.loadFromFile(resolved);
     if (agent.conversation.loadedPlanState) {
       agent.planState = agent.conversation.loadedPlanState;
@@ -21,6 +27,11 @@ export class HistoryManager {
   public static async loadHistoryFromPath(agent: Agent, filePath: string): Promise<void> {
     (agent as any).currentHistoryFilePath = filePath;
     process.env.SUPERAGENT_SESSION_PATH = filePath;
+    agent.sessionId = path.basename(filePath, ".json");
+    try {
+      const { updateProcessActivity } = await import("../tools/state.js");
+      updateProcessActivity({ sessionId: agent.sessionId });
+    } catch {}
     await agent.conversation.loadFromFile(filePath);
     if (agent.conversation.loadedPlanState) {
       agent.planState = agent.conversation.loadedPlanState;
@@ -34,6 +45,7 @@ export class HistoryManager {
       (agent as any).currentHistoryFilePath = historyPath;
     }
     process.env.SUPERAGENT_SESSION_PATH = historyPath;
+    agent.sessionId = path.basename(historyPath, ".json");
 
     try {
       await this.syncConversationToRmemory(agent);
@@ -53,6 +65,7 @@ export class HistoryManager {
       (agent as any).currentHistoryFilePath = historyPath;
     }
     process.env.SUPERAGENT_SESSION_PATH = historyPath;
+    agent.sessionId = path.basename(historyPath, ".json");
 
     const wsIdentifier = getCurrentWorkspaceIdentifier(agent.workingDirectory);
     agent.conversation.saveToFileSync(historyPath, agent.planState, wsIdentifier);
@@ -65,7 +78,14 @@ export class HistoryManager {
     (agent as any).pendingMessagesQueue = [];
     agent.lastSpeed = null;
     agent.wasRunningBeforeAbort = false;
-    (agent as any).currentHistoryFilePath = agent.resolveHistoryFilePath(false);
+    const resolved = agent.resolveHistoryFilePath(false);
+    (agent as any).currentHistoryFilePath = resolved;
+    process.env.SUPERAGENT_SESSION_PATH = resolved;
+    agent.sessionId = path.basename(resolved, ".json");
+    try {
+      const { updateProcessActivity } = await import("../tools/state.js");
+      updateProcessActivity({ sessionId: agent.sessionId });
+    } catch {}
     await this.saveHistory(agent);
   }
 

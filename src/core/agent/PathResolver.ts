@@ -110,6 +110,10 @@ export class PathResolver {
     if (autoResume) {
       try {
         const sessions = listHistorySessions(agent.isMultiAgent, false, agent.workingDirectory);
+        const nonEmpty = sessions.find((s) => s.messageCount > 0);
+        if (nonEmpty) {
+          return nonEmpty.filePath;
+        }
         if (sessions.length > 0) {
           return sessions[0].filePath;
         }
@@ -129,7 +133,7 @@ export class PathResolver {
       (agent as any).currentHistoryFilePath = current;
     }
     process.env.SUPERAGENT_SESSION_PATH = current;
-    if (!agent.sessionId && current) {
+    if (current) {
       agent.sessionId = path.basename(current, ".json");
     }
     return current;

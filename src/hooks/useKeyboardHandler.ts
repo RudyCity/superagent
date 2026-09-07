@@ -121,6 +121,8 @@ export interface KeyboardHandlerContext {
   toggleChildExpand: (parentIndex: number, childIndex: number) => void;
   toggleThinkingExpand?: (index: number) => void;
   expandCursorRef: React.MutableRefObject<number>;
+  setSessionId?: React.Dispatch<React.SetStateAction<string>>;
+  onSessionPath?: (path: string) => void;
 }
 
 export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
@@ -201,6 +203,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     toggleChildExpand,
     toggleThinkingExpand,
     expandCursorRef,
+    setSessionId,
+    onSessionPath,
   } = ctx;
 
   const settings = getSettings();
@@ -1379,6 +1383,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 setHistory(userInputs);
                 setScrollOffset(0);
                 if (agentRef.current) setPlanState(agentRef.current.planState);
+                const newSessionId = path.basename(chosen.filePath, ".json");
+                setSessionId?.(newSessionId);
+                onSessionPath?.(chosen.filePath);
                 addLine({ type: "system", content: `✓ Session resumed: ${chosen.displayName} (${msgs.length} messages)`, timestamp: now });
               })
               .catch((err: any) => {
@@ -1476,6 +1483,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                     setHistory(userInputs);
                     setScrollOffset(0);
                     setPlanState(agentRef.current.planState);
+                    const newSessionId = path.basename(sessionPath, ".json");
+                    setSessionId?.(newSessionId);
+                    onSessionPath?.(sessionPath);
                   }
                   addLine({ type: "system", content: `✓ Checkpoint "${targetChk.name}" restored successfully! (${targetChk.messages.length} messages)`, timestamp: now });
                 })
@@ -1534,6 +1544,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                   setHistory(userInputs);
                   setScrollOffset(0);
                   setPlanState(agentRef.current.planState);
+                  const newSessionId = path.basename(sessionPath, ".json");
+                  setSessionId?.(newSessionId);
+                  onSessionPath?.(sessionPath);
                 }
                 addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" restored successfully! (${chosen.messages.length} messages)`, timestamp: now });
               })
@@ -1626,6 +1639,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 setHistory(userInputs);
                 setScrollOffset(0);
                 setPlanState(agentRef.current.planState);
+                const newSessionId = path.basename(sessionPath, ".json");
+                setSessionId?.(newSessionId);
+                onSessionPath?.(sessionPath);
               }
               addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" restored successfully! (${chosen.messages.length} messages)`, timestamp: now });
             } catch (err: any) {

@@ -43,6 +43,8 @@ export interface SlashCommandContext {
   pasteImage?: () => Promise<void>;
   setActiveDevHook?: (name: string | null) => void;
   setWorkingDirectory?: (path: string) => void;
+  setSessionId?: (id: string) => void;
+  onSessionPath?: (filePath: string) => void;
 }
 
 export interface SlashCommand {
