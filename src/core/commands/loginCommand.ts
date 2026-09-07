@@ -290,7 +290,7 @@ export const loginCommand: SlashCommand = {
         provider = "custom";
         baseUrl = subParts[1];
         apiKey = subParts[2];
-      } else if (["openrouter", "anthropic", "openai", "gemini", "opencode"].includes(subParts[0].toLowerCase())) {
+      } else if (["openrouter", "anthropic", "openai", "gemini", "opencode", "kilo"].includes(subParts[0].toLowerCase())) {
         if (subParts.length < 2) {
           ctx.addLine({
             type: "error",
@@ -326,6 +326,8 @@ export const loginCommand: SlashCommand = {
             ? "https://openrouter.ai/api/v1"
             : provider === "opencode"
             ? "https://opencode.ai/zen/v1"
+            : provider === "kilo"
+            ? "https://api.kilo.ai/api/gateway"
             : undefined),
         });
 
@@ -342,9 +344,11 @@ export const loginCommand: SlashCommand = {
           defaultModel = "gemini-2.5-flash";
         } else if (provider === "opencode") {
           defaultModel = "x-preview-f-free";
+        } else if (provider === "kilo") {
+          defaultModel = "openai/gpt-4o-mini";
         }
 
-        const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : provider === "opencode" ? `\nBase URL: https://opencode.ai/zen/v1` : "");
+        const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : provider === "opencode" ? `\nBase URL: https://opencode.ai/zen/v1` : provider === "kilo" ? `\nBase URL: https://api.kilo.ai/api/gateway` : "");
 
         ctx.addLine({
           type: "system",

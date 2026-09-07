@@ -200,7 +200,11 @@ export function isAnthropicCompatible(baseUrl: string, modelName: string): boole
     urlLower.includes("moonshot") ||
     urlLower.includes("kimi.com") ||
     urlLower.includes("azure.com") ||
-    urlLower.includes("openai.azure.com")
+    urlLower.includes("openai.azure.com") ||
+    urlLower.includes("tokenrouter.me") ||
+    urlLower.includes("commandcode.ai") ||
+    urlLower.includes("zenmux.ai") ||
+    urlLower.includes("kilo.ai")
   ) {
     return false;
   }
@@ -338,7 +342,10 @@ export function getModelInstanceForString(modelStr: string) {
         } else if (
           typeLower === "tokenrouter" ||
           typeLower === "commandcode" ||
-          typeLower === "zenmux"
+          typeLower === "zenmux" ||
+          typeLower === "kilo" ||
+          typeLower === "kilo-code" ||
+          typeLower === "kilocode"
         ) {
           // OpenAI-compatible LLM gateways — routed through the generic custom
           // client path with the gateway's default baseUrl.
@@ -346,7 +353,8 @@ export function getModelInstanceForString(modelStr: string) {
           if (!baseUrl) {
             if (typeLower === "tokenrouter") baseUrl = "https://tokenrouter.me/v1";
             else if (typeLower === "commandcode") baseUrl = "https://api.commandcode.ai/v1";
-            else baseUrl = "https://zenmux.ai/api/v1";
+            else if (typeLower === "zenmux") baseUrl = "https://zenmux.ai/api/v1";
+            else baseUrl = "https://api.kilo.ai/api/gateway";
           }
         } else if (typeLower === "deepseek") {
           provider = "deepseek";
@@ -475,7 +483,11 @@ export function getModelInstanceForString(modelStr: string) {
     || baseUrl.includes("api.moonshot")
     || baseUrl.includes("api.cerebras.ai")
     || baseUrl.includes("api.together.xyz")
-    || baseUrl.includes("api.fireworks.ai");
+    || baseUrl.includes("api.fireworks.ai")
+    || baseUrl.includes("tokenrouter.me")
+    || baseUrl.includes("commandcode.ai")
+    || baseUrl.includes("zenmux.ai")
+    || baseUrl.includes("kilo.ai");
   const isMissingKey = !apiKey || apiKey.trim() === "" || apiKey === "dummy";
   const isTest = (process.env.VITEST || process.env.NODE_ENV === "test") && !process.env.SUPERAGENT_FORCE_VAL_CHECK;
   if (!isTest && isCloud && isMissingKey) {

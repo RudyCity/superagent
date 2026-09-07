@@ -22,6 +22,7 @@ export type Provider =
   | "tokenrouter"
   | "commandcode"
   | "zenmux"
+  | "kilo"
   | "custom";
 
 export interface Config {

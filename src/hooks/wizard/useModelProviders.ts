@@ -513,6 +513,8 @@ export async function handleProviderStep(
           ? "https://openrouter.ai/api/v1"
           : providerType === "opencode"
           ? "https://opencode.ai/zen/v1"
+          : providerType === "kilo"
+          ? "https://api.kilo.ai/api/gateway"
           : undefined),
       });
       // Activate the newly created provider in all preset tiers

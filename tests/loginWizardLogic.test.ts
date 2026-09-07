@@ -32,6 +32,7 @@ describe("loginWizardLogic", () => {
       expect(resolveProviderType("20")).toBe("tokenrouter");
       expect(resolveProviderType("21")).toBe("commandcode");
       expect(resolveProviderType("22")).toBe("zenmux");
+      expect(resolveProviderType("23")).toBe("kilo");
     });
 
     it("resolves name choices case-insensitively", () => {
@@ -47,6 +48,8 @@ describe("loginWizardLogic", () => {
       expect(resolveProviderType("CommandCode")).toBe("commandcode");
       // ...and "zenmux" must NOT be captured by opencode's "zen" keyword rule.
       expect(resolveProviderType("ZenMux")).toBe("zenmux");
+      expect(resolveProviderType("Kilo Code")).toBe("kilo");
+      expect(resolveProviderType("kilo")).toBe("kilo");
     });
 
     it("returns null for invalid choices", () => {
@@ -431,8 +434,8 @@ describe("loginWizardLogic", () => {
   });
 
   describe("shared provider template lists", () => {
-    it("PROVIDER_TEMPLATE_LABELS covers all 22 providers in order", () => {
-      expect(PROVIDER_TEMPLATE_LABELS).toHaveLength(22);
+    it("PROVIDER_TEMPLATE_LABELS covers all 23 providers in order", () => {
+      expect(PROVIDER_TEMPLATE_LABELS).toHaveLength(23);
       expect(PROVIDER_TEMPLATE_LABELS[0]).toBe("1. OpenRouter");
       expect(PROVIDER_TEMPLATE_LABELS[6]).toBe("7. OpenCode Zen (Free Models)");
       expect(PROVIDER_TEMPLATE_LABELS[12]).toBe("13. Z.AI (GLM)");
@@ -440,16 +443,18 @@ describe("loginWizardLogic", () => {
       expect(PROVIDER_TEMPLATE_LABELS[19]).toBe("20. TokenRouter");
       expect(PROVIDER_TEMPLATE_LABELS[20]).toBe("21. CommandCode");
       expect(PROVIDER_TEMPLATE_LABELS[21]).toBe("22. ZenMux");
+      expect(PROVIDER_TEMPLATE_LABELS[22]).toBe("23. Kilo Code");
     });
 
     it("MODEL_OVERRIDE_TEMPLATE_LABELS appends Not Set and Back without renumbering", () => {
-      expect(MODEL_OVERRIDE_TEMPLATE_LABELS).toHaveLength(24);
+      expect(MODEL_OVERRIDE_TEMPLATE_LABELS).toHaveLength(25);
       // Provider numbering stays aligned with PROVIDER_TEMPLATE_OPTIONS keys
       expect(MODEL_OVERRIDE_TEMPLATE_LABELS[0]).toBe("1. OpenRouter");
       expect(MODEL_OVERRIDE_TEMPLATE_LABELS[18]).toBe("19. LM Studio (Local)");
       expect(MODEL_OVERRIDE_TEMPLATE_LABELS[21]).toBe("22. ZenMux");
-      expect(MODEL_OVERRIDE_TEMPLATE_LABELS[22]).toBe("Not Set (Clear Override)");
-      expect(MODEL_OVERRIDE_TEMPLATE_LABELS[23]).toBe("< Back");
+      expect(MODEL_OVERRIDE_TEMPLATE_LABELS[22]).toBe("23. Kilo Code");
+      expect(MODEL_OVERRIDE_TEMPLATE_LABELS[23]).toBe("Not Set (Clear Override)");
+      expect(MODEL_OVERRIDE_TEMPLATE_LABELS[24]).toBe("< Back");
     });
 
     it("every template label resolves back to its ProviderType", () => {
@@ -465,6 +470,7 @@ describe("loginWizardLogic", () => {
         "gemini", "opencode", "deepseek", "xai", "mistral", "groq",
         "azure", "zai", "kimi", "cerebras", "together", "fireworks",
         "ollama", "lmstudio", "tokenrouter", "commandcode", "zenmux",
+        "kilo",
       ];
       for (const type of expectedTypes) {
         expect(PROVIDER_DEFAULT_BASE_URLS).toHaveProperty(type);
@@ -475,7 +481,7 @@ describe("loginWizardLogic", () => {
       const cloudTypes = [
         "openrouter", "opencode", "deepseek", "xai", "mistral", "groq",
         "zai", "kimi", "cerebras", "together", "fireworks",
-        "tokenrouter", "commandcode", "zenmux",
+        "tokenrouter", "commandcode", "zenmux", "kilo",
       ] as const;
       for (const type of cloudTypes) {
         const url = PROVIDER_DEFAULT_BASE_URLS[type];

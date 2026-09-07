@@ -20,7 +20,8 @@ export type ProviderType =
   | "lmstudio"
   | "tokenrouter"
   | "commandcode"
-  | "zenmux";
+  | "zenmux"
+  | "kilo";
 
 // User-facing list shown in the provider picker (CLI wizard + dashboard wizard).
 // Adding a provider here is a single-source-of-truth change; the UI sites
@@ -53,6 +54,7 @@ export const PROVIDER_TEMPLATE_OPTIONS: ReadonlyArray<{
   { key: "20", label: "TokenRouter",                 type: "tokenrouter" },
   { key: "21", label: "CommandCode",                 type: "commandcode" },
   { key: "22", label: "ZenMux",                      type: "zenmux" },
+  { key: "23", label: "Kilo Code",                   type: "kilo" },
 ];
 
 export const PROVIDER_TEMPLATE_OPTION_KEYS: ReadonlySet<string> = new Set(
@@ -125,6 +127,7 @@ export const PROVIDER_DEFAULT_BASE_URLS: Readonly<Record<ProviderType, string>> 
   tokenrouter:     "https://tokenrouter.me/v1",
   commandcode:     "https://api.commandcode.ai/v1",
   zenmux:          "https://zenmux.ai/api/v1",
+  kilo:            "https://api.kilo.ai/api/gateway",
 };
 
 /**
@@ -243,6 +246,13 @@ export function getDefaultModels(providerType: ProviderType): string[] {
     case "commandcode":
     case "zenmux":
       return ["gpt-4o-mini", "claude-3-5-haiku-20241022"];
+    case "kilo":
+      return [
+        "openai/gpt-4o-mini",
+        "anthropic/claude-3.5-sonnet",
+        "google/gemini-2.5-flash",
+        "deepseek/deepseek-r1",
+      ];
     case "custom":
     default:
       return ["gpt-4o-mini"];
@@ -272,6 +282,7 @@ export function resolveProviderType(choice: string): ProviderType | null {
   if (lc === "20" || lc.includes("tokenrouter")) return "tokenrouter";
   if (lc === "21" || lc.includes("commandcode")) return "commandcode";
   if (lc === "22" || lc.includes("zenmux")) return "zenmux";
+  if (lc === "23" || lc.includes("kilo")) return "kilo";
   if (lc === "7" || lc.includes("opencode") || lc.includes("zen")) return "opencode";
   if (lc === "8" || lc.includes("deepseek")) return "deepseek";
   if (lc === "9" || (lc.includes("xai") || lc.includes("grok") || lc.includes("x.ai"))) return "xai";
@@ -375,6 +386,13 @@ export function getFallbackModels(providerType: ProviderType): string[] {
     case "commandcode":
     case "zenmux":
       return ["gpt-4o-mini", "claude-3-5-haiku-20241022"];
+    case "kilo":
+      return [
+        "openai/gpt-4o-mini",
+        "anthropic/claude-3.5-sonnet",
+        "google/gemini-2.5-flash",
+        "deepseek/deepseek-r1",
+      ];
     default:
       return ["gpt-4o", "gpt-4o-mini"];
   }
@@ -503,7 +521,8 @@ export async function fetchModelsForProvider(
     providerType === "fireworks" ||
     providerType === "tokenrouter" ||
     providerType === "commandcode" ||
-    providerType === "zenmux"
+    providerType === "zenmux" ||
+    providerType === "kilo"
   ) {
     // All new OpenAI-compatible cloud providers expose /v1/models.
     const fallbackBase = PROVIDER_DEFAULT_BASE_URLS[providerType as ProviderType] || "";
@@ -604,6 +623,7 @@ export function resolveTestModel(providerType: string, baseUrl: string): string 
     case "tokenrouter":
     case "commandcode":
     case "zenmux": return "gpt-4o-mini";
+    case "kilo": return "openai/gpt-4o-mini";
     case "ollama": return "llama3.2";
     case "lmstudio": return "llama-3.1-8b-instruct";
     default:
@@ -877,6 +897,7 @@ export async function resolveTestModelAsync(
     providerType === "tokenrouter" ||
     providerType === "commandcode" ||
     providerType === "zenmux" ||
+    providerType === "kilo" ||
     (baseUrl &&
       !baseUrl.includes("openrouter.ai") &&
       !baseUrl.includes("api.openai.com") &&

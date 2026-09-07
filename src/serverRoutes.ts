@@ -1670,7 +1670,8 @@ export async function handleServerRoute(
         azure: ["gpt-4o", "gpt-4o-mini"],
         tokenrouter: ["gpt-4o-mini", "claude-3-5-haiku-20241022"],
         commandcode: ["gpt-4o-mini", "claude-3-5-haiku-20241022"],
-        zenmux: ["gpt-4o-mini", "claude-3-5-haiku-20241022"]
+        zenmux: ["gpt-4o-mini", "claude-3-5-haiku-20241022"],
+        kilo: ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "google/gemini-2.5-flash", "deepseek/deepseek-r1"]
       };
 
       if (!provider) {
@@ -1715,6 +1716,7 @@ export async function handleServerRoute(
               else if (providerType === "tokenrouter") baseUrl = "https://tokenrouter.me/v1";
               else if (providerType === "commandcode") baseUrl = "https://api.commandcode.ai/v1";
               else if (providerType === "zenmux") baseUrl = "https://zenmux.ai/api/v1";
+              else if (providerType === "kilo") baseUrl = "https://api.kilo.ai/api/gateway";
             }
             if (baseUrl) {
               const url = baseUrl.endsWith("/models") ? baseUrl : `${baseUrl}/models`;

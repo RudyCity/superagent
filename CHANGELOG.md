@@ -1,3 +1,24 @@
+## [1.5.56] - 2026-09-07
+
+### Added: Kilo Code (Kilo AI Gateway) Provider
+
+- **Provider Integration**: Added Kilo Code (`https://api.kilo.ai/api/gateway`) as an OpenAI-compatible cloud gateway provider, selectable in `/login` and the dashboard/model wizards (option 23).
+- **`src/core/loginWizardLogic.ts`**:
+  - Extended `ProviderType` with `'kilo'`.
+  - Added option 23 (`Kilo Code`) to `PROVIDER_TEMPLATE_OPTIONS` and `PROVIDER_DEFAULT_BASE_URLS` (`https://api.kilo.ai/api/gateway`).
+  - Added starter/fallback models: `openai/gpt-4o-mini`, `anthropic/claude-3.5-sonnet`, `google/gemini-2.5-flash`, `deepseek/deepseek-r1`.
+  - Added provider type resolution for `"23"`, `"kilo"`, and `"kilo code"`.
+  - Added dynamic model fetching and test model resolution for Kilo.
+- **`src/core/config/models.ts`**:
+  - Added gateway routing for `typeLower === "kilo"` (and aliases `kilo-code`, `kilocode`) with default baseUrl `https://api.kilo.ai/api/gateway`.
+  - Added `kilo.ai` to `isAnthropicCompatible` blacklist so Claude models via Kilo use OpenAI-compatible routing.
+  - Added `kilo.ai` to `isCloud` check for API key validation.
+- **`src/core/commands/loginCommand.ts` & `src/serverRoutes.ts`**:
+  - Enabled `/login add kilo <api_key>` with default model `openai/gpt-4o-mini`.
+  - Added Kilo to desktop server bridge (`serverRoutes.ts`) with default models and fallback URL.
+- **Tests**:
+  - Updated `tests/loginWizardLogic.test.ts` for 23 template providers and resolution assertions.
+
 ## [1.5.55] - 2026-09-07
 
 ### Prompt Optimization: Command Logging, Output Truncation Handling, and Daemon Safety

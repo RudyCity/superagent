@@ -185,7 +185,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
     
     if (mainCommand === "/login") {
       if (parts.length >= 2 && parts[1].toLowerCase() === "add") {
-        const providers = ["openrouter", "openai", "anthropic", "gemini", "custom"];
+        const providers = ["openrouter", "openai", "anthropic", "gemini", "kilo", "custom"];
         const possibilities = providers.map(p => `/login add ${p}`);
         return filterSuggestions(possibilities, query);
       }
