@@ -300,8 +300,32 @@ export async function inspectSession(
   let sessionRecord: SessionRecord | null = null;
   let messages: MessageRecord[] = [];
 
-  // 1. Try exact load from SQLite
-  if (targetId) {
+  const isGenericRecent =
+    !targetId ||
+    /^(recent|latest|cek\s+sesi|check\s+session|inspect\s+session|lihat\s+sesi)$/i.test(targetId.trim());
+
+  // 1. If generic recent query, fetch the latest session from SQLite
+  if (isGenericRecent) {
+    try {
+      const db = getHistoryDb();
+      const latest = db.prepare(`
+        SELECT id, file_path as filePath, display_name as displayName, message_count as messageCount,
+               last_modified as lastModified, preview, working_directory as workingDirectory,
+               plan_state as planState, active_preset as activePreset
+        FROM sessions
+        ORDER BY last_modified DESC LIMIT 1
+      `).get() as SessionRecord | undefined;
+      if (latest) {
+        targetId = latest.id;
+        const loaded = loadSessionFromDb(targetId);
+        sessionRecord = loaded.session || latest;
+        messages = loaded.messages;
+      }
+    } catch {}
+  }
+
+  // 2. Try exact load from SQLite
+  if (!sessionRecord && targetId) {
     const loaded = loadSessionFromDb(targetId);
     if (loaded.session) {
       sessionRecord = loaded.session;
@@ -309,7 +333,7 @@ export async function inspectSession(
     }
   }
 
-  // 2. If not found, fuzzy search SQLite sessions table
+  // 3. If not found, fuzzy search SQLite sessions table
   if (!sessionRecord) {
     try {
       const db = getHistoryDb();

@@ -424,6 +424,19 @@ export function classifyHeuristic(
   const words = cleanLower.split(WORD_SPLIT_RE).filter(Boolean);
   const wordCount = words.length;
 
+  // ── Session Inspection Detection (Immediate Priority) ───────────────
+  const SESSION_ID_RE = /(?:session:\s*[`"']?)?(sess_\d+_[a-zA-Z0-9]+)/i;
+  const SESSION_INSPECT_KEYWORDS = /\b(cek\s+sesi|check\s+session|inspect\s+session|lihat\s+sesi|buka\s+sesi|peer\s+session|target\s+session)\b/i;
+  if (SESSION_ID_RE.test(cleanLower) || SESSION_INSPECT_KEYWORDS.test(cleanLower)) {
+    return {
+      category: "research",
+      confidence: "high",
+      reason: `Session inspection request: matched session ID or session keyword in "${trimmed}"`,
+      heuristicOnly: true,
+      classificationTokens: 0,
+    };
+  }
+
   // ── Ultra-short messages (1-3 words) ──────────────────────────────────
   if (wordCount <= 3) {
     // Check exact match against conversation tokens
@@ -1121,7 +1134,7 @@ const CATEGORY_TOOLS: Record<RequestCategory, string[] | null> = {
     "read", "glob", "grep", "ripgrep_search", "web_search", "get_skills", "use_skill",
     "fetch_url", "search_history", "load_pinned_session", "search_pinned_knowledge",
     "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos", "ask_question",
-    "read_shared_memory",
+    "read_shared_memory", "inspect_session",
     "list_chrome_profiles", "get_active_browser_tabs", "chrome_extension_status",
     "manage_chrome_bookmarks", "manage_chrome_history", "list_chrome_extensions",
     "get_browser_console_logs", "get_browser_network_logs", "manage_chrome_downloads",
@@ -1134,7 +1147,7 @@ const CATEGORY_TOOLS: Record<RequestCategory, string[] | null> = {
     "read", "glob", "grep", "ripgrep_search", "web_search", "fetch_url",
     "get_skills", "use_skill", "search_history", "load_pinned_session", "search_pinned_knowledge",
     "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos", "ask_question",
-    "read_shared_memory",
+    "read_shared_memory", "inspect_session",
     "list_chrome_profiles", "get_active_browser_tabs", "chrome_extension_status",
     "manage_chrome_bookmarks", "manage_chrome_history", "list_chrome_extensions",
     "get_browser_console_logs", "get_browser_network_logs", "manage_chrome_downloads",
@@ -1207,6 +1220,16 @@ export function getCategoryPromptAddendum(category: RequestCategory): string {
 }
 
 /**
+ * Commands that indicate the user wants to continue or proceed with ongoing work or tasks.
+ * When prior conversation exists, these must never be short-circuited by conversational fast-path.
+ */
+export const CONTINUATION_COMMANDS: ReadonlySet<string> = new Set([
+  "lanjut", "lanjutkan", "continue", "proceed", "next", "go", "gas", "gass", "gaskeun",
+  "ayo", "mari", "do it", "silakan", "silahkan", "jalan", "jalankan", "lakukan", "teruskan",
+  "gas bro", "lanjut bos", "lanjut boss", "lanjutkan bos", "lanjutkan boss"
+]);
+
+/**
  * Returns true when the classification is a high-confidence conversational
  * message that qualifies for the fast-path response (no full agent loop).
  *
@@ -1216,10 +1239,19 @@ export function getCategoryPromptAddendum(category: RequestCategory): string {
 export function isHighConfidenceConversation(
   classification: ClassificationResult,
   tier: string,
-  planState?: string
+  planState?: string,
+  hasPriorMessages: boolean = false,
+  userInput?: string
 ): boolean {
   if (planState && planState !== "IDLE") {
     return false;
+  }
+  if (hasPriorMessages && userInput) {
+    const text = typeof userInput === "string" ? userInput : "";
+    const cleanLower = text.toLowerCase().replace(PUNCTUATION_STRIP_RE, "").trim();
+    if (CONTINUATION_COMMANDS.has(cleanLower)) {
+      return false;
+    }
   }
   return (
     classification.category === "conversation" &&

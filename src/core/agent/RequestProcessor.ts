@@ -243,8 +243,21 @@ Reply with EXACTLY "chat", "yes", or "no" ONLY.`;
       try {
         const messages = agent.conversation.getMessages();
         const hasToolCalls = messages.some(m => m.role === "tool" || (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0));
-        const { isHighConfidenceConversation } = await import("../requestClassifier.js");
-        if (!hasToolCalls && isHighConfidenceConversation(agent.currentClassification, agent.tier, agent.planState)) {
+        const { isHighConfidenceConversation, CONTINUATION_COMMANDS } = await import("../requestClassifier.js");
+        const userText = typeof userInput === "string" ? userInput : "";
+        const cleanLower = userText.toLowerCase().replace(/^[!?.,\s()'""-]+|[!?.,\s()'""-]+$/g, "").trim();
+        const isContinuation = messages.length > 0 && CONTINUATION_COMMANDS && CONTINUATION_COMMANDS.has(cleanLower);
+
+        if (isContinuation) {
+          // Promote continuation command ("lanjut", "continue", etc.) to command category so full toolset is available
+          agent.currentClassification = {
+            category: "command",
+            confidence: "high",
+            reason: `User continuation command ("${cleanLower}") in active conversation`,
+            heuristicOnly: true,
+            classificationTokens: 0,
+          };
+        } else if (!hasToolCalls && isHighConfidenceConversation(agent.currentClassification, agent.tier, agent.planState, messages.length > 0, userText)) {
           agent.writeToLogFile("INFO", `Conversation fast-path activated (category=conversation, confidence=high)`);
           const { FastPath } = await import("./FastPath.js");
           await FastPath.runConversationFastPath(agent, userInput);

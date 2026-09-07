@@ -1,3 +1,23 @@
+## [1.5.53] - 2026-09-07
+
+### Fix: Session Inspection Tool Filtering, Continuation Command Routing, and System Prompts
+
+- **Request Classifier & Category Tool Filtering (`src/core/requestClassifier.ts`)**:
+  - Added `inspect_session` to `CATEGORY_TOOLS.question` and `CATEGORY_TOOLS.research` so session queries (`cek sesi`, `Session: sess_...`) retain access to `inspect_session` instead of having it stripped.
+  - Added high-priority heuristic detection for session patterns (`sess_\d+_[a-zA-Z0-9]+`, `cek sesi`, `inspect session`), classifying them directly into `research` with high confidence.
+  - Exported `CONTINUATION_COMMANDS` (`lanjut`, `continue`, `proceed`, `gas`, `next`, etc.) and updated `isHighConfidenceConversation` to prevent continuation commands from incorrectly triggering conversational fast-path when prior conversation exists.
+
+- **Request Processor Fast-Path Protection (`src/core/agent/RequestProcessor.ts`)**:
+  - Added check preventing conversation fast-path activation on continuation commands (`lanjut`, `continue`, `gas`).
+  - Promoted continuation commands in active dialogues to `command` category with full tool access so the agent proceeds with tool execution rather than returning conversational filler.
+
+- **System Prompts & Session Awareness (`src/core/config/base.ts`, `src/core/prompts.ts`)**:
+  - Added `# SESSION INSPECTION & PEER COLLABORATION` section to default system prompt (`getSystemPrompt()`), explicitly informing the agent of full access to past and peer sessions via SQLite and file storage.
+  - Mandated `TOOL_FIRST` and `PEER_SESSION` rules forbidding conversational promises (`Saya cek dulu...`) without immediate tool execution and prohibiting false claims of lack of session access.
+
+- **Session Inspection Enhancements (`src/core/tools/sessionTools.ts`)**:
+  - Added support for generic recent queries (`recent`, `latest`, `cek sesi`), automatically loading the most recent active session from SQLite when no specific ID is provided.
+
 ## [1.5.52] - 2026-09-07
 
 ### Performance: Session Inspection Caching, SQLite Indexing, and Event Memory Optimization

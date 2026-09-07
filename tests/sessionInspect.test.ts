@@ -13,6 +13,12 @@ import {
 } from "../src/core/tools/sessionTools.js";
 import { getRootConfigDir } from "../src/core/config/paths.js";
 import { saveSessionToDb, deleteSessionFromDb } from "../src/core/storage/historyDb.js";
+import {
+  classifyHeuristic,
+  isHighConfidenceConversation,
+  getToolsetForCategory,
+  CONTINUATION_COMMANDS
+} from "../src/core/requestClassifier.js";
 
 describe("Session Inspection and Peer Terminal Collaboration", () => {
   describe("extractSessionId", () => {
@@ -199,6 +205,62 @@ describe("Session Inspection and Peer Terminal Collaboration", () => {
       clearSessionInspectionCache();
       const third = await inspectSession(testSessionId);
       expect(third.cached).toBeUndefined();
+    });
+
+    it("should inspect recent session when query is 'recent' or 'cek sesi'", async () => {
+      clearSessionInspectionCache();
+      const res = await inspectSession("recent");
+      expect(res.found).toBe(true);
+      expect(res.sessionId).toBe(testSessionId);
+
+      const res2 = await inspectSession("cek sesi");
+      expect(res2.found).toBe(true);
+      expect(res2.sessionId).toBe(testSessionId);
+    });
+
+    it("should classify session inspection queries into research category with inspect_session tool", () => {
+      const c1 = classifyHeuristic("cek sesi Session: sess_1788744193171_qdfllz");
+      expect(c1.category).toBe("research");
+      expect(c1.confidence).toBe("high");
+
+      const c2 = classifyHeuristic("Session: sess_1788744193171_qdfllz");
+      expect(c2.category).toBe("research");
+      expect(c2.confidence).toBe("high");
+
+      const c3 = classifyHeuristic("cek sesi");
+      expect(c3.category).toBe("research");
+      expect(c3.confidence).toBe("high");
+
+      // Verify inspect_session is present in question and research categories
+      const questionTools = getToolsetForCategory("question", [inspectSessionTool]);
+      expect(questionTools.some(t => t.name === "inspect_session")).toBe(true);
+
+      const researchTools = getToolsetForCategory("research", [inspectSessionTool]);
+      expect(researchTools.some(t => t.name === "inspect_session")).toBe(true);
+    });
+
+    it("should prevent continuation commands ('lanjut', 'continue') from activating fast-path in active conversations", () => {
+      expect(CONTINUATION_COMMANDS.has("lanjut")).toBe(true);
+      expect(CONTINUATION_COMMANDS.has("continue")).toBe(true);
+
+      const convClass = {
+        category: "conversation" as const,
+        confidence: "high" as const,
+        reason: "Test",
+        heuristicOnly: true,
+        classificationTokens: 0,
+      };
+
+      // In active conversation (hasPriorMessages = true), "lanjut" must NOT trigger fast-path
+      const isFast = isHighConfidenceConversation(convClass, "single", "IDLE", true, "lanjut");
+      expect(isFast).toBe(false);
+
+      const isFastEng = isHighConfidenceConversation(convClass, "single", "IDLE", true, "continue");
+      expect(isFastEng).toBe(false);
+
+      // In brand new session (hasPriorMessages = false), greeting can trigger fast-path
+      const isFastNew = isHighConfidenceConversation(convClass, "single", "IDLE", false, "halo");
+      expect(isFastNew).toBe(true);
     });
   });
 });
