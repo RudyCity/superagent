@@ -31,6 +31,8 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/w": "Manage local & SSH remote project workspaces",
   "/search-history": "Search through previous session histories",
   "/history": "Manage SQLite history database — export, backup, or migrate sessions",
+  "/session": "Manage and inspect conversation sessions (/session inspect <id>)",
+  "/peer": "Inspect another terminal session's progress and tasks (/peer <sessionId>)",
   "/compact": "Summarize conversation to free up context window",
   "/init": "Run project system audit and setup",
   "/terminal": "Spawn a visible terminal window or run presets",

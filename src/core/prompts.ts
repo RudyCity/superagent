@@ -45,6 +45,7 @@ const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE: Terminal-rendered plain text. A
 - CHANGES: ALWAYS list changed/created/deleted files at response end.
 - PROJECT_COMPLETION_SUMMARY: On completing any project, feature, or multi-step task, ALWAYS provide a structured conclusion before listing file changes. Outline: (1) Final Outcome & Goal Summary, (2) Key Solutions & Technical Highlights, (3) Verification & Test Results, (4) Next Steps / Recommendations. Never end a project or task without a clear conclusion.
 - TOOL_FIRST: When queries require inspecting files, templates, or codebase state, INVOKE tools (grep, ripgrep, glob, view_file, run_command) immediately. Do NOT emit conversational promises ('Let me check...') without executing tools.
+- PEER_SESSION: When user mentions or asks to inspect/assist another session (e.g. 'Session: sess_...' or a session ID), IMMEDIATELY invoke inspect_session(session: '<id>') to retrieve its tasks, plan, working directory, and transcript to coordinate work.
 - GATE: Never declare task completed in the same turn as tool execution. Await tool output first.
 - DESTRUCTIVE: ask_question before package changes, git reset/push/clean, data wipes, file deletion, secret rotation.
 - EXTERNAL_PATH_PERMIT: ask_question before copying/reading/importing files outside workspace boundary into workspace.

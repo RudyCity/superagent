@@ -1,3 +1,25 @@
+## [1.5.51] - 2026-09-07
+
+### Feature: Session Inspection and Peer Terminal Collaboration
+
+- **Session Inspection Tool (`src/core/tools/sessionTools.ts`)**:
+  - Implemented `inspectSessionTool` (tool name: `inspect_session`) allowing AI agents to inspect, track, and assist peer terminal sessions.
+  - Added robust session ID extraction supporting raw IDs, prefixed queries (`Session: sess_...`), file paths, and substring searches in SQLite `history.db`.
+  - Added automatic task checklist detection and parsing (`_task.md`, `task.md`) into completed (`[x]`), in-progress (`[/]`), and pending (`[ ]`) task breakdowns.
+  - Added implementation plan (`_plan.md`) detection and recent activity transcript extraction from SQLite.
+  - Formatted actionable peer collaboration reports with suggested next steps for secondary terminals.
+
+- **Toolsets & Commands Integration (`src/core/tools/index.ts`, `src/core/tools/toolsets.ts`, `src/core/commands/sessionCommands.ts`, `src/utils/dashboardSuggestions.ts`)**:
+  - Registered `inspectSessionTool` across `masterToolset`, `superagentToolset`, `chromeExtensionToolset`, `researcher`, and default subagent toolsets.
+  - Added `/session inspect <sessionId>` and standalone `/peer <sessionId>` slash commands for direct interactive CLI inspection.
+  - Updated dashboard autocomplete suggestions with `/peer` and `/session` descriptions.
+
+- **System Prompt Guidance (`src/core/prompts.ts`)**:
+  - Added telegraphic system prompt rule instructing agents to immediately invoke `inspect_session` whenever the user mentions or requests assistance for a session ID.
+
+- **Automated Verification (`tests/sessionInspect.test.ts`)**:
+  - Added test suite validating session ID sanitization, task checklist parsing, working directory file discovery, SQLite metadata and message resolution, and tool execution.
+
 ## [1.5.50] - 2026-09-05
 
 ### Fix: Restore Tool Calls and Tool Response History on /resume

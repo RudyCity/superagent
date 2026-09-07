@@ -105,6 +105,7 @@ import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../workspace/w
 import { unlockFileTool, getLockStatsTool, resolveConflictTool, generateLockReportTool } from "./lockTools.js";
 import { transferSshFileTool } from "./sshTransferTools.js";
 import { cliBridgeTool } from "./cliBridgeTool.js";
+import { inspectSessionTool } from "./sessionTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Orchestration only. The Master Agent MUST NOT directly modify code or
@@ -134,6 +135,7 @@ export const masterToolset: Tool[] = [
   searchHistoryTool,
   loadPinnedSessionTool,
   searchPinnedKnowledgeTool,
+  inspectSessionTool,
   officeCliTool,
   // ── Planning & session management (writes only to ~/.superagent-r/) ──
   scheduleTool,
@@ -217,6 +219,7 @@ export const superagentToolset: Tool[] = [
   searchHistoryTool,
   loadPinnedSessionTool,
   searchPinnedKnowledgeTool,
+  inspectSessionTool,
   androidCliTool,
   playwrightScreenshotTool,
   readPeerSuperagentFileTool, // read files from peer Superagent worktrees
@@ -267,6 +270,7 @@ export const chromeExtensionToolset: Tool[] = [
   searchHistoryTool,
   loadPinnedSessionTool,
   searchPinnedKnowledgeTool,
+  inspectSessionTool,
   androidCliTool,
   rmemorySearchTool,
   rmemoryConversationSearchTool,
@@ -319,6 +323,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     searchHistoryTool,
     loadPinnedSessionTool,
     searchPinnedKnowledgeTool,
+    inspectSessionTool,
     askQuestionTool,
     getSkillsTool,
     useSkillTool,
@@ -449,6 +454,7 @@ export const defaultSubagentToolset: Tool[] = [
   grepTool,
   ripgrepSearchTool,
   webSearchTool,
+  inspectSessionTool,
   askQuestionTool,
   getSkillsTool,
   useSkillTool,

@@ -557,6 +557,18 @@ export const sessionSlashCommand: SlashCommand = {
       return;
     }
 
+    if (action === "inspect" || action === "peer") {
+      const sessionId = parts[1];
+      if (!sessionId) {
+        ctx.addLine({ type: "error", content: "Usage: /session inspect <sessionId>", timestamp: now });
+        return;
+      }
+      const { inspectSession } = await import("../tools/sessionTools.js");
+      const result = await inspectSession(sessionId, { includeMessages: true, messageLimit: 8 });
+      ctx.addLine({ type: "system", content: result.formattedReport, timestamp: now });
+      return;
+    }
+
     if (action === "clear" || action === "purge") {
       const { purgeEmptySessions } = await import("../config/history.js");
       const res = purgeEmptySessions(0);
@@ -569,12 +581,43 @@ export const sessionSlashCommand: SlashCommand = {
       content: [
         "Usage:",
         "  /session list [--all]         - List active and past sessions",
+        "  /session inspect <id>         - Inspect a session's tasks, plan, and progress",
         "  /session export <id> [format] - Export session to Markdown or JSON",
         "  /session clear --empty        - Purge empty draft sessions (0 messages)",
       ].join("\n"),
       timestamp: now,
     });
   }
+};
+
+export const peerCommand: SlashCommand = {
+  name: "peer",
+  aliases: ["inspect-session"],
+  description: "Inspect another terminal session's tasks and progress: /peer <sessionId>",
+  async execute(args, ctx) {
+    const now = Date.now();
+    const sessionId = (args || "").trim();
+    if (!sessionId) {
+      ctx.addLine({
+        type: "error",
+        content: "Usage: /peer <sessionId>\nExample: /peer sess_1788731471785_y60lo6",
+        timestamp: now,
+      });
+      return;
+    }
+    const { inspectSession } = await import("../tools/sessionTools.js");
+    ctx.addLine({
+      type: "system",
+      content: `Inspecting peer session "${sessionId}"...`,
+      timestamp: now,
+    });
+    const result = await inspectSession(sessionId, { includeMessages: true, messageLimit: 8 });
+    ctx.addLine({
+      type: "system",
+      content: result.formattedReport,
+      timestamp: Date.now(),
+    });
+  },
 };
 
 // Register session commands
@@ -584,5 +627,6 @@ registry.register(checkpointCommand);
 registry.register(knowledgeCommand);
 registry.register(historyCommand);
 registry.register(sessionSlashCommand);
+registry.register(peerCommand);
 
 

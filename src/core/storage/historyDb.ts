@@ -437,7 +437,7 @@ function initDatabaseSchema(db: any): void {
   migrateLegacyTrustedDirs(db);
 }
 
-export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[], pinnedMessagesJson?: string): void {
+export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[] = [], pinnedMessagesJson?: string): void {
   const db = getHistoryDb();
 
   db.exec("BEGIN TRANSACTION;");
@@ -555,7 +555,7 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
       const { clearHistoryCache } = require("../config/history.js");
       clearHistoryCache();
     } catch {}
-    logE2E("SQL", `saveSessionToDb: ${session.id}`, { messageCount: messages.length, workingDirectory: session.workingDirectory });
+    logE2E("SQL", `saveSessionToDb: ${session.id}`, { messageCount: messages?.length || 0, workingDirectory: session.workingDirectory });
   } catch (err) {
     db.exec("ROLLBACK;");
     logE2E("SQL", `saveSessionToDb ERROR: ${session.id}`, { error: String(err) });
