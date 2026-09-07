@@ -223,6 +223,7 @@ export interface TranslationBadgePayload {
 }
 
 export const translationBadgeEmitter = new EventEmitter();
+translationBadgeEmitter.setMaxListeners(100);
 
 const AMBIGUOUS_PATTERNS = [
   /tambah(kan)?\s+lagi/i,

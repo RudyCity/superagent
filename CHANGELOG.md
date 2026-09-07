@@ -1,3 +1,21 @@
+## [1.5.52] - 2026-09-07
+
+### Performance: Session Inspection Caching, SQLite Indexing, and Event Memory Optimization
+
+- **Session Inspection & Task Caching (`src/core/tools/sessionTools.ts`)**:
+  - Implemented 5-second in-memory TTL cache for session inspection results to eliminate redundant SQLite and disk I/O under rapid polling or re-inspection.
+  - Added mtime-validated task checklist file cache (`taskFileCache`) up to 100 entries, preventing duplicate markdown parsing.
+  - Implemented fast-path canonical task and plan file resolution before falling back to directory scans.
+  - Enhanced `extractSessionId` to safely strip backticks, markdown link syntax, and quotes.
+
+- **SQLite Database Optimization (`src/core/storage/historyDb.ts`)**:
+  - Added indexes: `idx_sessions_workspace` on `sessions(workspace_id, last_modified DESC)` and `idx_sessions_wd` on `sessions(working_directory)` for O(1) B-tree workspace lookups.
+  - Added index: `idx_messages_session_time` on `messages(session_id, timestamp DESC)` for high-speed recent message and timeline retrieval.
+
+- **Event Emitter Memory Leak Fix (`src/core/agent/RequestProcessor.ts`, `src/core/promptClarification.ts`)**:
+  - Fixed `MaxListenersExceededWarning` by attaching translation badge listeners once per agent lifecycle rather than accumulating unremoved `.once()` listeners per turn.
+  - Set `translationBadgeEmitter.setMaxListeners(100)` for safe concurrent multi-agent executions.
+
 ## [1.5.51] - 2026-09-07
 
 ### Feature: Session Inspection and Peer Terminal Collaboration

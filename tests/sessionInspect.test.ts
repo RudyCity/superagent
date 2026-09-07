@@ -9,6 +9,7 @@ import {
   findPlanFile,
   inspectSession,
   inspectSessionTool,
+  clearSessionInspectionCache,
 } from "../src/core/tools/sessionTools.js";
 import { getRootConfigDir } from "../src/core/config/paths.js";
 import { saveSessionToDb, deleteSessionFromDb } from "../src/core/storage/historyDb.js";
@@ -23,6 +24,12 @@ describe("Session Inspection and Peer Terminal Collaboration", () => {
     it("should extract session ID from raw session string", () => {
       const raw = "sess_1788744193171_qdfllz";
       expect(extractSessionId(raw)).toBe("sess_1788744193171_qdfllz");
+    });
+
+    it("should extract session ID enclosed in backticks or quotes", () => {
+      expect(extractSessionId("`sess_1788744193171_qdfllz`")).toBe("sess_1788744193171_qdfllz");
+      expect(extractSessionId("\"sess_1788744193171_qdfllz\"")).toBe("sess_1788744193171_qdfllz");
+      expect(extractSessionId("Session: `sess_1788744193171_qdfllz`")).toBe("sess_1788744193171_qdfllz");
     });
 
     it("should extract session ID from json file path", () => {
@@ -179,6 +186,19 @@ describe("Session Inspection and Peer Terminal Collaboration", () => {
       const result = await inspectSession("sess_nonexistent_99999999");
       expect(result.found).toBe(false);
       expect(result.formattedReport).toContain("could not be found");
+    });
+
+    it("should serve subsequent inspections from cache within TTL", async () => {
+      clearSessionInspectionCache();
+      const first = await inspectSession(testSessionId);
+      expect(first.cached).toBeUndefined();
+
+      const second = await inspectSession(testSessionId);
+      expect(second.cached).toBe(true);
+
+      clearSessionInspectionCache();
+      const third = await inspectSession(testSessionId);
+      expect(third.cached).toBeUndefined();
     });
   });
 });

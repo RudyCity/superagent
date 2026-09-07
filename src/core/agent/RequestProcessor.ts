@@ -17,13 +17,16 @@ export class RequestProcessor {
       : agent.workingDirectory;
     (agent as any).gitStartSnapshot = await captureGitSnapshot(currentCwd);
 
-    const onBadge = (badge: any) => {
-      agent.writeToLogFile("INFO", `[🌐 Desktop Badge UI] [${badge.detectedLanguage.toUpperCase()}] "${badge.originalPrompt}" -> "${badge.translatedPrompt}"`);
-      if (typeof (agent as any).emit === "function") {
-        (agent as any).emit("translationBadge", badge);
-      }
-    };
-    translationBadgeEmitter.once("badge", onBadge);
+    if (!(agent as any).__badgeListenerAttached) {
+      const onBadge = (badge: any) => {
+        agent.writeToLogFile("INFO", `[🌐 Desktop Badge UI] [${badge.detectedLanguage.toUpperCase()}] "${badge.originalPrompt}" -> "${badge.translatedPrompt}"`);
+        if (typeof (agent as any).emit === "function") {
+          (agent as any).emit("translationBadge", badge);
+        }
+      };
+      translationBadgeEmitter.on("badge", onBadge);
+      (agent as any).__badgeListenerAttached = true;
+    }
 
     const isTestEnv = process.env.VITEST && process.env.SUPERAGENT_TEST_SIMPLE_TASK !== "true";
     if (!isTestEnv) {

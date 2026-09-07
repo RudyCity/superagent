@@ -176,7 +176,10 @@ function initDatabaseSchema(db: any): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_messages_session_seq ON messages(session_id, sequence_order);
+    CREATE INDEX IF NOT EXISTS idx_messages_session_time ON messages(session_id, timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_sessions_last_modified ON sessions(last_modified DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions(workspace_id, last_modified DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_wd ON sessions(working_directory);
 
     CREATE TABLE IF NOT EXISTS compaction_events (
       id TEXT PRIMARY KEY,

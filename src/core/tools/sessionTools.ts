@@ -36,21 +36,47 @@ export interface SessionInspectionResult {
   lastChat?: string;
   formattedReport: string;
   suggestedAction: string;
+  cached?: boolean;
+}
+
+// In-memory cache for parsed task checklist files (keyed by absolute file path)
+interface CachedTaskChecklist {
+  summary: TaskChecklistSummary;
+  mtime: number;
+}
+const taskFileCache = new Map<string, CachedTaskChecklist>();
+
+// In-memory cache for full session inspection results (keyed by session query string)
+interface CachedSessionInspection {
+  result: SessionInspectionResult;
+  cachedAt: number;
+  cacheKey: string;
+}
+const sessionInspectionCache = new Map<string, CachedSessionInspection>();
+const INSPECTION_CACHE_TTL_MS = 5000; // 5-second TTL cache for rapid polling or re-inspection
+
+/**
+ * Clear the session inspection and task checklist caches (useful for testing or manual refresh).
+ */
+export function clearSessionInspectionCache(): void {
+  taskFileCache.clear();
+  sessionInspectionCache.clear();
 }
 
 /**
  * Extract clean session ID from raw input string.
  * Supports patterns like:
  * - "Session: sess_1788744193171_qdfllz"
- * - "sess_1788744193171_qdfllz"
+ * - "`sess_1788744193171_qdfllz`"
+ * - "[sess_1788744193171_qdfllz](...)"
  * - "path/to/sess_1788744193171_qdfllz.json"
  */
 export function extractSessionId(raw: string): string {
   if (!raw) return "";
   const trimmed = raw.trim();
 
-  // Pattern: (Session:\s*)?(sess_\d+_[a-zA-Z0-9]+)
-  const match = trimmed.match(/(?:Session:\s*)?(sess_\d+_[a-zA-Z0-9]+)/i);
+  // Pattern: (Session:\s*[`"']?)?(sess_\d+_[a-zA-Z0-9]+)
+  const match = trimmed.match(/(?:Session:\s*[`"']?)?(sess_\d+_[a-zA-Z0-9]+)/i);
   if (match) {
     return match[1];
   }
@@ -61,22 +87,35 @@ export function extractSessionId(raw: string): string {
     return jsonMatch[1];
   }
 
-  return trimmed;
+  return trimmed.replace(/^[`"']+|[`"']+$/g, "");
 }
 
 /**
- * Scan candidate paths for a session's task checklist file.
+ * Scan candidate paths for a session's task checklist file with fast-path checking.
  */
 export function findTaskFile(sessionId: string, workingDirectory?: string, sessionFilePath?: string): string | null {
   const root = getRootConfigDir();
   const candidates: string[] = [];
 
+  // Fast path 1: direct derivation from session JSON file path
   if (sessionFilePath) {
-    candidates.push(sessionFilePath.replace(/\.json$/, "_task.md"));
+    const directTask = sessionFilePath.replace(/\.json$/, "_task.md");
+    if (fs.existsSync(directTask)) {
+      try {
+        if (fs.statSync(directTask).isFile()) return directTask;
+      } catch {}
+    }
   }
 
+  // Fast path 2: direct canonical history paths for single and multi
+  const singleTask = path.join(root, "history", "single", sessionId, `${sessionId}_task.md`);
+  if (fs.existsSync(singleTask)) return singleTask;
+
+  const multiTask = path.join(root, "history", "multi", sessionId, `${sessionId}_task.md`);
+  if (fs.existsSync(multiTask)) return multiTask;
+
+  // Secondary candidate checks
   for (const mode of ["single", "multi"]) {
-    candidates.push(path.join(root, "history", mode, sessionId, `${sessionId}_task.md`));
     candidates.push(path.join(root, "history", mode, sessionId, "_task.md"));
     candidates.push(path.join(root, "history", mode, sessionId, "task.md"));
   }
@@ -98,7 +137,7 @@ export function findTaskFile(sessionId: string, workingDirectory?: string, sessi
     }
   }
 
-  // Deep search in history folders for matching session substring
+  // Fallback: deep search in history folders only if direct paths failed
   try {
     const historyDir = path.join(root, "history");
     for (const mode of ["single", "multi"]) {
@@ -121,18 +160,31 @@ export function findTaskFile(sessionId: string, workingDirectory?: string, sessi
 }
 
 /**
- * Scan candidate paths for a session's plan file.
+ * Scan candidate paths for a session's plan file with fast-path checking.
  */
 export function findPlanFile(sessionId: string, workingDirectory?: string, sessionFilePath?: string): string | null {
   const root = getRootConfigDir();
-  const candidates: string[] = [];
 
+  // Fast path 1: direct derivation from session JSON file path
   if (sessionFilePath) {
-    candidates.push(sessionFilePath.replace(/\.json$/, "_plan.md"));
+    const directPlan = sessionFilePath.replace(/\.json$/, "_plan.md");
+    if (fs.existsSync(directPlan)) {
+      try {
+        if (fs.statSync(directPlan).isFile()) return directPlan;
+      } catch {}
+    }
   }
 
+  // Fast path 2: direct canonical history paths for single and multi
+  const singlePlan = path.join(root, "history", "single", sessionId, `${sessionId}_plan.md`);
+  if (fs.existsSync(singlePlan)) return singlePlan;
+
+  const multiPlan = path.join(root, "history", "multi", sessionId, `${sessionId}_plan.md`);
+  if (fs.existsSync(multiPlan)) return multiPlan;
+
+  // Secondary candidate checks
+  const candidates: string[] = [];
   for (const mode of ["single", "multi"]) {
-    candidates.push(path.join(root, "history", mode, sessionId, `${sessionId}_plan.md`));
     candidates.push(path.join(root, "history", mode, sessionId, "_plan.md"));
     candidates.push(path.join(root, "history", mode, sessionId, "plan.md"));
     candidates.push(path.join(root, "history", mode, sessionId, "implementation_plan.md"));
@@ -156,23 +208,26 @@ export function findPlanFile(sessionId: string, workingDirectory?: string, sessi
 }
 
 /**
- * Parse a markdown task checklist into structured groups.
+ * Parse a markdown task checklist into structured groups with pre-compiled regex.
  */
+const CHECKLIST_REGEX = /^\s*[-*+]\s*\[([ xX/])\]\s*(.+)$/;
+
 export function parseTaskChecklist(content: string): TaskChecklistSummary {
   const lines = content.split(/\r?\n/);
   const completed: ParsedTask[] = [];
   const inProgress: ParsedTask[] = [];
   const pending: ParsedTask[] = [];
 
-  lines.forEach((line, index) => {
-    const match = line.match(/^\s*[-*+]\s*\[([ xX/])\]\s*(.+)$/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const match = line.match(CHECKLIST_REGEX);
     if (match) {
       const mark = match[1].toLowerCase();
       const text = match[2].trim();
       const task: ParsedTask = {
         status: mark === "x" ? "completed" : mark === "/" ? "in_progress" : "pending",
         text,
-        lineNumber: index + 1,
+        lineNumber: i + 1,
       };
       if (task.status === "completed") {
         completed.push(task);
@@ -182,7 +237,7 @@ export function parseTaskChecklist(content: string): TaskChecklistSummary {
         pending.push(task);
       }
     }
-  });
+  }
 
   return {
     total: completed.length + inProgress.length + pending.length,
@@ -193,14 +248,53 @@ export function parseTaskChecklist(content: string): TaskChecklistSummary {
 }
 
 /**
- * Inspect a session by ID or search term.
+ * Read and parse task checklist with mtime caching.
+ */
+export function getCachedTaskChecklist(taskFilePath: string): TaskChecklistSummary {
+  try {
+    const stat = fs.statSync(taskFilePath);
+    const cached = taskFileCache.get(taskFilePath);
+    if (cached && cached.mtime === stat.mtimeMs) {
+      return cached.summary;
+    }
+
+    const content = fs.readFileSync(taskFilePath, "utf8");
+    const summary = parseTaskChecklist(content);
+    summary.taskFilePath = taskFilePath;
+
+    // Maintain max cache size of 100 entries
+    if (taskFileCache.size >= 100) {
+      const oldestKey = taskFileCache.keys().next().value;
+      if (oldestKey) taskFileCache.delete(oldestKey);
+    }
+    taskFileCache.set(taskFilePath, { summary, mtime: stat.mtimeMs });
+    return summary;
+  } catch {
+    return { total: 0, completed: [], inProgress: [], pending: [] };
+  }
+}
+
+/**
+ * Inspect a session by ID or search term with high-speed caching and fast-path resolution.
  */
 export async function inspectSession(
   rawQuery: string,
-  options: { messageLimit?: number; includeMessages?: boolean } = {}
+  options: { messageLimit?: number; includeMessages?: boolean; forceFresh?: boolean } = {}
 ): Promise<SessionInspectionResult> {
   const messageLimit = options.messageLimit ?? 8;
   const includeMessages = options.includeMessages ?? true;
+  const forceFresh = options.forceFresh ?? false;
+
+  const cacheKey = `${rawQuery.trim()}|${messageLimit}|${includeMessages}`;
+  const now = Date.now();
+
+  // Return cached result if fresh and within TTL
+  if (!forceFresh) {
+    const cachedEntry = sessionInspectionCache.get(cacheKey);
+    if (cachedEntry && now - cachedEntry.cachedAt < INSPECTION_CACHE_TTL_MS) {
+      return { ...cachedEntry.result, cached: true };
+    }
+  }
 
   let targetId = extractSessionId(rawQuery);
   let sessionRecord: SessionRecord | null = null;
@@ -250,11 +344,7 @@ export async function inspectSession(
   };
 
   if (taskFilePath && fs.existsSync(taskFilePath)) {
-    try {
-      const content = fs.readFileSync(taskFilePath, "utf8");
-      tasks = parseTaskChecklist(content);
-      tasks.taskFilePath = taskFilePath;
-    } catch {}
+    tasks = getCachedTaskChecklist(taskFilePath);
   }
 
   let planContent: string | undefined;
@@ -276,7 +366,7 @@ export async function inspectSession(
     } catch {}
 
     const notFoundMsg = `Session "${rawQuery}" could not be found in history database or local storage.${recentListStr}`;
-    return {
+    const unfoundResult: SessionInspectionResult = {
       found: false,
       sessionId: targetId || rawQuery,
       sessionRecord: null,
@@ -285,6 +375,7 @@ export async function inspectSession(
       formattedReport: notFoundMsg,
       suggestedAction: "Verify the session ID or select one from the recent sessions list.",
     };
+    return unfoundResult;
   }
 
   // Extract recent messages
@@ -397,7 +488,7 @@ export async function inspectSession(
     suggestedAction = `Help Terminal 1 by taking on pending task: "${tasks.pending[0].text}"`;
   }
 
-  return {
+  const finalResult: SessionInspectionResult = {
     found: true,
     sessionId: targetId,
     sessionRecord,
@@ -410,6 +501,15 @@ export async function inspectSession(
     formattedReport,
     suggestedAction,
   };
+
+  // Cache final result
+  if (sessionInspectionCache.size >= 100) {
+    const oldestKey = sessionInspectionCache.keys().next().value;
+    if (oldestKey) sessionInspectionCache.delete(oldestKey);
+  }
+  sessionInspectionCache.set(cacheKey, { result: finalResult, cachedAt: now, cacheKey });
+
+  return finalResult;
 }
 
 /**
