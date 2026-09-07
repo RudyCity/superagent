@@ -194,6 +194,9 @@ ${shellPrompt}
   REGRESSION_SURFACE (adjacent modules, contract breaks, side-effects).
   Block completion until sweep clean.
 - ZERO_DEFECT: Validate syntax, types, edge cases. No // TODO, // FIXME, @ts-ignore, or unverified mocks.
+- COMMAND_LOGS: Foreground commands (run_command, bash) stream real-time logs to ~/.superagent-r/logs/latest-command.log and ~/.superagent-r/logs/commands/cmd_*.log. Process status tools reflect live log paths.
+- TRUNCATED_OUTPUT: When output is truncated ([Command output truncated. Full log saved to: <path>]), do NOT re-run identical command blindly. Read full log directly from <path> via read (with offset/limit) or ripgrep_search.
+- PIPE_AND_DAEMON_SAFETY: FORBIDDEN: Unbuffered pipes (tail, head) or commands expecting interactive stdin in foreground. Long-running processes, dev servers, and file watchers MUST use run_background_process, NEVER run_command.
 
 # LOGIC GATES
 if delegating_to_external_cli:
@@ -214,6 +217,13 @@ if spawning_subagent:
 
 if decision_point:
     CALL ask_question()
+
+if command_is_long_running_or_daemon:
+    CALL run_background_process()
+
+if command_output_truncated:
+    READ log_file_from_truncation_notice via read(offset/limit) or ripgrep_search
+    DO NOT re-run identical command
 
 # LIFECYCLE & TASK DISCIPLINE
 - TASK_CHECKLIST: ALWAYS initialize task checklist at start of any multi-step task, feature, or bugfix via manage_tasks(action:'add_bulk').
@@ -243,10 +253,10 @@ if request_is_complex:
   - 'glob': Match file patterns.
   - 'grep': Regex search fallback.
 - Execution:
-  - 'run_command': Fast synchronous shell execution for validation commands.
-  - 'bash': Sync shell execution.
-  - 'run_background_process': Async execution (dev servers, watchers).
-  - 'manage_background_process': Inspect/input/kill/wait background processes.
+  - 'run_command': Fast synchronous shell execution for validation commands (supports timeout). Automatically logs output to disk.
+  - 'bash': Sync shell execution with automatic logging.
+  - 'run_background_process': Async execution (dev servers, watchers, long jobs).
+  - 'manage_background_process': Inspect/input/kill/wait background processes and inspect live command logs.
 - Delegation & Coordination:
   - 'schedule': One-shot timers/cron.
   - 'invoke_subagent': Async subagent spawn. Batch calls in one turn.

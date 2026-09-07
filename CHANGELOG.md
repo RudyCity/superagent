@@ -1,3 +1,21 @@
+## [1.5.55] - 2026-09-07
+
+### Prompt Optimization: Command Logging, Output Truncation Handling, and Daemon Safety
+
+- **System Prompts Optimization (`src/core/prompts.ts`)**:
+  - Added `COMMAND_LOGS` rule to `AESTHETIC_AND_GATEWAY_RULES`, informing agents across Master, Superagent, Subagents, and Chrome Extension tiers that foreground executions (`run_command`, `bash`) automatically stream real-time logs to `~/.superagent-r/logs/latest-command.log` and `~/.superagent-r/logs/commands/cmd_*.log`.
+  - Added `TRUNCATED_OUTPUT` rule forbidding blind command re-runs on truncation and instructing agents to read the complete output from the disk log path via `read` (with `offset`/`limit`) or `ripgrep_search`.
+  - Added `PIPE_AND_DAEMON_SAFETY` rule forbidding unbuffered pipes (`tail`, `head`) or interactive hanging foreground executions, mandating `run_background_process` for daemons, servers, and file watchers.
+  - Added logic gates for command logging, daemon delegation, and truncated output recovery in `DECISION_GATE`, `MASTER_AGENT_SYSTEM_PROMPT`, and `SUPERAGENT_SYSTEM_PROMPT`.
+
+- **Base Configuration Prompts (`src/core/config/base.ts`)**:
+  - Updated `getSystemPrompt()` critical rules with `COMMAND_LOGS`, `TRUNCATED_OUTPUT`, and `PIPE_AND_DAEMON_SAFETY`.
+  - Added logic gates under `# LOGIC GATES` for automatic background process delegation and truncated log inspection.
+  - Updated tool usage guidelines under `- Execution:` to document automatic command logging and log inspection capabilities.
+
+- **Automated Tests (`tests/promptToolGuidance.test.ts`)**:
+  - Added test verifying prompt enforcement of `COMMAND_LOGS`, `latest-command.log`, `TRUNCATED_OUTPUT`, `PIPE_AND_DAEMON_SAFETY`, and non-repetitive log inspection across `prompts.ts` and `base.ts`.
+
 ## [1.5.54] - 2026-09-07
 
 ### Feature: Automatic Real-Time Command Logging for Foreground Shell Tools

@@ -50,6 +50,9 @@ const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE: Terminal-rendered plain text. A
 - DESTRUCTIVE: ask_question before package changes, git reset/push/clean, data wipes, file deletion, secret rotation.
 - EXTERNAL_PATH_PERMIT: ask_question before copying/reading/importing files outside workspace boundary into workspace.
 - OS_SEP: PowerShell ";" | Git Bash "&&". Respect active shell.
+- COMMAND_LOGS: Foreground commands (run_command, bash) stream real-time logs to ~/.superagent-r/logs/latest-command.log and ~/.superagent-r/logs/commands/cmd_*.log. Live process tools reflect active log paths.
+- TRUNCATED_OUTPUT: When output is truncated ([Command output truncated. Full log saved to: <path>]), NEVER re-run identical command blindly. Read full log from <path> via read (with offset/limit) or ripgrep_search.
+- PIPE_AND_DAEMON_SAFETY: FORBIDDEN: Unbuffered pipes (tail, head) or commands expecting interactive stdin in foreground. Long-running processes, dev servers, and file watchers MUST use run_background_process.
 - INTENT_GUARD: Plan approval ≠ override ask/research intent. If ask/research, DO NOT edit code.
 - IMAGE_VISION: Visual tasks (UI/mockup/layout) → instruct user "/image paste" or "/image attach <path>". When images present, analyze with vision as primary context.`;
 
@@ -95,7 +98,15 @@ const CLI_BRIDGE_RULE = `- CLI_BRIDGE: Delegate tasks to external AI CLI assista
 const SKILL_CHECK_RULE = `- SKILL_CHECK: get_skills(query). If found: use_skill(name).`;
 
 const DECISION_GATE = `# LOGIC GATES
-if decision_point: CALL ask_question()`;
+if decision_point:
+    CALL ask_question()
+
+if command_is_long_running_or_daemon:
+    CALL run_background_process()
+
+if command_output_truncated:
+    READ log_file_from_truncation_notice via read(offset/limit) or ripgrep_search
+    NEVER re-run identical command`;
 
 const SELF_VERIFY_STEPS = `1. Terminal Debug: ALWAYS debug via terminal execution FIRST before code edits.
 2. Build & Test at END: Run build and execute tests on new/updated files at END of repair process. Fix ALL errors.
@@ -220,6 +231,13 @@ if spawning_superagent:
 if decision_point:
     CALL ask_question()
 
+if command_is_long_running_or_daemon:
+    CALL run_background_process()
+
+if command_output_truncated:
+    READ log_file_from_truncation_notice via read(offset/limit) or ripgrep_search
+    NEVER re-run identical command
+
 if post_merge:
     VERIFY build+tests pass in merged master.
     if failed:
@@ -301,6 +319,13 @@ if spawning_subagent:
 
 if decision_point:
     CALL ask_question()
+
+if command_is_long_running_or_daemon:
+    CALL run_background_process()
+
+if command_output_truncated:
+    READ log_file_from_truncation_notice via read(offset/limit) or ripgrep_search
+    NEVER re-run identical command
 
 if verification_failed:
     CALL NON_LINEAR_DEBUG_ENGINE

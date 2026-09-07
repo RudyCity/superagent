@@ -74,4 +74,21 @@ describe("prompt and command guidance", () => {
 
     expect(prompts).toContain("Debugging tasks MUST view .agents/skills/non-linear-debugging/SKILL.md first");
   });
+
+  it("enforces command logging, truncation, and daemon safety guidance in prompts", () => {
+    const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
+    const base = fs.readFileSync(path.resolve(process.cwd(), "src/core/config/base.ts"), "utf-8");
+
+    expect(prompts).toContain("COMMAND_LOGS: Foreground commands");
+    expect(prompts).toContain("latest-command.log");
+    expect(prompts).toContain("TRUNCATED_OUTPUT");
+    expect(prompts).toContain("NEVER re-run identical command");
+    expect(prompts).toContain("PIPE_AND_DAEMON_SAFETY");
+
+    expect(base).toContain("COMMAND_LOGS: Foreground commands");
+    expect(base).toContain("latest-command.log");
+    expect(base).toContain("TRUNCATED_OUTPUT");
+    expect(base).toContain("DO NOT re-run identical command");
+    expect(base).toContain("PIPE_AND_DAEMON_SAFETY");
+  });
 });
