@@ -1,3 +1,28 @@
+## [1.5.54] - 2026-09-07
+
+### Feature: Automatic Real-Time Command Logging for Foreground Shell Tools
+
+- **Command Execution Logger (`src/core/tools/commandLogger.ts`)**:
+  - Implemented `createCommandLog`, `getCurrentCommandLogPath`, `getCommandLogsDir`, `getLatestCommandLogPath`, and `formatOutputWithLogReference`.
+  - Automatically provisions dedicated command log files on disk under `~/.superagent-r/logs/commands/cmd_<timestamp>_<id>.log` and maintains rolling `~/.superagent-r/logs/latest-command.log`.
+  - Streams stdout and stderr chunks in real time as they arrive, preserving live execution progress and crash/timeout logs.
+  - Formats large outputs upon truncation with direct pointers to the full log on disk.
+  - Automatically prunes older command logs beyond 50 files to prevent unbounded disk usage.
+
+- **Shell Tools Integration (`src/core/tools/shellTools.ts`)**:
+  - Integrated `createCommandLog` into `bashTool` and `runCommandTool`.
+  - Stream chunks to disk on every data event.
+  - Automatically record completion status, exit code, and timeout/abort errors in log footers.
+  - Include full command log paths in timeout and error messages.
+
+- **Process Journal & MCP Discovery (`src/core/mcp/processJournal.ts`, `src/core/mcp/tools/processTools.ts`)**:
+  - Extended `ActiveProcessEntry` with `currentCommandLogPath` and `activeToolOutput`.
+  - Updated `handleGetLogs` to prioritize reading directly from active command log files and `latest-command.log` for instant live log inspection.
+  - Updated `handleGetProcessStatus` and `handleGetStatus` to display active command log paths and live output stream tails.
+
+- **Automated Tests (`tests/commandLogger.test.ts`)**:
+  - Added unit and integration tests covering log provisioning, real-time chunk streaming, exit code footers, truncation references, and automatic logging for `bashTool` and `runCommandTool`.
+
 ## [1.5.53] - 2026-09-07
 
 ### Fix: Session Inspection Tool Filtering, Continuation Command Routing, and System Prompts

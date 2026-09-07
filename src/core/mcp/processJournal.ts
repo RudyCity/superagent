@@ -19,7 +19,9 @@ import {
   subscribeToSuperagents,
   masterPromptTokens,
   masterCompletionTokens,
+  getActiveToolOutput,
 } from "../tools/state.js";
+import { getCurrentCommandLogPath } from "../tools/commandLogger.js";
 
 export interface ActiveProcessSuperagent {
   id: string;
@@ -54,6 +56,8 @@ export interface ActiveProcessEntry {
   activeSubagents?: Array<{ id: string; typeName: string; role: string; status: string; prompt?: string }>;
   backgroundTaskCount?: number;
   recentLogs?: string[];
+  currentCommandLogPath?: string;
+  activeToolOutput?: string;
 }
 
 function getProcessJournalPath(): string {
@@ -191,6 +195,8 @@ export function registerCurrentProcess(mode: "single" | "multi" | "server" | "mc
         activeSubagents,
         backgroundTaskCount: backgroundTasks.size,
         recentLogs: (activity.recentLogs || []).slice(-30),
+        currentCommandLogPath: getCurrentCommandLogPath(),
+        activeToolOutput: getActiveToolOutput() || undefined,
       };
 
       const currentList = loadActiveProcesses().filter((p) => p.pid !== pid);

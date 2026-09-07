@@ -241,6 +241,14 @@ export async function handleGetProcessStatus(): Promise<McpToolResult> {
     lines.push(`  - State: ${p.isAgentRunning ? "🟢 RUNNING" : "⚪ IDLE"} (${p.currentStatus || (p.isAgentRunning ? "Active" : "Idle")})`);
     if (p.currentTask) lines.push(`  - Current Task: ${p.currentTask}`);
     if (p.currentTool) lines.push(`  - Current Tool: ${p.currentTool}`);
+    if (p.currentCommandLogPath) lines.push(`  - Active Command Log: ${p.currentCommandLogPath}`);
+    if (p.activeToolOutput && p.activeToolOutput.trim()) {
+      lines.push(`  - Live Tool Output Stream:`);
+      const streamLines = p.activeToolOutput.trim().split(/\r?\n/).slice(-10);
+      for (const sl of streamLines) {
+        lines.push(`      ${sl}`);
+      }
+    }
     if (p.model) lines.push(`  - Model: ${p.model}`);
     if (p.promptTokens || p.completionTokens) lines.push(`  - Tokens: ${p.promptTokens || 0} prompt / ${p.completionTokens || 0} completion`);
     if (p.sessionId) lines.push(`  - Session ID: ${p.sessionId}`);
@@ -424,10 +432,22 @@ export async function handleGetStatus(args: any): Promise<McpToolResult> {
       `  - State: ${matchedProc.isAgentRunning ? "🟢 RUNNING" : "⚪ IDLE"} (${matchedProc.currentStatus || "Idle"})`,
       `  - Current Task: ${matchedProc.currentTask || "(none)"}`,
       `  - Active Tool: ${matchedProc.currentTool || "(none)"}`,
+    ];
+    if (matchedProc.currentCommandLogPath) {
+      lines.push(`  - Active Command Log: ${matchedProc.currentCommandLogPath}`);
+    }
+    if (matchedProc.activeToolOutput && matchedProc.activeToolOutput.trim()) {
+      lines.push(`  - Live Tool Output Stream:`);
+      const streamLines = matchedProc.activeToolOutput.trim().split(/\r?\n/).slice(-10);
+      for (const sl of streamLines) {
+        lines.push(`      ${sl}`);
+      }
+    }
+    lines.push(
       `  - Model: ${matchedProc.model || "(default)"}`,
       `  - Tokens: ${matchedProc.promptTokens || 0} prompt / ${matchedProc.completionTokens || 0} completion`,
       `  - Uptime: ${uptimeStr}`,
-    ];
+    );
     if (matchedProc.recentLogs && matchedProc.recentLogs.length > 0) {
       lines.push(`  - Recent Logs:`);
       for (const log of matchedProc.recentLogs.slice(-5)) {
@@ -508,7 +528,44 @@ export async function handleGetLogs(args: any): Promise<McpToolResult> {
   if (!id || id === "all" || id === "current" || id === "latest" || /^\d+$/.test(id)) {
     const targetProc = /^\d+$/.test(id)
       ? processes.find((p) => String(p.pid) === id)
-      : nonMcpProcs[0];
+      : nonMcpProcs.find((p) => p.isAgentRunning) || nonMcpProcs[0];
+
+    // Priority 1: If target process has an active command log on disk, read live output from it
+    if (targetProc?.currentCommandLogPath && fs.existsSync(targetProc.currentCommandLogPath)) {
+      try {
+        const content = fs.readFileSync(targetProc.currentCommandLogPath, "utf-8");
+        const lines = content.split(/\r?\n/);
+        const sliced = lines.slice(-limit).join("\n");
+        return {
+          content: [
+            {
+              type: "text",
+              text: `=== Active Command Log for Process PID ${targetProc.pid} (${targetProc.currentCommandLogPath}) ===\n${sliced}`,
+            },
+          ],
+        };
+      } catch {}
+    }
+
+    // Priority 2: If querying latest or current, check latest-command.log
+    if (id === "latest" || id === "current") {
+      const latestPath = path.join(getRootConfigDir(), "logs", "latest-command.log");
+      if (fs.existsSync(latestPath)) {
+        try {
+          const content = fs.readFileSync(latestPath, "utf-8");
+          const lines = content.split(/\r?\n/);
+          const sliced = lines.slice(-limit).join("\n");
+          return {
+            content: [
+              {
+                type: "text",
+                text: `=== Latest Command Execution Log (${latestPath}) ===\n${sliced}`,
+              },
+            ],
+          };
+        } catch {}
+      }
+    }
 
     if (targetProc && targetProc.recentLogs && targetProc.recentLogs.length > 0) {
       const recent = targetProc.recentLogs.slice(-limit).join("\n");

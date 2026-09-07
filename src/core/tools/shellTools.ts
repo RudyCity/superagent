@@ -28,6 +28,7 @@ import {
   appendActiveToolOutput,
   appendCapped
 } from "./state.js";
+import { createCommandLog, formatOutputWithLogReference } from "./commandLogger.js";
 import net from "net";
 
 async function isPortAvailable(port: number): Promise<boolean> {
@@ -105,7 +106,7 @@ export async function acquireNpmLock(): Promise<() => void> {
   }
 }
 
-function formatAndTruncateOutput(output: string, maxLines: number, logPath: string): string {
+export function formatAndTruncateOutput(output: string, maxLines: number, logPath: string): string {
   const trimmed = output.trim();
   const lines = trimmed.split(/\r?\n/);
   if (lines.length > maxLines) {
@@ -178,6 +179,8 @@ export const bashTool: Tool = {
       }
     }
 
+    const cmdLogger = createCommandLog(command, cwd);
+
     let timeoutId: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
@@ -198,11 +201,13 @@ export const bashTool: Tool = {
 
       const abortHandler = () => {
         killProcessTree(proc.pid);
+        cmdLogger.end(null, "Aborted");
       };
 
       if (signal) {
         if (signal.aborted) {
           killProcessTree(proc.pid);
+          cmdLogger.end(null, "Aborted");
           throw new Error("AbortError");
         }
         signal.addEventListener("abort", abortHandler);
@@ -212,6 +217,7 @@ export const bashTool: Tool = {
       proc.all?.on("data", (data) => {
         const text = data.toString();
         appendActiveToolOutput(text);
+        cmdLogger.write(text);
         const warning = detectInteractivePrompt(text);
         if (warning) {
           interactiveWarning = warning;
@@ -223,13 +229,14 @@ export const bashTool: Tool = {
         const result = await Promise.race([proc, timeoutPromise]);
         clearActiveToolOutput();
         let output = (result.all || result.stdout || "").trim();
-        output = truncateOutput(output);
+        const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
+        cmdLogger.end(exitCodeNum, interactiveWarning || undefined);
+        output = formatOutputWithLogReference(output, 100, cmdLogger.logPath);
         
         if (interactiveWarning) {
-          return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background_process', then monitor it with 'manage_background_process' (action: 'status') and send inputs using 'manage_background_process' (action: 'send_input').`;
+          return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background_process', then monitor it with 'manage_background_process' (action: 'status') and send inputs using 'manage_background_process' (action: 'send_input'). Full command log saved at: ${cmdLogger.logPath}`;
         }
 
-        const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
         if (exitCodeNum !== 0) {
           return `Exit code: ${exitCodeNum}\n${output}`;
         }
@@ -237,10 +244,12 @@ export const bashTool: Tool = {
       } catch (innerErr: any) {
         if (innerErr && innerErr.name === "TimeoutError") {
           killProcessTree(proc.pid);
-          return `Error executing command: Timeout of ${timeout}ms exceeded.`;
+          cmdLogger.end(null, `Timeout of ${timeout}ms exceeded`);
+          return `Error executing command: Timeout of ${timeout}ms exceeded. Full command log saved at: ${cmdLogger.logPath}`;
         }
         throw innerErr;
       } finally {
+        cmdLogger.end();
         if (timeoutId) clearTimeout(timeoutId);
         if (signal) {
           signal.removeEventListener("abort", abortHandler);
@@ -248,13 +257,14 @@ export const bashTool: Tool = {
       }
     } catch (err: unknown) {
       clearActiveToolOutput();
+      cmdLogger.end(null, err instanceof Error ? err.message : String(err));
       if (signal?.aborted || (err instanceof Error && (err.name === "AbortError" || err.name === "CancelError"))) {
         const abortErr = new Error("AbortError");
         abortErr.name = "AbortError";
         throw abortErr;
       }
       const message = err instanceof Error ? err.message : String(err);
-      return `Error executing command: ${message}`;
+      return `Error executing command: ${message}. Full command log saved at: ${cmdLogger.logPath}`;
     }
   },
 };
@@ -312,6 +322,8 @@ export const runCommandTool: Tool = {
       }
     }
 
+    const cmdLogger = createCommandLog(command, targetCwd);
+
     let timeoutId: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
@@ -332,11 +344,13 @@ export const runCommandTool: Tool = {
 
       const abortHandler = () => {
         killProcessTree(proc.pid);
+        cmdLogger.end(null, "Aborted");
       };
 
       if (signal) {
         if (signal.aborted) {
           killProcessTree(proc.pid);
+          cmdLogger.end(null, "Aborted");
           throw new Error("AbortError");
         }
         signal.addEventListener("abort", abortHandler);
@@ -346,6 +360,7 @@ export const runCommandTool: Tool = {
       proc.all?.on("data", (data) => {
         const text = data.toString();
         appendActiveToolOutput(text);
+        cmdLogger.write(text);
         const warning = detectInteractivePrompt(text);
         if (warning) {
           interactiveWarning = warning;
@@ -357,13 +372,14 @@ export const runCommandTool: Tool = {
         const result = await Promise.race([proc, timeoutPromise]);
         clearActiveToolOutput();
         let output = (result.all || result.stdout || "").trim();
-        output = truncateOutput(output);
+        const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
+        cmdLogger.end(exitCodeNum, interactiveWarning || undefined);
+        output = formatOutputWithLogReference(output, 100, cmdLogger.logPath);
 
         if (interactiveWarning) {
-          return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background_process', then monitor it with 'manage_background_process' (action: 'status') and send inputs using 'manage_background_process' (action: 'send_input').`;
+          return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background_process', then monitor it with 'manage_background_process' (action: 'status') and send inputs using 'manage_background_process' (action: 'send_input'). Full command log saved at: ${cmdLogger.logPath}`;
         }
 
-        const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
         if (exitCodeNum !== 0) {
           const reporterHint = /Failed to load custom Reporter from (\w+)/.exec(output)?.[1];
           const hint = reporterHint ? `\nFix: Vitest reporter "${reporterHint}" is unavailable. Use default output, --reporter=dot, or --reporter=json.` : "";
@@ -374,10 +390,12 @@ export const runCommandTool: Tool = {
       } catch (innerErr: any) {
         if (innerErr && innerErr.name === "TimeoutError") {
           killProcessTree(proc.pid);
-          return `Error executing command: Timeout of ${timeout}ms exceeded. If this command is a long-running process (like a dev server, watcher, or database), please run it in the background using 'run_background_process' instead.`;
+          cmdLogger.end(null, `Timeout of ${timeout}ms exceeded`);
+          return `Error executing command: Timeout of ${timeout}ms exceeded. Full command log saved at: ${cmdLogger.logPath}. If this command is a long-running process (like a dev server, watcher, or database), please run it in the background using 'run_background_process' instead.`;
         }
         throw innerErr;
       } finally {
+        cmdLogger.end();
         if (timeoutId) clearTimeout(timeoutId);
         if (signal) {
           signal.removeEventListener("abort", abortHandler);
@@ -386,13 +404,14 @@ export const runCommandTool: Tool = {
       }
     } catch (err: unknown) {
       clearActiveToolOutput();
+      cmdLogger.end(null, err instanceof Error ? err.message : String(err));
       if (signal?.aborted || (err instanceof Error && (err.name === "AbortError" || err.name === "CancelError"))) {
         const abortErr = new Error("AbortError");
         abortErr.name = "AbortError";
         throw abortErr;
       }
       const message = err instanceof Error ? err.message : String(err);
-      return `Error executing command: ${message}`;
+      return `Error executing command: ${message}. Full command log saved at: ${cmdLogger.logPath}`;
     }
   },
 };
@@ -756,296 +775,8 @@ export const runBackgroundProcessTool: Tool = {
   },
 };
 
-export const killBackgroundProcessTool: Tool = {
-  name: "kill_background_process",
-  description: "Terminate a background process by ID.",
-  parameters: {
-    type: "object",
-    properties: {
-      processId: {
-        type: "string",
-        description: "The Process ID returned by run_background_process",
-      },
-    },
-    required: ["processId"],
-  },
-  async execute(args, cwd, signal) {
-    const processId = args.processId as string;
-    if (workspaceMode.isSsh()) {
-      return await sshKillBackgroundProcessExecute(processId);
-    }
-    const task = backgroundTasks.get(processId);
-    if (!task) {
-      return `Error: No background process found with ID "${processId}"`;
-    }
-
-    try {
-      killProcessTree(task.process.pid);
-      backgroundTasks.delete(processId);
-      notifyTasksChanged();
-      return `Background process "${processId}" has been killed successfully.`;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return `Error killing background process: ${message}`;
-    }
-  },
-};
-
-export const viewBackgroundProcessesTool: Tool = {
-  name: "view_background_processes",
-  description: "List running background processes and show their recent output logs.",
-  parameters: {
-    type: "object",
-    properties: {
-      processId: {
-        type: "string",
-        description: "Optional Process ID to view detailed output for. If omitted, lists all processes.",
-      },
-    },
-  },
-  async execute(args, cwd, signal) {
-    const processId = args.processId as string;
-    if (workspaceMode.isSsh()) {
-      return await sshViewBackgroundProcessesExecute(processId);
-    }
-    if (processId) {
-      const task = backgroundTasks.get(processId);
-      if (!task) return `No background process found with ID "${processId}"`;
-      const fullOutput = task.output.join("");
-      const formattedOutput = formatAndTruncateOutput(fullOutput, 50, task.logPath || "");
-      return `Process: ${task.command}\nStatus: ${task.process.killed ? "Killed" : "Running/Completed"}\nOutput:\n${formattedOutput}`;
-    }
-
-    if (backgroundTasks.size === 0) return "No active background processes.";
-    const lines: string[] = [];
-    for (const [id, task] of backgroundTasks.entries()) {
-      lines.push(`Process ID: ${id} | Command: ${task.command}`);
-    }
-    return lines.join("\n");
-  },
-};
-
-export const manageBackgroundProcessTool: Tool = {
-  name: "manage_background_process",
-  description: "Manage background processes: list them, check status/output, send input, wait for completion, or kill them.",
-  parameters: {
-    type: "object",
-    properties: {
-      action: {
-        type: "string",
-        enum: ["list", "status", "send_input", "kill", "wait", "stream"],
-        description: "Action to perform. Use 'stream' to pipe a running background process's future output live to the SYSTEM_CALL_OUTPUT (LIVE) console.",
-      },
-      processId: {
-        type: "string",
-        description: "The background process ID",
-      },
-      input: {
-        type: "string",
-        description: "The input string to send (required for send_input)",
-      },
-      timeout: {
-        type: "number",
-        description: "Timeout in milliseconds to wait for the process (default 600000 / 10 minutes)",
-      },
-    },
-    required: ["action"],
-  },
-  async execute(args, cwd, signal) {
-    const action = args.action as string;
-    const processId = args.processId as string;
-    const input = args.input as string;
-
-    if (workspaceMode.isSsh()) {
-      return await sshManageBackgroundProcessExecute(action, processId, input);
-    }
-
-    if (action === "list") {
-      if (backgroundTasks.size === 0) return "No active background processes.";
-      const lines: string[] = [];
-      for (const [id, task] of backgroundTasks.entries()) {
-        lines.push(`Process ID: ${id} | Command: ${task.command}`);
-      }
-      return lines.join("\n");
-    }
-
-    if (!processId) {
-      return "Error: processId is required for status, send_input, kill, and wait actions.";
-    }
-
-    const task = backgroundTasks.get(processId);
-    if (!task) {
-      return `Error: No background process found with ID "${processId}"`;
-    }
-
-    if (action === "status") {
-      const fullOutput = task.output.join("");
-      const formattedOutput = formatAndTruncateOutput(fullOutput, 50, task.logPath || "");
-      return `Process: ${task.command}\nStatus: ${task.process.killed ? "Killed" : "Running/Completed"}\nOutput:\n${formattedOutput}`;
-    }
-
-    if (action === "send_input") {
-      if (input === undefined) {
-        return "Error: input is required for send_input action.";
-      }
-      try {
-        task.process.stdin?.write(input + "\n");
-        return `Sent input to process "${processId}".`;
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        return `Error sending input: ${message}`;
-      }
-    }
-
-    if (action === "kill") {
-      try {
-        killProcessTree(task.process.pid);
-        backgroundTasks.delete(processId);
-        notifyTasksChanged();
-        return `Process "${processId}" has been killed successfully.`;
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        return `Error killing process: ${message}`;
-      }
-    }
-
-    if (action === "wait") {
-      if (task.hasExited) {
-        const logs = task.output.join("");
-        const formattedLogs = formatAndTruncateOutput(logs, 50, task.logPath || "");
-        return `Process has completed with exit code ${task.exitCode}.\nOutput:\n${formattedLogs}`;
-      }
-
-      const timeoutMs = (args.timeout as number) || 600000;
-      let timeoutId: NodeJS.Timeout | undefined;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          const err = new Error("TimeoutError");
-          err.name = "TimeoutError";
-          reject(err);
-        }, timeoutMs);
-      });
-
-      const exitPromise = new Promise<void>((resolve) => {
-        const check = () => {
-          if (task.hasExited) {
-            resolve();
-            return true;
-          }
-          return false;
-        };
-
-        if (check()) return;
-
-        const interval = setInterval(() => {
-          if (check()) {
-            clearInterval(interval);
-          }
-        }, 50);
-
-        try {
-          task.process.once("close", () => {
-            clearInterval(interval);
-            resolve();
-          });
-        } catch {
-          // ignore if process emitter not available
-        }
-      });
-
-      const onAbort = () => {
-        if (timeoutId) clearTimeout(timeoutId);
-        const err = new Error("AbortError");
-        err.name = "AbortError";
-        throw err;
-      };
-
-      if (signal) {
-        if (signal.aborted) {
-          if (timeoutId) clearTimeout(timeoutId);
-          throw new Error("AbortError");
-        }
-        signal.addEventListener("abort", onAbort);
-      }
-
-      try {
-        await Promise.race([exitPromise, timeoutPromise]);
-        if (timeoutId) clearTimeout(timeoutId);
-        const logs = task.output.join("");
-        const formattedLogs = formatAndTruncateOutput(logs, 50, task.logPath || "");
-        return `Process completed with exit code ${task.exitCode}.\nOutput:\n${formattedLogs}`;
-      } catch (err: any) {
-        if (timeoutId) clearTimeout(timeoutId);
-        if (err && err.name === "TimeoutError") {
-          return `Error: Timeout of ${timeoutMs}ms exceeded while waiting for background process "${processId}".`;
-        }
-        throw err;
-      } finally {
-        if (signal) {
-          signal.removeEventListener("abort", onAbort);
-        }
-      }
-    }
-
-    if (action === "stream") {
-      if (task.hasExited) {
-        return `Process "${processId}" has already exited with code ${task.exitCode}. Use 'status' to read its final output.`;
-      }
-      clearActiveToolOutput();
-      appendActiveToolOutput(`[Streaming output from background process "${processId}"...]\n`);
-
-      const timeoutMs = (args.timeout as number) || 600000;
-      let timeoutId: NodeJS.Timeout | undefined;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          const err = new Error("TimeoutError");
-          err.name = "TimeoutError";
-          reject(err);
-        }, timeoutMs);
-      });
-
-      const unsubscribe = task.process.all?.on("data", (data: Buffer) => {
-        appendActiveToolOutput(data.toString());
-      });
-
-      const exitPromise = new Promise<void>((resolve) => {
-        if (task.hasExited) { resolve(); return; }
-        try {
-          task.process.once("close", () => resolve());
-        } catch {
-          resolve();
-        }
-      });
-
-      const onAbort = () => { if (timeoutId) clearTimeout(timeoutId); };
-      if (signal) {
-        if (signal.aborted) {
-          if (timeoutId) clearTimeout(timeoutId);
-          clearActiveToolOutput();
-          return "Aborted.";
-        }
-        signal.addEventListener("abort", onAbort);
-      }
-
-      try {
-        await Promise.race([exitPromise, timeoutPromise]);
-        if (timeoutId) clearTimeout(timeoutId);
-        clearActiveToolOutput();
-        const logs = task.output.join("");
-        const formattedLogs = formatAndTruncateOutput(logs, 50, task.logPath || "");
-        return `Process "${processId}" completed with exit code ${task.exitCode}.\nFull output:\n${formattedLogs}`;
-      } catch (err: any) {
-        if (timeoutId) clearTimeout(timeoutId);
-        clearActiveToolOutput();
-        if (err && err.name === "TimeoutError") {
-          return `Streaming stopped: Timeout of ${timeoutMs}ms exceeded. Process "${processId}" is still running.`;
-        }
-        throw err;
-      } finally {
-        if (signal) signal.removeEventListener("abort", onAbort);
-      }
-    }
-
-    return formatUnknownActionError(action, ["list", "status", "send_input", "kill", "wait", "stream"], "Use 'list' to inspect available process IDs.");
-  },
-};
+export {
+  killBackgroundProcessTool,
+  viewBackgroundProcessesTool,
+  manageBackgroundProcessTool,
+} from "./backgroundProcessTools.js";
