@@ -1,3 +1,32 @@
+## [1.5.58] - 2026-09-08
+
+### Added: Non-Interactive CLI Login, Presets, Launch Flags & AI Agent Automation Skill
+
+- **Non-Interactive Login Management (`superagent login`)**:
+  - Added `src/core/commands/loginCliHandler.ts` providing automated CLI subcommands:
+    - `superagent login list`: Lists all configured providers with type, active status, base URL, and masked API key.
+    - `superagent login add <provider> <api_key> [base_url]`: Adds or updates a provider and activates it.
+    - `superagent login add <api_key>`: Auto-detects provider type from API key format.
+    - `superagent login add custom <base_url> <api_key>`: Adds a custom OpenAI/Anthropic-compatible endpoint.
+    - `superagent login use <provider_id>`: Switches active provider profile.
+    - `superagent login remove <provider_id>`: Removes a provider profile.
+- **Non-Interactive Preset Management (`superagent preset`)**:
+  - Added `src/core/commands/presetCliHandler.ts` providing automated preset subcommands:
+    - `superagent preset list`: Lists available presets across both multi-agent and single-agent modes.
+    - `superagent preset use <name> [--single]`: Applies a model preset globally to `model-config.json`.
+    - `superagent preset show <name> [--single]`: Shows detailed tier-model breakdown for a preset.
+- **Launch Command-Line Flags**:
+  - Updated `src/cli.tsx` and `src/cliMain.tsx`:
+    - `-p, --preset <name>`: Loads model preset for the current run.
+    - `--model <model_name>`: Sets model override for the session.
+    - `--provider <id>`: Activates provider profile before loading configuration.
+    - Filtered `--preset`, `--model`, `--provider` flags and arguments from positional arguments to prevent prompt pollution.
+    - Updated `superagent --help` documentation.
+- **AI Agent Automation Skill**:
+  - Created `.agents/skills/superagent-cli/SKILL.md` documenting non-interactive CLI workflows, configuration management, headless prompt execution, and best practices for external AI agents (Claude Code, AGY, Codex, CI/CD).
+- **Tests**:
+  - Added `tests/loginCliHandler.test.ts` and `tests/presetCliHandler.test.ts` verifying all subcommands and CLI parsing.
+
 ## [1.5.57] - 2026-09-07
 
 ### Fixed: Active Session Synchronization in Terminal UI Header & Process Journal

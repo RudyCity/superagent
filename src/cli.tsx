@@ -39,6 +39,18 @@ if (process.argv.includes("--sync-history-only")) {
   process.exit(0);
 }
 
+if (process.argv[2] === "login") {
+  const { handleLoginCliCommand } = await import("./core/commands/loginCliHandler.js");
+  await handleLoginCliCommand(process.argv.slice(3));
+  process.exit(0);
+}
+
+if (process.argv[2] === "preset") {
+  const { handlePresetCliCommand } = await import("./core/commands/presetCliHandler.js");
+  await handlePresetCliCommand(process.argv.slice(3));
+  process.exit(0);
+}
+
 if (process.argv[2] === "session") {
   const { handleSessionCliCommand } = await import("./core/commands/sessionCliHandler.js");
   await handleSessionCliCommand(process.argv.slice(3));
@@ -75,12 +87,17 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 Usage: superagent [command/options] [prompt]
 
 Commands:
+  login             Manage provider authentication (add, list, use, remove)
+  preset            Manage model presets (list, use, show)
   session           Manage conversation sessions (list, export, clear --empty, import)
   mcp register      Register Superagent MCP Server to Antigravity (AGY) configuration
 
 Options:
   -r, --resume            Resume the last active session
   -w, --workspace <path>  Target workspace directory path
+  -p, --preset <name>     Activate a model preset for this session
+  --model <model_name>    Override active model for this session
+  --provider <id>         Override active provider profile for this session
   --multi                 Start in Multi Superagent master orchestrator mode
   --mcp, --mcp-server     Start Superagent as an MCP (Model Context Protocol) server
   -s, --server [P]        Start API server (default port: 7888)
@@ -88,17 +105,19 @@ Options:
   -h, --help              Show this help message and exit
 
 Examples:
-  superagent
+  superagent login list
+  superagent login add openrouter sk-or-v1-...
+  superagent preset list
+  superagent preset use dev
+  superagent --preset dev "explain quantum computing in simple terms"
+  superagent --multi --preset dev "build authentication module"
   superagent --mcp
   superagent mcp register
   superagent session list -w ./my-project
   superagent session export sess_123 -o output.md
   superagent session clear --empty
   superagent --resume
-  superagent --multi
   superagent --server 7888 --client-mode tline
-  superagent --server 7888 --client-mode chrome-extension
-  superagent "explain quantum computing in simple terms"
 `);
   process.exit(0);
 }

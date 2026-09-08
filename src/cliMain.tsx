@@ -242,6 +242,20 @@ export async function runCli() {
     process.exit(1);
   });
 
+  // Switch provider before loading config if --provider is passed
+  const providerFlagIdx = process.argv.findIndex(arg => arg === "--provider");
+  if (providerFlagIdx !== -1 && providerFlagIdx + 1 < process.argv.length) {
+    const nextArg = process.argv[providerFlagIdx + 1];
+    if (!nextArg.startsWith("-")) {
+      const { switchActiveProvider } = await import("./core/config/providers.js");
+      try {
+        switchActiveProvider(nextArg);
+      } catch (err: any) {
+        console.error(`Warning: Failed to switch to provider "${nextArg}": ${err.message}`);
+      }
+    }
+  }
+
   const config = getConfig();
   const apiKey = config.apiKey;
   const hasCustomEndpoint = !!config.baseUrl;
@@ -369,7 +383,40 @@ export async function runCli() {
       }
     }
 
-    const flags = ["--resume", "-r", "--help", "-h", "--multi", "--workspace", "-w", "--workspace-ssh", "-ws"];
+    // Preset value for prompt filtering
+    const presetIndex = process.argv.findIndex(arg => arg === "--preset" || arg === "-p");
+    let presetVal: string | undefined = undefined;
+    if (presetIndex !== -1 && presetIndex + 1 < process.argv.length) {
+      const nextArg = process.argv[presetIndex + 1];
+      if (!nextArg.startsWith("-")) {
+        presetVal = nextArg;
+      }
+    }
+
+    // Model override value for prompt filtering
+    const modelIndex = process.argv.findIndex(arg => arg === "--model");
+    let modelVal: string | undefined = undefined;
+    if (modelIndex !== -1 && modelIndex + 1 < process.argv.length) {
+      const nextArg = process.argv[modelIndex + 1];
+      if (!nextArg.startsWith("-")) {
+        modelVal = nextArg;
+      }
+    }
+
+    // Provider override value for prompt filtering
+    const providerIndex = process.argv.findIndex(arg => arg === "--provider");
+    let providerVal: string | undefined = undefined;
+    if (providerIndex !== -1 && providerIndex + 1 < process.argv.length) {
+      const nextArg = process.argv[providerIndex + 1];
+      if (!nextArg.startsWith("-")) {
+        providerVal = nextArg;
+      }
+    }
+
+    const flags = [
+      "--resume", "-r", "--help", "-h", "--multi", "--workspace", "-w",
+      "--workspace-ssh", "-ws", "--preset", "-p", "--model", "--provider"
+    ];
     const positionalArgs = process.argv.slice(2).filter((arg, idx) => {
       if (flags.includes(arg)) return false;
       if (resumeVal && arg === resumeVal) {
@@ -390,11 +437,51 @@ export async function runCli() {
           return false;
         }
       }
+      if (presetVal && arg === presetVal) {
+        const prevArg = process.argv[2 + idx - 1];
+        if (prevArg === "--preset" || prevArg === "-p") {
+          return false;
+        }
+      }
+      if (modelVal && arg === modelVal) {
+        const prevArg = process.argv[2 + idx - 1];
+        if (prevArg === "--model") {
+          return false;
+        }
+      }
+      if (providerVal && arg === providerVal) {
+        const prevArg = process.argv[2 + idx - 1];
+        if (prevArg === "--provider") {
+          return false;
+        }
+      }
       return true;
     });
     const initialPrompt = positionalArgs.join(" ");
 
     const isMulti = process.argv.includes("--multi");
+
+    if (presetVal) {
+      const { applyModelPreset } = await import("./core/config/presets.js");
+      try {
+        applyModelPreset(presetVal, isMulti ? "multi" : "single", false);
+      } catch (err: any) {
+        console.error(`Warning: Failed to activate preset "${presetVal}": ${err.message}`);
+      }
+    }
+
+    if (modelVal) {
+      const { setTierModel } = await import("./core/config/providers.js");
+      try {
+        if (isMulti) {
+          setTierModel("multi", "master", modelVal);
+        } else {
+          setTierModel("single", "superagent", modelVal);
+        }
+      } catch (err: any) {
+        console.error(`Warning: Failed to set model "${modelVal}": ${err.message}`);
+      }
+    }
 
     let hasCurrentHistory = false;
     let sessionPath = "";
