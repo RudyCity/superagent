@@ -1,3 +1,18 @@
+## [1.5.59] - 2026-09-08
+
+### Fixed: Headless Execution in Non-TTY Environments & CLI Argument Scoping
+
+- **CLI Argument Scoping in `src/cliMain.tsx`**:
+  - Moved CLI argument and flag parsing (`--resume`, `--workspace`, `--preset`, `--model`, `--provider`, positional arguments) outside of the `if (process.stdin.isTTY)` block so headless automated agent execution correctly receives prompts and configuration.
+- **Headless Prompt Execution & Auto-Approval**:
+  - In non-interactive/non-TTY mode, if an initial prompt is provided, Superagent executes `agent.sendMessage(initialPrompt)` and automatically exits with status code 0 upon completion rather than hanging on stdin readline.
+  - Auto-trusts the target workspace directory in non-TTY mode to avoid interactive prompts blocking headless processes.
+  - Updated the non-TTY permission handler to use `isToolCallOutOfBounds` from `src/core/permissions.ts` and `isDangerousCommand`, allowing file modifications within the workspace while blocking dangerous shell commands and writes outside the workspace.
+- **Model and Provider Synchronous Override**:
+  - Updated `setTierModel` and `setAllTierModels` in `src/core/config/providers.ts` to update `sessionActivePreset` via `setActivePreset`, ensuring `--preset` and `--model` / `--provider` flags correctly update the in-memory active session preset.
+- **Verification**:
+  - Successfully ran Superagent non-interactively via CLI to generate and test a Node.js calculator application with full test coverage in a scratch workspace.
+
 ## [1.5.58] - 2026-09-08
 
 ### Added: Non-Interactive CLI Login, Presets, Launch Flags & AI Agent Automation Skill

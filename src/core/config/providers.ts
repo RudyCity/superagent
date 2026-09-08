@@ -1,4 +1,4 @@
-import { getProviders, loadModelConfig, getActivePreset, mutateModelConfig, TierModelConfig } from "./jsonConfig.js";
+import { getProviders, loadModelConfig, getActivePreset, setActivePreset, mutateModelConfig, TierModelConfig } from "./jsonConfig.js";
 import { PROVIDER_TEMPLATE_LABELS } from "../loginWizardLogic.js";
 
 export interface ConfiguredProvider {
@@ -381,6 +381,25 @@ export function setTierModel(
       preset.models.subagentDetails[key] = { ...preset.models.subagentDetails[key], ...update };
     }
   });
+
+  const activeSessionPreset = getActivePreset<any>(m);
+  if (activeSessionPreset?.models) {
+    if (key === "master") {
+      if (m === "multi") {
+        activeSessionPreset.models.master = { ...activeSessionPreset.models.master, ...update };
+      } else {
+        activeSessionPreset.models.superagent = { ...activeSessionPreset.models.superagent, ...update };
+      }
+    } else if (key === "superagent") {
+      activeSessionPreset.models.superagent = { ...activeSessionPreset.models.superagent, ...update };
+    } else if (key === "subagent") {
+      activeSessionPreset.models.subagentDefault = { ...activeSessionPreset.models.subagentDefault, ...update };
+    } else {
+      if (!activeSessionPreset.models.subagentDetails) activeSessionPreset.models.subagentDetails = {};
+      activeSessionPreset.models.subagentDetails[key] = { ...activeSessionPreset.models.subagentDetails[key], ...update };
+    }
+    setActivePreset(m, activeSessionPreset);
+  }
 }
 
 /**
@@ -427,6 +446,21 @@ export function setAllTierModels(
       }
     }
   });
+
+  const activeSessionPreset = getActivePreset<any>(m);
+  if (activeSessionPreset?.models) {
+    if (m === "multi") {
+      activeSessionPreset.models.master = { ...activeSessionPreset.models.master, ...update };
+    }
+    activeSessionPreset.models.superagent = { ...activeSessionPreset.models.superagent, ...update };
+    activeSessionPreset.models.subagentDefault = { ...activeSessionPreset.models.subagentDefault, ...update };
+    if (activeSessionPreset.models.subagentDetails) {
+      for (const key of Object.keys(activeSessionPreset.models.subagentDetails)) {
+        activeSessionPreset.models.subagentDetails[key] = { ...activeSessionPreset.models.subagentDetails[key], ...update };
+      }
+    }
+    setActivePreset(m, activeSessionPreset);
+  }
 }
 
 /**

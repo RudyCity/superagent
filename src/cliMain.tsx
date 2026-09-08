@@ -11,6 +11,7 @@ import { isDirectoryTrusted, addTrustedDirectory, ensureDirectoryTrusted } from 
 import { backgroundTasks, isTaskInWorkspace, subagentInstances, superagentInstances, masterAgentRef } from "./core/tools/state.js";
 import { killProcessTree } from "./core/tools/shellTools.js";
 import { closeMcpServers } from "./core/mcp/McpManager.js";
+import type { Agent as AgentType } from "./core/agent.js";
 
 function cleanupBackgroundTasks() {
   try {
@@ -297,6 +298,149 @@ export async function runCli() {
   // index.ts free of the static import cycle.
   await bootstrapSubagentTypes();
 
+  const resumeIndex = process.argv.findIndex(arg => arg === "--resume" || arg === "-r");
+  let resumeVal: string | undefined = undefined;
+  if (resumeIndex !== -1 && resumeIndex + 1 < process.argv.length) {
+    const nextArg = process.argv[resumeIndex + 1];
+    if (!nextArg.startsWith("-")) {
+      resumeVal = nextArg;
+    }
+  }
+  const autoResume = resumeVal !== undefined ? resumeVal : (resumeIndex !== -1 ? true : false);
+
+  // Workspace value for prompt filtering
+  const workspaceIndexForPrompt = process.argv.findIndex(arg => arg === "--workspace" || arg === "-w");
+  let workspaceValForPrompt: string | undefined = undefined;
+  if (workspaceIndexForPrompt !== -1 && workspaceIndexForPrompt + 1 < process.argv.length) {
+    const nextArg = process.argv[workspaceIndexForPrompt + 1];
+    if (!nextArg.startsWith("-")) {
+      workspaceValForPrompt = nextArg;
+    }
+  }
+
+  // SSH Workspace value for prompt filtering
+  let sshVal: string | undefined = undefined;
+  if (sshFlagIdx !== -1 && process.argv[sshFlagIdx + 1]) {
+    const nextArg = process.argv[sshFlagIdx + 1];
+    if (!nextArg.startsWith("-")) {
+      sshVal = nextArg;
+    }
+  }
+
+  // Preset value for prompt filtering
+  const presetIndex = process.argv.findIndex(arg => arg === "--preset" || arg === "-p");
+  let presetVal: string | undefined = undefined;
+  if (presetIndex !== -1 && presetIndex + 1 < process.argv.length) {
+    const nextArg = process.argv[presetIndex + 1];
+    if (!nextArg.startsWith("-")) {
+      presetVal = nextArg;
+    }
+  }
+
+  // Model override value for prompt filtering
+  const modelIndex = process.argv.findIndex(arg => arg === "--model");
+  let modelVal: string | undefined = undefined;
+  if (modelIndex !== -1 && modelIndex + 1 < process.argv.length) {
+    const nextArg = process.argv[modelIndex + 1];
+    if (!nextArg.startsWith("-")) {
+      modelVal = nextArg;
+    }
+  }
+
+  // Provider override value for prompt filtering
+  const providerIndex = process.argv.findIndex(arg => arg === "--provider");
+  let providerVal: string | undefined = undefined;
+  if (providerIndex !== -1 && providerIndex + 1 < process.argv.length) {
+    const nextArg = process.argv[providerIndex + 1];
+    if (!nextArg.startsWith("-")) {
+      providerVal = nextArg;
+    }
+  }
+
+  const flags = [
+    "--resume", "-r", "--help", "-h", "--multi", "--workspace", "-w",
+    "--workspace-ssh", "-ws", "--preset", "-p", "--model", "--provider"
+  ];
+  const positionalArgs = process.argv.slice(2).filter((arg, idx) => {
+    if (flags.includes(arg)) return false;
+    if (resumeVal && arg === resumeVal) {
+      const prevArg = process.argv[2 + idx - 1];
+      if (prevArg === "--resume" || prevArg === "-r") {
+        return false;
+      }
+    }
+    if (workspaceValForPrompt && arg === workspaceValForPrompt) {
+      const prevArg = process.argv[2 + idx - 1];
+      if (prevArg === "--workspace" || prevArg === "-w") {
+        return false;
+      }
+    }
+    if (sshVal && arg === sshVal) {
+      const prevArg = process.argv[2 + idx - 1];
+      if (prevArg === "--workspace-ssh" || prevArg === "-ws") {
+        return false;
+      }
+    }
+    if (presetVal && arg === presetVal) {
+      const prevArg = process.argv[2 + idx - 1];
+      if (prevArg === "--preset" || prevArg === "-p") {
+        return false;
+      }
+    }
+    if (modelVal && arg === modelVal) {
+      const prevArg = process.argv[2 + idx - 1];
+      if (prevArg === "--model") {
+        return false;
+      }
+    }
+    if (providerVal && arg === providerVal) {
+      const prevArg = process.argv[2 + idx - 1];
+      if (prevArg === "--provider") {
+        return false;
+      }
+    }
+    return true;
+  });
+  const initialPrompt = positionalArgs.join(" ");
+
+  const isMulti = process.argv.includes("--multi");
+
+  if (presetVal) {
+    const { applyModelPreset } = await import("./core/config/presets.js");
+    try {
+      applyModelPreset(presetVal, isMulti ? "multi" : "single", false);
+    } catch (err: any) {
+      console.error(`Warning: Failed to activate preset "${presetVal}": ${err.message}`);
+    }
+  }
+
+  if (providerVal && !modelVal) {
+    const { setTierModel, getTierModel } = await import("./core/config/providers.js");
+    try {
+      const curModel = getTierModel(isMulti ? "multi" : "single", isMulti ? "master" : "superagent");
+      if (isMulti) {
+        setTierModel("multi", "master", curModel, providerVal);
+      } else {
+        setTierModel("single", "superagent", curModel, providerVal);
+      }
+    } catch (err: any) {
+      console.error(`Warning: Failed to set provider "${providerVal}": ${err.message}`);
+    }
+  }
+
+  if (modelVal) {
+    const { setTierModel } = await import("./core/config/providers.js");
+    try {
+      if (isMulti) {
+        setTierModel("multi", "master", modelVal, providerVal);
+      } else {
+        setTierModel("single", "superagent", modelVal, providerVal);
+      }
+    } catch (err: any) {
+      console.error(`Warning: Failed to set model "${modelVal}": ${err.message}`);
+    }
+  }
+
   if (process.stdin.isTTY) {
     // Confirm directory trust before starting the application
     const currentDir = path.resolve(process.cwd());
@@ -352,136 +496,6 @@ export async function runCli() {
       });
     };
     await runStartupChecks();
-
-    const resumeIndex = process.argv.findIndex(arg => arg === "--resume" || arg === "-r");
-    let resumeVal: string | undefined = undefined;
-    if (resumeIndex !== -1 && resumeIndex + 1 < process.argv.length) {
-      const nextArg = process.argv[resumeIndex + 1];
-      if (!nextArg.startsWith("-")) {
-        resumeVal = nextArg;
-      }
-    }
-    const autoResume = resumeVal !== undefined ? resumeVal : (resumeIndex !== -1 ? true : false);
-
-    // Workspace value for prompt filtering
-    const workspaceIndexForPrompt = process.argv.findIndex(arg => arg === "--workspace" || arg === "-w");
-    let workspaceValForPrompt: string | undefined = undefined;
-    if (workspaceIndexForPrompt !== -1 && workspaceIndexForPrompt + 1 < process.argv.length) {
-      const nextArg = process.argv[workspaceIndexForPrompt + 1];
-      if (!nextArg.startsWith("-")) {
-        workspaceValForPrompt = nextArg;
-      }
-    }
-
-    // SSH Workspace value for prompt filtering
-    const sshFlagIdx = process.argv.findIndex((arg) => arg === "--workspace-ssh" || arg === "-ws");
-    let sshVal: string | undefined = undefined;
-    if (sshFlagIdx !== -1 && process.argv[sshFlagIdx + 1]) {
-      const nextArg = process.argv[sshFlagIdx + 1];
-      if (!nextArg.startsWith("-")) {
-        sshVal = nextArg;
-      }
-    }
-
-    // Preset value for prompt filtering
-    const presetIndex = process.argv.findIndex(arg => arg === "--preset" || arg === "-p");
-    let presetVal: string | undefined = undefined;
-    if (presetIndex !== -1 && presetIndex + 1 < process.argv.length) {
-      const nextArg = process.argv[presetIndex + 1];
-      if (!nextArg.startsWith("-")) {
-        presetVal = nextArg;
-      }
-    }
-
-    // Model override value for prompt filtering
-    const modelIndex = process.argv.findIndex(arg => arg === "--model");
-    let modelVal: string | undefined = undefined;
-    if (modelIndex !== -1 && modelIndex + 1 < process.argv.length) {
-      const nextArg = process.argv[modelIndex + 1];
-      if (!nextArg.startsWith("-")) {
-        modelVal = nextArg;
-      }
-    }
-
-    // Provider override value for prompt filtering
-    const providerIndex = process.argv.findIndex(arg => arg === "--provider");
-    let providerVal: string | undefined = undefined;
-    if (providerIndex !== -1 && providerIndex + 1 < process.argv.length) {
-      const nextArg = process.argv[providerIndex + 1];
-      if (!nextArg.startsWith("-")) {
-        providerVal = nextArg;
-      }
-    }
-
-    const flags = [
-      "--resume", "-r", "--help", "-h", "--multi", "--workspace", "-w",
-      "--workspace-ssh", "-ws", "--preset", "-p", "--model", "--provider"
-    ];
-    const positionalArgs = process.argv.slice(2).filter((arg, idx) => {
-      if (flags.includes(arg)) return false;
-      if (resumeVal && arg === resumeVal) {
-        const prevArg = process.argv[2 + idx - 1];
-        if (prevArg === "--resume" || prevArg === "-r") {
-          return false;
-        }
-      }
-      if (workspaceValForPrompt && arg === workspaceValForPrompt) {
-        const prevArg = process.argv[2 + idx - 1];
-        if (prevArg === "--workspace" || prevArg === "-w") {
-          return false;
-        }
-      }
-      if (sshVal && arg === sshVal) {
-        const prevArg = process.argv[2 + idx - 1];
-        if (prevArg === "--workspace-ssh" || prevArg === "-ws") {
-          return false;
-        }
-      }
-      if (presetVal && arg === presetVal) {
-        const prevArg = process.argv[2 + idx - 1];
-        if (prevArg === "--preset" || prevArg === "-p") {
-          return false;
-        }
-      }
-      if (modelVal && arg === modelVal) {
-        const prevArg = process.argv[2 + idx - 1];
-        if (prevArg === "--model") {
-          return false;
-        }
-      }
-      if (providerVal && arg === providerVal) {
-        const prevArg = process.argv[2 + idx - 1];
-        if (prevArg === "--provider") {
-          return false;
-        }
-      }
-      return true;
-    });
-    const initialPrompt = positionalArgs.join(" ");
-
-    const isMulti = process.argv.includes("--multi");
-
-    if (presetVal) {
-      const { applyModelPreset } = await import("./core/config/presets.js");
-      try {
-        applyModelPreset(presetVal, isMulti ? "multi" : "single", false);
-      } catch (err: any) {
-        console.error(`Warning: Failed to activate preset "${presetVal}": ${err.message}`);
-      }
-    }
-
-    if (modelVal) {
-      const { setTierModel } = await import("./core/config/providers.js");
-      try {
-        if (isMulti) {
-          setTierModel("multi", "master", modelVal);
-        } else {
-          setTierModel("single", "superagent", modelVal);
-        }
-      } catch (err: any) {
-        console.error(`Warning: Failed to set model "${modelVal}": ${err.message}`);
-      }
-    }
 
     let hasCurrentHistory = false;
     let sessionPath = "";
@@ -649,102 +663,173 @@ export async function runCli() {
       });
     }
   } else {
+    const currentDir = path.resolve(process.cwd());
+    if (!isDirectoryTrusted(currentDir)) {
+      addTrustedDirectory(currentDir);
+    }
+    ensureDirectoryTrusted(currentDir).catch(() => {});
+
     const readline = (await import("readline")).default;
     let inReasoning = false;
-    const agent = new Agent(
-      (event: any) => {
-        switch (event.type) {
-          case "text":
-            if (inReasoning) {
-              process.stdout.write("\n[/Reasoning]\n");
-              inReasoning = false;
-            }
-            process.stdout.write(event.content);
-            break;
-          case "reasoning":
-            if (!inReasoning) {
-              process.stdout.write("\n [Reasoning]\n   ");
-              inReasoning = true;
-            }
-            process.stdout.write(event.content.replace(/\n/g, "\n   "));
-            break;
-          case "tool_start":
-            if (inReasoning) {
-              process.stdout.write("\n[/Reasoning]\n");
-              inReasoning = false;
-            }
-            console.log(`\n⚡ ${event.description}`);
-            break;
-          case "tool_end":
-            const r = event.toolResult;
-            if (r.isError) {
-              console.log(`✗ Failed - ${event.description}\nDetail: ${r.result}`);
-            } else {
-              console.log(`✓ Completed - ${event.description}\nOutput: ${r.result.slice(0, 200)}${r.result.length > 200 ? "..." : ""}`);
-            }
-            break;
-          case "error":
-            if (inReasoning) {
-              process.stdout.write("\n[/Reasoning]\n");
-              inReasoning = false;
-            }
-            console.error(`\nError: ${event.message}`);
-            break;
-          case "done":
-            if (inReasoning) {
-              process.stdout.write("\n[/Reasoning]\n");
-              inReasoning = false;
-            }
-            process.stdout.write("\n❯ ");
-            break;
-          case "token_usage":
-            // Quietly ignore or log in non-TTY mode
-            break;
-          case "model_download":
-            if (event.status === "downloading") {
-              process.stdout.write(`\n[INFO] Downloading local ${event.modelName} model to cache...\n`);
-            } else if (event.status === "progress" && typeof event.progress === "number") {
-              process.stdout.write(`\r[INFO] Downloading ${event.modelName} model: ${event.progress.toFixed(1)}%`);
-            } else if (event.status === "loaded") {
-              process.stdout.write(`\n[INFO] ${event.modelName} model loaded successfully.\n`);
-            }
-            break;
+
+    const onEvent = (event: any) => {
+      switch (event.type) {
+        case "text":
+          if (inReasoning) {
+            process.stdout.write("\n[/Reasoning]\n");
+            inReasoning = false;
+          }
+          process.stdout.write(event.content);
+          break;
+        case "reasoning":
+          if (!inReasoning) {
+            process.stdout.write("\n [Reasoning]\n   ");
+            inReasoning = true;
+          }
+          process.stdout.write(event.content.replace(/\n/g, "\n   "));
+          break;
+        case "tool_start":
+          if (inReasoning) {
+            process.stdout.write("\n[/Reasoning]\n");
+            inReasoning = false;
+          }
+          console.log(`\n⚡ ${event.description}`);
+          break;
+        case "tool_end": {
+          const r = event.toolResult;
+          if (r.isError) {
+            console.log(`✗ Failed - ${event.description}\nDetail: ${r.result}`);
+          } else {
+            console.log(`✓ Completed - ${event.description}\nOutput: ${r.result.slice(0, 200)}${r.result.length > 200 ? "..." : ""}`);
+          }
+          break;
         }
-      },
-      async (toolCall, description) => {
-        // In non-interactive mode: auto-approve shell/read tools but BLOCK out-of-bounds file writes.
-        // File write tools outside the workspace must never silently succeed in headless mode.
-        const FILE_WRITE_TOOLS = [
-          "write", "write_to_file", "edit",
-          "replace_file_content", "multi_replace_file_content", "apply_patch",
-        ];
-        if (FILE_WRITE_TOOLS.includes(toolCall.name)) {
+        case "error":
+          if (inReasoning) {
+            process.stdout.write("\n[/Reasoning]\n");
+            inReasoning = false;
+          }
+          console.error(`\nError: ${event.message}`);
+          break;
+        case "done":
+          if (inReasoning) {
+            process.stdout.write("\n[/Reasoning]\n");
+            inReasoning = false;
+          }
+          if (!initialPrompt) {
+            process.stdout.write("\n❯ ");
+          }
+          break;
+        case "token_usage":
+          // Quietly ignore or log in non-TTY mode
+          break;
+        case "model_download":
+          if (event.status === "downloading") {
+            process.stdout.write(`\n[INFO] Downloading local ${event.modelName} model to cache...\n`);
+          } else if (event.status === "progress" && typeof event.progress === "number") {
+            process.stdout.write(`\r[INFO] Downloading ${event.modelName} model: ${event.progress.toFixed(1)}%`);
+          } else if (event.status === "loaded") {
+            process.stdout.write(`\n[INFO] ${event.modelName} model loaded successfully.\n`);
+          }
+          break;
+      }
+    };
+
+    const onPermission = async (toolCall: any, description: string) => {
+      // In non-interactive mode: auto-approve workspace tool operations.
+      // Block dangerous shell commands and file writes strictly OUTSIDE the workspace.
+      const { isDangerousCommand, isToolCallOutOfBounds } = await import("./core/permissions.js");
+
+      if (toolCall.name === "exec_command" || toolCall.name === "bash" || toolCall.name === "shell") {
+        const cmd = (toolCall.args as any)?.command || "";
+        if (isDangerousCommand(cmd)) {
+          console.error(`\n🚫 Blocked dangerous command in non-TTY mode: ${cmd}`);
+          return false;
+        }
+      }
+
+      const FILE_WRITE_TOOLS = [
+        "write", "write_to_file", "edit",
+        "replace_file_content", "multi_replace_file_content", "apply_patch",
+      ];
+      if (FILE_WRITE_TOOLS.includes(toolCall.name)) {
+        if (isToolCallOutOfBounds(toolCall, process.cwd())) {
           console.error(
             `\n🚫 Blocked out-of-bounds FILE WRITE in non-TTY mode: ${description}\n` +
             `   Tool "${toolCall.name}" attempted to write outside the workspace. Denied.`
           );
           return false;
         }
-        console.log(`\n⚠ Auto-approving permission in non-TTY: ${description}`);
-        return true;
-      },
-      async (question, options) => {
-        console.log(`\n❓ Question in non-TTY: ${question}`);
+      }
+
+      return true;
+    };
+
+    const onQuestion = async (question: any, options?: string[]) => {
+      console.log(`\n❓ Question in non-TTY: ${typeof question === "string" ? question : JSON.stringify(question)}`);
+      if (Array.isArray(question)) {
+        return question.map(q => q.options?.[0] ?? "");
+      }
+      const firstOpt = options?.[0] ?? "";
+      console.log(`Auto-selecting first option: "${firstOpt}"`);
+      return firstOpt;
+    };
+
+    let agent: AgentType;
+    if (isMulti) {
+      const { MASTER_AGENT_SYSTEM_PROMPT } = await import("./core/prompts.js");
+      const { masterToolset } = await import("./core/tools/toolsets.js");
+      agent = new Agent(
+        onEvent,
+        onPermission,
+        onQuestion,
+        MASTER_AGENT_SYSTEM_PROMPT,
+        masterToolset
+      );
+      agent.tier = "master";
+      agent.isMultiAgent = true;
+      registerMasterAgent(agent);
+      registerQuestionHandler(async (question, options) => {
         if (Array.isArray(question)) {
           return question.map(q => q.options?.[0] ?? "");
         }
-        const firstOpt = options?.[0] ?? "";
-        console.log(`Auto-selecting first option: "${firstOpt}"`);
-        return firstOpt;
+        return options?.[0] ?? "";
+      });
+    } else {
+      agent = new Agent(
+        onEvent,
+        onPermission,
+        onQuestion
+      );
+      agent.tier = "single";
+    }
+
+    if (autoResume) {
+      try {
+        await agent.loadHistory(autoResume);
+      } catch (err: any) {
+        // Ignore and start clean if history load fails
       }
-    );
-    agent.tier = "single";
+    }
 
     // Register with extension server
     try {
       const { registerCliAgent } = await import("./server.js");
-      registerCliAgent(agent, process.cwd(), "single");
+      registerCliAgent(agent, process.cwd(), isMulti ? "multi" : "single");
     } catch {}
+
+    if (initialPrompt) {
+      try {
+        await agent.sendMessage(initialPrompt);
+      } catch (err: any) {
+        console.error(`\nExecution error: ${err.message}`);
+        process.exit(1);
+      }
+      try {
+        await agent.saveHistory();
+      } catch {}
+      process.exit(0);
+    }
 
     const rl = readline.createInterface({
       input: process.stdin,
