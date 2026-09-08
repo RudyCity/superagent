@@ -288,7 +288,11 @@ export function getModelInstanceForString(modelStr: string) {
       provider = "custom";
       modelName = rest;
       const customProfile = modelConfig.providers.find(
+        (p) => p.id === "custom"
+      ) || modelConfig.providers.find(
         (p) => p.provider === "custom" && p.apiKey && p.apiKey.trim() !== ""
+      ) || modelConfig.providers.find(
+        (p) => p.provider === "custom"
       );
       if (customProfile) {
         apiKey = customProfile.apiKey;
@@ -591,7 +595,7 @@ export function getModelInstanceForString(modelStr: string) {
   }
 
   const openai = createOpenAI({
-    apiKey,
+    apiKey: apiKey && apiKey.trim() !== "" ? apiKey : "no-key-required",
     ...(baseUrl && { baseURL: baseUrl }),
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Superagent/1.0",
