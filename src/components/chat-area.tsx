@@ -1315,10 +1315,25 @@ export function computeWrappedLines({
     );
     result.push({ node: spinnerNode, lineIndex: -1, type: "tool_start" });
 
-    // Live terminal boxed viewport — replaces old unbordered SYSTEM_CALL_OUTPUT lines
-    const hasCommandOutput = activeToolName === "bash" || activeToolName === "run_command" ||
-      activeToolName === "command" || activeToolName === "run_background_process";
-    if (hasCommandOutput || activeToolOutput) {
+    // Live terminal boxed viewport — covers all tools that stream via appendActiveToolOutput.
+    // STREAMING_TOOL_NAMES: tools known to produce live stdout/stderr.
+    // Placeholder is shown from tool_start even before first output chunk for these tools.
+    // For any other tool that happens to produce activeToolOutput, the box is also shown.
+    const STREAMING_TOOL_NAMES = new Set([
+      // Shell execution tools (shellTools.ts)
+      "bash",
+      "run_command",
+      "command",          // /terminal preset runner (app.tsx)
+      "run_background_process",
+      // CLI bridge delegation (cliBridgeTool.ts / cliBridgeSession.ts)
+      "cli_bridge",
+      // Android device CLI (otherTools.ts)
+      "android_cli",
+      // Multi-agent orchestration streaming (superagentTools.ts)
+      "invoke_superagent",
+    ]);
+    const hasStreamingOutput = STREAMING_TOOL_NAMES.has(activeToolName ?? "") || !!activeToolOutput;
+    if (hasStreamingOutput) {
       const liveViewportWidth = Math.max(20, chatWidth - marginSpaces.length);
       const liveNode = (
         <Box flexDirection="row">
@@ -1327,7 +1342,7 @@ export function computeWrappedLines({
             activeToolOutput={activeToolOutput}
             maxLines={10}
             viewportWidth={liveViewportWidth}
-            showPlaceholder={true}
+            showPlaceholder={STREAMING_TOOL_NAMES.has(activeToolName ?? "")}
           />
         </Box>
       );
