@@ -1,3 +1,15 @@
+## [1.5.62] - 2026-09-10
+
+### Changed: Set 1M Context Window Limit for z-ai/glm-5.3-flash Models
+
+- **Model Limits Configuration (`src/core/model_limits.ts`)**:
+  - Added `z-ai/glm-5.3`, `z-ai/glm-5.3-flash`, `z-ai/glm-5.3-flash:free`, and `z-ai/glm-5.3-flash-free` with a 1,048,576 (1M) token context limit in `MODEL_LIMITS`.
+  - Added fallback heuristics for `glm-5.3` and `glm-5.3-flash` returning 1,048,576 tokens.
+- **Model Context Lookup & Cache Guard (`src/core/config/models.ts`)**:
+  - Updated cache evaluation in `getContextWindowLimit` to allow static limits to take precedence over stale cached values of 131,072 tokens.
+- **Test Coverage (`tests/config.test.ts`)**:
+  - Added test suite coverage verifying 1,048,576 token context window for `z-ai/glm-5.3-flash-free` across direct, free-suffix, and custom-prefixed model names.
+
 ## [1.5.61] - 2026-09-10
 
 ### Fixed: Slowness in Input Matching and Selection Bugs in /login Wizard

@@ -464,6 +464,10 @@ export const MODEL_LIMITS: Record<string, number> = {
   "z-ai/glm-5-turbo": 262144,
   "z-ai/glm-5.1": 202752,
   "z-ai/glm-5.2": 1048576,
+  "z-ai/glm-5.3": 1048576,
+  "z-ai/glm-5.3-flash": 1048576,
+  "z-ai/glm-5.3-flash:free": 1048576,
+  "z-ai/glm-5.3-flash-free": 1048576,
   "z-ai/glm-5v-turbo": 202752,
 
   // ~anthropic Models
@@ -581,7 +585,9 @@ export function getStaticModelLimit(model: string): number | null {
   if (m.includes("grok-4")) return 1000000;
   if (m.includes("grok")) return 500000;
 
-  // Z.AI (GLM) — native provider models (glm-4.6, glm-4.5)
+  // Z.AI (GLM) — native provider models (glm-5.3, glm-5.2, glm-4.6, glm-4.5)
+  if (m.includes("glm-5.3-flash") || m.includes("glm-5.3")) return 1048576;
+  if (m.includes("glm-5.2")) return 1048576;
   if (m.includes("glm-4.6")) return 202752;
   if (m.includes("glm-4.5")) return 131072;
   if (m.includes("glm")) return 131072;

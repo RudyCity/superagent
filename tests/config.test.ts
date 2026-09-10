@@ -265,6 +265,14 @@ describe("config", () => {
     expect(getContextWindowLimit("qwen/qwen3-coder:free")).toBe(1048576);
     expect(getContextWindowLimit("qwen3.8-max")).toBe(1000000);
     expect(getContextWindowLimit("qwen/qwen3.8-max")).toBe(1000000);
+
+    // Z-ai GLM 5.3 1M context tests
+    expect(getContextWindowLimit("z-ai/glm-5.3-flash-free")).toBe(1048576);
+    expect(getContextWindowLimit("z-ai/glm-5.3-flash:free")).toBe(1048576);
+    expect(getContextWindowLimit("z-ai/glm-5.3-flash")).toBe(1048576);
+    expect(getContextWindowLimit("glm-5.3-flash-free")).toBe(1048576);
+    expect(getContextWindowLimit("glm-5.3-flash")).toBe(1048576);
+    expect(getContextWindowLimit("custom-prefix/z-ai/glm-5.3-flash-free")).toBe(1048576);
   });
 
   it("should fetch and cache models from provider correctly", async () => {

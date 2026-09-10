@@ -152,7 +152,7 @@ export function getContextWindowLimit(model: string): number {
       if (cachedVal < MIN_TRUSTED_CONTEXT_LIMIT) {
         return staticLimit ?? DEFAULT_CONTEXT_WINDOW_LIMIT;
       }
-      if ((cachedVal === 128000 || cachedVal === 200000) && staticLimit !== null) {
+      if ((cachedVal === 128000 || cachedVal === 131072 || cachedVal === 200000) && staticLimit !== null && staticLimit > cachedVal) {
         return staticLimit;
       }
       return cachedVal;
