@@ -10,6 +10,7 @@ import { formatCompactNumber, minimizePathInDescription } from "../utils/text.js
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ChatLinePosition } from "../hooks/useMouseScroll.js";
 import { getSettings } from "../core/config.js";
+import { LiveTerminalView } from "./live-terminal-view.js";
 
 export interface WrappedChatLine {
   node: React.ReactNode;
@@ -1314,27 +1315,23 @@ export function computeWrappedLines({
     );
     result.push({ node: spinnerNode, lineIndex: -1, type: "tool_start" });
 
-    const activeToolLines = activeToolOutput ? activeToolOutput.trim().split("\n").slice(-8) : [];
-    if (activeToolLines.length > 0) {
-      const liveOutputHeader = (
+    // Live terminal boxed viewport — replaces old unbordered SYSTEM_CALL_OUTPUT lines
+    const hasCommandOutput = activeToolName === "bash" || activeToolName === "run_command" ||
+      activeToolName === "command" || activeToolName === "run_background_process";
+    if (hasCommandOutput || activeToolOutput) {
+      const liveViewportWidth = Math.max(20, chatWidth - marginSpaces.length);
+      const liveNode = (
         <Box flexDirection="row">
-          <Text color="gray" dimColor>{connectorPrefix}</Text><Text bold color="gray">SYSTEM_CALL_OUTPUT (LIVE)</Text><Text color="gray" dimColor> ]</Text>
+          <Text color="gray" dimColor>{marginSpaces}</Text>
+          <LiveTerminalView
+            activeToolOutput={activeToolOutput}
+            maxLines={10}
+            viewportWidth={liveViewportWidth}
+            showPlaceholder={true}
+          />
         </Box>
       );
-      result.push({ node: liveOutputHeader, lineIndex: -1, type: "tool_start" });
-
-      for (const line of activeToolLines) {
-        const subLines = wrapTextForDisplay(line, chatWidth - marginSpaces.length);
-        for (const subLine of subLines) {
-          const node = (
-            <Box flexDirection="row">
-              <Text color="gray" dimColor>{marginSpaces}</Text>
-              <Text color="gray">{subLine}</Text>
-            </Box>
-          );
-          result.push({ node, lineIndex: -1, type: "tool_start" });
-        }
-      }
+      result.push({ node: liveNode, lineIndex: -1, type: "tool_start" });
     }
   }
 

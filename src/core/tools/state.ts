@@ -18,6 +18,7 @@ import {
   deleteWorkspaceTaskFromDb,
   deleteWorkspaceDataFromDb
 } from "../storage/historyDb.js";
+import { resolveCarriageReturns } from "../../utils/terminalStream.js";
 
 export const backgroundTasks = new Map<string, BackgroundTask>();
 export const taskChangeListeners = new Set<TaskChangeListener>();
@@ -296,9 +297,12 @@ export function clearActiveToolOutput() {
 
 export function appendActiveToolOutput(text: string) {
   activeToolOutput += text;
+  if (activeToolOutput.includes("\r")) {
+    activeToolOutput = resolveCarriageReturns(activeToolOutput);
+  }
   const lines = activeToolOutput.split("\n");
-  if (lines.length > 50) {
-    activeToolOutput = lines.slice(lines.length - 50).join("\n");
+  if (lines.length > 100) {
+    activeToolOutput = lines.slice(lines.length - 100).join("\n");
   }
   // Throttle UI listener notifications to prevent excessive re-renders
   if (!activeOutputThrottleTimer) {

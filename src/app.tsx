@@ -1779,16 +1779,38 @@ export function App({
     let intervalId: NodeJS.Timeout | null = null;
 
     const check = async () => {
-      const taskPath = agentRef.current ? agentRef.current.getTaskFilePath() : null;
-      if (!taskPath) return;
+      const agent = agentRef.current;
+      const candidates: string[] = [];
+      if (agent?.getTaskFilePath) {
+        try {
+          candidates.push(agent.getTaskFilePath());
+        } catch {}
+      }
+      const ws = agent?.workingDirectory || process.cwd();
+      candidates.push(path.join(ws, "task.md"));
+      candidates.push(path.join(ws, "_task.md"));
+      candidates.push(path.join(ws, "tasks.md"));
+
+      let foundPath: string | null = null;
+      for (const p of candidates) {
+        if (p && fsSync.existsSync(p)) {
+          foundPath = p;
+          break;
+        }
+      }
+      if (!foundPath && candidates[0]) {
+        foundPath = candidates[0];
+      }
+      if (!foundPath) return;
+
       try {
-        const result = await readChecklistTasks(taskPath);
+        const result = await readChecklistTasks(foundPath);
         if (!active) return;
         setChecklistTasks(result.tasks);
 
         // Also poll the task history file for completed tasks archive
         try {
-          const history = await readTaskHistory(taskPath);
+          const history = await readTaskHistory(foundPath);
           if (!active) return;
           setRawCompletedHistory(history);
         } catch {
@@ -1802,7 +1824,7 @@ export function App({
       }
     };
 
-    if (planState === "APPROVED") {
+    if (planState !== "PLANNING_PENDING") {
       check();
       intervalId = setInterval(check, 2000);
     } else {
@@ -1818,7 +1840,7 @@ export function App({
 
   // Synchronize rawCompletedHistory with completedHistory using a 15-second auto-hide decay
   useEffect(() => {
-    if (planState !== "APPROVED" || rawCompletedHistory.length === 0) {
+    if (planState === "PLANNING_PENDING" || rawCompletedHistory.length === 0) {
       historyTimestampsRef.current.clear();
       setCompletedHistory([]);
       return;
@@ -2862,17 +2884,19 @@ export function App({
   const totalAgentsHeight = saSectionHeight + subSectionHeight + procSectionHeight;
 
   const inputLinesCount = input ? Math.max(1, Math.ceil((input.length + 6) / terminalWidth)) : 1;
-  const activeToolLinesCount = activeToolOutput ? activeToolOutput.trim().split("\n").slice(-8).length : 0;
+  // LiveTerminalView box: 1 header + up to 10 output lines + 1 footer = 12 total;
+  // +1 spinner line above = 13 fixed lines when a shell command is executing
+  const activeToolLinesCount = isExecutingTool ? 13 : 0;
   const showBanner = messageCount === 0;
 
   // Checklist height — the ACTIVE TASK CHECKLIST is always expanded, so
   // we no longer honor collapsedSections.checklist when computing height.
   let checklistSectionHeight = 0;
-  if (planState === "APPROVED" && checklistTasks.length > 0) {
+  if (planState !== "PLANNING_PENDING" && checklistTasks.length > 0) {
     checklistSectionHeight = 1 + Math.min(checklistTasks.length, maxChecklistVisible);
   }
   // Account for completed history section height
-  if (planState === "APPROVED" && completedHistory.length > 0) {
+  if (planState !== "PLANNING_PENDING" && completedHistory.length > 0) {
     const historyVisible = Math.min(completedHistory.length, 3);
     checklistSectionHeight += 1 + historyVisible + (completedHistory.length > 3 ? 1 : 0);
   }
@@ -2912,8 +2936,8 @@ export function App({
   const bannerHeight = showBanner ? (gitBranch ? 6 : 8) : 0;
   const chatContentStartRow = bannerHeight + 1 /* header */ + 1 /* first content row */;
 
-  // Bottom chrome: marginTop(1) + agents + checklist + history + wizard + input
-  const bottomChromeContentHeight = totalAgentsHeight + checklistSectionHeight + historySectionHeight + wizardSectionHeight + inputSectionHeight;
+  // Bottom chrome: marginTop(1) + agents + checklist + history + wizard + input + live terminal box
+  const bottomChromeContentHeight = totalAgentsHeight + checklistSectionHeight + historySectionHeight + wizardSectionHeight + inputSectionHeight + activeToolLinesCount;
   const bottomChromeTotalHeight = 1 + bottomChromeContentHeight; // +1 for marginTop of the chrome box
 
   // Chat area height on screen

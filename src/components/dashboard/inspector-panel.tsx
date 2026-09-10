@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import path from "path";
 import { AgentSession } from "../multi-agent-dashboard.js";
+import { LiveTerminalView } from "../live-terminal-view.js";
 
 // Render inline Markdown formatting like bold, code blocks, links, and file/web URLs
 export function renderLogInlineStyles(
@@ -209,6 +210,7 @@ interface InspectorPanelProps {
   isExecutingTool: boolean;
   timeLeft: number | null;
   activeToolLines: string[];
+  activeToolOutput?: string;
   workspaceHeight: number;
 }
 
@@ -223,6 +225,7 @@ export function InspectorPanel({
   isExecutingTool,
   timeLeft,
   activeToolLines,
+  activeToolOutput = "",
   workspaceHeight,
 }: InspectorPanelProps) {
   return (
@@ -298,19 +301,13 @@ export function InspectorPanel({
               <Text color="gray">│    </Text>
               <ToolLoadingIndicator />
             </Box>
-            {activeToolLines.length > 0 && (
-              <>
-                <Text color="gray">
-                  ├─── [ <Text bold color="gray">SYSTEM_CALL_OUTPUT (LIVE)</Text> ]
-                </Text>
-                {activeToolLines.map((line, idx) => (
-                  <Box key={idx} flexDirection="row">
-                    <Text color="gray">│    </Text>
-                    <Text color="gray">{line}</Text>
-                  </Box>
-                ))}
-              </>
-            )}
+            <LiveTerminalView
+              activeToolOutput={activeToolOutput}
+              maxLines={Math.max(4, Math.min(10, activeToolLines.length > 0 ? activeToolLines.length + 2 : 6))}
+              viewportWidth={feedWidth}
+              showPlaceholder={true}
+              headerPrefix="│  "
+            />
           </Box>
         )}
       </Box>

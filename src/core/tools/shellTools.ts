@@ -190,6 +190,13 @@ export const bashTool: Tool = {
       }, timeout);
     });
 
+    const unbufferedEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      PYTHONUNBUFFERED: "1",
+      FORCE_COLOR: "1",
+      CI: "1",
+    };
+
     try {
       clearActiveToolOutput();
       const proc = execa(command, {
@@ -197,6 +204,7 @@ export const bashTool: Tool = {
         cwd,
         reject: false,
         all: true,
+        env: unbufferedEnv,
       });
 
       const abortHandler = () => {
@@ -333,6 +341,13 @@ export const runCommandTool: Tool = {
       }, timeout);
     });
 
+    const unbufferedEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      PYTHONUNBUFFERED: "1",
+      FORCE_COLOR: "1",
+      CI: "1",
+    };
+
     try {
       clearActiveToolOutput();
       const proc = execa(command, {
@@ -340,6 +355,7 @@ export const runCommandTool: Tool = {
         cwd: targetCwd,
         reject: false,
         all: true,
+        env: unbufferedEnv,
       });
 
       const abortHandler = () => {

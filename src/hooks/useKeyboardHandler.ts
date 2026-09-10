@@ -487,7 +487,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
 
     // Ctrl+T: Toggle checklist focus mode
     if (key.ctrl && inputChar === "t" && !activeWizard) {
-      if (planState === "APPROVED" && (checklistTasks.length > 0 || completedHistory.length > 0)) {
+      if (planState !== "PLANNING_PENDING" && (checklistTasks.length > 0 || completedHistory.length > 0)) {
         setFocusMode((prev: any) => (prev === "checklist" ? "input" : "checklist"));
       }
       return;

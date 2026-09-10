@@ -3,7 +3,7 @@ import { execa } from "execa";
 import { Box, Text, useInput, useApp } from "ink";
 import ChatTextInput, { ChatTextInputRef } from "./ChatTextInput.js";
 import fs from "fs/promises";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { 
   subagentInstances, 
@@ -387,16 +387,37 @@ export function MultiAgentDashboard({
     let intervalId: NodeJS.Timeout | null = null;
 
     const check = async () => {
-      const taskPath = agent ? agent.getTaskFilePath() : null;
-      if (!taskPath) return;
+      const candidates: string[] = [];
+      if (agent?.getTaskFilePath) {
+        try {
+          candidates.push(agent.getTaskFilePath());
+        } catch {}
+      }
+      const ws = agent?.workingDirectory || process.cwd();
+      candidates.push(path.join(ws, "task.md"));
+      candidates.push(path.join(ws, "_task.md"));
+      candidates.push(path.join(ws, "tasks.md"));
+
+      let foundPath: string | null = null;
+      for (const p of candidates) {
+        if (p && existsSync(p)) {
+          foundPath = p;
+          break;
+        }
+      }
+      if (!foundPath && candidates[0]) {
+        foundPath = candidates[0];
+      }
+      if (!foundPath) return;
+
       try {
-        const result = await readChecklistTasks(taskPath);
+        const result = await readChecklistTasks(foundPath);
         if (!active) return;
         setChecklistTasks(result.tasks);
 
         // Also poll the task history file for completed tasks archive
         try {
-          const history = await readTaskHistory(taskPath);
+          const history = await readTaskHistory(foundPath);
           if (!active) return;
           setRawCompletedHistory(history);
         } catch {
@@ -404,7 +425,7 @@ export function MultiAgentDashboard({
         }
       } catch (err: any) {
         if (agent) {
-          agent.writeToLogFile("WARN", `Failed to read task checklist file from path '${taskPath}': ${err.message}`);
+          agent.writeToLogFile("WARN", `Failed to read task checklist file from path '${foundPath}': ${err.message}`);
         }
         if (active) {
           setChecklistTasks([]);
@@ -413,7 +434,7 @@ export function MultiAgentDashboard({
       }
     };
 
-    if (planState === "APPROVED") {
+    if (planState !== "PLANNING_PENDING") {
       check();
       intervalId = setInterval(check, 2000);
     } else {
@@ -429,7 +450,7 @@ export function MultiAgentDashboard({
 
   // Synchronize rawCompletedHistory with completedHistory using a 15-second auto-hide decay
   useEffect(() => {
-    if (planState !== "APPROVED" || rawCompletedHistory.length === 0) {
+    if (planState === "PLANNING_PENDING" || rawCompletedHistory.length === 0) {
       historyTimestampsRef.current.clear();
       setCompletedHistory([]);
       return;
@@ -1033,12 +1054,12 @@ export function MultiAgentDashboard({
   const fixedHeight = 5 + statusBarHeight; // 3 (header) + 2 (divider) + statusBarHeight
   const workspaceHeight = Math.max(10, terminalSize.height - fixedHeight - bottomPromptHeight - liveListHeight - wizardHeight);
   let checklistHeight = 0;
-  if (planState === "APPROVED" && checklistTasks.length > 0) {
+  if (planState !== "PLANNING_PENDING" && checklistTasks.length > 0) {
     const checklistCount = Math.min(checklistTasks.length, maxChecklistVisible);
     checklistHeight += 1 + checklistCount;
   }
   // Account for completed history section height
-  if (planState === "APPROVED" && completedHistory.length > 0) {
+  if (planState !== "PLANNING_PENDING" && completedHistory.length > 0) {
     const historyVisible = Math.min(completedHistory.length, 3);
     checklistHeight += 1 + historyVisible + (completedHistory.length > 3 ? 1 : 0);
   }
@@ -1437,6 +1458,7 @@ export function MultiAgentDashboard({
           isExecutingTool={isExecutingTool}
           timeLeft={timeLeft}
           activeToolLines={activeToolLines}
+          activeToolOutput={activeToolOutput}
           workspaceHeight={workspaceHeight}
         />
       </Box>

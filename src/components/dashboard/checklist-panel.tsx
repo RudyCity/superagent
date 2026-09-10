@@ -27,8 +27,9 @@ export function ChecklistPanel({
   const hasActiveTasks = checklistTasks.length > 0;
   const hasHistory = completedHistory.length > 0;
 
-  // Only show when plan is approved AND (there are active tasks OR completed history)
-  if (planState !== "APPROVED" || (!hasActiveTasks && !hasHistory)) {
+  // Show whenever there are active tasks OR completed history,
+  // except during pending plan approval review.
+  if (planState === "PLANNING_PENDING" || (!hasActiveTasks && !hasHistory)) {
     return null;
   }
 

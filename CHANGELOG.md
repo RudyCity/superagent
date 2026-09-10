@@ -1,3 +1,46 @@
+## [1.5.63] - 2026-09-10
+
+### Added: Boxed Inline Live Terminal View for Command Execution
+
+- **New Component (`src/components/live-terminal-view.tsx`)**:
+  - Created `LiveTerminalView` Ink component replacing the old unbordered SYSTEM_CALL_OUTPUT live lines.
+  - Renders a bordered box with a pulsing color LIVE badge, elapsed seconds, and an auto-scrolling viewport of the last 10 lines of command stdout/stderr.
+  - Displays a "Command executing, awaiting output..." placeholder when a process is running but has not yet emitted any output.
+  - Supports a configurable `headerPrefix` for indented use inside inspector panels.
+
+- **Stream Normalization Utility (`src/utils/terminalStream.ts`)**:
+  - Added `resolveCarriageReturns(text)` to handle `\r` progress bar overwrite sequences (e.g. tqdm, download bars, benchmark tickers) so lines update in place instead of accumulating duplicates.
+  - Added `getTerminalTailLines(text, maxLines)` to get the last N normalized output lines for the viewport.
+
+- **Unbuffered Process Execution (`src/core/tools/shellTools.ts`)**:
+  - `bashTool` and `runCommandTool` now inject `PYTHONUNBUFFERED=1`, `FORCE_COLOR=1`, and `CI=1` environment flags to prevent runtimes from buffering stdout before flushing.
+
+- **Live Output Buffer Improvements (`src/core/tools/state.ts`)**:
+  - Expanded in-memory active output sliding window from 50 to 100 lines.
+  - Applied carriage-return normalization in `appendActiveToolOutput` before slicing the buffer.
+
+- **Layout Budget (`src/app.tsx`)**:
+  - Reserved a stable 13-line space in `bottomChromeContentHeight` when a tool is actively executing, preventing chat history and the prompt input from jumping during streaming.
+
+- **Chat Area Integration (`src/components/chat-area.tsx`)**:
+  - Replaced the legacy flat SYSTEM_CALL_OUTPUT line rendering with `LiveTerminalView` for all shell command tool executions.
+
+- **Dashboard Inspector Integration (`src/components/dashboard/inspector-panel.tsx`)**:
+  - Replaced old SYSTEM_CALL_OUTPUT output lines in the Master session inspector with `LiveTerminalView`.
+
+### Fixed: Task Checklist Always Visible (Not Gated on Plan Approval)
+
+- **`src/components/task-checklist.tsx`**: Guard updated from `planState !== "APPROVED"` to `planState === "PLANNING_PENDING"` — checklist now renders whenever tasks exist, except during the plan approval wizard.
+- **`src/components/dashboard/checklist-panel.tsx`**: Same guard fix applied.
+- **`src/app.tsx`**: Task polling now resolves candidate paths (`task.md`, `_task.md`, `tasks.md`) and polls whenever `planState !== "PLANNING_PENDING"`.
+- **`src/components/multi-agent-dashboard.tsx`**: Same candidate path resolution and `planState` guard update applied.
+- **`src/hooks/useKeyboardHandler.ts`**: Ctrl+T checklist toggle now works when tasks exist, not only after plan approval.
+- **`src/hooks/useDashboardKeyboard.ts`**: Checklist focus area navigation guard updated similarly.
+
+### Tests
+
+- Added `tests/terminalStream.test.ts` with 8 tests covering carriage-return resolution, CRLF normalization, and tail line extraction.
+
 ## [1.5.62] - 2026-09-10
 
 ### Changed: Set 1M Context Window Limit for z-ai/glm-5.3-flash Models

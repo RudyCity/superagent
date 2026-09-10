@@ -703,7 +703,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
       if (focusArea === "input") {
         setFocusArea("list");
       } else if (focusArea === "list") {
-        if (planState === "APPROVED" && (checklistTasks.length > 0 || completedHistory.length > 0)) {
+        if (planState !== "PLANNING_PENDING" && (checklistTasks.length > 0 || completedHistory.length > 0)) {
           setFocusArea("checklist");
         } else if (runningSubagentsCount > 0) {
           setFocusArea("agents");
