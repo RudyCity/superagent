@@ -1,3 +1,22 @@
+## [1.5.61] - 2026-09-10
+
+### Fixed: Slowness in Input Matching and Selection Bugs in /login Wizard
+
+- **Optimized Fuzzy Matching & Suggestion Filtering (`src/utils/text.ts`)**:
+  - Replaced expensive `localeCompare` with direct string comparison, avoiding repeated main-thread event loop freezes.
+  - Added O(1) early return for empty or whitespace-only inputs to avoid scoring and sorting 1,000+ items on initial render.
+  - Pre-computed lowercased pattern and multi-term tokens once per filter operation rather than N times per item.
+  - Enhanced `fuzzyScore` to support multi-term / whitespace-separated tokens against hyphenated, slashed, or dotted names (e.g. `gemini flash` matching `google/gemini-2.5-flash` and `gpt 4o` matching `openai/gpt-4o`).
+- **Fixed Model and Provider Selection in `/login` Wizard**:
+  - Updated `src/hooks/useKeyboardHandler.ts` and `src/app.tsx` to handle `/login` step 8 (Select Model) and step 14 (Delete Provider) with active fuzzy-filtered options.
+  - Arrow keys now strictly clamp against `filtered.length - 1` instead of unfiltered `wizardOptions.length - 1`.
+  - Enter submission in step 8 selects the active filtered model; step 14 resolves the selected item back to its original index in `wizardOptions` to prevent deleting the wrong provider.
+  - Reset `wizardSelectedIndex` to 0 on input changes in step 8 and step 14 in `src/app.tsx`.
+- **Render Optimization (`src/app.tsx`)**:
+  - Memoized `skillCommands` and `commands` with `useMemo` to eliminate unnecessary filesystem traversal and array allocations on every keystroke.
+- **Tests & Benchmark (`tests/fuzzy.test.ts`)**:
+  - Added tests for multi-term queries, empty input O(1) return, and 1,500-item filtering benchmark executing under 15ms.
+
 ## [1.5.59] - 2026-09-08
 
 ### Fixed: Headless Execution in Non-TTY Environments & CLI Argument Scoping

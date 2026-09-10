@@ -580,7 +580,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     if (activeWizard) {
-      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10 || activeWizard.step === 14 || activeWizard.step === 15 || activeWizard.step === 17)) {
+      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 10 || activeWizard.step === 15 || activeWizard.step === 17)) {
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
           return;
@@ -678,19 +678,6 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           } else if (activeWizard.step === 7) {
             // Confirm connection test
             handleWizardSubmit(selectedOption);
-          } else if (activeWizard.step === 8) {
-            // Select model — support filter: use filtered list if input exists
-            const currentInput = (typeof input === "string") ? input.trim() : "";
-            const filteredModels = currentInput ? filterSuggestions(wizardOptions, currentInput) : wizardOptions;
-            const clampedIdx = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
-            const chosenModel = filteredModels[clampedIdx] || wizardOptions[wizardSelectedIndex];
-            if (chosenModel) {
-              handleWizardSubmit(chosenModel);
-            }
-          } else if (activeWizard.step === 14) {
-            // Select provider to delete
-            const idx = wizardSelectedIndex + 1;
-            handleWizardSubmit(String(idx));
           } else if (activeWizard.step === 15) {
             // Confirm deletion
             handleWizardSubmit(selectedOption);
@@ -993,6 +980,34 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           const selectedVal = filtered[wizardSelectedIndex] ?? filtered[0];
           if (selectedVal) {
             handleWizardSubmit(selectedVal);
+          }
+          return;
+        }
+      } else if (activeWizard.type === "login" && activeWizard.step === 8 && wizardOptions.length > 0) {
+        const modelSearchQuery = (typeof input === "string") ? input.trim() : "";
+        const filteredModels = modelSearchQuery
+          ? filterSuggestions(wizardOptions, modelSearchQuery)
+          : wizardOptions;
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => {
+            const currentMax = Math.max(0, filteredModels.length - 1);
+            const clampedPrev = Math.min(prev, currentMax);
+            return Math.max(0, clampedPrev - 1);
+          });
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => {
+            const currentMax = Math.max(0, filteredModels.length - 1);
+            const clampedPrev = Math.min(prev, currentMax);
+            return Math.min(currentMax, clampedPrev + 1);
+          });
+          return;
+        }
+        if (key.return) {
+          const chosen = filteredModels[wizardSelectedIndex] ?? filteredModels[0];
+          if (chosen && chosen !== "(no results)") {
+            handleWizardSubmit(chosen);
           }
           return;
         }

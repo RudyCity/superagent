@@ -797,7 +797,7 @@ export function App({
 
         const isSelectionStep = 
           (activeWizard.type === "exit_confirm") ||
-          (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10 || activeWizard.step === 15 || activeWizard.step === 17)) ||
+          (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 10 || activeWizard.step === 15 || activeWizard.step === 17)) ||
           (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40 || activeWizard.step === 41 || activeWizard.step === 50)) ||
           (activeWizard.type === "permission") ||
           (activeWizard.type === "question" && wizardOptions.length > 0) ||
@@ -823,17 +823,26 @@ export function App({
               setActiveWizard({ ...activeWizard, step: 2 });
             }
           }
+        } else if (activeWizard.type === "login" && activeWizard.step === 8) {
+          // Step 8: search-select model
+          const currentInput = (typeof value === "string") ? value.trim() : "";
+          const filteredModels = currentInput ? filterSuggestions(wizardOptions, currentInput) : wizardOptions;
+          const clampedIdx = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
+          const chosenModel = filteredModels[clampedIdx] || wizardOptions[wizardSelectedIndex];
+          if (chosenModel && chosenModel !== "(no results)") {
+            handleWizardSubmit(chosenModel);
+          }
         } else if (activeWizard.type === "login" && activeWizard.step === 14) {
-            // Step 14: search-select provider to delete
-            const currentInput = (typeof value === "string") ? value.trim() : "";
-            const filteredProviders = currentInput ? filterSuggestions(wizardOptions, currentInput) : wizardOptions;
-            const clampedIdx = Math.min(wizardSelectedIndex, Math.max(0, filteredProviders.length - 1));
-            const chosenProvider = filteredProviders[clampedIdx];
-            if (chosenProvider && chosenProvider !== "(no results)") {
-              // Find the 1-based index in the original wizardOptions
-              const origIdx = wizardOptions.indexOf(chosenProvider) + 1;
-              handleWizardSubmit(String(origIdx));
-            }
+          // Step 14: search-select provider to delete
+          const currentInput = (typeof value === "string") ? value.trim() : "";
+          const filteredProviders = currentInput ? filterSuggestions(wizardOptions, currentInput) : wizardOptions;
+          const clampedIdx = Math.min(wizardSelectedIndex, Math.max(0, filteredProviders.length - 1));
+          const chosenProvider = filteredProviders[clampedIdx];
+          if (chosenProvider && chosenProvider !== "(no results)") {
+            // Find the 1-based index in the original wizardOptions
+            const origIdx = wizardOptions.indexOf(chosenProvider) + 1;
+            handleWizardSubmit(String(origIdx));
+          }
         } else {
           handleWizardSubmit(trimmed);
         }
@@ -1172,11 +1181,13 @@ export function App({
     [pendingSubmitMessage, addLine]
   );
 
-  const installedSkills = getInstalledSkills();
-  const skillCommands = installedSkills.map(s => {
-    const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    return `/${slug}`;
-  });
+  const skillCommands = useMemo(() => {
+    const installedSkills = getInstalledSkills();
+    return installedSkills.map(s => {
+      const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      return `/${slug}`;
+    });
+  }, []);
 
   // ── Image attachment handlers ─────────────────────────────────────────────
 
@@ -1228,7 +1239,7 @@ export function App({
   }, []);
 
 
-  const commands = [
+  const commands = useMemo(() => [
     ...new Set(
       registry.getAll().flatMap(cmd => {
         const names = [`/${cmd.name}`];
@@ -1237,7 +1248,7 @@ export function App({
       })
     ),
     ...skillCommands
-  ];
+  ], [skillCommands]);
 
   const getSuggestions = (originalInput = input) => {
     const context = getActiveCommandContext(originalInput, originalInput.length);
@@ -1519,7 +1530,12 @@ export function App({
         setLastTabPrefix(null);
       }
     }
-    if (activeWizard?.type === "model" && wizardOptions.length > 0) {
+    if (
+      (activeWizard?.type === "model" ||
+        (activeWizard?.type === "login" && (activeWizard.step === 8 || activeWizard.step === 14)) ||
+        activeWizard?.type === "workspace") &&
+      wizardOptions.length > 0
+    ) {
       setWizardSelectedIndex(0);
     }
   }, [input, lastTabPrefix, activeWizard, wizardOptions, isPasted, pastePrefixLength, pasteSuffixLength]);

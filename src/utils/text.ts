@@ -36,29 +36,80 @@ export function formatCompactNumber(num: number): string {
   return num.toString();
 }
 
-/**
- * Perform a fuzzy match and score on a text against a pattern.
- * Returns a score if it matches, or null if it doesn't.
- * Lower score is better/closer match:
- * - 0: Exact match (case-insensitive)
- * - 1: Prefix match (starts with)
- * - 2: Substring match (contains)
- * - 3: Fuzzy / subsequence match
- */
-export function fuzzyScore(pattern: string, text: string): number | null {
-  if (!pattern) return 0;
-  const p = pattern.toLowerCase();
-  const t = text.toLowerCase();
+function computeFuzzyScoreFast(
+  pLower: string,
+  trimmed: string,
+  tokens: string[] | null,
+  tLower: string
+): number | null {
+  if (!pLower) return 0;
+  if (tLower === pLower) return 0;
+  if (tLower.startsWith(pLower)) return 1;
+  if (tLower.includes(pLower)) return 2;
 
-  if (t === p) return 0;
-  if (t.startsWith(p)) return 1;
-  if (t.includes(p)) return 2;
+  // Multi-term matching if pattern has spaces
+  if (tokens && tokens.length > 1) {
+    let lastIdx = 0;
+    let matchedAllInOrder = true;
+    for (let i = 0; i < tokens.length; i++) {
+      const foundIdx = tLower.indexOf(tokens[i], lastIdx);
+      if (foundIdx === -1) {
+        matchedAllInOrder = false;
+        break;
+      }
+      lastIdx = foundIdx + tokens[i].length;
+    }
+    if (matchedAllInOrder) {
+      return 2.3;
+    }
 
+    let allTokensFound = true;
+    for (let i = 0; i < tokens.length; i++) {
+      if (!tLower.includes(tokens[i])) {
+        allTokensFound = false;
+        break;
+      }
+    }
+    if (allTokensFound) {
+      return 2.7;
+    }
+
+    // Subsequence across tokens in order
+    let tCursor = 0;
+    let allTokensSubseq = true;
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      let matchedToken = false;
+      let tokIdx = 0;
+      while (tCursor < tLower.length) {
+        if (tLower[tCursor] === token[tokIdx]) {
+          tokIdx++;
+          if (tokIdx === token.length) {
+            matchedToken = true;
+            tCursor++;
+            break;
+          }
+        }
+        tCursor++;
+      }
+      if (!matchedToken) {
+        allTokensSubseq = false;
+        break;
+      }
+    }
+    if (allTokensSubseq) {
+      return 3;
+    }
+
+    return null;
+  }
+
+  // Single token or continuous pattern subsequence match
   let pIdx = 0;
-  for (let tIdx = 0; tIdx < t.length; tIdx++) {
-    if (t[tIdx] === p[pIdx]) {
+  for (let tIdx = 0; tIdx < tLower.length; tIdx++) {
+    if (tLower[tIdx] === pLower[pIdx]) {
       pIdx++;
-      if (pIdx === p.length) return 3;
+      if (pIdx === pLower.length) return 3;
     }
   }
 
@@ -66,20 +117,58 @@ export function fuzzyScore(pattern: string, text: string): number | null {
 }
 
 /**
+ * Perform a fuzzy match and score on a text against a pattern.
+ * Returns a score if it matches, or null if it doesn't.
+ * Lower score is better/closer match:
+ * - 0: Exact match (case-insensitive)
+ * - 1: Prefix match (starts with)
+ * - 2: Substring match (contains)
+ * - 2.3: Multi-token match in order
+ * - 2.7: Multi-token match out of order
+ * - 3: Fuzzy / subsequence match
+ */
+export function fuzzyScore(pattern: string, text: string): number | null {
+  if (!pattern) return 0;
+  const pLower = pattern.toLowerCase();
+  const trimmed = pLower.trim();
+  const tokens = trimmed.includes(" ") ? trimmed.split(/\s+/).filter(Boolean) : null;
+  return computeFuzzyScoreFast(pLower, trimmed, tokens, text.toLowerCase());
+}
+
+/**
  * Filter and sort a list of possibilities using fuzzy matching against an input.
+ * Optimized for performance: returns early for empty input, pre-lowercases pattern,
+ * and replaces expensive localeCompare with direct string comparison.
  */
 export function filterSuggestions(possibilities: string[], input: string): string[] {
-  const scored = possibilities
-    .map((p) => ({ text: p, score: fuzzyScore(input, p) }))
-    .filter((item) => item.score !== null) as { text: string; score: number }[];
+  if (!input || !input.trim()) {
+    return possibilities;
+  }
 
-  return scored
-    .sort((a, b) => {
-      if (a.score !== b.score) return a.score - b.score;
-      if (a.text.length !== b.text.length) return a.text.length - b.text.length;
-      return a.text.localeCompare(b.text);
-    })
-    .map((item) => item.text);
+  const pLower = input.toLowerCase();
+  const trimmed = pLower.trim();
+  const tokens = trimmed.includes(" ") ? trimmed.split(/\s+/).filter(Boolean) : null;
+
+  const scored: { text: string; score: number }[] = [];
+  for (let i = 0; i < possibilities.length; i++) {
+    const text = possibilities[i];
+    const score = computeFuzzyScoreFast(pLower, trimmed, tokens, text.toLowerCase());
+    if (score !== null) {
+      scored.push({ text, score });
+    }
+  }
+
+  scored.sort((a, b) => {
+    if (a.score !== b.score) return a.score - b.score;
+    if (a.text.length !== b.text.length) return a.text.length - b.text.length;
+    return a.text < b.text ? -1 : a.text > b.text ? 1 : 0;
+  });
+
+  const result: string[] = new Array(scored.length);
+  for (let i = 0; i < scored.length; i++) {
+    result[i] = scored[i].text;
+  }
+  return result;
 }
 
 /**

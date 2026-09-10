@@ -70,6 +70,38 @@ describe("Fuzzy Matching Utilities", () => {
       const result2 = filterSuggestions(possibilities, "cl");
       expect(result2).toEqual(["/clear", "/checkpoint list"]);
     });
+
+    it("should match multi-word queries against hyphenated/slashed model names", () => {
+      const models = [
+        "google/gemini-2.5-flash",
+        "google/gemini-2.5-pro",
+        "openai/gpt-4o",
+        "openai/gpt-4o-mini",
+        "anthropic/claude-3-5-sonnet",
+        "deepseek/deepseek-chat"
+      ];
+
+      expect(filterSuggestions(models, "gemini flash")).toEqual(["google/gemini-2.5-flash"]);
+      expect(filterSuggestions(models, "gpt 4o")).toEqual(["openai/gpt-4o", "openai/gpt-4o-mini"]);
+      expect(filterSuggestions(models, "claude sonnet")).toEqual(["anthropic/claude-3-5-sonnet"]);
+      expect(filterSuggestions(models, "deepseek chat")).toEqual(["deepseek/deepseek-chat"]);
+    });
+
+    it("should return all possibilities untouched when query is empty or whitespace", () => {
+      const possibilities = ["apple", "banana", "cherry"];
+      expect(filterSuggestions(possibilities, "")).toBe(possibilities);
+      expect(filterSuggestions(possibilities, "   ")).toBe(possibilities);
+    });
+
+    it("should filter 1,500 items in under 15ms without blocking the event loop", () => {
+      const largeList = Array.from({ length: 1500 }, (_, i) => `provider-${i}/model-variant-${i % 20}`);
+      const t0 = performance.now();
+      const filtered = filterSuggestions(largeList, "model variant 5");
+      const elapsed = performance.now() - t0;
+
+      expect(filtered.length).toBeGreaterThan(0);
+      expect(elapsed).toBeLessThan(15);
+    });
   });
 
   describe("minimizePathInDescription", () => {
