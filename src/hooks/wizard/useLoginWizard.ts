@@ -59,7 +59,8 @@ export function useLoginWizard(ctx: LoginWizardContext) {
   const handleLoginWizard = useCallback(async (value: string, step: number, data: Record<string, string>) => {
     const now = Date.now();
 
-    if (step === 1) {
+    try {
+      if (step === 1) {
       const choice = value.toLowerCase();
       if (choice.includes("create") || choice === "2") {
         setActiveWizard({
@@ -556,7 +557,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         timestamp: now,
       });
       // Activate the selected provider in ALL preset tiers (both modes)
-      switchActiveProvider(selectedProvider.id);
+      try {
+        switchActiveProvider(selectedProvider.id);
+      } catch (switchErr: any) {
+        addLine({
+          type: "error",
+          content: `Failed to switch active provider: ${switchErr?.message || String(switchErr)}`,
+          timestamp: now,
+        });
+      }
       const selBaseUrl = selectedProvider.baseUrl || "";
       const selApiKey = selectedProvider.apiKey || "";
       const selType = selectedProvider.type || "";
@@ -648,8 +657,20 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       // Load model options and proceed to step 8
       let directFetched: string[] = [];
       if (fetchedModelsList.length === 0) {
-        directFetched = await fetchModelsForProvider(pType, pApiKey, pBaseUrl);
+        try {
+          directFetched = await fetchModelsForProvider(pType, pApiKey, pBaseUrl);
+        } catch (fetchErr: any) {
+          addLine({
+            type: "system",
+            content: `⚠️ Could not fetch live model list from ${pName} (${fetchErr?.message || String(fetchErr)}). Using fallback models.`,
+            timestamp: Date.now(),
+          });
+        }
       }
+
+      try {
+        await fetchAndCacheModels();
+      } catch {}
 
       let models: string[];
       if (fetchedModelsList.length > 0) {
@@ -669,11 +690,23 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
       setWizardIsLoadingModels(false);
       setActiveWizard({ type: "login", step: 8, data });
-      setWizardOptions([...models, "+ Custom Model (Input manually)"]);
+      setWizardOptions([...models, "+ Custom Model (Input manually)", "❌ Cancel Setup"]);
       setWizardSelectedIndex(0);
     } else if (step === 8) {
       // Step 8: User selects model
-      const selectedModel = value;
+      const selectedModel = value.trim();
+      if (selectedModel === "❌ Cancel Setup" || selectedModel.toLowerCase() === "cancel" || selectedModel === "/cancel") {
+        addLine({
+          type: "system",
+          content: "Login setup cancelled.",
+          timestamp: now,
+        });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
       if (selectedModel === "+ Custom Model (Input manually)") {
         setActiveWizard({
           type: "login",
@@ -833,7 +866,19 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     } else if (step === 19) {
       await handleEditProviderStep19(value, data, ctx, now);
     }
-  }, [
+  } catch (fatalErr: any) {
+    addLine({
+      type: "error",
+      content: `Login wizard error: ${fatalErr?.message || String(fatalErr)}`,
+      timestamp: now,
+    });
+    setActiveWizard(null);
+    setWizardOptions([]);
+    setWizardSelectedIndex(0);
+    setWizardIsLoadingModels(false);
+    setIsProcessing(false);
+  }
+}, [
     setActiveWizard,
     setWizardOptions,
     setWizardSelectedIndex,

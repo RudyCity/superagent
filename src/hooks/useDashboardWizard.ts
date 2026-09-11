@@ -789,10 +789,18 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
 
         setWizardIsLoadingModels(false);
         setActiveWizard({ type: "login", step: 8, data: activeWizard.data });
-        setWizardOptions([...models, "+ Custom Model (Input manually)"]);
+        setWizardOptions([...models, "+ Custom Model (Input manually)", "❌ Cancel Setup"]);
         setWizardSelectedIndex(0);
       } else if (activeWizard.step === 8) {
-        const selectedModel = value;
+        const selectedModel = value.trim();
+        if (selectedModel === "❌ Cancel Setup" || selectedModel.toLowerCase() === "cancel" || selectedModel === "/cancel") {
+          setMasterLogs((prev) => [...prev, "[SYSTEM] Login setup cancelled."].slice(-500));
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
+        }
         if (selectedModel === "+ Custom Model (Input manually)") {
           setActiveWizard({
             type: "login",

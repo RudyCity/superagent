@@ -1,3 +1,23 @@
+## [1.5.64] - 2026-09-11
+
+### Fixed: Login Wizard Sudden Crash/Exit on Authentication or Network Errors
+
+- **Defensive Error Handling in Login Wizard (`src/hooks/wizard/useLoginWizard.ts`)**:
+  - Wrapped `fetchModelsForProvider` in a try/catch block during Step 7 (Connection Test) so that authentication rejections (HTTP 401/403), network timeouts, or unreachable endpoints fall back to cached/default models with a visible warning rather than throwing uncaught errors.
+  - Added top-level `try...catch` wrapper in `handleLoginWizard` to intercept any unexpected errors in any step, reporting them cleanly via `addLine` and resetting wizard state without crashing the process.
+  - Ensured `setWizardIsLoadingModels(false)` is reliably invoked on connection test completion or error.
+  - Added support for "❌ Cancel Setup" and "/cancel" in Step 8 to provide an escape hatch if credentials fail.
+  - Wrapped `switchActiveProvider` in try/catch in Step 6.
+
+- **Asynchronous Wizard Submission Resilience (`src/hooks/useWizardSubmit.ts`)**:
+  - Awaited `handleLoginWizard`, `handleModelWizard`, and `handleGoalWizard` with dedicated `try...catch` blocks to prevent unhandled promise rejections from bubbling up to `process.on("unhandledRejection")` and terminating Superagent.
+
+- **Dashboard Wizard Robustness (`src/hooks/useDashboardWizard.ts`)**:
+  - Added "❌ Cancel Setup" handling and fallback resilience in Step 8.
+
+- **Test Coverage (`tests/loginWizardErrorHandling.test.ts`)**:
+  - Added comprehensive unit tests validating error recovery when `fetchModelsForProvider` rejects, verifying fallback models, loading state reset, and clean cancellation.
+
 ## [1.5.63] - 2026-09-10
 
 ### Added: Boxed Inline Live Terminal View for Command Execution

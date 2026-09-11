@@ -184,17 +184,53 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
     }
 
     if (activeWizard.type === "login") {
-      handleLoginWizard(value, activeWizard.step, activeWizard.data);
+      try {
+        await handleLoginWizard(value, activeWizard.step, activeWizard.data);
+      } catch (err: any) {
+        addLine({
+          type: "error",
+          content: `Login wizard error: ${err?.message || String(err)}`,
+          timestamp: now,
+        });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setIsProcessing(false);
+      }
       return;
     }
 
     if (activeWizard.type === "model") {
-      handleModelWizard(value, activeWizard.step, activeWizard.data);
+      try {
+        await handleModelWizard(value, activeWizard.step, activeWizard.data);
+      } catch (err: any) {
+        addLine({
+          type: "error",
+          content: `Model wizard error: ${err?.message || String(err)}`,
+          timestamp: now,
+        });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setIsProcessing(false);
+      }
       return;
     }
 
     if (activeWizard.type === "goal") {
-      handleGoalWizard(value, activeWizard.step, activeWizard.data);
+      try {
+        await handleGoalWizard(value, activeWizard.step, activeWizard.data);
+      } catch (err: any) {
+        addLine({
+          type: "error",
+          content: `Goal wizard error: ${err?.message || String(err)}`,
+          timestamp: now,
+        });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setIsProcessing(false);
+      }
       return;
     }
 
