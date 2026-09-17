@@ -50,13 +50,16 @@ function cleanThinkingTags(text: string, existingReasoning = ""): { cleanText: s
   return { cleanText: rawText, reasoning };
 }
 
+import { isGoalCompleteResponse } from "./GoalCompletion.js";
+export { isGoalCompleteResponse } from "./GoalCompletion.js";
+
 export class LoopIterationProcessor {
   public static async processIteration(
     agent: Agent,
     i: number,
     maxIterations: number,
     signal?: AbortSignal
-  ): Promise<{ shouldBreak: boolean }> {
+  ): Promise<{ shouldBreak: boolean; goalStatus?: "complete" | "aborted" | "error" | "incomplete" }> {
     const {
       finalSystemPrompt: builderSystemPrompt,
       messages: builderMessages,
@@ -832,6 +835,7 @@ export class LoopIterationProcessor {
     }
 
     if (toolCalls.length === 0) {
+      const goalComplete = isGoalCompleteResponse(textContent);
       const currentCwd = (agent.tier === "superagent" && agent.worktreePath)
         ? agent.worktreePath
         : agent.workingDirectory;
@@ -855,7 +859,7 @@ export class LoopIterationProcessor {
           textContent.trim().length < 600 &&
           !/\?$/.test(textContent.trim());
 
-        if (isPlanningText) {
+        if (isPlanningText && !(agent.goalMode && goalComplete)) {
           agent.writeToLogFile(
             "INFO",
             `Text-only response on iteration ${i} (action/planning narration). Auto-continuing with nudge.`
@@ -876,7 +880,8 @@ export class LoopIterationProcessor {
         agent.conversation.addAssistantMessage(textContent || "Completed task.", undefined, undefined, reasoningContent);
         await agent.saveHistory();
       }
-      return { shouldBreak: true };
+      const goalStatus = goalComplete ? "complete" : "incomplete";
+      return { shouldBreak: true, goalStatus };
     }
 
     const toolResults = await ToolExecutor.executeTools(
@@ -955,7 +960,7 @@ export class LoopIterationProcessor {
           }
         } catch {}
 
-        return { shouldBreak: true };
+        return { shouldBreak: true, goalStatus: "error" };
       }
     }
 
@@ -976,7 +981,7 @@ export class LoopIterationProcessor {
     }
 
     if (agent.planState === "PLANNING_PENDING") {
-      return { shouldBreak: true };
+      return { shouldBreak: true, goalStatus: "incomplete" };
     }
 
     return { shouldBreak: false };

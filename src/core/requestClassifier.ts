@@ -399,6 +399,12 @@ const EDIT_VERBS_RE = /\b(change|edit|modify|update|rename|move|add|remove|delet
 /** Edit intent pattern for question disambiguation */
 const EDIT_INTENT_RE = /\b(change|edit|modify|update|add|remove|delete|fix|replace|write|create|make|run|test|execute)\b/i;
 
+/** Match a complete identity question, not model names or embedded task text. */
+const MODEL_IDENTITY_RE = /^(?:kamu|anda)\s+model\s+ap(?:a)?$/i;
+
+/** Explicit operational requests must not lose shell access to research keywords. */
+const OPERATIONAL_REQUEST_RE = /^(?:(?:please|tolong|silakan)\s+)?(?:(?:clean\s+up|cleanup|clean|delete|remove|hapus|bersihkan)\b|(?:cek|check|verify|validate)\s+runtime\b)/i;
+
 /** Punctuation strip pattern for exact matching */
 const PUNCTUATION_STRIP_RE = /^[!?.,\s()'""-]+|[!?.,\s()'""-]+$/g;
 
@@ -498,8 +504,34 @@ export function classifyHeuristic(
     }
   }
 
+  // Whole-message matching keeps abbreviated identity questions out of fallback.
+  if (MODEL_IDENTITY_RE.test(cleanLower)) {
+    return {
+      category: "conversation",
+      confidence: "high",
+      reason: "Assistant model identity question",
+      heuristicOnly: true,
+      classificationTokens: 0,
+    };
+  }
+
+  // Cleanup and runtime validation require execution tools even when paired with "check".
+  if (OPERATIONAL_REQUEST_RE.test(cleanLower)
+    && /\b(cek|check|inspect|verify|validate|jalankan|run|test)\b/i.test(cleanLower)) {
+    return {
+      category: "command",
+      confidence: "high",
+      reason: "Explicit cleanup or runtime validation request",
+      heuristicOnly: true,
+      classificationTokens: 0,
+    };
+  }
+
   // ── Conversation phrase matching ──────────────────────────────────────
-  if (wordCount <= 6) {
+  const hasActionIntent = EDIT_INTENT_RE.test(cleanLower)
+    || EDIT_VERBS_RE.test(cleanLower)
+    || /\b(perbaiki|benerin|betulkan|jalankan|hapus|bersihkan)\b/i.test(cleanLower);
+  if (wordCount <= 6 && !hasActionIntent) {
     if (CONVERSATION_PHRASES.some(phrase => cleanLower.includes(phrase))) {
       return {
         category: "conversation",

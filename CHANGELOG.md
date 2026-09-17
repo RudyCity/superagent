@@ -1,3 +1,12 @@
+## [1.5.65] - 2026-09-17
+
+### Fixed
+
+- Report accurate Goal Mode completion, cancellation, limit, error, and incomplete states, and reset goal state after execution.
+- Recognize standalone goal completion markers outside fenced code blocks and reject overlapping goal requests.
+- Improve request classification for model identity questions, cleanup, and runtime validation requests.
+- Add regression coverage for goal lifecycle handling and request classification.
+
 ## [1.5.64] - 2026-09-11
 
 ### Fixed: Login Wizard Sudden Crash/Exit on Authentication or Network Errors

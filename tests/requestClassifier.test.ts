@@ -100,6 +100,36 @@ describe("meetsThreshold", () => {
 // ─── Heuristic Classifier Tests ─────────────────────────────────────────────
 
 describe("classifyHeuristic", () => {
+  describe("current intent routing regressions", () => {
+    it.each(["kamu model ap", "Kamu model apa?", "kamu model ap?"])(
+      "recognizes the assistant identity question: %s",
+      (input) => {
+        const result = classifyHeuristic(input);
+        expect(result.category).toBe("conversation");
+        expect(result.confidence).toBe("high");
+      },
+    );
+
+    it.each([
+      "bersihkan dan cek runtime",
+      "hapus log lalu jalankan test",
+      "cek runtime goal mode",
+      "go ahead and fix classifier",
+      "oke lanjut perbaiki classifier",
+      "please delete logs and inspect results",
+    ])("keeps tools available for an actionable request: %s", (input) => {
+      const result = classifyHeuristic(input);
+      expect(["debug", "command", "simple_edit", "complex_task"]).toContain(result.category);
+      expect(result.confidence).not.toBe("low");
+    });
+
+    it.each(["aku minta fix clasifier", "perbaiki system classifier di superagent"])(
+      "recognizes the classifier repair request: %s",
+      (input) => {
+        expect(classifyHeuristic(input).category).toBe("debug");
+      },
+    );
+  });
   describe("conversation detection", () => {
     const conversationInputs = [
       "ok", "okay", "oke", "yes", "no", "y", "n",
@@ -553,6 +583,21 @@ describe("classifyRequest (Optimized Pipeline)", () => {
     const result = await classifyRequest("", mockModel);
     expect(result.category).toBe("conversation");
     expect(result.heuristicOnly).toBe(true);
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["kamu model ap", "conversation"],
+    ["Kamu model apa?", "conversation"],
+    ["bersihkan dan cek runtime", "command"],
+    ["hapus log lalu jalankan test", "command"],
+    ["cek runtime goal mode", "command"],
+  ])("routes %s without invoking the local model", async (input, category) => {
+    const result = await classifyRequest(input, {});
+    expect(result.category).toBe(category);
+    expect(result.confidence).toBe("high");
+    expect(result.heuristicOnly).toBe(true);
+    expect(mockClassifierPipeline).not.toHaveBeenCalled();
     expect(generateText).not.toHaveBeenCalled();
   });
 

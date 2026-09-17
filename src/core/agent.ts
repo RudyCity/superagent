@@ -68,6 +68,8 @@ export function parsePayloadLimitBytes(msg: string): number | null {
 }
 
 
+export const DEFAULT_GOAL_MAX_ITERATIONS = 1000;
+
 export class Agent {
   public sessionId: string = "";
   public detectedPayloadLimitBytes?: number;
@@ -90,7 +92,7 @@ export class Agent {
   public currentClassification: import("./requestClassifier.js").ClassificationResult | null = null;
   public lastSpeed: number | null = null;
   public goalMode: string | null = null;
-  public goalMaxIterations: number = 1000;
+  public goalMaxIterations: number = DEFAULT_GOAL_MAX_ITERATIONS;
   public wasRunningBeforeAbort = false;
   public allowSessionOutOfBounds = false;
   /** Separate flag — file write tools (write_to_file, replace_file_content, etc.) are NEVER granted session-wide bypass. */
@@ -602,7 +604,9 @@ export class Agent {
     // Sync advisor thresholds/flags from live config so runtime changes take effect
     this.advisor.syncSettings(getSettings());
     const signal = this.abortController?.signal;
-    const isGoalMode = !!this.goalMode;
+    const activeGoal = this.goalMode;
+    const isGoalMode = !!activeGoal;
+    let goalStatus: Extract<AgentEvent, { type: "goal_done" }>["status"] = "maxed";
     const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 500);
     const maxIterations = isGoalMode ? this.goalMaxIterations : defaultMax;
     const maxIterationsStr = maxIterations === Infinity ? "unlimited" : maxIterations.toString();
@@ -616,8 +620,9 @@ export class Agent {
           throw err;
         }
 
-        const { shouldBreak } = await LoopIterationProcessor.processIteration(this, i, maxIterations, signal);
-        if (shouldBreak) {
+        const iteration = await LoopIterationProcessor.processIteration(this, i, maxIterations, signal);
+        if (iteration.shouldBreak) {
+          goalStatus = iteration.goalStatus ?? "incomplete";
           break;
         }
         if (i === maxIterations - 1) {
@@ -654,7 +659,16 @@ export class Agent {
           }
         }
       }
+    } catch (error) {
+      goalStatus = signal?.aborted || (error instanceof Error && error.name === "AbortError")
+        ? "aborted" : "error";
+      throw error;
     } finally {
+      if (isGoalMode) {
+        if (signal?.aborted) goalStatus = "aborted";
+        this.goalMode = null;
+        this.goalMaxIterations = DEFAULT_GOAL_MAX_ITERATIONS;
+      }
       let finalSummary = "Agent has finished executing. Check the output above for GOAL_COMPLETE or GOAL_PARTIAL status.";
       if (!process.env.VITEST) {
         try {
@@ -677,10 +691,11 @@ export class Agent {
         }
       }
 
-      if (isGoalMode && this.goalMode) {
+      if (activeGoal) {
         this.onEvent({
           type: "goal_done",
-          goal: this.goalMode,
+          goal: activeGoal,
+          status: goalStatus,
           summary: finalSummary,
         });
       }

@@ -43,6 +43,40 @@ function makeHandlers() {
   return { events, onEvent, onPermission, onQuestion };
 }
 
+describe("Goal command active-goal guard", () => {
+  it("rejects a replacement without changing the active goal or queueing a message", async () => {
+    const { goalCommand } = await import("../src/core/commands/agentCommands.js");
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.goalMode = "original goal";
+    const sendMessage = vi.spyOn(agent, "sendMessage").mockResolvedValue(undefined);
+    const mkdir = vi.fn().mockRejectedValue(new Error("Scratchpad access is forbidden in this test"));
+    vi.doMock("fs/promises", async () => ({
+      ...await vi.importActual<typeof import("fs/promises")>("fs/promises"),
+      mkdir,
+    }));
+    const addLine = vi.fn();
+    const setGoalMode = vi.fn();
+    const context = { agent, addLine, setGoalMode } as unknown as Parameters<typeof goalCommand.execute>[1];
+
+    try {
+      await goalCommand.execute("replacement goal", context);
+
+      expect(agent.goalMode).toBe("original goal");
+      expect(sendMessage).not.toHaveBeenCalled();
+      expect(mkdir).not.toHaveBeenCalled();
+      expect(setGoalMode).not.toHaveBeenCalled();
+      expect(addLine).toHaveBeenCalledWith(expect.objectContaining({
+        type: "error",
+        content: "A goal is already active. Wait for it to finish before starting another goal.",
+      }));
+    } finally {
+      vi.doUnmock("fs/promises");
+      sendMessage.mockRestore();
+    }
+  });
+});
+
 // ─── Goal Mode: Properties ─────────────────────────────────────────────────────
 
 describe("Agent – goal mode properties", () => {
@@ -121,6 +155,7 @@ describe("AgentEvent type – goal_done", () => {
       type: "goal_done",
       goal: "implement auth",
       summary: "GOAL_COMPLETE: auth implemented with tests",
+      status: "complete",
     };
     expect(event.type).toBe("goal_done");
     expect(event.goal).toBe("implement auth");
@@ -501,3 +536,170 @@ describe("Agent – tier-specific model resolution", () => {
   });
 });
 
+
+
+describe("Goal completion response recognition", () => {
+  it.each([
+    ["GOAL_COMPLETE: tested", true],
+    ["Example:\n```text\n/goal example\nGOAL_COMPLETE: demo\n```", false],
+    ["~~~text\nGOAL_COMPLETE: demo\n~~~", false],
+    ["```text\nGOAL_PARTIAL: example\n```\nGOAL_COMPLETE: tested", true],
+    ["```text\nGOAL_COMPLETE: unfinished example", false],
+    ["````text\n```\nGOAL_COMPLETE: nested example\n````", false],
+    ["```text\nGOAL_COMPLETE: example\n```\nGOAL_COMPLETE: tested", true],
+    ["Summary\n  goal_complete : tested", true],
+    ["GOAL_PARTIAL: blocked", false],
+    ["GOAL_COMPLETE: done\nGOAL_PARTIAL: blocked", false],
+    ["Instructions mention GOAL_COMPLETE: as the marker", false],
+    ["GOAL_COMPLETE", false],
+    ["", false],
+    ["All done", false],
+  ])("recognizes %j as complete=%s", async (text, expected) => {
+    const { isGoalCompleteResponse } = await import("../src/core/agent/LoopIterationProcessor.js");
+    expect(isGoalCompleteResponse(text as string)).toBe(expected);
+  });
+});
+
+describe("Agent – goal lifecycle", () => {
+  it.each([
+    ["complete", { shouldBreak: true, goalStatus: "complete" }],
+    ["aborted", { shouldBreak: true, goalStatus: "aborted" }],
+    ["error", { shouldBreak: true, goalStatus: "error" }],
+    ["incomplete", { shouldBreak: true }],
+    ["maxed", { shouldBreak: false }],
+  ] as const)("reports %s and restores defaults before callbacks", async (status, result) => {
+    const { LoopIterationProcessor } = await import("../src/core/agent/LoopIterationProcessor.js");
+    const iteration = vi.spyOn(LoopIterationProcessor, "processIteration").mockResolvedValue(result);
+    const { onPermission } = makeHandlers();
+    const events: AgentEvent[] = [];
+    const agent = new Agent(event => {
+      if (event.type === "goal_done") {
+        expect(agent.goalMode).toBeNull();
+        expect(agent.goalMaxIterations).toBe(1000);
+        events.push(event);
+      }
+    }, onPermission, vi.fn().mockResolvedValue("No, stop"));
+    agent.goalMode = "test objective";
+    agent.goalMaxIterations = 1;
+    const loop = agent as unknown as { runAgentLoop(): Promise<void> };
+    try {
+      await loop.runAgentLoop();
+      expect(events).toEqual([expect.objectContaining({ goal: "test objective", status })]);
+      iteration.mockResolvedValue({ shouldBreak: true });
+      await loop.runAgentLoop();
+      expect(events).toHaveLength(1);
+    } finally {
+      iteration.mockRestore();
+    }
+  });
+
+  it.each([false, true])("cleans up a thrown error (abort=%s)", async abort => {
+    const { LoopIterationProcessor } = await import("../src/core/agent/LoopIterationProcessor.js");
+    const failure = new Error("iteration failed");
+    const controller = new AbortController();
+    const iteration = vi.spyOn(LoopIterationProcessor, "processIteration").mockImplementation(async () => {
+      if (abort) controller.abort();
+      throw failure;
+    });
+    const { onPermission, onQuestion } = makeHandlers();
+    const events: AgentEvent[] = [];
+    const agent = new Agent(event => {
+      if (event.type === "goal_done") {
+        expect(agent.goalMode).toBeNull();
+        expect(agent.goalMaxIterations).toBe(1000);
+        events.push(event);
+      }
+    }, onPermission, onQuestion);
+    agent.goalMode = "failing objective";
+    agent.goalMaxIterations = 2;
+    const loop = agent as unknown as { abortController: AbortController; runAgentLoop(): Promise<void> };
+    loop.abortController = controller;
+    try {
+      await expect(loop.runAgentLoop()).rejects.toBe(failure);
+      expect(events).toEqual([expect.objectContaining({ status: abort ? "aborted" : "error" })]);
+    } finally {
+      iteration.mockRestore();
+    }
+  });
+
+  it("cancellation overrides completion returned by an in-flight iteration", async () => {
+    const { LoopIterationProcessor } = await import("../src/core/agent/LoopIterationProcessor.js");
+    const controller = new AbortController();
+    const iteration = vi.spyOn(LoopIterationProcessor, "processIteration").mockImplementation(async () => {
+      controller.abort();
+      return { shouldBreak: true, goalStatus: "complete" };
+    });
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.goalMode = "cancel late";
+    const loop = agent as unknown as { abortController: AbortController; runAgentLoop(): Promise<void> };
+    loop.abortController = controller;
+    try {
+      await loop.runAgentLoop();
+      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "goal_done", status: "aborted" }));
+    } finally {
+      iteration.mockRestore();
+    }
+  });
+
+  it.each([
+    { status: "complete", result: { shouldBreak: true, goalStatus: "complete" as const }, calls: 1 },
+    { status: "incomplete", result: { shouldBreak: true }, calls: 1 },
+    { status: "aborted", result: { shouldBreak: true, goalStatus: "aborted" as const }, calls: 1 },
+    { status: "maxed", result: { shouldBreak: false }, calls: 11 },
+    { status: "error", result: { shouldBreak: false }, calls: 1 },
+  ])("reports $status with clean state before notifying consumers", async ({ status, result, calls }) => {
+    const { LoopIterationProcessor } = await import("../src/core/agent/LoopIterationProcessor.js");
+    const iteration = vi.spyOn(LoopIterationProcessor, "processIteration");
+    const failure = new Error("Iteration failed");
+    if (status === "error") iteration.mockRejectedValue(failure);
+    else iteration.mockResolvedValue(result);
+    const { onPermission, onQuestion } = makeHandlers();
+    const events: AgentEvent[] = [];
+    const agent = new Agent(event => {
+      if (event.type === "goal_done") {
+        expect(agent.goalMode).toBeNull();
+        expect(agent.goalMaxIterations).toBe(1000);
+        events.push(event);
+      }
+    }, onPermission, onQuestion);
+    agent.goalMode = "verify lifecycle";
+    agent.goalMaxIterations = 1;
+    const loop = agent as unknown as { runAgentLoop(): Promise<void> };
+    try {
+      if (status === "error") await expect(loop.runAgentLoop()).rejects.toBe(failure);
+      else await loop.runAgentLoop();
+      expect(iteration).toHaveBeenCalledTimes(calls);
+      expect(events).toEqual([expect.objectContaining({ type: "goal_done", goal: "verify lifecycle", status })]);
+    } finally {
+      iteration.mockRestore();
+    }
+  });
+
+  it("clears goal state before reporting an aborted run", async () => {
+    const { LoopIterationProcessor } = await import("../src/core/agent/LoopIterationProcessor.js");
+    const iteration = vi.spyOn(LoopIterationProcessor, "processIteration");
+    const { onPermission, onQuestion } = makeHandlers();
+    const events: AgentEvent[] = [];
+    const agent = new Agent(event => {
+      if (event.type === "goal_done") {
+        expect(agent.goalMode).toBeNull();
+        expect(agent.goalMaxIterations).toBe(1000);
+        events.push(event);
+      }
+    }, onPermission, onQuestion);
+    agent.goalMode = "cancel this goal";
+    agent.goalMaxIterations = 1;
+    const controller = new AbortController();
+    controller.abort();
+    const loop = agent as unknown as { abortController: AbortController; runAgentLoop(): Promise<void> };
+    loop.abortController = controller;
+    try {
+      await expect(loop.runAgentLoop()).rejects.toMatchObject({ name: "AbortError" });
+      expect(iteration).not.toHaveBeenCalled();
+      expect(events).toEqual([expect.objectContaining({ type: "goal_done", goal: "cancel this goal", status: "aborted" })]);
+    } finally {
+      iteration.mockRestore();
+    }
+  });
+});

@@ -378,6 +378,7 @@ export const goalCommand: SlashCommand = {
   description: "Activate Goal Mode for long-running overnight tasks",
   async execute(args, ctx) {
     const now = Date.now();
+    args = args.trim();
     if (!args) {
       if (ctx.setActiveWizard) {
         ctx.setActiveWizard({ type: "goal", step: 1, data: {} });
@@ -394,6 +395,14 @@ export const goalCommand: SlashCommand = {
     }
     if (!ctx.agent) {
       ctx.addLine({ type: "error", content: "Agent not available.", timestamp: now });
+      return;
+    }
+    if (ctx.agent.goalMode) {
+      ctx.addLine({
+        type: "error",
+        content: "A goal is already active. Wait for it to finish before starting another goal.",
+        timestamp: now,
+      });
       return;
     }
     ctx.agent.goalMode = args;

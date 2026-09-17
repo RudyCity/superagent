@@ -2541,11 +2541,13 @@ export async function handleServerRoute(
     }
     try {
       const bodyStr = await readBody(req);
-      const { goal } = JSON.parse(bodyStr || "{}");
-      if (!goal) {
-        sendJSON(res, 400, { error: "Missing goal objective" });
+      const body: unknown = JSON.parse(bodyStr || "{}");
+      const objective = body && typeof body === "object" && "goal" in body ? body.goal : undefined;
+      if (typeof objective !== "string" || !objective.trim()) {
+        sendJSON(res, 400, { error: "Goal objective must be a non-empty string" });
         return true;
       }
+      const goal = objective.trim();
       session.agent.goalMode = goal;
       
       try {

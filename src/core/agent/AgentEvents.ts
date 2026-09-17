@@ -8,7 +8,7 @@ export type AgentEvent =
   | { type: "tool_end"; toolResult: ToolResult; description: string; toolCall?: ToolCall }
   | { type: "error"; message: string }
   | { type: "done" }
-  | { type: "goal_done"; goal: string; summary: string }
+  | { type: "goal_done"; goal: string; summary: string; status: "complete" | "aborted" | "maxed" | "error" | "incomplete" }
   | { type: "permission_required"; toolCall: ToolCall; description: string }
   | { type: "illegal_operation"; violation: ViolationRecord }
   | { type: "token_usage"; promptTokens: number; completionTokens: number; durationMs?: number }

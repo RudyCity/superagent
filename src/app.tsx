@@ -2168,12 +2168,9 @@ export function App({
           break;
         case "goal_done":
           setGoalMode(null);
-          if (agentRef.current) {
-            agentRef.current.goalMode = null;
-          }
           addLine({
             type: "system",
-            content: `🎯 GOAL MODE COMPLETED\n   Goal: "${event.goal}"\n   ${event.summary}`,
+            content: `🎯 GOAL MODE ${{ complete: "COMPLETED", aborted: "CANCELLED", maxed: "LIMIT REACHED", error: "FAILED", incomplete: "INCOMPLETE" }[event.status]}\n   Goal: "${event.goal}"\n   ${event.summary}`,
             timestamp: Date.now(),
           });
           break;
