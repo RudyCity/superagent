@@ -52,7 +52,7 @@ export const ActiveSubagentsPanel = memo(function ActiveSubagentsPanel({
         const action = streams[streamTick % streams.length];
         return (
           <Text key={inst.id} color="yellow" wrap="truncate">
-            │  {branchChar} Action: {inst.id}: <Text italic color="white">{action}</Text> | Role: {inst.role} ({inst.status})
+            │  {branchChar} {inst.id} | Type: {inst.typeName} | Role: {inst.role} ({inst.status}) | Action: <Text italic color="white">{action}</Text>
           </Text>
         );
       })}

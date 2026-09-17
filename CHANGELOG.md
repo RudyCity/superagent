@@ -1,3 +1,9 @@
+## [1.5.67] - 2026-09-17
+
+### Changed
+
+- Show subagent type alongside role in both Active Subagents views, before action text.
+
 ## [1.5.66] - 2026-09-17
 
 ### Maintenance
