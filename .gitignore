@@ -13,3 +13,8 @@ graphify-out/
 .grok/
 Notepad++/
 
+
+# Scratch/audit artifacts
+*.log
+.goal-baseline/
+goal-*.diff

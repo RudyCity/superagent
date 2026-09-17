@@ -1,3 +1,16 @@
+## [1.5.66] - 2026-09-17
+
+### Maintenance
+
+- Ignore scratch logs, Goal Mode baseline artifacts, and temporary goal diff files.
+- No application behavior changes.
+
+### Verification notes
+
+- Full suite before this metadata-only cleanup: 2,025 passed, 10 failed, and 5 skipped across 212 test files.
+- Rerunning the five failing files: 65 passed and 8 failed. The payload retry file passed all 8 tests when run alone.
+- Test failures remain unresolved; their relationship to earlier commits has not been established. This release does not claim a passing full suite.
+
 ## [1.5.65] - 2026-09-17
 
 ### Fixed
