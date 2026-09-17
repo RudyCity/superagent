@@ -1,3 +1,13 @@
+## [1.5.68] - 2026-09-17
+
+### Fixed
+
+- Preserve partial subagent reports when a follow-up message or invocation fails: the report is extracted from agent history and stored on the instance before cleanup, across inline/background and rejection/timeout paths.
+
+### Tests
+
+- Add regression coverage for failed subagent follow-ups and invocations (inline/background, rejection/timeout), asserting the partial report survives agent cleanup and is returned by the report action.
+
 ## [1.5.67] - 2026-09-17
 
 ### Changed

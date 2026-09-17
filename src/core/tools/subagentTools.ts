@@ -659,6 +659,7 @@ export const invokeSubagentTool: Tool = {
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "error";
         instance.completedAt = Date.now();
+        instance.result = extractSubagentReport(agentInstance, subagentId) || instance.result;
         runSubagentPromptOptimization(typeName, baseSystemPrompt, prompt, agentInstance).catch(() => {});
         notifySubagentsChanged();
         appendMasterLog(`[ERROR] Subagent "${typeName}" [ID: ${subagentId}] failed: ${err.message}`);
@@ -703,6 +704,7 @@ export const invokeSubagentTool: Tool = {
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "error";
         instance.completedAt = Date.now();
+        instance.result = extractSubagentReport(agentInstance, subagentId) || instance.result;
         runSubagentPromptOptimization(typeName, baseSystemPrompt, prompt, agentInstance).catch(() => {});
         notifySubagentsChanged();
         appendMasterLog(`[ERROR] Subagent "${typeName}" [ID: ${subagentId}] failed: ${message}`);
@@ -1001,6 +1003,7 @@ export const sendMessageTool: Tool = {
         return `Subagent "${recipientId}" finished. Report:\n\n${result || "(no report)"}`;
       } catch (err: any) {
         instance.status = "error";
+        instance.result = extractSubagentReport(agentInstance, recipientId) || instance.result;
         notifySubagentsChanged();
         if (agentInstance) {
           agentInstance.writeToLogFile("SUBAGENT_FAILED", err.message);
@@ -1024,6 +1027,7 @@ export const sendMessageTool: Tool = {
         notifySubagentsChanged();
       }).catch((err: any) => {
         instance.status = "error";
+        instance.result = extractSubagentReport(agentInstance, recipientId) || instance.result;
         notifySubagentsChanged();
         if (agentInstance) {
           agentInstance.writeToLogFile("SUBAGENT_FAILED", err.message || String(err));
