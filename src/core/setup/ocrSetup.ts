@@ -3,6 +3,7 @@ import path from "path";
 import os from "os";
 import { execa } from "execa";
 import { getGlobalConfigDir } from "../config.js";
+import { getSystemCheckCache, updateSystemCheckCache } from "../config/systemCache.js";
 import { DownloadProgressCallback, logSetupDebug } from "../androidSetup.js";
 
 let cachedPythonInstalled: boolean | null = null;
@@ -13,14 +14,23 @@ export function clearOcrCache() {
   cachedPaddleOcrInstalled = null;
 }
 
+let cachedUvInstalledGlobally: boolean | null = null;
 export async function isUvInstalledGlobally(): Promise<boolean> {
+  if (cachedUvInstalledGlobally !== null) return cachedUvInstalledGlobally;
+  const sysCache = getSystemCheckCache();
+  if (sysCache?.uv !== undefined) {
+    cachedUvInstalledGlobally = sysCache.uv;
+    return cachedUvInstalledGlobally;
+  }
   const isWin = process.platform === "win32";
   try {
     await execa(isWin ? "where.exe" : "which", ["uv"]);
-    return true;
+    cachedUvInstalledGlobally = true;
   } catch {
-    return false;
+    cachedUvInstalledGlobally = false;
   }
+  updateSystemCheckCache({ uv: cachedUvInstalledGlobally });
+  return cachedUvInstalledGlobally;
 }
 
 export async function isUvInstalledLocally(): Promise<boolean> {
@@ -75,21 +85,25 @@ export async function ensureUvInstalled(onProgress?: DownloadProgressCallback): 
 
 export async function isPythonInstalled(): Promise<boolean> {
   if (cachedPythonInstalled !== null) return cachedPythonInstalled;
+  const sysCache = getSystemCheckCache();
+  if (sysCache?.python !== undefined) {
+    cachedPythonInstalled = sysCache.python;
+    return cachedPythonInstalled;
+  }
   const isWin = process.platform === "win32";
   try {
     await execa(isWin ? "where.exe" : "which", ["python"]);
     cachedPythonInstalled = true;
-    return true;
   } catch {
     try {
       await execa(isWin ? "where.exe" : "which", ["python3"]);
       cachedPythonInstalled = true;
-      return true;
     } catch {
       cachedPythonInstalled = false;
-      return false;
     }
   }
+  updateSystemCheckCache({ python: cachedPythonInstalled });
+  return cachedPythonInstalled;
 }
 
 export async function ensurePythonInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
@@ -116,6 +130,7 @@ export async function ensurePythonInstalled(onProgress?: DownloadProgressCallbac
     await execa(uvCmd, ["python", "install"]);
 
     cachedPythonInstalled = true;
+    updateSystemCheckCache({ python: true });
     if (onProgress) onProgress(0, 0, "done");
   } catch (err: any) {
     if (onProgress) onProgress(0, 0, "error");
@@ -125,8 +140,14 @@ export async function ensurePythonInstalled(onProgress?: DownloadProgressCallbac
 
 export async function isPaddleOcrAvailable(): Promise<boolean> {
   if (cachedPaddleOcrInstalled !== null) return cachedPaddleOcrInstalled;
+  const sysCache = getSystemCheckCache();
+  if (sysCache?.paddleOcr !== undefined) {
+    cachedPaddleOcrInstalled = sysCache.paddleOcr;
+    return cachedPaddleOcrInstalled;
+  }
   if (!(await isPythonInstalled())) {
     cachedPaddleOcrInstalled = false;
+    updateSystemCheckCache({ paddleOcr: false });
     return false;
   }
 
@@ -140,11 +161,11 @@ export async function isPaddleOcrAvailable(): Promise<boolean> {
       "import sys\ntry:\n import paddleocr, pdf2image\nexcept:\n import pytesseract, pypdfium2",
     ]);
     cachedPaddleOcrInstalled = true;
-    return true;
   } catch {
     cachedPaddleOcrInstalled = false;
-    return false;
   }
+  updateSystemCheckCache({ paddleOcr: cachedPaddleOcrInstalled });
+  return cachedPaddleOcrInstalled;
 }
 
 export async function ensurePaddleOcrInstalled(onProgress?: DownloadProgressCallback): Promise<void> {

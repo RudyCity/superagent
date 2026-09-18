@@ -4,6 +4,7 @@ import os from "os";
 import { execa } from "execa";
 import { fileURLToPath } from "url";
 import { getGlobalConfigDir } from "./config.js";
+import { getSystemCheckCache, updateSystemCheckCache } from "./config/systemCache.js";
 
 // Helper function to fetch resources with retry logic
 async function fetchWithRetry(url: string, retries = 3, delay = 2000): Promise<Response> {
@@ -64,14 +65,23 @@ async function downloadFileWithProgress(
   await fs.writeFile(destPath, buffer);
 }
 
+let cachedAndroidCliGlobally: boolean | null = null;
 export async function isAndroidCliInstalledGlobally(): Promise<boolean> {
+  if (cachedAndroidCliGlobally !== null) return cachedAndroidCliGlobally;
+  const sysCache = getSystemCheckCache();
+  if (sysCache?.androidCli !== undefined) {
+    cachedAndroidCliGlobally = sysCache.androidCli;
+    return cachedAndroidCliGlobally;
+  }
   const isWin = process.platform === "win32";
   try {
     await execa(isWin ? "where.exe" : "which", ["android"]);
-    return true;
+    cachedAndroidCliGlobally = true;
   } catch {
-    return false;
+    cachedAndroidCliGlobally = false;
   }
+  updateSystemCheckCache({ androidCli: cachedAndroidCliGlobally });
+  return cachedAndroidCliGlobally;
 }
 
 export function getLocalAndroidCliPath(): string {
@@ -97,6 +107,11 @@ export async function isAndroidCliInstalledLocally(): Promise<boolean> {
 let cachedRgInstalledGlobally: boolean | null = null;
 export async function isRgInstalledGlobally(): Promise<boolean> {
   if (cachedRgInstalledGlobally !== null) return cachedRgInstalledGlobally;
+  const sysCache = getSystemCheckCache();
+  if (sysCache?.rg !== undefined) {
+    cachedRgInstalledGlobally = sysCache.rg;
+    return cachedRgInstalledGlobally;
+  }
   const isWin = process.platform === "win32";
   try {
     await execa(isWin ? "where.exe" : "which", ["rg"]);
@@ -104,6 +119,7 @@ export async function isRgInstalledGlobally(): Promise<boolean> {
   } catch {
     cachedRgInstalledGlobally = false;
   }
+  updateSystemCheckCache({ rg: cachedRgInstalledGlobally });
   return cachedRgInstalledGlobally;
 }
 
@@ -214,14 +230,23 @@ export async function ensureRgInstalled(onProgress?: DownloadProgressCallback): 
   }
 }
 
+let cachedCurlInstalledGlobally: boolean | null = null;
 export async function isCurlInstalledGlobally(): Promise<boolean> {
+  if (cachedCurlInstalledGlobally !== null) return cachedCurlInstalledGlobally;
+  const sysCache = getSystemCheckCache();
+  if (sysCache?.curl !== undefined) {
+    cachedCurlInstalledGlobally = sysCache.curl;
+    return cachedCurlInstalledGlobally;
+  }
   const isWin = process.platform === "win32";
   try {
     await execa(isWin ? "where.exe" : "which", ["curl"]);
-    return true;
+    cachedCurlInstalledGlobally = true;
   } catch {
-    return false;
+    cachedCurlInstalledGlobally = false;
   }
+  updateSystemCheckCache({ curl: cachedCurlInstalledGlobally });
+  return cachedCurlInstalledGlobally;
 }
 
 export function getLocalCurlPath(): string {
@@ -402,13 +427,36 @@ export {
   runPaddleOcrOnPdf
 } from "./setup/ocrSetup.js";
 
+let cachedRmemoryInstalled: boolean | null = null;
+export function clearRmemoryCache(): void {
+  cachedRmemoryInstalled = null;
+}
+
 export async function isRmemoryInstalled(): Promise<boolean> {
-  try {
-    await import("r-memory");
-    return true;
-  } catch {
-    return false;
+  if (cachedRmemoryInstalled !== null) return cachedRmemoryInstalled;
+  const sysCache = getSystemCheckCache();
+  if (sysCache?.rmemory !== undefined) {
+    cachedRmemoryInstalled = sysCache.rmemory;
+    return cachedRmemoryInstalled;
   }
+  try {
+    const { createRequire } = await import("module");
+    const req = createRequire(import.meta.url);
+    req.resolve("r-memory/package.json");
+    cachedRmemoryInstalled = true;
+  } catch {
+    try {
+      const filename = fileURLToPath(import.meta.url);
+      const dirname = path.dirname(filename);
+      const projectRoot = path.resolve(dirname, "..", "..");
+      await fs.access(path.join(projectRoot, "node_modules", "r-memory", "package.json"));
+      cachedRmemoryInstalled = true;
+    } catch {
+      cachedRmemoryInstalled = false;
+    }
+  }
+  updateSystemCheckCache({ rmemory: cachedRmemoryInstalled });
+  return cachedRmemoryInstalled;
 }
 
 /**

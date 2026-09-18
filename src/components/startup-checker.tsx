@@ -25,7 +25,7 @@ import {
 } from "../core/androidSetup.js";
 import { initMcpServers } from "../core/mcp/McpManager.js";
 import { warmUpClassifier } from "../core/requestClassifier.js";
-import { preloadLocalEmbeddingModel } from "../core/rmemoryUtil.js";
+import { preloadLocalEmbeddingModel, checkLocalModelDownloadStatus, DEFAULT_LOCAL_EMBEDDING_MODEL } from "../core/rmemoryUtil.js";
 import { runRmemorySetup } from "../core/rmemorySetup.js";
 import { getSettings } from "../core/config/jsonConfig.js";
 import { registerProgressCallback } from "../core/tools/state.js";
@@ -94,8 +94,13 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
 
     // Run the checks and downloads
     async function runInitialization() {
+      let anyDownloadOccurred = false;
+
       // Helper to update a task's state
       const updateTask = (id: string, updates: Partial<TaskState>) => {
+        if (updates.status === "downloading" || updates.status === "extracting") {
+          anyDownloadOccurred = true;
+        }
         setTasks((prev) => {
           if (!prev[id]) return prev;
           return {
@@ -108,6 +113,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
       // 1. Register progress callback for transformers model downloads
       registerProgressCallback((event) => {
         if (event.type === "model_download") {
+          anyDownloadOccurred = true;
           const taskId = event.modelName === "classifier" ? "classifierModel" : "embeddingModel";
           if (event.status === "downloading") {
             updateTask(taskId, { status: "downloading", progress: 0 });
@@ -124,27 +130,30 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
         }
       });
 
-      // 2. Ripgrep (rg) check & setup
-      updateTask("ripgrep", { status: "checking" });
-      const hasRg = (await isRgInstalledLocally()) || (await isRgInstalledGlobally());
-      if (hasRg) {
-        updateTask("ripgrep", { status: "ready" });
-      } else {
-        updateTask("ripgrep", { status: "downloading", progress: 0 });
-        await ensureRgInstalled((downloaded, total, stage) => {
-          if (stage === "downloading") {
-            const progress = total > 0 ? (downloaded / total) * 100 : 0;
-            updateTask("ripgrep", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
-          } else if (stage === "extracting") {
-            updateTask("ripgrep", { status: "extracting" });
-          } else if (stage === "done") {
-            updateTask("ripgrep", { status: "ready" });
-          }
-        }).catch(() => updateTask("ripgrep", { status: "failed" }));
-      }
+      // 2. Ripgrep (rg)
+      const checkRg = async () => {
+        updateTask("ripgrep", { status: "checking" });
+        const hasRg = (await isRgInstalledLocally()) || (await isRgInstalledGlobally());
+        if (hasRg) {
+          updateTask("ripgrep", { status: "ready" });
+        } else {
+          updateTask("ripgrep", { status: "downloading", progress: 0 });
+          await ensureRgInstalled((downloaded, total, stage) => {
+            if (stage === "downloading") {
+              const progress = total > 0 ? (downloaded / total) * 100 : 0;
+              updateTask("ripgrep", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
+            } else if (stage === "extracting") {
+              updateTask("ripgrep", { status: "extracting" });
+            } else if (stage === "done") {
+              updateTask("ripgrep", { status: "ready" });
+            }
+          }).catch(() => updateTask("ripgrep", { status: "failed" }));
+        }
+      };
 
-      // 3. Curl check & setup (Windows only)
-      if (isWin) {
+      // 3. Curl (Windows only)
+      const checkCurl = async () => {
+        if (!isWin) return;
         updateTask("curl", { status: "checking" });
         const hasCurl = (await isCurlInstalledLocally()) || (await isCurlInstalledGlobally());
         if (hasCurl) {
@@ -162,123 +171,124 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
             }
           }).catch(() => updateTask("curl", { status: "failed" }));
         }
-      }
+      };
 
-      // 4. Android CLI check & setup
-      updateTask("androidCli", { status: "checking" });
-      const hasAndroid = (await isAndroidCliInstalledLocally()) || (await isAndroidCliInstalledGlobally());
-      if (hasAndroid) {
-        updateTask("androidCli", { status: "ready" });
-      } else {
-        updateTask("androidCli", { status: "downloading", progress: 0 });
-        await ensureAndroidCliInstalled((downloaded, total, stage) => {
-          if (stage === "downloading") {
-            const progress = total > 0 ? (downloaded / total) * 100 : 0;
-            updateTask("androidCli", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
-          } else if (stage === "extracting") {
-            updateTask("androidCli", { status: "extracting" });
-          } else if (stage === "done") {
-            updateTask("androidCli", { status: "ready" });
-          }
-        }).catch(() => updateTask("androidCli", { status: "failed" }));
-      }
+      // 4. Android CLI
+      const checkAndroid = async () => {
+        updateTask("androidCli", { status: "checking" });
+        const hasAndroid = (await isAndroidCliInstalledLocally()) || (await isAndroidCliInstalledGlobally());
+        if (hasAndroid) {
+          updateTask("androidCli", { status: "ready" });
+        } else {
+          updateTask("androidCli", { status: "downloading", progress: 0 });
+          await ensureAndroidCliInstalled((downloaded, total, stage) => {
+            if (stage === "downloading") {
+              const progress = total > 0 ? (downloaded / total) * 100 : 0;
+              updateTask("androidCli", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
+            } else if (stage === "extracting") {
+              updateTask("androidCli", { status: "extracting" });
+            } else if (stage === "done") {
+              updateTask("androidCli", { status: "ready" });
+            }
+          }).catch(() => updateTask("androidCli", { status: "failed" }));
+        }
+      };
 
-      // 5. uv check & setup
-      updateTask("uv", { status: "checking" });
-      const hasUv = (await isUvInstalledLocally()) || (await isUvInstalledGlobally());
-      if (hasUv) {
-        updateTask("uv", { status: "ready" });
-      } else {
-        updateTask("uv", { status: "downloading", progress: 0 });
-        await ensureUvInstalled((downloaded, total, stage) => {
-          if (stage === "downloading") {
-            const progress = total > 0 ? (downloaded / total) * 100 : 0;
-            updateTask("uv", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
-          } else if (stage === "extracting") {
-            updateTask("uv", { status: "extracting" });
-          } else if (stage === "done") {
-            updateTask("uv", { status: "ready" });
-          }
-        }).catch(() => updateTask("uv", { status: "failed" }));
-      }
+      // 5. uv
+      const checkUv = async () => {
+        updateTask("uv", { status: "checking" });
+        const hasUv = (await isUvInstalledLocally()) || (await isUvInstalledGlobally());
+        if (hasUv) {
+          updateTask("uv", { status: "ready" });
+        } else {
+          updateTask("uv", { status: "downloading", progress: 0 });
+          await ensureUvInstalled((downloaded, total, stage) => {
+            if (stage === "downloading") {
+              const progress = total > 0 ? (downloaded / total) * 100 : 0;
+              updateTask("uv", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
+            } else if (stage === "extracting") {
+              updateTask("uv", { status: "extracting" });
+            } else if (stage === "done") {
+              updateTask("uv", { status: "ready" });
+            }
+          }).catch(() => updateTask("uv", { status: "failed" }));
+        }
+      };
 
-      // 6. Python check & setup
-      updateTask("python", { status: "checking" });
-      const hasPython = await isPythonInstalled();
-      if (hasPython) {
-        updateTask("python", { status: "ready" });
-      } else {
-        updateTask("python", { status: "downloading", progress: 0 });
-        await ensurePythonInstalled((downloaded, total, stage) => {
-          if (stage === "downloading") {
-          } else if (stage === "extracting") {
-            updateTask("python", { status: "extracting" });
-          } else if (stage === "done") {
-            updateTask("python", { status: "ready" });
-          }
-        }).catch(() => updateTask("python", { status: "failed" }));
-      }
+      // 6. Python
+      const checkPython = async () => {
+        updateTask("python", { status: "checking" });
+        const hasPython = await isPythonInstalled();
+        if (hasPython) {
+          updateTask("python", { status: "ready" });
+        } else {
+          updateTask("python", { status: "downloading", progress: 0 });
+          await ensurePythonInstalled((downloaded, total, stage) => {
+            if (stage === "downloading") {
+            } else if (stage === "extracting") {
+              updateTask("python", { status: "extracting" });
+            } else if (stage === "done") {
+              updateTask("python", { status: "ready" });
+            }
+          }).catch(() => updateTask("python", { status: "failed" }));
+        }
+      };
 
-      // 6.5. PaddleOCR check & setup
-      updateTask("paddleOcr", { status: "checking" });
-      const hasPaddleOcr = await isPaddleOcrAvailable();
-      if (hasPaddleOcr) {
-        updateTask("paddleOcr", { status: "ready" });
-      } else {
-        updateTask("paddleOcr", { status: "downloading", progress: 0 });
-        await ensurePaddleOcrInstalled((downloaded, total, stage) => {
-          if (stage === "downloading") {
-            updateTask("paddleOcr", { status: "downloading", progress: 50 });
-          } else if (stage === "done") {
-            updateTask("paddleOcr", { status: "ready" });
-          }
-        }).catch(() => updateTask("paddleOcr", { status: "ready" })); // Fallback ready
-      }
+      // 7. PaddleOCR
+      const checkPaddleOcr = async () => {
+        updateTask("paddleOcr", { status: "checking" });
+        const hasPaddleOcr = await isPaddleOcrAvailable();
+        if (hasPaddleOcr) {
+          updateTask("paddleOcr", { status: "ready" });
+        } else {
+          updateTask("paddleOcr", { status: "skipped" });
+        }
+      };
 
-      // 7. Office CLI check & setup
-      updateTask("officeCli", { status: "checking" });
-      const hasOfficeCli = (await isOfficeCliInstalledLocally()) || (await isOfficeCliInstalledGlobally());
-      if (hasOfficeCli) {
-        updateTask("officeCli", { status: "ready" });
-      } else {
-        updateTask("officeCli", { status: "downloading", progress: 0 });
-        await ensureOfficeCliInstalled((downloaded, total, stage) => {
-          if (stage === "downloading") {
-            const progress = total > 0 ? (downloaded / total) * 100 : 0;
-            updateTask("officeCli", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
-          } else if (stage === "extracting") {
-            updateTask("officeCli", { status: "extracting" });
-          } else if (stage === "done") {
-            updateTask("officeCli", { status: "ready" });
-          }
-        }).catch(() => updateTask("officeCli", { status: "failed" }));
-      }
+      // 8. Office CLI
+      const checkOfficeCli = async () => {
+        updateTask("officeCli", { status: "checking" });
+        const hasOfficeCli = (await isOfficeCliInstalledLocally()) || (await isOfficeCliInstalledGlobally());
+        if (hasOfficeCli) {
+          updateTask("officeCli", { status: "ready" });
+        } else {
+          updateTask("officeCli", { status: "downloading", progress: 0 });
+          await ensureOfficeCliInstalled((downloaded, total, stage) => {
+            if (stage === "downloading") {
+              const progress = total > 0 ? (downloaded / total) * 100 : 0;
+              updateTask("officeCli", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
+            } else if (stage === "extracting") {
+              updateTask("officeCli", { status: "extracting" });
+            } else if (stage === "done") {
+              updateTask("officeCli", { status: "ready" });
+            }
+          }).catch(() => updateTask("officeCli", { status: "failed" }));
+        }
+      };
 
-      // 8. RMemory Package check & setup
-      updateTask("rmemory", { status: "checking" });
-      const hasRmemory = await isRmemoryInstalled();
-      if (hasRmemory) {
-        updateTask("rmemory", { status: "ready" });
-      } else {
-        updateTask("rmemory", { status: "downloading", progress: 0 });
-        await ensureRmemoryInstalled((downloaded, total, stage) => {
-          if (stage === "downloading") {
-            const progress = total > 0 ? (downloaded / total) * 100 : 0;
-            updateTask("rmemory", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
-          } else if (stage === "extracting") {
-            updateTask("rmemory", { status: "extracting" });
-          } else if (stage === "done") {
-            updateTask("rmemory", { status: "ready" });
-          }
-        }).catch(() => updateTask("rmemory", { status: "failed" }));
-      }
+      // 9. RMemory Package
+      const checkRmemory = async () => {
+        updateTask("rmemory", { status: "checking" });
+        const hasRmemory = await isRmemoryInstalled();
+        if (hasRmemory) {
+          updateTask("rmemory", { status: "ready" });
+        } else {
+          updateTask("rmemory", { status: "downloading", progress: 0 });
+          await ensureRmemoryInstalled((downloaded, total, stage) => {
+            if (stage === "downloading") {
+              const progress = total > 0 ? (downloaded / total) * 100 : 0;
+              updateTask("rmemory", { status: "downloading", progress, downloadedBytes: downloaded, totalBytes: total });
+            } else if (stage === "extracting") {
+              updateTask("rmemory", { status: "extracting" });
+            } else if (stage === "done") {
+              updateTask("rmemory", { status: "ready" });
+            }
+          }).catch(() => updateTask("rmemory", { status: "failed" }));
+        }
+      };
 
-
-      // Concurrently run MCP, Request Classifier, Embedding Model, and RMemory setup
-      const parallelTasks = [];
-
-      // MCP Servers
-      parallelTasks.push((async () => {
+      // 10. MCP Servers
+      const checkMcp = async () => {
         updateTask("mcpServers", { status: "checking" });
         try {
           await initMcpServers();
@@ -286,11 +296,16 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
         } catch {
           updateTask("mcpServers", { status: "failed" });
         }
-      })());
+      };
 
-      // Request Classifier Model
-      if (settings.classifierEnabled !== false) {
-        parallelTasks.push((async () => {
+      // 11. Request Classifier Model
+      const checkClassifier = async () => {
+        if (settings.classifierEnabled === false) return;
+        const status = checkLocalModelDownloadStatus("Sharjeelbaig/Supra-Router-51M-ONNX");
+        if (status.includes("DOWNLOADED") || status.includes("LOADED")) {
+          updateTask("classifierModel", { status: "ready" });
+          warmUpClassifier().catch(() => {});
+        } else {
           updateTask("classifierModel", { status: "checking" });
           try {
             await warmUpClassifier();
@@ -298,23 +313,26 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           } catch {
             updateTask("classifierModel", { status: "failed" });
           }
-        })());
-      }
+        }
+      };
 
-      // Embedding Model and RMemory Setup
-      if (settings.enableRmemory === true) {
-        parallelTasks.push((async () => {
-          updateTask("rmemoryGateway", { status: "checking" });
-          try {
-            await runRmemorySetup();
-            updateTask("rmemoryGateway", { status: "ready" });
-          } catch {
-            updateTask("rmemoryGateway", { status: "failed" });
-          }
-        })());
+      // 12. Embedding Model and RMemory Setup
+      const checkRmemoryServices = async () => {
+        if (settings.enableRmemory !== true) return;
+        updateTask("rmemoryGateway", { status: "checking" });
+        try {
+          await runRmemorySetup();
+          updateTask("rmemoryGateway", { status: "ready" });
+        } catch {
+          updateTask("rmemoryGateway", { status: "failed" });
+        }
 
         if (settings.rmemoryEmbeddingProvider === "local" || !settings.rmemoryEmbeddingProvider) {
-          parallelTasks.push((async () => {
+          const status = checkLocalModelDownloadStatus(DEFAULT_LOCAL_EMBEDDING_MODEL);
+          if (status.includes("DOWNLOADED") || status.includes("LOADED")) {
+            updateTask("embeddingModel", { status: "ready" });
+            preloadLocalEmbeddingModel().catch(() => {});
+          } else {
             updateTask("embeddingModel", { status: "checking" });
             try {
               await preloadLocalEmbeddingModel();
@@ -322,19 +340,36 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
             } catch {
               updateTask("embeddingModel", { status: "failed" });
             }
-          })());
+          }
         }
-      }
+      };
 
-      await Promise.all(parallelTasks);
+      // Execute all checks in parallel!
+      await Promise.all([
+        checkRg(),
+        ...(isWin ? [checkCurl()] : []),
+        checkAndroid(),
+        checkUv(),
+        checkPython(),
+        checkPaddleOcr(),
+        checkOfficeCli(),
+        checkRmemory(),
+        checkMcp(),
+        checkClassifier(),
+        checkRmemoryServices(),
+      ]);
 
       // Clean up global progress callback
       registerProgressCallback(() => {});
 
-      // All finished! Wait a moment for visual confirmation, then trigger callback
-      setTimeout(() => {
+      // If downloads occurred, wait briefly for visual confirmation; otherwise complete immediately
+      if (anyDownloadOccurred) {
+        setTimeout(() => {
+          onComplete();
+        }, 300);
+      } else {
         onComplete();
-      }, 600);
+      }
     }
 
     runInitialization();

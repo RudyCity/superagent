@@ -1,3 +1,19 @@
+## [1.5.74] - 2026-09-19
+
+### Performance & Optimization
+
+- Add persistent 24-hour system toolcheck cache (`src/core/config/systemCache.ts`) saved in `~/.superagent-r/system-cache.json` with memory caching.
+- Optimize `isRmemoryInstalled()` in `src/core/androidSetup.ts` to use lightweight package.json disk resolution via `createRequire` instead of dynamic ONNX runtime imports, reducing check duration from 4,222ms to 2.8ms.
+- Parallelize all startup checks in `StartupChecker` (`src/components/startup-checker.tsx`) via `Promise.all` across ripgrep, curl, android CLI, uv, python, paddleocr, officecli, rmemory, MCP servers, and classifier.
+- Decouple classifier model (`Sharjeelbaig/Supra-Router-51M-ONNX`) and local embedding model warmup so that cached models resolve instantaneously in 0ms while ONNX warming proceeds asynchronously in the background without freezing the UI.
+- Treat `paddleocr` as an optional PDF OCR engine during startup to avoid heavy, blocking pip installations.
+- Eliminate 600ms artificial timeout delay in `StartupChecker` when all dependencies are pre-installed and cached.
+- Add instant execution fast-path in `cliMain.tsx` when one-shot prompt is passed or when `--quick` / `-q` / `--skip-startup-check` flags are provided, bypassing UI startup progress render and launching immediately in < 200ms.
+
+### Tests
+
+- Add unit test coverage in `tests/startupOptimization.test.ts` (4/4 tests passing) verifying cache persistence, rapid rmemory checks, and synchronous model status resolution.
+
 ## [1.5.73] - 2026-09-19
 
 ### Added

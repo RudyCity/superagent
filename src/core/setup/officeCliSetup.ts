@@ -3,6 +3,7 @@ import path from "path";
 import os from "os";
 import { execa } from "execa";
 import { getGlobalConfigDir } from "../config.js";
+import { getSystemCheckCache, updateSystemCheckCache } from "../config/systemCache.js";
 import { DownloadProgressCallback, logSetupDebug } from "../androidSetup.js";
 
 let cachedOfficeCliInstalledLocally: boolean | null = null;
@@ -36,14 +37,23 @@ export async function isOfficeCliInstalledLocally(): Promise<boolean> {
   }
 }
 
+let cachedOfficeCliInstalledGlobally: boolean | null = null;
 export async function isOfficeCliInstalledGlobally(): Promise<boolean> {
+  if (cachedOfficeCliInstalledGlobally !== null) return cachedOfficeCliInstalledGlobally;
+  const sysCache = getSystemCheckCache();
+  if (sysCache?.officeCli !== undefined) {
+    cachedOfficeCliInstalledGlobally = sysCache.officeCli;
+    return cachedOfficeCliInstalledGlobally;
+  }
   const isWin = process.platform === "win32";
   try {
     await execa(isWin ? "where.exe" : "which", ["officecli"]);
-    return true;
+    cachedOfficeCliInstalledGlobally = true;
   } catch {
-    return false;
+    cachedOfficeCliInstalledGlobally = false;
   }
+  updateSystemCheckCache({ officeCli: cachedOfficeCliInstalledGlobally });
+  return cachedOfficeCliInstalledGlobally;
 }
 
 export async function isOfficeCliAvailable(): Promise<boolean> {

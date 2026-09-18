@@ -359,7 +359,8 @@ export async function runCli() {
 
   const flags = [
     "--resume", "-r", "--help", "-h", "--multi", "--workspace", "-w",
-    "--workspace-ssh", "-ws", "--preset", "-p", "--model", "--provider"
+    "--workspace-ssh", "-ws", "--preset", "-p", "--model", "--provider",
+    "--quick", "-q", "--skip-startup-check"
   ];
   const positionalArgs = process.argv.slice(2).filter((arg, idx) => {
     if (flags.includes(arg)) return false;
@@ -495,7 +496,21 @@ export async function runCli() {
         );
       });
     };
-    await runStartupChecks();
+
+    const isQuickMode =
+      process.argv.includes("--quick") ||
+      process.argv.includes("-q") ||
+      process.argv.includes("--skip-startup-check") ||
+      Boolean(initialPrompt && initialPrompt.trim()) ||
+      process.env.SUPERAGENT_QUICK === "1";
+
+    if (isQuickMode) {
+      import("./core/mcp/McpManager.js")
+        .then(({ initMcpServers }) => initMcpServers())
+        .catch(() => {});
+    } else {
+      await runStartupChecks();
+    }
 
     let hasCurrentHistory = false;
     let sessionPath = "";
