@@ -1,3 +1,21 @@
+## [1.5.72] - 2026-09-19
+
+### Added
+
+- Add candidate distillation module (`src/core/selfdev/distiller.ts`) for identifying operational failure-fix cycles and user feedback with nested secret redaction.
+- Add trusted human review service (`src/core/selfdev/reviewService.ts`) and `selfdev_review` tool (`src/core/tools/selfdevReviewTool.ts`) supporting revision-bound approval, rejection, and retirement.
+- Add bounded prompt injector (`src/core/selfdev/injector.ts`) to inject active verified workspace lessons into system prompts within strict character and token limits.
+- Add idempotent feedback tracker (`src/core/selfdev/feedback.ts`) to track lesson exposure and outcomes without counter inflation.
+- Extract `configTypes.ts`, `defaultConfig.ts`, and `trustedDirs.ts` from `jsonConfig.ts` to satisfy strict file size constraints (< 1000 lines).
+
+### Fixed
+
+- Prevent `cliBridgeTool` from injecting dummy artifact banners into prompts when no artifact files exist on disk, stabilizing CLI Bridge test suites.
+
+### Tests
+
+- Add unit test coverage in `tests/selfdev/distiller.test.ts`, `reviewService.test.ts`, `injector.test.ts`, and `feedback.test.ts` (67/67 tests passing).
+
 ## [1.5.71] - 2026-09-18
 
 ### Added

@@ -486,6 +486,7 @@ async function handleDelegate(
       taskPath: args.taskPath ? String(args.taskPath) : undefined,
       planPath: args.planPath ? String(args.planPath) : undefined,
       walkthroughPath: args.walkthroughPath ? String(args.walkthroughPath) : undefined,
+      provideDefaultTargets: Boolean(args.provideDefaultTargets ?? (args.taskPath || args.planPath || args.walkthroughPath)),
     });
     const block = buildArtifactContextBlock(activeArtifacts);
     if (block) {
@@ -609,6 +610,7 @@ async function handleSessionCreate(
       taskPath: args.taskPath ? String(args.taskPath) : undefined,
       planPath: args.planPath ? String(args.planPath) : undefined,
       walkthroughPath: args.walkthroughPath ? String(args.walkthroughPath) : undefined,
+      provideDefaultTargets: Boolean(args.provideDefaultTargets ?? (args.taskPath || args.planPath || args.walkthroughPath)),
     });
     const block = buildArtifactContextBlock(artifacts);
     if (block) {

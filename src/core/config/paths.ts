@@ -126,3 +126,9 @@ export function ensureProtocol(url: string | undefined): string | undefined {
   return `https://${trimmed}`;
 }
 
+export function getSelfDevLessonsPath(): string {
+  return path.join(getRootConfigDir(), "selfdev.json");
+}
+
+
+

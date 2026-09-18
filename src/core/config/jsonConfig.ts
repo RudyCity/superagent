@@ -1,215 +1,27 @@
 import fs from "fs";
 import path from "path";
-import { execa } from "execa";
 import { threadId } from "worker_threads";
-import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir, ensureProtocol, getWorkspaceId } from "./paths.js";
-import { saveWorkspaceToDb, getWorkspacesFromDb, getWorkspaceFromDb, deleteWorkspaceFromDb } from "../storage/historyDb.js";
+import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir, ensureProtocol } from "./paths.js";
 import { encryptSecret, decryptSecret, isEncrypted } from "./secretStore.js";
 import { validateModelConfig } from "./configSchema.js";
 import { normalizeSelfDevConfig } from "./selfdevConfig.js";
 import type { SelfDevConfig } from "../selfdev/types.js";
+import {
+  type ProviderProfile,
+  type TierModelConfig,
+  type PresetModelsMulti,
+  type PresetModelsSingle,
+  type JSONModelPreset,
+  type SystemSettings,
+  type McpServerConfig,
+  type GlobalModelConfig,
+} from "./configTypes.js";
+import { DEFAULT_CONFIG } from "./defaultConfig.js";
 
-export interface ProviderProfile {
-  id: string;
-  name: string;
-  provider: string; // e.g. 'openai', 'anthropic', 'openrouter', 'custom'
-  apiKey: string;
-  baseUrl?: string;
-}
-
-export interface TierModelConfig {
-  providerProfileId: string;
-  model: string;
-  supportsVision?: boolean;
-}
-
-export interface PresetModelsMulti {
-  master: TierModelConfig;
-  superagent: TierModelConfig;
-  subagentDefault: TierModelConfig;
-  subagentDetails: Record<string, TierModelConfig>;
-}
-
-export interface PresetModelsSingle {
-  superagent: TierModelConfig;
-  subagentDefault: TierModelConfig;
-  subagentDetails: Record<string, TierModelConfig>;
-}
-
-export interface JSONModelPreset<T> {
-  id: string;
-  name: string;
-  description: string;
-  models: T;
-}
-
-export interface SystemSettings {
-  /** Optional self-development controls; absent settings remain disabled. */
-  selfdev?: SelfDevConfig;
-  concurrencyLimit: number;
-  rateLimitRpm: number;
-  rateLimitCapacity: number;
-  disableStreaming: boolean;
-  contextWindowLimit: number;
-  /** Estimated token budget reserved for optional skills, memories, and runtime context. */
-  promptContextBudget?: number;
-  maxIterations: number;
-  simpleTaskFileThreshold?: number;
-  simpleTaskKeywords?: string[];
-  /** Enable multi-category request classifier for token optimization (default: true) */
-  classifierEnabled?: boolean;
-  /** Minimum heuristic confidence to skip LLM classification phase (default: "high") */
-  classifierConfidenceThreshold?: "high" | "medium" | "low";
-  /** Custom keyword overrides per request category */
-  classifierKeywords?: Record<string, string[]>;
-  rmemoryGatewayUrl?: string;
-  rmemoryGatewayApiKey?: string;
-  rmemoryServiceId?: string;
-  enableRmemory?: boolean;
-  rmemoryPollIntervalMs?: number;
-  rmemoryEmbeddingProvider?: "local" | "openai";
-  rmemoryEmbeddingModel?: string;
-  rmemoryEmbeddingDimensions?: number;
-  maxChecklistVisible?: number;
-  maxHistoryVisible?: number;
-  maxProcsVisible?: number;
-  forcePromptBasedToolCalling?: boolean;
-  hideTimeline?: boolean;
-  enableAdvisor?: boolean;
-  advisorWarningThreshold?: number;
-  advisorPauseThreshold?: number;
-  advisorErrorThreshold?: number;
-  advisorAdaptiveScaling?: boolean;
-  advisorPatternMemory?: boolean;
-  /** Log level for prompt logging: off | metadata (no messages) | full (all content) */
-  promptLogLevel?: "off" | "metadata" | "full";
-  /**
-   * Force single-agent mode (suppress Master/Superagent/Subagent
-   * orchestration). Previously stored in `process.env.SINGLE_AGENT_MODE`
-   * — migrated to JSON config in v1.5.0 (audit finding H4).
-   */
-  singleAgentMode?: boolean;
-}
-
-export interface McpServerConfig {
-  command: string;
-  args: string[];
-  env?: Record<string, string>;
-}
-
-export interface GlobalModelConfig {
-  providers: ProviderProfile[];
-  presets: {
-    multi: JSONModelPreset<PresetModelsMulti>[];
-    single: JSONModelPreset<PresetModelsSingle>[];
-  };
-  activePresetId: {
-    multi: string;
-    single: string;
-  };
-  settings?: SystemSettings;
-  trustedDirectories?: string[];
-  activeHooks?: Record<string, string[]>;
-  mcpServers?: Record<string, McpServerConfig>;
-}
-
-
-const DEFAULT_CONFIG: GlobalModelConfig = {
-  settings: {
-    concurrencyLimit: 0,
-    rateLimitRpm: 60,
-    rateLimitCapacity: 60,
-    disableStreaming: false,
-    contextWindowLimit: 0,
-    promptContextBudget: 8000,
-    maxIterations: 500,
-    simpleTaskFileThreshold: 3,
-    simpleTaskKeywords: ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
-    maxChecklistVisible: 3,
-    maxHistoryVisible: 3,
-    maxProcsVisible: 3,
-    forcePromptBasedToolCalling: false,
-    enableRmemory: false,
-    rmemoryEmbeddingProvider: "local",
-    rmemoryEmbeddingModel: "Xenova/all-MiniLM-L6-v2",
-    rmemoryEmbeddingDimensions: 384,
-    enableAdvisor: true,
-    advisorWarningThreshold: 3,
-    advisorPauseThreshold: 5,
-    advisorErrorThreshold: 5,
-    advisorAdaptiveScaling: true,
-    advisorPatternMemory: true,
-  },
-  trustedDirectories: [],
-  providers: [
-    {
-      id: "default-anthropic",
-      name: "Default Anthropic",
-      provider: "anthropic",
-      apiKey: "",
-      baseUrl: "",
-    },
-    {
-      id: "default-openai",
-      name: "Default OpenAI",
-      provider: "openai",
-      apiKey: "",
-      baseUrl: "",
-    }
-  ],
-  presets: {
-    multi: [
-      {
-        id: "default-multi",
-        name: "Default Multi-Agent Setup",
-        description: "Standard configuration using Claude Sonnet and GPT-4o-mini",
-        models: {
-          master: {
-            providerProfileId: "default-anthropic",
-            model: "claude-3-5-sonnet-20241022",
-          },
-          superagent: {
-            providerProfileId: "default-anthropic",
-            model: "claude-3-5-sonnet-20241022",
-          },
-          subagentDefault: {
-            providerProfileId: "default-openai",
-            model: "gpt-4o-mini",
-          },
-          subagentDetails: {},
-        },
-      },
-    ],
-    single: [
-      {
-        id: "default-single",
-        name: "Default Single-Agent Setup",
-        description: "Standard single-agent setup using Claude Sonnet and GPT-4o-mini",
-        models: {
-          superagent: {
-            providerProfileId: "default-anthropic",
-            model: "claude-3-5-sonnet-20241022",
-          },
-          subagentDefault: {
-            providerProfileId: "default-openai",
-            model: "gpt-4o-mini",
-          },
-          subagentDetails: {},
-        },
-      },
-    ],
-  },
-  activePresetId: {
-    multi: "default-multi",
-    single: "default-single",
-  },
-};
+export * from "./configTypes.js";
+export { DEFAULT_CONFIG };
 
 let cachedConfig: GlobalModelConfig | null = null;
-// Modification time (ms) of the file that produced `cachedConfig`. Used to detect
-// out-of-band writes (a second process / terminal / spawned agent) so we don't keep
-// serving — and worse, re-saving — a stale in-memory snapshot that is missing
-// providers another process added. -1 means "unknown".
 let cachedConfigMtimeMs = -1;
 let lastStatCheckTime = 0;
 
@@ -1138,53 +950,4 @@ export function getModelInfoForDisplay(isMulti: boolean): {
   };
 }
 
-export function getTrustedDirectories(): string[] {
-  const workspaces = getWorkspacesFromDb();
-  return workspaces.filter(ws => ws.isTrusted).map(ws => ws.path);
-}
-
-export function addTrustedDirectory(dirPath: string, name?: string): void {
-  const resolvedPath = dirPath.startsWith("ssh:") ? dirPath : path.resolve(dirPath);
-  const id = getWorkspaceId(resolvedPath);
-  saveWorkspaceToDb({
-    id,
-    path: resolvedPath,
-    name,
-    isTrusted: true
-  });
-}
-
-export function removeTrustedDirectory(dirPath: string): void {
-  const resolvedPath = dirPath.startsWith("ssh:") ? dirPath : path.resolve(dirPath);
-  deleteWorkspaceFromDb(resolvedPath);
-}
-
-export function isDirectoryTrusted(dirPath: string): boolean {
-  const resolvedPath = path.resolve(dirPath);
-  const id = getWorkspaceId(resolvedPath);
-  const ws = getWorkspaceFromDb(id);
-  return ws ? ws.isTrusted : false;
-}
-
-/**
- * Ensure a directory is added to Git's global safe.directory configuration
- * to prevent dubious ownership issues on Windows/multi-user systems.
- */
-export async function ensureDirectoryTrusted(dirPath: string, cwd: string = process.cwd()): Promise<void> {
-  try {
-    const resolvedPath = path.resolve(dirPath);
-    // Normalize path to use forward slashes for Git config compatibility on Windows
-    const normalizedPath = resolvedPath.replace(/\\/g, "/");
-
-    // Check if it's already in safe.directory to avoid duplicates
-    const { stdout } = await execa("git", ["config", "--global", "--get-all", "safe.directory"], { cwd, reject: false });
-    const safeDirectories = stdout.split(/\r?\n/).map(d => d.trim().replace(/\\/g, "/"));
-
-    if (!safeDirectories.includes(normalizedPath)) {
-      await execa("git", ["config", "--global", "--add", "safe.directory", normalizedPath], { cwd });
-    }
-  } catch (err) {
-    // Ignore config errors
-  }
-}
-
+export * from "./trustedDirs.js";
