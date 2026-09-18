@@ -1,3 +1,20 @@
+## [1.5.71] - 2026-09-18
+
+### Added
+
+- Add foundation for self-development engine in `src/core/selfdev/` including event validation, candidate storage, event store, settings, and lesson validation.
+- Add `selfdevConfig` schema and normalization helpers under `src/core/config/selfdevConfig.ts` and integrate with `SystemSettings` in `jsonConfig.ts`.
+
+### Changed
+
+- Optimize system prompts in `src/core/config/base.ts` and `src/core/prompts.ts` with deduplicated guidance, telegraphic phrasing, and unified logic gates.
+- Ignore scratch files, temporary test directories, and prompt diff artifacts in `.gitignore`.
+
+### Tests
+
+- Add test coverage in `tests/selfdev/` and `tests/lessonValidation.test.ts` for lesson validation and candidate storage.
+- Add test coverage in `tests/promptOptimization.test.ts` for prompt contracts and role prompt sizing.
+
 ## [1.5.70] - 2026-09-18
 
 ### Fixed

@@ -6,6 +6,8 @@ import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir, ensureProt
 import { saveWorkspaceToDb, getWorkspacesFromDb, getWorkspaceFromDb, deleteWorkspaceFromDb } from "../storage/historyDb.js";
 import { encryptSecret, decryptSecret, isEncrypted } from "./secretStore.js";
 import { validateModelConfig } from "./configSchema.js";
+import { normalizeSelfDevConfig } from "./selfdevConfig.js";
+import type { SelfDevConfig } from "../selfdev/types.js";
 
 export interface ProviderProfile {
   id: string;
@@ -42,6 +44,8 @@ export interface JSONModelPreset<T> {
 }
 
 export interface SystemSettings {
+  /** Optional self-development controls; absent settings remain disabled. */
+  selfdev?: SelfDevConfig;
   concurrencyLimit: number;
   rateLimitRpm: number;
   rateLimitCapacity: number;
@@ -870,6 +874,7 @@ export function getSettings(): SystemSettings {
   }
 
     return {
+      selfdev: normalizeSelfDevConfig(s.selfdev),
       concurrencyLimit: s.concurrencyLimit ?? 0,
       rateLimitRpm: s.rateLimitRpm ?? 60,
       rateLimitCapacity: s.rateLimitCapacity ?? 60,
@@ -912,6 +917,9 @@ export function updateSettings(updates: Partial<SystemSettings>): void {
     config.settings = { ...DEFAULT_CONFIG.settings! };
   }
   const nextSettings = { ...config.settings, ...updates };
+  if (Object.hasOwn(updates, "selfdev")) {
+    nextSettings.selfdev = normalizeSelfDevConfig(updates.selfdev);
+  }
   if (JSON.stringify(nextSettings) === JSON.stringify(config.settings)) {
     return;
   }

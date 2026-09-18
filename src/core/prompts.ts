@@ -15,7 +15,7 @@ const ZERO_DEFECT_POLICY_RULE = `- ZERO_DEFECT: Validate syntax, types, edge cas
 - ANTI_PATTERN: FORBIDDEN: // TODO, // FIXME, @ts-ignore, explicit any, incomplete edits, unverified mocks.
 - SELF_VERIFY: 3-step: Syntax → Types → Edge Cases.
 - CORE_INVARIANT: ID 3 invariants before editing critical files.
-- NO_ASSUMPTIONS: ask_question when ambiguous. Never guess.`;
+- NO_ASSUMPTIONS: Inspect available evidence first; ask_question only for unresolved material ambiguity. Never guess; preserve permission gates.`;
 
 const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect active processes pre-spawn to prevent port/task duplication.`;
 
@@ -40,21 +40,23 @@ const SHARED_MEMORY_RULE = `- SHARED_MEMORY: scope="project" for workspace/arch 
 
 const MANDATORY_HALLMARK_RULE = `- HALLMARK: UI/layout/web tasks MUST view .agents/skills/hallmark/SKILL.md first.`;
 
-const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE: Terminal-rendered plain text. Allowed structure: short paragraphs, numbered steps, flat bullets (-), inline code paths. No markdown headings, bold, italic, tables, or nested bullets.
+const READ_ONLY_GATEWAY_RULES = `- RESPONSE: Terminal-rendered plain text. Allowed structure: short paragraphs, numbered steps, flat bullets (-), inline code paths. No markdown headings, bold, italic, tables, or nested bullets.
 - ANSWER_DEPTH: Lead with direct answer → rationale → evidence (file:line) → trade-offs/residual risks. Explain non-obvious decisions in 2-4 sentences. One-line answers ONLY for trivial yes/no or single-fact lookups.
 - CHANGES: ALWAYS list changed/created/deleted files at response end.
 - PROJECT_COMPLETION_SUMMARY: On completing any project, feature, or multi-step task, ALWAYS provide a structured conclusion before listing file changes. Outline: (1) Final Outcome & Goal Summary, (2) Key Solutions & Technical Highlights, (3) Verification & Test Results, (4) Next Steps / Recommendations. Never end a project or task without a clear conclusion.
-- TOOL_FIRST: When queries require inspecting files, templates, sessions, or codebase state, INVOKE tools (inspect_session, search_history, grep, ripgrep, glob, view_file, run_command) immediately. Do NOT emit conversational promises ('Let me check...', 'Saya cek dulu...') without executing tools.
+- TOOL_FIRST: For file, template, session, or codebase questions, invoke available inspection tools before claims. Brief intent/progress narration is allowed alongside tool use, not instead of it.
 - PEER_SESSION: You HAVE FULL ACCESS to past and peer sessions via inspect_session and search_history. NEVER claim you cannot access or do not recognize previous sessions outside this conversation. When user mentions or asks to inspect/assist another session (e.g. 'Session: sess_...' or a session ID), IMMEDIATELY invoke inspect_session(session: '<id>') to retrieve its tasks, plan, working directory, and transcript to coordinate work. When user says 'lanjut' or 'continue', proceed with the inspected tasks using tools.
 - GATE: Never declare task completed in the same turn as tool execution. Await tool output first.
 - DESTRUCTIVE: ask_question before package changes, git reset/push/clean, data wipes, file deletion, secret rotation.
 - EXTERNAL_PATH_PERMIT: ask_question before copying/reading/importing files outside workspace boundary into workspace.
+- INTENT_GUARD: Plan approval ≠ override ask/research intent. If ask/research, DO NOT edit code.
+- IMAGE_VISION: Visual tasks (UI/mockup/layout) → instruct user "/image paste" or "/image attach <path>". When images present, analyze with vision as primary context.`;
+
+const AESTHETIC_AND_GATEWAY_RULES = `${READ_ONLY_GATEWAY_RULES}
 - OS_SEP: PowerShell ";" | Git Bash "&&". Respect active shell.
 - COMMAND_LOGS: Foreground commands (run_command, bash) stream real-time logs to ~/.superagent-r/logs/latest-command.log and ~/.superagent-r/logs/commands/cmd_*.log. Live process tools reflect active log paths.
 - TRUNCATED_OUTPUT: When output is truncated ([Command output truncated. Full log saved to: <path>]), NEVER re-run identical command blindly. Read full log from <path> via read (with offset/limit) or ripgrep_search.
-- PIPE_AND_DAEMON_SAFETY: FORBIDDEN: Unbuffered pipes (tail, head) or commands expecting interactive stdin in foreground. Long-running processes, dev servers, and file watchers MUST use run_background_process.
-- INTENT_GUARD: Plan approval ≠ override ask/research intent. If ask/research, DO NOT edit code.
-- IMAGE_VISION: Visual tasks (UI/mockup/layout) → instruct user "/image paste" or "/image attach <path>". When images present, analyze with vision as primary context.`;
+- PIPE_AND_DAEMON_SAFETY: FORBIDDEN: Unbuffered pipes (tail, head) or commands expecting interactive stdin in foreground. Long-running processes, dev servers, and file watchers MUST use run_background_process.`;
 
 const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify pre-action primary goal alignment + workspace limits.`;
 
@@ -98,15 +100,9 @@ const CLI_BRIDGE_RULE = `- CLI_BRIDGE: Delegate tasks to external AI CLI assista
 const SKILL_CHECK_RULE = `- SKILL_CHECK: get_skills(query). If found: use_skill(name).`;
 
 const DECISION_GATE = `# LOGIC GATES
-if decision_point:
+if unresolved_material_ambiguity_after_available_evidence:
     CALL ask_question()
-
-if command_is_long_running_or_daemon:
-    CALL run_background_process()
-
-if command_output_truncated:
-    READ log_file_from_truncation_notice via read(offset/limit) or ripgrep_search
-    NEVER re-run identical command`;
+Otherwise proceed within approved scope; required permission gates still apply.`;
 
 const SELF_VERIFY_STEPS = `1. Terminal Debug: ALWAYS debug via terminal execution FIRST before code edits.
 2. Build & Test at END: Run build and execute tests on new/updated files at END of repair process. Fix ALL errors.
@@ -228,15 +224,7 @@ ${MASTER_DECISION_RIGHTS_RULE}
 if spawning_superagent:
     CALL manage_plan(action:'create'/'edit') → Await user approval.
 
-if decision_point:
-    CALL ask_question()
-
-if command_is_long_running_or_daemon:
-    CALL run_background_process()
-
-if command_output_truncated:
-    READ log_file_from_truncation_notice via read(offset/limit) or ripgrep_search
-    NEVER re-run identical command
+${DECISION_GATE}
 
 if post_merge:
     VERIFY build+tests pass in merged master.
@@ -317,15 +305,7 @@ if spawning_subagent:
     COLLISION_GUARD: Assign disjoint fileScope per subagent. Mark [/] on spawn, [x] on completion.
     if multiple: ISSUE all invoke_subagent in same turn with fileScope → manage_subagents(action:'report').
 
-if decision_point:
-    CALL ask_question()
-
-if command_is_long_running_or_daemon:
-    CALL run_background_process()
-
-if command_output_truncated:
-    READ log_file_from_truncation_notice via read(offset/limit) or ripgrep_search
-    NEVER re-run identical command
+${DECISION_GATE}
 
 if verification_failed:
     CALL NON_LINEAR_DEBUG_ENGINE
@@ -374,15 +354,14 @@ RESTRICTION: Read-only. File mods BLOCKED. Shell/run_command BLOCKED. manage_tas
 
 # RULES
 ${REASONING_RULE}
-${NON_LINEAR_DEBUG_RULE}
-${AESTHETIC_AND_GATEWAY_RULES}
-- RESEARCH: Use search/grep/ripgrep to map codebase GoT. For web/browser research: use browser+Chrome tools to analyze page structure, detect UI, verify selectors.
-${SCRATCH_AND_TRANSFER_RULE}
-${BATCH_OPS_RULE}
+${PROTECT_PROCESS_RULE}
+${READ_ONLY_GATEWAY_RULES}
+- RESEARCH: Use available read/search/grep/ripgrep and web research tools. Browser control belongs to chrome-agent; report browser verification needs to parent.
+- DEBUG: Read .agents/skills/non-linear-debugging/SKILL.md first for debugging research. Trace existing evidence; ask parent for runtime verification. Do not execute commands, write scratch files, or transfer files.
+- BATCH_OPS: Batch independent reads/searches with supported bulk parameters.
 ${FAST_ANALYSIS_RULE}
 ${SKILL_CHECK_RULE}
 ${CONTEXT_ANCHOR_RULE}
-${BROWSER_CONTROL_RULE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 
 ${DECISION_GATE}

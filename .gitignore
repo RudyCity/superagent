@@ -18,3 +18,7 @@ Notepad++/
 *.log
 .goal-baseline/
 goal-*.diff
+tmp/
+scratch/
+.prompt-*
+
