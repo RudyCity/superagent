@@ -25,6 +25,47 @@ interface AgentState {
   lastCallKey: string;
   successStreak: number;
   patternWarningHits: number;
+  recentReads: Map<string, number>;
+  callHistory: string[];
+}
+
+const WRITE_TOOLS = new Set([
+  "write_to_file",
+  "replace_file_content",
+  "apply_patch",
+  "patch",
+  "edit_file",
+  "write",
+  "write_file",
+  "superagent_write_file",
+]);
+
+const READ_TOOLS = new Set([
+  "read",
+  "view_file",
+  "cat",
+  "read_file",
+  "superagent_read_file",
+]);
+
+function extractReadPaths(tc: ToolCall): string[] {
+  const paths: string[] = [];
+  if (!tc.args || typeof tc.args !== "object") return paths;
+  const args = tc.args as Record<string, unknown>;
+
+  if (typeof args.filePath === "string") paths.push(args.filePath);
+  if (typeof args.path === "string") paths.push(args.path);
+  if (typeof args.AbsolutePath === "string") paths.push(args.AbsolutePath);
+
+  if (Array.isArray(args.filePaths)) {
+    for (const item of args.filePaths) {
+      if (typeof item === "string") paths.push(item);
+      else if (item && typeof item === "object" && typeof (item as any).path === "string") {
+        paths.push((item as any).path);
+      }
+    }
+  }
+  return paths;
 }
 
 const POLLING_STATUS_ACTIONS = new Set(["list", "status", "report", "logs", "violations"]);
@@ -104,9 +145,13 @@ export class RealtimeAdvisor {
         lastCallKey: "",
         successStreak: 0,
         patternWarningHits: 0,
+        recentReads: new Map(),
+        callHistory: [],
       };
       this.agentStates.set(agentId, state);
     }
+    if (!state.recentReads) state.recentReads = new Map();
+    if (!state.callHistory) state.callHistory = [];
     return state;
   }
 
@@ -125,6 +170,14 @@ export class RealtimeAdvisor {
     // Penalize repeat pattern memory warnings
     if (state.patternWarningHits > 0) {
       score -= Math.min(state.patternWarningHits, 3) * 5;
+    }
+    // Penalize repeated unmodified file reads
+    if (state.recentReads) {
+      for (const [, count] of state.recentReads) {
+        if (count > 2) {
+          score -= Math.min((count - 2) * 15, 45);
+        }
+      }
     }
     // Boost score for sustained successful execution
     if (state.successStreak >= 5) {
@@ -347,6 +400,134 @@ export class RealtimeAdvisor {
           });
         }
 
+        return {
+          action: "warn_agent",
+          message,
+          suggestion,
+          healthScore: this.getHealthScore(agentId),
+          autoCorrectionHint,
+        };
+      }
+
+      // Check for file modifications vs repeated read inspections
+      const hasWriteTool = toolCalls.some(tc => WRITE_TOOLS.has(tc.name.toLowerCase()));
+      if (hasWriteTool) {
+        state.recentReads.clear();
+      } else {
+        const readCalls = toolCalls.filter(tc => READ_TOOLS.has(tc.name.toLowerCase()));
+        if (readCalls.length > 0) {
+          const readWarnThreshold = Math.max(3, warningThreshold);
+          const readPauseThreshold = Math.max(5, pauseThreshold);
+          for (const rc of readCalls) {
+            const filePaths = extractReadPaths(rc);
+            for (const fp of filePaths) {
+              const norm = fp.trim().toLowerCase();
+              const readCount = (state.recentReads.get(norm) || 0) + 1;
+              state.recentReads.set(norm, readCount);
+
+              if (readCount >= readPauseThreshold) {
+                const baseName = fp.split(/[\/\\]/).pop() || fp;
+                const suggestion = `Repeatedly reading '${baseName}' without edits. Synthesize your findings and answer the user directly, or make required file edits.`;
+                const message = `Advisor detected an unprogressed read loop: '${baseName}' was read ${readCount} times without any file modifications. Pausing execution. Suggestion: ${suggestion}`;
+                const autoCorrectionHint = "[SYSTEM AUTO-CORRECTION SKILL]: File inspection loop limit reached. STOP reading the same files. Synthesize collected data or execute edits.";
+
+                if (this.enableLogging) {
+                  logAdvisorEvent({
+                    agentId,
+                    action: "pause_execution",
+                    reason: "repeated_read_loop",
+                    toolNames: [rc.name],
+                    consecutiveCount: readCount,
+                    message,
+                    suggestion,
+                  });
+                }
+                return {
+                  action: "pause_execution",
+                  message,
+                  suggestion,
+                  healthScore: this.getHealthScore(agentId),
+                  autoCorrectionHint,
+                };
+              } else if (readCount >= readWarnThreshold) {
+                const baseName = fp.split(/[\/\\]/).pop() || fp;
+                const suggestion = `Avoid re-reading '${baseName}'. Synthesize your answer with existing context or proceed with concrete actions.`;
+                const message = `ADVISOR WARNING: You have read '${baseName}' ${readCount} times without making any edits. Do not repeat identical file inspections. Suggestion: ${suggestion}`;
+                const autoCorrectionHint = "[SYSTEM AUTO-CORRECTION SKILL]: Repeated read warning. Synthesize your findings and reply to the user, or take concrete action instead of reading again.";
+
+                if (this.enableLogging) {
+                  logAdvisorEvent({
+                    agentId,
+                    action: "warn_agent",
+                    reason: "repeated_read_warning",
+                    toolNames: [rc.name],
+                    consecutiveCount: readCount,
+                    message,
+                    suggestion,
+                  });
+                }
+                return {
+                  action: "warn_agent",
+                  message,
+                  suggestion,
+                  healthScore: this.getHealthScore(agentId),
+                  autoCorrectionHint,
+                };
+              }
+            }
+          }
+        }
+      }
+
+      // Sliding window pattern detection for alternating non-consecutive loops
+      state.callHistory.push(currentCallKey);
+      if (state.callHistory.length > 10) {
+        state.callHistory.shift();
+      }
+      const windowOccurrences = state.callHistory.slice(-6).filter(k => k === currentCallKey).length;
+      if (windowOccurrences >= pauseThreshold && state.consecutiveSameCallCount < pauseThreshold) {
+        const toolNamesList = toolCalls.map(tc => tc.name);
+        const toolNames = toolNamesList.join(", ");
+        const suggestion = `Execution paused. Stop alternating between repeating tool calls (${toolNames}). Conclude your task or change strategy.`;
+        const message = `Advisor detected an alternating loop repeating the same tool actions (${toolNames}) ${windowOccurrences} times within the last 6 steps. Pausing execution. Suggestion: ${suggestion}`;
+        const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "pause_execution" }, toolNamesList);
+
+        if (this.enableLogging) {
+          logAdvisorEvent({
+            agentId,
+            action: "pause_execution",
+            reason: "alternating_loop_pause",
+            toolNames: toolNamesList,
+            consecutiveCount: windowOccurrences,
+            message,
+            suggestion,
+          });
+        }
+        return {
+          action: "pause_execution",
+          message,
+          suggestion,
+          healthScore: this.getHealthScore(agentId),
+          autoCorrectionHint,
+        };
+      } else if (windowOccurrences >= warningThreshold && state.consecutiveSameCallCount < warningThreshold) {
+        const toolNamesList = toolCalls.map(tc => tc.name);
+        const toolNames = toolNamesList.join(", ");
+        const suggestion = `Do not alternate between the same repeated tool calls. Proceed with task synthesis or file modifications.`;
+        const message = `ADVISOR WARNING: You are cycling between repeated tool actions (${toolNames}) across recent steps. Suggestion: ${suggestion}`;
+        const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "warn_agent" }, toolNamesList);
+
+        if (this.enableLogging) {
+          logAdvisorEvent({
+            agentId,
+            action: "warn_agent",
+            reason: "alternating_loop_warning",
+            toolNames: toolNamesList,
+            consecutiveCount: windowOccurrences,
+            message,
+            suggestion,
+          });
+        }
         return {
           action: "warn_agent",
           message,

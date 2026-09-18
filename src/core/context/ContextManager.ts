@@ -161,13 +161,17 @@ export class ContextManager {
       const content = contentToString(msg.content);
 
       // Pin the initial user request, task checklists, and implementation plans
-      // (Do NOT pin conversation summaries)
-      if (
-        (msg.role === "user" && i === 0 && !content.includes("[System Conversation Summary]")) || // First user request (excluding summaries)
-        content.includes("# Implementation Plan") ||
-        content.includes("task.md") ||
-        content.includes("implementation_plan.md")
-      ) {
+      // (Do NOT pin conversation summaries, tool results, or casual references)
+      const isInitialUserMsg = msg.role === "user" && i === 0 && !content.includes("[System Conversation Summary]");
+      const isPlanOrTaskDoc =
+        (msg.role === "user" || msg.role === "system") &&
+        (content.startsWith("# Implementation Plan") ||
+          content.startsWith("# Plan") ||
+          content.startsWith("# Tasks") ||
+          content.includes("\n# Implementation Plan") ||
+          content.includes("\n# Tasks"));
+
+      if (isInitialUserMsg || isPlanOrTaskDoc) {
         const contentPrefix = content.slice(0, 64);
         const stableId = `${msg.role}:${msg.timestamp}:${contentPrefix}`;
         

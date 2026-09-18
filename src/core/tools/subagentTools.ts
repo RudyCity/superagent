@@ -148,7 +148,7 @@ function resolveSubagentInstance(identifier: string): SubagentInstance | undefin
   // 2. Try matching by typeName or role (case-insensitive)
   const lower = identifier.toLowerCase();
   for (const [, inst] of subagentInstances.entries()) {
-    if (inst.typeName.toLowerCase() === lower || inst.role.toLowerCase() === lower) {
+    if (inst.typeName?.toLowerCase() === lower || inst.role?.toLowerCase() === lower) {
       return inst;
     }
   }

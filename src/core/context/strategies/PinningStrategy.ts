@@ -70,19 +70,42 @@ export class PinningStrategy implements CompactionStrategy {
     let toSummarize = unpinned.slice(0, keepIndex);
     let toKeep = unpinned.slice(keepIndex);
 
-    // Enforce token budget: reduce preserved unpinned messages if they exceed budget
+    // Enforce token budget: reduce preserved unpinned and redundant pinned messages if they exceed budget
     if (tokenBudget > 0) {
       const summaryOverhead = 500;
       const modelName = options.modelName || "";
       const tracker = new TokenTracker(modelName);
-      const pinnedTokens = pinned.reduce((s, p) => s + tracker.estimateTokens(p.msg), 0);
-      const keepBudget = Math.floor(tokenBudget * 0.6) - summaryOverhead - pinnedTokens;
+      await tracker.ensureEncoder();
+
+      // Cap pinned messages if they consume too much of the context window:
+      // Keep initial user prompt and latest plan/state, evicting older intermediate pinned messages.
+      const maxPinnedBudget = Math.floor(tokenBudget * 0.4);
+      let pinnedTokens = pinned.reduce((s, p) => s + tracker.estimateTokens(p.msg), 0);
+      if (pinnedTokens > maxPinnedBudget && pinned.length > 2) {
+        const keptPinned = [pinned[0], pinned[pinned.length - 1]];
+        const evictedPinned = pinned.slice(1, -1);
+        for (const ep of evictedPinned) {
+          toSummarize.push(ep.msg);
+        }
+        pinned.length = 0;
+        pinned.push(...keptPinned);
+        pinnedTokens = pinned.reduce((s, p) => s + tracker.estimateTokens(p.msg), 0);
+      }
+
+      const keepBudget = Math.max(1000, Math.floor(tokenBudget * 0.6) - summaryOverhead - pinnedTokens);
       let keepTokens = 0;
       for (const m of toKeep) keepTokens += tracker.estimateTokens(m);
       while (keepTokens > keepBudget && toKeep.length > 0) {
         const moved = toKeep.shift()!;
         toSummarize.push(moved);
         keepTokens -= tracker.estimateTokens(moved);
+      }
+
+      // Guarantee forward progress: if over 75% budget, force prune at least some unpinned messages
+      if (toSummarize.length === 0 && toKeep.length > 2 && (keepTokens + pinnedTokens) > Math.floor(tokenBudget * 0.75)) {
+        const forceCount = Math.max(1, Math.min(toKeep.length - 2, Math.floor(toKeep.length * 0.3)));
+        const evicted = toKeep.splice(0, forceCount);
+        toSummarize.push(...evicted);
       }
     }
 

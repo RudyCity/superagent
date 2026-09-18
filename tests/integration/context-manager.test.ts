@@ -247,7 +247,7 @@ describe("ContextManager Integration", () => {
     });
 
     const largeMessages: Message[] = [];
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 250; i++) {
       largeMessages.push({
         role: "user",
         content: "F".repeat(300),

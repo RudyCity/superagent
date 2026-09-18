@@ -1,3 +1,17 @@
+## [1.5.69] - 2026-09-18
+
+### Fixed
+
+- Fixed infinite context compaction deadlocks in ContextManager where tool outputs containing "task.md" or "implementation_plan.md" were permanently pinned, preventing token pruning.
+- Fixed PinningStrategy to cap pinned message tokens and enforce forward progress when token budget is exceeded.
+- Added repeated file-read detection (3 warnings, 5 pause) and sliding-window tool pattern loop detection to RealtimeAdvisor.
+- Fixed TypeError in resolveSubagentInstance by adding optional chaining when inspecting subagent instance typeName or role.
+
+### Tests
+
+- Added test coverage in tests/advisorLoopDetection.test.ts for unprogressed repeated reads and sliding window loop pauses.
+- Added test coverage in tests/autoPinKeyMessages.test.ts for selective pinning, token budget compaction, and safe subagent resolution.
+
 ## [1.5.68] - 2026-09-17
 
 ### Fixed

@@ -2,11 +2,22 @@ import fs from "fs";
 import path from "path";
 import { getGlobalConfigDir, ensureGlobalConfigDir } from "./config/paths.js";
 
+export type AdvisorReason =
+  | "loop_warning"
+  | "loop_pause"
+  | "hallucinated_tool"
+  | "consecutive_errors"
+  | "pattern_memory_warning"
+  | "repeated_read_warning"
+  | "repeated_read_loop"
+  | "alternating_loop_warning"
+  | "alternating_loop_pause";
+
 export interface AdvisorEvent {
   timestamp: string;
   agentId?: string;
   action: "warn_agent" | "pause_execution";
-  reason: "loop_warning" | "loop_pause" | "hallucinated_tool" | "consecutive_errors" | "pattern_memory_warning";
+  reason: AdvisorReason;
   toolNames?: string[];
   consecutiveCount?: number;
   message: string;
