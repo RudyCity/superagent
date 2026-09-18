@@ -132,7 +132,9 @@ export class PathResolver {
       current = this.resolveHistoryFilePath(agent, false);
       (agent as any).currentHistoryFilePath = current;
     }
-    process.env.SUPERAGENT_SESSION_PATH = current;
+    if (agent.tier === "master" || agent.tier === "single") {
+      process.env.SUPERAGENT_SESSION_PATH = current;
+    }
     if (current) {
       agent.sessionId = path.basename(current, ".json");
     }

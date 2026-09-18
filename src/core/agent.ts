@@ -155,7 +155,11 @@ export class Agent {
     this.preloadedSkillKeys.clear();
   }
 
-
+  private updateRootProcessActivity(updates: Partial<import("./tools/state.js").ProcessActivity>): void {
+    if (this.tier === "master" || this.tier === "single") {
+      updateProcessActivity(updates);
+    }
+  }
 
   public buildGuidelinesText(userQuery?: string): string {
     return GuidelineLoader.buildGuidelines({
@@ -221,7 +225,7 @@ export class Agent {
         const argsStr = JSON.stringify(event.toolCall.args);
         const desc = event.description || event.toolCall.name;
         this.writeToLogFile("TOOL_START", `Tool: ${event.toolCall.name}, Description: ${event.description}, Args: ${argsStr}`);
-        updateProcessActivity({
+        this.updateRootProcessActivity({
           isAgentRunning: true,
           currentTool: `${event.toolCall.name}: ${desc}`,
           currentStatus: `Executing tool: ${event.toolCall.name}`,
@@ -233,18 +237,18 @@ export class Agent {
           : JSON.stringify(event.toolResult.result);
         const truncatedResult = resultStr.length > 500 ? resultStr.substring(0, 500) + "... (truncated)" : resultStr;
         this.writeToLogFile("TOOL_END", `Tool: ${event.toolResult.name}, Success: ${success}, Result: ${truncatedResult}`);
-        updateProcessActivity({
+        this.updateRootProcessActivity({
           currentTool: undefined,
           currentStatus: "Thinking / Generating response...",
         });
       } else if (event.type === "error") {
         this.writeToLogFile("ERROR", event.message);
-        updateProcessActivity({
+        this.updateRootProcessActivity({
           currentStatus: `Error: ${event.message}`,
         });
       } else if (event.type === "permission_required") {
         this.writeToLogFile("PERMISSION_REQUIRED", `Tool: ${event.toolCall.name}, Description: ${event.description}`);
-        updateProcessActivity({
+        this.updateRootProcessActivity({
           currentStatus: `Waiting for permission: ${event.description}`,
         });
       } else if (event.type === "illegal_operation") {
@@ -256,7 +260,7 @@ export class Agent {
           logMsg += `, Duration: ${event.durationMs}ms`;
         }
         this.writeToLogFile("TOKEN_USAGE", logMsg);
-        updateProcessActivity({
+        this.updateRootProcessActivity({
           promptTokens: event.promptTokens,
           completionTokens: event.completionTokens,
         });
@@ -264,7 +268,7 @@ export class Agent {
         this.writeToLogFile("GOAL_DONE", `Goal: ${event.goal}\nSummary: ${event.summary}`);
       } else if (event.type === "done") {
         this.writeToLogFile("DONE", "Agent execution iteration/loop done");
-        updateProcessActivity({
+        this.updateRootProcessActivity({
           isAgentRunning: false,
           currentTool: undefined,
           currentStatus: "Idle",
@@ -511,7 +515,7 @@ export class Agent {
       }
     } catch {}
 
-    updateProcessActivity({
+    this.updateRootProcessActivity({
       isAgentRunning: true,
       currentTask: taskSummary.slice(0, 150),
       currentTaskStatus: "in_progress",
@@ -580,7 +584,7 @@ export class Agent {
         }
       } catch {}
 
-      updateProcessActivity({
+      this.updateRootProcessActivity({
         isAgentRunning: false,
         currentTool: undefined,
         currentStatus: "Idle",

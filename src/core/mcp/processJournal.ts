@@ -73,6 +73,86 @@ export function isPidAlive(pid: number): boolean {
   }
 }
 
+export function normalizeProcessSession(entry: ActiveProcessEntry): { entry: ActiveProcessEntry; changed: boolean } {
+  let changed = false;
+
+  // 1. Detect if taskFilePath or planFilePath points to a subagent folder
+  const candidatePath = entry.taskFilePath || entry.planFilePath || "";
+  const subagentMatch = candidatePath.match(
+    /[\\\/]history[\\\/](?:single|multi)[\\\/](sess_[^\\\/]+)[\\\/]subagents[\\\/]/i
+  );
+
+  let rootSessionId = subagentMatch?.[1];
+
+  // 2. If no subagent path match, but sessionId is given, check if that session folder itself is a subagent of a parent session
+  if (!rootSessionId && entry.sessionId) {
+    try {
+      const historyRoot = path.join(getRootConfigDir(), "history");
+      for (const m of ["single", "multi"]) {
+        const modeDir = path.join(historyRoot, m);
+        if (!fs.existsSync(modeDir)) continue;
+        const parents = fs.readdirSync(modeDir);
+        for (const parent of parents) {
+          const subDir = path.join(modeDir, parent, "subagents", entry.sessionId);
+          if (fs.existsSync(subDir)) {
+            rootSessionId = parent;
+            break;
+          }
+        }
+        if (rootSessionId) break;
+      }
+    } catch {}
+  }
+
+  // 3. If a parent session was detected, normalize entry.sessionId, taskFilePath, and planFilePath
+  if (rootSessionId) {
+    if (entry.sessionId !== rootSessionId) {
+      entry.sessionId = rootSessionId;
+      changed = true;
+    }
+    const mode = entry.mode === "multi" ? "multi" : "single";
+    const modeDir = path.join(getRootConfigDir(), "history", mode, rootSessionId);
+    const parentTask = path.join(modeDir, `${rootSessionId}_task.md`);
+    if (fs.existsSync(parentTask) && entry.taskFilePath !== parentTask) {
+      entry.taskFilePath = parentTask;
+      changed = true;
+    }
+    const parentPlan = path.join(modeDir, `${rootSessionId}_implementation_plan.md`);
+    if (fs.existsSync(parentPlan) && entry.planFilePath !== parentPlan) {
+      entry.planFilePath = parentPlan;
+      changed = true;
+    }
+  }
+
+  // 4. If the process is idle and taskFilePath exists, ensure currentTask reflects the active task checklist step
+  if (!entry.isAgentRunning && entry.taskFilePath && fs.existsSync(entry.taskFilePath)) {
+    try {
+      const content = fs.readFileSync(entry.taskFilePath, "utf-8");
+      const lines = content.split(/\r?\n/);
+      let inProgressTask: string | null = null;
+      let pendingTask: string | null = null;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("- [/]") || trimmed.startsWith("* [/]")) {
+          inProgressTask = trimmed.replace(/^[-*]\s*\[\/\]\s*/, "").trim();
+          break;
+        }
+        if (!pendingTask && (trimmed.startsWith("- [ ]") || trimmed.startsWith("* [ ]"))) {
+          pendingTask = trimmed.replace(/^[-*]\s*\[\s\]\s*/, "").trim();
+        }
+      }
+      const activeTask = inProgressTask || pendingTask;
+      if (activeTask && (rootSessionId || !entry.currentTask || !content.includes(entry.currentTask.trim()))) {
+        entry.currentTask = activeTask;
+        entry.currentTaskStatus = inProgressTask ? "in_progress" : "pending";
+        changed = true;
+      }
+    } catch {}
+  }
+
+  return { entry, changed };
+}
+
 export function loadActiveProcesses(): ActiveProcessEntry[] {
   try {
     const filePath = getProcessJournalPath();
@@ -89,7 +169,9 @@ export function loadActiveProcesses(): ActiveProcessEntry[] {
       if (item && typeof item.pid === "number") {
         // Drop processes that died or haven't sent a heartbeat in > 20 seconds
         if (isPidAlive(item.pid) && now - (item.lastHeartbeat || 0) < 20000) {
-          alive.push(item);
+          const { entry, changed } = normalizeProcessSession(item);
+          if (changed) dirty = true;
+          alive.push(entry);
         } else {
           dirty = true;
         }
@@ -184,8 +266,7 @@ export function registerCurrentProcess(mode: "single" | "multi" | "server" | "mc
         currentTask: activity.currentTask,
         currentTaskStatus: activity.currentTaskStatus || (isRunning ? "in_progress" : "pending"),
         currentTool: activity.currentTool,
-        currentStatus: activity.currentStatus || (isRunning ? "Running" : "Idle"),
-        sessionId: activity.sessionId || masterAgentRef?.sessionId,
+        sessionId: masterAgentRef?.sessionId || (masterAgentRef?.getSessionId ? masterAgentRef.getSessionId() : undefined) || activity.sessionId,
         taskFilePath: resolvedTaskFilePath,
         planFilePath: resolvedPlanFilePath,
         model: activity.model,
@@ -199,8 +280,9 @@ export function registerCurrentProcess(mode: "single" | "multi" | "server" | "mc
         activeToolOutput: getActiveToolOutput() || undefined,
       };
 
+      const { entry: normalizedEntry } = normalizeProcessSession(entry);
       const currentList = loadActiveProcesses().filter((p) => p.pid !== pid);
-      currentList.push(entry);
+      currentList.push(normalizedEntry);
       saveActiveProcesses(currentList);
     } catch {}
   };

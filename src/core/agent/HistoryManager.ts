@@ -8,12 +8,16 @@ export class HistoryManager {
   public static async loadHistory(agent: Agent, autoResume: boolean | string = false): Promise<void> {
     const resolved = agent.resolveHistoryFilePath(autoResume);
     (agent as any).currentHistoryFilePath = resolved;
-    process.env.SUPERAGENT_SESSION_PATH = resolved;
+    if (agent.tier === "master" || agent.tier === "single") {
+      process.env.SUPERAGENT_SESSION_PATH = resolved;
+    }
     agent.sessionId = path.basename(resolved, ".json");
-    try {
-      const { updateProcessActivity } = await import("../tools/state.js");
-      updateProcessActivity({ sessionId: agent.sessionId });
-    } catch {}
+    if (agent.tier === "master" || agent.tier === "single") {
+      try {
+        const { updateProcessActivity } = await import("../tools/state.js");
+        updateProcessActivity({ sessionId: agent.sessionId });
+      } catch {}
+    }
     await agent.conversation.loadFromFile(resolved);
     if (agent.conversation.loadedPlanState) {
       agent.planState = agent.conversation.loadedPlanState;
@@ -26,12 +30,16 @@ export class HistoryManager {
 
   public static async loadHistoryFromPath(agent: Agent, filePath: string): Promise<void> {
     (agent as any).currentHistoryFilePath = filePath;
-    process.env.SUPERAGENT_SESSION_PATH = filePath;
+    if (agent.tier === "master" || agent.tier === "single") {
+      process.env.SUPERAGENT_SESSION_PATH = filePath;
+    }
     agent.sessionId = path.basename(filePath, ".json");
-    try {
-      const { updateProcessActivity } = await import("../tools/state.js");
-      updateProcessActivity({ sessionId: agent.sessionId });
-    } catch {}
+    if (agent.tier === "master" || agent.tier === "single") {
+      try {
+        const { updateProcessActivity } = await import("../tools/state.js");
+        updateProcessActivity({ sessionId: agent.sessionId });
+      } catch {}
+    }
     await agent.conversation.loadFromFile(filePath);
     if (agent.conversation.loadedPlanState) {
       agent.planState = agent.conversation.loadedPlanState;
@@ -44,7 +52,9 @@ export class HistoryManager {
       historyPath = agent.resolveHistoryFilePath(false);
       (agent as any).currentHistoryFilePath = historyPath;
     }
-    process.env.SUPERAGENT_SESSION_PATH = historyPath;
+    if (agent.tier === "master" || agent.tier === "single") {
+      process.env.SUPERAGENT_SESSION_PATH = historyPath;
+    }
     agent.sessionId = path.basename(historyPath, ".json");
 
     try {
@@ -64,7 +74,9 @@ export class HistoryManager {
       historyPath = agent.resolveHistoryFilePath(false);
       (agent as any).currentHistoryFilePath = historyPath;
     }
-    process.env.SUPERAGENT_SESSION_PATH = historyPath;
+    if (agent.tier === "master" || agent.tier === "single") {
+      process.env.SUPERAGENT_SESSION_PATH = historyPath;
+    }
     agent.sessionId = path.basename(historyPath, ".json");
 
     const wsIdentifier = getCurrentWorkspaceIdentifier(agent.workingDirectory);
@@ -80,12 +92,16 @@ export class HistoryManager {
     agent.wasRunningBeforeAbort = false;
     const resolved = agent.resolveHistoryFilePath(false);
     (agent as any).currentHistoryFilePath = resolved;
-    process.env.SUPERAGENT_SESSION_PATH = resolved;
+    if (agent.tier === "master" || agent.tier === "single") {
+      process.env.SUPERAGENT_SESSION_PATH = resolved;
+    }
     agent.sessionId = path.basename(resolved, ".json");
-    try {
-      const { updateProcessActivity } = await import("../tools/state.js");
-      updateProcessActivity({ sessionId: agent.sessionId });
-    } catch {}
+    if (agent.tier === "master" || agent.tier === "single") {
+      try {
+        const { updateProcessActivity } = await import("../tools/state.js");
+        updateProcessActivity({ sessionId: agent.sessionId });
+      } catch {}
+    }
     await this.saveHistory(agent);
   }
 

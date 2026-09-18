@@ -1,3 +1,15 @@
+## [1.5.70] - 2026-09-18
+
+### Fixed
+
+- Prevent subagents and ephemeral child agents from overwriting process-level session activity, `process.env.SUPERAGENT_SESSION_PATH`, and task/plan file paths in `Agent`, `PathResolver`, and `HistoryManager`.
+- Add `normalizeProcessSession` in `processJournal` to detect subagent session paths in active process entries and resolve back to the primary parent session ID, parent task checklist file, and parent implementation plan.
+- Add direct session ID resolution fallback in MCP `taskResolver` to load session tasks, plans, and checklist progress directly from disk history.
+
+### Tests
+
+- Add unit test coverage in `tests/processSessionNormalization.test.ts` verifying subagent path parent normalization, non-subagent preservation, direct session ID resolution, and subagent session isolation.
+
 ## [1.5.69] - 2026-09-18
 
 ### Fixed

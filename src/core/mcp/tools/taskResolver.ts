@@ -408,6 +408,42 @@ export async function resolveInstanceCurrentTask(
       };
     }
 
+    // 1g. Session ID directly on disk in history (single or multi)
+    if (rawId.startsWith("sess_") || rawId.includes("_")) {
+      const root = getRootConfigDir();
+      for (const m of ["single", "multi"]) {
+        const sessDir = path.join(root, "history", m, rawId);
+        if (fs.existsSync(sessDir)) {
+          const taskFile = path.join(sessDir, `${rawId}_task.md`);
+          const planFile = path.join(sessDir, `${rawId}_implementation_plan.md`);
+          const { tasks } = await findTaskFileAndRead([taskFile]);
+          const { planContent } = findPlanFileAndRead([planFile]);
+          const taskInfo = getCurrentTaskFromChecklist(tasks);
+          const currentTask = taskInfo.task || "(session idle)";
+          return {
+            found: true,
+            type: "process",
+            id: rawId,
+            status: "idle",
+            goal: currentTask,
+            currentTask,
+            currentTaskStatus: taskInfo.status !== "none" ? taskInfo.status : "pending",
+            currentTaskIndex: taskInfo.index || 1,
+            progress: taskInfo.total > 0 ? `${taskInfo.completed}/${taskInfo.total} (${taskInfo.percentage}%)` : "0/0 (0%)",
+            totalTasks: taskInfo.total || 0,
+            completedTasks: taskInfo.completed || 0,
+            inProgressTasks: taskInfo.inProgress || 0,
+            pendingTasks: taskInfo.pending || 0,
+            percentage: taskInfo.percentage,
+            tasks: taskInfo.tasks,
+            taskFilePath: fs.existsSync(taskFile) ? taskFile : undefined,
+            planFilePath: fs.existsSync(planFile) ? planFile : undefined,
+            planContent,
+          };
+        }
+      }
+    }
+
     // Explicit ID not found
     return {
       found: false,
