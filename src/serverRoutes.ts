@@ -96,6 +96,65 @@ export async function handleServerRoute(
     killVisionServerProcess
   } = ctx;
 
+  // ─── Omnichannel Gateway Routes ─────────────────────────────────────────────
+  if (pathname.startsWith("/api/gateway")) {
+    const { handleGatewayRoutes } = await import("./core/gateway/gatewayRoutes.js");
+    const handled = await handleGatewayRoutes(req, res, pathname, parsedUrl, {
+      sendJSON,
+      readBody,
+      executeAgentPrompt: async (prompt: string, workspace: string, sessionId?: string) => {
+        let session = resolveSession(req, sessionId);
+        if (!session) {
+          const agent = await createAgentForMode(workspace, "single", serverDefaultClientMode);
+          session = {
+            agent,
+            workspace,
+            mode: "single",
+            clientMode: serverDefaultClientMode,
+            sessionId: sessionId || (agent as any).sessionId || `sess_${Date.now()}`,
+            isCliSession: false
+          };
+          activeSessions.set(session.sessionId, session);
+        }
+        let accumulated = "";
+        const origOnEvent = (session.agent as any).onEvent;
+        const interceptor = (event: any) => {
+          if (event?.type === "text" && event?.content) accumulated += event.content;
+          if (origOnEvent) origOnEvent(event);
+        };
+        (session.agent as any).onEvent = interceptor;
+        try {
+          await session.agent.sendMessage(prompt);
+        } finally {
+          (session.agent as any).onEvent = origOnEvent;
+        }
+        return accumulated || "[Action completed]";
+      }
+    });
+    if (handled) return true;
+  }
+
+  // ─── Headless Daemon & Cron Scheduler Routes ────────────────────────────────
+  if (pathname.startsWith("/api/daemon")) {
+    const { handleDaemonRoutes } = await import("./core/daemon/daemonRoutes.js");
+    const handled = await handleDaemonRoutes(req, res, pathname, parsedUrl, {
+      sendJSON,
+      readBody
+    });
+    if (handled) return true;
+  }
+
+  // ─── Autonomous Skill Synthesizer Routes ────────────────────────────────────
+  if (pathname.startsWith("/api/skills/synthesiz")) {
+    const { handleSkillRoutes } = await import("./core/skills/skillRoutes.js");
+    const handled = await handleSkillRoutes(req, res, pathname, parsedUrl, {
+      sendJSON,
+      readBody,
+      resolveWorkspacePath
+    });
+    if (handled) return true;
+  }
+
   // SSE Endpoint
   if (pathname === "/api/events" && req.method === "GET") {
     res.writeHead(200, {

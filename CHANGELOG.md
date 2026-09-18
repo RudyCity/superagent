@@ -1,3 +1,17 @@
+## [1.5.73] - 2026-09-19
+
+### Added
+
+- Add Omnichannel Messaging Gateway (`src/core/gateway/`) supporting Telegram, Discord, Slack, and generic webhooks with adapter architecture, session mapping, and outbound message chunking.
+- Add Autonomous Headless Daemon & Cron Scheduler (`src/core/daemon/`) with 5-field cron parsing (`minute hour dom month dow`), background tick loop, overlap prevention, concurrency limits, and CLI commands (`superagent daemon start|stop|status|list|add|remove|run`).
+- Add Autonomous Skill Synthesizer (`src/core/skills/`) for extracting multi-step tool sequences, command patterns, and error recoveries from execution trajectories into reusable `SKILL.md` documents.
+- Add `synthesize_skill` tool (`src/core/tools/synthesizeSkillTool.ts`) to `masterToolset` and `superagentToolset` for automated capability synthesis.
+- Expose REST endpoints for Gateway (`/api/gateway/*`), Daemon Scheduler (`/api/daemon/*`), and Skill Synthesis (`/api/skills/synthesiz*`).
+
+### Tests
+
+- Add unit test suites in `tests/gateway.test.ts`, `tests/cronParser.test.ts`, `tests/daemonScheduler.test.ts`, and `tests/skillSynthesizer.test.ts` (39/39 tests passing).
+
 ## [1.5.72] - 2026-09-19
 
 ### Added

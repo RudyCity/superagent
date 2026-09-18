@@ -106,6 +106,7 @@ import { unlockFileTool, getLockStatsTool, resolveConflictTool, generateLockRepo
 import { transferSshFileTool } from "./sshTransferTools.js";
 import { cliBridgeTool } from "./cliBridgeTool.js";
 import { inspectSessionTool } from "./sessionTools.js";
+import { synthesizeSkillTool } from "./synthesizeSkillTool.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Orchestration only. The Master Agent MUST NOT directly modify code or
@@ -143,6 +144,7 @@ export const masterToolset: Tool[] = [
   managePlanTool,
   getSkillsTool,
   useSkillTool,
+  synthesizeSkillTool,
   // The three write tools below ARE allowed in the master toolset because
   // the Master owns its own plan/task/walkthrough artifacts. The runtime
   // path-allowlist in the write tools' .execute() blocks writes to the
@@ -208,6 +210,7 @@ export const superagentToolset: Tool[] = [
   managePlanTool,
   getSkillsTool,
   useSkillTool,
+  synthesizeSkillTool,
   manageMcpTool,
   listPeerSuperagentsTool,
   defineSubagentTool,    // define specialized subagents

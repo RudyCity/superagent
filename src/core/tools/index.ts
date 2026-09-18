@@ -140,6 +140,7 @@ import {
 import { transferSshFileTool } from "./sshTransferTools.js";
 import { cliBridgeTool } from "./cliBridgeTool.js";
 import { inspectSessionTool } from "./sessionTools.js";
+import { synthesizeSkillTool } from "./synthesizeSkillTool.js";
 
 export {
   listChromeProfilesTool,
@@ -162,6 +163,7 @@ export {
   controlIsolatedCdpTool,
   cliBridgeTool,
   inspectSessionTool,
+  synthesizeSkillTool,
 };
 import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../workspace/workspaceChainTools.js";
 
@@ -249,6 +251,7 @@ export const allTools: Tool[] = [
   transferSshFileTool,
   cliBridgeTool,
   inspectSessionTool,
+  synthesizeSkillTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {

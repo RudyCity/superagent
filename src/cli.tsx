@@ -90,6 +90,7 @@ Commands:
   login             Manage provider authentication (add, list, use, remove)
   preset            Manage model presets (list, use, show)
   session           Manage conversation sessions (list, export, clear --empty, import)
+  daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
   mcp register      Register Superagent MCP Server to Antigravity (AGY) configuration
 
 Options:
@@ -109,6 +110,8 @@ Examples:
   superagent login add openrouter sk-or-v1-...
   superagent preset list
   superagent preset use dev
+  superagent daemon list
+  superagent daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"
   superagent --preset dev "explain quantum computing in simple terms"
   superagent --multi --preset dev "build authentication module"
   superagent --mcp
@@ -122,7 +125,13 @@ Examples:
   process.exit(0);
 }
 
-
+const daemonIndex = process.argv.findIndex(arg => arg === "daemon" || arg === "--daemon");
+if (daemonIndex !== -1) {
+  const daemonArgs = process.argv.slice(daemonIndex + 1);
+  const { handleDaemonCli } = await import("./core/daemon/daemonCli.js");
+  await handleDaemonCli(daemonArgs);
+  process.exit(0);
+}
 
 const serverIndex = process.argv.findIndex(arg => arg === "--server" || arg === "-s" || arg === "--server-only");
 if (serverIndex !== -1) {
