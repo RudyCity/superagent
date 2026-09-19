@@ -28,6 +28,10 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 ## ✨ Key Features
 
 - **🎯 Single Agent Mode (Primary)**: Seamless pair programming with live terminal execution, intelligent tool usage, and subagent delegation.
+- **⚡ Instant Startup & System Cache**: Parallelized zero-wait dependency checks, decoupled background neural classifier loading, persistent 24-hour cache, and instant `-q` / `--quick` fast-path (< 200ms).
+- **📡 Omnichannel Messaging Gateway**: Bidirectional messaging integration supporting Telegram, Discord, Slack, and generic webhooks with session mapping and automated message chunking.
+- **⏰ Autonomous Headless Daemon & Cron Scheduler**: Background execution daemon with standard 5-field cron parsing (`minute hour dom month dow`), overlap protection, concurrency limits, and CLI management.
+- **🧩 Autonomous Skill Synthesizer**: Extracts multi-step tool workflows, command patterns, and error recoveries from execution trajectories into reusable `SKILL.md` documents.
 - **🖥️ Native Desktop Integration**: Automatic connection with [t-line](https://github.com/RudyCity/t-line) desktop GUI app without manual configuration.
 - **🧠 Smart Context Management**: Automatic token tracking, LLM summarization, strategy-based pruning, and message pinning.
 - **🛡️ Local Git Checkpoints**: Automatic branch checkpoints and safety rollbacks during active sessions.
@@ -53,17 +57,27 @@ bun install
 bun run build
 
 # Register globally (optional)
-bun install-g .
+bun install -g .
 ```
 
 ### Usage
 
 ```bash
-# Start Superagent in the current workspace
+# Start Superagent in interactive mode (instant startup)
 superagent
 
-# Open Superagent in a specific project directory
-superagent --dir /path/to/project
+# Fast-path prompt execution (< 200ms launch)
+superagent -q "explain quantum computing in simple terms"
+
+# Open Superagent in a specific workspace
+superagent -w /path/to/project
+
+# Connect to a remote SSH workspace
+superagent -ws user@192.168.1.100:/var/www/app
+
+# Manage autonomous background daemon & cron scheduler
+superagent daemon list
+superagent daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"
 
 # Launch in Multi-Agent Orchestration mode (Experimental)
 superagent --multi
@@ -131,8 +145,9 @@ No manual server configuration or extra CLI arguments are required—simply laun
 | `/agents` | List active subagents and defined subagent types |
 | `/processes` `/procs` | List running background processes |
 | `/processes stop [id\|all]` | Stop background processes |
+| `/daemon` | Manage autonomous background daemon & cron scheduler (start, stop, status, list, add, remove, run) |
 | `/terminal` | Manage & execute terminal presets. Subcommands: `<command>`, `preset <name>`, `bg <cmd>`, `all`, `init`, `stop`, `list` |
-| `/skills` | List all installed agent skills and templates |
+| `/skills` | List installed skills or synthesize new ones (`/skills synthesize <title>`) |
 | `/install` | Install a skill from skills.sh (e.g. `/install vercel-labs/skills/find-skills`) |
 | `/memory` | Manage and inspect RMemory long-term memory: status, sync, search, add, delete, list-scenes, read-scene, read-persona |
 | `/mcp` | Manage MCP (Model Context Protocol) servers: list, add, remove, reload |
@@ -223,20 +238,21 @@ Workspace Chaining allows you to link multiple workspaces—both local directori
 ```text
                                ┌────────────────────────────────┐
                                │       Superagent CLI           │
-                               └──────────────┬─────────────────┘
-                                              │
-                     ┌────────────────────────┴────────────────────────┐
-                     ▼                                                 ▼
-        ┌────────────────────────┐                        ┌────────────────────────┐
-        │  Single Agent Mode     │                        │  t-line Desktop Client │
-        │  (Direct Execution)    │                        │  (Automatic Bridge)    │
-        └───────────┬────────────┘                        └────────────────────────┘
-                    │
-         ┌──────────┴──────────┐
-         ▼                     ▼
-┌──────────────────┐  ┌──────────────────┐
-│ Shell & FileOps  │  │ Atomic Subagents │
-└──────────────────┘  └──────────────────┘
+                               └───────┬────────────┬───────────┘
+                                       │            │
+            ┌──────────────────────────┼────────────┼──────────────────────────┐
+            ▼                          ▼            ▼                          ▼
+┌────────────────────────┐  ┌──────────────────┐ ┌──────────────────┐ ┌────────────────────────┐
+│  Single Agent Mode     │  │ Headless Daemon  │ │ Omnichannel      │ │  t-line Desktop Client │
+│  (Direct Execution)    │  │ & Cron Scheduler │ │ Messaging Gateway│ │  (Automatic Bridge)    │
+└───────────┬────────────┘  └──────────────────┘ └──────────────────┘ └────────────────────────┘
+            │
+ ┌──────────┼──────────────────────┐
+ ▼          ▼                      ▼
+┌────────┐ ┌────────────────────┐ ┌────────────────────┐
+│ Shell  │ │ Atomic Subagents   │ │ Skill Synthesizer  │
+│ & File │ │ (Coder/Tester/etc) │ │ (Autonomous Traj)  │
+└────────┘ └────────────────────┘ └────────────────────┘
 ```
 
 <details>

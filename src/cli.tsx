@@ -96,13 +96,17 @@ Commands:
 Options:
   -r, --resume            Resume the last active session
   -w, --workspace <path>  Target workspace directory path
+  -ws, --workspace-ssh <T> Target remote SSH workspace (e.g. user@host:/path)
   -p, --preset <name>     Activate a model preset for this session
   --model <model_name>    Override active model for this session
   --provider <id>         Override active provider profile for this session
   --multi                 Start in Multi Superagent master orchestrator mode
   --mcp, --mcp-server     Start Superagent as an MCP (Model Context Protocol) server
+  -q, --quick             Fast startup path, bypass interactive progress UI
+  --skip-startup-check    Alias for --quick
   -s, --server [P]        Start API server (default port: 7888)
   -m, --client-mode <M>   Client mode for server: 'chrome-extension' or 'tline' (default: tline)
+  -v, --version           Show version number and exit
   -h, --help              Show this help message and exit
 
 Examples:
@@ -112,8 +116,10 @@ Examples:
   superagent preset use dev
   superagent daemon list
   superagent daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"
+  superagent -q "explain quantum computing in simple terms"
   superagent --preset dev "explain quantum computing in simple terms"
   superagent --multi --preset dev "build authentication module"
+  superagent -ws root@192.168.1.100:/home/app
   superagent --mcp
   superagent mcp register
   superagent session list -w ./my-project

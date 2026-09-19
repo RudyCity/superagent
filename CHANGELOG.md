@@ -1,3 +1,12 @@
+## [1.5.75] - 2026-09-19
+
+### Documentation & CLI Help
+
+- Update CLI `--help` output in `src/cli.tsx` with `-q` / `--quick` / `--skip-startup-check`, `-ws` / `--workspace-ssh`, and `-v` / `--version` options, along with updated usage examples.
+- Update `/help` command in `src/core/commands/coreCommands.ts` to document `/daemon` background cron management and `/skills synthesize` capability.
+- Overhaul `README.md` to document Instant Startup, Omnichannel Messaging Gateway, Autonomous Headless Daemon, and Autonomous Skill Synthesizer, alongside updated ASCII architecture diagrams and command reference tables.
+- Update `AGENTS.md` with new core subsystem paths (`gateway/`, `daemon/`, `skills/`, `systemCache.ts`) and add strict architectural guidelines for sub-second startup optimization and fast-path execution.
+
 ## [1.5.74] - 2026-09-19
 
 ### Performance & Optimization
