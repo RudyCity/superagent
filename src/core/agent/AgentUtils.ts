@@ -21,15 +21,20 @@ export function isContextLengthExceeded(err: unknown): boolean {
   const lower = rawStr.toLowerCase();
   return (
     lower.includes("context_length_exceeded") ||
+    lower.includes("exceed_context_size_error") ||
     (lower.includes("context length") && lower.includes("exceed")) ||
+    (lower.includes("context size") && lower.includes("exceed")) ||
+    (lower.includes("context window") && lower.includes("exceed")) ||
     lower.includes("maximum context length") ||
     lower.includes("token limit exceeded") ||
     lower.includes("too many tokens") ||
     lower.includes("prompt is too long") ||
     lower.includes("reduce the length of the messages") ||
-    (lower.includes("context window") && lower.includes("exceed")) ||
     lower.includes("exceeds this model") ||
-    (lower.includes("tokens long and exceeds") && lower.includes("context"))
+    (lower.includes("tokens long and exceeds") && lower.includes("context")) ||
+    (lower.includes("tokens) exceeds") && lower.includes("context")) ||
+    lower.includes("exceeds the available context") ||
+    lower.includes("n_ctx")
   );
 }
 
@@ -51,18 +56,43 @@ export function parseContextLimitTokens(err: unknown): { requestedTokens?: numbe
   let requestedTokens: number | undefined;
   let maxTokens: number | undefined;
 
-  const reqMatch = /request is (\d+) tokens long/i.exec(rawStr);
-  if (reqMatch) {
-    requestedTokens = parseInt(reqMatch[1], 10);
+  // Pattern 1: e.g. "request (34312 tokens) exceeds the available context size (4096 tokens)"
+  const exceedSizeMatch = /request\s*\((\d+)\s*tokens\)\s*exceeds(?:\s*the)?\s*(?:available)?\s*context\s*(?:size|length|window)\s*\((\d+)\s*tokens\)/i.exec(rawStr);
+  if (exceedSizeMatch) {
+    requestedTokens = parseInt(exceedSizeMatch[1], 10);
+    maxTokens = parseInt(exceedSizeMatch[2], 10);
   }
 
-  const limitMatch1 = /(?:context length|context window|limit)\s*(?:of|is|:)?\s*(\d+)\s*tokens/i.exec(rawStr);
-  if (limitMatch1) {
-    maxTokens = parseInt(limitMatch1[1], 10);
+  // Pattern 2: JSON fields "n_ctx": 4096, "n_prompt_tokens": 34312
+  if (!maxTokens) {
+    const nCtxMatch = /"n_ctx"\s*:\s*(\d+)/i.exec(rawStr);
+    if (nCtxMatch) {
+      maxTokens = parseInt(nCtxMatch[1], 10);
+    }
+  }
+  if (!requestedTokens) {
+    const nPromptMatch = /"n_prompt_tokens"\s*:\s*(\d+)/i.exec(rawStr);
+    if (nPromptMatch) {
+      requestedTokens = parseInt(nPromptMatch[1], 10);
+    }
+  }
+
+  if (!requestedTokens) {
+    const reqMatch = /request is (\d+) tokens long/i.exec(rawStr);
+    if (reqMatch) {
+      requestedTokens = parseInt(reqMatch[1], 10);
+    }
   }
 
   if (!maxTokens) {
-    const limitMatch2 = /(?:context length|context window|limit)\s*(?:of|is|:)?\s*(\d{5,12})\b/i.exec(rawStr);
+    const limitMatch1 = /(?:context length|context window|context size|limit)\s*(?:of|is|:)?\s*(\d+)\s*tokens/i.exec(rawStr);
+    if (limitMatch1) {
+      maxTokens = parseInt(limitMatch1[1], 10);
+    }
+  }
+
+  if (!maxTokens) {
+    const limitMatch2 = /(?:context length|context window|context size|limit)\s*(?:of|is|:)?\s*(\d{4,12})\b/i.exec(rawStr);
     if (limitMatch2) {
       maxTokens = parseInt(limitMatch2[1], 10);
     }

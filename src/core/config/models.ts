@@ -159,10 +159,17 @@ export function getContextWindowLimit(model: string): number {
       const cachedVal = cache[cleanModel];
       const staticLimit = getStaticModelLimit(cleanModel);
       // Guard against unreasonably small cached values (e.g. 8192 misreported
-      // by a provider's /models endpoint). Prefer static lookup or the 256K
-      // default over a cached value below the minimum trusted threshold.
+      // by a provider's /models endpoint for a known model). Prefer static lookup
+      // over a cached value below the minimum trusted threshold.
+      // For unknown/custom models, if cachedVal is at least 1024, respect the server's reported limit.
       if (cachedVal < MIN_TRUSTED_CONTEXT_LIMIT) {
-        return staticLimit ?? DEFAULT_CONTEXT_WINDOW_LIMIT;
+        if (staticLimit !== null) {
+          return staticLimit;
+        }
+        if (cachedVal >= 1024) {
+          return cachedVal;
+        }
+        return DEFAULT_CONTEXT_WINDOW_LIMIT;
       }
       if ((cachedVal === 128000 || cachedVal === 131072 || cachedVal === 200000) && staticLimit !== null && staticLimit > cachedVal) {
         return staticLimit;

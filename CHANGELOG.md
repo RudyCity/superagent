@@ -1,3 +1,17 @@
+## [1.5.90] - 2026-09-20
+
+### Fixed
+
+- **Local Model Context Overflow Auto-Recovery**:
+  - Expanded `isContextLengthExceeded` in `AgentUtils.ts` to detect `exceed_context_size_error`, `context size` overflow messages, `n_ctx`, and `exceeds the available context` patterns emitted by local model servers (e.g. llama.cpp, Ollama, LM Studio).
+  - Enhanced `parseContextLimitTokens` to accurately extract requested tokens and maximum available context tokens from messages matching `request (X tokens) exceeds the available context size (Y tokens)` and JSON fields `n_ctx` / `n_prompt_tokens`.
+  - Fixed `getContextWindowLimit` in `models.ts` so custom/unknown models with context size >= 1024 (e.g. 4096 or 8192) are respected instead of unconditionally discarded in favor of the 256k fallback.
+  - Ensured live `ContextManager` threshold is updated dynamically upon encountering context length exceeded errors in `HistoryCompactor.ts` and `FastPath.ts`.
+
+### Tests
+
+- Added test cases in `tests/contextLengthExceededRetry.test.ts` verifying detection and parsing of local server `exceed_context_size_error` and `n_ctx` snippets.
+
 ## [1.5.89] - 2026-09-19
 
 ### Added

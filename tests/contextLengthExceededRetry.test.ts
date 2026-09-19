@@ -17,6 +17,7 @@ import * as aiModule from "ai";
 import * as configModule from "../src/core/config.js";
 
 const EXACT_USER_ERROR_SNIPPET = `Fatal error: Provider returned error (status: 400) - response body snippet: "{\\"error\\":{\\"message\\":\\"Provider returned error\\",\\"code\\":400,\\"metadata\\":{\\"raw\\":\\"{\\\\\\"error\\\\\\":{\\\\\\"message\\\\\\":\\\\\\"The request is 286595 tokens long and exceeds this model's context length of 262144 tokens.\\\\\\",\\\\\\"type\\\\\\":\\\\\\"invalid_request_error\\\\\\",\\\\\\"param\\\\\\":\\\\\\"\\\\\\",\\\\\\"code\\\\\\":\\\\\\"context_length_exceeded\\\\\\"}}\\",\\"provider_name\\":\\"Nex AGI\\",\\"is_byok\\":false,\\"provider_error_code\\":\\"context_length_exceeded\\"}},\\"user_id\\":\\"user_30cmooB0TF5esinNkAbFxeKEca5\\"}"`;
+const LLAMA_CPP_USER_ERROR_SNIPPET = `Fatal error: request (34312 tokens) exceeds the available context size (4096 tokens), try increasing it (status: 400) - response body snippet: "{\\"error\\":{\\"code\\":400,\\"message\\":\\"request (34312 tokens) exceeds the available context size (4096 tokens), try increasing it\\",\\"type\\":\\"exceed_context_size_error\\",\\"n_prompt_tokens\\":34312,\\"n_ctx\\":4096}}"`;
 
 describe("Context Length Exceeded (400) Recovery & Robustness", () => {
   let delaySpy: any;
@@ -64,6 +65,8 @@ describe("Context Length Exceeded (400) Recovery & Robustness", () => {
     it("should accurately identify the exact user error report as context length exceeded", () => {
       expect(isContextLengthExceeded(EXACT_USER_ERROR_SNIPPET)).toBe(true);
       expect(isContextLengthExceeded(new Error(EXACT_USER_ERROR_SNIPPET))).toBe(true);
+      expect(isContextLengthExceeded(LLAMA_CPP_USER_ERROR_SNIPPET)).toBe(true);
+      expect(isContextLengthExceeded(new Error(LLAMA_CPP_USER_ERROR_SNIPPET))).toBe(true);
     });
 
     it("should identify other common context length exceeded error messages", () => {
@@ -71,6 +74,7 @@ describe("Context Length Exceeded (400) Recovery & Robustness", () => {
       expect(isContextLengthExceeded("prompt is too long for the context window")).toBe(true);
       expect(isContextLengthExceeded("token limit exceeded: 300000 > 262144")).toBe(true);
       expect(isContextLengthExceeded("Please reduce the length of the messages or completion.")).toBe(true);
+      expect(isContextLengthExceeded("request (10000 tokens) exceeds the available context size (4096 tokens)")).toBe(true);
     });
 
     it("should not falsely match non-context 400 errors", () => {
@@ -84,6 +88,13 @@ describe("Context Length Exceeded (400) Recovery & Robustness", () => {
       expect(parsed).not.toBeNull();
       expect(parsed?.requestedTokens).toBe(286595);
       expect(parsed?.maxTokens).toBe(262144);
+    });
+
+    it("should parse requested tokens and maximum tokens from llama.cpp / local server error", () => {
+      const parsed = parseContextLimitTokens(LLAMA_CPP_USER_ERROR_SNIPPET);
+      expect(parsed).not.toBeNull();
+      expect(parsed?.requestedTokens).toBe(34312);
+      expect(parsed?.maxTokens).toBe(4096);
     });
 
     it("should parse tokens from standard OpenAI context error", () => {

@@ -26,6 +26,7 @@ export class HistoryCompactor {
     if (parsed?.maxTokens) {
       try {
         updateCachedModelLimit(activeModelName, parsed.maxTokens);
+        agent.conversation.getContextManager()?.setThreshold(parsed.maxTokens);
       } catch {}
     }
 

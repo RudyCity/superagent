@@ -362,6 +362,7 @@ export class FastPath {
             let knownLimit = parsed?.maxTokens || getContextWindowLimit(activeModelName) || 262144;
             if (parsed?.maxTokens) {
               updateCachedModelLimit(activeModelName, parsed.maxTokens);
+              agent.conversation.getContextManager()?.setThreshold(parsed.maxTokens);
             }
             const targetBudget = Math.max(1000, Math.floor(knownLimit * 0.5));
             await agent.compactHistoryIfNeeded(signal, true, targetBudget);
