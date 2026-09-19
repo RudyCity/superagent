@@ -352,6 +352,24 @@ export class FastPath {
         agent.onEvent({ type: "text", content: "\n\n[Interrupted]" });
         await agent.saveHistory();
       } else {
+        const { isContextLengthExceeded, parseContextLimitTokens, getAgentActiveModelName } = await import("./AgentUtils.js");
+        if (isContextLengthExceeded(err)) {
+          try {
+            const { getContextWindowLimit, updateCachedModelLimit } = await import("../config.js");
+            const rawMsg = err instanceof Error ? err.message : String(err);
+            const parsed = parseContextLimitTokens(rawMsg);
+            const activeModelName = getAgentActiveModelName(agent);
+            let knownLimit = parsed?.maxTokens || getContextWindowLimit(activeModelName) || 262144;
+            if (parsed?.maxTokens) {
+              updateCachedModelLimit(activeModelName, parsed.maxTokens);
+            }
+            const targetBudget = Math.max(1000, Math.floor(knownLimit * 0.5));
+            await agent.compactHistoryIfNeeded(signal, true, targetBudget);
+            if (agent.conversation.getTokenEstimate() > targetBudget) {
+              agent.conversation.pruneToTokenLimit(targetBudget);
+            }
+          } catch {}
+        }
         const message = formatError(err);
         agent.writeToLogFile("AGENT_ERROR", message);
         agent.onEvent({ type: "text", content: `\n\n❌ [ERROR] ${message}\n` });

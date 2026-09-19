@@ -1,11 +1,102 @@
 import { generateText } from "ai";
-import { getContextWindowLimit, getSettings, getConfig } from "../config.js";
+import { getContextWindowLimit, getSettings, getConfig, updateCachedModelLimit } from "../config.js";
 import { rateLimiter, concurrencyLimiter } from "../rateLimiter.js";
 import { contentToString, type Message } from "../conversation.js";
 import { getRMemoryClient, getRMemorySessionKey, isRmemoryActive } from "../rmemoryUtil.js";
+import { getAgentActiveModelName, parseContextLimitTokens, parsePayloadLimitBytes } from "./AgentUtils.js";
 import type { Agent } from "../agent.js";
 
 export class HistoryCompactor {
+  public static async handleContextOverflow(params: {
+    agent: Agent;
+    signal?: AbortSignal;
+    rawMsg: string;
+    contextOverflowCount: number;
+    supportsNativeTools: boolean;
+    injectDynamicContext: (msgs: any[]) => void;
+  }): Promise<{ messages: any[] }> {
+    const { agent, signal, rawMsg, contextOverflowCount, supportsNativeTools, injectDynamicContext } = params;
+    if (contextOverflowCount > 3) {
+      throw new Error("Context length limit exceeded repeatedly. Prompt and history exceed model context limit.");
+    }
+
+    const parsed = parseContextLimitTokens(rawMsg);
+    const activeModelName = getAgentActiveModelName(agent);
+    let knownLimit = parsed?.maxTokens || getContextWindowLimit(activeModelName) || 262144;
+    if (parsed?.maxTokens) {
+      try {
+        updateCachedModelLimit(activeModelName, parsed.maxTokens);
+      } catch {}
+    }
+
+    const reductionFactor = Math.pow(0.5, contextOverflowCount);
+    const targetBudget = Math.max(1000, Math.floor(knownLimit * reductionFactor));
+
+    agent.writeToLogFile(
+      "INFO",
+      `Context overflow compaction: attempt ${contextOverflowCount}. Known limit: ${knownLimit}, Target budget: ${targetBudget}`
+    );
+    await agent.compactHistoryIfNeeded(signal, true, targetBudget);
+
+    if (agent.conversation.getTokenEstimate() > targetBudget) {
+      agent.conversation.pruneToTokenLimit(targetBudget);
+    }
+
+    const messages = (agent as any).buildMessages(supportsNativeTools);
+    injectDynamicContext(messages);
+    agent.onEvent({
+      type: "text",
+      content: `\n[SYS] Context length exceeded (${knownLimit.toLocaleString()} tokens). Retrying compaction... (attempt ${contextOverflowCount}/3)\n`,
+    });
+    await (agent as any).delayWithCountdown(1, 1000, signal);
+    return { messages };
+  }
+
+  public static async handlePayload413(params: {
+    agent: Agent;
+    signal?: AbortSignal;
+    rawMsg: string;
+    payload413Count: number;
+    finalSystemPrompt: string;
+    modelTools: Record<string, any>;
+    supportsNativeTools: boolean;
+    injectDynamicContext: (msgs: any[]) => void;
+    mode: "stream" | "non-stream";
+  }): Promise<{ messages: any[]; newByteBudget: number }> {
+    const { agent, signal, rawMsg, payload413Count, finalSystemPrompt, modelTools, supportsNativeTools, injectDynamicContext, mode } = params;
+    if (payload413Count > 3) {
+      throw new Error(`Payload size limit exceeded repeatedly. System prompt and tool schemas exceed payload limit.`);
+    }
+
+    const parsedLimit = parsePayloadLimitBytes(rawMsg);
+    if (parsedLimit) {
+      agent.detectedPayloadLimitBytes = parsedLimit;
+    }
+    const limitToUse = agent.detectedPayloadLimitBytes || parsedLimit || 4 * 1024 * 1024;
+    const maxPayloadBytes = Math.floor(limitToUse * 0.9);
+    const systemSize = finalSystemPrompt ? Buffer.byteLength(finalSystemPrompt, "utf-8") : 0;
+    const toolsSize = Object.keys(modelTools).length > 0 ? Buffer.byteLength(JSON.stringify(modelTools), "utf-8") : 0;
+
+    const reductionFactor = Math.pow(0.5, payload413Count - 1);
+    const allowedHeadroom = maxPayloadBytes - systemSize - toolsSize - 5000;
+    const newByteBudget = Math.max(1024 * 20, Math.floor(allowedHeadroom * reductionFactor));
+
+    agent.writeToLogFile(
+      "INFO",
+      `413 Compaction (${mode}): attempt ${payload413Count}. Target budget: ${(newByteBudget / 1024).toFixed(1)} KB`
+    );
+    await agent.compactHistoryIfNeeded(signal, true, undefined, newByteBudget);
+
+    const messages = (agent as any).buildMessages(supportsNativeTools);
+    injectDynamicContext(messages);
+    agent.onEvent({
+      type: "text",
+      content: `\n[SYS] Payload limit exceeded (413). Retrying compaction... (attempt ${payload413Count}/3)\n`,
+    });
+    await (agent as any).delayWithCountdown(1, 1000, signal);
+    return { messages, newByteBudget };
+  }
+
   public static async contextManagerCompact(
     agent: Agent,
     signal?: AbortSignal,
@@ -33,8 +124,9 @@ export class HistoryCompactor {
       );
 
       let strategy;
+      const activeModelName = getAgentActiveModelName(agent);
       let compactionOptions: Partial<import("../context/CompactionStrategy.js").CompactionOptions> = {
-        modelName: getConfig().model,
+        modelName: activeModelName,
       };
       if (force && !tokenBudget) {
         const { PruningStrategy } = await import("../context/strategies/PruningStrategy.js");
@@ -73,7 +165,8 @@ export class HistoryCompactor {
     tokenBudget?: number,
     byteBudget?: number
   ): Promise<void> {
-    const modelLimit = getContextWindowLimit(getConfig().model);
+    const activeModelName = getAgentActiveModelName(agent);
+    const modelLimit = getContextWindowLimit(activeModelName);
     const maxHistoryTokens = tokenBudget ?? Math.floor(modelLimit * (force ? 0.3 : 0.5));
 
     if (force || tokenBudget || agent.conversation.getTokenEstimate() > maxHistoryTokens) {

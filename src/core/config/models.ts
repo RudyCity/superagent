@@ -98,6 +98,18 @@ export async function fetchAndCacheModels(): Promise<void> {
   }
 }
 
+export function updateCachedModelLimit(model: string, limit: number): void {
+  if (!model || !limit || limit <= 0) return;
+  const cleanModel = model.includes("@") ? model.substring(model.indexOf("@") + 1) : model;
+  try {
+    const existingCache = getModelCachesFromDb();
+    existingCache[cleanModel] = limit;
+    saveModelCachesToDb(existingCache);
+  } catch {
+    // Ignore cache write errors
+  }
+}
+
 function loadModelsCacheWithMigration(): Record<string, number> {
   const dbCache = getModelCachesFromDb();
   if (legacyCacheMigrated) {

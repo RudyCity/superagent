@@ -12,6 +12,7 @@ import { contentToString, type Message } from "../conversation.js";
 import { isRmemoryActive } from "../rmemoryUtil.js";
 import { HistoryCompactor } from "./HistoryCompactor.js";
 import { buildBudgetedPromptContext } from "./PromptContextBudget.js";
+import { getAgentActiveModelName } from "./AgentUtils.js";
 import type { Agent } from "../agent.js";
 
 export class ContextBuilder {
@@ -494,48 +495,74 @@ export class ContextBuilder {
     }
 
     {
-      const modelLimit = getContextWindowLimit(getConfig().model);
-      const isAnthropic = getConfig().provider === "anthropic" ||
-                          (typeof getConfig().provider === "string" && getConfig().provider.includes("anthropic")) ||
-                          getConfig().model.toLowerCase().includes("antigravity");
+      const activeModelName = getAgentActiveModelName(agent);
+      const modelLimit = getContextWindowLimit(activeModelName);
+      const details = getModelConnectionDetailsForTier(agent.tier, agent.delegationDepth, agent.subagentType, !agent.isMultiAgent);
+      const provider = details?.provider || getConfig().provider;
+      const isAnthropic = provider === "anthropic" ||
+                          (typeof provider === "string" && provider.includes("anthropic")) ||
+                          activeModelName.toLowerCase().includes("antigravity") ||
+                          activeModelName.toLowerCase().includes("claude");
       const safetyMax = Math.floor(modelLimit * (isAnthropic || modelLimit >= 100000 ? 0.80 : 0.70));
       
       let estSysTokens = 0;
       let estMsgTokens = 0;
+      let estToolTokens = 0;
       let estTotal = 0;
 
       const ctxMgr = agent.conversation.getContextManager();
+      const toolsJson = JSON.stringify(filteredToolDefs);
+
       if (ctxMgr) {
         const tracker = ctxMgr.getTokenTracker();
+        await tracker.ensureEncoder();
         const breakdown = tracker.getBreakdown(allMessages, systemPrompt);
         const dynamicContextTokens = tracker.estimateTokens({
           role: "user",
           content: dynamicContext,
           timestamp: Date.now(),
         });
-        estTotal = breakdown.total + dynamicContextTokens;
+        estToolTokens = tracker.estimateText(toolsJson);
         estSysTokens = breakdown.systemPrompt;
-        estMsgTokens = estTotal - estSysTokens;
+        estMsgTokens = breakdown.messages + breakdown.toolCalls + breakdown.toolResults + dynamicContextTokens;
+        estTotal = breakdown.total + dynamicContextTokens + estToolTokens;
       } else {
         estSysTokens = Math.ceil(systemPrompt.length / 3);
+        estToolTokens = Math.ceil(toolsJson.length / 3);
         estMsgTokens = agent.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
-        estTotal = estMsgTokens + estSysTokens;
+        estTotal = estMsgTokens + estSysTokens + estToolTokens;
       }
 
       if (estTotal > safetyMax) {
         const overshootPct = Math.round((estTotal / modelLimit) * 100);
-        agent.writeToLogFile("WARN", `Pre-flight context check: estimated ~${estTotal.toLocaleString()} total tokens (${overshootPct}% of ${modelLimit.toLocaleString()} limit). Compact threshold: ${safetyMax.toLocaleString()}. Triggering emergency compaction.`);
+        agent.writeToLogFile(
+          "WARN",
+          `Pre-flight context check (${activeModelName}): estimated ~${estTotal.toLocaleString()} total tokens (${overshootPct}% of ${modelLimit.toLocaleString()} limit). Compact threshold: ${safetyMax.toLocaleString()}. Triggering emergency compaction.`
+        );
         const dynamicContextTokens = ctxMgr ? ctxMgr.getTokenTracker().estimateTokens({
           role: "user",
           content: dynamicContext,
           timestamp: Date.now(),
         }) : Math.ceil(dynamicContext.length / 3);
-        const targetHistoryBudget = Math.max(1000, safetyMax - estSysTokens - dynamicContextTokens);
+        const targetHistoryBudget = Math.max(1000, safetyMax - estSysTokens - estToolTokens - dynamicContextTokens);
         await agent.compactHistoryIfNeeded(signal, false, targetHistoryBudget);
         messages = (agent as any).buildMessages(supportsNativeTools);
         injectDynamicContext(messages);
-        const afterEstMsgTokens = agent.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
-        const afterEstTotal = afterEstMsgTokens + estSysTokens;
+        let afterEstMsgTokens = agent.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
+        let afterEstTotal = afterEstMsgTokens + estSysTokens + estToolTokens;
+
+        if (afterEstTotal > safetyMax) {
+          agent.writeToLogFile(
+            "WARN",
+            `Post-compaction estimated total (~${afterEstTotal.toLocaleString()}) still exceeds safety threshold (${safetyMax.toLocaleString()}). Applying hard pruning.`
+          );
+          agent.conversation.pruneToTokenLimit(targetHistoryBudget);
+          messages = (agent as any).buildMessages(supportsNativeTools);
+          injectDynamicContext(messages);
+          afterEstMsgTokens = agent.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
+          afterEstTotal = afterEstMsgTokens + estSysTokens + estToolTokens;
+        }
+
         agent.writeToLogFile("INFO", `Post-compaction estimated total: ~${afterEstTotal.toLocaleString()} tokens.`);
       }
     }

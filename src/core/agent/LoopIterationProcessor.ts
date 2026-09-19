@@ -14,41 +14,13 @@ import { ToolExecutor } from "./ToolExecutor.js";
 import { ContextBuilder } from "./ContextBuilder.js";
 import { formatError } from "./AgentEvents.js";
 import { type Agent, parsePayloadLimitBytes } from "../agent.js";
-import { isRetryableError as isRetryableErrorHelper } from "./AgentUtils.js";
+import { isRetryableError as isRetryableErrorHelper, isContextLengthExceeded } from "./AgentUtils.js";
 
 function isRetryableError(err: unknown): boolean {
   return isRetryableErrorHelper(err);
 }
 
-function cleanThinkingTags(text: string, existingReasoning = ""): { cleanText: string; reasoning: string } {
-  let rawText = text || "";
-  let reasoning = existingReasoning || "";
-
-  const thinkRegex = /<(think|thought|reasoning|thinking)(?:\s+[^>]*)?>([\s\S]*?)<\/\1\s*>/gi;
-  let match;
-  while ((match = thinkRegex.exec(rawText)) !== null) {
-    const innerText = match[2].trim();
-    if (innerText) {
-      reasoning = (reasoning + "\n" + innerText).trim();
-    }
-  }
-  rawText = rawText.replace(thinkRegex, "").trim();
-
-  const looseCloseRegex = /<\/(think|thought|reasoning|thinking)\s*>/gi;
-  rawText = rawText.replace(looseCloseRegex, "").trim();
-
-  const unclosedRegex = /<(think|thought|reasoning|thinking)(?:\s+[^>]*)?>([\s\S]*)$/i;
-  const unclosedMatch = unclosedRegex.exec(rawText);
-  if (unclosedMatch) {
-    const innerText = unclosedMatch[2].trim();
-    if (innerText) {
-      reasoning = (reasoning + "\n" + innerText).trim();
-    }
-    rawText = rawText.replace(unclosedRegex, "").trim();
-  }
-
-  return { cleanText: rawText, reasoning };
-}
+import { cleanThinkingTags } from "./FastPath.js";
 
 import { isGoalCompleteResponse } from "./GoalCompletion.js";
 export { isGoalCompleteResponse } from "./GoalCompletion.js";
@@ -151,6 +123,7 @@ export class LoopIterationProcessor {
           const baseDelay = 5000;
           let currentByteBudget = 3 * 1024 * 1024; // 3.0 MB initial safety threshold
           let payload413Count = 0;
+          let contextOverflowCount = 0;
 
           while (true) {
             try {
@@ -392,13 +365,17 @@ export class LoopIterationProcessor {
               }
               const isRetryable = isRetryableError(err);
               const isPayloadTooLarge = err.status === 413 || /payload too large/i.test(err.message) || /request entity too large/i.test(err.message);
+              const isContextOverflow = isContextLengthExceeded(err);
               const isOverloaded = err.status === 429 || err.status === 503 || /overloaded/i.test(err.message) || /rate limit/i.test(err.message);
 
               attempt++;
               const currentMaxRetries = isOverloaded ? 5 : maxRetries;
-              if (attempt > currentMaxRetries || !isRetryable) {
+              if (attempt > currentMaxRetries || (!isRetryable && !isContextOverflow)) {
                 if (isPayloadTooLarge) {
                   throw new Error(`Payload size limit exceeded (413). System prompt (${(Buffer.byteLength(system, "utf-8") / 1024).toFixed(1)} KB) and tool schemas exceed model payload limit. Try reducing history length.`);
+                }
+                if (isContextOverflow) {
+                  throw new Error(`Context length limit exceeded (${rawMsg}). Prompt and history exceed model context limit.`);
                 }
                 if (rawMsg.toLowerCase().includes("empty response")) {
                   throw new Error("Empty response from model. Check your endpoint/model config.");
@@ -409,33 +386,35 @@ export class LoopIterationProcessor {
                 throw new Error(`Stream error after ${attempt - 1} retries: ${rawMsg}`);
               }
 
+              if (isContextOverflow) {
+                contextOverflowCount++;
+                const res = await HistoryCompactor.handleContextOverflow({
+                  agent,
+                  signal,
+                  rawMsg,
+                  contextOverflowCount,
+                  supportsNativeTools,
+                  injectDynamicContext,
+                });
+                messages = res.messages;
+                continue;
+              }
+
               if (isPayloadTooLarge) {
                 payload413Count++;
-                const parsedLimit = parsePayloadLimitBytes(rawMsg);
-                if (parsedLimit) {
-                  agent.detectedPayloadLimitBytes = parsedLimit;
-                }
-                const limitToUse = agent.detectedPayloadLimitBytes || parsedLimit || 4 * 1024 * 1024;
-                const maxPayloadBytes = Math.floor(limitToUse * 0.9);
-                const systemSize = finalSystemPrompt ? Buffer.byteLength(finalSystemPrompt, "utf-8") : 0;
-                const toolsSize = Object.keys(modelTools).length > 0 ? Buffer.byteLength(JSON.stringify(modelTools), "utf-8") : 0;
-
-                if (payload413Count > 3) {
-                  throw new Error(`Payload size limit exceeded repeatedly. System prompt (${(systemSize / 1024).toFixed(1)} KB) and tool schemas exceed payload limit.`);
-                }
-
-                const reductionFactor = Math.pow(0.5, payload413Count - 1);
-                const allowedHeadroom = maxPayloadBytes - systemSize - toolsSize - 5000;
-                currentByteBudget = Math.max(1024 * 20, Math.floor(allowedHeadroom * reductionFactor));
-
-                const beforePayloadBytes = Buffer.byteLength(JSON.stringify(messages), "utf-8") + systemSize + toolsSize + 5000;
-                agent.writeToLogFile("INFO", `413 Compaction (stream): attempt ${payload413Count}. Before size: ${(beforePayloadBytes / 1024).toFixed(1)} KB, Budget target: ${(currentByteBudget / 1024).toFixed(1)} KB`);
-                await agent.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
-
-                messages = agent.buildMessages(supportsNativeTools);
-                injectDynamicContext(messages);
-                agent.onEvent({ type: "text", content: `\n[SYS] Payload limit exceeded (413). Retrying compaction... (attempt ${payload413Count}/3)\n` });
-                await agent.delayWithCountdown(1, 1000, signal);
+                const res = await HistoryCompactor.handlePayload413({
+                  agent,
+                  signal,
+                  rawMsg,
+                  payload413Count,
+                  finalSystemPrompt,
+                  modelTools,
+                  supportsNativeTools,
+                  injectDynamicContext,
+                  mode: "stream",
+                });
+                messages = res.messages;
+                currentByteBudget = res.newByteBudget;
                 continue;
               }
 
@@ -468,6 +447,7 @@ export class LoopIterationProcessor {
           const baseDelay = 5000;
           let currentByteBudget = 3 * 1024 * 1024;
           let payload413Count = 0;
+          let contextOverflowCount = 0;
 
           while (true) {
             try {
@@ -572,13 +552,17 @@ export class LoopIterationProcessor {
               }
               const isRetryable = isRetryableError(err) || rawMsg.toLowerCase().includes("empty response");
               const isPayloadTooLarge = err.status === 413 || /payload too large/i.test(err.message) || /request entity too large/i.test(err.message);
+              const isContextOverflow = isContextLengthExceeded(err);
               const isOverloaded = err.status === 429 || err.status === 503 || /overloaded/i.test(err.message) || /rate limit/i.test(err.message);
 
               attempt++;
               const currentMaxRetries = isOverloaded ? 5 : maxRetries;
-              if (attempt > currentMaxRetries || !isRetryable) {
+              if (attempt > currentMaxRetries || (!isRetryable && !isContextOverflow)) {
                 if (isPayloadTooLarge) {
                   throw new Error(`Payload size limit exceeded (413).`);
+                }
+                if (isContextOverflow) {
+                  throw new Error(`Context length limit exceeded (${rawMsg}). Prompt and history exceed model context limit.`);
                 }
                 if (rawMsg.toLowerCase().includes("empty response")) {
                   throw new Error("Empty response from model. Check your endpoint/model config.");
@@ -589,33 +573,35 @@ export class LoopIterationProcessor {
                 throw new Error(`Generate text failed after ${attempt - 1} retries: ${rawMsg}`);
               }
 
+              if (isContextOverflow) {
+                contextOverflowCount++;
+                const res = await HistoryCompactor.handleContextOverflow({
+                  agent,
+                  signal,
+                  rawMsg,
+                  contextOverflowCount,
+                  supportsNativeTools,
+                  injectDynamicContext,
+                });
+                messages = res.messages;
+                continue;
+              }
+
               if (isPayloadTooLarge) {
                 payload413Count++;
-                const parsedLimit = parsePayloadLimitBytes(rawMsg);
-                if (parsedLimit) {
-                  agent.detectedPayloadLimitBytes = parsedLimit;
-                }
-                const limitToUse = agent.detectedPayloadLimitBytes || parsedLimit || 4 * 1024 * 1024;
-                const maxPayloadBytes = Math.floor(limitToUse * 0.9);
-                const systemSize = finalSystemPrompt ? Buffer.byteLength(finalSystemPrompt, "utf-8") : 0;
-                const toolsSize = Object.keys(modelTools).length > 0 ? Buffer.byteLength(JSON.stringify(modelTools), "utf-8") : 0;
-
-                if (payload413Count > 3) {
-                  throw new Error(`Payload size limit exceeded repeatedly.`);
-                }
-
-                const reductionFactor = Math.pow(0.5, payload413Count - 1);
-                const allowedHeadroom = maxPayloadBytes - systemSize - toolsSize - 5000;
-                currentByteBudget = Math.max(1024 * 20, Math.floor(allowedHeadroom * reductionFactor));
-
-                const beforePayloadBytes = Buffer.byteLength(JSON.stringify(messages), "utf-8") + systemSize + toolsSize + 5000;
-                agent.writeToLogFile("INFO", `413 Compaction (non-stream): attempt ${payload413Count}. Before size: ${(beforePayloadBytes / 1024).toFixed(1)} KB, Budget target: ${(currentByteBudget / 1024).toFixed(1)} KB`);
-                await agent.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
-
-                messages = agent.buildMessages(supportsNativeTools);
-                injectDynamicContext(messages);
-                agent.onEvent({ type: "text", content: `\n[SYS] Payload limit exceeded (413). Retrying compaction...\n` });
-                await agent.delayWithCountdown(1, 1000, signal);
+                const res = await HistoryCompactor.handlePayload413({
+                  agent,
+                  signal,
+                  rawMsg,
+                  payload413Count,
+                  finalSystemPrompt,
+                  modelTools,
+                  supportsNativeTools,
+                  injectDynamicContext,
+                  mode: "non-stream",
+                });
+                messages = res.messages;
+                currentByteBudget = res.newByteBudget;
                 continue;
               }
 

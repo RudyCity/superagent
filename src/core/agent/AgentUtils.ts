@@ -1,11 +1,112 @@
 import { generateText } from "ai";
 import fs from "fs";
 import { rateLimiter } from "../rateLimiter.js";
-import { getModelInstanceForTier } from "../config.js";
+import { getModelInstanceForTier, getModelConnectionDetailsForTier, getConfig } from "../config.js";
 import type { Agent } from "../agent.js";
+
+export function isContextLengthExceeded(err: unknown): boolean {
+  if (!err) return false;
+  let rawStr = "";
+  if (err instanceof Error) {
+    rawStr = err.message;
+  } else if (typeof err === "object") {
+    try {
+      rawStr = JSON.stringify(err);
+    } catch {
+      rawStr = String(err);
+    }
+  } else {
+    rawStr = String(err);
+  }
+  const lower = rawStr.toLowerCase();
+  return (
+    lower.includes("context_length_exceeded") ||
+    (lower.includes("context length") && lower.includes("exceed")) ||
+    lower.includes("maximum context length") ||
+    lower.includes("token limit exceeded") ||
+    lower.includes("too many tokens") ||
+    lower.includes("prompt is too long") ||
+    lower.includes("reduce the length of the messages") ||
+    (lower.includes("context window") && lower.includes("exceed")) ||
+    lower.includes("exceeds this model") ||
+    (lower.includes("tokens long and exceeds") && lower.includes("context"))
+  );
+}
+
+export function parseContextLimitTokens(err: unknown): { requestedTokens?: number; maxTokens?: number } | null {
+  if (!err) return null;
+  let rawStr = "";
+  if (err instanceof Error) {
+    rawStr = err.message;
+  } else if (typeof err === "object") {
+    try {
+      rawStr = JSON.stringify(err);
+    } catch {
+      rawStr = String(err);
+    }
+  } else {
+    rawStr = String(err);
+  }
+
+  let requestedTokens: number | undefined;
+  let maxTokens: number | undefined;
+
+  const reqMatch = /request is (\d+) tokens long/i.exec(rawStr);
+  if (reqMatch) {
+    requestedTokens = parseInt(reqMatch[1], 10);
+  }
+
+  const limitMatch1 = /(?:context length|context window|limit)\s*(?:of|is|:)?\s*(\d+)\s*tokens/i.exec(rawStr);
+  if (limitMatch1) {
+    maxTokens = parseInt(limitMatch1[1], 10);
+  }
+
+  if (!maxTokens) {
+    const limitMatch2 = /(?:context length|context window|limit)\s*(?:of|is|:)?\s*(\d{5,12})\b/i.exec(rawStr);
+    if (limitMatch2) {
+      maxTokens = parseInt(limitMatch2[1], 10);
+    }
+  }
+
+  if (!requestedTokens) {
+    const resMatch = /(?:resulted in|prompt has|total of|tokens long:?)\s*(\d+)\s*tokens/i.exec(rawStr);
+    if (resMatch) {
+      requestedTokens = parseInt(resMatch[1], 10);
+    }
+  }
+
+  if (requestedTokens !== undefined || maxTokens !== undefined) {
+    return { requestedTokens, maxTokens };
+  }
+
+  return null;
+}
+
+export function getAgentActiveModelName(agent: Agent): string {
+  try {
+    const modelInstance = agent.getModel?.();
+    if (modelInstance?.modelId) {
+      return modelInstance.modelId;
+    }
+    const details = getModelConnectionDetailsForTier(
+      agent.tier,
+      agent.delegationDepth,
+      agent.subagentType,
+      !agent.isMultiAgent
+    );
+    if (details?.modelName) {
+      return details.modelName;
+    }
+  } catch {}
+  return (agent as any)?.config?.model || getConfig().model;
+}
 
 export function isRetryableError(err: unknown): boolean {
   if (!err) return false;
+
+  if (isContextLengthExceeded(err)) {
+    return true;
+  }
   
   let msg = "";
   let statusCode: number | undefined;

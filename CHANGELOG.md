@@ -1,3 +1,16 @@
+## [1.5.84] - 2026-09-19
+
+### Fixed
+
+- **Context Length Exceeded (HTTP 400) Auto-Compaction & Retry**: Added `isContextLengthExceeded()`, `parseContextLimitTokens()`, and `handleContextOverflow()` to detect provider context length overflow responses (such as `status: 400` with `code: "context_length_exceeded"`), extract true model context capacities, dynamically update the SQLite model cache, and automatically trigger emergency compaction and retry transparently without crashing.
+- **Tier Model Context Limit Resolution**: Corrected context limit calculation in `ContextBuilder.ts`, `HistoryCompactor.ts`, and `Agent.initContextManager()` to evaluate against the executing agent's active tier model (`getAgentActiveModelName()`) rather than defaulting to the Master model from the active preset, preventing subagents from bypassing compaction when the Master model has a larger context window.
+- **Tool Schema Definitions Token Accounting**: Updated `ContextBuilder.ts` pre-flight context calculation to explicitly account for tool definition schemas (`filteredToolDefs`), await tiktoken encoder readiness, and enforce post-compaction hard pruning if total estimated tokens still exceed the safety ceiling.
+- **Code Modularization & Invariants Guarding**: Refactored payload 413 and context overflow compaction handling into `HistoryCompactor.ts` and eliminated redundant helper code, maintaining all files strictly under 1000 lines.
+
+### Tests
+
+- Added `tests/contextLengthExceededRetry.test.ts` (10/10 passing) verifying detection of provider 400 context errors, token parsing from raw JSON snippets, tier model resolution, and end-to-end emergency compaction retry across streaming and non-streaming modes.
+
 ## [1.5.83] - 2026-09-19
 
 ### Added

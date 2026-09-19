@@ -34,7 +34,7 @@ import { PathResolver } from "./agent/PathResolver.js";
 import { HistoryManager } from "./agent/HistoryManager.js";
 import { RequestProcessor } from "./agent/RequestProcessor.js";
 import { ContextBuilder } from "./agent/ContextBuilder.js";
-import { isRetryableError as isRetryableErrorHelper, parsePayloadLimitBytes as parsePayloadLimitBytesHelper, answerQuestionAsMaster as answerQuestionAsMasterHelper } from "./agent/AgentUtils.js";
+import { isRetryableError as isRetryableErrorHelper, parsePayloadLimitBytes as parsePayloadLimitBytesHelper, answerQuestionAsMaster as answerQuestionAsMasterHelper, getAgentActiveModelName } from "./agent/AgentUtils.js";
 import { LoopIterationProcessor } from "./agent/LoopIterationProcessor.js";
 import { checkPlanStructure } from "./agent/PlanValidator.js";
 import { MessageBuilder } from "./agent/MessageBuilder.js";
@@ -295,9 +295,10 @@ export class Agent {
   }
 
   private async initContextManager(): Promise<void> {
-    const modelLimit = getContextWindowLimit(this.config.model);
+    const activeModelName = getAgentActiveModelName(this);
+    const modelLimit = getContextWindowLimit(activeModelName);
     await this.conversation.initContextManager({
-      model: this.config.model,
+      model: activeModelName,
       contextWindowLimit: modelLimit,
       llmModel: this.getModel(),
       abortSignal: this.abortController?.signal,
