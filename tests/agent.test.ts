@@ -50,11 +50,8 @@ describe("Goal command active-goal guard", () => {
     const agent = new Agent(onEvent, onPermission, onQuestion);
     agent.goalMode = "original goal";
     const sendMessage = vi.spyOn(agent, "sendMessage").mockResolvedValue(undefined);
-    const mkdir = vi.fn().mockRejectedValue(new Error("Scratchpad access is forbidden in this test"));
-    vi.doMock("fs/promises", async () => ({
-      ...await vi.importActual<typeof import("fs/promises")>("fs/promises"),
-      mkdir,
-    }));
+    const fsPromises = await import("fs/promises");
+    const mkdir = vi.spyOn(fsPromises, "mkdir").mockRejectedValue(new Error("Scratchpad access is forbidden in this test"));
     const addLine = vi.fn();
     const setGoalMode = vi.fn();
     const context = { agent, addLine, setGoalMode } as unknown as Parameters<typeof goalCommand.execute>[1];
@@ -71,7 +68,7 @@ describe("Goal command active-goal guard", () => {
         content: "A goal is already active. Wait for it to finish before starting another goal.",
       }));
     } finally {
-      vi.doUnmock("fs/promises");
+      mkdir.mockRestore();
       sendMessage.mockRestore();
     }
   });

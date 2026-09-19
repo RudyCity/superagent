@@ -47,6 +47,21 @@ if (fs.existsSync(workerHomeDir)) {
   } catch {}
 }
 
+// Clean up any orphaned temp-home-worker-* directories from prior crashed runs
+try {
+  const testsDir = path.join(process.cwd(), "tests");
+  if (fs.existsSync(testsDir)) {
+    const entries = fs.readdirSync(testsDir);
+    for (const entry of entries) {
+      if (entry.startsWith("temp-home-worker-") && entry !== `temp-home-worker-${workerId}`) {
+        try {
+          fs.rmSync(path.join(testsDir, entry), { recursive: true, force: true });
+        } catch {}
+      }
+    }
+  }
+} catch {}
+
 process.env.SUPERAGENT_CONFIG_DIR = workerConfigDir;
 
 // Protect tests against global environment and command-line argument pollution
@@ -77,6 +92,26 @@ if (typeof vi !== "undefined") {
   // vi.mocked polyfill
   if (!(vi as any).mocked) {
     (vi as any).mocked = (fn: any) => fn;
+  }
+
+  // vi.doMock polyfill
+  if (!(vi as any).doMock) {
+    (vi as any).doMock = (modulePath: any, factory?: any) => {
+      if (typeof mock !== "undefined" && typeof (mock as any).module === "function") {
+        (mock as any).module(modulePath, factory);
+      } else if (typeof vi !== "undefined") {
+        const mockFn = (vi as any)["mock"];
+        if (typeof mockFn === "function") {
+          mockFn.call(vi, modulePath, factory);
+        }
+      }
+      return vi;
+    };
+  }
+
+  // vi.hoisted polyfill
+  if (!(vi as any).hoisted) {
+    (vi as any).hoisted = (factory: any) => factory();
   }
 
   // vi.stubGlobal and vi.unstubAllGlobals polyfills

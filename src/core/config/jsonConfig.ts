@@ -216,6 +216,7 @@ export function loadModelConfig(): GlobalModelConfig {
             try {
               const backupPath = configPath + ".corrupt-" + Date.now();
               fs.copyFileSync(configPath, backupPath);
+              pruneConfigBackups(configPath, 5);
               console.warn(`model-config.json had invalid providers field. Backed up to: ${backupPath}`);
             } catch {}
             // Try to recover real providers (with their API keys) from the newest backup
@@ -358,6 +359,7 @@ export function loadModelConfig(): GlobalModelConfig {
       try {
         const backupPath = configPath + ".corrupt-" + Date.now();
         fs.copyFileSync(configPath, backupPath);
+        pruneConfigBackups(configPath, 5);
         console.warn(`model-config.json was corrupted. Backed up to: ${backupPath}`);
       } catch {}
     }
@@ -465,6 +467,30 @@ function recoverProvidersFromBackups(configPath: string): ProviderProfile[] | nu
     // Ignore recovery errors
   }
   return null;
+}
+
+/**
+ * Prune model-config.json.corrupt-* backups, retaining only the most recent `maxKeep` files.
+ */
+export function pruneConfigBackups(configPath: string, maxKeep: number = 5): void {
+  try {
+    const dir = configPath.substring(0, Math.max(configPath.lastIndexOf("/"), configPath.lastIndexOf("\\")));
+    const base = configPath.substring(Math.max(configPath.lastIndexOf("/"), configPath.lastIndexOf("\\")) + 1);
+    if (!dir || !fs.existsSync(dir)) return;
+    const candidates = fs
+      .readdirSync(dir)
+      .filter((f) => f.startsWith(base + ".corrupt-"))
+      .map((f) => {
+        const full = dir + "/" + f;
+        return { full, mtime: safeMtimeMs(full) };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+    for (let i = maxKeep; i < candidates.length; i++) {
+      try {
+        fs.unlinkSync(candidates[i].full);
+      } catch {}
+    }
+  } catch {}
 }
 
 /**

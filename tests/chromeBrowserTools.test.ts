@@ -29,13 +29,14 @@ describe("chromeBrowserTools", () => {
   });
 
   test("chromeExtensionStatusTool returns connected status when handler registered", async () => {
-    const { ensureRemoteChromeBridge } = await import("../src/core/tools/remoteChromeBridge.js");
+    const { ensureRemoteChromeBridge, getBridgeToken } = await import("../src/core/tools/remoteChromeBridge.js");
     const { WebSocket } = await import("ws");
 
     await ensureRemoteChromeBridge(9223);
     const client = new WebSocket("ws://127.0.0.1:9223");
     await new Promise((res) => client.on("open", res));
-    await new Promise((res) => setTimeout(res, 100));
+    client.send(JSON.stringify({ type: "bridge_handshake_v1", token: getBridgeToken() }));
+    await new Promise((res) => setTimeout(res, 50));
 
     setBrowserControlHandler(async (action: string) => {
       if (action === "list_instances") return "Window 1 (Tabs: 2)";
@@ -51,13 +52,14 @@ describe("chromeBrowserTools", () => {
   });
 
   test("chromeExtensionStatusTool handles handler errors gracefully", async () => {
-    const { ensureRemoteChromeBridge } = await import("../src/core/tools/remoteChromeBridge.js");
+    const { ensureRemoteChromeBridge, getBridgeToken } = await import("../src/core/tools/remoteChromeBridge.js");
     const { WebSocket } = await import("ws");
 
     await ensureRemoteChromeBridge(9223);
     const client = new WebSocket("ws://127.0.0.1:9223");
     await new Promise((res) => client.on("open", res));
-    await new Promise((res) => setTimeout(res, 100));
+    client.send(JSON.stringify({ type: "bridge_handshake_v1", token: getBridgeToken() }));
+    await new Promise((res) => setTimeout(res, 50));
 
     setBrowserControlHandler(async (action: string) => {
       if (action === "list_instances") throw new Error("Bridge connection lost");

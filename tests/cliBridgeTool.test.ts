@@ -158,9 +158,16 @@ beforeAll(() => {
   }
 });
 
-afterAll(() => {
+afterAll(async () => {
+  try {
+    const { closeHistoryDb } = await import("../src/core/storage/historyDb.js");
+    closeHistoryDb();
+  } catch {}
+  delete process.env.SUPERAGENT_CONFIG_DIR;
   if (fs.existsSync(tempHome)) {
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    try {
+      fs.rmSync(tempHome, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    } catch {}
   }
 });
 

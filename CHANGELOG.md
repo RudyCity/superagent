@@ -1,3 +1,19 @@
+## [1.5.77] - 2026-09-19
+
+### Fixed
+
+- **Remote Chrome Bridge Server Cleanup**: Cleaned up `activeServers` registry and `tokenHttpServer` in `stopRemoteChromeBridge()` (`src/core/tools/remoteChromeBridge.ts`) to prevent stale server reuse and port re-binding deadlocks across tests and CLI restarts.
+- **Master Agent Orchestration Artifacts**: Permitted task, plan, and walkthrough artifacts in `isLocalConfigOrSessionPath` (`src/core/tools/pathHelpers.ts`) and defaulted `overwrite: true` for orchestration files (`src/core/tools/fileEditTools.ts`), resolving Master Agent write allowlist failures when running in custom or temporary session paths.
+- **Image Vision FastPath Test Expectations**: Updated message length assertions in `tests/imageVision.test.ts` to align with the optimized single-message FastPath conversation initialization.
+- **Cross-Platform Test Reliability**: Replaced Vitest-only `vi.doMock` in `tests/agent.test.ts` with standard `vi.spyOn` for universal runner compatibility under both Bun and Node.
+- **Windows SQLite Database Lock Teardown**: Updated `afterAll` hook in `tests/cliBridgeTool.test.ts` to close the SQLite database and safely retry removing temporary directories to eliminate Windows `EBUSY` file locking errors.
+
+### Maintenance & Retention
+
+- **Config Backup Retention**: Added `pruneConfigBackups()` in `src/core/config/jsonConfig.ts` to limit `model-config.json.corrupt-*` backup files to the 5 most recent copies, preventing unbounded disk growth.
+- **Test Artifact Cleanup**: Added automated cleanup sweep for orphaned `temp-home-worker-*` directories in `tests/setup.ts`.
+- **Runtime Directory Hygiene**: Purged legacy backup accumulation and stale scratch PowerShell/text dumps from `~/.superagent-r/`.
+
 ## [1.5.76] - 2026-09-19
 
 ### Added

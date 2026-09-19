@@ -48,6 +48,20 @@ export function isLocalConfigOrSessionPath(rawPath: string): boolean {
   if (cleanPath.startsWith("~")) {
     cleanPath = path.join(os.homedir(), cleanPath.slice(1));
   }
+  const base = path.basename(cleanPath).toLowerCase();
+  if (
+    base === "task.md" ||
+    base === "_task.md" ||
+    base === "plan.md" ||
+    base === "_plan.md" ||
+    base === "walkthrough.md" ||
+    base === "_walkthrough.md" ||
+    base.endsWith("_task.md") ||
+    base.endsWith("_implementation_plan.md") ||
+    base.endsWith("_walkthrough.md")
+  ) {
+    return true;
+  }
   const rootConfig = path.resolve(getRootConfigDir());
   const sessionPath = process.env.SUPERAGENT_SESSION_PATH;
   const sessionDir = sessionPath ? path.resolve(path.dirname(sessionPath)) : undefined;

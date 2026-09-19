@@ -85,8 +85,8 @@ describe("Image Vision and FastPath Integration", () => {
       const callArgs = vi.mocked(streamText).mock.calls[0][0];
       const messages = callArgs.messages;
 
-      // First message is summary/init, second message is our input
-      expect(messages.length).toBeGreaterThanOrEqual(2);
+      // FastPath delivers user input message
+      expect(messages.length).toBeGreaterThanOrEqual(1);
       const lastMessage = messages[messages.length - 1];
       expect(lastMessage.role).toBe("user");
       
@@ -127,7 +127,7 @@ describe("Image Vision and FastPath Integration", () => {
       const callArgs = vi.mocked(streamText).mock.calls[0][0];
       const messages = callArgs.messages;
 
-      expect(messages.length).toBeGreaterThanOrEqual(2);
+      expect(messages.length).toBeGreaterThanOrEqual(1);
       const lastMessage = messages[messages.length - 1];
       expect(lastMessage.role).toBe("user");
       // Image should be replaced by [image] placeholder in plain text

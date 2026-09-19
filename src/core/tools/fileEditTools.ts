@@ -886,7 +886,9 @@ export const writeToFileTool: Tool = {
     if (!filePath) {
       return "Error: Missing required parameter 'filePath' or 'files'. Provide the path to the file to write to.";
     }
-    const overwrite = !!(args.overwrite ?? (args as any).Overwrite);
+    const isOrchestrationArtifact = isLocalConfigOrSessionPath(filePath) ||
+      /^(_?task|_?plan|_?walkthrough)\.md$/i.test(path.basename(filePath));
+    const overwrite = !!(args.overwrite ?? (args as any).Overwrite ?? isOrchestrationArtifact);
     const nextContent = (args.content ?? (args as any).CodeContent ?? (args as any).codeContent ?? (args as any).text ?? (args as any).fileContent) as string | undefined;
     if (nextContent === undefined || nextContent === null) {
       return "Error: Missing required parameter 'content'. Provide the content to write to the file.";

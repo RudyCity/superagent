@@ -608,7 +608,7 @@ export async function sendRemoteCommand(
 /**
  * Stop serverless bridge server.
  */
-export function stopRemoteChromeBridge(): Promise<void> {
+export function stopRemoteChromeBridge(port?: number): Promise<void> {
   stopPingHeartbeat();
   return new Promise((resolve) => {
     rejectAllPendingRequests("Remote Chrome Bridge server stopped.");
@@ -619,6 +619,24 @@ export function stopRemoteChromeBridge(): Promise<void> {
     }
     connectedClients.clear();
     activeClient = null;
+
+    if (port !== undefined) {
+      const server = activeServers.get(port);
+      if (server) {
+        try { server.close(); } catch {}
+        activeServers.delete(port);
+      }
+    } else {
+      for (const [, s] of activeServers.entries()) {
+        try { s.close(); } catch {}
+      }
+      activeServers.clear();
+    }
+
+    if (tokenHttpServer) {
+      try { (tokenHttpServer as any).close(); } catch {}
+      tokenHttpServer = null;
+    }
 
     if (wss) {
       const server = wss;
