@@ -87,6 +87,7 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 Usage: superagent [command/options] [prompt]
 
 Commands:
+  setup             Run interactive provider and initial setup wizard
   login             Manage provider authentication (add, list, use, remove)
   preset            Manage model presets (list, use, show)
   session           Manage conversation sessions (list, export, clear --empty, import)

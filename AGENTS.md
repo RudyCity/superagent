@@ -48,6 +48,7 @@ Master Agent  (orchestrator)
 - `src/core/skills/` — Autonomous Skill Synthesizer (`synthesizer.ts`, `skillValidator.ts`, `trajectoryExtractor.ts`) and `synthesizeSkillTool.ts`.
 - `src/core/config/systemCache.ts` — Persistent 24-hour system check cache (`~/.superagent-r/system-cache.json`) for binary resolution.
 - `src/components/startup-checker.tsx` — Parallelized dependency validator with decoupled background model warming.
+- `src/components/startup-prompt.tsx` — First-run interactive choice dialog when no AI provider is configured.
 
 ## Coding Guidelines & Constraints
 - **Language — English Only**: All user-facing text strings, UI labels, log messages, comments, variable names, documentation, and any other text content MUST be written in English. No exceptions.

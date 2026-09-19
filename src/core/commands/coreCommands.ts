@@ -196,6 +196,7 @@ export const helpCommand: SlashCommand = {
         "              /ih dev <name>   - Set workspace focus to hook development and run dev loop",
         "              /ih list         - List all discovered internal hooks and their status",
         "              /ih active       - Select which hooks to activate via checkbox dialog",
+        "  /setup    - Run the interactive provider and initial setup wizard",
         "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
         "  /model    - Set or list active AI models (e.g. /model openai/gpt-4o)",
         "  /mp       - Quick-switch model preset (e.g. /mp fast, /mp default). Shortcut: /mp-<name>",
@@ -504,9 +505,34 @@ export const imageCommand: SlashCommand = {
   }
 };
 
+// /setup command
+export const setupCommand: SlashCommand = {
+  name: "setup",
+  description: "Run the interactive provider and initial setup wizard",
+  async execute(args, ctx) {
+    if (ctx.setActiveWizard) {
+      const { PROVIDER_TEMPLATE_LABELS } = await import("../loginWizardLogic.js");
+      ctx.setActiveWizard({
+        type: "login",
+        step: 2,
+        data: {},
+      });
+      ctx.setWizardOptions?.([...PROVIDER_TEMPLATE_LABELS]);
+      ctx.setWizardSelectedIndex?.(0);
+    } else {
+      ctx.addLine({
+        type: "system",
+        content: "To configure a provider, run: /login add <provider> <api_key>",
+        timestamp: Date.now(),
+      });
+    }
+  },
+};
+
 // Register core commands
 registry.register(newCommand);
 registry.register(exitCommand);
 registry.register(helpCommand);
 registry.register(initCommand);
 registry.register(imageCommand);
+registry.register(setupCommand);

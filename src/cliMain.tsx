@@ -360,7 +360,7 @@ export async function runCli() {
   const flags = [
     "--resume", "-r", "--help", "-h", "--multi", "--workspace", "-w",
     "--workspace-ssh", "-ws", "--preset", "-p", "--model", "--provider",
-    "--quick", "-q", "--skip-startup-check"
+    "--quick", "-q", "--skip-startup-check", "setup", "--setup"
   ];
   const positionalArgs = process.argv.slice(2).filter((arg, idx) => {
     if (flags.includes(arg)) return false;
@@ -512,6 +512,33 @@ export async function runCli() {
       await runStartupChecks();
     }
 
+    let startWithWizard = false;
+    const isSetupArg = process.argv.includes("setup") || process.argv.includes("--setup");
+    if (isSetupArg) {
+      startWithWizard = true;
+    } else if (!isQuickMode && process.stdin.isTTY && !autoResume) {
+      const { getConfiguredProviders } = await import("./core/config/providers.js");
+      const providers = getConfiguredProviders();
+      if (providers.length === 0) {
+        const React = (await import("react")).default;
+        const { render } = await import("ink");
+        const { StartupPrompt } = await import("./components/startup-prompt.js");
+        const choice = await new Promise<"wizard" | "terminal">((resolve) => {
+          const { unmount } = render(
+            React.createElement(StartupPrompt, {
+              onSelect: (c) => {
+                unmount();
+                resolve(c);
+              },
+            })
+          );
+        });
+        if (choice === "wizard") {
+          startWithWizard = true;
+        }
+      }
+    }
+
     let hasCurrentHistory = false;
     let sessionPath = "";
     console.clear();
@@ -651,6 +678,7 @@ export async function runCli() {
         React.createElement(App, {
           autoResume,
           initialPrompt,
+          startWithWizard,
           onHistoryChange: (exists) => {
             hasCurrentHistory = exists;
           },

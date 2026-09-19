@@ -120,6 +120,7 @@ No manual server configuration or extra CLI arguments are required—simply laun
 
 | Command | Description |
 |---|---|
+| `/setup` | Run interactive provider & initial setup wizard |
 | `/login` | Configure AI provider credentials (e.g. `/login openrouter sk-or-...`) |
 | `/model` | Switch model presets or custom tier configurations |
 | `/settings` | View current rate limit, concurrency & app settings |

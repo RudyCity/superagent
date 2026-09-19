@@ -1,3 +1,16 @@
+## [1.5.76] - 2026-09-19
+
+### Added
+
+- Add interactive **Startup Choice Prompt** (`src/components/startup-prompt.tsx`) displayed when launching Superagent interactively without configured AI providers, allowing first-time users to choose between running the guided setup wizard or entering the terminal directly.
+- Add `/setup` slash command (`src/core/commands/coreCommands.ts`) to easily re-launch the interactive provider setup wizard from inside active sessions.
+- Add `superagent setup` CLI command and help documentation in `src/cli.tsx`.
+- Support `startWithWizard` property in `App` component (`src/app.tsx`) to directly initiate the provider picker and onboarding workflow.
+
+### Tests
+
+- Add unit test coverage in `tests/startupPrompt.test.ts` (4/4 tests passing) verifying `/setup` command registration, wizard dispatching, and fallback handling.
+
 ## [1.5.75] - 2026-09-19
 
 ### Documentation & CLI Help

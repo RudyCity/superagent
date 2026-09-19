@@ -37,6 +37,7 @@ import type { ChatLine } from "./core/slash-commands.js";
 import { readChecklistTasks, readTaskHistory } from "./core/taskChecklist.js";
 import { getActiveChainId, getWorkspaceChain } from "./core/workspace/WorkspaceChainConfig.js";
 import { lockEventEmitter, getLockStats } from "./core/storage/sharedMemory.js";
+import { PROVIDER_TEMPLATE_LABELS } from "./core/loginWizardLogic.js";
 
 // Hook & Component Baru
 import { StatusBar } from "./components/status-bar.js";
@@ -187,11 +188,13 @@ export function App({
   onHistoryChange,
   onSessionPath,
   initialPrompt,
+  startWithWizard = false,
 }: {
   autoResume?: boolean | string;
   onHistoryChange?: (exists: boolean) => void;
   onSessionPath?: (filePath: string) => void;
   initialPrompt?: string;
+  startWithWizard?: boolean;
 }) {
   const { exit } = useApp();
   const [lines, _setLines] = useState<ChatLine[]>([]);
@@ -305,14 +308,28 @@ export function App({
     questions?: QuestionItem[];
     currentQuestionIndex?: number;
     answers?: string[];
-  } | null>(null);
+  } | null>(() => {
+    if (startWithWizard) {
+      return {
+        type: "login",
+        step: 2,
+        data: {},
+      };
+    }
+    return null;
+  });
 
   const [workspacePath, setWorkspacePath] = useState<string>(process.cwd());
 
   const [wizardSelectedSet, setWizardSelectedSet] = useState<Set<number>>(new Set());
   const [checkpointsList, setCheckpointsList] = useState<any[]>([]);
   const [wizardSelectedIndex, setWizardSelectedIndex] = useState(0);
-  const [wizardOptions, setWizardOptions] = useState<string[]>([]);
+  const [wizardOptions, setWizardOptions] = useState<string[]>(() => {
+    if (startWithWizard) {
+      return [...PROVIDER_TEMPLATE_LABELS];
+    }
+    return [];
+  });
   const [wizardIsLoadingModels, setWizardIsLoadingModels] = useState(false);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [activeModel, setActiveModel] = useState(() => getEffectiveMasterModel("single") || getDefaultModel());
