@@ -1,3 +1,16 @@
+## [1.5.83] - 2026-09-19
+
+### Added
+
+- **Slack Socket Mode Polling Daemon**: Implemented `startSlackSocketMode()` in `src/core/gateway/slackPoller.ts` using `apps.connections.open` to establish WebSocket connections for receiving Slack events (messages, mentions) without exposing public HTTP endpoints or webhooks.
+- **Unified Tri-Channel Gateway Poller**: Extended `startGatewayPolling()` in `src/core/gateway/gatewayPoller.ts` to orchestrate Telegram, Discord, and Slack Socket Mode concurrently with `superagent gateway poll [telegram|discord|slack|all]`.
+- **Daemon Failure Gateway Alerts**: Enhanced `daemonScheduler.ts` error handling to immediately broadcast failure notifications to configured gateway channels when scheduled jobs fail.
+- **Interactive & CLI Skill Execution**: Added `superagent skill show <name>` and `superagent skill run <name>` to `src/core/commands/skillCliHandler.ts`, and `/skills show <name>` and `/skills run <name>` to `src/core/commands/skillCommands.ts` to directly inspect and execute automated skill workflows via agent.
+
+### Tests
+
+- Expanded test coverage in `tests/selfdevAndGatewaySuite.test.ts` (20/20 passing) validating Slack Socket Mode token requirements, unified tri-channel poller error handling, `/skills show`, and `/skills run`.
+
 ## [1.5.82] - 2026-09-19
 
 ### Added

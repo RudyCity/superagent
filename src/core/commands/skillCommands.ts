@@ -125,6 +125,112 @@ export const skillsCommand: SlashCommand = {
       return;
     }
 
+    if (sub === "show" || sub === "view") {
+      const name = parts[1]?.toLowerCase();
+      if (!name) {
+        ctx.addLine({
+          type: "error",
+          content: "Usage: /skills show <skill_name>",
+          timestamp: now,
+        });
+        return;
+      }
+
+      const fs = await import("fs");
+      const { listSynthesizedSkills } = await import("../skills/skillSynthesizer.js");
+      const workspace = ctx.agent?.workingDirectory || process.cwd();
+      const installed = getInstalledSkills();
+      const synthesized = listSynthesizedSkills(workspace);
+
+      const foundInstalled = installed.find((s) => s.name.toLowerCase() === name);
+      const foundSynthesized = synthesized.find((s) => s.name.toLowerCase() === name);
+      const targetPath = foundSynthesized?.path || foundInstalled?.path;
+
+      if (targetPath && fs.existsSync(targetPath)) {
+        const content = fs.readFileSync(targetPath, "utf-8");
+        ctx.addLine({
+          type: "system",
+          content: `Skill: ${name}\nPath: ${targetPath}\n\n${content}`,
+          timestamp: now,
+        });
+      } else {
+        ctx.addLine({
+          type: "error",
+          content: `Skill "${name}" not found. Run /skills to view available skills.`,
+          timestamp: now,
+        });
+      }
+      return;
+    }
+
+    if (sub === "run" || sub === "exec") {
+      const name = parts[1]?.toLowerCase();
+      if (!name) {
+        ctx.addLine({
+          type: "error",
+          content: "Usage: /skills run <skill_name>",
+          timestamp: now,
+        });
+        return;
+      }
+
+      const fs = await import("fs");
+      const { listSynthesizedSkills } = await import("../skills/skillSynthesizer.js");
+      const { recordSkillExecution } = await import("../skills/skillTracker.js");
+      const workspace = ctx.agent?.workingDirectory || process.cwd();
+      const installed = getInstalledSkills();
+      const synthesized = listSynthesizedSkills(workspace);
+
+      const foundInstalled = installed.find((s) => s.name.toLowerCase() === name);
+      const foundSynthesized = synthesized.find((s) => s.name.toLowerCase() === name);
+      const targetPath = foundSynthesized?.path || foundInstalled?.path;
+
+      if (!targetPath || !fs.existsSync(targetPath)) {
+        ctx.addLine({
+          type: "error",
+          content: `Skill "${name}" not found. Run /skills to view available skills.`,
+          timestamp: now,
+        });
+        return;
+      }
+
+      recordSkillExecution(name);
+      const skillContent = fs.readFileSync(targetPath, "utf-8");
+
+      if (ctx.agent) {
+        ctx.addLine({
+          type: "user",
+          content: `❯ /skills run ${name}`,
+          timestamp: now,
+        });
+        ctx.addLine({
+          type: "system",
+          content: `Executing workflow for skill "${name}"...`,
+          timestamp: now,
+        });
+        ctx.setIsProcessing?.(true);
+        try {
+          await ctx.agent.sendMessage(
+            `Please execute the following skill guide:\n\n${skillContent}`
+          );
+        } catch (err: any) {
+          ctx.addLine({
+            type: "error",
+            content: `Failed to execute skill: ${err.message}`,
+            timestamp: Date.now(),
+          });
+          ctx.setIsProcessing?.(false);
+        }
+      } else {
+        ctx.addLine({
+          type: "system",
+          content: `Skill ${name} loaded. Run from an active agent session to execute interactively.`,
+          timestamp: now,
+        });
+      }
+      return;
+    }
+
     if (sub === "synth" || sub === "synthesize") {
       const { synthesizeSkill } = await import("../skills/skillSynthesizer.js");
       const workspace = ctx.agent?.workingDirectory || process.cwd();

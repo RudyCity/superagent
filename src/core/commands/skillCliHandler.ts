@@ -8,6 +8,8 @@ Usage: superagent skill <command> [options]
 
 Commands:
   list, ls                              List all installed and synthesized skills
+  show <skill_name>                     Display instructions and markdown of a skill
+  run <skill_name> [options]            Execute an automated skill workflow via agent
   stats, metrics                        Show skill usage counts and execution stats
   synth <task_description> [options]    Synthesize a new reusable skill (SKILL.md)
   help                                  Show this help message
@@ -17,8 +19,14 @@ Options for synth:
   --category <category>                 Skill category (e.g. testing, refactor, automation)
   --workspace <path>                    Workspace directory (defaults to current directory)
 
+Options for run:
+  --workspace <path>                    Workspace directory
+  --multi                               Run in 3-tier multi-agent mode
+
 Examples:
   superagent skill list
+  superagent skill show tdd
+  superagent skill run tdd
   superagent skill stats
   superagent skill synth "Automate SQLite schema migrations and backups" --name sqlite-backup-helper
   superagent skill synth "Review pull requests and enforce conventional commits" --category review
@@ -77,6 +85,82 @@ export async function handleSkillCliCommand(args: string[]): Promise<void> {
     }
 
     process.exit(0);
+  }
+
+  if (subcommand === "show" || subcommand === "view") {
+    const name = args[1]?.toLowerCase();
+    if (!name) {
+      console.log("Usage: superagent skill show <skill_name>");
+      process.exit(1);
+    }
+
+    const fs = await import("fs");
+    const workspace = process.cwd();
+    const installed = getInstalledSkills();
+    const synthesized = listSynthesizedSkills(workspace);
+
+    const foundInstalled = installed.find((s) => s.name.toLowerCase() === name);
+    const foundSynthesized = synthesized.find((s) => s.name.toLowerCase() === name);
+    const targetPath = foundSynthesized?.path || foundInstalled?.path;
+
+    if (targetPath && fs.existsSync(targetPath)) {
+      const content = fs.readFileSync(targetPath, "utf-8");
+      console.log(`\n--- Skill: ${name} (${targetPath}) ---\n`);
+      console.log(content);
+      process.exit(0);
+    } else {
+      console.log(`Error: Skill "${name}" not found.`);
+      console.log("Run 'superagent skill list' to inspect available skills.");
+      process.exit(1);
+    }
+  }
+
+  if (subcommand === "run" || subcommand === "exec") {
+    const name = args[1]?.toLowerCase();
+    if (!name) {
+      console.log("Usage: superagent skill run <skill_name> [--workspace <path>] [--multi]");
+      process.exit(1);
+    }
+
+    const wsIndex = args.indexOf("--workspace");
+    const isMulti = args.includes("--multi");
+    const workspace = wsIndex !== -1 && args[wsIndex + 1] ? args[wsIndex + 1] : process.cwd();
+
+    const fs = await import("fs");
+    const installed = getInstalledSkills();
+    const synthesized = listSynthesizedSkills(workspace);
+
+    const foundInstalled = installed.find((s) => s.name.toLowerCase() === name);
+    const foundSynthesized = synthesized.find((s) => s.name.toLowerCase() === name);
+    const targetPath = foundSynthesized?.path || foundInstalled?.path;
+
+    if (!targetPath || !fs.existsSync(targetPath)) {
+      console.log(`Error: Skill "${name}" not found.`);
+      process.exit(1);
+    }
+
+    const skillContent = fs.readFileSync(targetPath, "utf-8");
+    console.log(`Executing workflow for skill: ${name}...`);
+    console.log(`- Workspace: ${workspace}`);
+    console.log(`- Mode: ${isMulti ? "multi" : "single"}\n`);
+
+    const { recordSkillExecution } = await import("../skills/skillTracker.js");
+    recordSkillExecution(name);
+
+    const { createAgentExecutor } = await import("../gateway/gatewayServer.js");
+    const executeAgent = await createAgentExecutor(workspace);
+
+    const prompt = `Please follow and execute the following skill guide carefully to complete the task:\n\n${skillContent}`;
+    try {
+      const output = await executeAgent(prompt, workspace);
+      console.log("\n--- Execution Output ---");
+      console.log(output);
+      console.log("\nSkill execution completed.");
+      process.exit(0);
+    } catch (err: any) {
+      console.log(`\nExecution failed: ${err.message}`);
+      process.exit(1);
+    }
   }
 
   if (subcommand === "synth" || subcommand === "synthesize") {

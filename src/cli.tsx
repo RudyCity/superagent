@@ -222,7 +222,7 @@ if (process.argv[2] === "gateway") {
     }
     default:
       console.log(`Unknown gateway subcommand: ${subcommand}`);
-      console.log("Available: status | enable | disable | listen [port] | poll [telegram|discord|all]");
+      console.log("Available: status | enable | disable | listen [port] | poll [telegram|discord|slack|all]");
       break;
   }
   process.exit(0);

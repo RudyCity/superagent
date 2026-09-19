@@ -46,6 +46,7 @@ export interface DiscordChannelConfig {
 export interface SlackChannelConfig {
   enabled: boolean;
   botToken?: string;
+  appToken?: string;
   signingSecret?: string;
   allowedUserIds?: string[];
   defaultWorkspace?: string;

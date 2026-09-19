@@ -1,6 +1,7 @@
 import { gatewayManager } from "./gatewayManager.js";
 import { startTelegramPolling } from "./telegramPoller.js";
 import { startDiscordGateway } from "./discordPoller.js";
+import { startSlackSocketMode } from "./slackPoller.js";
 
 export interface GatewayPollerOptions {
   channels?: string[] | string;
@@ -27,18 +28,20 @@ export async function startGatewayPolling(options: GatewayPollerOptions = {}): P
 
   const hasTelegram = !!(cfg.channels.telegram?.botToken);
   const hasDiscord = !!(cfg.channels.discord?.botToken);
+  const hasSlack = !!(cfg.channels.slack?.botToken && cfg.channels.slack?.appToken);
 
   const shouldPollTelegram = isAll ? hasTelegram : requested.includes("telegram");
   const shouldPollDiscord = isAll ? hasDiscord : requested.includes("discord");
+  const shouldPollSlack = isAll ? hasSlack : requested.includes("slack");
 
-  if (!shouldPollTelegram && !shouldPollDiscord) {
+  if (!shouldPollTelegram && !shouldPollDiscord && !shouldPollSlack) {
     if (isAll) {
       throw new Error(
-        "No gateway polling channels configured with bot tokens. Configure Telegram (/gateway config telegram botToken <token>) or Discord (/gateway config discord botToken <token>)."
+        "No gateway polling channels configured with credentials. Configure Telegram, Discord, or Slack Socket Mode (botToken & appToken)."
       );
     } else {
       throw new Error(
-        `Requested polling channel(s) [${requested.join(", ")}] not recognized or missing required bot tokens.`
+        `Requested polling channel(s) [${requested.join(", ")}] not recognized or missing required credentials.`
       );
     }
   }
@@ -46,6 +49,7 @@ export async function startGatewayPolling(options: GatewayPollerOptions = {}): P
   const activeChannels: string[] = [];
   if (shouldPollTelegram) activeChannels.push("Telegram");
   if (shouldPollDiscord) activeChannels.push("Discord");
+  if (shouldPollSlack) activeChannels.push("Slack");
 
   if (!options.silent) {
     console.log("Starting Unified Superagent Gateway Poller...");
@@ -70,6 +74,16 @@ export async function startGatewayPolling(options: GatewayPollerOptions = {}): P
   if (shouldPollDiscord) {
     pollers.push(
       startDiscordGateway({
+        workspace,
+        signal: options.signal,
+        silent: options.silent,
+      })
+    );
+  }
+
+  if (shouldPollSlack) {
+    pollers.push(
+      startSlackSocketMode({
         workspace,
         signal: options.signal,
         silent: options.silent,

@@ -262,6 +262,9 @@ export class DaemonScheduler {
       job.runCount++;
       job.lastRunDurationMs = Date.now() - startTime;
       this.log(`Job failed: ${job.name} (${job.id}) error: ${error}`);
+      if (job.notifyGateway) {
+        this.notifyGateway(job, `[FAILURE ALERT] Job execution failed with error:\n${error}`);
+      }
       return { success: false, error };
     } finally {
       this.runningJobIds.delete(job.id);

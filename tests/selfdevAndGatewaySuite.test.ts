@@ -122,7 +122,14 @@ describe("Self-Dev, Gateway & Skills Enhancement Suite", () => {
       const { startGatewayPolling } = await import("../src/core/gateway/gatewayPoller.js");
       await expect(
         startGatewayPolling({ channels: "invalid-channel", silent: true })
-      ).rejects.toThrow("not recognized or missing required bot tokens");
+      ).rejects.toThrow("not recognized or missing required credentials");
+    });
+
+    it("handles missing app/bot token in startSlackSocketMode with descriptive error", async () => {
+      const { startSlackSocketMode } = await import("../src/core/gateway/slackPoller.js");
+      await expect(
+        startSlackSocketMode({ appToken: "", botToken: "", silent: true })
+      ).rejects.toThrow("No Slack app-level token");
     });
   });
 
@@ -188,6 +195,23 @@ describe("Self-Dev, Gateway & Skills Enhancement Suite", () => {
       const lines = ctx.getLines();
       expect(lines.length).toBeGreaterThan(0);
       expect(lines[0].content).toContain("Agent Skill Statistics & Tracking:");
+    });
+
+    it("executes /skills show subcommand for a known skill", async () => {
+      const cmd = registry.get("skills");
+      const ctx = createMockContext();
+      await cmd?.execute("show tdd", ctx as any);
+      const lines = ctx.getLines();
+      expect(lines.length).toBeGreaterThan(0);
+    });
+
+    it("handles /skills run subcommand gracefully", async () => {
+      const cmd = registry.get("skills");
+      const ctx = createMockContext();
+      await cmd?.execute("run non-existent-skill", ctx as any);
+      const lines = ctx.getLines();
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines[0].content).toContain("not found");
     });
   });
 
