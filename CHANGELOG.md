@@ -1,3 +1,20 @@
+## [1.5.85] - 2026-09-19
+
+### Fixed
+
+- **Login Configuration & Credentials Retention**: Resolved issue where restarting or running test suites wiped provider login configurations and API keys in `~/.superagent-r/model-config.json`.
+- **Hermetic Test Isolation**: Isolated `tests/secretStore.test.ts` key-size test inside an isolated temporary directory with `SUPERAGENT_CONFIG_DIR`, preventing test runs from deleting the production master encryption key `~/.superagent-r/.secret-key`.
+- **Master Key Auto-Backup & Recovery**: Added `.secret-key.bak` mirroring and auto-restoration in `secretStore.ts` so that if `.secret-key` is missing or corrupted, the master key is automatically restored from backup rather than generating an incompatible fresh key.
+- **Defensive Credential Overwrite Protection**: Updated `jsonConfig.ts` `mergeProvidersWithDisk` and `writeConfigAtomically` to prevent empty in-memory `apiKey` strings from clobbering existing encrypted or valid on-disk API keys.
+- **Ciphertext Preservation on Decryption Failure**: Updated `loadModelConfig` to retain raw encrypted ciphertexts (`_rawEncryptedApiKey`) if decryption encounters transient issues, preventing destructive overwrites with empty strings.
+- **Auto-Recovery from Backups**: Enhanced `loadModelConfig` to automatically recover provider API keys from `.corrupt-*` and `.bak` backups when live provider keys are empty.
+- **Active Provider Switching & Preset Persistence**: Fixed inverted guard condition in `providers.ts` `switchActiveProvider()` so that switching providers properly updates `providerProfileId` across all active preset tiers, and ensured `/login` commands (`loginCommand.ts` and `loginCliHandler.ts`) persist tier models to `model-config.json`.
+- **Atomic Trusted Dirs Migration**: Replaced raw `fs.writeFileSync` in `historyDb.ts` `migrateLegacyTrustedDirs()` with `mutateModelConfig()` to prevent file write races during startup.
+
+### Tests
+
+- Added `tests/loginConfigPersistence.test.ts` (4/4 passing) validating master key backup/recovery, empty-key clobbering prevention, backup recovery, and active provider tier updates.
+
 ## [1.5.84] - 2026-09-19
 
 ### Fixed

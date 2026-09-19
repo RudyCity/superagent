@@ -118,36 +118,27 @@ describe("secretStore — envelope format", () => {
     );
     _resetSecretStoreForTests();
 
-    // We can't easily redirect getRootConfigDir, but we can
-    // test the behavior at the source level: write a file at
-    // the key path with the wrong size and assert getOrCreateMasterKey
-    // throws. This requires the module to read from the user's
-    // real $HOME/.superagent-r/ — skip if not writable.
-    const os_ = await import("os");
-    const rootConfigDir =
-      process.env.SUPERAGENT_TEST_CONFIG_DIR ||
-      path.join(os_.homedir(), ".superagent-r");
-    const keyPath = path.join(rootConfigDir, ".secret-key");
+    // Isolate in a temporary directory so the user's real ~/.superagent-r/.secret-key is NEVER touched
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "secret-test-"));
+    const origConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
+    process.env.SUPERAGENT_CONFIG_DIR = tmpDir;
+    const keyPath = path.join(tmpDir, ".secret-key");
     try {
-      if (!fs.existsSync(rootConfigDir)) {
-        fs.mkdirSync(rootConfigDir, { recursive: true });
-      }
       fs.writeFileSync(keyPath, "tooshort", "utf-8");
       _resetSecretStoreForTests();
       const { getOrCreateMasterKey } = await import(
         "../src/core/config/secretStore.js"
       );
       expect(() => getOrCreateMasterKey()).toThrow(/unexpected size/);
-    } catch (err) {
-      // If the test env doesn't allow writing to the real $HOME,
-      // skip rather than fail — we still proved the round-trip and
-      // envelope behavior above.
-      console.warn("[secretStore] skipping key-size test:", (err as Error).message);
     } finally {
+      if (origConfigDir !== undefined) {
+        process.env.SUPERAGENT_CONFIG_DIR = origConfigDir;
+      } else {
+        delete process.env.SUPERAGENT_CONFIG_DIR;
+      }
+      _resetSecretStoreForTests();
       try {
-        if (fs.existsSync(keyPath) && fs.readFileSync(keyPath, "utf-8") === "tooshort") {
-          fs.unlinkSync(keyPath);
-        }
+        fs.rmSync(tmpDir, { recursive: true, force: true });
       } catch {
         /* best-effort */
       }
@@ -162,13 +153,18 @@ describe("jsonConfig — apiKey is encrypted at rest (C2)", () => {
     const fakeHome = tmp;
     // Save the real $HOME / USERPROFILE so we can restore.
     const origHome = process.env.HOME || process.env.USERPROFILE;
+    const origConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
     process.env.HOME = fakeHome;
     process.env.USERPROFILE = fakeHome;
-    // Force the config module to re-resolve paths.
-    vi.resetModules();
+    process.env.SUPERAGENT_CONFIG_DIR = path.join(fakeHome, ".superagent-r");
+    // Force the config module to re-resolve paths if in vitest
+    if (typeof vi !== "undefined" && typeof (vi as any).resetModules === "function") {
+      (vi as any).resetModules();
+    }
     try {
       // Re-import to pick up the new HOME.
       const jc = await import("../src/core/config/jsonConfig.js");
+      jc.clearModelConfigCache();
       // Ensure the root config dir exists.
       const rootDir = (await import("../src/core/config/paths.js"))
         .getRootConfigDir();
@@ -201,6 +197,11 @@ describe("jsonConfig — apiKey is encrypted at rest (C2)", () => {
     } finally {
       process.env.HOME = origHome;
       process.env.USERPROFILE = origHome;
+      if (origConfigDir !== undefined) {
+        process.env.SUPERAGENT_CONFIG_DIR = origConfigDir;
+      } else {
+        delete process.env.SUPERAGENT_CONFIG_DIR;
+      }
       try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
     }
   });

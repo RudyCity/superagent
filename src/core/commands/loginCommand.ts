@@ -7,7 +7,8 @@ import {
   getContextWindowLimit,
   addProvider,
   getProviders,
-  removeProvider
+  removeProvider,
+  setAllTierModels
 } from "../config.js";
 
 export const loginCommand: SlashCommand = {
@@ -229,6 +230,11 @@ export const loginCommand: SlashCommand = {
           defaultModel = "x-preview-f-free";
         }
 
+        try {
+          setAllTierModels("multi", defaultModel, target.id);
+          setAllTierModels("single", defaultModel, target.id);
+        } catch {}
+
         const baseUrlInfo = newBaseUrl ? `\nBase URL: ${newBaseUrl}` : "";
 
         ctx.addLine({
@@ -347,6 +353,11 @@ export const loginCommand: SlashCommand = {
         } else if (provider === "kilo") {
           defaultModel = "openai/gpt-4o-mini";
         }
+
+        try {
+          setAllTierModels("multi", defaultModel, profileId);
+          setAllTierModels("single", defaultModel, profileId);
+        } catch {}
 
         const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : provider === "opencode" ? `\nBase URL: https://opencode.ai/zen/v1` : provider === "kilo" ? `\nBase URL: https://api.kilo.ai/api/gateway` : "");
 

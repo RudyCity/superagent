@@ -49,9 +49,14 @@ const TAG_LEN = 16;
 const KEY_LEN = 32;
 const PREFIX = "enc:v1:";
 const KEY_FILE = ".secret-key";
+const KEY_BAK_FILE = ".secret-key.bak";
 
 function keyFilePath(): string {
   return path.join(getRootConfigDir(), KEY_FILE);
+}
+
+function keyBakFilePath(): string {
+  return path.join(getRootConfigDir(), KEY_BAK_FILE);
 }
 
 let _cachedKey: Buffer | null = null;
@@ -60,15 +65,30 @@ let _cachedKey: Buffer | null = null;
  * Read (or lazily create) the 32-byte master key.
  *
  * Side effects: on first call in a fresh install, writes a 32-byte
- * random key to `~/.superagent-r/.secret-key` with mode 0600.
+ * random key to `~/.superagent-r/.secret-key` with mode 0600 and creates
+ * a backup at `~/.superagent-r/.secret-key.bak`.
+ * If `.secret-key` is missing or corrupted but `.secret-key.bak` exists,
+ * it restores from the backup to prevent credential loss.
  */
 export function getOrCreateMasterKey(): Buffer {
   if (_cachedKey) return _cachedKey;
   const kf = keyFilePath();
+  const bak = keyBakFilePath();
   const dir = path.dirname(kf);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+
+  // If primary key file is missing or empty, attempt recovery from backup
+  if (!fs.existsSync(kf) || fs.statSync(kf).size === 0) {
+    if (fs.existsSync(bak) && fs.statSync(bak).size > 0) {
+      try {
+        fs.copyFileSync(bak, kf);
+        console.warn("[secretStore] Restored master key from backup .secret-key.bak");
+      } catch {}
+    }
+  }
+
   if (fs.existsSync(kf)) {
     const raw = fs.readFileSync(kf, "utf-8").trim();
     // Tolerate base64 (preferred) and raw hex for forward compatibility.
@@ -80,8 +100,29 @@ export function getOrCreateMasterKey(): Buffer {
     }
     if (buf.length === KEY_LEN) {
       _cachedKey = buf;
+      // Ensure backup file is in sync
+      try {
+        if (!fs.existsSync(bak) || fs.readFileSync(bak, "utf-8").trim() !== raw) {
+          fs.copyFileSync(kf, bak);
+        }
+      } catch {}
       return buf;
     }
+
+    // If current file has unexpected size, try backup before throwing
+    if (fs.existsSync(bak)) {
+      try {
+        const bakRaw = fs.readFileSync(bak, "utf-8").trim();
+        const bakBuf = Buffer.from(bakRaw, "base64");
+        if (bakBuf.length === KEY_LEN) {
+          fs.copyFileSync(bak, kf);
+          _cachedKey = bakBuf;
+          console.warn("[secretStore] Recovered valid master key from .secret-key.bak");
+          return bakBuf;
+        }
+      } catch {}
+    }
+
     // Wrong size — refuse to overwrite silently. The user must
     // delete the file (and any encrypted values become unreadable).
     throw new Error(
@@ -89,10 +130,15 @@ export function getOrCreateMasterKey(): Buffer {
     );
   }
   const fresh = crypto.randomBytes(KEY_LEN);
-  fs.writeFileSync(kf, fresh.toString("base64"), { mode: 0o600 });
+  const freshB64 = fresh.toString("base64");
+  fs.writeFileSync(kf, freshB64, { mode: 0o600 });
+  try {
+    fs.writeFileSync(bak, freshB64, { mode: 0o600 });
+  } catch {}
   // On some platforms mode is masked by umask; chmod again.
   try {
     fs.chmodSync(kf, 0o600);
+    if (fs.existsSync(bak)) fs.chmodSync(bak, 0o600);
   } catch {
     /* best-effort */
   }

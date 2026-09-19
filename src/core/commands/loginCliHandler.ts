@@ -4,7 +4,8 @@ import {
   addProvider,
   getProviders,
   removeProvider,
-  closeHistoryDb
+  closeHistoryDb,
+  setAllTierModels
 } from "../config.js";
 
 export function printLoginHelp(): void {
@@ -192,6 +193,18 @@ export async function handleLoginCliCommand(args: string[]): Promise<void> {
       });
 
       switchActiveProvider(profileId);
+
+      let defaultModel = "gpt-4o";
+      if (provider === "openrouter") defaultModel = "google/gemini-2.5-flash";
+      else if (provider === "anthropic") defaultModel = "claude-3-5-sonnet-20241022";
+      else if (provider === "gemini") defaultModel = "gemini-2.5-flash";
+      else if (provider === "opencode") defaultModel = "x-preview-f-free";
+      else if (provider === "kilo") defaultModel = "openai/gpt-4o-mini";
+
+      try {
+        setAllTierModels("multi", defaultModel, profileId);
+        setAllTierModels("single", defaultModel, profileId);
+      } catch {}
 
       const resolvedBase = baseUrl || defaultBaseUrl;
       const baseInfo = resolvedBase ? ` (Base URL: ${resolvedBase})` : "";

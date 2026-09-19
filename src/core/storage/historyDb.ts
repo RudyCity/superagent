@@ -1859,8 +1859,11 @@ export function migrateLegacyTrustedDirs(db: any): void {
       }
       // Remove trustedDirectories from configuration once migrated to SQLite
       try {
-        delete parsed.trustedDirectories;
-        fs.writeFileSync(configPath, JSON.stringify(parsed, null, 2), "utf-8");
+        import("../config/jsonConfig.js").then(({ mutateModelConfig }) => {
+          mutateModelConfig((cfg: any) => {
+            delete cfg.trustedDirectories;
+          });
+        }).catch(() => {});
       } catch {}
     }
   } catch {}

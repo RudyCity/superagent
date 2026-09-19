@@ -303,9 +303,49 @@ export function loadModelConfig(): GlobalModelConfig {
             if (cachedConfig && Array.isArray(cachedConfig.providers)) {
               for (const p of cachedConfig.providers) {
                 if (p && typeof (p as ProviderProfile).apiKey === "string") {
-                  (p as ProviderProfile).apiKey = decryptSecret(
-                    (p as ProviderProfile).apiKey
-                  );
+                  const rawVal = (p as ProviderProfile).apiKey;
+                  if (rawVal.startsWith("enc:v1:")) {
+                    const dec = decryptSecret(rawVal);
+                    if (dec) {
+                      (p as ProviderProfile).apiKey = dec;
+                    } else {
+                      // Decryption failed: preserve raw ciphertext to prevent wiping on disk
+                      (p as any)._rawEncryptedApiKey = rawVal;
+                      (p as ProviderProfile).apiKey = "";
+                    }
+                  }
+                }
+              }
+            }
+
+            // Auto-recovery: if all providers have empty keys, restore from newest backup
+            const hasAnyKey = (cachedConfig?.providers || []).some(
+              (p: any) => p.apiKey && typeof p.apiKey === "string" && p.apiKey.trim() !== ""
+            );
+            if (!hasAnyKey && (cachedConfig?.providers || []).length > 0) {
+              const rec = recoverProvidersFromBackups(configPath);
+              if (rec && rec.length > 0) {
+                const recMap = new Map(rec.map((rp) => [rp.id, rp]));
+                let restored = 0;
+                for (const p of (cachedConfig?.providers || [])) {
+                  const match = recMap.get(p.id);
+                  if (match?.apiKey && match.apiKey.trim() !== "" && (!p.apiKey || p.apiKey.trim() === "")) {
+                    const plain = match.apiKey.startsWith("enc:v1:") ? decryptSecret(match.apiKey) : match.apiKey;
+                    if (plain) {
+                      p.apiKey = plain;
+                      delete (p as any)._rawEncryptedApiKey;
+                      restored++;
+                    } else if (match.apiKey.startsWith("enc:v1:")) {
+                      (p as any)._rawEncryptedApiKey = match.apiKey;
+                    }
+                  }
+                }
+                if (restored > 0) {
+                  console.warn(`[WARNING] Auto-recovered ${restored} provider credential(s) from backup.`);
+                  try {
+                    writeConfigAtomically(configPath, cachedConfig!);
+                    cachedConfigMtimeMs = safeMtimeMs(configPath);
+                  } catch {}
                 }
               }
             }
@@ -434,10 +474,8 @@ function recoverConfigFromBackups(configPath: string): GlobalModelConfig | null 
 }
 
 /**
- * Scan model-config.json backups (.corrupt-* and .tmp) newest-first and return the
- * first valid, non-empty providers array found. Used to recover credentials when the
- * live file's providers field is missing/invalid, so a transient bad write doesn't
- * permanently destroy the user's API keys.
+ * Scan model-config.json backups (.corrupt-* and .bak) newest-first and return the
+ * first valid providers array with API keys found.
  */
 function recoverProvidersFromBackups(configPath: string): ProviderProfile[] | null {
   try {
@@ -446,32 +484,23 @@ function recoverProvidersFromBackups(configPath: string): ProviderProfile[] | nu
     if (!dir || !fs.existsSync(dir)) return null;
     const candidates = fs
       .readdirSync(dir)
-      .filter((f) => f.startsWith(base + ".corrupt-"))
-      .map((f) => {
-        const full = dir + "/" + f;
-        return { full, mtime: safeMtimeMs(full) };
-      })
+      .filter((f) => f.startsWith(base + ".corrupt-") || f === base + ".bak")
+      .map((f) => ({ full: dir + "/" + f, mtime: safeMtimeMs(dir + "/" + f) }))
       .sort((a, b) => b.mtime - a.mtime);
     for (const c of candidates) {
       try {
         const raw = fs.readFileSync(c.full, "utf-8").replace(/^\uFEFF/, "");
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed?.providers) && parsed.providers.length > 0) {
-          return parsed.providers;
+          const hasKey = parsed.providers.some((p: any) => p?.apiKey && typeof p.apiKey === "string" && p.apiKey.trim() !== "");
+          if (hasKey) return parsed.providers;
         }
-      } catch {
-        // Skip unreadable/invalid backup
-      }
+      } catch {}
     }
-  } catch {
-    // Ignore recovery errors
-  }
+  } catch {}
   return null;
 }
 
-/**
- * Prune model-config.json.corrupt-* backups, retaining only the most recent `maxKeep` files.
- */
 export function pruneConfigBackups(configPath: string, maxKeep: number = 5): void {
   try {
     const dir = configPath.substring(0, Math.max(configPath.lastIndexOf("/"), configPath.lastIndexOf("\\")));
@@ -480,27 +509,18 @@ export function pruneConfigBackups(configPath: string, maxKeep: number = 5): voi
     const candidates = fs
       .readdirSync(dir)
       .filter((f) => f.startsWith(base + ".corrupt-"))
-      .map((f) => {
-        const full = dir + "/" + f;
-        return { full, mtime: safeMtimeMs(full) };
-      })
+      .map((f) => ({ full: dir + "/" + f, mtime: safeMtimeMs(dir + "/" + f) }))
       .sort((a, b) => b.mtime - a.mtime);
     for (let i = maxKeep; i < candidates.length; i++) {
-      try {
-        fs.unlinkSync(candidates[i].full);
-      } catch {}
+      try { fs.unlinkSync(candidates[i].full); } catch {}
     }
   } catch {}
 }
 
 /**
- * Merge the providers we're about to save with whatever providers currently exist on
- * disk. Any provider id that exists on disk but is missing from `config` is preserved
- * (appended), so a stale in-memory snapshot from another process can never silently
- * delete provider profiles + API keys. Providers present in `config` always win for
- * matching ids (this is how legitimate updates take effect).
- *
- * This is intentionally skipped for explicit deletions (see removeProvider).
+ * Merge in-memory providers with on-disk providers.
+ * Preserves disk providers missing from memory, and preserves non-empty on-disk keys
+ * if in-memory has an empty apiKey (protects against clobbering valid credentials).
  */
 function mergeProvidersWithDisk(config: GlobalModelConfig, configPath: string): void {
   try {
@@ -508,25 +528,19 @@ function mergeProvidersWithDisk(config: GlobalModelConfig, configPath: string): 
     const raw = fs.readFileSync(configPath, "utf-8").replace(/^\uFEFF/, "");
     const onDisk = JSON.parse(raw);
     if (!Array.isArray(onDisk?.providers)) return;
-    const inMemoryIds = new Set((config.providers || []).map((p) => p.id));
+    const inMemoryMap = new Map((config.providers || []).map((p) => [p.id, p]));
     for (const diskProvider of onDisk.providers as ProviderProfile[]) {
-      if (diskProvider?.id && !inMemoryIds.has(diskProvider.id)) {
+      if (!diskProvider?.id) continue;
+      const memProvider = inMemoryMap.get(diskProvider.id);
+      if (!memProvider) {
         config.providers.push(diskProvider);
+      } else if ((!memProvider.apiKey || memProvider.apiKey.trim() === "") && diskProvider.apiKey && diskProvider.apiKey.trim() !== "") {
+        memProvider.apiKey = diskProvider.apiKey;
       }
     }
-  } catch {
-    // If the on-disk file is unreadable, fall through and write what we have.
-  }
+  } catch {}
 }
 
-/**
- * Merge the presets we're about to save with whatever presets currently exist on disk.
- * Any preset id (per mode) that exists on disk but is missing from `config` is preserved,
- * so a stale in-memory snapshot from another process can never silently delete a preset
- * the user created in a different process. Presets present in `config` win for matching ids.
- *
- * Intentionally skipped for explicit deletions (see deletePreset).
- */
 function mergePresetsWithDisk(config: GlobalModelConfig, configPath: string): void {
   try {
     if (!fs.existsSync(configPath)) return;
@@ -535,37 +549,27 @@ function mergePresetsWithDisk(config: GlobalModelConfig, configPath: string): vo
     if (!onDisk?.presets) return;
     for (const mode of ["multi", "single"] as const) {
       const diskList = onDisk.presets?.[mode];
-      if (!Array.isArray(diskList)) continue;
-      if (!config.presets) continue;
+      if (!Array.isArray(diskList) || !config.presets) continue;
       const memList = config.presets[mode] as any[] | undefined;
       if (!Array.isArray(memList)) continue;
       const memIds = new Set(memList.map((p) => p?.id));
       for (const diskPreset of diskList) {
-        if (diskPreset?.id && !memIds.has(diskPreset.id)) {
-          memList.push(diskPreset);
-        }
+        if (diskPreset?.id && !memIds.has(diskPreset.id)) memList.push(diskPreset);
       }
     }
-  } catch {
-    // If the on-disk file is unreadable, fall through and write what we have.
-  }
+  } catch {}
 }
 
 function writeConfigAtomically(configPath: string, config: GlobalModelConfig): void {
   ensureGlobalConfigDir();
-  // Audit fix C2: encrypt every `apiKey` before it touches disk.
-  // We clone the providers list so we never mutate the caller's
-  // in-memory config (which currently holds plaintext keys after the
-  // read path's decrypt step). Re-serializing the clone is safe
-  // because the rest of the config is unchanged.
   const toWrite: GlobalModelConfig = {
     ...config,
     providers: Array.isArray(config.providers)
       ? config.providers.map((p) => {
-          if (!p || typeof (p as ProviderProfile).apiKey !== "string") {
-            return p;
-          }
+          if (!p || typeof (p as ProviderProfile).apiKey !== "string") return p;
           const raw = (p as ProviderProfile).apiKey;
+          const rawEnc = (p as any)._rawEncryptedApiKey;
+          if (!raw && rawEnc && isEncrypted(rawEnc)) return { ...p, apiKey: rawEnc };
           if (!raw || isEncrypted(raw)) return p;
           return { ...p, apiKey: encryptSecret(raw) };
         })
@@ -573,26 +577,20 @@ function writeConfigAtomically(configPath: string, config: GlobalModelConfig): v
   };
   const serialized = JSON.stringify(toWrite, null, 2);
   const tmpPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
-
   fs.writeFileSync(tmpPath, serialized, "utf-8");
 
   const MAX_RETRIES = 5;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       try {
-        // Try direct rename first (atomic on POSIX and generally works on Windows)
         fs.renameSync(tmpPath, configPath);
+        try { fs.copyFileSync(configPath, configPath + ".bak"); } catch {}
         return;
       } catch (renameErr: any) {
-        // Fallback to copyFileSync + unlinkSync on Windows if direct rename fails
-        try {
-          fs.copyFileSync(tmpPath, configPath);
-          try { fs.unlinkSync(tmpPath); } catch {}
-          return;
-        } catch (copyErr: any) {
-          // If copy also fails, throw renameErr to let the retry loop handle it
-          throw renameErr;
-        }
+        fs.copyFileSync(tmpPath, configPath);
+        try { fs.unlinkSync(tmpPath); } catch {}
+        try { fs.copyFileSync(configPath, configPath + ".bak"); } catch {}
+        return;
       }
     } catch (renameErr: any) {
       const canRetry = attempt < MAX_RETRIES && (renameErr?.code === "EPERM" || renameErr?.code === "EBUSY" || renameErr?.code === "ENOENT");
