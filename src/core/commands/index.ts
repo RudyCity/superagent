@@ -10,6 +10,8 @@ import "./workspaceCommand.js";
 import "./macroCommand.js";
 import "./mpCommand.js";
 import "./sshCommand.js";
+import "./daemonCommand.js";
+import "./gatewayCommand.js";
 
 
 export { registry } from "./registry.js";

@@ -57,18 +57,56 @@ if (process.argv[2] === "session") {
   process.exit(0);
 }
 
-if (process.argv[2] === "mcp" && process.argv[3] === "register") {
-  const { registerToAgyConfig } = await import("./core/mcp/mcpRegistration.js");
-  const res = registerToAgyConfig();
-  console.log(res.message);
-  process.exit(res.success ? 0 : 1);
+if (process.argv[2] === "setup") {
+  const { handleLoginCliCommand } = await import("./core/commands/loginCliHandler.js");
+  // Launch login wizard in guided add mode
+  const args = process.argv.slice(3);
+  if (args.length === 0) {
+    // If no args, print guided setup instructions and redirect to login add
+    console.log(`
+Superagent Setup Wizard
+=======================
+
+To configure an AI provider, run one of the following:
+
+  superagent login add openrouter   <api_key>
+  superagent login add anthropic    <api_key>
+  superagent login add openai       <api_key>
+  superagent login add gemini       <api_key>
+  superagent login add custom       <base_url> <api_key>
+
+After adding a provider, use:
+  superagent preset list            - list available model presets
+  superagent preset use <name>      - activate a preset
+  superagent                        - start the interactive terminal
+
+For full login help:
+  superagent login --help
+`);
+  } else {
+    await handleLoginCliCommand(["add", ...args]);
+  }
+  process.exit(0);
+}
+
+if (process.argv[2] === "mcp") {
+  const sub = process.argv[3]?.toLowerCase();
+  if (sub === "register") {
+    const { registerToAgyConfig } = await import("./core/mcp/mcpRegistration.js");
+    const res = registerToAgyConfig();
+    console.log(res.message);
+    process.exit(res.success ? 0 : 1);
+  } else if (["list", "ls", "add", "remove", "rm", "delete", "help", "--help", "-h"].includes(sub) || !sub) {
+    const { handleMcpCliCommand } = await import("./core/commands/mcpCliHandler.js");
+    await handleMcpCliCommand(process.argv.slice(3));
+    process.exit(0);
+  }
 }
 
 if (
   process.argv.includes("--mcp") ||
   process.argv.includes("--mcp-server") ||
-  process.argv[2] === "mcp-server" ||
-  (process.argv[2] === "mcp" && !["register", "list", "add", "remove"].includes(process.argv[3]))
+  process.argv[2] === "mcp-server"
 ) {
   const { startSuperagentMcpServer } = await import("./core/mcp/superagentMcpServer.js");
   await startSuperagentMcpServer();
@@ -92,7 +130,8 @@ Commands:
   preset            Manage model presets (list, use, show)
   session           Manage conversation sessions (list, export, clear --empty, import)
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
-  mcp register      Register Superagent MCP Server to Antigravity (AGY) configuration
+  gateway           Manage the omnichannel messaging gateway (status, enable, disable)
+  mcp               Manage MCP servers (list, add, remove, register)
 
 Options:
   -r, --resume            Resume the last active session
@@ -137,6 +176,36 @@ if (daemonIndex !== -1) {
   const daemonArgs = process.argv.slice(daemonIndex + 1);
   const { handleDaemonCli } = await import("./core/daemon/daemonCli.js");
   await handleDaemonCli(daemonArgs);
+  process.exit(0);
+}
+
+if (process.argv[2] === "gateway") {
+  const { gatewayManager } = await import("./core/gateway/gatewayManager.js");
+  const subcommand = process.argv[3]?.toLowerCase() || "status";
+  switch (subcommand) {
+    case "status": {
+      const status = gatewayManager.getStatus();
+      const cfg = gatewayManager.getConfig();
+      console.log(`Gateway: ${status.enabled ? "enabled" : "disabled"} | Mode: ${cfg.defaultMode}`);
+      for (const [ch, st] of Object.entries(status.channels)) {
+        const s = st as any;
+        console.log(`  ${ch.padEnd(10)}: ${s.enabled ? "on" : "off"} | configured=${s.configured} | recv=${s.messagesReceived} sent=${s.messagesSent}`);
+      }
+      break;
+    }
+    case "enable":
+      gatewayManager.updateConfig({ enabled: true });
+      console.log("Gateway enabled.");
+      break;
+    case "disable":
+      gatewayManager.updateConfig({ enabled: false });
+      console.log("Gateway disabled.");
+      break;
+    default:
+      console.log(`Unknown gateway subcommand: ${subcommand}`);
+      console.log("Available: status | enable | disable");
+      break;
+  }
   process.exit(0);
 }
 

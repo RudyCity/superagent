@@ -505,6 +505,17 @@ export class Agent {
     const taskFilePath = this.getTaskFilePath();
     const planFilePath = this.getPlanFilePath();
 
+    // Record task_started event for self-dev learning loop (fire-and-forget)
+    import("./selfdev/selfdevAgent.js").then(({ recordSelfDevEvent }) => {
+      recordSelfDevEvent({
+        sessionId: this.sessionId,
+        workspace: this.workingDirectory || process.cwd(),
+        kind: "task_started",
+        summary: `Task started: ${taskSummary.slice(0, 200)}`,
+        tags: [this.tier, this.isMultiAgent ? "multi" : "single"],
+      });
+    }).catch(() => {});
+
     // Ensure session task file exists immediately so MCP, dashboards, and background processes have live visibility
     try {
       if (this.tier === "master" || this.tier === "single" || this.tier === "superagent") {
@@ -562,6 +573,16 @@ export class Agent {
           timestamp: Date.now(),
         });
         await this.saveHistory();
+        // Record task_failed event for self-dev learning loop (fire-and-forget)
+        import("./selfdev/selfdevAgent.js").then(({ recordSelfDevEvent }) => {
+          recordSelfDevEvent({
+            sessionId: this.sessionId,
+            workspace: this.workingDirectory || process.cwd(),
+            kind: "task_failed",
+            summary: `Task failed: ${message.slice(0, 200)}`,
+            tags: [this.tier, "fatal"],
+          });
+        }).catch(() => {});
       }
     } finally {
       if (signal && onAbort) {
@@ -583,6 +604,17 @@ export class Agent {
           }
         }
       } catch {}
+
+      // Record task_completed event for self-dev learning loop (fire-and-forget)
+      import("./selfdev/selfdevAgent.js").then(({ recordSelfDevEvent }) => {
+        recordSelfDevEvent({
+          sessionId: this.sessionId,
+          workspace: this.workingDirectory || process.cwd(),
+          kind: "task_completed",
+          summary: `Task completed: ${taskSummary.slice(0, 200)}`,
+          tags: [this.tier, this.isMultiAgent ? "multi" : "single"],
+        });
+      }).catch(() => {});
 
       this.updateRootProcessActivity({
         isAgentRunning: false,

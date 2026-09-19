@@ -296,12 +296,30 @@ export class DaemonScheduler {
     try {
       const { gatewayManager } = await import("../gateway/gatewayManager.js");
       const summary = `[DAEMON SCHEDULE NOTIFICATION]\nJob: ${job.name} (${job.id})\nStatus: ${job.lastStatus}\n\nResult:\n${output.slice(0, 1000)}`;
-      
+
       const config = gatewayManager.getConfig();
+
+      // Notify Telegram
       if (config.channels.telegram.enabled && config.channels.telegram.botToken) {
         const adapter = gatewayManager.getAdapter("telegram");
         const user = config.channels.telegram.allowedUserIds?.[0];
-        if (user) await adapter.sendReply(user, summary);
+        if (user) await adapter.sendReply(user, summary).catch(() => {});
+      }
+
+      // Notify Discord via webhook or first allowed user channel
+      if (config.channels.discord.enabled) {
+        const adapter = gatewayManager.getAdapter("discord");
+        if (config.channels.discord.webhookUrl) {
+          await adapter.sendReply("", summary).catch(() => {});
+        } else if (config.channels.discord.botToken && config.channels.discord.allowedUserIds?.[0]) {
+          await adapter.sendReply(config.channels.discord.allowedUserIds[0], summary).catch(() => {});
+        }
+      }
+
+      // Notify Slack via first allowed channel
+      if (config.channels.slack.enabled && config.channels.slack.botToken && config.channels.slack.allowedUserIds?.[0]) {
+        const adapter = gatewayManager.getAdapter("slack");
+        await adapter.sendReply(config.channels.slack.allowedUserIds[0], summary).catch(() => {});
       }
     } catch {
       // Ignore notification failures

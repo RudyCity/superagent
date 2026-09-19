@@ -63,16 +63,22 @@ export async function handleDaemonCli(args: string[]): Promise<void> {
       const cronIndex = args.indexOf("--cron");
       const promptIndex = args.indexOf("--prompt");
       const wsIndex = args.indexOf("--workspace");
+      const maxRunsIndex = args.indexOf("--max-runs");
+      const tagsIndex = args.indexOf("--tags");
       const isMulti = args.includes("--multi");
+      const notifyGateway = args.includes("--notify-gateway");
 
       const name = nameIndex !== -1 && args[nameIndex + 1] ? args[nameIndex + 1] : "";
       const cron = cronIndex !== -1 && args[cronIndex + 1] ? args[cronIndex + 1] : "";
       const prompt = promptIndex !== -1 && args[promptIndex + 1] ? args[promptIndex + 1] : "";
       const workspace = wsIndex !== -1 && args[wsIndex + 1] ? args[wsIndex + 1] : process.cwd();
+      const maxRuns = maxRunsIndex !== -1 && args[maxRunsIndex + 1] ? parseInt(args[maxRunsIndex + 1], 10) : undefined;
+      const tags = tagsIndex !== -1 && args[tagsIndex + 1] ? args[tagsIndex + 1].split(",").map(t => t.trim()) : undefined;
 
       if (!name || !cron || !prompt) {
         console.log("Error: Missing required arguments for 'daemon add'.");
-        console.log("Usage: superagent daemon add --name <job_name> --cron <cron_expression> --prompt <task_prompt> [--workspace <path>] [--multi]");
+        console.log("Usage: superagent daemon add --name <job_name> --cron <cron_expression> --prompt <task_prompt>");
+        console.log("         [--workspace <path>] [--multi] [--notify-gateway] [--max-runs <n>] [--tags <t1,t2>]");
         process.exit(1);
       }
 
@@ -87,12 +93,18 @@ export async function handleDaemonCli(args: string[]): Promise<void> {
           cronExpression: cron,
           prompt,
           workspace,
-          mode: isMulti ? "multi" : "single"
+          mode: isMulti ? "multi" : "single",
+          notifyGateway,
+          maxRuns: Number.isFinite(maxRuns) ? maxRuns : undefined,
+          tags,
         });
         console.log("Successfully added scheduled daemon job:");
         console.log(`- ID: ${job.id}`);
         console.log(`- Name: ${job.name}`);
         console.log(`- Schedule: ${job.cronExpression} (${describeCron(job.cronExpression)})`);
+        console.log(`- Mode: ${job.mode}`);
+        console.log(`- Notify Gateway: ${job.notifyGateway ? "Yes" : "No"}`);
+        console.log(`- Max Runs: ${job.maxRuns ?? "Unlimited"}`);
         console.log(`- Next Run: ${job.nextRun ? new Date(job.nextRun).toLocaleString() : "Unknown"}`);
         process.exit(0);
       } catch (err: any) {

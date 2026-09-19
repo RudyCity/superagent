@@ -1,3 +1,20 @@
+## [1.5.79] - 2026-09-19
+
+### Added
+
+- **Daemon Slash Command**: Added `/daemon` slash command (`src/core/commands/daemonCommand.ts`) with subcommands `status`, `start`, `stop`, `list`, `add`, `remove`, `enable`, `disable`, and `run` to inspect and manage the autonomous background scheduler from inside terminal sessions.
+- **Gateway Slash & CLI Commands**: Added `/gateway` slash command (`src/core/commands/gatewayCommand.ts`) and `superagent gateway [status|enable|disable]` CLI command (`src/cli.tsx`) for administering the omnichannel messaging gateway.
+- **MCP CLI Subcommands**: Added `mcpCliHandler.ts` handling `superagent mcp list`, `superagent mcp add <name> <command>`, and `superagent mcp remove <name>` directly from the command line.
+- **Setup CLI Command Entry Point**: Added `superagent setup` handler in `src/cli.tsx` providing guided provider setup and redirecting to the login wizard.
+- **Self-Dev Agent Loop Integration**: Added `selfdevAgent.ts` wiring `SelfDevCollector` into `src/core/agent.ts` to automatically record `task_started`, `task_completed`, and `task_failed` lifecycle events into SQLite.
+- **Dynamic Lesson Prompt Injection**: Wired `buildSelfDevInjectionBlock` into `src/core/agent/ContextBuilder.ts` to load approved operational lessons for the active workspace into the budgeted system context.
+- **Omnichannel Daemon Notifications**: Extended `daemonScheduler.ts` to notify Discord, Slack, and Telegram when configured upon job completion.
+- **Extended Daemon CLI Flags**: Added `--notify-gateway`, `--max-runs`, and `--tags` parameters to `superagent daemon add` in `src/core/daemon/daemonCli.ts`.
+
+### Tests
+
+- Added comprehensive unit test coverage in `tests/slashCommandsGap.test.ts` (9 tests passing) validating `/daemon`, `/gateway`, `selfdevAgent`, and CLI command handling.
+
 ## [1.5.78] - 2026-09-19
 
 ### Fixed

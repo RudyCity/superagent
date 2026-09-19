@@ -353,6 +353,14 @@ export class ContextBuilder {
     const promptContextBudget = Math.max(1_000, getSettings().promptContextBudget ?? 8_000);
     const systemContextBudget = Math.round(promptContextBudget * 0.65);
     const dynamicContextBudget = promptContextBudget - systemContextBudget;
+
+    // Load selfdev operational lessons for prompt injection (silent fail)
+    let selfdevLessonsText = "";
+    try {
+      const { buildSelfDevInjectionBlock } = await import("../selfdev/selfdevAgent.js");
+      selfdevLessonsText = await buildSelfDevInjectionBlock(agent.workingDirectory || process.cwd());
+    } catch {}
+
     const budgetedSystemContext = buildBudgetedPromptContext([
       { id: "guidelines", content: guidelinesText, maxTokens: 3_200 },
       { id: "workspace-chain", content: workspaceChainNotice, maxTokens: 900 },
@@ -360,6 +368,7 @@ export class ContextBuilder {
       { id: "shared-memory", content: sharedMemoryNotice, maxTokens: 500 },
       { id: "running-processes", content: processNotice, maxTokens: 300 },
       { id: "developer-hook", content: devHookNotice, maxTokens: 150 },
+      { id: "selfdev-lessons", content: selfdevLessonsText, maxTokens: 400 },
     ], systemContextBudget);
     const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}\n\nEXECUTION CONTEXT:\n- Step limit: ${maxIterationsStr} iterations. Be efficient.\n- Spawn subagents in parallel for independent tasks (>3 files, >2 domains, broad research).\n${singleModeSubagentDirective}${goalModeAddendum}${budgetedSystemContext.text ? `\n${budgetedSystemContext.text}` : ""}`;
 
