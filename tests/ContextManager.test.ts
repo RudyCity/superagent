@@ -314,6 +314,37 @@ describe("SummarizationStrategy fallback metadata", () => {
   });
 });
 
+describe("PinningStrategy fallback metadata", () => {
+  it("flags usedFallback=true and usedLLM=false when no LLM model is configured", async () => {
+    const { PinningStrategy } = await import(
+      "../src/core/context/strategies/PinningStrategy.js"
+    );
+    const strategy = new PinningStrategy({ /* no model */ });
+
+    const messages: Message[] = [];
+    for (let i = 0; i < 20; i++) {
+      messages.push({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: "Z".repeat(150),
+        timestamp: Date.now() + i * 10,
+      });
+    }
+
+    const pinnedIds = new Set<string>();
+    pinnedIds.add(`user:${messages[0].timestamp}:${messages[0].content.slice(0, 64)}`);
+
+    const result = await strategy.execute(messages, {
+      tokenBudget: 500,
+      pinnedMessageIds: pinnedIds,
+      preserveRecent: 5,
+    } as any);
+
+    expect(result.metadata.usedFallback).toBe(true);
+    expect(result.metadata.usedLLM).toBe(false);
+    expect(result.metadata.strategy).toBe("pinning");
+  });
+});
+
 describe("TokenTracker.estimateText (live stream accounting)", () => {
   it("returns 0 for empty input", async () => {
     const { TokenTracker } = await import(

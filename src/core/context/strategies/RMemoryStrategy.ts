@@ -196,6 +196,8 @@ Do NOT automatically resume or reference these past sessions, previous code modi
           messagesAfter: result.length,
           summary: summaryText || "No prior memories recalled.",
           lastCapturedTimestamp: this.lastCapturedTimestamp,
+          usedFallback: false,
+          usedLLM: false,
         },
       };
     } catch (error) {

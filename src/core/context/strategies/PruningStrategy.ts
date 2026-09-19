@@ -130,6 +130,8 @@ export class PruningStrategy implements CompactionStrategy {
         messagesAfter: result.length,
         messagesPruned: toPrune.length,
         summary: emergencySummary,
+        usedFallback: false,
+        usedLLM: false,
       },
     };
   }

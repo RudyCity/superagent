@@ -173,6 +173,8 @@ export class BudgetedPruningStrategy implements CompactionStrategy {
         tokensSaved: Math.max(0, tokensBefore - tokensAfter),
         budget,
         summary,
+        usedFallback: false,
+        usedLLM: false,
       },
     };
   }

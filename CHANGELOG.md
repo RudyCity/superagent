@@ -1,3 +1,18 @@
+## [1.5.88] - 2026-09-19
+
+### Fixed
+
+- **Misleading Compaction Quality Indicator**: Removed confusing "(quality unknown)" suffix displayed during context auto-compaction across all strategies.
+- **Accurate Strategy Metadata Tracking**:
+  - `PinningStrategy`: Added proper tracking of `usedLLM` and `usedFallback` in compaction result metadata. When an LLM model is configured, it tracks whether AI summarization succeeded or fell back to heuristic summary.
+  - `SummarizationStrategy`: Wrapped `generateLLMSummary` to ensure `usedFallback` is reliably set to `true` and `usedLLM` to `false` when LLM generation fails or retries are exhausted.
+  - `PruningStrategy`, `BudgetedPruningStrategy`, and `RMemoryStrategy`: Explicitly initialized `usedFallback: false` and `usedLLM: false` metadata to avoid undefined state lookups.
+  - `app.tsx`: Simplified `fallbackNote` to only display `(⚠️ heuristic fallback — lower quality, LLM unavailable)` when `usedFallback === true`, eliminating erroneous "(quality unknown)" labels.
+
+### Tests
+
+- Added `PinningStrategy fallback metadata` unit test in `tests/ContextManager.test.ts` verifying that `usedFallback: true` and `usedLLM: false` are populated when no LLM is configured.
+
 ## [1.5.87] - 2026-09-19
 
 ### Fixed

@@ -118,10 +118,21 @@ export class PinningStrategy implements CompactionStrategy {
     // Smart AI compact: use LLM summary when model is available, otherwise heuristic fallback.
     const abortSignal = options.abortSignal ?? this.config?.abortSignal;
     let summary: string;
-    if (this.config?.model) {
-      summary = await this.generateLLMSummary(toSummarize, abortSignal);
+    let usedLLM = false;
+    let usedFallback = false;
+    if (toSummarize.length === 0) {
+      summary = "No messages pruned.";
+    } else if (this.config?.model) {
+      try {
+        summary = await this.generateLLMSummary(toSummarize, abortSignal);
+        usedLLM = true;
+      } catch {
+        summary = this.buildPruneSummary(toSummarize);
+        usedFallback = true;
+      }
     } else {
       summary = this.buildPruneSummary(toSummarize);
+      usedFallback = true;
     }
 
     const summaryMessage: Message = {
@@ -149,6 +160,8 @@ export class PinningStrategy implements CompactionStrategy {
         messagesAfter: result.length,
         pinnedCount: pinned.length,
         summary,
+        usedLLM,
+        usedFallback,
       },
     };
   }
@@ -223,7 +236,7 @@ ${truncated}`;
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") throw err;
         attempt++;
-        if (attempt > maxRetries) return this.buildPruneSummary(messages);
+        if (attempt > maxRetries) throw err;
         if (abortSignal?.aborted) throw err as Error;
         await new Promise((resolve) => setTimeout(resolve, baseDelay * Math.pow(2, attempt - 1)));
       }

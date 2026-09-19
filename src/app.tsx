@@ -2578,12 +2578,9 @@ export function App({
       const msgAfter = payload.messagesAfter ?? 0;
       const reducedPct = before > 0 ? Math.round((saved / before) * 100) : 0;
       const usedFallback = (payload.metadata as any)?.usedFallback === true;
-      const usedLLM = (payload.metadata as any)?.usedLLM === true;
       const fallbackNote = usedFallback
         ? " (⚠️ heuristic fallback — lower quality, LLM unavailable)"
-        : usedLLM
-          ? ""
-          : " (quality unknown)";
+        : "";
       addLine({
         type: "system",
         content: `🧹 Context auto-compacted via "${strategy}": ${msgBefore}→${msgAfter} messages, ${before.toLocaleString()}→${after.toLocaleString()} tokens (saved ${saved.toLocaleString()} / ${reducedPct}%)${fallbackNote}`,
