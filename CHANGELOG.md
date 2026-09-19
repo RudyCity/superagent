@@ -1,3 +1,15 @@
+## [1.5.89] - 2026-09-19
+
+### Added
+
+- **Anti-Slop Skills Suite**: Integrated the complete anti-slop skills suite into `.agents/skills/` (and globally in `~/.superagent-r/skills` and `~/.gemini/config/`):
+  - `antislop`: Core filter with 38 rules (R-01 to R-38), liveliness toolkit (ENERGY/RHYTHM/MOTION), and delivery gate.
+  - `antislop-code`: Code comment hygiene removing generic AI banners and boilerplate restatements.
+  - `antislop-copywriting`: Concise, authentic copywriting preventing hype and emoji bullet points.
+  - `antislop-human`: Human accessibility, WCAG contrast verification, keyboard navigation, and interaction states.
+  - `antislop-layoutmobile`: Responsive mobile layouts, touch targets, and reflow patterns.
+  - `antislop-ui`: Purposeful UI design avoiding generic purple gradients, card grids, and artificial glows.
+
 ## [1.5.88] - 2026-09-19
 
 ### Fixed
