@@ -15,54 +15,88 @@ describe("RealtimeAdvisor - Loop Detection & Repeated Read Guard", () => {
     });
   });
 
-  it("warns when reading the same file 3 times without any edits", () => {
-    const readCall: ToolCall[] = [
-      { id: "1", name: "read", args: { filePath: "src/core/agent.ts", limit: 100 } },
+  it("warns when reading the exact same file chunk 3 times non-consecutively without any edits", () => {
+    const chunkCall: ToolCall[] = [
+      { id: "1", name: "read", args: { filePath: "src/core/agent.ts", offset: 1, limit: 100 } },
     ];
-    const readResult: ToolResult[] = [
+    const chunkResult: ToolResult[] = [
       { toolCallId: "1", name: "read", result: "file content 1" },
     ];
+    const otherCall: ToolCall[] = [
+      { id: "other", name: "list_dir", args: { path: "src" } },
+    ];
+    const otherResult: ToolResult[] = [
+      { toolCallId: "other", name: "list_dir", result: "files" },
+    ];
 
-    expect(advisor.evaluateStep(readCall, readResult).action).toBe("pass");
-    const readCall2: ToolCall[] = [
-      { id: "2", name: "read", args: { filePath: "src/core/agent.ts", limit: 200 } },
-    ];
-    const readResult2: ToolResult[] = [
-      { toolCallId: "2", name: "read", result: "file content 2" },
-    ];
-    expect(advisor.evaluateStep(readCall2, readResult2).action).toBe("pass");
+    expect(advisor.evaluateStep(chunkCall, chunkResult).action).toBe("pass");
+    advisor.evaluateStep(otherCall, otherResult);
+    expect(advisor.evaluateStep(chunkCall, chunkResult).action).toBe("pass");
+    advisor.evaluateStep(otherCall, otherResult);
 
-    const readCall3: ToolCall[] = [
-      { id: "3", name: "read", args: { filePath: "src/core/agent.ts", limit: 300 } },
-    ];
-    const readResult3: ToolResult[] = [
-      { toolCallId: "3", name: "read", result: "file content 3" },
-    ];
-    const res3 = advisor.evaluateStep(readCall3, readResult3);
+    const res3 = advisor.evaluateStep(chunkCall, chunkResult);
     expect(res3.action).toBe("warn_agent");
-    expect(res3.message).toContain("read 'agent.ts' 3 times without making any edits");
+    expect(res3.message).toContain("read 'agent.ts' (offset 1, limit 100) 3 times without making any edits");
   });
 
-  it("pauses execution when reading the same file 5 times without any edits", () => {
+  it("pauses execution when reading the exact same file chunk 5 times non-consecutively without any edits", () => {
+    const chunkCall: ToolCall[] = [
+      { id: "read", name: "read", args: { filePath: "src/core/agent.ts", offset: 1, limit: 100 } },
+    ];
+    const chunkResult: ToolResult[] = [
+      { toolCallId: "read", name: "read", result: "content" },
+    ];
+    const otherCall: ToolCall[] = [
+      { id: "other", name: "list_dir", args: { path: "src" } },
+    ];
+    const otherResult: ToolResult[] = [
+      { toolCallId: "other", name: "list_dir", result: "files" },
+    ];
+
     for (let i = 1; i <= 4; i++) {
-      const call: ToolCall[] = [
-        { id: `${i}`, name: "read", args: { filePath: "src/core/agent.ts", offset: i * 50 } },
-      ];
-      const result: ToolResult[] = [
-        { toolCallId: `${i}`, name: "read", result: `content ${i}` },
-      ];
-      advisor.evaluateStep(call, result);
+      advisor.evaluateStep(chunkCall, chunkResult);
+      advisor.evaluateStep(otherCall, otherResult);
     }
 
-    const call5: ToolCall[] = [
-      { id: "5", name: "read", args: { filePath: "src/core/agent.ts", offset: 500 } },
-    ];
-    const result5: ToolResult[] = [
-      { toolCallId: "5", name: "read", result: "content 5" },
-    ];
-    const res5 = advisor.evaluateStep(call5, result5);
+    const res5 = advisor.evaluateStep(chunkCall, chunkResult);
     expect(res5.action).toBe("pause_execution");
-    expect(res5.message).toContain("unprogressed read loop");
+    expect(res5.message).toContain("unprogressed read loop: 'agent.ts' (offset 1, limit 100) was read 5 times");
+  });
+
+  it("allows reading different chunks/ranges of the same file more than 3 times without warning or pausing (sepotong-sepotong)", () => {
+    for (let i = 1; i <= 6; i++) {
+      const call: ToolCall[] = [
+        { id: `${i}`, name: "read", args: { filePath: "src/core/agent.ts", offset: i * 100, limit: 100 } },
+      ];
+      const result: ToolResult[] = [
+        { toolCallId: `${i}`, name: "read", result: `chunk ${i} content` },
+      ];
+      const stepRes = advisor.evaluateStep(call, result);
+      expect(stepRes.action).toBe("pass");
+    }
+    expect(advisor.getHealthScore()).toBe(100);
+  });
+
+  it("allows reading file in chunks using view_file with StartLine/EndLine ranges without false loop detection", () => {
+    const ranges = [
+      { start: 1, end: 250 },
+      { start: 251, end: 500 },
+      { start: 501, end: 750 },
+      { start: 751, end: 1000 },
+    ];
+
+    for (let i = 0; i < ranges.length; i++) {
+      const r = ranges[i];
+      const call: ToolCall[] = [
+        { id: `vf-${i}`, name: "view_file", args: { AbsolutePath: "d:/superagent/src/core/agent.ts", StartLine: r.start, EndLine: r.end } },
+      ];
+      const result: ToolResult[] = [
+        { toolCallId: `vf-${i}`, name: "view_file", result: `lines ${r.start}-${r.end}` },
+      ];
+      const stepRes = advisor.evaluateStep(call, result);
+      expect(stepRes.action).toBe("pass");
+    }
+    expect(advisor.getHealthScore()).toBe(100);
   });
 
   it("resets repeated read counter when an edit/write tool is executed", () => {

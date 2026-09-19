@@ -35,6 +35,7 @@ const WRITE_TOOLS = new Set([
   "apply_patch",
   "patch",
   "edit_file",
+  "edit",
   "write",
   "write_file",
   "superagent_write_file",
@@ -43,29 +44,138 @@ const WRITE_TOOLS = new Set([
 const READ_TOOLS = new Set([
   "read",
   "view_file",
+  "view",
   "cat",
   "read_file",
   "superagent_read_file",
 ]);
 
-function extractReadPaths(tc: ToolCall): string[] {
-  const paths: string[] = [];
-  if (!tc.args || typeof tc.args !== "object") return paths;
+export interface ReadTarget {
+  filePath: string;
+  rangeKey: string;
+  rangeLabel: string;
+  isChunk: boolean;
+}
+
+export function extractReadTargets(tc: ToolCall): ReadTarget[] {
+  const targets: ReadTarget[] = [];
+  if (!tc.args || typeof tc.args !== "object") return targets;
   const args = tc.args as Record<string, unknown>;
 
-  if (typeof args.filePath === "string") paths.push(args.filePath);
-  if (typeof args.path === "string") paths.push(args.path);
-  if (typeof args.AbsolutePath === "string") paths.push(args.AbsolutePath);
+  const globalOffset = args.offset !== undefined ? Number(args.offset) : undefined;
+  const globalLimit = args.limit !== undefined ? Number(args.limit) : undefined;
+  const globalStartLine =
+    args.StartLine !== undefined ? Number(args.StartLine)
+    : args.start_line !== undefined ? Number(args.start_line)
+    : args.startLine !== undefined ? Number(args.startLine)
+    : args.line_start !== undefined ? Number(args.line_start)
+    : undefined;
+  const globalEndLine =
+    args.EndLine !== undefined ? Number(args.EndLine)
+    : args.end_line !== undefined ? Number(args.end_line)
+    : args.endLine !== undefined ? Number(args.endLine)
+    : args.line_end !== undefined ? Number(args.line_end)
+    : undefined;
+  const globalContentOffset = args.ContentOffset !== undefined ? Number(args.ContentOffset) : undefined;
+
+  const buildRange = (
+    offset?: number,
+    limit?: number,
+    startLine?: number,
+    endLine?: number,
+    contentOffset?: number
+  ): { rangeKey: string; rangeLabel: string; isChunk: boolean } => {
+    if (startLine !== undefined || endLine !== undefined) {
+      const s = startLine ?? 1;
+      const e = endLine !== undefined ? String(endLine) : "end";
+      return {
+        rangeKey: `lines:${s}-${e}`,
+        rangeLabel: `lines ${s}-${e}`,
+        isChunk: true,
+      };
+    }
+    if (offset !== undefined || limit !== undefined) {
+      const o = offset ?? 1;
+      const l = limit !== undefined ? String(limit) : "all";
+      return {
+        rangeKey: `offset:${o},limit:${l}`,
+        rangeLabel: `offset ${o}, limit ${l}`,
+        isChunk: true,
+      };
+    }
+    if (contentOffset !== undefined) {
+      return {
+        rangeKey: `contentOffset:${contentOffset}`,
+        rangeLabel: `byte offset ${contentOffset}`,
+        isChunk: true,
+      };
+    }
+    return {
+      rangeKey: "full",
+      rangeLabel: "entire file",
+      isChunk: false,
+    };
+  };
+
+  const addPath = (
+    rawPath: string,
+    itemOffset?: number,
+    itemLimit?: number,
+    itemStartLine?: number,
+    itemEndLine?: number
+  ) => {
+    if (!rawPath || typeof rawPath !== "string") return;
+    const off = itemOffset ?? globalOffset;
+    const lim = itemLimit ?? globalLimit;
+    const sLine = itemStartLine ?? globalStartLine;
+    const eLine = itemEndLine ?? globalEndLine;
+    const { rangeKey, rangeLabel, isChunk } = buildRange(off, lim, sLine, eLine, globalContentOffset);
+    targets.push({
+      filePath: rawPath,
+      rangeKey,
+      rangeLabel,
+      isChunk,
+    });
+  };
+
+  if (typeof args.filePath === "string") addPath(args.filePath);
+  if (typeof args.path === "string") addPath(args.path);
+  if (typeof args.AbsolutePath === "string") addPath(args.AbsolutePath);
 
   if (Array.isArray(args.filePaths)) {
     for (const item of args.filePaths) {
-      if (typeof item === "string") paths.push(item);
-      else if (item && typeof item === "object" && typeof (item as any).path === "string") {
-        paths.push((item as any).path);
+      if (typeof item === "string") {
+        addPath(item);
+      } else if (item && typeof item === "object") {
+        const itemObj = item as Record<string, unknown>;
+        const p =
+          typeof itemObj.path === "string" ? itemObj.path
+          : typeof itemObj.filePath === "string" ? itemObj.filePath
+          : undefined;
+        if (p) {
+          const itemOff = itemObj.offset !== undefined ? Number(itemObj.offset) : undefined;
+          const itemLim = itemObj.limit !== undefined ? Number(itemObj.limit) : undefined;
+          const itemStart =
+            itemObj.StartLine !== undefined ? Number(itemObj.StartLine)
+            : itemObj.start_line !== undefined ? Number(itemObj.start_line)
+            : itemObj.startLine !== undefined ? Number(itemObj.startLine)
+            : undefined;
+          const itemEnd =
+            itemObj.EndLine !== undefined ? Number(itemObj.EndLine)
+            : itemObj.end_line !== undefined ? Number(itemObj.end_line)
+            : itemObj.endLine !== undefined ? Number(itemObj.endLine)
+            : undefined;
+          addPath(p, itemOff, itemLim, itemStart, itemEnd);
+        }
       }
     }
   }
-  return paths;
+
+  return targets;
+}
+
+export function extractReadPaths(tc: ToolCall): string[] {
+  return extractReadTargets(tc).map(t => t.filePath);
 }
 
 const POLLING_STATUS_ACTIONS = new Set(["list", "status", "report", "logs", "violations"]);
@@ -419,16 +529,18 @@ export class RealtimeAdvisor {
           const readWarnThreshold = Math.max(3, warningThreshold);
           const readPauseThreshold = Math.max(5, pauseThreshold);
           for (const rc of readCalls) {
-            const filePaths = extractReadPaths(rc);
-            for (const fp of filePaths) {
-              const norm = fp.trim().toLowerCase();
-              const readCount = (state.recentReads.get(norm) || 0) + 1;
-              state.recentReads.set(norm, readCount);
+            const targets = extractReadTargets(rc);
+            for (const target of targets) {
+              const norm = target.filePath.trim().toLowerCase();
+              const targetKey = `${norm}::${target.rangeKey}`;
+              const readCount = (state.recentReads.get(targetKey) || 0) + 1;
+              state.recentReads.set(targetKey, readCount);
 
               if (readCount >= readPauseThreshold) {
-                const baseName = fp.split(/[\/\\]/).pop() || fp;
-                const suggestion = `Repeatedly reading '${baseName}' without edits. Synthesize your findings and answer the user directly, or make required file edits.`;
-                const message = `Advisor detected an unprogressed read loop: '${baseName}' was read ${readCount} times without any file modifications. Pausing execution. Suggestion: ${suggestion}`;
+                const baseName = target.filePath.split(/[\/\\]/).pop() || target.filePath;
+                const rangeDesc = target.isChunk ? ` (${target.rangeLabel})` : "";
+                const suggestion = `Repeatedly reading '${baseName}'${rangeDesc} without edits. Synthesize your findings and answer the user directly, or make required file edits.`;
+                const message = `Advisor detected an unprogressed read loop: '${baseName}'${rangeDesc} was read ${readCount} times without any file modifications. Pausing execution. Suggestion: ${suggestion}`;
                 const autoCorrectionHint = "[SYSTEM AUTO-CORRECTION SKILL]: File inspection loop limit reached. STOP reading the same files. Synthesize collected data or execute edits.";
 
                 if (this.enableLogging) {
@@ -450,9 +562,10 @@ export class RealtimeAdvisor {
                   autoCorrectionHint,
                 };
               } else if (readCount >= readWarnThreshold) {
-                const baseName = fp.split(/[\/\\]/).pop() || fp;
-                const suggestion = `Avoid re-reading '${baseName}'. Synthesize your answer with existing context or proceed with concrete actions.`;
-                const message = `ADVISOR WARNING: You have read '${baseName}' ${readCount} times without making any edits. Do not repeat identical file inspections. Suggestion: ${suggestion}`;
+                const baseName = target.filePath.split(/[\/\\]/).pop() || target.filePath;
+                const rangeDesc = target.isChunk ? ` (${target.rangeLabel})` : "";
+                const suggestion = `Avoid re-reading '${baseName}'${rangeDesc}. Synthesize your answer with existing context or proceed with concrete actions.`;
+                const message = `ADVISOR WARNING: You have read '${baseName}'${rangeDesc} ${readCount} times without making any edits. Do not repeat identical file inspections. Suggestion: ${suggestion}`;
                 const autoCorrectionHint = "[SYSTEM AUTO-CORRECTION SKILL]: Repeated read warning. Synthesize your findings and reply to the user, or take concrete action instead of reading again.";
 
                 if (this.enableLogging) {

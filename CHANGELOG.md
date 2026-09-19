@@ -1,3 +1,16 @@
+## [1.5.86] - 2026-09-19
+
+### Fixed
+
+- **Advisor Chunked File Read Support**: Resolved issue where `RealtimeAdvisor` falsely flagged agents reading files in chunks/parts ("sepotong-sepotong", e.g. using `offset`/`limit`, `StartLine`/`EndLine`, or `ContentOffset`) as unprogressed read loops after 3-5 reads.
+- **Granular Read Target Tracking**: Enhanced `advisor.ts` with `ReadTarget` and `extractReadTargets()`, indexing file inspections by `${filePath}::${rangeKey}` instead of plain file path so progressive chunked inspections of large files proceed without false warnings or pauses.
+- **Targeted Loop Warnings**: Updated repeated read warning and pause messages to include specific chunk ranges when applicable, preserving loop detection for genuinely repeated identical inspections while allowing normal multi-chunk exploration.
+- **Extended Read and Write Toolsets**: Added `view` to `READ_TOOLS` and `edit` to `WRITE_TOOLS` in `advisor.ts`.
+
+### Tests
+
+- Updated `tests/advisorLoopDetection.test.ts` (6/6 passing) verifying that reading different chunks/ranges of the same file >3 times passes cleanly with 100% health score, while reading identical chunks repeatedly triggers warnings and pauses as expected.
+
 ## [1.5.85] - 2026-09-19
 
 ### Fixed
