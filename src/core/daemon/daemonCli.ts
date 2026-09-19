@@ -35,6 +35,18 @@ export async function handleDaemonCli(args: string[]): Promise<void> {
       break;
     }
 
+    case "top":
+    case "dashboard":
+    case "dash": {
+      const { renderDaemonDashboard } = await import("./daemonScheduler.js");
+      const status = daemonScheduler.getStatus();
+      const jobs = daemonScheduler.listJobs();
+      const dashboard = renderDaemonDashboard(status, jobs, (id) => daemonScheduler.isJobRunning(id));
+      console.log(dashboard);
+      process.exit(0);
+      break;
+    }
+
     case "list": {
       const jobs = daemonScheduler.listJobs();
       if (jobs.length === 0) {
@@ -160,6 +172,7 @@ export async function handleDaemonCli(args: string[]): Promise<void> {
       console.log(`Unknown daemon command: ${subcommand}`);
       console.log("Available daemon commands:");
       console.log("- superagent daemon status");
+      console.log("- superagent daemon top");
       console.log("- superagent daemon start");
       console.log("- superagent daemon stop");
       console.log("- superagent daemon list");

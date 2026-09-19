@@ -216,6 +216,11 @@ export async function synthesizeSkill(request: SkillSynthesisRequest): Promise<S
 
   await saveSynthesizedSkill(skill, targetDir);
 
+  try {
+    const { recordSkillSynthesized } = await import("./skillTracker.js");
+    recordSkillSynthesized(skill.name);
+  } catch {}
+
   return skill;
 }
 

@@ -88,11 +88,42 @@ export const installCommand: SlashCommand = {
 export const skillsCommand: SlashCommand = {
   name: "skills",
   aliases: ["skill"],
-  description: "List all installed agent skills and templates",
+  description: "List all installed agent skills, track stats, or synthesize new skills",
   async execute(args, ctx) {
     const now = Date.now();
     const parts = args.trim().split(/\s+/).filter(Boolean);
     const sub = parts[0]?.toLowerCase();
+
+    if (sub === "stats" || sub === "metrics") {
+      const { getSkillStats } = await import("../skills/skillTracker.js");
+      const workspace = ctx.agent?.workingDirectory || process.cwd();
+      const stats = getSkillStats(workspace);
+
+      const installedCount = stats.filter(s => s.type === "installed").length;
+      const synthCount = stats.filter(s => s.type === "synthesized").length;
+      const totalExecutions = stats.reduce((acc, s) => acc + s.executionCount, 0);
+
+      const lines = [
+        "Agent Skill Statistics & Tracking:",
+        `- Installed Skills    : ${installedCount}`,
+        `- Synthesized Skills  : ${synthCount}`,
+        `- Total Skill Usages  : ${totalExecutions}`,
+        "",
+        "Top Active / Synthesized Skills:",
+      ];
+
+      const topSkills = stats.slice(0, 25);
+      for (const s of topSkills) {
+        const typeTag = s.type === "synthesized" ? "[SYNTH]" : "[BUILTIN]";
+        const lastUsedStr = s.lastUsed ? new Date(s.lastUsed).toLocaleDateString() : "Never";
+        lines.push(
+          `- ${typeTag} ${s.name.padEnd(30)} (used: ${s.executionCount}x | last: ${lastUsedStr})`
+        );
+      }
+
+      ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
+      return;
+    }
 
     if (sub === "synth" || sub === "synthesize") {
       const { synthesizeSkill } = await import("../skills/skillSynthesizer.js");

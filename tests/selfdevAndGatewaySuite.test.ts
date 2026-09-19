@@ -110,6 +110,85 @@ describe("Self-Dev, Gateway & Skills Enhancement Suite", () => {
         startTelegramPolling({ botToken: "", silent: true })
       ).rejects.toThrow("No Telegram bot token configured");
     });
+
+    it("handles missing bot token in startDiscordGateway with descriptive error", async () => {
+      const { startDiscordGateway } = await import("../src/core/gateway/discordPoller.js");
+      await expect(
+        startDiscordGateway({ botToken: "", silent: true })
+      ).rejects.toThrow("No Discord bot token configured");
+    });
+
+    it("handles unconfigured channels in startGatewayPolling with descriptive error", async () => {
+      const { startGatewayPolling } = await import("../src/core/gateway/gatewayPoller.js");
+      await expect(
+        startGatewayPolling({ channels: "invalid-channel", silent: true })
+      ).rejects.toThrow("not recognized or missing required bot tokens");
+    });
+  });
+
+  describe("/selfdev review & /daemon top commands", () => {
+    it("executes /selfdev review subcommand without error", async () => {
+      const cmd = registry.get("selfdev");
+      const ctx = createMockContext();
+      await cmd?.execute("review", ctx as any);
+      const lines = ctx.getLines();
+      expect(lines.length).toBeGreaterThan(0);
+    });
+
+    it("executes /daemon top subcommand and renders dashboard", async () => {
+      await import("../src/core/commands/daemonCommand.js");
+      const cmd = registry.get("daemon");
+      const ctx = createMockContext();
+      await cmd?.execute("top", ctx as any);
+      const lines = ctx.getLines();
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines[0].content).toContain("Superagent Autonomous Daemon - Live Top / Dashboard");
+    });
+
+    it("renders daemon dashboard using renderDaemonDashboard helper", async () => {
+      const { renderDaemonDashboard } = await import("../src/core/daemon/daemonScheduler.js");
+      const dashboard = renderDaemonDashboard(
+        { running: true, pid: 1234, uptime: 60, activeJobsCount: 0 },
+        [
+          {
+            id: "test_job_1",
+            name: "test-task",
+            cronExpression: "0 0 * * *",
+            prompt: "echo test",
+            workspace: process.cwd(),
+            mode: "single",
+            enabled: true,
+            runCount: 2,
+            createdAt: Date.now(),
+          },
+        ]
+      );
+      expect(dashboard).toContain("test_job_1");
+      expect(dashboard).toContain("ACTIVE");
+      expect(dashboard).toContain("test-task");
+    });
+  });
+
+  describe("Skill Execution Tracking & Stats", () => {
+    it("records and retrieves skill execution stats", async () => {
+      const { recordSkillExecution, getSkillStats } = await import("../src/core/skills/skillTracker.js");
+      recordSkillExecution("test-tracker-skill");
+
+      const stats = getSkillStats();
+      const match = stats.find((s) => s.name === "test-tracker-skill");
+      expect(match).toBeDefined();
+      expect(match?.executionCount).toBeGreaterThanOrEqual(1);
+    });
+
+    it("executes /skills stats subcommand and displays metrics", async () => {
+      await import("../src/core/commands/skillCommands.js");
+      const cmd = registry.get("skills");
+      const ctx = createMockContext();
+      await cmd?.execute("stats", ctx as any);
+      const lines = ctx.getLines();
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines[0].content).toContain("Agent Skill Statistics & Tracking:");
+    });
   });
 
   describe("Skill Synthesis Engine", () => {

@@ -213,15 +213,16 @@ if (process.argv[2] === "gateway") {
       break;
     }
     case "poll": {
-      const { startTelegramPolling } = await import("./core/gateway/telegramPoller.js");
-      await startTelegramPolling();
+      const channel = process.argv[4] || "all";
+      const { startGatewayPolling } = await import("./core/gateway/gatewayPoller.js");
+      await startGatewayPolling({ channels: channel });
       // Keep process alive while polling
       await new Promise(() => {});
       break;
     }
     default:
       console.log(`Unknown gateway subcommand: ${subcommand}`);
-      console.log("Available: status | enable | disable | listen [port] | poll");
+      console.log("Available: status | enable | disable | listen [port] | poll [telegram|discord|all]");
       break;
   }
   process.exit(0);

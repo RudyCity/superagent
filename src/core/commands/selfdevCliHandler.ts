@@ -15,6 +15,7 @@ Commands:
   enable                                Enable self-development globally
   disable                               Disable self-development globally
   list [candidate|active|retired]       List lessons for current workspace
+  review                                Interactive review wizard for pending candidate lessons
   distill [max]                         Distill recent session events into candidate lessons
   approve <lesson_id> [version]         Approve a candidate lesson to make it active
   reject <lesson_id> [reason]           Reject and discard a candidate lesson
@@ -119,6 +120,61 @@ export async function handleSelfDevCliCommand(args: string[]): Promise<void> {
         process.exit(0);
       } catch (err: any) {
         console.log(`Failed to list lessons: ${err.message}`);
+        process.exit(1);
+      }
+      break;
+    }
+
+    case "review": {
+      try {
+        const candidates = await reviewService.list(workspace, "candidate");
+        if (candidates.length === 0) {
+          console.log("No candidate lessons pending review for this workspace.");
+          console.log("Run 'superagent selfdev distill' to extract new candidates from recent tasks.");
+          process.exit(0);
+        }
+
+        console.log(`Starting interactive review for ${candidates.length} candidate lesson(s)...\n`);
+        const readline = await import("readline");
+        const rl = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+
+        const question = (query: string): Promise<string> =>
+          new Promise((resolve) => rl.question(query, resolve));
+
+        for (let i = 0; i < candidates.length; i++) {
+          const c = candidates[i];
+          console.log(`------------------------------------------------------------`);
+          console.log(`[${i + 1}/${candidates.length}] Lesson ID: ${c.id} (v${c.version})`);
+          console.log(`Statement: ${c.statement}`);
+          console.log(`Rationale: ${c.rationale || "None"}`);
+          console.log(`Tags     : ${c.tags?.join(", ") || "none"}`);
+          console.log(`------------------------------------------------------------`);
+
+          const answer = (await question("Action: [a]pprove, [r]eject, [s]kip, [q]uit? ")).trim().toLowerCase();
+
+          if (answer === "a" || answer === "approve") {
+            await reviewService.approve(workspace, c.id, c.version, "cli_reviewer");
+            console.log(`✓ Approved and activated ${c.id}.\n`);
+          } else if (answer === "r" || answer === "reject") {
+            const reason = (await question("Rejection reason (optional): ")).trim() || "Rejected in CLI review";
+            await reviewService.reject(workspace, c.id, c.version, reason);
+            console.log(`✗ Rejected and deleted candidate ${c.id}.\n`);
+          } else if (answer === "q" || answer === "quit") {
+            console.log("Review session terminated.");
+            break;
+          } else {
+            console.log(`Skipped ${c.id}.\n`);
+          }
+        }
+
+        rl.close();
+        console.log("Review completed.");
+        process.exit(0);
+      } catch (err: any) {
+        console.log(`Review failed: ${err.message}`);
         process.exit(1);
       }
       break;

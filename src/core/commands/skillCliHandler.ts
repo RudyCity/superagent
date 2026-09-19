@@ -8,6 +8,7 @@ Usage: superagent skill <command> [options]
 
 Commands:
   list, ls                              List all installed and synthesized skills
+  stats, metrics                        Show skill usage counts and execution stats
   synth <task_description> [options]    Synthesize a new reusable skill (SKILL.md)
   help                                  Show this help message
 
@@ -18,6 +19,7 @@ Options for synth:
 
 Examples:
   superagent skill list
+  superagent skill stats
   superagent skill synth "Automate SQLite schema migrations and backups" --name sqlite-backup-helper
   superagent skill synth "Review pull requests and enforce conventional commits" --category review
 `);
@@ -28,6 +30,31 @@ export async function handleSkillCliCommand(args: string[]): Promise<void> {
 
   if (!subcommand || subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
     printSkillHelp();
+    process.exit(0);
+  }
+
+  if (subcommand === "stats" || subcommand === "metrics") {
+    const { getSkillStats } = await import("../skills/skillTracker.js");
+    const workspace = process.cwd();
+    const stats = getSkillStats(workspace);
+
+    const installedCount = stats.filter(s => s.type === "installed").length;
+    const synthCount = stats.filter(s => s.type === "synthesized").length;
+    const totalExecutions = stats.reduce((acc, s) => acc + s.executionCount, 0);
+
+    console.log("Superagent Skill Execution Statistics:");
+    console.log(`- Installed Skills    : ${installedCount}`);
+    console.log(`- Synthesized Skills  : ${synthCount}`);
+    console.log(`- Total Skill Usages  : ${totalExecutions}\n`);
+
+    console.log("Top Active / Synthesized Skills:");
+    const topSkills = stats.slice(0, 30);
+    for (const s of topSkills) {
+      const typeTag = s.type === "synthesized" ? "[SYNTH]" : "[BUILTIN]";
+      const lastUsedStr = s.lastUsed ? new Date(s.lastUsed).toLocaleDateString() : "Never";
+      console.log(`- ${typeTag} ${s.name.padEnd(30)} (used: ${s.executionCount}x | last: ${lastUsedStr})`);
+    }
+
     process.exit(0);
   }
 

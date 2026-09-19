@@ -163,6 +163,25 @@ export const gatewayCommand: SlashCommand = {
         break;
       }
 
+      case "poll": {
+        const channel = parts[1] || "all";
+        ctx.addLine({
+          type: "system",
+          content: [
+            `Gateway Polling Runner (${channel}):`,
+            "To run continuous bot polling in the background without opening HTTP ports:",
+            `  superagent gateway poll ${channel}`,
+            "",
+            "Supported channels:",
+            "  - telegram : Long-polling loop using getUpdates",
+            "  - discord  : Real-time Gateway WebSocket (v10)",
+            "  - all      : Concurrently poll all configured channels",
+          ].join("\n"),
+          timestamp: now,
+        });
+        break;
+      }
+
       default: {
         ctx.addLine({
           type: "system",
@@ -176,9 +195,11 @@ export const gatewayCommand: SlashCommand = {
             "  config                        - Show full gateway config",
             "  config <channel> <key> <val>  - Set a channel configuration value",
             "  sessions                      - Show gateway sessions info",
+            "  poll [channel]                - Show background polling instructions",
             "",
             "Channels: telegram, discord, slack, webhook",
             "Note: Gateway HTTP routes are active when running superagent --server.",
+            "      Direct polling daemon runs via: superagent gateway poll [channel]",
           ].join("\n"),
           timestamp: now,
         });

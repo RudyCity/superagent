@@ -264,6 +264,49 @@ export const selfdevCommand: SlashCommand = {
         break;
       }
 
+      case "review": {
+        try {
+          const candidates = await reviewService.list(workspace, "candidate");
+          if (candidates.length === 0) {
+            ctx.addLine({
+              type: "system",
+              content: [
+                "No candidate lessons pending review for this workspace.",
+                "Run /selfdev distill to extract lessons from recent task trajectories.",
+              ].join("\n"),
+              timestamp: now,
+            });
+            break;
+          }
+
+          const lines = [
+            `Candidate Lessons Pending Review (${candidates.length}):`,
+            "Review each candidate below and approve or reject:",
+          ];
+          for (let i = 0; i < candidates.length; i++) {
+            const c = candidates[i];
+            lines.push(
+              `\n[${i + 1}] ID: ${c.id} (v${c.version})`,
+              `    Statement: ${c.statement}`,
+              `    Rationale: ${c.rationale || "None"}`,
+              `    Tags     : ${c.tags?.join(", ") || "none"}`,
+              `    Approve  : /selfdev approve ${c.id} ${c.version}`,
+              `    Reject   : /selfdev reject ${c.id}`
+            );
+          }
+          lines.push(
+            "",
+            "Tip: You can also use interactive step-by-step CLI review by running:",
+            "  superagent selfdev review"
+          );
+
+          ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
+        } catch (err: any) {
+          ctx.addLine({ type: "error", content: `Failed to load review candidates: ${err.message}`, timestamp: now });
+        }
+        break;
+      }
+
       default: {
         ctx.addLine({
           type: "system",
@@ -275,6 +318,7 @@ export const selfdevCommand: SlashCommand = {
             "  enable                        - Enable self-development globally",
             "  disable                       - Disable self-development globally",
             "  list [candidate|active|ret]   - List lessons for current workspace",
+            "  review                        - Review pending candidate lessons",
             "  distill [max]                 - Distill recent events into candidate lessons",
             "  approve <id> [version]        - Approve candidate lesson to become active",
             "  reject <id> [reason]          - Reject and discard candidate lesson",

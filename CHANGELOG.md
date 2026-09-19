@@ -1,3 +1,17 @@
+## [1.5.82] - 2026-09-19
+
+### Added
+
+- **Discord Gateway WebSocket Polling Daemon**: Implemented `startDiscordGateway()` in `src/core/gateway/discordPoller.ts` connecting directly to Discord Gateway v10 (`wss://gateway.discord.gg/?v=10&encoding=json`) with automatic heartbeat dispatch, identify handshake, message dispatch filtering, agent prompt execution, and chunked response dispatch.
+- **Unified Gateway Polling**: Added `startGatewayPolling()` in `src/core/gateway/gatewayPoller.ts` and updated `superagent gateway poll [telegram|discord|all]` to run Telegram long-polling and Discord Gateway WebSocket listeners simultaneously.
+- **Interactive Self-Dev Review Wizard**: Added `superagent selfdev review` interactive CLI review wizard (`src/core/commands/selfdevCliHandler.ts`) and `/selfdev review` command (`src/core/commands/selfdevCommand.ts`) to step through and approve/reject/skip candidate lessons.
+- **Daemon Live Top / Dashboard View**: Added `renderDaemonDashboard()` and `formatCountdown()` in `src/core/daemon/daemonScheduler.ts`, accessible via `/daemon top` in session (`src/core/commands/daemonCommand.ts`) and `superagent daemon top` via CLI (`src/core/daemon/daemonCli.ts`) to display real-time daemon state, active executions, and job countdowns.
+- **Skill Execution Tracking & Metrics**: Created `src/core/skills/skillTracker.ts` to record skill executions and synthesis timestamps, and added `/skills stats` (`src/core/commands/skillCommands.ts`) and `superagent skill stats` (`src/core/commands/skillCliHandler.ts`) to report installed and synthesized skill usage metrics.
+
+### Tests
+
+- Expanded test suite in `tests/selfdevAndGatewaySuite.test.ts` (17/17 passing) validating Discord and unified gateway polling error handling, `/selfdev review`, `/daemon top`, dashboard rendering, and skill execution tracking.
+
 ## [1.5.81] - 2026-09-19
 
 ### Added

@@ -57,6 +57,21 @@ export const daemonCommand: SlashCommand = {
         break;
       }
 
+      case "top":
+      case "dashboard":
+      case "dash": {
+        const { renderDaemonDashboard } = await import("../daemon/daemonScheduler.js");
+        const status = daemonScheduler.getStatus();
+        const jobs = daemonScheduler.listJobs();
+        const dashboard = renderDaemonDashboard(status, jobs, (id) => daemonScheduler.isJobRunning(id));
+        ctx.addLine({
+          type: "system",
+          content: dashboard,
+          timestamp: now,
+        });
+        break;
+      }
+
       case "list": {
         const jobs = daemonScheduler.listJobs();
         if (jobs.length === 0) {
@@ -228,6 +243,7 @@ export const daemonCommand: SlashCommand = {
             "",
             "Subcommands:",
             "  status                             - Show daemon status and job count",
+            "  top, dash                          - Display live daemon dashboard & job countdowns",
             "  start                              - Start the in-process daemon scheduler",
             "  stop                               - Stop the in-process daemon scheduler",
             "  list                               - List all scheduled jobs",

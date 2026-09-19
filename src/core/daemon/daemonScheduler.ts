@@ -51,6 +51,10 @@ export class DaemonScheduler {
     return this.jobs.get(id) || null;
   }
 
+  public isJobRunning(id: string): boolean {
+    return this.runningJobIds.has(id);
+  }
+
   public addJob(params: {
     name: string;
     cronExpression: string;
@@ -348,6 +352,69 @@ export class DaemonScheduler {
       fs.writeFileSync(this.jobsPath, JSON.stringify(list, null, 2), "utf-8");
     } catch {}
   }
+}
+
+export function formatCountdown(targetMs?: number): string {
+  if (!targetMs) return "N/A";
+  const diff = targetMs - Date.now();
+  if (diff <= 0) return "due now";
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `in ${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `in ${min}m ${sec % 60}s`;
+  const hrs = Math.floor(min / 60);
+  const remMin = min % 60;
+  if (hrs < 24) return `in ${hrs}h ${remMin}m`;
+  const days = Math.floor(hrs / 24);
+  return `in ${days}d ${hrs % 24}h`;
+}
+
+export function renderDaemonDashboard(
+  status: DaemonStatus,
+  jobs: DaemonJob[],
+  isJobRunning?: (id: string) => boolean
+): string {
+  const lines: string[] = [
+    "Superagent Autonomous Daemon - Live Top / Dashboard",
+    "--------------------------------------------------------------------------------",
+    `Daemon State : ${status.running ? "RUNNING" : "STOPPED"} | PID: ${status.pid} | Uptime: ${status.uptime}s`,
+    `Active Exec  : ${status.activeJobsCount} executing | Total Scheduled: ${jobs.length} jobs`,
+    "--------------------------------------------------------------------------------",
+  ];
+
+  if (jobs.length === 0) {
+    lines.push("No scheduled jobs found. Use 'superagent daemon add' or '/daemon add' to schedule tasks.");
+    return lines.join("\n");
+  }
+
+  lines.push(
+    "ID".padEnd(16) +
+    "NAME".padEnd(18) +
+    "STATUS".padEnd(12) +
+    "SCHEDULE".padEnd(16) +
+    "RUNS".padEnd(8) +
+    "NEXT RUN / COUNTDOWN"
+  );
+  lines.push("-".repeat(80));
+
+  for (const job of jobs) {
+    const isExecuting = isJobRunning ? isJobRunning(job.id) : false;
+    const st = isExecuting ? "EXECUTING" : job.enabled ? "ACTIVE" : "PAUSED";
+    const nextStr = !job.enabled ? "paused" : formatCountdown(job.nextRun);
+    const runsStr = `${job.runCount}${job.maxRuns ? `/${job.maxRuns}` : ""}`;
+
+    lines.push(
+      job.id.slice(0, 15).padEnd(16) +
+      job.name.slice(0, 16).padEnd(18) +
+      st.padEnd(12) +
+      job.cronExpression.slice(0, 14).padEnd(16) +
+      runsStr.padEnd(8) +
+      nextStr
+    );
+  }
+
+  lines.push("--------------------------------------------------------------------------------");
+  return lines.join("\n");
 }
 
 export const daemonScheduler = new DaemonScheduler();
