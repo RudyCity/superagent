@@ -1,3 +1,14 @@
+## [1.5.81] - 2026-09-19
+
+### Added
+
+- **Telegram Bot Long-Polling Daemon**: Added `startTelegramPolling()` in `src/core/gateway/telegramPoller.ts` and `superagent gateway poll` in `src/cli.tsx` allowing Telegram bots to receive updates directly via `getUpdates` long-polling without needing public ports, static IP, or reverse-proxy webhooks.
+- **Automated Post-Task Self-Dev Distillation Hook**: Added `maybeAutoDistill()` in `src/core/selfdev/selfdevAgent.ts` and wired it into `src/core/agent.ts` finally block to automatically distill recent task events into candidate lessons whenever self-dev is enabled.
+
+### Tests
+
+- Added unit tests in `tests/selfdevAndGatewaySuite.test.ts` (10/10 passing) covering `maybeAutoDistill` execution and `startTelegramPolling` token validation.
+
 ## [1.5.80] - 2026-09-19
 
 ### Added

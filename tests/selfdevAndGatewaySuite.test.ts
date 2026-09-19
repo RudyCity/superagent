@@ -62,6 +62,12 @@ describe("Self-Dev, Gateway & Skills Enhancement Suite", () => {
       await cmd?.execute("disable", ctx2 as any);
       expect(ctx2.getLines()[0].content).toContain("Self-Development engine disabled.");
     });
+
+    it("runs maybeAutoDistill safely without errors", async () => {
+      const { maybeAutoDistill } = await import("../src/core/selfdev/selfdevAgent.js");
+      const count = await maybeAutoDistill(process.cwd());
+      expect(typeof count).toBe("number");
+    });
   });
 
   describe("Standalone Gateway Listener", () => {
@@ -96,6 +102,13 @@ describe("Self-Dev, Gateway & Skills Enhancement Suite", () => {
 
       // Close server
       await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    it("handles missing bot token in startTelegramPolling with descriptive error", async () => {
+      const { startTelegramPolling } = await import("../src/core/gateway/telegramPoller.js");
+      await expect(
+        startTelegramPolling({ botToken: "", silent: true })
+      ).rejects.toThrow("No Telegram bot token configured");
     });
   });
 

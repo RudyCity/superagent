@@ -130,7 +130,7 @@ Commands:
   preset            Manage model presets (list, use, show)
   session           Manage conversation sessions (list, export, clear --empty, import)
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
-  gateway           Manage the omnichannel messaging gateway (status, enable, disable, listen)
+  gateway           Manage the omnichannel messaging gateway (status, enable, disable, listen, poll)
   mcp               Manage MCP servers (list, add, remove, register)
   selfdev           Manage self-development behavioral lessons (status, list, distill, approve, reject, retire)
   skill             Manage and synthesize reusable skills (list, synth)
@@ -212,9 +212,16 @@ if (process.argv[2] === "gateway") {
       await new Promise(() => {});
       break;
     }
+    case "poll": {
+      const { startTelegramPolling } = await import("./core/gateway/telegramPoller.js");
+      await startTelegramPolling();
+      // Keep process alive while polling
+      await new Promise(() => {});
+      break;
+    }
     default:
       console.log(`Unknown gateway subcommand: ${subcommand}`);
-      console.log("Available: status | enable | disable | listen [port]");
+      console.log("Available: status | enable | disable | listen [port] | poll");
       break;
   }
   process.exit(0);

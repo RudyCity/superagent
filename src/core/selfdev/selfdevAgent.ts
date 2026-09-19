@@ -77,3 +77,50 @@ export async function buildSelfDevInjectionBlock(workspace: string): Promise<str
     return "";
   }
 }
+
+/**
+ * Automatically distills recent task events into candidate lessons in the background.
+ * Runs only when selfdev is enabled. Never throws or blocks execution.
+ */
+export async function maybeAutoDistill(workspace: string): Promise<number> {
+  try {
+    const { getSelfDevConfig } = await import("./settings.js");
+    const cfg = getSelfDevConfig();
+    if (!cfg.enabled) return 0;
+
+    const { getHistoryDb } = await import("../storage/historyDb.js");
+    const { SelfDevEventStore } = await import("./eventStore.js");
+    const { CandidateStore } = await import("./candidateStore.js");
+    const { distillAndStore } = await import("./distiller.js");
+    const { getSelfDevLessonsPath } = await import("../config/paths.js");
+
+    const eventStore = new SelfDevEventStore({
+      workspace,
+      getDb: () => getHistoryDb() as any,
+      config: cfg,
+    });
+
+    const storePath = cfg.storePath || getSelfDevLessonsPath();
+    const candidateStore = new CandidateStore({
+      storePath,
+      workspace,
+      enabled: () => cfg.enabled,
+    });
+
+    const events = eventStore.list({ limit: 50 });
+    if (!events || events.length === 0) return 0;
+
+    const existingLessons = await candidateStore.list();
+    const saved = await distillAndStore({
+      workspace,
+      events,
+      existingLessons,
+      candidateStore,
+      maxCandidates: 5,
+    });
+
+    return saved.length;
+  } catch {
+    return 0;
+  }
+}

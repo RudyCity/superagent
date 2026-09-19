@@ -606,14 +606,16 @@ export class Agent {
       } catch {}
 
       // Record task_completed event for self-dev learning loop (fire-and-forget)
-      import("./selfdev/selfdevAgent.js").then(({ recordSelfDevEvent }) => {
+      import("./selfdev/selfdevAgent.js").then(({ recordSelfDevEvent, maybeAutoDistill }) => {
+        const ws = this.workingDirectory || process.cwd();
         recordSelfDevEvent({
           sessionId: this.sessionId,
-          workspace: this.workingDirectory || process.cwd(),
+          workspace: ws,
           kind: "task_completed",
           summary: `Task completed: ${taskSummary.slice(0, 200)}`,
           tags: [this.tier, this.isMultiAgent ? "multi" : "single"],
         });
+        maybeAutoDistill(ws).catch(() => {});
       }).catch(() => {});
 
       this.updateRootProcessActivity({
