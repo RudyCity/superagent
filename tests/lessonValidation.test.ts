@@ -35,9 +35,11 @@ describe("isValidLesson", () => {
     expect(isValidLesson({ ...candidate(), status: "retired", retiredAt: 300 })).toBe(true);
   });
 
-  it.each([null, undefined, [], "lesson", 1, {}])("rejects non-lessons: %j", value => {
-    expect(isValidLesson(value)).toBe(false);
-  });
+  for (const value of [null, undefined, [], "lesson", 1, {}]) {
+    it(`rejects non-lessons: ${JSON.stringify(value)}`, () => {
+      expect(isValidLesson(value)).toBe(false);
+    });
+  }
 
   it.each([
     { id: " " }, { workspace: "" }, { statement: " " },

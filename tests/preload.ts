@@ -62,6 +62,45 @@ if (typeof vi !== "undefined") {
     (vi as any).mocked = (fn: any) => fn;
   }
 
+  // vi.doMock polyfill
+  if (!(vi as any).doMock) {
+    (vi as any).doMock = (modulePath: any, factory?: any) => {
+      if (typeof mock !== "undefined" && typeof (mock as any).module === "function") {
+        (mock as any).module(modulePath, factory);
+      } else if (typeof vi !== "undefined") {
+        const mockFn = (vi as any)["mock"];
+        if (typeof mockFn === "function") {
+          mockFn.call(vi, modulePath, factory);
+        }
+      }
+      return vi;
+    };
+  }
+
+  // vi.hoisted polyfill
+  if (!(vi as any).hoisted) {
+    (vi as any).hoisted = (factory: any) => factory();
+  }
+
+  // vi.waitFor polyfill
+  if (!(vi as any).waitFor) {
+    (vi as any).waitFor = async function (callback: () => any, options: { timeout?: number; interval?: number } = {}) {
+      const timeout = options.timeout ?? 10000;
+      const interval = options.interval ?? 50;
+      const start = Date.now();
+      let lastError: any;
+      while (Date.now() - start < timeout) {
+        try {
+          return await callback();
+        } catch (err) {
+          lastError = err;
+          await new Promise((resolve) => setTimeout(resolve, interval));
+        }
+      }
+      throw lastError ?? new Error("vi.waitFor timed out");
+    };
+  }
+
   // vi.stubGlobal and vi.unstubAllGlobals polyfills
   const stubbedGlobals = new Map<any, any>();
   if (!(vi as any).stubGlobal) {

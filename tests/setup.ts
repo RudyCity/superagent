@@ -2,16 +2,10 @@ import { beforeEach, afterEach, mock, vi } from "vitest";
 import path from "path";
 import fs from "fs";
 
-// Globally mock @huggingface/transformers to prevent ONNX runtime hangs on Windows under Bun
-if (typeof mock !== "undefined" && typeof mock.module === "function") {
-  mock.module("@huggingface/transformers", () => ({
-    pipeline: () => Promise.resolve(() => ({})),
-  }));
-} else {
-  vi.mock("@huggingface/transformers", () => ({
-    pipeline: () => Promise.resolve(() => ({})),
-  }));
-}
+// Globally mock @huggingface/transformers to prevent ONNX runtime hangs on Windows
+vi.mock("@huggingface/transformers", () => ({
+  pipeline: () => Promise.resolve(() => ({})),
+}));
 
 // Globally enable spying on read-only ESM modules
 vi.mock("execa", { spy: true });
@@ -40,27 +34,12 @@ const workerId = process.env.VITEST_WORKER_ID || `bun-${process.pid}`;
 const workerHomeDir = path.join(process.cwd(), "tests", `temp-home-worker-${workerId}`);
 const workerConfigDir = path.join(workerHomeDir, ".superagent-r");
 
-// Clean up any stale directory from a previous Vitest run at startup
+// Clean up any stale directory from a previous Vitest run for this worker
 if (fs.existsSync(workerHomeDir)) {
   try {
     fs.rmSync(workerHomeDir, { recursive: true, force: true });
   } catch {}
 }
-
-// Clean up any orphaned temp-home-worker-* directories from prior crashed runs
-try {
-  const testsDir = path.join(process.cwd(), "tests");
-  if (fs.existsSync(testsDir)) {
-    const entries = fs.readdirSync(testsDir);
-    for (const entry of entries) {
-      if (entry.startsWith("temp-home-worker-") && entry !== `temp-home-worker-${workerId}`) {
-        try {
-          fs.rmSync(path.join(testsDir, entry), { recursive: true, force: true });
-        } catch {}
-      }
-    }
-  }
-} catch {}
 
 process.env.SUPERAGENT_CONFIG_DIR = workerConfigDir;
 
@@ -134,6 +113,25 @@ if (typeof vi !== "undefined") {
       }
       stubbedGlobals.clear();
       return vi;
+    };
+  }
+
+  // vi.waitFor polyfill
+  if (!(vi as any).waitFor) {
+    (vi as any).waitFor = async function (callback: () => any, options: { timeout?: number; interval?: number } = {}) {
+      const timeout = options.timeout ?? 10000;
+      const interval = options.interval ?? 50;
+      const start = Date.now();
+      let lastError: any;
+      while (Date.now() - start < timeout) {
+        try {
+          return await callback();
+        } catch (err) {
+          lastError = err;
+          await new Promise((resolve) => setTimeout(resolve, interval));
+        }
+      }
+      throw lastError ?? new Error("vi.waitFor timed out");
     };
   }
 

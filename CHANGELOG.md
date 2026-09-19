@@ -1,3 +1,14 @@
+## [1.5.78] - 2026-09-19
+
+### Fixed
+
+- **Test Runner Freeze & Slowness**: Fixed infinite hang in Bun's test runner caused by table-driven `it.each` parsing empty array `[]` arguments in `tests/selfdev/settings.test.ts` and `tests/lessonValidation.test.ts`, converting to idiomatic `for...of` loops and cutting test runtimes from hanging 3+ minutes to under 400ms.
+- **Settings Test Config Isolation**: Replaced fragile `vi.mock` for `paths.js` with direct `process.env.SUPERAGENT_CONFIG_DIR` isolation in `tests/selfdev/settings.test.ts`, preventing unmocked global config pollution.
+- **ESM Namespace Spy Incompatibility**: Replaced frozen module namespace spy on `fsPromises.mkdir` with configurable `fs.promises.mkdir` in `tests/agent.test.ts` to ensure compatibility across Node.js/Vitest ESM and Bun.
+- **Vitest Mock Hoisting Warning**: Elevated `@huggingface/transformers` mock to top-level in `tests/setup.ts`, eliminating AST hoisting de-optimization and startup warnings.
+- **Cross-Worker File Lock Contention**: Removed cross-worker directory deletion loops in `tests/setup.ts` to prevent parallel test workers from locking and fighting over each other's temporary directories on Windows.
+- **Async Test Polling Polyfill**: Added `vi.waitFor` polyfill to `tests/preload.ts` and `tests/setup.ts` for consistent asynchronous condition polling across both Bun and Vitest.
+
 ## [1.5.77] - 2026-09-19
 
 ### Fixed
