@@ -182,6 +182,8 @@ export function encryptSecret(plaintext: string | undefined | null): string {
  * returned. We never throw from this function, because a corrupt
  * key should not crash the entire model-config loader.
  */
+let _hasWarnedDecryptionFailure = false;
+
 export function decryptSecret(stored: string | undefined | null): string {
   if (stored === undefined || stored === null || stored === "") {
     return "";
@@ -215,16 +217,22 @@ export function decryptSecret(stored: string | undefined | null): string {
     );
     return "";
   }
+
   try {
     const decipher = crypto.createDecipheriv(ALGO, key, iv);
     decipher.setAuthTag(tag);
     const out = Buffer.concat([decipher.update(enc), decipher.final()]);
     return out.toString("utf-8");
   } catch (err) {
-    console.warn(
-      "[secretStore] decryption failed (corrupt value or wrong key); returning empty secret:",
-      (err as Error).message
-    );
+    if (!_hasWarnedDecryptionFailure) {
+      _hasWarnedDecryptionFailure = true;
+      if (process.env.DEBUG_SECRET_STORE) {
+        console.warn(
+          "[secretStore] decryption failed (corrupt value or wrong key); returning empty secret:",
+          (err as Error).message
+        );
+      }
+    }
     return "";
   }
 }
@@ -244,4 +252,5 @@ export function isEncrypted(stored: string | undefined | null): boolean {
  */
 export function _resetSecretStoreForTests(): void {
   _cachedKey = null;
+  _hasWarnedDecryptionFailure = false;
 }

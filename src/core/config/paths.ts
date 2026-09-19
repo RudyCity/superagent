@@ -9,6 +9,16 @@ export function getRootConfigDir(): string {
   if (override) {
     return path.resolve(override);
   }
+  if (process.env.VITEST || process.env.NODE_ENV === "test" || process.env.BUN_TEST) {
+    const workerId = process.env.VITEST_WORKER_ID || `test-${process.pid}`;
+    const testDir = path.join(os.tmpdir(), "superagent-test-workers", workerId);
+    if (!fs.existsSync(testDir)) {
+      try {
+        fs.mkdirSync(testDir, { recursive: true });
+      } catch {}
+    }
+    return testDir;
+  }
   return path.join(os.homedir(), ".superagent-r");
 }
 

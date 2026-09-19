@@ -14,6 +14,17 @@ const emergencyRestoreTerminal = () => {
     process.stdin.pause();
   } catch {}
 };
+// Prevent MaxListenersExceededWarning across CLI subsystems (mouse, SIGINT, bridges)
+process.setMaxListeners(50);
+
+// Suppress experimental warnings (e.g. node:sqlite) from cluttering user terminal
+const originalEmitWarning = process.emitWarning;
+process.emitWarning = (warning: any, ...args: any[]) => {
+  if (typeof warning === "string" && warning.includes("SQLite")) return;
+  if (warning && typeof warning === "object" && warning.name === "ExperimentalWarning" && String(warning.message).includes("SQLite")) return;
+  return (originalEmitWarning as any).call(process, warning, ...args);
+};
+
 process.once("uncaughtException", (err) => {
   emergencyRestoreTerminal();
   console.error("\n[FATAL ERROR]:", err);

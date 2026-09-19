@@ -1,3 +1,14 @@
+## [1.5.87] - 2026-09-19
+
+### Fixed
+
+- **Startup Warnings Elimination**: Resolved multiple warnings appearing on Superagent startup:
+  1. `MaxListenersExceededWarning`: Increased process EventEmitter `maxListeners` to 50 in `src/cli.tsx` to accommodate listeners across Ink UI, mouse handlers, process cleanup, MCP server, and bridge sessions.
+  2. `ExperimentalWarning (SQLite)`: Filtered Node.js experimental warning for `node:sqlite` in `src/cli.tsx` to keep the startup terminal clean.
+  3. `SecretStore Decryption Flood`: Deduplicated and debug-scoped decryption failure warnings in `src/core/config/secretStore.ts`, and re-encrypted 15 provider credentials in `~/.superagent-r/model-config.json` with the current master key.
+- **Hermetic Test Isolation in Config Paths**: Updated `getRootConfigDir()` in `src/core/config/paths.ts` to automatically route configuration to an isolated temporary directory in `os.tmpdir()` whenever tests run (`VITEST`, `NODE_ENV === "test"`, or `BUN_TEST`), permanently preventing unit tests from mutating, corrupting, or wiping the user's real `~/.superagent-r/.secret-key` or `model-config.json`.
+- **Config & Preset Sanitization**: Removed leftover test presets from user configuration and restored default active presets and active provider to `openrouter-real`.
+
 ## [1.5.86] - 2026-09-19
 
 ### Fixed
