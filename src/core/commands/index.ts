@@ -12,6 +12,7 @@ import "./mpCommand.js";
 import "./sshCommand.js";
 import "./daemonCommand.js";
 import "./gatewayCommand.js";
+import "./selfdevCommand.js";
 
 
 export { registry } from "./registry.js";

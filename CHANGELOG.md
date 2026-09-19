@@ -1,3 +1,15 @@
+## [1.5.80] - 2026-09-19
+
+### Added
+
+- **Self-Dev Distillation & Review Suite**: Added `/selfdev` slash command (`src/core/commands/selfdevCommand.ts`) and `superagent selfdev` CLI handler (`src/core/commands/selfdevCliHandler.ts`) supporting `status`, `list`, `distill`, `approve`, `reject`, `retire`, `enable`, and `disable` to complete the full autonomous self-development loop.
+- **Standalone Omnichannel Gateway Listener**: Added `startGatewayServer()` (`src/core/gateway/gatewayServer.ts`) and `superagent gateway listen [port]` CLI command (`src/cli.tsx`) to run a dedicated, standalone HTTP gateway listener with webhook endpoints for Telegram, Discord, Slack, and generic webhooks without requiring desktop server mode.
+- **Autonomous Skill Synthesis Suite**: Added `/skills synth <task_description>` and `/skills synth current` in `src/core/commands/skillCommands.ts` and `superagent skill [list|synth]` CLI command (`src/core/commands/skillCliHandler.ts`) to extract workflow patterns and synthesize reusable `SKILL.md` documents directly from conversations or manual prompts.
+
+### Tests
+
+- Added comprehensive unit test coverage in `tests/selfdevAndGatewaySuite.test.ts` (8/8 tests passing) validating `/selfdev` command dispatching, standalone gateway HTTP server lifecycle and health checks, and skill markdown synthesis and validation.
+
 ## [1.5.79] - 2026-09-19
 
 ### Added

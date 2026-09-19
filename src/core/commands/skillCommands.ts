@@ -89,15 +89,84 @@ export const skillsCommand: SlashCommand = {
   name: "skills",
   aliases: ["skill"],
   description: "List all installed agent skills and templates",
-  execute(args, ctx) {
+  async execute(args, ctx) {
     const now = Date.now();
+    const parts = args.trim().split(/\s+/).filter(Boolean);
+    const sub = parts[0]?.toLowerCase();
+
+    if (sub === "synth" || sub === "synthesize") {
+      const { synthesizeSkill } = await import("../skills/skillSynthesizer.js");
+      const workspace = ctx.agent?.workingDirectory || process.cwd();
+
+      let taskDescription = parts.slice(1).join(" ").trim();
+      let trajectory: any[] = [];
+
+      if (taskDescription === "current" || !taskDescription) {
+        // Extract trajectory from active conversation
+        const messages = ctx.agent?.getHistory?.()?.getMessages?.() || [];
+        trajectory = messages.map((m: any) => ({
+          role: m.role,
+          content: typeof m.content === "string" ? m.content : "",
+          toolName: m.toolName,
+          toolArgs: m.toolArgs,
+          toolResult: m.toolResult,
+          error: m.error,
+        }));
+        const firstUserMsg = messages.find((m: any) => m.role === "user");
+        const userPrompt = typeof firstUserMsg?.content === "string" ? firstUserMsg.content : "Current conversation workflow";
+        taskDescription = taskDescription === "current" ? userPrompt : taskDescription;
+      }
+
+      if (!taskDescription) {
+        ctx.addLine({
+          type: "error",
+          content: "Usage: /skills synth <task_description>\nOr: /skills synth current (to synthesize from active session)",
+          timestamp: now,
+        });
+        return;
+      }
+
+      ctx.addLine({
+        type: "system",
+        content: `Synthesizing new reusable skill for: "${taskDescription.slice(0, 80)}"...`,
+        timestamp: now,
+      });
+
+      try {
+        const skill = await synthesizeSkill({
+          taskDescription,
+          workspace,
+          conversationTrajectory: trajectory.length > 0 ? trajectory : undefined,
+        });
+
+        ctx.addLine({
+          type: "system",
+          content: [
+            `Skill synthesized successfully: ${skill.name}`,
+            `- File Path   : ${skill.filePath}`,
+            `- Description : ${skill.description}`,
+            `- Category    : ${skill.category}`,
+            "The skill is saved in .agents/skills/ and immediately available to Superagent.",
+          ].join("\n"),
+          timestamp: Date.now(),
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to synthesize skill: ${err.message}`,
+          timestamp: Date.now(),
+        });
+      }
+      return;
+    }
+
     const isMulti = ctx.agent?.isMultiAgent || false;
     const allSkills = getInstalledSkills();
     const skills = filterSkillsByMode(allSkills, isMulti);
     if (skills.length === 0) {
       ctx.addLine({
         type: "system",
-        content: "No skills installed. Use /install <owner/repo> to install skills.",
+        content: "No skills installed. Use /install <owner/repo> or /skills synth <description> to create skills.",
         timestamp: now,
       });
       return;

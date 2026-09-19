@@ -130,8 +130,10 @@ Commands:
   preset            Manage model presets (list, use, show)
   session           Manage conversation sessions (list, export, clear --empty, import)
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
-  gateway           Manage the omnichannel messaging gateway (status, enable, disable)
+  gateway           Manage the omnichannel messaging gateway (status, enable, disable, listen)
   mcp               Manage MCP servers (list, add, remove, register)
+  selfdev           Manage self-development behavioral lessons (status, list, distill, approve, reject, retire)
+  skill             Manage and synthesize reusable skills (list, synth)
 
 Options:
   -r, --resume            Resume the last active session
@@ -201,11 +203,32 @@ if (process.argv[2] === "gateway") {
       gatewayManager.updateConfig({ enabled: false });
       console.log("Gateway disabled.");
       break;
+    case "listen":
+    case "start": {
+      const port = parseInt(process.argv[4], 10) || 7890;
+      const { startGatewayServer } = await import("./core/gateway/gatewayServer.js");
+      await startGatewayServer({ port });
+      // Keep process alive while listening
+      await new Promise(() => {});
+      break;
+    }
     default:
       console.log(`Unknown gateway subcommand: ${subcommand}`);
-      console.log("Available: status | enable | disable");
+      console.log("Available: status | enable | disable | listen [port]");
       break;
   }
+  process.exit(0);
+}
+
+if (process.argv[2] === "selfdev") {
+  const { handleSelfDevCliCommand } = await import("./core/commands/selfdevCliHandler.js");
+  await handleSelfDevCliCommand(process.argv.slice(3));
+  process.exit(0);
+}
+
+if (process.argv[2] === "skill" || process.argv[2] === "skills") {
+  const { handleSkillCliCommand } = await import("./core/commands/skillCliHandler.js");
+  await handleSkillCliCommand(process.argv.slice(3));
   process.exit(0);
 }
 

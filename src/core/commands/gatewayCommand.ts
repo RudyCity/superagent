@@ -35,8 +35,8 @@ export const gatewayCommand: SlashCommand = {
           "",
           `Total received: ${status.totalMessagesReceived}  sent: ${status.totalMessagesSent}  errors: ${status.totalErrors}`,
           "",
-          "Tip: Webhooks are routed via /api/gateway/* when running in server mode (superagent --server).",
-          "Configure channel credentials via /gateway config telegram <botToken> or edit ~/.superagent-r/gateway-config.json."
+          "Tip: Webhooks are routed via /api/gateway/* when running in server mode (superagent --server) or standalone listener (superagent gateway listen [port]).",
+          "Configure channel credentials via /gateway config <channel> <key> <value> or edit ~/.superagent-r/gateway-config.json."
         );
         ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
         break;
