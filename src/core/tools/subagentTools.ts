@@ -15,6 +15,7 @@ import { resolveCarriageReturns } from "../../utils/text.js";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { isDestructiveCommand } from "../requestClassifier.js";
 
 /** Directory where subagent JSON reports are persisted. */
 const SUBAGENT_REPORTS_DIR = path.join(os.homedir(), ".superagent-r", "subagents");
@@ -569,10 +570,10 @@ export const invokeSubagentTool: Tool = {
           }
         }
       },
-      // Permission: block destructive commands, auto-approve everything else
+      // Permission: block destructive commands via Senopati Neural Guardrail, auto-approve everything else
       async (toolCall, _desc) => {
         const cmd = (toolCall.args.command as string || "").trim();
-        const isDestructive = /(rm\s+-rf\s+[\/~]|git\s+reset\s+--hard|git\s+clean\s+-fd|mkfs|dd\s+if=)/i.test(cmd);
+        const isDestructive = await isDestructiveCommand(cmd);
         return !isDestructive;
       },
       async (question, options = []) => {
@@ -932,9 +933,10 @@ export const sendMessageTool: Tool = {
             }
           }
         },
+        // Permission: block destructive commands via Senopati Neural Guardrail, auto-approve everything else
         async (toolCall, _desc) => {
           const cmd = (toolCall.args.command as string || "").trim();
-          const isDestructive = /(rm\s+-rf\s+[\/~]|git\s+reset\s+--hard|git\s+clean\s+-fd|mkfs|dd\s+if=)/i.test(cmd);
+          const isDestructive = await isDestructiveCommand(cmd);
           return !isDestructive;
         },
         async (question, options = []) => {

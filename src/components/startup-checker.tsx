@@ -298,21 +298,15 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
         }
       };
 
-      // 11. Request Classifier Model
+      // 11. Request Classifier Model (Native Senopati System-1 ONNX)
       const checkClassifier = async () => {
         if (settings.classifierEnabled === false) return;
-        const status = checkLocalModelDownloadStatus("Sharjeelbaig/Supra-Router-51M-ONNX");
-        if (status.includes("DOWNLOADED") || status.includes("LOADED")) {
+        updateTask("classifierModel", { status: "checking" });
+        try {
+          await warmUpClassifier();
           updateTask("classifierModel", { status: "ready" });
-          warmUpClassifier().catch(() => {});
-        } else {
-          updateTask("classifierModel", { status: "checking" });
-          try {
-            await warmUpClassifier();
-            updateTask("classifierModel", { status: "ready" });
-          } catch {
-            updateTask("classifierModel", { status: "failed" });
-          }
+        } catch {
+          updateTask("classifierModel", { status: "failed" });
         }
       };
 

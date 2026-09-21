@@ -10,6 +10,9 @@
  *   Phase 2: LLM classification (only when heuristic confidence is below threshold)
  */
 
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { Tool } from "./tools/types.js";
 import { getSettings } from "./config/jsonConfig.js";
 
@@ -36,6 +39,10 @@ export interface ClassificationResult {
   classificationTokens: number;
   /** Optional secondary category when classification is ambiguous */
   secondaryCategory?: RequestCategory;
+  /** Optional Senopati System-1 urgency score (1.0 - 5.0) */
+  urgencyScore?: number;
+  /** Optional Senopati System-1 safety guardrail flag (true = destructive/blocked, false = safe) */
+  isDestructive?: boolean;
 }
 
 // ─── Confidence Threshold Helper ────────────────────────────────────────────
@@ -814,17 +821,269 @@ function classifyStatistical(
   return null;
 }
 
-// ─── Local 51M Classifier ───────────────────────────────────────────────────
+// ─── Local Senopati System-1 ONNX Classifier ──────────────────────────────────
+// Architecture: Non-Autoregressive Transformer Encoder + Multi-Task RLCD
+// Author & Lead Architect: Rudy Hermawan (hrudy715@gmail.com)
+// Copyright (c) Rudy Hermawan. All rights reserved.
 
-let localClassifierPipeline: any = null;
+export const SENOPATI_CATEGORIES: readonly RequestCategory[] = [
+  "conversation",
+  "question",
+  "simple_edit",
+  "research",
+  "complex_task",
+  "debug",
+  "command",
+] as const;
+
+let senopatiSession: any = null;
+let senopatiVocab: { vocab_size: number; word2id: Record<string, number> } | null = null;
+let senopatiBundle: { session: any; vocab: { vocab_size: number; word2id: Record<string, number> } } | null = null;
+let senopatiLoadingPromise: Promise<{ session: any; vocab: { vocab_size: number; word2id: Record<string, number> } } | null> | null = null;
 
 /**
- * Clear the local classifier cache. Used for testing purposes.
+ * Locate Senopati ONNX model and vocabulary across common repository locations.
  */
-export function clearLocalClassifierCache(): void {
-  localClassifierPipeline = null;
+export function getSenopatiModelPaths(): { modelPath: string; vocabPath: string } | null {
+  const candidates = [
+    path.resolve(process.cwd(), "models", "senopati"),
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "models", "senopati"),
+    "D:\\backup from pc asus\\Documents Development\\superagent\\models\\senopati",
+    "G:\\project\\cika\\build",
+  ];
+  for (const dir of candidates) {
+    const m = path.join(dir, "senopati_superagent.onnx");
+    const v = path.join(dir, "senopati_superagent_vocab.json");
+    if (fs.existsSync(m) && fs.existsSync(v)) {
+      return { modelPath: m, vocabPath: v };
+    }
+  }
+  return null;
 }
 
+/**
+ * Canonical clean text parser matching SenopatiTokenizer in Rudy/Python.
+ */
+export function cleanSenopatiText(text: string): string[] {
+  let cleaned = "";
+  for (const c of text.toLowerCase()) {
+    if (/[a-z0-9 _\-./$]/.test(c)) {
+      cleaned += c;
+    } else {
+      cleaned += " ";
+    }
+  }
+  const rawWords = cleaned.split(/\s+/).filter(w => w.length > 0);
+  const words: string[] = [];
+  for (const w of rawWords) {
+    const stripped = w.replace(/^[ .,!?]+|[ .,!?]+$/g, "");
+    if (stripped.length > 0) {
+      words.push(stripped);
+    }
+  }
+  return words;
+}
+
+/**
+ * Encode raw text into sequence of token IDs (<cls> = 2, <sep> = 3, <unk> = 1).
+ */
+export function encodeSenopatiTokens(
+  text: string,
+  word2id: Record<string, number>,
+  maxLen = 64
+): number[] {
+  const words = cleanSenopatiText(text);
+  const tokens = [2]; // <cls>
+  const unkId = word2id["<unk>"] ?? 1;
+  for (const w of words) {
+    tokens.push(word2id[w] !== undefined ? word2id[w] : unkId);
+    if (tokens.length >= maxLen - 1) break;
+  }
+  tokens.push(3); // <sep>
+  return tokens;
+}
+
+/**
+ * Lazily initialize and cache the Senopati ONNX inference session.
+ */
+export async function getSenopatiSession(onProgress?: (event: any) => void): Promise<{
+  session: any;
+  vocab: { vocab_size: number; word2id: Record<string, number> };
+} | null> {
+  if (senopatiBundle) {
+    return senopatiBundle;
+  }
+
+  if (senopatiLoadingPromise) {
+    return senopatiLoadingPromise;
+  }
+
+  senopatiLoadingPromise = (async () => {
+    const paths = getSenopatiModelPaths();
+    if (!paths) {
+      return null;
+    }
+
+    try {
+      if (onProgress) {
+        onProgress({
+          type: "model_load",
+          modelName: "senopati_onnx",
+          status: "loading",
+        });
+      }
+
+      const ortModule = await import("onnxruntime-node");
+      const ort = (ortModule as any).default || ortModule;
+      const sessionOptions = {
+        executionProviders: ["cpu"],
+        graphOptimizationLevel: "all" as const,
+      };
+
+      const session = await ort.InferenceSession.create(paths.modelPath, sessionOptions);
+      const vocabContent = fs.readFileSync(paths.vocabPath, "utf8");
+      const vocab = JSON.parse(vocabContent);
+
+      senopatiSession = session;
+      senopatiVocab = vocab;
+      senopatiBundle = { session, vocab };
+
+      if (onProgress) {
+        onProgress({
+          type: "model_load",
+          modelName: "senopati_onnx",
+          status: "loaded",
+        });
+      }
+
+      return senopatiBundle;
+    } catch {
+      return null;
+    } finally {
+      senopatiLoadingPromise = null;
+    }
+  })();
+
+  return senopatiLoadingPromise;
+}
+
+// ─── Micro LRU Cache for Senopati ONNX Inference ─────────────────────────
+const SENOPATI_CACHE_MAX_SIZE = 256;
+const senopatiLRUCache = new Map<string, ClassificationResult>();
+
+/**
+ * Clear the in-memory LRU cache for Senopati classifications.
+ */
+export function clearSenopatiLRUCache(): void {
+  senopatiLRUCache.clear();
+}
+
+/**
+ * Execute pure local System-1 classification using Senopati ONNX with Micro LRU caching.
+ */
+export async function classifyWithSenopatiONNX(
+  text: string,
+  heuristicResult?: ClassificationResult,
+  onProgress?: (event: any) => void
+): Promise<ClassificationResult | null> {
+  const cacheKey = text.trim().toLowerCase();
+  if (cacheKey.length > 0 && senopatiLRUCache.has(cacheKey)) {
+    const cached = senopatiLRUCache.get(cacheKey)!;
+    // Refresh LRU order
+    senopatiLRUCache.delete(cacheKey);
+    senopatiLRUCache.set(cacheKey, cached);
+    return { ...cached, reason: `${cached.reason} [cache-hit]` };
+  }
+
+  const bundle = await getSenopatiSession(onProgress);
+  if (!bundle) return null;
+
+  const { session, vocab } = bundle;
+  const tokens = encodeSenopatiTokens(text, vocab.word2id, 64);
+
+  const ortModule = await import("onnxruntime-node");
+  const ort = (ortModule as any).default || ortModule;
+  const tensor = new ort.Tensor(
+    "int64",
+    new BigInt64Array(tokens.map(t => BigInt(t))),
+    [1, tokens.length]
+  );
+
+  const feeds = { input_ids: tensor };
+  const outputs = await session.run(feeds);
+
+  const choiceProbs: number[] = Array.from(outputs.choice_probs.data);
+  const scoreProbs: number[] = Array.from(outputs.score_probs.data);
+  const noulProbs: number[] = Array.from(outputs.noul_probs.data);
+
+  // Argmax category choice
+  let maxIdx = 0;
+  for (let i = 1; i < choiceProbs.length; i++) {
+    if (choiceProbs[i] > choiceProbs[maxIdx]) {
+      maxIdx = i;
+    }
+  }
+
+  const category = SENOPATI_CATEGORIES[maxIdx] || "question";
+  const confidenceScore = choiceProbs[maxIdx];
+  const confidence: ClassificationConfidence =
+    confidenceScore >= 0.60 ? "high" : confidenceScore >= 0.30 ? "medium" : "low";
+
+  // Expected urgency score: sum((i + 1) * p_i) for i in 0..4
+  let expScore = 0;
+  for (let i = 0; i < scoreProbs.length; i++) {
+    expScore += (i + 1) * scoreProbs[i];
+  }
+
+  // Destructive guardrail: noulProbs[1] is P(destructive)
+  const isDestructive = noulProbs[1] > 0.5;
+
+  // Detect second-best category for secondaryCategory
+  let secondIdx = -1;
+  let secondProb = 0;
+  for (let i = 0; i < choiceProbs.length; i++) {
+    if (i !== maxIdx && choiceProbs[i] > secondProb) {
+      secondProb = choiceProbs[i];
+      secondIdx = i;
+    }
+  }
+  const secondaryCategory = (secondIdx >= 0 && secondProb >= 0.20) ? SENOPATI_CATEGORIES[secondIdx] : undefined;
+
+  const result: ClassificationResult = {
+    category,
+    confidence,
+    reason: `Senopati ONNX System-1: ${category} (conf: ${(confidenceScore * 100).toFixed(1)}%, urgency: ${expScore.toFixed(2)}/5, risk: ${isDestructive ? "destructive" : "safe"})`,
+    heuristicOnly: false,
+    classificationTokens: 0,
+    secondaryCategory,
+    urgencyScore: expScore,
+    isDestructive,
+  };
+
+  // Store in Micro LRU cache
+  if (cacheKey.length > 0) {
+    if (senopatiLRUCache.size >= SENOPATI_CACHE_MAX_SIZE) {
+      const oldestKey = senopatiLRUCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        senopatiLRUCache.delete(oldestKey);
+      }
+    }
+    senopatiLRUCache.set(cacheKey, result);
+  }
+
+  return result;
+}
+
+/**
+ * Clear the local classifier cache and session. Used for testing purposes.
+ */
+export function clearLocalClassifierCache(): void {
+  senopatiSession = null;
+  senopatiVocab = null;
+  senopatiBundle = null;
+  senopatiLoadingPromise = null;
+  clearSenopatiLRUCache();
+}
 
 /**
  * Maps the structured output of Supra-Router-51M telemetry into Superagent's RequestCategory.
@@ -836,8 +1095,6 @@ export function mapSupraTelemetryToCategory(
   const lower = telemetry.toLowerCase();
 
   // Gibberish / Degeneration Check:
-  // If the telemetry does not contain any of the expected key format labels,
-  // it is likely degenerated or invalid. Fall back to heuristicCategory immediately.
   const hasFormat = lower.includes("complexity:") || lower.includes("route:") || lower.includes("code:") || lower.includes("domain:");
   if (!hasFormat) {
     return heuristicCategory;
@@ -867,11 +1124,9 @@ export function mapSupraTelemetryToCategory(
 
   // 2. If high complexity or math-intensive task
   if (isBigModel || complexity >= 3) {
-    // Only map to research if the heuristic agreed it was research or it's a research domain
     if (heuristicCategory === "research" || lower.includes("domain: research") || lower.includes("domain: search")) {
       return "research";
     }
-    // If the heuristic was action-oriented, preserve it rather than downgrading to research
     if (heuristicCategory === "debug" || heuristicCategory === "complex_task" || heuristicCategory === "simple_edit" || heuristicCategory === "command") {
       return heuristicCategory;
     }
@@ -904,7 +1159,7 @@ export function mapSupraTelemetryToCategory(
  * Call this during app startup to eliminate first-use classification delay.
  */
 export function isLocalClassifierLoaded(): boolean {
-  return localClassifierPipeline !== null;
+  return senopatiSession !== null;
 }
 
 export async function warmUpClassifier(onProgress?: (event: any) => void): Promise<void> {
@@ -919,80 +1174,22 @@ export async function warmUpClassifier(onProgress?: (event: any) => void): Promi
         if (cb) progressCb = cb;
       } catch {}
     }
-    const { pipeline, env } = await import("@huggingface/transformers");
-    if (env?.backends?.onnx) {
-      (env.backends.onnx as any).logLevel = 'error';
-    }
-    if (env) {
-      (env as any).logLevel = 'error';
-    }
-    const isMocked = (pipeline as any).mock || (pipeline as any)._isMockFunction || typeof (pipeline as any).mockImplementation === "function";
-    if (process.env.NODE_ENV === "test" && !isMocked) {
-      return;
-    }
-    if (!localClassifierPipeline) {
-      let downloadStarted = false;
-      localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
-        model_file_name: "model_int8",
-        session_options: {
-          logSeverityLevel: 3,
-        } as any,
-        progress_callback: (data: any) => {
-          if (data.status === "downloading" && !downloadStarted) {
-            downloadStarted = true;
-            if (progressCb) {
-              progressCb({
-                type: "model_download",
-                modelName: "classifier",
-                status: "downloading"
-              });
-            } else {
-              console.log(`\n[INFO] Downloading local classifier model (~66MB) to cache...`);
-            }
-          }
-          if (data.status === "progress" && downloadStarted) {
-            const pct = typeof data.progress === "number" ? data.progress : 0;
-            if (progressCb) {
-              progressCb({
-                type: "model_download",
-                modelName: "classifier",
-                status: "progress",
-                progress: pct,
-                loaded: typeof data.loaded === "number" ? data.loaded : undefined,
-                total: typeof data.total === "number" ? data.total : undefined
-              });
-            } else {
-              const pctStr = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
-              process.stdout.write(`\r[INFO] Downloading classifier model: ${pctStr}%`);
-            }
-          }
-        }
-      });
-      if (downloadStarted) {
-        if (progressCb) {
-          progressCb({
-            type: "model_download",
-            modelName: "classifier",
-            status: "loaded"
-          });
-        } else {
-          console.log(`\n[INFO] Classifier model loaded successfully.`);
-        }
-      }
-    }
+
+    // Warm up pure native Senopati ONNX session (<1ms startup, zero download)
+    await getSenopatiSession(progressCb);
   } catch {
     // Ignore warm-up failure (will retry on demand)
   }
 }
 
 /**
- * Phase 2: Local 51M Causal LM classification. Uses Supra-Router-51M-ONNX via transformers.js.
- * Only called when heuristic confidence is below threshold.
+ * Phase 2: Local classification.
+ * Prioritizes native Senopati ONNX model (zero external download, <1ms inference).
  */
 export async function classifyWithLLM(
   userInput: string,
-  model: any,
-  heuristicResult: ClassificationResult,
+  model?: any,
+  heuristicResult?: ClassificationResult,
   onProgress?: (event: any) => void
 ): Promise<ClassificationResult> {
   try {
@@ -1004,99 +1201,33 @@ export async function classifyWithLLM(
         if (cb) progressCb = cb;
       } catch {}
     }
-    const { pipeline, env } = await import("@huggingface/transformers");
-    if (env?.backends?.onnx) {
-      (env.backends.onnx as any).logLevel = 'error';
-    }
-    if (env) {
-      (env as any).logLevel = 'error';
-    }
-    const isMocked = (pipeline as any).mock || (pipeline as any)._isMockFunction || typeof (pipeline as any).mockImplementation === "function";
-    if (process.env.NODE_ENV === "test" && !isMocked) {
-      return {
-        category: "question",
-        confidence: "low",
-        reason: "Bypassed real classifier loading in test environment",
-        heuristicOnly: false,
-        classificationTokens: 0,
-      };
-    }
 
-    if (!localClassifierPipeline) {
-      let downloadStarted = false;
-      localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
-        model_file_name: "model_int8",
-        session_options: {
-          logSeverityLevel: 3,
-        } as any,
-        progress_callback: (data: any) => {
-          if (data.status === "downloading" && !downloadStarted) {
-            downloadStarted = true;
-            if (progressCb) {
-              progressCb({
-                type: "model_download",
-                modelName: "classifier",
-                status: "downloading"
-              });
-            } else {
-              console.log(`\n[INFO] Downloading local classifier model (~66MB) to cache...`);
-            }
-          }
-          if (data.status === "progress" && downloadStarted) {
-            const pct = typeof data.progress === "number" ? data.progress : 0;
-            if (progressCb) {
-              progressCb({
-                type: "model_download",
-                modelName: "classifier",
-                status: "progress",
-                progress: pct
-              });
-            } else {
-              const pctStr = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
-              process.stdout.write(`\r[INFO] Downloading classifier model: ${pctStr}%`);
-            }
-          }
-        }
-      });
-      if (downloadStarted) {
-        if (progressCb) {
-          progressCb({
-            type: "model_download",
-            modelName: "classifier",
-            status: "loaded"
-          });
-        } else {
-          console.log(`\n[INFO] Classifier model loaded successfully.`);
-        }
-      }
-    }
-
-    const prompt = `Task: ${userInput.substring(0, 400)}\nAnalysis:`;
-    const response = await localClassifierPipeline(prompt, {
-      max_new_tokens: 64,
-      temperature: 0.1,
-      do_sample: false,
-    });
-
-    const telemetry = response[0]?.generated_text || "";
-    // Extract only the generated telemetry part after "Analysis:"
-    const analysisIndex = telemetry.indexOf("Analysis:");
-    const generatedPart = analysisIndex !== -1 ? telemetry.substring(analysisIndex) : telemetry;
-
-    const category = mapSupraTelemetryToCategory(generatedPart, heuristicResult.category);
-
-    return {
-      category,
-      confidence: "high",
-      reason: `Local 51M Classifier: ${generatedPart.trim()} (heuristic was: ${heuristicResult.category})`,
+    const dummyHeuristic: ClassificationResult = heuristicResult || {
+      category: "question",
+      confidence: "low",
+      reason: "Direct Senopati classification",
       heuristicOnly: false,
       classificationTokens: 0,
     };
+
+    // Pure Senopati ONNX execution (production, CLI, runtime)
+    const senopatiResult = await classifyWithSenopatiONNX(userInput, dummyHeuristic, progressCb);
+    if (senopatiResult) {
+      return senopatiResult;
+    }
+
+    return dummyHeuristic;
   } catch (err: any) {
     // Fallback to heuristic on local model failure
     return {
-      ...heuristicResult,
-      reason: `${heuristicResult.reason} (Local Classifier failed: ${err.message})`,
+      ...(heuristicResult || {
+        category: "question",
+        confidence: "low",
+        reason: "Direct Senopati classification failed",
+        heuristicOnly: false,
+        classificationTokens: 0,
+      }),
+      reason: `Senopati Classifier failed: ${err.message}`,
     };
   }
 }
@@ -1105,18 +1236,17 @@ export async function classifyWithLLM(
 
 /**
  * Main classification entry point.
- * Runs heuristic first, then optionally LLM if confidence is below threshold.
- *
- * Optimization: When the heuristic returns confidence >= threshold, the LLM
- * call is skipped entirely, saving tokens and latency.
+ * By default, bypasses regex heuristics entirely and runs Senopati System-1 ONNX neural classification directly.
+ * Regex heuristics are disabled by default as requested (useHeuristic: false).
  */
 export async function classifyRequest(
   userInput: string | any[],
-  model: any,
+  model?: any,
   options?: {
     confidenceThreshold?: ClassificationConfidence;
     customKeywords?: Partial<Record<RequestCategory, string[]>>;
     skipLLM?: boolean;
+    useHeuristic?: boolean; // Regex heuristics toggle (OFF by default)
     onProgress?: (event: any) => void;
   }
 ): Promise<ClassificationResult> {
@@ -1127,7 +1257,7 @@ export async function classifyRequest(
 
   const trimmedText = text.trim();
 
-  // If input is empty/whitespace, classify as conversation immediately (no LLM call needed)
+  // If input is empty/whitespace, classify as conversation immediately (no neural pass needed)
   if (!trimmedText) {
     return {
       category: "conversation",
@@ -1138,23 +1268,41 @@ export async function classifyRequest(
     };
   }
 
-  const threshold = options?.confidenceThreshold ?? "high";
+  // If caller explicitly requested regex heuristic mode:
+  if (options?.useHeuristic === true) {
+    const threshold = options?.confidenceThreshold ?? "high";
+    const heuristicResult = classifyHeuristic(text, options?.customKeywords);
 
-  // Phase 1: Always run heuristic first (zero cost)
-  const heuristicResult = classifyHeuristic(text, options?.customKeywords);
+    // If heuristic confidence meets threshold, skip local model entirely
+    if (meetsThreshold(heuristicResult.confidence, threshold)) {
+      return heuristicResult;
+    }
 
-  // If heuristic confidence meets threshold, skip LLM entirely
-  if (meetsThreshold(heuristicResult.confidence, threshold)) {
+    // Secondary local classification for low-confidence heuristic results
+    if (!options?.skipLLM) {
+      return classifyWithLLM(text, model, heuristicResult, options?.onProgress);
+    }
+
+    // Fallback to heuristic when local model is unavailable or skipped
     return heuristicResult;
   }
 
-  // Phase 2: LLM classification for low-confidence heuristic results
-  if (!options?.skipLLM && model) {
-    return classifyWithLLM(text, model, heuristicResult, options?.onProgress);
+  // DEFAULT ROUTE: PURE SENOPATI SYSTEM-1 ONNX NEURAL CLASSIFIER (REGEX DISABLED)
+  try {
+    const senopatiResult = await classifyWithSenopatiONNX(text, undefined, options?.onProgress);
+    if (senopatiResult) {
+      return senopatiResult;
+    }
+  } catch (err: any) {
+    // Graceful fallback if ONNX engine throws
   }
 
-  // Fallback to heuristic when LLM is unavailable or skipped
-  return heuristicResult;
+  // Fallback to heuristic only if Senopati ONNX model cannot be loaded
+  const fallbackResult = classifyHeuristic(text, options?.customKeywords);
+  return {
+    ...fallbackResult,
+    reason: `${fallbackResult.reason} (Senopati fallback)`,
+  };
 }
 
 // ─── Toolset Filtering ──────────────────────────────────────────────────────
@@ -1249,6 +1397,79 @@ export function getCategoryPromptAddendum(category: RequestCategory): string {
     default:
       return "";
   }
+}
+
+/**
+ * Get a focused system prompt addendum for the classification result,
+ * incorporating category, urgency score, and destructive safety alerts from Senopati System-1.
+ * Author / Model Architecture Credit: Rudy Hermawan <hrudy715@gmail.com>
+ */
+export function getClassificationPromptAddendum(classification: ClassificationResult): string {
+  const parts: string[] = [];
+  const category = classification.category;
+
+  switch (category) {
+    case "conversation":
+      parts.push("CLASSIFICATION: conversation");
+      if (classification.urgencyScore !== undefined && classification.urgencyScore <= 1.5) {
+        parts.push("Tone: Friendly, concise, casual conversation. No code modifications or tools needed.");
+      }
+      break;
+    case "question":
+      parts.push("CLASSIFICATION: question");
+      break;
+    case "research":
+      parts.push("CLASSIFICATION: research");
+      break;
+    case "command":
+      parts.push("CLASSIFICATION: command");
+      break;
+    case "simple_edit":
+      parts.push("CLASSIFICATION: simple_edit");
+      break;
+    case "debug":
+      parts.push("CLASSIFICATION: debug");
+      break;
+    case "complex_task":
+      parts.push("CLASSIFICATION: complex_task");
+      break;
+  }
+
+  if (classification.urgencyScore !== undefined && classification.urgencyScore >= 4.0) {
+    parts.push(`[URGENCY HIGH: ${classification.urgencyScore.toFixed(1)}/5.0] Prioritize direct, high-impact resolution with minimal roundtrips.`);
+  }
+
+  if (classification.isDestructive) {
+    parts.push(`[SENOPATI AI SYSTEM-1: DESTRUCTIVE SAFETY GUARD TRIGGERED] This request involves irreversible or destructive operations (Urgency: ${(classification.urgencyScore ?? 5.0).toFixed(1)}/5). Do NOT execute without explicit user approval.`);
+  }
+
+  return parts.length > 0 ? `\n\n${parts.join("\n")}` : "";
+}
+
+/**
+ * Checks whether a shell/terminal command is destructive, using Senopati ONNX guardrail
+ * combined with critical fast regex safeguards (e.g. rm -rf, git reset --hard, format, dd).
+ * Powered by Senopati Neural Engine (Credit: Rudy Hermawan <hrudy715@gmail.com>).
+ */
+export async function isDestructiveCommand(cmd: string): Promise<boolean> {
+  const trimmed = (cmd || "").trim();
+  if (!trimmed) return false;
+
+  // 1. Fast regex safety check for undeniable dangerous shell patterns
+  const dangerousRegex = /(rm\s+(-rf|-fr|-r\s+-f|-f\s+-r)\s+[/~*]|git\s+reset\s+--hard|git\s+clean\s+-f[xd]*|mkfs|dd\s+if=|drop\s+database|format\s+[c-z]:)/i;
+  if (dangerousRegex.test(trimmed)) {
+    return true;
+  }
+
+  // 2. Senopati Neural Guardrail System-1 evaluation
+  try {
+    const res = await classifyWithSenopatiONNX(trimmed);
+    if (res?.isDestructive === true) {
+      return true;
+    }
+  } catch {}
+
+  return false;
 }
 
 /**

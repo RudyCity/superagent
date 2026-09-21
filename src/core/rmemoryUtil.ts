@@ -14,6 +14,15 @@ export function checkLocalModelDownloadStatus(modelRepoName: string, isMemoryLoa
     return "LOADED (In Memory)";
   }
 
+  // Handle Senopati System-1 ONNX model (pre-installed natively in repository)
+  if (modelRepoName.includes("Supra-Router") || modelRepoName.includes("Senopati") || modelRepoName.includes("classifier")) {
+    const localSenopati = path.resolve(process.cwd(), "models", "senopati", "senopati_superagent.onnx");
+    const absSenopati = "D:\\backup from pc asus\\Documents Development\\superagent\\models\\senopati\\senopati_superagent.onnx";
+    if (fs.existsSync(localSenopati) || fs.existsSync(absSenopati)) {
+      return "READY (Native Senopati ONNX)";
+    }
+  }
+
   const cacheBase = process.env.TRANSFORMERS_CACHE || path.join(os.homedir(), ".cache", "huggingface", "hub");
   const folderName = `models--${modelRepoName.replace(/\//g, "--")}`;
   const path1 = path.join(cacheBase, folderName);

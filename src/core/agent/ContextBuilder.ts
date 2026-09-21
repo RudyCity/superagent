@@ -407,11 +407,15 @@ export class ContextBuilder {
     let classifierPromptAddendum = "";
     if (agent.currentClassification) {
       try {
-        const { shouldSkipPlanInjection, getCategoryPromptAddendum } = await import("../requestClassifier.js");
+        const { shouldSkipPlanInjection, getClassificationPromptAddendum, getCategoryPromptAddendum } = await import("../requestClassifier.js");
         const category = agent.currentClassification.category;
+        const isDestructive = !!agent.currentClassification.isDestructive;
         const shouldBypassFilter = agent.planState !== "IDLE" || agent.tier === "subagent";
-        classifierSkipPlan = shouldSkipPlanInjection(category) && !shouldBypassFilter;
-        classifierPromptAddendum = getCategoryPromptAddendum(category);
+        // Never skip plan injection if destructive safety guardrail is active
+        classifierSkipPlan = !isDestructive && shouldSkipPlanInjection(category) && !shouldBypassFilter;
+        classifierPromptAddendum = typeof getClassificationPromptAddendum === "function"
+          ? getClassificationPromptAddendum(agent.currentClassification)
+          : getCategoryPromptAddendum(category);
       } catch {}
     }
 

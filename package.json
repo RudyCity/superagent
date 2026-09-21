@@ -39,6 +39,7 @@
     "ink": "^5.2.0",
     "ink-text-input": "^6.0.0",
     "mammoth": "^1.12.0",
+    "onnxruntime-node": "^1.14.0",
     "pdf-parse": "^2.4.5",
     "r-memory": "git+https://github.com/RudyCity/r-memory.git",
     "react": "^18.3.1",

@@ -570,7 +570,7 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(addedLines.some((l) => l.content.includes("Triggering download for RMemory local embedding model"))).toBe(true);
 
     await handleSlashCommand("/setting-classifier download", mockCtx as any);
-    expect(addedLines.some((l) => l.content.includes("Downloading local classifier router model"))).toBe(true);
+    expect(addedLines.some((l) => l.content.includes("Senopati System-1 ONNX classifier"))).toBe(true);
   });
 
   it("should configure concurrency limit when running /setting-concurrency", () => {

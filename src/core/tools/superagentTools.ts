@@ -36,6 +36,7 @@ import { agentLocalStorage } from "../agent.js";
 import { MasterAgent } from "../masterAgent.js";
 import { ensureGitIgnore, pruneWorktrees } from "../workspaceIsolation.js";
 import { contentToString } from "../conversation.js";
+import { isDestructiveCommand } from "../requestClassifier.js";
 
 function checkCycle(proposedRole: string, proposedBranch: string, proposedDeps: string[]): string[] | null {
   const adj = new Map<string, string[]>();
@@ -612,10 +613,10 @@ export const invokeSuperagentTool: Tool = {
           }
         }
       },
-      // Permission handler: auto-approve but never approve destructive commands
+      // Permission handler: auto-approve but never approve destructive commands (Senopati Neural Guardrail)
       async (_toolCall, _desc) => {
         const cmd = (_toolCall.args.command as string || "").trim();
-        const isDestructive = /(rm\s+-rf\s+[/~]|git\s+reset\s+--hard|git\s+clean\s+-fd|mkfs|dd\s+if=)/i.test(cmd);
+        const isDestructive = await isDestructiveCommand(cmd);
         return !isDestructive;
       },
       // Question handler: route to Master Agent LLM for answering
@@ -1701,9 +1702,10 @@ export const sendMessageToSuperagentTool: Tool = {
             }
           }
         },
+        // Permission handler: auto-approve but never approve destructive commands (Senopati Neural Guardrail)
         async (_toolCall, _desc) => {
           const cmd = (_toolCall.args.command as string || "").trim();
-          const isDestructive = /(rm\s+-rf\s+[/~]|git\s+reset\s+--hard|git\s+clean\s+-fd|mkfs|dd\s+if=)/i.test(cmd);
+          const isDestructive = await isDestructiveCommand(cmd);
           return !isDestructive;
         },
         async (question, options = []) => {

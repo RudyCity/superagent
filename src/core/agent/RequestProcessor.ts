@@ -87,31 +87,38 @@ export class RequestProcessor {
             }
 
             if (agent.planState === "IDLE") {
-              const skipPlanningCategories = ["conversation", "question", "research"];
-              if (skipPlanningCategories.includes(classification.category)) {
-                agent.isSimpleTask = true;
-                agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
-                agent.simpleTaskApproved = true;
-              } else if (classification.category === "complex_task") {
-                const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
-                const lowerInput = userInputText.toLowerCase();
-                const isPlanRequest = /plan|design|architecture/i.test(lowerInput);
-                if (isPlanRequest) {
-                  agent.isSimpleTask = false;
-                } else {
-                  const isComplex = /refactor|rewrite|architecture|design|feature|migration|oauth|database|schema|multi-file/i.test(lowerInput) || lowerInput.split(/\s+/).length > 25;
-                  if (isComplex) {
+              if (classification.isDestructive) {
+                agent.isSimpleTask = false;
+                agent.planState = "PLANNING_PENDING";
+                agent.simpleTaskApproved = false;
+                agent.writeToLogFile("WARN", `Destructive action flagged by Senopati Guardrail: "${classification.reason}". Forcing human confirmation.`);
+              } else {
+                const skipPlanningCategories = ["conversation", "question", "research"];
+                if (skipPlanningCategories.includes(classification.category)) {
+                  agent.isSimpleTask = true;
+                  agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
+                  agent.simpleTaskApproved = true;
+                } else if (classification.category === "complex_task") {
+                  const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
+                  const lowerInput = userInputText.toLowerCase();
+                  const isPlanRequest = /plan|design|architecture/i.test(lowerInput);
+                  if (isPlanRequest) {
                     agent.isSimpleTask = false;
                   } else {
-                    agent.isSimpleTask = true;
-                    agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
-                    agent.simpleTaskApproved = true;
+                    const isComplex = /refactor|rewrite|architecture|design|feature|migration|oauth|database|schema|multi-file/i.test(lowerInput) || lowerInput.split(/\s+/).length > 25;
+                    if (isComplex) {
+                      agent.isSimpleTask = false;
+                    } else {
+                      agent.isSimpleTask = true;
+                      agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
+                      agent.simpleTaskApproved = true;
+                    }
                   }
+                } else if (classification.category === "simple_edit" || classification.category === "command" || classification.category === "debug") {
+                  agent.isSimpleTask = true;
+                  agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
+                  agent.simpleTaskApproved = true;
                 }
-              } else if (classification.category === "simple_edit" || classification.category === "command" || classification.category === "debug") {
-                agent.isSimpleTask = true;
-                agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
-                agent.simpleTaskApproved = true;
               }
             } else if (agent.planState === "PLANNING_PENDING") {
               const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");

@@ -214,7 +214,7 @@ export const settingsCommand: SlashCommand = {
         `│ • Chrome Remote WSS  : ${isChromeBridgeOnline ? "ONLINE" : "OFFLINE"} (port 9223)${chromeConnected ? ` [CONNECTED${chromeMeta}]` : ""}`,
         `│ • RMemory Gateway    : ${s.enableRmemory ? "ONLINE" : "OFFLINE"} (Transcript Memory Database)`,
         `│ • Local Embedding    : ${s.enableRmemory ? "ONLINE" : "OFFLINE"} (nomic-embed-text-v1.5 via Transformers.js)`,
-        `│ • Local Router       : ${s.classifierEnabled !== false ? "ONLINE" : "OFFLINE"} (Supra-Router-51M-ONNX via Transformers.js)`,
+        `│ • Local Router       : ${s.classifierEnabled !== false ? "ONLINE" : "OFFLINE"} (Senopati System-1 Native ONNX)`,
         "│ ",
         ...sessionLines,
         "│ ",
@@ -890,31 +890,30 @@ export const settingClassifierCommand: SlashCommand = {
       const settings = getSettings();
       ctx.addLine({
         type: "system",
-        content: `Usage: /setting-classifier <on|off|download>\nCurrent value: ${settings.classifierEnabled !== false ? "on" : "off"}\nConfidence threshold: ${settings.classifierConfidenceThreshold ?? "high"}`,
+        content: `Usage: /setting-classifier <on|off|warmup>\nCurrent value: ${settings.classifierEnabled !== false ? "on" : "off"}\nConfidence threshold: ${settings.classifierConfidenceThreshold ?? "high"}\nEngine: Senopati System-1 Native ONNX (Author: Rudy Hermawan <hrudy715@gmail.com>)`,
         timestamp: now,
       });
       return;
     }
-    if (val === "download") {
+    if (val === "download" || val === "warmup") {
       ctx.addLine({
         type: "system",
-        content: "Downloading local classifier router model (Sharjeelbaig/Supra-Router-51M-ONNX)...",
+        content: "Warming up local Senopati System-1 ONNX classifier (by Rudy Hermawan)...",
         timestamp: now,
       });
       try {
         const { warmUpClassifier, isLocalClassifierLoaded } = await import("../requestClassifier.js");
-        const { checkLocalModelDownloadStatus } = await import("../rmemoryUtil.js");
         await warmUpClassifier();
-        const status = checkLocalModelDownloadStatus("Sharjeelbaig/Supra-Router-51M-ONNX", isLocalClassifierLoaded());
+        const loaded = isLocalClassifierLoaded();
         ctx.addLine({
           type: "system",
-          content: `✓ Local classifier router model (Sharjeelbaig/Supra-Router-51M-ONNX) download complete! Status: ${status}`,
+          content: `✓ Senopati System-1 ONNX classifier ready! Status: ${loaded ? "LOADED (In Memory)" : "STANDBY (Local ONNX)"}\nAuthor: Rudy Hermawan (hrudy715@gmail.com)`,
           timestamp: Date.now(),
         });
       } catch (err: any) {
         ctx.addLine({
           type: "error",
-          content: `Failed to download router model: ${err.message}`,
+          content: `Failed to warm up Senopati classifier: ${err.message}`,
           timestamp: Date.now(),
         });
       }

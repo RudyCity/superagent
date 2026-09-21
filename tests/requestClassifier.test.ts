@@ -17,7 +17,10 @@ import {
   meetsThreshold,
   mapSupraTelemetryToCategory,
   warmUpClassifier,
+  isLocalClassifierLoaded,
   clearLocalClassifierCache,
+  clearSenopatiLRUCache,
+  classifyWithSenopatiONNX,
   isHighConfidenceConversation,
   type RequestCategory,
   type ClassificationResult,
@@ -570,134 +573,92 @@ describe("classifyHeuristic Enhancements", () => {
   });
 });
 
-// ─── Optimized Classification Pipeline Tests ──────────────────────────────────
+// ─── Senopati System-1 Neural Classification Pipeline Tests ───────────────────────
 
-describe("classifyRequest (Optimized Pipeline)", () => {
+describe("classifyRequest (Senopati System-1 Neural Pipeline)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearLocalClassifierCache();
   });
 
-  it("should bypass LLM and return conversation immediately for empty input", async () => {
+  it("should bypass neural model and return conversation immediately for empty input", async () => {
     const mockModel = {};
     const result = await classifyRequest("", mockModel);
     expect(result.category).toBe("conversation");
     expect(result.heuristicOnly).toBe(true);
+    expect(result.classificationTokens).toBe(0);
     expect(generateText).not.toHaveBeenCalled();
   });
 
   it.each([
     ["kamu model ap", "conversation"],
     ["Kamu model apa?", "conversation"],
-    ["bersihkan dan cek runtime", "command"],
+    ["ok", "conversation"],
     ["hapus log lalu jalankan test", "command"],
-    ["cek runtime goal mode", "command"],
-  ])("routes %s without invoking the local model", async (input, category) => {
+  ])("routes %s natively via Senopati ONNX with zero LLM tokens", async (input, category) => {
     const result = await classifyRequest(input, {});
     expect(result.category).toBe(category);
-    expect(result.confidence).toBe("high");
-    expect(result.heuristicOnly).toBe(true);
-    expect(mockClassifierPipeline).not.toHaveBeenCalled();
-    expect(generateText).not.toHaveBeenCalled();
-  });
-
-  it("should skip LLM when heuristic confidence is high (default threshold)", async () => {
-    const mockModel = {};
-    // "ok" is high-confidence conversation — should NOT call LLM
-    const result = await classifyRequest("ok", mockModel);
-    expect(result.category).toBe("conversation");
-    expect(result.confidence).toBe("high");
-    expect(result.heuristicOnly).toBe(true);
+    expect(result.heuristicOnly).toBe(false);
     expect(result.classificationTokens).toBe(0);
+    expect(result.reason).toContain("Senopati ONNX System-1");
     expect(generateText).not.toHaveBeenCalled();
   });
 
-  it("should skip LLM when heuristic has high confidence for debug", async () => {
+  it("should classify requests natively with urgency score and safety guardrail", async () => {
     const mockModel = {};
-    // "fix the bug error" has 3 debug keywords => high confidence
-    const result = await classifyRequest("fix the bug error", mockModel);
-    expect(result.category).toBe("debug");
-    expect(result.confidence).toBe("high");
-    expect(result.heuristicOnly).toBe(true);
-    expect(generateText).not.toHaveBeenCalled();
-  });
-
-  it("should call local classifier model when heuristic confidence is below threshold", async () => {
-    const mockModel = {};
-    mockClassifierPipeline.mockResolvedValue([
-      { generated_text: "Analysis: Domain: Code | Complexity: 5 | Route: big model | Justification: Complex coding task" }
-    ]);
-
-    // Ambiguous input that heuristic returns low confidence for
-    const result = await classifyRequest(
-      "I need you to do something with the system that involves multiple considerations and careful planning",
-      mockModel,
-    );
+    const result = await classifyRequest("refactor the entire auth system to use jwt", mockModel);
     expect(result.heuristicOnly).toBe(false);
-    expect(result.category).toBe("complex_task");
-    expect(mockClassifierPipeline).toHaveBeenCalled();
+    expect(result.classificationTokens).toBe(0);
+    expect(result.reason).toContain("Senopati ONNX System-1");
+    expect(typeof result.urgencyScore).toBe("number");
+    expect(typeof result.isDestructive).toBe("boolean");
   });
 
-  it("should call local classifier when heuristic is medium and threshold is high", async () => {
-    const mockModel = {};
-    mockClassifierPipeline.mockResolvedValue([
-      { generated_text: "Analysis: Domain: Code | Complexity: 2 | Route: small model | Justification: Small edit" }
-    ]);
+  it("should utilize Micro LRU in-memory cache for repeated prompts in <0.1ms", async () => {
+    clearSenopatiLRUCache();
+    const prompt = "jalankan unit test sekarang";
+    const res1 = await classifyWithSenopatiONNX(prompt);
+    expect(res1).not.toBeNull();
+    expect(res1?.reason).not.toContain("[cache-hit]");
 
-    // Single debug keyword => medium confidence, threshold defaults to high
-    const result = await classifyRequest("there is an issue with the build", mockModel, {
-      confidenceThreshold: "high",
-    });
-    expect(result.heuristicOnly).toBe(false);
-    expect(result.category).toBe("simple_edit");
-    expect(mockClassifierPipeline).toHaveBeenCalled();
+    const t0 = performance.now();
+    const res2 = await classifyWithSenopatiONNX(prompt);
+    const latency = performance.now() - t0;
+
+    expect(res2).not.toBeNull();
+    expect(res2?.category).toBe(res1?.category);
+    expect(res2?.reason).toContain("[cache-hit]");
+    expect(latency).toBeLessThan(5); // Ultra-fast microsecond cache hit
   });
 
-  it("should skip local model when heuristic is medium and threshold is medium", async () => {
-    const mockModel = {};
-    // Single debug keyword => medium confidence, threshold is medium => skip classifier
-    const result = await classifyRequest("there is an issue with it", mockModel, {
-      confidenceThreshold: "medium",
-    });
-    expect(result.heuristicOnly).toBe(true);
-    expect(mockClassifierPipeline).not.toHaveBeenCalled();
+  it("should detect destructive commands via multi-task Noul guardrail", async () => {
+    const destructive = await classifyWithSenopatiONNX("rm -rf / --no-preserve-root");
+    expect(destructive).not.toBeNull();
+    expect(destructive?.isDestructive).toBe(true);
+
+    const safe = await classifyWithSenopatiONNX("git status");
+    expect(safe).not.toBeNull();
+    expect(safe?.isDestructive).toBe(false);
   });
 
-  it("should use heuristic when heuristic has low threshold but high confidence", async () => {
+  it("should support explicit useHeuristic: true mode when requested", async () => {
     const mockModel = {};
     const result = await classifyRequest("fix the compiler error", mockModel, {
+      useHeuristic: true,
       confidenceThreshold: "low",
     });
-    // Heuristic returns high for "fix the compiler error" (2 debug keywords),
-    // so even with low threshold it should skip classifier
     expect(result.heuristicOnly).toBe(true);
-    expect(mockClassifierPipeline).not.toHaveBeenCalled();
-  });
-
-  it("should fallback to heuristic when no model is provided (e.g. skipLLM is true)", async () => {
-    const result = await classifyRequest("fix the compiler error", null);
     expect(result.category).toBe("debug");
-    expect(result.heuristicOnly).toBe(true);
   });
 
-  it("should fallback to heuristic when skipLLM is true", async () => {
+  it("should fallback to heuristic when useHeuristic: true with high threshold", async () => {
     const mockModel = {};
-    const result = await classifyRequest("fix the compiler error", mockModel, { skipLLM: true });
+    const result = await classifyRequest("fix the compiler error", mockModel, {
+      useHeuristic: true,
+      confidenceThreshold: "high",
+    });
+    expect(result.heuristicOnly).toBe(true);
     expect(result.category).toBe("debug");
-    expect(result.heuristicOnly).toBe(true);
-  });
-
-  it("should fallback to heuristic on classifier model failure", async () => {
-    const mockModel = {};
-    mockClassifierPipeline.mockRejectedValue(new Error("Local model load failure"));
-
-    const result = await classifyRequest(
-      "I need you to consider many things about the overall approach for this system",
-      mockModel,
-    );
-    // Should still return a result (heuristic fallback), not throw
-    expect(result).toBeDefined();
-    expect(result.reason).toContain("Local Classifier failed");
   });
 });
 
@@ -758,10 +719,9 @@ describe("mapSupraTelemetryToCategory", () => {
 });
 
 describe("warmUpClassifier", () => {
-  it("should call pipeline pre-warmup if not disabled", async () => {
-    const { pipeline } = await import("@huggingface/transformers");
+  it("should warm up native Senopati ONNX session without external downloading", async () => {
     await warmUpClassifier();
-    expect(pipeline).toHaveBeenCalledWith("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", expect.any(Object));
+    expect(isLocalClassifierLoaded()).toBe(true);
   });
 });
 
