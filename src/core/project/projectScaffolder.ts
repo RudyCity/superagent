@@ -1,8 +1,22 @@
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { execa } from "execa";
 import { getPackageRootDir } from "../config/paths.js";
 import { addTrustedDirectory } from "../config/trustedDirs.js";
+
+export function getDefaultProjectDir(projectName: string): string {
+  const home = os.homedir();
+  const docsDir = path.join(home, "Documents");
+  const lowercaseDocsDir = path.join(home, "documents");
+  const baseDocs = fs.existsSync(docsDir)
+    ? docsDir
+    : fs.existsSync(lowercaseDocsDir)
+    ? lowercaseDocsDir
+    : docsDir;
+
+  return path.join(baseDocs, "superagent", projectName.trim());
+}
 
 export interface InstantProjectOptions {
   projectName: string;
@@ -81,7 +95,7 @@ export async function createInstantProject(
   }
 
   const targetDir = path.resolve(
-    options.targetDir || path.resolve(process.cwd(), "..", trimmedName)
+    options.targetDir || getDefaultProjectDir(trimmedName)
   );
 
   if (fs.existsSync(targetDir)) {

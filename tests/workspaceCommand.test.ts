@@ -88,6 +88,7 @@ describe("Slash Command: /workspace and /w (Interactive Wizard)", () => {
     expect(activeWizard.type).toBe("workspace");
     expect(activeWizard.step).toBe(21);
     expect(activeWizard.data?.projectName).toBe("my-instant-app");
+    expect(activeWizard.data?.defaultTarget).toContain(path.join("Documents", "superagent", "my-instant-app"));
   });
 
   it("should add and remove trusted workspace directories using config functions", async () => {

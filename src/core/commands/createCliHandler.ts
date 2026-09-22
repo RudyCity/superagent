@@ -9,7 +9,7 @@ Usage: superagent create <project-name> [options]
 Create a new instant project using Superagent as the base template.
 
 Options:
-  -d, --dir <path>       Target directory path (defaults to ../<project-name>)
+  -d, --dir <path>       Target directory path (defaults to Documents/superagent/<project-name>)
   -f, --force            Overwrite destination directory if it already exists
   --no-git               Do not initialize a Git repository
   --desc <description>   Custom project description

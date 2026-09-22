@@ -1577,8 +1577,8 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        const currentCwd = path.resolve(agentRef.current?.workingDirectory || process.cwd());
-        const defaultTarget = path.resolve(currentCwd, "..", projectName);
+        const { getDefaultProjectDir } = await import("../core/project/projectScaffolder.js");
+        const defaultTarget = getDefaultProjectDir(projectName);
 
         setActiveWizard({
           type: "workspace",
@@ -1594,9 +1594,10 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
       if (activeWizard.step === 21) {
         const dirInput = value.trim();
         const projectName = activeWizard.data?.projectName || "my-project";
+        const { createInstantProject, getDefaultProjectDir } = await import("../core/project/projectScaffolder.js");
         const targetDir = dirInput
           ? path.resolve(dirInput)
-          : (activeWizard.data?.defaultTarget || path.resolve(process.cwd(), "..", projectName));
+          : (activeWizard.data?.defaultTarget || getDefaultProjectDir(projectName));
 
         addLine({
           type: "system",

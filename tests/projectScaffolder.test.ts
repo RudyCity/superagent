@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
 import fs from "fs";
 import os from "os";
-import { createInstantProject } from "../src/core/project/projectScaffolder.js";
+import { createInstantProject, getDefaultProjectDir } from "../src/core/project/projectScaffolder.js";
 
 describe("projectScaffolder", () => {
   let tempDir: string;
@@ -78,5 +78,10 @@ describe("projectScaffolder", () => {
 
     expect(result.success).toBe(true);
     expect(fs.existsSync(path.join(targetProjectDir, "package.json"))).toBe(true);
+  });
+
+  it("should return default project directory under Documents/superagent", () => {
+    const defaultDir = getDefaultProjectDir("my-new-app");
+    expect(defaultDir).toContain(path.join("Documents", "superagent", "my-new-app"));
   });
 });

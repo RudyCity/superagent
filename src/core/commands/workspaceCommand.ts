@@ -23,8 +23,8 @@ export const workspaceCommand: SlashCommand = {
       const projectName = parts[1] || "";
       if (ctx.setActiveWizard) {
         if (projectName) {
-          const currentCwd = path.resolve(ctx.agent?.workingDirectory || process.cwd());
-          const defaultTarget = path.resolve(currentCwd, "..", projectName);
+          const { getDefaultProjectDir } = await import("../project/projectScaffolder.js");
+          const defaultTarget = getDefaultProjectDir(projectName);
           ctx.setActiveWizard({
             type: "workspace",
             step: 21,

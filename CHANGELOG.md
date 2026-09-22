@@ -1,3 +1,15 @@
+## [1.5.92] - 2026-09-22
+
+### Changed
+
+- **Default Project Destination (`documents/superagent/*`)**:
+  - Updated instant project scaffolding destination across `/w` wizard, direct command `/w create`, and CLI `superagent create` to default to `Documents/superagent/<project-name>` via shared `getDefaultProjectDir()`.
+  - Automatically creates parent `Documents/superagent` directory if it does not already exist.
+
+### Tests
+
+- Added tests in `tests/projectScaffolder.test.ts` and `tests/workspaceCommand.test.ts` verifying default paths under `Documents/superagent`.
+
 ## [1.5.91] - 2026-09-22
 
 ### Added
