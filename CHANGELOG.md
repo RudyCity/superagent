@@ -1,3 +1,18 @@
+## [1.5.93] - 2026-09-22
+
+### Fixed
+
+- Fixed phantom Plan Approval dialog triggering when no plan exists:
+  - Guarded Senopati ONNX `isDestructive` classification so conversational queries, pricing inquiries, and benign questions without destructive action verbs are not misclassified as destructive.
+  - Fixed premature `agent.planState = "PLANNING_PENDING"` assignment in `RequestProcessor.ts` when no plan file exists on disk, ensuring `planState` stays `IDLE` until an actual implementation plan is formulated and saved.
+  - Guarded `plan_approve` wizard triggers in `app.tsx`, `multi-agent-dashboard.tsx`, and `useDashboardWizard.ts` to require `hasRealPlanContent()`, auto-correcting any dangling `PLANNING_PENDING` states to `IDLE` if no plan file exists.
+  - Enhanced `hasRealPlanContent()` in `agent.ts` to support working directory fallback `implementation_plan.md`.
+  - Enhanced `PlanApprovalDialog` with `resolveExistingPlanPath` to check session directory and current working directory fallbacks, displaying clear diagnostic messages rather than misleading approve actions if a plan file is missing.
+
+### Tests
+
+- Added `tests/planStateGuards.test.ts` covering non-destructive queries, real plan file verification, and path resolution.
+
 ## [1.5.92] - 2026-09-22
 
 ### Changed

@@ -89,9 +89,12 @@ export class RequestProcessor {
             if (agent.planState === "IDLE") {
               if (classification.isDestructive) {
                 agent.isSimpleTask = false;
-                agent.planState = "PLANNING_PENDING";
                 agent.simpleTaskApproved = false;
-                agent.writeToLogFile("WARN", `Destructive action flagged by Senopati Guardrail: "${classification.reason}". Forcing human confirmation.`);
+                // Only retain PLANNING_PENDING if real plan content actually exists on disk.
+                // Do not prematurely set PLANNING_PENDING before any plan file exists,
+                // as that triggers the plan approval wizard with a non-existent plan file.
+                agent.planState = agent.hasRealPlanContent() ? "PLANNING_PENDING" : "IDLE";
+                agent.writeToLogFile("WARN", `Destructive action flagged by Senopati Guardrail: "${classification.reason}". Requiring plan creation.`);
               } else {
                 const skipPlanningCategories = ["conversation", "question", "research"];
                 if (skipPlanningCategories.includes(classification.category)) {

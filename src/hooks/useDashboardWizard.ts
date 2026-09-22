@@ -1736,6 +1736,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     }
 
     if (planState === "PLANNING_PENDING") {
+      const hasPlan = (agent as any)?.hasRealPlanContent ? (agent as any).hasRealPlanContent() : false;
+      if (!hasPlan) {
+        if (agent) (agent as any).planState = "IDLE";
+        setPlanState?.("IDLE");
+        return;
+      }
       setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
       setWizardSelectedIndex(0);
       setActiveWizard({

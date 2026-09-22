@@ -371,9 +371,20 @@ export class Agent {
   public hasRealPlanContent(): boolean {
     try {
       const planPath = this.getPlanFilePath();
-      if (!planPath || !fs.existsSync(planPath)) return false;
-      const content = fs.readFileSync(planPath, "utf-8").trim();
-      return content.length > 40 && /(implementation|plan|task|feature|fix|refactor|phase|\n#{1,6}\s)/i.test(content);
+      if (planPath && fs.existsSync(planPath)) {
+        const content = fs.readFileSync(planPath, "utf-8").trim();
+        if (content.length > 40 && /(implementation|plan|task|feature|fix|refactor|phase|\n#{1,6}\s)/i.test(content)) {
+          return true;
+        }
+      }
+      const cwdPlan = this.workingDirectory ? path.join(this.workingDirectory, "implementation_plan.md") : "";
+      if (cwdPlan && fs.existsSync(cwdPlan)) {
+        const content = fs.readFileSync(cwdPlan, "utf-8").trim();
+        if (content.length > 40 && /(implementation|plan|task|feature|fix|refactor|phase|\n#{1,6}\s)/i.test(content)) {
+          return true;
+        }
+      }
+      return false;
     } catch {
       return false;
     }

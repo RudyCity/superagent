@@ -3,6 +3,8 @@ import { Box, Text, useInput } from "ink";
 import fs from "fs";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
 
+import path from "path";
+
 // Module-level cache: plan file content shared by planLines + totalLines
 // computation, invalidated by mtime. Plan files rarely change mid-dialog,
 // so this avoids reading the same file twice and keeps the dialog snappy
@@ -13,23 +15,52 @@ const planReadCache: { key: string | null; mtimeMs: number; lines: string[] } = 
   lines: [],
 };
 
-function readPlanLines(planFilePath: string): string[] {
+export function resolveExistingPlanPath(initialPath: string): string | null {
+  if (initialPath && fs.existsSync(initialPath)) return initialPath;
+  const cwdPlan = path.join(process.cwd(), "implementation_plan.md");
+  if (fs.existsSync(cwdPlan)) return cwdPlan;
+  if (initialPath) {
+    try {
+      const dir = path.dirname(initialPath);
+      if (fs.existsSync(dir)) {
+        const files = fs.readdirSync(dir);
+        const match = files.find(f => f.endsWith("_implementation_plan.md") || f === "implementation_plan.md");
+        if (match) return path.join(dir, match);
+      }
+    } catch {}
+  }
+  return null;
+}
+
+function readPlanLines(planFilePath: string): { lines: string[]; found: boolean; resolvedPath: string } {
+  const resolved = resolveExistingPlanPath(planFilePath);
+  if (!resolved) {
+    return {
+      lines: ["(No implementation plan file found. The agent has not prepared a plan yet.)"],
+      found: false,
+      resolvedPath: planFilePath,
+    };
+  }
   try {
-    const stat = fs.statSync(planFilePath);
+    const stat = fs.statSync(resolved);
     if (
-      planReadCache.key === planFilePath &&
+      planReadCache.key === resolved &&
       planReadCache.mtimeMs === stat.mtimeMs
     ) {
-      return planReadCache.lines;
+      return { lines: planReadCache.lines, found: true, resolvedPath: resolved };
     }
-    const raw = fs.readFileSync(planFilePath, "utf8");
+    const raw = fs.readFileSync(resolved, "utf8");
     const lines = raw.split("\n");
-    planReadCache.key = planFilePath;
+    planReadCache.key = resolved;
     planReadCache.mtimeMs = stat.mtimeMs;
     planReadCache.lines = lines;
-    return lines;
+    return { lines, found: true, resolvedPath: resolved };
   } catch {
-    return ["(Plan file not found or unreadable)"];
+    return {
+      lines: ["(Plan file could not be read or is unreadable)"],
+      found: false,
+      resolvedPath: resolved,
+    };
   }
 }
 
@@ -75,7 +106,10 @@ export function PlanApprovalDialog({
   };
 
   // Read plan content (memoised on file path, mtime-cached across the module)
-  const planLines = useMemo(() => readPlanLines(planFilePath), [planFilePath]);
+  const planInfo = useMemo(() => readPlanLines(planFilePath), [planFilePath]);
+  const planLines = planInfo.lines;
+  const isPlanFound = planInfo.found;
+  const displayPlanPath = planInfo.resolvedPath;
 
   const totalLines = planLines.length;
 
@@ -152,8 +186,12 @@ export function PlanApprovalDialog({
       </Box>
       <Box flexDirection="row" width="100%">
         <Text bold color="yellow">║  </Text>
-        <Text color="gray">Agent has prepared a plan —</Text>
-        <Text color="white" bold> review and decide before execution proceeds.</Text>
+        <Text color={isPlanFound ? "gray" : "red"}>
+          {isPlanFound ? "Agent has prepared a plan —" : "No implementation plan file found —"}
+        </Text>
+        <Text color="white" bold>
+          {isPlanFound ? " review and decide before execution proceeds." : " agent has not prepared a plan yet."}
+        </Text>
       </Box>
       <Box flexDirection="row" width="100%">
         <Text bold color="yellow">║  </Text>
@@ -163,7 +201,7 @@ export function PlanApprovalDialog({
       <Box flexDirection="row" width="100%">
         <Text bold color="yellow">╚══[ </Text>
         <Text color="gray" dimColor>📄 </Text>
-        <Text color="cyan" bold wrap="truncate-end">{planFilePath}</Text>
+        <Text color="cyan" bold wrap="truncate-end">{displayPlanPath}</Text>
         <Text bold color="yellow"> ]</Text>
       </Box>
 

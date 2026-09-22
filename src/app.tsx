@@ -1108,8 +1108,13 @@ export function App({
       await agentRef.current?.sendMessage(messageContent);
       if (agentRef.current) {
         const nextState = agentRef.current.planState;
-        setPlanState(nextState);
-        if (nextState === "PLANNING_PENDING") {
+        const hasPlan = agentRef.current.hasRealPlanContent();
+        const effectivePlanState = (nextState === "PLANNING_PENDING" && !hasPlan) ? "IDLE" : nextState;
+        if (nextState === "PLANNING_PENDING" && !hasPlan) {
+          agentRef.current.planState = "IDLE";
+        }
+        setPlanState(effectivePlanState);
+        if (effectivePlanState === "PLANNING_PENDING" && hasPlan) {
           setActiveWizard((curr) => {
             if (curr && curr.type === "plan_approve") return curr;
             setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
@@ -2272,8 +2277,13 @@ export function App({
       // caused the wizard to appear before the response finished printing.
       if (agentRef.current) {
         const nextState = agentRef.current.planState;
-        setPlanState(nextState);
-        if (event.type === "done" && nextState === "PLANNING_PENDING") {
+        const hasPlan = agentRef.current.hasRealPlanContent();
+        const effectivePlanState = (nextState === "PLANNING_PENDING" && !hasPlan) ? "IDLE" : nextState;
+        if (nextState === "PLANNING_PENDING" && !hasPlan) {
+          agentRef.current.planState = "IDLE";
+        }
+        setPlanState(effectivePlanState);
+        if (event.type === "done" && effectivePlanState === "PLANNING_PENDING" && hasPlan) {
           setActiveWizard((curr) => {
             if (curr && curr.type === "plan_approve") return curr;
             setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
@@ -2461,8 +2471,13 @@ export function App({
          setReasoningDisplay("");
         agent.sendMessage(prompt).then(() => {
           const nextState = agent.planState;
-          setPlanState(nextState);
-          if (nextState === "PLANNING_PENDING") {
+          const hasPlan = agent.hasRealPlanContent();
+          const effectivePlanState = (nextState === "PLANNING_PENDING" && !hasPlan) ? "IDLE" : nextState;
+          if (nextState === "PLANNING_PENDING" && !hasPlan) {
+            agent.planState = "IDLE";
+          }
+          setPlanState(effectivePlanState);
+          if (effectivePlanState === "PLANNING_PENDING" && hasPlan) {
             setActiveWizard((curr) => {
               if (curr && curr.type === "plan_approve") return curr;
               setWizardOptions([...PLAN_APPROVAL_OPTIONS]);

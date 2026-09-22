@@ -1036,7 +1036,10 @@ export async function classifyWithSenopatiONNX(
   }
 
   // Destructive guardrail: noulProbs[1] is P(destructive)
-  const isDestructive = noulProbs[1] > 0.5;
+  // Guard against false positives: questions/conversations or queries without destructive action keywords are not destructive
+  const destructiveActionRegex = /\b(rm|del|delete|remove|drop|truncate|kill|destroy|format|wipe|hapus|hilangkan|bersihkan|uninstall|unlink|purge|reset\s+--hard)\b/i;
+  const isQuestionOrChat = category === "conversation" || category === "question" || text.trim().endsWith("?");
+  const isDestructive = !isQuestionOrChat && (noulProbs[1] > 0.5 || destructiveActionRegex.test(text));
 
   // Detect second-best category for secondaryCategory
   let secondIdx = -1;

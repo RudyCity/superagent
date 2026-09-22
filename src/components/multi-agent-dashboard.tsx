@@ -348,7 +348,12 @@ export function MultiAgentDashboard({
             // fully printed to the log history.
             // Note: planState is always synced (so the PENDING_PLAN banner
             // shows), but the wizard opening is deferred.
-            if (currentPlanState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve") {
+            const hasPlan = (agent as any)?.hasRealPlanContent ? (agent as any).hasRealPlanContent() : false;
+            if (currentPlanState === "PLANNING_PENDING" && !hasPlan) {
+              (agent as any).planState = "IDLE";
+              return "IDLE";
+            }
+            if (currentPlanState === "PLANNING_PENDING" && hasPlan && activeWizard?.type !== "plan_approve") {
               if (!agent.isAgentRunning()) {
                 setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
                 setWizardSelectedIndex(0);
@@ -366,7 +371,12 @@ export function MultiAgentDashboard({
           }
           // Agent may have stopped since last tick — re-check if wizard
           // needs to be opened for an existing PLANNING_PENDING state.
-          if (currentPlanState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && !agent.isAgentRunning()) {
+          const hasPlan = (agent as any)?.hasRealPlanContent ? (agent as any).hasRealPlanContent() : false;
+          if (currentPlanState === "PLANNING_PENDING" && !hasPlan) {
+            (agent as any).planState = "IDLE";
+            return "IDLE";
+          }
+          if (currentPlanState === "PLANNING_PENDING" && hasPlan && activeWizard?.type !== "plan_approve" && !agent.isAgentRunning()) {
             setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
             setWizardSelectedIndex(0);
             setActiveWizard({
