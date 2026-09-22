@@ -1047,6 +1047,36 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 20 && (
+          <WizardDialog
+            title="✨ CREATE INSTANT PROJECT — Enter Project Name (Type & Enter, Esc: Back):"
+            description="Create a new project using Superagent as base template. Enter project name (e.g. my-app):"
+            borderColor="cyan"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 21 && (
+          <WizardDialog
+            title="📁 CREATE INSTANT PROJECT — Target Directory (Type & Enter, Esc: Back):"
+            description={`Destination directory (press Enter for default: ${(activeWizard.data as any)?.defaultTarget || ""}):`}
+            borderColor="cyan"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 22 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title={`🚀 PROJECT READY — ${(activeWizard.data as any)?.projectName || "New Project"}`}
+            description="Do you want to switch your active workspace to the newly created project now?"
+            borderColor="green"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
         {/* Goal Mode Banner */}
         {goalMode && !activeWizard && (
           <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>

@@ -68,6 +68,12 @@ if (process.argv[2] === "session") {
   process.exit(0);
 }
 
+if (process.argv[2] === "create" || process.argv[2] === "init-project" || process.argv[2] === "new-project") {
+  const { handleCreateCliCommand } = await import("./core/commands/createCliHandler.js");
+  await handleCreateCliCommand(process.argv.slice(3));
+  process.exit(0);
+}
+
 if (process.argv[2] === "setup") {
   const { handleLoginCliCommand } = await import("./core/commands/loginCliHandler.js");
   // Launch login wizard in guided add mode
@@ -145,6 +151,7 @@ Commands:
   mcp               Manage MCP servers (list, add, remove, register)
   selfdev           Manage self-development behavioral lessons (status, list, distill, approve, reject, retire)
   skill             Manage and synthesize reusable skills (list, synth)
+  create <name>     Create a new instant project from the Superagent base template
 
 Options:
   -r, --resume            Resume the last active session

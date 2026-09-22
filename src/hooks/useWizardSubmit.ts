@@ -392,7 +392,19 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "3. Remove a workspace...") {
+        if (value.includes("Create new instant project") || value.startsWith("3. Create")) {
+          setActiveWizard({
+            type: "workspace",
+            step: 20,
+            data: {},
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        if (value === "3. Remove a workspace..." || value === "4. Remove a workspace..." || value.includes("Remove a workspace")) {
           const { getTrustedDirectories } = await import("../core/config/jsonConfig.js");
           const { getWorkspacesFromDb } = await import("../core/storage/historyDb.js");
           const trustedDirs = getTrustedDirectories();
@@ -436,7 +448,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "5. Manage workspace chains...") {
+        if (value.includes("Manage workspace chains")) {
           const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
           const sshCfg = workspaceMode.getConfig();
           const currentWorkspace = workspaceMode.isSsh() && sshCfg
@@ -455,7 +467,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           return;
         }
 
-        if (value === "4. View workspace status") {
+        if (value.includes("View workspace status")) {
           const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
           const { sshProxy } = await import("../core/ssh/sshProxy.js");
           if (!workspaceMode.isSsh()) {
@@ -1551,6 +1563,135 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
         setActiveWizard(null);
         setWizardOptions([]);
         setWizardSelectedIndex(0);
+        return;
+      }
+
+      if (activeWizard.step === 20) {
+        const projectName = value.trim();
+        if (!projectName) {
+          addLine({
+            type: "error",
+            content: "Project name cannot be empty.",
+            timestamp: now,
+          });
+          return;
+        }
+
+        const currentCwd = path.resolve(agentRef.current?.workingDirectory || process.cwd());
+        const defaultTarget = path.resolve(currentCwd, "..", projectName);
+
+        setActiveWizard({
+          type: "workspace",
+          step: 21,
+          data: { projectName, defaultTarget },
+        });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
+
+      if (activeWizard.step === 21) {
+        const dirInput = value.trim();
+        const projectName = activeWizard.data?.projectName || "my-project";
+        const targetDir = dirInput
+          ? path.resolve(dirInput)
+          : (activeWizard.data?.defaultTarget || path.resolve(process.cwd(), "..", projectName));
+
+        addLine({
+          type: "system",
+          content: `🚀 Creating instant project "${projectName}" at ${targetDir}...`,
+          timestamp: now,
+        });
+
+        try {
+          const { createInstantProject } = await import("../core/project/projectScaffolder.js");
+          const result = await createInstantProject({
+            projectName,
+            targetDir,
+            initGit: true,
+          });
+
+          addLine({
+            type: "system",
+            content: `✅ ${result.message}`,
+            timestamp: Date.now(),
+          });
+
+          setActiveWizard({
+            type: "workspace",
+            step: 22,
+            data: { projectName, targetDir },
+          });
+          setWizardOptions([
+            "1. Yes, switch to new workspace now",
+            "2. No, stay in current workspace",
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        } catch (err: any) {
+          addLine({
+            type: "error",
+            content: `Failed to create instant project: ${err?.message || err}`,
+            timestamp: Date.now(),
+          });
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+      }
+
+      if (activeWizard.step === 22) {
+        const targetDir = activeWizard.data?.targetDir;
+        const projectName = activeWizard.data?.projectName || "Project";
+
+        if (value.startsWith("1") || value.includes("Yes")) {
+          if (targetDir) {
+            const { addTrustedDirectory } = await import("../core/config/jsonConfig.js");
+            const { workspaceMode } = await import("../core/ssh/workspaceMode.js");
+            const { sshProxy } = await import("../core/ssh/sshProxy.js");
+
+            addTrustedDirectory(targetDir, projectName);
+            await sshProxy.disconnect();
+            workspaceMode.setLocalMode();
+
+            if (setWorkingDirectory) {
+              setWorkingDirectory(targetDir);
+            } else {
+              process.chdir(targetDir);
+              if (agentRef.current) agentRef.current.workingDirectory = targetDir;
+            }
+
+            if (agentRef.current) {
+              agentRef.current.resetInternalState();
+              await agentRef.current.clearHistory();
+              agentRef.current.planState = "IDLE";
+              agentRef.current.goalMode = null;
+            }
+            if (setPlanState) setPlanState("IDLE");
+            if (clearLines) clearLines();
+
+            addLine({
+              type: "system",
+              content: `📁 Switched active workspace to: ${targetDir}`,
+              timestamp: Date.now(),
+            });
+          }
+        } else {
+          addLine({
+            type: "system",
+            content: `📁 Project created at ${targetDir}. Workspace unchanged.`,
+            timestamp: Date.now(),
+          });
+        }
+
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
         return;
       }
     }

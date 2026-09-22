@@ -71,8 +71,9 @@ describe("Slash Command: /workspace and /w (Interactive Wizard)", () => {
     expect(activeWizard.step).toBe(1);
     expect(wizardOptions.length).toBeGreaterThan(0);
     expect(wizardOptions).toContain("2. Add a new workspace...");
-    expect(wizardOptions).toContain("3. Remove a workspace...");
-    expect(wizardOptions).toContain("4. View workspace status");
+    expect(wizardOptions).toContain("3. Create new instant project (Superagent base)...");
+    expect(wizardOptions).toContain("4. Remove a workspace...");
+    expect(wizardOptions).toContain("5. View workspace status");
     expect(wizardOptions).toContain("❌ Exit Wizard");
 
     activeWizard = null;
@@ -80,6 +81,13 @@ describe("Slash Command: /workspace and /w (Interactive Wizard)", () => {
     expect(activeWizard).toBeDefined();
     expect(activeWizard.type).toBe("workspace");
     expect(activeWizard.step).toBe(1);
+
+    activeWizard = null;
+    await handleSlashCommand("/w create my-instant-app", mockCtx as any);
+    expect(activeWizard).toBeDefined();
+    expect(activeWizard.type).toBe("workspace");
+    expect(activeWizard.step).toBe(21);
+    expect(activeWizard.data?.projectName).toBe("my-instant-app");
   });
 
   it("should add and remove trusted workspace directories using config functions", async () => {

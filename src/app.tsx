@@ -1610,6 +1610,9 @@ export function App({
       if (activeWizard.step === 13) return "Select a node to remove from the chain:";
       if (activeWizard.step === 14) return "Confirm deletion of the workspace chain.";
       if (activeWizard.step === 15) return "Enter directory path or SSH target for the new node:";
+      if (activeWizard.step === 20) return "Enter a name for your new instant project:";
+      if (activeWizard.step === 21) return "Enter destination directory (or press Enter for default):";
+      if (activeWizard.step === 22) return "Select whether to switch to the new workspace now:";
     }
     if (activeWizard.type === "permission") {
       return pendingPermission?.description || "Allow or deny this action.";
@@ -1677,6 +1680,9 @@ export function App({
       if (activeWizard.step === 13) return "Select node using arrows and Enter (Esc: Back)...";
       if (activeWizard.step === 14) return "Select confirmation using arrows and Enter...";
       if (activeWizard.step === 15) return "Enter node path or user@host:port/path target and press Enter...";
+      if (activeWizard.step === 20) return "Type project name and press Enter (Esc: Back)...";
+      if (activeWizard.step === 21) return "Type target directory or press Enter for default (Esc: Back)...";
+      if (activeWizard.step === 22) return "Select option using arrows and Enter...";
     }
     if (activeWizard.type === "question") {
       if (pendingQuestion?.inputType === "password") return "Enter password (hidden) and press Enter...";

@@ -17,13 +17,40 @@ export const workspaceCommand: SlashCommand = {
       ? `${sshCfg.username}@${sshCfg.host}:${sshCfg.port}${sshCfg.remoteCwd}`
       : path.resolve(ctx.agent?.workingDirectory || process.cwd());
 
+    const trimmedArgs = (_args || "").trim();
+    if (trimmedArgs.startsWith("create")) {
+      const parts = trimmedArgs.split(/\s+/);
+      const projectName = parts[1] || "";
+      if (ctx.setActiveWizard) {
+        if (projectName) {
+          const currentCwd = path.resolve(ctx.agent?.workingDirectory || process.cwd());
+          const defaultTarget = path.resolve(currentCwd, "..", projectName);
+          ctx.setActiveWizard({
+            type: "workspace",
+            step: 21,
+            data: { projectName, defaultTarget },
+          });
+        } else {
+          ctx.setActiveWizard({
+            type: "workspace",
+            step: 20,
+            data: {},
+          });
+        }
+        ctx.setWizardOptions?.([]);
+        ctx.setWizardSelectedIndex?.(0);
+        return;
+      }
+    }
+
     if (ctx.setActiveWizard) {
       const options = [
         "1. Select & Switch Workspace...",
         "2. Add a new workspace...",
-        "3. Remove a workspace...",
-        "4. View workspace status",
-        "5. Manage workspace chains...",
+        "3. Create new instant project (Superagent base)...",
+        "4. Remove a workspace...",
+        "5. View workspace status",
+        "6. Manage workspace chains...",
         "❌ Exit Wizard",
       ];
 

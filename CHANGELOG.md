@@ -1,3 +1,21 @@
+## [1.5.91] - 2026-09-22
+
+### Added
+
+- **Instant Project Creation Engine (`/w` & CLI)**:
+  - Added "3. Create new instant project (Superagent base)..." to the `/workspace` (`/w`) interactive wizard menu.
+  - Implemented `projectScaffolder.ts` (`createInstantProject`) to clone and personalize fresh projects using `documents/superagent/*` as base template.
+  - Integrated filtering to exclude heavy dependencies (`node_modules`), build outputs (`dist`), git history (`.git`), worktrees (`.worktrees`), session cache (`.superagent`), and temporary log/diff files.
+  - Personalized `package.json` (reset to version `1.0.0`, project name, new description) and `AGENTS.md`.
+  - Added automatic git repository initialization (`git init`) and workspace trust registration (`addTrustedDirectory`).
+  - Added direct command support: `/w create <name>` and standalone CLI command `superagent create <name> [--dir <path>] [--force] [--no-git]`.
+  - Added interactive workspace switching confirmation upon project scaffolding completion.
+
+### Tests
+
+- Added comprehensive unit tests in `tests/projectScaffolder.test.ts` and `tests/createCliHandler.test.ts`.
+- Updated `tests/workspaceCommand.test.ts` verifying wizard options and direct arguments.
+
 ## [1.5.90] - 2026-09-20
 
 ### Fixed
