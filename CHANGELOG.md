@@ -1,3 +1,12 @@
+## [1.5.99] - 2026-10-01
+
+### Fixed
+
+- **Interactive Terminal Autocomplete for Muse Commands**:
+  - Fixed missing suggestions for `/muse` and `/muse config` subcommands in the single-agent interactive terminal (`src/app.tsx`).
+  - Added dedicated `/muse` autocomplete branch in `getSuggestions` with contextual recommendations for `status`, `config`, config keys (`as_runner_model`, `as_runner`, `botToken`, `groupId`, `museBotId`, `defaultWorkspace`), and `on`/`off` toggles.
+  - Added fallback delegating to `getDashboardSuggestions` so all dashboard and system suggestions seamlessly populate in `src/app.tsx`.
+
 ## [1.5.98] - 2026-10-01
 
 ### Added

@@ -39,6 +39,7 @@ import { getActiveChainId, getWorkspaceChain } from "./core/workspace/WorkspaceC
 import { lockEventEmitter, getLockStats } from "./core/storage/sharedMemory.js";
 import { PROVIDER_TEMPLATE_LABELS } from "./core/loginWizardLogic.js";
 import { isMuseRunnerActive } from "./core/remoteAgent/config.js";
+import { getDashboardSuggestions } from "./utils/dashboardSuggestions.js";
 
 // Hook & Component Baru
 import { StatusBar } from "./components/status-bar.js";
@@ -1563,6 +1564,54 @@ export function App({
           `${mainCommand} status`
         ];
         return filterSuggestions(sshSuggestions, currentInput);
+      }
+
+      if (mainCommand === "/muse") {
+        const sub = parts[1]?.toLowerCase();
+        if (sub === "config") {
+          const configKey = parts[2]?.toLowerCase();
+          if (configKey === "as_runner_model" || configKey === "as_runner") {
+            const togglePossibilities = [
+              `/muse config ${parts[2]} on`,
+              `/muse config ${parts[2]} off`,
+            ];
+            return filterSuggestions(togglePossibilities, currentInput);
+          }
+          const configPossibilities = [
+            "/muse config as_runner_model",
+            "/muse config as_runner_model on",
+            "/muse config as_runner_model off",
+            "/muse config as_runner",
+            "/muse config as_runner on",
+            "/muse config as_runner off",
+            "/muse config botToken",
+            "/muse config groupId",
+            "/muse config museBotId",
+            "/muse config defaultWorkspace",
+          ];
+          return filterSuggestions(configPossibilities, currentInput);
+        }
+
+        const possibilities = [
+          "/muse status",
+          "/muse config",
+          "/muse config as_runner_model",
+          "/muse config as_runner_model on",
+          "/muse config as_runner_model off",
+          "/muse config as_runner",
+          "/muse config as_runner on",
+          "/muse config as_runner off",
+          "/muse config botToken",
+          "/muse config groupId",
+          "/muse config museBotId",
+          "/muse config defaultWorkspace",
+        ];
+        return filterSuggestions(possibilities, currentInput);
+      }
+
+      const fallback = getDashboardSuggestions(currentInput);
+      if (fallback.length > 0) {
+        return fallback;
       }
 
       return [];
