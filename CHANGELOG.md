@@ -10,6 +10,7 @@
   - Implemented `taskRunner.ts` orchestrating remote tasks, loop guards (maximum 50 batches, 30 minute timeout), envelope ID deduplication, and terminal progress updates.
   - Implemented `config.ts` managing `~/.superagent-r/remote-agent.json` with secure token masking.
   - Added `/muse` slash command (`src/core/commands/museCommand.ts`) and CLI runner `superagent muse` (`src/core/remoteAgent/museCli.ts`) supporting `status`, `config`, and task execution.
+  - Added comprehensive setup guide in `docs/remote-agent-setup.md` covering architecture, Bot-to-Bot mode configuration, Telegram group setup, Muse system prompt, troubleshooting, and security.
   - Added comprehensive unit tests in `tests/remoteAgent.test.ts`.
 
 ## [1.5.93] - 2026-09-22

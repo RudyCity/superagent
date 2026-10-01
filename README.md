@@ -258,6 +258,8 @@ Superagent can pair with an external AI agent (**"Muse"**) acting as a remote br
 superagent muse "find all unhandled promise rejections in src"
 ```
 
+For the complete end-to-end setup guide, Telegram Bot-to-Bot mode configuration, troubleshooting, and the Muse system prompt, see **[docs/remote-agent-setup.md](docs/remote-agent-setup.md)**.
+
 ### Keyboard Shortcuts
 
 | Shortcut | Description |
