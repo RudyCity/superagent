@@ -1,3 +1,14 @@
+## [1.5.100] - 2026-10-01
+
+### Fixed
+
+- **Remote Agent Response Rendering & History Persistence**:
+  - Fixed a display bug where Muse responses for tasks without local tool calls (`batches = 0`, such as conversational replies or immediate answers) were not displayed at the bottom of the interactive chat because `setLines` inadvertently updated previous assistant messages in the history.
+  - Added timestamp-targeted matching for assistant lines created during task execution, ensuring only the current task's assistant response is updated.
+  - Ensured fresh assistant response lines are appended at the bottom whenever no tool batches were executed.
+  - Added conversation history tracking and SQLite database persistence (`saveToFile`) for completed Muse tasks.
+  - Added unit test in `tests/remoteAgent.test.ts` verifying that prior assistant messages are preserved and new assistant responses are appended properly.
+
 ## [1.5.99] - 2026-10-01
 
 ### Fixed

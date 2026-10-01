@@ -226,6 +226,7 @@ export const museCommand: SlashCommand = {
 
     ctx.setIsProcessing?.(true);
 
+    const assistantTimestamp = Date.now();
     let assistantLineCreated = false;
     const ensureAssistantLine = () => {
       if (assistantLineCreated) return;
@@ -236,7 +237,7 @@ export const museCommand: SlashCommand = {
           {
             type: "assistant",
             content: "",
-            timestamp: Date.now(),
+            timestamp: assistantTimestamp,
             children: [],
           },
         ]);
@@ -356,17 +357,21 @@ export const museCommand: SlashCommand = {
       });
 
       if (result.success) {
-        if (ctx.setLines) {
+        if (assistantLineCreated && ctx.setLines) {
           ctx.setLines((prev) => {
-            for (let i = prev.length - 1; i >= 0; i--) {
-              if (prev[i].type === "assistant") {
-                const updated = [...prev];
-                updated[i] = {
-                  ...updated[i],
+            let found = false;
+            const updated = prev.map((l) => {
+              if (l.type === "assistant" && l.timestamp === assistantTimestamp) {
+                found = true;
+                return {
+                  ...l,
                   content: result.summary,
                 };
-                return updated;
               }
+              return l;
+            });
+            if (found) {
+              return updated;
             }
             return [
               ...prev,
@@ -383,6 +388,22 @@ export const museCommand: SlashCommand = {
             content: result.summary,
             timestamp: Date.now(),
           });
+        }
+
+        // Persist interaction to conversation history & SQLite database if agent is present
+        if (ctx.agent) {
+          try {
+            ctx.agent.getHistory().addUserMessage(rawTrimmed);
+            ctx.agent.getHistory().addAssistantMessage(result.summary);
+            const histPath = ctx.agent.getCurrentHistoryFilePath?.();
+            if (histPath) {
+              await ctx.agent.getHistory().saveToFile(
+                histPath,
+                ctx.agent.planState,
+                ctx.agent.workingDirectory
+              );
+            }
+          } catch {}
         }
       } else {
         ctx.addLine({

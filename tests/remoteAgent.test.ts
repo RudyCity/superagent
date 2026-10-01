@@ -722,6 +722,101 @@ describe("remoteAgent - Slash Command (/muse)", () => {
     expect(cfg.asRunner).toBe(false);
   });
 
+  it("should append a new assistant response without overwriting previous assistant messages", async () => {
+    saveRemoteAgentConfig({
+      botToken: "123456789:ABCsecretTokenXYZ",
+      groupId: "-100987654",
+      museBotId: "998877",
+    });
+
+    let currentLines: ChatLine[] = [
+      { type: "assistant", content: "Previous answer from earlier turn", timestamp: 1000 },
+      { type: "user", content: "❯ hi", timestamp: 2000 },
+    ];
+
+    let capturedTaskId = "";
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string, options?: any) => {
+      if (url.includes("deleteWebhook")) return new Response(JSON.stringify({ ok: true }));
+      if (url.includes("getMe")) return new Response(JSON.stringify({ ok: true, result: { username: "bot", can_read_all_group_messages: true } }));
+      if (url.includes("sendMessage")) {
+        const body = JSON.parse(options?.body || "{}");
+        if (body.text) {
+          try {
+            const p = JSON.parse(body.text);
+            if (p.kind === "task_request") capturedTaskId = p.id;
+          } catch {}
+        }
+        return new Response(JSON.stringify({ ok: true, result: {} }));
+      }
+      if (url.includes("getUpdates")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            result: [
+              {
+                update_id: 201,
+                message: {
+                  chat: { id: "-100987654" },
+                  from: { id: "998877" },
+                  text: JSON.stringify({
+                    v: 1,
+                    kind: "task_done",
+                    id: "done_123",
+                    task_id: capturedTaskId,
+                    summary: "Hai juga! Bridge aktif.",
+                  }),
+                },
+              },
+            ],
+          })
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }));
+    });
+
+    const addedMessages: any[] = [];
+    const mockAgent: any = {
+      workingDirectory: "/test/ws",
+      planState: "IDLE",
+      getCurrentHistoryFilePath: () => "/test/sess.json",
+      getHistory: () => ({
+        addUserMessage: (msg: string) => addedMessages.push({ role: "user", msg }),
+        addAssistantMessage: (msg: string) => addedMessages.push({ role: "assistant", msg }),
+        saveToFile: async () => {},
+      }),
+    };
+
+    const taskCtx: SlashCommandContext = {
+      addLine: (line) => currentLines.push(line),
+      setLines: (updater: any) => {
+        if (typeof updater === "function") {
+          currentLines = updater(currentLines);
+        } else {
+          currentLines = updater;
+        }
+      },
+      exit: () => {},
+      agent: mockAgent,
+    };
+
+    await museCommand.execute("hi", taskCtx);
+
+    // Verify: previous assistant message was NOT overwritten!
+    expect(currentLines[0].content).toBe("Previous answer from earlier turn");
+
+    // Verify: new assistant message was appended with Muse's answer
+    const assistantLines = currentLines.filter((l) => l.type === "assistant");
+    expect(assistantLines.length).toBe(2);
+    expect(assistantLines[1].content).toBe("Hai juga! Bridge aktif.");
+
+    // Verify: conversation history recorded the exchange
+    expect(addedMessages).toHaveLength(2);
+    expect(addedMessages[0].role).toBe("user");
+    expect(addedMessages[0].msg).toBe("hi");
+    expect(addedMessages[1].role).toBe("assistant");
+    expect(addedMessages[1].msg).toBe("Hai juga! Bridge aktif.");
+  });
+
   it("should be registered in the slash command registry", () => {
     const cmd = registry.get("muse");
     expect(cmd).toBeDefined();
