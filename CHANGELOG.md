@@ -1,3 +1,15 @@
+## [1.5.96] - 2026-10-01
+
+### Fixed
+
+- **Remote Agent Polling Resilience & Telegram Drop Prevention**:
+  - Identified and fixed dropped batches caused by Telegram Bot Group Privacy Mode (`can_read_all_group_messages: false`). Added `reply_hint` in `TaskRequestEnvelope` instructing Muse to send replies to Bot B, bypassing Telegram privacy restrictions.
+  - Added warning banner in `/muse status` and command pre-flight when Group Privacy Mode is enabled on the runner bot.
+  - Fixed premature long-poll termination in `museClient.ts` by decoupling fetch timeout (`AbortSignal.timeout`) from outer cancellation signal.
+  - Added case-insensitive, normalized prefix matching for `task_id` in `taskRunner.ts` to prevent silent dropping of batches.
+  - Added structured end-to-end diagnostic logging (`REMOTE-AGENT` category) across polling, filtering, batch execution, and error handling.
+  - Updated documentation in `docs/remote-agent-setup.md` with step-by-step instructions to disable Group Privacy Mode in `@BotFather`.
+
 ## [1.5.95] - 2026-10-01
 
 ### Improved

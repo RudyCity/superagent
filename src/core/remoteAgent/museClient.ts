@@ -5,6 +5,7 @@ import {
   EnvelopeReassembler,
   validateEnvelope,
 } from "./protocol.js";
+import { logE2E } from "../utils/unifiedLogger.js";
 
 /**
  * Note on Telegram Bot API File Limits (for future file transfer work):
@@ -17,12 +18,22 @@ export interface MuseClientOptions {
   signal?: AbortSignal;
 }
 
+export interface BotMeInfo {
+  ok: boolean;
+  id?: number;
+  username?: string;
+  firstName?: string;
+  canReadGroupMessages?: boolean;
+  error?: string;
+}
+
 export class MuseClient {
   private config: RemoteAgentConfig;
   private reassembler = new EnvelopeReassembler();
   private isPolling = false;
   private seenUpdateIds = new Set<number>();
   private readonly maxSeenUpdateIds = 2000;
+  private lastSentMessageId?: number;
 
   constructor(config: RemoteAgentConfig) {
     this.config = { ...config };
@@ -38,6 +49,37 @@ export class MuseClient {
 
   public isPollerActive(): boolean {
     return this.isPolling;
+  }
+
+  public getLastSentMessageId(): number | undefined {
+    return this.lastSentMessageId;
+  }
+
+  /**
+   * Fetches the bot identity and privacy mode status via Telegram Bot API getMe.
+   */
+  public async getMeInfo(): Promise<BotMeInfo> {
+    const token = this.config.botToken;
+    if (!token) {
+      return { ok: false, error: "Bot token is not configured." };
+    }
+    try {
+      const url = `https://api.telegram.org/bot${token}/getMe`;
+      const res = await fetch(url);
+      const data = (await res.json()) as any;
+      if (!data || !data.ok || !data.result) {
+        return { ok: false, error: data?.description || `HTTP ${res.status}` };
+      }
+      return {
+        ok: true,
+        id: data.result.id,
+        username: data.result.username,
+        firstName: data.result.first_name,
+        canReadGroupMessages: Boolean(data.result.can_read_all_group_messages),
+      };
+    } catch (err: any) {
+      return { ok: false, error: this.sanitizeError(err.message || String(err)) };
+    }
   }
 
   /**
@@ -81,7 +123,8 @@ export class MuseClient {
   public async sendMessage(
     chatId: string | number,
     text: string,
-    retryCount = 0
+    retryCount = 0,
+    replyToMessageId?: number
   ): Promise<boolean> {
     const token = this.config.botToken;
     if (!token) {
@@ -92,22 +135,28 @@ export class MuseClient {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
 
     try {
+      const payload: Record<string, any> = {
+        chat_id: chatId,
+        text,
+      };
+      if (replyToMessageId) {
+        payload.reply_parameters = { message_id: replyToMessageId };
+      }
+
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (res.status === 429) {
         // Respect Telegram parameters.retry_after
         const body = (await res.json().catch(() => ({}))) as any;
         const retryAfterSec = body?.parameters?.retry_after ?? 2;
+        logE2E("REMOTE-AGENT", `Telegram 429 rate limit. Retrying after ${retryAfterSec}s (retry ${retryCount + 1}/${maxRetries})`);
         if (retryCount < maxRetries) {
           await new Promise((resolve) => setTimeout(resolve, retryAfterSec * 1000 + 500));
-          return this.sendMessage(chatId, text, retryCount + 1);
+          return this.sendMessage(chatId, text, retryCount + 1, replyToMessageId);
         }
         return false;
       }
@@ -115,14 +164,19 @@ export class MuseClient {
       if (!res.ok) {
         const bodyText = await res.text().catch(() => "");
         const sanitized = this.sanitizeError(`HTTP ${res.status}: ${bodyText}`);
+        logE2E("REMOTE-AGENT", `sendMessage failed: ${sanitized}`);
         console.warn(`[MuseClient] sendMessage failed: ${sanitized}`);
         return false;
       }
 
       const data = (await res.json()) as any;
+      if (data && data.ok && data.result?.message_id) {
+        this.lastSentMessageId = data.result.message_id;
+      }
       return Boolean(data && data.ok);
     } catch (err: any) {
       const sanitized = this.sanitizeError(err.message || String(err));
+      logE2E("REMOTE-AGENT", `sendMessage network error: ${sanitized}`);
       console.warn(`[MuseClient] sendMessage network error: ${sanitized}`);
       return false;
     }
@@ -134,7 +188,8 @@ export class MuseClient {
    */
   public async sendEnvelope(
     envelope: RemoteAgentEnvelope,
-    targetGroupId?: string | number
+    targetGroupId?: string | number,
+    replyToMessageId?: number
   ): Promise<boolean> {
     const groupId = targetGroupId || this.config.groupId;
     if (!groupId) {
@@ -144,8 +199,10 @@ export class MuseClient {
     const chunks = encodeEnvelope(envelope);
     let allOk = true;
 
+    logE2E("REMOTE-AGENT", `Sending envelope ${envelope.kind} (chunks: ${chunks.length}) to group ${groupId}`);
+
     for (let i = 0; i < chunks.length; i++) {
-      const ok = await this.sendMessage(groupId, chunks[i]);
+      const ok = await this.sendMessage(groupId, chunks[i], 0, replyToMessageId);
       if (!ok) {
         allOk = false;
       }
@@ -180,6 +237,8 @@ export class MuseClient {
     let offset = 0;
     let consecutiveErrors = 0;
 
+    logE2E("REMOTE-AGENT", `Starting envelope polling loop for group ${this.config.groupId}, museBotId: ${this.config.museBotId}`);
+
     try {
       // Step 1: Ensure webhooks are deleted before polling
       await this.deleteWebhook();
@@ -191,11 +250,17 @@ export class MuseClient {
             JSON.stringify(["message"])
           )}`;
 
-          const res = await fetch(url, { signal });
+          // Create a per-request signal with a 35s timeout to prevent hanging sockets
+          const fetchSignal = signal
+            ? AbortSignal.any([signal, AbortSignal.timeout(35000)])
+            : AbortSignal.timeout(35000);
+
+          const res = await fetch(url, { signal: fetchSignal });
 
           if (res.status === 429) {
             const body = (await res.json().catch(() => ({}))) as any;
             const retryAfterSec = body?.parameters?.retry_after ?? 3;
+            logE2E("REMOTE-AGENT", `pollEnvelopes 429 rate limit. Waiting ${retryAfterSec}s`);
             await new Promise((resolve) => setTimeout(resolve, retryAfterSec * 1000 + 500));
             continue;
           }
@@ -203,6 +268,7 @@ export class MuseClient {
           if (!res.ok) {
             consecutiveErrors++;
             const backoffMs = Math.min(1000 * Math.pow(2, consecutiveErrors), 15000);
+            logE2E("REMOTE-AGENT", `pollEnvelopes HTTP error ${res.status}. Backoff ${backoffMs}ms`);
             await new Promise((resolve) => setTimeout(resolve, backoffMs));
             continue;
           }
@@ -241,9 +307,12 @@ export class MuseClient {
             const chatId = msg.chat?.id;
             const senderId = msg.from?.id;
 
+            logE2E("REMOTE-AGENT", `Update ${updateId} from sender ${senderId} in chat ${chatId}`);
+
             // Rule 1: Ignore any message where message.chat.id != config.groupId
             if (this.config.groupId !== undefined && this.config.groupId !== "") {
               if (String(chatId) !== String(this.config.groupId)) {
+                logE2E("REMOTE-AGENT", `Update ${updateId} ignored: chat ID ${chatId} != expected ${this.config.groupId}`);
                 continue;
               }
             }
@@ -251,6 +320,7 @@ export class MuseClient {
             // Rule 2: Ignore any message where sender is not Muse's bot ID
             if (this.config.museBotId !== undefined && this.config.museBotId !== "") {
               if (String(senderId) !== String(this.config.museBotId)) {
+                logE2E("REMOTE-AGENT", `Update ${updateId} ignored: sender ID ${senderId} != expected ${this.config.museBotId}`);
                 continue;
               }
             }
@@ -258,6 +328,7 @@ export class MuseClient {
             // Feed chunk or message to reassembler
             const envelope = this.reassembler.processMessage(msg.text);
             if (!envelope) {
+              logE2E("REMOTE-AGENT", `Update ${updateId}: message did not yield complete envelope yet (pending assembly or non-envelope text)`);
               continue;
             }
 
@@ -268,28 +339,40 @@ export class MuseClient {
             });
 
             if (!val.valid) {
+              logE2E("REMOTE-AGENT", `Update ${updateId}: envelope rejected: ${val.error}`);
               console.warn(`[MuseClient] Envelope rejected: ${val.error}`);
               continue;
             }
+
+            logE2E("REMOTE-AGENT", `Processing received envelope: kind=${val.envelope!.kind}, id=${(val.envelope as any).id || (val.envelope as any).task_id}`);
 
             try {
               await onEnvelope(val.envelope!);
             } catch (handleErr: any) {
               const sanitized = this.sanitizeError(handleErr.message || String(handleErr));
+              logE2E("REMOTE-AGENT", `Error in onEnvelope handler: ${sanitized}`);
               console.error(`[MuseClient] Error in onEnvelope handler: ${sanitized}`);
             }
           }
         } catch (err: any) {
-          if (signal?.aborted || err.name === "AbortError") {
+          if (signal?.aborted) {
+            logE2E("REMOTE-AGENT", "Polling loop stopped: signal aborted by user");
             break;
+          }
+          // Per-request timeout is expected for long-polling when no updates arrive
+          if (err.name === "TimeoutError" || (err.name === "AbortError" && !signal?.aborted)) {
+            continue;
           }
           consecutiveErrors++;
           const backoffMs = Math.min(1000 * Math.pow(2, consecutiveErrors), 15000);
+          const sanitized = this.sanitizeError(err.message || String(err));
+          logE2E("REMOTE-AGENT", `Polling loop network error: ${sanitized}. Backoff ${backoffMs}ms`);
           await new Promise((resolve) => setTimeout(resolve, backoffMs));
         }
       }
     } finally {
       this.isPolling = false;
+      logE2E("REMOTE-AGENT", "Polling loop terminated");
     }
   }
 }

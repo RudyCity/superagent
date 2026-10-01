@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { getGlobalConfigDir } from "../config/paths.js";
 
-export type LogCategory = "SQL" | "SUPERAGENT-SERVER" | "TLINE-BACKEND" | "TLINE-UI";
+export type LogCategory = "SQL" | "SUPERAGENT-SERVER" | "TLINE-BACKEND" | "TLINE-UI" | "REMOTE-AGENT";
 
 // Diagnostic logging must never block the event loop: writes are queued as
 // fire-and-forget promises, serialized per file to preserve ordering. The

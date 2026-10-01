@@ -6,6 +6,7 @@ export interface TaskRequestEnvelope {
   task: string;
   workspace: string;
   tools: string[];
+  reply_hint?: string;
 }
 
 export interface BatchToolCall {

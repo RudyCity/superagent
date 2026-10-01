@@ -61,7 +61,16 @@ By default, Telegram bots cannot see messages from other bots. To allow Bot A an
 3. Select **Bot B** -> **Bot Settings** -> enable **Bot-to-Bot Communication Mode**.
 4. Confirm with your remote assistant provider that Bot A also has Bot-to-Bot Communication Mode enabled.
 
-### 3.3 Create a Private Telegram Group
+### 3.3 Disable Group Privacy Mode in @BotFather (Critical)
+By default, Telegram bots have **Privacy Mode enabled**. When active, Telegram silently discards messages from other bots in groups unless they start with `/` or directly reply to Bot B. To ensure Bot B receives all tool batches:
+
+1. Open **@BotFather** in Telegram.
+2. Send `/setprivacy`.
+3. Select **Bot B** (`<BOT_B_USERNAME>`).
+4. Select **Disable** (BotFather will confirm: *"Privacy mode for <bot> is now disabled. The bot will receive all messages in group chats"*).
+5. If privacy mode cannot be disabled, Muse MUST always reply directly to Bot B's messages using `reply_parameters` or `reply_to_message_id`.
+
+### 3.4 Create a Private Telegram Group
 1. Create a new **Private Group** in Telegram.
 2. Add both **Bot B** and **`<BOT_A_USERNAME>`** (Bot A) as members.
 3. Promote **both bots to Group Administrators** with permission to read and send messages.
@@ -130,9 +139,10 @@ Protocol — JSON envelopes, v: 1:
 Rules:
 1. Process only messages where chat.id == <GROUP_ID> AND from.id == <BOT_B_ID>; ignore everything else.
 2. Dedupe by envelope id and Telegram update_id — never answer the same batch twice.
-3. Loop: task_request -> reason -> task_batch -> wait task_result -> repeat -> task_done. Max 50 batches / 30 min per task.
-4. Telegram message text limit is 4096 chars — split larger envelopes as: MUSEBUS <envelope_id> <n>/<N>\n<chunk>.
-5. Prefer read-only batches first (explore before modifying). Keep summary concise and actionable.
+3. ALWAYS send responses as Telegram replies to Bot B (use reply_parameters or reply_to_message_id) so Telegram routes messages even if Group Privacy Mode is enabled.
+4. Loop: task_request -> reason -> task_batch -> wait task_result -> repeat -> task_done. Max 50 batches / 30 min per task.
+5. Telegram message text limit is 4096 chars — split larger envelopes as: MUSEBUS <envelope_id> <n>/<N>\n<chunk>.
+6. Prefer read-only batches first (explore before modifying). Keep summary concise and actionable.
 ```
 
 ---
@@ -171,6 +181,7 @@ Superagent's `EnvelopeReassembler` buffers incoming parts and reconstructs the e
 | `Remote agent (Muse) is not configured` | Missing one of `botToken`, `groupId`, or `museBotId` | Set all three values using `/muse config <key> <val>` |
 | `Failed to send task request` | Bot B token is invalid or Bot B was removed from the group | Check members list in Telegram and verify token via `/muse status` |
 | `task_request` sent but no response | Bot-to-Bot Communication Mode is disabled on Bot A or Bot B | Enable mode in @BotFather Mini App (step 3.2) |
+| Muse sends batch but Superagent doesn't respond | Group Privacy Mode is enabled on Bot B, blocking standalone messages | In @BotFather: `/setprivacy` -> Bot B -> `Disable`, or have Muse reply directly to Bot B's message |
 | Group ID rejected or messages not arriving | Missing negative sign on group ID | Telegram group IDs must be negative (e.g. `-100...`) |
 | Bot ID mixed up with Group ID | Group ID is negative; bot user ID is positive | Swap the values in `/muse config` |
 | Telegram 409 Conflict | Another process is polling the same bot token | Ensure only one Superagent instance polls Bot B |

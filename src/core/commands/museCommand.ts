@@ -22,10 +22,31 @@ export const museCommand: SlashCommand = {
       const workspace = cfg.defaultWorkspace || ctx.agent?.workingDirectory || process.cwd();
       const isConfigured = Boolean(cfg.botToken && cfg.groupId && cfg.museBotId);
 
+      let botInfoStr = "";
+      let privacyInfo = "";
+      if (cfg.botToken) {
+        try {
+          const { MuseClient } = await import("../remoteAgent/museClient.js");
+          const client = new MuseClient(cfg);
+          const me = await client.getMeInfo();
+          if (me.ok) {
+            botInfoStr = ` (@${me.username || me.firstName})`;
+            if (me.canReadGroupMessages === false) {
+              privacyInfo = "- Group Privacy   : ENABLED (WARNING: Telegram blocks non-reply messages! Run /setprivacy -> @bot -> Disable in @BotFather)\n";
+            } else {
+              privacyInfo = "- Group Privacy   : DISABLED (OK: Bot reads all group messages)\n";
+            }
+          } else {
+            botInfoStr = ` (Error: ${me.error})`;
+          }
+        } catch {}
+      }
+
       const lines = [
         "Remote Agent (Muse) Status:",
         `- Configured      : ${isConfigured ? "Yes" : "No (run /muse config)"}`,
-        `- Bot Token       : ${maskToken(cfg.botToken)}`,
+        `- Bot Token       : ${maskToken(cfg.botToken)}${botInfoStr}`,
+        privacyInfo ? privacyInfo.trimEnd() : null,
         `- Telegram Group  : ${cfg.groupId || "(not set)"}`,
         `- Muse Bot ID     : ${cfg.museBotId || "(not set)"}`,
         `- Workspace       : ${workspace}`,
@@ -38,7 +59,7 @@ export const museCommand: SlashCommand = {
         "  /muse <task>                 - Run a task with remote Muse brain",
         "  /muse status                 - View remote agent status",
         "  /muse config <key> <val>     - Set config key (botToken, groupId, museBotId, defaultWorkspace)",
-      ];
+      ].filter(Boolean) as string[];
 
       ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
       return;
@@ -147,6 +168,28 @@ export const museCommand: SlashCommand = {
     const { runRemoteTask } = await import("../remoteAgent/taskRunner.js");
     const workspace = ctx.agent?.workingDirectory || process.cwd();
 
+    // Check Telegram Group Privacy Mode status to proactively warn user if misconfigured
+    const cfg = loadRemoteAgentConfig();
+    if (cfg.botToken) {
+      try {
+        const { MuseClient } = await import("../remoteAgent/museClient.js");
+        const client = new MuseClient(cfg);
+        const me = await client.getMeInfo();
+        if (me.ok && me.canReadGroupMessages === false) {
+          ctx.addLine({
+            type: "system",
+            content: [
+              `⚠️  [Muse Warning] Telegram Group Privacy Mode is ENABLED for @${me.username || "your_bot"}.`,
+              "   Telegram will NOT deliver standalone messages from Muse in group chats!",
+              "   To fix: Open @BotFather in Telegram -> send /setprivacy -> select bot -> Disable.",
+              "   Alternatively, instruct Muse to reply directly to bot messages.",
+            ].join("\n"),
+            timestamp: now,
+          });
+        }
+      } catch {}
+    }
+
     ctx.addLine({
       type: "system",
       content: `[Muse] Initiating remote task in workspace: ${workspace}\nTask: "${rawTrimmed}"`,
@@ -155,12 +198,30 @@ export const museCommand: SlashCommand = {
 
     ctx.setIsProcessing?.(true);
 
+    let assistantLineCreated = false;
+    const ensureAssistantLine = () => {
+      if (assistantLineCreated) return;
+      assistantLineCreated = true;
+      if (ctx.setLines) {
+        ctx.setLines((prev) => [
+          ...prev,
+          {
+            type: "assistant",
+            content: "",
+            timestamp: Date.now(),
+            children: [],
+          },
+        ]);
+      }
+    };
+
     try {
       const result = await runRemoteTask({
         task: rawTrimmed,
         workspace,
         agent: ctx.agent,
         onToolStart: (toolCall, description) => {
+          ensureAssistantLine();
           if (ctx.agent?.onEvent) {
             ctx.agent.onEvent({
               type: "tool_start",
@@ -236,13 +297,28 @@ export const museCommand: SlashCommand = {
           }
         },
         onProgress: (msg) => {
-          ctx.addLine({
-            type: "system",
-            content: `[Muse] ${msg}`,
-            timestamp: Date.now(),
-          });
+          if (ctx.agent?.onEvent) {
+            ctx.agent.onEvent({
+              type: "tool_progress",
+              toolCallId: "muse_progress",
+              message: msg,
+            });
+          }
+          if (msg.startsWith("Warning") || msg.startsWith("Duplicate") || msg.startsWith("Waiting")) {
+            ctx.addLine({
+              type: "system",
+              content: `[Muse] ${msg}`,
+              timestamp: Date.now(),
+            });
+          }
         },
         onChat: (msg) => {
+          if (ctx.agent?.onEvent) {
+            ctx.agent.onEvent({
+              type: "reasoning",
+              content: `\n[Muse Note]: ${msg}\n`,
+            });
+          }
           ctx.addLine({
             type: "assistant",
             content: `[Muse Note]: ${msg}`,
@@ -254,13 +330,11 @@ export const museCommand: SlashCommand = {
       if (result.success) {
         if (ctx.setLines) {
           ctx.setLines((prev) => {
-            if (prev.length > 0) {
-              const lastIdx = prev.length - 1;
-              const lastLine = prev[lastIdx];
-              if (lastLine.type === "assistant" && (!lastLine.content || lastLine.content.trim() === "")) {
+            for (let i = prev.length - 1; i >= 0; i--) {
+              if (prev[i].type === "assistant") {
                 const updated = [...prev];
-                updated[lastIdx] = {
-                  ...lastLine,
+                updated[i] = {
+                  ...updated[i],
                   content: result.summary,
                 };
                 return updated;
