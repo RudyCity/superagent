@@ -284,4 +284,144 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
     sendSpy.mockRestore();
     pollSpy.mockRestore();
   });
+
+  it("should include run_command and bash in task_request tools list", async () => {
+    let capturedRequest: TaskRequestEnvelope | null = null;
+
+    const sendSpy = vi
+      .spyOn(MuseClient.prototype, "sendEnvelope")
+      .mockImplementation(async (envelope) => {
+        if (envelope.kind === "task_request") {
+          capturedRequest = envelope as TaskRequestEnvelope;
+        }
+        return true;
+      });
+
+    const pollSpy = vi
+      .spyOn(MuseClient.prototype, "pollEnvelopes")
+      .mockImplementation((onEnvelope) => {
+        return new Promise<void>((resolve) => {
+          setTimeout(async () => {
+            await onEnvelope({
+              v: 1,
+              kind: "task_done",
+              task_id: capturedRequest?.id || "task_tools",
+              summary: "Done",
+            });
+            resolve();
+          }, 10);
+        });
+      });
+
+    await runRemoteTask({ task: "Check tools" });
+
+    expect(capturedRequest).not.toBeNull();
+    expect(capturedRequest!.tools).toContain("run_command");
+    expect(capturedRequest!.tools).toContain("bash");
+    expect(capturedRequest!.tools).toContain("read");
+    expect(capturedRequest!.tools).toContain("write");
+
+    sendSpy.mockRestore();
+    pollSpy.mockRestore();
+  });
+
+  it("should inject system_prompt in TaskRequestEnvelope and session_reset envelope", async () => {
+    let capturedRequest: TaskRequestEnvelope | null = null;
+    let capturedReset: SessionResetEnvelope | null = null;
+
+    const sendSpy = vi
+      .spyOn(MuseClient.prototype, "sendEnvelope")
+      .mockImplementation(async (envelope) => {
+        if (envelope.kind === "task_request") {
+          capturedRequest = envelope as TaskRequestEnvelope;
+        } else if (envelope.kind === "session_reset") {
+          capturedReset = envelope as SessionResetEnvelope;
+        }
+        return true;
+      });
+
+    const pollSpy = vi
+      .spyOn(MuseClient.prototype, "pollEnvelopes")
+      .mockImplementation((onEnvelope) => {
+        return new Promise<void>((resolve) => {
+          setTimeout(async () => {
+            await onEnvelope({
+              v: 1,
+              kind: "task_done",
+              task_id: capturedRequest?.id || "task_sys",
+              summary: "Done",
+            });
+            resolve();
+          }, 10);
+        });
+      });
+
+    await runRemoteTask({ task: "Run test" });
+    await notifyMuseSessionReset("sess_reset_test");
+
+    expect(capturedRequest).not.toBeNull();
+    expect(capturedRequest!.system_prompt).toBeDefined();
+    expect(capturedRequest!.system_prompt).toContain("You are Muse");
+    expect(capturedRequest!.system_prompt).toContain("run_command");
+
+    expect(capturedReset).not.toBeNull();
+    expect(capturedReset!.system_prompt).toBeDefined();
+    expect(capturedReset!.system_prompt).toContain("You are Muse");
+
+    sendSpy.mockRestore();
+    pollSpy.mockRestore();
+  });
+
+  it("should prepend system instructions header to task string on initial turn", async () => {
+    let capturedRequest: TaskRequestEnvelope | null = null;
+
+    const sendSpy = vi
+      .spyOn(MuseClient.prototype, "sendEnvelope")
+      .mockImplementation(async (envelope) => {
+        if (envelope.kind === "task_request") {
+          capturedRequest = envelope as TaskRequestEnvelope;
+        }
+        return true;
+      });
+
+    const pollSpy = vi
+      .spyOn(MuseClient.prototype, "pollEnvelopes")
+      .mockImplementation((onEnvelope) => {
+        return new Promise<void>((resolve) => {
+          setTimeout(async () => {
+            await onEnvelope({
+              v: 1,
+              kind: "task_done",
+              task_id: capturedRequest?.id || "task_init",
+              summary: "Done",
+            });
+            resolve();
+          }, 10);
+        });
+      });
+
+    // When running with no context (initial turn)
+    await runRemoteTask({ task: "Build me a login screen" });
+
+    expect(capturedRequest).not.toBeNull();
+    expect(capturedRequest!.task).toContain("[SYSTEM INSTRUCTIONS FOR MUSE REMOTE BRAIN]");
+    expect(capturedRequest!.task).toContain("run_command");
+    expect(capturedRequest!.task).toContain("Build me a login screen");
+
+    sendSpy.mockRestore();
+    pollSpy.mockRestore();
+  });
+
+  it("should support /muse config systemPrompt to customize instructions", async () => {
+    const lines: Array<{ type: string; content: string }> = [];
+    const fakeCtx: SlashCommandContext = {
+      addLine: (line) => lines.push({ type: line.type, content: line.content }),
+      exit: () => {},
+    };
+
+    await museCommand.execute("config systemPrompt Be concise and strict", fakeCtx);
+    const updated = loadRemoteAgentConfig();
+    expect(updated.systemPrompt).toBe("Be concise and strict");
+    expect(lines.some((l) => l.content.includes("systemPrompt = Be concise and strict"))).toBe(true);
+  });
 });

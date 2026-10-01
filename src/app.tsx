@@ -1588,6 +1588,7 @@ export function App({
             "/muse config groupId",
             "/muse config museBotId",
             "/muse config defaultWorkspace",
+            "/muse config systemPrompt",
           ];
           return filterSuggestions(configPossibilities, currentInput);
         }
@@ -1609,6 +1610,7 @@ export function App({
           "/muse config groupId",
           "/muse config museBotId",
           "/muse config defaultWorkspace",
+          "/muse config systemPrompt",
         ];
         return filterSuggestions(possibilities, currentInput);
       }

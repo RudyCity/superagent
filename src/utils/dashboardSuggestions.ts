@@ -68,6 +68,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/muse config groupId": "Configure Telegram private group chat ID (e.g. -100xxxxxxxxxx)",
   "/muse config museBotId": "Configure Telegram user ID of Muse bot (Bot A)",
   "/muse config defaultWorkspace": "Set default workspace directory for remote tasks",
+  "/muse config systemPrompt": "Set custom guidance system instructions for Muse remote brain",
 };
 
 const RESUME_SCAN_LIMIT = 100;
@@ -369,6 +370,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
           "/muse config groupId",
           "/muse config museBotId",
           "/muse config defaultWorkspace",
+          "/muse config systemPrompt",
         ];
         return filterSuggestions(configPossibilities, query);
       }
@@ -390,6 +392,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         "/muse config groupId",
         "/muse config museBotId",
         "/muse config defaultWorkspace",
+        "/muse config systemPrompt",
       ];
       return filterSuggestions(possibilities, query);
     }

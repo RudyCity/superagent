@@ -22,7 +22,8 @@ A comprehensive setup guide for connecting **Superagent** (the AI coding assista
 │  /muse <task>       │         │  │ Bot B (Your bot)  │  │         │  High-level         │
 │  Executes local     │◄───────►│  │ Bot A (Muse bot)  │  │◄───────►│  reasoning &        │
 │  tools: read, glob, │         │  └───────────────────┘  │         │  planning, sends    │
-│  grep, write, edit  │         │                         │         │  task_batch calls   │
+│  grep, write, edit, │         │                         │         │  task_batch calls   │
+│  run_command, bash  │         │                         │         │                     │
 └─────────────────────┘         └─────────────────────────┘         └─────────────────────┘
 ```
 
@@ -32,8 +33,8 @@ A comprehensive setup guide for connecting **Superagent** (the AI coding assista
 
 ### Single Task Workflow
 1. User enters `/muse <task>` in Superagent. Superagent (via Bot B) posts a `task_request` envelope to the Telegram group.
-2. Muse reads the request, reasons through the problem, and replies with a `task_batch` containing tool calls (`read`, `glob`, `ripgrep_search`, `write`, `edit`, `apply_patch`).
-3. Superagent executes the tools locally (prompting the user for approval on destructive file changes or commands) and posts a `task_result` envelope back.
+2. Muse reads the request, reasons through the problem, and replies with a `task_batch` containing tool calls (`read`, `glob`, `ripgrep_search`, `write`, `edit`, `apply_patch`, `run_command`, `bash`).
+3. Superagent executes the tools locally (prompting the user for approval on destructive file changes or dangerous commands) and posts a `task_result` envelope back.
 4. Steps 2 and 3 repeat until Muse completes the task and posts a `task_done` envelope with a final summary.
 
 ---
@@ -97,6 +98,7 @@ Configure Superagent directly in your terminal using the `/muse config` slash co
 | `museBotId` | `muse_bot_id` | Numeric Telegram user ID of Muse bot (Bot A) | `/muse config museBotId 987654321` |
 | `as_runner_model` | `as_runner`, `default_runner` | Route regular prompts directly to Muse (on/off) | `/muse config as_runner_model on` |
 | `defaultWorkspace` | `workspace` | Default workspace root for tool executions | `/muse config defaultWorkspace ./my-project` |
+| `systemPrompt` | `system_prompt`, `prompt` | Custom guidance system prompt for Muse brain | `/muse config systemPrompt "Follow strict TDD"` |
 
 #### How to Find `<GROUP_ID>`:
 - Group IDs in Telegram are always negative numbers (e.g. `-1001234567890`).
@@ -113,7 +115,7 @@ The output will confirm that credentials are saved in `~/.superagent-r/remote-ag
 ### 4.2 Interactive Autocomplete Suggestions
 Superagent includes built-in autocomplete for all `/muse` commands:
 - Type `/muse ` and press Tab or Space to view available subcommands (`status`, `config`).
-- Type `/muse config ` to view suggestions for all keys (`as_runner_model`, `botToken`, `groupId`, `museBotId`, `defaultWorkspace`).
+- Type `/muse config ` to view suggestions for all keys (`as_runner_model`, `botToken`, `groupId`, `museBotId`, `defaultWorkspace`, `systemPrompt`).
 - Type `/muse config as_runner_model ` to see quick selection options for `on` and `off`.
 
 ### 4.3 Test Connection
@@ -130,8 +132,9 @@ Expected sequence in the terminal:
 4. Muse sends `task_done` and the final answer appears in your terminal.
 
 ### 4.4 Managing Sessions and Resetting Context
+- **Automatic System Prompt Injection**: On the initial turn of a chat session, or when starting a new session, Superagent automatically injects a protocol guidance prompt into the message to Muse (and within `system_prompt` in the envelope). Muse is automatically informed of all tools (including shell execution), response schemas, and formatting rules.
 - **Session Continuity**: Multi-turn prompts automatically preserve the active conversation session ID and include recent dialogue history in the `context` field of `task_request`.
-- **Resetting Remote Context**: Use `/muse new` or `/muse reset` to send a `session_reset` envelope over Telegram, clearing Muse's conversation memory for the current session.
+- **Resetting Remote Context**: Use `/muse new` or `/muse reset` to send a `session_reset` envelope over Telegram, clearing Muse's conversation memory and transmitting fresh system instructions for the next session.
 - **Cancelling Active Tasks**: Run `/muse stop` or `/muse cancel` to terminate the active remote task immediately. Superagent kills the local poller and sends a `task_cancel` envelope to Muse over Telegram so Muse stops processing immediately.
 - **Auto-Cancellation on Interrupt**: Aborting in Superagent (or typing a new task) automatically cleans up any previous remote task, preventing competing zombie pollers and Telegram HTTP 409 Conflict errors.
 - **Global Reset**: Running `/new` or `/clear` in Superagent automatically notifies Muse over Telegram while creating a fresh local session.
@@ -168,13 +171,13 @@ Identities:
 - Group: chat id <GROUP_ID> (both bots are admins, Bot-to-Bot Communication Mode enabled).
 
 Protocol — JSON envelopes, v: 1:
-- task_request (in): {"v": 1, "kind": "task_request", "id": "task_<uuid>", "session": "<id>", "task": "<prompt>", "workspace": "<path>", "tools": [...], "context": [{"role": "user"|"assistant", "content": "..."}]}
-- task_batch (out): {"v": 1, "kind": "task_batch", "id": "batch_<uuid>", "task_id": "task_<uuid>", "calls": [{"id": "c1", "tool": "read", "args": {"path": "src/index.ts"}}]}
-  Tools available: read, glob, grep, ripgrep_search (safe); write, edit, write_to_file, replace_file_content, apply_patch (destructive — local runner prompts user).
+- task_request (in): {"v": 1, "kind": "task_request", "id": "task_<uuid>", "session": "<id>", "task": "<prompt>", "workspace": "<path>", "tools": [...], "system_prompt": "...", "context": [{"role": "user"|"assistant", "content": "..."}]}
+- task_batch (out): {"v": 1, "kind": "task_batch", "id": "batch_<uuid>", "task_id": "task_<uuid>", "calls": [{"id": "c1", "tool": "run_command", "args": {"command": "git status"}}]}
+  Tools available: read, glob, grep, ripgrep_search (safe); run_command, bash (terminal commands; dangerous commands prompt user); write, edit, write_to_file, replace_file_content, apply_patch (destructive file modifications — prompt user).
 - task_result (in): {"v": 1, "kind": "task_result", "id": "batch_<uuid>", "task_id": "task_<uuid>", "results": [{"id": "c1", "ok": true, "output": "<string>"}]}
 - task_done (out): {"v": 1, "kind": "task_done", "task_id": "task_<uuid>", "summary": "<final markdown summary>"}
 - chat (either): {"v": 1, "kind": "chat", "task_id": "task_<uuid>", "text": "<non-tool progress note>"}
-- session_reset (in): {"v": 1, "kind": "session_reset", "session": "<id>", "message": "<reason>"}
+- session_reset (in): {"v": 1, "kind": "session_reset", "session": "<id>", "message": "<reason>", "system_prompt": "..."}
 - task_cancel (in): {"v": 1, "kind": "task_cancel", "task_id": "task_<uuid>", "reason": "<string>"}
 
 Rules:

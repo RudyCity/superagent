@@ -85,6 +85,7 @@ export const museCommand: SlashCommand = {
           `- groupId          : ${cfg.groupId || "(not set)"}`,
           `- museBotId        : ${cfg.museBotId || "(not set)"}`,
           `- defaultWorkspace : ${cfg.defaultWorkspace || "(default to current workspace)"}`,
+          `- systemPrompt     : ${cfg.systemPrompt ? `configured (${cfg.systemPrompt.length} chars)` : "default (auto-injected)"}`,
           "",
           "Usage: /muse config <key> <value>",
           "Keys:",
@@ -93,12 +94,14 @@ export const museCommand: SlashCommand = {
           "  groupId          - Numeric private group chat ID (e.g. -100xxxxxxxxxx)",
           "  museBotId        - Numeric Telegram user ID of Muse bot (Bot A)",
           "  defaultWorkspace - Default project workspace path",
+          "  systemPrompt     - Custom system instructions injected into Muse requests",
           "",
           "Example:",
           "  /muse config as_runner_model on",
           "  /muse config botToken 123456789:ABCdef...",
           "  /muse config groupId -1001234567890",
           "  /muse config museBotId 987654321",
+          "  /muse config systemPrompt Follow strict TDD conventions.",
         ];
         ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
         return;
@@ -120,13 +123,16 @@ export const museCommand: SlashCommand = {
         as_runner_model: "asRunner",
         defaultrunner: "asRunner",
         default_runner: "asRunner",
+        systemprompt: "systemPrompt",
+        system_prompt: "systemPrompt",
+        prompt: "systemPrompt",
       };
 
       const mappedKey = validKeys[key];
       if (!mappedKey) {
         ctx.addLine({
           type: "error",
-          content: `Unknown config key: "${key}". Valid keys: as_runner_model, botToken, groupId, museBotId, defaultWorkspace`,
+          content: `Unknown config key: "${key}". Valid keys: as_runner_model, botToken, groupId, museBotId, defaultWorkspace, systemPrompt`,
           timestamp: now,
         });
         return;
@@ -164,6 +170,8 @@ export const museCommand: SlashCommand = {
         patch.museBotId = val;
       } else if (mappedKey === "defaultWorkspace") {
         patch.defaultWorkspace = val;
+      } else if (mappedKey === "systemPrompt") {
+        patch.systemPrompt = val;
       }
 
       updateRemoteAgentConfig(patch);

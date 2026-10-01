@@ -38,7 +38,18 @@ function isErrorResult(resultStr: string): boolean {
 }
 
 /**
- * Normalizes tool arguments (e.g. mapping path -> filePath for file tools).
+ * Maps common tool aliases (e.g. shell, exec, terminal -> run_command).
+ */
+export function normalizeToolName(tool: string): string {
+  const lower = (tool || "").toLowerCase().trim();
+  if (["shell", "exec", "terminal", "cmd", "sh"].includes(lower)) {
+    return "run_command";
+  }
+  return tool;
+}
+
+/**
+ * Normalizes tool arguments (e.g. mapping path -> filePath for file tools, cmd -> command for shell tools).
  */
 function normalizeArgs(tool: string, rawArgs?: Record<string, any>): Record<string, any> {
   const args = { ...(rawArgs || {}) };
@@ -49,6 +60,11 @@ function normalizeArgs(tool: string, rawArgs?: Record<string, any>): Record<stri
   ) {
     if (args.path && !args.filePath && !args.TargetFile) {
       args.filePath = args.path;
+    }
+  }
+  if (["run_command", "bash", "shell", "exec", "terminal", "cmd", "sh"].includes(tool)) {
+    if (!args.command && (args.cmd || args.script || args.input)) {
+      args.command = args.cmd || args.script || args.input;
     }
   }
   return args;
@@ -74,7 +90,7 @@ export async function executeBatch(
       break;
     }
 
-    const toolName = call.tool;
+    const toolName = normalizeToolName(call.tool);
     const toolArgs = normalizeArgs(toolName, call.args);
     const toolCallObj = {
       id: call.id,
@@ -100,6 +116,16 @@ export async function executeBatch(
         try {
           const { writeTool } = await import("../tools/fileEditTools.js");
           tool = writeTool;
+        } catch {}
+      } else if (toolName === "run_command") {
+        try {
+          const { runCommandTool } = await import("../tools/shellTools.js");
+          tool = runCommandTool;
+        } catch {}
+      } else if (toolName === "bash") {
+        try {
+          const { bashTool } = await import("../tools/shellTools.js");
+          tool = bashTool;
         } catch {}
       }
     }

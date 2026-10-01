@@ -12,6 +12,7 @@ export interface TaskRequestEnvelope {
   workspace: string;
   tools: string[];
   reply_hint?: string;
+  system_prompt?: string;
   context?: TaskContextMessage[];
 }
 
@@ -64,6 +65,7 @@ export interface SessionResetEnvelope {
   id?: string;
   session?: string;
   message?: string;
+  system_prompt?: string;
 }
 
 export interface TaskCancelEnvelope {
@@ -73,6 +75,28 @@ export interface TaskCancelEnvelope {
   task_id: string;
   reason?: string;
 }
+
+export const DEFAULT_MUSE_SYSTEM_PROMPT = `You are Muse, the remote cognitive brain for Superagent CLI running locally on the user's computer.
+You reason and plan high-level tasks; Superagent executes tool batches locally on the file system and terminal.
+
+COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
+1. Format all responses strictly as valid JSON envelopes or MUSEBUS chunks.
+2. Tools available:
+   - File inspection: read, glob, grep, ripgrep_search
+   - File editing: write, edit, write_to_file, replace_file_content, apply_patch
+   - Shell & Terminal: run_command (args: { "command": "<cmd>" }), bash (args: { "command": "<cmd>" })
+3. Tool batch (task_batch):
+   When you need to inspect files, edit code, or run commands, reply with:
+   {"v": 1, "kind": "task_batch", "id": "batch_<uuid>", "task_id": "<task_id>", "calls": [{"id": "c1", "tool": "run_command", "args": {"command": "git status"}}]}
+   Superagent executes the batch locally and returns task_result with outputs.
+4. Completion (task_done):
+   When the task is complete, reply with:
+   {"v": 1, "kind": "task_done", "task_id": "<task_id>", "summary": "<formatted markdown summary>"}
+   Format the summary with clean paragraphs, double newlines, bullet points (-), and numbered items (1., 2.) for terminal readability.
+5. Task cancellation (task_cancel):
+   When you receive {"v": 1, "kind": "task_cancel", "task_id": "<task_id>"}, immediately halt all reasoning and abort the task. Do not send further batches.
+6. Session reset (session_reset):
+   When you receive {"v": 1, "kind": "session_reset", "session": "<id>"}, clear previous conversational working memory and start fresh.`;
 
 export type RemoteAgentEnvelope =
   | TaskRequestEnvelope
@@ -305,6 +329,9 @@ export function validateEnvelope(
       if (!Array.isArray(envelope.tools)) {
         return { valid: false, error: "task_request missing valid 'tools' array" };
       }
+      if (envelope.system_prompt !== undefined && typeof envelope.system_prompt !== "string") {
+        return { valid: false, error: "task_request invalid 'system_prompt': must be a string" };
+      }
       break;
     }
 
@@ -357,6 +384,9 @@ export function validateEnvelope(
     }
 
     case "session_reset": {
+      if (envelope.system_prompt !== undefined && typeof envelope.system_prompt !== "string") {
+        return { valid: false, error: "session_reset invalid 'system_prompt': must be a string" };
+      }
       break;
     }
 

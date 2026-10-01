@@ -94,6 +94,7 @@ export class MuseClient {
 
   /**
    * Telegram Bot API deleteWebhook. Must be called before getUpdates long polling.
+   * 20s request timeout so a hanging connection never wedges the loop.
    */
   public async deleteWebhook(): Promise<boolean> {
     const token = this.config.botToken;
@@ -107,6 +108,8 @@ export class MuseClient {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ drop_pending_updates: false }),
+        // 20s timeout: a hanging Telegram POST must never wedge the loop
+        signal: AbortSignal.timeout(20000),
       });
       const data = (await res.json()) as any;
       return Boolean(data && data.ok);
@@ -119,6 +122,7 @@ export class MuseClient {
 
   /**
    * Sends a single raw text message to a Telegram chat, handling 429 rate limits.
+   * 20s timeout per attempt; retries network errors and transient 5xx up to 3 times, 5s apart.
    */
   public async sendMessage(
     chatId: string | number,
@@ -143,10 +147,12 @@ export class MuseClient {
         payload.reply_parameters = { message_id: replyToMessageId };
       }
 
+      // 20s per-attempt timeout: a hanging Telegram POST must never wedge the loop
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(20000),
       });
 
       if (res.status === 429) {
@@ -166,6 +172,12 @@ export class MuseClient {
         const sanitized = this.sanitizeError(`HTTP ${res.status}: ${bodyText}`);
         logE2E("REMOTE-AGENT", `sendMessage failed: ${sanitized}`);
         console.warn(`[MuseClient] sendMessage failed: ${sanitized}`);
+        // Retry transient server errors: up to 3 attempts, 5s apart
+        if (res.status >= 500 && retryCount < maxRetries) {
+          logE2E("REMOTE-AGENT", `sendMessage transient HTTP ${res.status}: retrying in 5s (${retryCount + 1}/${maxRetries})`);
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          return this.sendMessage(chatId, text, retryCount + 1, replyToMessageId);
+        }
         return false;
       }
 
@@ -177,7 +189,13 @@ export class MuseClient {
     } catch (err: any) {
       const sanitized = this.sanitizeError(err.message || String(err));
       logE2E("REMOTE-AGENT", `sendMessage network error: ${sanitized}`);
-      console.warn(`[MuseClient] sendMessage network error: ${sanitized}`);
+      console.warn(`[MuseClient] sendMessage networkerror: ${sanitized}`);
+      // Retry network/timeout errors: up to 3 attempts, 5s apart
+      if (retryCount < maxRetries) {
+        logE2E("REMOTE-AGENT", `sendMessage retrying in 5s (${retryCount + 1}/${maxRetries})`);
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        return this.sendMessage(chatId, text, retryCount + 1, replyToMessageId);
+      }
       return false;
     }
   }
@@ -185,11 +203,13 @@ export class MuseClient {
   /**
    * Sends an envelope to the configured private group, splitting into chunks if needed.
    * Respects chat rate limits with brief delays between multi-part chunks.
+   * Reports per-chunk progress via onProgress when provided.
    */
   public async sendEnvelope(
     envelope: RemoteAgentEnvelope,
     targetGroupId?: string | number,
-    replyToMessageId?: number
+    replyToMessageId?: number,
+    onProgress?: (message: string) => void
   ): Promise<boolean> {
     const groupId = targetGroupId || this.config.groupId;
     if (!groupId) {
@@ -200,8 +220,12 @@ export class MuseClient {
     let allOk = true;
 
     logE2E("REMOTE-AGENT", `Sending envelope ${envelope.kind} (chunks: ${chunks.length}) to group ${groupId}`);
+    onProgress?.(`Sending ${envelope.kind} (${chunks.length} chunk${chunks.length === 1 ? "" : "s"})...`);
 
     for (let i = 0; i < chunks.length; i++) {
+      if (chunks.length > 1) {
+        onProgress?.(`Sending ${envelope.kind} chunk ${i + 1}/${chunks.length}...`);
+      }
       const ok = await this.sendMessage(groupId, chunks[i], 0, replyToMessageId);
       if (!ok) {
         allOk = false;
@@ -211,6 +235,12 @@ export class MuseClient {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
+
+    onProgress?.(
+      allOk
+        ? `${envelope.kind} sent (${chunks.length}/${chunks.length} chunks)`
+        : `${envelope.kind} send failed - results may not have reached Muse`
+    );
 
     return allOk;
   }

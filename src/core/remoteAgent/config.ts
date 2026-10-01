@@ -9,6 +9,7 @@ export interface RemoteAgentConfig {
   museBotId?: string | number;
   defaultWorkspace?: string;
   asRunner?: boolean;
+  systemPrompt?: string;
 }
 
 const DEFAULT_CONFIG: RemoteAgentConfig = {};

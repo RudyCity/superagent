@@ -335,6 +335,42 @@ describe("remoteAgent - Batch Executor", () => {
     expect(fs.readFileSync(path.join(tempDir, "allowed.txt"), "utf-8")).toBe("Approved content");
   });
 
+  it("should execute shell command tool (run_command) and return output", async () => {
+    const results = await executeBatch(
+      [
+        {
+          id: "c_shell_1",
+          tool: "run_command",
+          args: { command: "node -e \"console.log('hello from remote shell')\"" },
+        },
+      ],
+      { workspace: tempDir }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe("c_shell_1");
+    expect(results[0].ok).toBe(true);
+    expect(results[0].output).toContain("hello from remote shell");
+  });
+
+  it("should normalize shell tool aliases like 'shell', 'exec', 'cmd' to run_command", async () => {
+    const results = await executeBatch(
+      [
+        {
+          id: "c_shell_alias",
+          tool: "shell",
+          args: { cmd: "node -e \"console.log('aliased command success')\"" },
+        },
+      ],
+      { workspace: tempDir }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe("c_shell_alias");
+    expect(results[0].ok).toBe(true);
+    expect(results[0].output).toContain("aliased command success");
+  });
+
   it("should truncate tool output exceeding 20,000 characters", () => {
     const huge = "a".repeat(25000);
     const truncated = truncateOutput(huge);

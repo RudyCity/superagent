@@ -6,6 +6,7 @@ import {
   TaskRequestEnvelope,
   TaskResultEnvelope,
   TaskContextMessage,
+  DEFAULT_MUSE_SYSTEM_PROMPT,
 } from "./protocol.js";
 import { MuseClient } from "./museClient.js";
 import { executeBatch } from "./batchExecutor.js";
@@ -36,8 +37,18 @@ export interface TaskRunnerResult {
   error?: string;
 }
 
-export const MAX_BATCHES_PER_TASK = 50;
-export const MAX_TASK_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+export const MAX_BATCHES_PER_TASK = 1000; // safety net only; the stall guard below kills stuck loops
+export const MAX_TASK_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours (safety net)
+export const STALL_ELAPSED_MS = 60 * 60 * 1000; // close only after the task ran this long...
+export const STALL_NO_PROGRESS_MS = 60 * 60 * 1000; // ...AND made no progress for this long
+
+/**
+ * Human-readable duration for limit messages ("24 hours" instead of "1440 minutes").
+ */
+function formatDurationLimit(ms: number): string {
+  const mins = Math.round(ms / 60000);
+  return mins >= 120 ? `${Math.round(mins / 60)} hours` : `${mins} minutes`;
+}
 
 interface ActiveRemoteTaskHandle {
   taskId: string;
@@ -160,6 +171,37 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
 
   let batchCount = 0;
   const seenBatchIds = new Set<string>();
+  // Progress-based stall detection: a task only dies when it stops moving forward.
+  let lastProgressAt = Date.now();
+  const MUTATING_TOOLS = new Set([
+    "write",
+    "edit",
+    "write_to_file",
+    "replace_file_content",
+    "apply_patch",
+    "run_command",
+    "bash",
+  ]);
+
+  /**
+   * Returns true when a batch's results moved the task forward: a successful
+   * mutating tool call, or meaningful new information from a read-only call.
+   * Retries of the same failing call and pure error results do NOT count.
+   */
+  const batchMadeProgress = (
+    calls: { id: string; tool: string }[] | undefined,
+    results: { id: string; ok: boolean; output?: string }[]
+  ): boolean => {
+    if (!calls) return false;
+    const resultById = new Map(results.map((r) => [r.id, r]));
+    for (const call of calls) {
+      const res = resultById.get(call.id);
+      if (!res || !res.ok) continue;
+      if (MUTATING_TOOLS.has(call.tool)) return true;
+      if (res.output && res.output.trim().length > 0) return true;
+    }
+    return false;
+  };
 
   const standardTools = [
     "read",
@@ -171,24 +213,47 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
     "write_to_file",
     "replace_file_content",
     "apply_patch",
+    "run_command",
+    "bash",
   ];
+
+  const systemPrompt = config.systemPrompt || DEFAULT_MUSE_SYSTEM_PROMPT;
+  const isFirstTurn = !taskContext || taskContext.length === 0;
+
+  // On initial turn of a session, or if taskContext is empty, inject a guidance header
+  // so LLM-based remote bots that only read the task string are also fully aware.
+  let taskContent = options.task;
+  if (isFirstTurn) {
+    taskContent = `[SYSTEM INSTRUCTIONS FOR MUSE REMOTE BRAIN]
+Tools available: read, glob, grep, ripgrep_search, write, edit, write_to_file, replace_file_content, apply_patch, run_command, bash.
+Reply with task_batch for tool execution, and task_done for completion with clear newline formatting.
+[END SYSTEM INSTRUCTIONS]
+
+${options.task}`;
+  }
 
   const requestEnvelope: TaskRequestEnvelope = {
     v: 1,
     kind: "task_request",
     id: taskId,
     session: sessionId,
-    task: options.task,
+    task: taskContent,
     workspace,
     tools: standardTools,
-    reply_hint: "Always reply directly to Bot B's message in Telegram (use reply_to_message_id). In task_done, format summary with clear newlines, bullet points (-), and numbered items (1., 2.) for readable terminal presentation.",
+    system_prompt: systemPrompt,
+    reply_hint: "Always reply directly to Bot B's message in Telegram (use reply_to_message_id). Tools available: read, glob, grep, ripgrep_search, write, edit, write_to_file, replace_file_content, apply_patch, run_command, bash. In task_done, format summary with clear newlines, bullet points (-), and numbered items (1., 2.) for readable terminal presentation.",
     ...(taskContext && taskContext.length > 0 ? { context: taskContext } : {}),
   };
 
   logE2E("REMOTE-AGENT", `Starting remote task: taskId=${taskId}, session=${sessionId}, workspace=${workspace}`);
 
   // Step 1: Send the task request to the group
-  const sent = await client.sendEnvelope(requestEnvelope);
+  const sent = await client.sendEnvelope(
+    requestEnvelope,
+    undefined,
+    undefined,
+    options.onProgress
+  );
   if (!sent) {
     if (activeRemoteTask?.taskId === taskId) {
       activeRemoteTask = null;
@@ -244,9 +309,7 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
     // Timer check for max duration
     const timeoutTimer = setTimeout(() => {
       finishError(
-        `Task aborted: exceeded maximum duration limit of ${
-          MAX_TASK_DURATION_MS / 60000
-        } minutes.`
+        `Task aborted: exceeded maximum duration limit of ${formatDurationLimit(MAX_TASK_DURATION_MS)}.`
       );
     }, MAX_TASK_DURATION_MS);
 
@@ -255,14 +318,22 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
       .pollEnvelopes(async (envelope: RemoteAgentEnvelope) => {
         if (resolved) return;
 
-        // Check if duration exceeded
+        // Check if duration exceeded (24h safety net)
         if (Date.now() - startTime >= MAX_TASK_DURATION_MS) {
           clearTimeout(timeoutTimer);
           finishError(
-            `Task aborted: exceeded maximum duration limit of ${
-              MAX_TASK_DURATION_MS / 60000
-            } minutes.`
+            `Task aborted: exceeded maximum duration limit of ${formatDurationLimit(MAX_TASK_DURATION_MS)}.`
           );
+          return;
+        }
+
+        // Progress-based stall guard: close only when the task ran 60+ min
+        // AND made no progress for 60+ min. Productive work is never killed.
+        const elapsedMs = Date.now() - startTime;
+        const idleMs = Date.now() - lastProgressAt;
+        if (elapsedMs > STALL_ELAPSED_MS && idleMs > STALL_NO_PROGRESS_MS) {
+          clearTimeout(timeoutTimer);
+          finishError(`Task aborted: stalled - no progress for 60+ minutes.`);
           return;
         }
 
@@ -350,6 +421,16 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
 
           logE2E("REMOTE-AGENT", `Batch ${envelope.id} finished executing. Results count: ${results.length}`);
 
+          // Progress-based stalldetection: a successful mutating call or new
+          // information counts as forward motion; errors and retries do not.
+          if (batchMadeProgress(envelope.calls, results)) {
+            lastProgressAt = Date.now();
+            logE2E(
+              "REMOTE-AGENT",
+              `Batch ${envelope.id} made progress; stall timer reset`
+            );
+          }
+
           // Build task_result envelope and post back to Muse
           const resultEnvelope: TaskResultEnvelope = {
             v: 1,
@@ -360,7 +441,12 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
           };
 
           const lastMsgId = client.getLastSentMessageId();
-          const sendOk = await client.sendEnvelope(resultEnvelope, undefined, lastMsgId);
+          const sendOk = await client.sendEnvelope(
+            resultEnvelope,
+            undefined,
+            lastMsgId,
+            options.onProgress
+          );
           if (!sendOk) {
             logE2E("REMOTE-AGENT", `Warning: Failed to deliver results for batch ${envelope.id} to Telegram`);
             options.onProgress?.(
@@ -401,12 +487,15 @@ export async function notifyMuseSessionReset(sessionId?: string, customPath?: st
   }
   try {
     const client = new MuseClient(config);
+    const targetSession = sessionId || `sess_${crypto.randomUUID()}`;
+    const systemPrompt = config.systemPrompt || DEFAULT_MUSE_SYSTEM_PROMPT;
     const resetEnvelope: RemoteAgentEnvelope = {
       v: 1,
       kind: "session_reset",
       id: `reset_${crypto.randomUUID()}`,
-      session: sessionId || `sess_${crypto.randomUUID()}`,
+      session: targetSession,
       message: "Session context has been reset by user.",
+      system_prompt: systemPrompt,
     };
     logE2E("REMOTE-AGENT", `Sending session_reset envelope to Muse: ${resetEnvelope.id}, session=${resetEnvelope.session}`);
     return await client.sendEnvelope(resetEnvelope);

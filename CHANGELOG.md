@@ -1,3 +1,17 @@
+## [1.5.104] - 2026-10-01
+
+### Added
+
+- **Remote Agent Shell Tools & Automated System Prompt Injection**:
+  - Added shell execution tools (`run_command` and `bash`) to Muse remote assistant's toolset and protocol envelopes.
+  - Implemented smart tool alias resolution in `batchExecutor` mapping `shell`, `exec`, `terminal`, `cmd`, and `sh` to `run_command` with parameter normalization (`cmd`, `script`, `input` mapped to `command`).
+  - Added automated system prompt injection:
+    - Prepend protocol guidance instructions (`[SYSTEM INSTRUCTIONS FOR MUSE REMOTE BRAIN]`) to the task string on the initial turn of a chat session so LLMs receiving messages automatically understand available tools, response schemas, and formatting rules.
+    - Added `system_prompt` field to `TaskRequestEnvelope` and `SessionResetEnvelope` transmitting structured instructions on task requests, session resets (`/new`, `/clear`, `/muse new`, `/muse reset`), and task dispatches.
+    - Added `/muse config systemPrompt <instructions>` support allowing users to customize or override remote system instructions.
+    - Updated interactive terminal and dashboard suggestions to include `/muse config systemPrompt`.
+    - Added unit test suites verifying shell tool execution, alias normalization, and prompt injection across session events.
+
 ## [1.5.103] - 2026-10-01
 
 ### Fixed
