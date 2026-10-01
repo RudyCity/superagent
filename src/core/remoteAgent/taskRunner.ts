@@ -17,6 +17,8 @@ export interface TaskRunnerOptions {
   signal?: AbortSignal;
   onProgress?: (message: string) => void;
   onChat?: (message: string) => void;
+  onToolStart?: (toolCall: any, description: string) => void;
+  onToolEnd?: (toolCall: any, toolResult: any, description: string) => void;
 }
 
 export interface TaskRunnerResult {
@@ -85,16 +87,13 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
     tools: standardTools,
   };
 
-  options.onProgress?.(`Starting remote task ${taskId} in ${workspace}...`);
-  options.onProgress?.(`Sending task request to Muse bot (${config.museBotId})...`);
-
   // Step 1: Send the task request to the group
   const sent = await client.sendEnvelope(requestEnvelope);
   if (!sent) {
     throw new Error("Failed to send task request to Telegram group. Check bot token and group ID.");
   }
 
-  options.onProgress?.(`Task request sent. Awaiting reasoning batches from Muse...`);
+  options.onProgress?.("Waiting for Muse reasoning and tool batches...");
 
   return new Promise<TaskRunnerResult>((resolve, reject) => {
     let resolved = false;
@@ -161,7 +160,6 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
         if (envelope.kind === "chat") {
           const chatMsg = envelope.text;
           options.onChat?.(chatMsg);
-          options.onProgress?.(`[Muse Note]: ${chatMsg}`);
           return;
         }
 
@@ -172,7 +170,6 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
             return;
           }
           clearTimeout(timeoutTimer);
-          options.onProgress?.(`Task ${taskId} completed by Muse.`);
           finishSuccess(envelope.summary);
           return;
         }
@@ -201,18 +198,16 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
           }
 
           batchCount++;
-          const callCount = envelope.calls?.length || 0;
-          options.onProgress?.(
-            `Received batch ${envelope.id} (${batchCount}/${MAX_BATCHES_PER_TASK}) with ${callCount} tool call(s).`
-          );
 
-          // Execute batch locally
+          // Execute batch locally with native tool event hooks
           let results: any[] = [];
           try {
             results = await executeBatch(envelope.calls || [], {
               workspace,
               agent: options.agent,
               signal: pollAbortController.signal,
+              onToolStart: options.onToolStart,
+              onToolEnd: options.onToolEnd,
               onProgress: options.onProgress,
             });
           } catch (execErr: any) {
@@ -232,14 +227,11 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
             results,
           };
 
-          options.onProgress?.(`Sending results for batch ${envelope.id} back to Muse...`);
           const sendOk = await client.sendEnvelope(resultEnvelope);
           if (!sendOk) {
             options.onProgress?.(
               `Warning: Failed to deliver results for batch ${envelope.id} to Telegram.`
             );
-          } else {
-            options.onProgress?.(`Batch ${envelope.id} results delivered.`);
           }
         }
       }, pollAbortController.signal)

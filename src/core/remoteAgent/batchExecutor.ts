@@ -14,6 +14,8 @@ export interface BatchExecutorOptions {
   signal?: AbortSignal;
   onProgress?: (message: string) => void;
   onPermissionPrompt?: (toolCall: any, description: string) => Promise<boolean | "session">;
+  onToolStart?: (toolCall: any, description: string) => void;
+  onToolEnd?: (toolCall: any, toolResult: any, description: string) => void;
 }
 
 export const MAX_TOOL_OUTPUT_CHARS = 20_000;
@@ -80,6 +82,18 @@ export async function executeBatch(
       args: toolArgs,
     };
 
+    const description = getToolDescription(toolCallObj);
+
+    if (options.onToolStart) {
+      options.onToolStart(toolCallObj, description);
+    } else if (options.agent?.onEvent) {
+      options.agent.onEvent({
+        type: "tool_start",
+        toolCall: toolCallObj,
+        description,
+      });
+    }
+
     let tool = getToolByName(toolName);
     if (!tool) {
       if (toolName === "write") {
@@ -90,16 +104,32 @@ export async function executeBatch(
       }
     }
     if (!tool) {
+      const unknownMsg = `Unknown tool: ${toolName}`;
       results.push({
         id: call.id,
         ok: false,
-        error: `Unknown tool: ${toolName}`,
+        error: unknownMsg,
       });
+
+      const unknownResult = {
+        toolCallId: call.id,
+        name: toolName,
+        result: unknownMsg,
+        isError: true,
+      };
+
+      if (options.onToolEnd) {
+        options.onToolEnd(toolCallObj, unknownResult, description);
+      } else if (options.agent?.onEvent) {
+        options.agent.onEvent({
+          type: "tool_end",
+          toolCall: toolCallObj,
+          toolResult: unknownResult,
+          description,
+        });
+      }
       continue;
     }
-
-    const description = getToolDescription(toolCallObj);
-    options.onProgress?.(`Executing ${toolName}: ${description}`);
 
     // Permission enforcement: destructive tools must be explicitly approved
     const isModifying = MODIFYING_TOOLS.includes(toolName);
@@ -132,12 +162,30 @@ export async function executeBatch(
       }
 
       if (!approved) {
-        options.onProgress?.(`Permission denied for ${toolName}`);
+        const deniedMsg = `User denied permission to execute tool '${toolName}'.`;
         results.push({
           id: call.id,
           ok: false,
-          error: `User denied permission to execute tool '${toolName}'.`,
+          error: deniedMsg,
         });
+
+        const deniedResult = {
+          toolCallId: call.id,
+          name: toolName,
+          result: deniedMsg,
+          isError: true,
+        };
+
+        if (options.onToolEnd) {
+          options.onToolEnd(toolCallObj, deniedResult, description);
+        } else if (options.agent?.onEvent) {
+          options.agent.onEvent({
+            type: "tool_end",
+            toolCall: toolCallObj,
+            toolResult: deniedResult,
+            description,
+          });
+        }
         continue;
       }
     }
@@ -146,6 +194,24 @@ export async function executeBatch(
       const rawOutput = await tool.execute(toolArgs, cwd, options.signal);
       const isErr = isErrorResult(String(rawOutput));
       const truncated = truncateOutput(String(rawOutput));
+
+      const toolResult = {
+        toolCallId: call.id,
+        name: toolName,
+        result: truncated,
+        isError: isErr,
+      };
+
+      if (options.onToolEnd) {
+        options.onToolEnd(toolCallObj, toolResult, description);
+      } else if (options.agent?.onEvent) {
+        options.agent.onEvent({
+          type: "tool_end",
+          toolCall: toolCallObj,
+          toolResult,
+          description,
+        });
+      }
 
       if (isErr) {
         results.push({
@@ -161,20 +227,36 @@ export async function executeBatch(
         });
       }
     } catch (err: any) {
-      if (options.signal?.aborted || err.name === "AbortError") {
-        results.push({
-          id: call.id,
-          ok: false,
-          error: "Tool execution aborted",
+      const isAborted = options.signal?.aborted || err.name === "AbortError";
+      const errMsg = isAborted ? "Tool execution aborted" : truncateOutput(err.message || String(err));
+      
+      const toolResult = {
+        toolCallId: call.id,
+        name: toolName,
+        result: errMsg,
+        isError: true,
+      };
+
+      if (options.onToolEnd) {
+        options.onToolEnd(toolCallObj, toolResult, description);
+      } else if (options.agent?.onEvent) {
+        options.agent.onEvent({
+          type: "tool_end",
+          toolCall: toolCallObj,
+          toolResult,
+          description,
         });
-        break;
       }
-      const errMsg = truncateOutput(err.message || String(err));
+
       results.push({
         id: call.id,
         ok: false,
         error: errMsg,
       });
+
+      if (isAborted) {
+        break;
+      }
     }
   }
 

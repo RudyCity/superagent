@@ -318,6 +318,98 @@ describe("remoteAgent - Batch Executor", () => {
     expect(results[0].ok).toBe(false);
     expect(results[0].error).toContain("Unknown tool");
   });
+
+  it("should trigger onToolStart and onToolEnd callbacks during batch execution", async () => {
+    const toolStarts: any[] = [];
+    const toolEnds: any[] = [];
+    const sampleFile = path.join(tempDir, "sample.txt");
+
+    const results = await executeBatch(
+      [
+        {
+          id: "call_test_1",
+          tool: "read",
+          args: { filePath: sampleFile },
+        },
+      ],
+      {
+        workspace: tempDir,
+        onToolStart: (toolCall, desc) => toolStarts.push({ toolCall, desc }),
+        onToolEnd: (toolCall, toolResult, desc) => toolEnds.push({ toolCall, toolResult, desc }),
+      }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(true);
+
+    expect(toolStarts).toHaveLength(1);
+    expect(toolStarts[0].toolCall.name).toBe("read");
+    expect(toolStarts[0].desc).toContain(sampleFile);
+
+    expect(toolEnds).toHaveLength(1);
+    expect(toolEnds[0].toolResult.name).toBe("read");
+    expect(toolEnds[0].toolResult.isError).toBe(false);
+    expect(toolEnds[0].toolResult.result).toContain("Line 1");
+  });
+
+  it("should dispatch to agent.onEvent when onToolStart / onToolEnd are not provided", async () => {
+    const events: any[] = [];
+    const mockAgent: any = {
+      onEvent: (event: any) => events.push(event),
+    };
+    const sampleFile = path.join(tempDir, "sample.txt");
+
+    const results = await executeBatch(
+      [
+        {
+          id: "call_test_2",
+          tool: "read",
+          args: { filePath: sampleFile },
+        },
+      ],
+      {
+        workspace: tempDir,
+        agent: mockAgent,
+      }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(true);
+
+    const startEvent = events.find((e) => e.type === "tool_start");
+    expect(startEvent).toBeDefined();
+    expect(startEvent.toolCall.name).toBe("read");
+
+    const endEvent = events.find((e) => e.type === "tool_end");
+    expect(endEvent).toBeDefined();
+    expect(endEvent.toolResult.name).toBe("read");
+    expect(endEvent.toolResult.isError).toBe(false);
+  });
+
+  it("should trigger onToolEnd with error status when permission is denied", async () => {
+    const toolEnds: any[] = [];
+
+    const results = await executeBatch(
+      [
+        {
+          id: "call_test_denied",
+          tool: "write",
+          args: { filePath: path.join(tempDir, "denied_event.txt"), content: "foo" },
+        },
+      ],
+      {
+        workspace: tempDir,
+        onPermissionPrompt: async () => false,
+        onToolEnd: (_tc, toolResult) => toolEnds.push(toolResult),
+      }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(false);
+    expect(toolEnds).toHaveLength(1);
+    expect(toolEnds[0].isError).toBe(true);
+    expect(toolEnds[0].result).toContain("User denied permission");
+  });
 });
 
 describe("remoteAgent - MuseClient", () => {

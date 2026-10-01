@@ -1,3 +1,15 @@
+## [1.5.95] - 2026-10-01
+
+### Improved
+
+- **Remote Agent UI & Native Tool Display Formatting**:
+  - Unified tool execution displays for `/muse` tasks with Superagent's native tool event pipeline (`tool_start` and `tool_end`).
+  - Tools invoked by the remote assistant (such as `glob`, `read`, `write`, `edit`) now render directly as interactive child elements under the assistant message block with collapsible status, execution emoji, arguments, and result outputs via `Ctrl+O`.
+  - Eliminated repetitive and noisy intermediate system info cards (`[ ℹ SYSTEM_INFO ]`) during tool execution and polling.
+  - Linked final task summary into the same assistant message block containing the tool invocation list.
+  - Added callbacks `onToolStart` and `onToolEnd` in `batchExecutor` and `taskRunner` with automatic fallbacks for non-interactive contexts.
+  - Added unit test coverage in `tests/remoteAgent.test.ts` for tool event emission and agent integration.
+
 ## [1.5.94] - 2026-10-01
 
 ### Added

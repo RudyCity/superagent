@@ -1,5 +1,5 @@
 import { registry } from "./registry.js";
-import type { SlashCommand, SlashCommandContext } from "./types.js";
+import type { SlashCommand, SlashCommandContext, ChatLine } from "./types.js";
 import {
   loadRemoteAgentConfig,
   updateRemoteAgentConfig,
@@ -153,11 +153,88 @@ export const museCommand: SlashCommand = {
       timestamp: now,
     });
 
+    ctx.setIsProcessing?.(true);
+
     try {
       const result = await runRemoteTask({
         task: rawTrimmed,
         workspace,
         agent: ctx.agent,
+        onToolStart: (toolCall, description) => {
+          if (ctx.agent?.onEvent) {
+            ctx.agent.onEvent({
+              type: "tool_start",
+              toolCall,
+              description,
+            });
+            return;
+          }
+          if (ctx.setLines) {
+            const child: ChatLine = {
+              type: "tool_start",
+              content: `⚡ ${description}\n   Detail: ${toolCall.name}(${JSON.stringify(toolCall.args || {})})`,
+              timestamp: Date.now(),
+            };
+            ctx.setLines((prev) => {
+              if (prev.length === 0) {
+                return [{ type: "assistant", content: "", timestamp: Date.now(), children: [child] }];
+              }
+              const last = prev[prev.length - 1];
+              if (last.type === "assistant") {
+                const updated = [...prev];
+                updated[prev.length - 1] = {
+                  ...last,
+                  children: [...(last.children || []), child],
+                };
+                return updated;
+              }
+              return [...prev, { type: "assistant", content: "", timestamp: Date.now(), children: [child] }];
+            });
+          }
+        },
+        onToolEnd: (toolCall, toolResult, description) => {
+          if (ctx.agent?.onEvent) {
+            ctx.agent.onEvent({
+              type: "tool_end",
+              toolCall,
+              toolResult,
+              description,
+            });
+            return;
+          }
+          if (ctx.setLines) {
+            const resultContent = toolResult.isError
+              ? `Detail: ${toolResult.result}`
+              : `Output: ${String(toolResult.result).slice(0, 500)}${String(toolResult.result).length > 500 ? "..." : ""}`;
+            ctx.setLines((prev) => {
+              for (let i = prev.length - 1; i >= 0; i--) {
+                if (prev[i].type === "assistant" && prev[i].children) {
+                  const children = prev[i].children!;
+                  for (let c = children.length - 1; c >= 0; c--) {
+                    if (children[c].type === "tool_start" && !children[c].mergedResult) {
+                      const updated = [...prev];
+                      const updatedChildren = [...children];
+                      updatedChildren[c] = {
+                        ...updatedChildren[c],
+                        mergedResult: {
+                          isError: !!toolResult.isError,
+                          content: resultContent,
+                          description,
+                        },
+                      };
+                      updated[i] = {
+                        ...updated[i],
+                        children: updatedChildren,
+                      };
+                      return updated;
+                    }
+                  }
+                }
+              }
+              return prev;
+            });
+          }
+        },
         onProgress: (msg) => {
           ctx.addLine({
             type: "system",
@@ -175,11 +252,36 @@ export const museCommand: SlashCommand = {
       });
 
       if (result.success) {
-        ctx.addLine({
-          type: "assistant",
-          content: result.summary,
-          timestamp: Date.now(),
-        });
+        if (ctx.setLines) {
+          ctx.setLines((prev) => {
+            if (prev.length > 0) {
+              const lastIdx = prev.length - 1;
+              const lastLine = prev[lastIdx];
+              if (lastLine.type === "assistant" && (!lastLine.content || lastLine.content.trim() === "")) {
+                const updated = [...prev];
+                updated[lastIdx] = {
+                  ...lastLine,
+                  content: result.summary,
+                };
+                return updated;
+              }
+            }
+            return [
+              ...prev,
+              {
+                type: "assistant",
+                content: result.summary,
+                timestamp: Date.now(),
+              },
+            ];
+          });
+        } else {
+          ctx.addLine({
+            type: "assistant",
+            content: result.summary,
+            timestamp: Date.now(),
+          });
+        }
       } else {
         ctx.addLine({
           type: "error",
@@ -193,6 +295,8 @@ export const museCommand: SlashCommand = {
         content: `Failed to execute remote task: ${err.message}`,
         timestamp: Date.now(),
       });
+    } finally {
+      ctx.setIsProcessing?.(false);
     }
   },
 };
