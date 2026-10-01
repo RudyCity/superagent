@@ -89,6 +89,15 @@ Configure Superagent directly in your terminal using the `/muse config` slash co
 /muse config museBotId <BOT_A_ID>
 ```
 
+#### Available Configuration Keys:
+| Key | Aliases | Description | Example |
+|---|---|---|---|
+| `botToken` | `bot_token` | API token of Bot B from @BotFather | `/muse config botToken 123456:ABC...` |
+| `groupId` | `group_id` | Private Telegram group ID (always negative) | `/muse config groupId -1001234567890` |
+| `museBotId` | `muse_bot_id` | Numeric Telegram user ID of Muse bot (Bot A) | `/muse config museBotId 987654321` |
+| `as_runner_model` | `as_runner`, `default_runner` | Route regular prompts directly to Muse (on/off) | `/muse config as_runner_model on` |
+| `defaultWorkspace` | `workspace` | Default workspace root for tool executions | `/muse config defaultWorkspace ./my-project` |
+
 #### How to Find `<GROUP_ID>`:
 - Group IDs in Telegram are always negative numbers (e.g. `-1001234567890`).
 - You can find your group ID by temporarily adding `@getmyid_bot` to the group to read the chat ID, or by asking your remote assistant. Once noted, remove `@getmyid_bot`.
@@ -101,7 +110,13 @@ Verify your configuration:
 
 The output will confirm that credentials are saved in `~/.superagent-r/remote-agent.json`, with the bot token securely masked.
 
-### 4.2 Test Connection
+### 4.2 Interactive Autocomplete Suggestions
+Superagent includes built-in autocomplete for all `/muse` commands:
+- Type `/muse ` and press Tab or Space to view available subcommands (`status`, `config`).
+- Type `/muse config ` to view suggestions for all keys (`as_runner_model`, `botToken`, `groupId`, `museBotId`, `defaultWorkspace`).
+- Type `/muse config as_runner_model ` to see quick selection options for `on` and `off`.
+
+### 4.3 Test Connection
 Run a simple verification task:
 
 ```bash
@@ -114,7 +129,7 @@ Expected sequence in the terminal:
 3. Superagent returns `task_result`.
 4. Muse sends `task_done` and the final answer appears in your terminal.
 
-### 4.3 Optional: Enable Muse as Default Runner
+### 4.4 Optional: Enable Muse as Default Runner (`as_runner_model`)
 
 If you want all regular prompts entered in the terminal to automatically coordinate with Muse without typing `/muse` every time, enable runner mode:
 
@@ -122,11 +137,14 @@ If you want all regular prompts entered in the terminal to automatically coordin
 /muse config as_runner_model on
 ```
 
+(Or via non-interactive command: `superagent muse config as_runner_model on`).
+
 When enabled:
-- Any message you type in the terminal is dispatched directly to Muse.
-- The status bar and input border indicate `MUSE REMOTE RUNNER`.
-- All slash commands (such as `/model`, `/clear`, `/exit`, `/muse status`) continue to work normally.
-- To disable and revert to local execution, run `/muse config as_runner_model off`.
+- Any message you type in the terminal is dispatched directly to Muse over Telegram.
+- The input border indicator displays `COMM_LINK: MUSE REMOTE RUNNER`.
+- The status bar displays `(Muse Remote)` next to the active model name.
+- All slash commands (such as `/model`, `/clear`, `/exit`, `/muse status`) and system commands (`!<cmd>`) continue to work normally.
+- To disable and revert to local model execution: `/muse config as_runner_model off`.
 
 ---
 
