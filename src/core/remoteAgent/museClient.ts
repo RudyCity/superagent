@@ -265,6 +265,12 @@ export class MuseClient {
             continue;
           }
 
+          if (res.status === 409) {
+            logE2E("REMOTE-AGENT", `pollEnvelopes 409 Conflict (competing poller detected). Waiting 2000ms.`);
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            continue;
+          }
+
           if (!res.ok) {
             consecutiveErrors++;
             const backoffMs = Math.min(1000 * Math.pow(2, consecutiveErrors), 15000);

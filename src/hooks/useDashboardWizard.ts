@@ -43,6 +43,7 @@ import type { Agent, QuestionItem } from "../core/agent.js";
 import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility, testCustomProviderMessage, PROVIDER_TEMPLATE_LABELS, PROVIDER_DEFAULT_BASE_URLS } from "../core/loginWizardLogic.js";
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 import { contentToString } from "../core/conversation.js";
+import { isMuseRunnerActive } from "../core/remoteAgent/config.js";
 import { attachmentToImagePart, type ImageAttachment } from "../utils/imageUtils.js";
 import { useModelWizard } from "./wizard/useModelWizard.js";
 import { reconstructDashboardLogs } from "../utils/uiHelpers.js";
@@ -1772,6 +1773,30 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
     const commandInput = cleanVal.startsWith("!") ? `/terminal ${cleanVal.slice(1).trim()}` : cleanVal;
 
+    const handleAttachImage = async (filePath: string) => {
+      try {
+        const { readImageFromPath } = await import("../utils/imageUtils.js");
+        const attachment = await readImageFromPath(filePath);
+        setAttachments((prev) => [...prev, attachment]);
+        setMasterLogs((prev) => [...prev, `[SYSTEM] 📎 Image attached: ${attachment.filename}`].slice(-500));
+      } catch (err: any) {
+        setMasterLogs((prev) => [...prev, `[ERROR] Could not attach image: ${err.message}`].slice(-500));
+      }
+    };
+
+    const handlePasteImage = async () => {
+      try {
+        const { readImageFromClipboard } = await import("../utils/imageUtils.js");
+        const attachment = await readImageFromClipboard();
+        if (attachment) {
+          setAttachments((prev) => [...prev, attachment]);
+          setMasterLogs((prev) => [...prev, `[SYSTEM] 📎 Clipboard image attached: ${attachment.filename}`].slice(-500));
+        }
+      } catch (err: any) {
+        setMasterLogs((prev) => [...prev, `[ERROR] Could not paste image: ${err.message}`].slice(-500));
+      }
+    };
+
     if (commandInput.startsWith("/")) {
       if (commandInput.toLowerCase().startsWith("/goal")) {
         setMasterLogs((prev) => [...prev, `[USER] ${commandInput}`, `[ERROR] /goal command is disabled in Multi-Agent Dashboard.`].slice(-500));
@@ -1787,30 +1812,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           })
           .catch(() => {});
       }
-
-      const handleAttachImage = async (filePath: string) => {
-        try {
-          const { readImageFromPath } = await import("../utils/imageUtils.js");
-          const attachment = await readImageFromPath(filePath);
-          setAttachments((prev) => [...prev, attachment]);
-          setMasterLogs((prev) => [...prev, `[SYSTEM] 📎 Image attached: ${attachment.filename}`].slice(-500));
-        } catch (err: any) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Could not attach image: ${err.message}`].slice(-500));
-        }
-      };
-
-      const handlePasteImage = async () => {
-        try {
-          const { readImageFromClipboard } = await import("../utils/imageUtils.js");
-          const attachment = await readImageFromClipboard();
-          if (attachment) {
-            setAttachments((prev) => [...prev, attachment]);
-            setMasterLogs((prev) => [...prev, `[SYSTEM] 📎 Clipboard image attached: ${attachment.filename}`].slice(-500));
-          }
-        } catch (err: any) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Could not paste image: ${err.message}`].slice(-500));
-        }
-      };
 
       handleSlashCommand(commandInput, {
         addLine: (line) => setMasterLogs((prev) => [...prev, `[${line.type.toUpperCase()}] ${line.content}`].slice(-500)),
@@ -1865,6 +1866,37 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         ...attachments.map(attachmentToImagePart),
       ];
       messageContent = parts;
+    }
+
+    if (isMuseRunnerActive()) {
+      setMasterLogs((prev) => [...prev, `[USER] ${displayLine}`].slice(-500));
+      setQuery("");
+      setAttachments([]);
+      handleSlashCommand(`/muse ${commandInput}`, {
+        addLine: (line) => setMasterLogs((prev) => [...prev, `[${line.type.toUpperCase()}] ${line.content}`].slice(-500)),
+        exit,
+        agent,
+        clearLines: () => {
+          setMasterLogs([]);
+        },
+        setContextLimit,
+        setActiveModel,
+        setActiveWizard: (val) => {
+          if (val && val.type === "goal") return;
+          setActiveWizard(val);
+        },
+        setWizardOptions,
+        setWizardSelectedIndex,
+        setPlanState,
+        setGoalMode: () => {},
+        setIsProcessing,
+        resumeSession: async () => {},
+        attachImage: handleAttachImage,
+        pasteImage: handlePasteImage,
+        resumeFromPath: async () => {},
+        runInteractiveProcess: async () => ({ exitCode: 0 }),
+      });
+      return;
     }
 
     if (isProcessing) {

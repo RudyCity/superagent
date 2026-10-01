@@ -1,3 +1,17 @@
+## [1.5.103] - 2026-10-01
+
+### Fixed
+
+- **Remote Agent Multi-Turn Context, Session Reset & Zombie Poller Termination**:
+  - Fixed issue where Superagent got stuck in an infinite "Thinking / Waiting for Muse" loop due to competing zombie pollers consuming Telegram updates and returning HTTP 409 Conflict.
+  - Implemented singleton remote task runner management (`activeRemoteTask`, `abortActiveRemoteTask`, `getActiveRemoteTaskId`) that automatically cancels any existing poller before launching a new task.
+  - Added `task_cancel` protocol envelope sent to Muse on user abort, Ctrl+C, `/muse stop`, `/muse cancel`, or new task launch, halting Muse's reasoning loop on Telegram immediately.
+  - Bound Superagent's `agent.getAbortSignal()` and `Agent.prototype.abort()` directly to active remote tasks.
+  - Preserved multi-turn conversation context across interactions by transmitting recent dialog turns (`TaskContextMessage[]`) within `TaskRequestEnvelope.context` with a stable session ID.
+  - Added `session_reset` protocol envelope and `/muse new`, `/muse reset`, `/new`, and `/clear` integration to clear remote context and synchronize session resets with Muse.
+  - Added dedicated HTTP 409 Conflict backoff in `MuseClient` to prevent exponential backoff cascades.
+  - Added comprehensive test suite in `tests/remoteAgentSession.test.ts` (8 passing tests).
+
 ## [1.5.102] - 2026-10-01
 
 ### Fixed

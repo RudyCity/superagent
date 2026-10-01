@@ -5,17 +5,22 @@ import {
   RemoteAgentEnvelope,
   TaskRequestEnvelope,
   TaskResultEnvelope,
+  TaskContextMessage,
 } from "./protocol.js";
 import { MuseClient } from "./museClient.js";
 import { executeBatch } from "./batchExecutor.js";
 import type { Agent } from "../agent.js";
+import { contentToString } from "../conversation.js";
 import { logE2E } from "../utils/unifiedLogger.js";
 
 export interface TaskRunnerOptions {
   task: string;
   workspace?: string;
+  sessionId?: string;
+  context?: TaskContextMessage[];
   agent?: Agent | null;
   signal?: AbortSignal;
+  customConfigPath?: string;
   onProgress?: (message: string) => void;
   onChat?: (message: string) => void;
   onToolStart?: (toolCall: any, description: string) => void;
@@ -34,32 +39,122 @@ export interface TaskRunnerResult {
 export const MAX_BATCHES_PER_TASK = 50;
 export const MAX_TASK_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 
+interface ActiveRemoteTaskHandle {
+  taskId: string;
+  abortController: AbortController;
+  client: MuseClient;
+  startTime: number;
+}
+
+let activeRemoteTask: ActiveRemoteTaskHandle | null = null;
+
+export function getActiveRemoteTaskId(): string | null {
+  return activeRemoteTask?.taskId || null;
+}
+
+/**
+ * Aborts any currently active remote task running on this machine.
+ * Sends a task_cancel envelope over Telegram to inform Muse to cease work on this task,
+ * and aborts the local polling loop and tool executions.
+ */
+export async function abortActiveRemoteTask(reason = "Cancelled by user"): Promise<boolean> {
+  if (!activeRemoteTask) {
+    return false;
+  }
+  const current = activeRemoteTask;
+  activeRemoteTask = null;
+
+  logE2E("REMOTE-AGENT", `Aborting active remote task ${current.taskId}: reason=${reason}`);
+
+  try {
+    const cancelEnvelope: RemoteAgentEnvelope = {
+      v: 1,
+      kind: "task_cancel",
+      id: `cancel_${crypto.randomUUID()}`,
+      task_id: current.taskId,
+      reason,
+    };
+    await current.client.sendEnvelope(cancelEnvelope).catch(() => {});
+  } catch (err: any) {
+    logE2E("REMOTE-AGENT", `Failed to send task_cancel for ${current.taskId}: ${err?.message || err}`);
+  }
+
+  try {
+    current.abortController.abort();
+  } catch {}
+
+  return true;
+}
+
 /**
  * Runs a remote task with Muse as the brain and superagent as local hands.
  * Enforces deduplication of batches, loop guards, and permission gates.
  */
 export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRunnerResult> {
-  const config = loadRemoteAgentConfig();
+  const config = loadRemoteAgentConfig(options.customConfigPath);
   if (!config.botToken || !config.groupId || !config.museBotId) {
     throw new Error(
       "Remote agent (Muse) is not configured. Please configure botToken, groupId, and museBotId using `/muse config <key> <value>`."
     );
   }
 
+  // Singleton guard: if another remote task is currently running, cancel it first
+  if (activeRemoteTask) {
+    logE2E(
+      "REMOTE-AGENT",
+      `Active remote task ${activeRemoteTask.taskId} detected. Aborting it before launching new task.`
+    );
+    await abortActiveRemoteTask("New remote task started by user");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+
   const workspace = path.resolve(
     options.workspace || config.defaultWorkspace || process.cwd()
   );
   const taskId = `task_${crypto.randomUUID()}`;
-  const sessionId = `sess_${crypto.randomUUID()}`;
+  const sessionId =
+    options.sessionId ||
+    options.agent?.sessionId ||
+    `sess_${crypto.randomUUID()}`;
   const startTime = Date.now();
+
+  let taskContext: TaskContextMessage[] | undefined = options.context;
+  if (!taskContext && options.agent) {
+    try {
+      const msgs = options.agent.getHistory().getMessages();
+      const filtered = msgs
+        .filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
+        .map((m) => {
+          const text = contentToString(m.content).trim();
+          return {
+            role: m.role as "user" | "assistant",
+            content: text,
+          };
+        })
+        .filter((m) => m.content.length > 0);
+      if (filtered.length > 0) {
+        taskContext = filtered.slice(-10);
+      }
+    } catch (err) {
+      logE2E("REMOTE-AGENT", `Failed to extract conversation context: ${err}`);
+    }
+  }
 
   const client = new MuseClient(config);
   const pollAbortController = new AbortController();
 
+  // Register active remote task handle
+  activeRemoteTask = {
+    taskId,
+    abortController: pollAbortController,
+    client,
+    startTime,
+  };
+
   // Combine external abort signal if provided
   if (options.signal) {
     options.signal.addEventListener("abort", () => {
-      pollAbortController.abort();
+      abortActiveRemoteTask("Operation aborted by signal").catch(() => {});
     });
   }
 
@@ -87,6 +182,7 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
     workspace,
     tools: standardTools,
     reply_hint: "Always reply directly to Bot B's message in Telegram (use reply_to_message_id). In task_done, format summary with clear newlines, bullet points (-), and numbered items (1., 2.) for readable terminal presentation.",
+    ...(taskContext && taskContext.length > 0 ? { context: taskContext } : {}),
   };
 
   logE2E("REMOTE-AGENT", `Starting remote task: taskId=${taskId}, session=${sessionId}, workspace=${workspace}`);
@@ -94,6 +190,9 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
   // Step 1: Send the task request to the group
   const sent = await client.sendEnvelope(requestEnvelope);
   if (!sent) {
+    if (activeRemoteTask?.taskId === taskId) {
+      activeRemoteTask = null;
+    }
     logE2E("REMOTE-AGENT", `Failed to send task request ${taskId} to Telegram group`);
     throw new Error("Failed to send task request to Telegram group. Check bot token and group ID.");
   }
@@ -105,6 +204,9 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
     let resolved = false;
 
     const cleanup = () => {
+      if (activeRemoteTask?.taskId === taskId) {
+        activeRemoteTask = null;
+      }
       if (!pollAbortController.signal.aborted) {
         pollAbortController.abort();
       }
@@ -287,3 +389,30 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
       });
   });
 }
+
+/**
+ * Sends a session_reset envelope to Muse over Telegram.
+ * Informs Muse that the user has started a new conversation or reset session memory.
+ */
+export async function notifyMuseSessionReset(sessionId?: string, customPath?: string): Promise<boolean> {
+  const config = loadRemoteAgentConfig(customPath);
+  if (!config.botToken || !config.groupId) {
+    return false;
+  }
+  try {
+    const client = new MuseClient(config);
+    const resetEnvelope: RemoteAgentEnvelope = {
+      v: 1,
+      kind: "session_reset",
+      id: `reset_${crypto.randomUUID()}`,
+      session: sessionId || `sess_${crypto.randomUUID()}`,
+      message: "Session context has been reset by user.",
+    };
+    logE2E("REMOTE-AGENT", `Sending session_reset envelope to Muse: ${resetEnvelope.id}, session=${resetEnvelope.session}`);
+    return await client.sendEnvelope(resetEnvelope);
+  } catch (err: any) {
+    logE2E("REMOTE-AGENT", `Failed to send session_reset to Muse: ${err?.message || err}`);
+    return false;
+  }
+}
+

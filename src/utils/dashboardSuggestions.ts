@@ -53,6 +53,10 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
   "/muse": "Coordinate with remote AI agent (Muse) over Telegram group bus",
   "/muse status": "Show remote agent configuration, runner mode, and bot connection",
+  "/muse stop": "Cancel active remote task and send cancellation notice to Muse",
+  "/muse cancel": "Cancel active remote task and send cancellation notice to Muse",
+  "/muse new": "Start a fresh session with remote agent (Muse) and reset context",
+  "/muse reset": "Reset remote agent (Muse) session context and conversation memory",
   "/muse config": "Configure botToken, groupId, museBotId, as_runner_model, or workspace",
   "/muse config as_runner_model": "Automatically route all terminal chat prompts to Muse (on/off)",
   "/muse config as_runner_model on": "Enable automatic routing of terminal chat prompts to Muse",
@@ -371,6 +375,10 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
 
       const possibilities = [
         "/muse status",
+        "/muse stop",
+        "/muse cancel",
+        "/muse new",
+        "/muse reset",
         "/muse config",
         "/muse config as_runner_model",
         "/muse config as_runner_model on",

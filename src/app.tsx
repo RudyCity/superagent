@@ -1594,6 +1594,10 @@ export function App({
 
         const possibilities = [
           "/muse status",
+          "/muse stop",
+          "/muse cancel",
+          "/muse new",
+          "/muse reset",
           "/muse config",
           "/muse config as_runner_model",
           "/muse config as_runner_model on",

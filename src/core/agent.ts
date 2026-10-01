@@ -852,6 +852,16 @@ export class Agent {
     this.isRunning = false;
     this.pendingMessagesQueue = [];
     this.abortController?.abort();
+    // Also abort any active remote agent task if running
+    import("./remoteAgent/taskRunner.js")
+      .then(({ abortActiveRemoteTask }) => {
+        abortActiveRemoteTask("Agent aborted by user").catch(() => {});
+      })
+      .catch(() => {});
+  }
+
+  public getAbortSignal(): AbortSignal | undefined {
+    return this.abortController?.signal;
   }
 
   queueMessage(message: string | import("./conversation.js").MessageContent): void {

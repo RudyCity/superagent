@@ -129,7 +129,14 @@ Expected sequence in the terminal:
 3. Superagent returns `task_result`.
 4. Muse sends `task_done` and the final answer appears in your terminal.
 
-### 4.4 Optional: Enable Muse as Default Runner (`as_runner_model`)
+### 4.4 Managing Sessions and Resetting Context
+- **Session Continuity**: Multi-turn prompts automatically preserve the active conversation session ID and include recent dialogue history in the `context` field of `task_request`.
+- **Resetting Remote Context**: Use `/muse new` or `/muse reset` to send a `session_reset` envelope over Telegram, clearing Muse's conversation memory for the current session.
+- **Cancelling Active Tasks**: Run `/muse stop` or `/muse cancel` to terminate the active remote task immediately. Superagent kills the local poller and sends a `task_cancel` envelope to Muse over Telegram so Muse stops processing immediately.
+- **Auto-Cancellation on Interrupt**: Aborting in Superagent (or typing a new task) automatically cleans up any previous remote task, preventing competing zombie pollers and Telegram HTTP 409 Conflict errors.
+- **Global Reset**: Running `/new` or `/clear` in Superagent automatically notifies Muse over Telegram while creating a fresh local session.
+
+### 4.5 Optional: Enable Muse as Default Runner (`as_runner_model`)
 
 If you want all regular prompts entered in the terminal to automatically coordinate with Muse without typing `/muse` every time, enable runner mode:
 
@@ -161,12 +168,14 @@ Identities:
 - Group: chat id <GROUP_ID> (both bots are admins, Bot-to-Bot Communication Mode enabled).
 
 Protocol — JSON envelopes, v: 1:
-- task_request (in): {"v": 1, "kind": "task_request", "id": "task_<uuid>", "session": "<id>", "task": "<prompt>", "workspace": "<path>", "tools": [...]}
+- task_request (in): {"v": 1, "kind": "task_request", "id": "task_<uuid>", "session": "<id>", "task": "<prompt>", "workspace": "<path>", "tools": [...], "context": [{"role": "user"|"assistant", "content": "..."}]}
 - task_batch (out): {"v": 1, "kind": "task_batch", "id": "batch_<uuid>", "task_id": "task_<uuid>", "calls": [{"id": "c1", "tool": "read", "args": {"path": "src/index.ts"}}]}
   Tools available: read, glob, grep, ripgrep_search (safe); write, edit, write_to_file, replace_file_content, apply_patch (destructive — local runner prompts user).
 - task_result (in): {"v": 1, "kind": "task_result", "id": "batch_<uuid>", "task_id": "task_<uuid>", "results": [{"id": "c1", "ok": true, "output": "<string>"}]}
 - task_done (out): {"v": 1, "kind": "task_done", "task_id": "task_<uuid>", "summary": "<final markdown summary>"}
 - chat (either): {"v": 1, "kind": "chat", "task_id": "task_<uuid>", "text": "<non-tool progress note>"}
+- session_reset (in): {"v": 1, "kind": "session_reset", "session": "<id>", "message": "<reason>"}
+- task_cancel (in): {"v": 1, "kind": "task_cancel", "task_id": "task_<uuid>", "reason": "<string>"}
 
 Rules:
 1. Process only messages where chat.id == <GROUP_ID> AND from.id == <BOT_B_ID>; ignore everything else.
@@ -175,6 +184,8 @@ Rules:
 4. Loop: task_request -> reason -> task_batch -> wait task_result -> repeat -> task_done. Max 50 batches / 30 min per task.
 5. Telegram message text limit is 4096 chars — split larger envelopes as: MUSEBUS <envelope_id> <n>/<N>\n<chunk>.
 6. Prefer read-only batches first (explore before modifying). In task_done, format summary with clear newlines (\n), structured bullet points (-), and numbered items (1., 2.) so it is readable and well-spaced in the terminal.
+7. Session Memory & Context: Multi-turn tasks maintain the same "session" identifier. Previous conversation turns are provided in "context". When a "session_reset" envelope arrives or a new session begins, wipe previous working memory and start fresh.
+8. Task Cancellation: When a "task_cancel" envelope arrives for a task, immediately cease all work and planning on that task. Do not send further tool batches for it.
 ```
 
 ---
@@ -183,11 +194,13 @@ Rules:
 
 | `kind` | Direction | Description |
 |---|---|---|
-| `task_request` | Superagent -> Muse | Starts a new task with goal, workspace path, and available tools |
+| `task_request` | Superagent -> Muse | Starts a task with goal, workspace, tools, and multi-turn context |
 | `task_batch` | Muse -> Superagent | Dispatches a batch of tool calls to execute on local machine |
 | `task_result` | Superagent -> Muse | Returns batch execution results with outputs or errors |
 | `task_done` | Muse -> Superagent | Marks task completion with final user-facing summary |
 | `chat` | Bidirectional | Out-of-band progress notes or chat text |
+| `session_reset` | Superagent -> Muse | Resets remote assistant working memory when starting a new session |
+| `task_cancel` | Superagent -> Muse | Cancels an ongoing task, ordering remote brain to cease immediately |
 
 ### Message Chunking Format
 Any envelope whose JSON representation exceeds ~3800 characters is split into multiple parts using the `MUSEBUS` header:

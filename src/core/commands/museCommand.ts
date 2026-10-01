@@ -60,6 +60,10 @@ export const museCommand: SlashCommand = {
         "Usage:",
         "  /muse <task>                 - Run a task with remote Muse brain",
         "  /muse status                 - View remote agent status",
+        "  /muse stop                   - Cancel active remote task and notify Muse",
+        "  /muse cancel                 - Cancel active remote task and notify Muse",
+        "  /muse new                    - Reset remote session memory",
+        "  /muse reset                  - Reset remote session memory",
         "  /muse config <key> <val>     - Set config key (botToken, groupId, museBotId, as_runner_model)",
       ].filter(Boolean) as string[];
 
@@ -178,6 +182,68 @@ export const museCommand: SlashCommand = {
       return;
     }
 
+    // /muse new or /muse reset
+    if (subcommand === "new" || subcommand === "reset") {
+      const cfg = loadRemoteAgentConfig();
+      if (!cfg.botToken || !cfg.groupId) {
+        ctx.addLine({
+          type: "error",
+          content: "Remote agent (Muse) is not configured. Run /muse config.",
+          timestamp: now,
+        });
+        return;
+      }
+      const { notifyMuseSessionReset } = await import("../remoteAgent/taskRunner.js");
+      ctx.addLine({
+        type: "system",
+        content: "[Muse] Resetting remote session context on Telegram...",
+        timestamp: now,
+      });
+      const ok = await notifyMuseSessionReset(ctx.agent?.sessionId);
+      if (ok) {
+        ctx.addLine({
+          type: "system",
+          content: "[Muse] Remote session context has been reset. Muse will start next task with fresh context.",
+          timestamp: now,
+        });
+      } else {
+        ctx.addLine({
+          type: "error",
+          content: "[Muse] Failed to send reset notification to Telegram. Check bot configuration.",
+          timestamp: now,
+        });
+      }
+      return;
+    }
+
+    // /muse stop or /muse cancel
+    if (subcommand === "stop" || subcommand === "cancel") {
+      const { abortActiveRemoteTask, getActiveRemoteTaskId } = await import("../remoteAgent/taskRunner.js");
+      const activeId = getActiveRemoteTaskId();
+      if (!activeId) {
+        ctx.addLine({
+          type: "system",
+          content: "[Muse] No active remote task is currently running.",
+          timestamp: now,
+        });
+        return;
+      }
+      ctx.addLine({
+        type: "system",
+        content: `[Muse] Aborting active remote task (${activeId}) and notifying Muse...`,
+        timestamp: now,
+      });
+      const ok = await abortActiveRemoteTask("Cancelled by user via /muse stop");
+      if (ok) {
+        ctx.addLine({
+          type: "system",
+          content: "[Muse] Active remote task has been cancelled.",
+          timestamp: now,
+        });
+      }
+      return;
+    }
+
     // Default: /muse <task>
     if (!rawTrimmed) {
       ctx.addLine({
@@ -187,6 +253,10 @@ export const museCommand: SlashCommand = {
           "Example: /muse cari semua TODO di src",
           "Subcommands:",
           "  /muse status",
+          "  /muse stop                   - Cancel active remote task",
+          "  /muse cancel                 - Cancel active remote task",
+          "  /muse new                    - Reset remote session memory",
+          "  /muse reset                  - Reset remote session memory",
           "  /muse config <key> <value>",
         ].join("\n"),
         timestamp: now,
@@ -250,6 +320,7 @@ export const museCommand: SlashCommand = {
         task: rawTrimmed,
         workspace,
         agent: ctx.agent,
+        signal: (ctx.agent as any)?.getAbortSignal?.(),
         onToolStart: (toolCall, description) => {
           ensureAssistantLine();
           if (ctx.agent?.onEvent) {

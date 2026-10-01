@@ -1,3 +1,8 @@
+export interface TaskContextMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface TaskRequestEnvelope {
   v: 1;
   kind: "task_request";
@@ -7,6 +12,7 @@ export interface TaskRequestEnvelope {
   workspace: string;
   tools: string[];
   reply_hint?: string;
+  context?: TaskContextMessage[];
 }
 
 export interface BatchToolCall {
@@ -49,9 +55,23 @@ export interface TaskDoneEnvelope {
 export interface ChatEnvelope {
   v: 1;
   kind: "chat";
-  id?: string;
-  task_id?: string;
   text: string;
+}
+
+export interface SessionResetEnvelope {
+  v: 1;
+  kind: "session_reset";
+  id?: string;
+  session?: string;
+  message?: string;
+}
+
+export interface TaskCancelEnvelope {
+  v: 1;
+  kind: "task_cancel";
+  id?: string;
+  task_id: string;
+  reason?: string;
 }
 
 export type RemoteAgentEnvelope =
@@ -59,7 +79,9 @@ export type RemoteAgentEnvelope =
   | TaskBatchEnvelope
   | TaskResultEnvelope
   | TaskDoneEnvelope
-  | ChatEnvelope;
+  | ChatEnvelope
+  | SessionResetEnvelope
+  | TaskCancelEnvelope;
 
 export const CHUNK_HEADER_PREFIX = "MUSEBUS";
 export const DEFAULT_MAX_CHUNK_SIZE = 3800;
@@ -248,7 +270,7 @@ export function validateEnvelope(
   }
 
   // 3. Schema check: known kind
-  const validKinds = ["task_request", "task_batch", "task_result", "task_done", "chat"];
+  const validKinds = ["task_request", "task_batch", "task_result", "task_done", "chat", "session_reset", "task_cancel"];
   if (!validKinds.includes(envelope.kind)) {
     return { valid: false, error: `Unknown envelope kind: ${envelope.kind}` };
   }
@@ -330,6 +352,17 @@ export function validateEnvelope(
     case "chat": {
       if (typeof envelope.text !== "string") {
         return { valid: false, error: "chat missing valid 'text'" };
+      }
+      break;
+    }
+
+    case "session_reset": {
+      break;
+    }
+
+    case "task_cancel": {
+      if (!envelope.task_id || typeof envelope.task_id !== "string") {
+        return { valid: false, error: "task_cancel missing valid 'task_id'" };
       }
       break;
     }

@@ -98,6 +98,17 @@ export const newCommand: SlashCommand = {
       await fs.appendFile(logPath, separator, "utf-8");
     } catch {}
 
+    // ── 7b. Notify Remote Agent (Muse) of session reset if configured ───
+    try {
+      const { loadRemoteAgentConfig } = await import("../remoteAgent/config.js");
+      const remoteCfg = loadRemoteAgentConfig();
+      if (remoteCfg.botToken && remoteCfg.groupId) {
+        const { notifyMuseSessionReset, abortActiveRemoteTask } = await import("../remoteAgent/taskRunner.js");
+        abortActiveRemoteTask("New session started").catch(() => {});
+        notifyMuseSessionReset(ctx.agent?.sessionId).catch(() => {});
+      }
+    } catch {}
+
     // ── 8. Reset UI state ─────────────────────────────────
     ctx.setPlanState?.("IDLE");
     ctx.setGoalMode?.(null);
