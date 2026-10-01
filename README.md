@@ -37,6 +37,7 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 - **🛡️ Local Git Checkpoints**: Automatic branch checkpoints and safety rollbacks during active sessions.
 - **🛠️ Integrated Tooling**: Built-in file search, regex ripgrep, background command runners, terminal presets, system-level screenshots, and Playwright web page screenshots.
 - **🌐 Remote SSH Workspaces**: Secure connection to remote hosts with active boundary protection, interactive path expansion, local-to-remote file transfer, and workspace-based session continuation.
+- **🛰️ Remote AI Agent Coordination (Muse)**: Coordinate with a remote AI brain over a private Telegram group bus, delegating high-level reasoning to Muse while Superagent executes batched tools locally.
 - **🤖 3-Tier Multi-Agent Mode *(Experimental)***: Master Agent orchestrating isolated Superagents across parallel Git worktrees (`--multi`).
 
 ---
@@ -78,6 +79,10 @@ superagent -ws user@192.168.1.100:/var/www/app
 # Manage autonomous background daemon & cron scheduler
 superagent daemon list
 superagent daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"
+
+# Run a task using the remote AI agent (Muse)
+superagent muse status
+superagent muse "find and refactor all deprecated functions"
 
 # Launch in Multi-Agent Orchestration mode (Experimental)
 superagent --multi
@@ -154,6 +159,7 @@ No manual server configuration or extra CLI arguments are required—simply laun
 | `/mcp` | Manage MCP (Model Context Protocol) servers: list, add, remove, reload |
 | `/macro` | Manage and run browser macro presets: list, run, delete |
 | `/internal-hooks` `/ih` | Manage custom internal hook tools: init, dev, list, active |
+| `/muse` | Coordinate with remote AI agent (Muse) over Telegram group bus (`/muse <task>`, `/muse status`, `/muse config`) |
 
 ### Workspace Management
 
@@ -216,6 +222,41 @@ Workspace Chaining allows you to link multiple workspaces—both local directori
 - `list` — Show all Git worktrees
 - `prune` — Clean stale worktree metadata
 - `remove <path>` — Remove a worktree
+
+### 🛰️ Remote AI Agent Coordination (Muse)
+
+Superagent can pair with an external AI agent (**"Muse"**) acting as a remote brain over a private Telegram group bus, while Superagent provides local file access, command execution, and test running on your machine:
+
+- **Transport Architecture**: Private Telegram group with two bots (Bot A for Muse, Bot B for Superagent) with Bot-to-Bot Communication Mode enabled.
+- **Batched Tool Execution**: Muse reasons in large batches and issues tool requests; Superagent executes them locally and returns batched results.
+- **Safety & Permissions**: Destructive operations (`write`, `edit`, `apply_patch`, commands) require interactive confirmation.
+- **Loop Guards & Deduplication**: Maximum 50 batches and 30-minute task duration with automatic duplicate batch ID filtering.
+
+**Configuration:**
+
+```bash
+# Configure Superagent's bot token (Bot B)
+/muse config botToken 123456789:ABCdef...
+
+# Configure the Telegram group ID
+/muse config groupId -1001234567890
+
+# Configure the Muse bot's user ID (Bot A)
+/muse config museBotId 987654321
+
+# Inspect status (bot token is securely masked)
+/muse status
+```
+
+**Running Tasks:**
+
+```bash
+# In interactive mode
+/muse refactor the authentication middleware to use JWT
+
+# From the command line
+superagent muse "find all unhandled promise rejections in src"
+```
 
 ### Keyboard Shortcuts
 
