@@ -97,6 +97,15 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
     expect((parsed as TaskCancelEnvelope).task_id).toBe("task_abc");
   });
 
+  it("should parse JSON envelopes wrapped in markdown code blocks", () => {
+    const rawFenced = "```json\n{\"v\":1,\"kind\":\"chat\",\"text\":\"Hello from Muse with fences\"}\n```";
+    const reassembler = new EnvelopeReassembler();
+    const parsed = reassembler.processMessage(rawFenced);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.kind).toBe("chat");
+    expect((parsed as any).text).toBe("Hello from Muse with fences");
+  });
+
   it("should send session_reset envelope via notifyMuseSessionReset", async () => {
     const sendSpy = vi
       .spyOn(MuseClient.prototype, "sendEnvelope")
@@ -516,6 +525,72 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
 
       const stats = getMuseWatcher()?.getStats();
       expect(stats?.batchesExecuted).toBe(1);
+
+      // Re-send the exact same batch ID: should be deduplicated and not executed again
+      await registeredHandler!({
+        v: 1,
+        kind: "task_batch",
+        id: "batch_001",
+        task_id: "task_watch_1",
+        calls: [
+          {
+            id: "call_1",
+            tool: "run_command",
+            args: { command: 'node -e "console.log(12345)"' },
+          },
+        ],
+      });
+
+      expect(getMuseWatcher()?.getStats().batchesExecuted).toBe(1);
+
+      await stopMuseWatcher();
+      pollSpy.mockRestore();
+      sendSpy.mockRestore();
+    });
+
+    it("should auto-approve safe workspace file operations in watch mode", async () => {
+      let registeredHandler: ((envelope: any) => Promise<void>) | null = null;
+      const sentEnvelopes: any[] = [];
+
+      const pollSpy = vi
+        .spyOn(MuseClient.prototype, "pollEnvelopes")
+        .mockImplementation((handler) => {
+          registeredHandler = handler;
+          return new Promise(() => {});
+        });
+
+      const sendSpy = vi
+        .spyOn(MuseClient.prototype, "sendEnvelope")
+        .mockImplementation(async (env) => {
+          sentEnvelopes.push(env);
+          return true;
+        });
+
+      await startMuseWatcher({
+        workspace: process.cwd(),
+        announce: false,
+      });
+
+      expect(registeredHandler).not.toBeNull();
+
+      // Read/write tool without interactive agent - should be auto-approved in workspace
+      await registeredHandler!({
+        v: 1,
+        kind: "task_batch",
+        id: "batch_write_test",
+        task_id: "task_watch_write",
+        calls: [
+          {
+            id: "call_w1",
+            tool: "read",
+            args: { filePath: "package.json" },
+          },
+        ],
+      });
+
+      const resultEnv = sentEnvelopes.find((e) => e.kind === "task_result");
+      expect(resultEnv).toBeDefined();
+      expect(resultEnv.results[0].ok).toBe(true);
 
       await stopMuseWatcher();
       pollSpy.mockRestore();

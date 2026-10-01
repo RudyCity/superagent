@@ -167,6 +167,7 @@ export {
   synthesizeSkillTool,
 };
 import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../workspace/workspaceChainTools.js";
+import { listToolsTool, describeToolTool } from "./toolDiscoveryTools.js";
 
 
 export const allTools: Tool[] = [
@@ -219,6 +220,8 @@ export const allTools: Tool[] = [
   defineSuperagentTool,
   sendMessageToSuperagentTool,
   applyPatchTool,
+  listToolsTool,
+  describeToolTool,
   gitActionTool,
   gitWorktreeTool,
   screenshotTool,

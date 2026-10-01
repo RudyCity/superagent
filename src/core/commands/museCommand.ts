@@ -321,6 +321,44 @@ export const museCommand: SlashCommand = {
         await startMuseWatcher({
           workspace: ctx.agent?.workingDirectory || process.cwd(),
           agent: ctx.agent,
+          onProgress: (msg) => {
+            ctx.addLine({
+              type: "system",
+              content: `[Muse Progress] ${msg}`,
+              timestamp: Date.now(),
+            });
+          },
+          onToolStart: (toolCall, description) => {
+            if (ctx.agent?.onEvent) {
+              ctx.agent.onEvent({
+                type: "tool_start",
+                toolCall,
+                description,
+              });
+              return;
+            }
+            ctx.addLine({
+              type: "tool_start",
+              content: `⚡ ${description}\n   Detail: ${toolCall.name}(${JSON.stringify(toolCall.args || {})})`,
+              timestamp: Date.now(),
+            });
+          },
+          onToolEnd: (toolCall, toolResult, description) => {
+            if (ctx.agent?.onEvent) {
+              ctx.agent.onEvent({
+                type: "tool_end",
+                toolCall,
+                toolResult,
+                description,
+              });
+              return;
+            }
+            ctx.addLine({
+              type: "tool_end",
+              content: `✔ ${description}`,
+              timestamp: Date.now(),
+            });
+          },
           onLine: (line) => {
             ctx.addLine({
               type: (line.type as any) || "system",
@@ -357,6 +395,16 @@ export const museCommand: SlashCommand = {
           "  /muse reset                  - Reset remote session memory",
           "  /muse config <key> <value>",
         ].join("\n"),
+        timestamp: now,
+      });
+      return;
+    }
+
+    const { isMuseWatcherActive } = await import("../remoteAgent/museWatcher.js");
+    if (isMuseWatcherActive()) {
+      ctx.addLine({
+        type: "system",
+        content: "[Muse Watch] Watch mode is currently active (Superagent is controlled by Muse). You can instruct Muse directly via Telegram, or run '/muse watch stop' to return to manual control.",
         timestamp: now,
       });
       return;

@@ -1075,6 +1075,15 @@ export function App({
         timestamp: Date.now(),
       });
 
+      if (isMuseWatcherActive()) {
+        addLine({
+          type: "system",
+          content: "[Muse Watch] Superagent is currently controlled by Muse in Watch Mode. You can send instructions directly to Muse via Telegram, or run '/muse watch stop' to return to manual control.",
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
       if (isMuseRunnerActive()) {
         await handleSlashCommand(`/muse ${trimmed}`, {
           addLine,

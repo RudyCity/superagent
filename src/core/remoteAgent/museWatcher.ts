@@ -35,6 +35,7 @@ export interface MuseWatcherOptions {
   agent?: Agent | null;
   customConfigPath?: string;
   announce?: boolean;
+  autoApproveWorkspace?: boolean;
   onProgress?: (message: string) => void;
   onLog?: (message: string) => void;
   onLine?: (line: { type: string; content: string; timestamp?: number }) => void;
@@ -61,6 +62,7 @@ export class MuseWatcher {
   private options: MuseWatcherOptions;
   private activeBatchAborts = new Set<AbortController>();
   private seenChatIds = new Set<string>();
+  private seenBatchIds = new Set<string>();
 
   constructor(options: MuseWatcherOptions = {}) {
     this.options = options;
@@ -140,12 +142,22 @@ export class MuseWatcher {
 
     const abortSignal = this.abortController.signal;
 
-    // Optional presence greeting on Telegram in background
+    // Optional presence greeting and session priming on Telegram in background
     if (this.options.announce !== false) {
+      const resetEnvelope: SessionResetEnvelope = {
+        v: 1,
+        kind: "session_reset",
+        id: `reset_${crypto.randomUUID()}`,
+        session: `watch_${Date.now()}`,
+        message: `Superagent is now active in WATCH mode on workspace: ${ws}. Listening for task_batch tool calls.`,
+        system_prompt: this.config.systemPrompt || DEFAULT_MUSE_SYSTEM_PROMPT,
+      };
+      this.client.sendEnvelope(resetEnvelope).catch(() => {});
+
       const presenceEnvelope: RemoteAgentEnvelope = {
         v: 1,
         kind: "chat",
-        text: `🟢 Superagent is now active in WATCH mode (controlled by Muse) on workspace: ${ws}`,
+        text: `🟢 Superagent is now active in WATCH mode (controlled by Muse) on workspace: ${ws}\nMuse, you can now command this machine using task_batch envelopes.`,
       };
       this.client.sendEnvelope(presenceEnvelope).catch(() => {});
     }
@@ -159,6 +171,8 @@ export class MuseWatcher {
         if (!abortSignal.aborted) {
           logE2E("REMOTE-AGENT", `MuseWatcher polling error: ${err?.message || err}`);
           this.emitLine("error", `[Muse Watch] Polling error: ${err?.message || err}`);
+          this.isRunning = false;
+          this.options.onStatusChange?.(false);
         }
       });
   }
@@ -233,6 +247,18 @@ export class MuseWatcher {
   }
 
   private async handleTaskBatch(envelope: TaskBatchEnvelope): Promise<void> {
+    if (envelope.id) {
+      if (this.seenBatchIds.has(envelope.id)) {
+        logE2E("REMOTE-AGENT", `MuseWatcher ignoring duplicate task_batch: ${envelope.id}`);
+        return;
+      }
+      this.seenBatchIds.add(envelope.id);
+      if (this.seenBatchIds.size > 1000) {
+        const toRemove = Array.from(this.seenBatchIds).slice(0, 500);
+        for (const id of toRemove) this.seenBatchIds.delete(id);
+      }
+    }
+
     this.activeTaskId = envelope.task_id;
     const callsCount = envelope.calls?.length || 0;
     const ws = path.resolve(
@@ -261,6 +287,7 @@ export class MuseWatcher {
         workspace: ws,
         agent: this.options.agent,
         signal: batchSignal,
+        autoApproveWorkspace: this.options.autoApproveWorkspace ?? true,
         onToolStart: this.options.onToolStart,
         onToolEnd: this.options.onToolEnd,
         onProgress: this.options.onProgress,
@@ -281,7 +308,12 @@ export class MuseWatcher {
         `MuseWatcher completed batch ${envelope.id} with ${results.length} result(s). Posting back to Telegram.`
       );
 
-      const sent = await this.client.sendEnvelope(resultEnvelope);
+      const sent = await this.client.sendEnvelope(
+        resultEnvelope,
+        undefined,
+        this.client.getLastSentMessageId(),
+        this.options.onProgress
+      );
       if (!sent) {
         this.emitLine(
           "error",

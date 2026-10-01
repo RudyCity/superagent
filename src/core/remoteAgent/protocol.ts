@@ -13,6 +13,8 @@ export interface TaskRequestEnvelope {
   tools: string[];
   reply_hint?: string;
   system_prompt?: string;
+  /** SHA-256 (first 16 hex chars) of system_prompt; sent when the full prompt is omitted (cached). */
+  system_prompt_hash?: string;
   context?: TaskContextMessage[];
 }
 
@@ -20,6 +22,10 @@ export interface BatchToolCall {
   id: string;
   tool: string;
   args?: Record<string, any>;
+  /** Ids of calls in the same batch that must complete before this call runs. */
+  depends_on?: string[];
+  /** Per-call execution timeout in milliseconds (bounds tool.execute only). */
+  timeout_ms?: number;
 }
 
 export interface TaskBatchEnvelope {
@@ -94,6 +100,8 @@ COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
    - Git: git_action (args: { "action": "<op>", "message": "<msg>" }), git_worktree
    - Misc: schedule, synthesize_skill, screenshot, playwright_screenshot
    - Project conventions: at the start of a task, read AGENTS.md (or agents.md) in the workspace root if present and follow its conventions
+   - Tool discovery: list_tools (args: { "query": "<keyword>" }) to browse tools, describe_tool (args: { "names": ["<tool>"] }) for exact argument schemas \u2014 use it instead of guessing args
+   - Batching: independent calls in one batch run in parallel; add "depends_on": ["<call id>"] to order dependent calls; add "timeout_ms": <ms> per call to bound slow tools
 3. Tool batch (task_batch):
    When you need to inspect files, edit code, or run commands, reply with:
    {"v": 1, "kind": "task_batch", "id": "batch_<uuid>", "task_id": "<task_id>", "calls": [{"id": "c1", "tool": "run_command", "args": {"command": "git status"}}]}
@@ -230,9 +238,10 @@ export class EnvelopeReassembler {
           fullParts.push(part);
         }
         this.pending.delete(envelopeId);
-        const combinedJson = fullParts.join("");
+        const combinedJson = fullParts.join("").trim();
+        const cleanCombined = combinedJson.replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1").trim();
         try {
-          return JSON.parse(combinedJson) as RemoteAgentEnvelope;
+          return JSON.parse(cleanCombined) as RemoteAgentEnvelope;
         } catch {
           return null;
         }
@@ -241,9 +250,10 @@ export class EnvelopeReassembler {
       return null;
     }
 
-    // Direct JSON message
+    // Direct JSON message (stripping markdown code fences if wrapped by LLM)
     try {
-      const parsed = JSON.parse(trimmed);
+      const cleanJson = trimmed.replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1").trim();
+      const parsed = JSON.parse(cleanJson);
       if (parsed && typeof parsed === "object") {
         return parsed as RemoteAgentEnvelope;
       }
@@ -340,6 +350,9 @@ export function validateEnvelope(
       }
       if (envelope.system_prompt !== undefined && typeof envelope.system_prompt !== "string") {
         return { valid: false, error: "task_request invalid 'system_prompt': must be a string" };
+      }
+      if (envelope.system_prompt_hash !== undefined && typeof envelope.system_prompt_hash !== "string") {
+        return { valid: false, error: "task_request invalid 'system_prompt_hash': must be a string" };
       }
       break;
     }

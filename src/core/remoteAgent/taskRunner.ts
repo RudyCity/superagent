@@ -1,5 +1,7 @@
 import crypto from "crypto";
+import fs from "fs";
 import path from "path";
+import { getRootConfigDir } from "../config/paths.js";
 import { loadRemoteAgentConfig, maskToken } from "./config.js";
 import {
   RemoteAgentEnvelope,
@@ -107,6 +109,20 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
     throw new Error(
       "Remote agent (Muse) is not configured. Please configure botToken, groupId, and museBotId using `/muse config <key> <value>`."
     );
+  }
+
+  // Singleton guard: if watch mode is active, reject to avoid Telegram 409 Conflict
+  try {
+    const { isMuseWatcherActive } = await import("./museWatcher.js");
+    if (isMuseWatcherActive()) {
+      throw new Error(
+        "Muse Watch Mode is currently active. Either send instructions to Muse in Telegram, or stop watch mode first using '/muse watch stop'."
+      );
+    }
+  } catch (err: any) {
+    if (err?.message?.includes("Muse Watch Mode is currently active")) {
+      throw err;
+    }
   }
 
   // Singleton guard: if another remote task is currently running, cancel it first
@@ -218,6 +234,15 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
   ];
 
   const systemPrompt = config.systemPrompt || DEFAULT_MUSE_SYSTEM_PROMPT;
+  // Prompt caching: only resend the full system prompt when it changed since the
+  // last task_request; otherwise send just the hash (the bridge worker caches it).
+  const systemPromptHash = crypto.createHash("sha256").update(systemPrompt).digest("hex").slice(0, 16);
+  const promptHashPath = path.join(getRootConfigDir(), "last_system_prompt.hash");
+  let lastPromptHash = "";
+  try {
+    lastPromptHash = fs.readFileSync(promptHashPath, "utf-8").trim();
+  } catch {}
+  const promptChanged = lastPromptHash !== systemPromptHash;
   const isFirstTurn = !taskContext || taskContext.length === 0;
 
   // On initial turn of a session, or if taskContext is empty, inject a guidance header
@@ -240,7 +265,8 @@ ${options.task}`;
     task: taskContent,
     workspace,
     tools: standardTools,
-    system_prompt: systemPrompt,
+    system_prompt_hash: systemPromptHash,
+    ...((isFirstTurn || promptChanged) ? { system_prompt: systemPrompt } : {}),
     reply_hint: "Always reply directly to Bot B's message in Telegram (use reply_to_message_id). Tools available: read, glob, grep, ripgrep_search, write, edit, write_to_file, replace_file_content, apply_patch, run_command, bash. In task_done, format summary with clear newlines, bullet points (-), and numbered items (1., 2.) for readable terminal presentation.",
     ...(taskContext && taskContext.length > 0 ? { context: taskContext } : {}),
   };
@@ -260,6 +286,11 @@ ${options.task}`;
     }
     logE2E("REMOTE-AGENT", `Failed to send task request ${taskId} to Telegram group`);
     throw new Error("Failed to send task request to Telegram group. Check bot token and group ID.");
+  }
+  if (promptChanged) {
+    try {
+      fs.writeFileSync(promptHashPath, systemPromptHash);
+    } catch {}
   }
 
   logE2E("REMOTE-AGENT", `Task request ${taskId} sent to Telegram group. Awaiting Muse envelopes...`);
