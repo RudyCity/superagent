@@ -1,3 +1,14 @@
+## [1.5.101] - 2026-10-01
+
+### Fixed
+
+- **Remote Agent Final Summary Layout & Placement**:
+  - Fixed an issue where Muse's final response text was placed at the top above tool executions instead of below them.
+  - Formatted the final response cleanly as `📋 Task Summary (Muse Remote)` with a divider, appending it at the very end after all tool batches have finished.
+  - Kept tool execution containers focused purely on displaying tool runs without premature text.
+  - Prevented internal deduplication progress notes (`Duplicate batch ID`, `Received batch for different task ID`) from interrupting and fragmenting the assistant's tool display box.
+  - Added unit test in `tests/remoteAgent.test.ts` verifying that tool executions precede the final task summary at the bottom.
+
 ## [1.5.100] - 2026-10-01
 
 ### Fixed

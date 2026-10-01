@@ -333,7 +333,7 @@ export const museCommand: SlashCommand = {
               message: msg,
             });
           }
-          if (msg.startsWith("Warning") || msg.startsWith("Duplicate") || msg.startsWith("Waiting")) {
+          if (msg.startsWith("Waiting")) {
             ctx.addLine({
               type: "system",
               content: `[Muse] ${msg}`,
@@ -357,38 +357,17 @@ export const museCommand: SlashCommand = {
       });
 
       if (result.success) {
-        if (assistantLineCreated && ctx.setLines) {
-          ctx.setLines((prev) => {
-            let found = false;
-            const updated = prev.map((l) => {
-              if (l.type === "assistant" && l.timestamp === assistantTimestamp) {
-                found = true;
-                return {
-                  ...l,
-                  content: result.summary,
-                };
-              }
-              return l;
-            });
-            if (found) {
-              return updated;
-            }
-            return [
-              ...prev,
-              {
-                type: "assistant",
-                content: result.summary,
-                timestamp: Date.now(),
-              },
-            ];
-          });
-        } else {
-          ctx.addLine({
-            type: "assistant",
-            content: result.summary,
-            timestamp: Date.now(),
-          });
-        }
+        const summaryText = (result.summary || "").trim();
+        const formattedSummary = summaryText.startsWith("📋") || /^task summary/i.test(summaryText)
+          ? summaryText
+          : `📋 Task Summary (Muse Remote)\n────────────────────────────────────────────\n${summaryText}`;
+
+        // Always append the final response at the end so it appears cleanly below all tool executions
+        ctx.addLine({
+          type: "assistant",
+          content: formattedSummary,
+          timestamp: Date.now(),
+        });
 
         // Persist interaction to conversation history & SQLite database if agent is present
         if (ctx.agent) {

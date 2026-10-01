@@ -807,7 +807,8 @@ describe("remoteAgent - Slash Command (/muse)", () => {
     // Verify: new assistant message was appended with Muse's answer
     const assistantLines = currentLines.filter((l) => l.type === "assistant");
     expect(assistantLines.length).toBe(2);
-    expect(assistantLines[1].content).toBe("Hai juga! Bridge aktif.");
+    expect(assistantLines[1].content).toContain("Hai juga! Bridge aktif.");
+    expect(assistantLines[1].content).toContain("📋 Task Summary (Muse Remote)");
 
     // Verify: conversation history recorded the exchange
     expect(addedMessages).toHaveLength(2);
@@ -815,6 +816,109 @@ describe("remoteAgent - Slash Command (/muse)", () => {
     expect(addedMessages[0].msg).toBe("hi");
     expect(addedMessages[1].role).toBe("assistant");
     expect(addedMessages[1].msg).toBe("Hai juga! Bridge aktif.");
+  });
+
+  it("should append summary at the end after all tool executions without putting text above tools", async () => {
+    saveRemoteAgentConfig({
+      botToken: "123456789:ABCsecretTokenXYZ",
+      groupId: "-100987654",
+      museBotId: "998877",
+    });
+
+    let currentLines: ChatLine[] = [];
+    let capturedTaskId = "";
+    let step = 0;
+
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string, options?: any) => {
+      if (url.includes("deleteWebhook")) return new Response(JSON.stringify({ ok: true }));
+      if (url.includes("getMe")) return new Response(JSON.stringify({ ok: true, result: { username: "bot", can_read_all_group_messages: true } }));
+      if (url.includes("sendMessage")) {
+        const body = JSON.parse(options?.body || "{}");
+        if (body.text) {
+          try {
+            const p = JSON.parse(body.text);
+            if (p.kind === "task_request") capturedTaskId = p.id;
+          } catch {}
+        }
+        return new Response(JSON.stringify({ ok: true, result: {} }));
+      }
+      if (url.includes("getUpdates")) {
+        step++;
+        if (step === 1) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: [
+                {
+                  update_id: 301,
+                  message: {
+                    chat: { id: "-100987654" },
+                    from: { id: "998877" },
+                    text: JSON.stringify({
+                      v: 1,
+                      kind: "task_batch",
+                      id: "batch_tools",
+                      task_id: capturedTaskId,
+                      calls: [{ id: "c1", tool: "read", args: { filePath: "package.json" } }],
+                    }),
+                  },
+                },
+              ],
+            })
+          );
+        }
+        if (step === 2) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              result: [
+                {
+                  update_id: 302,
+                  message: {
+                    chat: { id: "-100987654" },
+                    from: { id: "998877" },
+                    text: JSON.stringify({
+                      v: 1,
+                      kind: "task_done",
+                      id: "done_tools",
+                      task_id: capturedTaskId,
+                      summary: "Audit selesai. Semua dependensi terverifikasi.",
+                    }),
+                  },
+                },
+              ],
+            })
+          );
+        }
+        return new Response(JSON.stringify({ ok: true, result: [] }));
+      }
+      return new Response(JSON.stringify({ ok: true }));
+    });
+
+    const taskCtx: SlashCommandContext = {
+      addLine: (line) => currentLines.push(line),
+      setLines: (updater: any) => {
+        if (typeof updater === "function") {
+          currentLines = updater(currentLines);
+        } else {
+          currentLines = updater;
+        }
+      },
+      exit: () => {},
+      agent: null,
+    };
+
+    await museCommand.execute("audit package.json", taskCtx);
+
+    const assistantLines = currentLines.filter((l) => l.type === "assistant");
+    expect(assistantLines.length).toBe(2);
+    // Line 1: tool execution container has empty text content so tools are not preceded by premature text
+    expect(assistantLines[0].content).toBe("");
+    expect(assistantLines[0].children?.length).toBeGreaterThan(0);
+
+    // Line 2: final summary at the end
+    expect(assistantLines[1].content).toContain("📋 Task Summary (Muse Remote)");
+    expect(assistantLines[1].content).toContain("Audit selesai. Semua dependensi terverifikasi.");
   });
 
   it("should be registered in the slash command registry", () => {
