@@ -93,6 +93,7 @@ COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
    - Planning: manage_plan (args: { "action": "create|edit|sync|get" }), manage_tasks
    - Git: git_action (args: { "action": "<op>", "message": "<msg>" }), git_worktree
    - Misc: schedule, synthesize_skill, screenshot, playwright_screenshot
+   - Project conventions: at the start of a task, read AGENTS.md (or agents.md) in the workspace root if present and follow its conventions
 3. Tool batch (task_batch):
    When you need to inspect files, edit code, or run commands, reply with:
    {"v": 1, "kind": "task_batch", "id": "batch_<uuid>", "task_id": "<task_id>", "calls": [{"id": "c1", "tool": "run_command", "args": {"command": "git status"}}]}
