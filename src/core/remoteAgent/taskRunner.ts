@@ -86,7 +86,7 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
     task: options.task,
     workspace,
     tools: standardTools,
-    reply_hint: "Always reply directly to Bot B's message in Telegram (use reply_to_message_id) so Telegram Privacy Mode allows message delivery.",
+    reply_hint: "Always reply directly to Bot B's message in Telegram (use reply_to_message_id). In task_done, format summary with clear newlines, bullet points (-), and numbered items (1., 2.) for readable terminal presentation.",
   };
 
   logE2E("REMOTE-AGENT", `Starting remote task: taskId=${taskId}, session=${sessionId}, workspace=${workspace}`);

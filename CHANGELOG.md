@@ -1,3 +1,15 @@
+## [1.5.102] - 2026-10-01
+
+### Fixed
+
+- **Remote Agent Response Readability & Line-Break Formatting**:
+  - Implemented `formatReadableSummary` (`src/core/remoteAgent/formatSummary.ts`) to automatically parse dense, unformatted Muse summaries and break them into readable paragraphs with clean newlines and indentation.
+  - Automatically unescapes literal `\n` characters in JSON envelope responses.
+  - Automatically separates section headers (`TEMUAN:`, `POSITIF:`, `CATATAN:`, `FINDINGS:`, `RECOMMENDATIONS:`, etc.) onto their own paragraphs.
+  - Automatically breaks inline numbered list items (`1) `, `2) `, `1. `, `2. `) and bullet points (`•`, `-`) onto dedicated lines with 2-space indentation.
+  - Updated `reply_hint` in `taskRunner.ts` and remote assistant prompt in `docs/remote-agent-setup.md` instructing Muse to format summaries with clear newlines, bullet points, and numbered lists.
+  - Added unit test suite in `tests/remoteAgent.test.ts` verifying readable formatting and escaped character handling.
+
 ## [1.5.101] - 2026-10-01
 
 ### Fixed

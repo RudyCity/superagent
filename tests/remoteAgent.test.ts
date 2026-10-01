@@ -984,3 +984,31 @@ describe("remoteAgent - CLI Handler", () => {
   });
 });
 
+describe("remoteAgent - Summary Formatter", () => {
+  it("should unescape literal \\n and break numbered lists and headings cleanly", async () => {
+    const { formatReadableSummary } = await import("../src/core/remoteAgent/formatSummary.js");
+
+    const denseText =
+      "Audit selesai. TEMUAN: 1) [Sedang] Password DB default 'postgres123'. 2) [Rendah] REPORT basi. POSITIF: backend aman. 3) [Rendah] README basi.";
+
+    const formatted = formatReadableSummary(denseText);
+
+    // Headings break onto separate lines
+    expect(formatted).toContain("TEMUAN:\n  1)");
+    expect(formatted).toContain("POSITIF:\nbackend aman.");
+
+    // Numbered items break onto separate lines
+    expect(formatted).toContain("\n  2) [Rendah] REPORT basi.");
+    expect(formatted).toContain("\n  3) [Rendah] README basi.");
+  });
+
+  it("should handle escaped \\n correctly", async () => {
+    const { formatReadableSummary } = await import("../src/core/remoteAgent/formatSummary.js");
+
+    const escaped = "Line 1\\nLine 2\\nLine 3";
+    const formatted = formatReadableSummary(escaped);
+
+    expect(formatted).toBe("Line 1\nLine 2\nLine 3");
+  });
+});
+

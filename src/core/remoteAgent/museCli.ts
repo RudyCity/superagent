@@ -5,6 +5,7 @@ import {
   RemoteAgentConfig,
 } from "./config.js";
 import { runRemoteTask } from "./taskRunner.js";
+import { formatReadableSummary } from "./formatSummary.js";
 
 export async function handleMuseCliCommand(args: string[]): Promise<void> {
   const subcommand = (args[0] || "status").toLowerCase();
@@ -117,7 +118,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
   if (result.success) {
     console.log("\n--- Task Summary ---");
-    console.log(result.summary);
+    console.log(formatReadableSummary(result.summary));
   } else {
     console.error(`\nTask Failed: ${result.error || "Unknown error"}`);
     process.exit(1);

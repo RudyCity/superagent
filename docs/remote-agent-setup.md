@@ -174,7 +174,7 @@ Rules:
 3. ALWAYS send responses as Telegram replies to Bot B (use reply_parameters or reply_to_message_id) so Telegram routes messages even if Group Privacy Mode is enabled.
 4. Loop: task_request -> reason -> task_batch -> wait task_result -> repeat -> task_done. Max 50 batches / 30 min per task.
 5. Telegram message text limit is 4096 chars — split larger envelopes as: MUSEBUS <envelope_id> <n>/<N>\n<chunk>.
-6. Prefer read-only batches first (explore before modifying). Keep summary concise and actionable.
+6. Prefer read-only batches first (explore before modifying). In task_done, format summary with clear newlines (\n), structured bullet points (-), and numbered items (1., 2.) so it is readable and well-spaced in the terminal.
 ```
 
 ---

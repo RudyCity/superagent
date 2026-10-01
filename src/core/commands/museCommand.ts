@@ -6,6 +6,7 @@ import {
   maskToken,
   RemoteAgentConfig,
 } from "../remoteAgent/config.js";
+import { formatReadableSummary } from "../remoteAgent/formatSummary.js";
 
 export const museCommand: SlashCommand = {
   name: "muse",
@@ -357,10 +358,10 @@ export const museCommand: SlashCommand = {
       });
 
       if (result.success) {
-        const summaryText = (result.summary || "").trim();
-        const formattedSummary = summaryText.startsWith("📋") || /^task summary/i.test(summaryText)
-          ? summaryText
-          : `📋 Task Summary (Muse Remote)\n────────────────────────────────────────────\n${summaryText}`;
+        const readableSummary = formatReadableSummary(result.summary);
+        const formattedSummary = readableSummary.startsWith("📋") || /^task summary/i.test(readableSummary)
+          ? readableSummary
+          : `📋 Task Summary (Muse Remote)\n────────────────────────────────────────────\n${readableSummary}`;
 
         // Always append the final response at the end so it appears cleanly below all tool executions
         ctx.addLine({
@@ -373,7 +374,7 @@ export const museCommand: SlashCommand = {
         if (ctx.agent) {
           try {
             ctx.agent.getHistory().addUserMessage(rawTrimmed);
-            ctx.agent.getHistory().addAssistantMessage(result.summary);
+            ctx.agent.getHistory().addAssistantMessage(readableSummary);
             const histPath = ctx.agent.getCurrentHistoryFilePath?.();
             if (histPath) {
               await ctx.agent.getHistory().saveToFile(
