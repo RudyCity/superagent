@@ -611,5 +611,23 @@ describe("remoteAgent - CLI Handler", () => {
     expect(cfg.museBotId).toBe("888777");
     spy.mockRestore();
   });
+
+  it("should provide command and subcommand suggestions for /muse", async () => {
+    const { getDashboardSuggestions, getSuggestionDescriptions } = await import(
+      "../src/utils/dashboardSuggestions.js"
+    );
+
+    const rootSuggestions = getDashboardSuggestions("/mu");
+    expect(rootSuggestions).toContain("/muse");
+
+    const subSuggestions = getDashboardSuggestions("/muse ");
+    expect(subSuggestions).toContain("/muse status");
+    expect(subSuggestions).toContain("/muse config");
+    expect(subSuggestions).toContain("/muse config botToken");
+
+    const desc = getSuggestionDescriptions();
+    expect(desc["/muse"]).toBeDefined();
+    expect(desc["/muse"]).toContain("Muse");
+  });
 });
 

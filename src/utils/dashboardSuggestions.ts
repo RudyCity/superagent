@@ -51,6 +51,9 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-classifier": "Enable or disable multi-category request classifier (on or off)",
   "/setting-classifier-threshold": "Set classifier heuristic confidence threshold (high, medium, low)",
   "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
+  "/muse": "Coordinate with remote AI agent (Muse) over Telegram group bus",
+  "/muse status": "Show remote agent configuration and poller state",
+  "/muse config": "Configure botToken, groupId, museBotId, or defaultWorkspace",
 };
 
 const RESUME_SCAN_LIMIT = 100;
@@ -326,6 +329,18 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         "/setting-rmemory provider openai",
         "/setting-rmemory model",
         "/setting-rmemory dimensions"
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/muse") {
+      const possibilities = [
+        "/muse status",
+        "/muse config",
+        "/muse config botToken",
+        "/muse config groupId",
+        "/muse config museBotId",
+        "/muse config defaultWorkspace",
       ];
       return filterSuggestions(possibilities, query);
     }
