@@ -142,22 +142,12 @@ export class MuseWatcher {
 
     const abortSignal = this.abortController.signal;
 
-    // Optional presence greeting and session priming on Telegram in background
+    // Optional presence greeting on Telegram in background
     if (this.options.announce !== false) {
-      const resetEnvelope: SessionResetEnvelope = {
-        v: 1,
-        kind: "session_reset",
-        id: `reset_${crypto.randomUUID()}`,
-        session: `watch_${Date.now()}`,
-        message: `Superagent is now active in WATCH mode on workspace: ${ws}. Listening for task_batch tool calls.`,
-        system_prompt: this.config.systemPrompt || DEFAULT_MUSE_SYSTEM_PROMPT,
-      };
-      this.client.sendEnvelope(resetEnvelope).catch(() => {});
-
       const presenceEnvelope: RemoteAgentEnvelope = {
         v: 1,
         kind: "chat",
-        text: `🟢 Superagent is now active in WATCH mode (controlled by Muse) on workspace: ${ws}\nMuse, you can now command this machine using task_batch envelopes.`,
+        text: `🟢 Superagent is now active in WATCH mode (controlled by Muse) on workspace: ${ws}`,
       };
       this.client.sendEnvelope(presenceEnvelope).catch(() => {});
     }

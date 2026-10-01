@@ -106,6 +106,16 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
     expect((parsed as any).text).toBe("Hello from Muse with fences");
   });
 
+  it("should parse MUSEBUS 1/1 chunk without separate envelope id (real Telegram bot format)", () => {
+    const rawTelegram = 'MUSEBUS 1/1 {"v": 1, "kind": "task_batch", "id": "batch_v3_958a51a7", "task_id": "verify-opt", "calls": [{"id": "lt", "tool": "list_tools", "args": {}}]}';
+    const reassembler = new EnvelopeReassembler();
+    const parsed = reassembler.processMessage(rawTelegram);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.kind).toBe("task_batch");
+    expect((parsed as any).task_id).toBe("verify-opt");
+    expect((parsed as any).calls[0].tool).toBe("list_tools");
+  });
+
   it("should send session_reset envelope via notifyMuseSessionReset", async () => {
     const sendSpy = vi
       .spyOn(MuseClient.prototype, "sendEnvelope")

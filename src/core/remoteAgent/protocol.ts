@@ -199,52 +199,69 @@ export class EnvelopeReassembler {
 
     const trimmed = rawText.trim();
     if (trimmed.startsWith(CHUNK_HEADER_PREFIX)) {
-      // Chunk format: MUSEBUS <envelope_id> <n>/<N>\n<chunk>
-      const match = trimmed.match(/^MUSEBUS\s+(\S+)\s+(\d+)\/(\d+)\n([\s\S]*)$/);
-      if (!match) {
-        return null;
-      }
+      // Variant 1: MUSEBUS <n>/<N>[\n\s]<chunk> (e.g. MUSEBUS 1/1 {"v": 1...})
+      const matchWithoutId = trimmed.match(/^MUSEBUS\s+(\d+)\/(\d+)[\r\n\s]+([\s\S]*)$/i);
+      if (matchWithoutId) {
+        const partIndex = parseInt(matchWithoutId[1], 10);
+        const totalParts = parseInt(matchWithoutId[2], 10);
+        const chunkData = matchWithoutId[3];
 
-      const envelopeId = match[1];
-      const partIndex = parseInt(match[2], 10);
-      const totalParts = parseInt(match[3], 10);
-      const chunkData = match[4];
-
-      if (totalParts <= 0 || partIndex <= 0 || partIndex > totalParts) {
-        return null;
-      }
-
-      let assembly = this.pending.get(envelopeId);
-      if (!assembly) {
-        assembly = {
-          envelopeId,
-          parts: new Map(),
-          totalParts,
-          createdAt: Date.now(),
-        };
-        this.pending.set(envelopeId, assembly);
-      }
-
-      assembly.parts.set(partIndex, chunkData);
-
-      if (assembly.parts.size === assembly.totalParts) {
-        const fullParts: string[] = [];
-        for (let i = 1; i <= assembly.totalParts; i++) {
-          const part = assembly.parts.get(i);
-          if (part === undefined) {
-            // Missing part in sequence, keep waiting
-            return null;
-          }
-          fullParts.push(part);
-        }
-        this.pending.delete(envelopeId);
-        const combinedJson = fullParts.join("").trim();
-        const cleanCombined = combinedJson.replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1").trim();
-        try {
-          return JSON.parse(cleanCombined) as RemoteAgentEnvelope;
-        } catch {
+        if (totalParts <= 0 || partIndex <= 0 || partIndex > totalParts) {
           return null;
         }
+
+        if (totalParts === 1) {
+          const cleanCombined = chunkData.replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1").trim();
+          try {
+            return JSON.parse(cleanCombined) as RemoteAgentEnvelope;
+          } catch {
+            return null;
+          }
+        }
+
+        let envelopeId = `chunk_${totalParts}`;
+        const idMatch = chunkData.match(/"id"\s*:\s*"([^"]+)"/) || chunkData.match(/"task_id"\s*:\s*"([^"]+)"/);
+        if (idMatch) {
+          envelopeId = idMatch[1];
+        }
+
+        return this.assembleChunk(envelopeId, partIndex, totalParts, chunkData);
+      }
+
+      // Variant 2: MUSEBUS <envelope_id> <n>/<N>[\n\s]<chunk>
+      const matchWithId = trimmed.match(/^MUSEBUS\s+(\S+)\s+(\d+)\/(\d+)[\r\n\s]+([\s\S]*)$/i);
+      if (matchWithId) {
+        const envelopeId = matchWithId[1];
+        const partIndex = parseInt(matchWithId[2], 10);
+        const totalParts = parseInt(matchWithId[3], 10);
+        const chunkData = matchWithId[4];
+
+        if (totalParts <= 0 || partIndex <= 0 || partIndex > totalParts) {
+          return null;
+        }
+
+        if (totalParts === 1) {
+          const cleanCombined = chunkData.replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1").trim();
+          try {
+            return JSON.parse(cleanCombined) as RemoteAgentEnvelope;
+          } catch {
+            return null;
+          }
+        }
+
+        return this.assembleChunk(envelopeId, partIndex, totalParts, chunkData);
+      }
+
+      // Variant 3: MUSEBUS directly preceding JSON/markdown
+      const directChunk = trimmed.replace(/^MUSEBUS[\r\n\s]*/i, "").trim();
+      if (directChunk.startsWith("{") || directChunk.startsWith("```")) {
+        const cleanJson = directChunk.replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1").trim();
+        try {
+          const parsed = JSON.parse(cleanJson);
+          if (parsed && typeof parsed === "object") {
+            return parsed as RemoteAgentEnvelope;
+          }
+        } catch {}
       }
 
       return null;
@@ -259,6 +276,47 @@ export class EnvelopeReassembler {
       }
     } catch {
       // Not JSON or chunked format
+    }
+
+    return null;
+  }
+
+  private assembleChunk(
+    envelopeId: string,
+    partIndex: number,
+    totalParts: number,
+    chunkData: string
+  ): RemoteAgentEnvelope | null {
+    let assembly = this.pending.get(envelopeId);
+    if (!assembly) {
+      assembly = {
+        envelopeId,
+        parts: new Map(),
+        totalParts,
+        createdAt: Date.now(),
+      };
+      this.pending.set(envelopeId, assembly);
+    }
+
+    assembly.parts.set(partIndex, chunkData);
+
+    if (assembly.parts.size === assembly.totalParts) {
+      const fullParts: string[] = [];
+      for (let i = 1; i <= assembly.totalParts; i++) {
+        const part = assembly.parts.get(i);
+        if (part === undefined) {
+          return null;
+        }
+        fullParts.push(part);
+      }
+      this.pending.delete(envelopeId);
+      const combinedJson = fullParts.join("").trim();
+      const cleanCombined = combinedJson.replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1").trim();
+      try {
+        return JSON.parse(cleanCombined) as RemoteAgentEnvelope;
+      } catch {
+        return null;
+      }
     }
 
     return null;
