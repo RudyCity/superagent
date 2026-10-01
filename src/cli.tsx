@@ -148,6 +148,7 @@ Commands:
   session           Manage conversation sessions (list, export, clear --empty, import)
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
   gateway           Manage the omnichannel messaging gateway (status, enable, disable, listen, poll)
+  muse              Coordinate with remote AI agent (status, config, run)
   mcp               Manage MCP servers (list, add, remove, register)
   selfdev           Manage self-development behavioral lessons (status, list, distill, approve, reject, retire)
   skill             Manage and synthesize reusable skills (list, synth)
@@ -243,6 +244,12 @@ if (process.argv[2] === "gateway") {
       console.log("Available: status | enable | disable | listen [port] | poll [telegram|discord|slack|all]");
       break;
   }
+  process.exit(0);
+}
+
+if (process.argv[2] === "muse") {
+  const { handleMuseCliCommand } = await import("./core/remoteAgent/museCli.js");
+  await handleMuseCliCommand(process.argv.slice(3));
   process.exit(0);
 }
 

@@ -36,6 +36,7 @@ async function loadPrompts() {
 
 import {
   readTool,
+  writeTool,
   editTool,
   globTool,
   grepTool,
@@ -191,6 +192,7 @@ export const allTools: Tool[] = [
   readDocumentTool,
   officeCliTool,
   readTool,
+  writeTool,
   editTool,
   askQuestionTool,
   globTool,

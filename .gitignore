@@ -21,4 +21,6 @@ goal-*.diff
 tmp/
 scratch/
 .prompt-*
+*remote-agent.json
+.superagent-r/
 

@@ -12,6 +12,7 @@ import "./mpCommand.js";
 import "./sshCommand.js";
 import "./daemonCommand.js";
 import "./gatewayCommand.js";
+import "./museCommand.js";
 import "./selfdevCommand.js";
 
 

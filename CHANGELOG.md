@@ -1,3 +1,17 @@
+## [1.5.94] - 2026-10-01
+
+### Added
+
+- **Remote Agent Module (`remoteAgent`)**:
+  - Added `src/core/remoteAgent/` allowing external AI agents ("Muse") to act as a remote brain over Telegram group bus while Superagent executes local tools.
+  - Implemented `protocol.ts` defining JSON envelope protocol (`task_request`, `task_batch`, `task_result`, `task_done`, `chat`), `MUSEBUS` chunking (for messages > 3800 chars), envelope reassembler, and strict schema & sender validation.
+  - Implemented `museClient.ts` providing Telegram Bot API transport, webhook deletion on start, long polling with `getUpdates`, HTTP 429 rate limit backoff respecting `parameters.retry_after`, and single-poller concurrency guards.
+  - Implemented `batchExecutor.ts` executing batches of local tools sequentially, enforcing permission gates for destructive operations (`write`, `edit`, `apply_patch`), and truncating tool output to 20k characters with `[truncated]` marker.
+  - Implemented `taskRunner.ts` orchestrating remote tasks, loop guards (maximum 50 batches, 30 minute timeout), envelope ID deduplication, and terminal progress updates.
+  - Implemented `config.ts` managing `~/.superagent-r/remote-agent.json` with secure token masking.
+  - Added `/muse` slash command (`src/core/commands/museCommand.ts`) and CLI runner `superagent muse` (`src/core/remoteAgent/museCli.ts`) supporting `status`, `config`, and task execution.
+  - Added comprehensive unit tests in `tests/remoteAgent.test.ts`.
+
 ## [1.5.93] - 2026-09-22
 
 ### Fixed
