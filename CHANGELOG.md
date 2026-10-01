@@ -1,3 +1,18 @@
+## [1.5.105] - 2026-10-01
+
+### Added
+
+- **Muse Watch Mode (`/muse watch` — Superagent Controlled by Muse)**:
+  - Added continuous listener daemon (`MuseWatcher` in `src/core/remoteAgent/museWatcher.ts`) allowing Superagent to be continuously controlled remotely by Muse.
+  - Automatically receives `task_batch` envelopes from Muse over the Telegram group bus, executes tools locally (`run_command`, `bash`, `read`, `write`, `edit`, `replace_file_content`), and returns `task_result` envelopes to Telegram in real time.
+  - Gracefully handles `task_done`, `task_cancel`, and `session_reset` envelopes with formatted summaries and live status logging.
+  - Added interactive terminal subcommands `/muse watch`, `/muse watch start`, `/muse watch stop`, `/muse watch status`, and `/muse unwatch`.
+  - Added non-interactive CLI command `superagent muse watch [start|stop|status]` with graceful signal handling (Ctrl+C).
+  - Added real-time visual status indicator in terminal input border (`COMM_LINK: MUSE WATCH (CONTROLLED BY MUSE)`) and status bar (`(Controlled by Muse)`).
+  - Added autocomplete suggestions and descriptions for `/muse watch` commands in dashboard suggestions.
+  - Documented continuous watch mode setup and usage in `docs/remote-agent-setup.md`.
+  - Added unit test suite covering `MuseWatcher` lifecycle, batch execution, envelope handling, and slash command integration.
+
 ## [1.5.104] - 2026-10-01
 
 ### Added

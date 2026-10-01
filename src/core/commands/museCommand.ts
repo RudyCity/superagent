@@ -252,6 +252,87 @@ export const museCommand: SlashCommand = {
       return;
     }
 
+    // /muse watch [start|stop|status] or /muse unwatch
+    if (subcommand === "watch" || subcommand === "unwatch") {
+      const action = subcommand === "unwatch" ? "stop" : (parts[1]?.toLowerCase() || "start");
+      const {
+        startMuseWatcher,
+        stopMuseWatcher,
+        isMuseWatcherActive,
+        getMuseWatcher,
+      } = await import("../remoteAgent/museWatcher.js");
+
+      if (action === "stop") {
+        if (!isMuseWatcherActive()) {
+          ctx.addLine({
+            type: "system",
+            content: "[Muse Watch] Watch mode is not currently running.",
+            timestamp: now,
+          });
+          return;
+        }
+        await stopMuseWatcher();
+        return;
+      }
+
+      if (action === "status") {
+        const watcher = getMuseWatcher();
+        const stats = watcher?.getStats();
+        if (!stats || !stats.isRunning) {
+          ctx.addLine({
+            type: "system",
+            content: "[Muse Watch] Watch mode is INACTIVE. Run '/muse watch' or '/muse watch start' to activate.",
+            timestamp: now,
+          });
+          return;
+        }
+
+        const lines = [
+          "Muse Watch Mode: ACTIVE",
+          `- Workspace         : ${stats.workspace}`,
+          `- Telegram Group    : ${stats.groupId || "(not set)"}`,
+          `- Muse Bot ID       : ${stats.museBotId || "(not set)"}`,
+          `- Uptime            : ${stats.uptimeSeconds}s`,
+          `- Batches Executed  : ${stats.batchesExecuted}`,
+          `- Tasks Completed   : ${stats.tasksCompleted}`,
+          `- Active Task       : ${stats.activeTaskId || "none (idle, waiting for Muse)"}`,
+        ];
+        ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
+        return;
+      }
+
+      // Default: start
+      if (isMuseWatcherActive()) {
+        ctx.addLine({
+          type: "system",
+          content: "[Muse Watch] Watch mode is already running. Superagent is actively controlled by Muse.\nRun '/muse watch stop' to deactivate.",
+          timestamp: now,
+        });
+        return;
+      }
+
+      try {
+        await startMuseWatcher({
+          workspace: ctx.agent?.workingDirectory || process.cwd(),
+          agent: ctx.agent,
+          onLine: (line) => {
+            ctx.addLine({
+              type: (line.type as any) || "system",
+              content: line.content,
+              timestamp: line.timestamp || Date.now(),
+            });
+          },
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `[Muse Watch] Failed to start watch mode: ${err.message}`,
+          timestamp: now,
+        });
+      }
+      return;
+    }
+
     // Default: /muse <task>
     if (!rawTrimmed) {
       ctx.addLine({
@@ -261,6 +342,9 @@ export const museCommand: SlashCommand = {
           "Example: /muse cari semua TODO di src",
           "Subcommands:",
           "  /muse status",
+          "  /muse watch                  - Enter watch mode (superagent controlled by Muse)",
+          "  /muse watch stop             - Stop watch mode",
+          "  /muse watch status           - Show watch mode statistics",
           "  /muse stop                   - Cancel active remote task",
           "  /muse cancel                 - Cancel active remote task",
           "  /muse new                    - Reset remote session memory",

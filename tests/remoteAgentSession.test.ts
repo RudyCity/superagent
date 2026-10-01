@@ -19,6 +19,13 @@ import {
   getActiveRemoteTaskId,
   runRemoteTask,
 } from "../src/core/remoteAgent/taskRunner.js";
+import {
+  MuseWatcher,
+  startMuseWatcher,
+  stopMuseWatcher,
+  isMuseWatcherActive,
+  getMuseWatcher,
+} from "../src/core/remoteAgent/museWatcher.js";
 import { MuseClient } from "../src/core/remoteAgent/museClient.js";
 import { museCommand } from "../src/core/commands/museCommand.js";
 import {
@@ -41,6 +48,7 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
   });
 
   afterEach(async () => {
+    stopMuseWatcher();
     await abortActiveRemoteTask("test cleanup");
     saveRemoteAgentConfig(originalConfig);
   });
@@ -423,5 +431,197 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
     const updated = loadRemoteAgentConfig();
     expect(updated.systemPrompt).toBe("Be concise and strict");
     expect(lines.some((l) => l.content.includes("systemPrompt = Be concise and strict"))).toBe(true);
+  });
+
+  describe("MuseWatcher - Continuous Remote Control Mode", () => {
+    it("should manage watcher lifecycle correctly", async () => {
+      expect(isMuseWatcherActive()).toBe(false);
+
+      const pollSpy = vi
+        .spyOn(MuseClient.prototype, "pollEnvelopes")
+        .mockImplementation(() => new Promise(() => {}));
+
+      const sendSpy = vi
+        .spyOn(MuseClient.prototype, "sendEnvelope")
+        .mockResolvedValue(true);
+
+      const watcher = await startMuseWatcher({ announce: false });
+      expect(watcher).toBeDefined();
+      expect(isMuseWatcherActive()).toBe(true);
+
+      const stats = getMuseWatcher()?.getStats();
+      expect(stats?.isRunning).toBe(true);
+      expect(stats?.uptimeSeconds).toBeGreaterThanOrEqual(0);
+      expect(stats?.batchesExecuted).toBe(0);
+      expect(stats?.tasksCompleted).toBe(0);
+
+      const stopped = await stopMuseWatcher();
+      expect(stopped).toBe(true);
+      expect(isMuseWatcherActive()).toBe(false);
+
+      pollSpy.mockRestore();
+      sendSpy.mockRestore();
+    });
+
+    it("should process task_batch and send back task_result", async () => {
+      let registeredHandler: ((envelope: any) => Promise<void>) | null = null;
+      const sentEnvelopes: any[] = [];
+
+      const pollSpy = vi
+        .spyOn(MuseClient.prototype, "pollEnvelopes")
+        .mockImplementation((handler) => {
+          registeredHandler = handler;
+          return new Promise(() => {});
+        });
+
+      const sendSpy = vi
+        .spyOn(MuseClient.prototype, "sendEnvelope")
+        .mockImplementation(async (env) => {
+          sentEnvelopes.push(env);
+          return true;
+        });
+
+      const lines: string[] = [];
+      await startMuseWatcher({
+        workspace: process.cwd(),
+        announce: false,
+        onLog: (msg) => lines.push(msg),
+      });
+
+      expect(registeredHandler).not.toBeNull();
+
+      // Simulate incoming task_batch
+      await registeredHandler!({
+        v: 1,
+        kind: "task_batch",
+        id: "batch_001",
+        task_id: "task_watch_1",
+        calls: [
+          {
+            id: "call_1",
+            tool: "run_command",
+            args: { command: 'node -e "console.log(12345)"' },
+          },
+        ],
+      });
+
+      expect(sentEnvelopes.length).toBeGreaterThan(0);
+      const resultEnv = sentEnvelopes.find((e) => e.kind === "task_result");
+      expect(resultEnv).toBeDefined();
+      expect(resultEnv.task_id).toBe("task_watch_1");
+      expect(resultEnv.id).toBe("batch_001");
+      expect(resultEnv.results[0].id).toBe("call_1");
+      expect(resultEnv.results[0].ok).toBe(true);
+      expect(resultEnv.results[0].output).toContain("12345");
+
+      const stats = getMuseWatcher()?.getStats();
+      expect(stats?.batchesExecuted).toBe(1);
+
+      await stopMuseWatcher();
+      pollSpy.mockRestore();
+      sendSpy.mockRestore();
+    });
+
+    it("should handle task_done, task_cancel, and session_reset in watch mode", async () => {
+      let registeredHandler: ((envelope: any) => Promise<void>) | null = null;
+
+      const pollSpy = vi
+        .spyOn(MuseClient.prototype, "pollEnvelopes")
+        .mockImplementation((handler) => {
+          registeredHandler = handler;
+          return new Promise(() => {});
+        });
+
+      const sendSpy = vi
+        .spyOn(MuseClient.prototype, "sendEnvelope")
+        .mockResolvedValue(true);
+
+      const lines: string[] = [];
+      await startMuseWatcher({
+        announce: false,
+        onLog: (msg) => lines.push(msg),
+      });
+
+      // 1. task_done
+      await registeredHandler!({
+        v: 1,
+        kind: "task_done",
+        task_id: "task_watch_1",
+        summary: "Watched task completed successfully!",
+      });
+
+      expect(getMuseWatcher()?.getStats().tasksCompleted).toBe(1);
+      expect(lines.some((l) => l.includes("completed") || l.includes("Completed"))).toBe(true);
+
+      // 2. task_cancel
+      await registeredHandler!({
+        v: 1,
+        kind: "task_cancel",
+        task_id: "task_watch_2",
+        reason: "User changed mind in Telegram",
+      });
+      expect(lines.some((l) => l.includes("cancelled"))).toBe(true);
+
+      // 3. session_reset
+      await registeredHandler!({
+        v: 1,
+        kind: "session_reset",
+        session: "sess_watch_new",
+        message: "New topic started",
+      });
+      expect(lines.some((l) => l.includes("reset") || l.includes("Reset"))).toBe(true);
+
+      await stopMuseWatcher();
+      pollSpy.mockRestore();
+      sendSpy.mockRestore();
+    });
+
+    it("should handle /muse watch and /muse unwatch slash commands", async () => {
+      const pollSpy = vi
+        .spyOn(MuseClient.prototype, "pollEnvelopes")
+        .mockImplementation(() => new Promise(() => {}));
+
+      const sendSpy = vi
+        .spyOn(MuseClient.prototype, "sendEnvelope")
+        .mockResolvedValue(true);
+
+      const lines: Array<{ type: string; content: string }> = [];
+      const fakeCtx: SlashCommandContext = {
+        addLine: (line) => lines.push({ type: line.type, content: line.content }),
+        exit: () => {},
+      };
+
+      // 1. /muse watch start
+      await museCommand.execute("watch start", fakeCtx);
+      expect(isMuseWatcherActive()).toBe(true);
+      expect(lines.some((l) => l.content.includes("controlled by Muse"))).toBe(true);
+
+      // 2. /muse watch status
+      lines.length = 0;
+      await museCommand.execute("watch status", fakeCtx);
+      expect(lines.some((l) => l.content.includes("Muse Watch Mode: ACTIVE"))).toBe(true);
+
+      // 3. /muse unwatch
+      lines.length = 0;
+      await museCommand.execute("unwatch", fakeCtx);
+      expect(isMuseWatcherActive()).toBe(false);
+      expect(lines.some((l) => l.content.includes("stopped"))).toBe(true);
+
+      pollSpy.mockRestore();
+      sendSpy.mockRestore();
+    });
+
+    it("should provide autocomplete suggestions for /muse watch commands", () => {
+      const suggestions = getDashboardSuggestions("/muse w");
+      expect(suggestions).toContain("/muse watch");
+      expect(suggestions).toContain("/muse watch start");
+      expect(suggestions).toContain("/muse watch stop");
+      expect(suggestions).toContain("/muse watch status");
+
+      const descriptions = getSuggestionDescriptions();
+      expect(descriptions["/muse watch"]).toBeDefined();
+      expect(descriptions["/muse watch start"]).toBeDefined();
+      expect(descriptions["/muse watch stop"]).toBeDefined();
+    });
   });
 });

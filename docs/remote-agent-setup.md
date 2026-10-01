@@ -156,6 +156,42 @@ When enabled:
 - All slash commands (such as `/model`, `/clear`, `/exit`, `/muse status`) and system commands (`!<cmd>`) continue to work normally.
 - To disable and revert to local model execution: `/muse config as_runner_model off`.
 
+### 4.6 Continuous Watch Mode (`/muse watch` — Controlled by Muse)
+
+In Watch Mode, Superagent runs as an always-on background listener daemon where **Superagent is continuously controlled by Muse**. This allows the user to interact with Muse remotely (e.g. from the Telegram mobile app on a phone while away from the computer), while Muse commands Superagent to perform coding, testing, and terminal actions on the local machine:
+
+1. **Activate Watch Mode**:
+   ```bash
+   /muse watch
+   # or
+   /muse watch start
+   ```
+   Or launch directly from your OS shell without entering interactive mode:
+   ```bash
+   superagent muse watch
+   ```
+
+2. **How It Works**:
+   - Superagent continuously listens to the Telegram group bus for incoming `task_batch` envelopes from Muse.
+   - When Muse sends a tool batch, Superagent executes the tools locally (e.g., `run_command`, `read`, `write`, `edit`, `replace_file_content`).
+   - Superagent returns the `task_result` envelope to Telegram so Muse can decide the next step.
+   - Live execution output and tool events stream directly to your Superagent terminal in real time.
+   - Terminal border reflects `COMM_LINK: MUSE WATCH (CONTROLLED BY MUSE)` and status bar indicates `(Controlled by Muse)`.
+
+3. **Check Watcher Status**:
+   ```bash
+   /muse watch status
+   ```
+   Displays uptime, workspace, batches executed, tasks completed, and the active task ID.
+
+4. **Deactivate Watch Mode**:
+   ```bash
+   /muse watch stop
+   # or
+   /muse unwatch
+   ```
+   Or in CLI mode, press `Ctrl+C`.
+
 ---
 
 ## 5. Remote Assistant (Muse) Setup Prompt

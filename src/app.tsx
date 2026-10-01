@@ -39,6 +39,7 @@ import { getActiveChainId, getWorkspaceChain } from "./core/workspace/WorkspaceC
 import { lockEventEmitter, getLockStats } from "./core/storage/sharedMemory.js";
 import { PROVIDER_TEMPLATE_LABELS } from "./core/loginWizardLogic.js";
 import { isMuseRunnerActive } from "./core/remoteAgent/config.js";
+import { isMuseWatcherActive } from "./core/remoteAgent/museWatcher.js";
 import { getDashboardSuggestions } from "./utils/dashboardSuggestions.js";
 
 // Hook & Component Baru
@@ -1595,6 +1596,11 @@ export function App({
 
         const possibilities = [
           "/muse status",
+          "/muse watch",
+          "/muse watch start",
+          "/muse watch stop",
+          "/muse watch status",
+          "/muse unwatch",
           "/muse stop",
           "/muse cancel",
           "/muse new",
@@ -3442,7 +3448,7 @@ export function App({
               })()}
               <Text color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>
                 └───[ <Text bold color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>
-                  {activeWizard ? `⚙️ WIZARD: ${activeWizard.type.toUpperCase()} (Step ${activeWizard.step})` : isMuseRunnerActive() ? "⌨️ COMM_LINK: MUSE REMOTE RUNNER" : "⌨️ COMM_LINK: ACTIVE"}
+                  {activeWizard ? `⚙️ WIZARD: ${activeWizard.type.toUpperCase()} (Step ${activeWizard.step})` : isMuseWatcherActive() ? "👁️ COMM_LINK: MUSE WATCH (CONTROLLED BY MUSE)" : isMuseRunnerActive() ? "⌨️ COMM_LINK: MUSE REMOTE RUNNER" : "⌨️ COMM_LINK: ACTIVE"}
                 </Text> ]
                 {isProcessing && displayPrompt && (
                   <Text color="cyan" bold> ─── [ PROMPT: "{displayPrompt}" ]</Text>
@@ -3486,7 +3492,7 @@ export function App({
 
       {/* Render Status Bar */}
       <StatusBar
-        modelName={isMuseRunnerActive() ? `${activeModel} (Muse Remote)` : activeModel}
+        modelName={isMuseWatcherActive() ? `${activeModel} (Controlled by Muse)` : isMuseRunnerActive() ? `${activeModel} (Muse Remote)` : activeModel}
         presetName={activePresetName}
         contextPercentage={contextPercentage}
         tokensUp={tokensUp}

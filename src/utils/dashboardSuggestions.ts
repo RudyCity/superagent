@@ -53,6 +53,11 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
   "/muse": "Coordinate with remote AI agent (Muse) over Telegram group bus",
   "/muse status": "Show remote agent configuration, runner mode, and bot connection",
+  "/muse watch": "Start persistent watch mode where Superagent is controlled by Muse",
+  "/muse watch start": "Start persistent watch mode where Superagent is controlled by Muse",
+  "/muse watch stop": "Stop persistent watch mode and return to manual execution",
+  "/muse watch status": "Show active watch mode statistics and connection state",
+  "/muse unwatch": "Stop persistent watch mode and return to manual execution",
   "/muse stop": "Cancel active remote task and send cancellation notice to Muse",
   "/muse cancel": "Cancel active remote task and send cancellation notice to Muse",
   "/muse new": "Start a fresh session with remote agent (Muse) and reset context",
@@ -377,6 +382,11 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
 
       const possibilities = [
         "/muse status",
+        "/muse watch",
+        "/muse watch start",
+        "/muse watch stop",
+        "/muse watch status",
+        "/muse unwatch",
         "/muse stop",
         "/muse cancel",
         "/muse new",

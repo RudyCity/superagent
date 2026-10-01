@@ -101,10 +101,77 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     return;
   }
 
+  if (subcommand === "watch" || subcommand === "unwatch") {
+    const action = subcommand === "unwatch" ? "stop" : (args[1]?.toLowerCase() || "start");
+    const { startMuseWatcher, stopMuseWatcher, isMuseWatcherActive, getMuseWatcher } = await import("./museWatcher.js");
+
+    if (action === "stop") {
+      if (!isMuseWatcherActive()) {
+        console.log("[Muse Watch] Watch mode is not currently running.");
+        return;
+      }
+      await stopMuseWatcher();
+      console.log("[Muse Watch] Watch mode stopped.");
+      return;
+    }
+
+    if (action === "status") {
+      const stats = getMuseWatcher()?.getStats();
+      if (!stats || !stats.isRunning) {
+        console.log("[Muse Watch] Watch mode is INACTIVE.");
+        return;
+      }
+      console.log("Muse Watch Mode: ACTIVE (controlled by Muse)");
+      console.log(`  Workspace         : ${stats.workspace}`);
+      console.log(`  Telegram Group    : ${stats.groupId || "(not set)"}`);
+      console.log(`  Muse Bot ID       : ${stats.museBotId || "(not set)"}`);
+      console.log(`  Uptime            : ${stats.uptimeSeconds}s`);
+      console.log(`  Batches Executed  : ${stats.batchesExecuted}`);
+      console.log(`  Tasks Completed   : ${stats.tasksCompleted}`);
+      console.log(`  Active Task       : ${stats.activeTaskId || "none (idle)"}`);
+      return;
+    }
+
+    // Default: start
+    console.log("[Muse Watch] Starting persistent watch mode...");
+    console.log("[Muse Watch] Superagent is now controlled by Muse. Press Ctrl+C to stop.\n");
+
+    try {
+      const watcher = await startMuseWatcher({
+        workspace: process.cwd(),
+        onLine: (line) => console.log(line.content),
+        onProgress: (msg) => console.log(`[Muse Progress] ${msg}`),
+      });
+
+      const handleExit = async () => {
+        console.log("\n[Muse Watch] Shutting down watcher...");
+        await watcher.stop();
+        process.exit(0);
+      };
+
+      process.on("SIGINT", handleExit);
+      process.on("SIGTERM", handleExit);
+
+      // Keep process alive while watcher is active
+      await new Promise<void>((resolve) => {
+        const interval = setInterval(() => {
+          if (!watcher.isActive()) {
+            clearInterval(interval);
+            resolve();
+          }
+        }, 1000);
+      });
+    } catch (err: any) {
+      console.error(`[Muse Watch Error] ${err.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
   // Treat rest as a task
   const taskPrompt = args.join(" ").trim();
   if (!taskPrompt) {
-    console.log("Usage: superagent muse [status|config|<task prompt>]");
+    console.log("Usage: superagent muse [status|config|watch|<task prompt>]");
     return;
   }
 
