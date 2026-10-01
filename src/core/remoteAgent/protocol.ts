@@ -56,6 +56,7 @@ export interface TaskDoneEnvelope {
 export interface ChatEnvelope {
   v: 1;
   kind: "chat";
+  id?: string;
   text: string;
 }
 
@@ -85,6 +86,13 @@ COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
    - File inspection: read, glob, grep, ripgrep_search
    - File editing: write, edit, write_to_file, replace_file_content, apply_patch
    - Shell & Terminal: run_command (args: { "command": "<cmd>" }), bash (args: { "command": "<cmd>" })
+   - Skills: get_skills (args: { "query": "<task description>" }) to discover relevant installed skills, then use_skill (args: { "skillName": "<name>" }) to load a skill's instructions and follow them
+   - Subagents (parallel background work): define_subagent (args: { "name", "description", "systemPrompt" }), invoke_subagent (args: { "typeName", "role", "prompt" }), manage_subagents
+   - Web: web_search (args: { "query": "<q>" }), fetch_url (args: { "url": "<url>" }), extract_page_content_markdown, run_headless_browser
+   - Memory: rmemory_save, rmemory_search, search_journal, save_shared_memory, read_shared_memory
+   - Planning: manage_plan (args: { "action": "create|edit|sync|get" }), manage_tasks
+   - Git: git_action (args: { "action": "<op>", "message": "<msg>" }), git_worktree
+   - Misc: schedule, synthesize_skill, screenshot, playwright_screenshot
 3. Tool batch (task_batch):
    When you need to inspect files, edit code, or run commands, reply with:
    {"v": 1, "kind": "task_batch", "id": "batch_<uuid>", "task_id": "<task_id>", "calls": [{"id": "c1", "tool": "run_command", "args": {"command": "git status"}}]}

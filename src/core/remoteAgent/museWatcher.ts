@@ -59,7 +59,8 @@ export class MuseWatcher {
   private lastActiveAt?: number;
   private activeTaskId?: string;
   private options: MuseWatcherOptions;
-  private activeBatchAbort: AbortController | null = null;
+  private activeBatchAborts = new Set<AbortController>();
+  private seenChatIds = new Set<string>();
 
   constructor(options: MuseWatcherOptions = {}) {
     this.options = options;
@@ -169,12 +170,7 @@ export class MuseWatcher {
 
     this.isRunning = false;
 
-    if (this.activeBatchAbort) {
-      try {
-        this.activeBatchAbort.abort();
-      } catch {}
-      this.activeBatchAbort = null;
-    }
+    this.abortAllBatches();
 
     if (this.abortController) {
       try {
@@ -254,10 +250,11 @@ export class MuseWatcher {
     );
     this.options.onProgress?.(`Executing ${callsCount} tool call(s) for task ${envelope.task_id}...`);
 
-    this.activeBatchAbort = new AbortController();
+    const batchAbort = new AbortController();
+    this.activeBatchAborts.add(batchAbort);
     const batchSignal = this.abortController?.signal
-      ? AbortSignal.any([this.abortController.signal, this.activeBatchAbort.signal])
-      : this.activeBatchAbort.signal;
+      ? AbortSignal.any([this.abortController.signal, batchAbort.signal])
+      : batchAbort.signal;
 
     try {
       const results = await executeBatch(envelope.calls || [], {
@@ -295,7 +292,7 @@ export class MuseWatcher {
       logE2E("REMOTE-AGENT", `MuseWatcher batch execution error: ${err?.message || err}`);
       this.emitLine("error", `[Muse Watch] Error executing tool batch: ${err?.message || err}`);
     } finally {
-      this.activeBatchAbort = null;
+      this.activeBatchAborts.delete(batchAbort);
     }
   }
 
@@ -336,15 +333,20 @@ export class MuseWatcher {
     );
   }
 
+  /** Aborts every in-flight tool batch (used by task_cancel and session_reset). */
+  private abortAllBatches(): void {
+    for (const c of this.activeBatchAborts) {
+      try {
+        c.abort();
+      } catch {}
+    }
+    this.activeBatchAborts.clear();
+  }
+
   private handleTaskCancel(envelope: TaskCancelEnvelope): void {
     logE2E("REMOTE-AGENT", `MuseWatcher received task_cancel for task ${envelope.task_id}`);
 
-    if (this.activeBatchAbort) {
-      try {
-        this.activeBatchAbort.abort();
-      } catch {}
-      this.activeBatchAbort = null;
-    }
+    this.abortAllBatches();
 
     this.activeTaskId = undefined;
 
@@ -354,8 +356,13 @@ export class MuseWatcher {
     );
   }
 
-  private handleSessionReset(envelope: SessionResetEnvelope): void {
-    logE2E("REMOTE-AGENT", `MuseWatcher received session_reset: session=${envelope.session}`);
+  /**
+   * Public: resets the local session context immediately.
+   * Used by /muse new|reset in the terminal and by incoming session_reset envelopes.
+   */
+  public resetLocalSession(origin: string, message?: string): void {
+    // Stop any in-flight batch so stale results don't pollute the fresh session
+    this.abortAllBatches();
 
     this.activeTaskId = undefined;
     if (this.options.agent) {
@@ -366,11 +373,26 @@ export class MuseWatcher {
 
     this.emitLine(
       "system",
-      `[Muse Watch] Session context reset by Muse (${envelope.message || "memory cleared"}).`
+      `[Muse Watch] Session context reset ${origin} (${message || "memory cleared"}).`
     );
   }
 
+  private handleSessionReset(envelope: SessionResetEnvelope): void {
+    logE2E("REMOTE-AGENT", `MuseWatcher received session_reset: session=${envelope.session}`);
+    this.resetLocalSession("by Muse", envelope.message || undefined);
+  }
+
   private handleChat(envelope: ChatEnvelope): void {
+    // Dedupe redelivered chat notes
+    if (envelope.id) {
+      if (this.seenChatIds.has(envelope.id)) {
+        logE2E("REMOTE-AGENT", `MuseWatcher ignoring duplicate chat note: ${envelope.id}`);
+        return;
+      }
+      this.seenChatIds.add(envelope.id);
+      if (this.seenChatIds.size > 1000) this.seenChatIds.clear();
+    }
+
     logE2E("REMOTE-AGENT", `MuseWatcher received chat note: ${envelope.text}`);
 
     this.emitLine("assistant", `[Muse Note]: ${envelope.text}`);

@@ -201,6 +201,12 @@ export const museCommand: SlashCommand = {
         });
         return;
       }
+      // In watch mode, reset the local session directly: the Telegram loopback
+      // would be ignored by the watcher's sender filter (Rule 2: only Muse bot).
+      const { getMuseWatcher, isMuseWatcherActive } = await import("../remoteAgent/museWatcher.js");
+      if (isMuseWatcherActive()) {
+        getMuseWatcher()?.resetLocalSession("from terminal");
+      }
       const { notifyMuseSessionReset } = await import("../remoteAgent/taskRunner.js");
       ctx.addLine({
         type: "system",
