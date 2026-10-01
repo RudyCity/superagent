@@ -1,3 +1,13 @@
+## [1.5.98] - 2026-10-01
+
+### Added
+
+- **Muse Config Subcommand & Key Suggestions**:
+  - Expanded terminal autocomplete and suggestions in `src/utils/dashboardSuggestions.ts` for all `/muse config` keys.
+  - Added interactive suggestions for `/muse config as_runner_model`, `/muse config as_runner_model on`, `/muse config as_runner_model off`, `/muse config as_runner`, `/muse config as_runner on`, `/muse config as_runner off`, `/muse config botToken`, `/muse config groupId`, `/muse config museBotId`, and `/muse config defaultWorkspace`.
+  - Added descriptive tooltips in `BUILTIN_DESCRIPTIONS` for all Muse configuration keys and toggle values.
+  - Added unit test coverage in `tests/remoteAgent.test.ts`.
+
 ## [1.5.97] - 2026-10-01
 
 ### Added

@@ -770,10 +770,18 @@ describe("remoteAgent - CLI Handler", () => {
     expect(subSuggestions).toContain("/muse status");
     expect(subSuggestions).toContain("/muse config");
     expect(subSuggestions).toContain("/muse config botToken");
+    expect(subSuggestions).toContain("/muse config as_runner_model");
+    expect(subSuggestions).toContain("/muse config as_runner_model on");
+    expect(subSuggestions).toContain("/muse config as_runner_model off");
+
+    const configKeySuggestions = getDashboardSuggestions("/muse config as");
+    expect(configKeySuggestions).toContain("/muse config as_runner_model on");
 
     const desc = getSuggestionDescriptions();
     expect(desc["/muse"]).toBeDefined();
     expect(desc["/muse"]).toContain("Muse");
+    expect(desc["/muse config as_runner_model"]).toBeDefined();
+    expect(desc["/muse config as_runner_model on"]).toBeDefined();
   });
 });
 

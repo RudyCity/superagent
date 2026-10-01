@@ -52,8 +52,18 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-classifier-threshold": "Set classifier heuristic confidence threshold (high, medium, low)",
   "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
   "/muse": "Coordinate with remote AI agent (Muse) over Telegram group bus",
-  "/muse status": "Show remote agent configuration and poller state",
-  "/muse config": "Configure botToken, groupId, museBotId, or defaultWorkspace",
+  "/muse status": "Show remote agent configuration, runner mode, and bot connection",
+  "/muse config": "Configure botToken, groupId, museBotId, as_runner_model, or workspace",
+  "/muse config as_runner_model": "Automatically route all terminal chat prompts to Muse (on/off)",
+  "/muse config as_runner_model on": "Enable automatic routing of terminal chat prompts to Muse",
+  "/muse config as_runner_model off": "Disable automatic routing of terminal chat prompts to Muse",
+  "/muse config as_runner": "Route terminal chat prompts to Muse without /muse (on/off)",
+  "/muse config as_runner on": "Enable automatic routing of terminal chat prompts to Muse",
+  "/muse config as_runner off": "Disable automatic routing of terminal chat prompts to Muse",
+  "/muse config botToken": "Configure Telegram runner bot token (Bot B)",
+  "/muse config groupId": "Configure Telegram private group chat ID (e.g. -100xxxxxxxxxx)",
+  "/muse config museBotId": "Configure Telegram user ID of Muse bot (Bot A)",
+  "/muse config defaultWorkspace": "Set default workspace directory for remote tasks",
 };
 
 const RESUME_SCAN_LIMIT = 100;
@@ -334,9 +344,40 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
     }
 
     if (mainCommand === "/muse") {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === "config") {
+        const configKey = parts[2]?.toLowerCase();
+        if (configKey === "as_runner_model" || configKey === "as_runner") {
+          const togglePossibilities = [
+            `/muse config ${parts[2]} on`,
+            `/muse config ${parts[2]} off`,
+          ];
+          return filterSuggestions(togglePossibilities, query);
+        }
+        const configPossibilities = [
+          "/muse config as_runner_model",
+          "/muse config as_runner_model on",
+          "/muse config as_runner_model off",
+          "/muse config as_runner",
+          "/muse config as_runner on",
+          "/muse config as_runner off",
+          "/muse config botToken",
+          "/muse config groupId",
+          "/muse config museBotId",
+          "/muse config defaultWorkspace",
+        ];
+        return filterSuggestions(configPossibilities, query);
+      }
+
       const possibilities = [
         "/muse status",
         "/muse config",
+        "/muse config as_runner_model",
+        "/muse config as_runner_model on",
+        "/muse config as_runner_model off",
+        "/muse config as_runner",
+        "/muse config as_runner on",
+        "/muse config as_runner off",
         "/muse config botToken",
         "/muse config groupId",
         "/muse config museBotId",
