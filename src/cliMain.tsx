@@ -863,6 +863,14 @@ export async function runCli() {
 
     if (initialPrompt) {
       try {
+        const { isMuseRunnerActive } = await import("./core/remoteAgent/config.js");
+        if (isMuseRunnerActive()) {
+          const { handleMuseCliCommand } = await import("./core/remoteAgent/museCli.js");
+          await handleMuseCliCommand([initialPrompt]);
+          process.exit(0);
+        }
+      } catch {}
+      try {
         await agent.sendMessage(initialPrompt);
       } catch (err: any) {
         console.error(`\nExecution error: ${err.message}`);

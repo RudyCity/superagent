@@ -8,6 +8,7 @@ export interface RemoteAgentConfig {
   groupId?: string | number;
   museBotId?: string | number;
   defaultWorkspace?: string;
+  asRunner?: boolean;
 }
 
 const DEFAULT_CONFIG: RemoteAgentConfig = {};
@@ -78,3 +79,13 @@ export function maskToken(token?: string): string {
   }
   return trimmed.slice(0, 4) + "..." + trimmed.slice(-4);
 }
+
+/**
+ * Checks if Muse is active as the default runner for chat prompts.
+ * Requires asRunner to be true and all required Telegram parameters configured.
+ */
+export function isMuseRunnerActive(customPath?: string): boolean {
+  const cfg = loadRemoteAgentConfig(customPath);
+  return Boolean(cfg.asRunner && cfg.botToken && cfg.groupId && cfg.museBotId);
+}
+

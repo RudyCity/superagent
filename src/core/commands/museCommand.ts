@@ -45,6 +45,7 @@ export const museCommand: SlashCommand = {
       const lines = [
         "Remote Agent (Muse) Status:",
         `- Configured      : ${isConfigured ? "Yes" : "No (run /muse config)"}`,
+        `- Runner Mode     : ${cfg.asRunner ? "ENABLED (All terminal prompts automatically route to Muse)" : "DISABLED (type /muse <task> to coordinate with Muse)"}`,
         `- Bot Token       : ${maskToken(cfg.botToken)}${botInfoStr}`,
         privacyInfo ? privacyInfo.trimEnd() : null,
         `- Telegram Group  : ${cfg.groupId || "(not set)"}`,
@@ -58,7 +59,7 @@ export const museCommand: SlashCommand = {
         "Usage:",
         "  /muse <task>                 - Run a task with remote Muse brain",
         "  /muse status                 - View remote agent status",
-        "  /muse config <key> <val>     - Set config key (botToken, groupId, museBotId, defaultWorkspace)",
+        "  /muse config <key> <val>     - Set config key (botToken, groupId, museBotId, as_runner_model)",
       ].filter(Boolean) as string[];
 
       ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
@@ -74,6 +75,7 @@ export const museCommand: SlashCommand = {
         const cfg = loadRemoteAgentConfig();
         const lines = [
           "Remote Agent Configuration:",
+          `- as_runner_model : ${cfg.asRunner ? "on (enabled)" : "off (disabled)"}`,
           `- botToken         : ${maskToken(cfg.botToken)}`,
           `- groupId          : ${cfg.groupId || "(not set)"}`,
           `- museBotId        : ${cfg.museBotId || "(not set)"}`,
@@ -81,12 +83,14 @@ export const museCommand: SlashCommand = {
           "",
           "Usage: /muse config <key> <value>",
           "Keys:",
+          "  as_runner_model  - Route all terminal prompts to Muse directly without /muse (on/off)",
           "  botToken         - Bot B (superagent's Telegram bot token)",
           "  groupId          - Numeric private group chat ID (e.g. -100xxxxxxxxxx)",
           "  museBotId        - Numeric Telegram user ID of Muse bot (Bot A)",
           "  defaultWorkspace - Default project workspace path",
           "",
           "Example:",
+          "  /muse config as_runner_model on",
           "  /muse config botToken 123456789:ABCdef...",
           "  /muse config groupId -1001234567890",
           "  /muse config museBotId 987654321",
@@ -105,13 +109,19 @@ export const museCommand: SlashCommand = {
         defaultworkspace: "defaultWorkspace",
         default_workspace: "defaultWorkspace",
         workspace: "defaultWorkspace",
+        asrunner: "asRunner",
+        as_runner: "asRunner",
+        asrunnermodel: "asRunner",
+        as_runner_model: "asRunner",
+        defaultrunner: "asRunner",
+        default_runner: "asRunner",
       };
 
       const mappedKey = validKeys[key];
       if (!mappedKey) {
         ctx.addLine({
           type: "error",
-          content: `Unknown config key: "${key}". Valid keys: botToken, groupId, museBotId, defaultWorkspace`,
+          content: `Unknown config key: "${key}". Valid keys: as_runner_model, botToken, groupId, museBotId, defaultWorkspace`,
           timestamp: now,
         });
         return;
@@ -127,7 +137,21 @@ export const museCommand: SlashCommand = {
       }
 
       const patch: Partial<RemoteAgentConfig> = {};
-      if (mappedKey === "botToken") {
+      if (mappedKey === "asRunner") {
+        const lowerVal = val.toLowerCase();
+        if (["on", "true", "1", "yes", "enable", "enabled"].includes(lowerVal)) {
+          patch.asRunner = true;
+        } else if (["off", "false", "0", "no", "disable", "disabled"].includes(lowerVal)) {
+          patch.asRunner = false;
+        } else {
+          ctx.addLine({
+            type: "error",
+            content: `Invalid value for ${key}: "${val}". Use "on" or "off".`,
+            timestamp: now,
+          });
+          return;
+        }
+      } else if (mappedKey === "botToken") {
         patch.botToken = val;
       } else if (mappedKey === "groupId") {
         patch.groupId = val;
@@ -139,7 +163,11 @@ export const museCommand: SlashCommand = {
 
       updateRemoteAgentConfig(patch);
       const maskedConfirmation =
-        mappedKey === "botToken" ? maskToken(val) : val;
+        mappedKey === "botToken"
+          ? maskToken(val)
+          : mappedKey === "asRunner"
+            ? (patch.asRunner ? "on (enabled)" : "off (disabled)")
+            : val;
 
       ctx.addLine({
         type: "system",

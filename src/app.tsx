@@ -38,6 +38,7 @@ import { readChecklistTasks, readTaskHistory } from "./core/taskChecklist.js";
 import { getActiveChainId, getWorkspaceChain } from "./core/workspace/WorkspaceChainConfig.js";
 import { lockEventEmitter, getLockStats } from "./core/storage/sharedMemory.js";
 import { PROVIDER_TEMPLATE_LABELS } from "./core/loginWizardLogic.js";
+import { isMuseRunnerActive } from "./core/remoteAgent/config.js";
 
 // Hook & Component Baru
 import { StatusBar } from "./components/status-bar.js";
@@ -1071,6 +1072,55 @@ export function App({
           : `❯ ${trimmed}`,
         timestamp: Date.now(),
       });
+
+      if (isMuseRunnerActive()) {
+        await handleSlashCommand(`/muse ${trimmed}`, {
+          addLine,
+          exit,
+          agent: agentRef.current,
+          setActiveWizard: (w: any) => {
+            setActiveWizard(w);
+          },
+          setWizardOptions,
+          setWizardSelectedIndex,
+          setCheckpointsList,
+          setIsProcessing,
+          setLines,
+          setHistory,
+          setPlanState,
+          setContextLimit,
+          setActiveModel,
+          setInputHistory: setHistory,
+          clearLines: () => {
+            setLines([]);
+          },
+          runInteractiveProcess,
+          attachImage: handleAttachImage,
+          pasteImage: handlePasteImage,
+          setActiveDevHook: (name: string | null) => {
+            setActiveDevHook(name);
+            setActiveDevHookGlobal(name);
+            if (agentRef.current) {
+              if (name) {
+                agentRef.current.workingDirectory = path.join(originalWorkingDirectoryRef.current, "internal-hooks", name);
+              } else {
+                agentRef.current.workingDirectory = originalWorkingDirectoryRef.current;
+              }
+            }
+          },
+          setWorkingDirectory: (newPath: string) => {
+            setWorkspacePath(newPath);
+            originalWorkingDirectoryRef.current = newPath;
+            if (agentRef.current) {
+              agentRef.current.workingDirectory = newPath;
+            }
+            process.chdir(newPath);
+          },
+          setSessionId,
+          onSessionPath,
+        } as any);
+        return;
+      }
 
       if (agentRef.current) {
         const sessionPath = agentRef.current.getCurrentHistoryFilePath();
@@ -2462,13 +2512,43 @@ export function App({
             timestamp: Date.now(),
           },
         ]);
+        if (isMuseRunnerActive()) {
+          Promise.resolve(
+            handleSlashCommand(`/muse ${prompt}`, {
+              addLine,
+              exit,
+              agent,
+              setIsProcessing,
+              setLines,
+              setHistory,
+              setPlanState,
+              setContextLimit,
+              setActiveModel,
+              setInputHistory: setHistory,
+              clearLines: () => {
+                setLines([]);
+              },
+              attachImage: handleAttachImage,
+              pasteImage: handlePasteImage,
+              setSessionId,
+              onSessionPath,
+            } as any)
+          ).catch((err: any) => {
+            addLine({
+              type: "error",
+              content: `[Muse Error]: ${err.message}`,
+              timestamp: Date.now(),
+            });
+          });
+          return;
+        }
         setIsProcessing(true);
-         streamBufferRef.current = "";
-         reasoningBufferRef.current = "";
-         textStreamCleaner.reset();
-         reasoningStreamCleaner.reset();
-         setStreamDisplay("");
-         setReasoningDisplay("");
+        streamBufferRef.current = "";
+        reasoningBufferRef.current = "";
+        textStreamCleaner.reset();
+        reasoningStreamCleaner.reset();
+        setStreamDisplay("");
+        setReasoningDisplay("");
         agent.sendMessage(prompt).then(() => {
           const nextState = agent.planState;
           const hasPlan = agent.hasRealPlanContent();
@@ -3307,7 +3387,7 @@ export function App({
               })()}
               <Text color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>
                 └───[ <Text bold color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>
-                  {activeWizard ? `⚙️ WIZARD: ${activeWizard.type.toUpperCase()} (Step ${activeWizard.step})` : "⌨️ COMM_LINK: ACTIVE"}
+                  {activeWizard ? `⚙️ WIZARD: ${activeWizard.type.toUpperCase()} (Step ${activeWizard.step})` : isMuseRunnerActive() ? "⌨️ COMM_LINK: MUSE REMOTE RUNNER" : "⌨️ COMM_LINK: ACTIVE"}
                 </Text> ]
                 {isProcessing && displayPrompt && (
                   <Text color="cyan" bold> ─── [ PROMPT: "{displayPrompt}" ]</Text>
@@ -3351,7 +3431,7 @@ export function App({
 
       {/* Render Status Bar */}
       <StatusBar
-        modelName={activeModel}
+        modelName={isMuseRunnerActive() ? `${activeModel} (Muse Remote)` : activeModel}
         presetName={activePresetName}
         contextPercentage={contextPercentage}
         tokensUp={tokensUp}

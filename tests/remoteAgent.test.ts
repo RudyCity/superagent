@@ -8,6 +8,7 @@ import {
   saveRemoteAgentConfig,
   updateRemoteAgentConfig,
   maskToken,
+  isMuseRunnerActive,
   RemoteAgentConfig,
 } from "../src/core/remoteAgent/config.js";
 import {
@@ -86,6 +87,40 @@ describe("remoteAgent - Config Module", () => {
     expect(maskToken("12345678")).toBe("********");
     expect(maskToken("123456789:ABCDEF123456")).toBe("1234...3456");
     expect(maskToken("123456789:ABCDEF123456")).not.toContain("ABCDEF");
+  });
+
+  it("should correctly check isMuseRunnerActive based on asRunner flag and credentials", () => {
+    // Empty config
+    saveRemoteAgentConfig({}, tempConfigPath);
+    expect(isMuseRunnerActive(tempConfigPath)).toBe(false);
+
+    // asRunner true but credentials missing
+    saveRemoteAgentConfig({ asRunner: true }, tempConfigPath);
+    expect(isMuseRunnerActive(tempConfigPath)).toBe(false);
+
+    // asRunner true and all credentials present
+    saveRemoteAgentConfig(
+      {
+        asRunner: true,
+        botToken: "123456:ABC-DEF",
+        groupId: "-100123",
+        museBotId: "999",
+      },
+      tempConfigPath
+    );
+    expect(isMuseRunnerActive(tempConfigPath)).toBe(true);
+
+    // asRunner false even with credentials
+    saveRemoteAgentConfig(
+      {
+        asRunner: false,
+        botToken: "123456:ABC-DEF",
+        groupId: "-100123",
+        museBotId: "999",
+      },
+      tempConfigPath
+    );
+    expect(isMuseRunnerActive(tempConfigPath)).toBe(false);
   });
 });
 
@@ -673,6 +708,20 @@ describe("remoteAgent - Slash Command (/muse)", () => {
     expect(cfg.groupId).toBe("-100444555");
   });
 
+  it("should toggle as_runner_model via /muse config", async () => {
+    lines = [];
+    await museCommand.execute("config as_runner_model on", mockContext);
+    expect(lines[0].content).toContain("Remote agent configuration updated: asRunner = on (enabled)");
+    let cfg = loadRemoteAgentConfig();
+    expect(cfg.asRunner).toBe(true);
+
+    lines = [];
+    await museCommand.execute("config as_runner_model off", mockContext);
+    expect(lines[0].content).toContain("Remote agent configuration updated: asRunner = off (disabled)");
+    cfg = loadRemoteAgentConfig();
+    expect(cfg.asRunner).toBe(false);
+  });
+
   it("should be registered in the slash command registry", () => {
     const cmd = registry.get("muse");
     expect(cmd).toBeDefined();
@@ -699,8 +748,13 @@ describe("remoteAgent - CLI Handler", () => {
 
     await handleMuseCliCommand(["config", "museBotId", "888777"]);
 
-    const cfg = loadRemoteAgentConfig();
+    let cfg = loadRemoteAgentConfig();
     expect(cfg.museBotId).toBe("888777");
+
+    await handleMuseCliCommand(["config", "as_runner", "on"]);
+    cfg = loadRemoteAgentConfig();
+    expect(cfg.asRunner).toBe(true);
+
     spy.mockRestore();
   });
 

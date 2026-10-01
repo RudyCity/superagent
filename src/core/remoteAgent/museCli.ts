@@ -15,12 +15,14 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
     console.log("Remote Agent (Muse) Status:");
     console.log(`  Configured      : ${isConfigured ? "Yes" : "No (run: superagent muse config)"}`);
+    console.log(`  Runner Mode     : ${cfg.asRunner ? "ENABLED (normal terminal prompts route to Muse)" : "DISABLED"}`);
     console.log(`  Bot Token       : ${maskToken(cfg.botToken)}`);
     console.log(`  Telegram Group  : ${cfg.groupId || "(not set)"}`);
     console.log(`  Muse Bot ID     : ${cfg.museBotId || "(not set)"}`);
     console.log(`  Default Ws      : ${cfg.defaultWorkspace || process.cwd()}`);
     console.log("");
     console.log("To set config:");
+    console.log("  superagent muse config as_runner_model on");
     console.log("  superagent muse config botToken <token>");
     console.log("  superagent muse config groupId <groupId>");
     console.log("  superagent muse config museBotId <botId>");
@@ -34,6 +36,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     if (!key) {
       const cfg = loadRemoteAgentConfig();
       console.log("Current Remote Agent Configuration:");
+      console.log(`  as_runner_model  : ${cfg.asRunner ? "on (enabled)" : "off (disabled)"}`);
       console.log(`  botToken         : ${maskToken(cfg.botToken)}`);
       console.log(`  groupId          : ${cfg.groupId || "(not set)"}`);
       console.log(`  museBotId        : ${cfg.museBotId || "(not set)"}`);
@@ -52,6 +55,12 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       muse_bot_id: "museBotId",
       defaultworkspace: "defaultWorkspace",
       default_workspace: "defaultWorkspace",
+      asrunner: "asRunner",
+      as_runner: "asRunner",
+      asrunnermodel: "asRunner",
+      as_runner_model: "asRunner",
+      defaultrunner: "asRunner",
+      default_runner: "asRunner",
     };
 
     const mappedKey = validKeys[key];
@@ -65,9 +74,28 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       return;
     }
 
-    const patch: Partial<RemoteAgentConfig> = { [mappedKey]: val };
+    const patch: Partial<RemoteAgentConfig> = {};
+    if (mappedKey === "asRunner") {
+      const lower = val.toLowerCase();
+      if (["on", "true", "1", "yes", "enable", "enabled"].includes(lower)) {
+        patch.asRunner = true;
+      } else if (["off", "false", "0", "no", "disable", "disabled"].includes(lower)) {
+        patch.asRunner = false;
+      } else {
+        console.error(`Invalid value for ${key}: "${val}". Use "on" or "off".`);
+        return;
+      }
+    } else {
+      (patch as any)[mappedKey] = val;
+    }
+
     updateRemoteAgentConfig(patch);
-    const maskedVal = mappedKey === "botToken" ? maskToken(val) : val;
+    const maskedVal =
+      mappedKey === "botToken"
+        ? maskToken(val)
+        : mappedKey === "asRunner"
+          ? (patch.asRunner ? "on (enabled)" : "off (disabled)")
+          : val;
     console.log(`Updated remoteAgent config: ${mappedKey} = ${maskedVal}`);
     return;
   }

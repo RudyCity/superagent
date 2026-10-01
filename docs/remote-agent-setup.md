@@ -114,6 +114,20 @@ Expected sequence in the terminal:
 3. Superagent returns `task_result`.
 4. Muse sends `task_done` and the final answer appears in your terminal.
 
+### 4.3 Optional: Enable Muse as Default Runner
+
+If you want all regular prompts entered in the terminal to automatically coordinate with Muse without typing `/muse` every time, enable runner mode:
+
+```bash
+/muse config as_runner_model on
+```
+
+When enabled:
+- Any message you type in the terminal is dispatched directly to Muse.
+- The status bar and input border indicate `MUSE REMOTE RUNNER`.
+- All slash commands (such as `/model`, `/clear`, `/exit`, `/muse status`) continue to work normally.
+- To disable and revert to local execution, run `/muse config as_runner_model off`.
+
 ---
 
 ## 5. Remote Assistant (Muse) Setup Prompt

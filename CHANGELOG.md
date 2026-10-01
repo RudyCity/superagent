@@ -1,3 +1,16 @@
+## [1.5.97] - 2026-10-01
+
+### Added
+
+- **Muse Default Runner Mode (`as_runner_model` / `as_runner`)**:
+  - Added configuration toggle `/muse config as_runner_model on` (and `superagent muse config as_runner on`), enabling automatic routing of all normal terminal chat prompts directly to remote Muse without requiring `/muse` prefix.
+  - Added `asRunner` field to `RemoteAgentConfig` and exported `isMuseRunnerActive()` helper.
+  - Integrated auto-routing in interactive chat input (`src/app.tsx`) and headless one-shot prompts (`src/cliMain.tsx`). Slash commands (`/model`, `/exit`, `/clear`, `/muse`, etc.) and system commands (`!<cmd>`) continue to function normally.
+  - Added active visual status indicator `[MUSE REMOTE RUNNER]` in input border and `(Muse Remote)` in status bar.
+  - Added runner mode display in `/muse status` and configuration help in `/muse config`.
+  - Added documentation in `docs/remote-agent-setup.md` under section 4.3.
+  - Added unit test coverage in `tests/remoteAgent.test.ts` for configuration toggling and runner state checking.
+
 ## [1.5.96] - 2026-10-01
 
 ### Fixed
