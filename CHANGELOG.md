@@ -1,3 +1,14 @@
+## [1.5.117] - 2026-10-02
+
+### Documentation
+
+- **Comprehensive Muse Architecture, WebSocket, and Multi-Project Watch Documentation**:
+  - Updated `docs/remote-agent-setup.md` into a complete end-to-end setup guide covering both Cloudflare Tunnel + WebSocket transport and Telegram bus transport.
+  - Documented the 5-layer defense-in-depth security architecture (Cloudflare Access Service Token validation, timing-safe Bearer authentication, monotonic nonce & clock drift validation via `ReplayValidator`, singleton session concurrency lock, and loopback isolation with ping-pong heartbeat).
+  - Added step-by-step instructions for `/muse tunnel` onboarding, quick ephemeral tunnels (`cloudflared tunnel --url ...`), and production named tunnel ingress configurations (`config.yml`).
+  - Documented Multi-Project Watch Mode (`/muse watch <dir1> <dir2> ...`, `/muse watch add <dir>`, `/muse watch remove <dir>`, `/muse watch status`), project routing via `workspace`/`project` in envelopes, and dynamic workspace directory resolution.
+  - Added Section 6 to `docs/wiki/04-features-and-workflows.md` detailing the remote cognitive brain architecture, Mermaid sequence diagram, and multi-project coordination flow.
+
 ## [1.5.116] - 2026-10-02
 
 ### Added

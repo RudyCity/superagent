@@ -134,3 +134,56 @@ Superagent dynamically classifies and filters skills based on the active executi
 2. **Multi-Agent Mode**:
    - Skills are grouped into Multi-Agent Orchestration Skills and General Skills, enabling the Master Agent and Superagents to access orchestration strategies while preventing subagents from exceeding their scope.
 
+---
+
+## 6. Remote Cognitive Brain (Muse) & Cloudflare WebSocket Transport
+
+Superagent can decouple high-level reasoning and planning to a remote assistant ("Muse") while retaining local execution of shell tools and file systems. Superagent supports both outbound Telegram polling and high-speed WebSocket transport secured behind Cloudflare Tunnel.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer / User
+    participant Muse as Remote Brain (Muse)
+    participant CF as Cloudflare Edge (Zero Trust)
+    participant Server as WS Server (127.0.0.1:9225)
+    participant Watcher as Muse Multi-Project Watcher
+    participant RepoA as Project A (frontend)
+    participant RepoB as Project B (backend)
+
+    Note over Server: Bound to 127.0.0.1:9225 loopback<br/>cloudflared tunnel active
+    Muse->>CF: Connect WSS /muse with Bearer & CF Access headers
+    CF->>Server: HTTP Upgrade Handshake
+    Server->>Server: Layer 1: Validate CF-Access-Client-Id & Secret
+    Server->>Server: Layer 2: Constant-Time Bearer Auth (timingSafeEqual)
+    Server->>Server: Layer 4: Singleton Session Lock (Reject Concurrent Code 4409)
+    Server-->>Muse: 101 Switching Protocols (Authenticated)
+
+    Dev->>Watcher: /muse watch ./frontend ./backend
+    Note over Watcher: Monitored Workspaces: [frontend, backend]
+
+    Muse->>Server: task_batch { workspace: "backend", calls: [run_command: "bun test"] }
+    Server->>Server: Layer 3: Validate ts drift (±60s) & nonce uniqueness
+    Server->>Watcher: Dispatch Batch
+    Watcher->>RepoB: Route CWD to backend & execute "bun test"
+    RepoB-->>Watcher: Execution Output (Tests Passed)
+    Watcher->>Server: task_result envelope
+    Server-->>Muse: Return batch results via WebSocket frame
+
+    Muse->>Server: task_done { summary: "Backend test suite passing" }
+    Server->>Watcher: Complete Task
+    Watcher-->>Dev: Render Cyberpunk Completion Summary Card
+```
+
+### 5-Layer Defense-in-Depth Security
+1. **Cloudflare Access Service Tokens**: Verified during WebSocket handshake via `CF-Access-Client-Id` and `CF-Access-Client-Secret`.
+2. **Timing-Safe Pre-Shared Key**: Constant-time comparison (`crypto.timingSafeEqual`) with strict 5-second handshake window (`code 4401`).
+3. **Replay & Clock Drift Validation**: Inbound envelopes are checked by `ReplayValidator` requiring monotonic nonces and timestamps within $\pm 60$s.
+4. **Singleton Concurrency Lock**: Only one remote assistant connection is permitted at a time; competing sockets are disconnected (`code 4409`).
+5. **Loopback Isolation & Ping-Pong Heartbeat**: Socket binds exclusively to `127.0.0.1:9225` with 30-second ping-pong monitoring. Destructive filesystem edits require interactive confirmation.
+
+### Multi-Project Watch Coordination
+- **Concurrent Project Monitoring**: Superagent can watch multiple directories simultaneously via `/muse watch <dir1> <dir2> ...` or `superagent muse watch --ws <dir1> <dir2>`.
+- **Dynamic Directory Routing**: Incoming batches with `"workspace"` or `"project"` fields are resolved against watched roots by exact path, basename, or substring, dynamically re-targeting execution contexts.
+- **Live Workspace Control**: Workspaces can be added or removed on the fly via `/muse watch add <dir>` and `/muse watch remove <dir>`.
+

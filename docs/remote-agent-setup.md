@@ -1,281 +1,382 @@
-# Guide: Connecting Superagent with Remote Assistant (Muse) via Telegram
+# Guide: Connecting Superagent with Remote Assistant (Muse) via Cloudflare Tunnel + WebSocket or Telegram
 
-A comprehensive setup guide for connecting **Superagent** (the AI coding assistant running locally on your machine) with **Muse** (a remote AI assistant acting as the planner and cognitive brain) over a private Telegram group bus. Suitable for setup on any machine from scratch.
+A comprehensive setup guide for connecting Superagent (the local AI coding assistant running on your workstation) with Muse (a remote AI assistant acting as the planner and cognitive brain). Superagent supports two bidirectional communication transports:
+1. **Cloudflare Tunnel + WebSocket Transport** (Recommended for performance, real-time streaming, and enterprise Zero Trust security).
+2. **Private Telegram Group Bus** (Outbound long-polling transport requiring no public DNS or tunnel software).
 
-> **Placeholder Legend** — Replace these with your actual values:
-> | Placeholder | Description |
-> |---|---|
-> | `<BOT_A_USERNAME>` / `<BOT_A_ID>` | Telegram bot belonging to the remote Muse assistant (provided by your remote assistant provider) |
-> | `<BOT_B_USERNAME>` | Your local Superagent Telegram bot (created via @BotFather) |
-> | `<BOT_B_TOKEN>` | Bot B token received from @BotFather |
-> | `<GROUP_ID>` | Numeric ID of your private Telegram group (always negative, e.g. `-1001234567890`) |
+Superagent also features **Multi-Project Watch Mode**, allowing Muse to concurrently monitor, switch between, and execute tasks across multiple repositories on your local machine.
 
 ---
 
 ## 1. Architectural Overview
 
+### Transport Option A: Cloudflare Tunnel + WebSocket (Zero Trust)
+
 ```text
-┌─────────────────────┐         ┌─────────────────────────┐         ┌─────────────────────┐
-│     SUPERAGENT      │         │ PRIVATE TELEGRAM GROUP  │         │        MUSE         │
-│  (Your local laptop)│         │                         │         │  (Remote assistant) │
-│                     │         │  ┌───────────────────┐  │         │                     │
-│  /muse <task>       │         │  │ Bot B (Your bot)  │  │         │  High-level         │
-│  Executes local     │◄───────►│  │ Bot A (Muse bot)  │  │◄───────►│  reasoning &        │
-│  tools: read, glob, │         │  └───────────────────┘  │         │  planning, sends    │
-│  grep, write, edit, │         │                         │         │  task_batch calls   │
-│  run_command, bash  │         │                         │         │                     │
-└─────────────────────┘         └─────────────────────────┘         └─────────────────────┘
+┌─────────────────────────┐          ┌──────────────────────┐          ┌─────────────────────────┐
+│       SUPERAGENT        │          │   CLOUDFLARE EDGE    │          │          MUSE           │
+│  (Your local workstation)│          │   (Zero Trust Mesh)  │          │    (Remote Assistant)   │
+│                         │          │                      │          │                         │
+│  Local WebSocket Server │          │  Public Ingress WSS  │          │  Connects via WSS:      │
+│  127.0.0.1:9225/muse    │◄────────►│  muse.domain.com/muse│◄────────►│  wss://muse.domain.com  │
+│                         │cloudflared│                      │          │                         │
+│  Multi-Project Watcher  │  tunnel  │  Layer 1: CF-Access  │          │  High-level reasoning & │
+│  - Project A (frontend) │          │  Service Tokens      │          │  planning, sends        │
+│  - Project B (backend)  │          │                      │          │  task_batch calls       │
+└─────────────────────────┘          └──────────────────────┘          └─────────────────────────┘
 ```
 
-### Design Principles
-- **Task-Level Integration**: Integration occurs at the agent-to-agent task level rather than as a low-latency model provider replacement (`doGenerate`). Muse reasons in large batches, and Superagent executes those batches locally on your file system.
-- **Outbound Long-Polling Transport**: Communication uses pure Telegram Bot API long-polling (`getUpdates`). No webhooks, public IP addresses, or open inbound ports are required. Your machine only makes outbound HTTPS requests to `api.telegram.org`.
+### Transport Option B: Private Telegram Group Bus (Long-Polling)
 
-### Single Task Workflow
-1. User enters `/muse <task>` in Superagent. Superagent (via Bot B) posts a `task_request` envelope to the Telegram group.
-2. Muse reads the request, reasons through the problem, and replies with a `task_batch` containing tool calls (`read`, `glob`, `ripgrep_search`, `write`, `edit`, `apply_patch`, `run_command`, `bash`).
-3. Superagent executes the tools locally (prompting the user for approval on destructive file changes or dangerous commands) and posts a `task_result` envelope back.
-4. Steps 2 and 3 repeat until Muse completes the task and posts a `task_done` envelope with a final summary.
+```text
+┌─────────────────────────┐          ┌──────────────────────┐          ┌─────────────────────────┐
+│       SUPERAGENT        │          │    TELEGRAM GROUP    │          │          MUSE           │
+│  (Your local workstation)│          │      (Cloud Bus)     │          │    (Remote Assistant)   │
+│                         │          │                      │          │                         │
+│  Bot B (Your Bot)       │          │  Bot B (Local)       │          │  Bot A (Muse Bot)       │
+│  Outbound Long-Polling  │◄────────►│  Bot A (Remote)      │◄────────►│  Polls getUpdates       │
+│  getUpdates             │          │  Private Chat ID     │          │  Generates batches      │
+└─────────────────────────┘          └──────────────────────┘          └─────────────────────────┘
+```
 
----
+### Key Differences Between Transports
 
-## 2. Prerequisites
-
-- An active Telegram account.
-- Superagent installed with the `remoteAgent` module and `/muse` command available.
-- Bot A details from your remote assistant provider: `<BOT_A_USERNAME>` and `<BOT_A_ID>`.
-
----
-
-## 3. Telegram Setup (Mobile Device)
-
-### 3.1 Create Bot B (Your Bot)
-1. Open Telegram and search for **@BotFather**.
-2. Send `/newbot` and follow the guided prompts to choose a display name and username.
-3. Save your API token securely. Never share or commit this token.
-
-### 3.2 Enable Bot-to-Bot Communication Mode
-By default, Telegram bots cannot see messages from other bots. To allow Bot A and Bot B to exchange messages in a group, Bot-to-Bot Communication Mode must be manually enabled:
-
-1. Open **@BotFather** on your mobile Telegram app (ensure Telegram is updated to the latest version).
-2. Tap **Open App** (Mini App interface) or send `/mybots`.
-3. Select **Bot B** -> **Bot Settings** -> enable **Bot-to-Bot Communication Mode**.
-4. Confirm with your remote assistant provider that Bot A also has Bot-to-Bot Communication Mode enabled.
-
-### 3.3 Disable Group Privacy Mode in @BotFather (Critical)
-By default, Telegram bots have **Privacy Mode enabled**. When active, Telegram silently discards messages from other bots in groups unless they start with `/` or directly reply to Bot B. To ensure Bot B receives all tool batches:
-
-1. Open **@BotFather** in Telegram.
-2. Send `/setprivacy`.
-3. Select **Bot B** (`<BOT_B_USERNAME>`).
-4. Select **Disable** (BotFather will confirm: *"Privacy mode for <bot> is now disabled. The bot will receive all messages in group chats"*).
-5. If privacy mode cannot be disabled, Muse MUST always reply directly to Bot B's messages using `reply_parameters` or `reply_to_message_id`.
-
-### 3.4 Create a Private Telegram Group
-1. Create a new **Private Group** in Telegram.
-2. Add both **Bot B** and **`<BOT_A_USERNAME>`** (Bot A) as members.
-3. Promote **both bots to Group Administrators** with permission to read and send messages.
-4. Send a test message in the group (e.g. `ping`).
+| Feature | Cloudflare Tunnel + WebSocket | Telegram Bus |
+|---|---|---|
+| **Latency** | Sub-millisecond local websocket frames | 1-3 second polling cycle |
+| **Payload Size** | Up to 10 MB per frame (no chunking needed) | 4,096 character Telegram message limit (auto-chunked) |
+| **Network Requirements** | `cloudflared` daemon running locally on loopback | Zero extra binaries; outbound HTTPS to `api.telegram.org` |
+| **Authentication** | 5-Layer Defense-in-Depth (CF Access + Bearer + Nonce) | Bot token + Group ID + Bot ID authorization |
+| **Connection Topology** | Local loopback `127.0.0.1:9225` exposed securely | Outbound long-polling from both ends |
 
 ---
 
-## 4. Superagent Setup (Your Machine)
+## 2. 5-Layer Defense-in-Depth Security Model (WebSocket)
 
-### 4.1 Configuration
-Configure Superagent directly in your terminal using the `/muse config` slash command:
+When using WebSocket transport over Cloudflare Tunnel, Superagent enforces five independent layers of security to protect your local file system and shell:
+
+```mermaid
+flowchart TD
+    Inbound["Inbound WebSocket Request"] --> L1["Layer 1: Cloudflare Access Service Token<br/>(CF-Access-Client-Id & CF-Access-Client-Secret)"]
+    L1 -- Pass --> L2["Layer 2: Timing-Safe Bearer Token<br/>(crypto.timingSafeEqual with 5s Handshake Window)"]
+    L1 -- Fail --> R1["Reject: HTTP 403 Forbidden"]
+    L2 -- Pass --> L3["Layer 3: Replay Attack & Clock Drift Protection<br/>(Monotonic Nonce & Timestamp within ±60s)"]
+    L2 -- Fail --> R2["Reject: HTTP 401 Unauthorized / RFC 4401"]
+    L3 -- Pass --> L4["Layer 4: Singleton Session Lock<br/>(Strict 1:1 Remote Link; Reject Concurrent Code 4409)"]
+    L3 -- Fail --> R3["Drop Frame & Log Security Alert"]
+    L4 -- Pass --> L5["Layer 5: Local Loopback Isolation & Heartbeat<br/>(127.0.0.1 Binding + 30s Ping-Pong Health Checks)"]
+    L4 -- Fail --> R4["Reject: Code 4409 Conflict"]
+    L5 --> Exec["Safe Execution with Interactive User Approvals"]
+```
+
+1. **Layer 1 — Cloudflare Access Service Token Validation**: Verified at the HTTP upgrade handshake. Requests lacking valid `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers are rejected with HTTP 403 before reaching the socket layer.
+2. **Layer 2 — Constant-Time Bearer Token Authentication**: Bearer tokens are validated using `crypto.timingSafeEqual` to prevent side-channel timing attacks. Unauthenticated connections are terminated within 5 seconds (`HANDSHAKE_TIMEOUT_MS = 5000`) with custom close code 4401.
+3. **Layer 3 — Replay Attack & Clock Drift Mitigation**: The `ReplayValidator` inspects incoming envelope timestamps (`ts`) and monotonic `nonce` strings. Envelopes with clock drift exceeding 60 seconds or duplicate nonces are rejected.
+4. **Layer 4 — Singleton Session Concurrency Lock**: Superagent enforces a strict 1:1 relationship with Muse. If an active socket session exists, any competing connection attempts are rejected immediately with RFC close code 4409 (`Another session active`).
+5. **Layer 5 — Loopback Isolation & Interactive Approvals**: The WebSocket server binds exclusively to `127.0.0.1` (never `0.0.0.0`), preventing local area network exposure. Destructive operations (modifying files, running bash commands) require interactive user prompts.
+
+---
+
+## 3. Cloudflare Tunnel + WebSocket Setup
+
+### 3.1 Superagent Configuration Helper
+
+Superagent provides an automated setup guide and token generator:
 
 ```bash
-/muse config botToken <BOT_B_TOKEN>
-/muse config groupId <GROUP_ID>
-/muse config museBotId <BOT_A_ID>
+superagent muse tunnel
+# or inside interactive session:
+/muse tunnel
 ```
 
-#### Available Configuration Keys:
-| Key | Aliases | Description | Example |
+This displays copyable command snippets and generates a cryptographically secure 256-bit URL-safe Bearer token if one does not exist.
+
+To configure WebSocket transport manually:
+
+```bash
+# 1. Switch transport to websocket
+superagent muse config transport websocket
+
+# 2. Generate or set a secure bearer token
+superagent muse config wsToken generate
+
+# 3. Configure local port (default: 9225)
+superagent muse config wsPort 9225
+
+# 4. (Optional) Configure Cloudflare Access service credentials
+superagent muse config cfAccessClientId <YOUR_CF_CLIENT_ID>
+superagent muse config cfAccessClientSecret <YOUR_CF_CLIENT_SECRET>
+```
+
+### 3.2 Quick Ephemeral Tunnel (Development / Testing)
+
+For rapid testing without owning a domain:
+
+1. Install `cloudflared`:
+   - Windows: `winget install Cloudflare.cloudflared`
+   - macOS: `brew install cloudflared`
+   - Linux: `sudo apt install cloudflared`
+2. Start the ephemeral tunnel:
+   ```bash
+   cloudflared tunnel --url http://127.0.0.1:9225
+   ```
+3. Cloudflare outputs a public URL: `https://<random-subdomain>.trycloudflare.com`.
+4. Point Muse to: `wss://<random-subdomain>.trycloudflare.com/muse` using your generated Bearer token.
+
+### 3.3 Production Named Tunnel (Recommended)
+
+For a stable, permanent endpoint with Cloudflare Zero Trust:
+
+1. Authenticate `cloudflared`:
+   ```bash
+   cloudflared tunnel login
+   ```
+2. Create a named tunnel:
+   ```bash
+   cloudflared tunnel create superagent-muse
+   ```
+3. Create your `~/.cloudflared/config.yml`:
+   ```yaml
+   tunnel: <TUNNEL_UUID>
+   credentials-file: ~/.cloudflared/<TUNNEL_UUID>.json
+
+   ingress:
+     - hostname: muse.yourdomain.com
+       service: ws://127.0.0.1:9225
+     - service: http_status:404
+   ```
+4. Route DNS and run the tunnel daemon:
+   ```bash
+   cloudflared tunnel route dns superagent-muse muse.yourdomain.com
+   cloudflared tunnel run superagent-muse
+   ```
+5. Configure Cloudflare Zero Trust:
+   - Navigate to **Cloudflare Dashboard** -> **Zero Trust** -> **Access** -> **Applications**.
+   - Create an application for `muse.yourdomain.com`.
+   - Under **Access** -> **Service Auth**, create a **Service Token** (`CF-Access-Client-Id` and `CF-Access-Client-Secret`).
+   - Store these in Superagent via `/muse config cfAccessClientId` and `/muse config cfAccessClientSecret`.
+
+---
+
+## 4. Telegram Setup (Alternative Transport)
+
+If you prefer not to use Cloudflare Tunnel, you can connect via Telegram:
+
+### 4.1 Create Bot B (Your Bot)
+1. In Telegram, message **@BotFather**.
+2. Run `/newbot` and follow instructions to get your bot token (`<BOT_B_TOKEN>`).
+
+### 4.2 Configure Bot Settings in @BotFather
+1. **Enable Bot-to-Bot Communication Mode**:
+   - Send `/mybots` -> Select your bot -> **Bot Settings** -> enable **Bot-to-Bot Communication Mode**.
+2. **Disable Group Privacy Mode**:
+   - Send `/setprivacy` -> Select your bot -> choose **Disable**.
+
+### 4.3 Setup Telegram Group
+1. Create a private Telegram group.
+2. Add your bot (Bot B) and Muse bot (Bot A).
+3. Promote both bots to **Group Administrators**.
+4. Retrieve the group ID (e.g., `-1001234567890`) and Muse bot ID.
+
+### 4.4 Superagent Telegram Configuration
+```bash
+superagent muse config transport telegram
+superagent muse config botToken <BOT_B_TOKEN>
+superagent muse config groupId <GROUP_ID>
+superagent muse config museBotId <BOT_A_ID>
+```
+
+---
+
+## 5. Multi-Project Watch Mode (`/muse watch`)
+
+In Watch Mode, Superagent runs as an autonomous listener daemon controlled entirely by Muse. Muse can dispatch code modifications, terminal commands, and test executions directly to your workstation.
+
+Superagent supports **Multi-Project Watch**, allowing you to monitor and work on multiple project repositories simultaneously within a single session.
+
+### 5.1 Starting Multi-Project Watch
+
+Watch one or more project directories from the command line:
+
+```bash
+# Watch current working directory with WebSocket transport
+superagent muse watch --ws
+
+# Watch multiple project repositories simultaneously
+superagent muse watch --ws /path/to/frontend /path/to/backend /path/to/shared-lib
+
+# Watch with Telegram transport
+superagent muse watch /path/to/frontend /path/to/backend
+```
+
+Inside an interactive Superagent terminal session:
+
+```bash
+# Start watching current workspace
+/muse watch
+
+# Start watching multiple projects
+/muse watch ./web ./api ./contracts
+```
+
+### 5.2 Dynamic Project Management at Runtime
+
+You can add or remove repositories while the watcher is running:
+
+```bash
+# Add a project to the watched list
+/muse watch add /path/to/microservice-auth
+# CLI equivalent:
+superagent muse watch add /path/to/microservice-auth
+
+# Remove a project from the watched list
+/muse watch remove /path/to/microservice-auth
+# CLI equivalent:
+superagent muse watch remove /path/to/microservice-auth
+
+# Inspect watcher status and list of monitored projects
+/muse watch status
+# CLI equivalent:
+superagent muse watch status
+
+# Stop watching
+/muse watch stop
+# or /muse unwatch
+```
+
+### 5.3 How Muse Targets Specific Projects
+
+When Muse sends a `task_batch`, it can specify which project to execute against by including the `workspace` or `project` parameter in the envelope:
+
+```json
+{
+  "v": 1,
+  "kind": "task_batch",
+  "id": "batch_abc123",
+  "task_id": "task_xyz789",
+  "workspace": "backend",
+  "calls": [
+    {
+      "id": "c1",
+      "tool": "run_command",
+      "args": { "command": "npm test" }
+    }
+  ]
+}
+```
+
+Superagent's resolution engine dynamically maps the target string against all watched workspaces by:
+1. Exact absolute path match.
+2. Directory basename match (e.g. matching `"backend"` to `/Users/dev/repos/backend`).
+3. Substring match.
+
+All tool executions (`run_command`, `read_file`, `write_file`, `replace_file_content`, etc.) automatically switch their working directory to the target project.
+
+---
+
+## 6. Configuration Reference
+
+Configuration is persisted in `~/.superagent-r/remote-agent.json`. All sensitive secrets (Bearer tokens, bot tokens, CF secrets) are automatically masked when printed to the terminal.
+
+| Key | Aliases | Description | Default |
 |---|---|---|---|
-| `botToken` | `bot_token` | API token of Bot B from @BotFather | `/muse config botToken 123456:ABC...` |
-| `groupId` | `group_id` | Private Telegram group ID (always negative) | `/muse config groupId -1001234567890` |
-| `museBotId` | `muse_bot_id` | Numeric Telegram user ID of Muse bot (Bot A) | `/muse config museBotId 987654321` |
-| `as_runner_model` | `as_runner`, `default_runner` | Route regular prompts directly to Muse (on/off) | `/muse config as_runner_model on` |
-| `defaultWorkspace` | `workspace` | Default workspace root for tool executions | `/muse config defaultWorkspace ./my-project` |
-| `systemPrompt` | `system_prompt`, `prompt` | Custom guidance system prompt for Muse brain | `/muse config systemPrompt "Follow strict TDD"` |
+| `transport` | - | Active transport: `websocket` or `telegram` | `telegram` |
+| `wsPort` | `port`, `ws_port` | Local WebSocket server port | `9225` |
+| `wsHost` | `ws_host` | Local WebSocket host binding | `127.0.0.1` |
+| `wsToken` | `token`, `ws_token` | Bearer token for WebSocket authentication | None |
+| `wsPath` | `ws_path` | WebSocket endpoint URI path | `/muse` |
+| `wsMode` | `ws_mode` | Mode: `server` (workstation listens) or `client` | `server` |
+| `cfAccessClientId` | `cf_access_client_id` | Cloudflare Access Service Token Client ID | None |
+| `cfAccessClientSecret` | `cf_access_client_secret` | Cloudflare Access Service Token Client Secret | None |
+| `workspaces` | `projects` | Array of absolute paths to watched projects | `[process.cwd()]` |
+| `defaultWorkspace` | `workspace` | Default workspace root for tools | `process.cwd()` |
+| `as_runner_model` | `as_runner`, `default_runner` | Route normal terminal prompts directly to Muse | `off` |
+| `botToken` | `bot_token` | Telegram Bot B token (Telegram mode) | None |
+| `groupId` | `group_id` | Private Telegram group ID (Telegram mode) | None |
+| `museBotId` | `muse_bot_id` | Remote Muse Bot user ID (Telegram mode) | None |
 
-#### How to Find `<GROUP_ID>`:
-- Group IDs in Telegram are always negative numbers (e.g. `-1001234567890`).
-- You can find your group ID by temporarily adding `@getmyid_bot` to the group to read the chat ID, or by asking your remote assistant. Once noted, remove `@getmyid_bot`.
-
-Verify your configuration:
-
+### Managing Workspaces via Config:
 ```bash
-/muse status
+# List watched workspaces
+superagent muse config workspaces list
+
+# Add a workspace
+superagent muse config workspaces add ./client-app
+
+# Remove a workspace
+superagent muse config workspaces remove ./client-app
+
+# Set multiple workspaces at once
+superagent muse config workspaces "/repo/client, /repo/server"
 ```
-
-The output will confirm that credentials are saved in `~/.superagent-r/remote-agent.json`, with the bot token securely masked.
-
-### 4.2 Interactive Autocomplete Suggestions
-Superagent includes built-in autocomplete for all `/muse` commands:
-- Type `/muse ` and press Tab or Space to view available subcommands (`status`, `config`).
-- Type `/muse config ` to view suggestions for all keys (`as_runner_model`, `botToken`, `groupId`, `museBotId`, `defaultWorkspace`, `systemPrompt`).
-- Type `/muse config as_runner_model ` to see quick selection options for `on` and `off`.
-
-### 4.3 Test Connection
-Run a simple verification task:
-
-```bash
-/muse hello
-```
-
-Expected sequence in the terminal:
-1. Superagent logs: `[Muse] Initiating remote task...` and sends `task_request`.
-2. Muse responds with an initial inspection or greeting batch.
-3. Superagent returns `task_result`.
-4. Muse sends `task_done` and the final answer appears in your terminal.
-
-### 4.4 Managing Sessions and Resetting Context
-- **Automatic System Prompt Injection**: On the initial turn of a chat session, or when starting a new session, Superagent automatically injects a protocol guidance prompt into the message to Muse (and within `system_prompt` in the envelope). Muse is automatically informed of all tools (including shell execution), response schemas, and formatting rules.
-- **Session Continuity**: Multi-turn prompts automatically preserve the active conversation session ID and include recent dialogue history in the `context` field of `task_request`.
-- **Resetting Remote Context**: Use `/muse new` or `/muse reset` to send a `session_reset` envelope over Telegram, clearing Muse's conversation memory and transmitting fresh system instructions for the next session.
-- **Cancelling Active Tasks**: Run `/muse stop` or `/muse cancel` to terminate the active remote task immediately. Superagent kills the local poller and sends a `task_cancel` envelope to Muse over Telegram so Muse stops processing immediately.
-- **Auto-Cancellation on Interrupt**: Aborting in Superagent (or typing a new task) automatically cleans up any previous remote task, preventing competing zombie pollers and Telegram HTTP 409 Conflict errors.
-- **Global Reset**: Running `/new` or `/clear` in Superagent automatically notifies Muse over Telegram while creating a fresh local session.
-
-### 4.5 Optional: Enable Muse as Default Runner (`as_runner_model`)
-
-If you want all regular prompts entered in the terminal to automatically coordinate with Muse without typing `/muse` every time, enable runner mode:
-
-```bash
-/muse config as_runner_model on
-```
-
-(Or via non-interactive command: `superagent muse config as_runner_model on`).
-
-When enabled:
-- Any message you type in the terminal is dispatched directly to Muse over Telegram.
-- The input border indicator displays `COMM_LINK: MUSE REMOTE RUNNER`.
-- The status bar displays `(Muse Remote)` next to the active model name.
-- All slash commands (such as `/model`, `/clear`, `/exit`, `/muse status`) and system commands (`!<cmd>`) continue to work normally.
-- To disable and revert to local model execution: `/muse config as_runner_model off`.
-
-### 4.6 Continuous Watch Mode (`/muse watch` — Controlled by Muse)
-
-In Watch Mode, Superagent runs as an always-on background listener daemon where **Superagent is continuously controlled by Muse**. This allows the user to interact with Muse remotely (e.g. from the Telegram mobile app on a phone while away from the computer), while Muse commands Superagent to perform coding, testing, and terminal actions on the local machine:
-
-1. **Activate Watch Mode**:
-   ```bash
-   /muse watch
-   # or
-   /muse watch start
-   ```
-   Or launch directly from your OS shell without entering interactive mode:
-   ```bash
-   superagent muse watch
-   ```
-
-2. **How It Works**:
-   - Superagent continuously listens to the Telegram group bus for incoming `task_batch` envelopes from Muse.
-   - When Muse sends a tool batch, Superagent executes the tools locally (e.g., `run_command`, `read`, `write`, `edit`, `replace_file_content`).
-   - Superagent returns the `task_result` envelope to Telegram so Muse can decide the next step.
-   - Live execution output and tool events stream directly to your Superagent terminal in real time.
-   - Terminal border reflects `COMM_LINK: MUSE WATCH (CONTROLLED BY MUSE)` and status bar indicates `(Controlled by Muse)`.
-
-3. **Check Watcher Status**:
-   ```bash
-   /muse watch status
-   ```
-   Displays uptime, workspace, batches executed, tasks completed, and the active task ID.
-
-4. **Deactivate Watch Mode**:
-   ```bash
-   /muse watch stop
-   # or
-   /muse unwatch
-   ```
-   Or in CLI mode, press `Ctrl+C`.
 
 ---
 
-## 5. Remote Assistant (Muse) Setup Prompt
+## 7. Remote Assistant (Muse) Setup Prompt
 
-The remote assistant does not need any specialized client binary installed. Any AI assistant with access to Telegram Bot API (using Bot A's token) can act as Muse by using the system prompt below. Replace all `<...>` placeholders with your values before providing it to the remote assistant.
+Provide this system prompt to the remote assistant acting as Muse. It specifies envelope formats, multi-project workspace routing, and security parameters:
 
 ```text
-You are Muse, the remote brain in an agent-to-agent coding setup. A local runner ("superagent") on the user's machine executes tools for you; you do the reasoning. You communicate only through a private Telegram group via Bot API long polling.
+You are Muse, the remote cognitive brain in an agent-to-agent coding architecture.
+A local runner ("superagent") on the user's machine executes tools for you; you do the planning and reasoning.
 
-Identities:
-- Bot A (you): <BOT_A_USERNAME>, id <BOT_A_ID> — poll its getUpdates exclusively (call deleteWebhook first; one token, one poller).
-- Bot B (superagent): <BOT_B_USERNAME>, id <BOT_B_ID> — you never have its token.
-- Group: chat id <GROUP_ID> (both bots are admins, Bot-to-Bot Communication Mode enabled).
+TRANSPORT MODES:
+1. WebSocket (Recommended): Connect via WSS to the provided endpoint with header `Authorization: Bearer <TOKEN>` and Cloudflare Access headers if configured. Envelopes are exchanged as individual JSON frames.
+2. Telegram: Long-poll Bot A's getUpdates in the designated group chat.
 
-Protocol — JSON envelopes, v: 1:
-- task_request (in): {"v": 1, "kind": "task_request", "id": "task_<uuid>", "session": "<id>", "task": "<prompt>", "workspace": "<path>", "tools": [...], "system_prompt": "...", "context": [{"role": "user"|"assistant", "content": "..."}]}
-- task_batch (out): {"v": 1, "kind": "task_batch", "id": "batch_<uuid>", "task_id": "task_<uuid>", "calls": [{"id": "c1", "tool": "run_command", "args": {"command": "git status"}}]}
-  Tools available: read, glob, grep, ripgrep_search (safe); run_command, bash (terminal commands; dangerous commands prompt user); write, edit, write_to_file, replace_file_content, apply_patch (destructive file modifications — prompt user).
-- task_result (in): {"v": 1, "kind": "task_result", "id": "batch_<uuid>", "task_id": "task_<uuid>", "results": [{"id": "c1", "ok": true, "output": "<string>"}]}
-- task_done (out): {"v": 1, "kind": "task_done", "task_id": "task_<uuid>", "summary": "<final markdown summary>"}
-- chat (either): {"v": 1, "kind": "chat", "task_id": "task_<uuid>", "text": "<non-tool progress note>"}
-- session_reset (in): {"v": 1, "kind": "session_reset", "session": "<id>", "message": "<reason>", "system_prompt": "..."}
-- task_cancel (in): {"v": 1, "kind": "task_cancel", "task_id": "task_<uuid>", "reason": "<string>"}
+PROTOCOL SPECIFICATION (v: 1):
+- task_request (in):
+  {"v": 1, "kind": "task_request", "id": "task_<id>", "session": "<id>", "task": "<prompt>", "workspace": "<path>", "workspaces": ["<path1>", "<path2>"], "tools": [...], "system_prompt": "...", "context": [...]}
+- task_batch (out):
+  {"v": 1, "kind": "task_batch", "id": "batch_<id>", "task_id": "task_<id>", "workspace": "<optional_target_project>", "calls": [{"id": "c1", "tool": "run_command", "args": {"command": "npm test"}}]}
+- task_result (in):
+  {"v": 1, "kind": "task_result", "id": "batch_<id>", "task_id": "task_<id>", "results": [{"id": "c1", "ok": true, "output": "<string>"}]}
+- task_done (out):
+  {"v": 1, "kind": "task_done", "task_id": "task_<id>", "summary": "<formatted summary>"}
+- chat (bidirectional):
+  {"v": 1, "kind": "chat", "task_id": "task_<id>", "text": "<progress update>"}
+- session_reset (in):
+  {"v": 1, "kind": "session_reset", "session": "<id>", "message": "<reason>"}
+- task_cancel (in):
+  {"v": 1, "kind": "task_cancel", "task_id": "task_<id>", "reason": "<reason>"}
 
-Rules:
-1. Process only messages where chat.id == <GROUP_ID> AND from.id == <BOT_B_ID>; ignore everything else.
-2. Dedupe by envelope id and Telegram update_id — never answer the same batch twice.
-3. ALWAYS send responses as Telegram replies to Bot B (use reply_parameters or reply_to_message_id) so Telegram routes messages even if Group Privacy Mode is enabled.
-4. Loop: task_request -> reason -> task_batch -> wait task_result -> repeat -> task_done. Max 50 batches / 30 min per task.
-5. Telegram message text limit is 4096 chars — split larger envelopes as: MUSEBUS <envelope_id> <n>/<N>\n<chunk>.
-6. Prefer read-only batches first (explore before modifying). In task_done, format summary with clear newlines (\n), structured bullet points (-), and numbered items (1., 2.) so it is readable and well-spaced in the terminal.
-7. Session Memory & Context: Multi-turn tasks maintain the same "session" identifier. Previous conversation turns are provided in "context". When a "session_reset" envelope arrives or a new session begins, wipe previous working memory and start fresh.
-8. Task Cancellation: When a "task_cancel" envelope arrives for a task, immediately cease all work and planning on that task. Do not send further tool batches for it.
+MULTI-PROJECT COORDINATION:
+When multiple projects are monitored (listed in "workspaces"), you can direct actions to a specific project by adding "workspace" or "project" (directory name or path) to your task_batch envelope. Superagent will automatically route execution to that directory.
+
+SECURITY & REPLAY DEFENSE:
+For WebSocket transport, include "ts": <current_timestamp_ms> and "nonce": "<unique_string>" in outgoing frames to satisfy replay validation.
+
+RULES & WORKFLOW:
+1. Always explore before modifying: use read, glob, and ripgrep_search before destructive tools.
+2. Available tools: read, glob, grep, ripgrep_search, run_command, bash, write, edit, replace_file_content, apply_patch.
+3. Keep summaries clear and structured with newlines and bullet points.
 ```
 
 ---
 
-## 6. Protocol Reference
+## 8. Protocol Envelope Reference
 
 | `kind` | Direction | Description |
 |---|---|---|
-| `task_request` | Superagent -> Muse | Starts a task with goal, workspace, tools, and multi-turn context |
-| `task_batch` | Muse -> Superagent | Dispatches a batch of tool calls to execute on local machine |
-| `task_result` | Superagent -> Muse | Returns batch execution results with outputs or errors |
-| `task_done` | Muse -> Superagent | Marks task completion with final user-facing summary |
-| `chat` | Bidirectional | Out-of-band progress notes or chat text |
-| `session_reset` | Superagent -> Muse | Resets remote assistant working memory when starting a new session |
-| `task_cancel` | Superagent -> Muse | Cancels an ongoing task, ordering remote brain to cease immediately |
-
-### Message Chunking Format
-Any envelope whose JSON representation exceeds ~3800 characters is split into multiple parts using the `MUSEBUS` header:
-
-```text
-MUSEBUS <envelope_id> 1/<total_parts>
-<chunk_data_1>
-```
-
-```text
-MUSEBUS <envelope_id> 2/<total_parts>
-<chunk_data_2>
-```
-
-Superagent's `EnvelopeReassembler` buffers incoming parts and reconstructs the envelope once all parts arrive (incomplete assemblies expire automatically after 5 minutes).
+| `task_request` | Superagent -> Muse | Dispatches user task, available tools, context, and watched workspace list |
+| `task_batch` | Muse -> Superagent | Dispatches batch of tool calls; may specify target `workspace` |
+| `task_result` | Superagent -> Muse | Returns stdout/stderr results and status per tool call |
+| `task_done` | Muse -> Superagent | Concludes the task with a markdown completion summary |
+| `chat` | Bidirectional | Informational status update without tool executions |
+| `session_reset` | Superagent -> Muse | Resets remote assistant memory for a fresh session |
+| `task_cancel` | Superagent -> Muse | Signals immediate cancellation of an active task |
 
 ---
 
-## 7. Troubleshooting
+## 9. Troubleshooting
 
 | Symptom | Cause | Solution |
 |---|---|---|
-| `Remote agent (Muse) is not configured` | Missing one of `botToken`, `groupId`, or `museBotId` | Set all three values using `/muse config <key> <val>` |
-| `Failed to send task request` | Bot B token is invalid or Bot B was removed from the group | Check members list in Telegram and verify token via `/muse status` |
-| `task_request` sent but no response | Bot-to-Bot Communication Mode is disabled on Bot A or Bot B | Enable mode in @BotFather Mini App (step 3.2) |
-| Muse sends batch but Superagent doesn't respond | Group Privacy Mode is enabled on Bot B, blocking standalone messages | In @BotFather: `/setprivacy` -> Bot B -> `Disable`, or have Muse reply directly to Bot B's message |
-| Group ID rejected or messages not arriving | Missing negative sign on group ID | Telegram group IDs must be negative (e.g. `-100...`) |
-| Bot ID mixed up with Group ID | Group ID is negative; bot user ID is positive | Swap the values in `/muse config` |
-| Telegram 409 Conflict | Another process is polling the same bot token | Ensure only one Superagent instance polls Bot B |
-
----
-
-## 8. Security & Guardrails
-
-1. **Token Protection**: Bot tokens are saved locally in `~/.superagent-r/remote-agent.json` and automatically masked in all UI and CLI outputs. Config files are gitignored.
-2. **Permission Prompts**: Destructive file operations (`write`, `edit`, `apply_patch`, terminal commands) require interactive user approval. They are never auto-approved.
-3. **Sender Authorization**: Superagent only executes batches from the configured `museBotId` inside the configured `groupId`. All other messages are discarded.
-4. **Loop Protection**: Tasks automatically abort after 50 batches or 30 minutes to prevent infinite loops.
-5. **No Token Collision**: Bot A and Bot B must use separate tokens so long-polling connections do not conflict.
+| `WebSocket upgrade rejected by CF Access` | Invalid or missing Cloudflare Access credentials | Check `cfAccessClientId` and `cfAccessClientSecret` in `/muse config` |
+| `WebSocket upgrade rejected: invalid bearer token` | Bearer token mismatch between Muse and Superagent | Verify `wsToken` matches the token Muse provides in `Authorization: Bearer <token>` |
+| `Connection closed with code 4401` | Handshake timeout (5 seconds exceeded without auth) | Ensure Muse sends auth immediately upon opening WebSocket |
+| `Connection closed with code 4409` | Another WebSocket session is already connected | Ensure only one client instance connects to Superagent at a time |
+| `Replay attack detected: duplicate nonce` | The same nonce was sent in multiple envelopes | Ensure Muse generates a fresh UUID/nonce per frame |
+| `Timestamp drift exceeded` | Workstation or Muse system clock is out of sync | Synchronize workstation clock via NTP (must be within $\pm 60$s) |
+| `Remote agent (Muse) is not configured` | Missing credentials for active transport | Run `/muse tunnel` or check configuration using `/muse status` |
+| Telegram 409 Conflict | Multiple pollers running on the same Bot token | Terminate competing instances or switch to `--ws` |
