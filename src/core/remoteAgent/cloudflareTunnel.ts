@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from "child_process";
+import { spawn, execSync, ChildProcess } from "child_process";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -199,6 +199,24 @@ export class CloudflareTunnelManager {
 
       this.currentProcess = child;
 
+      const exitHandler = () => {
+        try {
+          if (child && child.pid && !child.killed) {
+            if (process.platform === "win32") {
+              try {
+                execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: "ignore" });
+              } catch {
+                child.kill();
+              }
+            } else {
+              child.kill("SIGTERM");
+            }
+          }
+        } catch {}
+      };
+
+      process.once("exit", exitHandler);
+
       const timeoutTimer = setTimeout(() => {
         if (!isResolved) {
           isResolved = true;
@@ -260,6 +278,7 @@ export class CloudflareTunnelManager {
       });
 
       child.on("close", (code) => {
+        process.removeListener("exit", exitHandler);
         clearTunnelState();
         this.currentProcess = null;
         this.currentMetadata = null;
@@ -280,7 +299,19 @@ export class CloudflareTunnelManager {
 
     if (this.currentProcess) {
       try {
-        this.currentProcess.kill("SIGTERM");
+        if (this.currentProcess.pid) {
+          if (process.platform === "win32") {
+            try {
+              execSync(`taskkill /pid ${this.currentProcess.pid} /T /F`, { stdio: "ignore" });
+            } catch {
+              this.currentProcess.kill("SIGTERM");
+            }
+          } else {
+            this.currentProcess.kill("SIGTERM");
+          }
+        } else {
+          this.currentProcess.kill("SIGTERM");
+        }
         stopped = true;
       } catch {}
       this.currentProcess = null;

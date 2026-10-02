@@ -1,3 +1,11 @@
+## [1.5.124] - 2026-10-03
+
+### Fixed
+
+- **Automated Tunnel Process Cleanup on Exit, Ctrl+C, and Unexpected Crash**:
+  - Attached synchronous `process.once("exit")` cleanup hook to `CloudflareTunnelManager` ensuring `cloudflared` process tree is forcefully terminated (`taskkill /pid /T /F` on Windows, `SIGTERM` on POSIX) whenever Superagent exits, is interrupted by `Ctrl+C` (`SIGINT`), or encounters an unhandled exception / fatal crash.
+  - Enhanced in-memory process killing in `stopQuickTunnel()` to terminate whole process trees on Windows, preventing orphaned `cloudflared.exe` background processes.
+
 ## [1.5.123] - 2026-10-03
 
 ### Fixed
