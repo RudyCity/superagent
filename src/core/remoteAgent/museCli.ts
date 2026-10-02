@@ -35,8 +35,11 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       const host = cfg.wsHost || "127.0.0.1";
       const port = cfg.wsPort || 9225;
       const wsPath = cfg.wsPath || "/muse";
+      const { getTunnelStatus } = await import("./cloudflareTunnel.js");
+      const tunnel = getTunnelStatus();
       console.log(`  WS Mode         : ${(cfg.wsMode || "server").toUpperCase()}`);
       console.log(`  WS Endpoint     : ws://${host}:${port}${wsPath}`);
+      console.log(`  Quick Tunnel    : ${tunnel.isRunning ? `ACTIVE (${tunnel.wssUrl}, PID: ${tunnel.pid})` : "INACTIVE (run: superagent muse tunnel start)"}`);
       console.log(`  Bearer Token    : ${maskSecret(cfg.wsToken)}`);
       console.log(`  CF-Access ID    : ${cfg.cfAccessClientId || "(disabled)"}`);
       if (cfg.wsMode === "client") {
@@ -57,10 +60,14 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     console.log("");
     console.log("Commands & Configuration:");
     console.log("  superagent muse tunnel           - Cloudflare Tunnel setup guide & config");
+    console.log("  superagent muse tunnel start     - Start quick ephemeral Cloudflare Tunnel");
+    console.log("  superagent muse tunnel stop      - Stop running ephemeral tunnel");
+    console.log("  superagent muse tunnel status    - Check Cloudflare Tunnel process status");
+    console.log("  superagent muse watch --ws       - Watch projects via WebSocket");
+    console.log("  superagent muse watch --tunnel   - Watch projects and expose via Cloudflare Tunnel");
     console.log("  superagent muse config transport websocket|telegram");
     console.log("  superagent muse config wsToken generate");
     console.log("  superagent muse config wsPort 9225");
-    console.log("  superagent muse watch --ws");
     console.log("  superagent muse watch <dir1> <dir2> ...");
     return;
   }

@@ -1,3 +1,13 @@
+## [1.5.121] - 2026-10-03
+
+### Changed
+
+- **Live Quick Tunnel Status and Help Integration**:
+  - Integrated `getTunnelStatus()` directly into `/muse status` and `superagent muse status`, showing real-time tunnel state (`ACTIVE: <wssUrl> (PID: <pid>)` vs `INACTIVE (run /muse tunnel start)`).
+  - Updated usage commands across `/muse status`, `/muse help`, and `superagent muse status` to document `tunnel [start|stop|status]` and `watch --tunnel`.
+  - Added `/muse` and `/muse tunnel` documentation to the primary `/help` command list in `src/core/commands/coreCommands.ts`.
+  - Added integration tests in `tests/cloudflareTunnel.test.ts` verifying quick tunnel status reporting across both CLI and interactive slash command modes.
+
 ## [1.5.120] - 2026-10-03
 
 ### Added

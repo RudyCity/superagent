@@ -59,10 +59,14 @@ export const museCommand: SlashCommand = {
       const transport = cfg.transport || "telegram";
       const isConfiguredEffective = transport === "websocket" ? isMuseWsActive() : isConfigured;
 
+      const { getTunnelStatus } = await import("../remoteAgent/cloudflareTunnel.js");
+      const tunnelStatus = getTunnelStatus();
+
       const transportLines = transport === "websocket"
         ? [
             `- Transport       : WEBSOCKET (${(cfg.wsMode || "server").toUpperCase()})`,
             `- WS Endpoint     : ws://${cfg.wsHost || "127.0.0.1"}:${cfg.wsPort || 9225}${cfg.wsPath || "/muse"}`,
+            `- Quick Tunnel    : ${tunnelStatus.isRunning ? `ACTIVE (${tunnelStatus.wssUrl}, PID: ${tunnelStatus.pid})` : "INACTIVE (run /muse tunnel start)"}`,
             `- Bearer Token    : ${maskSecret(cfg.wsToken)}`,
             `- CF-Access ID    : ${cfg.cfAccessClientId || "(disabled)"}`,
           ]
@@ -89,8 +93,12 @@ export const museCommand: SlashCommand = {
         "  /muse <task>                 - Run a task with remote Muse brain",
         "  /muse status                 - View remote agent status",
         "  /muse tunnel                 - Cloudflare Tunnel setup guide & config",
+        "  /muse tunnel start           - Start quick ephemeral Cloudflare Tunnel",
+        "  /muse tunnel stop            - Stop active Cloudflare Tunnel",
+        "  /muse tunnel status          - Check Cloudflare Tunnel process status",
         "  /muse watch [dir1] [dir2]    - Watch one or multiple project workspaces",
         "  /muse watch --ws             - Watch projects using secure WebSocket transport",
+        "  /muse watch --tunnel         - Watch projects and expose via Cloudflare Tunnel",
         "  /muse watch add <dir>        - Add project to active watch session",
         "  /muse watch remove <dir>     - Remove project from active watch session",
         "  /muse stop                   - Cancel active remote task and notify Muse",

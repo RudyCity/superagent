@@ -167,4 +167,53 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(descriptions["/muse watch --tunnel"]).toBeDefined();
     });
   });
+
+  describe("Integration: /muse status and /help reporting", () => {
+    it("should include quick tunnel status in /muse status output", async () => {
+      const { updateRemoteAgentConfig } = await import("../src/core/remoteAgent/config.js");
+      updateRemoteAgentConfig({ transport: "websocket" });
+
+      const lines: any[] = [];
+      await museCommand.execute("status", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(lines.length).toBeGreaterThan(0);
+      const text = lines[0].content;
+      expect(text).toContain("Quick Tunnel");
+      expect(text).toContain("/muse tunnel start");
+    });
+
+    it("should include quick tunnel status in superagent muse status output", async () => {
+      const { updateRemoteAgentConfig } = await import("../src/core/remoteAgent/config.js");
+      updateRemoteAgentConfig({ transport: "websocket" });
+
+      const logs: string[] = [];
+      const spy = vi.spyOn(console, "log").mockImplementation((msg) => {
+        logs.push(String(msg));
+      });
+
+      await handleMuseCliCommand(["status"]);
+      expect(logs.some((l) => l.includes("Quick Tunnel"))).toBe(true);
+      expect(logs.some((l) => l.includes("superagent muse tunnel start"))).toBe(true);
+
+      spy.mockRestore();
+    });
+
+    it("should list /muse in main /help output", async () => {
+      const { helpCommand } = await import("../src/core/commands/coreCommands.js");
+      const lines: any[] = [];
+      await helpCommand.execute("", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(lines.length).toBeGreaterThan(0);
+      const helpText = String(lines[0].content);
+      expect(helpText).toContain("/muse");
+      expect(helpText).toContain("/muse tunnel");
+      expect(helpText).toContain("/muse watch");
+    });
+  });
 });
