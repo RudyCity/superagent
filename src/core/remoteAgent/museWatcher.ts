@@ -44,6 +44,8 @@ export interface MuseWatcherStats {
   queuedBatches?: number;
   transport?: string;
   transportDetails?: string;
+  tunnel?: boolean;
+  tunnelUrl?: string;
 }
 
 export interface MuseWatcherOptions {
@@ -53,6 +55,7 @@ export interface MuseWatcherOptions {
   customConfigPath?: string;
   announce?: boolean;
   autoApproveWorkspace?: boolean;
+  tunnel?: boolean;
   transport?: RemoteTransport;
   transportType?: RemoteAgentTransport;
   onProgress?: (message: string) => void;
@@ -105,6 +108,8 @@ export class MuseWatcher {
   private isProcessingQueue = false;
   private workspaces: string[] = [];
   private transport!: RemoteTransport;
+  private quickTunnelStarted = false;
+  private tunnelMetadata: { publicUrl: string; wssUrl: string; localUrl: string; pid: number } | null = null;
 
   constructor(options: MuseWatcherOptions = {}) {
     this.options = options;
@@ -247,6 +252,8 @@ export class MuseWatcher {
       queuedBatches: this.batchQueue.length,
       transport: transportInfo?.type,
       transportDetails: transportInfo?.details,
+      tunnel: Boolean(this.quickTunnelStarted),
+      tunnelUrl: this.tunnelMetadata?.wssUrl,
     };
   }
 
@@ -303,6 +310,31 @@ export class MuseWatcher {
       "system",
       `[Muse Watch] Superagent is now controlled by Muse.\n${wsInfoStr}\n- Transport: ${transportInfo.details}\n- Listening for incoming tool batches from Muse...`
     );
+
+    if (this.options.tunnel && this.transport.type === "websocket") {
+      try {
+        this.emitLine("system", "[Cloudflare Tunnel] Launching quick ephemeral tunnel...");
+        const { startQuickTunnel } = await import("./cloudflareTunnel.js");
+        const tunnelMeta = await startQuickTunnel({
+          port: this.config.wsPort,
+          host: this.config.wsHost,
+          path: this.config.wsPath,
+          customConfigPath: this.options.customConfigPath,
+          onLog: (msg) => this.options.onLog?.(`[Tunnel] ${msg.trim()}`),
+        });
+        this.quickTunnelStarted = true;
+        this.tunnelMetadata = tunnelMeta;
+        this.emitLine(
+          "system",
+          `[Cloudflare Tunnel] Quick tunnel online!\n- Public WSS URL : ${tunnelMeta.wssUrl}\n- Bearer Token   : ${this.config.wsToken}\n- Local Target   : ${tunnelMeta.localUrl}`
+        );
+      } catch (err: any) {
+        this.emitLine(
+          "system",
+          `[Cloudflare Tunnel] Warning: Failed to establish quick tunnel: ${err?.message}`
+        );
+      }
+    }
 
     const abortSignal = this.abortController.signal;
 
@@ -372,6 +404,15 @@ export class MuseWatcher {
       try {
         await this.transport.stop();
       } catch {}
+    }
+
+    if (this.quickTunnelStarted) {
+      try {
+        const { stopQuickTunnel } = await import("./cloudflareTunnel.js");
+        await stopQuickTunnel();
+      } catch {}
+      this.quickTunnelStarted = false;
+      this.tunnelMetadata = null;
     }
 
     this.options.onStatusChange?.(false);

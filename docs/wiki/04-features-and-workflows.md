@@ -194,3 +194,8 @@ sequenceDiagram
   - Server push: `token_refresh` $\rightarrow$ Client acknowledgment: `token_ack`.
 - **Management Commands**: `/muse config wsToken refresh`, `/muse config wsToken rotate`, `/muse config tokenTtl <sec>`, `/muse config autoTokenRefresh <on|off>`.
 
+### Automatic Quick Ephemeral Tunnel
+- **Native Tunnel Subcommands**: Automatically spawns and monitors `cloudflared` quick tunnels without manual shell commands via `/muse tunnel start`, `/muse tunnel stop`, and `/muse tunnel status` (CLI: `superagent muse tunnel start|stop|status`).
+- **One-Command Watch Daemon**: Supports `--tunnel` flag in watch mode (`/muse watch --tunnel` and `superagent muse watch --tunnel`) to initialize both the WebSocket listener and Cloudflare quick tunnel in a single unified command, capturing public `https://*.trycloudflare.com` URLs automatically.
+
+

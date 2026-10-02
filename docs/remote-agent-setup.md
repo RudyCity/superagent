@@ -110,18 +110,50 @@ superagent muse config cfAccessClientSecret <YOUR_CF_CLIENT_SECRET>
 
 ### 3.2 Quick Ephemeral Tunnel (Development / Testing)
 
-For rapid testing without owning a domain:
+For rapid development and testing without owning a custom domain, Superagent provides built-in subcommands to launch, inspect, and stop quick ephemeral Cloudflare tunnels automatically without manual shell commands:
 
-1. Install `cloudflared`:
-   - Windows: `winget install Cloudflare.cloudflared`
+1. **Prerequisite**: Install `cloudflared`:
+   - Windows: `winget install Cloudflare.cloudflared` (or `choco install cloudflared`)
    - macOS: `brew install cloudflared`
    - Linux: `sudo apt install cloudflared`
-2. Start the ephemeral tunnel:
+
+2. **Trigger via Dedicated Subcommands**:
    ```bash
-   cloudflared tunnel --url http://127.0.0.1:9225
+   # Launch quick ephemeral tunnel in the foreground
+   superagent muse tunnel start
+
+   # Or launch in the background
+   superagent muse tunnel start --detach
+
+   # Check active tunnel status, public URL, and PID
+   superagent muse tunnel status
+
+   # Stop active ephemeral tunnel
+   superagent muse tunnel stop
    ```
-3. Cloudflare outputs a public URL: `https://<random-subdomain>.trycloudflare.com`.
-4. Point Muse to: `wss://<random-subdomain>.trycloudflare.com/muse` using your generated Bearer token.
+
+   Inside the interactive terminal:
+   ```bash
+   # Start tunnel in the background
+   /muse tunnel start
+
+   # Check status and copy connection credentials
+   /muse tunnel status
+
+   # Stop tunnel
+   /muse tunnel stop
+   ```
+
+3. **One-Command Watch + Quick Tunnel (`--tunnel`)**:
+   Launch both the WebSocket daemon AND the Cloudflare quick tunnel together in a single command:
+   ```bash
+   # CLI
+   superagent muse watch --tunnel
+
+   # Interactive terminal
+   /muse watch --tunnel
+   ```
+   Superagent automatically launches `cloudflared`, discovers the public `https://*.trycloudflare.com` URL within seconds, renders the copyable WSS endpoint and Bearer token, and terminates the tunnel cleanly when watch mode stops.
 
 ### 3.3 Production Named Tunnel (Recommended)
 

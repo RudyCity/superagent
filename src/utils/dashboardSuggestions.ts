@@ -53,7 +53,11 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
   "/muse": "Coordinate with remote AI agent (Muse) over WebSocket (Cloudflare Tunnel) or Telegram bus",
   "/muse status": "Show remote agent configuration, runner mode, and connection status",
-  "/muse tunnel": "Cloudflare Tunnel setup guide, quick test commands, and Bearer token generator",
+  "/muse tunnel": "Cloudflare Tunnel subcommands (start, stop, status) & setup guide",
+  "/muse tunnel start": "Start quick ephemeral Cloudflare development tunnel for Muse",
+  "/muse tunnel stop": "Stop running quick ephemeral Cloudflare development tunnel",
+  "/muse tunnel status": "Check active Cloudflare quick development tunnel status",
+  "/muse tunnel guide": "View manual Cloudflare Tunnel setup guide",
   "/muse cloudflare": "Cloudflare Tunnel setup guide, quick test commands, and Bearer token generator",
   "/muse watch": "Start persistent watch mode where Superagent is controlled by Muse",
   "/muse watch start": "Start persistent watch mode where Superagent is controlled by Muse",
@@ -62,6 +66,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/muse watch add": "Add a project directory to watched workspaces at runtime",
   "/muse watch remove": "Remove a project directory from watched workspaces at runtime",
   "/muse watch --ws": "Start persistent watch mode using WebSocket transport (Cloudflare Tunnel)",
+  "/muse watch --tunnel": "Start watch daemon over WebSocket with automatic Cloudflare quick tunnel",
   "/muse watch --telegram": "Start persistent watch mode using Telegram group transport",
   "/muse unwatch": "Stop persistent watch mode and return to manual execution",
   "/muse stop": "Cancel active remote task and send cancellation notice to Muse",
@@ -471,6 +476,16 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         return filterSuggestions(configPossibilities, query);
       }
 
+      if (sub === "tunnel" || sub === "cloudflare") {
+        const tunnelPossibilities = [
+          "/muse tunnel start",
+          "/muse tunnel stop",
+          "/muse tunnel status",
+          "/muse tunnel guide",
+        ];
+        return filterSuggestions(tunnelPossibilities, query);
+      }
+
       if (sub === "watch") {
         const watchPossibilities = [
           "/muse watch start",
@@ -479,6 +494,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
           "/muse watch add",
           "/muse watch remove",
           "/muse watch --ws",
+          "/muse watch --tunnel",
           "/muse watch --telegram",
         ];
         return filterSuggestions(watchPossibilities, query);
@@ -487,6 +503,10 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       const possibilities = [
         "/muse status",
         "/muse tunnel",
+        "/muse tunnel start",
+        "/muse tunnel stop",
+        "/muse tunnel status",
+        "/muse tunnel guide",
         "/muse cloudflare",
         "/muse watch",
         "/muse watch start",
@@ -495,6 +515,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         "/muse watch add",
         "/muse watch remove",
         "/muse watch --ws",
+        "/muse watch --tunnel",
         "/muse watch --telegram",
         "/muse unwatch",
         "/muse stop",

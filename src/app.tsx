@@ -1664,6 +1664,16 @@ export function App({
           return filterSuggestions(configPossibilities, currentInput);
         }
 
+        if (sub === "tunnel" || sub === "cloudflare") {
+          const tunnelPossibilities = [
+            "/muse tunnel start",
+            "/muse tunnel stop",
+            "/muse tunnel status",
+            "/muse tunnel guide",
+          ];
+          return filterSuggestions(tunnelPossibilities, currentInput);
+        }
+
         if (sub === "watch") {
           const watchPossibilities = [
             "/muse watch start",
@@ -1672,6 +1682,7 @@ export function App({
             "/muse watch add",
             "/muse watch remove",
             "/muse watch --ws",
+            "/muse watch --tunnel",
             "/muse watch --telegram",
           ];
           return filterSuggestions(watchPossibilities, currentInput);
@@ -1680,6 +1691,10 @@ export function App({
         const possibilities = [
           "/muse status",
           "/muse tunnel",
+          "/muse tunnel start",
+          "/muse tunnel stop",
+          "/muse tunnel status",
+          "/muse tunnel guide",
           "/muse cloudflare",
           "/muse watch",
           "/muse watch start",
@@ -1688,6 +1703,7 @@ export function App({
           "/muse watch add",
           "/muse watch remove",
           "/muse watch --ws",
+          "/muse watch --tunnel",
           "/muse watch --telegram",
           "/muse unwatch",
           "/muse stop",

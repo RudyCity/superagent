@@ -1,3 +1,19 @@
+## [1.5.120] - 2026-10-03
+
+### Added
+
+- **Native Subcommands and Auto-Orchestration for Cloudflare Quick Ephemeral Tunnels**:
+  - Implemented `CloudflareTunnelManager` in `src/core/remoteAgent/cloudflareTunnel.ts` with automated binary discovery across PATH, Chocolatey, WinGet, Scoop, and system directories.
+  - Added dedicated CLI subcommands in `superagent muse tunnel`:
+    - `superagent muse tunnel start`: Launches a quick ephemeral tunnel targeting the configured local WebSocket port with real-time log scanning and public `trycloudflare.com` URL discovery.
+    - `superagent muse tunnel start --detach`: Runs the quick tunnel in the background and saves metadata to `~/.superagent-r/tunnel.json`.
+    - `superagent muse tunnel stop`: Gracefully terminates active foreground or background quick tunnels.
+    - `superagent muse tunnel status`: Displays active tunnel status, process PID, public WSS endpoint, local target, and uptime.
+  - Added interactive terminal subcommands: `/muse tunnel start`, `/muse tunnel stop`, `/muse tunnel status`, and `/muse tunnel guide`.
+  - Added `--tunnel` flag to `/muse watch` and `superagent muse watch` (`superagent muse watch --tunnel`), launching both the WebSocket daemon and the Cloudflare quick tunnel in a single unified command and shutting down the tunnel automatically on exit.
+  - Added full autocomplete suggestions and descriptions in `src/utils/dashboardSuggestions.ts` and `src/app.tsx`.
+  - Added comprehensive unit and integration test suite in `tests/cloudflareTunnel.test.ts`.
+
 ## [1.5.119] - 2026-10-03
 
 ### Added

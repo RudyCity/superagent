@@ -106,6 +106,7 @@ export const museCommand: SlashCommand = {
 
     // /muse tunnel or /muse cloudflare
     if (subcommand === "tunnel" || subcommand === "cloudflare") {
+      const action = (parts[1] || "").toLowerCase();
       const cfg = loadRemoteAgentConfig();
       const host = cfg.wsHost || "127.0.0.1";
       const port = cfg.wsPort || 9225;
@@ -122,10 +123,134 @@ export const museCommand: SlashCommand = {
         });
       }
 
+      const { startQuickTunnel, stopQuickTunnel, getTunnelStatus } = await import(
+        "../remoteAgent/cloudflareTunnel.js"
+      );
+
+      if (action === "start" || action === "quick" || action === "run") {
+        const existing = getTunnelStatus();
+        if (existing.isRunning) {
+          ctx.addLine({
+            type: "system",
+            content: [
+              "[Cloudflare Tunnel] Quick tunnel is ALREADY ACTIVE:",
+              `- Public URL   : ${existing.publicUrl}`,
+              `- WSS Endpoint : ${existing.wssUrl}`,
+              `- Local Target : ${existing.localUrl}`,
+              `- Process PID  : ${existing.pid}`,
+              `- Uptime       : ${existing.uptimeSeconds}s`,
+              `- Bearer Token : ${token}`,
+              "",
+              "To stop the tunnel, run: /muse tunnel stop",
+            ].join("\n"),
+            timestamp: now,
+          });
+          return;
+        }
+
+        ctx.addLine({
+          type: "system",
+          content: "[Cloudflare Tunnel] Spawning quick ephemeral development tunnel via cloudflared...",
+          timestamp: now,
+        });
+
+        try {
+          const meta = await startQuickTunnel({
+            port,
+            host,
+            path: pathEndpoint,
+          });
+
+          ctx.addLine({
+            type: "system",
+            content: [
+              "═════════════════════════════════════════════════════════════════════════════",
+              "  Cloudflare Quick Ephemeral Tunnel Online!",
+              "═════════════════════════════════════════════════════════════════════════════",
+              `- Public URL   : ${meta.publicUrl}`,
+              `- WSS Endpoint : ${meta.wssUrl}`,
+              `- Local Target : ${meta.localUrl}`,
+              `- Process PID  : ${meta.pid}`,
+              `- Bearer Token : ${token}`,
+              "═════════════════════════════════════════════════════════════════════════════",
+              "",
+              "Send the WSS Endpoint and Bearer Token to Muse to establish real-time connection.",
+              "Run '/muse tunnel stop' to terminate the tunnel at any time.",
+            ].join("\n"),
+            timestamp: Date.now(),
+          });
+        } catch (err: any) {
+          ctx.addLine({
+            type: "error",
+            content: `[Cloudflare Tunnel] Error: ${err?.message}`,
+            timestamp: Date.now(),
+          });
+        }
+        return;
+      }
+
+      if (action === "stop") {
+        const existing = getTunnelStatus();
+        if (!existing.isRunning) {
+          ctx.addLine({
+            type: "system",
+            content: "[Cloudflare Tunnel] No quick tunnel is currently running.",
+            timestamp: now,
+          });
+          return;
+        }
+        await stopQuickTunnel();
+        ctx.addLine({
+          type: "system",
+          content: "[Cloudflare Tunnel] Quick tunnel stopped successfully.",
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      if (action === "status") {
+        const existing = getTunnelStatus();
+        if (existing.isRunning) {
+          ctx.addLine({
+            type: "system",
+            content: [
+              "Cloudflare Quick Tunnel Status: ACTIVE",
+              `- Public URL   : ${existing.publicUrl}`,
+              `- WSS Endpoint : ${existing.wssUrl}`,
+              `- Local Target : ${existing.localUrl}`,
+              `- Process PID  : ${existing.pid}`,
+              `- Uptime       : ${existing.uptimeSeconds}s`,
+              `- Bearer Token : ${token ? maskSecret(token) : "(none)"}`,
+              "",
+              "To stop it, run: /muse tunnel stop",
+            ].join("\n"),
+            timestamp: now,
+          });
+        } else {
+          ctx.addLine({
+            type: "system",
+            content: "Cloudflare Quick Tunnel Status: INACTIVE\nRun '/muse tunnel start' to launch a quick development tunnel.",
+            timestamp: now,
+          });
+        }
+        return;
+      }
+
+      const currentStatus = getTunnelStatus();
+      const statusPrefix = currentStatus.isRunning
+        ? `[Cloudflare Tunnel] Quick tunnel is ACTIVE (PID: ${currentStatus.pid}, URL: ${currentStatus.publicUrl})\n\n`
+        : "";
+
       const guide = [
         "═════════════════════════════════════════════════════════════════════════════",
-        "  Cloudflare Tunnel Setup Guide for Muse WebSocket Bridge",
+        "  Cloudflare Tunnel Setup & Ephemeral Subcommands for Muse",
         "═════════════════════════════════════════════════════════════════════════════",
+        "",
+        "Subcommands:",
+        "  /muse tunnel start           - Start quick ephemeral tunnel in background",
+        "  /muse tunnel stop            - Stop running quick tunnel",
+        "  /muse tunnel status          - Check current tunnel status",
+        "  /muse tunnel guide           - View full manual Cloudflare setup guide",
         "",
         "1. Prerequisites:",
         "   Install cloudflared: winget install Cloudflare.cloudflared (or brew install cloudflared)",
@@ -148,12 +273,12 @@ export const museCommand: SlashCommand = {
         "5. Authentication Token:",
         `   Authorization: Bearer ${token}`,
         "",
-        "6. Start Daemon:",
-        "   /muse watch --ws",
+        "6. Start Daemon with Tunnel:",
+        "   /muse watch --tunnel",
         "═════════════════════════════════════════════════════════════════════════════",
       ];
 
-      ctx.addLine({ type: "system", content: guide.join("\n"), timestamp: now });
+      ctx.addLine({ type: "system", content: statusPrefix + guide.join("\n"), timestamp: now });
       return;
     }
 
@@ -560,14 +685,23 @@ export const museCommand: SlashCommand = {
         return;
       }
 
-      // Collect directories and flags: /muse watch [start] [--ws] [dir1] [dir2] ...
+      // Collect directories and flags: /muse watch [start] [--ws] [--tunnel] [dir1] [dir2] ...
       const isWs = parts.some((p) => p === "--ws" || p === "--websocket");
       const isTg = parts.some((p) => p === "--telegram" || p === "--tg");
-      const transportType = isWs ? "websocket" : isTg ? "telegram" : undefined;
+      const isTunnel = parts.some((p) => p === "--tunnel" || p === "--quick-tunnel");
+      const transportType = (isWs || isTunnel) ? "websocket" : isTg ? "telegram" : undefined;
 
       const rawDirs = parts.slice(1).filter((p) => {
         if (p.toLowerCase() === "start") return false;
-        if (p === "--ws" || p === "--websocket" || p === "--telegram" || p === "--tg") return false;
+        if (
+          p === "--ws" ||
+          p === "--websocket" ||
+          p === "--telegram" ||
+          p === "--tg" ||
+          p === "--tunnel" ||
+          p === "--quick-tunnel"
+        )
+          return false;
         return true;
       });
       const targetDirs = rawDirs
@@ -607,6 +741,7 @@ export const museCommand: SlashCommand = {
           workspace: allWatched[0] || ctx.agent?.workingDirectory || process.cwd(),
           workspaces: allWatched,
           transportType,
+          tunnel: isTunnel,
           agent: ctx.agent,
           onProgress: (msg) => {
             ctx.addLine({
