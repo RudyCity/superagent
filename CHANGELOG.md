@@ -1,3 +1,13 @@
+## [1.5.125] - 2026-10-03
+
+### Added
+
+- **Multi-Terminal & Multi-Tunnel Isolation Across Projects**:
+  - Added per-port tunnel state isolation (`tunnel-<port>.json`) in `CloudflareTunnelManager` so multiple independent tunnels can run simultaneously on different ports (e.g. `--port 9225` and `--port 9226`) across different terminal sessions without metadata collisions.
+  - Added `wsPort` forwarding in `MuseWatcherOptions` and `MuseWatcher.start()` to seamlessly launch WebSocket server and Cloudflare Quick Tunnel on custom ports.
+  - Linked current working directory (`process.cwd()`) to `getWatchedWorkspaces` in CLI commands ensuring each terminal tunnel automatically binds to its own project folder.
+  - Added multi-tunnel isolation integration tests in `tests/cloudflareTunnel.test.ts`.
+
 ## [1.5.124] - 2026-10-03
 
 ### Fixed

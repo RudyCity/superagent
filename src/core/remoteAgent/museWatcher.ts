@@ -57,6 +57,7 @@ export interface MuseWatcherOptions {
   announce?: boolean;
   autoApproveWorkspace?: boolean;
   tunnel?: boolean;
+  wsPort?: number;
   transport?: RemoteTransport;
   transportType?: RemoteAgentTransport;
   onProgress?: (message: string) => void;
@@ -131,7 +132,10 @@ export class MuseWatcher {
 
     const effectiveType = this.options.transportType || this.config.transport || "telegram";
     if (effectiveType === "websocket") {
-      const wsTransport = createMuseWsTransport(this.config, this.options.customConfigPath);
+      const effectiveCfg = this.options.wsPort
+        ? { ...this.config, wsPort: this.options.wsPort }
+        : this.config;
+      const wsTransport = createMuseWsTransport(effectiveCfg, this.options.customConfigPath);
       if (wsTransport instanceof MuseWsServerTransport) {
         wsTransport.onConnectionChange = (connected, connId) => {
           if (connected) {
@@ -332,8 +336,9 @@ export class MuseWatcher {
       try {
         this.emitLine("system", "[Cloudflare Tunnel] Launching quick ephemeral tunnel...");
         const { startQuickTunnel } = await import("./cloudflareTunnel.js");
+        const effectivePort = this.options.wsPort || this.config.wsPort;
         const tunnelMeta = await startQuickTunnel({
-          port: this.config.wsPort,
+          port: effectivePort,
           host: this.config.wsHost,
           path: this.config.wsPath,
           customConfigPath: this.options.customConfigPath,
@@ -437,8 +442,9 @@ export class MuseWatcher {
 
     if (this.quickTunnelStarted) {
       try {
+        const effectivePort = this.options.wsPort || this.config.wsPort;
         const { stopQuickTunnel } = await import("./cloudflareTunnel.js");
-        await stopQuickTunnel();
+        await stopQuickTunnel(effectivePort);
       } catch {}
       this.quickTunnelStarted = false;
       this.tunnelMetadata = null;

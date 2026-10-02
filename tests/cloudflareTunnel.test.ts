@@ -298,5 +298,53 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       spy.mockRestore();
       clearTunnelState();
     });
+
+    it("should isolate multiple tunnels on different ports without state collisions", async () => {
+      const {
+        saveTunnelState,
+        readTunnelState,
+        clearTunnelState,
+        getTunnelStatus,
+      } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+
+      const tunnelA = {
+        pid: process.pid,
+        publicUrl: "https://project-a.trycloudflare.com",
+        wssUrl: "wss://project-a.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:9225",
+        port: 9225,
+        startedAt: Date.now(),
+      };
+
+      const tunnelB = {
+        pid: process.pid,
+        publicUrl: "https://project-b.trycloudflare.com",
+        wssUrl: "wss://project-b.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:9226",
+        port: 9226,
+        startedAt: Date.now(),
+      };
+
+      saveTunnelState(tunnelA, 9225);
+      saveTunnelState(tunnelB, 9226);
+
+      const statusA = getTunnelStatus(9225);
+      const statusB = getTunnelStatus(9226);
+
+      expect(statusA.isRunning).toBe(true);
+      expect(statusA.publicUrl).toBe("https://project-a.trycloudflare.com");
+      expect(statusA.port).toBe(9225);
+
+      expect(statusB.isRunning).toBe(true);
+      expect(statusB.publicUrl).toBe("https://project-b.trycloudflare.com");
+      expect(statusB.port).toBe(9226);
+
+      clearTunnelState(9225);
+      expect(getTunnelStatus(9225).isRunning).toBe(false);
+      expect(getTunnelStatus(9226).isRunning).toBe(true);
+
+      clearTunnelState(9226);
+      expect(getTunnelStatus(9226).isRunning).toBe(false);
+    });
   });
 });

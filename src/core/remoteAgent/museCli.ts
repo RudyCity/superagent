@@ -135,7 +135,8 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         }
       }
 
-      const existing = getTunnelStatus();
+      const effectivePort = portOverride || port;
+      const existing = getTunnelStatus(effectivePort);
       if (existing.isRunning) {
         console.log("[Cloudflare Tunnel] Quick tunnel and WebSocket server are already ACTIVE:");
         console.log(`  Public URL        : ${existing.publicUrl}`);
@@ -145,7 +146,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         console.log(`  Uptime            : ${existing.uptimeSeconds}s`);
         console.log(`  Bearer Token      : ${token}`);
 
-        const watched = getWatchedWorkspaces(cfg);
+        const watched = getWatchedWorkspaces(cfg, process.cwd());
         const musePrompt = buildMuseConnectionPrompt({
           wssUrl: existing.wssUrl || "",
           token,
@@ -177,17 +178,18 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
           await stopMuseWatcher();
         }
 
-        const watched = getWatchedWorkspaces(cfg);
+        const watched = getWatchedWorkspaces(cfg, process.cwd());
         const watcher = await startMuseWatcher({
           workspace: watched[0],
           workspaces: watched,
           transportType: "websocket",
           tunnel: true,
+          wsPort: effectivePort,
           onLine: (line) => console.log(line.content),
           onProgress: (msg) => console.log(`[Muse Progress] ${msg}`),
         });
 
-        const meta = getTunnelStatus();
+        const meta = getTunnelStatus(effectivePort);
         const effectiveWss = meta.wssUrl || `wss://${meta.publicUrl?.replace(/^https?:\/\//, "")}${pathEndpoint}`;
 
         console.log("");
@@ -260,14 +262,21 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       const { stopMuseWatcher, isMuseWatcherActive } = await import("./museWatcher.js");
       const { stopQuickTunnel, getTunnelStatus } = await import("./cloudflareTunnel.js");
 
+      const portArgIdx = args.findIndex((a) => a === "--port" || a === "-p");
+      let portOverride: number | undefined;
+      if (portArgIdx !== -1 && args[portArgIdx + 1]) {
+        const parsed = parseInt(args[portArgIdx + 1], 10);
+        if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
+      }
+
       let stoppedAny = false;
       if (isMuseWatcherActive()) {
         await stopMuseWatcher();
         stoppedAny = true;
       }
-      const existing = getTunnelStatus();
+      const existing = getTunnelStatus(portOverride);
       if (existing.isRunning) {
-        await stopQuickTunnel();
+        await stopQuickTunnel(portOverride);
         stoppedAny = true;
       }
 
@@ -280,7 +289,14 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     }
 
     if (action === "status") {
-      const existing = getTunnelStatus();
+      const portArgIdx = args.findIndex((a) => a === "--port" || a === "-p");
+      let portOverride: number | undefined;
+      if (portArgIdx !== -1 && args[portArgIdx + 1]) {
+        const parsed = parseInt(args[portArgIdx + 1], 10);
+        if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
+      }
+
+      const existing = getTunnelStatus(portOverride);
       if (existing.isRunning) {
         console.log("Cloudflare Quick Tunnel Status: ACTIVE");
         console.log(`  Public URL        : ${existing.publicUrl}`);

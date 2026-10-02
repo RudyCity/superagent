@@ -21,6 +21,7 @@ export interface TunnelStatus {
   wssUrl?: string;
   localUrl?: string;
   pid?: number;
+  port?: number;
   startedAt?: number;
   uptimeSeconds?: number;
   error?: string;
@@ -36,36 +37,70 @@ export interface StartTunnelOptions {
   onUrlDetected?: (publicUrl: string, wssUrl: string) => void;
 }
 
-export function getTunnelStateFile(): string {
+export function getTunnelStateFile(port?: number): string {
   const dir = path.join(os.homedir(), ".superagent-r");
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+  if (port) {
+    return path.join(dir, `tunnel-${port}.json`);
+  }
   return path.join(dir, "tunnel.json");
 }
 
-export function saveTunnelState(meta: TunnelMetadata): void {
+export function saveTunnelState(meta: TunnelMetadata, port?: number): void {
   try {
-    fs.writeFileSync(getTunnelStateFile(), JSON.stringify(meta, null, 2), "utf-8");
+    const targetPort = port || meta.port;
+    if (targetPort) {
+      const portFile = getTunnelStateFile(targetPort);
+      fs.writeFileSync(portFile, JSON.stringify(meta, null, 2), "utf-8");
+    }
+    const defaultFile = getTunnelStateFile();
+    fs.writeFileSync(defaultFile, JSON.stringify(meta, null, 2), "utf-8");
   } catch {}
 }
 
-export function readTunnelState(): TunnelMetadata | null {
+export function readTunnelState(port?: number): TunnelMetadata | null {
   try {
+    if (port) {
+      const portFile = getTunnelStateFile(port);
+      if (fs.existsSync(portFile)) {
+        const raw = fs.readFileSync(portFile, "utf-8");
+        return JSON.parse(raw);
+      }
+    }
     const file = getTunnelStateFile();
     if (!fs.existsSync(file)) return null;
     const raw = fs.readFileSync(file, "utf-8");
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (port && parsed?.port && parsed.port !== port) {
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }
 }
 
-export function clearTunnelState(): void {
+export function clearTunnelState(port?: number): void {
   try {
+    if (port) {
+      const portFile = getTunnelStateFile(port);
+      if (fs.existsSync(portFile)) {
+        fs.unlinkSync(portFile);
+      }
+    }
     const file = getTunnelStateFile();
     if (fs.existsSync(file)) {
-      fs.unlinkSync(file);
+      try {
+        const raw = fs.readFileSync(file, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (!port || parsed?.port === port) {
+          fs.unlinkSync(file);
+        }
+      } catch {
+        fs.unlinkSync(file);
+      }
     }
   } catch {}
 }
@@ -158,13 +193,23 @@ export class CloudflareTunnelManager {
    * Scans stderr/stdout for the https://*.trycloudflare.com URL and resolves once ready.
    */
   public async startQuickTunnel(options: StartTunnelOptions = {}): Promise<TunnelMetadata> {
-    // Check if in-process instance is active
-    if (this.currentProcess && this.currentMetadata && isProcessRunning(this.currentMetadata.pid)) {
+    const cfg = loadRemoteAgentConfig(options.customConfigPath);
+    const host = options.host || cfg.wsHost || "127.0.0.1";
+    const port = options.port || cfg.wsPort || 9225;
+    const wsPath = options.path || cfg.wsPath || "/muse";
+
+    // Check if in-process instance is active for this port
+    if (
+      this.currentProcess &&
+      this.currentMetadata &&
+      (!this.currentMetadata.port || this.currentMetadata.port === port) &&
+      isProcessRunning(this.currentMetadata.pid)
+    ) {
       return this.currentMetadata;
     }
 
-    // Check if an external detached instance is active
-    const persisted = readTunnelState();
+    // Check if an external detached instance is active for this port
+    const persisted = readTunnelState(port);
     if (persisted && isProcessRunning(persisted.pid)) {
       this.currentMetadata = persisted;
       return persisted;
@@ -179,11 +224,6 @@ export class CloudflareTunnelManager {
           "  Linux  : sudo apt install cloudflared"
       );
     }
-
-    const cfg = loadRemoteAgentConfig(options.customConfigPath);
-    const host = options.host || cfg.wsHost || "127.0.0.1";
-    const port = options.port || cfg.wsPort || 9225;
-    const wsPath = options.path || cfg.wsPath || "/muse";
     const localTarget = `http://${host}:${port}`;
     const timeoutMs = options.timeoutMs || 30000;
 
@@ -294,30 +334,32 @@ export class CloudflareTunnelManager {
   /**
    * Stops the active quick Cloudflare tunnel if running.
    */
-  public async stopQuickTunnel(): Promise<boolean> {
+  public async stopQuickTunnel(port?: number): Promise<boolean> {
     let stopped = false;
 
     if (this.currentProcess) {
-      try {
-        if (this.currentProcess.pid) {
-          if (process.platform === "win32") {
-            try {
-              execSync(`taskkill /pid ${this.currentProcess.pid} /T /F`, { stdio: "ignore" });
-            } catch {
+      if (!port || this.currentMetadata?.port === port) {
+        try {
+          if (this.currentProcess.pid) {
+            if (process.platform === "win32") {
+              try {
+                execSync(`taskkill /pid ${this.currentProcess.pid} /T /F`, { stdio: "ignore" });
+              } catch {
+                this.currentProcess.kill("SIGTERM");
+              }
+            } else {
               this.currentProcess.kill("SIGTERM");
             }
           } else {
             this.currentProcess.kill("SIGTERM");
           }
-        } else {
-          this.currentProcess.kill("SIGTERM");
-        }
-        stopped = true;
-      } catch {}
-      this.currentProcess = null;
+          stopped = true;
+        } catch {}
+        this.currentProcess = null;
+      }
     }
 
-    const persisted = readTunnelState();
+    const persisted = readTunnelState(port);
     if (persisted && persisted.pid) {
       try {
         if (isProcessRunning(persisted.pid)) {
@@ -333,26 +375,31 @@ export class CloudflareTunnelManager {
           stopped = true;
         }
       } catch {}
-      clearTunnelState();
+      clearTunnelState(persisted.port || port);
     }
 
-    this.currentMetadata = null;
-    logE2E("REMOTE-AGENT", "Cloudflare quick tunnel stopped.");
+    if (!port || this.currentMetadata?.port === port) {
+      this.currentMetadata = null;
+    }
+    logE2E("REMOTE-AGENT", `Cloudflare quick tunnel stopped${port ? ` (port ${port})` : ""}.`);
     return stopped;
   }
 
   /**
    * Retrieves the current status of the quick tunnel.
    */
-  public getStatus(): TunnelStatus {
-    const meta = this.currentMetadata || readTunnelState();
+  public getStatus(port?: number): TunnelStatus {
+    const meta =
+      this.currentMetadata && (!port || this.currentMetadata.port === port)
+        ? this.currentMetadata
+        : readTunnelState(port);
     if (!meta || !meta.pid) {
       return { isRunning: false };
     }
 
     const alive = isProcessRunning(meta.pid);
     if (!alive) {
-      clearTunnelState();
+      clearTunnelState(meta.port || port);
       return { isRunning: false };
     }
 
@@ -363,6 +410,7 @@ export class CloudflareTunnelManager {
       publicUrl: meta.publicUrl,
       wssUrl: meta.wssUrl,
       localUrl: meta.localUrl,
+      port: meta.port,
       startedAt: meta.startedAt,
       uptimeSeconds: uptime,
     };
@@ -375,13 +423,14 @@ export async function startQuickTunnel(options?: StartTunnelOptions): Promise<Tu
   return cloudflareTunnel.startQuickTunnel(options);
 }
 
-export async function stopQuickTunnel(): Promise<boolean> {
-  return cloudflareTunnel.stopQuickTunnel();
+export async function stopQuickTunnel(port?: number): Promise<boolean> {
+  return cloudflareTunnel.stopQuickTunnel(port);
 }
 
-export function getTunnelStatus(): TunnelStatus {
-  return cloudflareTunnel.getStatus();
+export function getTunnelStatus(port?: number): TunnelStatus {
+  return cloudflareTunnel.getStatus(port);
 }
+
 
 export interface BuildMusePromptOptions {
   wssUrl: string;
