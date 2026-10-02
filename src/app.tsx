@@ -1587,7 +1587,53 @@ export function App({
             ];
             return filterSuggestions(togglePossibilities, currentInput);
           }
+          if (configKey === "transport") {
+            const transportPossibilities = [
+              "/muse config transport websocket",
+              "/muse config transport telegram",
+            ];
+            return filterSuggestions(transportPossibilities, currentInput);
+          }
+          if (configKey === "wstoken" || configKey === "token" || configKey === "ws_token") {
+            const tokenPossibilities = [
+              `/muse config ${parts[2]} generate`,
+            ];
+            return filterSuggestions(tokenPossibilities, currentInput);
+          }
+          if (configKey === "wsmode" || configKey === "ws_mode") {
+            const modePossibilities = [
+              `/muse config ${parts[2]} server`,
+              `/muse config ${parts[2]} client`,
+            ];
+            return filterSuggestions(modePossibilities, currentInput);
+          }
+          if (configKey === "workspaces" || configKey === "workspace" || configKey === "projects") {
+            const wsPossibilities = [
+              `/muse config ${parts[2]} list`,
+              `/muse config ${parts[2]} add`,
+              `/muse config ${parts[2]} remove`,
+            ];
+            return filterSuggestions(wsPossibilities, currentInput);
+          }
           const configPossibilities = [
+            "/muse config transport",
+            "/muse config transport websocket",
+            "/muse config transport telegram",
+            "/muse config wsToken",
+            "/muse config wsToken generate",
+            "/muse config wsPort",
+            "/muse config wsHost",
+            "/muse config wsPath",
+            "/muse config wsMode",
+            "/muse config wsMode server",
+            "/muse config wsMode client",
+            "/muse config wsRemoteUrl",
+            "/muse config cfAccessClientId",
+            "/muse config cfAccessClientSecret",
+            "/muse config workspaces",
+            "/muse config workspaces list",
+            "/muse config workspaces add",
+            "/muse config workspaces remove",
             "/muse config as_runner_model",
             "/muse config as_runner_model on",
             "/muse config as_runner_model off",
@@ -1603,18 +1649,52 @@ export function App({
           return filterSuggestions(configPossibilities, currentInput);
         }
 
+        if (sub === "watch") {
+          const watchPossibilities = [
+            "/muse watch start",
+            "/muse watch stop",
+            "/muse watch status",
+            "/muse watch add",
+            "/muse watch remove",
+            "/muse watch --ws",
+            "/muse watch --telegram",
+          ];
+          return filterSuggestions(watchPossibilities, currentInput);
+        }
+
         const possibilities = [
           "/muse status",
+          "/muse tunnel",
+          "/muse cloudflare",
           "/muse watch",
           "/muse watch start",
           "/muse watch stop",
           "/muse watch status",
+          "/muse watch add",
+          "/muse watch remove",
+          "/muse watch --ws",
+          "/muse watch --telegram",
           "/muse unwatch",
           "/muse stop",
           "/muse cancel",
           "/muse new",
           "/muse reset",
           "/muse config",
+          "/muse config transport",
+          "/muse config transport websocket",
+          "/muse config transport telegram",
+          "/muse config wsToken",
+          "/muse config wsToken generate",
+          "/muse config wsPort",
+          "/muse config wsHost",
+          "/muse config wsPath",
+          "/muse config wsMode",
+          "/muse config cfAccessClientId",
+          "/muse config cfAccessClientSecret",
+          "/muse config workspaces",
+          "/muse config workspaces list",
+          "/muse config workspaces add",
+          "/muse config workspaces remove",
           "/muse config as_runner_model",
           "/muse config as_runner_model on",
           "/muse config as_runner_model off",

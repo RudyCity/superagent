@@ -1,3 +1,15 @@
+## [1.5.118] - 2026-10-02
+
+### Added
+
+- **Interactive Autocomplete Suggestions for Muse Commands & Settings**:
+  - Added full autocomplete suggestions and descriptions in `src/utils/dashboardSuggestions.ts` and `src/app.tsx` for all new Muse commands and subcommands:
+    - `/muse tunnel` and `/muse cloudflare` (Cloudflare Tunnel onboarding guide and Bearer token generator).
+    - `/muse watch` subcommands: `/muse watch add`, `/muse watch remove`, `/muse watch status`, `/muse watch --ws`, `/muse watch --telegram`.
+    - `/muse config` subcommands: `/muse config transport` (`websocket`, `telegram`), `/muse config wsToken` (`generate`), `/muse config wsPort`, `/muse config wsHost`, `/muse config wsPath`, `/muse config wsMode` (`server`, `client`), `/muse config wsRemoteUrl`, `/muse config cfAccessClientId`, `/muse config cfAccessClientSecret`, `/muse config workspaces` (`list`, `add`, `remove`).
+  - Added comprehensive built-in descriptions in `BUILTIN_DESCRIPTIONS` for all new `/muse` subcommands.
+  - Added unit test assertions in `tests/remoteAgent.test.ts` verifying root, sub, config, watch, and description suggestions.
+
 ## [1.5.117] - 2026-10-02
 
 ### Documentation

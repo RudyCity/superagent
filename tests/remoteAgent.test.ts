@@ -1367,18 +1367,45 @@ describe("remoteAgent - CLI Handler", () => {
 
     const subSuggestions = getDashboardSuggestions("/muse ");
     expect(subSuggestions).toContain("/muse status");
+    expect(subSuggestions).toContain("/muse tunnel");
+    expect(subSuggestions).toContain("/muse watch --ws");
+    expect(subSuggestions).toContain("/muse watch add");
     expect(subSuggestions).toContain("/muse config");
+    expect(subSuggestions).toContain("/muse config transport");
+    expect(subSuggestions).toContain("/muse config wsToken");
+    expect(subSuggestions).toContain("/muse config workspaces");
     expect(subSuggestions).toContain("/muse config botToken");
     expect(subSuggestions).toContain("/muse config as_runner_model");
     expect(subSuggestions).toContain("/muse config as_runner_model on");
     expect(subSuggestions).toContain("/muse config as_runner_model off");
 
+    const watchSuggestions = getDashboardSuggestions("/muse watch ");
+    expect(watchSuggestions).toContain("/muse watch --ws");
+    expect(watchSuggestions).toContain("/muse watch add");
+    expect(watchSuggestions).toContain("/muse watch status");
+
     const configKeySuggestions = getDashboardSuggestions("/muse config as");
     expect(configKeySuggestions).toContain("/muse config as_runner_model on");
+
+    const transportSuggestions = getDashboardSuggestions("/muse config transport ");
+    expect(transportSuggestions).toContain("/muse config transport websocket");
+    expect(transportSuggestions).toContain("/muse config transport telegram");
+
+    const wsTokenSuggestions = getDashboardSuggestions("/muse config wsToken ");
+    expect(wsTokenSuggestions).toContain("/muse config wsToken generate");
+
+    const workspacesSuggestions = getDashboardSuggestions("/muse config workspaces ");
+    expect(workspacesSuggestions).toContain("/muse config workspaces list");
+    expect(workspacesSuggestions).toContain("/muse config workspaces add");
 
     const desc = getSuggestionDescriptions();
     expect(desc["/muse"]).toBeDefined();
     expect(desc["/muse"]).toContain("Muse");
+    expect(desc["/muse tunnel"]).toBeDefined();
+    expect(desc["/muse watch --ws"]).toBeDefined();
+    expect(desc["/muse config transport"]).toBeDefined();
+    expect(desc["/muse config wsToken generate"]).toBeDefined();
+    expect(desc["/muse config workspaces"]).toBeDefined();
     expect(desc["/muse config as_runner_model"]).toBeDefined();
     expect(desc["/muse config as_runner_model on"]).toBeDefined();
   });

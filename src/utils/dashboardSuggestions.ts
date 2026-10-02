@@ -51,18 +51,42 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-classifier": "Enable or disable multi-category request classifier (on or off)",
   "/setting-classifier-threshold": "Set classifier heuristic confidence threshold (high, medium, low)",
   "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
-  "/muse": "Coordinate with remote AI agent (Muse) over Telegram group bus",
-  "/muse status": "Show remote agent configuration, runner mode, and bot connection",
+  "/muse": "Coordinate with remote AI agent (Muse) over WebSocket (Cloudflare Tunnel) or Telegram bus",
+  "/muse status": "Show remote agent configuration, runner mode, and connection status",
+  "/muse tunnel": "Cloudflare Tunnel setup guide, quick test commands, and Bearer token generator",
+  "/muse cloudflare": "Cloudflare Tunnel setup guide, quick test commands, and Bearer token generator",
   "/muse watch": "Start persistent watch mode where Superagent is controlled by Muse",
   "/muse watch start": "Start persistent watch mode where Superagent is controlled by Muse",
   "/muse watch stop": "Stop persistent watch mode and return to manual execution",
-  "/muse watch status": "Show active watch mode statistics and connection state",
+  "/muse watch status": "Show active watch mode statistics, watched projects, and connection state",
+  "/muse watch add": "Add a project directory to watched workspaces at runtime",
+  "/muse watch remove": "Remove a project directory from watched workspaces at runtime",
+  "/muse watch --ws": "Start persistent watch mode using WebSocket transport (Cloudflare Tunnel)",
+  "/muse watch --telegram": "Start persistent watch mode using Telegram group transport",
   "/muse unwatch": "Stop persistent watch mode and return to manual execution",
   "/muse stop": "Cancel active remote task and send cancellation notice to Muse",
   "/muse cancel": "Cancel active remote task and send cancellation notice to Muse",
   "/muse new": "Start a fresh session with remote agent (Muse) and reset context",
   "/muse reset": "Reset remote agent (Muse) session context and conversation memory",
-  "/muse config": "Configure botToken, groupId, museBotId, as_runner_model, or workspace",
+  "/muse config": "Configure transport, wsToken, wsPort, workspaces, botToken, or runner mode",
+  "/muse config transport": "Switch Muse transport between websocket and telegram",
+  "/muse config transport websocket": "Set Muse transport to WebSocket (for Cloudflare Tunnel)",
+  "/muse config transport telegram": "Set Muse transport to Telegram group bus",
+  "/muse config wsToken": "Set pre-shared Bearer authentication token for WebSocket",
+  "/muse config wsToken generate": "Generate a fresh 256-bit cryptographically secure Bearer token",
+  "/muse config wsPort": "Set local WebSocket server listen port (default: 9225)",
+  "/muse config wsHost": "Set local WebSocket server host binding (default: 127.0.0.1)",
+  "/muse config wsPath": "Set WebSocket URL path endpoint (default: /muse)",
+  "/muse config wsMode": "Set WebSocket mode (server or client)",
+  "/muse config wsMode server": "Set WebSocket mode to server (local workstation listens)",
+  "/muse config wsMode client": "Set WebSocket mode to client (connect to remote endpoint)",
+  "/muse config wsRemoteUrl": "Set remote WebSocket URL when in client mode",
+  "/muse config cfAccessClientId": "Set Cloudflare Access Service Token Client ID",
+  "/muse config cfAccessClientSecret": "Set Cloudflare Access Service Token Client Secret",
+  "/muse config workspaces": "Manage multi-project watched workspaces",
+  "/muse config workspaces list": "List all currently configured watched project workspaces",
+  "/muse config workspaces add": "Add a project directory to configured watched workspaces",
+  "/muse config workspaces remove": "Remove a project directory from configured watched workspaces",
   "/muse config as_runner_model": "Automatically route all terminal chat prompts to Muse (on/off)",
   "/muse config as_runner_model on": "Enable automatic routing of terminal chat prompts to Muse",
   "/muse config as_runner_model off": "Disable automatic routing of terminal chat prompts to Muse",
@@ -364,7 +388,53 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
           ];
           return filterSuggestions(togglePossibilities, query);
         }
+        if (configKey === "transport") {
+          const transportPossibilities = [
+            "/muse config transport websocket",
+            "/muse config transport telegram",
+          ];
+          return filterSuggestions(transportPossibilities, query);
+        }
+        if (configKey === "wstoken" || configKey === "token" || configKey === "ws_token") {
+          const tokenPossibilities = [
+            `/muse config ${parts[2]} generate`,
+          ];
+          return filterSuggestions(tokenPossibilities, query);
+        }
+        if (configKey === "wsmode" || configKey === "ws_mode") {
+          const modePossibilities = [
+            `/muse config ${parts[2]} server`,
+            `/muse config ${parts[2]} client`,
+          ];
+          return filterSuggestions(modePossibilities, query);
+        }
+        if (configKey === "workspaces" || configKey === "workspace" || configKey === "projects") {
+          const wsPossibilities = [
+            `/muse config ${parts[2]} list`,
+            `/muse config ${parts[2]} add`,
+            `/muse config ${parts[2]} remove`,
+          ];
+          return filterSuggestions(wsPossibilities, query);
+        }
         const configPossibilities = [
+          "/muse config transport",
+          "/muse config transport websocket",
+          "/muse config transport telegram",
+          "/muse config wsToken",
+          "/muse config wsToken generate",
+          "/muse config wsPort",
+          "/muse config wsHost",
+          "/muse config wsPath",
+          "/muse config wsMode",
+          "/muse config wsMode server",
+          "/muse config wsMode client",
+          "/muse config wsRemoteUrl",
+          "/muse config cfAccessClientId",
+          "/muse config cfAccessClientSecret",
+          "/muse config workspaces",
+          "/muse config workspaces list",
+          "/muse config workspaces add",
+          "/muse config workspaces remove",
           "/muse config as_runner_model",
           "/muse config as_runner_model on",
           "/muse config as_runner_model off",
@@ -380,18 +450,52 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         return filterSuggestions(configPossibilities, query);
       }
 
+      if (sub === "watch") {
+        const watchPossibilities = [
+          "/muse watch start",
+          "/muse watch stop",
+          "/muse watch status",
+          "/muse watch add",
+          "/muse watch remove",
+          "/muse watch --ws",
+          "/muse watch --telegram",
+        ];
+        return filterSuggestions(watchPossibilities, query);
+      }
+
       const possibilities = [
         "/muse status",
+        "/muse tunnel",
+        "/muse cloudflare",
         "/muse watch",
         "/muse watch start",
         "/muse watch stop",
         "/muse watch status",
+        "/muse watch add",
+        "/muse watch remove",
+        "/muse watch --ws",
+        "/muse watch --telegram",
         "/muse unwatch",
         "/muse stop",
         "/muse cancel",
         "/muse new",
         "/muse reset",
         "/muse config",
+        "/muse config transport",
+        "/muse config transport websocket",
+        "/muse config transport telegram",
+        "/muse config wsToken",
+        "/muse config wsToken generate",
+        "/muse config wsPort",
+        "/muse config wsHost",
+        "/muse config wsPath",
+        "/muse config wsMode",
+        "/muse config cfAccessClientId",
+        "/muse config cfAccessClientSecret",
+        "/muse config workspaces",
+        "/muse config workspaces list",
+        "/muse config workspaces add",
+        "/muse config workspaces remove",
         "/muse config as_runner_model",
         "/muse config as_runner_model on",
         "/muse config as_runner_model off",
