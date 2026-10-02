@@ -84,10 +84,20 @@ export function readTunnelState(port?: number): TunnelMetadata | null {
 
 export function clearTunnelState(port?: number): void {
   try {
+    const dir = path.join(os.homedir(), ".superagent-r");
     if (port) {
       const portFile = getTunnelStateFile(port);
       if (fs.existsSync(portFile)) {
         fs.unlinkSync(portFile);
+      }
+    } else if (fs.existsSync(dir)) {
+      const files = fs.readdirSync(dir);
+      for (const f of files) {
+        if (f === "tunnel.json" || /^tunnel-\d+\.json$/.test(f)) {
+          try {
+            fs.unlinkSync(path.join(dir, f));
+          } catch {}
+        }
       }
     }
     const file = getTunnelStateFile();

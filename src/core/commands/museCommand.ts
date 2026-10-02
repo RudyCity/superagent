@@ -146,9 +146,26 @@ export const museCommand: SlashCommand = {
       } = await import("../remoteAgent/museWatcher.js");
 
       if (action === "start" || action === "quick" || action === "run") {
-        const initialTask = parts.slice(2).join(" ").trim();
+        const rawArgs = parts.slice(2);
+        const portArgIdx = rawArgs.findIndex((a) => a === "--port" || a === "-p");
+        let portOverride: number | undefined;
+        if (portArgIdx !== -1 && rawArgs[portArgIdx + 1]) {
+          const parsed = parseInt(rawArgs[portArgIdx + 1], 10);
+          if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
+        }
+
+        const initialTask = rawArgs
+          .filter((a, idx, arr) => {
+            if (a === "--port" || a === "-p") return false;
+            if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p")) return false;
+            return true;
+          })
+          .join(" ")
+          .trim();
+
+        const effectivePort = portOverride || port;
         const watchedWorkspaces = getWatchedWorkspaces(cfg, ctx.agent?.workingDirectory);
-        const existing = getTunnelStatus();
+        const existing = getTunnelStatus(effectivePort);
         const watcherActive = isMuseWatcherActive();
 
         if (existing.isRunning) {
@@ -182,7 +199,7 @@ export const museCommand: SlashCommand = {
               musePrompt,
               "-----------------------------------------------------------------------------",
               "",
-              "To stop the tunnel, run: /muse tunnel stop",
+              `To stop the tunnel, run: /muse tunnel stop${portOverride ? ` --port ${portOverride}` : ""}`,
             ].join("\n"),
             timestamp: now,
           });
@@ -191,7 +208,7 @@ export const museCommand: SlashCommand = {
 
         ctx.addLine({
           type: "system",
-          content: "[Cloudflare Tunnel] Starting Superagent WebSocket server and Cloudflare quick tunnel...",
+          content: `[Cloudflare Tunnel] Starting Superagent WebSocket server (port ${effectivePort}) and Cloudflare quick tunnel...`,
           timestamp: now,
         });
 
@@ -205,6 +222,7 @@ export const museCommand: SlashCommand = {
             workspaces: watchedWorkspaces,
             transportType: "websocket",
             tunnel: true,
+            wsPort: effectivePort,
             agent: ctx.agent,
             onProgress: (msg) => {
               ctx.addLine({
@@ -305,39 +323,61 @@ export const museCommand: SlashCommand = {
       }
 
       if (action === "stop") {
+        const rawArgs = parts.slice(2);
+        const portArgIdx = rawArgs.findIndex((a) => a === "--port" || a === "-p");
+        let portOverride: number | undefined;
+        if (portArgIdx !== -1 && rawArgs[portArgIdx + 1]) {
+          const parsed = parseInt(rawArgs[portArgIdx + 1], 10);
+          if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
+        }
+
+        const effectivePort = portOverride || port;
         let stoppedAny = false;
         if (isMuseWatcherActive()) {
           await stopMuseWatcher();
           stoppedAny = true;
         }
-        const existing = getTunnelStatus();
+        const existing = getTunnelStatus(effectivePort);
         if (existing.isRunning) {
-          await stopQuickTunnel();
+          await stopQuickTunnel(effectivePort);
           stoppedAny = true;
         }
         if (!stoppedAny) {
           ctx.addLine({
             type: "system",
-            content: "[Cloudflare Tunnel] No quick tunnel is currently running.",
+            content: `[Cloudflare Tunnel] No quick tunnel is currently running${portOverride ? ` on port ${portOverride}` : ""}.`,
             timestamp: now,
           });
           return;
         }
         ctx.addLine({
           type: "system",
-          content: "[Cloudflare Tunnel] Quick tunnel and WebSocket watch daemon stopped successfully.",
+          content: `[Cloudflare Tunnel] Quick tunnel (port ${effectivePort}) and WebSocket watch daemon stopped successfully.`,
           timestamp: Date.now(),
         });
         return;
       }
 
       if (action === "status") {
-        const existing = getTunnelStatus();
+        const rawArgs = parts.slice(2);
+        const portArgIdx = rawArgs.findIndex((a) => a === "--port" || a === "-p");
+        let portOverride: number | undefined;
+        if (portArgIdx !== -1 && rawArgs[portArgIdx + 1]) {
+          const parsed = parseInt(rawArgs[portArgIdx + 1], 10);
+          if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
+        }
+
+        const effectivePort = portOverride || port;
+        const existing = getTunnelStatus(effectivePort);
+        const titlePrefix = portOverride
+          ? `Cloudflare Quick Tunnel Status (port ${portOverride}):`
+          : "Cloudflare Quick Tunnel Status:";
+
         if (existing.isRunning) {
           ctx.addLine({
             type: "system",
             content: [
-              "Cloudflare Quick Tunnel Status: ACTIVE",
+              `${titlePrefix} ACTIVE`,
               `- Public URL   : ${existing.publicUrl}`,
               `- WSS Endpoint : ${existing.wssUrl}`,
               `- Local Target : ${existing.localUrl}`,
@@ -345,14 +385,14 @@ export const museCommand: SlashCommand = {
               `- Uptime       : ${existing.uptimeSeconds}s`,
               `- Bearer Token : ${token ? maskSecret(token) : "(none)"}`,
               "",
-              "To stop it, run: /muse tunnel stop",
+              `To stop it, run: /muse tunnel stop${portOverride ? ` --port ${portOverride}` : ""}`,
             ].join("\n"),
             timestamp: now,
           });
         } else {
           ctx.addLine({
             type: "system",
-            content: "Cloudflare Quick Tunnel Status: INACTIVE\nRun '/muse tunnel start' to launch a quick development tunnel.",
+            content: `${titlePrefix} INACTIVE\nRun '/muse tunnel start${portOverride ? ` --port ${portOverride}` : ""}' to launch a quick development tunnel.`,
             timestamp: now,
           });
         }

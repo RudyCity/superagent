@@ -1,3 +1,11 @@
+## [1.5.126] - 2026-10-03
+
+### Added
+
+- **Slash Command Support for Multi-Tunnel Custom Ports**:
+  - Added `--port` and `-p` flags to interactive slash commands `/muse tunnel start`, `/muse tunnel stop`, and `/muse tunnel status` allowing multi-tunnel management directly inside the terminal UI.
+  - Enabled per-port status inspection and graceful per-port shutdown from within Superagent interactive sessions.
+
 ## [1.5.125] - 2026-10-03
 
 ### Added
