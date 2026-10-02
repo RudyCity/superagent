@@ -1011,6 +1011,7 @@ export function App({
           },
           setSessionId,
           onSessionPath,
+          handleSubmit: (val: string) => { handleSubmit(val); },
         } as any);
         return;
       }
@@ -1939,6 +1940,8 @@ export function App({
     setInput,
     isProcessing,
     setIsProcessing,
+    isExecutingTool,
+    setIsExecutingTool,
     activeWizard,
     setActiveWizard,
     wizardOptions,
@@ -2613,6 +2616,8 @@ export function App({
   pendingQuestionRef.current = pendingQuestion;
   const isProcessingRef = useRef(isProcessing);
   isProcessingRef.current = isProcessing;
+  const isExecutingToolRef = useRef(isExecutingTool);
+  isExecutingToolRef.current = isExecutingTool;
 
   useEffect(() => {
     registerQuestionHandler(questionHandler);
@@ -2642,12 +2647,13 @@ export function App({
         setToolTimeout(null);
         setToolStartTime(null);
         setTimeLeft(null);
+        clearActiveToolOutput();
         return;
       }
       if (activeWizardRef.current || pendingPermissionRef.current || pendingQuestionRef.current) {
         return;
       }
-      if (agent.isAgentRunning() || agent.wasRunningBeforeAbort || isProcessingRef.current) {
+      if (agent.isAgentRunning() || agent.wasRunningBeforeAbort || isProcessingRef.current || isExecutingToolRef.current) {
         agent.abort();
         setIsProcessing(false);
         setIsExecutingTool(false);
@@ -2656,6 +2662,10 @@ export function App({
         setToolTimeout(null);
         setToolStartTime(null);
         setTimeLeft(null);
+        clearActiveToolOutput();
+        import("./core/remoteAgent/museWatcher.js").then(({ abortActiveMuseBatch }) => {
+          abortActiveMuseBatch("User SIGINT");
+        }).catch(() => {});
       } else {
         exit();
       }

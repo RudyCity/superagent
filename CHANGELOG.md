@@ -1,3 +1,27 @@
+## [1.5.129] - 2026-10-03
+
+### Fixed
+
+- **Emergency Shell Tool Cancellation & Stdin Hang Safeguards**:
+  - Configured `stdin: "ignore"` on shell executions in `bashTool` and `runCommandTool` (`src/core/tools/shellTools.ts`), preventing commands like `grep`, `cat`, or `awk` from blocking indefinitely on piped standard input when operands are missing.
+  - Added an explicit `abortPromise` into `Promise.race([proc, timeoutPromise, abortPromise])` for both shell tools, ensuring immediate cancellation rejection rather than waiting for timeouts.
+  - Implemented robust synchronous process tree termination via `taskkill /F /T /PID` on Windows (and `pkill -P` on POSIX) protecting against zombie or orphaned background processes.
+  - Reduced default shell execution timeout to 120 seconds.
+
+### Added
+
+- **Instant Keyboard Cancellation (Ctrl+C) for Active Tools & Muse Batches**:
+  - Updated `useKeyboardHandler` and `src/app.tsx` so pressing `Ctrl+C` while any shell tool or Muse watcher batch is running immediately halts execution and aborts the process tree without triggering the session exit dialog.
+- **Dedicated Slash Commands for Process Cancellation (`/stop`, `/cancel`, `/abort`)**:
+  - Added `/stop`, `/cancel`, and `/abort` commands to cancel running tools, subagents, and remote task batches cleanly with optional reason feedback.
+  - Added `/muse stop` and `/muse cancel` subcommands for remote watcher tasks.
+- **Operator Steering & Intervention ("Menyanggah") (`/steer`, `/sanggah`, `/intervene`)**:
+  - Implemented `/steer` (with aliases `/sanggah` and `/intervene`) to immediately interrupt hanging commands and deliver real-time counter-instructions to redirect the agent's plan.
+  - Added `/muse steer <msg>`, `/muse chat <msg>`, and `/muse sanggah <msg>` to transmit `[Operator Intervention]` chat envelopes to the remote Muse brain over WebSocket and Telegram.
+  - Exported `abortActiveBatch()`, `sendSteeringMessage()`, `hasActiveBatch()`, `abortActiveMuseBatch()`, and `sendMuseSteerMessage()` in `src/core/remoteAgent/museWatcher.ts`.
+- **Autocomplete Suggestions and Help Documentation**:
+  - Updated command registry `/help`, `docs/remote-agent-setup.md`, `docs/wiki/04-features-and-workflows.md`, and dashboard suggestions in `src/utils/dashboardSuggestions.ts`.
+
 ## [1.5.128] - 2026-10-03
 
 ### Added

@@ -12,7 +12,8 @@ import { getDefaultModel } from "../core/slash-commands.js";
 import { readFileTail } from "../utils/logTail.js";
 import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, deleteCheckpointById, type Checkpoint } from "../core/checkpoints.js";
 import { getToolDescription } from "../core/permissions.js";
-import { registerSubagentType, allTools, backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifySubagentsChanged, isTaskInWorkspace } from "../core/tools.js";
+import { registerSubagentType, allTools, backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifySubagentsChanged, isTaskInWorkspace, clearActiveToolOutput } from "../core/tools.js";
+import { isMuseWatcherActive, abortActiveMuseBatch, hasActiveMuseBatch } from "../core/remoteAgent/museWatcher.js";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ToolCall } from "../core/conversation.js";
 import { contentToString } from "../core/conversation.js";
@@ -33,6 +34,8 @@ export interface KeyboardHandlerContext {
   setInput: React.Dispatch<React.SetStateAction<string>>;
   isProcessing: boolean;
   setIsProcessing: React.Dispatch<React.SetStateAction<boolean>>;
+  isExecutingTool?: boolean;
+  setIsExecutingTool?: React.Dispatch<React.SetStateAction<boolean>>;
   activeWizard: {
     type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm" | "workspace";
     step: number;
@@ -131,6 +134,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     setInput,
     isProcessing,
     setIsProcessing,
+    isExecutingTool,
+    setIsExecutingTool,
     activeWizard,
     setActiveWizard,
     wizardOptions,
@@ -1795,24 +1800,51 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
 
     if (isCtrlC) {
       // Note: wizard-active case already handled at top of useInput callback
+      let didAbort = false;
+
       if (stopRunningSubagents() > 0) {
         agentRef.current?.abort();
         setIsProcessing(false);
-        return;
+        setIsExecutingTool?.(false);
+        didAbort = true;
       }
-      if (isProcessing || agentRef.current?.isAgentRunning() || agentRef.current?.wasRunningBeforeAbort) {
+
+      if (isProcessing || isExecutingTool || agentRef.current?.isAgentRunning() || agentRef.current?.wasRunningBeforeAbort) {
         agentRef.current?.abort();
         setIsProcessing(false);
-        return;
-      } else {
-        setActiveWizard({
-          type: "exit_confirm",
-          step: 1,
-          data: {},
-        });
-        setWizardOptions(["No, keep working", "Yes, exit"]);
-        setWizardSelectedIndex(0);
+        setIsExecutingTool?.(false);
+        didAbort = true;
       }
+
+      // Check if Muse Watch mode has an active batch or task running
+      if (isMuseWatcherActive() && hasActiveMuseBatch()) {
+        const watcherAborted = abortActiveMuseBatch("User interrupted via Ctrl+C");
+        if (watcherAborted) {
+          setIsProcessing(false);
+          setIsExecutingTool?.(false);
+          didAbort = true;
+        }
+      }
+
+      if (didAbort) {
+        clearActiveToolOutput();
+        addLine({
+          type: "system",
+          content: "Process / execution aborted by user (Ctrl+C).",
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      // If nothing was executing, show normal exit confirmation wizard
+      setActiveWizard({
+        type: "exit_confirm",
+        step: 1,
+        data: {},
+      });
+      setWizardOptions(["No, keep working", "Yes, exit"]);
+      setWizardSelectedIndex(0);
+      return;
     }
 
     if (!activeWizard || activeWizard.type !== "plan_approve") {

@@ -104,6 +104,7 @@ export const museCommand: SlashCommand = {
         "  /muse watch remove <dir>     - Remove project from active watch session",
         "  /muse stop                   - Cancel active remote task and notify Muse",
         "  /muse cancel                 - Cancel active remote task and notify Muse",
+        "  /muse steer <msg>            - Intervene and steer Muse with counter-instructions (alias: /muse chat)",
         "  /muse new                    - Reset remote session memory",
         "  /muse reset                  - Reset remote session memory",
         "  /muse config <key> <val>     - Set config key (transport, wsToken, wsPort, botToken, etc.)",
@@ -758,29 +759,91 @@ export const museCommand: SlashCommand = {
 
     // /muse stop or /muse cancel
     if (subcommand === "stop" || subcommand === "cancel") {
+      let stoppedSomething = false;
+
+      // 1. Check taskRunner (single-task runner mode)
       const { abortActiveRemoteTask, getActiveRemoteTaskId } = await import("../remoteAgent/taskRunner.js");
       const activeId = getActiveRemoteTaskId();
-      if (!activeId) {
+      if (activeId) {
         ctx.addLine({
           type: "system",
-          content: "[Muse] No active remote task is currently running.",
+          content: `[Muse] Aborting active remote task (${activeId}) and notifying Muse...`,
+          timestamp: now,
+        });
+        const ok = await abortActiveRemoteTask("Cancelled by user via /muse stop");
+        if (ok) {
+          ctx.addLine({
+            type: "system",
+            content: "[Muse] Active remote task has been cancelled.",
+            timestamp: now,
+          });
+          stoppedSomething = true;
+        }
+      }
+
+      // 2. Check museWatcher (watch mode active batch)
+      const { isMuseWatcherActive, abortActiveMuseBatch, hasActiveMuseBatch } = await import("../remoteAgent/museWatcher.js");
+      if (isMuseWatcherActive()) {
+        const didAbort = abortActiveMuseBatch("Cancelled by user via /muse stop");
+        if (didAbort) {
+          ctx.addLine({
+            type: "system",
+            content: "[Muse Watch] Active tool execution batch has been cancelled.",
+            timestamp: now,
+          });
+          stoppedSomething = true;
+        }
+      }
+
+      if (!stoppedSomething) {
+        ctx.addLine({
+          type: "system",
+          content: "[Muse] No active remote task or tool batch is currently running.",
+          timestamp: now,
+        });
+      }
+      return;
+    }
+
+    // /muse steer, /muse chat, /muse say, /muse sanggah
+    if (subcommand === "steer" || subcommand === "chat" || subcommand === "say" || subcommand === "sanggah") {
+      const text = parts.slice(1).join(" ").trim();
+      if (!text) {
+        ctx.addLine({
+          type: "error",
+          content: `Usage: /muse ${subcommand} <message>`,
           timestamp: now,
         });
         return;
       }
+
+      const { isMuseWatcherActive, sendMuseSteerMessage, abortActiveMuseBatch } = await import("../remoteAgent/museWatcher.js");
+      if (isMuseWatcherActive()) {
+        if (subcommand === "steer" || subcommand === "sanggah") {
+          abortActiveMuseBatch(`Operator intervention: ${text}`);
+        }
+        const sent = await sendMuseSteerMessage(text);
+        if (sent) {
+          ctx.addLine({
+            type: "system",
+            content: `[Muse Steer] Sent counter-instruction to Muse brain: "${text}"`,
+            timestamp: now,
+          });
+        } else {
+          ctx.addLine({
+            type: "error",
+            content: "[Muse Steer] Failed to send message to Muse (transport not connected).",
+            timestamp: now,
+          });
+        }
+        return;
+      }
+
       ctx.addLine({
         type: "system",
-        content: `[Muse] Aborting active remote task (${activeId}) and notifying Muse...`,
+        content: "[Muse] Muse Watch mode is not currently running. Use /muse <task> to start a remote task.",
         timestamp: now,
       });
-      const ok = await abortActiveRemoteTask("Cancelled by user via /muse stop");
-      if (ok) {
-        ctx.addLine({
-          type: "system",
-          content: "[Muse] Active remote task has been cancelled.",
-          timestamp: now,
-        });
-      }
       return;
     }
 

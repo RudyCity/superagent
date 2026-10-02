@@ -858,6 +858,12 @@ export class Agent {
         abortActiveRemoteTask("Agent aborted by user").catch(() => {});
       })
       .catch(() => {});
+    // Also abort any active Muse Watcher batch if running
+    import("./remoteAgent/museWatcher.js")
+      .then(({ abortActiveMuseBatch }) => {
+        abortActiveMuseBatch("Agent aborted by user");
+      })
+      .catch(() => {});
   }
 
   public getAbortSignal(): AbortSignal | undefined {

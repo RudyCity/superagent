@@ -208,10 +208,15 @@ export const helpCommand: SlashCommand = {
         "              /ih list         - List all discovered internal hooks and their status",
         "              /ih active       - Select which hooks to activate via checkbox dialog",
         "  /muse     - Coordinate with remote Muse brain via WebSocket / Telegram bus",
-        "              Usage: /muse [<task>|status|tunnel|watch|config|stop|new]",
+        "              Usage: /muse [<task>|status|tunnel|watch|config|stop|steer|new]",
         "              Tunnel: /muse tunnel [list|start|stop|status|guide] [--port <n>] (Isolated Quick Tunnel)",
         "              Watch:  /muse watch [--ws|--tunnel] [--port <n>] [dir1] [dir2] (Multi-project watch)",
+        "              Steer:  /muse steer <message> (intervene & send counter-instructions to Muse)",
         "  /tunnel   - Manage Cloudflare quick tunnels (/tunnel [list|start|stop|status])",
+        "  /stop     - Stop/abort currently running tool, task, or agent (aliases: /cancel, /abort)",
+        "              Usage: /stop [optional feedback / reason]",
+        "  /steer    - Interrupt and steer/redirect the agent with feedback (aliases: /sanggah, /intervene)",
+        "              Usage: /steer <instructions/feedback> (e.g. /steer Jangan grep semua file, cari di src saja)",
         "  /setup    - Run the interactive provider and initial setup wizard",
         "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
         "  /model    - Set or list active AI models (e.g. /model openai/gpt-4o)",
@@ -545,6 +550,130 @@ export const setupCommand: SlashCommand = {
   },
 };
 
+// /stop command (aliases: /cancel, /abort)
+export const stopCommand: SlashCommand = {
+  name: "stop",
+  aliases: ["cancel", "abort"],
+  description: "Stop/interrupt currently running tool, process, task, or agent",
+  async execute(args, ctx) {
+    const feedback = args.trim();
+    let abortedCount = 0;
+
+    // 1. Abort subagents
+    for (const inst of subagentInstances.values()) {
+      if (inst.status === "running" && inst.agent && typeof inst.agent.abort === "function") {
+        try {
+          inst.agent.abort();
+          abortedCount++;
+        } catch {}
+      }
+    }
+    if (abortedCount > 0) notifySubagentsChanged();
+
+    // 2. Abort master agent
+    if (ctx.agent) {
+      ctx.agent.abort();
+    }
+
+    // 3. Abort Muse watcher active batch
+    try {
+      const { isMuseWatcherActive, abortActiveMuseBatch } = await import("../remoteAgent/museWatcher.js");
+      if (isMuseWatcherActive()) {
+        const didAbort = abortActiveMuseBatch(feedback || "Stopped by user via /stop");
+        if (didAbort) abortedCount++;
+      }
+    } catch {}
+
+    // 4. Abort remote task runner
+    try {
+      const { abortActiveRemoteTask, getActiveRemoteTaskId } = await import("../remoteAgent/taskRunner.js");
+      if (getActiveRemoteTaskId()) {
+        await abortActiveRemoteTask(feedback || "Stopped by user via /stop");
+        abortedCount++;
+      }
+    } catch {}
+
+    clearActiveToolOutput();
+    ctx.setIsProcessing?.(false);
+
+    ctx.addLine({
+      type: "system",
+      content: feedback
+        ? `[Stop] Execution stopped. Steering note: "${feedback}"`
+        : "[Stop] Execution stopped by user.",
+      timestamp: Date.now(),
+    });
+
+    if (feedback) {
+      // In Muse mode, forward steering note to Muse
+      try {
+        const { isMuseWatcherActive, sendMuseSteerMessage } = await import("../remoteAgent/museWatcher.js");
+        if (isMuseWatcherActive()) {
+          await sendMuseSteerMessage(feedback);
+        }
+      } catch {}
+
+      // In local mode, queue message to agent so next prompt has the correction
+      if (ctx.agent) {
+        ctx.agent.queueMessage(`[User Correction / Menyanggah]: ${feedback}`);
+      }
+    }
+  },
+};
+
+// /steer command (aliases: /sanggah, /intervene)
+export const steerCommand: SlashCommand = {
+  name: "steer",
+  aliases: ["sanggah", "intervene"],
+  description: "Interrupt and steer/redirect the agent with feedback or counter-instructions",
+  async execute(args, ctx) {
+    const feedback = args.trim();
+    if (!feedback) {
+      ctx.addLine({
+        type: "error",
+        content: "Usage: /steer <instructions/feedback> (e.g. /steer Jangan grep semua file, cari di src saja)",
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    // First stop whatever is currently running
+    if (ctx.agent) {
+      ctx.agent.abort();
+    }
+    clearActiveToolOutput();
+    ctx.setIsProcessing?.(false);
+
+    // If in Muse Watch mode:
+    try {
+      const { isMuseWatcherActive, abortActiveMuseBatch, sendMuseSteerMessage } = await import("../remoteAgent/museWatcher.js");
+      if (isMuseWatcherActive()) {
+        abortActiveMuseBatch(`Operator intervention: ${feedback}`);
+        await sendMuseSteerMessage(feedback);
+        ctx.addLine({
+          type: "system",
+          content: `[Steer] Intervened and sent counter-instruction to Muse:\n"${feedback}"`,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+    } catch {}
+
+    // In local agent mode:
+    if (ctx.agent) {
+      ctx.agent.queueMessage(`[Human Operator Intervention / Sanggahan]: ${feedback}`);
+      ctx.addLine({
+        type: "system",
+        content: `[Steer] Intervened. Feedback queued for agent:\n"${feedback}"\nAgent will apply this instruction on next step.`,
+        timestamp: Date.now(),
+      });
+      try {
+        ctx.handleSubmit?.(feedback);
+      } catch {}
+    }
+  },
+};
+
 // Register core commands
 registry.register(newCommand);
 registry.register(exitCommand);
@@ -552,3 +681,5 @@ registry.register(helpCommand);
 registry.register(initCommand);
 registry.register(imageCommand);
 registry.register(setupCommand);
+registry.register(stopCommand);
+registry.register(steerCommand);

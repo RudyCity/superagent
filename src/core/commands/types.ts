@@ -45,6 +45,7 @@ export interface SlashCommandContext {
   setWorkingDirectory?: (path: string) => void;
   setSessionId?: (id: string) => void;
   onSessionPath?: (filePath: string) => void;
+  handleSubmit?: (value: string) => void;
 }
 
 export interface SlashCommand {

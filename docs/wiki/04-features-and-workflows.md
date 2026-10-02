@@ -202,4 +202,11 @@ sequenceDiagram
 - **Multi-Terminal Isolation**: Multiple tunnels can run concurrently across different terminals using `--port <number>` (e.g. `/muse tunnel start --port 9226`), storing isolated state in `~/.superagent-r/tunnel-<port>.json`.
 - **Automated Process Cleanup**: Attaches synchronous `process.once("exit")` and `SIGINT`/`SIGTERM` handlers to forcefully terminate the `cloudflared` process tree upon exit or unexpected crash, preventing zombie background processes.
 
+### Process Interruption & Operator Steering ("Menyanggah")
+- **Emergency Tool Cancellation**: `Ctrl+C` immediately kills running shell processes (`taskkill /F /T /PID` or `pkill`) and tool execution without displaying the exit confirmation dialog when execution is active.
+- **Immediate Abort Slash Command**: `/stop` (aliases `/cancel`, `/abort`, `/muse stop`, `/muse cancel`) halts running tools, subagents, and remote task batches cleanly.
+- **Human-in-the-Loop Steering ("Menyanggah")**: `/steer` (aliases `/sanggah`, `/intervene`, `/muse steer <msg>`) aborts the hanging process and dispatches real-time counter-instructions to the agent or remote brain, redirecting exploration without dropping the session.
+- **Stdin Isolation & Timeout Bounds**: Shell executions enforce `stdin: "ignore"` to eliminate infinite hangs when commands wait for pipe input, backed by a 120-second default timeout.
+
+
 

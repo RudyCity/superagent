@@ -493,3 +493,44 @@ RULES & WORKFLOW:
 | `Timestamp drift exceeded` | Workstation or Muse system clock is out of sync | Synchronize workstation clock via NTP (must be within $\pm 60$s) |
 | `Remote agent (Muse) is not configured` | Missing credentials for active transport | Run `/muse tunnel` or check configuration using `/muse status` |
 | Telegram 409 Conflict | Multiple pollers running on the same Bot token | Terminate competing instances or switch to `--ws` |
+
+---
+
+## 10. Process Interruption, Cancellation & Operator Steering ("Menyanggah")
+
+When Superagent or the remote Muse agent is executing commands, operators maintain full control to cancel hanging processes or dynamically steer execution.
+
+### 10.1 Instant Keyboard Cancellation (Ctrl+C)
+- Pressing `Ctrl+C` while a shell tool or remote batch is actively running immediately aborts the active process tree (`taskkill /F /T /PID` on Windows or `pkill` on POSIX) and clears the running tool state.
+- In Muse Watch mode, `Ctrl+C` terminates the executing tool/batch without prompting for terminal session exit.
+
+### 10.2 Slash Commands for Stopping Execution
+- `/stop` (aliases: `/cancel`, `/abort`): Aborts the active tool, cancels running subagents, terminates active Muse task batches, and sends a cancellation notification.
+  ```bash
+  /stop
+  /cancel
+  /abort "Command took too long"
+  /muse stop
+  /muse cancel
+  ```
+
+### 10.3 Operator Steering & Intervention ("Menyanggah")
+- `/steer` (aliases: `/sanggah`, `/intervene`): Immediately aborts the running command or batch and delivers real-time counter-instructions to the agent.
+  ```bash
+  # Abort hanging grep and steer agent to a specific folder
+  /steer Stop full-repo search, only look inside src/auth/
+
+  # Indonesian alias:
+  /sanggah Jangan run grep di seluruh folder, cek src/core/agent.ts saja
+
+  # Direct Muse steer:
+  /muse steer Abort test run and fix the compile error first
+  /muse chat Let's skip integration tests for now
+  ```
+- In Muse Watch mode, `/steer` aborts the active tool batch and transmits an `[Operator Intervention]` envelope to Muse over WebSocket or Telegram, allowing the remote brain to immediately pivot its plan.
+
+### 10.4 Shell Hang Protection & Safety Guards
+- **Stdin Isolation**: All shell tool invocations (`bash`, `run_command`) configure `stdin: "ignore"`. Commands such as `grep`, `cat`, or `awk` invoked without target files will not hang indefinitely waiting on standard input.
+- **Process Tree Cleanup**: Abort signals trigger synchronous recursive termination of child processes, preventing orphaned or background zombie processes.
+- **Fail-Safe Timeout**: Tool execution defaults to a 120-second timeout with immediate Promise rejection upon abort.
+

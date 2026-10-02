@@ -854,6 +854,70 @@ export class MuseWatcher {
     this.activeBatchAborts.clear();
   }
 
+  /**
+   * Aborts active in-flight tool batches, with notification to Muse and terminal UI.
+   * Returns true if there was an active batch or task that was aborted.
+   */
+  public abortActiveBatch(reason?: string): boolean {
+    const hasAborts = this.activeBatchAborts.size > 0;
+    const hasTask = Boolean(this.activeTaskId);
+    if (!hasAborts && !hasTask) {
+      return false;
+    }
+
+    logE2E(
+      "REMOTE-AGENT",
+      `MuseWatcher aborting active batch(es). Active aborts: ${this.activeBatchAborts.size}, Active task: ${this.activeTaskId}, Reason: ${reason || "User abort"}`
+    );
+
+    this.abortAllBatches();
+    const prevTaskId = this.activeTaskId;
+    this.activeTaskId = undefined;
+
+    // Drain queued batches for this task
+    for (const item of this.batchQueue) {
+      item.resolve?.();
+    }
+    this.batchQueue = [];
+    this.activeBatchIds.clear();
+
+    const notice = `⚠️ [Muse Watch] Tool batch execution aborted by operator: ${reason || "Interrupted by user"}`;
+    this.emitLine("system", notice);
+
+    // Send abort notification back to Muse so Muse brain knows its batch was cancelled
+    if (this.transport && this.isRunning) {
+      const abortEnvelope: RemoteAgentEnvelope = {
+        v: 1,
+        kind: "chat",
+        text: `[Operator Abort] The active execution batch for task "${prevTaskId || "current"}" was stopped by the human operator.\nReason: ${reason || "Manual user interruption (Ctrl+C or /stop)"}. Please adjust your approach or wait for new instructions.`,
+      };
+      this.transport.sendEnvelope(abortEnvelope).catch(() => {});
+    }
+
+    return true;
+  }
+
+  public hasActiveBatch(): boolean {
+    return this.activeBatchAborts.size > 0 || Boolean(this.activeTaskId);
+  }
+
+  /**
+   * Sends a steering/intervention chat message directly to Muse over transport.
+   */
+  public async sendSteeringMessage(text: string): Promise<boolean> {
+    if (!this.transport || !this.isRunning) {
+      return false;
+    }
+    const steerEnvelope: RemoteAgentEnvelope = {
+      v: 1,
+      kind: "chat",
+      text: `[Operator Intervention / Menyanggah]: ${text}`,
+    };
+    await this.transport.sendEnvelope(steerEnvelope);
+    this.emitLine("system", `[Muse Steer] Sent intervention to Muse: "${text}"`);
+    return true;
+  }
+
   private handleTaskCancel(envelope: TaskCancelEnvelope): void {
     logE2E("REMOTE-AGENT", `MuseWatcher received task_cancel for task ${envelope.task_id}`);
 
@@ -1020,3 +1084,18 @@ export async function stopMuseWatcher(): Promise<boolean> {
   globalMuseWatcher = null;
   return true;
 }
+
+export function hasActiveMuseBatch(): boolean {
+  return Boolean(globalMuseWatcher && globalMuseWatcher.hasActiveBatch());
+}
+
+export function abortActiveMuseBatch(reason?: string): boolean {
+  if (!globalMuseWatcher) return false;
+  return globalMuseWatcher.abortActiveBatch(reason);
+}
+
+export async function sendMuseSteerMessage(text: string): Promise<boolean> {
+  if (!globalMuseWatcher) return false;
+  return await globalMuseWatcher.sendSteeringMessage(text);
+}
+

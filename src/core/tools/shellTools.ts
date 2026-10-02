@@ -1,5 +1,5 @@
 import { execa } from "execa";
-import { exec } from "child_process";
+import { exec, execSync } from "child_process";
 import path from "path";
 import fs from "fs";
 import { Tool, BackgroundTask } from "./types.js";
@@ -118,19 +118,27 @@ export function formatAndTruncateOutput(output: string, maxLines: number, logPat
 }
 
 export function killProcessTree(pid: number | undefined): void {
-  if (!pid) return;
+  if (!pid || pid === process.pid) return;
   if (process.platform === "win32") {
     try {
-      exec(`taskkill /F /T /PID ${pid}`);
+      execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore", timeout: 3000 });
     } catch {
-      // Ignore
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Ignore
+      }
     }
   } else {
     try {
-      exec(`pkill -P ${pid}`);
+      execSync(`pkill -P ${pid}`, { stdio: "ignore", timeout: 3000 });
       process.kill(pid, "SIGKILL");
     } catch {
-      // Ignore
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Ignore
+      }
     }
   }
 }
@@ -169,7 +177,7 @@ export const bashTool: Tool = {
       return await sshRunCommandExecute(rawCommand, requestedCwd, undefined, signal);
     }
     let command = normalizeGitPaths(rawCommand).replace(/\r\n/g, "\n");
-    const timeout = (args.timeout as number) || 600000;
+    const timeout = (args.timeout as number) || 120000;
     
     let shellPath: string | boolean = true;
     if (process.platform === "win32") {
@@ -206,20 +214,36 @@ export const bashTool: Tool = {
         reject: false,
         all: true,
         env: unbufferedEnv,
+        stdin: "ignore",
+      });
+
+      let abortPromiseReject: ((err: any) => void) | undefined;
+      const abortPromise = new Promise<never>((_, reject) => {
+        abortPromiseReject = reject;
+        if (signal?.aborted) {
+          const err = new Error("AbortError");
+          err.name = "AbortError";
+          reject(err);
+        }
       });
 
       const abortHandler = () => {
+        try {
+          proc.kill("SIGKILL");
+        } catch {}
         killProcessTree(proc.pid);
         cmdLogger.end(null, "Aborted");
+        const err = new Error("AbortError");
+        err.name = "AbortError";
+        abortPromiseReject?.(err);
       };
 
       if (signal) {
         if (signal.aborted) {
-          killProcessTree(proc.pid);
-          cmdLogger.end(null, "Aborted");
+          abortHandler();
           throw new Error("AbortError");
         }
-        signal.addEventListener("abort", abortHandler);
+        signal.addEventListener("abort", abortHandler, { once: true });
       }
 
       let interactiveWarning: string | null = null;
@@ -235,7 +259,7 @@ export const bashTool: Tool = {
       });
 
       try {
-        const result = await Promise.race([proc, timeoutPromise]);
+        const result = await Promise.race([proc, timeoutPromise, abortPromise]);
         clearActiveToolOutput();
         let output = (result.all || result.stdout || "").trim();
         const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
@@ -251,7 +275,20 @@ export const bashTool: Tool = {
         }
         return output || "(no output)";
       } catch (innerErr: any) {
+        if (innerErr && (innerErr.name === "AbortError" || signal?.aborted)) {
+          try {
+            proc.kill("SIGKILL");
+          } catch {}
+          killProcessTree(proc.pid);
+          cmdLogger.end(null, "Aborted");
+          const abortErr = new Error("AbortError");
+          abortErr.name = "AbortError";
+          throw abortErr;
+        }
         if (innerErr && innerErr.name === "TimeoutError") {
+          try {
+            proc.kill("SIGKILL");
+          } catch {}
           killProcessTree(proc.pid);
           cmdLogger.end(null, `Timeout of ${timeout}ms exceeded`);
           return `Error executing command: Timeout of ${timeout}ms exceeded. Full command log saved at: ${cmdLogger.logPath}`;
@@ -357,20 +394,36 @@ export const runCommandTool: Tool = {
         reject: false,
         all: true,
         env: unbufferedEnv,
+        stdin: "ignore",
+      });
+
+      let abortPromiseReject: ((err: any) => void) | undefined;
+      const abortPromise = new Promise<never>((_, reject) => {
+        abortPromiseReject = reject;
+        if (signal?.aborted) {
+          const err = new Error("AbortError");
+          err.name = "AbortError";
+          reject(err);
+        }
       });
 
       const abortHandler = () => {
+        try {
+          proc.kill("SIGKILL");
+        } catch {}
         killProcessTree(proc.pid);
         cmdLogger.end(null, "Aborted");
+        const err = new Error("AbortError");
+        err.name = "AbortError";
+        abortPromiseReject?.(err);
       };
 
       if (signal) {
         if (signal.aborted) {
-          killProcessTree(proc.pid);
-          cmdLogger.end(null, "Aborted");
+          abortHandler();
           throw new Error("AbortError");
         }
-        signal.addEventListener("abort", abortHandler);
+        signal.addEventListener("abort", abortHandler, { once: true });
       }
 
       let interactiveWarning: string | null = null;
@@ -386,7 +439,7 @@ export const runCommandTool: Tool = {
       });
 
       try {
-        const result = await Promise.race([proc, timeoutPromise]);
+        const result = await Promise.race([proc, timeoutPromise, abortPromise]);
         clearActiveToolOutput();
         let output = (result.all || result.stdout || "").trim();
         const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
@@ -405,7 +458,20 @@ export const runCommandTool: Tool = {
 
         return output || "(no output)";
       } catch (innerErr: any) {
+        if (innerErr && (innerErr.name === "AbortError" || signal?.aborted)) {
+          try {
+            proc.kill("SIGKILL");
+          } catch {}
+          killProcessTree(proc.pid);
+          cmdLogger.end(null, "Aborted");
+          const abortErr = new Error("AbortError");
+          abortErr.name = "AbortError";
+          throw abortErr;
+        }
         if (innerErr && innerErr.name === "TimeoutError") {
+          try {
+            proc.kill("SIGKILL");
+          } catch {}
           killProcessTree(proc.pid);
           cmdLogger.end(null, `Timeout of ${timeout}ms exceeded`);
           return `Error executing command: Timeout of ${timeout}ms exceeded. Full command log saved at: ${cmdLogger.logPath}. If this command is a long-running process (like a dev server, watcher, or database), please run it in the background using 'run_background_process' instead.`;
