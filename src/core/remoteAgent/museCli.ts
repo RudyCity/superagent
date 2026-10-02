@@ -93,6 +93,11 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       buildMuseConnectionPrompt,
       copyTextToClipboard,
     } = await import("./cloudflareTunnel.js");
+    const {
+      startMuseWatcher,
+      stopMuseWatcher,
+      isMuseWatcherActive,
+    } = await import("./museWatcher.js");
 
     if (action === "start" || action === "quick" || action === "run" || action === "dev") {
       const isDetach =
@@ -132,7 +137,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
       const existing = getTunnelStatus();
       if (existing.isRunning) {
-        console.log("[Cloudflare Tunnel] Quick tunnel is already ACTIVE:");
+        console.log("[Cloudflare Tunnel] Quick tunnel and WebSocket server are already ACTIVE:");
         console.log(`  Public URL        : ${existing.publicUrl}`);
         console.log(`  WSS Endpoint      : ${existing.wssUrl}`);
         console.log(`  Local Target      : ${existing.localUrl}`);
@@ -166,34 +171,41 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         return;
       }
 
-      console.log("[Cloudflare Tunnel] Requesting new quick ephemeral tunnel from Cloudflare...");
+      console.log("[Cloudflare Tunnel] Starting Superagent WebSocket server and requesting Cloudflare quick tunnel...");
       try {
-        const meta = await startQuickTunnel({
-          port: portOverride || port,
-          host,
-          path: pathEndpoint,
-          onLog: (msg) => {
-            if (args.includes("--verbose")) console.log(`[cloudflared] ${msg.trim()}`);
-          },
+        if (isMuseWatcherActive()) {
+          await stopMuseWatcher();
+        }
+
+        const watched = getWatchedWorkspaces(cfg);
+        const watcher = await startMuseWatcher({
+          workspace: watched[0],
+          workspaces: watched,
+          transportType: "websocket",
+          tunnel: true,
+          onLine: (line) => console.log(line.content),
+          onProgress: (msg) => console.log(`[Muse Progress] ${msg}`),
         });
+
+        const meta = getTunnelStatus();
+        const effectiveWss = meta.wssUrl || `wss://${meta.publicUrl?.replace(/^https?:\/\//, "")}${pathEndpoint}`;
 
         console.log("");
         console.log("═════════════════════════════════════════════════════════════════════════════");
-        console.log("  Cloudflare Quick Ephemeral Tunnel Online!");
+        console.log("  Superagent WebSocket Server & Cloudflare Quick Tunnel Online!");
         console.log("═════════════════════════════════════════════════════════════════════════════");
         console.log(`  Public URL        : ${meta.publicUrl}`);
-        console.log(`  WSS Endpoint      : ${meta.wssUrl}`);
-        console.log(`  Local Target      : ${meta.localUrl}`);
+        console.log(`  WSS Endpoint      : ${effectiveWss}`);
+        console.log(`  Local Target      : ${meta.localUrl || `http://${host}:${port}`}`);
         console.log(`  Process PID       : ${meta.pid}`);
         console.log(`  Bearer Token      : ${token}`);
         console.log("═════════════════════════════════════════════════════════════════════════════");
 
-        const watched = getWatchedWorkspaces(cfg);
         const musePrompt = buildMuseConnectionPrompt({
-          wssUrl: meta.wssUrl,
+          wssUrl: effectiveWss,
           token,
           publicUrl: meta.publicUrl,
-          localUrl: meta.localUrl,
+          localUrl: meta.localUrl || `http://${host}:${port}`,
           workspaces: watched,
           cfClientId: cfg.cfAccessClientId,
           cfClientSecret: cfg.cfAccessClientSecret,
@@ -211,19 +223,16 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         console.log(musePrompt);
         console.log("-----------------------------------------------------------------------------");
 
-        if (isDetach) {
-          console.log("\n[Cloudflare Tunnel] Tunnel is running in background.");
-          console.log("Run 'superagent muse tunnel stop' to terminate.\n");
-          return;
-        }
-
-        console.log("\n[Cloudflare Tunnel] Tunnel active in foreground. Press Ctrl+C to stop.\n");
+        console.log("\nSuperagent is actively listening in WATCH mode over WebSocket (controlled by Muse).");
+        console.log("When Muse connects and sends remote tasks or tool batches, Superagent will execute them and report back.");
+        console.log("Press Ctrl+C to stop tunnel and exit watch daemon.\n");
 
         let isExiting = false;
         const cleanExit = async () => {
           if (isExiting) return;
           isExiting = true;
-          console.log("\n[Cloudflare Tunnel] Stopping quick tunnel...");
+          console.log("\n[Cloudflare Tunnel] Stopping tunnel and watch daemon...");
+          await watcher.stop();
           await stopQuickTunnel();
           process.exit(0);
         };
@@ -231,22 +240,42 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         process.on("SIGINT", cleanExit);
         process.on("SIGTERM", cleanExit);
 
-        await new Promise(() => {});
+        // Keep process alive while watcher is active
+        await new Promise<void>((resolve) => {
+          const interval = setInterval(() => {
+            if (!watcher.isActive()) {
+              clearInterval(interval);
+              resolve();
+            }
+          }, 1000);
+        });
       } catch (err: any) {
-        console.error(`\n[Cloudflare Tunnel] Error: ${err?.message}\n`);
+        console.error(`\n[Cloudflare Tunnel Error] ${err?.message}\n`);
         return;
       }
       return;
     }
 
     if (action === "stop") {
+      const { stopMuseWatcher, isMuseWatcherActive } = await import("./museWatcher.js");
+      const { stopQuickTunnel, getTunnelStatus } = await import("./cloudflareTunnel.js");
+
+      let stoppedAny = false;
+      if (isMuseWatcherActive()) {
+        await stopMuseWatcher();
+        stoppedAny = true;
+      }
       const existing = getTunnelStatus();
-      if (!existing.isRunning) {
+      if (existing.isRunning) {
+        await stopQuickTunnel();
+        stoppedAny = true;
+      }
+
+      if (!stoppedAny) {
         console.log("[Cloudflare Tunnel] No quick tunnel is currently running.");
         return;
       }
-      await stopQuickTunnel();
-      console.log("[Cloudflare Tunnel] Quick tunnel stopped successfully.");
+      console.log("[Cloudflare Tunnel] Quick tunnel and watch daemon stopped successfully.");
       return;
     }
 

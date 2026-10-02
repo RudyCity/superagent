@@ -1,3 +1,18 @@
+## [1.5.123] - 2026-10-03
+
+### Fixed
+
+- **WebSocket Server & Watch Daemon Integration on Tunnel Start**:
+  - Resolved issue where starting a Cloudflare Quick Tunnel left the local endpoint down by running `startMuseWatcher` with `transportType: "websocket"` and `tunnel: true`, keeping port 9225 active and monitored.
+  - Added keep-alive loop in CLI `superagent muse tunnel start` with clean shutdown on SIGINT/SIGTERM.
+  - Linked `tunnel stop` commands (`/muse tunnel stop` and `superagent muse tunnel stop`) to gracefully terminate both active watchers and background tunnels.
+
+### Added
+
+- **Real-Time Remote Task Execution Like Telegram Watch**:
+  - Added `task_request` handling to `MuseWatcher`, allowing remote Muse brains over WebSocket to initiate tasks on Superagent just like in Telegram watch mode.
+  - Added `onConnectionChange` hooks to `MuseWsServerTransport` providing real-time connection and disconnection alerts in the terminal and logs.
+
 ## [1.5.122] - 2026-10-03
 
 ### Added

@@ -9,6 +9,7 @@ import {
 } from "./config.js";
 import {
   RemoteAgentEnvelope,
+  TaskRequestEnvelope,
   TaskBatchEnvelope,
   TaskResultEnvelope,
   TaskDoneEnvelope,
@@ -23,7 +24,7 @@ import {
   TelegramTransport,
   RemoteEnvelopeMeta,
 } from "./transport.js";
-import { createMuseWsTransport } from "./museWsTransport.js";
+import { createMuseWsTransport, MuseWsServerTransport } from "./museWsTransport.js";
 import { executeBatch } from "./batchExecutor.js";
 import { formatReadableSummary } from "./formatSummary.js";
 import type { Agent } from "../agent.js";
@@ -130,7 +131,23 @@ export class MuseWatcher {
 
     const effectiveType = this.options.transportType || this.config.transport || "telegram";
     if (effectiveType === "websocket") {
-      this.transport = createMuseWsTransport(this.config, this.options.customConfigPath);
+      const wsTransport = createMuseWsTransport(this.config, this.options.customConfigPath);
+      if (wsTransport instanceof MuseWsServerTransport) {
+        wsTransport.onConnectionChange = (connected, connId) => {
+          if (connected) {
+            this.emitLine(
+              "system",
+              `🟢 [Muse Watch] Muse connected via WebSocket! Real-time session active (Conn: ${connId ? connId.slice(0, 8) : "active"}).`
+            );
+          } else {
+            this.emitLine(
+              "system",
+              "🟡 [Muse Watch] Muse WebSocket connection closed."
+            );
+          }
+        };
+      }
+      this.transport = wsTransport;
     } else {
       this.client = new MuseClient(this.config);
       this.transport = new TelegramTransport(this.config, this.client);
@@ -464,6 +481,11 @@ export class MuseWatcher {
 
       case "chat": {
         this.handleChat(envelope as ChatEnvelope);
+        break;
+      }
+
+      case "task_request": {
+        await this.handleTaskRequest(envelope as TaskRequestEnvelope, meta);
         break;
       }
 
@@ -926,6 +948,33 @@ export class MuseWatcher {
     logE2E("REMOTE-AGENT", `MuseWatcher received chat note: ${envelope.text}`);
 
     this.emitLine("assistant", `[Muse Note]: ${envelope.text}`);
+  }
+
+  private async handleTaskRequest(
+    envelope: TaskRequestEnvelope,
+    _meta?: RemoteEnvelopeMeta
+  ): Promise<void> {
+    this.activeTaskId = envelope.id;
+    logE2E("REMOTE-AGENT", `MuseWatcher received task_request: id=${envelope.id}, task=${envelope.task}`);
+
+    this.emitLine(
+      "system",
+      `⚡ [Muse Remote Start] Task started by Muse: "${envelope.task}" (Task ID: ${envelope.id})`
+    );
+
+    if (envelope.workspace && typeof envelope.workspace === "string") {
+      const targetWs = path.resolve(envelope.workspace.trim());
+      if (!this.workspaces.includes(targetWs)) {
+        this.addWorkspace(targetWs);
+      }
+    }
+
+    const ackEnvelope: RemoteAgentEnvelope = {
+      v: 1,
+      kind: "chat",
+      text: `Superagent accepted remote task: "${envelope.task}". Ready for tool execution batches.`,
+    };
+    this.transport.sendEnvelope(ackEnvelope).catch(() => {});
   }
 }
 

@@ -36,6 +36,7 @@ interface ExtWebSocket extends WebSocket {
  */
 export class MuseWsServerTransport implements RemoteTransport {
   public readonly type = "websocket" as const;
+  public onConnectionChange?: (connected: boolean, connectionId?: string) => void;
   private config: RemoteAgentConfig;
   private wss: WebSocketServer | null = null;
   private activeSocket: ExtWebSocket | null = null;
@@ -177,6 +178,7 @@ export class MuseWsServerTransport implements RemoteTransport {
 
     if (preAuthenticated) {
       this.activeSocket = socket;
+      this.onConnectionChange?.(true, connectionId);
     }
 
     // Set handshake timeout if not pre-authenticated
@@ -221,6 +223,7 @@ export class MuseWsServerTransport implements RemoteTransport {
               }
 
               this.activeSocket = socket;
+              this.onConnectionChange?.(true, connectionId);
               socket.send(JSON.stringify({ v: 1, kind: "auth_ok", connection_id: connectionId }));
               logE2E("REMOTE-AGENT", `Handshake authenticated for connection ${connectionId}`);
               return;
@@ -302,6 +305,7 @@ export class MuseWsServerTransport implements RemoteTransport {
       );
       if (this.activeSocket === socket) {
         this.activeSocket = null;
+        this.onConnectionChange?.(false, connectionId);
       }
     });
 
