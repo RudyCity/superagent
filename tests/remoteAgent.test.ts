@@ -335,6 +335,141 @@ describe("remoteAgent - Batch Executor", () => {
     expect(fs.readFileSync(path.join(tempDir, "allowed.txt"), "utf-8")).toBe("Approved content");
   });
 
+  it("should allow modifying tools by default within workspace without permission prompt", async () => {
+    const results = await executeBatch(
+      [
+        {
+          id: "c_auto_allow",
+          tool: "write",
+          args: { filePath: path.join(tempDir, "auto_allowed.txt"), content: "Auto approved for Muse" },
+        },
+      ],
+      { workspace: tempDir }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, "auto_allowed.txt"))).toBe(true);
+    expect(fs.readFileSync(path.join(tempDir, "auto_allowed.txt"), "utf-8")).toBe("Auto approved for Muse");
+  });
+
+  it("should block deletion shell commands (rm, del, Remove-Item, git rm, git clean) for Muse", async () => {
+    const results = await executeBatch(
+      [
+        {
+          id: "c_del_rm",
+          tool: "run_command",
+          args: { command: "rm sample.txt" },
+        },
+        {
+          id: "c_del_cmd",
+          tool: "run_command",
+          args: { command: "del sample.txt" },
+        },
+        {
+          id: "c_del_ri",
+          tool: "run_command",
+          args: { command: "Remove-Item sample.txt" },
+        },
+        {
+          id: "c_del_git",
+          tool: "run_command",
+          args: { command: "git rm sample.txt" },
+        },
+        {
+          id: "c_del_clean",
+          tool: "run_command",
+          args: { command: "git clean -fd" },
+        },
+      ],
+      { workspace: tempDir }
+    );
+
+    for (const res of results) {
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/Deletion/i);
+    }
+  });
+
+  it("should block deletion tool calls / actions / flags for Muse", async () => {
+    const results = await executeBatch(
+      [
+        {
+          id: "c_del_flag",
+          tool: "control_browser_macro_save",
+          args: { name: "test_macro", delete: true },
+        },
+        {
+          id: "c_del_action",
+          tool: "git_action",
+          args: { action: "clean" },
+        },
+      ],
+      { workspace: tempDir }
+    );
+
+    for (const res of results) {
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/Deletion/i);
+    }
+  });
+
+  it("should block out-of-workspace shell commands (traversal and absolute paths) for Muse", async () => {
+    const results = await executeBatch(
+      [
+        {
+          id: "c_oob_traversal",
+          tool: "run_command",
+          args: { command: "cat ../outside.txt" },
+        },
+        {
+          id: "c_oob_cd",
+          tool: "run_command",
+          args: { command: "cd .. && ls" },
+        },
+        {
+          id: "c_oob_win",
+          tool: "run_command",
+          args: { command: 'type "C:\\Windows\\System32\\drivers\\etc\\hosts"' },
+        },
+        {
+          id: "c_oob_unix",
+          tool: "run_command",
+          args: { command: "cat /etc/passwd" },
+        },
+      ],
+      { workspace: tempDir }
+    );
+
+    for (const res of results) {
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/Access outside workspace is not allowed/i);
+    }
+  });
+
+  it("should block out-of-workspace file inspection and editing tools for Muse", async () => {
+    const results = await executeBatch(
+      [
+        {
+          id: "c_oob_read",
+          tool: "read",
+          args: { filePath: path.join(tempDir, "../outside.txt") },
+        },
+        {
+          id: "c_oob_write",
+          tool: "write",
+          args: { filePath: path.join(tempDir, "../outside.txt"), content: "hack" },
+        },
+      ],
+      { workspace: tempDir }
+    );
+
+    for (const res of results) {
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/Access outside workspace is not allowed/i);
+    }
+  });
+
   it("should execute shell command tool (run_command) and return output", async () => {
     const results = await executeBatch(
       [

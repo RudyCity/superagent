@@ -100,19 +100,23 @@ COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
    - Git: git_action (args: { "action": "<op>", "message": "<msg>" }), git_worktree
    - Misc: schedule, synthesize_skill, screenshot, playwright_screenshot
    - Project conventions: at the start of a task, read AGENTS.md (or agents.md) in the workspace root if present and follow its conventions
-   - Tool discovery: list_tools (args: { "query": "<keyword>" }) to browse tools, describe_tool (args: { "names": ["<tool>"] }) for exact argument schemas \u2014 use it instead of guessing args
+   - Tool discovery: list_tools (args: { "query": "<keyword>" }) to browse tools, describe_tool (args: { "names": ["<tool>"] }) for exact argument schemas — use it instead of guessing args
    - Batching: independent calls in one batch run in parallel; add "depends_on": ["<call id>"] to order dependent calls; add "timeout_ms": <ms> per call to bound slow tools
-3. Tool batch (task_batch):
+3. Permissions & Safety Policy:
+   - All standard inspection, modification, build, test, and shell executions inside the workspace are permitted.
+   - Deletion operations (e.g. rm, rmdir, del, Remove-Item, git rm, git clean) are strictly disallowed.
+   - Access outside the workspace directory (whether via shell/bash commands or other tools) is strictly disallowed.
+4. Tool batch (task_batch):
    When you need to inspect files, edit code, or run commands, reply with:
    {"v": 1, "kind": "task_batch", "id": "batch_<uuid>", "task_id": "<task_id>", "calls": [{"id": "c1", "tool": "run_command", "args": {"command": "git status"}}]}
    Superagent executes the batch locally and returns task_result with outputs.
-4. Completion (task_done):
+5. Completion (task_done):
    When the task is complete, reply with:
    {"v": 1, "kind": "task_done", "task_id": "<task_id>", "summary": "<formatted markdown summary>"}
    Format the summary with clean paragraphs, double newlines, bullet points (-), and numbered items (1., 2.) for terminal readability.
-5. Task cancellation (task_cancel):
+6. Task cancellation (task_cancel):
    When you receive {"v": 1, "kind": "task_cancel", "task_id": "<task_id>"}, immediately halt all reasoning and abort the task. Do not send further batches.
-6. Session reset (session_reset):
+7. Session reset (session_reset):
    When you receive {"v": 1, "kind": "session_reset", "session": "<id>"}, clear previous conversational working memory and start fresh.`;
 
 export type RemoteAgentEnvelope =

@@ -6,6 +6,8 @@ import {
   MODIFYING_TOOLS,
   getToolDescription,
   isDangerousCommand,
+  isDeleteToolCall,
+  isMuseOutOfBounds,
 } from "../permissions.js";
 
 export interface BatchExecutorOptions {
@@ -243,44 +245,166 @@ async function executeOneCall(
     return { id: call.id, ok: false, error: unknownMsg };
   }
 
-  // Permission enforcement: destructive tools must be explicitly approved
-  const isModifying = MODIFYING_TOOLS.includes(toolName);
-  const isDangerous =
-    ["bash", "run_command", "run_background_process"].includes(toolName) &&
-    isDangerousCommand(toolArgs.command || "");
+  // Permission enforcement for Muse:
+  // Allow all operations within the workspace EXCEPT:
+  // 1. Out-of-workspace access (whether via shell/bash or file tools)
+  // 2. Deletion operations (whether via shell/bash or tools)
+  // 3. Dangerous system commands (mkfs, dd, forkbomb, etc.)
+  // 4. Sensitive configuration files (.env, model-config.json)
 
-  if (isModifying || isDangerous) {
+  // Gate 1: Check out-of-workspace access
+  const oobCheck = isMuseOutOfBounds(toolCallObj, cwd);
+  if (oobCheck.isOutOfBounds) {
     let approved = false;
-
-    // 1. Check if agent permission handler is provided
-    if (options.agent && typeof (options.agent as any).onPermission === "function") {
+    if (options.onPermissionPrompt) {
       try {
-        const res = await (options.agent as any).onPermission(toolCallObj, description);
+        const res = await options.onPermissionPrompt(toolCallObj, oobCheck.reason || description);
         approved = res === true || res === "session";
       } catch {
         approved = false;
       }
-    } else if (options.onPermissionPrompt) {
-      // 2. Custom permission prompt callback
+    } else if (options.agent && typeof (options.agent as any).onPermission === "function") {
+      try {
+        const res = await (options.agent as any).onPermission(toolCallObj, oobCheck.reason || description);
+        approved = res === true || res === "session";
+      } catch {
+        approved = false;
+      }
+    }
+
+    if (!approved) {
+      const deniedMsg = `Permission denied: Access outside workspace is not allowed for Muse (${oobCheck.reason}).`;
+      emitEnd({
+        toolCallId: call.id,
+        name: toolName,
+        result: deniedMsg,
+        isError: true,
+      });
+      return { id: call.id, ok: false, error: deniedMsg };
+    }
+  }
+
+  // Gate 2: Check deletion operations
+  const deleteCheck = isDeleteToolCall(toolCallObj);
+  if (deleteCheck.isDelete) {
+    let approved = false;
+    if (options.onPermissionPrompt) {
+      try {
+        const res = await options.onPermissionPrompt(toolCallObj, deleteCheck.reason || description);
+        approved = res === true || res === "session";
+      } catch {
+        approved = false;
+      }
+    } else if (options.agent && typeof (options.agent as any).onPermission === "function") {
+      try {
+        const res = await (options.agent as any).onPermission(toolCallObj, deleteCheck.reason || description);
+        approved = res === true || res === "session";
+      } catch {
+        approved = false;
+      }
+    }
+
+    if (!approved) {
+      const deniedMsg = `Permission denied: Deletion operations are not allowed for Muse (${deleteCheck.reason}).`;
+      emitEnd({
+        toolCallId: call.id,
+        name: toolName,
+        result: deniedMsg,
+        isError: true,
+      });
+      return { id: call.id, ok: false, error: deniedMsg };
+    }
+  }
+
+  // Gate 3: Check dangerous system commands
+  const isDangerous =
+    ["bash", "run_command", "run_background_process"].includes(toolName) &&
+    isDangerousCommand(toolArgs.command || "");
+  if (isDangerous) {
+    let approved = false;
+    if (options.onPermissionPrompt) {
       try {
         const res = await options.onPermissionPrompt(toolCallObj, description);
         approved = res === true || res === "session";
       } catch {
         approved = false;
       }
-    } else if (options.autoApproveWorkspace && !isDangerous) {
-      // 3. Auto-approve workspace modifying operations in watch mode
-      // Security gate: block sensitive system files (.env, model-config.json)
-      const targetPath = toolArgs.filePath || toolArgs.path || toolArgs.TargetFile;
-      const isSensitive =
-        typeof targetPath === "string" &&
-        (/\.env($|\.)/i.test(targetPath) || /model-config\.json/i.test(targetPath));
-      if (!isSensitive) {
-        approved = true;
+    } else if (options.agent && typeof (options.agent as any).onPermission === "function") {
+      try {
+        const res = await (options.agent as any).onPermission(toolCallObj, description);
+        approved = res === true || res === "session";
+      } catch {
+        approved = false;
       }
-    } else {
-      // Without an interactive permission handler, destructive operations are rejected
-      approved = false;
+    }
+
+    if (!approved) {
+      const deniedMsg = `Permission denied: Dangerous command is not allowed for Muse.`;
+      emitEnd({
+        toolCallId: call.id,
+        name: toolName,
+        result: deniedMsg,
+        isError: true,
+      });
+      return { id: call.id, ok: false, error: deniedMsg };
+    }
+  }
+
+  // Gate 4: Check sensitive files (.env, model-config.json)
+  const targetPath = toolArgs.filePath || toolArgs.path || toolArgs.TargetFile;
+  const isSensitive =
+    typeof targetPath === "string" &&
+    (/\.env($|\.)/i.test(targetPath) || /model-config\.json/i.test(targetPath));
+  if (isSensitive) {
+    let approved = false;
+    if (options.onPermissionPrompt) {
+      try {
+        const res = await options.onPermissionPrompt(toolCallObj, description);
+        approved = res === true || res === "session";
+      } catch {
+        approved = false;
+      }
+    } else if (options.agent && typeof (options.agent as any).onPermission === "function") {
+      try {
+        const res = await (options.agent as any).onPermission(toolCallObj, description);
+        approved = res === true || res === "session";
+      } catch {
+        approved = false;
+      }
+    }
+
+    if (!approved) {
+      const deniedMsg = `Permission denied: Access to sensitive file is not allowed for Muse (${targetPath}).`;
+      emitEnd({
+        toolCallId: call.id,
+        name: toolName,
+        result: deniedMsg,
+        isError: true,
+      });
+      return { id: call.id, ok: false, error: deniedMsg };
+    }
+  }
+
+  // Gate 5: General workspace-modifying tools
+  // Policy for Muse: allow all inside workspace unless explicitly denied by prompt/agent or autoApproveWorkspace === false
+  const isModifying = MODIFYING_TOOLS.includes(toolName);
+  if (isModifying) {
+    let approved = options.autoApproveWorkspace !== false;
+
+    if (options.onPermissionPrompt) {
+      try {
+        const res = await options.onPermissionPrompt(toolCallObj, description);
+        approved = res === true || res === "session";
+      } catch {
+        approved = false;
+      }
+    } else if (options.agent && typeof (options.agent as any).onPermission === "function") {
+      try {
+        const res = await (options.agent as any).onPermission(toolCallObj, description);
+        approved = res === true || res === "session";
+      } catch {
+        approved = false;
+      }
     }
 
     if (!approved) {

@@ -1,3 +1,13 @@
+## [1.5.108] - 2026-10-02
+
+### Added
+
+- **Muse Autonomous Permissions & Workspace Boundary Security**:
+  - Implemented permissive-by-default execution policy for Muse within workspace boundaries ("allow all"): file inspections, file modifications (`write`, `edit`, `replace_file_content`, `apply_patch`), builds, tests, package managers, and safe terminal executions run automatically without blocking or requiring manual interactive prompts.
+  - Implemented strict deletion prevention (`isDeleteCommand` and `isDeleteToolCall` in `src/core/permissions.ts` and `batchExecutor.ts`): blocks any shell command or tool executing file/resource deletion (`rm`, `rmdir`, `unlink`, `del`, `erase`, `rd`, `Remove-Item`, `ri`, `git rm`, `git clean`, `fs.unlink`, `os.remove`, tool deletion flags or actions).
+  - Implemented strict workspace boundary enforcement (`isMuseOutOfBounds` in `src/core/permissions.ts` and `batchExecutor.ts`): blocks any tool or shell/bash command attempting to inspect, modify, or traverse outside the active workspace directory (via relative directory traversals `..`, `cd ..`, or absolute file paths across Windows and Unix platforms).
+  - Integrated permissions and security policy into `DEFAULT_MUSE_SYSTEM_PROMPT` in `protocol.ts` and added unit test coverage in `tests/remoteAgent.test.ts`.
+
 ## [1.5.107] - 2026-10-02
 
 ### Fixed

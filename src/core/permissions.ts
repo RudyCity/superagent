@@ -59,6 +59,65 @@ export function isDangerousCommand(command: string): boolean {
   return DANGEROUS_PATTERNS.some((p) => p.test(command));
 }
 
+export const SHELL_DELETE_PATTERNS = [
+  // rm, rmdir, unlink, shred (supports full paths /bin/rm, prefixes after ;, &&, |, `, $( )
+  /(?:^|[;&|`\n]\s*|\$\(\s*)(?:(?:\/usr)?\/bin\/)?(?:rm|rmdir|unlink|shred)\b/i,
+  // Windows CMD: del, erase, rd
+  /(?:^|[;&|`\n]\s*|\$\(\s*)(?:del|erase|rd)\b/i,
+  // PowerShell: Remove-Item, ri
+  /(?:^|[;&|`\n]\s*|\$\(\s*)(?:Remove-Item|ri)\b/i,
+  // Git file deletion or untracked cleaning
+  /\bgit\s+(?:rm|clean)\b/i,
+  // Inline scripts executing file deletion
+  /\bfs\.(?:unlink|rm|rmdir)(?:Sync)?\b/i,
+  /\b(?:os\.(?:remove|unlink)|shutil\.rmtree)\b/i,
+];
+
+export function isDeleteCommand(command: string): boolean {
+  if (!command || typeof command !== "string") return false;
+  return SHELL_DELETE_PATTERNS.some((p) => p.test(command));
+}
+
+export function isDeleteToolCall(toolCall: { name: string; args?: Record<string, unknown> }): {
+  isDelete: boolean;
+  reason?: string;
+} {
+  const name = (toolCall.name || "").toLowerCase();
+  const args = toolCall.args || {};
+
+  // 1. Tool name is a delete tool
+  if (["delete_file", "remove_file", "unlink_file", "delete", "remove"].includes(name)) {
+    return { isDelete: true, reason: `Tool "${toolCall.name}" is a deletion tool` };
+  }
+
+  // 2. Shell tools executing deletion commands
+  if (["bash", "run_command", "run_background_process", "shell", "exec", "terminal", "cmd", "sh"].includes(name)) {
+    const cmd = (args.command ?? args.cmd ?? args.script ?? args.input) as string | undefined;
+    if (cmd && isDeleteCommand(cmd)) {
+      return { isDelete: true, reason: `Deletion command detected in command: "${cmd.trim().slice(0, 80)}"` };
+    }
+  }
+
+  // 3. Tool argument flags indicating deletion
+  if (args.delete === true) {
+    return { isDelete: true, reason: `Deletion flag (delete: true) detected in tool "${toolCall.name}"` };
+  }
+
+  // 4. Tool action argument indicating deletion
+  const action = typeof args.action === "string" ? args.action.toLowerCase() : "";
+  if (["delete", "remove", "clean", "rm", "history_delete", "history_clear", "remove-node"].includes(action)) {
+    return { isDelete: true, reason: `Deletion action "${args.action}" detected in tool "${toolCall.name}"` };
+  }
+
+  // 5. Tool operation argument indicating deletion
+  const operation = typeof args.operation === "string" ? args.operation.toLowerCase() : "";
+  if (["delete", "remove"].includes(operation)) {
+    return { isDelete: true, reason: `Deletion operation "${args.operation}" detected in tool "${toolCall.name}"` };
+  }
+
+  return { isDelete: false };
+}
+
 function resolveNormalizedPath(fp: string, baseDir?: string): string {
   let normalized = fp;
   if (process.platform === "win32") {
@@ -417,6 +476,124 @@ export function isToolCallOutOfBounds(
   }
 
   return false;
+}
+
+/**
+ * Checks whether a tool call targets paths or processes outside the workspace boundary specifically for Muse.
+ * Inspects file tools and shell/bash commands (for relative traversals and absolute paths).
+ */
+export function isMuseOutOfBounds(
+  toolCall: { name: string; args?: Record<string, unknown> },
+  workspacePath: string
+): { isOutOfBounds: boolean; reason?: string } {
+  const name = (toolCall.name || "").toLowerCase();
+  const args = toolCall.args || {};
+  const effectiveWs = resolveNormalizedPath(workspacePath);
+
+  // 1. Check file tools and path arguments
+  const candidatePaths = [
+    args.filePath, args.file_path, args.TargetFile, args.path,
+    args.DirectoryPath, args.SearchPath, args.AbsolutePath,
+    args.targetPath, args.sourcePath, args.destination,
+  ].filter((v): v is string => typeof v === "string");
+
+  if (args.filePaths && Array.isArray(args.filePaths)) {
+    for (const fp of args.filePaths) {
+      const resolvedFp = extractFilePath(fp);
+      if (resolvedFp) candidatePaths.push(resolvedFp);
+    }
+  }
+  if (args.edits && Array.isArray(args.edits)) {
+    for (const edit of args.edits) {
+      if (edit && typeof edit === "object" && typeof (edit as any).filePath === "string") {
+        candidatePaths.push((edit as any).filePath);
+      }
+    }
+  }
+  if (args.files && Array.isArray(args.files)) {
+    for (const file of args.files) {
+      if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
+        candidatePaths.push((file as any).filePath);
+      }
+    }
+  }
+  if (args.patches && Array.isArray(args.patches)) {
+    for (const patch of args.patches) {
+      if (patch && typeof patch === "object" && typeof (patch as any).filePath === "string") {
+        candidatePaths.push((patch as any).filePath);
+      }
+    }
+  }
+
+  for (const fp of candidatePaths) {
+    const isAbs = path.isAbsolute(fp) || (process.platform === "win32" && /^\/[a-zA-Z]\//.test(fp));
+    const resolved = isAbs
+      ? resolveNormalizedPath(fp)
+      : resolveNormalizedPath(fp, effectiveWs);
+    if (!normalizeAndCheckSubpath(resolved, effectiveWs)) {
+      return { isOutOfBounds: true, reason: `Path "${fp}" resolves outside workspace "${effectiveWs}"` };
+    }
+  }
+
+  // 2. Check shell tools (run_command, bash, shell, exec, etc.)
+  const shellTools = ["bash", "run_command", "run_background_process", "shell", "exec", "terminal", "cmd", "sh"];
+  if (shellTools.includes(name)) {
+    const cwdArg = args.cwd as string | undefined;
+    const resolvedCwd = cwdArg ? resolveNormalizedPath(cwdArg, effectiveWs) : effectiveWs;
+    if (!normalizeAndCheckSubpath(resolvedCwd, effectiveWs)) {
+      return { isOutOfBounds: true, reason: `Working directory "${cwdArg}" is outside workspace "${effectiveWs}"` };
+    }
+
+    const command = (args.command ?? args.cmd ?? args.script ?? args.input) as string | undefined;
+    if (command && typeof command === "string") {
+      if (command.includes("..")) {
+        if (/\bcd\s+\.\.(?:[\/\\]|$|\s)/i.test(command)) {
+          if (resolvedCwd.toLowerCase() === effectiveWs.toLowerCase()) {
+            return { isOutOfBounds: true, reason: `Directory traversal "cd .." leaves workspace root in command: "${truncateCommand(command)}"` };
+          }
+        }
+        const traversalRegex = /(?:^|[\s"'`=])((?:\.\.[\/\\][^\s"'`;&|]*|\.\.))(?=[\s"'`;&|]|$)/g;
+        let tMatch;
+        while ((tMatch = traversalRegex.exec(command)) !== null) {
+          const relPath = tMatch[1];
+          const target = resolveNormalizedPath(relPath, resolvedCwd);
+          if (!normalizeAndCheckSubpath(target, effectiveWs)) {
+            return { isOutOfBounds: true, reason: `Relative path "${relPath}" resolves outside workspace in command: "${truncateCommand(command)}"` };
+          }
+        }
+      }
+
+      // Windows absolute paths
+      const winAbsPathRegex = /"[a-zA-Z]:\\[^"]+"|'[a-zA-Z]:\\[^']+'|(?:[a-zA-Z]:\\[^\r\n;&|]+)/g;
+      let match;
+      while ((match = winAbsPathRegex.exec(command)) !== null) {
+        let p = match[0].trim();
+        if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
+          p = p.slice(1, -1);
+        }
+        const resolved = resolveNormalizedPath(p);
+        if (!normalizeAndCheckSubpath(resolved, effectiveWs)) {
+          return { isOutOfBounds: true, reason: `Absolute Windows path "${p}" is outside workspace in command: "${truncateCommand(command)}"` };
+        }
+      }
+
+      // Unix absolute paths
+      const unixAbsPathRegex = /(?:^|[\s"'`=])(\/[a-zA-Z0-9_\-\.\/]+)/g;
+      let uMatch;
+      while ((uMatch = unixAbsPathRegex.exec(command)) !== null) {
+        const p = uMatch[1];
+        if (p.startsWith("/dev/") || p === "/dev/null" || p.startsWith("/bin/") || p.startsWith("/usr/bin/") || p.startsWith("/usr/local/bin/") || p.startsWith("/tmp/")) {
+          continue;
+        }
+        const resolved = resolveNormalizedPath(p);
+        if (!normalizeAndCheckSubpath(resolved, effectiveWs)) {
+          return { isOutOfBounds: true, reason: `Absolute Unix path "${p}" is outside workspace in command: "${truncateCommand(command)}"` };
+        }
+      }
+    }
+  }
+
+  return { isOutOfBounds: false };
 }
 
 /**

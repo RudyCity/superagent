@@ -442,6 +442,7 @@ ${options.task}`;
               workspace,
               agent: options.agent,
               signal: pollAbortController.signal,
+              autoApproveWorkspace: true,
               onToolStart: options.onToolStart,
               onToolEnd: options.onToolEnd,
               onProgress: options.onProgress,
