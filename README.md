@@ -37,7 +37,7 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 - **🛡️ Local Git Checkpoints**: Automatic branch checkpoints and safety rollbacks during active sessions.
 - **🛠️ Integrated Tooling**: Built-in file search, regex ripgrep, background command runners, terminal presets, system-level screenshots, and Playwright web page screenshots.
 - **🌐 Remote SSH Workspaces**: Secure connection to remote hosts with active boundary protection, interactive path expansion, local-to-remote file transfer, and workspace-based session continuation.
-- **🛰️ Remote AI Agent Coordination (Muse)**: Coordinate with a remote AI brain over a private Telegram group bus, delegating high-level reasoning to Muse while Superagent executes batched tools locally.
+- **🛰️ Remote AI Agent Coordination (Muse)**: Coordinate with a remote AI brain over Cloudflare Tunnel + WebSocket or Telegram bus, delegating high-level reasoning to Muse while Superagent executes batched tools locally with multi-project watch mode and multi-tunnel isolation.
 - **🤖 3-Tier Multi-Agent Mode *(Experimental)***: Master Agent orchestrating isolated Superagents across parallel Git worktrees (`--multi`).
 
 ---
@@ -79,6 +79,10 @@ superagent -ws user@192.168.1.100:/var/www/app
 # Manage autonomous background daemon & cron scheduler
 superagent daemon list
 superagent daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"
+
+# Manage Cloudflare Quick Tunnels
+superagent tunnel list
+superagent tunnel start
 
 # Run a task using the remote AI agent (Muse)
 superagent muse status
@@ -158,8 +162,8 @@ No manual server configuration or extra CLI arguments are required—simply laun
 | `/memory` | Manage and inspect RMemory long-term memory: status, sync, search, add, delete, list-scenes, read-scene, read-persona |
 | `/mcp` | Manage MCP (Model Context Protocol) servers: list, add, remove, reload |
 | `/macro` | Manage and run browser macro presets: list, run, delete |
-| `/internal-hooks` `/ih` | Manage custom internal hook tools: init, dev, list, active |
-| `/muse` | Coordinate with remote AI agent (Muse) over Telegram group bus (`/muse <task>`, `/muse status`, `/muse config`) |
+| `/muse` | Coordinate with remote AI agent (Muse) over WebSocket (Cloudflare Tunnel) or Telegram (`/muse <task>`, `/muse tunnel`, `/muse watch`, `/muse status`) |
+| `/tunnel` `/tunnels` | Manage Cloudflare quick tunnels: `list`, `start`, `stop`, `status` |
 
 ### Workspace Management
 
@@ -225,14 +229,47 @@ Workspace Chaining allows you to link multiple workspaces—both local directori
 
 ### 🛰️ Remote AI Agent Coordination (Muse)
 
-Superagent can pair with an external AI agent (**"Muse"**) acting as a remote brain over a private Telegram group bus, while Superagent provides local file access, command execution, and test running on your machine:
+Superagent can pair with an external AI agent (**"Muse"**) acting as a remote cognitive brain while Superagent provides local file access, command execution, and test running on your workstation. Superagent supports two bidirectional transports:
 
-- **Transport Architecture**: Private Telegram group with two bots (Bot A for Muse, Bot B for Superagent) with Bot-to-Bot Communication Mode enabled.
-- **Batched Tool Execution**: Muse reasons in large batches and issues tool requests; Superagent executes them locally and returns batched results.
-- **Safety & Permissions**: Destructive operations (`write`, `edit`, `apply_patch`, commands) require interactive confirmation.
-- **Loop Guards & Deduplication**: Maximum 50 batches and 30-minute task duration with automatic duplicate batch ID filtering.
+1. **Cloudflare Tunnel + WebSocket (Zero Trust)** *(Recommended)*:
+   - **Sub-millisecond Streaming**: Real-time batch streaming without polling delays.
+   - **Quick Ephemeral Tunnel**: Instant zero-configuration tunnel via `cloudflared` without custom domain setup.
+   - **Multi-Project Watch Daemon**: Watch multiple repositories concurrently (`/muse watch dir1 dir2 --tunnel`).
+   - **Multi-Terminal Isolation**: Run independent tunnels across multiple terminals using custom ports (`--port 9226`).
+   - **Tunnel Inspection & Batch Stop**: Inspect all active tunnels via `/tunnel list` (or `superagent tunnel list`) and stop all via `/tunnel stop all`.
 
-**Configuration:**
+2. **Private Telegram Group Bus**:
+   - Outbound long-polling communication requiring zero firewall or DNS configuration.
+
+**Quick Tunnel Subcommands:**
+
+```bash
+# Manage quick ephemeral tunnels
+superagent tunnel list                   # List all active tunnels across all ports
+superagent tunnel start                  # Start tunnel on default port (9225)
+superagent tunnel start --port 9226      # Start tunnel on isolated custom port
+superagent tunnel stop                   # Stop tunnel on default port
+superagent tunnel stop all               # Stop all active tunnels
+superagent tunnel status                 # Check status and uptime
+
+# Interactive terminal equivalents:
+/tunnel list                             # Or /tunnels
+/tunnel start [--port <n>]
+/tunnel stop [all|--port <n>]
+/tunnel status [--port <n>]
+```
+
+**Starting Watch Mode with Tunnel:**
+
+```bash
+# Watch multiple workspaces and expose via Cloudflare Tunnel:
+/muse watch ./frontend ./backend --tunnel
+
+# CLI equivalent:
+superagent muse watch ./frontend ./backend --tunnel
+```
+
+**Telegram Configuration:**
 
 ```bash
 # Configure Superagent's bot token (Bot B)
@@ -244,7 +281,7 @@ Superagent can pair with an external AI agent (**"Muse"**) acting as a remote br
 # Configure the Muse bot's user ID (Bot A)
 /muse config museBotId 987654321
 
-# Inspect status (bot token is securely masked)
+# Inspect status (credentials are securely masked)
 /muse status
 ```
 
@@ -258,7 +295,7 @@ Superagent can pair with an external AI agent (**"Muse"**) acting as a remote br
 superagent muse "find all unhandled promise rejections in src"
 ```
 
-For the complete end-to-end setup guide, Telegram Bot-to-Bot mode configuration, troubleshooting, and the Muse system prompt, see **[docs/remote-agent-setup.md](docs/remote-agent-setup.md)**.
+For the complete end-to-end setup guide, Zero Trust configuration, multi-project workflows, and the Muse system prompt, see **[docs/remote-agent-setup.md](docs/remote-agent-setup.md)**.
 
 ### Keyboard Shortcuts
 
