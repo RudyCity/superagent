@@ -1,3 +1,13 @@
+## [1.5.127] - 2026-10-03
+
+### Documentation
+
+- **Updated Multi-Terminal & Multi-Tunnel Isolation Guides and Help**:
+  - Updated primary `/help` in `src/core/commands/coreCommands.ts` documenting `--port <n>` for `/muse tunnel` and `/muse watch`.
+  - Updated `/muse help` and interactive setup guide in `src/core/commands/museCommand.ts` and `src/core/remoteAgent/museCli.ts` with multi-project isolation workflows.
+  - Expanded `docs/remote-agent-setup.md` with Section 3.2.4 detail on multi-terminal isolation, crash/exit safety hooks, and state file persistence.
+  - Updated `docs/wiki/04-features-and-workflows.md` and autocomplete descriptions in `src/utils/dashboardSuggestions.ts`.
+
 ## [1.5.126] - 2026-10-03
 
 ### Added

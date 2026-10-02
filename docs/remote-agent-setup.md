@@ -155,6 +155,30 @@ For rapid development and testing without owning a custom domain, Superagent pro
    ```
    Superagent automatically launches `cloudflared`, discovers the public `https://*.trycloudflare.com` URL within seconds, renders the copyable WSS endpoint and Bearer token, and terminates the tunnel cleanly when watch mode stops.
 
+4. **Multi-Terminal & Multi-Project Isolation (`--port <number>`)**:
+   When working across multiple projects in separate terminal windows, Superagent guarantees full process, state, and workspace isolation:
+   - **Terminal 1 with Tunnel, Terminal 2 Local**: If Terminal 1 runs a tunnel on Project A while Terminal 2 works on Project B locally without a tunnel, they are 100% isolated. Terminal 2 opens no network listeners and is completely unreachable by Muse.
+   - **Multiple Concurrent Tunnels**: If you run tunnels in both terminals, assign a distinct local port using `--port` (default is 9225):
+     ```bash
+     # Terminal 1 (Project A):
+     cd /path/to/project-a
+     superagent muse tunnel start               # Uses port 9225
+
+     # Terminal 2 (Project B):
+     cd /path/to/project-b
+     superagent muse tunnel start --port 9226    # Uses port 9226
+     ```
+     Or inside interactive terminal sessions:
+     ```bash
+     # Terminal 1:
+     /muse tunnel start
+
+     # Terminal 2:
+     /muse tunnel start --port 9226
+     ```
+   - **State Isolation**: Metadata is persisted per-port (`~/.superagent-r/tunnel-9225.json` and `~/.superagent-r/tunnel-9226.json`), preventing PID or URL collisions.
+   - **Crash & Exit Safety**: Superagent attaches synchronous `process.once("exit")` and `SIGINT`/`SIGTERM` hooks, ensuring the background `cloudflared` process tree is forcefully terminated when closing, pressing `Ctrl+C`, or upon unexpected crash.
+
 ### 3.3 Production Named Tunnel (Recommended)
 
 For a stable, permanent endpoint with Cloudflare Zero Trust:
