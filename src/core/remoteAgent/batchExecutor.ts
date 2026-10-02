@@ -19,7 +19,7 @@ export interface BatchExecutorOptions {
   onToolEnd?: (toolCall: any, toolResult: any, description: string) => void;
 }
 
-export const MAX_TOOL_OUTPUT_CHARS = 20_000;
+export const MAX_TOOL_OUTPUT_CHARS = 3500;
 
 export function truncateOutput(text: string, maxChars = MAX_TOOL_OUTPUT_CHARS): string {
   if (!text || text.length <= maxChars) {

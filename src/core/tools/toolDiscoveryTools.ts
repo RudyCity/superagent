@@ -1,5 +1,4 @@
 import type { Tool } from "./types.js";
-import { getToolByName, getToolDefinitions } from "./index.js";
 
 /**
  * Lists available tool names with one-line descriptions.
@@ -20,6 +19,7 @@ export const listToolsTool: Tool = {
     required: [],
   },
   async execute(args) {
+    const { getToolDefinitions } = await import("./index.js");
     const defs = getToolDefinitions();
     const q = String(args.query || "").toLowerCase().trim();
     const filtered = q
@@ -31,7 +31,11 @@ export const listToolsTool: Tool = {
       return `No tools match query "${args.query}".`;
     }
     return filtered
-      .map((d) => `- ${d.name}: ${d.description.split("\n")[0]}`)
+      .map((d) => {
+        const firstLine = d.description.split("\n")[0].trim();
+        const shortDesc = firstLine.length > 70 ? firstLine.slice(0, 67) + "..." : firstLine;
+        return `- ${d.name}: ${shortDesc}`;
+      })
       .join("\n");
   },
 };
@@ -55,6 +59,7 @@ export const describeToolTool: Tool = {
     required: ["names"],
   },
   async execute(args) {
+    const { getToolByName } = await import("./index.js");
     const names = Array.isArray(args.names) ? args.names : [];
     const out = names.map((n: unknown) => {
       const name = String(n);

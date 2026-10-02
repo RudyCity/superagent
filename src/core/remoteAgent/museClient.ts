@@ -172,6 +172,18 @@ export class MuseClient {
         const sanitized = this.sanitizeError(`HTTP ${res.status}: ${bodyText}`);
         logE2E("REMOTE-AGENT", `sendMessage failed: ${sanitized}`);
         console.warn(`[MuseClient] sendMessage failed: ${sanitized}`);
+        // If 400 Bad Request caused by invalid reply_parameters (e.g. replied message deleted), retry without reply_parameters
+        if (
+          res.status === 400 &&
+          replyToMessageId &&
+          /message to be replied not found|replied message not found/i.test(bodyText)
+        ) {
+          logE2E(
+            "REMOTE-AGENT",
+            `sendMessage: replied message ${replyToMessageId} not found, retrying without reply_parameters`
+          );
+          return this.sendMessage(chatId, text, retryCount, undefined);
+        }
         // Retry transient server errors: up to 3 attempts, 5s apart
         if (res.status >= 500 && retryCount < maxRetries) {
           logE2E("REMOTE-AGENT", `sendMessage transient HTTP ${res.status}: retrying in 5s (${retryCount + 1}/${maxRetries})`);
@@ -229,10 +241,12 @@ export class MuseClient {
       const ok = await this.sendMessage(groupId, chunks[i], 0, replyToMessageId);
       if (!ok) {
         allOk = false;
+        // If a chunk fails completely, abort remaining chunks to prevent broken fragments
+        break;
       }
-      // If multiple chunks, insert a 1000ms delay to respect 1 msg/sec rate limit per chat
+      // If multiple chunks, insert a 1500ms delay to respect 1 msg/sec rate limit per chat
       if (chunks.length > 1 && i < chunks.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     }
 
@@ -251,7 +265,10 @@ export class MuseClient {
    * Yields validated envelopes received from Muse bot in the configured group.
    */
   public async pollEnvelopes(
-    onEnvelope: (envelope: RemoteAgentEnvelope) => Promise<void> | void,
+    onEnvelope: (
+      envelope: RemoteAgentEnvelope,
+      meta?: { messageId?: number }
+    ) => Promise<void> | void,
     signal?: AbortSignal
   ): Promise<void> {
     if (this.isPolling) {
@@ -315,6 +332,12 @@ export class MuseClient {
           }
 
           consecutiveErrors = 0; // Reset consecutive errors on success
+
+          if (data.result.length === 0) {
+            // Idle polling: small yield so fast responses or mocks don't spin the event loop
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            continue;
+          }
 
           for (const update of data.result) {
             const updateId = update.update_id;
@@ -383,7 +406,7 @@ export class MuseClient {
             logE2E("REMOTE-AGENT", `Processing received envelope: kind=${val.envelope!.kind}, id=${(val.envelope as any).id || (val.envelope as any).task_id}`);
 
             try {
-              await onEnvelope(val.envelope!);
+              await onEnvelope(val.envelope!, { messageId: msg.message_id });
             } catch (handleErr: any) {
               const sanitized = this.sanitizeError(handleErr.message || String(handleErr));
               logE2E("REMOTE-AGENT", `Error in onEnvelope handler: ${sanitized}`);
@@ -397,6 +420,7 @@ export class MuseClient {
           }
           // Per-request timeout is expected for long-polling when no updates arrive
           if (err.name === "TimeoutError" || (err.name === "AbortError" && !signal?.aborted)) {
+            consecutiveErrors = 0;
             continue;
           }
           consecutiveErrors++;

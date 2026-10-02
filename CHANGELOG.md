@@ -1,3 +1,16 @@
+## [1.5.107] - 2026-10-02
+
+### Fixed
+
+- **Muse Remote Agent Transmission & Rate Limit Optimization**:
+  - Reduced `MAX_TOOL_OUTPUT_CHARS` from 20,000 to 3,500 in `batchExecutor.ts` to ensure tool execution outputs fit within a single Telegram message envelope (< 3,800 chars), eliminating unnecessary message fragmentation and multi-chunk reassembly failures.
+  - Eliminated circular dependency in `toolDiscoveryTools.ts` by replacing top-level imports with dynamic imports in `execute()`, preventing `ReferenceError: Cannot access 'listToolsTool' before initialization`.
+  - Optimized `list_tools` output to format concise summaries (< 2,500 chars) instead of dumping extensive multi-line documentation across all 70+ tools into Telegram.
+  - Increased multi-chunk envelope transmission delay from 1,000ms to 1,500ms in `sendEnvelope` (`museClient.ts`) and added early abort on failed chunk delivery, preventing Telegram group burst rate limits (HTTP 429).
+  - Added HTTP 400 error recovery in `sendMessage` (`museClient.ts`): automatically retries without `reply_parameters` if a previously replied-to message was deleted.
+  - Passed `messageId` metadata from inbound Telegram updates to `handleTaskBatch` and `taskRunner` so `task_result` envelopes thread directly as replies to Muse's incoming tool batch message.
+  - Added safety yield to `pollEnvelopes` when polling returns empty updates to protect the event loop, and reset `consecutiveErrors` upon expected long-poll timeouts.
+
 ## [1.5.106] - 2026-10-02
 
 ### Fixed

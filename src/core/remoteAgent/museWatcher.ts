@@ -154,8 +154,8 @@ export class MuseWatcher {
 
     // Start background polling loop
     this.client
-      .pollEnvelopes(async (envelope) => {
-        await this.handleEnvelope(envelope);
+      .pollEnvelopes(async (envelope, meta) => {
+        await this.handleEnvelope(envelope, meta);
       }, abortSignal)
       .catch((err: any) => {
         if (!abortSignal.aborted) {
@@ -201,12 +201,15 @@ export class MuseWatcher {
   /**
    * Dispatches incoming validated envelopes from Muse.
    */
-  private async handleEnvelope(envelope: RemoteAgentEnvelope): Promise<void> {
+  private async handleEnvelope(
+    envelope: RemoteAgentEnvelope,
+    meta?: { messageId?: number }
+  ): Promise<void> {
     this.lastActiveAt = Date.now();
 
     switch (envelope.kind) {
       case "task_batch": {
-        await this.handleTaskBatch(envelope as TaskBatchEnvelope);
+        await this.handleTaskBatch(envelope as TaskBatchEnvelope, meta);
         break;
       }
 
@@ -236,7 +239,10 @@ export class MuseWatcher {
     }
   }
 
-  private async handleTaskBatch(envelope: TaskBatchEnvelope): Promise<void> {
+  private async handleTaskBatch(
+    envelope: TaskBatchEnvelope,
+    meta?: { messageId?: number }
+  ): Promise<void> {
     if (envelope.id) {
       if (this.seenBatchIds.has(envelope.id)) {
         logE2E("REMOTE-AGENT", `MuseWatcher ignoring duplicate task_batch: ${envelope.id}`);
@@ -298,10 +304,11 @@ export class MuseWatcher {
         `MuseWatcher completed batch ${envelope.id} with ${results.length} result(s). Posting back to Telegram.`
       );
 
+      const replyToId = meta?.messageId || this.client.getLastSentMessageId();
       const sent = await this.client.sendEnvelope(
         resultEnvelope,
         undefined,
-        this.client.getLastSentMessageId(),
+        replyToId,
         this.options.onProgress
       );
       if (!sent) {

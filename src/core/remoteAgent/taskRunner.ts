@@ -346,7 +346,7 @@ ${options.task}`;
 
     // Step 2: Start long polling for Muse responses
     client
-      .pollEnvelopes(async (envelope: RemoteAgentEnvelope) => {
+      .pollEnvelopes(async (envelope: RemoteAgentEnvelope, meta?: { messageId?: number }) => {
         if (resolved) return;
 
         // Check if duration exceeded (24h safety net)
@@ -471,11 +471,11 @@ ${options.task}`;
             results,
           };
 
-          const lastMsgId = client.getLastSentMessageId();
+          const replyToId = meta?.messageId || client.getLastSentMessageId();
           const sendOk = await client.sendEnvelope(
             resultEnvelope,
             undefined,
-            lastMsgId,
+            replyToId,
             options.onProgress
           );
           if (!sendOk) {

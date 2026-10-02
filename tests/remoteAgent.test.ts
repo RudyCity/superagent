@@ -371,8 +371,8 @@ describe("remoteAgent - Batch Executor", () => {
     expect(results[0].output).toContain("aliased command success");
   });
 
-  it("should truncate tool output exceeding 20,000 characters", () => {
-    const huge = "a".repeat(25000);
+  it("should truncate tool output exceeding character limit", () => {
+    const huge = "a".repeat(MAX_TOOL_OUTPUT_CHARS + 1000);
     const truncated = truncateOutput(huge);
 
     expect(truncated.length).toBe(MAX_TOOL_OUTPUT_CHARS + "\n[truncated]".length);
@@ -598,11 +598,16 @@ describe("remoteAgent - Task Runner & Loop Guards", () => {
         sentEnvelopes.push(body);
         if (body.text) {
           try {
-            const parsed = JSON.parse(body.text);
+            const clean = body.text.replace(/^MUSEBUS\s+\S+\s+\d+\/\d+[\r\n\s]+/, "").trim();
+            const parsed = JSON.parse(clean);
             if (parsed.kind === "task_request" && parsed.id) {
               capturedTaskId = parsed.id;
             }
           } catch {}
+          const match = body.text.match(/"id"\s*:\s*"(task_[^"]+)"/);
+          if (match) {
+            capturedTaskId = match[1];
+          }
         }
         return new Response(JSON.stringify({ ok: true, result: {} }));
       }
@@ -686,7 +691,11 @@ describe("remoteAgent - Task Runner & Loop Guards", () => {
         }
 
         // Subsequent polls idle
-        return new Response(JSON.stringify({ ok: true, result: [] }));
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            resolve(new Response(JSON.stringify({ ok: true, result: [] })));
+          }, 20);
+        });
       }
       return new Response(JSON.stringify({ ok: true }));
     });
@@ -781,6 +790,10 @@ describe("remoteAgent - Slash Command (/muse)", () => {
             const p = JSON.parse(body.text);
             if (p.kind === "task_request") capturedTaskId = p.id;
           } catch {}
+          const match = body.text.match(/"id"\s*:\s*"(task_[^"]+)"/);
+          if (match) {
+            capturedTaskId = match[1];
+          }
         }
         return new Response(JSON.stringify({ ok: true, result: {} }));
       }
@@ -875,6 +888,10 @@ describe("remoteAgent - Slash Command (/muse)", () => {
             const p = JSON.parse(body.text);
             if (p.kind === "task_request") capturedTaskId = p.id;
           } catch {}
+          const match = body.text.match(/"id"\s*:\s*"(task_[^"]+)"/);
+          if (match) {
+            capturedTaskId = match[1];
+          }
         }
         return new Response(JSON.stringify({ ok: true, result: {} }));
       }
@@ -926,7 +943,11 @@ describe("remoteAgent - Slash Command (/muse)", () => {
             })
           );
         }
-        return new Response(JSON.stringify({ ok: true, result: [] }));
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            resolve(new Response(JSON.stringify({ ok: true, result: [] })));
+          }, 20);
+        });
       }
       return new Response(JSON.stringify({ ok: true }));
     });
