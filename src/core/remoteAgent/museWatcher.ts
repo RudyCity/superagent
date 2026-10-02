@@ -125,7 +125,7 @@ export class MuseWatcher {
 
     const effectiveType = this.options.transportType || this.config.transport || "telegram";
     if (effectiveType === "websocket") {
-      this.transport = createMuseWsTransport(this.config);
+      this.transport = createMuseWsTransport(this.config, this.options.customConfigPath);
     } else {
       this.client = new MuseClient(this.config);
       this.transport = new TelegramTransport(this.config, this.client);

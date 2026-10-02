@@ -1597,8 +1597,17 @@ export function App({
           if (configKey === "wstoken" || configKey === "token" || configKey === "ws_token") {
             const tokenPossibilities = [
               `/muse config ${parts[2]} generate`,
+              `/muse config ${parts[2]} refresh`,
+              `/muse config ${parts[2]} rotate`,
             ];
             return filterSuggestions(tokenPossibilities, currentInput);
+          }
+          if (configKey === "autotokenrefresh" || configKey === "auto_token_refresh") {
+            const togglePossibilities = [
+              `/muse config ${parts[2]} on`,
+              `/muse config ${parts[2]} off`,
+            ];
+            return filterSuggestions(togglePossibilities, currentInput);
           }
           if (configKey === "wsmode" || configKey === "ws_mode") {
             const modePossibilities = [
@@ -1621,6 +1630,12 @@ export function App({
             "/muse config transport telegram",
             "/muse config wsToken",
             "/muse config wsToken generate",
+            "/muse config wsToken refresh",
+            "/muse config wsToken rotate",
+            "/muse config tokenTtl",
+            "/muse config autoTokenRefresh",
+            "/muse config autoTokenRefresh on",
+            "/muse config autoTokenRefresh off",
             "/muse config wsPort",
             "/muse config wsHost",
             "/muse config wsPath",

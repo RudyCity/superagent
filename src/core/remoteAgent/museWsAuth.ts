@@ -83,13 +83,32 @@ export function extractBearerToken(
 
 /**
  * Validates a received bearer token against the expected configured token using timing-safe comparison.
+ * If previousToken and tokenRotatedAt are provided, also accepts previousToken if within gracePeriodMs.
  */
 export function validateBearerToken(
   receivedToken?: string | null,
-  expectedToken?: string | null
+  expectedToken?: string | null,
+  previousToken?: string | null,
+  tokenRotatedAt?: number,
+  gracePeriodMs?: number
 ): boolean {
-  if (!expectedToken) return true;
-  return timingSafeCompare(receivedToken, expectedToken);
+  if (!expectedToken && !previousToken) return true;
+  if (!receivedToken) return false;
+
+  // Primary active token check
+  if (expectedToken && timingSafeCompare(receivedToken, expectedToken)) {
+    return true;
+  }
+
+  // Grace period handover check for previous token
+  if (previousToken && tokenRotatedAt && typeof gracePeriodMs === "number" && gracePeriodMs > 0) {
+    const elapsed = Date.now() - tokenRotatedAt;
+    if (elapsed >= 0 && elapsed <= gracePeriodMs) {
+      return timingSafeCompare(receivedToken, previousToken);
+    }
+  }
+
+  return false;
 }
 
 /**

@@ -25,6 +25,12 @@ export interface RemoteAgentConfig {
   cfAccessClientSecret?: string;
   wsMode?: MuseWsMode;
   wsRemoteUrl?: string;
+  // Token refresh and rotation parameters
+  previousWsToken?: string;
+  tokenRotatedAt?: number;
+  tokenGracePeriodMs?: number;
+  tokenTtlSeconds?: number;
+  autoTokenRefresh?: boolean;
 }
 
 const DEFAULT_CONFIG: RemoteAgentConfig = {};
@@ -105,6 +111,35 @@ export function maskSecret(secret?: string): string {
  */
 export function generateSecureWsToken(): string {
   return crypto.randomBytes(32).toString("base64url");
+}
+
+export const DEFAULT_TOKEN_GRACE_PERIOD_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Rotates the WebSocket Bearer token, preserving the previous token for a grace period
+ * to allow seamless handover without breaking active reconnecting clients.
+ */
+export function rotateWsToken(
+  customPath?: string,
+  gracePeriodMs: number = DEFAULT_TOKEN_GRACE_PERIOD_MS
+): { newToken: string; previousToken?: string } {
+  const existing = loadRemoteAgentConfig(customPath);
+  const previousToken = existing.wsToken;
+  const newToken = generateSecureWsToken();
+  const now = Date.now();
+
+  updateRemoteAgentConfig(
+    {
+      wsToken: newToken,
+      previousWsToken: previousToken,
+      tokenRotatedAt: now,
+      tokenGracePeriodMs: gracePeriodMs,
+      transport: "websocket",
+    },
+    customPath
+  );
+
+  return { newToken, previousToken };
 }
 
 /**

@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "http";
 import crypto from "crypto";
 import { RemoteAgentEnvelope, validateEnvelope } from "./protocol.js";
-import { RemoteAgentConfig, maskSecret } from "./config.js";
+import { RemoteAgentConfig, maskSecret, rotateWsToken, updateRemoteAgentConfig } from "./config.js";
 import {
   RemoteTransport,
   RemoteEnvelopeMeta,
@@ -44,7 +44,7 @@ export class MuseWsServerTransport implements RemoteTransport {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private isStarted = false;
 
-  constructor(config: RemoteAgentConfig) {
+  constructor(config: RemoteAgentConfig, private customConfigPath?: string) {
     this.config = { ...config };
   }
 
@@ -82,10 +82,17 @@ export class MuseWsServerTransport implements RemoteTransport {
             }
 
             // Step 2: Bearer token verification if token provided in request header or query
-            if (this.config.wsToken) {
+            if (this.config.wsToken || this.config.previousWsToken) {
               const token = extractBearerToken(info.req.headers.authorization, info.req.url);
               if (token) {
-                if (!validateBearerToken(token, this.config.wsToken)) {
+                const isValid = validateBearerToken(
+                  token,
+                  this.config.wsToken,
+                  this.config.previousWsToken,
+                  this.config.tokenRotatedAt,
+                  this.config.tokenGracePeriodMs
+                );
+                if (!isValid) {
                   logE2E("REMOTE-AGENT", "WebSocket upgrade rejected: invalid bearer token");
                   callback(false, 401, "Unauthorized: Invalid bearer token");
                   return;
@@ -143,7 +150,15 @@ export class MuseWsServerTransport implements RemoteTransport {
     // Check if token was already verified during HTTP upgrade
     const initialToken = extractBearerToken(req.headers.authorization, req.url);
     const preAuthenticated = Boolean(
-      !this.config.wsToken || (initialToken && validateBearerToken(initialToken, this.config.wsToken))
+      (!this.config.wsToken && !this.config.previousWsToken) ||
+      (initialToken &&
+        validateBearerToken(
+          initialToken,
+          this.config.wsToken,
+          this.config.previousWsToken,
+          this.config.tokenRotatedAt,
+          this.config.tokenGracePeriodMs
+        ))
     );
 
     socket.isAuthenticated = preAuthenticated;
@@ -187,7 +202,14 @@ export class MuseWsServerTransport implements RemoteTransport {
         // Handle handshake auth frame if awaiting auth
         if (!socket.isAuthenticated) {
           if (json?.kind === "auth" && typeof json?.token === "string") {
-            if (validateBearerToken(json.token, this.config.wsToken)) {
+            const isValid = validateBearerToken(
+              json.token,
+              this.config.wsToken,
+              this.config.previousWsToken,
+              this.config.tokenRotatedAt,
+              this.config.tokenGracePeriodMs
+            );
+            if (isValid) {
               if (handshakeTimer) clearTimeout(handshakeTimer);
               socket.isAuthenticated = true;
 
@@ -223,6 +245,41 @@ export class MuseWsServerTransport implements RemoteTransport {
         const validation = validateEnvelope(json);
         if (!validation.valid || !validation.envelope) {
           logE2E("REMOTE-AGENT", `Received invalid envelope: ${validation.error}`);
+          return;
+        }
+
+        // Handle token refresh handshake
+        if (validation.envelope.kind === "token_refresh_request") {
+          const rotation = rotateWsToken(this.customConfigPath, this.config.tokenGracePeriodMs);
+          const prevToken = rotation.previousToken || this.config.wsToken;
+          this.config.wsToken = rotation.newToken;
+          this.config.previousWsToken = prevToken;
+          this.config.tokenRotatedAt = Date.now();
+
+          const resp = {
+            v: 1,
+            kind: "token_refresh_response",
+            id: `resp_${crypto.randomUUID()}`,
+            request_id: validation.envelope.id,
+            token: rotation.newToken,
+            expires_in: this.config.tokenTtlSeconds || 86400,
+            grace_period_seconds: Math.floor((this.config.tokenGracePeriodMs || 300000) / 1000),
+            ts: Date.now(),
+            nonce: crypto.randomUUID(),
+          };
+          socket.send(JSON.stringify(resp));
+          logE2E(
+            "REMOTE-AGENT",
+            `Refreshed token on request from ${connectionId}. New token generated with grace period.`
+          );
+          return;
+        }
+
+        if (validation.envelope.kind === "token_ack") {
+          logE2E(
+            "REMOTE-AGENT",
+            `Received token_ack from ${connectionId} for refresh ${validation.envelope.refresh_id}: status=${validation.envelope.status}`
+          );
           return;
         }
 
@@ -297,6 +354,35 @@ export class MuseWsServerTransport implements RemoteTransport {
     }
   }
 
+  /**
+   * Proactively rotates the Bearer token and pushes a token_refresh envelope
+   * to the currently connected Muse assistant over WebSocket.
+   */
+  public rotateToken(reason: string = "proactive_rotation"): { newToken: string; previousToken?: string } {
+    const rotation = rotateWsToken(this.customConfigPath, this.config.tokenGracePeriodMs);
+    const prevToken = rotation.previousToken || this.config.wsToken;
+    this.config.wsToken = rotation.newToken;
+    this.config.previousWsToken = prevToken;
+    this.config.tokenRotatedAt = Date.now();
+
+    if (this.activeSocket && this.activeSocket.readyState === WebSocket.OPEN) {
+      const envelope: RemoteAgentEnvelope = {
+        v: 1,
+        kind: "token_refresh",
+        id: `ref_${crypto.randomUUID()}`,
+        token: rotation.newToken,
+        expires_in: this.config.tokenTtlSeconds || 86400,
+        grace_period_seconds: Math.floor((this.config.tokenGracePeriodMs || 300000) / 1000),
+        ts: Date.now(),
+        nonce: crypto.randomUUID(),
+      };
+      this.activeSocket.send(JSON.stringify(envelope));
+      logE2E("REMOTE-AGENT", `Pushed proactive token_refresh to active Muse connection (${reason}).`);
+    }
+
+    return { newToken: rotation.newToken, previousToken: prevToken };
+  }
+
   public isConnected(): boolean {
     return Boolean(this.activeSocket && this.activeSocket.readyState === WebSocket.OPEN && this.activeSocket.isAuthenticated);
   }
@@ -348,7 +434,7 @@ export class MuseWsClientTransport implements RemoteTransport {
   private shouldReconnect = true;
   private reconnectTimer: NodeJS.Timeout | null = null;
 
-  constructor(config: RemoteAgentConfig) {
+  constructor(config: RemoteAgentConfig, private customConfigPath?: string) {
     this.config = { ...config };
   }
 
@@ -409,10 +495,32 @@ export class MuseWsClientTransport implements RemoteTransport {
           }
 
           const validation = validateEnvelope(json);
-          if (validation.valid && validation.envelope && this.onEnvelopeHandler) {
-            await this.onEnvelopeHandler(validation.envelope, {
-              transport: "websocket",
-            });
+          if (validation.valid && validation.envelope) {
+            // Handle token refresh in client mode
+            if (validation.envelope.kind === "token_refresh" || validation.envelope.kind === "token_refresh_response") {
+              const freshToken = validation.envelope.token;
+              updateRemoteAgentConfig({ wsToken: freshToken }, this.customConfigPath);
+              this.config.wsToken = freshToken;
+              logE2E("REMOTE-AGENT", `Client transport updated wsToken from ${validation.envelope.kind}`);
+
+              const ack: RemoteAgentEnvelope = {
+                v: 1,
+                kind: "token_ack",
+                id: `ack_${crypto.randomUUID()}`,
+                refresh_id: validation.envelope.id,
+                status: "ok",
+                ts: Date.now(),
+                nonce: crypto.randomUUID(),
+              };
+              ws.send(JSON.stringify(ack));
+              return;
+            }
+
+            if (this.onEnvelopeHandler) {
+              await this.onEnvelopeHandler(validation.envelope, {
+                transport: "websocket",
+              });
+            }
           }
         } catch (err: any) {
           logE2E("REMOTE-AGENT", `Client message handling error: ${err?.message}`);
@@ -434,6 +542,20 @@ export class MuseWsClientTransport implements RemoteTransport {
         resolve(); // Don't crash caller, let reconnect loop retry
       });
     });
+  }
+
+  public async requestTokenRefresh(reason: string = "client_refresh_request"): Promise<boolean> {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return false;
+    const req: RemoteAgentEnvelope = {
+      v: 1,
+      kind: "token_refresh_request",
+      id: `req_${crypto.randomUUID()}`,
+      reason,
+      ts: Date.now(),
+      nonce: crypto.randomUUID(),
+    };
+    this.socket.send(JSON.stringify(req));
+    return true;
   }
 
   public async sendEnvelope(
@@ -484,9 +606,9 @@ export class MuseWsClientTransport implements RemoteTransport {
 /**
  * Factory to create appropriate WebSocket transport based on config.
  */
-export function createMuseWsTransport(config: RemoteAgentConfig): RemoteTransport {
+export function createMuseWsTransport(config: RemoteAgentConfig, customConfigPath?: string): RemoteTransport {
   if (config.wsMode === "client") {
-    return new MuseWsClientTransport(config);
+    return new MuseWsClientTransport(config, customConfigPath);
   }
-  return new MuseWsServerTransport(config);
+  return new MuseWsServerTransport(config, customConfigPath);
 }

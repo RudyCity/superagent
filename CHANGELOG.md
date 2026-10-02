@@ -1,3 +1,21 @@
+## [1.5.119] - 2026-10-03
+
+### Added
+
+- **Zero-Downtime Token Refresh Handshake & Dynamic Rotation for Muse WebSocket Transport**:
+  - Implemented dual-token handover grace window (`tokenGracePeriodMs`, default 5 minutes / 300,000 ms) allowing active and reconnecting clients to authenticate with either the new token or the previous token during rotation without dropped connections.
+  - Added bidirectional protocol envelopes in `src/core/remoteAgent/protocol.ts`:
+    - `token_refresh_request`: Sent by client to request a fresh token with renewal reason.
+    - `token_refresh_response`: Server response providing the new cryptographically secure token, TTL, and grace window.
+    - `token_refresh`: Proactive server push to notify the connected assistant of a credential rotation.
+    - `token_ack`: Client receipt confirmation acknowledging successful storage of the fresh token.
+  - Added token rotation primitive `rotateWsToken` in `src/core/remoteAgent/config.ts` storing `previousWsToken`, `tokenRotatedAt`, and `tokenGracePeriodMs`.
+  - Updated `validateBearerToken` in `src/core/remoteAgent/museWsAuth.ts` to perform constant-time timing-safe comparison on both active and previous tokens within the grace window.
+  - Extended `MuseWsServerTransport` and `MuseWsClientTransport` in `src/core/remoteAgent/museWsTransport.ts` with handshake frame handlers, proactive push methods, and automatic persistence.
+  - Added CLI and slash command support for `wsToken refresh`, `wsToken rotate`, `tokenTtl`, and `autoTokenRefresh` in `museCli.ts` and `museCommand.ts`.
+  - Updated autocomplete suggestions and descriptions in `src/utils/dashboardSuggestions.ts` and `src/app.tsx`.
+  - Added comprehensive test suite in `tests/museTokenRefresh.test.ts` covering token rotation, dual-token grace periods, request-response handshakes, proactive push notifications, and client token storage.
+
 ## [1.5.118] - 2026-10-02
 
 ### Added

@@ -74,6 +74,12 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/muse config transport telegram": "Set Muse transport to Telegram group bus",
   "/muse config wsToken": "Set pre-shared Bearer authentication token for WebSocket",
   "/muse config wsToken generate": "Generate a fresh 256-bit cryptographically secure Bearer token",
+  "/muse config wsToken refresh": "Trigger automatic zero-downtime token refresh handshake with Muse",
+  "/muse config wsToken rotate": "Rotate Bearer token with 5-minute dual-token handover grace period",
+  "/muse config tokenTtl": "Set token TTL in seconds for automatic expiration / renewal tracking",
+  "/muse config autoTokenRefresh": "Toggle automatic background token refresh handshake (on/off)",
+  "/muse config autoTokenRefresh on": "Enable automatic background token refresh handshake",
+  "/muse config autoTokenRefresh off": "Disable automatic background token refresh handshake",
   "/muse config wsPort": "Set local WebSocket server listen port (default: 9225)",
   "/muse config wsHost": "Set local WebSocket server host binding (default: 127.0.0.1)",
   "/muse config wsPath": "Set WebSocket URL path endpoint (default: /muse)",
@@ -398,8 +404,17 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         if (configKey === "wstoken" || configKey === "token" || configKey === "ws_token") {
           const tokenPossibilities = [
             `/muse config ${parts[2]} generate`,
+            `/muse config ${parts[2]} refresh`,
+            `/muse config ${parts[2]} rotate`,
           ];
           return filterSuggestions(tokenPossibilities, query);
+        }
+        if (configKey === "autotokenrefresh" || configKey === "auto_token_refresh") {
+          const togglePossibilities = [
+            `/muse config ${parts[2]} on`,
+            `/muse config ${parts[2]} off`,
+          ];
+          return filterSuggestions(togglePossibilities, query);
         }
         if (configKey === "wsmode" || configKey === "ws_mode") {
           const modePossibilities = [
@@ -422,6 +437,12 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
           "/muse config transport telegram",
           "/muse config wsToken",
           "/muse config wsToken generate",
+          "/muse config wsToken refresh",
+          "/muse config wsToken rotate",
+          "/muse config tokenTtl",
+          "/muse config autoTokenRefresh",
+          "/muse config autoTokenRefresh on",
+          "/muse config autoTokenRefresh off",
           "/muse config wsPort",
           "/muse config wsHost",
           "/muse config wsPath",

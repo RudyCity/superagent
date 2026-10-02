@@ -187,3 +187,10 @@ sequenceDiagram
 - **Dynamic Directory Routing**: Incoming batches with `"workspace"` or `"project"` fields are resolved against watched roots by exact path, basename, or substring, dynamically re-targeting execution contexts.
 - **Live Workspace Control**: Workspaces can be added or removed on the fly via `/muse watch add <dir>` and `/muse watch remove <dir>`.
 
+### Zero-Downtime Token Refresh Handshake
+- **Dual-Token Handover Grace Window**: Preserves the previous token for 5 minutes (`tokenGracePeriodMs: 300000`) after rotation, allowing reconnecting clients to transition seamlessly without authentication dropouts.
+- **Bidirectional Handshake Envelopes**:
+  - Client request: `token_refresh_request` $\rightarrow$ Server reply: `token_refresh_response` (new token + grace window).
+  - Server push: `token_refresh` $\rightarrow$ Client acknowledgment: `token_ack`.
+- **Management Commands**: `/muse config wsToken refresh`, `/muse config wsToken rotate`, `/muse config tokenTtl <sec>`, `/muse config autoTokenRefresh <on|off>`.
+

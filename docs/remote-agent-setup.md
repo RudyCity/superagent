@@ -156,6 +156,37 @@ For a stable, permanent endpoint with Cloudflare Zero Trust:
    - Under **Access** -> **Service Auth**, create a **Service Token** (`CF-Access-Client-Id` and `CF-Access-Client-Secret`).
    - Store these in Superagent via `/muse config cfAccessClientId` and `/muse config cfAccessClientSecret`.
 
+### 3.4 Zero-Downtime Token Refresh Handshake & Rotation
+
+Superagent and Muse support automatic zero-downtime Bearer token rotation over active WebSocket connections:
+
+1. **Dual-Token Handover Grace Window**:
+   - When a token is refreshed, the previous token remains valid for a 5-minute handover grace period (`tokenGracePeriodMs: 300000`).
+   - Reconnecting or in-flight requests using the previous token continue to authenticate seamlessly while Muse updates its credentials.
+2. **Client-Initiated Refresh Handshake**:
+   - Muse sends a `token_refresh_request` envelope over WebSocket.
+   - Superagent generates a new cryptographically secure token, persists the rotation, and replies with `token_refresh_response` containing the new token and remaining grace window.
+3. **Server-Initiated Proactive Push**:
+   - Administrators or timers trigger token rotation on Superagent (`rotateToken()`).
+   - Superagent pushes a `token_refresh` envelope to the active Muse connection.
+   - Muse stores the new token and confirms receipt with `token_ack`.
+4. **Configuration Commands**:
+   ```bash
+   # Trigger zero-downtime refresh handshake
+   /muse config wsToken refresh
+   superagent muse config wsToken refresh
+
+   # Rotate Bearer token with 5-minute handover grace window
+   /muse config wsToken rotate
+   superagent muse config wsToken rotate
+
+   # Configure token TTL in seconds
+   superagent muse config tokenTtl 86400
+
+   # Toggle automatic background token refresh
+   superagent muse config autoTokenRefresh on
+   ```
+
 ---
 
 ## 4. Telegram Setup (Alternative Transport)

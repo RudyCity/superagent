@@ -220,11 +220,18 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       cfaccessclientsecret: "cfAccessClientSecret",
       cf_access_client_secret: "cfAccessClientSecret",
       cfsecret: "cfAccessClientSecret",
+      tokenttl: "tokenTtlSeconds",
+      token_ttl: "tokenTtlSeconds",
+      ttl: "tokenTtlSeconds",
+      tokengrace: "tokenGracePeriodMs",
+      token_grace: "tokenGracePeriodMs",
+      autotokenrefresh: "autoTokenRefresh",
+      auto_token_refresh: "autoTokenRefresh",
     };
 
     const mappedKey = validKeys[key];
     if (!mappedKey) {
-      console.error(`Unknown config key: ${key}. Valid keys: transport, wsToken, wsPort, wsHost, wsPath, wsMode, cfAccessClientId, cfAccessClientSecret, botToken, groupId, museBotId, defaultWorkspace, workspaces`);
+      console.error(`Unknown config key: ${key}. Valid keys: transport, wsToken, wsPort, wsHost, wsPath, wsMode, cfAccessClientId, cfAccessClientSecret, tokenTtl, botToken, groupId, museBotId, defaultWorkspace, workspaces`);
       return;
     }
 
@@ -234,12 +241,12 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     }
 
     const patch: Partial<RemoteAgentConfig> = {};
-    if (mappedKey === "asRunner") {
+    if (mappedKey === "asRunner" || mappedKey === "autoTokenRefresh") {
       const lower = val.toLowerCase();
       if (["on", "true", "1", "yes", "enable", "enabled"].includes(lower)) {
-        patch.asRunner = true;
+        (patch as any)[mappedKey] = true;
       } else if (["off", "false", "0", "no", "disable", "disabled"].includes(lower)) {
-        patch.asRunner = false;
+        (patch as any)[mappedKey] = false;
       } else {
         console.error(`Invalid value for ${key}: "${val}". Use "on" or "off".`);
         return;
@@ -254,19 +261,23 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         console.error(`Invalid transport: "${val}". Supported: "telegram" or "websocket"`);
         return;
       }
-    } else if (mappedKey === "wsPort") {
+    } else if (mappedKey === "wsPort" || mappedKey === "tokenTtlSeconds" || mappedKey === "tokenGracePeriodMs") {
       const p = parseInt(val, 10);
-      if (isNaN(p) || p <= 0 || p > 65535) {
-        console.error(`Invalid port: "${val}". Must be an integer between 1 and 65535.`);
+      if (isNaN(p) || p <= 0) {
+        console.error(`Invalid integer for ${key}: "${val}".`);
         return;
       }
-      patch.wsPort = p;
+      (patch as any)[mappedKey] = p;
     } else if (mappedKey === "wsToken") {
-      if (val.toLowerCase() === "generate" || val.toLowerCase() === "gen") {
-        const fresh = generateSecureWsToken();
-        patch.wsToken = fresh;
-        updateRemoteAgentConfig(patch);
-        console.log(`Generated new secure Bearer token:\n${fresh}`);
+      if (
+        val.toLowerCase() === "generate" ||
+        val.toLowerCase() === "gen" ||
+        val.toLowerCase() === "refresh" ||
+        val.toLowerCase() === "rotate"
+      ) {
+        const { rotateWsToken } = await import("./config.js");
+        const rotation = rotateWsToken();
+        console.log(`Generated and rotated secure Bearer token (with 5-minute handover grace period):\n${rotation.newToken}`);
         return;
       }
       patch.wsToken = val;

@@ -85,6 +85,49 @@ export interface TaskCancelEnvelope {
   reason?: string;
 }
 
+export interface TokenRefreshRequestEnvelope {
+  v: 1;
+  kind: "token_refresh_request";
+  id?: string;
+  reason?: string;
+  ts?: number;
+  nonce?: string;
+}
+
+export interface TokenRefreshResponseEnvelope {
+  v: 1;
+  kind: "token_refresh_response";
+  id?: string;
+  request_id?: string;
+  token: string;
+  expires_in?: number;
+  grace_period_seconds?: number;
+  ts?: number;
+  nonce?: string;
+}
+
+export interface TokenRefreshEnvelope {
+  v: 1;
+  kind: "token_refresh";
+  id?: string;
+  token: string;
+  expires_in?: number;
+  grace_period_seconds?: number;
+  ts?: number;
+  nonce?: string;
+}
+
+export interface TokenAckEnvelope {
+  v: 1;
+  kind: "token_ack";
+  id?: string;
+  refresh_id?: string;
+  status: "ok" | "error";
+  message?: string;
+  ts?: number;
+  nonce?: string;
+}
+
 export const DEFAULT_MUSE_SYSTEM_PROMPT = `You are Muse, the remote cognitive brain for Superagent CLI running locally on the user's computer.
 You reason and plan high-level tasks; Superagent executes tool batches locally on the file system and terminal.
 
@@ -119,7 +162,12 @@ COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
 6. Task cancellation (task_cancel):
    When you receive {"v": 1, "kind": "task_cancel", "task_id": "<task_id>"}, immediately halt all reasoning and abort the task. Do not send further batches.
 7. Session reset (session_reset):
-   When you receive {"v": 1, "kind": "session_reset", "session": "<id>"}, clear previous conversational working memory and start fresh.`;
+   When you receive {"v": 1, "kind": "session_reset", "session": "<id>"}, clear previous conversational working memory and start fresh.
+8. Token Refresh Handshake (token_refresh_request):
+   When connected over WebSocket, you can refresh your Bearer token at any time by sending:
+   {"v": 1, "kind": "token_refresh_request", "id": "req_<uuid>"}
+   Superagent will return a fresh Bearer token in a token_refresh_response with a dual-token grace period.
+   Reply with {"v": 1, "kind": "token_ack", "refresh_id": "...", "status": "ok"} to acknowledge.`;
 
 export type RemoteAgentEnvelope =
   | TaskRequestEnvelope
@@ -128,7 +176,11 @@ export type RemoteAgentEnvelope =
   | TaskDoneEnvelope
   | ChatEnvelope
   | SessionResetEnvelope
-  | TaskCancelEnvelope;
+  | TaskCancelEnvelope
+  | TokenRefreshRequestEnvelope
+  | TokenRefreshResponseEnvelope
+  | TokenRefreshEnvelope
+  | TokenAckEnvelope;
 
 export const CHUNK_HEADER_PREFIX = "MUSEBUS";
 export const DEFAULT_MAX_CHUNK_SIZE = 3800;
@@ -377,7 +429,20 @@ export function validateEnvelope(
   }
 
   // 3. Schema check: known kind
-  const validKinds = ["task_request", "task_batch", "task_result", "task_done", "chat", "session_reset", "task_cancel", "prompt_cache_miss"];
+  const validKinds = [
+    "task_request",
+    "task_batch",
+    "task_result",
+    "task_done",
+    "chat",
+    "session_reset",
+    "task_cancel",
+    "prompt_cache_miss",
+    "token_refresh_request",
+    "token_refresh_response",
+    "token_refresh",
+    "token_ack",
+  ];
   if (!validKinds.includes(envelope.kind)) {
     return { valid: false, error: `Unknown envelope kind: ${envelope.kind}` };
   }
@@ -507,6 +572,26 @@ export function validateEnvelope(
     case "task_cancel": {
       if (!envelope.task_id || typeof envelope.task_id !== "string") {
         return { valid: false, error: "task_cancel missing valid 'task_id'" };
+      }
+      break;
+    }
+
+    case "token_refresh_request": {
+      // Optional id, reason, ts, nonce
+      break;
+    }
+
+    case "token_refresh_response":
+    case "token_refresh": {
+      if (!envelope.token || typeof envelope.token !== "string" || !envelope.token.trim()) {
+        return { valid: false, error: `${envelope.kind} missing valid non-empty 'token'` };
+      }
+      break;
+    }
+
+    case "token_ack": {
+      if (envelope.status !== "ok" && envelope.status !== "error") {
+        return { valid: false, error: "token_ack invalid 'status': must be 'ok' or 'error'" };
       }
       break;
     }
