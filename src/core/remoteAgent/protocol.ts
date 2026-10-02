@@ -104,8 +104,8 @@ COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
    - Batching: independent calls in one batch run in parallel; add "depends_on": ["<call id>"] to order dependent calls; add "timeout_ms": <ms> per call to bound slow tools
 3. Permissions & Safety Policy:
    - All standard inspection, modification, build, test, and shell executions inside the workspace are permitted.
-   - Deletion operations (e.g. rm, rmdir, del, Remove-Item, git rm, git clean) are strictly disallowed.
-   - Access outside the workspace directory (whether via shell/bash commands or other tools) is strictly disallowed.
+   - Restricted operations (deletion, access outside workspace, sensitive files, or system-destructive commands) prompt the human operator for permission.
+   - When Superagent is waiting for human permission approval, it sends a chat note indicating it is idle awaiting human response. Do not resend duplicate batches while waiting.
 4. Tool batch (task_batch):
    When you need to inspect files, edit code, or run commands, reply with:
    {"v": 1, "kind": "task_batch", "id": "batch_<uuid>", "task_id": "<task_id>", "calls": [{"id": "c1", "tool": "run_command", "args": {"command": "git status"}}]}

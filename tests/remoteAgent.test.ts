@@ -490,6 +490,37 @@ describe("remoteAgent - Batch Executor", () => {
     expect(onQuestionSpy).toHaveBeenCalled();
   });
 
+  it("should trigger onWaitingPermission and onPermissionDecision hooks during permission prompting", async () => {
+    const waitingSpy = vi.fn();
+    const decisionSpy = vi.fn();
+    const onPermissionSpy = vi.fn().mockResolvedValue(true);
+    const mockAgent: any = {
+      onPermission: onPermissionSpy,
+    };
+
+    await executeBatch(
+      [
+        {
+          id: "c_hook_test",
+          tool: "run_command",
+          args: { command: "cat ../outside_hook.txt" },
+        },
+      ],
+      {
+        workspace: tempDir,
+        agent: mockAgent,
+        onWaitingPermission: waitingSpy,
+        onPermissionDecision: decisionSpy,
+      }
+    );
+
+    expect(waitingSpy).toHaveBeenCalledTimes(1);
+    expect(waitingSpy.mock.calls[0][1]).toMatch(/outside/i);
+    expect(onPermissionSpy).toHaveBeenCalledTimes(1);
+    expect(decisionSpy).toHaveBeenCalledTimes(1);
+    expect(decisionSpy.mock.calls[0][2]).toBe(true);
+  });
+
   it("should not treat Windows CLI flags like /FI and /FO as out-of-bounds Unix paths", async () => {
     const results = await executeBatch(
       [

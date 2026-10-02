@@ -661,6 +661,68 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
       sendSpy.mockRestore();
     });
 
+    it("should send waiting permission notification chat envelope to Muse when idle awaiting human response", async () => {
+      let registeredHandler: ((envelope: any) => Promise<void>) | null = null;
+      const sentEnvelopes: any[] = [];
+
+      const pollSpy = vi
+        .spyOn(MuseClient.prototype, "pollEnvelopes")
+        .mockImplementation((handler) => {
+          registeredHandler = handler;
+          return new Promise(() => {});
+        });
+
+      const sendSpy = vi
+        .spyOn(MuseClient.prototype, "sendEnvelope")
+        .mockImplementation(async (env) => {
+          sentEnvelopes.push(env);
+          return true;
+        });
+
+      const onPermissionSpy = vi.fn().mockResolvedValue(true);
+      const mockAgent: any = {
+        onPermission: onPermissionSpy,
+      };
+
+      await startMuseWatcher({
+        workspace: process.cwd(),
+        agent: mockAgent,
+        announce: false,
+      });
+
+      expect(registeredHandler).not.toBeNull();
+
+      // Trigger an out-of-bounds command that requires human permission
+      await registeredHandler!({
+        v: 1,
+        kind: "task_batch",
+        id: "batch_perm_test",
+        task_id: "task_perm_1",
+        calls: [
+          {
+            id: "call_oob_1",
+            tool: "run_command",
+            args: { command: "cat ../outside_permission_test.txt" },
+          },
+        ],
+      });
+
+      // Verify that chat envelopes were sent for waiting permission and approval
+      const chatEnvelopes = sentEnvelopes.filter((e) => e.kind === "chat");
+      expect(chatEnvelopes.length).toBeGreaterThanOrEqual(1);
+
+      const waitingChat = chatEnvelopes.find((e) => e.text.includes("Waiting for human permission"));
+      expect(waitingChat).toBeDefined();
+      expect(waitingChat.text).toContain("Idle");
+
+      const decisionChat = chatEnvelopes.find((e) => e.text.includes("approved permission"));
+      expect(decisionChat).toBeDefined();
+
+      await stopMuseWatcher();
+      pollSpy.mockRestore();
+      sendSpy.mockRestore();
+    });
+
     it("should handle /muse watch and /muse unwatch slash commands", async () => {
       const pollSpy = vi
         .spyOn(MuseClient.prototype, "pollEnvelopes")

@@ -29,6 +29,8 @@ export interface TaskRunnerOptions {
   onToolStart?: (toolCall: any, description: string) => void;
   onToolEnd?: (toolCall: any, toolResult: any, description: string) => void;
   onPermissionPrompt?: (toolCall: any, description: string) => Promise<boolean | "session">;
+  onWaitingPermission?: (toolCall: any, description: string) => void | Promise<void>;
+  onPermissionDecision?: (toolCall: any, description: string, approved: boolean) => void | Promise<void>;
 }
 
 export interface TaskRunnerResult {
@@ -448,6 +450,46 @@ ${options.task}`;
               onToolEnd: options.onToolEnd,
               onProgress: options.onProgress,
               onPermissionPrompt: options.onPermissionPrompt,
+              onWaitingPermission: async (toolCall, reason) => {
+                const waitingMsg = `⏳ Waiting for human permission approval in Superagent terminal:\n- Reason: ${reason}\n- Status: Idle (awaiting operator input)`;
+                options.onProgress?.(waitingMsg);
+                try {
+                  await options.onWaitingPermission?.(toolCall, reason);
+                } catch {}
+
+                try {
+                  const chatEnv: RemoteAgentEnvelope = {
+                    v: 1,
+                    kind: "chat",
+                    text: waitingMsg,
+                  };
+                  const replyToId = meta?.messageId || client.getLastSentMessageId();
+                  await client.sendEnvelope(chatEnv, undefined, replyToId);
+                } catch (err: any) {
+                  logE2E("REMOTE-AGENT", `Failed to send waiting permission notice to Muse: ${err?.message || err}`);
+                }
+              },
+              onPermissionDecision: async (toolCall, reason, approved) => {
+                const decisionMsg = approved
+                  ? `✅ Human operator approved permission for: ${reason}. Resuming execution.`
+                  : `❌ Human operator denied permission for: ${reason}.`;
+                options.onProgress?.(decisionMsg);
+                try {
+                  await options.onPermissionDecision?.(toolCall, reason, approved);
+                } catch {}
+
+                try {
+                  const chatEnv: RemoteAgentEnvelope = {
+                    v: 1,
+                    kind: "chat",
+                    text: decisionMsg,
+                  };
+                  const replyToId = meta?.messageId || client.getLastSentMessageId();
+                  await client.sendEnvelope(chatEnv, undefined, replyToId);
+                } catch (err: any) {
+                  logE2E("REMOTE-AGENT", `Failed to send permission decision notice to Muse: ${err?.message || err}`);
+                }
+              },
             });
           } catch (execErr: any) {
             logE2E("REMOTE-AGENT", `Batch ${envelope.id} execution threw error: ${execErr.message}`);

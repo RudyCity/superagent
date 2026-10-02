@@ -18,6 +18,8 @@ export interface BatchExecutorOptions {
   autoApproveWorkspace?: boolean;
   onProgress?: (message: string) => void;
   onPermissionPrompt?: (toolCall: any, description: string) => Promise<boolean | "session">;
+  onWaitingPermission?: (toolCall: any, description: string) => void | Promise<void>;
+  onPermissionDecision?: (toolCall: any, description: string, approved: boolean) => void | Promise<void>;
   onToolStart?: (toolCall: any, description: string) => void;
   onToolEnd?: (toolCall: any, toolResult: any, description: string) => void;
 }
@@ -170,43 +172,56 @@ async function promptForPermission(
   reason: string,
   options: BatchExecutorOptions
 ): Promise<boolean> {
-  // 1. Explicit permission callback
+  // 1. Notify external listeners (e.g. Muse) that Superagent is idle waiting for human permission
+  if (options.onWaitingPermission) {
+    try {
+      await options.onWaitingPermission(toolCallObj, reason);
+    } catch {}
+  }
+
+  let approved = false;
+
+  // 2. Explicit permission callback
   if (options.onPermissionPrompt) {
     try {
       const res = await options.onPermissionPrompt(toolCallObj, reason);
-      return res === true || res === "session";
+      approved = res === true || res === "session";
     } catch {
-      return false;
+      approved = false;
     }
-  }
-
-  // 2. Agent's onPermission handler (triggers interactive terminal permission modal)
-  if (options.agent && typeof (options.agent as any).onPermission === "function") {
+  } else if (options.agent && typeof (options.agent as any).onPermission === "function") {
+    // 3. Agent's onPermission handler (triggers interactive terminal permission modal)
     try {
       const res = await (options.agent as any).onPermission(toolCallObj, reason);
-      return res === true || res === "session";
+      approved = res === true || res === "session";
     } catch {
-      return false;
+      approved = false;
     }
-  }
-
-  // 3. Agent's onQuestion handler (interactive question dialog fallback)
-  if (options.agent && typeof (options.agent as any).onQuestion === "function") {
+  } else if (options.agent && typeof (options.agent as any).onQuestion === "function") {
+    // 4. Agent's onQuestion handler (interactive question dialog fallback)
     try {
       const res = await (options.agent as any).onQuestion(
         `[Permission Required] ${reason}\nDo you want to allow this action?`,
         ["Allow Execution", "Deny Execution"]
       );
       if (Array.isArray(res)) {
-        return res[0] === "Allow Execution";
+        approved = res[0] === "Allow Execution";
+      } else {
+        approved = typeof res === "string" && (res === "Allow Execution" || res.toLowerCase().includes("allow"));
       }
-      return typeof res === "string" && (res === "Allow Execution" || res.toLowerCase().includes("allow"));
     } catch {
-      return false;
+      approved = false;
     }
   }
 
-  return false;
+  // 5. Notify external listeners of operator's decision
+  if (options.onPermissionDecision) {
+    try {
+      await options.onPermissionDecision(toolCallObj, reason, approved);
+    } catch {}
+  }
+
+  return approved;
 }
 
 /**

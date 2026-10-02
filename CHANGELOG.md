@@ -1,3 +1,15 @@
+## [1.5.113] - 2026-10-02
+
+### Added
+
+- **Muse Idle Waiting Permission Notification & Decision Status**:
+  - Implemented automatic real-time notification to Muse whenever Superagent pauses and waits for human operator permission in the terminal (`promptForPermission` in `batchExecutor.ts`).
+  - Added `onWaitingPermission` and `onPermissionDecision` hooks to `BatchExecutorOptions`, `MuseWatcherOptions`, and `TaskRunnerOptions`.
+  - When an elevated operation (out-of-workspace traversal, deletion, system destructive commands, or sensitive configuration access) requires interactive confirmation, Superagent sends a `chat` envelope to Muse over Telegram notifying that Superagent is idle awaiting human permission approval (`⏳ Waiting for human permission approval in Superagent terminal...`), preventing Muse from assuming timeouts or resending duplicate batches.
+  - When the operator decides (`Allow Execution` or `Deny Execution`), Superagent immediately notifies Muse via chat (`✅ Human operator approved permission...` or `❌ Human operator denied permission...`) before resuming tool execution or returning errors.
+  - Updated `DEFAULT_MUSE_SYSTEM_PROMPT` in `protocol.ts` to instruct Muse on handling human permission wait states without sending duplicate batches.
+  - Added comprehensive test coverage in `tests/remoteAgentSession.test.ts` and `tests/remoteAgent.test.ts`.
+
 ## [1.5.112] - 2026-10-02
 
 ### Fixed
