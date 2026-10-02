@@ -113,6 +113,66 @@ export function normalizeWindowsPackageRunner(command: string): string {
   return command;
 }
 
+let cachedPythonDirs: string[] | null = null;
+
+/**
+ * On Windows, finds installed Python versions in common directories (e.g. LocalAppData\Programs\Python)
+ * so processes launched in Git Bash or subprocesses can find real python.exe instead of failing or
+ * hitting Windows Store reparse points.
+ */
+export function resolveWindowsPythonDirs(): string[] {
+  if (cachedPythonDirs) return cachedPythonDirs;
+  if (process.platform !== "win32") {
+    cachedPythonDirs = [];
+    return cachedPythonDirs;
+  }
+  const found: string[] = [];
+  const localAppData = process.env.LOCALAPPDATA;
+  if (localAppData) {
+    const pyBase = path.join(localAppData, "Programs", "Python");
+    if (fsSync.existsSync(pyBase)) {
+      try {
+        const subdirs = fsSync
+          .readdirSync(pyBase)
+          .filter((d) => d.startsWith("Python"))
+          .sort()
+          .reverse();
+        for (const sub of subdirs) {
+          const dir = path.join(pyBase, sub);
+          if (fsSync.existsSync(path.join(dir, "python.exe"))) {
+            found.push(dir);
+            const scripts = path.join(dir, "Scripts");
+            if (fsSync.existsSync(scripts)) found.push(scripts);
+            break;
+          }
+        }
+      } catch {}
+    }
+  }
+  cachedPythonDirs = found;
+  return cachedPythonDirs;
+}
+
+/**
+ * Augments process environment on Windows so that installed Python is included in PATH if missing.
+ */
+export function augmentWindowsEnvPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (process.platform !== "win32") return env;
+  const pyDirs = resolveWindowsPythonDirs();
+  if (pyDirs.length === 0) return env;
+
+  const currentPath = env.PATH || env.Path || "";
+  const dirsToAdd = pyDirs.filter((d) => !currentPath.toLowerCase().includes(d.toLowerCase()));
+  if (dirsToAdd.length === 0) return env;
+
+  const newPath = `${dirsToAdd.join(";")};${currentPath}`;
+  return {
+    ...env,
+    PATH: newPath,
+    Path: newPath,
+  };
+}
+
 export function formatCommandForPowerShell(command: string): string {
   const parts: string[] = [];
   let currentPart = "";

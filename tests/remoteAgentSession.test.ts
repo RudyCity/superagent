@@ -723,6 +723,166 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
       sendSpy.mockRestore();
     });
 
+    it("should re-send cached task_result envelope when duplicate successful task_batch is received", async () => {
+      let registeredHandler: ((envelope: any, meta?: any) => Promise<void>) | null = null;
+      const sentEnvelopes: Array<{ env: any; replyToId?: number }> = [];
+
+      const pollSpy = vi
+        .spyOn(MuseClient.prototype, "pollEnvelopes")
+        .mockImplementation((handler) => {
+          registeredHandler = handler;
+          return new Promise(() => {});
+        });
+
+      const sendSpy = vi
+        .spyOn(MuseClient.prototype, "sendEnvelope")
+        .mockImplementation(async (env, _targetGroup, replyToId) => {
+          sentEnvelopes.push({ env, replyToId });
+          return true;
+        });
+
+      await startMuseWatcher({
+        workspace: process.cwd(),
+        announce: false,
+      });
+
+      expect(registeredHandler).not.toBeNull();
+
+      // First delivery of batch_fhash_cached
+      await registeredHandler!(
+        {
+          v: 1,
+          kind: "task_batch",
+          id: "batch_fhash_cached",
+          task_id: "task_test_cache",
+          calls: [
+            {
+              id: "c1",
+              tool: "run_command",
+              args: { command: "echo cached-result-test" },
+            },
+          ],
+        },
+        { messageId: 101 }
+      );
+
+      // Verify first result was sent
+      expect(sentEnvelopes.some((s) => s.env.kind === "task_result" && s.env.id === "batch_fhash_cached")).toBe(true);
+      const initialCount = sentEnvelopes.filter((s) => s.env.kind === "task_result").length;
+
+      // Duplicate delivery of the exact same batch ID from Muse/Telegram (e.g. retried message)
+      await registeredHandler!(
+        {
+          v: 1,
+          kind: "task_batch",
+          id: "batch_fhash_cached",
+          task_id: "task_test_cache",
+          calls: [
+            {
+              id: "c1",
+              tool: "run_command",
+              args: { command: "echo cached-result-test" },
+            },
+          ],
+        },
+        { messageId: 102 }
+      );
+
+      // Verify cached result was re-sent replying to the new messageId
+      const resultSends = sentEnvelopes.filter((s) => s.env.kind === "task_result" && s.env.id === "batch_fhash_cached");
+      expect(resultSends).toHaveLength(initialCount + 1);
+      expect(resultSends[resultSends.length - 1].replyToId).toBe(102);
+
+      await stopMuseWatcher();
+      pollSpy.mockRestore();
+      sendSpy.mockRestore();
+    });
+
+    it("should allow retrying a previously failed task_batch when resent by Muse", async () => {
+      let registeredHandler: ((envelope: any, meta?: any) => Promise<void>) | null = null;
+      const sentEnvelopes: any[] = [];
+
+      const pollSpy = vi
+        .spyOn(MuseClient.prototype, "pollEnvelopes")
+        .mockImplementation((handler) => {
+          registeredHandler = handler;
+          return new Promise(() => {});
+        });
+
+      const sendSpy = vi
+        .spyOn(MuseClient.prototype, "sendEnvelope")
+        .mockImplementation(async (env) => {
+          sentEnvelopes.push(env);
+          return true;
+        });
+
+      await startMuseWatcher({
+        workspace: process.cwd(),
+        announce: false,
+      });
+
+      expect(registeredHandler).not.toBeNull();
+
+      // First run: execute an unknown/invalid tool which fails (ok: false)
+      await registeredHandler!(
+        {
+          v: 1,
+          kind: "task_batch",
+          id: "batch_fhash_retry",
+          task_id: "task_retry_1",
+          calls: [
+            {
+              id: "c1",
+              tool: "non_existent_tool_xyz_for_failure",
+              args: {},
+            },
+          ],
+        },
+        { messageId: 201 }
+      );
+
+      // Verify failed result was sent
+      const firstResult = sentEnvelopes.find(
+        (e) => e.kind === "task_result" && e.id === "batch_fhash_retry"
+      );
+      expect(firstResult).toBeDefined();
+      expect(firstResult.results[0].ok).toBe(false);
+
+      const beforeRetryCount = sentEnvelopes.filter(
+        (e) => e.kind === "task_result" && e.id === "batch_fhash_retry"
+      ).length;
+
+      // Second delivery: Muse resends the failed batch
+      await registeredHandler!(
+        {
+          v: 1,
+          kind: "task_batch",
+          id: "batch_fhash_retry",
+          task_id: "task_retry_1",
+          calls: [
+            {
+              id: "c1",
+              tool: "run_command",
+              args: { command: "echo retry-recovered" },
+            },
+          ],
+        },
+        { messageId: 202 }
+      );
+
+      // Verify the batch was re-executed instead of being ignored!
+      const afterResults = sentEnvelopes.filter(
+        (e) => e.kind === "task_result" && e.id === "batch_fhash_retry"
+      );
+      expect(afterResults).toHaveLength(beforeRetryCount + 1);
+      const secondResult = afterResults[afterResults.length - 1];
+      expect(secondResult.results[0].ok).toBe(true);
+
+      await stopMuseWatcher();
+      pollSpy.mockRestore();
+      sendSpy.mockRestore();
+    });
+
     it("should handle /muse watch and /muse unwatch slash commands", async () => {
       const pollSpy = vi
         .spyOn(MuseClient.prototype, "pollEnvelopes")

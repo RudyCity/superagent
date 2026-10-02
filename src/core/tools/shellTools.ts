@@ -11,7 +11,8 @@ import {
   resolveWindowsShell,
   normalizeGitPaths,
   normalizeWindowsPackageRunner,
-  formatUnknownActionError
+  formatUnknownActionError,
+  augmentWindowsEnvPath,
 } from "./helpers.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { 
@@ -167,7 +168,7 @@ export const bashTool: Tool = {
       const requestedCwd = (args.cwd as string | undefined) || remoteCwd;
       return await sshRunCommandExecute(rawCommand, requestedCwd, undefined, signal);
     }
-    let command = normalizeGitPaths(rawCommand);
+    let command = normalizeGitPaths(rawCommand).replace(/\r\n/g, "\n");
     const timeout = (args.timeout as number) || 600000;
     
     let shellPath: string | boolean = true;
@@ -190,12 +191,12 @@ export const bashTool: Tool = {
       }, timeout);
     });
 
-    const unbufferedEnv: NodeJS.ProcessEnv = {
+    const unbufferedEnv: NodeJS.ProcessEnv = augmentWindowsEnvPath({
       ...process.env,
       PYTHONUNBUFFERED: "1",
       FORCE_COLOR: "1",
       CI: "1",
-    };
+    });
 
     try {
       clearActiveToolOutput();
@@ -306,7 +307,7 @@ export const runCommandTool: Tool = {
     if (workspaceMode.isSsh()) {
       return await sshRunCommandExecute(rawCommand, args.cwd as string | undefined, undefined, signal);
     }
-    let command = normalizeGitPaths(rawCommand);
+    let command = normalizeGitPaths(rawCommand).replace(/\r\n/g, "\n");
     const targetCwd = args.cwd 
       ? path.resolve(cwd, args.cwd as string)
       : cwd;
@@ -341,12 +342,12 @@ export const runCommandTool: Tool = {
       }, timeout);
     });
 
-    const unbufferedEnv: NodeJS.ProcessEnv = {
+    const unbufferedEnv: NodeJS.ProcessEnv = augmentWindowsEnvPath({
       ...process.env,
       PYTHONUNBUFFERED: "1",
       FORCE_COLOR: "1",
       CI: "1",
-    };
+    });
 
     try {
       clearActiveToolOutput();
@@ -526,7 +527,7 @@ export const runBackgroundProcessTool: Tool = {
     const autoRetry = !!args.autoRetry;
     const onExit = args.onExit as string | undefined;
 
-    let commandToRun = normalizeGitPaths(rawCommand);
+    let commandToRun = normalizeGitPaths(rawCommand).replace(/\r\n/g, "\n");
 
     let shellPath: string | boolean = true;
     if (process.platform === "win32") {
@@ -583,6 +584,7 @@ export const runBackgroundProcessTool: Tool = {
         cwd: targetCwd,
         reject: false,
         all: true,
+        env: augmentWindowsEnvPath({ ...process.env, PYTHONUNBUFFERED: "1" }),
       });
 
       let currentTask: BackgroundTask;

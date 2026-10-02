@@ -67,6 +67,16 @@ export class MuseWatcher {
   private activeBatchAborts = new Set<AbortController>();
   private seenChatIds = new Set<string>();
   private seenBatchIds = new Set<string>();
+  private activeBatchIds = new Set<string>();
+  private completedBatchResults = new Map<
+    string,
+    {
+      resultEnvelope: TaskResultEnvelope;
+      completedAt: number;
+      hasError: boolean;
+    }
+  >();
+  private pendingReplyMessageIds = new Map<string, Set<number>>();
   private batchQueue: Array<{
     type: "batch" | "done";
     envelope: TaskBatchEnvelope | TaskDoneEnvelope;
@@ -190,6 +200,8 @@ export class MuseWatcher {
       item.resolve?.();
     }
     this.batchQueue = [];
+    this.activeBatchIds.clear();
+    this.pendingReplyMessageIds.clear();
 
     this.abortAllBatches();
 
@@ -257,16 +269,68 @@ export class MuseWatcher {
     }
   }
 
-  private enqueueBatch(
+  private async enqueueBatch(
     envelope: TaskBatchEnvelope,
     meta?: { messageId?: number }
   ): Promise<void> {
-    if (envelope.id) {
-      if (this.seenBatchIds.has(envelope.id)) {
-        logE2E("REMOTE-AGENT", `MuseWatcher ignoring duplicate task_batch: ${envelope.id}`);
-        return Promise.resolve();
+    const batchId = envelope.id;
+    if (batchId) {
+      // 1. If this batch is currently in progress (in queue or executing):
+      if (this.activeBatchIds.has(batchId)) {
+        logE2E(
+          "REMOTE-AGENT",
+          `MuseWatcher received duplicate task_batch while already in progress: ${batchId}`
+        );
+        this.emitLine(
+          "system",
+          `[Muse Watch] Batch ${batchId} is already executing. Result will be posted upon completion.`
+        );
+        if (meta?.messageId) {
+          const pending = this.pendingReplyMessageIds.get(batchId) || new Set<number>();
+          pending.add(meta.messageId);
+          this.pendingReplyMessageIds.set(batchId, pending);
+        }
+        return;
       }
-      this.seenBatchIds.add(envelope.id);
+
+      // 2. If this batch already completed:
+      if (this.completedBatchResults.has(batchId)) {
+        const cached = this.completedBatchResults.get(batchId)!;
+        if (cached.hasError) {
+          // Previously failed; Muse or operator is retrying the batch
+          logE2E(
+            "REMOTE-AGENT",
+            `MuseWatcher retrying previously failed task_batch: ${batchId}`
+          );
+          this.emitLine(
+            "system",
+            `⚡ [Muse Watch] Retrying previously failed batch ${batchId} (${envelope.calls?.length || 0} calls)`
+          );
+          this.completedBatchResults.delete(batchId);
+          // Fall through to enqueue for re-execution
+        } else {
+          // Previously succeeded; re-send cached result immediately to satisfy Muse/Telegram
+          logE2E(
+            "REMOTE-AGENT",
+            `MuseWatcher re-sending cached successful result for duplicate task_batch: ${batchId}`
+          );
+          this.emitLine(
+            "system",
+            `⚡ [Muse Watch] Re-sending cached result for duplicate batch ${batchId}`
+          );
+          const replyToId = meta?.messageId || this.client.getLastSentMessageId();
+          await this.client.sendEnvelope(
+            cached.resultEnvelope,
+            undefined,
+            replyToId,
+            this.options.onProgress
+          );
+          return;
+        }
+      }
+
+      this.activeBatchIds.add(batchId);
+      this.seenBatchIds.add(batchId);
       if (this.seenBatchIds.size > 1000) {
         const toRemove = Array.from(this.seenBatchIds).slice(0, 500);
         for (const id of toRemove) this.seenBatchIds.delete(id);
@@ -283,8 +347,14 @@ export class MuseWatcher {
         type: "batch",
         envelope,
         meta,
-        resolve,
-        reject,
+        resolve: () => {
+          if (batchId) this.activeBatchIds.delete(batchId);
+          resolve();
+        },
+        reject: (err) => {
+          if (batchId) this.activeBatchIds.delete(batchId);
+          reject(err);
+        },
       });
 
       this.processBatchQueue().catch((err) => {
@@ -435,6 +505,22 @@ export class MuseWatcher {
         results,
       };
 
+      const hasError = results.some(
+        (r) => !r.ok || (typeof r.error === "string" && r.error.length > 0)
+      );
+
+      if (envelope.id) {
+        this.completedBatchResults.set(envelope.id, {
+          resultEnvelope,
+          completedAt: Date.now(),
+          hasError,
+        });
+        if (this.completedBatchResults.size > 500) {
+          const oldestKey = this.completedBatchResults.keys().next().value;
+          if (oldestKey) this.completedBatchResults.delete(oldestKey);
+        }
+      }
+
       logE2E(
         "REMOTE-AGENT",
         `MuseWatcher completed batch ${envelope.id} with ${results.length} result(s). Posting back to Telegram.`
@@ -453,11 +539,26 @@ export class MuseWatcher {
           `[Muse Watch] Failed to send tool results for batch ${envelope.id} to Telegram.`
         );
       }
+
+      if (envelope.id && this.pendingReplyMessageIds.has(envelope.id)) {
+        const extraReplyIds = this.pendingReplyMessageIds.get(envelope.id);
+        this.pendingReplyMessageIds.delete(envelope.id);
+        if (extraReplyIds) {
+          for (const extraId of extraReplyIds) {
+            if (extraId !== replyToId) {
+              await this.client.sendEnvelope(resultEnvelope, undefined, extraId).catch(() => {});
+            }
+          }
+        }
+      }
     } catch (err: any) {
       logE2E("REMOTE-AGENT", `MuseWatcher batch execution error: ${err?.message || err}`);
       this.emitLine("error", `[Muse Watch] Error executing tool batch: ${err?.message || err}`);
     } finally {
       this.activeBatchAborts.delete(batchAbort);
+      if (envelope.id) {
+        this.activeBatchIds.delete(envelope.id);
+      }
     }
   }
 
@@ -522,6 +623,13 @@ export class MuseWatcher {
       const remaining: typeof this.batchQueue = [];
       for (const item of this.batchQueue) {
         if (item.envelope.task_id?.trim() === targetTaskId) {
+          if (item.type === "batch") {
+            const batchId = (item.envelope as TaskBatchEnvelope).id;
+            if (batchId) {
+              this.activeBatchIds.delete(batchId);
+              this.pendingReplyMessageIds.delete(batchId);
+            }
+          }
           item.resolve?.();
         } else {
           remaining.push(item);
@@ -530,6 +638,13 @@ export class MuseWatcher {
       this.batchQueue = remaining;
     } else {
       for (const item of this.batchQueue) {
+        if (item.type === "batch") {
+          const batchId = (item.envelope as TaskBatchEnvelope).id;
+          if (batchId) {
+            this.activeBatchIds.delete(batchId);
+            this.pendingReplyMessageIds.delete(batchId);
+          }
+        }
         item.resolve?.();
       }
       this.batchQueue = [];
@@ -558,6 +673,9 @@ export class MuseWatcher {
     // Clear dedup sets so legitimate retries after reset are not ignored
     this.seenBatchIds.clear();
     this.seenChatIds.clear();
+    this.activeBatchIds.clear();
+    this.completedBatchResults.clear();
+    this.pendingReplyMessageIds.clear();
 
     this.activeTaskId = undefined;
     if (this.options.agent) {

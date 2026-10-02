@@ -1,3 +1,19 @@
+## [1.5.114] - 2026-10-02
+
+### Fixed
+
+- **MuseWatcher Duplicate Batch Retransmission & Result Caching**:
+  - Fixed issue where retried task batches from Muse over Telegram (such as `batch_fhash`) were silently dropped by `MuseWatcher` without acknowledging or responding, causing Muse and human operators to wait indefinitely with zero feedback.
+  - Implemented in-memory result caching (`completedBatchResults`) in `MuseWatcher` (`museWatcher.ts`): when a duplicate batch arrives for an already-completed successful batch, Superagent immediately re-sends the cached `task_result` envelope to Telegram (replying directly to the incoming message), acknowledging the sender without repeating side-effects.
+  - Added intelligent retry handling for failed batches: if a duplicate batch ID is received after a previous failure or error, `MuseWatcher` treats it as an intentional retry, clearing previous failure cache and re-executing the batch rather than dropping it.
+  - Added concurrent duplicate deduplication with `activeBatchIds` and `pendingReplyMessageIds`: if a duplicate batch arrives while execution is already in progress, execution is not duplicated and the completion result is delivered to all waiting messages.
+  - Automatically cleaned up batch tracking state during task cancellations (`handleTaskCancel`), session resets (`resetLocalSession`), and watcher shutdown (`stop()`).
+
+- **Windows Python PATH & Subprocess Execution Robustness**:
+  - Implemented `resolveWindowsPythonDirs` and `augmentWindowsEnvPath` in `src/core/tools/helpers.ts` to automatically detect installed Python environments (e.g. `LocalAppData\Programs\Python\Python*`) and inject them into `PATH` for child processes.
+  - Prevented Windows shells from falling back to Microsoft Store reparse points (`WindowsApps\python.exe`) or cmd error wrappers (`|| goto :error`) during multiline script execution.
+  - Normalized CRLF line endings (`\r\n` -> `\n`) across `bashTool`, `runCommandTool`, and `runBackgroundProcessTool` in `src/core/tools/shellTools.ts` to ensure consistent Unix line endings for shell scripts and Python `-c` commands.
+
 ## [1.5.113] - 2026-10-02
 
 ### Added
