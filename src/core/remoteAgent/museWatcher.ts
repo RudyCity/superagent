@@ -42,6 +42,7 @@ export interface MuseWatcherOptions {
   onToolStart?: (toolCall: any, description: string) => void;
   onToolEnd?: (toolCall: any, toolResult: any, description: string) => void;
   onStatusChange?: (isRunning: boolean) => void;
+  onPermissionPrompt?: (toolCall: any, description: string) => Promise<boolean | "session">;
 }
 
 /**
@@ -287,6 +288,7 @@ export class MuseWatcher {
         onToolStart: this.options.onToolStart,
         onToolEnd: this.options.onToolEnd,
         onProgress: this.options.onProgress,
+        onPermissionPrompt: this.options.onPermissionPrompt,
       });
 
       this.batchesExecuted++;

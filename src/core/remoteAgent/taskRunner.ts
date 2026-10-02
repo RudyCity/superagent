@@ -28,6 +28,7 @@ export interface TaskRunnerOptions {
   onChat?: (message: string) => void;
   onToolStart?: (toolCall: any, description: string) => void;
   onToolEnd?: (toolCall: any, toolResult: any, description: string) => void;
+  onPermissionPrompt?: (toolCall: any, description: string) => Promise<boolean | "session">;
 }
 
 export interface TaskRunnerResult {
@@ -446,6 +447,7 @@ ${options.task}`;
               onToolStart: options.onToolStart,
               onToolEnd: options.onToolEnd,
               onProgress: options.onProgress,
+              onPermissionPrompt: options.onPermissionPrompt,
             });
           } catch (execErr: any) {
             logE2E("REMOTE-AGENT", `Batch ${envelope.id} execution threw error: ${execErr.message}`);

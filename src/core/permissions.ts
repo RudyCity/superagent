@@ -479,6 +479,12 @@ export function isToolCallOutOfBounds(
           continue;
         }
 
+        // On Windows, tokens starting with / that do not contain a second / (e.g. /FI, /FO, /all, /s)
+        // are Windows command switches/flags, not absolute Unix paths.
+        if (process.platform === "win32" && !p.slice(1).includes("/")) {
+          continue;
+        }
+
         if (isSsh) {
           const inAnyWorkspace = allowedWorkspaces.some((wsPath) => {
             const normW = wsPath.replace(/\\/g, "/");
@@ -609,6 +615,12 @@ export function isMuseOutOfBounds(
       while ((uMatch = unixAbsPathRegex.exec(command)) !== null) {
         const p = uMatch[1];
         if (p.startsWith("/dev/") || p === "/dev/null" || p.startsWith("/bin/") || p.startsWith("/usr/bin/") || p.startsWith("/usr/local/bin/") || p.startsWith("/tmp/")) {
+          continue;
+        }
+
+        // On Windows, tokens starting with / that do not contain a second / (e.g. /FI, /FO, /all, /s)
+        // are Windows command switches/flags, not absolute Unix paths.
+        if (process.platform === "win32" && !p.slice(1).includes("/")) {
           continue;
         }
         const resolved = resolveNormalizedPath(p);

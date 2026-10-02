@@ -381,8 +381,8 @@ describe("remoteAgent - Batch Executor", () => {
     );
   });
 
-  it("should block deletion tools immediately without calling agent.onPermission", async () => {
-    const onPermissionSpy = vi.fn();
+  it("should prompt agent.onPermission for deletion tools and deny when user rejects", async () => {
+    const onPermissionSpy = vi.fn().mockResolvedValue(false);
     const mockAgent: any = {
       onPermission: onPermissionSpy,
     };
@@ -400,11 +400,36 @@ describe("remoteAgent - Batch Executor", () => {
     expect(results).toHaveLength(1);
     expect(results[0].ok).toBe(false);
     expect(results[0].error).toMatch(/Deletion/i);
-    expect(onPermissionSpy).not.toHaveBeenCalled();
+    expect(onPermissionSpy).toHaveBeenCalled();
   });
 
-  it("should block out-of-bounds tools immediately without calling agent.onPermission", async () => {
-    const onPermissionSpy = vi.fn();
+  it("should allow deletion tools when agent.onPermission approves", async () => {
+    const targetFile = path.join(tempDir, "to_delete.txt");
+    fs.writeFileSync(targetFile, "temporary content");
+
+    const onPermissionSpy = vi.fn().mockResolvedValue(true);
+    const mockAgent: any = {
+      onPermission: onPermissionSpy,
+    };
+    const results = await executeBatch(
+      [
+        {
+          id: "c_del_approve",
+          tool: "run_command",
+          args: { command: "rm to_delete.txt" },
+        },
+      ],
+      { workspace: tempDir, agent: mockAgent }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(true);
+    expect(onPermissionSpy).toHaveBeenCalled();
+    expect(fs.existsSync(targetFile)).toBe(false);
+  });
+
+  it("should prompt agent.onPermission for out-of-bounds tools and deny when user rejects", async () => {
+    const onPermissionSpy = vi.fn().mockResolvedValue(false);
     const mockAgent: any = {
       onPermission: onPermissionSpy,
     };
@@ -422,7 +447,64 @@ describe("remoteAgent - Batch Executor", () => {
     expect(results).toHaveLength(1);
     expect(results[0].ok).toBe(false);
     expect(results[0].error).toMatch(/Access outside workspace/i);
-    expect(onPermissionSpy).not.toHaveBeenCalled();
+    expect(onPermissionSpy).toHaveBeenCalled();
+  });
+
+  it("should allow out-of-bounds tools when agent.onPermission approves", async () => {
+    const onPermissionSpy = vi.fn().mockResolvedValue(true);
+    const mockAgent: any = {
+      onPermission: onPermissionSpy,
+    };
+    const results = await executeBatch(
+      [
+        {
+          id: "c_oob_approve",
+          tool: "run_command",
+          args: { command: "echo outside-allowed" },
+        },
+      ],
+      { workspace: tempDir, agent: mockAgent }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(true);
+    expect(results[0].output).toMatch(/outside-allowed/);
+  });
+
+  it("should fall back to agent.onQuestion when agent.onPermission is not defined", async () => {
+    const onQuestionSpy = vi.fn().mockResolvedValue("Allow Execution");
+    const mockAgent: any = {
+      onQuestion: onQuestionSpy,
+    };
+    const results = await executeBatch(
+      [
+        {
+          id: "c_oob_question",
+          tool: "run_command",
+          args: { command: "cat ../outside_prompt.txt" },
+        },
+      ],
+      { workspace: tempDir, agent: mockAgent }
+    );
+
+    expect(onQuestionSpy).toHaveBeenCalled();
+  });
+
+  it("should not treat Windows CLI flags like /FI and /FO as out-of-bounds Unix paths", async () => {
+    const results = await executeBatch(
+      [
+        {
+          id: "c_win_flags",
+          tool: "run_command",
+          args: { command: 'echo test /FI "IMAGENAME eq python.exe" /FO TABLE' },
+        },
+      ],
+      { workspace: tempDir }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(true);
+    expect(results[0].output).not.toMatch(/Permission denied: Access outside workspace/i);
   });
 
   it("should block system-destructive commands (mkfs, dd, forkbomb) for Muse", async () => {

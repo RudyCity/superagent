@@ -171,6 +171,50 @@ function effectiveSignal(
   };
 }
 
+async function promptForPermission(
+  toolCallObj: any,
+  reason: string,
+  options: BatchExecutorOptions
+): Promise<boolean> {
+  // 1. Explicit permission callback
+  if (options.onPermissionPrompt) {
+    try {
+      const res = await options.onPermissionPrompt(toolCallObj, reason);
+      return res === true || res === "session";
+    } catch {
+      return false;
+    }
+  }
+
+  // 2. Agent's onPermission handler (triggers interactive terminal permission modal)
+  if (options.agent && typeof (options.agent as any).onPermission === "function") {
+    try {
+      const res = await (options.agent as any).onPermission(toolCallObj, reason);
+      return res === true || res === "session";
+    } catch {
+      return false;
+    }
+  }
+
+  // 3. Agent's onQuestion handler (interactive question dialog fallback)
+  if (options.agent && typeof (options.agent as any).onQuestion === "function") {
+    try {
+      const res = await (options.agent as any).onQuestion(
+        `[Permission Required] ${reason}\nDo you want to allow this action?`,
+        ["Allow Execution", "Deny Execution"]
+      );
+      if (Array.isArray(res)) {
+        return res[0] === "Allow Execution";
+      }
+      return typeof res === "string" && (res === "Allow Execution" || res.toLowerCase().includes("allow"));
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Executes a single tool call: name/arg normalization, permission gate,
  * per-call timeout, output truncation, and tool_start/tool_end events.
@@ -256,16 +300,8 @@ async function executeOneCall(
   // Gate 1: Check out-of-workspace access
   const oobCheck = isMuseOutOfBounds(toolCallObj, cwd);
   if (oobCheck.isOutOfBounds) {
-    let approved = false;
-    if (options.onPermissionPrompt) {
-      try {
-        const res = await options.onPermissionPrompt(toolCallObj, oobCheck.reason || description);
-        approved = res === true || res === "session";
-      } catch {
-        approved = false;
-      }
-    }
-
+    const promptReason = `Access outside workspace: ${oobCheck.reason || description}`;
+    const approved = await promptForPermission(toolCallObj, promptReason, options);
     if (!approved) {
       const deniedMsg = `Permission denied: Access outside workspace is not allowed for Muse (${oobCheck.reason}).`;
       emitEnd({
@@ -281,16 +317,8 @@ async function executeOneCall(
   // Gate 2: Check deletion operations
   const deleteCheck = isDeleteToolCall(toolCallObj);
   if (deleteCheck.isDelete) {
-    let approved = false;
-    if (options.onPermissionPrompt) {
-      try {
-        const res = await options.onPermissionPrompt(toolCallObj, deleteCheck.reason || description);
-        approved = res === true || res === "session";
-      } catch {
-        approved = false;
-      }
-    }
-
+    const promptReason = `Deletion operation: ${deleteCheck.reason || description}`;
+    const approved = await promptForPermission(toolCallObj, promptReason, options);
     if (!approved) {
       const deniedMsg = `Permission denied: Deletion operations are not allowed for Muse (${deleteCheck.reason}).`;
       emitEnd({
@@ -308,16 +336,8 @@ async function executeOneCall(
     ["bash", "run_command", "run_background_process"].includes(toolName) &&
     isSystemDestructiveCommand(toolArgs.command || "");
   if (isDestructive) {
-    let approved = false;
-    if (options.onPermissionPrompt) {
-      try {
-        const res = await options.onPermissionPrompt(toolCallObj, description);
-        approved = res === true || res === "session";
-      } catch {
-        approved = false;
-      }
-    }
-
+    const promptReason = `System-destructive command: ${description}`;
+    const approved = await promptForPermission(toolCallObj, promptReason, options);
     if (!approved) {
       const deniedMsg = `Permission denied: System-destructive command is not allowed for Muse.`;
       emitEnd({
@@ -336,16 +356,8 @@ async function executeOneCall(
     typeof targetPath === "string" &&
     (/\.env($|\.)/i.test(targetPath) || /model-config\.json/i.test(targetPath));
   if (isSensitive) {
-    let approved = false;
-    if (options.onPermissionPrompt) {
-      try {
-        const res = await options.onPermissionPrompt(toolCallObj, description);
-        approved = res === true || res === "session";
-      } catch {
-        approved = false;
-      }
-    }
-
+    const promptReason = `Access to sensitive file: ${targetPath}`;
+    const approved = await promptForPermission(toolCallObj, promptReason, options);
     if (!approved) {
       const deniedMsg = `Permission denied: Access to sensitive file is not allowed for Muse (${targetPath}).`;
       emitEnd({
@@ -359,25 +371,14 @@ async function executeOneCall(
   }
 
   // Gate 5: General workspace-modifying tools
-  // Policy for Muse: allow all inside workspace unless explicitly denied by onPermissionPrompt or autoApproveWorkspace === false
+  // Policy for Muse: allow all inside workspace unless onPermissionPrompt is explicitly provided, or autoApproveWorkspace === false
   const isModifying = MODIFYING_TOOLS.includes(toolName);
   if (isModifying) {
     let approved = options.autoApproveWorkspace !== false;
-
     if (options.onPermissionPrompt) {
-      try {
-        const res = await options.onPermissionPrompt(toolCallObj, description);
-        approved = res === true || res === "session";
-      } catch {
-        approved = false;
-      }
-    } else if (!approved && options.agent && typeof (options.agent as any).onPermission === "function") {
-      try {
-        const res = await (options.agent as any).onPermission(toolCallObj, description);
-        approved = res === true || res === "session";
-      } catch {
-        approved = false;
-      }
+      approved = await promptForPermission(toolCallObj, description, options);
+    } else if (!approved) {
+      approved = await promptForPermission(toolCallObj, description, options);
     }
 
     if (!approved) {

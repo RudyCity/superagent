@@ -1,3 +1,14 @@
+## [1.5.111] - 2026-10-02
+
+### Fixed
+
+- **Muse Interactive Human Permission Prompt & Windows CLI Flags Fix**:
+  - Fixed false-positive out-of-workspace boundary detection in `permissions.ts` (`isMuseOutOfBounds` and `isToolCallOutOfBounds`): on Windows (`process.platform === "win32"`), command-line switches starting with `/` that do not contain a second `/` (e.g. `/FI`, `/FO`, `/all`, `/s`, `/b`, `/q`, `/ano`) are recognized as Windows CLI flags rather than being misclassified as absolute Unix paths (e.g. `tasklist /FI "IMAGENAME eq python.exe" /FO TABLE`).
+  - Added interactive human permission prompting via `promptForPermission` in `batchExecutor.ts`: when Muse requests operations requiring elevated confirmation (out-of-workspace access, file deletion, system destructive commands, or sensitive files), Superagent prompts the human operator for approval via `options.agent.onPermission` (or fallback to `options.agent.onQuestion`) instead of unconditionally denying the request.
+  - Workspace-modifying operations inside workspace boundaries continue to auto-approve without interactive prompts when `autoApproveWorkspace !== false`.
+  - Added `onPermissionPrompt` callback support to `MuseWatcherOptions` (`museWatcher.ts`) and `RemoteTaskRunOptions` (`taskRunner.ts`), forwarding directly to `executeBatch`.
+  - Added comprehensive test coverage in `tests/remoteAgent.test.ts` for permission prompting, user approval/denial flows, `onQuestion` fallback, and Windows CLI switches.
+
 ## [1.5.110] - 2026-10-02
 
 ### Fixed
