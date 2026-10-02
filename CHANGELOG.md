@@ -1,3 +1,14 @@
+## [1.5.109] - 2026-10-02
+
+### Fixed
+
+- **Muse Permission Auto-Approval & Interactive Modal Interception Fix**:
+  - Fixed regression in `batchExecutor.ts` Gate 5 where presence of `agent.onPermission` triggered interactive terminal UI permission prompts (`PERMISSION REQUIRED: Writing file: ...`) for workspace modifications during Muse execution.
+  - Workspace-modifying tools (`write`, `edit`, `replace_file_content`, `apply_patch`) inside the workspace boundary now automatically execute without prompting when `autoApproveWorkspace !== false`.
+  - Disconnected `agent.onPermission` from Gates 1-4 for Muse execution so forbidden operations (deletion, out-of-workspace traversal, system destruction, and sensitive files) are rejected with clear error messages immediately instead of prompting or hanging the terminal UI.
+  - Added `SYSTEM_DESTRUCTIVE_PATTERNS` and `isSystemDestructiveCommand` in `permissions.ts` to separate catastrophic system destruction (mkfs, dd, fork bomb) from standard development commands (npm, git commit, etc.), ensuring Muse has full development autonomy inside workspace boundaries while keeping host security intact.
+  - Added comprehensive unit tests in `tests/remoteAgent.test.ts` verifying `agent.onPermission` is never called for workspace operations or blocked actions during Muse runs.
+
 ## [1.5.108] - 2026-10-02
 
 ### Added

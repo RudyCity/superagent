@@ -6,4 +6,5 @@ export {
   executeToolCall,
   getToolDescription,
   isDangerousCommand,
+  isSystemDestructiveCommand,
 } from "./permissions.js";

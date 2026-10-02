@@ -353,6 +353,101 @@ describe("remoteAgent - Batch Executor", () => {
     expect(fs.readFileSync(path.join(tempDir, "auto_allowed.txt"), "utf-8")).toBe("Auto approved for Muse");
   });
 
+  it("should auto-approve modifying tools inside workspace without calling agent.onPermission", async () => {
+    const onPermissionSpy = vi.fn();
+    const mockAgent: any = {
+      onPermission: onPermissionSpy,
+    };
+    const results = await executeBatch(
+      [
+        {
+          id: "c_auto_agent",
+          tool: "write",
+          args: {
+            filePath: path.join(tempDir, "agent_auto.txt"),
+            content: "Created by Muse without modal popup",
+          },
+        },
+      ],
+      { workspace: tempDir, agent: mockAgent }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(true);
+    expect(onPermissionSpy).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(tempDir, "agent_auto.txt"))).toBe(true);
+    expect(fs.readFileSync(path.join(tempDir, "agent_auto.txt"), "utf-8")).toBe(
+      "Created by Muse without modal popup"
+    );
+  });
+
+  it("should block deletion tools immediately without calling agent.onPermission", async () => {
+    const onPermissionSpy = vi.fn();
+    const mockAgent: any = {
+      onPermission: onPermissionSpy,
+    };
+    const results = await executeBatch(
+      [
+        {
+          id: "c_del_spy",
+          tool: "run_command",
+          args: { command: "rm sample.txt" },
+        },
+      ],
+      { workspace: tempDir, agent: mockAgent }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(false);
+    expect(results[0].error).toMatch(/Deletion/i);
+    expect(onPermissionSpy).not.toHaveBeenCalled();
+  });
+
+  it("should block out-of-bounds tools immediately without calling agent.onPermission", async () => {
+    const onPermissionSpy = vi.fn();
+    const mockAgent: any = {
+      onPermission: onPermissionSpy,
+    };
+    const results = await executeBatch(
+      [
+        {
+          id: "c_oob_spy",
+          tool: "run_command",
+          args: { command: "cat ../outside.txt" },
+        },
+      ],
+      { workspace: tempDir, agent: mockAgent }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(false);
+    expect(results[0].error).toMatch(/Access outside workspace/i);
+    expect(onPermissionSpy).not.toHaveBeenCalled();
+  });
+
+  it("should block system-destructive commands (mkfs, dd, forkbomb) for Muse", async () => {
+    const results = await executeBatch(
+      [
+        {
+          id: "c_destruct_mkfs",
+          tool: "run_command",
+          args: { command: "mkfs /dev/sda1" },
+        },
+        {
+          id: "c_destruct_dd",
+          tool: "run_command",
+          args: { command: "dd if=/dev/zero of=/dev/sda" },
+        },
+      ],
+      { workspace: tempDir }
+    );
+
+    for (const res of results) {
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/System-destructive command is not allowed/i);
+    }
+  });
+
   it("should block deletion shell commands (rm, del, Remove-Item, git rm, git clean) for Muse", async () => {
     const results = await executeBatch(
       [

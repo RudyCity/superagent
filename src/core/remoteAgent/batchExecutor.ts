@@ -6,6 +6,7 @@ import {
   MODIFYING_TOOLS,
   getToolDescription,
   isDangerousCommand,
+  isSystemDestructiveCommand,
   isDeleteToolCall,
   isMuseOutOfBounds,
 } from "../permissions.js";
@@ -263,13 +264,6 @@ async function executeOneCall(
       } catch {
         approved = false;
       }
-    } else if (options.agent && typeof (options.agent as any).onPermission === "function") {
-      try {
-        const res = await (options.agent as any).onPermission(toolCallObj, oobCheck.reason || description);
-        approved = res === true || res === "session";
-      } catch {
-        approved = false;
-      }
     }
 
     if (!approved) {
@@ -295,13 +289,6 @@ async function executeOneCall(
       } catch {
         approved = false;
       }
-    } else if (options.agent && typeof (options.agent as any).onPermission === "function") {
-      try {
-        const res = await (options.agent as any).onPermission(toolCallObj, deleteCheck.reason || description);
-        approved = res === true || res === "session";
-      } catch {
-        approved = false;
-      }
     }
 
     if (!approved) {
@@ -316,11 +303,11 @@ async function executeOneCall(
     }
   }
 
-  // Gate 3: Check dangerous system commands
-  const isDangerous =
+  // Gate 3: Check system-destructive commands
+  const isDestructive =
     ["bash", "run_command", "run_background_process"].includes(toolName) &&
-    isDangerousCommand(toolArgs.command || "");
-  if (isDangerous) {
+    isSystemDestructiveCommand(toolArgs.command || "");
+  if (isDestructive) {
     let approved = false;
     if (options.onPermissionPrompt) {
       try {
@@ -329,17 +316,10 @@ async function executeOneCall(
       } catch {
         approved = false;
       }
-    } else if (options.agent && typeof (options.agent as any).onPermission === "function") {
-      try {
-        const res = await (options.agent as any).onPermission(toolCallObj, description);
-        approved = res === true || res === "session";
-      } catch {
-        approved = false;
-      }
     }
 
     if (!approved) {
-      const deniedMsg = `Permission denied: Dangerous command is not allowed for Muse.`;
+      const deniedMsg = `Permission denied: System-destructive command is not allowed for Muse.`;
       emitEnd({
         toolCallId: call.id,
         name: toolName,
@@ -364,13 +344,6 @@ async function executeOneCall(
       } catch {
         approved = false;
       }
-    } else if (options.agent && typeof (options.agent as any).onPermission === "function") {
-      try {
-        const res = await (options.agent as any).onPermission(toolCallObj, description);
-        approved = res === true || res === "session";
-      } catch {
-        approved = false;
-      }
     }
 
     if (!approved) {
@@ -386,7 +359,7 @@ async function executeOneCall(
   }
 
   // Gate 5: General workspace-modifying tools
-  // Policy for Muse: allow all inside workspace unless explicitly denied by prompt/agent or autoApproveWorkspace === false
+  // Policy for Muse: allow all inside workspace unless explicitly denied by onPermissionPrompt or autoApproveWorkspace === false
   const isModifying = MODIFYING_TOOLS.includes(toolName);
   if (isModifying) {
     let approved = options.autoApproveWorkspace !== false;
@@ -398,7 +371,7 @@ async function executeOneCall(
       } catch {
         approved = false;
       }
-    } else if (options.agent && typeof (options.agent as any).onPermission === "function") {
+    } else if (!approved && options.agent && typeof (options.agent as any).onPermission === "function") {
       try {
         const res = await (options.agent as any).onPermission(toolCallObj, description);
         approved = res === true || res === "session";

@@ -59,6 +59,32 @@ export function isDangerousCommand(command: string): boolean {
   return DANGEROUS_PATTERNS.some((p) => p.test(command));
 }
 
+export const SYSTEM_DESTRUCTIVE_PATTERNS = [
+  /rm\s+-rf\s+[\/~]/i,
+  /rmdir\s+[\/~]/i,
+  /mkfs/i,
+  /dd\s+if=/i,
+  /:{ *:.+}/,
+  /chmod\s+-R\s+777/i,
+  /(curl|wget).*\|\s*(ba)?sh/i,
+  /eval\(/i,
+  /base64\s+-(d|-decode).*\|\s*(ba)?sh/i,
+  /Invoke-Expression|iex/i,
+  /rmdir\s+\/[sS]\s+\/[qQ]\s+[cC]:\\/i,
+  /del\s+\/[fF]\s+\/[sS]\s+\/[qQ]\s+[cC]:\\/i,
+  /(shutdown|reboot|halt|poweroff)(\s|$)/i,
+  /Remove-Item\s+.*-(Recurse|Force)/i,
+  /Format-Volume/i,
+  /Initialize-Disk/i,
+  /Stop-Process\s+.*-Force/i,
+  /Stop-Computer/i,
+];
+
+export function isSystemDestructiveCommand(command: string): boolean {
+  if (!command || typeof command !== "string") return false;
+  return SYSTEM_DESTRUCTIVE_PATTERNS.some((p) => p.test(command));
+}
+
 export const SHELL_DELETE_PATTERNS = [
   // rm, rmdir, unlink, shred (supports full paths /bin/rm, prefixes after ;, &&, |, `, $( )
   /(?:^|[;&|`\n]\s*|\$\(\s*)(?:(?:\/usr)?\/bin\/)?(?:rm|rmdir|unlink|shred)\b/i,
