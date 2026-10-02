@@ -216,4 +216,87 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(helpText).toContain("/muse watch");
     });
   });
+
+  describe("Muse Connection Prompt Generation", () => {
+    it("should format connection prompt with endpoint and bearer token", async () => {
+      const { buildMuseConnectionPrompt } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+      const prompt = buildMuseConnectionPrompt({
+        wssUrl: "wss://test-subdomain.trycloudflare.com/muse",
+        token: "sec_token_12345",
+      });
+
+      expect(prompt).toContain("Connect to my local Superagent workstation via WebSocket:");
+      expect(prompt).toContain("- Endpoint: wss://test-subdomain.trycloudflare.com/muse");
+      expect(prompt).toContain("- Bearer Token: sec_token_12345");
+      expect(prompt).toContain("Please connect to the WebSocket endpoint");
+    });
+
+    it("should format prompt with initial task and workspaces", async () => {
+      const { buildMuseConnectionPrompt } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+      const prompt = buildMuseConnectionPrompt({
+        wssUrl: "wss://test-subdomain.trycloudflare.com/muse",
+        token: "sec_token_12345",
+        workspaces: ["/path/to/my-project"],
+        cfClientId: "cf-client-id",
+        cfClientSecret: "cf-client-secret",
+        task: "Implement OAuth2 login flow",
+      });
+
+      expect(prompt).toContain("- Endpoint: wss://test-subdomain.trycloudflare.com/muse");
+      expect(prompt).toContain("- CF-Access-Client-Id: cf-client-id");
+      expect(prompt).toContain("- CF-Access-Client-Secret: cf-client-secret");
+      expect(prompt).toContain("- Watched Projects: my-project");
+      expect(prompt).toContain("Task:\nImplement OAuth2 login flow");
+      expect(prompt).toContain("execute the task above");
+    });
+
+    it("should output ready-to-use prompt when tunnel is already active via /muse tunnel start", async () => {
+      const { saveTunnelState, clearTunnelState } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+      saveTunnelState({
+        pid: process.pid,
+        publicUrl: "https://test.trycloudflare.com",
+        wssUrl: "wss://test.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:9225",
+        port: 9225,
+        startedAt: Date.now(),
+      });
+
+      const lines: any[] = [];
+      await museCommand.execute("tunnel start", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(lines.length).toBeGreaterThan(0);
+      const text = lines[0].content;
+      expect(text).toContain("Prompt for Muse");
+      expect(text).toContain("wss://test.trycloudflare.com/muse");
+
+      clearTunnelState();
+    });
+
+    it("should output ready-to-use prompt when tunnel is already active via superagent muse tunnel start", async () => {
+      const { saveTunnelState, clearTunnelState } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+      saveTunnelState({
+        pid: process.pid,
+        publicUrl: "https://test.trycloudflare.com",
+        wssUrl: "wss://test.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:9225",
+        port: 9225,
+        startedAt: Date.now(),
+      });
+
+      const logs: string[] = [];
+      const spy = vi.spyOn(console, "log").mockImplementation((msg) => {
+        logs.push(String(msg));
+      });
+
+      await handleMuseCliCommand(["tunnel", "start", "--prompt", "Run database migration"]);
+      expect(logs.some((l) => l.includes("Prompt for Muse"))).toBe(true);
+      expect(logs.some((l) => l.includes("Run database migration"))).toBe(true);
+
+      spy.mockRestore();
+      clearTunnelState();
+    });
+  });
 });

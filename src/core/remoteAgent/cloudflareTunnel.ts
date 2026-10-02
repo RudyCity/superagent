@@ -351,3 +351,75 @@ export async function stopQuickTunnel(): Promise<boolean> {
 export function getTunnelStatus(): TunnelStatus {
   return cloudflareTunnel.getStatus();
 }
+
+export interface BuildMusePromptOptions {
+  wssUrl: string;
+  token?: string;
+  publicUrl?: string;
+  localUrl?: string;
+  workspaces?: string[];
+  cfClientId?: string;
+  cfClientSecret?: string;
+  task?: string;
+}
+
+export function buildMuseConnectionPrompt(opts: BuildMusePromptOptions): string {
+  const lines: string[] = [
+    "Connect to my local Superagent workstation via WebSocket:",
+    `- Endpoint: ${opts.wssUrl}`,
+  ];
+  if (opts.token) {
+    lines.push(`- Bearer Token: ${opts.token}`);
+  }
+  if (opts.cfClientId) {
+    lines.push(`- CF-Access-Client-Id: ${opts.cfClientId}`);
+  }
+  if (opts.cfClientSecret) {
+    lines.push(`- CF-Access-Client-Secret: ${opts.cfClientSecret}`);
+  }
+  if (opts.workspaces && opts.workspaces.length > 0) {
+    lines.push(`- Watched Projects: ${opts.workspaces.map((w) => path.basename(w)).join(", ")}`);
+  }
+  lines.push("");
+  if (opts.task && opts.task.trim()) {
+    lines.push("Task:");
+    lines.push(opts.task.trim());
+    lines.push("");
+    lines.push("Please connect to the WebSocket endpoint, inspect the workspace, and execute the task above.");
+  } else {
+    lines.push("Please connect to the WebSocket endpoint and confirm when you are ready to receive tasks.");
+  }
+  return lines.join("\n");
+}
+
+export async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (process.platform === "win32") {
+      await execa("powershell", ["-NoProfile", "-Command", "Set-Clipboard", "-Value", "$input"], {
+        input: text,
+        timeout: 2000,
+        reject: false,
+      });
+      return true;
+    } else if (process.platform === "darwin") {
+      await execa("pbcopy", [], {
+        input: text,
+        timeout: 2000,
+        reject: false,
+      });
+      return true;
+    } else if (process.platform === "linux") {
+      try {
+        await execa("wl-copy", [], { input: text, timeout: 1500, reject: false });
+        return true;
+      } catch {
+        await execa("xclip", ["-selection", "clipboard"], { input: text, timeout: 1500, reject: false });
+        return true;
+      }
+    }
+  } catch {
+    // Non-fatal fallback
+  }
+  return false;
+}
+

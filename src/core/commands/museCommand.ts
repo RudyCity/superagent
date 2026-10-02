@@ -131,13 +131,31 @@ export const museCommand: SlashCommand = {
         });
       }
 
-      const { startQuickTunnel, stopQuickTunnel, getTunnelStatus } = await import(
-        "../remoteAgent/cloudflareTunnel.js"
-      );
+      const {
+        startQuickTunnel,
+        stopQuickTunnel,
+        getTunnelStatus,
+        buildMuseConnectionPrompt,
+        copyTextToClipboard,
+      } = await import("../remoteAgent/cloudflareTunnel.js");
 
       if (action === "start" || action === "quick" || action === "run") {
+        const initialTask = parts.slice(2).join(" ").trim();
+        const watchedWorkspaces = getWatchedWorkspaces(cfg, ctx.agent?.workingDirectory);
         const existing = getTunnelStatus();
         if (existing.isRunning) {
+          const musePrompt = buildMuseConnectionPrompt({
+            wssUrl: existing.wssUrl || "",
+            token,
+            publicUrl: existing.publicUrl,
+            localUrl: existing.localUrl,
+            workspaces: watchedWorkspaces,
+            cfClientId: cfg.cfAccessClientId,
+            cfClientSecret: cfg.cfAccessClientSecret,
+            task: initialTask,
+          });
+          const copied = await copyTextToClipboard(musePrompt);
+
           ctx.addLine({
             type: "system",
             content: [
@@ -148,6 +166,13 @@ export const museCommand: SlashCommand = {
               `- Process PID  : ${existing.pid}`,
               `- Uptime       : ${existing.uptimeSeconds}s`,
               `- Bearer Token : ${token}`,
+              "",
+              copied
+                ? "Prompt for Muse (copied to clipboard, ready to send):"
+                : "Prompt for Muse (copy & send to Muse):",
+              "-----------------------------------------------------------------------------",
+              musePrompt,
+              "-----------------------------------------------------------------------------",
               "",
               "To stop the tunnel, run: /muse tunnel stop",
             ].join("\n"),
@@ -169,6 +194,18 @@ export const museCommand: SlashCommand = {
             path: pathEndpoint,
           });
 
+          const musePrompt = buildMuseConnectionPrompt({
+            wssUrl: meta.wssUrl,
+            token,
+            publicUrl: meta.publicUrl,
+            localUrl: meta.localUrl,
+            workspaces: watchedWorkspaces,
+            cfClientId: cfg.cfAccessClientId,
+            cfClientSecret: cfg.cfAccessClientSecret,
+            task: initialTask,
+          });
+          const copied = await copyTextToClipboard(musePrompt);
+
           ctx.addLine({
             type: "system",
             content: [
@@ -182,7 +219,13 @@ export const museCommand: SlashCommand = {
               `- Bearer Token : ${token}`,
               "═════════════════════════════════════════════════════════════════════════════",
               "",
-              "Send the WSS Endpoint and Bearer Token to Muse to establish real-time connection.",
+              copied
+                ? "Prompt for Muse (copied to clipboard, ready to send):"
+                : "Prompt for Muse (copy & send to Muse):",
+              "-----------------------------------------------------------------------------",
+              musePrompt,
+              "-----------------------------------------------------------------------------",
+              "",
               "Run '/muse tunnel stop' to terminate the tunnel at any time.",
             ].join("\n"),
             timestamp: Date.now(),

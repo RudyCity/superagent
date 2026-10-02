@@ -324,9 +324,21 @@ export class MuseWatcher {
         });
         this.quickTunnelStarted = true;
         this.tunnelMetadata = tunnelMeta;
+        const { buildMuseConnectionPrompt, copyTextToClipboard } = await import("./cloudflareTunnel.js");
+        const musePrompt = buildMuseConnectionPrompt({
+          wssUrl: tunnelMeta.wssUrl,
+          token: this.config.wsToken,
+          publicUrl: tunnelMeta.publicUrl,
+          localUrl: tunnelMeta.localUrl,
+          workspaces: this.workspaces,
+          cfClientId: this.config.cfAccessClientId,
+          cfClientSecret: this.config.cfAccessClientSecret,
+        });
+        const copied = await copyTextToClipboard(musePrompt);
+
         this.emitLine(
           "system",
-          `[Cloudflare Tunnel] Quick tunnel online!\n- Public WSS URL : ${tunnelMeta.wssUrl}\n- Bearer Token   : ${this.config.wsToken}\n- Local Target   : ${tunnelMeta.localUrl}`
+          `[Cloudflare Tunnel] Quick tunnel online!\n- Public WSS URL : ${tunnelMeta.wssUrl}\n- Bearer Token   : ${this.config.wsToken}\n- Local Target   : ${tunnelMeta.localUrl}\n\n${copied ? "Prompt for Muse (copied to clipboard, ready to send):" : "Prompt for Muse (copy & send to Muse):"}\n-----------------------------------------------------------------------------\n${musePrompt}\n-----------------------------------------------------------------------------`
         );
       } catch (err: any) {
         this.emitLine(

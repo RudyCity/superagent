@@ -86,7 +86,13 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       console.log(`[Muse Security] Generated new Bearer token: ${token}\n`);
     }
 
-    const { startQuickTunnel, stopQuickTunnel, getTunnelStatus } = await import("./cloudflareTunnel.js");
+    const {
+      startQuickTunnel,
+      stopQuickTunnel,
+      getTunnelStatus,
+      buildMuseConnectionPrompt,
+      copyTextToClipboard,
+    } = await import("./cloudflareTunnel.js");
 
     if (action === "start" || action === "quick" || action === "run" || action === "dev") {
       const isDetach =
@@ -101,6 +107,29 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
       }
 
+      let promptTask: string | undefined;
+      const promptArgIdx = args.findIndex((a) => a === "--prompt" || a === "--task");
+      if (promptArgIdx !== -1 && args[promptArgIdx + 1]) {
+        promptTask = args[promptArgIdx + 1];
+      } else {
+        const leftover = args.slice(2).filter((a, idx, arr) => {
+          if (
+            a === "--detach" ||
+            a === "-d" ||
+            a === "--background" ||
+            a === "--bg" ||
+            a === "--verbose"
+          )
+            return false;
+          if (a === "--port" || a === "-p") return false;
+          if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p")) return false;
+          return true;
+        });
+        if (leftover.length > 0) {
+          promptTask = leftover.join(" ");
+        }
+      }
+
       const existing = getTunnelStatus();
       if (existing.isRunning) {
         console.log("[Cloudflare Tunnel] Quick tunnel is already ACTIVE:");
@@ -110,7 +139,30 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         console.log(`  Process PID       : ${existing.pid}`);
         console.log(`  Uptime            : ${existing.uptimeSeconds}s`);
         console.log(`  Bearer Token      : ${token}`);
-        console.log("  To stop it, run: superagent muse tunnel stop\n");
+
+        const watched = getWatchedWorkspaces(cfg);
+        const musePrompt = buildMuseConnectionPrompt({
+          wssUrl: existing.wssUrl || "",
+          token,
+          publicUrl: existing.publicUrl,
+          localUrl: existing.localUrl,
+          workspaces: watched,
+          cfClientId: cfg.cfAccessClientId,
+          cfClientSecret: cfg.cfAccessClientSecret,
+          task: promptTask,
+        });
+        const copied = await copyTextToClipboard(musePrompt);
+
+        console.log("");
+        if (copied) {
+          console.log("Prompt for Muse (copied to clipboard, ready to send):");
+        } else {
+          console.log("Prompt for Muse (copy & send to Muse):");
+        }
+        console.log("-----------------------------------------------------------------------------");
+        console.log(musePrompt);
+        console.log("-----------------------------------------------------------------------------");
+        console.log("\n  To stop it, run: superagent muse tunnel stop\n");
         return;
       }
 
@@ -135,8 +187,29 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         console.log(`  Process PID       : ${meta.pid}`);
         console.log(`  Bearer Token      : ${token}`);
         console.log("═════════════════════════════════════════════════════════════════════════════");
+
+        const watched = getWatchedWorkspaces(cfg);
+        const musePrompt = buildMuseConnectionPrompt({
+          wssUrl: meta.wssUrl,
+          token,
+          publicUrl: meta.publicUrl,
+          localUrl: meta.localUrl,
+          workspaces: watched,
+          cfClientId: cfg.cfAccessClientId,
+          cfClientSecret: cfg.cfAccessClientSecret,
+          task: promptTask,
+        });
+        const copied = await copyTextToClipboard(musePrompt);
+
         console.log("");
-        console.log("Send the WSS Endpoint and Bearer Token to Muse to establish real-time connection.");
+        if (copied) {
+          console.log("Prompt for Muse (copied to clipboard, ready to send):");
+        } else {
+          console.log("Prompt for Muse (copy & send to Muse):");
+        }
+        console.log("-----------------------------------------------------------------------------");
+        console.log(musePrompt);
+        console.log("-----------------------------------------------------------------------------");
 
         if (isDetach) {
           console.log("\n[Cloudflare Tunnel] Tunnel is running in background.");

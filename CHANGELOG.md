@@ -1,3 +1,15 @@
+## [1.5.122] - 2026-10-03
+
+### Added
+
+- **Ready-to-Use Connection Prompt Generation for Muse on Tunnel Start**:
+  - Implemented `buildMuseConnectionPrompt()` and cross-platform `copyTextToClipboard()` in `src/core/remoteAgent/cloudflareTunnel.ts`.
+  - Added formatted, ready-to-copy connection prompt block whenever a Cloudflare Quick Tunnel starts or is reported active in `/muse tunnel start [task...]` and `superagent muse tunnel start [--prompt "task"]`.
+  - Automatically copies connection instructions and bearer credentials to the system clipboard (Windows, macOS, Linux) with notification if successful.
+  - Automatically includes initial task instructions, watched workspaces list, and optional Cloudflare Access Service Token credentials when configured.
+  - Integrated copyable Muse prompt into `/muse watch --tunnel` and `superagent muse watch --tunnel` daemon initialization.
+  - Added unit and integration tests in `tests/cloudflareTunnel.test.ts` verifying prompt generation with single and multi-project workspaces, bearer tokens, and tasks.
+
 ## [1.5.121] - 2026-10-03
 
 ### Changed

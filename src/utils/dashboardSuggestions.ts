@@ -54,7 +54,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/muse": "Coordinate with remote AI agent (Muse) over WebSocket (Cloudflare Tunnel) or Telegram bus",
   "/muse status": "Show remote agent configuration, runner mode, and connection status",
   "/muse tunnel": "Cloudflare Tunnel subcommands (start, stop, status) & setup guide",
-  "/muse tunnel start": "Start quick ephemeral Cloudflare development tunnel for Muse",
+  "/muse tunnel start": "Start quick Cloudflare development tunnel for Muse with copyable connection prompt",
   "/muse tunnel stop": "Stop running quick ephemeral Cloudflare development tunnel",
   "/muse tunnel status": "Check active Cloudflare quick development tunnel status",
   "/muse tunnel guide": "View manual Cloudflare Tunnel setup guide",
