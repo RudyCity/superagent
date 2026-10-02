@@ -287,11 +287,9 @@ ${options.task}`;
     logE2E("REMOTE-AGENT", `Failed to send task request ${taskId} to Telegram group`);
     throw new Error("Failed to send task request to Telegram group. Check bot token and group ID.");
   }
-  if (promptChanged) {
-    try {
-      fs.writeFileSync(promptHashPath, systemPromptHash);
-    } catch {}
-  }
+  // Audit F21: do NOT write hash here. Write it only after task_done confirms
+  // the worker processed this request (otherwise a lost message leads to
+  // hash-only requests the worker cannot fulfill).
 
   logE2E("REMOTE-AGENT", `Task request ${taskId} sent to Telegram group. Awaiting Muse envelopes...`);
   options.onProgress?.("Waiting for Muse reasoning and tool batches...");
@@ -390,6 +388,13 @@ ${options.task}`;
             }
           }
           clearTimeout(timeoutTimer);
+          // Audit F21: worker confirmed processing; safe to cache the hash now.
+          // Only write if this task sent the full prompt (promptChanged).
+          if (promptChanged) {
+            try {
+              fs.writeFileSync(promptHashPath, systemPromptHash);
+            } catch {}
+          }
           finishSuccess(envelope.summary);
           return;
         }

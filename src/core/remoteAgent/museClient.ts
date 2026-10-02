@@ -342,9 +342,8 @@ export class MuseClient {
           for (const update of data.result) {
             const updateId = update.update_id;
             if (typeof updateId === "number") {
-              offset = Math.max(offset, updateId + 1);
-
               if (this.seenUpdateIds.has(updateId)) {
+                offset = Math.max(offset, updateId + 1);
                 continue;
               }
               this.seenUpdateIds.add(updateId);
@@ -411,6 +410,12 @@ export class MuseClient {
               const sanitized = this.sanitizeError(handleErr.message || String(handleErr));
               logE2E("REMOTE-AGENT", `Error in onEnvelope handler: ${sanitized}`);
               console.error(`[MuseClient] Error in onEnvelope handler: ${sanitized}`);
+            } finally {
+              // Advance offset only after processing (or skipping) this update,
+              // so a crash mid-processing does not lose the message forever.
+              if (typeof updateId === "number") {
+                offset = Math.max(offset, updateId + 1);
+              }
             }
           }
         } catch (err: any) {

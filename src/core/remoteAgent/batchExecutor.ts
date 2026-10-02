@@ -351,10 +351,14 @@ async function executeOneCall(
 function isGatedCall(call: BatchToolCall): boolean {
   const toolName = normalizeToolName(call.tool);
   const toolArgs = normalizeArgs(toolName, call.args);
+  // All shell executions run sequentially: even "safe-looking" commands can
+  // race on files, branches, or ports when run in parallel (audit F6).
+  if (["bash", "run_command", "run_background_process"].includes(toolName)) {
+    return true;
+  }
   return (
     MODIFYING_TOOLS.includes(toolName) ||
-    (["bash", "run_command", "run_background_process"].includes(toolName) &&
-      isDangerousCommand(toolArgs.command || ""))
+    isDangerousCommand(toolArgs.command || "")
   );
 }
 

@@ -261,15 +261,15 @@ export async function handleServerRoute(
         const formattedMsgs = dbResult.messages.map((m) => {
           let content = m.content;
           if (typeof m.content === "string" && (m.content.startsWith("[") || m.content.startsWith("{"))) {
-            try { content = JSON.parse(m.content); } catch {}
+            try { content = JSON.parse(m.content); } catch (e) { console.debug("[serverRoutes] content JSON.parse failed:", (e as Error)?.message); }
           }
           let toolCalls = undefined;
           if (m.toolCalls) {
-            try { toolCalls = JSON.parse(m.toolCalls); } catch {}
+            try { toolCalls = JSON.parse(m.toolCalls); } catch (e) { console.debug("[serverRoutes] toolCalls JSON.parse failed:", (e as Error)?.message); }
           }
           let toolResults = undefined;
           if (m.toolResults) {
-            try { toolResults = JSON.parse(m.toolResults); } catch {}
+            try { toolResults = JSON.parse(m.toolResults); } catch (e) { console.debug("[serverRoutes] toolResults JSON.parse failed:", (e as Error)?.message); }
           }
           return {
             role: m.role,
@@ -1837,7 +1837,7 @@ export async function handleServerRoute(
       const agent = await createAgentForMode(targetWorkspace, targetMode, targetClientMode);
       agent.sessionId = sessionId;
 
-      try { await agent.loadHistory(sessionId); } catch {}
+      try { await agent.loadHistory(sessionId); } catch (e) { console.debug("[serverRoutes] loadHistory failed:", (e as Error)?.message); }
 
       session = {
         agent,

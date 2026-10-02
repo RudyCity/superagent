@@ -53,12 +53,14 @@ process.on('uncaughtException', (err: Error) => {
   const errStr = `[FATAL CRASH] Uncaught Exception: ${err?.stack || err?.message || String(err)}`;
   console.error(errStr);
   logToSuperAgentServerFile(errStr);
+  process.exit(1);
 });
 
 process.on('unhandledRejection', (reason: any) => {
   const errStr = `[FATAL ERROR] Unhandled Promise Rejection: ${reason?.stack || reason?.message || String(reason)}`;
   console.error(errStr);
   logToSuperAgentServerFile(errStr);
+  process.exit(1);
 });
 
 export type ClientMode = "chrome-extension" | "tline";

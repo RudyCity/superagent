@@ -371,7 +371,7 @@ export function validateEnvelope(
   }
 
   // 3. Schema check: known kind
-  const validKinds = ["task_request", "task_batch", "task_result", "task_done", "chat", "session_reset", "task_cancel"];
+  const validKinds = ["task_request", "task_batch", "task_result", "task_done", "chat", "session_reset", "task_cancel", "prompt_cache_miss"];
   if (!validKinds.includes(envelope.kind)) {
     return { valid: false, error: `Unknown envelope kind: ${envelope.kind}` };
   }
@@ -425,9 +425,31 @@ export function validateEnvelope(
       if (!Array.isArray(envelope.calls)) {
         return { valid: false, error: "task_batch missing valid 'calls' array" };
       }
+      // Audit F4: bound batch size to avoid resource exhaustion
+      if (envelope.calls.length > 200) {
+        return { valid: false, error: "task_batch too large: max 200 calls" };
+      }
+      const seenCallIds = new Set<string>();
       for (const call of envelope.calls) {
         if (!call || typeof call !== "object" || !call.id || !call.tool) {
           return { valid: false, error: "Invalid tool call inside task_batch calls" };
+        }
+        if (typeof call.id !== "string") {
+          return { valid: false, error: "task_batch call id must be a string" };
+        }
+        if (seenCallIds.has(call.id)) {
+          return { valid: false, error: `task_batch duplicate call id: ${call.id}` };
+        }
+        seenCallIds.add(call.id);
+        if (call.depends_on !== undefined) {
+          if (!Array.isArray(call.depends_on) || !call.depends_on.every((d: unknown) => typeof d === "string")) {
+            return { valid: false, error: `task_batch call ${call.id}: depends_on must be string[]` };
+          }
+        }
+        if (call.timeout_ms !== undefined) {
+          if (typeof call.timeout_ms !== "number" || !(call.timeout_ms > 0)) {
+            return { valid: false, error: `task_batch call ${call.id}: timeout_ms must be a positive number` };
+          }
         }
       }
       break;

@@ -182,7 +182,7 @@ async function parseDocumentBuffer(
 
     if (ext === "xlsx" || ext === "xls") {
       if (!XLSX) {
-        XLSX = await import("xlsx");
+        XLSX = await import("@e965/xlsx");
       }
       const workbook = XLSX.read(buffer, { type: "buffer" });
       const results: string[] = [];

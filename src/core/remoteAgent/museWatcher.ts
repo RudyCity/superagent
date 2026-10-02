@@ -393,6 +393,10 @@ export class MuseWatcher {
     // Stop any in-flight batch so stale results don't pollute the fresh session
     this.abortAllBatches();
 
+    // Clear dedup sets so legitimate retries after reset are not ignored
+    this.seenBatchIds.clear();
+    this.seenChatIds.clear();
+
     this.activeTaskId = undefined;
     if (this.options.agent) {
       try {
