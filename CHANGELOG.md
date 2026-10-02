@@ -1,3 +1,15 @@
+## [1.5.112] - 2026-10-02
+
+### Fixed
+
+- **Muse Watch Mode Process Streaming & Polling Hang Fix**:
+  - Fixed infinite hang in `manageBackgroundProcessTool` (`backgroundProcessTools.ts`): the `stream` action previously defaulted to a 10-minute timeout (`timeoutMs = 600000`) and awaited process termination (`Promise.race([exitPromise, timeoutPromise])`), causing Superagent to freeze indefinitely (e.g. 487+ seconds) when streaming outputs from persistent background processes such as web or development servers (e.g. `python web/server.py`).
+  - Rewrote `manageBackgroundProcessTool` action `stream` to sample live output across a non-blocking streaming window (default 5 seconds, or customizable via `args.timeout`) and immediately return recent logs with status indicators while the background process remains active.
+  - Added support for `logs` and `log` actions in `manageBackgroundProcessTool` and `sshManageBackgroundProcessExecute` (`sshCommands.ts`) as convenient aliases for output status inspection.
+  - Added a safe default timeout of 120 seconds (`120000ms`) for tool calls in `effectiveSignal` (`batchExecutor.ts`) when `call.timeout_ms` is omitted, preventing untimed tool invocations from hanging batches indefinitely.
+  - Decoupled incoming tool batch execution in `MuseWatcher` (`museWatcher.ts`) from Telegram long-polling via an asynchronous FIFO batch queue (`batchQueue`): Telegram polling continues uninterrupted, processing cancellations (`task_cancel`), new batches, and chat notes immediately without being blocked by in-flight batch execution.
+  - Added unit test suite in `tests/manageBackgroundProcessStream.test.ts` and updated `tests/remoteAgentBatchOpt.test.ts` to verify non-blocking streaming, log actions, and batch timeout behavior.
+
 ## [1.5.111] - 2026-10-02
 
 ### Fixed

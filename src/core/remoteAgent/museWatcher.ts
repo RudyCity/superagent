@@ -28,6 +28,7 @@ export interface MuseWatcherStats {
   workspace: string;
   groupId?: string | number;
   museBotId?: string | number;
+  queuedBatches?: number;
 }
 
 export interface MuseWatcherOptions {
@@ -64,6 +65,14 @@ export class MuseWatcher {
   private activeBatchAborts = new Set<AbortController>();
   private seenChatIds = new Set<string>();
   private seenBatchIds = new Set<string>();
+  private batchQueue: Array<{
+    type: "batch" | "done";
+    envelope: TaskBatchEnvelope | TaskDoneEnvelope;
+    meta?: { messageId?: number };
+    resolve?: () => void;
+    reject?: (err: any) => void;
+  }> = [];
+  private isProcessingQueue = false;
 
   constructor(options: MuseWatcherOptions = {}) {
     this.options = options;
@@ -102,6 +111,7 @@ export class MuseWatcher {
       workspace: ws,
       groupId: this.config.groupId,
       museBotId: this.config.museBotId,
+      queuedBatches: this.batchQueue.length,
     };
   }
 
@@ -174,6 +184,10 @@ export class MuseWatcher {
     }
 
     this.isRunning = false;
+    for (const item of this.batchQueue) {
+      item.resolve?.();
+    }
+    this.batchQueue = [];
 
     this.abortAllBatches();
 
@@ -201,6 +215,7 @@ export class MuseWatcher {
 
   /**
    * Dispatches incoming validated envelopes from Muse.
+   * Batch execution is enqueued to ensure orderly execution.
    */
   private async handleEnvelope(
     envelope: RemoteAgentEnvelope,
@@ -210,12 +225,12 @@ export class MuseWatcher {
 
     switch (envelope.kind) {
       case "task_batch": {
-        await this.handleTaskBatch(envelope as TaskBatchEnvelope, meta);
+        await this.enqueueBatch(envelope as TaskBatchEnvelope, meta);
         break;
       }
 
       case "task_done": {
-        await this.handleTaskDone(envelope as TaskDoneEnvelope);
+        await this.enqueueDone(envelope as TaskDoneEnvelope);
         break;
       }
 
@@ -240,14 +255,14 @@ export class MuseWatcher {
     }
   }
 
-  private async handleTaskBatch(
+  private enqueueBatch(
     envelope: TaskBatchEnvelope,
     meta?: { messageId?: number }
   ): Promise<void> {
     if (envelope.id) {
       if (this.seenBatchIds.has(envelope.id)) {
         logE2E("REMOTE-AGENT", `MuseWatcher ignoring duplicate task_batch: ${envelope.id}`);
-        return;
+        return Promise.resolve();
       }
       this.seenBatchIds.add(envelope.id);
       if (this.seenBatchIds.size > 1000) {
@@ -256,6 +271,74 @@ export class MuseWatcher {
       }
     }
 
+    logE2E(
+      "REMOTE-AGENT",
+      `MuseWatcher enqueued task_batch: id=${envelope.id}, task_id=${envelope.task_id}, queue_len=${this.batchQueue.length + 1}`
+    );
+
+    return new Promise<void>((resolve, reject) => {
+      this.batchQueue.push({
+        type: "batch",
+        envelope,
+        meta,
+        resolve,
+        reject,
+      });
+
+      this.processBatchQueue().catch((err) => {
+        logE2E("REMOTE-AGENT", `MuseWatcher queue processing error: ${err?.message || err}`);
+      });
+    });
+  }
+
+  private enqueueDone(envelope: TaskDoneEnvelope): Promise<void> {
+    logE2E("REMOTE-AGENT", `MuseWatcher enqueued task_done for task: ${envelope.task_id}`);
+
+    return new Promise<void>((resolve, reject) => {
+      this.batchQueue.push({
+        type: "done",
+        envelope,
+        resolve,
+        reject,
+      });
+
+      this.processBatchQueue().catch((err) => {
+        logE2E("REMOTE-AGENT", `MuseWatcher queue processing error: ${err?.message || err}`);
+      });
+    });
+  }
+
+  private async processBatchQueue(): Promise<void> {
+    if (this.isProcessingQueue || !this.isRunning) {
+      return;
+    }
+    this.isProcessingQueue = true;
+
+    try {
+      while (this.batchQueue.length > 0 && this.isRunning) {
+        const item = this.batchQueue.shift();
+        if (!item) break;
+
+        try {
+          if (item.type === "batch") {
+            await this.handleTaskBatch(item.envelope as TaskBatchEnvelope, item.meta);
+          } else if (item.type === "done") {
+            await this.handleTaskDone(item.envelope as TaskDoneEnvelope);
+          }
+          item.resolve?.();
+        } catch (err: any) {
+          item.reject?.(err);
+        }
+      }
+    } finally {
+      this.isProcessingQueue = false;
+    }
+  }
+
+  private async handleTaskBatch(
+    envelope: TaskBatchEnvelope,
+    meta?: { messageId?: number }
+  ): Promise<void> {
     this.activeTaskId = envelope.task_id;
     const callsCount = envelope.calls?.length || 0;
     const ws = path.resolve(
@@ -264,7 +347,7 @@ export class MuseWatcher {
 
     logE2E(
       "REMOTE-AGENT",
-      `MuseWatcher received task_batch: id=${envelope.id}, task_id=${envelope.task_id}, calls=${callsCount}`
+      `MuseWatcher executing task_batch: id=${envelope.id}, task_id=${envelope.task_id}, calls=${callsCount}`
     );
 
     this.emitLine(
@@ -292,6 +375,15 @@ export class MuseWatcher {
       });
 
       this.batchesExecuted++;
+
+      // If batch was aborted during execution, do not post results back to Telegram
+      if (batchAbort.signal.aborted || this.abortController?.signal.aborted) {
+        logE2E(
+          "REMOTE-AGENT",
+          `MuseWatcher batch ${envelope.id} was aborted. Skipping posting results back to Telegram.`
+        );
+        return;
+      }
 
       const resultEnvelope: TaskResultEnvelope = {
         v: 1,
@@ -377,13 +469,33 @@ export class MuseWatcher {
   private handleTaskCancel(envelope: TaskCancelEnvelope): void {
     logE2E("REMOTE-AGENT", `MuseWatcher received task_cancel for task ${envelope.task_id}`);
 
-    this.abortAllBatches();
+    const targetTaskId = envelope.task_id?.trim();
+    if (!targetTaskId || !this.activeTaskId || targetTaskId === this.activeTaskId.trim()) {
+      this.abortAllBatches();
+      this.activeTaskId = undefined;
+    }
 
-    this.activeTaskId = undefined;
+    // Filter out queued items for this task_id (or all if task_id not specified)
+    if (targetTaskId) {
+      const remaining: typeof this.batchQueue = [];
+      for (const item of this.batchQueue) {
+        if (item.envelope.task_id?.trim() === targetTaskId) {
+          item.resolve?.();
+        } else {
+          remaining.push(item);
+        }
+      }
+      this.batchQueue = remaining;
+    } else {
+      for (const item of this.batchQueue) {
+        item.resolve?.();
+      }
+      this.batchQueue = [];
+    }
 
     this.emitLine(
       "system",
-      `[Muse Watch] Task ${envelope.task_id} cancelled by Muse (${envelope.reason || "no reason provided"}).`
+      `[Muse Watch] Task ${envelope.task_id || "active"} cancelled by Muse (${envelope.reason || "no reason provided"}).`
     );
   }
 
@@ -394,6 +506,12 @@ export class MuseWatcher {
   public resetLocalSession(origin: string, message?: string): void {
     // Stop any in-flight batch so stale results don't pollute the fresh session
     this.abortAllBatches();
+
+    // Clear queue and resolve pending promises
+    for (const item of this.batchQueue) {
+      item.resolve?.();
+    }
+    this.batchQueue = [];
 
     // Clear dedup sets so legitimate retries after reset are not ignored
     this.seenBatchIds.clear();

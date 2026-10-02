@@ -143,15 +143,9 @@ function effectiveSignal(
   isTimedOut: () => boolean;
   clearCallTimeout: () => void;
 } {
+  // If call specifies timeout_ms, use it. Otherwise default to 120,000ms (2 minutes) to avoid indefinite hangs
   const timeoutMs =
-    call.timeout_ms && call.timeout_ms > 0 ? call.timeout_ms : undefined;
-  if (!timeoutMs)
-    return {
-      signal: batchSignal,
-      timeoutMs,
-      isTimedOut: () => false,
-      clearCallTimeout: () => {},
-    };
+    call.timeout_ms && call.timeout_ms > 0 ? call.timeout_ms : 120000;
   // Own controller instead of AbortSignal.timeout() so we can record that the
   // deadline fired: some tools turn an abort into a normal "Exit code: 1"
   // result instead of throwing AbortError.

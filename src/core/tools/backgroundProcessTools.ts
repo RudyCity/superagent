@@ -97,8 +97,8 @@ export const manageBackgroundProcessTool: Tool = {
     properties: {
       action: {
         type: "string",
-        enum: ["list", "status", "send_input", "kill", "wait", "stream"],
-        description: "Action to perform. Use 'stream' to pipe a running background process's future output live to the SYSTEM_CALL_OUTPUT (LIVE) console.",
+        enum: ["list", "status", "logs", "log", "send_input", "kill", "wait", "stream"],
+        description: "Action to perform. Use 'status' or 'logs' to inspect output. Use 'stream' to sample live output (default 5s). Use 'wait' to block until process exits.",
       },
       processId: {
         type: "string",
@@ -142,7 +142,7 @@ export const manageBackgroundProcessTool: Tool = {
       return `Error: No background process found with ID "${processId}"`;
     }
 
-    if (action === "status") {
+    if (action === "status" || action === "logs" || action === "log") {
       const fullOutput = task.output.join("");
       const formattedOutput = formatAndTruncateOutput(fullOutput, 50, task.logPath || "");
       return `Process: ${task.command}\nStatus: ${task.process.killed ? "Killed" : "Running/Completed"}\nOutput:\n${formattedOutput}`;
@@ -258,58 +258,54 @@ export const manageBackgroundProcessTool: Tool = {
       clearActiveToolOutput();
       appendActiveToolOutput(`[Streaming output from background process "${processId}"...]\n`);
 
-      const timeoutMs = (args.timeout as number) || 600000;
-      let timeoutId: NodeJS.Timeout | undefined;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          const err = new Error("TimeoutError");
-          err.name = "TimeoutError";
-          reject(err);
-        }, timeoutMs);
-      });
+      // Default stream sampling duration: 5 seconds (not 10 minutes) to avoid freezing agents on servers
+      const streamDurationMs = typeof args.timeout === "number" && args.timeout > 0 ? args.timeout : 5000;
 
-      task.process.all?.on("data", (data: Buffer) => {
-        appendActiveToolOutput(data.toString());
-      });
+      let listener: ((data: Buffer) => void) | undefined;
+      let timer: NodeJS.Timeout | undefined;
+      const streamPromise = new Promise<void>((resolve) => {
+        listener = (data: Buffer) => {
+          appendActiveToolOutput(data.toString());
+        };
+        task.process.all?.on("data", listener);
 
-      const exitPromise = new Promise<void>((resolve) => {
-        if (task.hasExited) { resolve(); return; }
-        try {
-          task.process.once("close", () => resolve());
-        } catch {
+        timer = setTimeout(() => {
           resolve();
+        }, streamDurationMs);
+
+        const onExit = () => {
+          if (timer) clearTimeout(timer);
+          resolve();
+        };
+
+        task.process.once("close", onExit);
+
+        if (signal) {
+          signal.addEventListener("abort", () => {
+            if (timer) clearTimeout(timer);
+            resolve();
+          }, { once: true });
         }
       });
-
-      const onAbort = () => { if (timeoutId) clearTimeout(timeoutId); };
-      if (signal) {
-        if (signal.aborted) {
-          if (timeoutId) clearTimeout(timeoutId);
-          clearActiveToolOutput();
-          return "Aborted.";
-        }
-        signal.addEventListener("abort", onAbort);
-      }
 
       try {
-        await Promise.race([exitPromise, timeoutPromise]);
-        if (timeoutId) clearTimeout(timeoutId);
-        clearActiveToolOutput();
-        const logs = task.output.join("");
-        const formattedLogs = formatAndTruncateOutput(logs, 50, task.logPath || "");
-        return `Process "${processId}" completed with exit code ${task.exitCode}.\nFull output:\n${formattedLogs}`;
-      } catch (err: any) {
-        if (timeoutId) clearTimeout(timeoutId);
-        clearActiveToolOutput();
-        if (err && err.name === "TimeoutError") {
-          return `Streaming stopped: Timeout of ${timeoutMs}ms exceeded. Process "${processId}" is still running.`;
-        }
-        throw err;
+        await streamPromise;
       } finally {
-        if (signal) signal.removeEventListener("abort", onAbort);
+        if (timer) clearTimeout(timer);
+        if (listener) {
+          task.process.all?.removeListener("data", listener);
+        }
+        clearActiveToolOutput();
       }
+
+      const logs = task.output.join("");
+      const formattedLogs = formatAndTruncateOutput(logs, 50, task.logPath || "");
+      if (task.hasExited) {
+        return `Process "${processId}" completed with exit code ${task.exitCode}.\nFull output:\n${formattedLogs}`;
+      }
+      return `Streaming finished for process "${processId}" (${streamDurationMs}ms window; process is still running).\nRecent output:\n${formattedLogs}`;
     }
 
-    return formatUnknownActionError(action, ["list", "status", "send_input", "kill", "wait", "stream"], "Use 'list' to inspect available process IDs.");
+    return formatUnknownActionError(action, ["list", "status", "logs", "send_input", "kill", "wait", "stream"], "Use 'list' to inspect available process IDs.");
   },
 };

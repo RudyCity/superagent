@@ -253,7 +253,7 @@ export async function sshManageBackgroundProcessExecute(
   if (action === "kill") {
     return sshKillBackgroundProcessExecute(processId);
   }
-  if (action === "status") {
+  if (action === "status" || action === "logs" || action === "log") {
     return sshViewBackgroundProcessesExecute(processId);
   }
   if (action === "send_input") {

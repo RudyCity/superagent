@@ -92,4 +92,14 @@ describe("executeBatch", () => {
     expect(results[0].error).toMatch(/Unknown tool/);
     expect(results[1].ok).toBe(true);
   });
+
+  it("executes calls normally when timeout_ms is omitted (using default timeout)", async () => {
+    const results = await executeBatch(
+      [{ id: "def1", tool: "run_command", args: { command: "node -e 'console.log(999)'" } }],
+      { workspace: process.cwd() }
+    );
+    expect(results[0].id).toBe("def1");
+    expect(results[0].ok).toBe(true);
+    expect(results[0].output).toContain("999");
+  });
 });
