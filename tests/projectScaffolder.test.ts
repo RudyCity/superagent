@@ -17,7 +17,7 @@ describe("projectScaffolder", () => {
     } catch {}
   });
 
-  it("should create a new instant project from the base directory", async () => {
+  it("should create a clean empty instant project by default without copying superagent internals", async () => {
     const targetProjectDir = path.join(tempDir, "my-instant-app");
 
     const result = await createInstantProject({
@@ -28,14 +28,23 @@ describe("projectScaffolder", () => {
 
     expect(result.success).toBe(true);
     expect(result.targetDir).toBe(targetProjectDir);
+    expect(result.template).toBe("empty");
     expect(fs.existsSync(targetProjectDir)).toBe(true);
 
-    // Verify key files and directories exist
+    // Verify key files and directories exist in clean project
     expect(fs.existsSync(path.join(targetProjectDir, "package.json"))).toBe(true);
     expect(fs.existsSync(path.join(targetProjectDir, "src"))).toBe(true);
+    expect(fs.existsSync(path.join(targetProjectDir, "src", "index.js"))).toBe(true);
+    expect(fs.existsSync(path.join(targetProjectDir, "README.md"))).toBe(true);
+    expect(fs.existsSync(path.join(targetProjectDir, ".gitignore"))).toBe(true);
     expect(fs.existsSync(path.join(targetProjectDir, "AGENTS.md"))).toBe(true);
 
-    // Verify exclusions: no node_modules, no dist, no .worktrees, no log files
+    // Verify superagent internals are NOT copied
+    expect(fs.existsSync(path.join(targetProjectDir, "chrome-extension"))).toBe(false);
+    expect(fs.existsSync(path.join(targetProjectDir, "chrome-extension-remote"))).toBe(false);
+    expect(fs.existsSync(path.join(targetProjectDir, "internal-hooks"))).toBe(false);
+    expect(fs.existsSync(path.join(targetProjectDir, "src", "core"))).toBe(false);
+    expect(fs.existsSync(path.join(targetProjectDir, "src", "components"))).toBe(false);
     expect(fs.existsSync(path.join(targetProjectDir, "node_modules"))).toBe(false);
     expect(fs.existsSync(path.join(targetProjectDir, "dist"))).toBe(false);
     expect(fs.existsSync(path.join(targetProjectDir, ".worktrees"))).toBe(false);
@@ -49,6 +58,23 @@ describe("projectScaffolder", () => {
     // Verify git initialization
     expect(fs.existsSync(path.join(targetProjectDir, ".git"))).toBe(true);
   }, 20000);
+
+  it("should create a minimal TypeScript project when template is minimal", async () => {
+    const targetProjectDir = path.join(tempDir, "minimal-ts-app");
+
+    const result = await createInstantProject({
+      projectName: "minimal-ts-app",
+      targetDir: targetProjectDir,
+      template: "minimal",
+      initGit: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.template).toBe("minimal");
+    expect(fs.existsSync(path.join(targetProjectDir, "tsconfig.json"))).toBe(true);
+    expect(fs.existsSync(path.join(targetProjectDir, "src", "index.ts"))).toBe(true);
+    expect(fs.existsSync(path.join(targetProjectDir, "package.json"))).toBe(true);
+  });
 
   it("should throw error if target directory exists without force flag", async () => {
     const targetProjectDir = path.join(tempDir, "existing-app");

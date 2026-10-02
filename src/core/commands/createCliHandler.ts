@@ -6,19 +6,20 @@ export function printCreateHelp(): void {
   console.log(`
 Usage: superagent create <project-name> [options]
 
-Create a new instant project using Superagent as the base template.
+Create a new instant project workspace.
 
 Options:
-  -d, --dir <path>       Target directory path (defaults to Documents/superagent/<project-name>)
-  -f, --force            Overwrite destination directory if it already exists
-  --no-git               Do not initialize a Git repository
-  --desc <description>   Custom project description
-  -h, --help             Show this help message
+  -d, --dir <path>          Target directory path (defaults to Documents/superagent/<project-name>)
+  -t, --template <type>     Project template: empty (default), minimal, or superagent
+  -f, --force               Overwrite destination directory if it already exists
+  --no-git                  Do not initialize a Git repository
+  --desc <description>      Custom project description
+  -h, --help                Show this help message
 
 Examples:
-  superagent create my-new-agent
-  superagent create my-new-agent --dir ./projects/my-new-agent
-  superagent create my-new-agent --force
+  superagent create my-new-app
+  superagent create my-new-app --template minimal
+  superagent create my-new-app --template superagent
 `);
 }
 
@@ -41,6 +42,7 @@ export async function handleCreateCliCommand(args: string[]): Promise<void> {
   let force = false;
   let initGit = true;
   let description = "";
+  let template: "empty" | "minimal" | "superagent" = "empty";
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -52,6 +54,11 @@ export async function handleCreateCliCommand(args: string[]): Promise<void> {
       initGit = false;
     } else if (arg === "--desc") {
       description = args[++i] || "";
+    } else if (arg === "--template" || arg === "-t") {
+      const val = (args[++i] || "").toLowerCase();
+      if (val === "superagent" || val === "base") template = "superagent";
+      else if (val === "minimal" || val === "ts" || val === "node") template = "minimal";
+      else template = "empty";
     } else if (!arg.startsWith("-") && !projectName) {
       projectName = arg;
     }
@@ -63,8 +70,15 @@ export async function handleCreateCliCommand(args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  const templateDisplay =
+    template === "empty"
+      ? "empty project"
+      : template === "minimal"
+      ? "minimal TypeScript project"
+      : "Superagent base template";
+
   console.log(
-    `\x1b[36m[SCAFFOLD]\x1b[0m Creating instant project \x1b[1m${projectName}\x1b[0m from Superagent base...`
+    `\x1b[36m[SCAFFOLD]\x1b[0m Creating instant project \x1b[1m${projectName}\x1b[0m (${templateDisplay})...`
   );
 
   try {
@@ -74,6 +88,7 @@ export async function handleCreateCliCommand(args: string[]): Promise<void> {
       force,
       initGit,
       description,
+      template,
     });
 
     console.log(`\x1b[32m[SUCCESS]\x1b[0m ${result.message}`);

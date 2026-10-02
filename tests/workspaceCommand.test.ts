@@ -71,7 +71,7 @@ describe("Slash Command: /workspace and /w (Interactive Wizard)", () => {
     expect(activeWizard.step).toBe(1);
     expect(wizardOptions.length).toBeGreaterThan(0);
     expect(wizardOptions).toContain("2. Add a new workspace...");
-    expect(wizardOptions).toContain("3. Create new instant project (Superagent base)...");
+    expect(wizardOptions).toContain("3. Create new instant workspace (Empty project)...");
     expect(wizardOptions).toContain("4. Remove a workspace...");
     expect(wizardOptions).toContain("5. View workspace status");
     expect(wizardOptions).toContain("❌ Exit Wizard");

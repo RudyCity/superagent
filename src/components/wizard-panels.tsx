@@ -1050,7 +1050,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
         {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 20 && (
           <WizardDialog
             title="✨ CREATE INSTANT PROJECT — Enter Project Name (Type & Enter, Esc: Back):"
-            description="Create a new project using Superagent as base template. Enter project name (e.g. my-app):"
+            description="Create a new workspace project. Enter project name (e.g. my-app):"
             borderColor="cyan"
             options={[]}
             selectedIndex={0}
@@ -1064,6 +1064,16 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
             borderColor="cyan"
             options={[]}
             selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 23 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title="📋 CHOOSE PROJECT TEMPLATE (Arrows & Enter, Esc: Back):"
+            description="Choose a project template for your new workspace (Empty Project recommended):"
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
           />
         )}
 

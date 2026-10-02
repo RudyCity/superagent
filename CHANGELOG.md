@@ -1,3 +1,15 @@
+## [1.5.110] - 2026-10-02
+
+### Fixed
+
+- **Instant Project Scaffolding Clean Default & Template Selection**:
+  - Fixed bug where creating an instant workspace (`superagent create` or `/workspace` menu option 3) cloned the entire Superagent repository (including internal source code, browser extensions, internal hooks, and test suites) into the new workspace.
+  - Added project template choices in `projectScaffolder.ts`: `"empty"` (default clean JavaScript/Node.js starter), `"minimal"` (clean TypeScript starter), and `"superagent"` (optional full Superagent assistant base).
+  - Scaffolded clean projects are now created in under 50ms with their own initialized Git repository, README, .gitignore, clean package.json, and AGENTS.md, without copying internal Superagent directories.
+  - Added `-t, --template <type>` option to `superagent create` CLI command.
+  - Added interactive template selection dialog (step 23) in the `/workspace` wizard with proper Escape key back-navigation.
+  - Updated all related unit tests in `tests/projectScaffolder.test.ts`, `tests/createCliHandler.test.ts`, and `tests/workspaceCommand.test.ts`.
+
 ## [1.5.109] - 2026-10-02
 
 ### Fixed

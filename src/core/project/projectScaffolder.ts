@@ -18,6 +18,8 @@ export function getDefaultProjectDir(projectName: string): string {
   return path.join(baseDocs, "superagent", projectName.trim());
 }
 
+export type ProjectTemplate = "empty" | "minimal" | "superagent";
+
 export interface InstantProjectOptions {
   projectName: string;
   targetDir?: string;
@@ -25,12 +27,14 @@ export interface InstantProjectOptions {
   force?: boolean;
   initGit?: boolean;
   description?: string;
+  template?: ProjectTemplate;
 }
 
 export interface InstantProjectResult {
   success: boolean;
   targetDir: string;
   projectName: string;
+  template: ProjectTemplate;
   message: string;
 }
 
@@ -89,11 +93,7 @@ export async function createInstantProject(
     throw new Error("Project name cannot be empty.");
   }
 
-  const sourceDir = path.resolve(options.templateSourceDir || getPackageRootDir());
-  if (!fs.existsSync(sourceDir)) {
-    throw new Error(`Base template source directory not found: ${sourceDir}`);
-  }
-
+  const template = options.template || "empty";
   const targetDir = path.resolve(
     options.targetDir || getDefaultProjectDir(trimmedName)
   );
@@ -109,60 +109,153 @@ export async function createInstantProject(
 
   fs.mkdirSync(targetDir, { recursive: true });
 
-  // Copy curated top-level directories
-  for (const dirName of INCLUDED_DIRS) {
-    const srcDirPath = path.join(sourceDir, dirName);
-    const destDirPath = path.join(targetDir, dirName);
-    if (fs.existsSync(srcDirPath)) {
-      copyDirRecursive(srcDirPath, destDirPath);
+  if (template === "superagent") {
+    const sourceDir = path.resolve(options.templateSourceDir || getPackageRootDir());
+    if (!fs.existsSync(sourceDir)) {
+      throw new Error(`Base template source directory not found: ${sourceDir}`);
     }
-  }
 
-  // Copy tests directory with temp folder filter
-  const srcTestsDir = path.join(sourceDir, "tests");
-  if (fs.existsSync(srcTestsDir)) {
-    copyDirRecursive(srcTestsDir, path.join(targetDir, "tests"));
-  }
-
-  // Copy curated top-level files
-  for (const fileName of INCLUDED_FILES) {
-    const srcFilePath = path.join(sourceDir, fileName);
-    const destFilePath = path.join(targetDir, fileName);
-    if (fs.existsSync(srcFilePath)) {
-      fs.copyFileSync(srcFilePath, destFilePath);
+    // Copy curated top-level directories
+    for (const dirName of INCLUDED_DIRS) {
+      const srcDirPath = path.join(sourceDir, dirName);
+      const destDirPath = path.join(targetDir, dirName);
+      if (fs.existsSync(srcDirPath)) {
+        copyDirRecursive(srcDirPath, destDirPath);
+      }
     }
-  }
 
-  // Personalize package.json
-  const pkgPath = path.join(targetDir, "package.json");
-  if (fs.existsSync(pkgPath)) {
-    try {
-      const rawPkg = fs.readFileSync(pkgPath, "utf-8");
-      const pkg = JSON.parse(rawPkg);
-      pkg.name = trimmedName;
-      pkg.version = "1.0.0";
-      pkg.description =
-        options.description ||
-        `Instant AI assistant project generated from Superagent`;
-      fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2), "utf-8");
-    } catch {}
-  }
+    // Copy tests directory with temp folder filter
+    const srcTestsDir = path.join(sourceDir, "tests");
+    if (fs.existsSync(srcTestsDir)) {
+      copyDirRecursive(srcTestsDir, path.join(targetDir, "tests"));
+    }
 
-  // Personalize AGENTS.md if present
-  const agentsPath = path.join(targetDir, "AGENTS.md");
-  if (fs.existsSync(agentsPath)) {
-    try {
-      let agentsContent = fs.readFileSync(agentsPath, "utf-8");
-      agentsContent = agentsContent.replace(
-        /# Project Specifications \(.*?\)/,
-        `# Project Specifications (${trimmedName})`
-      );
-      agentsContent = agentsContent.replace(
-        /- \*\*Name\*\*: .*/,
-        `- **Name**: ${trimmedName}`
-      );
-      fs.writeFileSync(agentsPath, agentsContent, "utf-8");
-    } catch {}
+    // Copy curated top-level files
+    for (const fileName of INCLUDED_FILES) {
+      const srcFilePath = path.join(sourceDir, fileName);
+      const destFilePath = path.join(targetDir, fileName);
+      if (fs.existsSync(srcFilePath)) {
+        fs.copyFileSync(srcFilePath, destFilePath);
+      }
+    }
+
+    // Personalize package.json
+    const pkgPath = path.join(targetDir, "package.json");
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const rawPkg = fs.readFileSync(pkgPath, "utf-8");
+        const pkg = JSON.parse(rawPkg);
+        pkg.name = trimmedName;
+        pkg.version = "1.0.0";
+        pkg.description =
+          options.description ||
+          `Instant AI assistant project generated from Superagent`;
+        fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2), "utf-8");
+      } catch {}
+    }
+
+    // Personalize AGENTS.md if present
+    const agentsPath = path.join(targetDir, "AGENTS.md");
+    if (fs.existsSync(agentsPath)) {
+      try {
+        let agentsContent = fs.readFileSync(agentsPath, "utf-8");
+        agentsContent = agentsContent.replace(
+          /# Project Specifications \(.*?\)/,
+          `# Project Specifications (${trimmedName})`
+        );
+        agentsContent = agentsContent.replace(
+          /- \*\*Name\*\*: .*/,
+          `- **Name**: ${trimmedName}`
+        );
+        fs.writeFileSync(agentsPath, agentsContent, "utf-8");
+      } catch {}
+    }
+  } else if (template === "minimal") {
+    // Minimal TypeScript project template
+    const srcDir = path.join(targetDir, "src");
+    fs.mkdirSync(srcDir, { recursive: true });
+
+    const indexTs = `export function main(): void {\n  console.log("Welcome to ${trimmedName}!");\n}\n\nmain();\n`;
+    fs.writeFileSync(path.join(srcDir, "index.ts"), indexTs, "utf-8");
+
+    const tsconfig = {
+      compilerOptions: {
+        target: "ES2022",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        esModuleInterop: true,
+        strict: true,
+        skipLibCheck: true,
+        outDir: "dist",
+        rootDir: "src",
+      },
+      include: ["src/**/*"],
+    };
+    fs.writeFileSync(
+      path.join(targetDir, "tsconfig.json"),
+      JSON.stringify(tsconfig, null, 2),
+      "utf-8"
+    );
+
+    const pkg = {
+      name: trimmedName,
+      version: "1.0.0",
+      description: options.description || `Instant TypeScript project ${trimmedName}`,
+      type: "module",
+      main: "dist/index.js",
+      scripts: {
+        build: "tsc",
+        start: "node dist/index.js",
+        test: 'echo "No test specified" && exit 0',
+      },
+    };
+    fs.writeFileSync(
+      path.join(targetDir, "package.json"),
+      JSON.stringify(pkg, null, 2),
+      "utf-8"
+    );
+
+    const readme = `# ${trimmedName}\n\n${options.description || "Minimal TypeScript project workspace created with Superagent."}\n\n## Getting Started\n\n\`\`\`bash\nnpm install\nnpm run build\nnpm start\n\`\`\`\n`;
+    fs.writeFileSync(path.join(targetDir, "README.md"), readme, "utf-8");
+
+    const gitignore = `node_modules/\ndist/\n.env\n.DS_Store\n*.log\n`;
+    fs.writeFileSync(path.join(targetDir, ".gitignore"), gitignore, "utf-8");
+
+    const agentsMd = `# Project Specifications (${trimmedName})\n\n## Project Overview\n- **Name**: ${trimmedName}\n- **Description**: ${options.description || "Minimal TypeScript project workspace created with Superagent."}\n`;
+    fs.writeFileSync(path.join(targetDir, "AGENTS.md"), agentsMd, "utf-8");
+  } else {
+    // Clean Empty Project (default): no superagent internals copied
+    const srcDir = path.join(targetDir, "src");
+    fs.mkdirSync(srcDir, { recursive: true });
+
+    const indexJs = `// ${trimmedName}\nconsole.log("Welcome to ${trimmedName}!");\n`;
+    fs.writeFileSync(path.join(srcDir, "index.js"), indexJs, "utf-8");
+
+    const pkg = {
+      name: trimmedName,
+      version: "1.0.0",
+      description: options.description || `Instant project ${trimmedName}`,
+      type: "module",
+      main: "src/index.js",
+      scripts: {
+        start: "node src/index.js",
+        test: 'echo "Error: no test specified" && exit 1',
+      },
+    };
+    fs.writeFileSync(
+      path.join(targetDir, "package.json"),
+      JSON.stringify(pkg, null, 2),
+      "utf-8"
+    );
+
+    const readme = `# ${trimmedName}\n\n${options.description || "Instant empty project workspace created with Superagent."}\n`;
+    fs.writeFileSync(path.join(targetDir, "README.md"), readme, "utf-8");
+
+    const gitignore = `node_modules/\ndist/\n.env\n.DS_Store\n*.log\n`;
+    fs.writeFileSync(path.join(targetDir, ".gitignore"), gitignore, "utf-8");
+
+    const agentsMd = `# Project Specifications (${trimmedName})\n\n## Project Overview\n- **Name**: ${trimmedName}\n- **Description**: ${options.description || "Instant empty project workspace created with Superagent."}\n`;
+    fs.writeFileSync(path.join(targetDir, "AGENTS.md"), agentsMd, "utf-8");
   }
 
   // Initialize Git repository if requested
@@ -177,10 +270,18 @@ export async function createInstantProject(
     addTrustedDirectory(targetDir, trimmedName);
   } catch {}
 
+  const templateLabel =
+    template === "empty"
+      ? "empty project"
+      : template === "minimal"
+      ? "minimal TypeScript project"
+      : "Superagent base project";
+
   return {
     success: true,
     targetDir,
     projectName: trimmedName,
-    message: `Instant project '${trimmedName}' successfully created at ${targetDir}`,
+    template,
+    message: `Instant project '${trimmedName}' (${templateLabel}) successfully created at ${targetDir}`,
   };
 }

@@ -2128,6 +2128,13 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             handleWizardSubmit("❌ Back");
             return;
           }
+          if (activeWizard.step === 23) {
+            setActiveWizard({ type: "workspace", step: 21, data: activeWizard.data });
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setInput(activeWizard.data?.targetDir || "");
+            return;
+          }
           if (activeWizard.step === 21) {
             setActiveWizard({ type: "workspace", step: 20, data: activeWizard.data });
             setWizardOptions([]);
@@ -2140,7 +2147,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             setWizardOptions([
               "1. Select & Switch Workspace...",
               "2. Add a new workspace...",
-              "3. Create new instant project (Superagent base)...",
+              "3. Create new instant workspace (Empty project)...",
               "4. Remove a workspace...",
               "5. View workspace status",
               "6. Manage workspace chains...",

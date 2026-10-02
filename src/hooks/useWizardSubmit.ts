@@ -1594,14 +1594,46 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
       if (activeWizard.step === 21) {
         const dirInput = value.trim();
         const projectName = activeWizard.data?.projectName || "my-project";
-        const { createInstantProject, getDefaultProjectDir } = await import("../core/project/projectScaffolder.js");
+        const { getDefaultProjectDir } = await import("../core/project/projectScaffolder.js");
         const targetDir = dirInput
           ? path.resolve(dirInput)
           : (activeWizard.data?.defaultTarget || getDefaultProjectDir(projectName));
 
+        setActiveWizard({
+          type: "workspace",
+          step: 23,
+          data: { projectName, targetDir },
+        });
+        setWizardOptions([
+          "1. Empty Project (Clean workspace with Git & README) [Recommended]",
+          "2. Minimal TypeScript (package.json, tsconfig.json, src/index.ts)",
+          "3. Superagent Base Template (Clone full assistant codebase)",
+        ]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
+
+      if (activeWizard.step === 23) {
+        const projectName = activeWizard.data?.projectName || "my-project";
+        const targetDir = activeWizard.data?.targetDir || "";
+        let template: "empty" | "minimal" | "superagent" = "empty";
+        if (value.startsWith("2") || value.toLowerCase().includes("minimal")) {
+          template = "minimal";
+        } else if (value.startsWith("3") || value.toLowerCase().includes("superagent")) {
+          template = "superagent";
+        }
+
+        const templateLabel =
+          template === "empty"
+            ? "empty project"
+            : template === "minimal"
+            ? "minimal TypeScript project"
+            : "Superagent base template";
+
         addLine({
           type: "system",
-          content: `🚀 Creating instant project "${projectName}" at ${targetDir}...`,
+          content: `🚀 Creating instant project "${projectName}" at ${targetDir} (${templateLabel})...`,
           timestamp: now,
         });
 
@@ -1610,6 +1642,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
           const result = await createInstantProject({
             projectName,
             targetDir,
+            template,
             initGit: true,
           });
 

@@ -47,7 +47,7 @@ export const workspaceCommand: SlashCommand = {
       const options = [
         "1. Select & Switch Workspace...",
         "2. Add a new workspace...",
-        "3. Create new instant project (Superagent base)...",
+        "3. Create new instant workspace (Empty project)...",
         "4. Remove a workspace...",
         "5. View workspace status",
         "6. Manage workspace chains...",

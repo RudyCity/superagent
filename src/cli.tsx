@@ -152,7 +152,7 @@ Commands:
   mcp               Manage MCP servers (list, add, remove, register)
   selfdev           Manage self-development behavioral lessons (status, list, distill, approve, reject, retire)
   skill             Manage and synthesize reusable skills (list, synth)
-  create <name>     Create a new instant project from the Superagent base template
+  create <name>     Create a new instant project workspace (empty project by default)
 
 Options:
   -r, --resume            Resume the last active session
