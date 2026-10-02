@@ -149,6 +149,7 @@ Commands:
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
   gateway           Manage the omnichannel messaging gateway (status, enable, disable, listen, poll)
   muse              Coordinate with remote AI agent (status, config, watch [projects...], run)
+  tunnel            Manage Cloudflare quick tunnels (list, start, stop, status)
   mcp               Manage MCP servers (list, add, remove, register)
   selfdev           Manage self-development behavioral lessons (status, list, distill, approve, reject, retire)
   skill             Manage and synthesize reusable skills (list, synth)
@@ -177,6 +178,8 @@ Examples:
   superagent preset use dev
   superagent daemon list
   superagent daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"
+  superagent tunnel list
+  superagent muse tunnel list
   superagent muse watch ./backend ./frontend
   superagent -q "explain quantum computing in simple terms"
   superagent --preset dev "explain quantum computing in simple terms"
@@ -251,6 +254,15 @@ if (process.argv[2] === "gateway") {
 if (process.argv[2] === "muse") {
   const { handleMuseCliCommand } = await import("./core/remoteAgent/museCli.js");
   await handleMuseCliCommand(process.argv.slice(3));
+  process.exit(0);
+}
+
+if (process.argv[2] === "tunnel" || process.argv[2] === "tunnels") {
+  const { handleMuseCliCommand } = await import("./core/remoteAgent/museCli.js");
+  const subArgs = process.argv[2] === "tunnels"
+    ? ["tunnel", "list", ...process.argv.slice(3)]
+    : ["tunnel", ...process.argv.slice(3)];
+  await handleMuseCliCommand(subArgs);
   process.exit(0);
 }
 

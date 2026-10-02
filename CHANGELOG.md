@@ -1,3 +1,16 @@
+## [1.5.128] - 2026-10-03
+
+### Added
+
+- **Command to View and List All Active Cloudflare Quick Tunnels**:
+  - Implemented `listActiveTunnels()` and `CloudflareTunnelManager.listActive()` to discover, validate, deduplicate, and report all active Cloudflare tunnels across all local ports and terminal processes, automatically purging stale or dead state files.
+  - Added formatted summary helper `formatActiveTunnels()` detailing each active tunnel's port, PID, uptime, public URL, WSS endpoint, and local target.
+  - Added dedicated CLI commands: `superagent tunnel list` (and aliases `superagent tunnel ls`, `superagent tunnels`, `superagent muse tunnel list`).
+  - Added dedicated interactive slash commands: `/tunnel list` (and aliases `/tunnel`, `/tunnels`, `/muse tunnel list`, `/muse tunnel ls`).
+  - Added batch termination support: `/tunnel stop all`, `/muse tunnel stop all`, `superagent tunnel stop all`, and `superagent muse tunnel stop all`.
+  - Added direct `/tunnel` slash command registered in command registry for convenient management (`/tunnel [list|start|stop|status]`).
+  - Updated autocomplete suggestions and help guides across CLI, `/help`, and dashboard suggestions.
+
 ## [1.5.127] - 2026-10-03
 
 ### Documentation

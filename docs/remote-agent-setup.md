@@ -179,6 +179,32 @@ For rapid development and testing without owning a custom domain, Superagent pro
    - **State Isolation**: Metadata is persisted per-port (`~/.superagent-r/tunnel-9225.json` and `~/.superagent-r/tunnel-9226.json`), preventing PID or URL collisions.
    - **Crash & Exit Safety**: Superagent attaches synchronous `process.once("exit")` and `SIGINT`/`SIGTERM` hooks, ensuring the background `cloudflared` process tree is forcefully terminated when closing, pressing `Ctrl+C`, or upon unexpected crash.
 
+5. **Viewing All Active Tunnels (`list`)**:
+   Inspect all running quick tunnels across all terminal sessions and local ports:
+   ```bash
+   # Via dedicated tunnel CLI
+   superagent tunnel list
+
+   # Or via muse CLI
+   superagent muse tunnel list
+   ```
+   Inside interactive terminal sessions:
+   ```bash
+   # Slash commands
+   /tunnel list       # Or simply: /tunnel or /tunnels
+   /muse tunnel list
+   ```
+   To terminate all active tunnels across all ports at once:
+   ```bash
+   # CLI
+   superagent tunnel stop all
+   superagent muse tunnel stop all
+
+   # Interactive terminal
+   /tunnel stop all
+   /muse tunnel stop all
+   ```
+
 ### 3.3 Production Named Tunnel (Recommended)
 
 For a stable, permanent endpoint with Cloudflare Zero Trust:

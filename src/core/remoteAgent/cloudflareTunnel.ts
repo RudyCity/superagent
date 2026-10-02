@@ -14,7 +14,6 @@ export interface TunnelMetadata {
   port: number;
   startedAt: number;
 }
-
 export interface TunnelStatus {
   isRunning: boolean;
   publicUrl?: string;
@@ -26,6 +25,17 @@ export interface TunnelStatus {
   uptimeSeconds?: number;
   error?: string;
 }
+
+export interface ActiveTunnelInfo {
+  port: number;
+  pid: number;
+  publicUrl: string;
+  wssUrl: string;
+  localUrl: string;
+  startedAt: number;
+  uptimeSeconds: number;
+}
+
 
 export interface StartTunnelOptions {
   port?: number;
@@ -343,8 +353,14 @@ export class CloudflareTunnelManager {
 
   /**
    * Stops the active quick Cloudflare tunnel if running.
+   * If port is "all", stops all active quick tunnels across all ports.
    */
-  public async stopQuickTunnel(port?: number): Promise<boolean> {
+  public async stopQuickTunnel(port?: number | "all"): Promise<boolean> {
+    if (port === "all") {
+      const count = await this.stopAll();
+      return count > 0;
+    }
+
     let stopped = false;
 
     if (this.currentProcess) {
@@ -396,6 +412,100 @@ export class CloudflareTunnelManager {
   }
 
   /**
+   * Lists all currently active quick Cloudflare tunnels across all ports.
+   */
+  public listActive(): ActiveTunnelInfo[] {
+    const dir = path.join(os.homedir(), ".superagent-r");
+    const activeMap = new Map<number, ActiveTunnelInfo>();
+
+    // 1. Check in-memory metadata if running in this process
+    if (
+      this.currentMetadata &&
+      this.currentProcess &&
+      this.currentProcess.pid &&
+      isProcessRunning(this.currentProcess.pid)
+    ) {
+      const meta = this.currentMetadata;
+      const uptime = Math.floor((Date.now() - meta.startedAt) / 1000);
+      activeMap.set(meta.port, {
+        port: meta.port,
+        pid: meta.pid,
+        publicUrl: meta.publicUrl,
+        wssUrl: meta.wssUrl,
+        localUrl: meta.localUrl,
+        startedAt: meta.startedAt,
+        uptimeSeconds: Math.max(0, uptime),
+      });
+    }
+
+    // 2. Scan ~/.superagent-r directory for tunnel state files
+    if (fs.existsSync(dir)) {
+      try {
+        const files = fs.readdirSync(dir);
+        for (const f of files) {
+          if (f === "tunnel.json" || /^tunnel-\d+\.json$/.test(f)) {
+            const filePath = path.join(dir, f);
+            try {
+              const raw = fs.readFileSync(filePath, "utf-8");
+              const meta = JSON.parse(raw) as TunnelMetadata;
+              if (meta && meta.pid) {
+                if (isProcessRunning(meta.pid)) {
+                  let effectivePort = meta.port;
+                  if (!effectivePort) {
+                    const match = f.match(/^tunnel-(\d+)\.json$/);
+                    if (match) {
+                      effectivePort = parseInt(match[1], 10);
+                    } else if (meta.localUrl) {
+                      const urlMatch = meta.localUrl.match(/:(\d+)/);
+                      if (urlMatch) effectivePort = parseInt(urlMatch[1], 10);
+                    }
+                    effectivePort = effectivePort || 9225;
+                  }
+                  const uptime = Math.floor((Date.now() - (meta.startedAt || Date.now())) / 1000);
+                  if (!activeMap.has(effectivePort)) {
+                    activeMap.set(effectivePort, {
+                      port: effectivePort,
+                      pid: meta.pid,
+                      publicUrl: meta.publicUrl,
+                      wssUrl: meta.wssUrl,
+                      localUrl: meta.localUrl,
+                      startedAt: meta.startedAt,
+                      uptimeSeconds: Math.max(0, uptime),
+                    });
+                  }
+                } else {
+                  // Clean up stale file
+                  try {
+                    fs.unlinkSync(filePath);
+                  } catch {}
+                }
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+
+    return Array.from(activeMap.values()).sort((a, b) => a.port - b.port);
+  }
+
+  /**
+   * Stops all running quick Cloudflare tunnels across all ports.
+   */
+  public async stopAll(): Promise<number> {
+    const active = this.listActive();
+    let stoppedCount = 0;
+    for (const t of active) {
+      try {
+        const stopped = await this.stopQuickTunnel(t.port);
+        if (stopped) stoppedCount++;
+      } catch {}
+    }
+    clearTunnelState();
+    return stoppedCount;
+  }
+
+  /**
    * Retrieves the current status of the quick tunnel.
    */
   public getStatus(port?: number): TunnelStatus {
@@ -433,13 +543,54 @@ export async function startQuickTunnel(options?: StartTunnelOptions): Promise<Tu
   return cloudflareTunnel.startQuickTunnel(options);
 }
 
-export async function stopQuickTunnel(port?: number): Promise<boolean> {
+export async function stopQuickTunnel(port?: number | "all"): Promise<boolean> {
   return cloudflareTunnel.stopQuickTunnel(port);
+}
+
+export function listActiveTunnels(): ActiveTunnelInfo[] {
+  return cloudflareTunnel.listActive();
+}
+
+export async function stopAllQuickTunnels(): Promise<number> {
+  return cloudflareTunnel.stopAll();
 }
 
 export function getTunnelStatus(port?: number): TunnelStatus {
   return cloudflareTunnel.getStatus(port);
 }
+
+export function formatActiveTunnels(tunnels: ActiveTunnelInfo[]): string {
+  if (!tunnels || tunnels.length === 0) {
+    return [
+      "Cloudflare Quick Tunnels: NONE ACTIVE",
+      "No active quick tunnels found.",
+      "Run '/muse tunnel start' (or 'superagent muse tunnel start') to launch a tunnel.",
+    ].join("\n");
+  }
+
+  const lines: string[] = [
+    `Active Cloudflare Quick Tunnels (${tunnels.length}):`,
+  ];
+
+  tunnels.forEach((t, i) => {
+    lines.push(
+      `${i + 1}. Port ${t.port} (PID: ${t.pid}, Uptime: ${t.uptimeSeconds}s)`,
+      `   - Public URL   : ${t.publicUrl}`,
+      `   - WSS Endpoint : ${t.wssUrl}`,
+      `   - Local Target : ${t.localUrl}`,
+    );
+  });
+
+  lines.push(
+    "",
+    "Commands:",
+    "  Stop specific tunnel : /muse tunnel stop --port <port>",
+    "  Stop all tunnels     : /muse tunnel stop all",
+  );
+
+  return lines.join("\n");
+}
+
 
 
 export interface BuildMusePromptOptions {

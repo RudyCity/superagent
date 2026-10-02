@@ -53,12 +53,19 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
   "/muse": "Coordinate with remote AI agent (Muse) over WebSocket (Cloudflare Tunnel) or Telegram bus",
   "/muse status": "Show remote agent configuration, runner mode, and connection status",
-  "/muse tunnel": "Cloudflare Tunnel subcommands (start, stop, status) & setup guide",
+  "/muse tunnel": "Cloudflare Tunnel subcommands (list, start, stop, status) & setup guide",
+  "/muse tunnel list": "List all currently active Cloudflare quick tunnels",
   "/muse tunnel start": "Start quick Cloudflare tunnel for Muse with copyable prompt (optional: --port <n>)",
-  "/muse tunnel stop": "Stop running quick ephemeral Cloudflare tunnel (optional: --port <n>)",
+  "/muse tunnel stop": "Stop running quick ephemeral Cloudflare tunnel (optional: --port <n> or all)",
   "/muse tunnel status": "Check active Cloudflare quick development tunnel status (optional: --port <n>)",
   "/muse tunnel guide": "View manual Cloudflare Tunnel setup guide",
   "/muse cloudflare": "Cloudflare Tunnel setup guide, quick test commands, and Bearer token generator",
+  "/tunnel": "Manage Cloudflare quick tunnels (list, start, stop, status)",
+  "/tunnel list": "List all currently active Cloudflare quick tunnels",
+  "/tunnel start": "Start quick ephemeral Cloudflare tunnel (optional: --port <n>)",
+  "/tunnel stop": "Stop active Cloudflare quick tunnel (optional: --port <n> or all)",
+  "/tunnel status": "Check active Cloudflare quick tunnel status (optional: --port <n>)",
+  "/tunnels": "List all currently active Cloudflare quick tunnels",
   "/muse watch": "Start persistent watch mode where Superagent is controlled by Muse",
   "/muse watch start": "Start persistent watch mode where Superagent is controlled by Muse",
   "/muse watch stop": "Stop persistent watch mode and return to manual execution",
@@ -478,6 +485,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
 
       if (sub === "tunnel" || sub === "cloudflare") {
         const tunnelPossibilities = [
+          "/muse tunnel list",
           "/muse tunnel start",
           "/muse tunnel stop",
           "/muse tunnel status",
@@ -503,6 +511,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       const possibilities = [
         "/muse status",
         "/muse tunnel",
+        "/muse tunnel list",
         "/muse tunnel start",
         "/muse tunnel stop",
         "/muse tunnel status",
@@ -551,6 +560,16 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         "/muse config systemPrompt",
       ];
       return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/tunnel" || mainCommand === "/tunnels") {
+      const tunnelPossibilities = [
+        "/tunnel list",
+        "/tunnel start",
+        "/tunnel stop",
+        "/tunnel status",
+      ];
+      return filterSuggestions(tunnelPossibilities, query);
     }
 
     if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {

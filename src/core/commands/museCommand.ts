@@ -93,8 +93,9 @@ export const museCommand: SlashCommand = {
         "  /muse <task>                 - Run a task with remote Muse brain",
         "  /muse status                 - View remote agent status",
         "  /muse tunnel                 - Cloudflare Tunnel setup guide & config",
+        "  /muse tunnel list            - List all currently active Cloudflare tunnels",
         "  /muse tunnel start           - Start quick ephemeral Cloudflare Tunnel (optional: --port <n>)",
-        "  /muse tunnel stop            - Stop active Cloudflare Tunnel (optional: --port <n>)",
+        "  /muse tunnel stop            - Stop active Cloudflare Tunnel (optional: --port <n> or all)",
         "  /muse tunnel status          - Check Cloudflare Tunnel process status (optional: --port <n>)",
         "  /muse watch [dir1] [dir2]    - Watch one or multiple project workspaces",
         "  /muse watch --ws             - Watch projects using secure WebSocket transport",
@@ -134,7 +135,10 @@ export const museCommand: SlashCommand = {
       const {
         startQuickTunnel,
         stopQuickTunnel,
+        stopAllQuickTunnels,
         getTunnelStatus,
+        listActiveTunnels,
+        formatActiveTunnels,
         buildMuseConnectionPrompt,
         copyTextToClipboard,
       } = await import("../remoteAgent/cloudflareTunnel.js");
@@ -144,6 +148,16 @@ export const museCommand: SlashCommand = {
         isMuseWatcherActive,
         getMuseWatcher,
       } = await import("../remoteAgent/museWatcher.js");
+
+      if (action === "list" || action === "ls" || action === "active") {
+        const tunnels = listActiveTunnels();
+        ctx.addLine({
+          type: "system",
+          content: formatActiveTunnels(tunnels),
+          timestamp: now,
+        });
+        return;
+      }
 
       if (action === "start" || action === "quick" || action === "run") {
         const rawArgs = parts.slice(2);
@@ -324,6 +338,20 @@ export const museCommand: SlashCommand = {
 
       if (action === "stop") {
         const rawArgs = parts.slice(2);
+        const isAll = rawArgs.includes("all") || rawArgs.includes("--all") || rawArgs.includes("-a");
+        if (isAll) {
+          if (isMuseWatcherActive()) {
+            await stopMuseWatcher();
+          }
+          const count = await stopAllQuickTunnels();
+          ctx.addLine({
+            type: "system",
+            content: `[Cloudflare Tunnel] Stopped ${count} active quick tunnel${count === 1 ? "" : "s"}.`,
+            timestamp: Date.now(),
+          });
+          return;
+        }
+
         const portArgIdx = rawArgs.findIndex((a) => a === "--port" || a === "-p");
         let portOverride: number | undefined;
         if (portArgIdx !== -1 && rawArgs[portArgIdx + 1]) {
@@ -410,8 +438,9 @@ export const museCommand: SlashCommand = {
         "═════════════════════════════════════════════════════════════════════════════",
         "",
         "Subcommands:",
+        "  /muse tunnel list            - List all currently active Cloudflare tunnels",
         "  /muse tunnel start           - Start quick ephemeral tunnel in background (optional: --port <n>)",
-        "  /muse tunnel stop            - Stop running quick tunnel (optional: --port <n>)",
+        "  /muse tunnel stop            - Stop running quick tunnel (optional: --port <n> or all)",
         "  /muse tunnel status          - Check current tunnel status (optional: --port <n>)",
         "  /muse tunnel guide           - View full manual Cloudflare setup guide",
         "",
@@ -1214,3 +1243,19 @@ export const museCommand: SlashCommand = {
 };
 
 registry.register(museCommand);
+
+export const tunnelCommand: SlashCommand = {
+  name: "tunnel",
+  aliases: ["tunnels"],
+  description: "Manage Cloudflare quick tunnels (list, start, stop, status)",
+  async execute(args, ctx) {
+    const rawTrimmed = args.trim();
+    if (!rawTrimmed) {
+      return museCommand.execute("tunnel list", ctx);
+    }
+    return museCommand.execute(`tunnel ${rawTrimmed}`, ctx);
+  },
+};
+
+registry.register(tunnelCommand);
+

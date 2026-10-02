@@ -195,7 +195,9 @@ sequenceDiagram
 - **Management Commands**: `/muse config wsToken refresh`, `/muse config wsToken rotate`, `/muse config tokenTtl <sec>`, `/muse config autoTokenRefresh <on|off>`.
 
 ### Automatic Quick Ephemeral Tunnel
-- **Native Tunnel Subcommands**: Automatically spawns and monitors `cloudflared` quick tunnels without manual shell commands via `/muse tunnel start`, `/muse tunnel stop`, and `/muse tunnel status` (CLI: `superagent muse tunnel start|stop|status`).
+- **Native Tunnel Subcommands**: Automatically spawns and monitors `cloudflared` quick tunnels without manual shell commands via `/muse tunnel start`, `/muse tunnel stop`, `/muse tunnel status`, and `/muse tunnel list` (CLI: `superagent muse tunnel [list|start|stop|status]` or shortcut `superagent tunnel [list|start|stop|status]`).
+- **Global & Per-Port Tunnel Inspection**: Inspect all active tunnels across all terminal sessions and ports via `/muse tunnel list`, `/tunnel list`, `/tunnel`, or `/tunnels`.
+- **Batch Stop**: Stop all active tunnels across all ports at once using `/muse tunnel stop all` or `superagent tunnel stop all`.
 - **One-Command Watch Daemon**: Supports `--tunnel` flag in watch mode (`/muse watch --tunnel` and `superagent muse watch --tunnel`) to initialize both the WebSocket listener and Cloudflare quick tunnel in a single unified command, capturing public `https://*.trycloudflare.com` URLs automatically.
 - **Multi-Terminal Isolation**: Multiple tunnels can run concurrently across different terminals using `--port <number>` (e.g. `/muse tunnel start --port 9226`), storing isolated state in `~/.superagent-r/tunnel-<port>.json`.
 - **Automated Process Cleanup**: Attaches synchronous `process.once("exit")` and `SIGINT`/`SIGTERM` handlers to forcefully terminate the `cloudflared` process tree upon exit or unexpected crash, preventing zombie background processes.

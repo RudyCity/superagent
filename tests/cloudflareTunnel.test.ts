@@ -346,5 +346,110 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       clearTunnelState(9226);
       expect(getTunnelStatus(9226).isRunning).toBe(false);
     });
+
+    it("should list all active tunnels and format them correctly", async () => {
+      const {
+        saveTunnelState,
+        clearTunnelState,
+        listActiveTunnels,
+        formatActiveTunnels,
+        stopAllQuickTunnels,
+      } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+
+      clearTunnelState();
+      expect(listActiveTunnels()).toEqual([]);
+      expect(formatActiveTunnels([])).toContain("NONE ACTIVE");
+
+      const tunnel1 = {
+        pid: process.pid,
+        publicUrl: "https://site-1.trycloudflare.com",
+        wssUrl: "wss://site-1.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:9225",
+        port: 9225,
+        startedAt: Date.now() - 5000,
+      };
+
+      const tunnel2 = {
+        pid: process.pid,
+        publicUrl: "https://site-2.trycloudflare.com",
+        wssUrl: "wss://site-2.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:9226",
+        port: 9226,
+        startedAt: Date.now() - 2000,
+      };
+
+      saveTunnelState(tunnel1, 9225);
+      saveTunnelState(tunnel2, 9226);
+
+      const active = listActiveTunnels();
+      expect(active.length).toBe(2);
+      expect(active[0].port).toBe(9225);
+      expect(active[1].port).toBe(9226);
+
+      const formatted = formatActiveTunnels(active);
+      expect(formatted).toContain("Active Cloudflare Quick Tunnels (2)");
+      expect(formatted).toContain("Port 9225");
+      expect(formatted).toContain("Port 9226");
+      expect(formatted).toContain("https://site-1.trycloudflare.com");
+      expect(formatted).toContain("https://site-2.trycloudflare.com");
+
+      // Test CLI listing
+      const logs: string[] = [];
+      const spy = vi.spyOn(console, "log").mockImplementation((msg) => {
+        logs.push(String(msg));
+      });
+      await handleMuseCliCommand(["tunnel", "list"]);
+      expect(logs.some((l) => l.includes("Active Cloudflare Quick Tunnels (2)"))).toBe(true);
+      expect(logs.some((l) => l.includes("Port 9225"))).toBe(true);
+      expect(logs.some((l) => l.includes("Port 9226"))).toBe(true);
+      spy.mockRestore();
+
+      // Test slash command /muse tunnel list
+      const lines: any[] = [];
+      await museCommand.execute("tunnel list", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+      expect(lines.some((l) => l.content.includes("Active Cloudflare Quick Tunnels (2)"))).toBe(true);
+
+      // Test slash command /tunnel list
+      const { tunnelCommand } = await import("../src/core/commands/museCommand.js");
+      const tunnelLines: any[] = [];
+      await tunnelCommand.execute("list", {
+        addLine: (line) => tunnelLines.push(line),
+        exit: () => {},
+      } as any);
+      expect(tunnelLines.some((l) => l.content.includes("Active Cloudflare Quick Tunnels (2)"))).toBe(true);
+
+      // Test stop all with mocked process kill
+      const { cloudflareTunnel } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+      const stopSpy = vi.spyOn(cloudflareTunnel, "stopQuickTunnel").mockImplementation(async (p) => {
+        clearTunnelState(typeof p === "number" ? p : undefined);
+        return true;
+      });
+
+      const stopLines: any[] = [];
+      await museCommand.execute("tunnel stop all", {
+        addLine: (line) => stopLines.push(line),
+        exit: () => {},
+      } as any);
+      expect(stopLines.some((l) => l.content.includes("Stopped"))).toBe(true);
+      stopSpy.mockRestore();
+
+      clearTunnelState();
+      expect(listActiveTunnels()).toEqual([]);
+    });
+
+    it("should provide suggestions for /muse tunnel list and /tunnel list", () => {
+      const suggestions = getDashboardSuggestions("/muse tunnel l");
+      expect(suggestions).toContain("/muse tunnel list");
+
+      const tunnelSuggestions = getDashboardSuggestions("/tunnel ");
+      expect(tunnelSuggestions).toContain("/tunnel list");
+      expect(tunnelSuggestions).toContain("/tunnel status");
+      expect(tunnelSuggestions).toContain("/tunnel start");
+      expect(tunnelSuggestions).toContain("/tunnel stop");
+    });
   });
 });
+
