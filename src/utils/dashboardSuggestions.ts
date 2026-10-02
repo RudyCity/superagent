@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { filterSuggestions, getActiveCommandContext } from "./text.js";
 import { getCachedModelIds, getInstalledSkills, getModelPresets, listHistorySessions, getTrustedDirectories } from "../core/config.js";
 import { registry } from "../core/commands/registry.js";
@@ -54,17 +55,26 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/muse": "Coordinate with remote AI agent (Muse) over WebSocket (Cloudflare Tunnel) or Telegram bus",
   "/muse status": "Show remote agent configuration, runner mode, and connection status",
   "/muse tunnel": "Cloudflare Tunnel subcommands (list, start, stop, status) & setup guide",
-  "/muse tunnel list": "List all currently active Cloudflare quick tunnels",
-  "/muse tunnel start": "Start quick Cloudflare tunnel for Muse with copyable prompt (optional: --port <n>)",
+  "/muse tunnel list": "List all currently active Cloudflare quick tunnels across all ports",
+  "/muse tunnel start": "Start quick Cloudflare tunnel with copyable prompt (optional: --port <n>)",
+  "/muse tunnel start --port": "Start quick Cloudflare tunnel on a custom local port (e.g. --port 9226)",
   "/muse tunnel stop": "Stop running quick ephemeral Cloudflare tunnel (optional: --port <n> or all)",
+  "/muse tunnel stop all": "Stop all running Cloudflare quick tunnels across all ports",
+  "/muse tunnel stop --port": "Stop running Cloudflare quick tunnel on a specific port",
   "/muse tunnel status": "Check active Cloudflare quick development tunnel status (optional: --port <n>)",
+  "/muse tunnel status --port": "Check Cloudflare quick development tunnel status on a specific port",
   "/muse tunnel guide": "View manual Cloudflare Tunnel setup guide",
   "/muse cloudflare": "Cloudflare Tunnel setup guide, quick test commands, and Bearer token generator",
   "/tunnel": "Manage Cloudflare quick tunnels (list, start, stop, status)",
-  "/tunnel list": "List all currently active Cloudflare quick tunnels",
+  "/tunnel list": "List all currently active Cloudflare quick tunnels across all ports",
   "/tunnel start": "Start quick ephemeral Cloudflare tunnel (optional: --port <n>)",
+  "/tunnel start --port": "Start quick Cloudflare tunnel on a custom local port (e.g. --port 9226)",
   "/tunnel stop": "Stop active Cloudflare quick tunnel (optional: --port <n> or all)",
+  "/tunnel stop all": "Stop all running Cloudflare quick tunnels across all ports",
+  "/tunnel stop --port": "Stop running Cloudflare quick tunnel on a specific port",
   "/tunnel status": "Check active Cloudflare quick tunnel status (optional: --port <n>)",
+  "/tunnel status --port": "Check Cloudflare quick tunnel status on a specific port",
+  "/tunnel guide": "View manual Cloudflare Tunnel setup guide",
   "/tunnels": "List all currently active Cloudflare quick tunnels",
   "/muse watch": "Start persistent watch mode where Superagent is controlled by Muse",
   "/muse watch start": "Start persistent watch mode where Superagent is controlled by Muse",
@@ -160,6 +170,70 @@ function getResumePossibilities(): string[] {
     scheduleResumeRefresh(isMulti);
   }
   return resumeSuggestionsCache.possibilities;
+}
+
+function getTunnelSubSuggestions(prefix: string, query: string): string[] {
+  const baseSuggestions = [
+    `${prefix} list`,
+    `${prefix} start`,
+    `${prefix} start --port`,
+    `${prefix} stop`,
+    `${prefix} stop all`,
+    `${prefix} status`,
+    `${prefix} guide`,
+  ];
+
+  if (query.startsWith(`${prefix} stop`)) {
+    const stopSuggestions = [
+      `${prefix} stop all`,
+      `${prefix} stop --port`,
+    ];
+    try {
+      const dir = path.join(os.homedir(), ".superagent-r");
+      if (fs.existsSync(dir)) {
+        const files = fs.readdirSync(dir);
+        for (const f of files) {
+          const match = f.match(/^tunnel-(\d+)\.json$/);
+          if (match) {
+            stopSuggestions.push(`${prefix} stop --port ${match[1]}`);
+          }
+        }
+      }
+    } catch {}
+    return filterSuggestions(stopSuggestions, query);
+  }
+
+  if (query.startsWith(`${prefix} start`)) {
+    const startSuggestions = [
+      `${prefix} start`,
+      `${prefix} start --port`,
+      `${prefix} start --port 9226`,
+      `${prefix} start --port 9227`,
+    ];
+    return filterSuggestions(startSuggestions, query);
+  }
+
+  if (query.startsWith(`${prefix} status`)) {
+    const statusSuggestions = [
+      `${prefix} status`,
+      `${prefix} status --port`,
+    ];
+    try {
+      const dir = path.join(os.homedir(), ".superagent-r");
+      if (fs.existsSync(dir)) {
+        const files = fs.readdirSync(dir);
+        for (const f of files) {
+          const match = f.match(/^tunnel-(\d+)\.json$/);
+          if (match) {
+            statusSuggestions.push(`${prefix} status --port ${match[1]}`);
+          }
+        }
+      }
+    } catch {}
+    return filterSuggestions(statusSuggestions, query);
+  }
+
+  return filterSuggestions(baseSuggestions, query);
 }
 
 export function getDashboardSuggestions(originalQuery: string, cursorPosition: number = originalQuery.length): string[] {
@@ -484,14 +558,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       }
 
       if (sub === "tunnel" || sub === "cloudflare") {
-        const tunnelPossibilities = [
-          "/muse tunnel list",
-          "/muse tunnel start",
-          "/muse tunnel stop",
-          "/muse tunnel status",
-          "/muse tunnel guide",
-        ];
-        return filterSuggestions(tunnelPossibilities, query);
+        return getTunnelSubSuggestions(sub === "cloudflare" ? "/muse cloudflare" : "/muse tunnel", query);
       }
 
       if (sub === "watch") {
@@ -513,7 +580,9 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         "/muse tunnel",
         "/muse tunnel list",
         "/muse tunnel start",
+        "/muse tunnel start --port",
         "/muse tunnel stop",
+        "/muse tunnel stop all",
         "/muse tunnel status",
         "/muse tunnel guide",
         "/muse cloudflare",
@@ -562,14 +631,12 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       return filterSuggestions(possibilities, query);
     }
 
-    if (mainCommand === "/tunnel" || mainCommand === "/tunnels") {
-      const tunnelPossibilities = [
-        "/tunnel list",
-        "/tunnel start",
-        "/tunnel stop",
-        "/tunnel status",
-      ];
-      return filterSuggestions(tunnelPossibilities, query);
+    if (mainCommand === "/tunnel") {
+      return getTunnelSubSuggestions("/tunnel", query);
+    }
+
+    if (mainCommand === "/tunnels") {
+      return filterSuggestions(["/tunnels", "/tunnel list"], query);
     }
 
     if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {

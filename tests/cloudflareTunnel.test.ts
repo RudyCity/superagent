@@ -449,6 +449,23 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(tunnelSuggestions).toContain("/tunnel status");
       expect(tunnelSuggestions).toContain("/tunnel start");
       expect(tunnelSuggestions).toContain("/tunnel stop");
+      expect(tunnelSuggestions).toContain("/tunnel guide");
+
+      const tunnelStopSuggestions = getDashboardSuggestions("/tunnel stop ");
+      expect(tunnelStopSuggestions).toContain("/tunnel stop all");
+      expect(tunnelStopSuggestions).toContain("/tunnel stop --port");
+
+      const tunnelStartSuggestions = getDashboardSuggestions("/tunnel start ");
+      expect(tunnelStartSuggestions).toContain("/tunnel start --port");
+
+      const museTunnelStopSuggestions = getDashboardSuggestions("/muse tunnel stop ");
+      expect(museTunnelStopSuggestions).toContain("/muse tunnel stop all");
+      expect(museTunnelStopSuggestions).toContain("/muse tunnel stop --port");
+
+      const descriptions = getSuggestionDescriptions();
+      expect(descriptions["/tunnel list"]).toBeDefined();
+      expect(descriptions["/tunnel stop all"]).toBeDefined();
+      expect(descriptions["/muse tunnel stop all"]).toBeDefined();
     });
   });
 });
