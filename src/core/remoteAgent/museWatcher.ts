@@ -5,6 +5,7 @@ import {
   maskToken,
   RemoteAgentConfig,
   getWatchedWorkspaces,
+  RemoteAgentTransport,
 } from "./config.js";
 import {
   RemoteAgentEnvelope,
@@ -17,6 +18,12 @@ import {
   DEFAULT_MUSE_SYSTEM_PROMPT,
 } from "./protocol.js";
 import { MuseClient } from "./museClient.js";
+import {
+  RemoteTransport,
+  TelegramTransport,
+  RemoteEnvelopeMeta,
+} from "./transport.js";
+import { createMuseWsTransport } from "./museWsTransport.js";
 import { executeBatch } from "./batchExecutor.js";
 import { formatReadableSummary } from "./formatSummary.js";
 import type { Agent } from "../agent.js";
@@ -35,6 +42,8 @@ export interface MuseWatcherStats {
   groupId?: string | number;
   museBotId?: string | number;
   queuedBatches?: number;
+  transport?: string;
+  transportDetails?: string;
 }
 
 export interface MuseWatcherOptions {
@@ -44,6 +53,8 @@ export interface MuseWatcherOptions {
   customConfigPath?: string;
   announce?: boolean;
   autoApproveWorkspace?: boolean;
+  transport?: RemoteTransport;
+  transportType?: RemoteAgentTransport;
   onProgress?: (message: string) => void;
   onLog?: (message: string) => void;
   onLine?: (line: { type: string; content: string; timestamp?: number }) => void;
@@ -87,18 +98,46 @@ export class MuseWatcher {
   private batchQueue: Array<{
     type: "batch" | "done";
     envelope: TaskBatchEnvelope | TaskDoneEnvelope;
-    meta?: { messageId?: number };
+    meta?: RemoteEnvelopeMeta;
     resolve?: () => void;
     reject?: (err: any) => void;
   }> = [];
   private isProcessingQueue = false;
   private workspaces: string[] = [];
+  private transport!: RemoteTransport;
 
   constructor(options: MuseWatcherOptions = {}) {
     this.options = options;
     this.config = loadRemoteAgentConfig(options.customConfigPath);
     this.client = new MuseClient(this.config);
     this.initWorkspaces();
+    this.initTransport();
+  }
+
+  private initTransport(): void {
+    if (this.options.transport) {
+      this.transport = this.options.transport;
+      if (this.transport instanceof TelegramTransport) {
+        this.client = this.transport.getClient();
+      }
+      return;
+    }
+
+    const effectiveType = this.options.transportType || this.config.transport || "telegram";
+    if (effectiveType === "websocket") {
+      this.transport = createMuseWsTransport(this.config);
+    } else {
+      this.client = new MuseClient(this.config);
+      this.transport = new TelegramTransport(this.config, this.client);
+    }
+  }
+
+  public getTransport(): RemoteTransport {
+    return this.transport;
+  }
+
+  public getClient(): MuseClient {
+    return this.client;
   }
 
   private initWorkspaces(): void {
@@ -191,6 +230,7 @@ export class MuseWatcher {
     const ws = this.workspaces[0] || path.resolve(
       this.options.workspace || this.config.defaultWorkspace || process.cwd()
     );
+    const transportInfo = this.transport ? this.transport.getTransportInfo() : undefined;
 
     return {
       isRunning: this.isRunning,
@@ -205,6 +245,8 @@ export class MuseWatcher {
       groupId: this.config.groupId,
       museBotId: this.config.museBotId,
       queuedBatches: this.batchQueue.length,
+      transport: transportInfo?.type,
+      transportDetails: transportInfo?.details,
     };
   }
 
@@ -214,13 +256,26 @@ export class MuseWatcher {
     }
 
     this.config = loadRemoteAgentConfig(this.options.customConfigPath);
-    if (!this.config.botToken || !this.config.groupId || !this.config.museBotId) {
-      throw new Error(
-        "Remote agent (Muse) is not configured. Run '/muse config' to set botToken, groupId, and museBotId."
-      );
+    this.initWorkspaces();
+    this.initTransport();
+
+    const transportInfo = this.transport.getTransportInfo();
+
+    if (this.transport.type === "telegram") {
+      if (!this.config.botToken || !this.config.groupId || !this.config.museBotId) {
+        throw new Error(
+          "Remote agent (Muse) Telegram is not configured. Run '/muse config' to set botToken, groupId, and museBotId."
+        );
+      }
+    } else if (this.transport.type === "websocket") {
+      if (this.config.wsMode === "client" && !this.config.wsRemoteUrl) {
+        throw new Error(
+          "Remote agent (Muse) WebSocket client mode requires wsRemoteUrl. Run '/muse config' to configure."
+        );
+      }
     }
 
-    // Cancel any running single-task runner to ensure Bot B token is exclusively polled by the watcher
+    // Cancel any running single-task runner to ensure token or port is exclusively polled
     try {
       const { abortActiveRemoteTask } = await import("./taskRunner.js");
       await abortActiveRemoteTask("Starting Muse Watch mode");
@@ -230,12 +285,13 @@ export class MuseWatcher {
     this.startedAt = Date.now();
     this.lastActiveAt = Date.now();
     this.abortController = new AbortController();
-    this.client = new MuseClient(this.config);
-    this.initWorkspaces();
 
     const primaryWs = this.workspaces[0];
 
-    logE2E("REMOTE-AGENT", `MuseWatcher started with ${this.workspaces.length} workspace(s). Primary: ${primaryWs}. Listening on Telegram group ${this.config.groupId}...`);
+    logE2E(
+      "REMOTE-AGENT",
+      `MuseWatcher started with ${this.workspaces.length} workspace(s). Primary: ${primaryWs}. Transport: ${transportInfo.details}`
+    );
 
     this.options.onStatusChange?.(true);
 
@@ -245,12 +301,12 @@ export class MuseWatcher {
 
     this.emitLine(
       "system",
-      `[Muse Watch] Superagent is now controlled by Muse.\n${wsInfoStr}\n- Telegram Group: ${this.config.groupId}\n- Muse Bot ID: ${this.config.museBotId}\n- Listening for incoming tool batches from Muse...`
+      `[Muse Watch] Superagent is now controlled by Muse.\n${wsInfoStr}\n- Transport: ${transportInfo.details}\n- Listening for incoming tool batches from Muse...`
     );
 
     const abortSignal = this.abortController.signal;
 
-    // Optional presence greeting on Telegram in background
+    // Optional presence greeting in background
     if (this.options.announce !== false) {
       const presenceText = this.workspaces.length > 1
         ? `🟢 Superagent is now active in WATCH mode (controlled by Muse) on ${this.workspaces.length} projects:\n${this.workspaces.map((w, i) => `${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`
@@ -261,18 +317,18 @@ export class MuseWatcher {
         kind: "chat",
         text: presenceText,
       };
-      this.client.sendEnvelope(presenceEnvelope).catch(() => {});
+      this.transport.sendEnvelope(presenceEnvelope).catch(() => {});
     }
 
-    // Start background polling loop
-    this.client
-      .pollEnvelopes(async (envelope, meta) => {
+    // Start background transport loop
+    this.transport
+      .start(async (envelope, meta) => {
         await this.handleEnvelope(envelope, meta);
       }, abortSignal)
       .catch((err: any) => {
         if (!abortSignal.aborted) {
-          logE2E("REMOTE-AGENT", `MuseWatcher polling error: ${err?.message || err}`);
-          this.emitLine("error", `[Muse Watch] Polling error: ${err?.message || err}`);
+          logE2E("REMOTE-AGENT", `MuseWatcher transport error: ${err?.message || err}`);
+          this.emitLine("error", `[Muse Watch] Transport error: ${err?.message || err}`);
           this.isRunning = false;
           this.options.onStatusChange?.(false);
         }
@@ -303,13 +359,19 @@ export class MuseWatcher {
 
     logE2E("REMOTE-AGENT", "MuseWatcher stopped.");
 
-    if (this.options.announce !== false && this.client) {
+    if (this.options.announce !== false && this.transport) {
       const offlineEnvelope: RemoteAgentEnvelope = {
         v: 1,
         kind: "chat",
         text: "🔴 Superagent WATCH mode stopped.",
       };
-      this.client.sendEnvelope(offlineEnvelope).catch(() => {});
+      this.transport.sendEnvelope(offlineEnvelope).catch(() => {});
+    }
+
+    if (this.transport) {
+      try {
+        await this.transport.stop();
+      } catch {}
     }
 
     this.options.onStatusChange?.(false);
@@ -322,7 +384,7 @@ export class MuseWatcher {
    */
   private async handleEnvelope(
     envelope: RemoteAgentEnvelope,
-    meta?: { messageId?: number }
+    meta?: RemoteEnvelopeMeta
   ): Promise<void> {
     this.lastActiveAt = Date.now();
 
@@ -360,7 +422,7 @@ export class MuseWatcher {
 
   private async enqueueBatch(
     envelope: TaskBatchEnvelope,
-    meta?: { messageId?: number }
+    meta?: RemoteEnvelopeMeta
   ): Promise<void> {
     const batchId = envelope.id;
     if (batchId) {
@@ -407,11 +469,9 @@ export class MuseWatcher {
             "system",
             `⚡ [Muse Watch] Re-sending cached result for duplicate batch ${batchId}`
           );
-          const replyToId = meta?.messageId || this.client.getLastSentMessageId();
-          await this.client.sendEnvelope(
+          await this.transport.sendEnvelope(
             cached.resultEnvelope,
-            undefined,
-            replyToId,
+            meta,
             this.options.onProgress
           );
           return;
@@ -498,7 +558,7 @@ export class MuseWatcher {
 
   private async handleTaskBatch(
     envelope: TaskBatchEnvelope,
-    meta?: { messageId?: number }
+    meta?: RemoteEnvelopeMeta
   ): Promise<void> {
     this.activeTaskId = envelope.task_id;
     const callsCount = envelope.calls?.length || 0;
@@ -565,8 +625,7 @@ export class MuseWatcher {
               kind: "chat",
               text: waitingMsg,
             };
-            const replyToId = meta?.messageId || this.client.getLastSentMessageId();
-            await this.client.sendEnvelope(chatEnv, undefined, replyToId);
+            await this.transport.sendEnvelope(chatEnv, meta);
           } catch (err: any) {
             logE2E("REMOTE-AGENT", `Failed to send waiting permission notice to Muse: ${err?.message || err}`);
           }
@@ -586,8 +645,7 @@ export class MuseWatcher {
               kind: "chat",
               text: decisionMsg,
             };
-            const replyToId = meta?.messageId || this.client.getLastSentMessageId();
-            await this.client.sendEnvelope(chatEnv, undefined, replyToId);
+            await this.transport.sendEnvelope(chatEnv, meta);
           } catch (err: any) {
             logE2E("REMOTE-AGENT", `Failed to send permission decision notice to Muse: ${err?.message || err}`);
           }
@@ -596,11 +654,11 @@ export class MuseWatcher {
 
       this.batchesExecuted++;
 
-      // If batch was aborted during execution, do not post results back to Telegram
+      // If batch was aborted during execution, do not post results back
       if (batchAbort.signal.aborted || this.abortController?.signal.aborted) {
         logE2E(
           "REMOTE-AGENT",
-          `MuseWatcher batch ${envelope.id} was aborted. Skipping posting results back to Telegram.`
+          `MuseWatcher batch ${envelope.id} was aborted. Skipping posting results back.`
         );
         return;
       }
@@ -631,20 +689,18 @@ export class MuseWatcher {
 
       logE2E(
         "REMOTE-AGENT",
-        `MuseWatcher completed batch ${envelope.id} with ${results.length} result(s). Posting back to Telegram.`
+        `MuseWatcher completed batch ${envelope.id} with ${results.length} result(s). Posting back via transport.`
       );
 
-      const replyToId = meta?.messageId || this.client.getLastSentMessageId();
-      const sent = await this.client.sendEnvelope(
+      const sent = await this.transport.sendEnvelope(
         resultEnvelope,
-        undefined,
-        replyToId,
+        meta,
         this.options.onProgress
       );
       if (!sent) {
         this.emitLine(
           "error",
-          `[Muse Watch] Failed to send tool results for batch ${envelope.id} to Telegram.`
+          `[Muse Watch] Failed to send tool results for batch ${envelope.id} via transport.`
         );
       }
 
@@ -653,8 +709,8 @@ export class MuseWatcher {
         this.pendingReplyMessageIds.delete(envelope.id);
         if (extraReplyIds) {
           for (const extraId of extraReplyIds) {
-            if (extraId !== replyToId) {
-              await this.client.sendEnvelope(resultEnvelope, undefined, extraId).catch(() => {});
+            if (extraId !== meta?.messageId) {
+              await this.transport.sendEnvelope(resultEnvelope, { messageId: extraId }).catch(() => {});
             }
           }
         }

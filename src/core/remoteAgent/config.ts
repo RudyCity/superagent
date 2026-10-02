@@ -1,7 +1,11 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import crypto from "crypto";
 import { getRootConfigDir } from "../config/paths.js";
+
+export type RemoteAgentTransport = "telegram" | "websocket";
+export type MuseWsMode = "server" | "client";
 
 export interface RemoteAgentConfig {
   botToken?: string;
@@ -11,6 +15,16 @@ export interface RemoteAgentConfig {
   workspaces?: string[];
   asRunner?: boolean;
   systemPrompt?: string;
+  // WebSocket & Cloudflare Tunnel parameters
+  transport?: RemoteAgentTransport;
+  wsPort?: number;
+  wsHost?: string;
+  wsToken?: string;
+  wsPath?: string;
+  cfAccessClientId?: string;
+  cfAccessClientSecret?: string;
+  wsMode?: MuseWsMode;
+  wsRemoteUrl?: string;
 }
 
 const DEFAULT_CONFIG: RemoteAgentConfig = {};
@@ -68,8 +82,8 @@ export function updateRemoteAgentConfig(
 }
 
 /**
- * Masks a bot token so it can be safely displayed in the UI or CLI.
- * Never prints the raw token.
+ * Masks a bot token or secret so it can be safely displayed in the UI or CLI.
+ * Never prints the raw token or secret.
  */
 export function maskToken(token?: string): string {
   if (!token || typeof token !== "string" || token.trim() === "") {
@@ -82,13 +96,40 @@ export function maskToken(token?: string): string {
   return trimmed.slice(0, 4) + "..." + trimmed.slice(-4);
 }
 
+export function maskSecret(secret?: string): string {
+  return maskToken(secret);
+}
+
+/**
+ * Generates a cryptographically secure random bearer token for WebSocket authentication.
+ */
+export function generateSecureWsToken(): string {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
+/**
+ * Checks if Muse WebSocket transport is configured and active.
+ */
+export function isMuseWsActive(customPath?: string): boolean {
+  const cfg = loadRemoteAgentConfig(customPath);
+  if (cfg.transport !== "websocket") return false;
+  if (cfg.wsMode === "client") {
+    return Boolean(cfg.wsRemoteUrl && (cfg.wsToken || cfg.cfAccessClientId));
+  }
+  return Boolean(cfg.wsToken || cfg.cfAccessClientId || cfg.wsPort);
+}
+
 /**
  * Checks if Muse is active as the default runner for chat prompts.
- * Requires asRunner to be true and all required Telegram parameters configured.
+ * Requires asRunner to be true and either Telegram or WebSocket properly configured.
  */
 export function isMuseRunnerActive(customPath?: string): boolean {
   const cfg = loadRemoteAgentConfig(customPath);
-  return Boolean(cfg.asRunner && cfg.botToken && cfg.groupId && cfg.museBotId);
+  if (!cfg.asRunner) return false;
+  if (cfg.transport === "websocket") {
+    return isMuseWsActive(customPath);
+  }
+  return Boolean(cfg.botToken && cfg.groupId && cfg.museBotId);
 }
 
 /**

@@ -3,6 +3,9 @@ import {
   loadRemoteAgentConfig,
   updateRemoteAgentConfig,
   maskToken,
+  maskSecret,
+  generateSecureWsToken,
+  isMuseWsActive,
   RemoteAgentConfig,
   getWatchedWorkspaces,
   addWatchedWorkspace,
@@ -17,15 +20,34 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
   if (subcommand === "status") {
     const cfg = loadRemoteAgentConfig();
-    const isConfigured = Boolean(cfg.botToken && cfg.groupId && cfg.museBotId);
+    const transport = cfg.transport || "telegram";
+    const isTelegramConfigured = Boolean(cfg.botToken && cfg.groupId && cfg.museBotId);
+    const isWsConfigured = isMuseWsActive();
+    const isConfigured = transport === "websocket" ? isWsConfigured : isTelegramConfigured;
     const watched = getWatchedWorkspaces(cfg);
 
     console.log("Remote Agent (Muse) Status:");
     console.log(`  Configured      : ${isConfigured ? "Yes" : "No (run: superagent muse config)"}`);
+    console.log(`  Transport       : ${transport.toUpperCase()}`);
     console.log(`  Runner Mode     : ${cfg.asRunner ? "ENABLED (normal terminal prompts route to Muse)" : "DISABLED"}`);
-    console.log(`  Bot Token       : ${maskToken(cfg.botToken)}`);
-    console.log(`  Telegram Group  : ${cfg.groupId || "(not set)"}`);
-    console.log(`  Muse Bot ID     : ${cfg.museBotId || "(not set)"}`);
+
+    if (transport === "websocket") {
+      const host = cfg.wsHost || "127.0.0.1";
+      const port = cfg.wsPort || 9225;
+      const wsPath = cfg.wsPath || "/muse";
+      console.log(`  WS Mode         : ${(cfg.wsMode || "server").toUpperCase()}`);
+      console.log(`  WS Endpoint     : ws://${host}:${port}${wsPath}`);
+      console.log(`  Bearer Token    : ${maskSecret(cfg.wsToken)}`);
+      console.log(`  CF-Access ID    : ${cfg.cfAccessClientId || "(disabled)"}`);
+      if (cfg.wsMode === "client") {
+        console.log(`  Remote URL      : ${cfg.wsRemoteUrl || "(not set)"}`);
+      }
+    } else {
+      console.log(`  Bot Token       : ${maskToken(cfg.botToken)}`);
+      console.log(`  Telegram Group  : ${cfg.groupId || "(not set)"}`);
+      console.log(`  Muse Bot ID     : ${cfg.museBotId || "(not set)"}`);
+    }
+
     if (watched.length > 1) {
       console.log(`  Watched Projects (${watched.length}):`);
       watched.forEach((w, i) => console.log(`    ${i + 1}. ${path.basename(w)} (${w})`));
@@ -33,13 +55,72 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       console.log(`  Default Ws      : ${cfg.defaultWorkspace || process.cwd()}`);
     }
     console.log("");
-    console.log("To set config:");
-    console.log("  superagent muse config as_runner_model on");
-    console.log("  superagent muse config botToken <token>");
-    console.log("  superagent muse config groupId <groupId>");
-    console.log("  superagent muse config museBotId <botId>");
-    console.log("  superagent muse config workspaces add <path>");
+    console.log("Commands & Configuration:");
+    console.log("  superagent muse tunnel           - Cloudflare Tunnel setup guide & config");
+    console.log("  superagent muse config transport websocket|telegram");
+    console.log("  superagent muse config wsToken generate");
+    console.log("  superagent muse config wsPort 9225");
+    console.log("  superagent muse watch --ws");
     console.log("  superagent muse watch <dir1> <dir2> ...");
+    return;
+  }
+
+  if (subcommand === "tunnel" || subcommand === "cloudflare") {
+    const cfg = loadRemoteAgentConfig();
+    const host = cfg.wsHost || "127.0.0.1";
+    const port = cfg.wsPort || 9225;
+    const pathEndpoint = cfg.wsPath || "/muse";
+    let token = cfg.wsToken;
+
+    if (!token) {
+      token = generateSecureWsToken();
+      updateRemoteAgentConfig({ wsToken: token, transport: "websocket" });
+      console.log(`[Muse Security] Generated new Bearer token: ${token}\n`);
+    }
+
+    console.log("═════════════════════════════════════════════════════════════════════════════");
+    console.log("  Cloudflare Tunnel Setup Guide for Muse WebSocket Bridge");
+    console.log("═════════════════════════════════════════════════════════════════════════════");
+    console.log("");
+    console.log("1. Prerequisites:");
+    console.log("   - Install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/");
+    console.log("   - Windows: winget install Cloudflare.cloudflared");
+    console.log("   - macOS  : brew install cloudflared");
+    console.log("   - Linux  : sudo apt install cloudflared");
+    console.log("");
+    console.log("2. Quick Ephemeral Tunnel (Development / Testing):");
+    console.log(`   cloudflared tunnel --url http://${host}:${port}`);
+    console.log("   - Cloudflare will generate a public hostname: https://*.trycloudflare.com");
+    console.log(`   - Connect Muse via WSS: wss://<subdomain>.trycloudflare.com${pathEndpoint}`);
+    console.log("");
+    console.log("3. Production Named Tunnel (Recommended):");
+    console.log("   cloudflared tunnel login");
+    console.log("   cloudflared tunnel create superagent-muse");
+    console.log("   In ~/.cloudflared/config.yml:");
+    console.log("   -------------------------------------------------");
+    console.log("   tunnel: <TUNNEL_UUID>");
+    console.log("   credentials-file: ~/.cloudflared/<TUNNEL_UUID>.json");
+    console.log("   ingress:");
+    console.log("     - hostname: muse.yourdomain.com");
+    console.log(`       service: ws://${host}:${port}`);
+    console.log("     - service: http_status:404");
+    console.log("   -------------------------------------------------");
+    console.log("   cloudflared tunnel route dns superagent-muse muse.yourdomain.com");
+    console.log("   cloudflared tunnel run superagent-muse");
+    console.log("");
+    console.log("4. Edge Security with Cloudflare Access (Zero Trust):");
+    console.log("   - Dashboard -> Zero Trust -> Access -> Applications -> Add application");
+    console.log("   - Add Service Token under Access -> Service Auth");
+    console.log("   - Set headers in Superagent:");
+    console.log("     superagent muse config cfAccessClientId <CF_CLIENT_ID>");
+    console.log("     superagent muse config cfAccessClientSecret <CF_CLIENT_SECRET>");
+    console.log("");
+    console.log("5. Muse Authentication Header:");
+    console.log(`   Authorization: Bearer ${token}`);
+    console.log("");
+    console.log("6. Start Watch Daemon:");
+    console.log("   superagent muse watch --ws");
+    console.log("═════════════════════════════════════════════════════════════════════════════");
     return;
   }
 
@@ -51,18 +132,28 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       const cfg = loadRemoteAgentConfig();
       const watched = getWatchedWorkspaces(cfg);
       console.log("Current Remote Agent Configuration:");
+      console.log(`  transport        : ${cfg.transport || "telegram"}`);
       console.log(`  as_runner_model  : ${cfg.asRunner ? "on (enabled)" : "off (disabled)"}`);
       console.log(`  botToken         : ${maskToken(cfg.botToken)}`);
       console.log(`  groupId          : ${cfg.groupId || "(not set)"}`);
       console.log(`  museBotId        : ${cfg.museBotId || "(not set)"}`);
+      console.log(`  wsPort           : ${cfg.wsPort || 9225}`);
+      console.log(`  wsHost           : ${cfg.wsHost || "127.0.0.1"}`);
+      console.log(`  wsToken          : ${maskSecret(cfg.wsToken)}`);
+      console.log(`  wsPath           : ${cfg.wsPath || "/muse"}`);
+      console.log(`  wsMode           : ${cfg.wsMode || "server"}`);
+      console.log(`  wsRemoteUrl      : ${cfg.wsRemoteUrl || "(not set)"}`);
+      console.log(`  cfAccessClientId : ${cfg.cfAccessClientId || "(not set)"}`);
       console.log(`  defaultWorkspace : ${cfg.defaultWorkspace || "(not set)"}`);
       console.log(`  watchedWorkspaces (${watched.length}):`);
       watched.forEach((w, i) => console.log(`    ${i + 1}. ${path.basename(w)} (${w})`));
       console.log("");
       console.log("Usage: superagent muse config <key> <value>");
       console.log("Examples:");
+      console.log("  superagent muse config transport websocket");
+      console.log("  superagent muse config wsToken generate");
+      console.log("  superagent muse config wsPort 9225");
       console.log("  superagent muse config workspaces add ./backend");
-      console.log("  superagent muse config workspaces add ./frontend");
       return;
     }
 
@@ -93,6 +184,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     }
 
     const validKeys: Record<string, keyof RemoteAgentConfig> = {
+      transport: "transport",
       bottoken: "botToken",
       bot_token: "botToken",
       groupid: "groupId",
@@ -107,11 +199,32 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       as_runner_model: "asRunner",
       defaultrunner: "asRunner",
       default_runner: "asRunner",
+      wsport: "wsPort",
+      ws_port: "wsPort",
+      port: "wsPort",
+      wshost: "wsHost",
+      ws_host: "wsHost",
+      wstoken: "wsToken",
+      ws_token: "wsToken",
+      token: "wsToken",
+      wspath: "wsPath",
+      ws_path: "wsPath",
+      wsmode: "wsMode",
+      ws_mode: "wsMode",
+      wsremoteurl: "wsRemoteUrl",
+      ws_remote_url: "wsRemoteUrl",
+      remoteurl: "wsRemoteUrl",
+      cfaccessclientid: "cfAccessClientId",
+      cf_access_client_id: "cfAccessClientId",
+      cfid: "cfAccessClientId",
+      cfaccessclientsecret: "cfAccessClientSecret",
+      cf_access_client_secret: "cfAccessClientSecret",
+      cfsecret: "cfAccessClientSecret",
     };
 
     const mappedKey = validKeys[key];
     if (!mappedKey) {
-      console.error(`Unknown config key: ${key}. Valid keys: as_runner_model, botToken, groupId, museBotId, defaultWorkspace, workspaces`);
+      console.error(`Unknown config key: ${key}. Valid keys: transport, wsToken, wsPort, wsHost, wsPath, wsMode, cfAccessClientId, cfAccessClientSecret, botToken, groupId, museBotId, defaultWorkspace, workspaces`);
       return;
     }
 
@@ -131,17 +244,51 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         console.error(`Invalid value for ${key}: "${val}". Use "on" or "off".`);
         return;
       }
+    } else if (mappedKey === "transport") {
+      const lower = val.toLowerCase();
+      if (lower === "websocket" || lower === "ws") {
+        patch.transport = "websocket";
+      } else if (lower === "telegram" || lower === "tg") {
+        patch.transport = "telegram";
+      } else {
+        console.error(`Invalid transport: "${val}". Supported: "telegram" or "websocket"`);
+        return;
+      }
+    } else if (mappedKey === "wsPort") {
+      const p = parseInt(val, 10);
+      if (isNaN(p) || p <= 0 || p > 65535) {
+        console.error(`Invalid port: "${val}". Must be an integer between 1 and 65535.`);
+        return;
+      }
+      patch.wsPort = p;
+    } else if (mappedKey === "wsToken") {
+      if (val.toLowerCase() === "generate" || val.toLowerCase() === "gen") {
+        const fresh = generateSecureWsToken();
+        patch.wsToken = fresh;
+        updateRemoteAgentConfig(patch);
+        console.log(`Generated new secure Bearer token:\n${fresh}`);
+        return;
+      }
+      patch.wsToken = val;
+    } else if (mappedKey === "wsMode") {
+      const lower = val.toLowerCase();
+      if (lower === "client" || lower === "server") {
+        patch.wsMode = lower;
+      } else {
+        console.error(`Invalid wsMode: "${val}". Use "server" or "client".`);
+        return;
+      }
     } else {
       (patch as any)[mappedKey] = val;
     }
 
     updateRemoteAgentConfig(patch);
     const maskedVal =
-      mappedKey === "botToken"
-        ? maskToken(val)
+      mappedKey === "botToken" || mappedKey === "wsToken" || mappedKey === "cfAccessClientSecret"
+        ? maskSecret(String((patch as any)[mappedKey]))
         : mappedKey === "asRunner"
           ? (patch.asRunner ? "on (enabled)" : "off (disabled)")
-          : val;
+          : (patch as any)[mappedKey];
     console.log(`Updated remoteAgent config: ${mappedKey} = ${maskedVal}`);
     return;
   }
@@ -167,14 +314,13 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         return;
       }
       console.log("Muse Watch Mode: ACTIVE (controlled by Muse)");
+      console.log(`  Transport         : ${stats.transportDetails || stats.transport || "telegram"}`);
       if (stats.workspaces && stats.workspaces.length > 1) {
         console.log(`  Watched Projects (${stats.workspaces.length}):`);
         stats.workspaces.forEach((w, i) => console.log(`    ${i + 1}. ${path.basename(w)} (${w})`));
       } else {
         console.log(`  Workspace         : ${stats.workspace}`);
       }
-      console.log(`  Telegram Group    : ${stats.groupId || "(not set)"}`);
-      console.log(`  Muse Bot ID       : ${stats.museBotId || "(not set)"}`);
       console.log(`  Uptime            : ${stats.uptimeSeconds}s`);
       console.log(`  Batches Executed  : ${stats.batchesExecuted}`);
       console.log(`  Tasks Completed   : ${stats.tasksCompleted}`);
@@ -209,16 +355,36 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     }
 
     // Default: start
-    const rawDirs = args[1]?.toLowerCase() === "start" ? args.slice(2) : args.slice(1);
+    const isWs = args.some((a) => a === "--ws" || a === "--websocket");
+    const isTg = args.some((a) => a === "--telegram" || a === "--tg");
+    const portArgIdx = args.findIndex((a) => a === "--port" || a === "-p");
+    let portOverride: number | undefined;
+    if (portArgIdx !== -1 && args[portArgIdx + 1]) {
+      const parsed = parseInt(args[portArgIdx + 1], 10);
+      if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
+    }
+
+    const rawDirs = args.slice(1).filter((a, idx, arr) => {
+      if (a.toLowerCase() === "start") return false;
+      if (a === "--ws" || a === "--websocket" || a === "--telegram" || a === "--tg") return false;
+      if (a === "--port" || a === "-p") return false;
+      if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p")) return false;
+      return true;
+    });
+
     const targetDirs = rawDirs
       .map((d) => d.trim())
-      .filter((d) => d.length > 0 && d.toLowerCase() !== "start")
+      .filter((d) => d.length > 0)
       .map((d) => path.resolve(d));
 
     const cfg = loadRemoteAgentConfig();
+    if (portOverride) {
+      cfg.wsPort = portOverride;
+    }
+    const transportType = isWs ? "websocket" : isTg ? "telegram" : cfg.transport || "telegram";
     const allWatched = targetDirs.length > 0 ? targetDirs : getWatchedWorkspaces(cfg);
 
-    console.log("[Muse Watch] Starting persistent watch mode...");
+    console.log(`[Muse Watch] Starting persistent watch mode (${transportType.toUpperCase()})...`);
     if (allWatched.length > 1) {
       console.log(`[Muse Watch] Watching ${allWatched.length} projects:`);
       allWatched.forEach((w, i) => console.log(`  ${i + 1}. ${path.basename(w)} (${w})`));
@@ -231,6 +397,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       const watcher = await startMuseWatcher({
         workspace: allWatched[0],
         workspaces: allWatched,
+        transportType,
         onLine: (line) => console.log(line.content),
         onProgress: (msg) => console.log(`[Muse Progress] ${msg}`),
       });
@@ -263,7 +430,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
   // Treat rest as a task
   const taskPrompt = args.join(" ").trim();
   if (!taskPrompt) {
-    console.log("Usage: superagent muse [status|config|watch|<task prompt>]");
+    console.log("Usage: superagent muse [status|tunnel|config|watch|<task prompt>]");
     return;
   }
 

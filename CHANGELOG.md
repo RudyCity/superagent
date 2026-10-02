@@ -1,3 +1,23 @@
+## [1.5.116] - 2026-10-02
+
+### Added
+
+- **Muse Cloudflare Tunnel and WebSocket Integration with 5-Layer Defense-in-Depth Security**:
+  - Implemented pluggable `RemoteTransport` interface in `src/core/remoteAgent/transport.ts` and wrapped `MuseClient` into `TelegramTransport`, decoupling `MuseWatcher` from Telegram and allowing seamless switching between Telegram and WebSocket transports without duplicating execution queue, multi-workspace routing, or permission logic.
+  - Implemented secure WebSocket transport server and client adapters in `src/core/remoteAgent/museWsTransport.ts` (`MuseWsServerTransport` and `MuseWsClientTransport`):
+    - Default local loopback binding (`127.0.0.1:9225`) specifically designed for exposing safely behind `cloudflared` (Cloudflare Tunnel) without direct internet surface exposure.
+    - Cloudflare Access Service Token validation (`CF-Access-Client-Id` and `CF-Access-Client-Secret`) on HTTP upgrade requests with timing-safe comparison.
+    - Timing-safe pre-shared Bearer token authentication via HTTP Authorization header, URL parameter, or post-connection handshake frame with a strict 5-second handshake timeout.
+    - Monotonic replay protection and clock drift verification (`ReplayValidator` in `src/core/remoteAgent/museWsAuth.ts`) preventing replay attacks and duplicate executions.
+    - Singleton session enforcement ensuring exactly one active authenticated Muse session at any given time to eliminate session hijacking or split-brain batch states.
+    - 30-second ping-pong heartbeat keepalive with automatic socket termination and batch cancellation on connection disconnect.
+    - Strict 10 MB payload limits (`MAX_PAYLOAD_BYTES`) on WebSocket frames.
+  - Added new `/muse tunnel` and `superagent muse tunnel` onboarding helper commands that output step-by-step instructions, ephemeral test commands (`cloudflared tunnel --url ...`), production ingress YAML snippets, and Cloudflare Access configuration guides.
+  - Extended `/muse config` and `superagent muse config` with WebSocket settings (`transport`, `wsPort`, `wsHost`, `wsToken`, `wsPath`, `wsMode`, `wsRemoteUrl`, `cfAccessClientId`, `cfAccessClientSecret`) and one-click random token generation (`/muse config wsToken generate`).
+  - Added `--ws` / `--websocket` flags to `/muse watch` and `superagent muse watch` to start the watch daemon directly over WebSocket transport.
+  - Extended tool name normalizer (`normalizeToolName` in `src/core/remoteAgent/batchExecutor.ts`) to handle aliases `read_file`, `view_file`, and `write_file`.
+  - Added comprehensive unit and integration test suite in `tests/museWebSocketTransport.test.ts` covering authentication, Cloudflare Access headers, replay rejection, singleton session enforcement, and multi-project batch execution.
+
 ## [1.5.115] - 2026-10-02
 
 ### Added

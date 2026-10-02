@@ -54,6 +54,12 @@ export function normalizeToolName(tool: string): string {
   if (["shell", "exec", "terminal", "cmd", "sh"].includes(lower)) {
     return "run_command";
   }
+  if (["read_file", "view_file"].includes(lower)) {
+    return "read";
+  }
+  if (["write_file"].includes(lower)) {
+    return "write";
+  }
   return tool;
 }
 
