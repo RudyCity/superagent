@@ -13,6 +13,9 @@ import {
 
 export interface BatchExecutorOptions {
   workspace: string;
+  workspaces?: string[];
+  batchWorkspace?: string;
+  batchProject?: string;
   agent?: Agent | null;
   signal?: AbortSignal;
   autoApproveWorkspace?: boolean;
@@ -225,6 +228,116 @@ async function promptForPermission(
 }
 
 /**
+ * Matches a target workspace name or path against a list of watched workspace directories.
+ */
+export function findMatchingWorkspace(
+  target: string,
+  workspaces: string[]
+): string | undefined {
+  if (!target || typeof target !== "string") return undefined;
+  const trimmed = target.trim();
+  const resolvedTarget = path.resolve(trimmed);
+  const isWin = process.platform === "win32";
+
+  // 1. Exact match on resolved path
+  const exact = workspaces.find((w) =>
+    isWin ? path.resolve(w).toLowerCase() === resolvedTarget.toLowerCase() : path.resolve(w) === resolvedTarget
+  );
+  if (exact) return exact;
+
+  // 2. Basename match (e.g. "backend" matches "/path/to/backend")
+  const baseMatch = workspaces.find((w) =>
+    isWin ? path.basename(w).toLowerCase() === trimmed.toLowerCase() : path.basename(w) === trimmed
+  );
+  if (baseMatch) return baseMatch;
+
+  // 3. Substring / partial match
+  const partial = workspaces.find((w) => {
+    const wBase = path.basename(w);
+    return isWin
+      ? wBase.toLowerCase().includes(trimmed.toLowerCase()) || w.toLowerCase().includes(trimmed.toLowerCase())
+      : wBase.includes(trimmed) || w.includes(trimmed);
+  });
+  if (partial) return partial;
+
+  return undefined;
+}
+
+/**
+ * Resolves the appropriate workspace execution directory for a given tool call.
+ * Checks tool arguments (workspace, project, cwd, filePath), batch targets, and fallbacks.
+ */
+export function resolveCallWorkspace(
+  call: BatchToolCall,
+  options: BatchExecutorOptions,
+  defaultCwd: string
+): string {
+  const allWorkspaces =
+    options.workspaces && options.workspaces.length > 0
+      ? options.workspaces
+      : [defaultCwd];
+
+  const args = call.args || {};
+
+  // 1. Direct workspace or project in tool args
+  const directTarget = args.workspace || args.project;
+  if (typeof directTarget === "string" && directTarget.trim()) {
+    const matched = findMatchingWorkspace(directTarget, allWorkspaces);
+    if (matched) return matched;
+  }
+
+  // 2. Explicit cwd in tool args
+  if (typeof args.cwd === "string" && args.cwd.trim()) {
+    const resolvedCwd = path.resolve(args.cwd.trim());
+    const matched = allWorkspaces.find((w) => {
+      const rw = path.resolve(w);
+      const isWin = process.platform === "win32";
+      return isWin
+        ? resolvedCwd.toLowerCase().startsWith(rw.toLowerCase())
+        : resolvedCwd.startsWith(rw);
+    });
+    if (matched) return resolvedCwd;
+  }
+
+  // 3. Batch-level target workspace or project
+  const batchTarget = options.batchWorkspace || options.batchProject;
+  if (typeof batchTarget === "string" && batchTarget.trim()) {
+    const matched = findMatchingWorkspace(batchTarget, allWorkspaces);
+    if (matched) return matched;
+  }
+
+  // 4. File path argument in file tools (filePath, TargetFile, path)
+  const candidateFilePath = args.filePath || args.TargetFile || args.path;
+  if (typeof candidateFilePath === "string" && candidateFilePath.trim()) {
+    const isAbs =
+      path.isAbsolute(candidateFilePath) ||
+      (process.platform === "win32" && /^\/[a-zA-Z]\//.test(candidateFilePath));
+    if (isAbs) {
+      const resolvedFp = path.resolve(candidateFilePath);
+      const matched = allWorkspaces.find((w) => {
+        const rw = path.resolve(w);
+        const isWin = process.platform === "win32";
+        return isWin
+          ? resolvedFp.toLowerCase().startsWith(rw.toLowerCase())
+          : resolvedFp.startsWith(rw);
+      });
+      if (matched) return matched;
+    } else {
+      const firstSegment = candidateFilePath.split(/[\/\\]/)[0];
+      const matched = allWorkspaces.find((w) => {
+        const isWin = process.platform === "win32";
+        return isWin
+          ? path.basename(w).toLowerCase() === firstSegment.toLowerCase()
+          : path.basename(w) === firstSegment;
+      });
+      if (matched) return matched;
+    }
+  }
+
+  return defaultCwd;
+}
+
+/**
  * Executes a single tool call: name/arg normalization, permission gate,
  * per-call timeout, output truncation, and tool_start/tool_end events.
  */
@@ -235,6 +348,15 @@ async function executeOneCall(
 ): Promise<BatchToolResult> {
   const toolName = normalizeToolName(call.tool);
   const toolArgs = normalizeArgs(toolName, call.args);
+  const callCwd = resolveCallWorkspace(call, options, cwd);
+
+  if (
+    ["bash", "run_command", "run_background_process"].includes(toolName) &&
+    !toolArgs.cwd
+  ) {
+    toolArgs.cwd = callCwd;
+  }
+
   const toolCallObj = {
     id: call.id,
     name: toolName,
@@ -307,7 +429,7 @@ async function executeOneCall(
   // 4. Sensitive configuration files (.env, model-config.json)
 
   // Gate 1: Check out-of-workspace access
-  const oobCheck = isMuseOutOfBounds(toolCallObj, cwd);
+  const oobCheck = isMuseOutOfBounds(toolCallObj, callCwd, options.workspaces);
   if (oobCheck.isOutOfBounds) {
     const promptReason = `Access outside workspace: ${oobCheck.reason || description}`;
     const approved = await promptForPermission(toolCallObj, promptReason, options);
@@ -409,7 +531,7 @@ async function executeOneCall(
   const timeoutError = () =>
     `Tool '${toolName}' timed out after ${timeoutMs}ms`;
   try {
-    const rawOutput = await tool.execute(toolArgs, cwd, signal);
+    const rawOutput = await tool.execute(toolArgs, callCwd, signal);
     clearCallTimeout();
     if (isTimedOut()) {
       const errMsg = timeoutError();

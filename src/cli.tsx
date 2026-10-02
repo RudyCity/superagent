@@ -148,7 +148,7 @@ Commands:
   session           Manage conversation sessions (list, export, clear --empty, import)
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
   gateway           Manage the omnichannel messaging gateway (status, enable, disable, listen, poll)
-  muse              Coordinate with remote AI agent (status, config, run)
+  muse              Coordinate with remote AI agent (status, config, watch [projects...], run)
   mcp               Manage MCP servers (list, add, remove, register)
   selfdev           Manage self-development behavioral lessons (status, list, distill, approve, reject, retire)
   skill             Manage and synthesize reusable skills (list, synth)
@@ -177,6 +177,7 @@ Examples:
   superagent preset use dev
   superagent daemon list
   superagent daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"
+  superagent muse watch ./backend ./frontend
   superagent -q "explain quantum computing in simple terms"
   superagent --preset dev "explain quantum computing in simple terms"
   superagent --multi --preset dev "build authentication module"

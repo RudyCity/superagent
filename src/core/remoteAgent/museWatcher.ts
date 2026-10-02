@@ -1,6 +1,11 @@
 import crypto from "crypto";
 import path from "path";
-import { loadRemoteAgentConfig, maskToken, RemoteAgentConfig } from "./config.js";
+import {
+  loadRemoteAgentConfig,
+  maskToken,
+  RemoteAgentConfig,
+  getWatchedWorkspaces,
+} from "./config.js";
 import {
   RemoteAgentEnvelope,
   TaskBatchEnvelope,
@@ -26,6 +31,7 @@ export interface MuseWatcherStats {
   lastActiveAt?: number;
   activeTaskId?: string;
   workspace: string;
+  workspaces: string[];
   groupId?: string | number;
   museBotId?: string | number;
   queuedBatches?: number;
@@ -33,6 +39,7 @@ export interface MuseWatcherStats {
 
 export interface MuseWatcherOptions {
   workspace?: string;
+  workspaces?: string[];
   agent?: Agent | null;
   customConfigPath?: string;
   announce?: boolean;
@@ -85,11 +92,84 @@ export class MuseWatcher {
     reject?: (err: any) => void;
   }> = [];
   private isProcessingQueue = false;
+  private workspaces: string[] = [];
 
   constructor(options: MuseWatcherOptions = {}) {
     this.options = options;
     this.config = loadRemoteAgentConfig(options.customConfigPath);
     this.client = new MuseClient(this.config);
+    this.initWorkspaces();
+  }
+
+  private initWorkspaces(): void {
+    const list: string[] = [];
+    if (Array.isArray(this.options.workspaces) && this.options.workspaces.length > 0) {
+      list.push(...this.options.workspaces);
+    }
+    if (this.options.workspace) {
+      list.push(this.options.workspace);
+    }
+    if (list.length === 0) {
+      list.push(...getWatchedWorkspaces(this.config));
+    }
+
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    for (const item of list) {
+      if (typeof item === "string" && item.trim()) {
+        const resolved = path.resolve(item.trim());
+        const key = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+        if (!seen.has(key)) {
+          seen.add(key);
+          normalized.push(resolved);
+        }
+      }
+    }
+    this.workspaces = normalized.length > 0 ? normalized : [path.resolve(process.cwd())];
+  }
+
+  public getWorkspaces(): string[] {
+    return [...this.workspaces];
+  }
+
+  public addWorkspace(wsPath: string): void {
+    const resolved = path.resolve(wsPath.trim());
+    const isWin = process.platform === "win32";
+    const exists = this.workspaces.some((w) =>
+      isWin ? w.toLowerCase() === resolved.toLowerCase() : w === resolved
+    );
+    if (!exists) {
+      this.workspaces.push(resolved);
+      this.emitLine(
+        "system",
+        `[Muse Watch] Added project workspace to watch list: ${resolved} (Total: ${this.workspaces.length})`
+      );
+    }
+  }
+
+  public removeWorkspace(wsPath: string): boolean {
+    const resolved = path.resolve(wsPath.trim());
+    const isWin = process.platform === "win32";
+    const prevLen = this.workspaces.length;
+    this.workspaces = this.workspaces.filter((w) =>
+      isWin ? w.toLowerCase() !== resolved.toLowerCase() : w !== resolved
+    );
+    if (this.workspaces.length === 0) {
+      this.workspaces.push(path.resolve(process.cwd()));
+    }
+    const removed = this.workspaces.length < prevLen;
+    if (removed) {
+      this.emitLine(
+        "system",
+        `[Muse Watch] Removed project workspace from watch list: ${resolved} (Remaining: ${this.workspaces.length})`
+      );
+    }
+    return removed;
+  }
+
+  public setWorkspaces(list: string[]): void {
+    const normalized = list.map((w) => path.resolve(w.trim()));
+    this.workspaces = normalized.length > 0 ? normalized : [path.resolve(process.cwd())];
   }
 
   private emitLine(type: string, content: string): void {
@@ -108,7 +188,7 @@ export class MuseWatcher {
   public getStats(): MuseWatcherStats {
     const now = Date.now();
     const uptimeSeconds = this.startedAt ? Math.floor((now - this.startedAt) / 1000) : 0;
-    const ws = path.resolve(
+    const ws = this.workspaces[0] || path.resolve(
       this.options.workspace || this.config.defaultWorkspace || process.cwd()
     );
 
@@ -121,6 +201,7 @@ export class MuseWatcher {
       lastActiveAt: this.lastActiveAt,
       activeTaskId: this.activeTaskId,
       workspace: ws,
+      workspaces: [...this.workspaces],
       groupId: this.config.groupId,
       museBotId: this.config.museBotId,
       queuedBatches: this.batchQueue.length,
@@ -150,27 +231,35 @@ export class MuseWatcher {
     this.lastActiveAt = Date.now();
     this.abortController = new AbortController();
     this.client = new MuseClient(this.config);
+    this.initWorkspaces();
 
-    const ws = path.resolve(
-      this.options.workspace || this.config.defaultWorkspace || process.cwd()
-    );
+    const primaryWs = this.workspaces[0];
 
-    logE2E("REMOTE-AGENT", `MuseWatcher started in workspace ${ws}. Listening on Telegram group ${this.config.groupId}...`);
+    logE2E("REMOTE-AGENT", `MuseWatcher started with ${this.workspaces.length} workspace(s). Primary: ${primaryWs}. Listening on Telegram group ${this.config.groupId}...`);
 
     this.options.onStatusChange?.(true);
+
+    const wsInfoStr = this.workspaces.length > 1
+      ? `- Watched Projects (${this.workspaces.length}):\n${this.workspaces.map((w, i) => `  ${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`
+      : `- Workspace: ${primaryWs}`;
+
     this.emitLine(
       "system",
-      `[Muse Watch] Superagent is now controlled by Muse.\n- Workspace: ${ws}\n- Telegram Group: ${this.config.groupId}\n- Muse Bot ID: ${this.config.museBotId}\n- Listening for incoming tool batches from Muse...`
+      `[Muse Watch] Superagent is now controlled by Muse.\n${wsInfoStr}\n- Telegram Group: ${this.config.groupId}\n- Muse Bot ID: ${this.config.museBotId}\n- Listening for incoming tool batches from Muse...`
     );
 
     const abortSignal = this.abortController.signal;
 
     // Optional presence greeting on Telegram in background
     if (this.options.announce !== false) {
+      const presenceText = this.workspaces.length > 1
+        ? `🟢 Superagent is now active in WATCH mode (controlled by Muse) on ${this.workspaces.length} projects:\n${this.workspaces.map((w, i) => `${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`
+        : `🟢 Superagent is now active in WATCH mode (controlled by Muse) on workspace: ${primaryWs}`;
+
       const presenceEnvelope: RemoteAgentEnvelope = {
         v: 1,
         kind: "chat",
-        text: `🟢 Superagent is now active in WATCH mode (controlled by Muse) on workspace: ${ws}`,
+        text: presenceText,
       };
       this.client.sendEnvelope(presenceEnvelope).catch(() => {});
     }
@@ -413,18 +502,34 @@ export class MuseWatcher {
   ): Promise<void> {
     this.activeTaskId = envelope.task_id;
     const callsCount = envelope.calls?.length || 0;
-    const ws = path.resolve(
-      this.options.workspace || this.config.defaultWorkspace || process.cwd()
-    );
+
+    let targetWs = this.workspaces[0] || process.cwd();
+    const batchTarget = envelope.workspace || envelope.project;
+    if (batchTarget && typeof batchTarget === "string" && batchTarget.trim()) {
+      const trimmedTarget = batchTarget.trim();
+      const resolvedTarget = path.resolve(trimmedTarget);
+      const isWin = process.platform === "win32";
+
+      const matched = this.workspaces.find((w) => {
+        const rw = path.resolve(w);
+        if (isWin ? rw.toLowerCase() === resolvedTarget.toLowerCase() : rw === resolvedTarget) return true;
+        if (isWin ? path.basename(w).toLowerCase() === trimmedTarget.toLowerCase() : path.basename(w) === trimmedTarget) return true;
+        return isWin ? w.toLowerCase().includes(trimmedTarget.toLowerCase()) : w.includes(trimmedTarget);
+      });
+      if (matched) {
+        targetWs = matched;
+      }
+    }
 
     logE2E(
       "REMOTE-AGENT",
-      `MuseWatcher executing task_batch: id=${envelope.id}, task_id=${envelope.task_id}, calls=${callsCount}`
+      `MuseWatcher executing task_batch: id=${envelope.id}, task_id=${envelope.task_id}, calls=${callsCount}, workspace=${targetWs}`
     );
 
+    const wsLabel = path.basename(targetWs);
     this.emitLine(
       "system",
-      `⚡ [Muse Watch] Received tool batch (${callsCount} calls) for task ${envelope.task_id}`
+      `⚡ [Muse Watch] Received tool batch (${callsCount} calls) for task ${envelope.task_id}${this.workspaces.length > 1 ? ` [Target: ${wsLabel}]` : ""}`
     );
     this.options.onProgress?.(`Executing ${callsCount} tool call(s) for task ${envelope.task_id}...`);
 
@@ -436,7 +541,10 @@ export class MuseWatcher {
 
     try {
       const results = await executeBatch(envelope.calls || [], {
-        workspace: ws,
+        workspace: targetWs,
+        workspaces: this.workspaces,
+        batchWorkspace: envelope.workspace,
+        batchProject: envelope.project,
         agent: this.options.agent,
         signal: batchSignal,
         autoApproveWorkspace: this.options.autoApproveWorkspace ?? true,
@@ -726,6 +834,13 @@ export function isMuseWatcherActive(): boolean {
 
 export async function startMuseWatcher(options: MuseWatcherOptions = {}): Promise<MuseWatcher> {
   if (globalMuseWatcher && globalMuseWatcher.isActive()) {
+    if (options.workspaces && options.workspaces.length > 0) {
+      for (const w of options.workspaces) {
+        globalMuseWatcher.addWorkspace(w);
+      }
+    } else if (options.workspace) {
+      globalMuseWatcher.addWorkspace(options.workspace);
+    }
     return globalMuseWatcher;
   }
   globalMuseWatcher = new MuseWatcher(options);

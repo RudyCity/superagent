@@ -1,8 +1,13 @@
+import path from "path";
 import {
   loadRemoteAgentConfig,
   updateRemoteAgentConfig,
   maskToken,
   RemoteAgentConfig,
+  getWatchedWorkspaces,
+  addWatchedWorkspace,
+  removeWatchedWorkspace,
+  setWatchedWorkspaces,
 } from "./config.js";
 import { runRemoteTask } from "./taskRunner.js";
 import { formatReadableSummary } from "./formatSummary.js";
@@ -13,6 +18,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
   if (subcommand === "status") {
     const cfg = loadRemoteAgentConfig();
     const isConfigured = Boolean(cfg.botToken && cfg.groupId && cfg.museBotId);
+    const watched = getWatchedWorkspaces(cfg);
 
     console.log("Remote Agent (Muse) Status:");
     console.log(`  Configured      : ${isConfigured ? "Yes" : "No (run: superagent muse config)"}`);
@@ -20,13 +26,20 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     console.log(`  Bot Token       : ${maskToken(cfg.botToken)}`);
     console.log(`  Telegram Group  : ${cfg.groupId || "(not set)"}`);
     console.log(`  Muse Bot ID     : ${cfg.museBotId || "(not set)"}`);
-    console.log(`  Default Ws      : ${cfg.defaultWorkspace || process.cwd()}`);
+    if (watched.length > 1) {
+      console.log(`  Watched Projects (${watched.length}):`);
+      watched.forEach((w, i) => console.log(`    ${i + 1}. ${path.basename(w)} (${w})`));
+    } else {
+      console.log(`  Default Ws      : ${cfg.defaultWorkspace || process.cwd()}`);
+    }
     console.log("");
     console.log("To set config:");
     console.log("  superagent muse config as_runner_model on");
     console.log("  superagent muse config botToken <token>");
     console.log("  superagent muse config groupId <groupId>");
     console.log("  superagent muse config museBotId <botId>");
+    console.log("  superagent muse config workspaces add <path>");
+    console.log("  superagent muse watch <dir1> <dir2> ...");
     return;
   }
 
@@ -36,14 +49,46 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
     if (!key) {
       const cfg = loadRemoteAgentConfig();
+      const watched = getWatchedWorkspaces(cfg);
       console.log("Current Remote Agent Configuration:");
       console.log(`  as_runner_model  : ${cfg.asRunner ? "on (enabled)" : "off (disabled)"}`);
       console.log(`  botToken         : ${maskToken(cfg.botToken)}`);
       console.log(`  groupId          : ${cfg.groupId || "(not set)"}`);
       console.log(`  museBotId        : ${cfg.museBotId || "(not set)"}`);
       console.log(`  defaultWorkspace : ${cfg.defaultWorkspace || "(not set)"}`);
+      console.log(`  watchedWorkspaces (${watched.length}):`);
+      watched.forEach((w, i) => console.log(`    ${i + 1}. ${path.basename(w)} (${w})`));
       console.log("");
       console.log("Usage: superagent muse config <key> <value>");
+      console.log("Examples:");
+      console.log("  superagent muse config workspaces add ./backend");
+      console.log("  superagent muse config workspaces add ./frontend");
+      return;
+    }
+
+    if (key === "workspaces" || key === "workspace" || key === "projects") {
+      if (!val || val === "list") {
+        const list = getWatchedWorkspaces();
+        console.log(`Watched workspaces (${list.length}):`);
+        list.forEach((w, i) => console.log(`  ${i + 1}. ${w}`));
+        return;
+      }
+      if (val.startsWith("add ")) {
+        const p = val.slice(4).trim();
+        const updated = addWatchedWorkspace(p);
+        console.log(`Added watched workspace: ${p} (Total: ${updated.workspaces?.length || 1})`);
+        return;
+      }
+      if (val.startsWith("remove ")) {
+        const p = val.slice(7).trim();
+        const updated = removeWatchedWorkspace(p);
+        console.log(`Removed watched workspace: ${p} (Remaining: ${updated.workspaces?.length || 0})`);
+        return;
+      }
+      const paths = val.split(/[,\s]+/).filter(Boolean);
+      const updated = setWatchedWorkspaces(paths);
+      console.log(`Watched workspaces set to (${updated.workspaces?.length || 0}):`);
+      (updated.workspaces || []).forEach((w, i) => console.log(`  ${i + 1}. ${w}`));
       return;
     }
 
@@ -66,7 +111,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
     const mappedKey = validKeys[key];
     if (!mappedKey) {
-      console.error(`Unknown config key: ${key}`);
+      console.error(`Unknown config key: ${key}. Valid keys: as_runner_model, botToken, groupId, museBotId, defaultWorkspace, workspaces`);
       return;
     }
 
@@ -122,7 +167,12 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         return;
       }
       console.log("Muse Watch Mode: ACTIVE (controlled by Muse)");
-      console.log(`  Workspace         : ${stats.workspace}`);
+      if (stats.workspaces && stats.workspaces.length > 1) {
+        console.log(`  Watched Projects (${stats.workspaces.length}):`);
+        stats.workspaces.forEach((w, i) => console.log(`    ${i + 1}. ${path.basename(w)} (${w})`));
+      } else {
+        console.log(`  Workspace         : ${stats.workspace}`);
+      }
       console.log(`  Telegram Group    : ${stats.groupId || "(not set)"}`);
       console.log(`  Muse Bot ID       : ${stats.museBotId || "(not set)"}`);
       console.log(`  Uptime            : ${stats.uptimeSeconds}s`);
@@ -132,13 +182,55 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       return;
     }
 
+    if (action === "add") {
+      const dirToAdd = args.slice(2).join(" ").trim();
+      if (!dirToAdd) {
+        console.error("Usage: superagent muse watch add <project_directory>");
+        return;
+      }
+      const resolved = path.resolve(dirToAdd);
+      addWatchedWorkspace(resolved);
+      getMuseWatcher()?.addWorkspace(resolved);
+      console.log(`[Muse Watch] Added project "${path.basename(resolved)}" (${resolved}) to watched projects.`);
+      return;
+    }
+
+    if (action === "remove") {
+      const dirToRem = args.slice(2).join(" ").trim();
+      if (!dirToRem) {
+        console.error("Usage: superagent muse watch remove <project_directory>");
+        return;
+      }
+      const resolved = path.resolve(dirToRem);
+      removeWatchedWorkspace(resolved);
+      getMuseWatcher()?.removeWorkspace(resolved);
+      console.log(`[Muse Watch] Removed project "${path.basename(resolved)}" (${resolved}) from watched projects.`);
+      return;
+    }
+
     // Default: start
+    const rawDirs = args[1]?.toLowerCase() === "start" ? args.slice(2) : args.slice(1);
+    const targetDirs = rawDirs
+      .map((d) => d.trim())
+      .filter((d) => d.length > 0 && d.toLowerCase() !== "start")
+      .map((d) => path.resolve(d));
+
+    const cfg = loadRemoteAgentConfig();
+    const allWatched = targetDirs.length > 0 ? targetDirs : getWatchedWorkspaces(cfg);
+
     console.log("[Muse Watch] Starting persistent watch mode...");
+    if (allWatched.length > 1) {
+      console.log(`[Muse Watch] Watching ${allWatched.length} projects:`);
+      allWatched.forEach((w, i) => console.log(`  ${i + 1}. ${path.basename(w)} (${w})`));
+    } else {
+      console.log(`[Muse Watch] Workspace: ${allWatched[0]}`);
+    }
     console.log("[Muse Watch] Superagent is now controlled by Muse. Press Ctrl+C to stop.\n");
 
     try {
       const watcher = await startMuseWatcher({
-        workspace: process.cwd(),
+        workspace: allWatched[0],
+        workspaces: allWatched,
         onLine: (line) => console.log(line.content),
         onProgress: (msg) => console.log(`[Muse Progress] ${msg}`),
       });

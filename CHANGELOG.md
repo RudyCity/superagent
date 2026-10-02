@@ -1,3 +1,28 @@
+## [1.5.115] - 2026-10-02
+
+### Added
+
+- **Muse Multi-Project Watch Mode**:
+  - Implemented multi-project workspace support in `MuseWatcher` (`src/core/remoteAgent/museWatcher.ts`), enabling a single persistent daemon to simultaneously monitor, watch, and execute tool commands across two or more project directories.
+  - Added multi-workspace configuration in `~/.superagent-r/remote-agent.json` via `RemoteAgentConfig.workspaces` along with helper functions `getWatchedWorkspaces`, `addWatchedWorkspace`, `removeWatchedWorkspace`, and `setWatchedWorkspaces` in `src/core/remoteAgent/config.ts`.
+  - Added dynamic workspace management to `/muse watch` and `superagent muse watch`:
+    - `superagent muse watch <dir1> <dir2> ...` and `/muse watch <dir1> <dir2> ...` to start watching multiple project workspaces.
+    - `/muse watch add <dir>` and `superagent muse watch add <dir>` to dynamically add new project workspaces to an active watch session.
+    - `/muse watch remove <dir>` and `superagent muse watch remove <dir>` to remove projects from an active watch session.
+    - `/muse watch status` and `superagent muse watch status` to inspect all currently watched projects, active tasks, and execution metrics.
+    - `/muse config workspaces [add|remove|list|set]` and `superagent muse config workspaces` to inspect and configure default watched projects.
+  - Implemented intelligent project routing in `batchExecutor.ts` (`findMatchingWorkspace` and `resolveCallWorkspace`):
+    - Automatically resolves tool execution directory (`callCwd`) by matching explicit tool arguments (`args.workspace`, `args.project`, `args.cwd`), batch-level target workspaces (`envelope.workspace`, `envelope.project`), or target file paths (`args.filePath`, `args.TargetFile`, `args.path`) against watched project directories.
+    - Ensures shell tools (`run_command`, `bash`) execute inside the target project workspace directory by default.
+  - Updated boundary permission gating (`isMuseOutOfBounds` in `src/core/permissions.ts`):
+    - Extended `isMuseOutOfBounds` to accept an array of watched workspaces (`workspacePath: string | string[]`, `additionalWorkspaces?: string[]`).
+    - Tool calls and shell operations targeting files or directories within any of the watched project workspaces are permitted without false-positive out-of-bounds permission denials.
+  - Updated protocol and system prompt:
+    - Added optional `workspace` and `project` target properties to `TaskBatchEnvelope` in `src/core/remoteAgent/protocol.ts`.
+    - Updated `DEFAULT_MUSE_SYSTEM_PROMPT` to instruct Muse on targeting specific projects during multi-project watch sessions.
+    - Enhanced Telegram presence notifications and terminal status headers to display all watched project names and paths.
+  - Added comprehensive test suite in `tests/museMultiProjectWatch.test.ts`.
+
 ## [1.5.114] - 2026-10-02
 
 ### Fixed

@@ -34,6 +34,8 @@ export interface TaskBatchEnvelope {
   id: string;
   task_id: string;
   calls: BatchToolCall[];
+  workspace?: string;
+  project?: string;
 }
 
 export interface BatchToolResult {
@@ -106,10 +108,10 @@ COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
    - All standard inspection, modification, build, test, and shell executions inside the workspace are permitted.
    - Restricted operations (deletion, access outside workspace, sensitive files, or system-destructive commands) prompt the human operator for permission.
    - When Superagent is waiting for human permission approval, it sends a chat note indicating it is idle awaiting human response. Do not resend duplicate batches while waiting.
-4. Tool batch (task_batch):
+4. Tool batch (task_batch) & Multiple Projects:
    When you need to inspect files, edit code, or run commands, reply with:
    {"v": 1, "kind": "task_batch", "id": "batch_<uuid>", "task_id": "<task_id>", "calls": [{"id": "c1", "tool": "run_command", "args": {"command": "git status"}}]}
-   Superagent executes the batch locally and returns task_result with outputs.
+   Multi-Project Watch: When Superagent is watching multiple projects, you can target a specific project by adding "workspace": "<path>" or "project": "<name>" in the batch envelope, or specifying "cwd" or file path in individual tool call arguments. Superagent executes calls within the matching workspace.
 5. Completion (task_done):
    When the task is complete, reply with:
    {"v": 1, "kind": "task_done", "task_id": "<task_id>", "summary": "<formatted markdown summary>"}
@@ -432,6 +434,12 @@ export function validateEnvelope(
       // Audit F4: bound batch size to avoid resource exhaustion
       if (envelope.calls.length > 200) {
         return { valid: false, error: "task_batch too large: max 200 calls" };
+      }
+      if (envelope.workspace !== undefined && typeof envelope.workspace !== "string") {
+        return { valid: false, error: "task_batch invalid 'workspace': must be a string" };
+      }
+      if (envelope.project !== undefined && typeof envelope.project !== "string") {
+        return { valid: false, error: "task_batch invalid 'project': must be a string" };
       }
       const seenCallIds = new Set<string>();
       for (const call of envelope.calls) {

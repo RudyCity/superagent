@@ -516,11 +516,31 @@ export function isToolCallOutOfBounds(
  */
 export function isMuseOutOfBounds(
   toolCall: { name: string; args?: Record<string, unknown> },
-  workspacePath: string
+  workspacePath: string | string[],
+  additionalWorkspaces?: string[]
 ): { isOutOfBounds: boolean; reason?: string } {
   const name = (toolCall.name || "").toLowerCase();
   const args = toolCall.args || {};
-  const effectiveWs = resolveNormalizedPath(workspacePath);
+
+  const rawWorkspaces: string[] = [];
+  if (Array.isArray(workspacePath)) {
+    rawWorkspaces.push(...workspacePath);
+  } else if (workspacePath) {
+    rawWorkspaces.push(workspacePath);
+  }
+  if (Array.isArray(additionalWorkspaces)) {
+    rawWorkspaces.push(...additionalWorkspaces);
+  }
+  if (rawWorkspaces.length === 0) {
+    rawWorkspaces.push(process.cwd());
+  }
+
+  const effectiveWorkspaces = Array.from(
+    new Set(rawWorkspaces.map((w) => resolveNormalizedPath(w)))
+  );
+  const primaryWs = effectiveWorkspaces[0];
+  const inAnyWorkspace = (targetPath: string) =>
+    effectiveWorkspaces.some((ws) => normalizeAndCheckSubpath(targetPath, ws));
 
   // 1. Check file tools and path arguments
   const candidatePaths = [
@@ -559,11 +579,19 @@ export function isMuseOutOfBounds(
 
   for (const fp of candidatePaths) {
     const isAbs = path.isAbsolute(fp) || (process.platform === "win32" && /^\/[a-zA-Z]\//.test(fp));
-    const resolved = isAbs
-      ? resolveNormalizedPath(fp)
-      : resolveNormalizedPath(fp, effectiveWs);
-    if (!normalizeAndCheckSubpath(resolved, effectiveWs)) {
-      return { isOutOfBounds: true, reason: `Path "${fp}" resolves outside workspace "${effectiveWs}"` };
+    if (isAbs) {
+      const resolved = resolveNormalizedPath(fp);
+      if (!inAnyWorkspace(resolved)) {
+        return { isOutOfBounds: true, reason: `Path "${fp}" resolves outside all watched workspaces` };
+      }
+    } else {
+      const matchesAny = effectiveWorkspaces.some((ws) => {
+        const resolved = resolveNormalizedPath(fp, ws);
+        return normalizeAndCheckSubpath(resolved, ws);
+      });
+      if (!matchesAny) {
+        return { isOutOfBounds: true, reason: `Relative path "${fp}" resolves outside all watched workspaces` };
+      }
     }
   }
 
@@ -571,16 +599,19 @@ export function isMuseOutOfBounds(
   const shellTools = ["bash", "run_command", "run_background_process", "shell", "exec", "terminal", "cmd", "sh"];
   if (shellTools.includes(name)) {
     const cwdArg = args.cwd as string | undefined;
-    const resolvedCwd = cwdArg ? resolveNormalizedPath(cwdArg, effectiveWs) : effectiveWs;
-    if (!normalizeAndCheckSubpath(resolvedCwd, effectiveWs)) {
-      return { isOutOfBounds: true, reason: `Working directory "${cwdArg}" is outside workspace "${effectiveWs}"` };
+    const resolvedCwd = cwdArg ? resolveNormalizedPath(cwdArg, primaryWs) : primaryWs;
+    if (!inAnyWorkspace(resolvedCwd)) {
+      return { isOutOfBounds: true, reason: `Working directory "${cwdArg}" is outside all watched workspaces` };
     }
 
     const command = (args.command ?? args.cmd ?? args.script ?? args.input) as string | undefined;
     if (command && typeof command === "string") {
       if (command.includes("..")) {
         if (/\bcd\s+\.\.(?:[\/\\]|$|\s)/i.test(command)) {
-          if (resolvedCwd.toLowerCase() === effectiveWs.toLowerCase()) {
+          const isAtAnyRoot = effectiveWorkspaces.some(
+            (ws) => resolvedCwd.toLowerCase() === ws.toLowerCase()
+          );
+          if (isAtAnyRoot) {
             return { isOutOfBounds: true, reason: `Directory traversal "cd .." leaves workspace root in command: "${truncateCommand(command)}"` };
           }
         }
@@ -589,8 +620,8 @@ export function isMuseOutOfBounds(
         while ((tMatch = traversalRegex.exec(command)) !== null) {
           const relPath = tMatch[1];
           const target = resolveNormalizedPath(relPath, resolvedCwd);
-          if (!normalizeAndCheckSubpath(target, effectiveWs)) {
-            return { isOutOfBounds: true, reason: `Relative path "${relPath}" resolves outside workspace in command: "${truncateCommand(command)}"` };
+          if (!inAnyWorkspace(target)) {
+            return { isOutOfBounds: true, reason: `Relative path "${relPath}" resolves outside watched workspaces in command: "${truncateCommand(command)}"` };
           }
         }
       }
@@ -604,8 +635,8 @@ export function isMuseOutOfBounds(
           p = p.slice(1, -1);
         }
         const resolved = resolveNormalizedPath(p);
-        if (!normalizeAndCheckSubpath(resolved, effectiveWs)) {
-          return { isOutOfBounds: true, reason: `Absolute Windows path "${p}" is outside workspace in command: "${truncateCommand(command)}"` };
+        if (!inAnyWorkspace(resolved)) {
+          return { isOutOfBounds: true, reason: `Absolute Windows path "${p}" is outside watched workspaces in command: "${truncateCommand(command)}"` };
         }
       }
 
@@ -624,8 +655,8 @@ export function isMuseOutOfBounds(
           continue;
         }
         const resolved = resolveNormalizedPath(p);
-        if (!normalizeAndCheckSubpath(resolved, effectiveWs)) {
-          return { isOutOfBounds: true, reason: `Absolute Unix path "${p}" is outside workspace in command: "${truncateCommand(command)}"` };
+        if (!inAnyWorkspace(resolved)) {
+          return { isOutOfBounds: true, reason: `Absolute Unix path "${p}" is outside watched workspaces in command: "${truncateCommand(command)}"` };
         }
       }
     }

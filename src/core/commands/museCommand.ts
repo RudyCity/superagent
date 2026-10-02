@@ -1,3 +1,4 @@
+import path from "path";
 import { registry } from "./registry.js";
 import type { SlashCommand, SlashCommandContext, ChatLine } from "./types.js";
 import {
@@ -5,6 +6,10 @@ import {
   updateRemoteAgentConfig,
   maskToken,
   RemoteAgentConfig,
+  getWatchedWorkspaces,
+  addWatchedWorkspace,
+  removeWatchedWorkspace,
+  setWatchedWorkspaces,
 } from "../remoteAgent/config.js";
 import { formatReadableSummary } from "../remoteAgent/formatSummary.js";
 
@@ -43,6 +48,11 @@ export const museCommand: SlashCommand = {
         } catch {}
       }
 
+      const watchedWorkspaces = getWatchedWorkspaces(cfg, ctx.agent?.workingDirectory);
+      const wsStatusStr = watchedWorkspaces.length > 1
+        ? `- Watched Projects (${watchedWorkspaces.length}):\n${watchedWorkspaces.map((w, i) => `   ${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`
+        : `- Workspace       : ${workspace}`;
+
       const lines = [
         "Remote Agent (Muse) Status:",
         `- Configured      : ${isConfigured ? "Yes" : "No (run /muse config)"}`,
@@ -51,7 +61,7 @@ export const museCommand: SlashCommand = {
         privacyInfo ? privacyInfo.trimEnd() : null,
         `- Telegram Group  : ${cfg.groupId || "(not set)"}`,
         `- Muse Bot ID     : ${cfg.museBotId || "(not set)"}`,
-        `- Workspace       : ${workspace}`,
+        wsStatusStr,
         "",
         "Architecture:",
         "- Muse acts as the remote brain over a private Telegram group bus.",
@@ -60,11 +70,14 @@ export const museCommand: SlashCommand = {
         "Usage:",
         "  /muse <task>                 - Run a task with remote Muse brain",
         "  /muse status                 - View remote agent status",
+        "  /muse watch [dir1] [dir2]    - Watch one or multiple project workspaces",
+        "  /muse watch add <dir>        - Add project to active watch session",
+        "  /muse watch remove <dir>     - Remove project from active watch session",
         "  /muse stop                   - Cancel active remote task and notify Muse",
         "  /muse cancel                 - Cancel active remote task and notify Muse",
         "  /muse new                    - Reset remote session memory",
         "  /muse reset                  - Reset remote session memory",
-        "  /muse config <key> <val>     - Set config key (botToken, groupId, museBotId, as_runner_model)",
+        "  /muse config <key> <val>     - Set config key (botToken, groupId, museBotId, workspaces)",
       ].filter(Boolean) as string[];
 
       ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
@@ -78,14 +91,16 @@ export const museCommand: SlashCommand = {
 
       if (!key) {
         const cfg = loadRemoteAgentConfig();
+        const watchedList = getWatchedWorkspaces(cfg);
         const lines = [
           "Remote Agent Configuration:",
-          `- as_runner_model : ${cfg.asRunner ? "on (enabled)" : "off (disabled)"}`,
-          `- botToken         : ${maskToken(cfg.botToken)}`,
-          `- groupId          : ${cfg.groupId || "(not set)"}`,
-          `- museBotId        : ${cfg.museBotId || "(not set)"}`,
-          `- defaultWorkspace : ${cfg.defaultWorkspace || "(default to current workspace)"}`,
-          `- systemPrompt     : ${cfg.systemPrompt ? `configured (${cfg.systemPrompt.length} chars)` : "default (auto-injected)"}`,
+          `- as_runner_model  : ${cfg.asRunner ? "on (enabled)" : "off (disabled)"}`,
+          `- botToken          : ${maskToken(cfg.botToken)}`,
+          `- groupId           : ${cfg.groupId || "(not set)"}`,
+          `- museBotId         : ${cfg.museBotId || "(not set)"}`,
+          `- defaultWorkspace  : ${cfg.defaultWorkspace || "(default to current workspace)"}`,
+          `- watchedWorkspaces (${watchedList.length}):\n${watchedList.map((w, i) => `   ${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`,
+          `- systemPrompt      : ${cfg.systemPrompt ? `configured (${cfg.systemPrompt.length} chars)` : "default (auto-injected)"}`,
           "",
           "Usage: /muse config <key> <value>",
           "Keys:",
@@ -94,16 +109,56 @@ export const museCommand: SlashCommand = {
           "  groupId          - Numeric private group chat ID (e.g. -100xxxxxxxxxx)",
           "  museBotId        - Numeric Telegram user ID of Muse bot (Bot A)",
           "  defaultWorkspace - Default project workspace path",
+          "  workspaces       - Configure watched workspaces (add <dir>, remove <dir>, or comma list)",
           "  systemPrompt     - Custom system instructions injected into Muse requests",
           "",
-          "Example:",
+          "Examples:",
+          "  /muse config workspaces add ./backend",
+          "  /muse config workspaces add ./frontend",
           "  /muse config as_runner_model on",
           "  /muse config botToken 123456789:ABCdef...",
-          "  /muse config groupId -1001234567890",
-          "  /muse config museBotId 987654321",
-          "  /muse config systemPrompt Follow strict TDD conventions.",
         ];
         ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
+        return;
+      }
+
+      if (key === "workspaces" || key === "workspace" || key === "projects") {
+        if (!val || val === "list") {
+          const list = getWatchedWorkspaces();
+          ctx.addLine({
+            type: "system",
+            content: `Watched workspaces (${list.length}):\n${list.map((w, i) => `  ${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`,
+            timestamp: now,
+          });
+          return;
+        }
+        if (val.startsWith("add ")) {
+          const p = val.slice(4).trim();
+          const updated = addWatchedWorkspace(p);
+          ctx.addLine({
+            type: "system",
+            content: `Watched workspace added: ${p}\nTotal configured: ${updated.workspaces?.length || 1}`,
+            timestamp: now,
+          });
+          return;
+        }
+        if (val.startsWith("remove ")) {
+          const p = val.slice(7).trim();
+          const updated = removeWatchedWorkspace(p);
+          ctx.addLine({
+            type: "system",
+            content: `Watched workspace removed: ${p}\nTotal configured: ${updated.workspaces?.length || 0}`,
+            timestamp: now,
+          });
+          return;
+        }
+        const paths = val.split(/[,\s]+/).filter(Boolean);
+        const updated = setWatchedWorkspaces(paths);
+        ctx.addLine({
+          type: "system",
+          content: `Watched workspaces set to (${updated.workspaces?.length || 0}):\n${(updated.workspaces || []).map((w, i) => `  ${i + 1}. ${w}`).join("\n")}`,
+          timestamp: now,
+        });
         return;
       }
 
@@ -116,7 +171,6 @@ export const museCommand: SlashCommand = {
         muse_bot_id: "museBotId",
         defaultworkspace: "defaultWorkspace",
         default_workspace: "defaultWorkspace",
-        workspace: "defaultWorkspace",
         asrunner: "asRunner",
         as_runner: "asRunner",
         asrunnermodel: "asRunner",
@@ -132,7 +186,7 @@ export const museCommand: SlashCommand = {
       if (!mappedKey) {
         ctx.addLine({
           type: "error",
-          content: `Unknown config key: "${key}". Valid keys: as_runner_model, botToken, groupId, museBotId, defaultWorkspace, systemPrompt`,
+          content: `Unknown config key: "${key}". Valid keys: as_runner_model, botToken, groupId, museBotId, defaultWorkspace, workspaces, systemPrompt`,
           timestamp: now,
         });
         return;
@@ -293,9 +347,13 @@ export const museCommand: SlashCommand = {
           return;
         }
 
+        const wsLines = stats.workspaces && stats.workspaces.length > 1
+          ? `- Watched Projects (${stats.workspaces.length}):\n${stats.workspaces.map((w, i) => `   ${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`
+          : `- Workspace         : ${stats.workspace}`;
+
         const lines = [
           "Muse Watch Mode: ACTIVE",
-          `- Workspace         : ${stats.workspace}`,
+          wsLines,
           `- Telegram Group    : ${stats.groupId || "(not set)"}`,
           `- Muse Bot ID       : ${stats.museBotId || "(not set)"}`,
           `- Uptime            : ${stats.uptimeSeconds}s`,
@@ -307,8 +365,80 @@ export const museCommand: SlashCommand = {
         return;
       }
 
-      // Default: start
+      if (action === "add") {
+        const dirToAdd = parts.slice(2).join(" ").trim();
+        if (!dirToAdd) {
+          ctx.addLine({
+            type: "error",
+            content: "Usage: /muse watch add <project_directory>",
+            timestamp: now,
+          });
+          return;
+        }
+        const resolved = path.resolve(dirToAdd);
+        addWatchedWorkspace(resolved);
+        const watcher = getMuseWatcher();
+        if (watcher && isMuseWatcherActive()) {
+          watcher.addWorkspace(resolved);
+        }
+        ctx.addLine({
+          type: "system",
+          content: `[Muse Watch] Added project "${path.basename(resolved)}" (${resolved}) to watched projects.`,
+          timestamp: now,
+        });
+        return;
+      }
+
+      if (action === "remove") {
+        const dirToRem = parts.slice(2).join(" ").trim();
+        if (!dirToRem) {
+          ctx.addLine({
+            type: "error",
+            content: "Usage: /muse watch remove <project_directory>",
+            timestamp: now,
+          });
+          return;
+        }
+        const resolved = path.resolve(dirToRem);
+        removeWatchedWorkspace(resolved);
+        const watcher = getMuseWatcher();
+        if (watcher && isMuseWatcherActive()) {
+          watcher.removeWorkspace(resolved);
+        }
+        ctx.addLine({
+          type: "system",
+          content: `[Muse Watch] Removed project "${path.basename(resolved)}" (${resolved}) from watched projects.`,
+          timestamp: now,
+        });
+        return;
+      }
+
+      // Collect directories if passed: /muse watch [start] [dir1] [dir2] ...
+      const rawDirs = parts[1]?.toLowerCase() === "start" ? parts.slice(2) : parts.slice(1);
+      const targetDirs = rawDirs
+        .map((d) => d.trim())
+        .filter((d) => d.length > 0 && d.toLowerCase() !== "start")
+        .map((d) => path.resolve(d));
+
+      const cfg = loadRemoteAgentConfig();
+      const allWatched = targetDirs.length > 0
+        ? targetDirs
+        : getWatchedWorkspaces(cfg, ctx.agent?.workingDirectory);
+
+      // If already active:
       if (isMuseWatcherActive()) {
+        const watcher = getMuseWatcher();
+        if (targetDirs.length > 0 && watcher) {
+          for (const d of targetDirs) {
+            watcher.addWorkspace(d);
+          }
+          ctx.addLine({
+            type: "system",
+            content: `[Muse Watch] Added ${targetDirs.length} project(s) to running watch session:\n${targetDirs.map((d, i) => `  ${i + 1}. ${path.basename(d)} (${d})`).join("\n")}`,
+            timestamp: now,
+          });
+          return;
+        }
         ctx.addLine({
           type: "system",
           content: "[Muse Watch] Watch mode is already running. Superagent is actively controlled by Muse.\nRun '/muse watch stop' to deactivate.",
@@ -319,7 +449,8 @@ export const museCommand: SlashCommand = {
 
       try {
         await startMuseWatcher({
-          workspace: ctx.agent?.workingDirectory || process.cwd(),
+          workspace: allWatched[0] || ctx.agent?.workingDirectory || process.cwd(),
+          workspaces: allWatched,
           agent: ctx.agent,
           onProgress: (msg) => {
             ctx.addLine({
