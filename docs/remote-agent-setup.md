@@ -534,3 +534,21 @@ When Superagent or the remote Muse agent is executing commands, operators mainta
 - **Process Tree Cleanup**: Abort signals trigger synchronous recursive termination of child processes, preventing orphaned or background zombie processes.
 - **Fail-Safe Timeout**: Tool execution defaults to a 120-second timeout with immediate Promise rejection upon abort.
 
+---
+
+## 11. Tunnel Context Optimization & Defense-in-Depth Secret Scrubbing
+
+To prevent token exhaustion and accidental leakage of sensitive credentials over public or remote networks, Superagent implements automated context budgeting and secret scrubbing:
+
+### 11.1 Dynamic Context Budgeting
+- **Per-Message Truncation**: Individual messages in conversation history are bounded to 2,500 characters, retaining both the initial context (head) and the recent conclusion (tail) with a clear omitted-characters marker.
+- **Total Payload Budgeting**: The overall conversation history transmitted in `task_request` envelopes is capped at 12,000 characters (~3,000 tokens), prioritizing the most recent turns in reverse-chronological order.
+
+### 11.2 Automated Secret Scrubbing
+Before any payload leaves the local workstation over WebSocket or Telegram, sensitive credentials are automatically redacted:
+- API Keys: Anthropic (`sk-ant-*`), OpenAI (`sk-proj-*`, `sk-*`), Google AI / Gemini (`AIzaSy*`).
+- Developer Tokens: GitHub PATs (`ghp_*`, `github_pat_*`), Slack tokens (`xoxb-*`), AWS Access Keys (`AKIA*`).
+- Infrastructure Credentials: DB connection string passwords (`postgres://`, `mongodb://`), Private Key blocks, Bearer tokens, and `.env` variable assignments.
+- Output Scrubbing: Tool outputs (`task_result`) are also automatically scrubbed to prevent accidental leakage of environment variables or secrets during shell commands.
+
+

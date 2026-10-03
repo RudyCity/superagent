@@ -10,6 +10,8 @@ import {
   isDeleteToolCall,
   isMuseOutOfBounds,
 } from "../permissions.js";
+import { scrubToolOutput } from "./contextSanitizer.js";
+
 
 export interface BatchExecutorOptions {
   workspace: string;
@@ -551,17 +553,18 @@ async function executeOneCall(
     }
     const isErr = isErrorResult(String(rawOutput));
     const truncated = truncateOutput(String(rawOutput));
+    const scrubbed = scrubToolOutput(truncated);
 
     emitEnd({
       toolCallId: call.id,
       name: toolName,
-      result: truncated,
+      result: scrubbed,
       isError: isErr,
     });
 
     return isErr
-      ? { id: call.id, ok: false, error: truncated }
-      : { id: call.id, ok: true, output: truncated };
+      ? { id: call.id, ok: false, error: scrubbed }
+      : { id: call.id, ok: true, output: scrubbed };
   } catch (err: any) {
     clearCallTimeout();
     const batchAborted = !!options.signal?.aborted;
@@ -570,7 +573,7 @@ async function executeOneCall(
       ? "Tool execution aborted"
       : timedOut
         ? timeoutError()
-        : truncateOutput(err.message || String(err));
+        : scrubToolOutput(truncateOutput(err.message || String(err)));
 
     emitEnd({
       toolCallId: call.id,
@@ -581,6 +584,7 @@ async function executeOneCall(
 
     return { id: call.id, ok: false, error: errMsg };
   }
+
 }
 
 function isGatedCall(call: BatchToolCall): boolean {

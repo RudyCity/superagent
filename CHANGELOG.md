@@ -1,3 +1,17 @@
+## [1.5.130] - 2026-10-03
+
+### Added
+
+- **Tunnel Context Optimization & Smart Payload Budgeting**:
+  - Created `src/core/remoteAgent/contextSanitizer.ts` implementing `sanitizeTaskContext()`, `truncateContextMessage()`, and `scrubSecrets()`.
+  - Added per-message truncation (`DEFAULT_MAX_MESSAGE_CHARS = 2500`) that preserves both initial intent (head) and recent conclusion (tail) while truncating bloated log pastes.
+  - Implemented dynamic context budget enforcement (`DEFAULT_MAX_TOTAL_CONTEXT_CHARS = 12000` / ~3000 tokens) prioritizing the newest messages in reverse-chronological order.
+- **Defense-in-Depth Secret Scrubbing Across Remote Tunnels**:
+  - Automated redaction for Anthropic API keys (`sk-ant-*`), OpenAI keys (`sk-proj-*`, `sk-*`), Google Gemini/AI keys (`AIzaSy*`), GitHub Personal Access Tokens (`ghp_*`, `github_pat_*`), AWS Access Key IDs (`AKIA*`), Slack tokens (`xoxb-*`), Private Key blocks, Bearer authorization tokens, database connection passwords (`postgres://`, `mongodb://`, etc.), and `.env` credential variable definitions.
+  - Integrated secret scrubbing into `taskRunner.ts` (sanitizing both task prompt strings and `taskContext` messages), `batchExecutor.ts` (sanitizing tool execution output and error messages before dispatching `task_result`), and `cloudflareTunnel.ts` (sanitizing tasks inside clipboard connection prompts).
+- **Unit Testing**:
+  - Added unit test suite `tests/contextSanitizer.test.ts` covering 19 test cases for regex redaction, payload budgeting, message truncation, and tool output scrubbing.
+
 ## [1.5.129] - 2026-10-03
 
 ### Fixed

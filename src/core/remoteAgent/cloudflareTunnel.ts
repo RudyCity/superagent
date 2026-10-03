@@ -5,6 +5,8 @@ import os from "os";
 import { execa } from "execa";
 import { logE2E } from "../utils/unifiedLogger.js";
 import { loadRemoteAgentConfig, updateRemoteAgentConfig } from "./config.js";
+import { scrubSecrets } from "./contextSanitizer.js";
+
 
 export interface TunnelMetadata {
   pid: number;
@@ -623,13 +625,15 @@ export function buildMuseConnectionPrompt(opts: BuildMusePromptOptions): string 
   }
   lines.push("");
   if (opts.task && opts.task.trim()) {
+    const cleanTask = scrubSecrets(opts.task.trim(), [opts.token, opts.cfClientSecret]);
     lines.push("Task:");
-    lines.push(opts.task.trim());
+    lines.push(cleanTask);
     lines.push("");
     lines.push("Please connect to the WebSocket endpoint, inspect the workspace, and execute the task above.");
   } else {
     lines.push("Please connect to the WebSocket endpoint and confirm when you are ready to receive tasks.");
   }
+
   return lines.join("\n");
 }
 

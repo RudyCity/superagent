@@ -15,6 +15,7 @@ import { executeBatch } from "./batchExecutor.js";
 import type { Agent } from "../agent.js";
 import { contentToString } from "../conversation.js";
 import { logE2E } from "../utils/unifiedLogger.js";
+import { sanitizeTaskContext, scrubSecrets } from "./contextSanitizer.js";
 
 export interface TaskRunnerOptions {
   task: string;
@@ -148,26 +149,47 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
     `sess_${crypto.randomUUID()}`;
   const startTime = Date.now();
 
+  const knownSecrets = [
+    config.wsToken,
+    config.previousWsToken,
+    config.botToken,
+    config.cfAccessClientSecret,
+  ];
+
   let taskContext: TaskContextMessage[] | undefined = options.context;
   if (!taskContext && options.agent) {
     try {
       const msgs = options.agent.getHistory().getMessages();
-      const filtered = msgs
-        .filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
-        .map((m) => {
+      const rawMessages: TaskContextMessage[] = [];
+      for (const m of msgs) {
+        if ((m.role === "user" || m.role === "assistant") && m.content) {
           const text = contentToString(m.content).trim();
-          return {
-            role: m.role as "user" | "assistant",
-            content: text,
-          };
-        })
-        .filter((m) => m.content.length > 0);
-      if (filtered.length > 0) {
-        taskContext = filtered.slice(-10);
+          if (text.length > 0) {
+            rawMessages.push({
+              role: m.role as "user" | "assistant",
+              content: text,
+            });
+          }
+        }
+      }
+      if (rawMessages.length > 0) {
+        taskContext = sanitizeTaskContext(rawMessages, {
+          customSecrets: knownSecrets,
+          maxMessages: 10,
+          maxCharsPerMessage: 2500,
+          maxTotalChars: 12000,
+        });
       }
     } catch (err) {
       logE2E("REMOTE-AGENT", `Failed to extract conversation context: ${err}`);
     }
+  } else if (taskContext && taskContext.length > 0) {
+    taskContext = sanitizeTaskContext(taskContext, {
+      customSecrets: knownSecrets,
+      maxMessages: 10,
+      maxCharsPerMessage: 2500,
+      maxTotalChars: 12000,
+    });
   }
 
   const client = new MuseClient(config);
@@ -250,14 +272,15 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
 
   // On initial turn of a session, or if taskContext is empty, inject a guidance header
   // so LLM-based remote bots that only read the task string are also fully aware.
-  let taskContent = options.task;
+  const sanitizedTask = scrubSecrets(options.task, knownSecrets);
+  let taskContent = sanitizedTask;
   if (isFirstTurn) {
     taskContent = `[SYSTEM INSTRUCTIONS FOR MUSE REMOTE BRAIN]
 Tools available: read, glob, grep, ripgrep_search, write, edit, write_to_file, replace_file_content, apply_patch, run_command, bash.
 Reply with task_batch for tool execution, and task_done for completion with clear newline formatting.
 [END SYSTEM INSTRUCTIONS]
 
-${options.task}`;
+${sanitizedTask}`;
   }
 
   const requestEnvelope: TaskRequestEnvelope = {

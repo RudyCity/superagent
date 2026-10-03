@@ -208,5 +208,10 @@ sequenceDiagram
 - **Human-in-the-Loop Steering ("Menyanggah")**: `/steer` (aliases `/sanggah`, `/intervene`, `/muse steer <msg>`) aborts the hanging process and dispatches real-time counter-instructions to the agent or remote brain, redirecting exploration without dropping the session.
 - **Stdin Isolation & Timeout Bounds**: Shell executions enforce `stdin: "ignore"` to eliminate infinite hangs when commands wait for pipe input, backed by a 120-second default timeout.
 
+### Tunnel Context Optimization & Secret Scrubbing
+- **Automated Secret Redaction**: All outbound task requests, conversation history context turns, and tool execution outputs are filtered through `contextSanitizer.ts`, redacting Anthropic/OpenAI/Google keys, GitHub/Slack/AWS tokens, private keys, database passwords, and `.env` credentials before transmission over public tunnels.
+- **Smart Message Truncation**: Individual context messages are capped at 2,500 characters preserving head intent and tail conclusion, while the overall context is budgeted to 12,000 characters (~3,000 tokens) prioritized in reverse-chronological order.
+
+
 
 

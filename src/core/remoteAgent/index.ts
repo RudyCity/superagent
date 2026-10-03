@@ -5,3 +5,4 @@ export * from "./batchExecutor.js";
 export * from "./taskRunner.js";
 export * from "./cloudflareTunnel.js";
 export * from "./museWsTransport.js";
+export * from "./contextSanitizer.js";
