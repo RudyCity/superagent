@@ -653,8 +653,9 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       return filterSuggestions(["/tunnels", "/tunnel list"], query);
     }
 
-    if (mainCommand === "/yolo") {
-      return filterSuggestions(["/yolo", "/yolo on", "/yolo full", "/yolo off", "/yolo status"], query);
+    if (mainCommand === "/yolo" || mainCommand === "/yolomode") {
+      const prefix = mainCommand;
+      return filterSuggestions([prefix, `${prefix} on`, `${prefix} full`, `${prefix} off`, `${prefix} status`], query);
     }
 
     if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {

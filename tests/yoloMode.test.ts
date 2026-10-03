@@ -446,3 +446,27 @@ describe("Full YOLO Mode – Unrestricted System-Wide Behavior", () => {
     expect(evaluatePermission(tcCfg, "Protected file access detected: model-config.json", fakeWs)).toBe(true);
   });
 });
+
+describe("YOLO Mode – Dashboard Autocomplete Suggestions", () => {
+  it("provides completions for /yolo subcommands including full", async () => {
+    const { getDashboardSuggestions, getSuggestionDescriptions } = await import("../src/utils/dashboardSuggestions.js");
+    const baseSuggestions = getDashboardSuggestions("/yol");
+    expect(baseSuggestions).toContain("/yolo");
+
+    const subSuggestions = getDashboardSuggestions("/yolo ");
+    expect(subSuggestions).toContain("/yolo on");
+    expect(subSuggestions).toContain("/yolo full");
+    expect(subSuggestions).toContain("/yolo off");
+    expect(subSuggestions).toContain("/yolo status");
+
+    const fullSuggestion = getDashboardSuggestions("/yolo fu");
+    expect(fullSuggestion).toEqual(["/yolo full"]);
+
+    const aliasSuggestions = getDashboardSuggestions("/yolomode ");
+    expect(aliasSuggestions).toContain("/yolomode full");
+
+    const descriptions = getSuggestionDescriptions();
+    expect(descriptions["/yolo full"]).toBeDefined();
+    expect(descriptions["/yolo full"]).toContain("full YOLO mode");
+  });
+});
