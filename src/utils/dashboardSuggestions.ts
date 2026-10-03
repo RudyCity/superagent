@@ -57,10 +57,11 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/abort": "Stop/interrupt currently running tool, process, task, or agent",
   "/steer": "Interrupt and steer/redirect the agent with feedback or counter-instructions",
   "/sanggah": "Interrupt and steer/redirect the agent with feedback or counter-instructions",
-  "/yolo": "Toggle scoped YOLO mode (auto-approve within project & 1 parent level)",
+  "/yolo": "Toggle YOLO mode (scoped: project & 1 parent level; full: unrestricted system-wide)",
   "/yolo on": "Enable scoped YOLO mode (auto-approve within project & 1 parent level)",
-  "/yolo off": "Disable scoped YOLO mode and restore standard confirmation prompts",
-  "/yolo status": "Check current YOLO mode status and allowed root scope",
+  "/yolo full": "Enable full YOLO mode (unrestricted auto-approval system-wide)",
+  "/yolo off": "Disable YOLO mode and restore standard confirmation prompts",
+  "/yolo status": "Check current YOLO mode status (scoped, full, or inactive)",
   "/muse": "Coordinate with remote AI agent (Muse) over WebSocket (Cloudflare Tunnel) or Telegram bus",
   "/muse status": "Show remote agent configuration, runner mode, and connection status",
   "/muse steer": "Intervene and send counter-instructions to Muse brain (alias: /muse chat)",
@@ -653,7 +654,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
     }
 
     if (mainCommand === "/yolo") {
-      return filterSuggestions(["/yolo", "/yolo on", "/yolo off", "/yolo status"], query);
+      return filterSuggestions(["/yolo", "/yolo on", "/yolo full", "/yolo off", "/yolo status"], query);
     }
 
     if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {

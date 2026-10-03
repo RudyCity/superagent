@@ -9,6 +9,7 @@ import {
   isModelConfigAccess,
   isSensitiveEnvFileAccess,
   isYoloMode,
+  isFullYoloMode,
   isToolCallWithinYoloScope,
 } from "../permissions.js";
 import type { ToolCall, ToolResult } from "../conversation.js";
@@ -221,7 +222,7 @@ export class ToolExecutor {
         const isWalkthroughFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(walkthroughFilePath).toLowerCase();
 
         const effectiveWsForMod = agent.worktreePath || agent.workingDirectory;
-        if (isYoloMode() && isToolCallWithinYoloScope(tc, effectiveWsForMod)) {
+        if (isYoloMode() && (isFullYoloMode() || isToolCallWithinYoloScope(tc, effectiveWsForMod))) {
           agent.simpleTaskApproved = true;
         }
 
@@ -459,7 +460,7 @@ export class ToolExecutor {
 
         const effectiveWorkspace = agent.worktreePath || agent.workingDirectory;
         const isModelCfgForCmd = isModelConfigAccess(tc, effectiveWorkspace);
-        const withinYoloForCommand = isYoloMode() && isToolCallWithinYoloScope(tc, effectiveWorkspace) && !isModelCfgForCmd;
+        const withinYoloForCommand = isFullYoloMode() || (isYoloMode() && isToolCallWithinYoloScope(tc, effectiveWorkspace) && !isModelCfgForCmd);
 
         if (isDangerousCommand(tc.args.command as string) && !agent.allowSessionDangerous && !withinYoloForCommand) {
           const approved = await (agent as any).onPermission(tc, description);
@@ -488,8 +489,10 @@ export class ToolExecutor {
       const isModelCfg = isModelConfigAccess(tc, effectiveWorkspace);
       const isEnvFile = !isModelCfg && isSensitiveEnvFileAccess(tc);
       const isFileWriteTool = MODIFYING_TOOLS.includes(tc.name);
-      const withinYoloScope = isYoloMode() && isToolCallWithinYoloScope(tc, effectiveWorkspace) && !isModelCfg;
-      const needsPermission = isModelCfg
+      const withinYoloScope = isFullYoloMode() || (isYoloMode() && isToolCallWithinYoloScope(tc, effectiveWorkspace) && !isModelCfg);
+      const needsPermission = isFullYoloMode()
+        ? false
+        : isModelCfg
         ? true
         : withinYoloScope
         ? false

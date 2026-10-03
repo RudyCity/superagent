@@ -809,15 +809,36 @@ export function isSensitiveEnvFileAccess(
   return false;
 }
 
-// ── Scoped YOLO Mode (1 Parent Level Above Project) ──────────────────────────
+// ── Scoped & Full YOLO Mode ──────────────────────────
 let _isYoloMode = false;
+let _isFullYoloMode = false;
 
 export function isYoloMode(): boolean {
-  return _isYoloMode;
+  return _isYoloMode || _isFullYoloMode;
+}
+
+export function isFullYoloMode(): boolean {
+  return _isFullYoloMode;
 }
 
 export function setYoloMode(enabled: boolean): void {
   _isYoloMode = Boolean(enabled);
+  if (!enabled) {
+    _isFullYoloMode = false;
+  }
+}
+
+export function setFullYoloMode(enabled: boolean): void {
+  _isFullYoloMode = Boolean(enabled);
+  if (enabled) {
+    _isYoloMode = true;
+  }
+}
+
+export function getYoloModeState(): "off" | "scoped" | "full" {
+  if (_isFullYoloMode) return "full";
+  if (_isYoloMode) return "scoped";
+  return "off";
 }
 
 /**
@@ -831,13 +852,18 @@ export function getYoloAllowedRoot(workspace: string): string {
 }
 
 /**
- * Checks whether a given path is within the 1-parent scope of the workspace(s).
+ * Checks whether a given path is within the YOLO scope.
+ * In Full YOLO mode, any target path is within scope.
+ * In Scoped YOLO mode, checked against the 1-parent scope of the workspace(s).
  */
 export function isPathWithinYoloScope(
   targetPath: string,
   workspacePath: string | string[],
   baseCwd?: string
 ): boolean {
+  if (_isFullYoloMode) {
+    return true;
+  }
   const rawWorkspaces = Array.isArray(workspacePath) ? workspacePath : [workspacePath];
   const isAbs = path.isAbsolute(targetPath) || (process.platform === "win32" && /^\/[a-zA-Z]\//.test(targetPath));
   const resolved = isAbs
@@ -854,8 +880,9 @@ export function isPathWithinYoloScope(
 }
 
 /**
- * Evaluates whether a tool call is fully within the 1-parent YOLO scope.
- * Inspects all file paths, arguments, cwd, and shell commands.
+ * Evaluates whether a tool call is fully within the YOLO scope.
+ * In Full YOLO mode, returns true for all tool calls.
+ * In Scoped YOLO mode, inspects file paths, arguments, cwd, and shell commands.
  * Returns false if any path or command traverses beyond 1 parent level above workspace,
  * or targets model-config.json.
  */
@@ -863,6 +890,9 @@ export function isToolCallWithinYoloScope(
   toolCall: { name: string; args?: Record<string, unknown> },
   workspacePath: string | string[]
 ): boolean {
+  if (_isFullYoloMode) {
+    return true;
+  }
   const rawWorkspaces = Array.isArray(workspacePath) ? workspacePath : [workspacePath];
   const primaryWs = rawWorkspaces[0] || process.cwd();
   const allowedRoots = rawWorkspaces.map((ws) => getYoloAllowedRoot(ws));

@@ -1,3 +1,19 @@
+## [1.5.133] - 2026-10-03
+
+### Added
+
+- **Full YOLO Mode (Unrestricted System-Wide Auto-Approval)**:
+  - Added full YOLO mode support via `/yolo full` (and `/yolo all` / `/yolo unrestricted`) and CLI flags `--yolo-full` / `--full-yolo`.
+  - Added `isFullYoloMode()`, `setFullYoloMode()`, and `getYoloModeState()` in `src/core/permissions.ts`.
+  - Configured `isPathWithinYoloScope()` and `isToolCallWithinYoloScope()` to automatically treat all paths and commands as approved when Full YOLO mode is enabled.
+  - Integrated Full YOLO mode permission bypass in `ToolExecutor.ts` (modifying tools, dangerous commands, and out-of-bounds file operations).
+  - Integrated Full YOLO auto-approval in interactive `permissionHandler` (`src/app.tsx`) and non-TTY `onPermission` (`src/cliMain.tsx`).
+  - Added distinct status bar indicator badge (`⚡ YOLO FULL`) in `StatusBar` (`src/components/status-bar.tsx`).
+  - Updated `/yolo` slash command in `src/core/commands/coreCommands.ts` with subcommands `full`, `scoped`, `on`, `off`, `status`, and dynamic status reporting (`ACTIVE (FULL)` vs `ACTIVE (SCOPED)`).
+  - Updated command suggestions and completions in `src/utils/dashboardSuggestions.ts` and CLI help in `src/cli.tsx`.
+  - Added test suite coverage in `tests/yoloMode.test.ts` with 33 passing tests verifying state transitions, full path scopes, tool call auto-approvals, and permission evaluation.
+  - Updated wiki documentation in `docs/wiki/04-features-and-workflows.md`.
+
 ## [1.5.132] - 2026-10-03
 
 ### Fixed

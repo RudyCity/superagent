@@ -217,8 +217,8 @@ export const helpCommand: SlashCommand = {
         "              Usage: /stop [optional feedback / reason]",
         "  /steer    - Interrupt and steer/redirect the agent with feedback (aliases: /sanggah, /intervene)",
         "              Usage: /steer <instructions/feedback> (e.g. /steer Jangan grep semua file, cari di src saja)",
-        "  /yolo     - Toggle scoped YOLO mode (auto-approve within project & 1 parent level)",
-        "              Usage: /yolo [on|off|status] (Grandparent trees, drive roots, & model-config.json always require permission)",
+        "  /yolo     - Toggle YOLO mode (scoped: project & 1 parent level; full: unrestricted system-wide)",
+        "              Usage: /yolo [on|full|off|status] (/yolo full auto-approves all operations system-wide)",
         "  /setup    - Run the interactive provider and initial setup wizard",
         "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
         "  /model    - Set or list active AI models (e.g. /model openai/gpt-4o)",
@@ -676,18 +676,29 @@ export const steerCommand: SlashCommand = {
   },
 };
 
-// /yolo command (scoped auto-approval: project workspace and 1 parent level above)
+// /yolo command (scoped: project workspace & 1 parent level above; full: unrestricted system-wide)
 export const yoloCommand: SlashCommand = {
   name: "yolo",
   aliases: ["yolomode"],
-  description: "Toggle scoped YOLO mode (auto-approve within project & 1 parent level above)",
+  description: "Toggle YOLO mode (scoped: project & 1 parent level; full: unrestricted system-wide)",
   async execute(args, ctx) {
-    const { isYoloMode, setYoloMode, getYoloAllowedRoot } = await import("../permissions.js");
+    const { isYoloMode, isFullYoloMode, setYoloMode, setFullYoloMode, getYoloAllowedRoot } = await import("../permissions.js");
     const sub = args.trim().toLowerCase();
     const currentWs = ctx.agent?.workingDirectory || process.cwd();
     const allowedRoot = getYoloAllowedRoot(currentWs);
 
-    if (sub === "on" || sub === "enable" || sub === "true" || sub === "1") {
+    if (sub === "full" || sub === "all" || sub === "unrestricted") {
+      setFullYoloMode(true);
+      ctx.addLine({
+        type: "system",
+        content: `[Full YOLO Mode Enabled]\n- Scope: Full System (Unrestricted)\n- All commands, out-of-bounds operations, and file actions are auto-approved without confirmation.\n- Standard safety confirmation prompts disabled system-wide.`,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    if (sub === "on" || sub === "enable" || sub === "true" || sub === "1" || sub === "scoped") {
+      setFullYoloMode(false);
       setYoloMode(true);
       ctx.addLine({
         type: "system",
@@ -698,6 +709,7 @@ export const yoloCommand: SlashCommand = {
     }
 
     if (sub === "off" || sub === "disable" || sub === "false" || sub === "0") {
+      setFullYoloMode(false);
       setYoloMode(false);
       ctx.addLine({
         type: "system",
@@ -708,25 +720,41 @@ export const yoloCommand: SlashCommand = {
     }
 
     if (sub === "status") {
+      const full = isFullYoloMode();
       const active = isYoloMode();
+      const statusStr = full ? "ACTIVE (FULL)" : active ? "ACTIVE (SCOPED)" : "INACTIVE";
       ctx.addLine({
         type: "system",
-        content: `[YOLO Mode Status: ${active ? "ACTIVE" : "INACTIVE"}]\n- Allowed Root (1 parent level): ${allowedRoot}\n- Grandparents, drive roots, and model-config.json always require human approval.`,
+        content: `[YOLO Mode Status: ${statusStr}]\n${
+          full
+            ? "- Unrestricted system-wide auto-approval active."
+            : active
+            ? `- Allowed Root (1 parent level): ${allowedRoot}\n- Grandparents, drive roots, and model-config.json always require human approval.`
+            : "- Standard confirmation prompts active."
+        }`,
         timestamp: Date.now(),
       });
       return;
     }
 
     // Default toggle
-    const nextState = !isYoloMode();
-    setYoloMode(nextState);
-    ctx.addLine({
-      type: "system",
-      content: nextState
-        ? `[YOLO Mode Enabled]\n- Scope: Project workspace and 1 parent level above\n- Allowed Root: ${allowedRoot}\n- Actions inside scope are auto-approved without confirmation.\n- Actions beyond 1 parent level or targeting model-config.json still require explicit human permission.`
-        : "[YOLO Mode Disabled]\n- Standard safety confirmation prompts restored for dangerous commands and out-of-bounds operations.",
-      timestamp: Date.now(),
-    });
+    if (isYoloMode()) {
+      setFullYoloMode(false);
+      setYoloMode(false);
+      ctx.addLine({
+        type: "system",
+        content: "[YOLO Mode Disabled]\n- Standard safety confirmation prompts restored for dangerous commands and out-of-bounds operations.",
+        timestamp: Date.now(),
+      });
+    } else {
+      setFullYoloMode(false);
+      setYoloMode(true);
+      ctx.addLine({
+        type: "system",
+        content: `[YOLO Mode Enabled]\n- Scope: Project workspace and 1 parent level above\n- Allowed Root: ${allowedRoot}\n- Actions inside scope are auto-approved without confirmation.\n- Actions beyond 1 parent level or targeting model-config.json still require explicit human permission.`,
+        timestamp: Date.now(),
+      });
+    }
   },
 };
 

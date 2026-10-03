@@ -14,7 +14,10 @@ import path from "path";
 import os from "os";
 import {
   isYoloMode,
+  isFullYoloMode,
   setYoloMode,
+  setFullYoloMode,
+  getYoloModeState,
   getYoloAllowedRoot,
   isPathWithinYoloScope,
   isToolCallWithinYoloScope,
@@ -264,6 +267,22 @@ describe("/yolo slash command", () => {
     await yoloCommand.execute("", ctx2 as any);
     expect(isYoloMode()).toBe(false);
   });
+
+  it("enables Full YOLO mode with '/yolo full'", async () => {
+    const ctx = makeMockCtx();
+    await yoloCommand.execute("full", ctx as any);
+    expect(isFullYoloMode()).toBe(true);
+    expect(isYoloMode()).toBe(true);
+    expect(getYoloModeState()).toBe("full");
+    expect(ctx.getLines()[0].content).toContain("Full YOLO Mode Enabled");
+  });
+
+  it("shows active full status with '/yolo status'", async () => {
+    setFullYoloMode(true);
+    const ctx = makeMockCtx();
+    await yoloCommand.execute("status", ctx as any);
+    expect(ctx.getLines()[0].content).toContain("YOLO Mode Status: ACTIVE (FULL)");
+  });
 });
 
 describe("Scoped YOLO Mode – Permission Handler Integration", () => {
@@ -331,5 +350,99 @@ describe("Scoped YOLO Mode – Permission Handler Integration", () => {
       args: { filePath: path.join(fakeWs, "model-config.json") },
     };
     expect(evaluatePermission(tc, "Protected file access detected: model-config.json", fakeWs)).toBe(false);
+  });
+});
+
+describe("Full YOLO Mode – Unrestricted System-Wide Behavior", () => {
+  const isWin = process.platform === "win32";
+  const fakeWs = isWin
+    ? "D:\\dev\\projects\\my-agent"
+    : "/home/user/dev/projects/my-agent";
+
+  beforeEach(() => {
+    setFullYoloMode(false);
+    setYoloMode(false);
+  });
+
+  afterEach(() => {
+    setFullYoloMode(false);
+    setYoloMode(false);
+  });
+
+  it("can be enabled and disabled via setFullYoloMode", () => {
+    expect(isFullYoloMode()).toBe(false);
+    expect(getYoloModeState()).toBe("off");
+
+    setFullYoloMode(true);
+    expect(isFullYoloMode()).toBe(true);
+    expect(isYoloMode()).toBe(true);
+    expect(getYoloModeState()).toBe("full");
+
+    setFullYoloMode(false);
+    expect(isFullYoloMode()).toBe(false);
+  });
+
+  it("setYoloMode(false) turns off both scoped and full YOLO modes", () => {
+    setFullYoloMode(true);
+    expect(isFullYoloMode()).toBe(true);
+
+    setYoloMode(false);
+    expect(isFullYoloMode()).toBe(false);
+    expect(isYoloMode()).toBe(false);
+    expect(getYoloModeState()).toBe("off");
+  });
+
+  it("auto-approves paths across anywhere in filesystem when Full YOLO is on", () => {
+    setFullYoloMode(true);
+    const grandparent = isWin ? "D:\\dev\\root.txt" : "/home/user/dev/root.txt";
+    const otherDrive = isWin ? "C:\\Windows\\System32\\calc.exe" : "/etc/hosts";
+    expect(isPathWithinYoloScope(grandparent, fakeWs)).toBe(true);
+    expect(isPathWithinYoloScope(otherDrive, fakeWs)).toBe(true);
+  });
+
+  it("auto-approves tool calls targeting any path or model-config.json when Full YOLO is on", () => {
+    setFullYoloMode(true);
+    const outToolCall = {
+      name: "write_to_file",
+      args: { filePath: isWin ? "C:\\other\\dir\\file.ts" : "/var/log/file.ts" },
+    };
+    expect(isToolCallWithinYoloScope(outToolCall, fakeWs)).toBe(true);
+
+    const modelCfgCall = {
+      name: "write_to_file",
+      args: { filePath: path.join(fakeWs, "model-config.json") },
+    };
+    expect(isToolCallWithinYoloScope(modelCfgCall, fakeWs)).toBe(true);
+
+    const cmdCall = {
+      name: "run_command",
+      args: { command: "rm -rf ../../other-dir", cwd: fakeWs },
+    };
+    expect(isToolCallWithinYoloScope(cmdCall, fakeWs)).toBe(true);
+  });
+
+  function evaluatePermission(toolCall: any, description: string, ws: string = fakeWs): boolean {
+    if (isFullYoloMode()) {
+      return true;
+    }
+    if (isYoloMode() && isToolCallWithinYoloScope(toolCall, ws) && !description.includes("model-config.json")) {
+      return true;
+    }
+    return false;
+  }
+
+  it("auto-approves out-of-bounds writes and model-config.json in permission evaluation", () => {
+    setFullYoloMode(true);
+    const tcOut = {
+      name: "write_to_file",
+      args: { filePath: isWin ? "C:\\temp\\file.txt" : "/tmp/file.txt" },
+    };
+    expect(evaluatePermission(tcOut, "write", fakeWs)).toBe(true);
+
+    const tcCfg = {
+      name: "write_to_file",
+      args: { filePath: path.join(fakeWs, "model-config.json") },
+    };
+    expect(evaluatePermission(tcCfg, "Protected file access detected: model-config.json", fakeWs)).toBe(true);
   });
 });

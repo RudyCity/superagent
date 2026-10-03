@@ -25,6 +25,7 @@ export interface StatusBarProps {
   activeChainNodeCount?: number;
   activeLocks?: number;
   yoloMode?: boolean;
+  fullYoloMode?: boolean;
 }
 
 function LoadingIndicator() {
@@ -66,6 +67,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
     activeChainNodeCount,
     activeLocks,
     yoloMode,
+    fullYoloMode,
   } = props;
 
   return (
@@ -97,12 +99,17 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
             <Text color="magentaBright" bold>🔗 Chain: {activeChainName}{activeChainNodeCount ? ` (${activeChainNodeCount} nodes)` : ""}</Text>
           </>
         )}
-        {yoloMode && (
+        {fullYoloMode ? (
+          <>
+            <Text color="gray"> • </Text>
+            <Text color="redBright" bold>⚡ YOLO FULL</Text>
+          </>
+        ) : yoloMode ? (
           <>
             <Text color="gray"> • </Text>
             <Text color="redBright" bold>🔥 YOLO</Text>
           </>
-        )}
+        ) : null}
       </Box>
 
       {/* Line 2: Metrics & Context */}
