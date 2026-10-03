@@ -217,6 +217,8 @@ export const helpCommand: SlashCommand = {
         "              Usage: /stop [optional feedback / reason]",
         "  /steer    - Interrupt and steer/redirect the agent with feedback (aliases: /sanggah, /intervene)",
         "              Usage: /steer <instructions/feedback> (e.g. /steer Jangan grep semua file, cari di src saja)",
+        "  /yolo     - Toggle scoped YOLO mode (auto-approve within project & 1 parent level)",
+        "              Usage: /yolo [on|off|status] (Grandparent trees, drive roots, & model-config.json always require permission)",
         "  /setup    - Run the interactive provider and initial setup wizard",
         "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
         "  /model    - Set or list active AI models (e.g. /model openai/gpt-4o)",
@@ -674,6 +676,60 @@ export const steerCommand: SlashCommand = {
   },
 };
 
+// /yolo command (scoped auto-approval: project workspace and 1 parent level above)
+export const yoloCommand: SlashCommand = {
+  name: "yolo",
+  aliases: ["yolomode"],
+  description: "Toggle scoped YOLO mode (auto-approve within project & 1 parent level above)",
+  async execute(args, ctx) {
+    const { isYoloMode, setYoloMode, getYoloAllowedRoot } = await import("../permissions.js");
+    const sub = args.trim().toLowerCase();
+    const currentWs = ctx.agent?.workingDirectory || process.cwd();
+    const allowedRoot = getYoloAllowedRoot(currentWs);
+
+    if (sub === "on" || sub === "enable" || sub === "true" || sub === "1") {
+      setYoloMode(true);
+      ctx.addLine({
+        type: "system",
+        content: `[YOLO Mode Enabled]\n- Scope: Project workspace and 1 parent level above\n- Allowed Root: ${allowedRoot}\n- Actions inside scope are auto-approved without confirmation.\n- Actions beyond 1 parent level or targeting model-config.json still require explicit human permission.`,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    if (sub === "off" || sub === "disable" || sub === "false" || sub === "0") {
+      setYoloMode(false);
+      ctx.addLine({
+        type: "system",
+        content: "[YOLO Mode Disabled]\n- Standard safety confirmation prompts restored for dangerous commands and out-of-bounds operations.",
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    if (sub === "status") {
+      const active = isYoloMode();
+      ctx.addLine({
+        type: "system",
+        content: `[YOLO Mode Status: ${active ? "ACTIVE" : "INACTIVE"}]\n- Allowed Root (1 parent level): ${allowedRoot}\n- Grandparents, drive roots, and model-config.json always require human approval.`,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    // Default toggle
+    const nextState = !isYoloMode();
+    setYoloMode(nextState);
+    ctx.addLine({
+      type: "system",
+      content: nextState
+        ? `[YOLO Mode Enabled]\n- Scope: Project workspace and 1 parent level above\n- Allowed Root: ${allowedRoot}\n- Actions inside scope are auto-approved without confirmation.\n- Actions beyond 1 parent level or targeting model-config.json still require explicit human permission.`
+        : "[YOLO Mode Disabled]\n- Standard safety confirmation prompts restored for dangerous commands and out-of-bounds operations.",
+      timestamp: Date.now(),
+    });
+  },
+};
+
 // Register core commands
 registry.register(newCommand);
 registry.register(exitCommand);
@@ -683,3 +739,4 @@ registry.register(imageCommand);
 registry.register(setupCommand);
 registry.register(stopCommand);
 registry.register(steerCommand);
+registry.register(yoloCommand);

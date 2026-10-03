@@ -19,7 +19,7 @@ import fsSync from "fs";
 import { handleSlashCommand, getDefaultModel } from "./core/slash-commands.js";
 import { registry } from "./core/commands/index.js";
 import { createCheckpoint, terminateActiveTasksAndSubagents } from "./core/checkpoints.js";
-import { getToolDescription } from "./core/permissions.js";
+import { getToolDescription, isYoloMode, isToolCallWithinYoloScope } from "./core/permissions.js";
 import path from "path";
 import { backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, registerMasterAgent, notifyTasksChanged, setActiveDevHookGlobal, isTaskInWorkspace, clearActiveToolOutput, appendActiveToolOutput } from "./core/tools.js";
 import { ProcessingIndicator } from "./components/common/LoadingIndicators.js";
@@ -2538,6 +2538,11 @@ export function App({
 
   const permissionHandler: PermissionHandler = useCallback(
     (toolCall: ToolCall, description: string) => {
+      // In YOLO mode, auto-approve actions within project and 1 parent level above, unless targeting model-config.json
+      if (isYoloMode() && isToolCallWithinYoloScope(toolCall, workspacePath || process.cwd()) && !description.includes("model-config.json")) {
+        return Promise.resolve(true);
+      }
+
       return new Promise<boolean | "session">((resolve) => {
         // model-config.json is always protected — no session-level bypass option
         const isModelCfgAccess = description.includes("model-config.json");
@@ -3646,6 +3651,7 @@ export function App({
         activeChainName={activeChain?.name || null}
         activeChainNodeCount={activeChain?.nodes.length}
         activeLocks={activeLocks}
+        yoloMode={isYoloMode()}
       />
     </Box>
   );

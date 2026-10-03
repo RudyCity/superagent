@@ -46,6 +46,7 @@ Superagent features built-in terminal wizard commands:
 | `/compact` | `src/core/context/ContextManager.ts` | Manually trigger LLM-driven context summarization and pruning |
 | `/history` | `src/core/storage/historyDb.ts` | Search previous conversation transcripts using SQLite FTS5 |
 | `/terminal [preset]` | `src/core/tools/systemTools.ts` | Run or initialize terminal automation presets |
+| `/yolo [on\|off\|status]` | `src/core/commands/coreCommands.ts` | Toggle scoped YOLO mode (auto-approve actions within project & 1 parent level above) |
 
 ---
 

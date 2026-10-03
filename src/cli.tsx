@@ -163,6 +163,7 @@ Options:
   --model <model_name>    Override active model for this session
   --provider <id>         Override active provider profile for this session
   --multi                 Start in Multi Superagent master orchestrator mode
+  -y, --yolo              Enable YOLO mode (auto-approve within project & 1 parent level above)
   --mcp, --mcp-server     Start Superagent as an MCP (Model Context Protocol) server
   -q, --quick             Fast startup path, bypass interactive progress UI
   --skip-startup-check    Alias for --quick

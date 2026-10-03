@@ -1,4 +1,5 @@
 import path from "path";
+import os from "os";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { getRootConfigDir } from "./config.js";
 import { agentLocalStorage } from "./agent.js";
@@ -173,7 +174,8 @@ export function normalizeAndCheckSubpath(childPath: string, parentPath: string):
     resolvedChild = resolvedChild.toLowerCase();
     resolvedParent = resolvedParent.toLowerCase();
   }
-  return resolvedChild.startsWith(resolvedParent + path.sep) || resolvedChild === resolvedParent;
+  const parentWithSep = resolvedParent.endsWith(path.sep) ? resolvedParent : resolvedParent + path.sep;
+  return resolvedChild.startsWith(parentWithSep) || resolvedChild === resolvedParent;
 }
 
 /**
@@ -806,6 +808,202 @@ export function isSensitiveEnvFileAccess(
 
   return false;
 }
+
+// ── Scoped YOLO Mode (1 Parent Level Above Project) ──────────────────────────
+let _isYoloMode = false;
+
+export function isYoloMode(): boolean {
+  return _isYoloMode;
+}
+
+export function setYoloMode(enabled: boolean): void {
+  _isYoloMode = Boolean(enabled);
+}
+
+/**
+ * Returns the allowed parent directory for YOLO mode: exactly 1 level above the workspace.
+ * If workspace is the filesystem root (e.g. C:\ or /), returns the workspace itself.
+ */
+export function getYoloAllowedRoot(workspace: string): string {
+  const resolved = resolveNormalizedPath(workspace);
+  const parent = path.dirname(resolved);
+  return parent;
+}
+
+/**
+ * Checks whether a given path is within the 1-parent scope of the workspace(s).
+ */
+export function isPathWithinYoloScope(
+  targetPath: string,
+  workspacePath: string | string[],
+  baseCwd?: string
+): boolean {
+  const rawWorkspaces = Array.isArray(workspacePath) ? workspacePath : [workspacePath];
+  const isAbs = path.isAbsolute(targetPath) || (process.platform === "win32" && /^\/[a-zA-Z]\//.test(targetPath));
+  const resolved = isAbs
+    ? resolveNormalizedPath(targetPath)
+    : resolveNormalizedPath(targetPath, baseCwd || rawWorkspaces[0] || process.cwd());
+
+  for (const ws of rawWorkspaces) {
+    const allowedRoot = getYoloAllowedRoot(ws);
+    if (normalizeAndCheckSubpath(resolved, allowedRoot)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Evaluates whether a tool call is fully within the 1-parent YOLO scope.
+ * Inspects all file paths, arguments, cwd, and shell commands.
+ * Returns false if any path or command traverses beyond 1 parent level above workspace,
+ * or targets model-config.json.
+ */
+export function isToolCallWithinYoloScope(
+  toolCall: { name: string; args?: Record<string, unknown> },
+  workspacePath: string | string[]
+): boolean {
+  const rawWorkspaces = Array.isArray(workspacePath) ? workspacePath : [workspacePath];
+  const primaryWs = rawWorkspaces[0] || process.cwd();
+  const allowedRoots = rawWorkspaces.map((ws) => getYoloAllowedRoot(ws));
+
+  // model-config.json is strictly protected, never within YOLO auto-approve
+  const rootConfig = resolveNormalizedPath(getRootConfigDir());
+  const modelConfigPath = path.join(rootConfig, "model-config.json");
+
+  const args = toolCall.args || {};
+  const candidatePaths = [
+    args.filePath, args.file_path, args.TargetFile, args.path,
+    args.cwd, args.DirectoryPath, args.SearchPath, args.AbsolutePath,
+    args.targetPath, args.sourcePath, args.destination,
+  ].filter((v): v is string => typeof v === "string");
+
+  if (args.filePaths && Array.isArray(args.filePaths)) {
+    for (const fp of args.filePaths) {
+      const resolvedFp = extractFilePath(fp);
+      if (resolvedFp) candidatePaths.push(resolvedFp);
+    }
+  }
+  if (args.edits && Array.isArray(args.edits)) {
+    for (const edit of args.edits) {
+      if (edit && typeof edit === "object" && typeof (edit as any).filePath === "string") {
+        candidatePaths.push((edit as any).filePath);
+      }
+    }
+  }
+  if (args.files && Array.isArray(args.files)) {
+    for (const file of args.files) {
+      if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
+        candidatePaths.push((file as any).filePath);
+      }
+    }
+  }
+  if (args.patches && Array.isArray(args.patches)) {
+    for (const patch of args.patches) {
+      if (patch && typeof patch === "object" && typeof (patch as any).filePath === "string") {
+        candidatePaths.push((patch as any).filePath);
+      }
+    }
+  }
+
+  for (const fp of candidatePaths) {
+    const isAbs = path.isAbsolute(fp) || (process.platform === "win32" && /^\/[a-zA-Z]\//.test(fp));
+    const resolved = isAbs
+      ? resolveNormalizedPath(fp)
+      : resolveNormalizedPath(fp, (args.cwd as string) || primaryWs);
+
+    if (
+      path.basename(resolved).toLowerCase() === "model-config.json" ||
+      normalizeAndCheckSubpath(resolved, modelConfigPath)
+    ) {
+      return false; // model-config.json always requires human prompt
+    }
+
+    const inAnyYoloRoot = allowedRoots.some((root) => normalizeAndCheckSubpath(resolved, root));
+    if (!inAnyYoloRoot) {
+      return false;
+    }
+  }
+
+  // Check shell commands for paths and relative traversals
+  const shellTools = ["bash", "run_command", "run_background_process", "shell", "exec", "terminal", "cmd", "sh"];
+  if (shellTools.includes(toolCall.name)) {
+    const cwdArg = args.cwd as string | undefined;
+    const resolvedCwd = cwdArg ? resolveNormalizedPath(cwdArg, primaryWs) : resolveNormalizedPath(primaryWs);
+    const inAnyYoloRoot = allowedRoots.some((root) => normalizeAndCheckSubpath(resolvedCwd, root));
+    if (!inAnyYoloRoot) {
+      return false;
+    }
+
+    const command = (args.command ?? args.cmd ?? args.CommandLine ?? args.script ?? args.input) as string | undefined;
+    if (command && typeof command === "string") {
+      if (command.toLowerCase().includes("model-config.json")) {
+        return false;
+      }
+
+      // Check home directory references (~, $HOME, %USERPROFILE%)
+      const homeDir = resolveNormalizedPath(os.homedir());
+      const homeInRoots = allowedRoots.some((root) => normalizeAndCheckSubpath(homeDir, root));
+      if (!homeInRoots) {
+        if (
+          /(?:^|[\s"'`=])(~[/\\][^\s"'`;&|]*|~|\$HOME[/\\][^\s"'`;&|]*|\$HOME|%USERPROFILE%[/\\][^\s"'`;&|]*|%USERPROFILE%)(?=[\s"'`;&|]|$)/i.test(command)
+        ) {
+          return false;
+        }
+      }
+
+      // Check relative traversals: e.g. cd .. or ../..
+      if (command.includes("..")) {
+        const traversalRegex = /(?:^|[\s"'`=])((?:\.\.[\/\\][^\s"'`;&|]*|\.\.))(?=[\s"'`;&|]|$)/g;
+        let tMatch;
+        while ((tMatch = traversalRegex.exec(command)) !== null) {
+          const relPath = tMatch[1];
+          const target = resolveNormalizedPath(relPath, resolvedCwd);
+          const withinRoots = allowedRoots.some((root) => normalizeAndCheckSubpath(target, root));
+          if (!withinRoots) {
+            return false;
+          }
+        }
+      }
+
+      // Check absolute Windows paths in command
+      const winAbsPathRegex = /"[a-zA-Z]:\\[^"]+"|'[a-zA-Z]:\\[^']+'|(?:[a-zA-Z]:\\[^\r\n;&|]+)/g;
+      let match;
+      while ((match = winAbsPathRegex.exec(command)) !== null) {
+        let p = match[0].trim();
+        if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
+          p = p.slice(1, -1);
+        }
+        const resolved = resolveNormalizedPath(p);
+        const withinRoots = allowedRoots.some((root) => normalizeAndCheckSubpath(resolved, root));
+        if (!withinRoots) {
+          return false;
+        }
+      }
+
+      // Check absolute Unix paths in command
+      const unixAbsPathRegex = /(?:^|[\s"'`=])(\/[a-zA-Z0-9_\-\.\/]+)/g;
+      let uMatch;
+      while ((uMatch = unixAbsPathRegex.exec(command)) !== null) {
+        const p = uMatch[1];
+        if (p.startsWith("/dev/") || p === "/dev/null" || p.startsWith("/bin/") || p.startsWith("/usr/bin/") || p.startsWith("/usr/local/bin/") || p.startsWith("/tmp/")) {
+          continue;
+        }
+        if (process.platform === "win32" && !p.slice(1).includes("/")) {
+          continue;
+        }
+        const resolved = resolveNormalizedPath(p);
+        const withinRoots = allowedRoots.some((root) => normalizeAndCheckSubpath(resolved, root));
+        if (!withinRoots) {
+          return false;
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
 
 /**
  * Shorten a shell command string to a readable one-liner summary.

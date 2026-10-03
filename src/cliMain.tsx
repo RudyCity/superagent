@@ -360,7 +360,8 @@ export async function runCli() {
   const flags = [
     "--resume", "-r", "--help", "-h", "--multi", "--workspace", "-w",
     "--workspace-ssh", "-ws", "--preset", "-p", "--model", "--provider",
-    "--quick", "-q", "--skip-startup-check", "setup", "--setup"
+    "--quick", "-q", "--skip-startup-check", "setup", "--setup",
+    "--yolo", "-y"
   ];
   const positionalArgs = process.argv.slice(2).filter((arg, idx) => {
     if (flags.includes(arg)) return false;
@@ -440,6 +441,11 @@ export async function runCli() {
     } catch (err: any) {
       console.error(`Warning: Failed to set model "${modelVal}": ${err.message}`);
     }
+  }
+
+  if (process.argv.includes("--yolo") || process.argv.includes("-y")) {
+    const { setYoloMode } = await import("./core/permissions.js");
+    setYoloMode(true);
   }
 
   if (process.stdin.isTTY) {
@@ -781,7 +787,11 @@ export async function runCli() {
     const onPermission = async (toolCall: any, description: string) => {
       // In non-interactive mode: auto-approve workspace tool operations.
       // Block dangerous shell commands and file writes strictly OUTSIDE the workspace.
-      const { isDangerousCommand, isToolCallOutOfBounds } = await import("./core/permissions.js");
+      const { isDangerousCommand, isToolCallOutOfBounds, isYoloMode, isToolCallWithinYoloScope } = await import("./core/permissions.js");
+
+      if (isYoloMode() && isToolCallWithinYoloScope(toolCall, process.cwd()) && !description.includes("model-config.json")) {
+        return true;
+      }
 
       if (toolCall.name === "exec_command" || toolCall.name === "bash" || toolCall.name === "shell") {
         const cmd = (toolCall.args as any)?.command || "";

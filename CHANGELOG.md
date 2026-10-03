@@ -1,3 +1,17 @@
+## [1.5.131] - 2026-10-03
+
+### Added
+
+- **Scoped YOLO Mode with 1-Parent Scope Restriction**:
+  - Implemented scoped YOLO mode (`--yolo`, `-y`, and `/yolo [on|off|status]`) enabling auto-approval of commands, file writes, and modifications strictly within the project workspace and up to 1 parent directory level above (`path.dirname(workspace)`).
+  - Added `isYoloMode()`, `setYoloMode()`, `getYoloAllowedRoot()`, `isPathWithinYoloScope()`, and `isToolCallWithinYoloScope()` in `src/core/permissions.ts`.
+  - Added strict defense-in-depth safety boundaries: operations targeting 2+ parent levels above (grandparents), root filesystem drives, or `model-config.json` are never auto-approved and always require explicit human operator confirmation.
+  - Integrated YOLO scope auto-approval checks into `ToolExecutor.ts` for dangerous commands, out-of-bounds gates, and simple task modifications.
+  - Added bypass logic in `src/app.tsx` (`permissionHandler`) and `src/cliMain.tsx` (`onPermission`) for in-scope YOLO operations.
+  - Added status indicator badge (`🔥 YOLO`) in `StatusBar` (`src/components/status-bar.tsx`).
+  - Added `/yolo` slash command and autocomplete suggestions in `src/utils/dashboardSuggestions.ts` and `/help`.
+  - Added comprehensive test suite `tests/yoloMode.test.ts` with 26 passing tests covering boundary validation, command traversal detection, and permission handling.
+
 ## [1.5.130] - 2026-10-03
 
 ### Added

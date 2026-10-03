@@ -8,6 +8,8 @@ import {
   isToolCallOutOfBounds,
   isModelConfigAccess,
   isSensitiveEnvFileAccess,
+  isYoloMode,
+  isToolCallWithinYoloScope,
 } from "../permissions.js";
 import type { ToolCall, ToolResult } from "../conversation.js";
 import type { QuestionItem } from "./AgentEvents.js";
@@ -217,6 +219,11 @@ export class ToolExecutor {
         const isPlanFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(planFilePath).toLowerCase();
         const isTaskFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(taskFilePath).toLowerCase();
         const isWalkthroughFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(walkthroughFilePath).toLowerCase();
+
+        const effectiveWsForMod = agent.worktreePath || agent.workingDirectory;
+        if (isYoloMode() && isToolCallWithinYoloScope(tc, effectiveWsForMod)) {
+          agent.simpleTaskApproved = true;
+        }
 
         if (agent.isSimpleTask && !agent.simpleTaskApproved && !isPlanFile && !isTaskFile && !isWalkthroughFile) {
           const filename = path.basename(filePath);
@@ -450,7 +457,11 @@ export class ToolExecutor {
           }
         }
 
-        if (isDangerousCommand(tc.args.command as string) && !agent.allowSessionDangerous) {
+        const effectiveWorkspace = agent.worktreePath || agent.workingDirectory;
+        const isModelCfgForCmd = isModelConfigAccess(tc, effectiveWorkspace);
+        const withinYoloForCommand = isYoloMode() && isToolCallWithinYoloScope(tc, effectiveWorkspace) && !isModelCfgForCmd;
+
+        if (isDangerousCommand(tc.args.command as string) && !agent.allowSessionDangerous && !withinYoloForCommand) {
           const approved = await (agent as any).onPermission(tc, description);
           if (approved === "session") {
             agent.allowSessionDangerous = true;
@@ -477,8 +488,11 @@ export class ToolExecutor {
       const isModelCfg = isModelConfigAccess(tc, effectiveWorkspace);
       const isEnvFile = !isModelCfg && isSensitiveEnvFileAccess(tc);
       const isFileWriteTool = MODIFYING_TOOLS.includes(tc.name);
+      const withinYoloScope = isYoloMode() && isToolCallWithinYoloScope(tc, effectiveWorkspace) && !isModelCfg;
       const needsPermission = isModelCfg
         ? true
+        : withinYoloScope
+        ? false
         : isEnvFile
         ? !agent.allowSessionEnvAccess
         : isToolCallOutOfBounds(tc, effectiveWorkspace) &&

@@ -212,6 +212,14 @@ sequenceDiagram
 - **Automated Secret Redaction**: All outbound task requests, conversation history context turns, and tool execution outputs are filtered through `contextSanitizer.ts`, redacting Anthropic/OpenAI/Google keys, GitHub/Slack/AWS tokens, private keys, database passwords, and `.env` credentials before transmission over public tunnels.
 - **Smart Message Truncation**: Individual context messages are capped at 2,500 characters preserving head intent and tail conclusion, while the overall context is budgeted to 12,000 characters (~3,000 tokens) prioritized in reverse-chronological order.
 
+### Scoped YOLO Mode (1-Parent Boundary Restriction)
+- **Controlled Auto-Approval**: Activated via `--yolo` / `-y` CLI flags or the interactive `/yolo [on|off|status]` slash command. Automatically approves dangerous commands and file modifications without prompting the user.
+- **Strict 1-Parent Scope Boundary**: Auto-approval is strictly limited to the current project workspace and exactly 1 parent level above (`path.dirname(workspace)`). This allows seamless multi-project operations across sibling packages in the same development root without annoying confirmation dialogs.
+- **Defense-in-Depth Safety Gates**: Any command, file write, or relative directory traversal (`../..`) that escapes beyond the 1-parent boundary (such as grandparent directories, root filesystem drives `C:\` / `/`, or user home roots) is strictly blocked from auto-approval and triggers human permission prompts.
+- **Strict Credential Protection**: Files named `model-config.json` containing sensitive encrypted API keys and provider profiles are unconditionally blocked from YOLO auto-approval and always require explicit human confirmation.
+- **Visual Status Indicator**: Active YOLO mode is visibly badged in the interactive status bar as `🔥 YOLO`.
+
+
 
 
 
