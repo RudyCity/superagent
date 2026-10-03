@@ -107,6 +107,7 @@ import { transferSshFileTool } from "./sshTransferTools.js";
 import { cliBridgeTool } from "./cliBridgeTool.js";
 import { inspectSessionTool } from "./sessionTools.js";
 import { synthesizeSkillTool } from "./synthesizeSkillTool.js";
+import { listToolsTool, describeToolTool } from "./toolDiscoveryTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Orchestration only. The Master Agent MUST NOT directly modify code or
@@ -137,6 +138,8 @@ export const masterToolset: Tool[] = [
   loadPinnedSessionTool,
   searchPinnedKnowledgeTool,
   inspectSessionTool,
+  listToolsTool,
+  describeToolTool,
   officeCliTool,
   // ── Planning & session management (writes only to ~/.superagent-r/) ──
   scheduleTool,
@@ -238,6 +241,8 @@ export const superagentToolset: Tool[] = [
   manageWorkspaceChainTool,
   crossWorkspaceExecTool,
   cliBridgeTool,           // delegate tasks to external AI CLIs (codex/claude/agy)
+  listToolsTool,
+  describeToolTool,
 ];
 
 // ─── Chrome Extension Toolset (depth 1) ──────────────────────────────────────
@@ -274,6 +279,8 @@ export const chromeExtensionToolset: Tool[] = [
   loadPinnedSessionTool,
   searchPinnedKnowledgeTool,
   inspectSessionTool,
+  listToolsTool,
+  describeToolTool,
   androidCliTool,
   rmemorySearchTool,
   rmemoryConversationSearchTool,
@@ -462,6 +469,8 @@ export const defaultSubagentToolset: Tool[] = [
   getSkillsTool,
   useSkillTool,
   sendMessageTool,
+  listToolsTool,
+  describeToolTool,
 ];
 
 /**

@@ -1212,6 +1212,20 @@ export function getToolDescription(
       if (action === "health") return `Checking workspace chain health metrics`;
       return `Managing workspace chain (${action})`;
     }
+    case "describe_tool": {
+      const toolTarget = s(
+        args.tool ??
+          args.name ??
+          args.tool_name ??
+          (Array.isArray(args.names) ? args.names.join(", ") : args.names) ??
+          (Array.isArray(args.tools) ? args.tools.join(", ") : args.tools)
+      );
+      return `Inspecting tool schema: ${toolTarget || "tools"}`;
+    }
+    case "list_tools": {
+      const q = s(args.query ?? args.q ?? args.filter);
+      return q ? `Listing tools matching "${q}"` : `Listing available tools`;
+    }
     default:
       return `Running tool ${toolCall.name} with parameters ${JSON.stringify(args)}`;
   }

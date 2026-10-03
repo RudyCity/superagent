@@ -1,3 +1,18 @@
+## [1.5.132] - 2026-10-03
+
+### Fixed
+
+- **Resilient Tool Discovery & Schema Inspection (`describe_tool` and `list_tools`)**:
+  - Fixed an issue where invoking `describe_tool` with singular `{ tool: "run_background_process" }` or `{ name: "..." }` returned an empty JSON array `[]` due to strict reliance on `args.names` array.
+  - Implemented `extractToolNames(args)` in `src/core/tools/toolDiscoveryTools.ts` supporting `{ tool: "..." }`, `{ name: "..." }`, `{ tool_name: "..." }`, `{ toolName: "..." }`, `{ names: [...] }`, `{ tools: [...] }`, raw strings, and string arrays.
+  - Updated `describe_tool` schema parameters to formally include `tool`, `name`, `names`, and `tools`.
+  - Added tokenized typo/keyword suggestions for unknown tools in `describe_tool` and helpful usage instructions when called with empty arguments instead of returning silent `[]`.
+  - Added query alias support (`args.q`, `args.filter`, `args.keyword`) in `list_tools`.
+  - Enhanced `getToolByName()` in `src/core/tools/index.ts` with whitespace and quote stripping, case-insensitivity, hyphen-to-underscore normalization (e.g. `run-background-process`), and common tool alias resolution (e.g. `background_process`, `read_file`, `write_file`).
+  - Added `describe_tool` and `list_tools` to `masterToolset`, `superagentToolset`, `chromeExtensionToolset`, and `defaultSubagentToolset` in `src/core/tools/toolsets.ts`.
+  - Added dedicated UI label formatters in `getToolDescription()` in `src/core/permissions.ts` for clean terminal reporting (`Inspecting tool schema: run_background_process`).
+  - Created unit test suite `tests/describeTool.test.ts` with 23 passing tests verifying parameter extraction, alias mapping, and error handling.
+
 ## [1.5.131] - 2026-10-03
 
 ### Added

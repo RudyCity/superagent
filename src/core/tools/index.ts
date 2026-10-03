@@ -259,8 +259,50 @@ export const allTools: Tool[] = [
   synthesizeSkillTool,
 ];
 
+const TOOL_ALIASES: Record<string, string> = {
+  background_process: "run_background_process",
+  run_background: "run_background_process",
+  background: "run_background_process",
+  bg_process: "run_background_process",
+  run_bg_process: "run_background_process",
+  manage_background: "manage_background_process",
+  kill_background: "manage_background_process",
+  cmd: "run_command",
+  exec: "run_command",
+  shell: "run_command",
+  terminal: "run_command",
+  read_file: "read",
+  write_file: "write_to_file",
+  edit_file: "edit",
+};
+
 export function getToolByName(name: string): Tool | undefined {
-  return allTools.find((t) => t.name === name);
+  if (!name || typeof name !== "string") return undefined;
+  const clean = name.trim().replace(/^['"`]+|['"`]+$/g, "");
+  if (!clean) return undefined;
+
+  // 1. Exact match
+  const exact = allTools.find((t) => t.name === clean);
+  if (exact) return exact;
+
+  // 2. Case-insensitive match
+  const lower = clean.toLowerCase();
+  const caseMatch = allTools.find((t) => t.name.toLowerCase() === lower);
+  if (caseMatch) return caseMatch;
+
+  // 3. Hyphen vs underscore normalization
+  const norm = lower.replace(/[-_]/g, "_");
+  const normMatch = allTools.find((t) => t.name.toLowerCase().replace(/[-_]/g, "_") === norm);
+  if (normMatch) return normMatch;
+
+  // 4. Common aliases
+  const aliasTarget = TOOL_ALIASES[norm];
+  if (aliasTarget) {
+    const aliasMatch = allTools.find((t) => t.name === aliasTarget);
+    if (aliasMatch) return aliasMatch;
+  }
+
+  return undefined;
 }
 
 export function getToolDefinitions(): Array<{
