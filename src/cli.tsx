@@ -308,8 +308,40 @@ if (serverIndex !== -1) {
     }
   }
 
+  const hasTunnel = process.argv.includes("--tunnel") || process.argv.includes("-t");
   const { runServer } = await import("./server.js");
-  await runServer(port, false, clientMode);
+  const serverInstance = await runServer(port, false, clientMode);
+
+  if (hasTunnel && serverInstance) {
+    try {
+      const { startQuickTunnel, stopQuickTunnel } = await import("./core/remoteAgent/cloudflareTunnel.js");
+      const { getServerAuthToken } = await import("./core/utils/serverSecurity.js");
+      console.log(`[Cloudflare Tunnel] Starting quick HTTPS tunnel for port ${port}...`);
+      const meta = await startQuickTunnel({ port, host: "127.0.0.1", path: "" });
+      const token = getServerAuthToken();
+      console.log("");
+      console.log("═════════════════════════════════════════════════════════════════════════════");
+      console.log("  Superagent HTTP REST/SSE Server & Cloudflare Quick Tunnel Online!");
+      console.log("═════════════════════════════════════════════════════════════════════════════");
+      console.log(`  Public HTTPS URL  : ${meta.publicUrl}`);
+      console.log(`  Local Target      : ${meta.localUrl}`);
+      console.log(`  Server Port       : ${port}`);
+      console.log(`  Process PID       : ${meta.pid}`);
+      console.log(`  Bearer Token      : ${token}`);
+      console.log("═════════════════════════════════════════════════════════════════════════════");
+      console.log(`Test: curl -H "Authorization: Bearer ${token}" ${meta.publicUrl}/api/status\n`);
+
+      const cleanTunnelExit = async () => {
+        try {
+          await stopQuickTunnel(port);
+        } catch {}
+      };
+      process.on("SIGINT", cleanTunnelExit);
+      process.on("SIGTERM", cleanTunnelExit);
+    } catch (err: any) {
+      console.error(`[Cloudflare Tunnel Error] ${err?.message}`);
+    }
+  }
 } else {
   // Boot the main CLI logic
   const { runCli } = await import("./cliMain.js");

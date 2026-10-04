@@ -668,3 +668,52 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
   return false;
 }
 
+export interface BuildHttpsPromptOptions {
+  publicUrl: string;
+  localUrl: string;
+  token?: string;
+  port: number;
+}
+
+export function buildHttpsConnectionPrompt(opts: BuildHttpsPromptOptions): string {
+  const lines: string[] = [
+    `Superagent HTTP REST/SSE Server is accessible over Cloudflare HTTPS:`,
+    `- Public HTTPS URL : ${opts.publicUrl}`,
+    `- Local Target     : ${opts.localUrl}`,
+    `- Server Port      : ${opts.port}`,
+  ];
+  if (opts.token) {
+    lines.push(`- Bearer Token     : ${opts.token}`);
+    lines.push("");
+    lines.push("Test with curl:");
+    lines.push(`curl -H "Authorization: Bearer ${opts.token}" ${opts.publicUrl}/api/status`);
+  }
+  return lines.join("\n");
+}
+
+export function isServerRunningOnPort(port = 7888): boolean {
+  try {
+    const serverInfoPath = path.join(os.homedir(), ".superagent-r", "server-info.json");
+    if (fs.existsSync(serverInfoPath)) {
+      const data = JSON.parse(fs.readFileSync(serverInfoPath, "utf-8"));
+      if (data?.port === port && data?.pid && isProcessRunning(data.pid)) {
+        return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
+export async function ensureSuperagentServer(port = 7888): Promise<void> {
+  if (isServerRunningOnPort(port)) {
+    return;
+  }
+  try {
+    const { runServer } = await import("../../server.js");
+    await runServer(port, true, "tline");
+  } catch (err: any) {
+    logE2E("REMOTE-AGENT", `ensureSuperagentServer error: ${err?.message}`);
+  }
+}
+
+

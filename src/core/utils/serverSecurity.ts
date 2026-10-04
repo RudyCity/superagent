@@ -1,12 +1,14 @@
 import crypto from "crypto";
 import path from "path";
+import fs from "fs";
+import os from "os";
 import type http from "http";
 
-const LOCAL_ORIGIN_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+const ALLOWED_ORIGIN_PATTERN = /^https?:\/\/((localhost|127\.0\.0\.1)(:\d+)?|[a-zA-Z0-9-]+\.trycloudflare\.com)$/i;
 
 export function resolveCorsOrigin(origin: string | string[] | undefined): string | undefined {
   const value = Array.isArray(origin) ? origin[0] : origin;
-  return value && LOCAL_ORIGIN_PATTERN.test(value) ? value : undefined;
+  return value && ALLOWED_ORIGIN_PATTERN.test(value) ? value : undefined;
 }
 
 export function buildCorsHeaders(req: http.IncomingMessage): Record<string, string> {
@@ -29,6 +31,21 @@ export function ensureServerAuthToken(): string {
     serverAuthToken = crypto.randomBytes(24).toString("hex");
   }
   return serverAuthToken;
+}
+
+export function getServerAuthToken(): string {
+  if (serverAuthToken) return serverAuthToken;
+  try {
+    const serverInfoPath = path.join(os.homedir(), ".superagent-r", "server-info.json");
+    if (fs.existsSync(serverInfoPath)) {
+      const data = JSON.parse(fs.readFileSync(serverInfoPath, "utf-8"));
+      if (data?.authToken) {
+        serverAuthToken = data.authToken;
+        return serverAuthToken;
+      }
+    }
+  } catch {}
+  return ensureServerAuthToken();
 }
 
 function tokenMatches(supplied: string): boolean {

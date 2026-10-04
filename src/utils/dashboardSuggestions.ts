@@ -69,22 +69,28 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/muse tunnel": "Cloudflare Tunnel subcommands (list, start, stop, status) & setup guide",
   "/muse tunnel list": "List all currently active Cloudflare quick tunnels across all ports",
   "/muse tunnel start": "Start quick Cloudflare tunnel with copyable prompt (optional: --port <n>)",
+  "/muse tunnel start --https": "Start Cloudflare HTTPS tunnel for Superagent REST & SSE server (port 7888)",
   "/muse tunnel start --port": "Start quick Cloudflare tunnel on a custom local port (e.g. --port 9226)",
   "/muse tunnel stop": "Stop running quick ephemeral Cloudflare tunnel (optional: --port <n> or all)",
+  "/muse tunnel stop --https": "Stop active Cloudflare HTTPS tunnel for Superagent REST server (port 7888)",
   "/muse tunnel stop all": "Stop all running Cloudflare quick tunnels across all ports",
   "/muse tunnel stop --port": "Stop running Cloudflare quick tunnel on a specific port",
   "/muse tunnel status": "Check active Cloudflare quick development tunnel status (optional: --port <n>)",
+  "/muse tunnel status --https": "Check active Cloudflare HTTPS tunnel status for Superagent REST server (port 7888)",
   "/muse tunnel status --port": "Check Cloudflare quick development tunnel status on a specific port",
   "/muse tunnel guide": "View manual Cloudflare Tunnel setup guide",
   "/muse cloudflare": "Cloudflare Tunnel setup guide, quick test commands, and Bearer token generator",
   "/tunnel": "Manage Cloudflare quick tunnels (list, start, stop, status)",
   "/tunnel list": "List all currently active Cloudflare quick tunnels across all ports",
   "/tunnel start": "Start quick ephemeral Cloudflare tunnel (optional: --port <n>)",
+  "/tunnel start --https": "Start Cloudflare HTTPS tunnel for Superagent REST & SSE server (port 7888)",
   "/tunnel start --port": "Start quick Cloudflare tunnel on a custom local port (e.g. --port 9226)",
   "/tunnel stop": "Stop active Cloudflare quick tunnel (optional: --port <n> or all)",
+  "/tunnel stop --https": "Stop active Cloudflare HTTPS tunnel for Superagent REST server (port 7888)",
   "/tunnel stop all": "Stop all running Cloudflare quick tunnels across all ports",
   "/tunnel stop --port": "Stop running Cloudflare quick tunnel on a specific port",
   "/tunnel status": "Check active Cloudflare quick tunnel status (optional: --port <n>)",
+  "/tunnel status --https": "Check active Cloudflare HTTPS tunnel status for Superagent REST server (port 7888)",
   "/tunnel status --port": "Check Cloudflare quick tunnel status on a specific port",
   "/tunnel guide": "View manual Cloudflare Tunnel setup guide",
   "/tunnels": "List all currently active Cloudflare quick tunnels",
@@ -188,16 +194,20 @@ function getTunnelSubSuggestions(prefix: string, query: string): string[] {
   const baseSuggestions = [
     `${prefix} list`,
     `${prefix} start`,
+    `${prefix} start --https`,
     `${prefix} start --port`,
     `${prefix} stop`,
+    `${prefix} stop --https`,
     `${prefix} stop all`,
     `${prefix} status`,
+    `${prefix} status --https`,
     `${prefix} guide`,
   ];
 
   if (query.startsWith(`${prefix} stop`)) {
     const stopSuggestions = [
       `${prefix} stop all`,
+      `${prefix} stop --https`,
       `${prefix} stop --port`,
     ];
     try {
@@ -218,6 +228,7 @@ function getTunnelSubSuggestions(prefix: string, query: string): string[] {
   if (query.startsWith(`${prefix} start`)) {
     const startSuggestions = [
       `${prefix} start`,
+      `${prefix} start --https`,
       `${prefix} start --port`,
       `${prefix} start --port 9226`,
       `${prefix} start --port 9227`,
@@ -228,6 +239,7 @@ function getTunnelSubSuggestions(prefix: string, query: string): string[] {
   if (query.startsWith(`${prefix} status`)) {
     const statusSuggestions = [
       `${prefix} status`,
+      `${prefix} status --https`,
       `${prefix} status --port`,
     ];
     try {

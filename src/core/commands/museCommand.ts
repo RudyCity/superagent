@@ -116,14 +116,16 @@ export const museCommand: SlashCommand = {
 
     // /muse tunnel or /muse cloudflare
     if (subcommand === "tunnel" || subcommand === "cloudflare") {
-      const action = (parts[1] || "").toLowerCase();
+      const isHttps = parts.slice(1).some((p) => p.toLowerCase() === "--https" || p.toLowerCase() === "--http" || p.toLowerCase() === "--web");
+      const nonFlagParts = parts.slice(1).filter((p) => !p.startsWith("-"));
+      const action = (nonFlagParts[0] || (isHttps ? "start" : "")).toLowerCase();
       const cfg = loadRemoteAgentConfig();
       const host = cfg.wsHost || "127.0.0.1";
       const port = cfg.wsPort || 9225;
       const pathEndpoint = cfg.wsPath || "/muse";
       let token = cfg.wsToken;
 
-      if (!token) {
+      if (!token && !isHttps) {
         token = generateSecureWsToken();
         updateRemoteAgentConfig({ wsToken: token, transport: "websocket" });
         ctx.addLine({
@@ -161,7 +163,7 @@ export const museCommand: SlashCommand = {
       }
 
       if (action === "start" || action === "quick" || action === "run") {
-        const rawArgs = parts.slice(2);
+        const rawArgs = parts.slice(1).filter((p) => p.toLowerCase() !== action && p.toLowerCase() !== "tunnel" && p.toLowerCase() !== "cloudflare");
         const portArgIdx = rawArgs.findIndex((a) => a === "--port" || a === "-p");
         let portOverride: number | undefined;
         if (portArgIdx !== -1 && rawArgs[portArgIdx + 1]) {
@@ -171,17 +173,104 @@ export const museCommand: SlashCommand = {
 
         const initialTask = rawArgs
           .filter((a, idx, arr) => {
-            if (a === "--port" || a === "-p") return false;
+            if (a === "--port" || a === "-p" || a === "--https" || a === "--http" || a === "--web") return false;
             if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p")) return false;
             return true;
           })
           .join(" ")
           .trim();
 
-        const effectivePort = portOverride || port;
+        const effectivePort = portOverride || (isHttps ? 7888 : port);
         const watchedWorkspaces = getWatchedWorkspaces(cfg, ctx.agent?.workingDirectory);
         const existing = getTunnelStatus(effectivePort);
         const watcherActive = isMuseWatcherActive();
+
+        if (isHttps) {
+          const { getServerAuthToken } = await import("../utils/serverSecurity.js");
+          const { ensureSuperagentServer } = await import("../remoteAgent/cloudflareTunnel.js");
+
+          if (existing.isRunning) {
+            const serverToken = getServerAuthToken();
+            const curlSnippet = `curl -H "Authorization: Bearer ${serverToken}" ${existing.publicUrl}/api/status`;
+            const copied = await copyTextToClipboard(curlSnippet);
+
+            ctx.addLine({
+              type: "system",
+              content: [
+                "[Cloudflare HTTPS Tunnel] Quick tunnel and HTTP server are ALREADY ACTIVE:",
+                `- Public HTTPS URL : ${existing.publicUrl}`,
+                `- Local Target     : ${existing.localUrl || `http://${host}:${effectivePort}`}`,
+                `- Server Port      : ${effectivePort}`,
+                `- Process PID      : ${existing.pid}`,
+                `- Uptime           : ${existing.uptimeSeconds}s`,
+                `- Bearer Token     : ${serverToken}`,
+                "",
+                copied
+                  ? "Test with curl (copied to clipboard, ready to run):"
+                  : "Test with curl (copy & run):",
+                "-----------------------------------------------------------------------------",
+                curlSnippet,
+                "-----------------------------------------------------------------------------",
+                "",
+                `To stop the tunnel, run: /muse tunnel stop --https${portOverride ? ` --port ${portOverride}` : ""}`,
+              ].join("\n"),
+              timestamp: now,
+            });
+            return;
+          }
+
+          ctx.addLine({
+            type: "system",
+            content: `[Cloudflare HTTPS Tunnel] Starting Superagent HTTP REST/SSE server (port ${effectivePort}) and Cloudflare quick tunnel...`,
+            timestamp: now,
+          });
+
+          try {
+            await ensureSuperagentServer(effectivePort);
+            const serverToken = getServerAuthToken();
+
+            const meta = await startQuickTunnel({
+              port: effectivePort,
+              host: "127.0.0.1",
+              path: "",
+            });
+
+            const curlSnippet = `curl -H "Authorization: Bearer ${serverToken}" ${meta.publicUrl}/api/status`;
+            const copied = await copyTextToClipboard(curlSnippet);
+
+            ctx.addLine({
+              type: "system",
+              content: [
+                "═════════════════════════════════════════════════════════════════════════════",
+                "  Superagent HTTP REST/SSE Server & Cloudflare Quick Tunnel Online!",
+                "═════════════════════════════════════════════════════════════════════════════",
+                `- Public HTTPS URL : ${meta.publicUrl}`,
+                `- Local Target     : ${meta.localUrl}`,
+                `- Server Port      : ${effectivePort}`,
+                `- Process PID      : ${meta.pid}`,
+                `- Bearer Token     : ${serverToken}`,
+                "═════════════════════════════════════════════════════════════════════════════",
+                "",
+                copied
+                  ? "Test with curl (copied to clipboard, ready to run):"
+                  : "Test with curl (copy & run):",
+                "-----------------------------------------------------------------------------",
+                curlSnippet,
+                "-----------------------------------------------------------------------------",
+                "",
+                `To stop the tunnel, run: /muse tunnel stop --https${portOverride ? ` --port ${portOverride}` : ""}`,
+              ].join("\n"),
+              timestamp: Date.now(),
+            });
+          } catch (err: any) {
+            ctx.addLine({
+              type: "error",
+              content: `[Cloudflare HTTPS Tunnel Error] ${err?.message || String(err)}`,
+              timestamp: Date.now(),
+            });
+          }
+          return;
+        }
 
         if (existing.isRunning) {
           const musePrompt = buildMuseConnectionPrompt({
@@ -338,7 +427,7 @@ export const museCommand: SlashCommand = {
       }
 
       if (action === "stop") {
-        const rawArgs = parts.slice(2);
+        const rawArgs = parts.slice(1).filter((p) => p.toLowerCase() !== action && p.toLowerCase() !== "tunnel" && p.toLowerCase() !== "cloudflare");
         const isAll = rawArgs.includes("all") || rawArgs.includes("--all") || rawArgs.includes("-a");
         if (isAll) {
           if (isMuseWatcherActive()) {
@@ -360,7 +449,27 @@ export const museCommand: SlashCommand = {
           if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
         }
 
-        const effectivePort = portOverride || port;
+        const effectivePort = portOverride || (isHttps ? 7888 : port);
+
+        if (isHttps) {
+          const existing = getTunnelStatus(effectivePort);
+          if (existing.isRunning) {
+            await stopQuickTunnel(effectivePort);
+            ctx.addLine({
+              type: "system",
+              content: `[Cloudflare HTTPS Tunnel] Quick tunnel (port ${effectivePort}) stopped successfully.`,
+              timestamp: Date.now(),
+            });
+          } else {
+            ctx.addLine({
+              type: "system",
+              content: `[Cloudflare HTTPS Tunnel] No quick tunnel is currently running on port ${effectivePort}.`,
+              timestamp: now,
+            });
+          }
+          return;
+        }
+
         let stoppedAny = false;
         if (isMuseWatcherActive()) {
           await stopMuseWatcher();
@@ -388,7 +497,7 @@ export const museCommand: SlashCommand = {
       }
 
       if (action === "status") {
-        const rawArgs = parts.slice(2);
+        const rawArgs = parts.slice(1).filter((p) => p.toLowerCase() !== action && p.toLowerCase() !== "tunnel" && p.toLowerCase() !== "cloudflare");
         const portArgIdx = rawArgs.findIndex((a) => a === "--port" || a === "-p");
         let portOverride: number | undefined;
         if (portArgIdx !== -1 && rawArgs[portArgIdx + 1]) {
@@ -396,8 +505,40 @@ export const museCommand: SlashCommand = {
           if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
         }
 
-        const effectivePort = portOverride || port;
+        const effectivePort = portOverride || (isHttps ? 7888 : port);
         const existing = getTunnelStatus(effectivePort);
+
+        if (isHttps) {
+          const { getServerAuthToken } = await import("../utils/serverSecurity.js");
+          const serverToken = getServerAuthToken();
+          if (existing.isRunning) {
+            ctx.addLine({
+              type: "system",
+              content: [
+                `Cloudflare HTTPS Tunnel Status (port ${effectivePort}): ACTIVE`,
+                `- Public HTTPS URL : ${existing.publicUrl}`,
+                `- Local Target     : ${existing.localUrl || `http://${host}:${effectivePort}`}`,
+                `- Server Port      : ${effectivePort}`,
+                `- Process PID      : ${existing.pid}`,
+                `- Uptime           : ${existing.uptimeSeconds}s`,
+                `- Bearer Token     : ${serverToken}`,
+                "",
+                `Test: curl -H "Authorization: Bearer ${serverToken}" ${existing.publicUrl}/api/status`,
+                "",
+                `To stop it, run: /muse tunnel stop --https${portOverride ? ` --port ${portOverride}` : ""}`,
+              ].join("\n"),
+              timestamp: now,
+            });
+          } else {
+            ctx.addLine({
+              type: "system",
+              content: `Cloudflare HTTPS Tunnel Status (port ${effectivePort}): INACTIVE\nRun '/muse tunnel start --https' to launch.`,
+              timestamp: now,
+            });
+          }
+          return;
+        }
+
         const titlePrefix = portOverride
           ? `Cloudflare Quick Tunnel Status (port ${portOverride}):`
           : "Cloudflare Quick Tunnel Status:";
@@ -441,8 +582,11 @@ export const museCommand: SlashCommand = {
         "Subcommands:",
         "  /muse tunnel list            - List all currently active Cloudflare tunnels",
         "  /muse tunnel start           - Start quick ephemeral tunnel in background (optional: --port <n>)",
+        "  /muse tunnel start --https   - Start Cloudflare HTTPS tunnel for Superagent REST/SSE server (port 7888)",
         "  /muse tunnel stop            - Stop running quick tunnel (optional: --port <n> or all)",
+        "  /muse tunnel stop --https    - Stop Cloudflare HTTPS tunnel (port 7888)",
         "  /muse tunnel status          - Check current tunnel status (optional: --port <n>)",
+        "  /muse tunnel status --https  - Check Cloudflare HTTPS tunnel status (port 7888)",
         "  /muse tunnel guide           - View full manual Cloudflare setup guide",
         "",
         "1. Prerequisites:",

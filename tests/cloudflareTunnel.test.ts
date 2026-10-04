@@ -467,6 +467,125 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(descriptions["/tunnel stop all"]).toBeDefined();
       expect(descriptions["/muse tunnel stop all"]).toBeDefined();
     });
+
+    it("should provide autocomplete suggestions and descriptions for --https subcommands", () => {
+      const startSuggestions = getDashboardSuggestions("/tunnel start ");
+      expect(startSuggestions).toContain("/tunnel start --https");
+
+      const stopSuggestions = getDashboardSuggestions("/tunnel stop ");
+      expect(stopSuggestions).toContain("/tunnel stop --https");
+
+      const statusSuggestions = getDashboardSuggestions("/tunnel status ");
+      expect(statusSuggestions).toContain("/tunnel status --https");
+
+      const museStartSuggestions = getDashboardSuggestions("/muse tunnel start ");
+      expect(museStartSuggestions).toContain("/muse tunnel start --https");
+
+      const descriptions = getSuggestionDescriptions();
+      expect(descriptions["/tunnel start --https"]).toBeDefined();
+      expect(descriptions["/tunnel stop --https"]).toBeDefined();
+      expect(descriptions["/tunnel status --https"]).toBeDefined();
+      expect(descriptions["/muse tunnel start --https"]).toBeDefined();
+    });
+
+    it("should permit trycloudflare.com and localhost origins in resolveCorsOrigin for HTTPS tunnel", async () => {
+      const { resolveCorsOrigin } = await import("../src/core/utils/serverSecurity.js");
+      expect(resolveCorsOrigin("https://random-subdomain.trycloudflare.com")).toBe("https://random-subdomain.trycloudflare.com");
+      expect(resolveCorsOrigin("http://localhost:7888")).toBe("http://localhost:7888");
+      expect(resolveCorsOrigin("http://127.0.0.1:7888")).toBe("http://127.0.0.1:7888");
+      expect(resolveCorsOrigin("https://evil-hacker.com")).toBeUndefined();
+    });
+
+    it("should report HTTPS tunnel status and existing session via /muse tunnel start --https", async () => {
+      const { saveTunnelState, clearTunnelState } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+      saveTunnelState({
+        pid: process.pid,
+        publicUrl: "https://my-https-agent.trycloudflare.com",
+        wssUrl: "wss://my-https-agent.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:7888",
+        port: 7888,
+        startedAt: Date.now() - 5000,
+      }, 7888);
+
+      const lines: any[] = [];
+      await museCommand.execute("tunnel start --https", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(lines.length).toBeGreaterThan(0);
+      const text = lines.map((l) => l.content).join("\n");
+      expect(text).toContain("https://my-https-agent.trycloudflare.com");
+      expect(text).toContain("7888");
+      expect(text).toContain("curl -H");
+
+      clearTunnelState(7888);
+    });
+
+    it("should handle /tunnel status --https and /tunnel stop --https", async () => {
+      const { saveTunnelState, clearTunnelState, cloudflareTunnel } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+      const { tunnelCommand } = await import("../src/core/commands/museCommand.js");
+
+      saveTunnelState({
+        pid: process.pid,
+        publicUrl: "https://my-status-tunnel.trycloudflare.com",
+        wssUrl: "wss://my-status-tunnel.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:7888",
+        port: 7888,
+        startedAt: Date.now() - 3000,
+      }, 7888);
+
+      const statusLines: any[] = [];
+      await tunnelCommand.execute("status --https", {
+        addLine: (line) => statusLines.push(line),
+        exit: () => {},
+      } as any);
+
+      const statusText = statusLines.map((l) => l.content).join("\n");
+      expect(statusText).toContain("ACTIVE");
+      expect(statusText).toContain("https://my-status-tunnel.trycloudflare.com");
+
+      const stopSpy = vi.spyOn(cloudflareTunnel, "stopQuickTunnel").mockResolvedValue(true);
+      const stopLines: any[] = [];
+      await tunnelCommand.execute("stop --https", {
+        addLine: (line) => stopLines.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(stopSpy).toHaveBeenCalledWith(7888);
+      stopSpy.mockRestore();
+      clearTunnelState(7888);
+    });
+
+    it("should handle CLI command superagent muse tunnel status --https", async () => {
+      const { saveTunnelState, clearTunnelState } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+      const { handleMuseCliCommand } = await import("../src/core/remoteAgent/museCli.js");
+
+      saveTunnelState({
+        pid: process.pid,
+        publicUrl: "https://cli-test-https.trycloudflare.com",
+        wssUrl: "wss://cli-test-https.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:7888",
+        port: 7888,
+        startedAt: Date.now() - 4000,
+      }, 7888);
+
+      const logs: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: any[]) => logs.push(args.join(" "));
+
+      try {
+        await handleMuseCliCommand(["tunnel", "status", "--https"]);
+      } finally {
+        console.log = origLog;
+        clearTunnelState(7888);
+      }
+
+      const logText = logs.join("\n");
+      expect(logText).toContain("ACTIVE");
+      expect(logText).toContain("https://cli-test-https.trycloudflare.com");
+      expect(logText).toContain("7888");
+    });
   });
 });
 

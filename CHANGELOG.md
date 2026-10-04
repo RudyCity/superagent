@@ -1,3 +1,15 @@
+## [1.5.137] - 2026-10-04
+
+### Added
+
+- **Unified Cloudflare HTTPS Tunnel Support for Superagent REST/SSE Server (`--https`)**:
+  - Added `--https` flag support across `/muse tunnel start --https`, `/tunnel start --https`, `superagent muse tunnel start --https`, and `superagent tunnel start --https`.
+  - Added `--tunnel` flag support directly to `superagent --server` CLI command (`superagent --server <port> --tunnel`) to boot the HTTP server and automatically launch the Cloudflare quick tunnel in one unified command.
+  - Automatically manages the Superagent HTTP REST/SSE server (port 7888) with Bearer token authentication via `serverSecurity.ts`.
+  - Added trycloudflare.com origin support in `resolveCorsOrigin` to allow secure cross-origin requests from web clients through Cloudflare quick tunnels.
+  - Added autocomplete suggestions and descriptions for `/tunnel start --https`, `/tunnel stop --https`, `/tunnel status --https`, `/muse tunnel start --https`, `/muse tunnel stop --https`, and `/muse tunnel status --https`.
+  - Added unit test suite in `tests/cloudflareTunnel.test.ts` covering `--https` slash commands, CLI handlers, CORS origin resolution, and autocomplete suggestions.
+
 ## [1.5.136] - 2026-10-04
 
 ### Added
