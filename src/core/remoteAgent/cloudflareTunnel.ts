@@ -15,6 +15,8 @@ export interface TunnelMetadata {
   localUrl: string;
   port: number;
   startedAt: number;
+  workspace?: string;
+  workspaces?: string[];
 }
 export interface TunnelStatus {
   isRunning: boolean;
@@ -25,6 +27,8 @@ export interface TunnelStatus {
   port?: number;
   startedAt?: number;
   uptimeSeconds?: number;
+  workspace?: string;
+  workspaces?: string[];
   error?: string;
 }
 
@@ -36,6 +40,8 @@ export interface ActiveTunnelInfo {
   localUrl: string;
   startedAt: number;
   uptimeSeconds: number;
+  workspace?: string;
+  workspaces?: string[];
 }
 
 
@@ -45,6 +51,8 @@ export interface StartTunnelOptions {
   path?: string;
   timeoutMs?: number;
   customConfigPath?: string;
+  workspace?: string;
+  workspaces?: string[];
   onLog?: (line: string) => void;
   onUrlDetected?: (publicUrl: string, wssUrl: string) => void;
 }
@@ -72,20 +80,41 @@ export function saveTunnelState(meta: TunnelMetadata, port?: number): void {
   } catch {}
 }
 
-export function readTunnelState(port?: number): TunnelMetadata | null {
+export function readTunnelState(portOrWorkspace?: number | string): TunnelMetadata | null {
   try {
-    if (port) {
-      const portFile = getTunnelStateFile(port);
+    const dir = path.join(os.homedir(), ".superagent-r");
+    if (typeof portOrWorkspace === "number") {
+      const portFile = getTunnelStateFile(portOrWorkspace);
       if (fs.existsSync(portFile)) {
         const raw = fs.readFileSync(portFile, "utf-8");
         return JSON.parse(raw);
+      }
+    } else if (typeof portOrWorkspace === "string" && portOrWorkspace.trim()) {
+      const targetWs = path.resolve(portOrWorkspace);
+      if (fs.existsSync(dir)) {
+        const files = fs.readdirSync(dir);
+        for (const f of files) {
+          if (f === "tunnel.json" || /^tunnel-\d+\.json$/.test(f)) {
+            try {
+              const raw = fs.readFileSync(path.join(dir, f), "utf-8");
+              const meta = JSON.parse(raw);
+              if (
+                meta &&
+                ((meta.workspace && path.resolve(meta.workspace) === targetWs) ||
+                 (meta.workspaces && meta.workspaces.some((w: string) => path.resolve(w) === targetWs)))
+              ) {
+                return meta;
+              }
+            } catch {}
+          }
+        }
       }
     }
     const file = getTunnelStateFile();
     if (!fs.existsSync(file)) return null;
     const raw = fs.readFileSync(file, "utf-8");
     const parsed = JSON.parse(raw);
-    if (port && parsed?.port && parsed.port !== port) {
+    if (typeof portOrWorkspace === "number" && parsed?.port && parsed.port !== portOrWorkspace) {
       return null;
     }
     return parsed;
@@ -94,34 +123,36 @@ export function readTunnelState(port?: number): TunnelMetadata | null {
   }
 }
 
-export function clearTunnelState(port?: number): void {
+export function clearTunnelState(port?: number | "all"): void {
   try {
     const dir = path.join(os.homedir(), ".superagent-r");
-    if (port) {
+    if (typeof port === "number") {
       const portFile = getTunnelStateFile(port);
       if (fs.existsSync(portFile)) {
         fs.unlinkSync(portFile);
       }
-    } else if (fs.existsSync(dir)) {
-      const files = fs.readdirSync(dir);
-      for (const f of files) {
-        if (f === "tunnel.json" || /^tunnel-\d+\.json$/.test(f)) {
-          try {
-            fs.unlinkSync(path.join(dir, f));
-          } catch {}
+      const defaultFile = path.join(dir, "tunnel.json");
+      if (fs.existsSync(defaultFile)) {
+        try {
+          const raw = fs.readFileSync(defaultFile, "utf-8");
+          const parsed = JSON.parse(raw);
+          if (parsed?.port === port) {
+            fs.unlinkSync(defaultFile);
+          }
+        } catch {
+          fs.unlinkSync(defaultFile);
         }
       }
-    }
-    const file = getTunnelStateFile();
-    if (fs.existsSync(file)) {
-      try {
-        const raw = fs.readFileSync(file, "utf-8");
-        const parsed = JSON.parse(raw);
-        if (!port || parsed?.port === port) {
-          fs.unlinkSync(file);
+    } else if (port === "all" || port === undefined) {
+      if (fs.existsSync(dir)) {
+        const files = fs.readdirSync(dir);
+        for (const f of files) {
+          if (f === "tunnel.json" || /^tunnel-\d+\.json$/.test(f)) {
+            try {
+              fs.unlinkSync(path.join(dir, f));
+            } catch {}
+          }
         }
-      } catch {
-        fs.unlinkSync(file);
       }
     }
   } catch {}
@@ -200,6 +231,8 @@ export async function findCloudflaredBinary(): Promise<string | null> {
 
 export class CloudflareTunnelManager {
   private static instance: CloudflareTunnelManager | null = null;
+  private activeProcesses = new Map<number, ChildProcess>();
+  private activeMetadata = new Map<number, TunnelMetadata>();
   private currentProcess: ChildProcess | null = null;
   private currentMetadata: TunnelMetadata | null = null;
 
@@ -219,20 +252,20 @@ export class CloudflareTunnelManager {
     const host = options.host || cfg.wsHost || "127.0.0.1";
     const port = options.port || cfg.wsPort || 9225;
     const wsPath = options.path || cfg.wsPath || "/muse";
+    const workspace = options.workspace || (options.workspaces && options.workspaces[0]) || process.cwd();
+    const workspaces = options.workspaces && options.workspaces.length > 0 ? options.workspaces : [workspace];
 
     // Check if in-process instance is active for this port
-    if (
-      this.currentProcess &&
-      this.currentMetadata &&
-      (!this.currentMetadata.port || this.currentMetadata.port === port) &&
-      isProcessRunning(this.currentMetadata.pid)
-    ) {
-      return this.currentMetadata;
+    const inProcChild = this.activeProcesses.get(port);
+    const inProcMeta = this.activeMetadata.get(port);
+    if (inProcChild && inProcMeta && inProcMeta.pid && isProcessRunning(inProcMeta.pid)) {
+      return inProcMeta;
     }
 
     // Check if an external detached instance is active for this port
     const persisted = readTunnelState(port);
     if (persisted && isProcessRunning(persisted.pid)) {
+      this.activeMetadata.set(port, persisted);
       this.currentMetadata = persisted;
       return persisted;
     }
@@ -259,6 +292,7 @@ export class CloudflareTunnelManager {
         windowsHide: true,
       });
 
+      this.activeProcesses.set(port, child);
       this.currentProcess = child;
 
       const exitHandler = () => {
@@ -282,7 +316,7 @@ export class CloudflareTunnelManager {
       const timeoutTimer = setTimeout(() => {
         if (!isResolved) {
           isResolved = true;
-          this.stopQuickTunnel().catch(() => {});
+          this.stopQuickTunnel(port).catch(() => {});
           reject(
             new Error(
               `Timed out after ${Math.round(timeoutMs / 1000)}s waiting for Cloudflare Tunnel URL.`
@@ -310,9 +344,12 @@ export class CloudflareTunnelManager {
               wssUrl,
               localUrl: localTarget,
               port,
+              workspace,
+              workspaces,
               startedAt: Date.now(),
             };
 
+            this.activeMetadata.set(port, meta);
             this.currentMetadata = meta;
             saveTunnelState(meta);
 
@@ -334,16 +371,26 @@ export class CloudflareTunnelManager {
         if (!isResolved) {
           isResolved = true;
           clearTimeout(timeoutTimer);
-          clearTunnelState();
+          clearTunnelState(port);
+          this.activeProcesses.delete(port);
+          this.activeMetadata.delete(port);
+          if (this.currentProcess === child) {
+            this.currentProcess = null;
+            this.currentMetadata = null;
+          }
           reject(new Error(`Failed to spawn cloudflared: ${err.message}`));
         }
       });
 
       child.on("close", (code) => {
         process.removeListener("exit", exitHandler);
-        clearTunnelState();
-        this.currentProcess = null;
-        this.currentMetadata = null;
+        clearTunnelState(port);
+        this.activeProcesses.delete(port);
+        this.activeMetadata.delete(port);
+        if (this.currentProcess === child) {
+          this.currentProcess = null;
+          this.currentMetadata = null;
+        }
         if (!isResolved) {
           isResolved = true;
           clearTimeout(timeoutTimer);
@@ -365,51 +412,74 @@ export class CloudflareTunnelManager {
 
     let stopped = false;
 
-    if (this.currentProcess) {
-      if (!port || this.currentMetadata?.port === port) {
-        try {
-          if (this.currentProcess.pid) {
-            if (process.platform === "win32") {
-              try {
-                execSync(`taskkill /pid ${this.currentProcess.pid} /T /F`, { stdio: "ignore" });
-              } catch {
-                this.currentProcess.kill("SIGTERM");
-              }
-            } else {
-              this.currentProcess.kill("SIGTERM");
-            }
-          } else {
-            this.currentProcess.kill("SIGTERM");
-          }
-          stopped = true;
-        } catch {}
-        this.currentProcess = null;
+    // Determine target ports to stop
+    const targetPorts: number[] = [];
+    if (typeof port === "number") {
+      targetPorts.push(port);
+    } else {
+      // If port is not specified, stop all in-process tunnels or fallback to active tunnels
+      if (this.activeProcesses.size > 0) {
+        targetPorts.push(...Array.from(this.activeProcesses.keys()));
+      } else {
+        const persisted = readTunnelState();
+        if (persisted?.port) {
+          targetPorts.push(persisted.port);
+        }
       }
     }
 
-    const persisted = readTunnelState(port);
-    if (persisted && persisted.pid) {
-      try {
-        if (isProcessRunning(persisted.pid)) {
-          if (process.platform === "win32") {
-            try {
-              await execa("taskkill", ["/pid", String(persisted.pid), "/T", "/F"]);
-            } catch {
-              process.kill(persisted.pid, "SIGTERM");
+    for (const p of targetPorts) {
+      const proc = this.activeProcesses.get(p);
+      if (proc) {
+        try {
+          if (proc.pid) {
+            if (process.platform === "win32") {
+              try {
+                execSync(`taskkill /pid ${proc.pid} /T /F`, { stdio: "ignore" });
+              } catch {
+                proc.kill("SIGTERM");
+              }
+            } else {
+              proc.kill("SIGTERM");
             }
           } else {
-            process.kill(persisted.pid, "SIGTERM");
+            proc.kill("SIGTERM");
           }
           stopped = true;
+        } catch {}
+        this.activeProcesses.delete(p);
+        this.activeMetadata.delete(p);
+        if (this.currentProcess === proc) {
+          this.currentProcess = null;
+          this.currentMetadata = null;
         }
-      } catch {}
-      clearTunnelState(persisted.port || port);
+      }
+
+      const persisted = readTunnelState(p);
+      if (persisted && persisted.pid) {
+        try {
+          if (isProcessRunning(persisted.pid)) {
+            if (process.platform === "win32") {
+              try {
+                await execa("taskkill", ["/pid", String(persisted.pid), "/T", "/F"]);
+              } catch {
+                process.kill(persisted.pid, "SIGTERM");
+              }
+            } else {
+              process.kill(persisted.pid, "SIGTERM");
+            }
+            stopped = true;
+          }
+        } catch {}
+        clearTunnelState(p);
+      }
     }
 
-    if (!port || this.currentMetadata?.port === port) {
-      this.currentMetadata = null;
+    if (typeof port === "number") {
+      logE2E("REMOTE-AGENT", `Cloudflare quick tunnel stopped (port ${port}).`);
+    } else {
+      logE2E("REMOTE-AGENT", `Cloudflare quick tunnel stopped.`);
     }
-    logE2E("REMOTE-AGENT", `Cloudflare quick tunnel stopped${port ? ` (port ${port})` : ""}.`);
     return stopped;
   }
 
@@ -421,23 +491,21 @@ export class CloudflareTunnelManager {
     const activeMap = new Map<number, ActiveTunnelInfo>();
 
     // 1. Check in-memory metadata if running in this process
-    if (
-      this.currentMetadata &&
-      this.currentProcess &&
-      this.currentProcess.pid &&
-      isProcessRunning(this.currentProcess.pid)
-    ) {
-      const meta = this.currentMetadata;
-      const uptime = Math.floor((Date.now() - meta.startedAt) / 1000);
-      activeMap.set(meta.port, {
-        port: meta.port,
-        pid: meta.pid,
-        publicUrl: meta.publicUrl,
-        wssUrl: meta.wssUrl,
-        localUrl: meta.localUrl,
-        startedAt: meta.startedAt,
-        uptimeSeconds: Math.max(0, uptime),
-      });
+    for (const [p, meta] of this.activeMetadata.entries()) {
+      if (meta && meta.pid && isProcessRunning(meta.pid)) {
+        const uptime = Math.floor((Date.now() - meta.startedAt) / 1000);
+        activeMap.set(meta.port, {
+          port: meta.port,
+          pid: meta.pid,
+          publicUrl: meta.publicUrl,
+          wssUrl: meta.wssUrl,
+          localUrl: meta.localUrl,
+          workspace: meta.workspace,
+          workspaces: meta.workspaces,
+          startedAt: meta.startedAt,
+          uptimeSeconds: Math.max(0, uptime),
+        });
+      }
     }
 
     // 2. Scan ~/.superagent-r directory for tunnel state files
@@ -471,6 +539,8 @@ export class CloudflareTunnelManager {
                       publicUrl: meta.publicUrl,
                       wssUrl: meta.wssUrl,
                       localUrl: meta.localUrl,
+                      workspace: meta.workspace,
+                      workspaces: meta.workspaces,
                       startedAt: meta.startedAt,
                       uptimeSeconds: Math.max(0, uptime),
                     });
@@ -512,9 +582,8 @@ export class CloudflareTunnelManager {
    */
   public getStatus(port?: number): TunnelStatus {
     const meta =
-      this.currentMetadata && (!port || this.currentMetadata.port === port)
-        ? this.currentMetadata
-        : readTunnelState(port);
+      (port ? this.activeMetadata.get(port) : this.currentMetadata) ||
+      readTunnelState(port);
     if (!meta || !meta.pid) {
       return { isRunning: false };
     }
@@ -522,6 +591,10 @@ export class CloudflareTunnelManager {
     const alive = isProcessRunning(meta.pid);
     if (!alive) {
       clearTunnelState(meta.port || port);
+      if (meta.port) {
+        this.activeProcesses.delete(meta.port);
+        this.activeMetadata.delete(meta.port);
+      }
       return { isRunning: false };
     }
 
@@ -533,6 +606,8 @@ export class CloudflareTunnelManager {
       wssUrl: meta.wssUrl,
       localUrl: meta.localUrl,
       port: meta.port,
+      workspace: meta.workspace,
+      workspaces: meta.workspaces,
       startedAt: meta.startedAt,
       uptimeSeconds: uptime,
     };
@@ -581,6 +656,9 @@ export function formatActiveTunnels(tunnels: ActiveTunnelInfo[]): string {
       `   - WSS Endpoint : ${t.wssUrl}`,
       `   - Local Target : ${t.localUrl}`,
     );
+    if (t.workspace) {
+      lines.push(`   - Workspace    : ${t.workspace}`);
+    }
   });
 
   lines.push(
@@ -693,9 +771,11 @@ export function buildHttpsConnectionPrompt(opts: BuildHttpsPromptOptions): strin
 
 export function isServerRunningOnPort(port = 7888): boolean {
   try {
+    const specificPath = path.join(os.homedir(), ".superagent-r", `server-info-${port}.json`);
     const serverInfoPath = path.join(os.homedir(), ".superagent-r", "server-info.json");
-    if (fs.existsSync(serverInfoPath)) {
-      const data = JSON.parse(fs.readFileSync(serverInfoPath, "utf-8"));
+    const targetPath = fs.existsSync(specificPath) ? specificPath : serverInfoPath;
+    if (fs.existsSync(targetPath)) {
+      const data = JSON.parse(fs.readFileSync(targetPath, "utf-8"));
       if (data?.port === port && data?.pid && isProcessRunning(data.pid)) {
         return true;
       }

@@ -33,15 +33,28 @@ export function ensureServerAuthToken(): string {
   return serverAuthToken;
 }
 
-export function getServerAuthToken(): string {
+export function getServerAuthToken(port?: number): string {
+  if (port) {
+    try {
+      const portServerInfoPath = path.join(os.homedir(), ".superagent-r", `server-info-${port}.json`);
+      if (fs.existsSync(portServerInfoPath)) {
+        const data = JSON.parse(fs.readFileSync(portServerInfoPath, "utf-8"));
+        if (data?.authToken) {
+          return data.authToken;
+        }
+      }
+    } catch {}
+  }
   if (serverAuthToken) return serverAuthToken;
   try {
     const serverInfoPath = path.join(os.homedir(), ".superagent-r", "server-info.json");
     if (fs.existsSync(serverInfoPath)) {
       const data = JSON.parse(fs.readFileSync(serverInfoPath, "utf-8"));
       if (data?.authToken) {
-        serverAuthToken = data.authToken;
-        return serverAuthToken;
+        if (!port || data.port === port) {
+          serverAuthToken = data.authToken;
+          return serverAuthToken;
+        }
       }
     }
   } catch {}

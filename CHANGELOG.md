@@ -1,3 +1,17 @@
+## [1.5.141] - 2026-10-05
+
+### Fixed & Improved
+
+- **Multi-Project & Multi-Port Tunnel Isolation**:
+  - Fixed an issue where starting a Cloudflare quick tunnel in one project terminated or collided with tunnels running in other projects on different ports.
+  - Refactored `CloudflareTunnelManager` in `cloudflareTunnel.ts` to track active processes and metadata in a `Map<number, ChildProcess>` and `Map<number, TunnelMetadata>` keyed by port instead of singleton variables.
+  - Enhanced tunnel state persistence to store metadata per port in `~/.superagent-r/tunnel-${port}.json` with workspace directory attribution, supporting lookups by both port and workspace directory.
+  - Refactored `clearTunnelState(port)` to delete only the targeted port's state file (`tunnel-${port}.json`), eliminating accidental wipeouts of other active project tunnels.
+  - Updated `MuseWatcher` registry in `museWatcher.ts` to support multiple concurrent watchers keyed by port, preventing watchers in different projects from terminating or overriding each other.
+  - Updated `museCommand.ts` and `museCli.ts` to pass `effectivePort` when starting, checking, or stopping tunnels and watchers instead of relying on default ports or un-parameterized operations.
+  - Updated `server.ts` and `serverSecurity.ts` to persist and retrieve port-specific server authentication tokens via `server-info-${port}.json`, ensuring independent security credentials across multiple server instances.
+  - Added unit test suite in `tests/cloudflareTunnel.test.ts` verifying concurrent multi-project and multi-port tunnel isolation, selective state clearing, workspace attribution, and multi-watcher management.
+
 ## [1.5.140] - 2026-10-04
 
 ### Added & Improved

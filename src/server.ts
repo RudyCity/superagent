@@ -648,6 +648,12 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       try {
         closeHistoryDb();
       } catch {}
+      try {
+        const portServerInfoPath = path.join(getRootConfigDir(), `server-info-${port}.json`);
+        if (fs.existsSync(portServerInfoPath)) {
+          fs.unlinkSync(portServerInfoPath);
+        }
+      } catch {}
     };
     process.on("exit", cleanup);
     process.on("SIGINT", () => { cleanup(); process.exit(0); });
@@ -676,6 +682,12 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       killVisionServerProcess();
       try {
         closeHistoryDb();
+      } catch {}
+      try {
+        const portServerInfoPath = path.join(getRootConfigDir(), `server-info-${port}.json`);
+        if (fs.existsSync(portServerInfoPath)) {
+          fs.unlinkSync(portServerInfoPath);
+        }
       } catch {}
     };
     process.on("exit", cleanup);
@@ -782,12 +794,15 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   server.listen(port, '127.0.0.1', () => {
     try {
       const serverInfoPath = path.join(getRootConfigDir(), "server-info.json");
-      fs.writeFileSync(serverInfoPath, JSON.stringify({
+      const portServerInfoPath = path.join(getRootConfigDir(), `server-info-${port}.json`);
+      const infoPayload = JSON.stringify({
         port,
         pid: process.pid,
         authToken: serverAuthToken,
         startedAt: Date.now()
-      }, null, 2), "utf-8");
+      }, null, 2);
+      fs.writeFileSync(serverInfoPath, infoPayload, "utf-8");
+      fs.writeFileSync(portServerInfoPath, infoPayload, "utf-8");
     } catch {}
     logToSuperAgentServerFile(`[SERVER] Auth token: ${serverAuthToken}`);
     if (!silent) {

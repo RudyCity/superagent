@@ -321,7 +321,7 @@ if (serverIndex !== -1) {
       const { getServerAuthToken } = await import("./core/utils/serverSecurity.js");
       console.log(`[Cloudflare Tunnel] Starting quick HTTPS tunnel for port ${port}...`);
       const meta = await startQuickTunnel({ port, host: "127.0.0.1", path: "" });
-      const token = getServerAuthToken();
+      const token = getServerAuthToken(port);
       console.log("");
       console.log("═════════════════════════════════════════════════════════════════════════════");
       console.log("  Superagent HTTP REST/SSE Server & Cloudflare Quick Tunnel Online!");

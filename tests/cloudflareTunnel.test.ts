@@ -663,6 +663,206 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       clearTunnelState(7888);
     });
   });
+
+  describe("Multi-Project Multi-Port Tunnel Isolation", () => {
+    const wsA = path.join(os.tmpdir(), "project-alpha");
+    const wsB = path.join(os.tmpdir(), "project-beta");
+
+    afterEach(() => {
+      clearTunnelState(9225);
+      clearTunnelState(9226);
+      clearTunnelState(7888);
+      clearTunnelState(7889);
+    });
+
+    it("should store and retrieve isolated state for distinct projects on distinct ports", () => {
+      const metaA = {
+        pid: process.pid,
+        publicUrl: "https://project-a.trycloudflare.com",
+        wssUrl: "wss://project-a.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:9225",
+        port: 9225,
+        workspace: wsA,
+        workspaces: [wsA],
+        startedAt: Date.now() - 5000,
+      };
+
+      const metaB = {
+        pid: process.pid,
+        publicUrl: "https://project-b.trycloudflare.com",
+        wssUrl: "wss://project-b.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:9226",
+        port: 9226,
+        workspace: wsB,
+        workspaces: [wsB],
+        startedAt: Date.now() - 3000,
+      };
+
+      saveTunnelState(metaA, 9225);
+      saveTunnelState(metaB, 9226);
+
+      // Lookup by port
+      const retrievedA = readTunnelState(9225);
+      const retrievedB = readTunnelState(9226);
+
+      expect(retrievedA).toBeDefined();
+      expect(retrievedA?.port).toBe(9225);
+      expect(retrievedA?.workspace).toBe(wsA);
+      expect(retrievedA?.publicUrl).toBe("https://project-a.trycloudflare.com");
+
+      expect(retrievedB).toBeDefined();
+      expect(retrievedB?.port).toBe(9226);
+      expect(retrievedB?.workspace).toBe(wsB);
+      expect(retrievedB?.publicUrl).toBe("https://project-b.trycloudflare.com");
+
+      // Lookup by workspace path
+      const lookupWsA = readTunnelState(wsA);
+      const lookupWsB = readTunnelState(wsB);
+
+      expect(lookupWsA).toBeDefined();
+      expect(lookupWsA?.port).toBe(9225);
+      expect(lookupWsB).toBeDefined();
+      expect(lookupWsB?.port).toBe(9226);
+    });
+
+    it("should clear tunnel state for only the specified port without affecting other projects", () => {
+      const metaA = {
+        pid: process.pid,
+        publicUrl: "https://project-a.trycloudflare.com",
+        wssUrl: "wss://project-a.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:9225",
+        port: 9225,
+        workspace: wsA,
+        startedAt: Date.now(),
+      };
+
+      const metaB = {
+        pid: process.pid,
+        publicUrl: "https://project-b.trycloudflare.com",
+        wssUrl: "wss://project-b.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:9226",
+        port: 9226,
+        workspace: wsB,
+        startedAt: Date.now(),
+      };
+
+      saveTunnelState(metaA, 9225);
+      saveTunnelState(metaB, 9226);
+
+      // Clear only port 9225
+      clearTunnelState(9225);
+
+      expect(readTunnelState(9225)).toBeNull();
+      const preservedB = readTunnelState(9226);
+      expect(preservedB).toBeDefined();
+      expect(preservedB?.port).toBe(9226);
+      expect(preservedB?.publicUrl).toBe("https://project-b.trycloudflare.com");
+    });
+
+    it("should format active tunnels displaying workspaces for multiple concurrent projects", async () => {
+      const { formatActiveTunnels } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+
+      const activeList = [
+        {
+          port: 9225,
+          pid: process.pid,
+          publicUrl: "https://alpha.trycloudflare.com",
+          wssUrl: "wss://alpha.trycloudflare.com/muse",
+          localUrl: "http://127.0.0.1:9225",
+          workspace: wsA,
+          startedAt: Date.now(),
+          uptimeSeconds: 120,
+        },
+        {
+          port: 9226,
+          pid: process.pid,
+          publicUrl: "https://beta.trycloudflare.com",
+          wssUrl: "wss://beta.trycloudflare.com/muse",
+          localUrl: "http://127.0.0.1:9226",
+          workspace: wsB,
+          startedAt: Date.now(),
+          uptimeSeconds: 60,
+        },
+      ];
+
+      const formatted = formatActiveTunnels(activeList);
+      expect(formatted).toContain("Active Cloudflare Quick Tunnels (2):");
+      expect(formatted).toContain("Port 9225");
+      expect(formatted).toContain("Port 9226");
+      expect(formatted).toContain(wsA);
+      expect(formatted).toContain(wsB);
+    });
+
+    it("should isolate server tokens across multiple server ports", async () => {
+      const { getServerAuthToken } = await import("../src/core/utils/serverSecurity.js");
+      const dir = path.join(os.homedir(), ".superagent-r");
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+      const file7888 = path.join(dir, "server-info-7888.json");
+      const file7889 = path.join(dir, "server-info-7889.json");
+
+      fs.writeFileSync(file7888, JSON.stringify({ port: 7888, authToken: "token-7888", pid: process.pid }), "utf-8");
+      fs.writeFileSync(file7889, JSON.stringify({ port: 7889, authToken: "token-7889", pid: process.pid }), "utf-8");
+
+      try {
+        const tokenA = getServerAuthToken(7888);
+        const tokenB = getServerAuthToken(7889);
+
+        expect(tokenA).toBe("token-7888");
+        expect(tokenB).toBe("token-7889");
+      } finally {
+        try { fs.unlinkSync(file7888); } catch {}
+        try { fs.unlinkSync(file7889); } catch {}
+      }
+    });
+
+    it("should manage separate Muse watchers per port without terminating each other", async () => {
+      const { startMuseWatcher, stopMuseWatcher, isMuseWatcherActive } = await import("../src/core/remoteAgent/museWatcher.js");
+
+      // Mock transport to avoid real network/telegram calls
+      const mockTransportA = {
+        type: "websocket" as const,
+        start: vi.fn().mockResolvedValue(undefined),
+        stop: vi.fn().mockResolvedValue(undefined),
+        sendEnvelope: vi.fn().mockResolvedValue(undefined),
+        getTransportInfo: vi.fn().mockReturnValue({ type: "websocket", details: "Mock A" }),
+      };
+
+      const mockTransportB = {
+        type: "websocket" as const,
+        start: vi.fn().mockResolvedValue(undefined),
+        stop: vi.fn().mockResolvedValue(undefined),
+        sendEnvelope: vi.fn().mockResolvedValue(undefined),
+        getTransportInfo: vi.fn().mockReturnValue({ type: "websocket", details: "Mock B" }),
+      };
+
+      const watcherA = await startMuseWatcher({
+        wsPort: 9225,
+        transport: mockTransportA as any,
+        announce: false,
+        workspace: wsA,
+      });
+
+      const watcherB = await startMuseWatcher({
+        wsPort: 9226,
+        transport: mockTransportB as any,
+        announce: false,
+        workspace: wsB,
+      });
+
+      expect(isMuseWatcherActive(9225)).toBe(true);
+      expect(isMuseWatcherActive(9226)).toBe(true);
+
+      // Stopping watcher A on 9225 should NOT stop watcher B on 9226
+      await stopMuseWatcher(9225);
+
+      expect(isMuseWatcherActive(9225)).toBe(false);
+      expect(isMuseWatcherActive(9226)).toBe(true);
+
+      await stopMuseWatcher(9226);
+      expect(isMuseWatcherActive(9226)).toBe(false);
+    });
+  });
 });
 
 

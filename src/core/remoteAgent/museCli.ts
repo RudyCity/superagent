@@ -161,7 +161,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         const { ensureSuperagentServer } = await import("./cloudflareTunnel.js");
 
         if (existing.isRunning) {
-          const serverToken = getServerAuthToken();
+          const serverToken = getServerAuthToken(effectivePort);
           const curlSnippet = `curl -H "Authorization: Bearer ${serverToken}" ${existing.publicUrl}/api/status`;
           console.log("[Cloudflare HTTPS Tunnel] Quick tunnel and HTTP server are already ACTIVE:");
           console.log(`  Public HTTPS URL  : ${existing.publicUrl}`);
@@ -182,7 +182,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         console.log(`[Cloudflare HTTPS Tunnel] Starting Superagent HTTP REST/SSE server (port ${effectivePort}) and Cloudflare quick tunnel...`);
 
         await ensureSuperagentServer(effectivePort);
-        const serverToken = getServerAuthToken();
+        const serverToken = getServerAuthToken(effectivePort);
 
         const meta = await startQuickTunnel({
           port: effectivePort,
@@ -269,8 +269,8 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
       console.log("[Cloudflare Tunnel] Starting Superagent WebSocket server and requesting Cloudflare quick tunnel...");
       try {
-        if (isMuseWatcherActive()) {
-          await stopMuseWatcher();
+        if (isMuseWatcherActive(effectivePort)) {
+          await stopMuseWatcher(effectivePort);
         }
 
         const watched = getWatchedWorkspaces(cfg, process.cwd());
@@ -293,7 +293,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         console.log("═════════════════════════════════════════════════════════════════════════════");
         console.log(`  Public URL        : ${meta.publicUrl}`);
         console.log(`  WSS Endpoint      : ${effectiveWss}`);
-        console.log(`  Local Target      : ${meta.localUrl || `http://${host}:${port}`}`);
+        console.log(`  Local Target      : ${meta.localUrl || `http://${host}:${effectivePort}`}`);
         console.log(`  Process PID       : ${meta.pid}`);
         console.log(`  Bearer Token      : ${token}`);
         console.log("═════════════════════════════════════════════════════════════════════════════");
@@ -302,7 +302,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
           wssUrl: effectiveWss,
           token,
           publicUrl: meta.publicUrl,
-          localUrl: meta.localUrl || `http://${host}:${port}`,
+          localUrl: meta.localUrl || `http://${host}:${effectivePort}`,
           workspaces: watched,
           cfClientId: cfg.cfAccessClientId,
           cfClientSecret: cfg.cfAccessClientSecret,
@@ -330,7 +330,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
           isExiting = true;
           console.log("\n[Cloudflare Tunnel] Stopping tunnel and watch daemon...");
           await watcher.stop();
-          await stopQuickTunnel();
+          await stopQuickTunnel(effectivePort);
           process.exit(0);
         };
 
@@ -388,13 +388,13 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       }
 
       let stoppedAny = false;
-      if (isMuseWatcherActive()) {
-        await stopMuseWatcher();
+      if (isMuseWatcherActive(effectivePort)) {
+        await stopMuseWatcher(effectivePort);
         stoppedAny = true;
       }
-      const existing = getTunnelStatus(portOverride);
+      const existing = getTunnelStatus(effectivePort);
       if (existing.isRunning) {
-        await stopQuickTunnel(portOverride);
+        await stopQuickTunnel(effectivePort);
         stoppedAny = true;
       }
 
@@ -402,7 +402,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         console.log(`[Cloudflare Tunnel] No quick tunnel is currently running${portOverride ? ` on port ${portOverride}` : ""}.`);
         return;
       }
-      console.log(`[Cloudflare Tunnel] Quick tunnel${portOverride ? ` (port ${portOverride})` : ""} and watch daemon stopped successfully.`);
+      console.log(`[Cloudflare Tunnel] Quick tunnel (port ${effectivePort}) and watch daemon stopped successfully.`);
       return;
     }
 

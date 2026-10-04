@@ -192,14 +192,14 @@ export const museCommand: SlashCommand = {
         const effectivePort = portOverride || (isHttps ? 7888 : port);
         const watchedWorkspaces = getWatchedWorkspaces(cfg, ctx.agent?.workingDirectory);
         const existing = getTunnelStatus(effectivePort);
-        const watcherActive = isMuseWatcherActive();
+        const watcherActive = isMuseWatcherActive(effectivePort);
 
         if (isHttps) {
           const { getServerAuthToken } = await import("../utils/serverSecurity.js");
           const { ensureSuperagentServer } = await import("../remoteAgent/cloudflareTunnel.js");
 
           if (existing.isRunning) {
-            const serverToken = getServerAuthToken();
+            const serverToken = getServerAuthToken(effectivePort);
             const curlSnippet = `curl -H "Authorization: Bearer ${serverToken}" ${existing.publicUrl}/api/status`;
             const copied = await copyTextToClipboard(curlSnippet);
 
@@ -236,7 +236,7 @@ export const museCommand: SlashCommand = {
 
           try {
             if (watcherActive) {
-              await stopMuseWatcher();
+              await stopMuseWatcher(effectivePort);
             }
 
             await startMuseWatcher({
@@ -319,7 +319,7 @@ export const museCommand: SlashCommand = {
 
         try {
           if (watcherActive) {
-            await stopMuseWatcher();
+            await stopMuseWatcher(effectivePort);
           }
 
           const watcher = await startMuseWatcher({
@@ -376,14 +376,14 @@ export const museCommand: SlashCommand = {
             },
           });
 
-          const meta = getTunnelStatus();
+          const meta = getTunnelStatus(effectivePort);
           const effectiveWss = meta.wssUrl || `wss://${meta.publicUrl?.replace(/^https?:\/\//, "")}${pathEndpoint}`;
 
           const musePrompt = buildMuseConnectionPrompt({
             wssUrl: effectiveWss,
             token,
             publicUrl: meta.publicUrl,
-            localUrl: meta.localUrl || `http://${host}:${port}`,
+            localUrl: meta.localUrl || `http://${host}:${effectivePort}`,
             workspaces: watchedWorkspaces,
             cfClientId: cfg.cfAccessClientId,
             cfClientSecret: cfg.cfAccessClientSecret,
@@ -399,7 +399,7 @@ export const museCommand: SlashCommand = {
               "═════════════════════════════════════════════════════════════════════════════",
               `- Public URL   : ${meta.publicUrl}`,
               `- WSS Endpoint : ${effectiveWss}`,
-              `- Local Target : ${meta.localUrl || `http://${host}:${port}`}`,
+              `- Local Target : ${meta.localUrl || `http://${host}:${effectivePort}`}`,
               `- Process PID  : ${meta.pid}`,
               `- Bearer Token : ${token}`,
               "═════════════════════════════════════════════════════════════════════════════",
@@ -472,8 +472,8 @@ export const museCommand: SlashCommand = {
         }
 
         let stoppedAny = false;
-        if (isMuseWatcherActive()) {
-          await stopMuseWatcher();
+        if (isMuseWatcherActive(effectivePort)) {
+          await stopMuseWatcher(effectivePort);
           stoppedAny = true;
         }
         const existing = getTunnelStatus(effectivePort);
@@ -511,7 +511,7 @@ export const museCommand: SlashCommand = {
 
         if (isHttps) {
           const { getServerAuthToken } = await import("../utils/serverSecurity.js");
-          const serverToken = getServerAuthToken();
+          const serverToken = getServerAuthToken(effectivePort);
           if (existing.isRunning) {
             ctx.addLine({
               type: "system",
