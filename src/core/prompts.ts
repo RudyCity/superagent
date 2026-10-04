@@ -56,7 +56,8 @@ const AESTHETIC_AND_GATEWAY_RULES = `${READ_ONLY_GATEWAY_RULES}
 - OS_SEP: PowerShell ";" | Git Bash "&&". Respect active shell.
 - COMMAND_LOGS: Foreground commands (run_command, bash) stream real-time logs to ~/.superagent-r/logs/latest-command.log and ~/.superagent-r/logs/commands/cmd_*.log. Live process tools reflect active log paths.
 - TRUNCATED_OUTPUT: When output is truncated ([Command output truncated. Full log saved to: <path>]), NEVER re-run identical command blindly. Read full log from <path> via read (with offset/limit) or ripgrep_search.
-- PIPE_AND_DAEMON_SAFETY: FORBIDDEN: Unbuffered pipes (tail, head) or commands expecting interactive stdin in foreground. Long-running processes, dev servers, and file watchers MUST use run_background_process.`;
+- PIPE_AND_DAEMON_SAFETY: FORBIDDEN: Unbuffered pipes (tail, head) or commands expecting interactive stdin in foreground. Long-running processes, dev servers, and file watchers MUST use run_background_process.
+- PROCESS_AND_PORT_SAFETY: FORBIDDEN: Blanket process termination (taskkill /IM bun.exe, taskkill /IM node.exe, killall, pkill). When resolving port conflicts (EADDRINUSE), ALWAYS use inspect_port(port) to diagnose and free_port(port) or kill_process(pid) to terminate ONLY the conflicting process tree.`;
 
 const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify pre-action primary goal alignment + workspace limits.`;
 

@@ -143,6 +143,13 @@ import { cliBridgeTool } from "./cliBridgeTool.js";
 import { inspectSessionTool } from "./sessionTools.js";
 import { synthesizeSkillTool } from "./synthesizeSkillTool.js";
 
+import {
+  inspectPortTool,
+  freePortTool,
+  findProcessTool,
+  killProcessTool,
+} from "./processInspectionTools.js";
+
 export {
   listChromeProfilesTool,
   launchChromeProfileTool,
@@ -165,6 +172,10 @@ export {
   cliBridgeTool,
   inspectSessionTool,
   synthesizeSkillTool,
+  inspectPortTool,
+  freePortTool,
+  findProcessTool,
+  killProcessTool,
 };
 import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../workspace/workspaceChainTools.js";
 import { listToolsTool, describeToolTool } from "./toolDiscoveryTools.js";
@@ -257,6 +268,10 @@ export const allTools: Tool[] = [
   cliBridgeTool,
   inspectSessionTool,
   synthesizeSkillTool,
+  inspectPortTool,
+  freePortTool,
+  findProcessTool,
+  killProcessTool,
 ];
 
 const TOOL_ALIASES: Record<string, string> = {
@@ -274,6 +289,19 @@ const TOOL_ALIASES: Record<string, string> = {
   read_file: "read",
   write_file: "write_to_file",
   edit_file: "edit",
+  check_port: "inspect_port",
+  port_inspect: "inspect_port",
+  port_status: "inspect_port",
+  check_port_status: "inspect_port",
+  kill_port: "free_port",
+  release_port: "free_port",
+  clear_port: "free_port",
+  search_process: "find_process",
+  find_processes: "find_process",
+  search_processes: "find_process",
+  ps_search: "find_process",
+  terminate_process: "kill_process",
+  stop_process: "kill_process",
 };
 
 export function getToolByName(name: string): Tool | undefined {

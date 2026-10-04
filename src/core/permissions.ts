@@ -48,6 +48,10 @@ const DANGEROUS_PATTERNS = [
   /Initialize-Disk/i,
   /Stop-Process\s+.*-Force/i,
   /Stop-Computer/i,
+  // Blanket process termination patterns (taskkill /IM bun.exe, killall node, pkill bun, etc.)
+  /(?:^|[;&|`\n]\s*|\$\(\s*)taskkill(?:\.exe)?\s+.*[\/\-]+im\s+(?:bun|node|deno|python\d*|java|go|cargo|rustc)(?:\.exe)?\b/i,
+  /(?:^|[;&|`\n]\s*|\$\(\s*)(?:killall|pkill)\s+(?:-9\s+)?(?:-f\s+)?(?:bun|node|deno|python\d*|java|go|cargo|rustc)\b/i,
+  /(?:^|[;&|`\n]\s*|\$\(\s*)Stop-Process\s+.*-(?:Name|ProcessName)\s+(?:bun|node|deno|python\d*|java)\b/i,
   // Destructive operations gate
   /\bgit\s+(reset|clean|push|commit|rm)\b/i,
   /\bgit\s+checkout\s+.*-f\b/i,
@@ -55,6 +59,26 @@ const DANGEROUS_PATTERNS = [
   /\b(db:wipe|db:seed|migrate:reset)\b/i,
   /\b(rotate|delete)\s+(secret|key)\b/i,
 ];
+
+export const BLANKET_KILL_PATTERNS = [
+  /(?:^|[;&|`\n]\s*|\$\(\s*)taskkill(?:\.exe)?\s+.*[\/\-]+im\s+(?:bun|node|deno|python\d*|java|go|cargo|rustc)(?:\.exe)?\b/i,
+  /(?:^|[;&|`\n]\s*|\$\(\s*)(?:killall|pkill)\s+(?:-9\s+)?(?:-f\s+)?(?:bun|node|deno|python\d*|java|go|cargo|rustc)\b/i,
+  /(?:^|[;&|`\n]\s*|\$\(\s*)Stop-Process\s+.*-(?:Name|ProcessName)\s+(?:bun|node|deno|python\d*|java)\b/i,
+];
+
+export function isBlanketKillCommand(command: string): { isBlanketKill: boolean; reason?: string } {
+  if (!command || typeof command !== "string") return { isBlanketKill: false };
+  for (const pattern of BLANKET_KILL_PATTERNS) {
+    if (pattern.test(command)) {
+      return {
+        isBlanketKill: true,
+        reason:
+          "Blanket process termination detected. Use 'inspect_port' and 'free_port' or 'kill_process' with a specific PID instead of mass-killing processes to avoid crashing unrelated development servers.",
+      };
+    }
+  }
+  return { isBlanketKill: false };
+}
 
 export function isDangerousCommand(command: string): boolean {
   return DANGEROUS_PATTERNS.some((p) => p.test(command));
@@ -79,6 +103,7 @@ export const SYSTEM_DESTRUCTIVE_PATTERNS = [
   /Initialize-Disk/i,
   /Stop-Process\s+.*-Force/i,
   /Stop-Computer/i,
+  ...BLANKET_KILL_PATTERNS,
 ];
 
 export function isSystemDestructiveCommand(command: string): boolean {
@@ -1256,6 +1281,14 @@ export function getToolDescription(
       const q = s(args.query ?? args.q ?? args.filter);
       return q ? `Listing tools matching "${q}"` : `Listing available tools`;
     }
+    case "inspect_port":
+      return `Inspecting TCP port: ${s(args.port ?? args.portNumber)}`;
+    case "free_port":
+      return `Freeing process holding TCP port: ${s(args.port ?? args.portNumber)}`;
+    case "find_process":
+      return `Searching active processes for: ${s(args.query ?? args.q)}`;
+    case "kill_process":
+      return `Terminating process PID: ${s(args.pid ?? args.processId)}`;
     default:
       return `Running tool ${toolCall.name} with parameters ${JSON.stringify(args)}`;
   }

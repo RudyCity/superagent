@@ -1,3 +1,25 @@
+## [1.5.134] - 2026-10-04
+
+### Added
+
+- **Targeted Process & Port Management Tools (`inspect_port`, `free_port`, `find_process`, `kill_process`)**:
+  - Added `src/core/tools/processInspectionTools.ts` providing cross-platform process and TCP port inspection and safe termination.
+  - Implemented `inspect_port` (`check_port`, `port_inspect`) to inspect any TCP port (1-65535) and resolve listening PID, process name, full command line, working directory, and Superagent background task correlation.
+  - Implemented `free_port` (`kill_port`, `release_port`) to safely terminate only the specific process and process tree holding a port (addressing `EADDRINUSE`) without killing unrelated services.
+  - Implemented `find_process` (`search_process`, `ps_search`) to search active system processes and background tasks by port number, process name, or command line substring.
+  - Implemented `kill_process` (`terminate_process`) to terminate a specific PID and process tree with built-in operating system safety guards.
+  - Registered the new tools across `masterToolset`, `superagentToolset`, `chromeExtensionToolset`, and subagent toolsets (`coder`, `software-tester`).
+  - Added process and port management tool specifications to `DEFAULT_MUSE_SYSTEM_PROMPT` in `src/core/remoteAgent/protocol.ts`.
+
+### Security
+
+- **Blanket Process Kill Guardrails (Defense-in-Depth)**:
+  - Added `BLANKET_KILL_PATTERNS` and `isBlanketKillCommand()` in `src/core/permissions.ts` detecting mass process terminations such as `taskkill /IM bun.exe`, `taskkill /IM node.exe`, `killall bun`, `killall node`, `pkill -f bun`, and `Stop-Process -Name bun`.
+  - Added blanket kill patterns to `DANGEROUS_PATTERNS` and `SYSTEM_DESTRUCTIVE_PATTERNS`, requiring operator approval and blocking automated execution in batch runs.
+  - Implemented `isProtectedProcess()` to prevent accidental termination of critical system processes (PID <= 4, `csrss.exe`, `lsass.exe`, `services.exe`, `smss.exe`, `explorer.exe`, `systemd`, `launchd`) and the active Superagent host process.
+  - Added `PROCESS_AND_PORT_SAFETY` imperative instruction across system prompts in `src/core/prompts.ts` mandating `inspect_port` and `free_port` for port conflicts.
+  - Added 23 unit tests in `tests/processInspectionTools.test.ts` verifying port inspection, safe freeing, blanket kill detection, and permission gates.
+
 ## [1.5.133] - 2026-10-03
 
 ### Added

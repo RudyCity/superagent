@@ -136,7 +136,8 @@ COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
 2. Tools available:
    - File inspection: read, glob, grep, ripgrep_search
    - File editing: write, edit, write_to_file, replace_file_content, apply_patch
-   - Shell & Terminal: run_command (args: { "command": "<cmd>" }), bash (args: { "command": "<cmd>" })
+   - Shell & Terminal: run_command (args: { "command": "<cmd>" }), bash (args: { "command": "<cmd>" }), run_background_process (args: { "command": "<cmd>" }), manage_background_process
+   - Process & Port Management: inspect_port (args: { "port": <number> }), free_port (args: { "port": <number> }), find_process (args: { "query": "<string>" }), kill_process (args: { "pid": <number> }). Use inspect_port and free_port to resolve port conflicts cleanly without terminating unrelated processes (FORBIDDEN: mass process killing like taskkill /IM bun.exe or killall node)
    - Skills: get_skills (args: { "query": "<task description>" }) to discover relevant installed skills, then use_skill (args: { "skillName": "<name>" }) to load a skill's instructions and follow them
    - Subagents (parallel background work): define_subagent (args: { "name", "description", "systemPrompt" }), invoke_subagent (args: { "typeName", "role", "prompt" }), manage_subagents
    - Web: web_search (args: { "query": "<q>" }), fetch_url (args: { "url": "<url>" }), extract_page_content_markdown, run_headless_browser

@@ -108,6 +108,12 @@ import { cliBridgeTool } from "./cliBridgeTool.js";
 import { inspectSessionTool } from "./sessionTools.js";
 import { synthesizeSkillTool } from "./synthesizeSkillTool.js";
 import { listToolsTool, describeToolTool } from "./toolDiscoveryTools.js";
+import {
+  inspectPortTool,
+  freePortTool,
+  findProcessTool,
+  killProcessTool,
+} from "./processInspectionTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Orchestration only. The Master Agent MUST NOT directly modify code or
@@ -140,6 +146,8 @@ export const masterToolset: Tool[] = [
   inspectSessionTool,
   listToolsTool,
   describeToolTool,
+  inspectPortTool,
+  findProcessTool,
   officeCliTool,
   // ── Planning & session management (writes only to ~/.superagent-r/) ──
   scheduleTool,
@@ -204,6 +212,10 @@ export const superagentToolset: Tool[] = [
   runCommandTool,
   runBackgroundProcessTool,
   manageBackgroundProcessTool,
+  inspectPortTool,
+  freePortTool,
+  findProcessTool,
+  killProcessTool,
   webSearchTool,
   fetchUrlTool,
   searchJournalTool,
@@ -260,6 +272,10 @@ export const chromeExtensionToolset: Tool[] = [
   runCommandTool,
   runBackgroundProcessTool,
   manageBackgroundProcessTool,
+  inspectPortTool,
+  freePortTool,
+  findProcessTool,
+  killProcessTool,
   webSearchTool,
   fetchUrlTool,
   gitActionTool,
@@ -359,6 +375,10 @@ export const subagentToolsets: Record<string, Tool[]> = {
     ripgrepSearchTool,
     runCommandTool,
     bashTool,
+    inspectPortTool,
+    freePortTool,
+    findProcessTool,
+    killProcessTool,
     webSearchTool,
     searchJournalTool,
     askQuestionTool,
@@ -397,6 +417,10 @@ export const subagentToolsets: Record<string, Tool[]> = {
     runCommandTool,
     bashTool,
     runBackgroundProcessTool,
+    inspectPortTool,
+    freePortTool,
+    findProcessTool,
+    killProcessTool,
     webSearchTool,
     askQuestionTool,
     getSkillsTool,
