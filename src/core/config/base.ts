@@ -196,6 +196,7 @@ ${shellPrompt}
 - COMMAND_LOGS: Foreground commands (run_command, bash) stream real-time logs to ~/.superagent-r/logs/latest-command.log and ~/.superagent-r/logs/commands/cmd_*.log. Process status tools reflect live log paths.
 - TRUNCATED_OUTPUT: When output is truncated ([Command output truncated. Full log saved to: <path>]), DO NOT re-run identical command blindly. Read full log directly from <path> via read (with offset/limit) or ripgrep_search.
 - PIPE_AND_DAEMON_SAFETY: FORBIDDEN: Unbuffered pipes (tail, head) or commands expecting interactive stdin in foreground. Long-running processes, dev servers, and file watchers MUST use run_background_process, NEVER run_command.
+- PROCESS_AND_PORT_SAFETY: FORBIDDEN: Blanket process termination (taskkill /IM bun.exe, taskkill /IM node.exe, killall, pkill). When resolving port conflicts (EADDRINUSE), ALWAYS use inspect_port(port) to diagnose and free_port(port) or kill_process(pid) to terminate ONLY the conflicting process tree.
 
 # LOGIC GATES
 if delegating_to_external_cli:
@@ -249,6 +250,11 @@ if request_is_complex:
   - 'bash': Sync shell execution with automatic logging.
   - 'run_background_process': Async execution (dev servers, watchers, long jobs).
   - 'manage_background_process': Inspect/input/kill/wait background processes and inspect live command logs.
+- Process & Port Diagnostics:
+  - 'inspect_port': Inspect TCP port, discover listening PID, process name, command line, and Superagent task correlation.
+  - 'free_port': Safely terminate the process tree holding a port to resolve conflicts without blanket kill.
+  - 'find_process': Search active processes by port, process name, or command line substring.
+  - 'kill_process': Terminate a specific PID safely. System critical PIDs and Superagent runtime are protected.
 - Delegation & Coordination:
   - 'schedule': One-shot timers/cron.
   - 'invoke_subagent': Async subagent spawn. Batch calls in one turn.

@@ -24,6 +24,13 @@ import {
   subagentToolsets,
   chromeExtensionToolset,
 } from "../src/core/tools/toolsets.js";
+import {
+  MASTER_AGENT_SYSTEM_PROMPT,
+  SUPERAGENT_SYSTEM_PROMPT,
+  SUBAGENT_SYSTEM_PROMPTS,
+} from "../src/core/prompts.js";
+import { getSystemPrompt } from "../src/core/config/base.js";
+import { DEFAULT_MUSE_SYSTEM_PROMPT } from "../src/core/remoteAgent/protocol.js";
 
 describe("Process Inspection & Targeted Port Management Suite", () => {
   let activeServers: Array<net.Server | http.Server> = [];
@@ -257,4 +264,43 @@ describe("Process Inspection & Targeted Port Management Suite", () => {
       );
     });
   });
+
+  describe("Prompt Alignment & Process Safety Guardrails", () => {
+    it("should include blanket kill ban and port diagnosis in MASTER_AGENT_SYSTEM_PROMPT", () => {
+      expect(MASTER_AGENT_SYSTEM_PROMPT).toContain("PROCESS_AND_PORT_SAFETY");
+      expect(MASTER_AGENT_SYSTEM_PROMPT).toContain("inspect_port");
+      expect(MASTER_AGENT_SYSTEM_PROMPT).toContain("free_port");
+      expect(MASTER_AGENT_SYSTEM_PROMPT).toContain("Blanket process termination");
+    });
+
+    it("should include blanket kill ban and port diagnosis in SUPERAGENT_SYSTEM_PROMPT", () => {
+      const saPrompt = SUPERAGENT_SYSTEM_PROMPT("coder", "feat/test", "/tmp/wt");
+      expect(saPrompt).toContain("PROCESS_AND_PORT_SAFETY");
+      expect(saPrompt).toContain("inspect_port");
+      expect(saPrompt).toContain("free_port");
+      expect(saPrompt).toContain("Blanket process termination");
+    });
+
+    it("should include process protection and port safety in coder and software-tester subagent prompts", () => {
+      expect(SUBAGENT_SYSTEM_PROMPTS.coder).toContain("PROCESS_AND_PORT_SAFETY");
+      expect(SUBAGENT_SYSTEM_PROMPTS.coder).toContain("inspect_port");
+      expect(SUBAGENT_SYSTEM_PROMPTS["software-tester"]).toContain("PROCESS_AND_PORT_SAFETY");
+      expect(SUBAGENT_SYSTEM_PROMPTS["software-tester"]).toContain("inspect_port");
+    });
+
+    it("should include blanket kill ban and process/port tools in base single-agent getSystemPrompt()", () => {
+      const basePrompt = getSystemPrompt();
+      expect(basePrompt).toContain("PROCESS_AND_PORT_SAFETY");
+      expect(basePrompt).toContain("inspect_port");
+      expect(basePrompt).toContain("free_port");
+      expect(basePrompt).toContain("Blanket process termination");
+    });
+
+    it("should include blanket kill prohibition and inspect_port guidance in DEFAULT_MUSE_SYSTEM_PROMPT", () => {
+      expect(DEFAULT_MUSE_SYSTEM_PROMPT).toContain("inspect_port");
+      expect(DEFAULT_MUSE_SYSTEM_PROMPT).toContain("free_port");
+      expect(DEFAULT_MUSE_SYSTEM_PROMPT).toContain("FORBIDDEN: mass process killing");
+    });
+  });
 });
+

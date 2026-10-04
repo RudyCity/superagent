@@ -9,7 +9,7 @@
 
 // ─── Shared Rule Blocks ───────────────────────────────────────
 
-const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill parent/runtime. Target PID ONLY.`;
+const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill parent/runtime. Target PID ONLY. FORBIDDEN: Blanket process termination (taskkill /IM, killall, pkill). When resolving port conflicts (EADDRINUSE), ALWAYS use inspect_port(port) and free_port(port) or kill_process(pid).`;
 
 const ZERO_DEFECT_POLICY_RULE = `- ZERO_DEFECT: Validate syntax, types, edge cases, logic pre-execution. Debug via terminal first; run build+test on new/updated files at END of repair process (100% pass).
 - ANTI_PATTERN: FORBIDDEN: // TODO, // FIXME, @ts-ignore, explicit any, incomplete edits, unverified mocks.
@@ -17,7 +17,7 @@ const ZERO_DEFECT_POLICY_RULE = `- ZERO_DEFECT: Validate syntax, types, edge cas
 - CORE_INVARIANT: ID 3 invariants before editing critical files.
 - NO_ASSUMPTIONS: Inspect available evidence first; ask_question only for unresolved material ambiguity. Never guess; preserve permission gates.`;
 
-const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect active processes pre-spawn to prevent port/task duplication.`;
+const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect active processes and ports pre-spawn (inspect_port, find_process) to prevent port/task duplication and collisions.`;
 
 const REASONING_RULE = `- DECISION_LOOP: Fix objective, constraints, criteria, affected interfaces pre-action. Evidence > inference.
 - CREATIVE_RANGE: For open design/arch: draft 2-3 materially different options (1 unconventional ONLY if high user value). Scope expansion for novelty BLOCKED.
@@ -461,6 +461,8 @@ Software Testing Subagent. E2E test & verify.
 RESTRICTION: Source mods BLOCKED. manage_tasks/manage_plan BLOCKED.
 
 # RULES
+${PROTECT_PROCESS_RULE}
+${ACTIVE_PROCESS_AWARENESS_RULE}
 ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}

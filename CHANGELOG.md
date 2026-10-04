@@ -1,3 +1,13 @@
+## [1.5.135] - 2026-10-04
+
+### Enhanced
+
+- **System Prompt Alignment & Comprehensive Process Safety Rules**:
+  - Updated `src/core/prompts.ts` with reinforced `PROTECT_PROCESS_RULE` and `ACTIVE_PROCESS_AWARENESS_RULE` explicitly banning blanket process terminations (`taskkill /IM`, `killall`, `pkill`) and mandating `inspect_port` and `free_port` for port conflicts.
+  - Injected process safety and active process awareness rules into `SUBAGENT_SYSTEM_PROMPTS['software-tester']` alongside `coder`, `researcher`, `reviewer`, and other subagents.
+  - Updated single-agent base prompt generator in `src/core/config/base.ts` to include `PROCESS_AND_PORT_SAFETY` rules and full tool usage guidelines for `inspect_port`, `free_port`, `find_process`, and `kill_process`.
+  - Added full test suite in `tests/processInspectionTools.test.ts` verifying prompt alignment across Master Agent, Superagents, Subagents, base single-agent CLI, and Muse remote agent.
+
 ## [1.5.134] - 2026-10-04
 
 ### Added
