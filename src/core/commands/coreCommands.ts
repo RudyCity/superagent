@@ -210,7 +210,7 @@ export const helpCommand: SlashCommand = {
         "  /muse     - Coordinate with remote Muse brain via WebSocket / Telegram bus",
         "              Usage: /muse [<task>|status|tunnel|watch|config|stop|steer|new]",
         "              Tunnel: /muse tunnel [list|start|stop|status|guide] [--https] [--port <n>] (Isolated Quick Tunnel)",
-        "              Watch:  /muse watch [--ws|--tunnel] [--port <n>] [dir1] [dir2] (Multi-project watch)",
+        "              Watch:  /muse watch [--ws|--tunnel|--https] [--port <n>] [dir1] [dir2] (Multi-project watch)",
         "              Steer:  /muse steer <message> (intervene & send counter-instructions to Muse)",
         "  /tunnel   - Manage Cloudflare quick tunnels (/tunnel [list|start|stop|status] [--https] [--port <n>])",
         "  /stop     - Stop/abort currently running tool, task, or agent (aliases: /cancel, /abort)",

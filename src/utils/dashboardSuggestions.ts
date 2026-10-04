@@ -104,6 +104,8 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/muse watch remove": "Remove a project directory from watched workspaces at runtime",
   "/muse watch --ws": "Start persistent watch mode using WebSocket transport (Cloudflare Tunnel)",
   "/muse watch --tunnel": "Start watch daemon over WebSocket with automatic Cloudflare quick tunnel",
+  "/muse watch --https": "Start persistent watch mode using Superagent HTTPS REST/SSE server & Cloudflare tunnel",
+  "/muse watch --tunnel --https": "Start watch mode over HTTPS with automatic Cloudflare quick tunnel",
   "/muse watch --telegram": "Start persistent watch mode using Telegram group transport",
   "/muse unwatch": "Stop persistent watch mode and return to manual execution",
   "/muse stop": "Cancel active remote task and send cancellation notice to Muse",
@@ -604,11 +606,12 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
           "/muse watch start",
           "/muse watch stop",
           "/muse watch status",
+          "/muse watch --tunnel",
+          "/muse watch --https",
+          "/muse watch --ws",
+          "/muse watch --telegram",
           "/muse watch add",
           "/muse watch remove",
-          "/muse watch --ws",
-          "/muse watch --tunnel",
-          "/muse watch --telegram",
         ];
         return filterSuggestions(watchPossibilities, query);
       }

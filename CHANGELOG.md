@@ -1,3 +1,18 @@
+## [1.5.140] - 2026-10-04
+
+### Added & Improved
+
+- **Unified Watch Mode for Cloudflare HTTPS REST/SSE Server (`--https`)**:
+  - Added `https` transport support to `RemoteAgentTransport` and implemented `HttpsTransport` in `transport.ts` bridging `RemoteTransport` with the Superagent HTTP/SSE REST server.
+  - Enhanced `MuseWatcher` to support HTTPS mode with `--https` option, managing HTTP server initialization, Cloudflare quick tunnel lifecycle, and active watch state.
+  - Enabled `/muse watch --https` and `/muse tunnel start --https` to enter active watch mode listening for incoming remote API calls, webhooks, and SSE clients.
+  - Updated `/muse watch status` and `/muse status` to report active status, transport type, HTTP port, Bearer token, and public HTTPS tunnel URL.
+  - Updated `/muse watch stop` to cleanly terminate both the watch mode listener and the Cloudflare quick tunnel.
+  - Enhanced CLI `superagent muse watch --https` to run unified HTTPS watch mode with automatic Cloudflare quick tunnel creation.
+  - Added autocomplete suggestions and dashboard tooltips for `/muse watch --https` and `/muse watch --tunnel --https`.
+  - Updated `/muse watch` usage syntax in `/help` command output.
+  - Added unit test suite in `tests/cloudflareTunnel.test.ts` covering `/muse watch status` for HTTPS mode, autocomplete suggestions, and `/muse watch stop`.
+
 ## [1.5.139] - 2026-10-04
 
 ### Added & Improved

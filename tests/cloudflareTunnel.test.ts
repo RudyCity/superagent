@@ -599,6 +599,70 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(logText).toContain("https://cli-test-https.trycloudflare.com");
       expect(logText).toContain("7888");
     });
+
+    it("should report ACTIVE HTTPS watch mode via /muse watch status when HTTPS tunnel is running", async () => {
+      const { saveTunnelState, clearTunnelState } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+      const { museCommand } = await import("../src/core/commands/museCommand.js");
+
+      saveTunnelState({
+        pid: process.pid,
+        publicUrl: "https://watch-https-test.trycloudflare.com",
+        wssUrl: "wss://watch-https-test.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:7888",
+        port: 7888,
+        startedAt: Date.now() - 2000,
+      }, 7888);
+
+      const lines: any[] = [];
+      await museCommand.execute("watch status", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(lines.length).toBeGreaterThan(0);
+      const text = lines.map((l) => l.content).join("\n");
+      expect(text).toContain("Muse Watch Mode: ACTIVE");
+      expect(text).toContain("https://watch-https-test.trycloudflare.com");
+      expect(text).toContain("7888");
+
+      clearTunnelState(7888);
+    });
+
+    it("should provide autocomplete suggestions for /muse watch --https", () => {
+      const watchSuggestions = getDashboardSuggestions("/muse watch ");
+      expect(watchSuggestions).toContain("/muse watch --https");
+
+      const descriptions = getSuggestionDescriptions();
+      expect(descriptions["/muse watch --https"]).toBeDefined();
+    });
+
+    it("should stop active HTTPS tunnel via /muse watch stop", async () => {
+      const { saveTunnelState, clearTunnelState, cloudflareTunnel } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+      const { museCommand } = await import("../src/core/commands/museCommand.js");
+
+      saveTunnelState({
+        pid: process.pid,
+        publicUrl: "https://watch-stop-test.trycloudflare.com",
+        wssUrl: "wss://watch-stop-test.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:7888",
+        port: 7888,
+        startedAt: Date.now() - 1000,
+      }, 7888);
+
+      const stopSpy = vi.spyOn(cloudflareTunnel, "stopQuickTunnel").mockResolvedValue(true);
+      const lines: any[] = [];
+      await museCommand.execute("watch stop", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(stopSpy).toHaveBeenCalledWith(7888);
+      expect(lines.some((l) => l.content.includes("stopped successfully"))).toBe(true);
+
+      stopSpy.mockRestore();
+      clearTunnelState(7888);
+    });
   });
 });
+
 

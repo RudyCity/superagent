@@ -4,7 +4,7 @@ import os from "os";
 import crypto from "crypto";
 import { getRootConfigDir } from "../config/paths.js";
 
-export type RemoteAgentTransport = "telegram" | "websocket";
+export type RemoteAgentTransport = "telegram" | "websocket" | "https";
 export type MuseWsMode = "server" | "client";
 
 export interface RemoteAgentConfig {

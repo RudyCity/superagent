@@ -7,6 +7,7 @@ import {
   generateSecureWsToken,
   isMuseWsActive,
   RemoteAgentConfig,
+  RemoteAgentTransport,
   getWatchedWorkspaces,
   addWatchedWorkspace,
   removeWatchedWorkspace,
@@ -765,6 +766,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     const isWs = args.some((a) => a === "--ws" || a === "--websocket");
     const isTg = args.some((a) => a === "--telegram" || a === "--tg");
     const isTunnel = args.some((a) => a === "--tunnel" || a === "--quick-tunnel");
+    const isHttps = args.some((a) => a === "--https" || a === "--http" || a === "--web");
     const portArgIdx = args.findIndex((a) => a === "--port" || a === "-p");
     let portOverride: number | undefined;
     if (portArgIdx !== -1 && args[portArgIdx + 1]) {
@@ -780,7 +782,10 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         a === "--telegram" ||
         a === "--tg" ||
         a === "--tunnel" ||
-        a === "--quick-tunnel"
+        a === "--quick-tunnel" ||
+        a === "--https" ||
+        a === "--http" ||
+        a === "--web"
       )
         return false;
       if (a === "--port" || a === "-p") return false;
@@ -794,10 +799,17 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       .map((d) => path.resolve(d));
 
     const cfg = loadRemoteAgentConfig();
+    const effectivePort = portOverride || (isHttps ? 7888 : (cfg.wsPort || 9225));
     if (portOverride) {
       cfg.wsPort = portOverride;
     }
-    const transportType = (isWs || isTunnel) ? "websocket" : isTg ? "telegram" : cfg.transport || "telegram";
+    const transportType: RemoteAgentTransport = isHttps
+      ? "https"
+      : (isWs || isTunnel)
+        ? "websocket"
+        : isTg
+          ? "telegram"
+          : (cfg.transport || "telegram");
     const allWatched = targetDirs.length > 0 ? targetDirs : getWatchedWorkspaces(cfg);
 
     console.log(`[Muse Watch] Starting persistent watch mode (${transportType.toUpperCase()})...`);
@@ -807,17 +819,19 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     } else {
       console.log(`[Muse Watch] Workspace: ${allWatched[0]}`);
     }
-    if (isTunnel) {
+    if (isTunnel || isHttps) {
       console.log("[Muse Watch] Cloudflare quick ephemeral tunnel will be launched automatically.");
     }
-    console.log("[Muse Watch] Superagent is now controlled by Muse. Press Ctrl+C to stop.\n");
+    console.log("[Muse Watch] Superagent is now controlled by Muse / Remote clients. Press Ctrl+C to stop.\n");
 
     try {
       const watcher = await startMuseWatcher({
         workspace: allWatched[0],
         workspaces: allWatched,
         transportType,
-        tunnel: isTunnel,
+        tunnel: isTunnel || isHttps,
+        isHttps,
+        wsPort: effectivePort,
         onLine: (line) => console.log(line.content),
         onProgress: (msg) => console.log(`[Muse Progress] ${msg}`),
       });

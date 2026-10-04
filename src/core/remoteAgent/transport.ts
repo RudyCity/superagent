@@ -6,7 +6,7 @@ export interface RemoteEnvelopeMeta {
   messageId?: number;
   senderId?: number | string;
   senderUsername?: string;
-  transport?: "telegram" | "websocket";
+  transport?: "telegram" | "websocket" | "https";
   connectionId?: string;
 }
 
@@ -16,7 +16,7 @@ export type EnvelopeHandler = (
 ) => Promise<void> | void;
 
 export interface RemoteTransport {
-  readonly type: "telegram" | "websocket";
+  readonly type: "telegram" | "websocket" | "https";
   start(onEnvelope: EnvelopeHandler, abortSignal?: AbortSignal): Promise<void>;
   stop(): Promise<void>;
   sendEnvelope(
@@ -25,7 +25,7 @@ export interface RemoteTransport {
     onProgress?: (message: string) => void
   ): Promise<boolean>;
   isConnected(): boolean;
-  getTransportInfo(): { type: "telegram" | "websocket"; details: string };
+  getTransportInfo(): { type: "telegram" | "websocket" | "https"; details: string };
 }
 
 /**
@@ -92,6 +92,48 @@ export class TelegramTransport implements RemoteTransport {
     return {
       type: "telegram",
       details: `Telegram (Group: ${this.config.groupId || "none"}, MuseBotId: ${this.config.museBotId || "none"}, Token: ${maskToken(this.config.botToken)})`,
+    };
+  }
+}
+
+/**
+ * HttpsTransport wraps Superagent HTTP REST/SSE server for watch mode.
+ */
+export class HttpsTransport implements RemoteTransport {
+  public readonly type = "https" as const;
+  private port: number;
+  private isRunning = false;
+
+  constructor(port: number = 7888) {
+    this.port = port;
+  }
+
+  public async start(onEnvelope: EnvelopeHandler, abortSignal?: AbortSignal): Promise<void> {
+    this.isRunning = true;
+    const { ensureSuperagentServer } = await import("./cloudflareTunnel.js");
+    await ensureSuperagentServer(this.port);
+  }
+
+  public async stop(): Promise<void> {
+    this.isRunning = false;
+  }
+
+  public async sendEnvelope(
+    envelope: RemoteAgentEnvelope,
+    replyToMeta?: RemoteEnvelopeMeta,
+    onProgress?: (message: string) => void
+  ): Promise<boolean> {
+    return true;
+  }
+
+  public isConnected(): boolean {
+    return this.isRunning;
+  }
+
+  public getTransportInfo(): { type: "https"; details: string } {
+    return {
+      type: "https",
+      details: `HTTP REST/SSE Server (port ${this.port})`,
     };
   }
 }

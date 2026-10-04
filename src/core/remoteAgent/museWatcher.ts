@@ -22,6 +22,7 @@ import { MuseClient } from "./museClient.js";
 import {
   RemoteTransport,
   TelegramTransport,
+  HttpsTransport,
   RemoteEnvelopeMeta,
 } from "./transport.js";
 import { createMuseWsTransport, MuseWsServerTransport } from "./museWsTransport.js";
@@ -47,6 +48,7 @@ export interface MuseWatcherStats {
   transportDetails?: string;
   tunnel?: boolean;
   tunnelUrl?: string;
+  tunnelPort?: number;
 }
 
 export interface MuseWatcherOptions {
@@ -58,6 +60,7 @@ export interface MuseWatcherOptions {
   autoApproveWorkspace?: boolean;
   tunnel?: boolean;
   wsPort?: number;
+  isHttps?: boolean;
   transport?: RemoteTransport;
   transportType?: RemoteAgentTransport;
   onProgress?: (message: string) => void;
@@ -111,7 +114,7 @@ export class MuseWatcher {
   private workspaces: string[] = [];
   private transport!: RemoteTransport;
   private quickTunnelStarted = false;
-  private tunnelMetadata: { publicUrl: string; wssUrl: string; localUrl: string; pid: number } | null = null;
+  private tunnelMetadata: { publicUrl?: string; wssUrl?: string; localUrl?: string; pid?: number; port?: number } | null = null;
 
   constructor(options: MuseWatcherOptions = {}) {
     this.options = options;
@@ -130,8 +133,11 @@ export class MuseWatcher {
       return;
     }
 
-    const effectiveType = this.options.transportType || this.config.transport || "telegram";
-    if (effectiveType === "websocket") {
+    const effectiveType = this.options.transportType || (this.options.isHttps ? "https" : this.config.transport) || "telegram";
+    if (effectiveType === "https" || this.options.isHttps) {
+      const port = this.options.wsPort || 7888;
+      this.transport = new HttpsTransport(port);
+    } else if (effectiveType === "websocket") {
       const effectiveCfg = this.options.wsPort
         ? { ...this.config, wsPort: this.options.wsPort }
         : this.config;
@@ -274,7 +280,8 @@ export class MuseWatcher {
       transport: transportInfo?.type,
       transportDetails: transportInfo?.details,
       tunnel: Boolean(this.quickTunnelStarted),
-      tunnelUrl: this.tunnelMetadata?.wssUrl,
+      tunnelUrl: this.tunnelMetadata?.publicUrl || this.tunnelMetadata?.wssUrl,
+      tunnelPort: this.tunnelMetadata?.port,
     };
   }
 
@@ -332,36 +339,79 @@ export class MuseWatcher {
       `[Muse Watch] Superagent is now controlled by Muse.\n${wsInfoStr}\n- Transport: ${transportInfo.details}\n- Listening for incoming tool batches from Muse...`
     );
 
-    if (this.options.tunnel && this.transport.type === "websocket") {
+    if (this.options.tunnel && (this.transport.type === "websocket" || this.transport.type === "https" || this.options.isHttps)) {
       try {
-        this.emitLine("system", "[Cloudflare Tunnel] Launching quick ephemeral tunnel...");
-        const { startQuickTunnel } = await import("./cloudflareTunnel.js");
-        const effectivePort = this.options.wsPort || this.config.wsPort;
-        const tunnelMeta = await startQuickTunnel({
-          port: effectivePort,
-          host: this.config.wsHost,
-          path: this.config.wsPath,
-          customConfigPath: this.options.customConfigPath,
-          onLog: (msg) => this.options.onLog?.(`[Tunnel] ${msg.trim()}`),
-        });
+        const isHttpsMode = this.transport.type === "https" || this.options.isHttps;
+        const effectivePort = this.options.wsPort || (isHttpsMode ? 7888 : this.config.wsPort || 9225);
+        this.emitLine("system", `[Cloudflare Tunnel] Launching quick ephemeral tunnel for port ${effectivePort}...`);
+        const { startQuickTunnel, getTunnelStatus } = await import("./cloudflareTunnel.js");
+        let tunnelMeta: { publicUrl?: string; wssUrl?: string; localUrl?: string; pid?: number; port?: number } | null = null;
+        const existingStatus = getTunnelStatus(effectivePort);
+        if (existingStatus.isRunning) {
+          tunnelMeta = existingStatus;
+        } else {
+          tunnelMeta = await startQuickTunnel({
+            port: effectivePort,
+            host: isHttpsMode ? "127.0.0.1" : (this.config.wsHost || "127.0.0.1"),
+            path: isHttpsMode ? "" : (this.config.wsPath || "/muse"),
+            customConfigPath: this.options.customConfigPath,
+            onLog: (msg) => this.options.onLog?.(`[Tunnel] ${msg.trim()}`),
+          });
+        }
         this.quickTunnelStarted = true;
         this.tunnelMetadata = tunnelMeta;
-        const { buildMuseConnectionPrompt, copyTextToClipboard } = await import("./cloudflareTunnel.js");
-        const musePrompt = buildMuseConnectionPrompt({
-          wssUrl: tunnelMeta.wssUrl,
-          token: this.config.wsToken,
-          publicUrl: tunnelMeta.publicUrl,
-          localUrl: tunnelMeta.localUrl,
-          workspaces: this.workspaces,
-          cfClientId: this.config.cfAccessClientId,
-          cfClientSecret: this.config.cfAccessClientSecret,
-        });
-        const copied = await copyTextToClipboard(musePrompt);
 
-        this.emitLine(
-          "system",
-          `[Cloudflare Tunnel] Quick tunnel online!\n- Public WSS URL : ${tunnelMeta.wssUrl}\n- Bearer Token   : ${this.config.wsToken}\n- Local Target   : ${tunnelMeta.localUrl}\n\n${copied ? "Prompt for Muse (copied to clipboard, ready to send):" : "Prompt for Muse (copy & send to Muse):"}\n-----------------------------------------------------------------------------\n${musePrompt}\n-----------------------------------------------------------------------------`
-        );
+        if (isHttpsMode) {
+          const { getServerAuthToken } = await import("../utils/serverSecurity.js");
+          const { copyTextToClipboard } = await import("./cloudflareTunnel.js");
+          const serverToken = getServerAuthToken();
+          const publicHttpsUrl = tunnelMeta.publicUrl || `http://127.0.0.1:${effectivePort}`;
+          const curlSnippet = `curl -H "Authorization: Bearer ${serverToken}" ${publicHttpsUrl}/api/status`;
+          const copied = await copyTextToClipboard(curlSnippet);
+
+          this.emitLine(
+            "system",
+            [
+              "═════════════════════════════════════════════════════════════════════════════",
+              "  Superagent HTTP REST/SSE Server Watch Online (Cloudflare Quick Tunnel)!",
+              "═════════════════════════════════════════════════════════════════════════════",
+              `- Public HTTPS URL : ${tunnelMeta.publicUrl || "(initializing)"}`,
+              `- Local Target     : ${tunnelMeta.localUrl || `http://127.0.0.1:${effectivePort}`}`,
+              `- Server Port      : ${effectivePort}`,
+              `- Process PID      : ${tunnelMeta.pid || process.pid}`,
+              `- Bearer Token     : ${serverToken}`,
+              "═════════════════════════════════════════════════════════════════════════════",
+              "",
+              copied
+                ? "Test with curl (copied to clipboard, ready to run):"
+                : "Test with curl (copy & run):",
+              "-----------------------------------------------------------------------------",
+              curlSnippet,
+              "-----------------------------------------------------------------------------",
+              "",
+              "Superagent is actively listening in WATCH mode over HTTPS (REST API & SSE).",
+              "External clients or Muse can connect using Bearer token authentication.",
+              "Run '/muse watch stop' or '/muse tunnel stop --https' to stop watch mode.",
+            ].join("\n")
+          );
+        } else {
+          const { buildMuseConnectionPrompt, copyTextToClipboard } = await import("./cloudflareTunnel.js");
+          const musePrompt = buildMuseConnectionPrompt({
+            wssUrl: tunnelMeta.wssUrl || "",
+            token: this.config.wsToken,
+            publicUrl: tunnelMeta.publicUrl,
+            localUrl: tunnelMeta.localUrl,
+            workspaces: this.workspaces,
+            cfClientId: this.config.cfAccessClientId,
+            cfClientSecret: this.config.cfAccessClientSecret,
+          });
+          const copied = await copyTextToClipboard(musePrompt);
+
+          this.emitLine(
+            "system",
+            `[Cloudflare Tunnel] Quick tunnel online!\n- Public WSS URL : ${tunnelMeta.wssUrl}\n- Bearer Token   : ${this.config.wsToken}\n- Local Target   : ${tunnelMeta.localUrl}\n\n${copied ? "Prompt for Muse (copied to clipboard, ready to send):" : "Prompt for Muse (copy & send to Muse):"}\n-----------------------------------------------------------------------------\n${musePrompt}\n-----------------------------------------------------------------------------`
+          );
+        }
       } catch (err: any) {
         this.emitLine(
           "system",
@@ -442,7 +492,8 @@ export class MuseWatcher {
 
     if (this.quickTunnelStarted) {
       try {
-        const effectivePort = this.options.wsPort || this.config.wsPort;
+        const isHttpsMode = this.transport?.type === "https" || this.options.isHttps;
+        const effectivePort = this.options.wsPort || (isHttpsMode ? 7888 : this.config.wsPort || 9225);
         const { stopQuickTunnel } = await import("./cloudflareTunnel.js");
         await stopQuickTunnel(effectivePort);
       } catch {}

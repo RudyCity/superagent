@@ -9,6 +9,7 @@ import {
   generateSecureWsToken,
   isMuseWsActive,
   RemoteAgentConfig,
+  RemoteAgentTransport,
   getWatchedWorkspaces,
   addWatchedWorkspace,
   removeWatchedWorkspace,
@@ -59,8 +60,16 @@ export const museCommand: SlashCommand = {
       const transport = cfg.transport || "telegram";
       const isConfiguredEffective = transport === "websocket" ? isMuseWsActive() : isConfigured;
 
-      const { getTunnelStatus } = await import("../remoteAgent/cloudflareTunnel.js");
-      const tunnelStatus = getTunnelStatus();
+      const { getTunnelStatus, listActiveTunnels } = await import("../remoteAgent/cloudflareTunnel.js");
+      const activeTunnels = listActiveTunnels();
+      const wsTunnel = getTunnelStatus(cfg.wsPort || 9225);
+      const httpsTunnel = getTunnelStatus(7888);
+      const firstActive = activeTunnels[0];
+      const tunnelStatus = wsTunnel.isRunning
+        ? wsTunnel
+        : (httpsTunnel.isRunning
+          ? httpsTunnel
+          : (firstActive ? { isRunning: true, ...firstActive } : wsTunnel));
 
       const transportLines = transport === "websocket"
         ? [
@@ -221,47 +230,39 @@ export const museCommand: SlashCommand = {
 
           ctx.addLine({
             type: "system",
-            content: `[Cloudflare HTTPS Tunnel] Starting Superagent HTTP REST/SSE server (port ${effectivePort}) and Cloudflare quick tunnel...`,
+            content: `[Cloudflare HTTPS Tunnel] Starting Superagent HTTP REST/SSE server (port ${effectivePort}) in WATCH mode with Cloudflare quick tunnel...`,
             timestamp: now,
           });
 
           try {
-            await ensureSuperagentServer(effectivePort);
-            const serverToken = getServerAuthToken();
+            if (watcherActive) {
+              await stopMuseWatcher();
+            }
 
-            const meta = await startQuickTunnel({
-              port: effectivePort,
-              host: "127.0.0.1",
-              path: "",
+            await startMuseWatcher({
+              workspace: watchedWorkspaces[0] || ctx.agent?.workingDirectory || process.cwd(),
+              workspaces: watchedWorkspaces,
+              transportType: "https",
+              wsPort: effectivePort,
+              tunnel: true,
+              isHttps: true,
+              agent: ctx.agent,
+              onProgress: (msg) => {
+                ctx.addLine({
+                  type: "system",
+                  content: `[Muse Progress] ${msg}`,
+                  timestamp: Date.now(),
+                });
+              },
+              onLine: (line) => {
+                ctx.addLine({
+                  type: (line.type as any) || "system",
+                  content: line.content,
+                  timestamp: line.timestamp || Date.now(),
+                });
+              },
             });
-
-            const curlSnippet = `curl -H "Authorization: Bearer ${serverToken}" ${meta.publicUrl}/api/status`;
-            const copied = await copyTextToClipboard(curlSnippet);
-
-            ctx.addLine({
-              type: "system",
-              content: [
-                "═════════════════════════════════════════════════════════════════════════════",
-                "  Superagent HTTP REST/SSE Server & Cloudflare Quick Tunnel Online!",
-                "═════════════════════════════════════════════════════════════════════════════",
-                `- Public HTTPS URL : ${meta.publicUrl}`,
-                `- Local Target     : ${meta.localUrl}`,
-                `- Server Port      : ${effectivePort}`,
-                `- Process PID      : ${meta.pid}`,
-                `- Bearer Token     : ${serverToken}`,
-                "═════════════════════════════════════════════════════════════════════════════",
-                "",
-                copied
-                  ? "Test with curl (copied to clipboard, ready to run):"
-                  : "Test with curl (copy & run):",
-                "-----------------------------------------------------------------------------",
-                curlSnippet,
-                "-----------------------------------------------------------------------------",
-                "",
-                `To stop the tunnel, run: /muse tunnel stop --https${portOverride ? ` --port ${portOverride}` : ""}`,
-              ].join("\n"),
-              timestamp: Date.now(),
-            });
+            return;
           } catch (err: any) {
             ctx.addLine({
               type: "error",
@@ -1003,7 +1004,18 @@ export const museCommand: SlashCommand = {
       } = await import("../remoteAgent/museWatcher.js");
 
       if (action === "stop") {
-        if (!isMuseWatcherActive()) {
+        let stoppedAny = false;
+        if (isMuseWatcherActive()) {
+          await stopMuseWatcher();
+          stoppedAny = true;
+        }
+        const { getTunnelStatus, stopQuickTunnel } = await import("../remoteAgent/cloudflareTunnel.js");
+        const httpsTunnel = getTunnelStatus(7888);
+        if (httpsTunnel.isRunning) {
+          await stopQuickTunnel(7888);
+          stoppedAny = true;
+        }
+        if (!stoppedAny) {
           ctx.addLine({
             type: "system",
             content: "[Muse Watch] Watch mode is not currently running.",
@@ -1011,14 +1023,43 @@ export const museCommand: SlashCommand = {
           });
           return;
         }
-        await stopMuseWatcher();
+        ctx.addLine({
+          type: "system",
+          content: "[Muse Watch] Watch mode stopped successfully.",
+          timestamp: now,
+        });
         return;
       }
 
       if (action === "status") {
         const watcher = getMuseWatcher();
         const stats = watcher?.getStats();
+        const { getTunnelStatus } = await import("../remoteAgent/cloudflareTunnel.js");
+        const httpsTunnel = getTunnelStatus(7888);
+
         if (!stats || !stats.isRunning) {
+          if (httpsTunnel.isRunning) {
+            const { getServerAuthToken } = await import("../utils/serverSecurity.js");
+            const serverToken = getServerAuthToken();
+            ctx.addLine({
+              type: "system",
+              content: [
+                "Muse Watch Mode: ACTIVE (HTTPS REST/SSE Server)",
+                `- Transport         : HTTP REST/SSE Server (port ${httpsTunnel.port || 7888})`,
+                `- Public HTTPS URL  : ${httpsTunnel.publicUrl}`,
+                `- Local Target      : ${httpsTunnel.localUrl || `http://127.0.0.1:${httpsTunnel.port || 7888}`}`,
+                `- Server Port       : ${httpsTunnel.port || 7888}`,
+                `- Process PID       : ${httpsTunnel.pid}`,
+                `- Uptime            : ${httpsTunnel.uptimeSeconds}s`,
+                `- Bearer Token      : ${serverToken}`,
+                "",
+                "Run '/muse watch stop' or '/muse tunnel stop --https' to stop.",
+              ].join("\n"),
+              timestamp: now,
+            });
+            return;
+          }
+
           ctx.addLine({
             type: "system",
             content: "[Muse Watch] Watch mode is INACTIVE. Run '/muse watch' or '/muse watch start' to activate.",
@@ -1034,12 +1075,13 @@ export const museCommand: SlashCommand = {
         const lines = [
           "Muse Watch Mode: ACTIVE",
           `- Transport         : ${stats.transportDetails || stats.transport || "telegram"}`,
+          stats.tunnelUrl ? `- Public URL        : ${stats.tunnelUrl}` : null,
           wsLines,
           `- Uptime            : ${stats.uptimeSeconds}s`,
           `- Batches Executed  : ${stats.batchesExecuted}`,
           `- Tasks Completed   : ${stats.tasksCompleted}`,
-          `- Active Task       : ${stats.activeTaskId || "none (idle, waiting for Muse)"}`,
-        ];
+          `- Active Task       : ${stats.activeTaskId || "none (idle, waiting for remote requests)"}`,
+        ].filter(Boolean);
         ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
         return;
       }
@@ -1092,11 +1134,26 @@ export const museCommand: SlashCommand = {
         return;
       }
 
-      // Collect directories and flags: /muse watch [start] [--ws] [--tunnel] [dir1] [dir2] ...
+      // Collect directories and flags: /muse watch [start] [--ws] [--tunnel] [--https] [dir1] [dir2] ...
       const isWs = parts.some((p) => p === "--ws" || p === "--websocket");
       const isTg = parts.some((p) => p === "--telegram" || p === "--tg");
       const isTunnel = parts.some((p) => p === "--tunnel" || p === "--quick-tunnel");
-      const transportType = (isWs || isTunnel) ? "websocket" : isTg ? "telegram" : undefined;
+      const isHttps = parts.some((p) => p === "--https" || p === "--http" || p === "--web");
+      const portArgIdx = parts.findIndex((p) => p === "--port" || p === "-p");
+      let portOverride: number | undefined;
+      if (portArgIdx !== -1 && parts[portArgIdx + 1]) {
+        const parsed = parseInt(parts[portArgIdx + 1], 10);
+        if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
+      }
+
+      const cfg = loadRemoteAgentConfig();
+      const transportType: RemoteAgentTransport = isHttps
+        ? "https"
+        : (isWs || isTunnel)
+          ? "websocket"
+          : isTg
+            ? "telegram"
+            : (cfg.transport || "telegram");
 
       const rawDirs = parts.slice(1).filter((p) => {
         if (p.toLowerCase() === "start") return false;
@@ -1106,9 +1163,15 @@ export const museCommand: SlashCommand = {
           p === "--telegram" ||
           p === "--tg" ||
           p === "--tunnel" ||
-          p === "--quick-tunnel"
+          p === "--quick-tunnel" ||
+          p === "--https" ||
+          p === "--http" ||
+          p === "--web" ||
+          p === "--port" ||
+          p === "-p"
         )
           return false;
+        if (portArgIdx !== -1 && (p === parts[portArgIdx + 1])) return false;
         return true;
       });
       const targetDirs = rawDirs
@@ -1116,7 +1179,6 @@ export const museCommand: SlashCommand = {
         .filter((d) => d.length > 0)
         .map((d) => path.resolve(d));
 
-      const cfg = loadRemoteAgentConfig();
       const allWatched = targetDirs.length > 0
         ? targetDirs
         : getWatchedWorkspaces(cfg, ctx.agent?.workingDirectory);
@@ -1148,7 +1210,9 @@ export const museCommand: SlashCommand = {
           workspace: allWatched[0] || ctx.agent?.workingDirectory || process.cwd(),
           workspaces: allWatched,
           transportType,
-          tunnel: isTunnel,
+          tunnel: isTunnel || isHttps,
+          isHttps: isHttps,
+          wsPort: portOverride || (isHttps ? 7888 : undefined),
           agent: ctx.agent,
           onProgress: (msg) => {
             ctx.addLine({
