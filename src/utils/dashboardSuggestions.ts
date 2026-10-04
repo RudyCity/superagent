@@ -66,7 +66,8 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/muse status": "Show remote agent configuration, runner mode, and connection status",
   "/muse steer": "Intervene and send counter-instructions to Muse brain (alias: /muse chat)",
   "/muse chat": "Send a chat or steering message directly to Muse brain",
-  "/muse tunnel": "Cloudflare Tunnel subcommands (list, start, stop, status) & setup guide",
+  "/muse tunnel": "Cloudflare Tunnel subcommands (list, start [--https], stop, status) & setup guide",
+  "/muse tunnel --https": "Start Cloudflare HTTPS tunnel for Superagent REST & SSE server (port 7888)",
   "/muse tunnel list": "List all currently active Cloudflare quick tunnels across all ports",
   "/muse tunnel start": "Start quick Cloudflare tunnel with copyable prompt (optional: --port <n>)",
   "/muse tunnel start --https": "Start Cloudflare HTTPS tunnel for Superagent REST & SSE server (port 7888)",
@@ -80,7 +81,8 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/muse tunnel status --port": "Check Cloudflare quick development tunnel status on a specific port",
   "/muse tunnel guide": "View manual Cloudflare Tunnel setup guide",
   "/muse cloudflare": "Cloudflare Tunnel setup guide, quick test commands, and Bearer token generator",
-  "/tunnel": "Manage Cloudflare quick tunnels (list, start, stop, status)",
+  "/tunnel": "Manage Cloudflare quick tunnels (list, start [--https], stop, status)",
+  "/tunnel --https": "Start Cloudflare HTTPS tunnel for Superagent REST & SSE server (port 7888)",
   "/tunnel list": "List all currently active Cloudflare quick tunnels across all ports",
   "/tunnel start": "Start quick ephemeral Cloudflare tunnel (optional: --port <n>)",
   "/tunnel start --https": "Start Cloudflare HTTPS tunnel for Superagent REST & SSE server (port 7888)",
@@ -193,21 +195,33 @@ function getResumePossibilities(): string[] {
 function getTunnelSubSuggestions(prefix: string, query: string): string[] {
   const baseSuggestions = [
     `${prefix} list`,
-    `${prefix} start`,
     `${prefix} start --https`,
-    `${prefix} start --port`,
-    `${prefix} stop`,
-    `${prefix} stop --https`,
-    `${prefix} stop all`,
-    `${prefix} status`,
+    `${prefix} start`,
     `${prefix} status --https`,
+    `${prefix} status`,
+    `${prefix} stop --https`,
+    `${prefix} stop`,
+    `${prefix} stop all`,
+    `${prefix} start --port`,
+    `${prefix} --https`,
     `${prefix} guide`,
   ];
 
+  if (query.startsWith(`${prefix} --`)) {
+    const flagSuggestions = [
+      `${prefix} --https`,
+      `${prefix} start --https`,
+      `${prefix} status --https`,
+      `${prefix} stop --https`,
+    ];
+    return filterSuggestions(flagSuggestions, query);
+  }
+
   if (query.startsWith(`${prefix} stop`)) {
     const stopSuggestions = [
-      `${prefix} stop all`,
       `${prefix} stop --https`,
+      `${prefix} stop`,
+      `${prefix} stop all`,
       `${prefix} stop --port`,
     ];
     try {
@@ -227,8 +241,8 @@ function getTunnelSubSuggestions(prefix: string, query: string): string[] {
 
   if (query.startsWith(`${prefix} start`)) {
     const startSuggestions = [
-      `${prefix} start`,
       `${prefix} start --https`,
+      `${prefix} start`,
       `${prefix} start --port`,
       `${prefix} start --port 9226`,
       `${prefix} start --port 9227`,
@@ -238,8 +252,8 @@ function getTunnelSubSuggestions(prefix: string, query: string): string[] {
 
   if (query.startsWith(`${prefix} status`)) {
     const statusSuggestions = [
-      `${prefix} status`,
       `${prefix} status --https`,
+      `${prefix} status`,
       `${prefix} status --port`,
     ];
     try {

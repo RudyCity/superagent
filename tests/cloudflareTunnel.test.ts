@@ -201,7 +201,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       spy.mockRestore();
     });
 
-    it("should list /muse in main /help output", async () => {
+    it("should list /muse and /tunnel with --https in main /help output", async () => {
       const { helpCommand } = await import("../src/core/commands/coreCommands.js");
       const lines: any[] = [];
       await helpCommand.execute("", {
@@ -213,7 +213,8 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       const helpText = String(lines[0].content);
       expect(helpText).toContain("/muse");
       expect(helpText).toContain("/muse tunnel");
-      expect(helpText).toContain("/muse watch");
+      expect(helpText).toContain("/tunnel");
+      expect(helpText).toContain("--https");
     });
   });
 
@@ -469,6 +470,14 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
     });
 
     it("should provide autocomplete suggestions and descriptions for --https subcommands", () => {
+      const tunnelSuggestions = getDashboardSuggestions("/tunnel ");
+      expect(tunnelSuggestions).toContain("/tunnel start --https");
+      expect(tunnelSuggestions).toContain("/tunnel --https");
+
+      const flagSuggestions = getDashboardSuggestions("/tunnel --");
+      expect(flagSuggestions).toContain("/tunnel --https");
+      expect(flagSuggestions).toContain("/tunnel start --https");
+
       const startSuggestions = getDashboardSuggestions("/tunnel start ");
       expect(startSuggestions).toContain("/tunnel start --https");
 
@@ -482,9 +491,13 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(museStartSuggestions).toContain("/muse tunnel start --https");
 
       const descriptions = getSuggestionDescriptions();
+      expect(descriptions["/tunnel"]).toContain("--https");
+      expect(descriptions["/tunnel --https"]).toBeDefined();
       expect(descriptions["/tunnel start --https"]).toBeDefined();
       expect(descriptions["/tunnel stop --https"]).toBeDefined();
       expect(descriptions["/tunnel status --https"]).toBeDefined();
+      expect(descriptions["/muse tunnel"]).toContain("--https");
+      expect(descriptions["/muse tunnel --https"]).toBeDefined();
       expect(descriptions["/muse tunnel start --https"]).toBeDefined();
     });
 

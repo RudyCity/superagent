@@ -1,3 +1,15 @@
+## [1.5.139] - 2026-10-04
+
+### Added & Improved
+
+- **Enhanced CLI Help and Autocomplete Suggestions for `--https` Cloudflare Tunnels**:
+  - Added `--https` flag to `/help` output for both `/muse tunnel` and `/tunnel` commands.
+  - Added `--https` flag description and example commands to `superagent --help` and `tunnelCommand` slash command definition.
+  - Added top-priority autocomplete suggestions for `/tunnel start --https`, `/tunnel --https`, `/tunnel status --https`, and `/tunnel stop --https` in `dashboardSuggestions.ts`.
+  - Added dedicated autocomplete suggestions when typing `/tunnel --` and `/muse tunnel --`.
+  - Added tooltip descriptions for `/tunnel --https` and `/muse tunnel --https` across the terminal dashboard.
+  - Updated unit test suite in `tests/cloudflareTunnel.test.ts` verifying `/help` and autocomplete suggestions for `--https`.
+
 ## [1.5.138] - 2026-10-04
 
 ### Documentation & System Prompts

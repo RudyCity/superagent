@@ -588,6 +588,7 @@ export const museCommand: SlashCommand = {
         "  /muse tunnel status          - Check current tunnel status (optional: --port <n>)",
         "  /muse tunnel status --https  - Check Cloudflare HTTPS tunnel status (port 7888)",
         "  /muse tunnel guide           - View full manual Cloudflare setup guide",
+        "  /tunnel start [--https]      - Shortcut: start quick tunnel with optional --https",
         "",
         "1. Prerequisites:",
         "   Install cloudflared: winget install Cloudflare.cloudflared (or brew install cloudflared)",
@@ -1454,7 +1455,7 @@ registry.register(museCommand);
 export const tunnelCommand: SlashCommand = {
   name: "tunnel",
   aliases: ["tunnels"],
-  description: "Manage Cloudflare quick tunnels (list, start, stop, status)",
+  description: "Manage Cloudflare quick tunnels (list, start [--https], stop, status)",
   async execute(args, ctx) {
     const rawTrimmed = args.trim();
     if (!rawTrimmed) {

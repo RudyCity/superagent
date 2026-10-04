@@ -149,7 +149,7 @@ Commands:
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
   gateway           Manage the omnichannel messaging gateway (status, enable, disable, listen, poll)
   muse              Coordinate with remote AI agent (status, config, watch [projects...], run)
-  tunnel            Manage Cloudflare quick tunnels (list, start, stop, status)
+  tunnel            Manage Cloudflare quick tunnels (list, start [--https], stop, status)
   mcp               Manage MCP servers (list, add, remove, register)
   selfdev           Manage self-development behavioral lessons (status, list, distill, approve, reject, retire)
   skill             Manage and synthesize reusable skills (list, synth)
@@ -169,6 +169,7 @@ Options:
   -q, --quick             Fast startup path, bypass interactive progress UI
   --skip-startup-check    Alias for --quick
   -s, --server [P]        Start API server (default port: 7888)
+  -t, --tunnel            Pair with --server to expose API server via Cloudflare HTTPS quick tunnel
   -m, --client-mode <M>   Client mode for server: 'chrome-extension' or 'tline' (default: tline)
   -v, --version           Show version number and exit
   -h, --help              Show this help message and exit
@@ -181,6 +182,8 @@ Examples:
   superagent daemon list
   superagent daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"
   superagent tunnel list
+  superagent tunnel start --https
+  superagent --server 7888 --tunnel
   superagent muse tunnel list
   superagent muse watch ./backend ./frontend
   superagent -q "explain quantum computing in simple terms"
