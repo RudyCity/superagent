@@ -863,4 +863,5 @@ export {
   killBackgroundProcessTool,
   viewBackgroundProcessesTool,
   manageBackgroundProcessTool,
+  inspectBackgroundLogTool,
 } from "./backgroundProcessTools.js";

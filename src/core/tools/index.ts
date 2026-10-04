@@ -51,7 +51,8 @@ import {
   bashTool, 
   runCommandTool, 
   runBackgroundProcessTool, 
-  manageBackgroundProcessTool 
+  manageBackgroundProcessTool,
+  inspectBackgroundLogTool
 } from "./shellTools.js";
 
 import { 
@@ -176,6 +177,7 @@ export {
   freePortTool,
   findProcessTool,
   killProcessTool,
+  inspectBackgroundLogTool,
 };
 import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../workspace/workspaceChainTools.js";
 import { listToolsTool, describeToolTool } from "./toolDiscoveryTools.js";
@@ -272,6 +274,7 @@ export const allTools: Tool[] = [
   freePortTool,
   findProcessTool,
   killProcessTool,
+  inspectBackgroundLogTool,
 ];
 
 const TOOL_ALIASES: Record<string, string> = {
@@ -282,6 +285,12 @@ const TOOL_ALIASES: Record<string, string> = {
   run_bg_process: "run_background_process",
   manage_background: "manage_background_process",
   kill_background: "manage_background_process",
+  inspect_background_log: "inspect_background_log",
+  grep_background_log: "inspect_background_log",
+  tail_background_log: "inspect_background_log",
+  search_background_log: "inspect_background_log",
+  read_background_log: "inspect_background_log",
+  view_background_log: "inspect_background_log",
   cmd: "run_command",
   exec: "run_command",
   shell: "run_command",

@@ -1179,6 +1179,8 @@ export function getToolDescription(
       return `Running command: ${truncateCommand(s(args.command ?? args.cmd))}${args.cwd ? ` (in ${args.cwd})` : ""}`;
     case "manage_background_process":
       return `Managing background process (${s(args.action)}): ${args.processId || ""}`;
+    case "inspect_background_log":
+      return `Inspecting background log (${s(args.action)}): ${args.processId || args.logPath || ""}`;
     case "schedule":
       return `Scheduling job: ${s(args.prompt)}`;
     case "define_subagent":

@@ -242,10 +242,64 @@ export async function sshViewBackgroundProcessesExecute(processId?: string): Pro
 export async function sshManageBackgroundProcessExecute(
   action: string,
   processId?: string,
-  input?: string
+  input?: string,
+  options?: {
+    query?: string;
+    offset?: number;
+    limit?: number;
+    lines?: number;
+    contextLines?: number;
+  }
 ): Promise<string> {
   if (action === "list") {
     return sshViewBackgroundProcessesExecute();
+  }
+  if (action === "list_logs") {
+    try {
+      const res = await sshProxy.exec("ls -lh .superagent-bg.log ~/.superagent-bg.log 2>/dev/null || echo 'No SSH background logs.'");
+      return res.stdout || "No SSH background logs.";
+    } catch {
+      return "No SSH background logs.";
+    }
+  }
+  if (action === "tail") {
+    const n = options?.lines || options?.limit || 50;
+    try {
+      const res = await sshProxy.exec(`tail -n ${n} .superagent-bg.log 2>/dev/null || true`);
+      return res.stdout || "(empty log)";
+    } catch (e: any) {
+      return `Error reading SSH log: ${e.message}`;
+    }
+  }
+  if (action === "head") {
+    const n = options?.lines || options?.limit || 50;
+    try {
+      const res = await sshProxy.exec(`head -n ${n} .superagent-bg.log 2>/dev/null || true`);
+      return res.stdout || "(empty log)";
+    } catch (e: any) {
+      return `Error reading SSH log: ${e.message}`;
+    }
+  }
+  if (action === "grep" || action === "search") {
+    const q = options?.query || "";
+    if (!q) return "Error: query is required for grep/search.";
+    const ctx = options?.contextLines ?? 2;
+    try {
+      const res = await sshProxy.exec(`grep -n -C ${ctx} -i ${sshProxy.escapeShellArg(q)} .superagent-bg.log 2>/dev/null || echo "No matches found."`);
+      return res.stdout || "No matches found.";
+    } catch (e: any) {
+      return `Error searching SSH log: ${e.message}`;
+    }
+  }
+  if (action === "read" || action === "slice") {
+    const off = options?.offset || 1;
+    const lim = options?.limit || 100;
+    try {
+      const res = await sshProxy.exec(`sed -n '${off},${off + lim - 1}p' .superagent-bg.log 2>/dev/null || true`);
+      return res.stdout || "(empty)";
+    } catch (e: any) {
+      return `Error slicing SSH log: ${e.message}`;
+    }
   }
   if (!processId) {
     return "Error: processId is required for SSH background process actions.";

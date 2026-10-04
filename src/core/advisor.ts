@@ -179,7 +179,7 @@ export function extractReadPaths(tc: ToolCall): string[] {
 }
 
 const POLLING_STATUS_ACTIONS = new Set(["list", "status", "report", "logs", "violations"]);
-const BG_PROCESS_ACTIONS = new Set(["list", "status", "stream"]);
+const BG_PROCESS_ACTIONS = new Set(["list", "status", "stream", "logs", "log", "tail", "head", "read", "slice", "grep", "search", "list_logs"]);
 
 export class RealtimeAdvisor {
   private agentStates: Map<string, AgentState> = new Map();
@@ -757,6 +757,9 @@ function isPollingOrStatusCall(name: string, args: any): boolean {
     case "manage_background_process": {
       const action = args?.action;
       return typeof action === "string" && BG_PROCESS_ACTIONS.has(action);
+    }
+    case "inspect_background_log": {
+      return true;
     }
     case "view_background_processes":
       return true;

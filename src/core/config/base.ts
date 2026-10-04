@@ -249,7 +249,8 @@ if request_is_complex:
   - 'run_command': Fast synchronous shell execution for validation commands (supports timeout). Automatically logs output to disk.
   - 'bash': Sync shell execution with automatic logging.
   - 'run_background_process': Async execution (dev servers, watchers, long jobs).
-  - 'manage_background_process': Inspect/input/kill/wait background processes and inspect live command logs.
+  - 'manage_background_process': Inspect/input/kill/wait background processes and inspect, grep, slice, tail, or list output logs.
+  - 'inspect_background_log': Deep log analysis: grep search patterns with context, slice line ranges, tail recent output, or list log files on disk.
 - Process & Port Diagnostics:
   - 'inspect_port': Inspect TCP port, discover listening PID, process name, command line, and Superagent task correlation.
   - 'free_port': Safely terminate the process tree holding a port to resolve conflicts without blanket kill.

@@ -1,3 +1,16 @@
+## [1.5.136] - 2026-10-04
+
+### Added
+
+- **Deep Log Analysis, Grep, Slicing, and Tailing for Background Processes (`manage_background_process` & `inspect_background_log`)**:
+  - Created modular `src/core/tools/backgroundLogService.ts` for deep log parsing, ANSI escape stripping, regex/substring searching with context lines (`grep`), line-range slicing (`read`/`slice` with 1-indexed and negative offset pagination), and fast head/tail extraction.
+  - Enhanced `manage_background_process` in `src/core/tools/backgroundProcessTools.ts` with new actions: `grep`, `search`, `tail`, `head`, `read`, `slice`, and `list_logs`.
+  - Added support for direct `logPath` target inspection in addition to `processId`, enabling direct analysis of current and historical background logs on disk even after process exit or memory pruning.
+  - Enhanced `action: "list"` to include PID, status, command, and exact log file path for every active background task.
+  - Added dedicated `inspect_background_log` tool (with aliases `grep_background_log`, `tail_background_log`, `search_background_log`, `read_background_log`, `view_background_log`) registered across `masterToolset`, `superagentToolset`, `chromeExtensionToolset`, and subagents (`coder`, `software-tester`, `reviewer`, `researcher`).
+  - Added full SSH remote workspace parity in `src/core/ssh/sshCommands.ts` for background log inspection actions via remote `tail`, `head`, `grep`, and `sed`.
+  - Added 19 comprehensive unit tests in `tests/backgroundProcessLogInspection.test.ts`.
+
 ## [1.5.135] - 2026-10-04
 
 ### Enhanced
