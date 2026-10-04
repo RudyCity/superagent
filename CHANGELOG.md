@@ -1,3 +1,13 @@
+## [1.5.138] - 2026-10-04
+
+### Documentation & System Prompts
+
+- **Documentation & System Prompt Alignment for Cloudflare HTTPS Tunnels**:
+  - Updated `README.md` with detailed usage documentation for `superagent tunnel start --https`, `/tunnel start --https`, `/tunnel stop --https`, `/tunnel status --https`, and `superagent --server [port] --tunnel`.
+  - Documented Bearer token authentication and Zero Trust security guarantees for public tunnels exposing the Superagent HTTP/SSE REST server.
+  - Updated system prompts in `src/core/prompts.ts` with `REMOTE_ACCESS_AND_TUNNELS` rule across Master, Superagent, and Subagent tiers.
+  - Added Cloudflare Quick Tunnels tool usage guidelines in `src/core/config/base.ts`.
+
 ## [1.5.137] - 2026-10-04
 
 ### Added

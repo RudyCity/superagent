@@ -81,8 +81,9 @@ superagent daemon list
 superagent daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"
 
 # Manage Cloudflare Quick Tunnels
-superagent tunnel list
-superagent tunnel start
+superagent tunnel list                   # List active tunnels across all ports
+superagent tunnel start                  # Start Muse WebSocket tunnel (port 9225)
+superagent tunnel start --https          # Start HTTPS tunnel for Superagent REST/SSE server (port 7888)
 
 # Run a task using the remote AI agent (Muse)
 superagent muse status
@@ -163,7 +164,7 @@ No manual server configuration or extra CLI arguments are required—simply laun
 | `/mcp` | Manage MCP (Model Context Protocol) servers: list, add, remove, reload |
 | `/macro` | Manage and run browser macro presets: list, run, delete |
 | `/muse` | Coordinate with remote AI agent (Muse) over WebSocket (Cloudflare Tunnel) or Telegram (`/muse <task>`, `/muse tunnel`, `/muse watch`, `/muse status`) |
-| `/tunnel` `/tunnels` | Manage Cloudflare quick tunnels: `list`, `start`, `stop`, `status` |
+| `/tunnel` `/tunnels` | Manage Cloudflare quick tunnels (WebSocket & HTTPS REST): `list`, `start` [`--https`], `stop` [`all`|`--https`], `status` [`--https`] |
 
 ### Workspace Management
 
@@ -231,9 +232,10 @@ Workspace Chaining allows you to link multiple workspaces—both local directori
 
 Superagent can pair with an external AI agent (**"Muse"**) acting as a remote cognitive brain while Superagent provides local file access, command execution, and test running on your workstation. Superagent supports two bidirectional transports:
 
-1. **Cloudflare Tunnel + WebSocket (Zero Trust)** *(Recommended)*:
-   - **Sub-millisecond Streaming**: Real-time batch streaming without polling delays.
-   - **Quick Ephemeral Tunnel**: Instant zero-configuration tunnel via `cloudflared` without custom domain setup.
+1. **Cloudflare Tunnel (Zero Trust)** *(Recommended)*:
+   - **Sub-millisecond Streaming**: Real-time WebSocket batch streaming for Muse cognitive brain coordination (port 9225).
+   - **Unified HTTPS REST & SSE Tunnel**: Expose the Superagent server (port 7888) over public HTTPS with Bearer token authentication (`--https`).
+   - **Quick Ephemeral Tunnel**: Instant zero-configuration tunnel via `cloudflared` without custom domain setup or open firewall ports.
    - **Multi-Project Watch Daemon**: Watch multiple repositories concurrently (`/muse watch dir1 dir2 --tunnel`).
    - **Multi-Terminal Isolation**: Run independent tunnels across multiple terminals using custom ports (`--port 9226`).
    - **Tunnel Inspection & Batch Stop**: Inspect all active tunnels via `/tunnel list` (or `superagent tunnel list`) and stop all via `/tunnel stop all`.
@@ -244,7 +246,7 @@ Superagent can pair with an external AI agent (**"Muse"**) acting as a remote co
 **Quick Tunnel Subcommands:**
 
 ```bash
-# Manage quick ephemeral tunnels
+# Manage quick ephemeral tunnels for Muse WebSocket (port 9225)
 superagent tunnel list                   # List all active tunnels across all ports
 superagent tunnel start                  # Start tunnel on default port (9225)
 superagent tunnel start --port 9226      # Start tunnel on isolated custom port
@@ -252,12 +254,27 @@ superagent tunnel stop                   # Stop tunnel on default port
 superagent tunnel stop all               # Stop all active tunnels
 superagent tunnel status                 # Check status and uptime
 
+# Expose HTTP REST / SSE Server via HTTPS Tunnel (Zero Trust + Bearer Token)
+superagent tunnel start --https          # Starts tunnel to port 7888 (auto-spawns server if needed)
+superagent tunnel start --https --port 8080 # Custom port for HTTP server tunnel
+superagent tunnel status --https         # Check HTTPS tunnel status
+superagent tunnel stop --https           # Stop HTTPS tunnel
+
+# Launch server directly with public quick tunnel:
+superagent --server 7888 --tunnel
+
 # Interactive terminal equivalents:
 /tunnel list                             # Or /tunnels
-/tunnel start [--port <n>]
-/tunnel stop [all|--port <n>]
-/tunnel status [--port <n>]
+/tunnel start [--https] [--port <n>]
+/tunnel stop [all|--https|--port <n>]
+/tunnel status [--https|--port <n>]
+/muse tunnel start [--https]
 ```
+
+**HTTPS Tunnel Security Guarantees:**
+- **Bearer Token Enforcement**: Every request to the public `trycloudflare.com` URL requires `Authorization: Bearer <token>`. Unauthorized requests are blocked with HTTP 401.
+- **Dynamic CORS Protection**: CORS headers strictly restrict origins to verified `trycloudflare.com` hostnames, localhost, and registered clients.
+- **Auto-Provisioning**: Running `/tunnel start --https` automatically verifies if the background server is active, safely auto-spawns it on port 7888 if not, and displays test `curl` snippets with the active token pre-filled.
 
 **Starting Watch Mode with Tunnel:**
 

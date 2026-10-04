@@ -57,7 +57,8 @@ const AESTHETIC_AND_GATEWAY_RULES = `${READ_ONLY_GATEWAY_RULES}
 - COMMAND_LOGS: Foreground commands (run_command, bash) stream real-time logs to ~/.superagent-r/logs/latest-command.log and ~/.superagent-r/logs/commands/cmd_*.log. Live process tools reflect active log paths.
 - TRUNCATED_OUTPUT: When output is truncated ([Command output truncated. Full log saved to: <path>]), NEVER re-run identical command blindly. Read full log from <path> via read (with offset/limit) or ripgrep_search.
 - PIPE_AND_DAEMON_SAFETY: FORBIDDEN: Unbuffered pipes (tail, head) or commands expecting interactive stdin in foreground. Long-running processes, dev servers, and file watchers MUST use run_background_process.
-- PROCESS_AND_PORT_SAFETY: FORBIDDEN: Blanket process termination (taskkill /IM bun.exe, taskkill /IM node.exe, killall, pkill). When resolving port conflicts (EADDRINUSE), ALWAYS use inspect_port(port) to diagnose and free_port(port) or kill_process(pid) to terminate ONLY the conflicting process tree.`;
+- PROCESS_AND_PORT_SAFETY: FORBIDDEN: Blanket process termination (taskkill /IM bun.exe, taskkill /IM node.exe, killall, pkill). When resolving port conflicts (EADDRINUSE), ALWAYS use inspect_port(port) to diagnose and free_port(port) or kill_process(pid) to terminate ONLY the conflicting process tree.
+- REMOTE_ACCESS_AND_TUNNELS: Cloudflare Quick Tunnels expose local endpoints safely via trycloudflare.com. Default port 9225 for WebSocket (Muse agent coordination). Use '--https' flag (default port 7888) to expose Superagent HTTP/SSE REST server protected by Bearer token authentication. Commands: /tunnel start [--https], /tunnel stop [--https|all], superagent --server [port] --tunnel.`;
 
 const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify pre-action primary goal alignment + workspace limits.`;
 

@@ -263,7 +263,12 @@ if request_is_complex:
   - 'cli_bridge': Delegate to external AI CLIs ('delegate' or 'session.*').
   - 'git_worktree': Manage worktrees (list/add/remove/prune).
   - 'manage_workspace_chain' & 'cross_workspace_exec': Cross-workspace nodes (local+SSH).
-  - 'ask_question': User interactive decisions.`;
+  - 'ask_question': User interactive decisions.
+- Cloudflare Quick Tunnels:
+  - Commands: '/tunnel start [--https] [--port <n>]', '/tunnel stop [all|--https|--port <n>]', '/tunnel status [--https|--port <n>]', '/tunnel list'.
+  - WebSocket mode (default, port 9225): Remote AI agent pairing (Muse).
+  - HTTPS mode ('--https', default port 7888): Expose Superagent HTTP/SSE REST server with Bearer token authentication. Also 'superagent --server [port] --tunnel'.
+  - Security: Bearer token authentication enforced. Dynamic CORS allows *.trycloudflare.com. Zero firewall openings required.`;
 
   return basePrompt;
 }
