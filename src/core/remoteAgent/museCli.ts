@@ -364,16 +364,14 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     }
 
     if (action === "stop") {
-      const { stopMuseWatcher, isMuseWatcherActive } = await import("./museWatcher.js");
+      const { stopMuseWatcher, isMuseWatcherActive, stopAllMuseWatchers } = await import("./museWatcher.js");
       const { stopQuickTunnel, stopAllQuickTunnels, getTunnelStatus } = await import("./cloudflareTunnel.js");
 
       const isAll = args.includes("all") || args.includes("--all") || args.includes("-a");
       if (isAll) {
-        if (isMuseWatcherActive()) {
-          await stopMuseWatcher();
-        }
+        const watcherCount = await stopAllMuseWatchers();
         const count = await stopAllQuickTunnels();
-        console.log(`[Cloudflare Tunnel] Stopped ${count} active quick tunnel${count === 1 ? "" : "s"}.`);
+        console.log(`[Cloudflare Tunnel] Stopped ${count} quick tunnel${count === 1 ? "" : "s"} and ${watcherCount} watch daemon${watcherCount === 1 ? "" : "s"} across all workspaces.`);
         return;
       }
 

@@ -562,19 +562,75 @@ export class CloudflareTunnelManager {
   }
 
   /**
-   * Stops all running quick Cloudflare tunnels across all ports.
+   * Stops all running quick Cloudflare tunnels across all ports and workspaces,
+   * including orphaned quick-tunnel processes that have no state file.
    */
   public async stopAll(): Promise<number> {
     const active = this.listActive();
     let stoppedCount = 0;
+    const handledPids = new Set<number>();
     for (const t of active) {
       try {
+        handledPids.add(t.pid);
         const stopped = await this.stopQuickTunnel(t.port);
         if (stopped) stoppedCount++;
       } catch {}
     }
+    stoppedCount += await this.killOrphanQuickTunnels(handledPids);
     clearTunnelState("all");
     return stoppedCount;
+  }
+
+  /**
+   * Finds and terminates cloudflared quick-tunnel processes (`tunnel --url http://<local>:<port>`)
+   * that are not tracked by any state file. Named/managed tunnels are left untouched.
+   */
+  private async killOrphanQuickTunnels(skipPids: Set<number>): Promise<number> {
+    const pids: number[] = [];
+    try {
+      if (process.platform === "win32") {
+        const { stdout } = await execa(
+          "powershell",
+          [
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance Win32_Process -Filter \"Name = 'cloudflared.exe'\" | Select-Object ProcessId, CommandLine | ConvertTo-Json -Compress",
+          ],
+          { timeout: 5000, reject: false },
+        );
+        if (stdout && stdout.trim()) {
+          const parsed = JSON.parse(stdout);
+          const list = Array.isArray(parsed) ? parsed : [parsed];
+          for (const p of list) {
+            if (p?.ProcessId && /tunnel\s+--url\s+https?:\/\/(127\.0\.0\.1|localhost)/i.test(p.CommandLine || "")) {
+              pids.push(Number(p.ProcessId));
+            }
+          }
+        }
+      } else {
+        const { stdout } = await execa("pgrep", ["-af", "cloudflared"], { timeout: 3000, reject: false });
+        for (const line of (stdout || "").split("\n")) {
+          const m = line.match(/^(\d+)\s+.*tunnel\s+--url\s+https?:\/\/(127\.0\.0\.1|localhost)/i);
+          if (m) pids.push(Number(m[1]));
+        }
+      }
+    } catch {
+      return 0;
+    }
+
+    let killed = 0;
+    for (const pid of pids) {
+      if (skipPids.has(pid) || pid === process.pid || !isProcessRunning(pid)) continue;
+      try {
+        if (process.platform === "win32") {
+          await execa("taskkill", ["/pid", String(pid), "/T", "/F"], { reject: false });
+        } else {
+          process.kill(pid, "SIGTERM");
+        }
+        killed++;
+      } catch {}
+    }
+    return killed;
   }
 
   /**
@@ -674,7 +730,7 @@ export function formatActiveTunnels(tunnels: ActiveTunnelInfo[]): string {
     "",
     "Commands:",
     "  Stop specific tunnel : /muse tunnel stop --port <port>",
-    "  Stop all tunnels     : /muse tunnel stop all",
+    "  Stop all tunnels     : /muse tunnel stop all  (all running tunnels and watchers across all workspaces)",
   );
 
   return lines.join("\n");

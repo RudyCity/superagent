@@ -1,3 +1,13 @@
+## [1.5.144] - 2026-10-05
+
+### Added & Improved
+
+- **Multi-Workspace Stop-All for Cloudflare Tunnels & Watchers**:
+  - Enhanced `/muse tunnel stop all` (and `/tunnel stop all`, `superagent tunnel stop all`, `superagent tunnels stop`) to terminate all active Cloudflare quick tunnels, active watch daemons, and orphaned `cloudflared` quick-tunnel processes across every workspace.
+  - Added `stopAllMuseWatchers()` in `museWatcher.ts` to cleanly tear down all background project watchers concurrently.
+  - Added `killOrphanQuickTunnels()` in `cloudflareTunnel.ts` to sweep any untracked `cloudflared` quick-tunnel child processes while strictly preserving named/managed infrastructure tunnels.
+  - Updated `/tunnel list` and `/muse tunnel list` help text to clearly describe the full scope of `stop all`.
+
 ## [1.5.143] - 2026-10-05
 
 ### Fixed & Synchronized

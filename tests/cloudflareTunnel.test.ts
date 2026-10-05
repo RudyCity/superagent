@@ -429,12 +429,17 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
         return true;
       });
 
+      const orphanSpy = vi.spyOn(cloudflareTunnel as any, "killOrphanQuickTunnels").mockResolvedValue(0);
+
       const stopLines: any[] = [];
       await museCommand.execute("tunnel stop all", {
         addLine: (line) => stopLines.push(line),
         exit: () => {},
       } as any);
       expect(stopLines.some((l) => l.content.includes("Stopped"))).toBe(true);
+      expect(stopLines.some((l) => l.content.includes("across all workspaces"))).toBe(true);
+      expect(orphanSpy).toHaveBeenCalled();
+      orphanSpy.mockRestore();
       stopSpy.mockRestore();
 
       clearTunnelState();

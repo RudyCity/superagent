@@ -1173,6 +1173,20 @@ export async function stopMuseWatcher(port?: number): Promise<boolean> {
   return false;
 }
 
+export async function stopAllMuseWatchers(): Promise<number> {
+  const watchers = Array.from(activeWatchers.values());
+  activeWatchers.clear();
+  globalMuseWatcher = null;
+  let count = 0;
+  for (const w of watchers) {
+    try {
+      await w.stop();
+      count++;
+    } catch {}
+  }
+  return count;
+}
+
 export function hasActiveMuseBatch(): boolean {
   return Boolean(globalMuseWatcher && globalMuseWatcher.hasActiveBatch());
 }

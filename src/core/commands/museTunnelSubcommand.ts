@@ -438,13 +438,12 @@ export async function handleMuseTunnelSubcommand(
     const rawArgs = parts.slice(1).filter((p) => p.toLowerCase() !== rawAction && p.toLowerCase() !== "tunnel" && p.toLowerCase() !== "cloudflare");
     const isAll = rawArgs.includes("all") || rawArgs.includes("--all") || rawArgs.includes("-a");
     if (isAll) {
-      if (isMuseWatcherActive()) {
-        await stopMuseWatcher();
-      }
+      const { stopAllMuseWatchers } = await import("../remoteAgent/museWatcher.js");
+      const watcherCount = await stopAllMuseWatchers();
       const count = await stopAllQuickTunnels();
       ctx.addLine({
         type: "system",
-        content: `[Cloudflare Tunnel] Stopped ${count} active quick tunnel${count === 1 ? "" : "s"}.`,
+        content: `[Cloudflare Tunnel] Stopped ${count} quick tunnel${count === 1 ? "" : "s"} and ${watcherCount} watch daemon${watcherCount === 1 ? "" : "s"} across all workspaces.`,
         timestamp: Date.now(),
       });
       return;
