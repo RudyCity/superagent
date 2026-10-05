@@ -6,7 +6,6 @@ import {
   updateRemoteAgentConfig,
   maskToken,
   maskSecret,
-  generateSecureWsToken,
   isMuseWsActive,
   RemoteAgentConfig,
   RemoteAgentTransport,
@@ -19,7 +18,7 @@ import { formatReadableSummary } from "../remoteAgent/formatSummary.js";
 
 export const museCommand: SlashCommand = {
   name: "muse",
-  description: "Coordinate with remote AI agent (Muse) over Telegram bot bus",
+  description: "Coordinate with remote AI agent (Muse) over Cloudflare Tunnel / WebSocket or Telegram",
   async execute(args, ctx) {
     const rawTrimmed = args.trim();
     const parts = rawTrimmed.split(/\s+/).filter(Boolean);
@@ -105,7 +104,9 @@ export const museCommand: SlashCommand = {
         "  /muse tunnel list            - List all currently active Cloudflare tunnels",
         "  /muse tunnel start           - Start quick ephemeral Cloudflare Tunnel (optional: --port <n>)",
         "  /muse tunnel stop            - Stop active Cloudflare Tunnel (optional: --port <n> or all)",
+        "  /muse tunnel restart         - Restart active Cloudflare Tunnel and watch daemon",
         "  /muse tunnel status          - Check Cloudflare Tunnel process status (optional: --port <n>)",
+        "  /muse tunnel prompt          - View and copy connection prompt for Muse",
         "  /muse watch [dir1] [dir2]    - Watch one or multiple project workspaces",
         "  /muse watch --ws             - Watch projects using secure WebSocket transport",
         "  /muse watch --tunnel         - Watch projects and expose via Cloudflare Tunnel",
@@ -114,8 +115,11 @@ export const museCommand: SlashCommand = {
         "  /muse stop                   - Cancel active remote task and notify Muse",
         "  /muse cancel                 - Cancel active remote task and notify Muse",
         "  /muse steer <msg>            - Intervene and steer Muse with counter-instructions (alias: /muse chat)",
+        "  /muse doctor                 - Run diagnostic checks (cloudflared, ports, credentials)",
+        "  /muse connect                - Test connection to remote Muse endpoint",
         "  /muse new                    - Reset remote session memory",
         "  /muse reset                  - Reset remote session memory",
+        "  /muse config                 - View current remote agent configuration",
         "  /muse config <key> <val>     - Set config key (transport, wsToken, wsPort, botToken, etc.)",
       ].filter(Boolean) as string[];
 
@@ -125,507 +129,51 @@ export const museCommand: SlashCommand = {
 
     // /muse tunnel or /muse cloudflare
     if (subcommand === "tunnel" || subcommand === "cloudflare") {
-      const isHttps = parts.slice(1).some((p) => p.toLowerCase() === "--https" || p.toLowerCase() === "--http" || p.toLowerCase() === "--web");
-      const nonFlagParts = parts.slice(1).filter((p) => !p.startsWith("-"));
-      const action = (nonFlagParts[0] || (isHttps ? "start" : "")).toLowerCase();
-      const cfg = loadRemoteAgentConfig();
-      const host = cfg.wsHost || "127.0.0.1";
-      const port = cfg.wsPort || 9225;
-      const pathEndpoint = cfg.wsPath || "/muse";
-      let token = cfg.wsToken;
+      const { handleMuseTunnelSubcommand } = await import("./museTunnelSubcommand.js");
+      return handleMuseTunnelSubcommand(parts, ctx, now);
+    }
 
-      if (!token && !isHttps) {
-        token = generateSecureWsToken();
-        updateRemoteAgentConfig({ wsToken: token, transport: "websocket" });
+    // /muse doctor or /muse ping or /muse test
+    if (subcommand === "doctor" || subcommand === "ping" || subcommand === "test") {
+      const { handleMuseDoctorSubcommand } = await import("./museDoctorSubcommand.js");
+      return handleMuseDoctorSubcommand(parts, ctx, now);
+    }
+
+    // /muse connect
+    if (subcommand === "connect") {
+      const { handleMuseConnectSubcommand } = await import("./museDoctorSubcommand.js");
+      return handleMuseConnectSubcommand(parts, ctx, now);
+    }
+
+    // /muse start [options]
+    if (subcommand === "start") {
+      const isTunnel = parts.some((p) => p === "--tunnel" || p === "--quick-tunnel" || p === "--https");
+      if (isTunnel) {
+        const { handleMuseTunnelSubcommand } = await import("./museTunnelSubcommand.js");
+        return handleMuseTunnelSubcommand(parts, ctx, now);
+      }
+      const watchArgs = ["watch", ...parts.slice(1)].join(" ");
+      return museCommand.execute(watchArgs, ctx);
+    }
+
+    // /muse restart [options]
+    if (subcommand === "restart") {
+      const isTunnel = parts.some((p) => p === "--tunnel" || p === "--quick-tunnel" || p === "--https");
+      if (isTunnel) {
+        const { handleMuseTunnelSubcommand } = await import("./museTunnelSubcommand.js");
+        return handleMuseTunnelSubcommand(["tunnel", ...parts], ctx, now);
+      }
+      const { isMuseWatcherActive, stopMuseWatcher } = await import("../remoteAgent/museWatcher.js");
+      if (isMuseWatcherActive()) {
+        await stopMuseWatcher();
         ctx.addLine({
           type: "system",
-          content: `[Muse Security] Generated new Bearer token: ${token}`,
+          content: "[Muse Watch] Watch mode stopped. Restarting...",
           timestamp: now,
         });
       }
-
-      const {
-        startQuickTunnel,
-        stopQuickTunnel,
-        stopAllQuickTunnels,
-        getTunnelStatus,
-        listActiveTunnels,
-        formatActiveTunnels,
-        buildMuseConnectionPrompt,
-        copyTextToClipboard,
-      } = await import("../remoteAgent/cloudflareTunnel.js");
-      const {
-        startMuseWatcher,
-        stopMuseWatcher,
-        isMuseWatcherActive,
-        getMuseWatcher,
-      } = await import("../remoteAgent/museWatcher.js");
-
-      if (action === "list" || action === "ls" || action === "active") {
-        const tunnels = listActiveTunnels();
-        ctx.addLine({
-          type: "system",
-          content: formatActiveTunnels(tunnels),
-          timestamp: now,
-        });
-        return;
-      }
-
-      if (action === "start" || action === "quick" || action === "run") {
-        const rawArgs = parts.slice(1).filter((p) => p.toLowerCase() !== action && p.toLowerCase() !== "tunnel" && p.toLowerCase() !== "cloudflare");
-        const portArgIdx = rawArgs.findIndex((a) => a === "--port" || a === "-p");
-        let portOverride: number | undefined;
-        if (portArgIdx !== -1 && rawArgs[portArgIdx + 1]) {
-          const parsed = parseInt(rawArgs[portArgIdx + 1], 10);
-          if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
-        }
-
-        const initialTask = rawArgs
-          .filter((a, idx, arr) => {
-            if (a === "--port" || a === "-p" || a === "--https" || a === "--http" || a === "--web") return false;
-            if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p")) return false;
-            return true;
-          })
-          .join(" ")
-          .trim();
-
-        const effectivePort = portOverride || (isHttps ? 7888 : port);
-        const watchedWorkspaces = getWatchedWorkspaces(cfg, ctx.agent?.workingDirectory);
-        const existing = getTunnelStatus(effectivePort);
-        const watcherActive = isMuseWatcherActive(effectivePort);
-
-        if (isHttps) {
-          const { getServerAuthToken } = await import("../utils/serverSecurity.js");
-          const { ensureSuperagentServer } = await import("../remoteAgent/cloudflareTunnel.js");
-
-          if (existing.isRunning) {
-            const serverToken = getServerAuthToken(effectivePort);
-            const curlSnippet = `curl -H "Authorization: Bearer ${serverToken}" ${existing.publicUrl}/api/status`;
-            const copied = await copyTextToClipboard(curlSnippet);
-
-            ctx.addLine({
-              type: "system",
-              content: [
-                "[Cloudflare HTTPS Tunnel] Quick tunnel and HTTP server are ALREADY ACTIVE:",
-                `- Public HTTPS URL : ${existing.publicUrl}`,
-                `- Local Target     : ${existing.localUrl || `http://${host}:${effectivePort}`}`,
-                `- Server Port      : ${effectivePort}`,
-                `- Process PID      : ${existing.pid}`,
-                `- Uptime           : ${existing.uptimeSeconds}s`,
-                `- Bearer Token     : ${serverToken}`,
-                "",
-                copied
-                  ? "Test with curl (copied to clipboard, ready to run):"
-                  : "Test with curl (copy & run):",
-                "-----------------------------------------------------------------------------",
-                curlSnippet,
-                "-----------------------------------------------------------------------------",
-                "",
-                `To stop the tunnel, run: /muse tunnel stop --https${portOverride ? ` --port ${portOverride}` : ""}`,
-              ].join("\n"),
-              timestamp: now,
-            });
-            return;
-          }
-
-          ctx.addLine({
-            type: "system",
-            content: `[Cloudflare HTTPS Tunnel] Starting Superagent HTTP REST/SSE server (port ${effectivePort}) in WATCH mode with Cloudflare quick tunnel...`,
-            timestamp: now,
-          });
-
-          try {
-            if (watcherActive) {
-              await stopMuseWatcher(effectivePort);
-            }
-
-            await startMuseWatcher({
-              workspace: watchedWorkspaces[0] || ctx.agent?.workingDirectory || process.cwd(),
-              workspaces: watchedWorkspaces,
-              transportType: "https",
-              wsPort: effectivePort,
-              tunnel: true,
-              isHttps: true,
-              agent: ctx.agent,
-              onProgress: (msg) => {
-                ctx.addLine({
-                  type: "system",
-                  content: `[Muse Progress] ${msg}`,
-                  timestamp: Date.now(),
-                });
-              },
-              onLine: (line) => {
-                ctx.addLine({
-                  type: (line.type as any) || "system",
-                  content: line.content,
-                  timestamp: line.timestamp || Date.now(),
-                });
-              },
-            });
-            return;
-          } catch (err: any) {
-            ctx.addLine({
-              type: "error",
-              content: `[Cloudflare HTTPS Tunnel Error] ${err?.message || String(err)}`,
-              timestamp: Date.now(),
-            });
-          }
-          return;
-        }
-
-        if (existing.isRunning) {
-          const musePrompt = buildMuseConnectionPrompt({
-            wssUrl: existing.wssUrl || "",
-            token,
-            publicUrl: existing.publicUrl,
-            localUrl: existing.localUrl,
-            workspaces: watchedWorkspaces,
-            cfClientId: cfg.cfAccessClientId,
-            cfClientSecret: cfg.cfAccessClientSecret,
-            task: initialTask,
-          });
-          const copied = await copyTextToClipboard(musePrompt);
-
-          ctx.addLine({
-            type: "system",
-            content: [
-              "[Cloudflare Tunnel] Quick tunnel and WebSocket server are ALREADY ACTIVE:",
-              `- Public URL   : ${existing.publicUrl}`,
-              `- WSS Endpoint : ${existing.wssUrl}`,
-              `- Local Target : ${existing.localUrl}`,
-              `- Process PID  : ${existing.pid}`,
-              `- Uptime       : ${existing.uptimeSeconds}s`,
-              `- Bearer Token : ${token}`,
-              "",
-              copied
-                ? "Prompt for Muse (copied to clipboard, ready to send):"
-                : "Prompt for Muse (copy & send to Muse):",
-              "-----------------------------------------------------------------------------",
-              musePrompt,
-              "-----------------------------------------------------------------------------",
-              "",
-              `To stop the tunnel, run: /muse tunnel stop${portOverride ? ` --port ${portOverride}` : ""}`,
-            ].join("\n"),
-            timestamp: now,
-          });
-          return;
-        }
-
-        ctx.addLine({
-          type: "system",
-          content: `[Cloudflare Tunnel] Starting Superagent WebSocket server (port ${effectivePort}) and Cloudflare quick tunnel...`,
-          timestamp: now,
-        });
-
-        try {
-          if (watcherActive) {
-            await stopMuseWatcher(effectivePort);
-          }
-
-          const watcher = await startMuseWatcher({
-            workspace: watchedWorkspaces[0] || ctx.agent?.workingDirectory || process.cwd(),
-            workspaces: watchedWorkspaces,
-            transportType: "websocket",
-            tunnel: true,
-            wsPort: effectivePort,
-            agent: ctx.agent,
-            onProgress: (msg) => {
-              ctx.addLine({
-                type: "system",
-                content: `[Muse Progress] ${msg}`,
-                timestamp: Date.now(),
-              });
-            },
-            onToolStart: (toolCall, description) => {
-              if (ctx.agent?.onEvent) {
-                ctx.agent.onEvent({
-                  type: "tool_start",
-                  toolCall,
-                  description,
-                });
-                return;
-              }
-              ctx.addLine({
-                type: "tool_start",
-                content: `⚡ ${description}\n   Detail: ${toolCall.name}(${JSON.stringify(toolCall.args || {})})`,
-                timestamp: Date.now(),
-              });
-            },
-            onToolEnd: (toolCall, toolResult, description) => {
-              if (ctx.agent?.onEvent) {
-                ctx.agent.onEvent({
-                  type: "tool_end",
-                  toolCall,
-                  toolResult,
-                  description,
-                });
-                return;
-              }
-              ctx.addLine({
-                type: "tool_end",
-                content: `✔ ${description}`,
-                timestamp: Date.now(),
-              });
-            },
-            onLine: (line) => {
-              ctx.addLine({
-                type: (line.type as any) || "system",
-                content: line.content,
-                timestamp: line.timestamp || Date.now(),
-              });
-            },
-          });
-
-          const meta = getTunnelStatus(effectivePort);
-          const effectiveWss = meta.wssUrl || `wss://${meta.publicUrl?.replace(/^https?:\/\//, "")}${pathEndpoint}`;
-
-          const musePrompt = buildMuseConnectionPrompt({
-            wssUrl: effectiveWss,
-            token,
-            publicUrl: meta.publicUrl,
-            localUrl: meta.localUrl || `http://${host}:${effectivePort}`,
-            workspaces: watchedWorkspaces,
-            cfClientId: cfg.cfAccessClientId,
-            cfClientSecret: cfg.cfAccessClientSecret,
-            task: initialTask,
-          });
-          const copied = await copyTextToClipboard(musePrompt);
-
-          ctx.addLine({
-            type: "system",
-            content: [
-              "═════════════════════════════════════════════════════════════════════════════",
-              "  Cloudflare Quick Ephemeral Tunnel Online!",
-              "═════════════════════════════════════════════════════════════════════════════",
-              `- Public URL   : ${meta.publicUrl}`,
-              `- WSS Endpoint : ${effectiveWss}`,
-              `- Local Target : ${meta.localUrl || `http://${host}:${effectivePort}`}`,
-              `- Process PID  : ${meta.pid}`,
-              `- Bearer Token : ${token}`,
-              "═════════════════════════════════════════════════════════════════════════════",
-              "",
-              copied
-                ? "Prompt for Muse (copied to clipboard, ready to send):"
-                : "Prompt for Muse (copy & send to Muse):",
-              "-----------------------------------------------------------------------------",
-              musePrompt,
-              "-----------------------------------------------------------------------------",
-              "",
-              "Superagent is actively listening in WATCH mode over WebSocket.",
-              "When Muse connects and sends remote tasks or tool batches, Superagent will execute them locally and report back in real time.",
-              "Run '/muse tunnel stop' to terminate the tunnel at any time.",
-            ].join("\n"),
-            timestamp: Date.now(),
-          });
-        } catch (err: any) {
-          ctx.addLine({
-            type: "error",
-            content: `[Cloudflare Tunnel] Error: ${err?.message}`,
-            timestamp: Date.now(),
-          });
-        }
-        return;
-      }
-
-      if (action === "stop") {
-        const rawArgs = parts.slice(1).filter((p) => p.toLowerCase() !== action && p.toLowerCase() !== "tunnel" && p.toLowerCase() !== "cloudflare");
-        const isAll = rawArgs.includes("all") || rawArgs.includes("--all") || rawArgs.includes("-a");
-        if (isAll) {
-          if (isMuseWatcherActive()) {
-            await stopMuseWatcher();
-          }
-          const count = await stopAllQuickTunnels();
-          ctx.addLine({
-            type: "system",
-            content: `[Cloudflare Tunnel] Stopped ${count} active quick tunnel${count === 1 ? "" : "s"}.`,
-            timestamp: Date.now(),
-          });
-          return;
-        }
-
-        const portArgIdx = rawArgs.findIndex((a) => a === "--port" || a === "-p");
-        let portOverride: number | undefined;
-        if (portArgIdx !== -1 && rawArgs[portArgIdx + 1]) {
-          const parsed = parseInt(rawArgs[portArgIdx + 1], 10);
-          if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
-        }
-
-        const effectivePort = portOverride || (isHttps ? 7888 : port);
-
-        if (isHttps) {
-          const existing = getTunnelStatus(effectivePort);
-          if (existing.isRunning) {
-            await stopQuickTunnel(effectivePort);
-            ctx.addLine({
-              type: "system",
-              content: `[Cloudflare HTTPS Tunnel] Quick tunnel (port ${effectivePort}) stopped successfully.`,
-              timestamp: Date.now(),
-            });
-          } else {
-            ctx.addLine({
-              type: "system",
-              content: `[Cloudflare HTTPS Tunnel] No quick tunnel is currently running on port ${effectivePort}.`,
-              timestamp: now,
-            });
-          }
-          return;
-        }
-
-        let stoppedAny = false;
-        if (isMuseWatcherActive(effectivePort)) {
-          await stopMuseWatcher(effectivePort);
-          stoppedAny = true;
-        }
-        const existing = getTunnelStatus(effectivePort);
-        if (existing.isRunning) {
-          await stopQuickTunnel(effectivePort);
-          stoppedAny = true;
-        }
-        if (!stoppedAny) {
-          ctx.addLine({
-            type: "system",
-            content: `[Cloudflare Tunnel] No quick tunnel is currently running${portOverride ? ` on port ${portOverride}` : ""}.`,
-            timestamp: now,
-          });
-          return;
-        }
-        ctx.addLine({
-          type: "system",
-          content: `[Cloudflare Tunnel] Quick tunnel (port ${effectivePort}) and WebSocket watch daemon stopped successfully.`,
-          timestamp: Date.now(),
-        });
-        return;
-      }
-
-      if (action === "status") {
-        const rawArgs = parts.slice(1).filter((p) => p.toLowerCase() !== action && p.toLowerCase() !== "tunnel" && p.toLowerCase() !== "cloudflare");
-        const portArgIdx = rawArgs.findIndex((a) => a === "--port" || a === "-p");
-        let portOverride: number | undefined;
-        if (portArgIdx !== -1 && rawArgs[portArgIdx + 1]) {
-          const parsed = parseInt(rawArgs[portArgIdx + 1], 10);
-          if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
-        }
-
-        const effectivePort = portOverride || (isHttps ? 7888 : port);
-        const existing = getTunnelStatus(effectivePort);
-
-        if (isHttps) {
-          const { getServerAuthToken } = await import("../utils/serverSecurity.js");
-          const serverToken = getServerAuthToken(effectivePort);
-          if (existing.isRunning) {
-            ctx.addLine({
-              type: "system",
-              content: [
-                `Cloudflare HTTPS Tunnel Status (port ${effectivePort}): ACTIVE`,
-                `- Public HTTPS URL : ${existing.publicUrl}`,
-                `- Local Target     : ${existing.localUrl || `http://${host}:${effectivePort}`}`,
-                `- Server Port      : ${effectivePort}`,
-                `- Process PID      : ${existing.pid}`,
-                `- Uptime           : ${existing.uptimeSeconds}s`,
-                `- Bearer Token     : ${serverToken}`,
-                "",
-                `Test: curl -H "Authorization: Bearer ${serverToken}" ${existing.publicUrl}/api/status`,
-                "",
-                `To stop it, run: /muse tunnel stop --https${portOverride ? ` --port ${portOverride}` : ""}`,
-              ].join("\n"),
-              timestamp: now,
-            });
-          } else {
-            ctx.addLine({
-              type: "system",
-              content: `Cloudflare HTTPS Tunnel Status (port ${effectivePort}): INACTIVE\nRun '/muse tunnel start --https' to launch.`,
-              timestamp: now,
-            });
-          }
-          return;
-        }
-
-        const titlePrefix = portOverride
-          ? `Cloudflare Quick Tunnel Status (port ${portOverride}):`
-          : "Cloudflare Quick Tunnel Status:";
-
-        if (existing.isRunning) {
-          ctx.addLine({
-            type: "system",
-            content: [
-              `${titlePrefix} ACTIVE`,
-              `- Public URL   : ${existing.publicUrl}`,
-              `- WSS Endpoint : ${existing.wssUrl}`,
-              `- Local Target : ${existing.localUrl}`,
-              `- Process PID  : ${existing.pid}`,
-              `- Uptime       : ${existing.uptimeSeconds}s`,
-              `- Bearer Token : ${token ? maskSecret(token) : "(none)"}`,
-              "",
-              `To stop it, run: /muse tunnel stop${portOverride ? ` --port ${portOverride}` : ""}`,
-            ].join("\n"),
-            timestamp: now,
-          });
-        } else {
-          ctx.addLine({
-            type: "system",
-            content: `${titlePrefix} INACTIVE\nRun '/muse tunnel start${portOverride ? ` --port ${portOverride}` : ""}' to launch a quick development tunnel.`,
-            timestamp: now,
-          });
-        }
-        return;
-      }
-
-      const currentStatus = getTunnelStatus();
-      const statusPrefix = currentStatus.isRunning
-        ? `[Cloudflare Tunnel] Quick tunnel is ACTIVE (PID: ${currentStatus.pid}, URL: ${currentStatus.publicUrl})\n\n`
-        : "";
-
-      const guide = [
-        "═════════════════════════════════════════════════════════════════════════════",
-        "  Cloudflare Tunnel Setup & Ephemeral Subcommands for Muse",
-        "═════════════════════════════════════════════════════════════════════════════",
-        "",
-        "Subcommands:",
-        "  /muse tunnel list            - List all currently active Cloudflare tunnels",
-        "  /muse tunnel start           - Start quick ephemeral tunnel in background (optional: --port <n>)",
-        "  /muse tunnel start --https   - Start Cloudflare HTTPS tunnel for Superagent REST/SSE server (port 7888)",
-        "  /muse tunnel stop            - Stop running quick tunnel (optional: --port <n> or all)",
-        "  /muse tunnel stop --https    - Stop Cloudflare HTTPS tunnel (port 7888)",
-        "  /muse tunnel status          - Check current tunnel status (optional: --port <n>)",
-        "  /muse tunnel status --https  - Check Cloudflare HTTPS tunnel status (port 7888)",
-        "  /muse tunnel guide           - View full manual Cloudflare setup guide",
-        "  /tunnel start [--https]      - Shortcut: start quick tunnel with optional --https",
-        "",
-        "1. Prerequisites:",
-        "   Install cloudflared: winget install Cloudflare.cloudflared (or brew install cloudflared)",
-        "",
-        "2. Quick Ephemeral Tunnel (Development):",
-        `   cloudflared tunnel --url http://${host}:${port}`,
-        `   Connect Muse over WSS to: wss://<subdomain>.trycloudflare.com${pathEndpoint}`,
-        "",
-        "3. Production Ingress config (~/.cloudflared/config.yml):",
-        "   ingress:",
-        "     - hostname: muse.yourdomain.com",
-        `       service: ws://${host}:${port}`,
-        "     - service: http_status:404",
-        "",
-        "4. Edge Security (Zero Trust Access):",
-        "   Set Service Token in Superagent:",
-        "   /muse config cfAccessClientId <CLIENT_ID>",
-        "   /muse config cfAccessClientSecret <CLIENT_SECRET>",
-        "",
-        "5. Multi-Project & Multi-Tunnel Isolation:",
-        "   - Run multiple tunnels on separate ports concurrently:",
-        "     Terminal 1 (Project A): /muse tunnel start",
-        "     Terminal 2 (Project B): /muse tunnel start --port 9226",
-        "   - Or watch multiple projects under a single tunnel:",
-        "     /muse watch <dir1> <dir2> --tunnel",
-        "",
-        "6. Authentication Token:",
-        `   Authorization: Bearer ${token}`,
-        "",
-        "7. Start Daemon with Tunnel:",
-        "   /muse watch --tunnel",
-        "═════════════════════════════════════════════════════════════════════════════",
-      ];
-
-      ctx.addLine({ type: "system", content: statusPrefix + guide.join("\n"), timestamp: now });
-      return;
+      const watchArgs = ["watch", ...parts.slice(1)].join(" ");
+      return museCommand.execute(watchArgs, ctx);
     }
 
     // /muse config [key] [val]
@@ -638,18 +186,36 @@ export const museCommand: SlashCommand = {
         const watchedList = getWatchedWorkspaces(cfg);
         const lines = [
           "Remote Agent Configuration:",
-          `- as_runner_model  : ${cfg.asRunner ? "on (enabled)" : "off (disabled)"}`,
-          `- botToken          : ${maskToken(cfg.botToken)}`,
-          `- groupId           : ${cfg.groupId || "(not set)"}`,
-          `- museBotId         : ${cfg.museBotId || "(not set)"}`,
-          `- defaultWorkspace  : ${cfg.defaultWorkspace || "(default to current workspace)"}`,
+          `- transport          : ${cfg.transport || "telegram"}`,
+          `- as_runner_model    : ${cfg.asRunner ? "on (enabled)" : "off (disabled)"}`,
+          `- botToken           : ${maskToken(cfg.botToken)}`,
+          `- groupId            : ${cfg.groupId || "(not set)"}`,
+          `- museBotId          : ${cfg.museBotId || "(not set)"}`,
+          `- wsPort             : ${cfg.wsPort || 9225}`,
+          `- wsHost             : ${cfg.wsHost || "127.0.0.1"}`,
+          `- wsToken            : ${maskSecret(cfg.wsToken)}`,
+          `- wsPath             : ${cfg.wsPath || "/muse"}`,
+          `- wsMode             : ${cfg.wsMode || "server"}`,
+          `- wsRemoteUrl        : ${cfg.wsRemoteUrl || "(not set)"}`,
+          `- cfAccessClientId   : ${cfg.cfAccessClientId || "(not set)"}`,
+          `- autoTokenRefresh   : ${cfg.autoTokenRefresh ? "on (enabled)" : "off (disabled)"}`,
+          `- defaultWorkspace   : ${cfg.defaultWorkspace || "(default to current workspace)"}`,
           `- watchedWorkspaces (${watchedList.length}):\n${watchedList.map((w, i) => `   ${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`,
-          `- systemPrompt      : ${cfg.systemPrompt ? `configured (${cfg.systemPrompt.length} chars)` : "default (auto-injected)"}`,
+          `- systemPrompt       : ${cfg.systemPrompt ? `configured (${cfg.systemPrompt.length} chars)` : "default (auto-injected)"}`,
           "",
           "Usage: /muse config <key> <value>",
           "Keys:",
+          "  transport        - Transport type: 'websocket' or 'telegram'",
           "  as_runner_model  - Route all terminal prompts to Muse directly without /muse (on/off)",
-          "  botToken         - Bot B (superagent's Telegram bot token)",
+          "  wsPort           - Local WebSocket listen port (default: 9225)",
+          "  wsHost           - Local WebSocket listen host (default: 127.0.0.1)",
+          "  wsToken          - Bearer token ('generate', 'refresh', 'rotate', or raw string)",
+          "  wsMode           - WebSocket mode: 'server' or 'client'",
+          "  wsRemoteUrl      - Remote WebSocket URL when in client mode",
+          "  cfAccessClientId - Cloudflare Access Service Token Client ID",
+          "  cfAccessClientSecret - Cloudflare Access Service Token Client Secret",
+          "  autoTokenRefresh - Background automatic token refresh (on/off)",
+          "  botToken         - Telegram runner bot token (Bot B)",
           "  groupId          - Numeric private group chat ID (e.g. -100xxxxxxxxxx)",
           "  museBotId        - Numeric Telegram user ID of Muse bot (Bot A)",
           "  defaultWorkspace - Default project workspace path",
@@ -657,8 +223,10 @@ export const museCommand: SlashCommand = {
           "  systemPrompt     - Custom system instructions injected into Muse requests",
           "",
           "Examples:",
+          "  /muse config transport websocket",
+          "  /muse config wsToken generate",
+          "  /muse config wsPort 9225",
           "  /muse config workspaces add ./backend",
-          "  /muse config workspaces add ./frontend",
           "  /muse config as_runner_model on",
           "  /muse config botToken 123456789:ABCdef...",
         ];
@@ -874,8 +442,6 @@ export const museCommand: SlashCommand = {
         });
         return;
       }
-      // In watch mode, reset the local session directly: the Telegram loopback
-      // would be ignored by the watcher's sender filter (Rule 2: only Muse bot).
       const { getMuseWatcher, isMuseWatcherActive } = await import("../remoteAgent/museWatcher.js");
       if (isMuseWatcherActive()) {
         getMuseWatcher()?.resetLocalSession("from terminal");
@@ -928,7 +494,7 @@ export const museCommand: SlashCommand = {
       }
 
       // 2. Check museWatcher (watch mode active batch)
-      const { isMuseWatcherActive, abortActiveMuseBatch, hasActiveMuseBatch } = await import("../remoteAgent/museWatcher.js");
+      const { isMuseWatcherActive, abortActiveMuseBatch } = await import("../remoteAgent/museWatcher.js");
       if (isMuseWatcherActive()) {
         const didAbort = abortActiveMuseBatch("Cancelled by user via /muse stop");
         if (didAbort) {
@@ -1270,23 +836,42 @@ export const museCommand: SlashCommand = {
       return;
     }
 
-    // Default: /muse <task>
-    if (!rawTrimmed) {
+    // Help & default listing
+    if (!rawTrimmed || subcommand === "help" || subcommand === "-h" || subcommand === "--help") {
       ctx.addLine({
         type: "system",
         content: [
           "Usage: /muse <task description>",
           "Example: /muse cari semua TODO di src",
+          "",
           "Subcommands:",
-          "  /muse status",
-          "  /muse watch                  - Enter watch mode (superagent controlled by Muse)",
-          "  /muse watch stop             - Stop watch mode",
+          "  /muse status                 - View remote agent, tunnel, and transport status",
+          "  /muse tunnel                 - Cloudflare Tunnel setup guide & options",
+          "  /muse tunnel list            - List all active Cloudflare tunnels",
+          "  /muse tunnel start           - Start quick ephemeral Cloudflare Tunnel & watcher",
+          "  /muse tunnel stop            - Stop active Cloudflare Tunnel (or: /muse tunnel stop all)",
+          "  /muse tunnel restart         - Restart Cloudflare Tunnel & watcher",
+          "  /muse tunnel status          - Check Cloudflare Tunnel process & public URL status",
+          "  /muse tunnel prompt          - View and copy connection prompt for Muse",
+          "  /muse watch [dirs]           - Enter watch mode (superagent controlled by Muse)",
+          "  /muse watch start            - Start watch mode daemon",
+          "  /muse watch stop             - Stop watch mode daemon",
           "  /muse watch status           - Show watch mode statistics",
+          "  /muse watch add <dir>        - Add workspace directory to watch list",
+          "  /muse watch remove <dir>     - Remove workspace directory from watch list",
+          "  /muse steer <instruction>    - Intervene and steer active Muse task (alias: /muse chat)",
+          "  /muse doctor                 - Run diagnostic checks (cloudflared, ports, credentials)",
+          "  /muse connect                - Test connection to remote Muse endpoint",
           "  /muse stop                   - Cancel active remote task",
           "  /muse cancel                 - Cancel active remote task",
           "  /muse new                    - Reset remote session memory",
           "  /muse reset                  - Reset remote session memory",
-          "  /muse config <key> <value>",
+          "  /muse config                 - View current remote agent configuration",
+          "  /muse config <key> <value>   - Update configuration setting",
+          "",
+          "Direct Shortcuts:",
+          "  /tunnel [subcommand]         - Shortcut for /muse tunnel (e.g. /tunnel start, /tunnel list)",
+          "  /tunnels                     - Shortcut to list all active tunnels",
         ].join("\n"),
         timestamp: now,
       });
@@ -1318,9 +903,8 @@ export const museCommand: SlashCommand = {
             type: "system",
             content: [
               `⚠️  [Muse Warning] Telegram Group Privacy Mode is ENABLED for @${me.username || "your_bot"}.`,
-              "   Telegram will NOT deliver standalone messages from Muse in group chats!",
-              "   To fix: Open @BotFather in Telegram -> send /setprivacy -> select bot -> Disable.",
-              "   Alternatively, instruct Muse to reply directly to bot messages.",
+              "   Because Privacy Mode is on, Telegram will NOT deliver non-reply messages to this bot.",
+              "   To fix: Open @BotFather -> /setprivacy -> Select your bot -> Choose 'Disable'.",
             ].join("\n"),
             timestamp: now,
           });
@@ -1519,7 +1103,7 @@ registry.register(museCommand);
 export const tunnelCommand: SlashCommand = {
   name: "tunnel",
   aliases: ["tunnels"],
-  description: "Manage Cloudflare quick tunnels (list, start [--https], stop, status)",
+  description: "Manage Cloudflare quick tunnels (list, start [--https], stop, status, restart)",
   async execute(args, ctx) {
     const rawTrimmed = args.trim();
     if (!rawTrimmed) {
@@ -1530,4 +1114,3 @@ export const tunnelCommand: SlashCommand = {
 };
 
 registry.register(tunnelCommand);
-

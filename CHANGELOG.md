@@ -1,3 +1,19 @@
+## [1.5.142] - 2026-10-05
+
+### Added & Improved
+
+- **Comprehensive Muse & Cloudflare Tunnel Subcommands & Help Architecture**:
+  - Expanded default `/muse` and `/muse help` output to list all supported subcommands, including Cloudflare Tunnel management (`/muse tunnel list`, `start`, `stop`, `restart`, `status`, `prompt`), direct shortcuts (`/tunnel`, `/tunnels`), diagnostics (`/muse doctor`), connectivity testing (`/muse connect`), operator intervention (`/muse steer`), and multi-workspace management (`/muse watch add/remove`).
+  - Modularized `museCommand.ts` by decomposing tunnel management into `museTunnelSubcommand.ts` and diagnostics into `museDoctorSubcommand.ts`, reducing file size from 1,534 lines down to ~667 lines in strict compliance with the sub-1000 line architecture constraint.
+  - Added `/muse tunnel restart` and `/tunnel restart` subcommands to allow seamless stopping and re-launching of Cloudflare quick tunnels and active watchers across specific ports.
+  - Added `/muse tunnel prompt` (and alias `/muse tunnel url`) to inspect and copy active tunnel endpoints and ready-to-send Muse connection prompts without re-initializing tunnels.
+  - Added `/muse doctor` (and aliases `ping`, `test`) to perform comprehensive environment diagnostics, verifying the `cloudflared` binary on PATH, port availability, transport health, WebSocket token strength, and Telegram bot API reachability with Group Privacy mode verification.
+  - Added `/muse connect` subcommand to test end-to-end connectivity across WebSocket server/client or Telegram Bot API transports.
+  - Prevented unintentional AI task execution when running `/muse start` or `/muse restart` by routing to watch or tunnel lifecycle handlers.
+  - Enhanced `/muse config` output when run without arguments to display full configuration attributes including WebSocket settings, Cloudflare Access headers, and watched workspaces.
+  - Synchronized terminal dashboard suggestions and autocomplete definitions in `dashboardSuggestions.ts` and `app.tsx`.
+  - Added comprehensive unit tests in `tests/cloudflareTunnel.test.ts` verifying all new subcommands, help outputs, and autocomplete suggestions.
+
 ## [1.5.141] - 2026-10-05
 
 ### Fixed & Improved

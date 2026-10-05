@@ -863,6 +863,136 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(isMuseWatcherActive(9226)).toBe(false);
     });
   });
+
+  describe("Comprehensive Muse & Tunnel Subcommands & Help Output Suite", () => {
+    it("should display full subcommands including tunnel in /muse default help", async () => {
+      const lines: any[] = [];
+      await museCommand.execute("", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(lines.length).toBeGreaterThan(0);
+      const text = lines[0].content;
+      expect(text).toContain("Usage: /muse <task description>");
+      expect(text).toContain("/muse status");
+      expect(text).toContain("/muse tunnel");
+      expect(text).toContain("/muse tunnel list");
+      expect(text).toContain("/muse tunnel start");
+      expect(text).toContain("/muse tunnel stop");
+      expect(text).toContain("/muse tunnel restart");
+      expect(text).toContain("/muse tunnel status");
+      expect(text).toContain("/muse tunnel prompt");
+      expect(text).toContain("/muse watch");
+      expect(text).toContain("/muse watch stop");
+      expect(text).toContain("/muse watch status");
+      expect(text).toContain("/muse doctor");
+      expect(text).toContain("/muse connect");
+      expect(text).toContain("/muse stop");
+      expect(text).toContain("/muse cancel");
+      expect(text).toContain("/muse new");
+      expect(text).toContain("/muse reset");
+      expect(text).toContain("/muse config");
+      expect(text).toContain("/tunnel [subcommand]");
+      expect(text).toContain("/tunnels");
+    });
+
+    it("should display full subcommands on /muse help and /muse -h", async () => {
+      const linesHelp: any[] = [];
+      await museCommand.execute("help", {
+        addLine: (line) => linesHelp.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(linesHelp.length).toBeGreaterThan(0);
+      expect(linesHelp[0].content).toContain("/muse tunnel");
+      expect(linesHelp[0].content).toContain("/muse doctor");
+
+      const linesDashH: any[] = [];
+      await museCommand.execute("-h", {
+        addLine: (line) => linesDashH.push(line),
+        exit: () => {},
+      } as any);
+      expect(linesDashH.length).toBeGreaterThan(0);
+      expect(linesDashH[0].content).toContain("/muse tunnel");
+    });
+
+    it("should display complete WebSocket and Cloudflare settings on /muse config", async () => {
+      const lines: any[] = [];
+      await museCommand.execute("config", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(lines.length).toBeGreaterThan(0);
+      const text = lines[0].content;
+      expect(text).toContain("Remote Agent Configuration:");
+      expect(text).toContain("transport");
+      expect(text).toContain("wsPort");
+      expect(text).toContain("wsHost");
+      expect(text).toContain("wsToken");
+      expect(text).toContain("wsMode");
+      expect(text).toContain("cfAccessClientId");
+      expect(text).toContain("autoTokenRefresh");
+      expect(text).toContain("botToken");
+      expect(text).toContain("defaultWorkspace");
+    });
+
+    it("should run diagnostic checks on /muse doctor", async () => {
+      const lines: any[] = [];
+      await museCommand.execute("doctor", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(lines.length).toBeGreaterThan(0);
+      const text = lines.map((l) => l.content).join("\n");
+      expect(text).toContain("Muse Health & Diagnostics (Doctor)");
+      expect(text).toContain("Cloudflare Binary");
+      expect(text).toContain("Active Transport");
+    });
+
+    it("should run connectivity check on /muse connect", async () => {
+      const lines: any[] = [];
+      await museCommand.execute("connect", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(lines.length).toBeGreaterThan(0);
+      const text = lines.map((l) => l.content).join("\n");
+      expect(text).toContain("[Muse Connect]");
+    });
+
+    it("should output connection prompt info on /muse tunnel prompt", async () => {
+      const lines: any[] = [];
+      await museCommand.execute("tunnel prompt", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+
+      expect(lines.length).toBeGreaterThan(0);
+      const text = lines[0].content;
+      // Inactive tunnel reports clear message with start instruction
+      expect(text).toContain("No quick tunnel is currently active");
+      expect(text).toContain("/muse tunnel start");
+    });
+
+    it("should provide suggestions for restart, prompt, doctor, connect", () => {
+      const suggestions = getDashboardSuggestions("/muse ");
+      expect(suggestions).toContain("/muse tunnel restart");
+      expect(suggestions).toContain("/muse tunnel prompt");
+      expect(suggestions).toContain("/muse doctor");
+      expect(suggestions).toContain("/muse connect");
+      expect(suggestions).toContain("/muse start");
+      expect(suggestions).toContain("/muse restart");
+
+      const tunnelSubs = getDashboardSuggestions("/muse tunnel ");
+      expect(tunnelSubs).toContain("/muse tunnel restart");
+      expect(tunnelSubs).toContain("/muse tunnel prompt");
+    });
+  });
 });
+
 
 
