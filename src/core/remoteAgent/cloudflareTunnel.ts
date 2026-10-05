@@ -129,7 +129,7 @@ export function clearTunnelState(port?: number | "all"): void {
     if (typeof port === "number") {
       const portFile = getTunnelStateFile(port);
       if (fs.existsSync(portFile)) {
-        fs.unlinkSync(portFile);
+        try { fs.unlinkSync(portFile); } catch {}
       }
       const defaultFile = path.join(dir, "tunnel.json");
       if (fs.existsSync(defaultFile)) {
@@ -140,7 +140,7 @@ export function clearTunnelState(port?: number | "all"): void {
             fs.unlinkSync(defaultFile);
           }
         } catch {
-          fs.unlinkSync(defaultFile);
+          try { fs.unlinkSync(defaultFile); } catch {}
         }
       }
     } else if (port === "all" || port === undefined) {
@@ -573,7 +573,7 @@ export class CloudflareTunnelManager {
         if (stopped) stoppedCount++;
       } catch {}
     }
-    clearTunnelState();
+    clearTunnelState("all");
     return stoppedCount;
   }
 
@@ -590,10 +590,19 @@ export class CloudflareTunnelManager {
 
     const alive = isProcessRunning(meta.pid);
     if (!alive) {
-      clearTunnelState(meta.port || port);
+      if (typeof meta.port === "number") {
+        clearTunnelState(meta.port);
+      } else if (typeof port === "number") {
+        clearTunnelState(port);
+      } else {
+        clearTunnelState(undefined);
+      }
       if (meta.port) {
         this.activeProcesses.delete(meta.port);
         this.activeMetadata.delete(meta.port);
+      }
+      if (this.currentMetadata === meta) {
+        this.currentMetadata = null;
       }
       return { isRunning: false };
     }

@@ -36,11 +36,21 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       const host = cfg.wsHost || "127.0.0.1";
       const port = cfg.wsPort || 9225;
       const wsPath = cfg.wsPath || "/muse";
-      const { getTunnelStatus } = await import("./cloudflareTunnel.js");
-      const tunnel = getTunnelStatus();
+      const { getTunnelStatus, listActiveTunnels } = await import("./cloudflareTunnel.js");
+      const activeTunnels = listActiveTunnels();
+      const wsTunnel = getTunnelStatus(port);
+      const firstActive = activeTunnels[0];
+      const tunnel = wsTunnel.isRunning ? wsTunnel : (firstActive ? { isRunning: true, ...firstActive } : wsTunnel);
       console.log(`  WS Mode         : ${(cfg.wsMode || "server").toUpperCase()}`);
       console.log(`  WS Endpoint     : ws://${host}:${port}${wsPath}`);
-      console.log(`  Quick Tunnel    : ${tunnel.isRunning ? `ACTIVE (${tunnel.wssUrl}, PID: ${tunnel.pid})` : "INACTIVE (run: superagent muse tunnel start)"}`);
+      if (activeTunnels.length > 1) {
+        console.log(`  Quick Tunnel    : ACTIVE (${activeTunnels.length} running: ${activeTunnels.map((t) => `port ${t.port}`).join(", ")})`);
+        activeTunnels.forEach((t, idx) => {
+          console.log(`    ${idx + 1}. Port ${t.port}: ${t.wssUrl} (PID: ${t.pid}, Uptime: ${t.uptimeSeconds}s)`);
+        });
+      } else {
+        console.log(`  Quick Tunnel    : ${tunnel.isRunning ? `ACTIVE (${tunnel.wssUrl}, PID: ${tunnel.pid}${tunnel.port && tunnel.port !== port ? `, Port: ${tunnel.port}` : ""})` : "INACTIVE (run: superagent muse tunnel start)"}`);
+      }
       console.log(`  Bearer Token    : ${maskSecret(cfg.wsToken)}`);
       console.log(`  CF-Access ID    : ${cfg.cfAccessClientId || "(disabled)"}`);
       if (cfg.wsMode === "client") {

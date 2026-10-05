@@ -61,7 +61,8 @@ export const museCommand: SlashCommand = {
 
       const { getTunnelStatus, listActiveTunnels } = await import("../remoteAgent/cloudflareTunnel.js");
       const activeTunnels = listActiveTunnels();
-      const wsTunnel = getTunnelStatus(cfg.wsPort || 9225);
+      const defaultPort = cfg.wsPort || 9225;
+      const wsTunnel = getTunnelStatus(defaultPort);
       const httpsTunnel = getTunnelStatus(7888);
       const firstActive = activeTunnels[0];
       const tunnelStatus = wsTunnel.isRunning
@@ -70,14 +71,26 @@ export const museCommand: SlashCommand = {
           ? httpsTunnel
           : (firstActive ? { isRunning: true, ...firstActive } : wsTunnel));
 
+      const tunnelHeader = activeTunnels.length > 1
+        ? `ACTIVE (${activeTunnels.length} running: ${activeTunnels.map((t) => `port ${t.port}`).join(", ")})`
+        : (tunnelStatus.isRunning
+          ? `ACTIVE (${tunnelStatus.wssUrl}, PID: ${tunnelStatus.pid}${tunnelStatus.port && tunnelStatus.port !== defaultPort ? `, Port: ${tunnelStatus.port}` : ""})`
+          : "INACTIVE (run /muse tunnel start)");
+
+      const multipleTunnelLines = activeTunnels.length > 1
+        ? activeTunnels.map((t, idx) => `   ${idx + 1}. Port ${t.port}: ${t.wssUrl} (PID: ${t.pid}, Uptime: ${t.uptimeSeconds}s)`)
+        : [];
+
       const transportLines = transport === "websocket"
         ? [
             `- Transport       : WEBSOCKET (${(cfg.wsMode || "server").toUpperCase()})`,
-            `- WS Endpoint     : ws://${cfg.wsHost || "127.0.0.1"}:${cfg.wsPort || 9225}${cfg.wsPath || "/muse"}`,
-            `- Quick Tunnel    : ${tunnelStatus.isRunning ? `ACTIVE (${tunnelStatus.wssUrl}, PID: ${tunnelStatus.pid})` : "INACTIVE (run /muse tunnel start)"}`,
+            `- WS Endpoint     : ws://${cfg.wsHost || "127.0.0.1"}:${defaultPort}${cfg.wsPath || "/muse"}`,
+            `- Quick Tunnel    : ${tunnelHeader}`,
+            ...multipleTunnelLines,
             `- Bearer Token    : ${maskSecret(cfg.wsToken)}`,
             `- CF-Access ID    : ${cfg.cfAccessClientId || "(disabled)"}`,
-          ]
+            cfg.wsMode === "client" ? `- Remote URL      : ${cfg.wsRemoteUrl || "(not set)"}` : null,
+          ].filter(Boolean) as string[]
         : [
             `- Transport       : TELEGRAM`,
             `- Bot Token       : ${maskToken(cfg.botToken)}${botInfoStr}`,

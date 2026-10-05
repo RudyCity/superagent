@@ -1,3 +1,14 @@
+## [1.5.143] - 2026-10-05
+
+### Fixed & Synchronized
+
+- **Cloudflare Tunnel Status & List Data Synchronization**:
+  - Resolved discrepancy between `/muse status` and `/muse tunnel list` where active tunnels were reported as inactive or out of date.
+  - Enhanced `/muse status` and `superagent muse status` to inspect all active tunnels via `listActiveTunnels()`, displaying multi-tunnel lists across all active ports with PID, uptime, and endpoint details.
+  - Synchronized `/muse tunnel status` fallback when no `--port` parameter is passed to query `listActiveTunnels()`, avoiding false INACTIVE reports when tunnels are running on non-default ports.
+  - Hardened `clearTunnelState()` to ensure `getStatus()` checks do not delete isolated multi-port tunnel state files.
+  - Restored active tunnel state persistence files (`tunnel-7228.json` and `tunnel-9225.json`) for running `cloudflared` daemons.
+
 ## [1.5.142] - 2026-10-05
 
 ### Added & Improved

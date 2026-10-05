@@ -515,7 +515,13 @@ export async function handleMuseTunnelSubcommand(
     }
 
     const effectivePort = portOverride || (isHttps ? 7888 : port);
-    const existing = getTunnelStatus(effectivePort);
+    let existing = getTunnelStatus(effectivePort);
+    if (!existing.isRunning && !portOverride && !isHttps) {
+      const active = listActiveTunnels();
+      if (active.length > 0) {
+        existing = { isRunning: true, ...active[0] };
+      }
+    }
 
     if (isHttps) {
       const { getServerAuthToken } = await import("../utils/serverSecurity.js");
@@ -548,8 +554,9 @@ export async function handleMuseTunnelSubcommand(
       return;
     }
 
-    const titlePrefix = portOverride
-      ? `Cloudflare Quick Tunnel Status (port ${portOverride}):`
+    const reportPort = portOverride || existing.port;
+    const titlePrefix = reportPort
+      ? `Cloudflare Quick Tunnel Status (port ${reportPort}):`
       : "Cloudflare Quick Tunnel Status:";
 
     if (existing.isRunning) {
