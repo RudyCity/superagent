@@ -44,56 +44,13 @@ import {
   McpSessionRegistry,
   type McpSessionEntry,
 } from "./mcpSessionRegistry.js";
+import {
+  MCP_TOOL_CLASSIFICATION as MCP_TOOL_CLASSIFICATION_SRC,
+} from "./superagentMcpServer.js";
+/** Re-exported for backward compatibility; canonical in superagentMcpServer.ts. */
+export const MCP_TOOL_CLASSIFICATION = MCP_TOOL_CLASSIFICATION_SRC;
 
-/**
- * Tool classification for the tunnel allowlist.
- * "safe"      = read-only observability; exposed by default.
- * "dangerous" = can execute commands, mutate files/state, control agents;
- *               requires explicit opt-in.
- */
-export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
-  // ---- safe: read-only ----
-  superagent_list_active: "safe",
-  superagent_get_process_status: "safe",
-  superagent_get_status: "safe",
-  superagent_get_logs: "safe",
-  superagent_read_file: "safe",
-  superagent_list_files: "safe",
-  superagent_grep_search: "safe",
-  superagent_find_files: "safe",
-  superagent_get_config: "safe",
-  superagent_get_workspace: "safe",
-  superagent_get_current_task: "safe",
-  superagent_get_instance_task: "safe",
-  superagent_get_plan_and_tasks: "safe",
-  superagent_memory_search: "safe",
-  superagent_query_history: "safe",
-  superagent_get_token_usage: "safe",
-  superagent_server_health: "safe",
-  superagent_export_session: "safe",
-  // ---- dangerous: mutation / execution / control ----
-  superagent_exec_command: "dangerous", // arbitrary command execution (RCE)
-  superagent_write_file: "dangerous",
-  superagent_interrupt: "dangerous",
-  superagent_pause: "dangerous",
-  superagent_resume: "dangerous",
-  superagent_send_message: "dangerous",
-  superagent_run_task: "dangerous",
-  superagent_spawn_subagent: "dangerous",
-  superagent_invoke: "dangerous",
-  superagent_cli_bridge: "dangerous",
-  superagent_await: "dangerous",
-  superagent_merge: "dangerous",
-  superagent_manage: "dangerous",
-  superagent_manage_worktrees: "dangerous",
-  superagent_update_tasks: "dangerous",
-  superagent_memory_save: "dangerous", // persistent memory poisoning risk
-  superagent_switch_preset: "dangerous",
-  superagent_switch_provider: "dangerous",
-  superagent_switch_workspace: "dangerous",
-  superagent_compact_context: "dangerous",
-  superagent_remote_chrome: "dangerous",
-};
+
 
 export function getDefaultSafeTools(): string[] {
   return Object.entries(MCP_TOOL_CLASSIFICATION)
@@ -463,7 +420,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
       const newTransport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => crypto.randomUUID(),
       });
-      const newServer = createSuperagentMcpServer({ allowedTools, onToolCall: audit } as McpServerOptions);
+      const newServer = createSuperagentMcpServer({ allowedTools, onToolCall: audit, authMode } as McpServerOptions);
       await newServer.connect(newTransport);
       try {
         await newTransport.handleRequest(req, res, rb.body);
