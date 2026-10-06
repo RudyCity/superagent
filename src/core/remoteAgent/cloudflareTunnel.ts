@@ -870,6 +870,11 @@ export function buildMuseConnectionPrompt(opts: BuildMusePromptOptions): string 
   } else {
     lines.push("Please connect to the WebSocket endpoint and confirm when you are ready to receive tasks.");
   }
+  lines.push("");
+  lines.push("Notes:");
+  lines.push("- Tunnel URL is ephemeral: it changes on every cloudflared restart. If the connection drops, run `/muse tunnel start` again and send the new URL + bearer token.");
+  lines.push("- Bearer token is shown once: treat it like a password, never share it.");
+  lines.push("- Stop the tunnel anytime: `/muse tunnel stop`.");
 
   return lines.join("\n");
 }
