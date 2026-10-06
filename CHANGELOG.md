@@ -1,3 +1,9 @@
+## [1.8.0] - 2026-10-06
+### Added
+- Fuzzy search di tool discovery: `list_tools` kini typo-tolerant (subsequence match dengan skor, urut by relevansi) dan `describe_tool` memberi saran "Did you mean ...?" saat nama tool salah ketik.
+### Changed
+- Optimasi base system prompt: ~3.057 → ~2.285 token (-25,2%) tanpa mengubah aturan perilaku, logic gates, atau ambang nilai.
+
 ## [1.7.0] - 2026-10-06
 ### Added
 - MCP tunnel OAuth 2.1 mode (`--mcp-auth oauth`): authorization-code + PKCE (S256) flow for ChatGPT, with `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server` discovery endpoints, owner-consent page gated by a one-time bootstrap approval code (printed once, hash-only storage), and token endpoint with refresh rotation.

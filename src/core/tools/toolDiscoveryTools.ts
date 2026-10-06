@@ -66,19 +66,62 @@ export function extractToolNames(args: unknown): string[] {
 }
 
 /**
+ * Fuzzy subsequence score of `query` against `target` (case-insensitive).
+ * Returns 0 when the query is not a subsequence of the target.
+ * Higher scores reward matches at the start of the string, at word
+ * boundaries (after `_`, `-`, space, `.`), and consecutive character runs.
+ */
+export function fuzzyScore(query: string, target: string): number {
+  const q = query.toLowerCase().trim();
+  const t = target.toLowerCase();
+  if (!q || !t) return 0;
+  let score = 0;
+  let ti = 0;
+  let prev = -1;
+  for (let qi = 0; qi < q.length; qi++) {
+    const ch = q[qi];
+    let found = -1;
+    for (let p = ti; p < t.length; p++) {
+      if (t[p] === ch) {
+        found = p;
+        break;
+      }
+    }
+    if (found === -1) return 0;
+    score += 10;
+    if (found === 0) {
+      score += 8;
+    } else if (/[_\-\s.]/.test(t[found - 1])) {
+      score += 6;
+    }
+    if (prev !== -1) {
+      if (found === prev + 1) {
+        score += 4;
+      } else {
+        score -= Math.min(3, found - prev - 1);
+      }
+    }
+    prev = found;
+    ti = found + 1;
+  }
+  score += Math.max(0, 10 - (t.length - q.length) * 0.5);
+  return Math.max(1, Math.round(score * 10) / 10);
+};
+
+/**
  * Lists available tool names with one-line descriptions.
  * Optional keyword query filters the list. Use describe_tool for full schemas.
  */
 export const listToolsTool: Tool = {
   name: "list_tools",
   description:
-    "List all available tool names with one-line descriptions. Provide an optional keyword query to filter (matches name and description). Use describe_tool to get exact argument schemas for specific tools.",
+    "List all available tool names with one-line descriptions. Provide an optional keyword query to filter (fuzzy search over name and description, best matches first). Use describe_tool to get exact argument schemas for specific tools.",
   parameters: {
     type: "object",
     properties: {
       query: {
         type: "string",
-        description: "Keyword filter, e.g. 'browser', 'git', 'memory', 'background'. Omit to list everything.",
+        description: "Fuzzy keyword filter, e.g. 'browser', 'clibrdg', 'bckgrnd'. Omit to list everything.",
       },
     },
     required: [],
@@ -89,9 +132,17 @@ export const listToolsTool: Tool = {
     const rawQuery = (args as any)?.query ?? (args as any)?.q ?? (args as any)?.filter ?? (args as any)?.keyword ?? "";
     const q = String(rawQuery).toLowerCase().trim();
     const filtered = q
-      ? defs.filter((d) =>
-          `${d.name} ${d.description}`.toLowerCase().includes(q)
-        )
+      ? defs
+          .map((d) => ({
+            def: d,
+            score: Math.max(
+              fuzzyScore(q, d.name),
+              0.5 * fuzzyScore(q, d.description)
+            ),
+          }))
+          .filter((x) => x.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .map((x) => x.def)
       : defs;
     if (filtered.length === 0) {
       return `No tools match query "${rawQuery}".`;
@@ -156,19 +207,15 @@ export const describeToolTool: Tool = {
     const out = names.map((name) => {
       const t = getToolByName(name);
       if (!t) {
-        const lowerName = name.toLowerCase();
-        const tokens = lowerName.split(/[-_ \t]+/).filter((tok) => tok.length > 2);
         const suggestions = allTools
-          .map((tool) => tool.name)
-          .filter((n) => {
-            const nLower = n.toLowerCase();
-            return (
-              nLower.includes(lowerName) ||
-              lowerName.includes(nLower) ||
-              tokens.some((token) => nLower.includes(token))
-            );
-          })
-          .slice(0, 5);
+          .map((tool) => ({
+            name: tool.name,
+            score: fuzzyScore(name, tool.name),
+          }))
+          .filter((x) => x.score >= Math.max(16, name.length * 8))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3)
+          .map((x) => x.name);
 
         return {
           name,
