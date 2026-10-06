@@ -381,3 +381,15 @@ Master Agent (Orchestrator)
 Developed by **Rudy City** ([@RudyCity](https://github.com/RudyCity)) • 📧 Contact: [hrudy715@gmail.com](mailto:hrudy715@gmail.com)
 
 Distributed under the [MIT License](LICENSE).
+
+### MCP OAuth mode — manual verification status (2026-10-06)
+
+Automated protocol tests cover: OAuth discovery, PKCE (S256) success/failure, owner approval via one-time bootstrap code, authorization-code replay rejection, token refresh rotation, per-session isolation, reconnect, DELETE cleanup, Origin/Host validation, and tool allowlisting (94 tests passing).
+
+Manual verification (requires user action — NOT yet run):
+
+- [ ] **MCP Inspector**: start `/muse tunnel start --mcp --mcp-auth oauth` in a disposable workspace, point MCP Inspector at the public `/mcp` URL, complete OAuth, verify tools/list + one safe tool call.
+- [ ] **ChatGPT Developer Mode**: create a draft custom MCP app with the public `/mcp` URL, complete authorization, scan tools, call one safe read-only tool.
+- [ ] **Denied dangerous tool**: in OAuth mode with a safe-only scope, attempt a dangerous tool call; verify a clear approval/auth error and no execution.
+
+Endpoint mode for manual tests: `--mcp-auth oauth` (OAuth 2.1 + PKCE). Static-bearer mode remains the default for backward compatibility.
