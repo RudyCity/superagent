@@ -101,3 +101,42 @@ Build a centralized `ContextManager` with pluggable strategies:
 ### Consequences
 - **Positive**: Sessions can run indefinitely without hitting context limits or losing core instructions.
 - **Positive**: Real-time token tracking calibrated to specific model tokenizers via `tiktoken`.
+
+---
+
+## ADR-006: MCP Tunnel Dual Auth Modes for ChatGPT Compatibility
+
+- **Status**: Accepted
+- **Date**: 2026-10-06
+- **Deciders**: Integrations Team
+
+### Context & Problem Statement
+The /muse tunnel start --mcp command exposes a Streamable HTTP MCP server through a public Cloudflare quick tunnel with a single static Bearer token. This works for generic MCP clients but is incompatible with ChatGPT remote MCP requirements: OAuth 2.1 authorization-code plus PKCE, protected-resource discovery, per-session lifecycle, and approval-gated tool access. Changing the default auth behavior would break existing static-Bearer clients.
+
+### Decision
+Support two explicit authentication modes on the MCP tunnel:
+
+1. **static-bearer** (default): existing behavior preserved - one transient Bearer token, constant-time comparison, safe-tool allowlist. Backward compatibility is guaranteed; no silent behavior change.
+2. **oauth**: OAuth 2.1 authorization-code plus PKCE flow for ChatGPT. Exposes public discovery endpoints:
+   - GET /.well-known/oauth-protected-resource (protected-resource metadata)
+   - GET /.well-known/oauth-authorization-server (authorization-server metadata)
+   - Owner-consent authorization endpoint plus token endpoint (code exchange, refresh rotation).
+   - Unauthenticated /mcp requests receive a standards-shaped WWW-Authenticate: Bearer challenge pointing at the protected-resource metadata URL.
+
+/mcp remains the canonical MCP endpoint in both modes. OAuth metadata endpoints are public discovery endpoints and never require the MCP access token.
+
+### Security Boundary
+The Cloudflare tunnel URL is public. Authorization, session ownership, and tool authorization are enforced inside the MCP server - never by URL obscurity. The tunnel only provides transport.
+
+### ChatGPT Acceptance Target
+- OAuth 2.1 authorization-code plus PKCE (S256) completes end-to-end.
+- Protected-resource and authorization-server metadata are discoverable.
+- WWW-Authenticate challenges are returned for unauthenticated requests.
+- Per-session transport isolation; reconnect with the same mcp-session-id works.
+- Safe tools callable after approval; dangerous tools remain opt-in and gated.
+
+### Consequences
+- **Positive**: Generic MCP clients keep working unchanged (static-bearer default).
+- **Positive**: ChatGPT can connect via standards-compliant OAuth without custom client work.
+- **Negative**: OAuth mode adds operational surface (consent page, token lifecycle, session registry).
+- **Negative**: Two auth paths must be maintained and tested; dangerous tools require OAuth mode for ChatGPT write access.
