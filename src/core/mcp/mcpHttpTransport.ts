@@ -36,8 +36,14 @@ import {
   extractBearerToken,
   verifyStaticBearer,
   buildBearerChallenge,
+  sha256Hex,
   type McpAuthMode,
+  type McpIdentity,
 } from "./mcpAuth.js";
+import {
+  McpSessionRegistry,
+  type McpSessionEntry,
+} from "./mcpSessionRegistry.js";
 
 /**
  * Tool classification for the tunnel allowlist.
@@ -190,6 +196,12 @@ export interface McpHttpServerOptions {
   oauth?: McpOAuthServerConfig;
   /** Public base URL used for the WWW-Authenticate challenge metadata hint. */
   publicBaseUrl?: string;
+  /** Max concurrent MCP sessions (default 32). */
+  maxSessions?: number;
+  /** Close sessions idle longer than this (default 30 min). */
+  sessionIdleTimeoutMs?: number;
+  /** Hard cap on session age (default 4 hours). */
+  sessionMaxLifetimeMs?: number;
 }
 
 export interface McpHttpServerHandle {
@@ -232,14 +244,15 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
   const auditLogPath = opts.auditLogPath || path.join(os.homedir(), ".superagent-r", "mcp-audit.log");
   const audit = createMcpAuditLogger(auditLogPath);
 
-  const mcpServer = createSuperagentMcpServer({ allowedTools, onToolCall: audit } as McpServerOptions);
-  // Stateful mode: the SDK requires a fresh transport per request in stateless
-  // mode, so we use session IDs (standard MCP flow). The Bearer token remains
-  // the access control - a session ID alone grants nothing without it.
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: () => crypto.randomUUID(),
+  // Per-session transports: no singleton remains. Every initialize creates a
+  // fresh transport + MCP server pair, registered by mcp-session-id. A session
+  // ID alone grants nothing: every request still requires valid credentials,
+  // and a session is only usable with the identity it was created under.
+  const registry = new McpSessionRegistry({
+    maxSessions: opts.maxSessions,
+    idleTimeoutMs: opts.sessionIdleTimeoutMs,
+    maxLifetimeMs: opts.sessionMaxLifetimeMs,
   });
-  await mcpServer.connect(transport);
 
   const httpServer = http.createServer(async (req, res) => {
     try {
@@ -264,15 +277,30 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         res.end(JSON.stringify({ error: "method not allowed" }));
         return;
       }
-      // Authenticate before touching any MCP state.
-      let authorized = false;
+      // Authenticate before touching any MCP state. Produces the identity
+      // that new sessions are bound to.
+      let identity: McpIdentity | null = null;
       if (authMode === "oauth" && oauthStore) {
         const token = extractBearerToken(req);
-        authorized = token !== null && oauthStore.verifyAccessToken(token) !== null;
-      } else {
-        authorized = isAuthorized(req, opts.bearerToken as string);
+        const record = token ? oauthStore.verifyAccessToken(token) : null;
+        if (record && token) {
+          identity = {
+            mode: "oauth",
+            subject: record.clientId,
+            scopes: record.scope,
+            credentialHash: sha256Hex(token),
+          };
+        }
+      } else if (isAuthorized(req, opts.bearerToken as string)) {
+        const token = extractBearerToken(req) as string;
+        identity = {
+          mode: "static-bearer",
+          subject: "bearer",
+          scopes: [],
+          credentialHash: sha256Hex(token),
+        };
       }
-      if (!authorized) {
+      if (!identity) {
         const challenge = buildBearerChallenge(protectedResourceMetadataUrl(metadataBase));
         res.writeHead(challenge.statusCode, {
           "Content-Type": "application/json",
@@ -281,17 +309,108 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         res.end(JSON.stringify(challenge.body));
         return;
       }
-      let body: unknown = undefined;
-      if (req.method === "POST") {
+
+      const sessionIdHeader = req.headers["mcp-session-id"];
+      const requestSessionId = typeof sessionIdHeader === "string" ? sessionIdHeader : undefined;
+
+      // Session binding: a session is only usable with the identity it was
+      // created under (static-bearer: same token; oauth: same client).
+      const isSessionBound = (session: McpSessionEntry): boolean => {
+        const id = identity as McpIdentity;
+        if (session.identity.mode !== id.mode) return false;
+        if (id.mode === "static-bearer") {
+          return session.identity.credentialHash === id.credentialHash;
+        }
+        return session.identity.subject === id.subject;
+      };
+
+      const readBody = async (): Promise<{ ok: true; body: unknown } | { ok: false }> => {
         try {
-          body = await readJsonBody(req);
+          return { ok: true, body: await readJsonBody(req) };
         } catch {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "invalid JSON body" }));
+          return { ok: false };
+        }
+      };
+
+      if (req.method === "DELETE") {
+        if (!requestSessionId) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "mcp-session-id header required" }));
           return;
         }
+        const removed = await registry.remove(requestSessionId);
+        res.writeHead(removed ? 200 : 404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(removed ? { ok: true } : { error: "unknown session" }));
+        return;
       }
-      await transport.handleRequest(req, res, body);
+
+      if (requestSessionId) {
+        const session = registry.get(requestSessionId);
+        if (!session) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "unknown mcp-session-id" }));
+          return;
+        }
+        if (!isSessionBound(session)) {
+          res.writeHead(403, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "session credential mismatch" }));
+          return;
+        }
+        let body: unknown = undefined;
+        if (req.method === "POST") {
+          const r = await readBody();
+          if (!r.ok) return;
+          body = r.body;
+        }
+        registry.touch(requestSessionId);
+        await session.transport.handleRequest(req, res, body);
+        return;
+      }
+
+      // No session ID: this must be an initialize POST.
+      if (req.method !== "POST") {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "mcp-session-id header required for non-initialize requests" }));
+        return;
+      }
+      if (registry.isFull()) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "too many concurrent MCP sessions" }));
+        return;
+      }
+      const rb = await readBody();
+      if (!rb.ok) return;
+      const newTransport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => crypto.randomUUID(),
+      });
+      const newServer = createSuperagentMcpServer({ allowedTools, onToolCall: audit } as McpServerOptions);
+      await newServer.connect(newTransport);
+      try {
+        await newTransport.handleRequest(req, res, rb.body);
+      } finally {
+        const assignedId = newTransport.sessionId;
+        if (assignedId) {
+          try {
+            registry.add({
+              sessionId: assignedId,
+              transport: newTransport,
+              identity: identity as McpIdentity,
+              createdAt: Date.now(),
+              lastActivityAt: Date.now(),
+            });
+          } catch {
+            try { await newTransport.close(); } catch { /* ignore */ }
+            return;
+          }
+          newTransport.onclose = () => {
+            void registry.remove(assignedId);
+          };
+        } else {
+          try { await newTransport.close(); } catch { /* ignore */ }
+        }
+      }
     } catch {
       if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "application/json" });
@@ -316,7 +435,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
     oauthStore,
     close: () =>
       new Promise<void>((resolve) => {
-        transport.close().finally(() => {
+        registry.closeAll().finally(() => {
           httpServer.close(() => resolve());
         });
       }),

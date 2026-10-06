@@ -189,3 +189,88 @@ describe("mcpHttpTransport", () => {
     });
   });
 });
+
+describe("per-session transport isolation", () => {
+  let handle: McpHttpServerHandle;
+  let token: string;
+  const url = () => `http://127.0.0.1:${handle.port}${MCP_HTTP_PATH}`;
+
+  const baseHeaders = (auth: string): Record<string, string> => ({
+    "Content-Type": "application/json",
+    Accept: "application/json, text/event-stream",
+    Authorization: `Bearer ${auth}`,
+  });
+
+  const initialize = async (auth: string): Promise<{ status: number; sessionId: string | null }> => {
+    const res = await fetch(url(), {
+      method: "POST",
+      headers: baseHeaders(auth),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "t", version: "1" } },
+      }),
+    });
+    await res.text().catch(() => {});
+    return { status: res.status, sessionId: res.headers.get("mcp-session-id") };
+  };
+
+  beforeAll(async () => {
+    token = generateMcpBearerToken();
+    handle = await startMcpHttpServer({ port: 0, bearerToken: token, allowDangerous: false });
+  }, 30000);
+
+  afterAll(async () => {
+    await handle.close();
+  });
+
+  it("creates two simultaneous sessions with distinct IDs", async () => {
+    const a = await initialize(token);
+    const b = await initialize(token);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(a.sessionId).toBeTruthy();
+    expect(b.sessionId).toBeTruthy();
+    expect(a.sessionId).not.toBe(b.sessionId);
+  });
+
+  it("rejects requests with an unknown session ID", async () => {
+    const res = await fetch(url(), {
+      method: "POST",
+      headers: { ...baseHeaders(token), "mcp-session-id": "does-not-exist" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+    });
+    expect(res.status).toBe(404);
+    await res.text();
+  });
+
+  it("rejects non-initialize requests without a session ID", async () => {
+    const res = await fetch(url(), { method: "GET", headers: baseHeaders(token) });
+    expect(res.status).toBe(400);
+    await res.text();
+  });
+
+  it("supports reconnect with the same session ID and DELETE cleanup", async () => {
+    const init = await initialize(token);
+    expect(init.sessionId).toBeTruthy();
+    const headers = { ...baseHeaders(token), "mcp-session-id": init.sessionId as string };
+    const list = await fetch(url(), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+    });
+    expect(list.status).toBe(200);
+    await list.text();
+    const del = await fetch(url(), { method: "DELETE", headers });
+    expect(del.status).toBe(200);
+    await del.text();
+    const gone = await fetch(url(), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/list", params: {} }),
+    });
+    expect(gone.status).toBe(404);
+    await gone.text();
+  });
+});
