@@ -196,6 +196,21 @@ export async function handleMuseTunnelSubcommand(
       if (!isNaN(parsed) && parsed > 0 && parsed < 65536) mcpPort = parsed;
     }
     const allowDangerous = rawArgs.some((a) => a.toLowerCase() === "--allow-dangerous");
+    const mcpAuthArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--mcp-auth");
+    let mcpAuthMode: "static-bearer" | "oauth" = "static-bearer";
+    if (mcpAuthArgIdx !== -1 && rawArgs[mcpAuthArgIdx + 1]) {
+      const v = rawArgs[mcpAuthArgIdx + 1].toLowerCase();
+      if (v === "oauth" || v === "static-bearer") {
+        mcpAuthMode = v;
+      } else {
+        ctx.addLine({
+          type: "error",
+          content: `[MCP Tunnel] Invalid --mcp-auth value "${rawArgs[mcpAuthArgIdx + 1]}". Use static-bearer or oauth.`,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+    }
 
     // --- MCP-only mode: /muse tunnel start --mcp (WSS tunnel NOT started) ---
     if (wantMcp) {
@@ -208,29 +223,72 @@ export async function handleMuseTunnelSubcommand(
         });
         return;
       }
-      try {
-        const mcpInfo = await startMcpTunnel({ port: mcpPort, allowDangerous });
+      if (allowDangerous && mcpAuthMode === "static-bearer") {
         ctx.addLine({
           type: "system",
           content: [
-            "-------------------------------------------------------------",
-            "  MCP via Tunnel Online!",
-            "-------------------------------------------------------------",
-            `- MCP Endpoint : ${mcpInfo.publicUrl}`,
-            `- Local        : ${mcpInfo.localUrl}`,
-            `- Bearer <redacted> : ${mcpInfo.bearerToken}`,
-            `- Tool mode    : ${mcpInfo.dangerous ? `FULL (${mcpInfo.toolCount} tools)` : `SAFE (${mcpInfo.toolCount} read-only)`}`,
-            `- Audit log    : ${mcpInfo.auditLogPath}`,
-            "",
-            "MCP client config (copy-paste):",
-            `{ "superagent": { "url": "${mcpInfo.publicUrl}", "headers": { "Authorization": "Bearer ${mcpInfo.bearerToken}" } } }`,
-            "",
-            "Flags: --allow-dangerous (destructive tools) | --mcp-port <n> (multi-project)",
-            "Stop: /muse tunnel stop",
-            "",
-            "!! URL is public - Bearer <redacted> is the ONLY access control.",
-            "!! Bearer <redacted> once, never stored. Rotate: /muse tunnel restart --mcp",
+            "!! WARNING: --allow-dangerous in static-bearer mode exposes destructive tools",
+            "!! (command execution, file writes, agent control) to anyone holding the bearer token.",
+            "!! For ChatGPT write access, prefer --mcp-auth oauth instead.",
           ].join("\n"),
+          timestamp: Date.now(),
+        });
+      }
+      try {
+        const mcpInfo = await startMcpTunnel({ port: mcpPort, allowDangerous, authMode: mcpAuthMode });
+        ctx.addLine({
+          type: "system",
+          content: (() => {
+            const toolModeLine = `- Tool mode    : ${mcpInfo.dangerous ? `FULL (${mcpInfo.toolCount} tools)` : `SAFE (${mcpInfo.toolCount} read-only)`}`;
+            if (mcpInfo.authMode === "oauth") {
+              return [
+                "-------------------------------------------------------------",
+                "  MCP via Tunnel Online! (OAuth mode)",
+                "-------------------------------------------------------------",
+                `- MCP Endpoint : ${mcpInfo.publicUrl}`,
+                `- Local        : ${mcpInfo.localUrl}`,
+                "- Auth mode    : oauth (OAuth 2.1 + PKCE)",
+                `- Discovery    : ${mcpInfo.oauthDiscoveryUrl}`,
+                `- Scopes       : mcp:tools${mcpInfo.dangerous ? " mcp:tools:write" : ""}`,
+                toolModeLine,
+                `- Audit log    : ${mcpInfo.auditLogPath}`,
+                "",
+                "One-time bootstrap approval code (shown ONCE, never stored):",
+                `- ${mcpInfo.bootstrapCode}`,
+                "",
+                "ChatGPT setup:",
+                "1. In ChatGPT, add an MCP server with the MCP Endpoint URL above.",
+                "2. Complete the OAuth authorization in your browser.",
+                "3. When the tunnel shows an approval prompt, enter the bootstrap code.",
+                "4. Approve scopes; safe tools are callable after approval.",
+                "",
+                "Flags: --mcp-auth oauth | --allow-dangerous (needs mcp:tools:write) | --mcp-port <n>",
+                "Stop: /muse tunnel stop",
+                "",
+                "!! URL is public - OAuth authorization is the ONLY access control.",
+                "!! Bootstrap code is shown once. Rotate: /muse tunnel restart --mcp",
+              ].join("\n");
+            }
+            return [
+              "-------------------------------------------------------------",
+              "  MCP via Tunnel Online!",
+              "-------------------------------------------------------------",
+              `- MCP Endpoint : ${mcpInfo.publicUrl}`,
+              `- Local        : ${mcpInfo.localUrl}`,
+              `- Bearer token : ${mcpInfo.bearerToken}`,
+              toolModeLine,
+              `- Audit log    : ${mcpInfo.auditLogPath}`,
+              "",
+              "MCP client config (copy-paste):",
+              `{ "superagent": { "url": "${mcpInfo.publicUrl}", "headers": { "Authorization": "Bearer token ${mcpInfo.bearerToken}" } } }`,
+              "",
+              "Flags: --mcp-auth oauth (ChatGPT) | --allow-dangerous (destructive tools) | --mcp-port <n> (multi-project)",
+              "Stop: /muse tunnel stop",
+              "",
+              "!! URL is public - Bearer token is the ONLY access control.",
+              "!! Bearer token shown once, never stored. Rotate: /muse tunnel restart --mcp",
+            ].join("\n");
+          })(),
           timestamp: Date.now(),
         });
       } catch (mcpErr: any) {
@@ -246,8 +304,8 @@ export async function handleMuseTunnelSubcommand(
     const initialTask = rawArgs
       .filter((a, idx, arr) => {
         if (a === "--port" || a === "-p" || a === "--https" || a === "--http" || a === "--web") return false;
-        if (a === "--mcp" || a === "--mcp-port" || a === "--allow-dangerous") return false;
-        if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p" || arr[idx - 1] === "--mcp-port")) return false;
+        if (a === "--mcp" || a === "--mcp-port" || a === "--allow-dangerous" || a === "--mcp-auth") return false;
+        if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p" || arr[idx - 1] === "--mcp-port" || arr[idx - 1] === "--mcp-auth")) return false;
         return true;
       })
       .join(" ")

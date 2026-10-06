@@ -242,7 +242,7 @@ Superagent can pair with an external AI agent (**"Muse"**) acting as a remote co
    - **Multi-Terminal Isolation**: Run independent tunnels across multiple terminals using custom ports (`--port 9226`).
    - **Tunnel Inspection & Batch Stop**: Inspect all active tunnels via `/tunnel list` (or `superagent tunnel list`) and stop all via `/tunnel stop all`.
    - **Tunnel Chat & ESC Menu (v1.5.147)**: Press `ESC` while a tunnel is active for a quick menu (stop tunnel / send message to Muse / continue), or send directly via `/muse tunnel msg <text>`.
-   - **MCP via Tunnel (v1.6.0)**: `/muse tunnel start --mcp` exposes an MCP server (Streamable HTTP) through the tunnel (MCP only, no WSS) — separate Bearer token (printed once), safe-tools allowlist by default, `--allow-dangerous` opts into destructive tools, audit log at `~/.superagent-r/mcp-audit.log`.
+   - **MCP via Tunnel (v1.6.0, OAuth in v1.7.0)**: `/muse tunnel start --mcp` exposes an MCP server (Streamable HTTP) through the tunnel (MCP only, no WSS) — two auth modes: `static-bearer` (default, separate bearer token printed once) and `oauth` (OAuth 2.1 + PKCE for ChatGPT, `--mcp-auth oauth`). Safe-tools allowlist by default, `--allow-dangerous` opts into destructive tools, audit log at `~/.superagent-r/mcp-audit.log`.
 
 2. **Private Telegram Group Bus**:
    - Outbound long-polling communication requiring zero firewall or DNS configuration.
@@ -272,7 +272,7 @@ superagent --server 7888 --tunnel
 /tunnel start [--https] [--port <n>]
 /tunnel stop [all|--https|--port <n>]
 /tunnel status [--https|--port <n>]
-/muse tunnel start [--https] [--mcp] [--mcp-port <n>] [--allow-dangerous]
+/muse tunnel start [--https] [--mcp] [--mcp-port <n>] [--allow-dangerous] [--mcp-auth static-bearer|oauth]
 ```
 
 **HTTPS Tunnel Security Guarantees:**

@@ -116,7 +116,7 @@ export const museCommand: SlashCommand = {
         "  /muse tunnel                 - Cloudflare Tunnel setup guide & config",
         "  /muse tunnel list            - List all currently active Cloudflare tunnels",
         "  /muse tunnel start           - Start quick ephemeral Cloudflare Tunnel (optional: --port <n>)",
-        "  /muse tunnel start --mcp      - MCP server ONLY via tunnel, no WSS (opts: --mcp-port <n>, --allow-dangerous)",
+        "  /muse tunnel start --mcp      - MCP server ONLY via tunnel, no WSS (opts: --mcp-port <n>, --allow-dangerous, --mcp-auth static-bearer|oauth)",
         "  /muse tunnel stop            - Stop active Cloudflare Tunnel (optional: --port <n> or all)",
         "  /muse tunnel msg <text>       - Send a chat message to Muse via the tunnel",
         "  ESC (tunnel active)          - Open tunnel menu: stop / message Muse / continue",
@@ -1119,7 +1119,7 @@ registry.register(museCommand);
 export const tunnelCommand: SlashCommand = {
   name: "tunnel",
   aliases: ["tunnels"],
-  description: "Manage Cloudflare quick tunnels (list, start [--https] [--mcp] [--mcp-port <n>], stop, status, restart)",
+  description: "Manage Cloudflare quick tunnels (list, start [--https] [--mcp] [--mcp-port <n>] [--mcp-auth <mode>], stop, status, restart)",
   async execute(args, ctx) {
     const rawTrimmed = args.trim();
     if (!rawTrimmed) {

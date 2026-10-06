@@ -73,6 +73,8 @@ export interface McpServerState {
   toolMode: "safe" | "dangerous";
   startedAt: number;
   workspace: string;
+  /** Auth mode; defaults to "static-bearer" for states written before Task 8. */
+  authMode?: McpAuthMode;
 }
 
 /** Full info for one active MCP server, including cross-workspace ones. */
@@ -121,6 +123,7 @@ export function readMcpStateFile(filePath: string): McpServerState | null {
       toolMode: s.toolMode === "dangerous" ? "dangerous" : "safe",
       startedAt: typeof s.startedAt === "number" ? s.startedAt : Date.now(),
       workspace: s.workspace || "",
+      authMode: s.authMode === "oauth" ? "oauth" : "static-bearer",
     };
   } catch {
     return null;
@@ -214,6 +217,7 @@ export async function startMcpTunnel(opts: {
     toolMode: dangerous ? "dangerous" : "safe",
     startedAt: active.startedAt,
     workspace: process.cwd(),
+    authMode,
   });
 
   return {
@@ -270,6 +274,7 @@ export function listActiveMcpServers(): ActiveMcpInfo[] {
         toolMode: state?.toolMode ?? "safe",
         startedAt: active.startedAt,
         workspace: state?.workspace ?? process.cwd(),
+        authMode: active.authMode,
       }),
     );
   }
@@ -311,10 +316,13 @@ export function formatActiveMcpServers(servers: ActiveMcpInfo[]): string {
 
   const lines: string[] = [`Active MCP Servers (${servers.length}):`];
   servers.forEach((s, i) => {
+    const authMode = s.authMode ?? "static-bearer";
+    const toolMode = s.toolMode === "dangerous" ? "FULL" : "SAFE";
     lines.push(
       `${i + 1}. Port ${s.port} (PID: ${s.pid}, Uptime: ${s.uptimeSeconds}s)`,
       `   - Public URL : ${s.publicUrl}`,
       `   - Local URL  : ${s.localUrl}`,
+      `   - Auth mode  : ${authMode} | Tool mode: ${toolMode}`,
     );
     if (s.workspace) {
       lines.push(`   - Workspace  : ${s.workspace}`);
