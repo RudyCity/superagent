@@ -26,6 +26,18 @@ import {
   createSuperagentMcpServer,
   type McpServerOptions,
 } from "./superagentMcpServer.js";
+import { McpOAuthStore } from "./mcpOAuthStore.js";
+import {
+  handleOAuthRoute,
+  protectedResourceMetadataUrl,
+  type McpOAuthRoutesConfig,
+} from "./mcpOAuthRoutes.js";
+import {
+  extractBearerToken,
+  verifyStaticBearer,
+  buildBearerChallenge,
+  type McpAuthMode,
+} from "./mcpAuth.js";
 
 /**
  * Tool classification for the tunnel allowlist.
@@ -89,11 +101,7 @@ export function generateMcpBearerToken(): string {
 }
 
 export function isAuthorized(req: http.IncomingMessage, expectedToken: string): boolean {
-  const header = req.headers["authorization"];
-  if (typeof header !== "string" || !header.startsWith("Bearer ")) return false;
-  const provided = Buffer.from(header.slice(7), "utf8");
-  const expected = Buffer.from(expectedToken, "utf8");
-  return provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
+  return verifyStaticBearer(extractBearerToken(req), expectedToken);
 }
 
 function summarizeArgs(args: unknown): string {
@@ -160,11 +168,28 @@ function readJsonBody(req: http.IncomingMessage, maxBytes = 16 * 1024 * 1024): P
   });
 }
 
+export interface McpOAuthServerConfig {
+  /** Public base URL for metadata, e.g. https://xxx.trycloudflare.com */
+  publicBaseUrl: string;
+  /** SHA-256 hex of the one-time bootstrap approval code. */
+  bootstrapCodeHash: string;
+}
+
 export interface McpHttpServerOptions {
   port: number;
-  bearerToken: string;
+  /**
+   * Static bearer token. Required in static-bearer mode (the default);
+   * ignored in oauth mode.
+   */
+  bearerToken?: string;
   allowDangerous: boolean;
   auditLogPath?: string;
+  /** Auth mode: "static-bearer" (default) or "oauth". See ADR-006. */
+  authMode?: McpAuthMode;
+  /** Required when authMode is "oauth". */
+  oauth?: McpOAuthServerConfig;
+  /** Public base URL used for the WWW-Authenticate challenge metadata hint. */
+  publicBaseUrl?: string;
 }
 
 export interface McpHttpServerHandle {
@@ -173,14 +198,36 @@ export interface McpHttpServerHandle {
   /** Actual bound port (useful when port 0 was requested). */
   port: number;
   close: () => Promise<void>;
+  /** OAuth store (only set in oauth mode); used for status/diagnostics. */
+  oauthStore?: McpOAuthStore;
 }
 
 export const MCP_HTTP_PATH = "/mcp";
 
 export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<McpHttpServerHandle> {
-  if (!opts.bearerToken || opts.bearerToken.length < 32) {
-    throw new Error("MCP bearer token must be at least 32 characters (use generateMcpBearerToken()).");
+  const authMode: McpAuthMode = opts.authMode ?? "static-bearer";
+
+  let oauthStore: McpOAuthStore | undefined;
+  let oauthRoutesConfig: McpOAuthRoutesConfig | undefined;
+  if (authMode === "oauth") {
+    if (!opts.oauth?.publicBaseUrl || !opts.oauth?.bootstrapCodeHash) {
+      throw new Error("OAuth mode requires opts.oauth.publicBaseUrl and opts.oauth.bootstrapCodeHash.");
+    }
+    oauthStore = new McpOAuthStore();
+    oauthRoutesConfig = {
+      store: oauthStore,
+      publicBaseUrl: opts.oauth.publicBaseUrl,
+      bootstrapCodeHash: opts.oauth.bootstrapCodeHash,
+    };
+  } else {
+    if (!opts.bearerToken || opts.bearerToken.length < 32) {
+      throw new Error("MCP bearer token must be at least 32 characters (use generateMcpBearerToken()).");
+    }
   }
+
+  const metadataBase =
+    opts.oauth?.publicBaseUrl ?? opts.publicBaseUrl ?? `http://127.0.0.1:${opts.port}`;
+
   const allowedTools = opts.allowDangerous ? undefined : getDefaultSafeTools();
   const auditLogPath = opts.auditLogPath || path.join(os.homedir(), ".superagent-r", "mcp-audit.log");
   const audit = createMcpAuditLogger(auditLogPath);
@@ -196,6 +243,16 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
 
   const httpServer = http.createServer(async (req, res) => {
     try {
+      // OAuth discovery/authorization/token endpoints are public by design
+      // (RFC 8414 / RFC 9728). They never require the MCP access token.
+      if (oauthRoutesConfig) {
+        const oauthResult = await handleOAuthRoute(req, oauthRoutesConfig);
+        if (oauthResult.handled) {
+          res.writeHead(oauthResult.statusCode, oauthResult.headers);
+          res.end(oauthResult.body);
+          return;
+        }
+      }
       const pathname = new URL(req.url || "/", "http://127.0.0.1").pathname;
       if (pathname !== MCP_HTTP_PATH) {
         res.writeHead(404, { "Content-Type": "application/json" });
@@ -207,15 +264,21 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         res.end(JSON.stringify({ error: "method not allowed" }));
         return;
       }
-      if (!isAuthorized(req, opts.bearerToken)) {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: null,
-            error: { code: -32000, message: "Unauthorized: valid Bearer token required" },
-          })
-        );
+      // Authenticate before touching any MCP state.
+      let authorized = false;
+      if (authMode === "oauth" && oauthStore) {
+        const token = extractBearerToken(req);
+        authorized = token !== null && oauthStore.verifyAccessToken(token) !== null;
+      } else {
+        authorized = isAuthorized(req, opts.bearerToken as string);
+      }
+      if (!authorized) {
+        const challenge = buildBearerChallenge(protectedResourceMetadataUrl(metadataBase));
+        res.writeHead(challenge.statusCode, {
+          "Content-Type": "application/json",
+          ...challenge.headers,
+        });
+        res.end(JSON.stringify(challenge.body));
         return;
       }
       let body: unknown = undefined;
@@ -250,6 +313,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
   return {
     url: `http://127.0.0.1:${boundPort}${MCP_HTTP_PATH}`,
     port: boundPort,
+    oauthStore,
     close: () =>
       new Promise<void>((resolve) => {
         transport.close().finally(() => {
