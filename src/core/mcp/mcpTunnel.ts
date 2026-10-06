@@ -137,6 +137,10 @@ export async function startMcpTunnel(opts: {
   allowDangerous?: boolean;
   auditLogPath?: string;
   authMode?: McpAuthMode;
+  /** Explicit allowed Origin values (defense in depth). */
+  allowedOrigins?: string[];
+  /** Allow requests without Origin (server-to-server). Default true. */
+  allowNoOrigin?: boolean;
 }): Promise<McpTunnelInfo> {
   const port = opts.port ?? DEFAULT_MCP_PORT;
   const dangerous = !!opts.allowDangerous;
@@ -181,6 +185,10 @@ export async function startMcpTunnel(opts: {
       authMode,
       oauth,
       publicBaseUrl: publicBaseClean,
+      hostOriginPolicy: {
+        allowedOrigins: opts.allowedOrigins,
+        allowNoOrigin: opts.allowNoOrigin,
+      },
     });
     const prev = readMcpStateFile(getMcpStateFile(port));
     active = {

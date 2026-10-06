@@ -154,16 +154,20 @@ function readJsonBody(req: http.IncomingMessage, maxBytes = 16 * 1024 * 1024): P
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
+    let rejected = false;
     req.on("data", (c: Buffer) => {
+      if (rejected) return; // drain remaining bytes
       size += c.length;
       if (size > maxBytes) {
+        rejected = true;
+        // Do NOT destroy the socket: the caller sends a 413 response.
         reject(new Error("request body too large"));
-        req.destroy();
         return;
       }
       chunks.push(c);
     });
     req.on("end", () => {
+      if (rejected) return;
       try {
         resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
       } catch {
@@ -172,6 +176,54 @@ function readJsonBody(req: http.IncomingMessage, maxBytes = 16 * 1024 * 1024): P
     });
     req.on("error", reject);
   });
+}
+
+/**
+ * Host/Origin validation policy (defense in depth).
+ * Validation runs before auth and before any session is created.
+ */
+export interface McpHostOriginPolicy {
+  /**
+   * Explicit extra allowed Host header values (full "host[:port]").
+   * Loopback (127.0.0.1, localhost) and the configured public tunnel hostname
+   * are always allowed.
+   */
+  allowedHosts?: string[];
+  /**
+   * Explicit allowed Origin header values. When set, requests carrying an
+   * Origin header must match; when unset, Origin is not validated.
+   */
+  allowedOrigins?: string[];
+  /** Allow requests without an Origin header (server-to-server). Default true. */
+  allowNoOrigin?: boolean;
+}
+
+/** Host validation: loopback always allowed; otherwise must match the public
+ *  tunnel hostname or the explicit allowlist. */
+export function isHostAllowed(
+  hostHeader: string | undefined,
+  publicHostname: string | undefined,
+  allowedHosts: string[] | undefined
+): boolean {
+  if (!hostHeader) return false;
+  const h = hostHeader.trim().toLowerCase();
+  const hostname = h.split(":")[0];
+  if (hostname === "127.0.0.1" || hostname === "localhost") return true;
+  if (publicHostname && hostname === publicHostname.toLowerCase()) return true;
+  if (allowedHosts && allowedHosts.map((x) => x.trim().toLowerCase()).includes(h)) return true;
+  return false;
+}
+
+/** Origin validation: absent Origin allowed only if allowNoOrigin; present
+ *  Origin must be in the allowlist when one is configured. */
+export function isOriginAllowed(
+  origin: string | undefined,
+  allowedOrigins: string[] | undefined,
+  allowNoOrigin: boolean
+): boolean {
+  if (origin === undefined || origin === "") return allowNoOrigin;
+  if (!allowedOrigins) return true;
+  return allowedOrigins.map((x) => x.trim()).includes(origin.trim());
 }
 
 export interface McpOAuthServerConfig {
@@ -202,6 +254,8 @@ export interface McpHttpServerOptions {
   sessionIdleTimeoutMs?: number;
   /** Hard cap on session age (default 4 hours). */
   sessionMaxLifetimeMs?: number;
+  /** Host/Origin validation policy (defense in depth). */
+  hostOriginPolicy?: McpHostOriginPolicy;
 }
 
 export interface McpHttpServerHandle {
@@ -240,6 +294,17 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
   const metadataBase =
     opts.oauth?.publicBaseUrl ?? opts.publicBaseUrl ?? `http://127.0.0.1:${opts.port}`;
 
+  // Defense in depth: Host/Origin policy, validated before auth and before
+  // any session is created.
+  const policy = opts.hostOriginPolicy ?? {};
+  const allowNoOrigin = policy.allowNoOrigin !== false;
+  let publicHostname: string | undefined;
+  try {
+    publicHostname = new URL(metadataBase).hostname;
+  } catch {
+    publicHostname = undefined;
+  }
+
   const allowedTools = opts.allowDangerous ? undefined : getDefaultSafeTools();
   const auditLogPath = opts.auditLogPath || path.join(os.homedir(), ".superagent-r", "mcp-audit.log");
   const audit = createMcpAuditLogger(auditLogPath);
@@ -256,6 +321,18 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
 
   const httpServer = http.createServer(async (req, res) => {
     try {
+      // 1. Host validation (before everything else).
+      if (!isHostAllowed(req.headers["host"], publicHostname, policy.allowedHosts)) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "invalid host" }));
+        return;
+      }
+      // 2. Origin validation (before auth).
+      if (!isOriginAllowed(req.headers["origin"], policy.allowedOrigins, allowNoOrigin)) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "origin not allowed" }));
+        return;
+      }
       // OAuth discovery/authorization/token endpoints are public by design
       // (RFC 8414 / RFC 9728). They never require the MCP access token.
       if (oauthRoutesConfig) {
@@ -327,9 +404,10 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
       const readBody = async (): Promise<{ ok: true; body: unknown } | { ok: false }> => {
         try {
           return { ok: true, body: await readJsonBody(req) };
-        } catch {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "invalid JSON body" }));
+        } catch (e: any) {
+          const tooLarge = e && typeof e.message === "string" && e.message.includes("too large");
+          res.writeHead(tooLarge ? 413 : 400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: tooLarge ? "request body too large" : "invalid JSON body" }));
           return { ok: false };
         }
       };
