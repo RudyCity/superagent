@@ -106,7 +106,7 @@ Build a centralized `ContextManager` with pluggable strategies:
 
 ## ADR-006: MCP Tunnel Dual Auth Modes for ChatGPT Compatibility
 
-- **Status**: Accepted
+- **Status**: Accepted & Implemented (v1.7.0)
 - **Date**: 2026-10-06
 - **Deciders**: Integrations Team
 

@@ -1,3 +1,17 @@
+## [1.7.0] - 2026-10-06
+### Added
+- MCP tunnel OAuth 2.1 mode (`--mcp-auth oauth`): authorization-code + PKCE (S256) flow for ChatGPT, with `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server` discovery endpoints, owner-consent page gated by a one-time bootstrap approval code (printed once, hash-only storage), and token endpoint with refresh rotation.
+- Per-session MCP transport registry: each client session gets an isolated transport + server pair keyed by `mcp-session-id`; sessions are bound to their auth identity, with idle timeout, max lifetime, and max concurrent session limits.
+- Defense-in-depth request validation: Host allowlisting (loopback + tunnel host), Origin allowlist, 413 for oversized bodies, standards-shaped `WWW-Authenticate` challenges.
+- ChatGPT-friendly tool metadata: `readOnlyHint`/`destructiveHint`/`idempotentHint` annotations and per-tool `securitySchemes` (oauth2 scopes) via `_meta`.
+- Log sanitizer: recursive redaction of credentials/tokens/secrets in audit and diagnostic logs; bounded arg summaries with shape hints and session hashes.
+### Changed
+- `MCP_TOOL_CLASSIFICATION` canonical location moved to `superagentMcpServer.ts` (re-exported from `mcpHttpTransport.ts` for compatibility).
+- `/tunnel list` and `/muse tunnel list` show auth mode and tool mode per MCP server.
+### Fixed
+- Oversized MCP request bodies now return 413 instead of resetting the connection.
+### Security
+- Static-bearer mode is unchanged (default, backward compatible). `--allow-dangerous` in static-bearer mode prints a strong warning; OAuth mode is recommended for ChatGPT write access.
 ## [1.6.2] - 2026-10-06
 
 ### Added
