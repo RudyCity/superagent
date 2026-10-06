@@ -11,6 +11,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { summarizeArgs } from "./mcpLogSanitizer.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
@@ -456,7 +457,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
 
   const dispatchMcpToolCall = async (request: any) => {
     const { name, arguments: args = {} } = request.params;
-    logMcp(`Handling tool call: ${name} with args: ${JSON.stringify(args)}`);
+    logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(args)}`);
 
     try {
       switch (name) {

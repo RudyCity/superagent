@@ -44,6 +44,7 @@ import {
   McpSessionRegistry,
   type McpSessionEntry,
 } from "./mcpSessionRegistry.js";
+import { summarizeArgs, argShape } from "./mcpLogSanitizer.js";
 import {
   MCP_TOOL_CLASSIFICATION as MCP_TOOL_CLASSIFICATION_SRC,
 } from "./superagentMcpServer.js";
@@ -67,20 +68,15 @@ export function isAuthorized(req: http.IncomingMessage, expectedToken: string): 
   return verifyStaticBearer(extractBearerToken(req), expectedToken);
 }
 
-function summarizeArgs(args: unknown): string {
-  try {
-    const s = JSON.stringify(args) ?? "<undefined>";
-    return s.length > 500 ? s.slice(0, 500) + "\u2026(truncated)" : s;
-  } catch {
-    return "<unserializable>";
-  }
-}
+// summarizeArgs moved to mcpLogSanitizer.ts (redacting version).
 export type McpAuditInfo = {
   tool: string;
   args: unknown;
   ok: boolean;
   error?: string;
   durationMs?: number;
+  /** SHA-256 prefix of the session credential (never the credential). */
+  sessionHash?: string;
 };
 
 /** Append-only JSONL audit logger. Never throws (must not break tool calls). */
@@ -96,9 +92,11 @@ export function createMcpAuditLogger(logPath: string): (info: McpAuditInfo) => v
         ts: new Date().toISOString(),
         tool: info.tool,
         args: summarizeArgs(info.args),
+        argShape: argShape(info.args),
         ok: info.ok,
         error: info.error,
         durationMs: info.durationMs,
+        sessionHash: info.sessionHash,
       });
       fs.appendFileSync(logPath, line + "\n", "utf8");
     } catch {
@@ -420,7 +418,11 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
       const newTransport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => crypto.randomUUID(),
       });
-      const newServer = createSuperagentMcpServer({ allowedTools, onToolCall: audit, authMode } as McpServerOptions);
+      const sessionCtx: { sessionHash?: string } = {
+        sessionHash: (identity as McpIdentity).credentialHash.slice(0, 16),
+      };
+      const sessionAudit = (info: McpAuditInfo) => audit({ ...info, sessionHash: sessionCtx.sessionHash });
+      const newServer = createSuperagentMcpServer({ allowedTools, onToolCall: sessionAudit, authMode } as McpServerOptions);
       await newServer.connect(newTransport);
       try {
         await newTransport.handleRequest(req, res, rb.body);
