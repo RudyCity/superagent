@@ -77,6 +77,10 @@ import {
   setNetworkConditionsTool,
 } from "./chromeExtraTools.js";
 import {
+  listRunningChromeTool,
+  closeChromeProfileTool,
+} from "./chromeProcessTools.js";
+import {
   runHeadlessBrowserTool,
   simulateVirtualCursorTool,
   controlIsolatedCdpTool,
@@ -335,6 +339,8 @@ export const chromeExtensionToolset: Tool[] = [
   controlIsolatedCdpTool,
   screenshotTool,
   playwrightScreenshotTool,
+  listRunningChromeTool,
+  closeChromeProfileTool,
 ];
 
 

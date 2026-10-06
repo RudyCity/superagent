@@ -47,6 +47,7 @@ import { StatusBar } from "./components/status-bar.js";
 import { WizardPanels } from "./components/wizard-panels.js";
 import { PLAN_APPROVAL_OPTIONS, planApprovalChromeHeight } from "./components/plan-approval-dialog.js";
 import { MessageSubmitDialog, type MessageSubmitChoice } from "./components/message-submit-dialog.js";
+import { TunnelMenuDialog, type TunnelMenuChoice } from "./components/tunnel-menu-dialog.js";
 import { ChatArea, computeWrappedLines } from "./components/chat-area.js";
 import { WizardHeaderRowsContext } from "./components/wizard-dialog.js";
 import { useWizardSubmit } from "./hooks/useWizardSubmit.js";
@@ -211,6 +212,8 @@ export function App({
     });
   }, []);
   const [input, setInput] = useState("");
+  const [tunnelMenuOpen, setTunnelMenuOpen] = useState(false);
+  const [tunnelMenuCount, setTunnelMenuCount] = useState(0);
   const [isPasted, setIsPasted] = useState(false);
   const [pastePrefixLength, setPastePrefixLength] = useState(0);
   const [pasteSuffixLength, setPasteSuffixLength] = useState(0);
@@ -1191,6 +1194,62 @@ export function App({
       }
     },
     [isProcessing, activeWizard, handleWizardSubmit, addLine, exit, wizardSelectedIndex, wizardOptions, attachments]
+  );
+
+  // ── TunnelMenuDialog (ESC menu) handlers ────────────────────────────────────
+  // Shown when the user presses ESC while a tunnel is active.
+  const handleTunnelMenuEscape = useCallback(() => {
+    if (tunnelMenuOpen) return;
+    import("./core/remoteAgent/cloudflareTunnel.js")
+      .then(({ listActiveTunnels }) => {
+        let count = 0;
+        try {
+          count = listActiveTunnels().length;
+        } catch {
+          count = 0;
+        }
+        if (count > 0) {
+          setTunnelMenuCount(count);
+          setTunnelMenuOpen(true);
+        }
+      })
+      .catch(() => {});
+  }, [tunnelMenuOpen]);
+
+  const handleTunnelMenuChoice = useCallback(
+    (choice: TunnelMenuChoice) => {
+      setTunnelMenuOpen(false);
+      if (choice === "back") return;
+      if (choice === "message") {
+        // Prefill the input; the user types the message and hits Enter.
+        // The normal submit pipeline routes it to `/muse tunnel msg`.
+        setInput("/muse tunnel msg ");
+        return;
+      }
+      // choice === "stop": stop all tunnels + watchers
+      (async () => {
+        try {
+          const [{ stopAllQuickTunnels }, { stopAllMuseWatchers }] = await Promise.all([
+            import("./core/remoteAgent/cloudflareTunnel.js"),
+            import("./core/remoteAgent/museWatcher.js"),
+          ]);
+          const watchers = await stopAllMuseWatchers();
+          const tunnels = await stopAllQuickTunnels();
+          addLine({
+            type: "system",
+            content: `[Tunnel] Stopped ${tunnels} quick tunnel(s) and ${watchers} watcher(s).`,
+            timestamp: Date.now(),
+          });
+        } catch (err: any) {
+          addLine({
+            type: "system",
+            content: `[Tunnel] Stop failed: ${err?.message || String(err)}`,
+            timestamp: Date.now(),
+          });
+        }
+      })();
+    },
+    [addLine]
   );
 
   // ── MessageSubmitDialog handlers ──────────────────────────────────────────
@@ -3413,6 +3472,14 @@ export function App({
               />
             )}
 
+            {/* TunnelMenuDialog — ESC menu while a tunnel is active */}
+            {tunnelMenuOpen && (
+              <TunnelMenuDialog
+                tunnelCount={tunnelMenuCount}
+                onChoose={handleTunnelMenuChoice}
+              />
+            )}
+
             {/* CommandLine Input — hidden for selection-only wizard steps */}
             {!isSelectionOnlyStep && (
             <Box flexDirection="column">
@@ -3446,7 +3513,8 @@ export function App({
                   )}
                   <ChatTextInput
                     ref={chatTextInputRef}
-                    focus={focusMode === "input" && !pendingSubmitMessage}
+                    focus={focusMode === "input" && !pendingSubmitMessage && !tunnelMenuOpen}
+                    onEscapeKey={handleTunnelMenuEscape}
                     value={input}
                     onChange={handleInputChange}
                     onSubmit={pendingSubmitMessage ? () => {} : handleSubmit}

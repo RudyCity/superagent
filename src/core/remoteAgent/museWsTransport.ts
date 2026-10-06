@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "http";
 import crypto from "crypto";
-import { RemoteAgentEnvelope, validateEnvelope } from "./protocol.js";
+import { RemoteAgentEnvelope, validateEnvelope, EnvelopeReassembler } from "./protocol.js";
 import { RemoteAgentConfig, maskSecret, rotateWsToken, updateRemoteAgentConfig } from "./config.js";
 import {
   RemoteTransport,
@@ -42,6 +42,7 @@ export class MuseWsServerTransport implements RemoteTransport {
   private activeSocket: ExtWebSocket | null = null;
   private onEnvelopeHandler: EnvelopeHandler | null = null;
   private replayValidator = new ReplayValidator();
+  private inboundReassembler = new EnvelopeReassembler();
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private isStarted = false;
 
@@ -199,7 +200,12 @@ export class MuseWsServerTransport implements RemoteTransport {
     socket.on("message", async (data: Buffer | string) => {
       try {
         const text = typeof data === "string" ? data : data.toString("utf-8");
-        const json = JSON.parse(text);
+        // Reassemble MUSEBUS chunks (also handles plain JSON envelopes).
+        const json: any = this.inboundReassembler.processMessage(text);
+        if (!json) {
+          // Incomplete chunk - wait for the remaining parts.
+          return;
+        }
 
         // Handle handshake auth frame if awaiting auth
         if (!socket.isAuthenticated) {
@@ -434,6 +440,7 @@ export class MuseWsClientTransport implements RemoteTransport {
   private socket: WebSocket | null = null;
   private onEnvelopeHandler: EnvelopeHandler | null = null;
   private replayValidator = new ReplayValidator();
+  private inboundReassembler = new EnvelopeReassembler();
   private isStarted = false;
   private shouldReconnect = true;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -490,7 +497,12 @@ export class MuseWsClientTransport implements RemoteTransport {
       ws.on("message", async (data: Buffer | string) => {
         try {
           const text = typeof data === "string" ? data : data.toString("utf-8");
-          const json = JSON.parse(text);
+          // Reassemble MUSEBUS chunks (also handles plain JSON envelopes).
+          const json: any = this.inboundReassembler.processMessage(text);
+          if (!json) {
+            // Incomplete chunk - wait for the remaining parts.
+            return;
+          }
 
           const replayCheck = this.replayValidator.validate(json);
           if (!replayCheck.ok) {

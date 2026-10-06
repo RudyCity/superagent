@@ -1,0 +1,9 @@
+{
+  "bridges": [
+    {
+      "name": "superagent",
+      "ws_url": "wss://<tunnel-kamu>.trycloudflare.com/muse",
+      "project": "superagent"
+    }
+  ]
+}

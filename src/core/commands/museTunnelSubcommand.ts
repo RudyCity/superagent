@@ -186,10 +186,21 @@ export async function handleMuseTunnelSubcommand(
       if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
     }
 
+    // MCP via tunnel flags: /muse tunnel start --mcp [--mcp-port <n>] [--allow-dangerous]
+    const wantMcp = rawArgs.some((a) => a.toLowerCase() === "--mcp");
+    const mcpPortArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--mcp-port");
+    let mcpPort = 9227;
+    if (mcpPortArgIdx !== -1 && rawArgs[mcpPortArgIdx + 1]) {
+      const parsed = parseInt(rawArgs[mcpPortArgIdx + 1], 10);
+      if (!isNaN(parsed) && parsed > 0 && parsed < 65536) mcpPort = parsed;
+    }
+    const allowDangerous = rawArgs.some((a) => a.toLowerCase() === "--allow-dangerous");
+
     const initialTask = rawArgs
       .filter((a, idx, arr) => {
         if (a === "--port" || a === "-p" || a === "--https" || a === "--http" || a === "--web") return false;
-        if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p")) return false;
+        if (a === "--mcp" || a === "--mcp-port" || a === "--allow-dangerous") return false;
+        if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p" || arr[idx - 1] === "--mcp-port")) return false;
         return true;
       })
       .join(" ")
@@ -423,6 +434,39 @@ export async function handleMuseTunnelSubcommand(
         ].join("\n"),
         timestamp: Date.now(),
       });
+
+      // --- MCP via tunnel (opt-in: /muse tunnel start --mcp) ---
+      if (wantMcp) {
+        try {
+          const { startMcpTunnel } = await import("../mcp/mcpTunnel.js");
+          const mcpInfo = await startMcpTunnel({ port: mcpPort, allowDangerous });
+          ctx.addLine({
+            type: "system",
+            content: [
+              "-------------------------------------------------------------",
+              "  MCP via Tunnel Online!",
+              "-------------------------------------------------------------",
+              `- MCP Endpoint : ${mcpInfo.publicUrl}`,
+              `- Local        : ${mcpInfo.localUrl}`,
+              `- Bearer token : ${mcpInfo.bearerToken}`,
+              `- Tool mode    : ${mcpInfo.dangerous ? `FULL (${mcpInfo.toolCount} tools)` : `SAFE (${mcpInfo.toolCount} read-only)`}`,
+              `- Audit log    : ${mcpInfo.auditLogPath}`,
+              "",
+              "MCP client: url + header Authorization: Bearer <token>",
+              "",
+              "!! URL is public - bearer token is the ONLY access control.",
+              "!! Bearer shown once, never stored. Rotate: /muse tunnel restart --mcp",
+            ].join("\n"),
+            timestamp: Date.now(),
+          });
+        } catch (mcpErr: any) {
+          ctx.addLine({
+            type: "error",
+            content: `[MCP Tunnel] Failed: ${mcpErr?.message || String(mcpErr)}`,
+            timestamp: Date.now(),
+          });
+        }
+      }
     } catch (err: any) {
       ctx.addLine({
         type: "error",
@@ -441,6 +485,8 @@ export async function handleMuseTunnelSubcommand(
       const { stopAllMuseWatchers } = await import("../remoteAgent/museWatcher.js");
       const watcherCount = await stopAllMuseWatchers();
       const count = await stopAllQuickTunnels();
+      const { stopAllMcpServers } = await import("../mcp/mcpTunnel.js");
+      await stopAllMcpServers();
       ctx.addLine({
         type: "system",
         content: `[Cloudflare Tunnel] Stopped ${count} quick tunnel${count === 1 ? "" : "s"} and ${watcherCount} watch daemon${watcherCount === 1 ? "" : "s"} across all workspaces.`,
@@ -584,6 +630,28 @@ export async function handleMuseTunnelSubcommand(
     return;
   }
 
+  // /muse tunnel msg <text> — kirim pesan ke Muse yang terkoneksi via tunnel
+  if (rawAction === "msg" || rawAction === "message" || rawAction === "chat") {
+    const actionIdx = parts.findIndex((p) => p.toLowerCase() === rawAction);
+    const text = parts.slice(actionIdx + 1).join(" ").trim();
+    if (!text) {
+      ctx.addLine({
+        type: "system",
+        content: "Usage: /muse tunnel msg <pesan> — kirim pesan ke Muse yang terkoneksi.",
+        timestamp: now,
+      });
+      return;
+    }
+    const { sendChatToMuse } = await import("../remoteAgent/museChat.js");
+    const res = await sendChatToMuse(text);
+    ctx.addLine({
+      type: res.ok ? "system" : "error",
+      content: `[Muse Chat] ${res.detail}`,
+      timestamp: Date.now(),
+    });
+    return;
+  }
+
   // Fallback: Guide & Subcommands overview
   const currentStatus = getTunnelStatus();
   const statusPrefix = currentStatus.isRunning
@@ -604,6 +672,8 @@ export async function handleMuseTunnelSubcommand(
     "  /muse tunnel restart         - Restart active Cloudflare Tunnel and watch daemon",
     "  /muse tunnel status          - Check current tunnel status (optional: --port <n>)",
     "  /muse tunnel status --https  - Check Cloudflare HTTPS tunnel status (port 7888)",
+    "  /muse tunnel msg <pesan>     - Kirim pesan ke Muse yang terkoneksi via tunnel",
+    "  /muse tunnel start --mcp    - Sertakan MCP server via tunnel (Streamable HTTP, port 9227)",
     "  /muse tunnel prompt          - View and copy connection prompt for Muse without starting",
     "  /muse tunnel guide           - View full manual Cloudflare setup guide",
     "  /tunnel start [--https]      - Shortcut: start quick tunnel with optional --https",

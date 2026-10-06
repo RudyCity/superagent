@@ -1,3 +1,80 @@
+## [1.6.0] - 2026-10-06
+
+### Added
+
+- **MCP via tunnel** (`/muse tunnel start --mcp`) — expose Superagent MCP server
+  ke MCP client remote via Cloudflare quick tunnel (Streamable HTTP):
+  - `src/core/mcp/mcpHttpTransport.ts` (baru): HTTP server di 127.0.0.1:9227
+    (default, bisa `--mcp-port`), Bearer auth per-request (timing-safe,
+    tidak via query param), tool allowlist (default 16 tool read-only;
+    21 tool berbahaya butuh `--allow-dangerous`), audit log JSONL setiap
+    pemanggilan tool.
+  - `src/core/mcp/mcpTunnel.ts` (baru): start HTTP server + tunnel cloudflared,
+    generate bearer 256-bit fresh per sesi (dicetak sekali, tidak disimpan),
+    stop/cleanup terintegrasi `/muse tunnel stop`.
+  - `src/core/mcp/superagentMcpServer.ts`: `createSuperagentMcpServer()` kini
+    terima opsi `{ allowedTools, onToolCall }` (backward compatible).
+  - Keamanan: bind loopback only, token MCP terpisah dari bearer Muse,
+    URL diperlakukan publik, audit log di `~/.superagent-r/mcp-audit.log`.
+  - Rotate token: `/muse tunnel restart --mcp` (bearer baru digenerate).
+
+### Tes
+
+- `tests/mcpHttpTransport.test.ts` (baru, 10 tes): token format/uniqueness,
+  klasifikasi tool, audit logger, 401 tanpa/salah token, tools/list hanya
+  safe tools, blokir tool berbahaya, audit tercatat, dangerous mode.
+
+## [1.5.148] - 2026-10-06
+
+### Added
+
+- **Reassembly MUSEBUS chunk di WS transport** — kedua jalur inbound WebSocket (`MuseWsServerTransport` dan client transport di `src/core/remoteAgent/museWsTransport.ts`) kini melewatkan setiap pesan teks melalui `EnvelopeReassembler.processMessage()`. Chunk MUSEBUS yang belum lengkap tidak lagi error/drop — menunggu bagian berikutnya. Plain JSON tetap diproses seperti biasa (reassembler juga menanganinya). Satu instance reassembler per transport (TTL/prune internal sudah ditangani `processMessage`).
+
+### Tes
+
+- `tests/museWsReassembly.test.ts` (baru, 3 tes): reassembly envelope 2+ chunk via WS server sungguhan (auth + kirim chunk + terima envelope utuh), plain JSON tetap jalan, chunk tak lengkap tidak emit dan tidak crash.
+
+## [1.5.147] - 2026-10-06
+
+### Added
+
+- **Tunnel ESC menu + chat ke Muse** — saat tunnel aktif, tekan ESC di input utama untuk membuka menu inline: `[1] Stop tunnel` (hentikan semua tunnel + watcher), `[2] Kirim pesan ke Muse` (prefill `/muse tunnel msg ` di input), `[3] Lanjut`. Implementasi: komponen baru `src/components/tunnel-menu-dialog.tsx` (pola `MessageSubmitDialog`), prop `onEscapeKey` di `ChatTextInput`, wiring di `src/app.tsx` (menu hanya muncul bila `listActiveTunnels()` tidak kosong).
+- **`/muse tunnel msg <pesan>`** — subcommand baru: kirim pesan teks ke Muse yang terkoneksi via tunnel. Fungsi `sendChatToMuse()` baru di `src/core/remoteAgent/museChat.ts` memakai envelope `chat` (`{v:1, kind:"chat", id, text}`) via `transport.sendEnvelope()`; tidak pernah throw — selalu mengembalikan `{ok, detail}` yang jelas (watcher tidak aktif / tidak ada koneksi / pesan kosong).
+
+### Tests
+
+- `tests/museChat.test.ts` baru — 6 test (pesan kosong, tanpa watcher, envelope chat terkirim, koneksi mati, transport throw, penerusan port).
+
+## [1.5.146] - 2026-10-06
+
+### Added
+
+- **Chrome process tools** — two new built-in tools in `src/core/tools/chromeProcessTools.ts`, registered in `chromeExtensionToolset`:
+  - `list_running_chrome`: lists running Chrome browser processes (PID, profile directory + display name from Local State, start time), EVERY visible window per browser (EnumWindows, not just the main window), and best-effort tab titles per window (UI Automation; titles only, no URLs). Tab titles travel base64-encoded through PowerShell JSON so arbitrary web titles (quotes, emoji, control chars) never break parsing. Cross-platform (Windows CIM; macOS/Linux `ps`). All scans run under strict timeouts and never hang.
+  - `close_chrome_profile`: closes Chrome for ONE profile only — terminates just the PIDs whose command line carries exactly `--profile-directory="<name>"` (exact match, so "Profile 1" never matches "Profile 10"); every other profile is left untouched.
+
+### Fixed
+
+- `list_running_chrome` initially used `Get-Process MainWindowTitle`, which returns only one window per process — replaced with a full EnumWindows top-level window enumeration (one live browser with 7 open windows was misreported as a single window).
+
+### Tests
+
+- New `tests/chromeProcessTools.test.ts`: profile-dir parsing (quoted/bare), browser-main detection, exact-match guard ("Profile 1" vs "Profile 10".."Profile 19"), multi-window scan parsing, profile display-name enrichment, tab availability fallback, empty-name rejection, clean no-match path.
+
+## [1.5.145] - 2026-10-05
+
+### Fixed
+
+- **Cloudflare quick tunnel: URL detection across chunk boundaries** — `handleOutput` now feeds stdout/stderr through a bounded rolling buffer (`TunnelUrlScanner`) before regex matching, so a `*.trycloudflare.com` URL split between two data chunks is still detected instead of timing out and killing a healthy tunnel (`src/core/remoteAgent/cloudflareTunnel.ts`).
+- **Cloudflare quick tunnel: stop/kill safety (no more broad process scan)** — removed `killOrphanQuickTunnels()`; `stopAll()` now terminates only state-tracked tunnels. `stopQuickTunnel()` signals a persisted PID only after `isOwnQuickTunnelProcess()` verifies the command line still belongs to our `cloudflared tunnel --url <localUrl>` instance, so foreign/manual quick tunnels (and reused PIDs) can never be terminated.
+- **Cloudflare quick tunnel: sticky default state** — `saveTunnelState()` no longer lets every start overwrite `tunnel.json`; the default keeps pointing at the first-started tunnel and only switches when empty/unreadable or re-saved for the same port, so `getTunnelStatus()` without a port is unambiguous with multiple tunnels.
+- **Cloudflare quick tunnel: stale wsRemoteUrl cleanup** — new `clearWsRemoteUrl()` clears the published URL from `remote-agent.json` on every stop path (per-port stop, stop-all, unexpected cloudflared exit, dead-PID detection, process exit), match-guarded so one tunnel's stop never wipes another tunnel's live URL.
+
+### Tests
+
+- New `tests/cloudflareTunnelFixes.test.ts`: chunk-split URL detection, foreign-process kill refusal (incl. end-to-end `stopQuickTunnel`/`stopAll` with a live foreign PID), sticky default state, and `wsRemoteUrl` cleanup semantics.
+- Updated `tests/cloudflareTunnel.test.ts`: removed the `killOrphanQuickTunnels` spy after the orphan sweep was deleted.
+
 ## [1.5.144] - 2026-10-05
 
 ### Added & Improved

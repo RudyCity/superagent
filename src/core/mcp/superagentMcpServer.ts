@@ -78,7 +78,15 @@ function logMcp(message: string): void {
   } catch {}
 }
 
-export function createSuperagentMcpServer(): Server {
+export interface McpServerOptions {
+  /** If set, only these tool names are listed and callable (HTTP tunnel allowlist). When omitted, all tools are available (existing stdio behavior). */
+  allowedTools?: string[];
+  /** Audit hook invoked for every tool invocation attempt, including blocked-by-allowlist attempts. Must never throw. */
+  onToolCall?: (info: { tool: string; args: unknown; ok: boolean; error?: string; durationMs?: number }) => void;
+}
+
+export function createSuperagentMcpServer(options: McpServerOptions = {}): Server {
+  const { allowedTools, onToolCall } = options;
   const version = getSuperAgentVersion();
   const server = new Server(
     {
@@ -98,8 +106,7 @@ export function createSuperagentMcpServer(): Server {
   registerResourcesAndPrompts(server);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
+    const allTools = [
         {
           name: "superagent_list_active",
           description: "List all currently active Superagents, subagents, and background processes in Superagent.",
@@ -332,11 +339,13 @@ export function createSuperagentMcpServer(): Server {
           description: "Check health of the Superagent background HTTP server, all active CLI sessions, and Remote Chrome bridge. Use to diagnose connectivity issues.",
           inputSchema: { type: "object", properties: {} },
         },
-      ],
-    };
+    ];
+    // Allowlist: hide non-allowed tools from MCP clients.
+    const tools = allowedTools ? allTools.filter((t) => allowedTools.includes(t.name)) : allTools;
+    return { tools };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const dispatchMcpToolCall = async (request: any) => {
     const { name, arguments: args = {} } = request.params;
     logMcp(`Handling tool call: ${name} with args: ${JSON.stringify(args)}`);
 
@@ -428,6 +437,35 @@ export function createSuperagentMcpServer(): Server {
         content: [{ type: "text", text: `Error executing ${name}: ${err?.message || String(err)}` }],
         isError: true,
       };
+    }
+  };
+
+  // Allowlist + audit wrapper around the dispatcher above.
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const toolName = String((request.params as any)?.name || "");
+    const rawArgs = (request.params as any)?.arguments;
+    if (allowedTools && !allowedTools.includes(toolName)) {
+      onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: "blocked by MCP tool allowlist" });
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `Tool '${toolName}' is not enabled on this MCP server (allowlist).`
+      );
+    }
+    const startedAt = Date.now();
+    try {
+      const result: any = await dispatchMcpToolCall(request);
+      const failed = !!(result && typeof result === "object" && (result as any).isError);
+      onToolCall?.({ tool: toolName, args: rawArgs, ok: !failed, durationMs: Date.now() - startedAt });
+      return result;
+    } catch (err: any) {
+      onToolCall?.({
+        tool: toolName,
+        args: rawArgs,
+        ok: false,
+        error: err?.message || String(err),
+        durationMs: Date.now() - startedAt,
+      });
+      throw err;
     }
   });
 

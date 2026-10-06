@@ -42,6 +42,8 @@ type Props = {
   onPasteImage?: () => void;
   /** Called when Ctrl+W is pressed with empty input — remove last attachment */
   onRemoveLastAttachment?: () => void;
+  /** Called when ESC is pressed in the main input (e.g. tunnel menu hook) */
+  onEscapeKey?: () => void;
   /** Current attachments (used to decide whether Ctrl+W should remove) */
   attachmentCount?: number;
   /** Force immediate (non-debounced) parent state updates (e.g., active wizard) */
@@ -69,6 +71,7 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
   onAttachImage,
   onPasteImage,
   onRemoveLastAttachment,
+  onEscapeKey,
   attachmentCount = 0,
   immediate = false,
   isPasted = false,
@@ -310,6 +313,12 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
         key.tab ||
         (key.shift && key.tab)
       ) {
+        return;
+      }
+
+      // ── ESC — hook for tunnel menu (parent decides based on tunnel state) ──
+      if (key.escape && onEscapeKey) {
+        onEscapeKey();
         return;
       }
 

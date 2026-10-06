@@ -271,6 +271,33 @@ Superagent and Muse support automatic zero-downtime Bearer token rotation over a
 
 ---
 
+### 3.5 Muse-Side Bridge Kit (`bridge/`)
+
+The `bridge/` directory in this repo is a self-contained kit for the Muse side
+of the WebSocket transport — install it on whatever machine runs Muse:
+
+| File | Purpose |
+|---|---|
+| `listener.py` | Persistent WS client (Bearer auth, auto-reconnect, envelope spooling) |
+| `bridge.sh` | Manager: `add` / `start` / `stop` / `status` / `send` / `log` |
+| `bridges.json.example` | Registry template — copy to `bridges.json`, no secrets inside |
+| `hooks/ws_chat_inbox.sh` | Optional hook: wakes Muse on `/muse tunnel` chat messages |
+
+Full instructions: `bridge/SETUP.md`. Key rule: the Bearer token is supplied
+via env (`BEARER='<token>' ./bridge.sh start <name>`) — transient, never
+written to disk or committed.
+
+### 3.6 MCP via Tunnel (v1.6.0+)
+
+`/muse tunnel start --mcp` exposes Superagent's tools as an MCP server
+(Streamable HTTP on 127.0.0.1:9227) through a Cloudflare Tunnel, so any
+MCP client can use them remotely. Security: separate Bearer token printed
+once per session, 16-tool safe allowlist by default (`--allow-dangerous`
+opts into destructive tools), JSONL audit log at
+`~/.superagent-r/mcp-audit.log`. Rotate via `/muse tunnel restart --mcp`.
+
+---
+
 ## 4. Telegram Setup (Alternative Transport)
 
 If you prefer not to use Cloudflare Tunnel, you can connect via Telegram:

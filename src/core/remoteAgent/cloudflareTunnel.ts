@@ -75,8 +75,25 @@ export function saveTunnelState(meta: TunnelMetadata, port?: number): void {
       const portFile = getTunnelStateFile(targetPort);
       fs.writeFileSync(portFile, JSON.stringify(meta, null, 2), "utf-8");
     }
+    // The default tunnel.json is sticky, not last-write-wins: it keeps pointing
+    // at the first-started tunnel and is only overwritten when it does not exist
+    // yet, is unreadable, or already belongs to the same port. This keeps
+    // getTunnelStatus() (no port) unambiguous with multiple tunnels active.
     const defaultFile = getTunnelStateFile();
-    fs.writeFileSync(defaultFile, JSON.stringify(meta, null, 2), "utf-8");
+    let writeDefault = true;
+    if (targetPort && fs.existsSync(defaultFile)) {
+      try {
+        const existing = JSON.parse(fs.readFileSync(defaultFile, "utf-8"));
+        if (existing && typeof existing.port === "number" && existing.port !== targetPort) {
+          writeDefault = false;
+        }
+      } catch {
+        // Unreadable default holds no valid claim; overwrite it below.
+      }
+    }
+    if (writeDefault) {
+      fs.writeFileSync(defaultFile, JSON.stringify(meta, null, 2), "utf-8");
+    }
   } catch {}
 }
 
@@ -166,6 +183,110 @@ export function isProcessRunning(pid: number): boolean {
   } catch (err: any) {
     return err?.code === "EPERM";
   }
+}
+
+/**
+ * Regex matching the public Cloudflare quick-tunnel URL printed by cloudflared.
+ */
+const TUNNEL_URL_REGEX = /https:\/\/([a-zA-Z0-9-]+\.trycloudflare\.com)/i;
+
+/**
+ * Incrementally scans cloudflared stdout/stderr for the public tunnel URL.
+ *
+ * Keeps a bounded rolling buffer so a URL split across chunk boundaries
+ * (stdout vs stderr, or two consecutive data events) is still detected.
+ * Matching each chunk in isolation would miss it and wrongly time out a
+ * healthy tunnel.
+ */
+export class TunnelUrlScanner {
+  private static readonly MAX_BUFFER_CHARS = 4096;
+  private buffer = "";
+
+  /**
+   * Feeds one output chunk. Returns the detected public URL, or null.
+   */
+  push(chunk: Buffer | string): string | null {
+    this.buffer = (this.buffer + chunk.toString()).slice(
+      -TunnelUrlScanner.MAX_BUFFER_CHARS
+    );
+    const match = this.buffer.match(TUNNEL_URL_REGEX);
+    return match ? `https://${match[1]}` : null;
+  }
+}
+
+/**
+ * Verifies that a PID recorded in a tunnel state file still belongs to the
+ * cloudflared quick-tunnel process started for the given local URL.
+ *
+ * Guards against PID reuse: a process is only ever signaled when its command
+ * line proves it is our `cloudflared tunnel --url <localUrl>` instance.
+ * Foreign cloudflared processes (e.g. started manually) are never touched.
+ */
+export async function isOwnQuickTunnelProcess(
+  pid: number,
+  localUrl: string
+): Promise<boolean> {
+  if (!pid || pid <= 0 || !Number.isInteger(pid) || !localUrl) return false;
+  const cmdline = await readProcessCommandLine(pid);
+  const lower = (cmdline || "").toLowerCase();
+  if (!lower.includes("cloudflared")) return false;
+  // Pin the exact local target (host AND port) so a foreign quick tunnel
+  // on another port can never match.
+  return lower.includes(`tunnel --url ${localUrl.toLowerCase()}`);
+}
+
+/**
+ * Reads a process command line cross-platform. Returns "" when unavailable.
+ */
+async function readProcessCommandLine(pid: number): Promise<string> {
+  try {
+    if (process.platform === "win32") {
+      const { stdout } = await execa(
+        "powershell",
+        [
+          "-NoProfile",
+          "-Command",
+          `Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" | Select-Object -ExpandProperty CommandLine`,
+        ],
+        { timeout: 3000, reject: false }
+      );
+      return stdout || "";
+    }
+    if (process.platform === "darwin") {
+      const { stdout } = await execa("ps", ["-p", String(pid), "-o", "command="], {
+        timeout: 3000,
+        reject: false,
+      });
+      return stdout || "";
+    }
+    try {
+      return fs.readFileSync(`/proc/${pid}/cmdline`, "utf-8").replace(/\0/g, " ");
+    } catch {
+      const { stdout } = await execa("ps", ["-p", String(pid), "-o", "args="], {
+        timeout: 3000,
+        reject: false,
+      });
+      return stdout || "";
+    }
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Clears a stale quick-tunnel URL from the remote-agent config.
+ *
+ * When expectedWssUrl is given, the stored value is cleared only if it
+ * matches, so stopping one tunnel never wipes another tunnel's live URL.
+ * Called with no argument (stop-all), whatever is stored is cleared.
+ */
+export function clearWsRemoteUrl(expectedWssUrl?: string, customConfigPath?: string): void {
+  try {
+    const cfg = loadRemoteAgentConfig(customConfigPath);
+    if (!cfg.wsRemoteUrl) return;
+    if (expectedWssUrl !== undefined && cfg.wsRemoteUrl !== expectedWssUrl) return;
+    updateRemoteAgentConfig({ wsRemoteUrl: undefined }, customConfigPath);
+  } catch {}
 }
 
 /**
@@ -309,6 +430,11 @@ export class CloudflareTunnelManager {
             }
           }
         } catch {}
+        // The tunnel goes down with this process; its published URL is now stale.
+        try {
+          const meta = this.activeMetadata.get(port);
+          if (meta?.wssUrl) clearWsRemoteUrl(meta.wssUrl);
+        } catch {}
       };
 
       process.once("exit", exitHandler);
@@ -325,18 +451,20 @@ export class CloudflareTunnelManager {
         }
       }, timeoutMs);
 
+      // Bounded rolling scanner: a URL split across chunk boundaries is still detected.
+      const urlScanner = new TunnelUrlScanner();
+
       const handleOutput = (chunk: Buffer | string) => {
         const text = chunk.toString();
         options.onLog?.(text);
 
         if (!isResolved) {
-          const match = text.match(/https:\/\/([a-zA-Z0-9-]+\.trycloudflare\.com)/i);
-          if (match) {
+          const publicUrl = urlScanner.push(text);
+          if (publicUrl) {
             isResolved = true;
             clearTimeout(timeoutTimer);
 
-            const publicUrl = `https://${match[1]}`;
-            const wssUrl = `wss://${match[1]}${wsPath}`;
+            const wssUrl = `wss://${publicUrl.slice("https://".length)}${wsPath}`;
 
             const meta: TunnelMetadata = {
               pid: child.pid!,
@@ -384,9 +512,12 @@ export class CloudflareTunnelManager {
 
       child.on("close", (code) => {
         process.removeListener("exit", exitHandler);
+        const closedMeta = this.activeMetadata.get(port);
         clearTunnelState(port);
         this.activeProcesses.delete(port);
         this.activeMetadata.delete(port);
+        // Unexpected cloudflared exit: the published URL is dead, clear it.
+        if (closedMeta?.wssUrl) clearWsRemoteUrl(closedMeta.wssUrl);
         if (this.currentProcess === child) {
           this.currentProcess = null;
           this.currentMetadata = null;
@@ -430,6 +561,7 @@ export class CloudflareTunnelManager {
 
     for (const p of targetPorts) {
       const proc = this.activeProcesses.get(p);
+      const inProcMeta = this.activeMetadata.get(p);
       if (proc) {
         try {
           if (proc.pid) {
@@ -453,12 +585,21 @@ export class CloudflareTunnelManager {
           this.currentProcess = null;
           this.currentMetadata = null;
         }
+        if (inProcMeta?.wssUrl) clearWsRemoteUrl(inProcMeta.wssUrl);
       }
 
       const persisted = readTunnelState(p);
       if (persisted && persisted.pid) {
         try {
-          if (isProcessRunning(persisted.pid)) {
+          // Only PIDs recorded in our own state files are ever signaled, and
+          // only after the command line proves the PID still belongs to our
+          // quick tunnel (never a broad pattern: foreign cloudflared
+          // processes and reused PIDs are left alone).
+          const localTarget = persisted.localUrl || `http://127.0.0.1:${persisted.port || p}`;
+          if (
+            isProcessRunning(persisted.pid) &&
+            (await isOwnQuickTunnelProcess(persisted.pid, localTarget))
+          ) {
             if (process.platform === "win32") {
               try {
                 await execa("taskkill", ["/pid", String(persisted.pid), "/T", "/F"]);
@@ -472,6 +613,7 @@ export class CloudflareTunnelManager {
           }
         } catch {}
         clearTunnelState(p);
+        if (persisted.wssUrl) clearWsRemoteUrl(persisted.wssUrl);
       }
     }
 
@@ -568,70 +710,21 @@ export class CloudflareTunnelManager {
   public async stopAll(): Promise<number> {
     const active = this.listActive();
     let stoppedCount = 0;
-    const handledPids = new Set<number>();
     for (const t of active) {
       try {
-        handledPids.add(t.pid);
         const stopped = await this.stopQuickTunnel(t.port);
         if (stopped) stoppedCount++;
       } catch {}
     }
-    stoppedCount += await this.killOrphanQuickTunnels(handledPids);
+    // Deliberately no broad process scan: only state-tracked tunnels are ever
+    // terminated (stopQuickTunnel + isOwnQuickTunnelProcess). Foreign
+    // cloudflared processes are always left alone.
     clearTunnelState("all");
+    clearWsRemoteUrl();
     return stoppedCount;
   }
 
-  /**
-   * Finds and terminates cloudflared quick-tunnel processes (`tunnel --url http://<local>:<port>`)
-   * that are not tracked by any state file. Named/managed tunnels are left untouched.
-   */
-  private async killOrphanQuickTunnels(skipPids: Set<number>): Promise<number> {
-    const pids: number[] = [];
-    try {
-      if (process.platform === "win32") {
-        const { stdout } = await execa(
-          "powershell",
-          [
-            "-NoProfile",
-            "-Command",
-            "Get-CimInstance Win32_Process -Filter \"Name = 'cloudflared.exe'\" | Select-Object ProcessId, CommandLine | ConvertTo-Json -Compress",
-          ],
-          { timeout: 5000, reject: false },
-        );
-        if (stdout && stdout.trim()) {
-          const parsed = JSON.parse(stdout);
-          const list = Array.isArray(parsed) ? parsed : [parsed];
-          for (const p of list) {
-            if (p?.ProcessId && /tunnel\s+--url\s+https?:\/\/(127\.0\.0\.1|localhost)/i.test(p.CommandLine || "")) {
-              pids.push(Number(p.ProcessId));
-            }
-          }
-        }
-      } else {
-        const { stdout } = await execa("pgrep", ["-af", "cloudflared"], { timeout: 3000, reject: false });
-        for (const line of (stdout || "").split("\n")) {
-          const m = line.match(/^(\d+)\s+.*tunnel\s+--url\s+https?:\/\/(127\.0\.0\.1|localhost)/i);
-          if (m) pids.push(Number(m[1]));
-        }
-      }
-    } catch {
-      return 0;
-    }
 
-    let killed = 0;
-    for (const pid of pids) {
-      if (skipPids.has(pid) || pid === process.pid || !isProcessRunning(pid)) continue;
-      try {
-        if (process.platform === "win32") {
-          await execa("taskkill", ["/pid", String(pid), "/T", "/F"], { reject: false });
-        } else {
-          process.kill(pid, "SIGTERM");
-        }
-        killed++;
-      } catch {}
-    }
-    return killed;
-  }
 
   /**
    * Retrieves the current status of the quick tunnel.
@@ -653,6 +746,7 @@ export class CloudflareTunnelManager {
       } else {
         clearTunnelState(undefined);
       }
+      if (meta.wssUrl) clearWsRemoteUrl(meta.wssUrl);
       if (meta.port) {
         this.activeProcesses.delete(meta.port);
         this.activeMetadata.delete(meta.port);
