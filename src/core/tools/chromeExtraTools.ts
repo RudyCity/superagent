@@ -1,5 +1,5 @@
 import { Tool } from "./types.js";
-import { browserControlHandler } from "./browserMacroTools.js";
+import { callBrowser } from "./chromeCommon.js";
 
 export const manageBrowserCookiesStorageTool: Tool = {
   name: "manage_browser_cookies_storage",
@@ -24,16 +24,9 @@ export const manageBrowserCookiesStorageTool: Tool = {
     },
   },
   execute: async ({ action = "get", targetType = "all", instanceId }: { action?: "get" | "clear"; targetType?: string; instanceId?: string }) => {
-    if (!browserControlHandler) {
-      return "No active browser connection. Ensure `superagent --server` is running and Chrome Extension is active.";
-    }
-
-    try {
-      const res = await browserControlHandler("manage_storage", action, targetType, instanceId);
-      return res || `Successfully executed ${action} on storage/cookies.`;
-    } catch (err: any) {
-      return `Failed to manage browser cookies/storage: ${err.message || String(err)}`;
-    }
+    return callBrowser("manage_storage", "Failed to manage browser cookies/storage", [action, targetType, instanceId], {
+      emptyFallback: `Successfully executed ${action} on storage/cookies.`,
+    });
   },
 };
 
@@ -79,17 +72,10 @@ export const setBrowserEmulationTool: Tool = {
     userAgent?: string;
     instanceId?: string;
   }) => {
-    if (!browserControlHandler) {
-      return "No active browser connection. Ensure `superagent --server` is running and Chrome Extension is active.";
-    }
-
-    try {
-      const modeStr = device === "custom" && width && height ? `${width}x${height}` : device;
-      const res = await browserControlHandler("emulate_viewport", modeStr, userAgent, instanceId);
-      return res || `Successfully updated browser emulation settings to '${modeStr}'.`;
-    } catch (err: any) {
-      return `Failed to update browser emulation: ${err.message || String(err)}`;
-    }
+    const modeStr = device === "custom" && width && height ? `${width}x${height}` : device;
+    return callBrowser("emulate_viewport", "Failed to update browser emulation", [modeStr, userAgent, instanceId], {
+      emptyFallback: `Successfully updated browser emulation settings to '${modeStr}'.`,
+    });
   },
 };
 
@@ -129,16 +115,9 @@ export const setNetworkConditionsTool: Tool = {
     blockAds?: boolean;
     instanceId?: string;
   }) => {
-    if (!browserControlHandler) {
-      return "No active browser connection. Ensure `superagent --server` is running and Chrome Extension is active.";
-    }
-
-    try {
-      const res = await browserControlHandler("set_network_conditions", throttling, "", instanceId);
-      return res || `Updated network conditions: Throttling=${throttling}, BlockImages=${blockImages}, BlockAds=${blockAds}.`;
-    } catch (err: any) {
-      return `Failed to update network conditions: ${err.message || String(err)}`;
-    }
+    return callBrowser("set_network_conditions", "Failed to update network conditions", [throttling, "", instanceId], {
+      emptyFallback: `Updated network conditions: Throttling=${throttling}, BlockImages=${blockImages}, BlockAds=${blockAds}.`,
+    });
   },
 };
 
@@ -160,17 +139,10 @@ export const captureTabFullpagePdfTool: Tool = {
     },
   },
   execute: async ({ instanceId, mode = "screenshot" }: { instanceId?: string; mode?: string }) => {
-    if (!browserControlHandler) {
-      return "No active browser connection. Ensure `superagent --server` is running and Chrome Extension is active.";
-    }
-
-    try {
-      const actionName = mode === "screenshot" ? "capture_pdf" : "html";
-      const res = await browserControlHandler(actionName, "", "", instanceId);
-      return res || `Captured ${mode} of current tab.`;
-    } catch (err: any) {
-      return `Failed to capture tab PDF/content: ${err.message || String(err)}`;
-    }
+    const actionName = mode === "screenshot" ? "capture_pdf" : "html";
+    return callBrowser(actionName, "Failed to capture tab PDF/content", ["", "", instanceId], {
+      emptyFallback: `Captured ${mode} of current tab.`,
+    });
   },
 };
 
@@ -187,16 +159,9 @@ export const getBrowserConsoleLogsTool: Tool = {
     },
   },
   execute: async ({ instanceId }: { instanceId?: string }) => {
-    if (!browserControlHandler) {
-      return "No active browser connection. Ensure `superagent --server` is running and Chrome Extension is active.";
-    }
-
-    try {
-      const res = await browserControlHandler("errors", "", "", instanceId);
-      return res || "No console logs recorded.";
-    } catch (err: any) {
-      return `Failed to retrieve browser console logs: ${err.message || String(err)}`;
-    }
+    return callBrowser("errors", "Failed to retrieve browser console logs", ["", "", instanceId], {
+      emptyFallback: "No console logs recorded.",
+    });
   },
 };
 
@@ -217,15 +182,8 @@ export const getBrowserNetworkLogsTool: Tool = {
     },
   },
   execute: async ({ filterPattern = "", instanceId }: { filterPattern?: string; instanceId?: string }) => {
-    if (!browserControlHandler) {
-      return "No active browser connection. Ensure `superagent --server` is running and Chrome Extension is active.";
-    }
-
-    try {
-      const res = await browserControlHandler("network_logs", filterPattern, "", instanceId);
-      return res || "No network requests recorded.";
-    } catch (err: any) {
-      return `Failed to retrieve browser network logs: ${err.message || String(err)}`;
-    }
+    return callBrowser("network_logs", "Failed to retrieve browser network logs", [filterPattern, "", instanceId], {
+      emptyFallback: "No network requests recorded.",
+    });
   },
 };

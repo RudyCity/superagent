@@ -137,6 +137,7 @@ import {
 import {
   listRunningChromeTool,
   closeChromeProfileTool,
+  closeChromeWindowTool,
 } from "./chromeProcessTools.js";
 import {
   runHeadlessBrowserTool,
@@ -173,6 +174,7 @@ export {
   setNetworkConditionsTool,
   listRunningChromeTool,
   closeChromeProfileTool,
+  closeChromeWindowTool,
   runHeadlessBrowserTool,
   simulateVirtualCursorTool,
   controlIsolatedCdpTool,
@@ -195,6 +197,7 @@ export const allTools: Tool[] = [
   controlIsolatedCdpTool,
   listRunningChromeTool,
   closeChromeProfileTool,
+  closeChromeWindowTool,
   listChromeProfilesTool,
   launchChromeProfileTool,
   getActiveBrowserTabsTool,

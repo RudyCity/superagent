@@ -5,6 +5,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { Tool } from "./types.js";
 import { getChromeUserDataPath, detectChromeProfiles } from "./chromeProfileTools.js";
+import { callBrowser, NO_BROWSER_CONTROL_CONNECTION_MSG } from "./chromeCommon.js";
 // PERF: `remoteChromeBridge` pulls in the `ws` websocket library and a
 // per-module HTTP server. It is only needed when a tool *actually* runs
 // — not at module-import time, when we are just constructing the
@@ -288,17 +289,10 @@ export const extractPageContentMarkdownTool: Tool = {
     },
   },
   execute: async ({ instanceId }: { instanceId?: string }) => {
-    const { browserControlHandler } = await getBrowserMacro();
-    if (!browserControlHandler) {
-      return "No active browser control connection. Ensure `superagent --server` is running and Superagent Chrome Extension is active.";
-    }
-
-    try {
-      const text = await browserControlHandler("extract_markdown", "", undefined, instanceId);
-      return text || "No text content extracted from current tab.";
-    } catch (err: any) {
-      return `Failed to extract page content: ${err.message || String(err)}`;
-    }
+    return callBrowser("extract_markdown", "Failed to extract page content", ["", undefined, instanceId], {
+      noConnMsg: NO_BROWSER_CONTROL_CONNECTION_MSG,
+      emptyFallback: "No text content extracted from current tab.",
+    });
   },
 };
 
@@ -320,17 +314,10 @@ export const captureTabFullpagePdfTool: Tool = {
     },
   },
   execute: async ({ mode = "screenshot", instanceId }: { mode?: "screenshot" | "html"; instanceId?: string }) => {
-    const { browserControlHandler } = await getBrowserMacro();
-    if (!browserControlHandler) {
-      return "No active browser control connection. Ensure `superagent --server` is running and Superagent Chrome Extension is active.";
-    }
-
-    try {
-      const action = mode === "html" ? "html" : "screenshot";
-      const result = await browserControlHandler(action, "", undefined, instanceId);
-      return result || `Successfully captured tab ${mode}.`;
-    } catch (err: any) {
-      return `Failed to capture tab ${mode}: ${err.message || String(err)}`;
-    }
+    const action = mode === "html" ? "html" : "screenshot";
+    return callBrowser(action, `Failed to capture tab ${mode}`, ["", undefined, instanceId], {
+      noConnMsg: NO_BROWSER_CONTROL_CONNECTION_MSG,
+      emptyFallback: `Successfully captured tab ${mode}.`,
+    });
   },
 };

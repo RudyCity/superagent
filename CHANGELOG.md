@@ -1,3 +1,10 @@
+## [1.9.0] - 2026-10-06
+### Added
+- Tool baru `close_chrome_window`: menutup SATU window Chrome spesifik via WM_CLOSE (graceful, bukan kill process) — bisa by HWND dari output `list_running_chrome` atau by judul window (case-insensitive, harus match tepat 1 window). Validasi ketat: HWND asing ditolak, judul ambigu ditolak, non-Windows tidak didukung.
+### Changed
+- `close_chrome_profile`: description dijujurkan — Chrome memakai satu browser process bersama untuk semua profile (singleton model), sehingga terminate process menutup SEMUA window SEMUA profile, bukan hanya profile yang dinamai. Hasil kini mencantumkan warning jumlah visible window yang tertutup.
+- Optimasi chrome tools (-80 baris): helper bersama baru `src/core/tools/chromeCommon.ts` (`callBrowser` untuk guard+invoke browserControlHandler, `runPsEncoded` untuk PowerShell -EncodedCommand); dedupe di chromeExtraTools (-42), chromeAdvancedTools (-13), chromeBrowserTools (-13), chromeProcessTools (-12). Perilaku, nama tool, parameter, dan deskripsi tidak berubah.
+
 ## [1.8.0] - 2026-10-06
 ### Added
 - Fuzzy search di tool discovery: `list_tools` kini typo-tolerant (subsequence match dengan skor, urut by relevansi) dan `describe_tool` memberi saran "Did you mean ...?" saat nama tool salah ketik.

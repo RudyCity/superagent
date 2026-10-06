@@ -3,6 +3,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { Tool } from "./types.js";
 import { detectChromeProfiles } from "./chromeProfileTools.js";
+import { runPsEncoded } from "./chromeCommon.js";
 
 const execAsync = promisify(exec);
 
@@ -208,12 +209,7 @@ async function scanWindowsBrowsers(): Promise<ChromeBrowserInfo[]> {
     `}`,
     `$result | ConvertTo-Json -Depth 5 -Compress`,
   ].join("\n");
-  // -EncodedCommand (UTF-16LE base64) avoids every quoting pitfall of -Command.
-  const encoded = Buffer.from(psScript, "utf16le").toString("base64");
-  const { stdout } = await execAsync(
-    `powershell.exe -NoProfile -EncodedCommand ${encoded}`,
-    { maxBuffer: 10 * 1024 * 1024, timeout: SCAN_TIMEOUT_MS }
-  );
+  const stdout = await runPsEncoded(psScript, { maxBuffer: 10 * 1024 * 1024, timeout: SCAN_TIMEOUT_MS });
   const raw = stdout.trim();
   if (!raw) return [];
   let parsed: unknown;
@@ -285,11 +281,7 @@ async function enrichWindowsTabs(browsers: ChromeBrowserInfo[]): Promise<void> {
     `$out | ConvertTo-Json -Depth 4 -Compress`,
   ].join("\n");
   try {
-    const encoded = Buffer.from(psScript, "utf16le").toString("base64");
-    const { stdout } = await execAsync(
-      `powershell.exe -NoProfile -EncodedCommand ${encoded}`,
-      { maxBuffer: 4 * 1024 * 1024, timeout: TABS_TIMEOUT_MS }
-    );
+    const stdout = await runPsEncoded(psScript, { maxBuffer: 4 * 1024 * 1024, timeout: TABS_TIMEOUT_MS });
     const raw = stdout.trim();
     if (!raw) return;
     let parsed: unknown;
@@ -360,6 +352,21 @@ async function scanChromeBrowsers(): Promise<ChromeBrowserInfo[]> {
     : scanPosixBrowsers();
 }
 
+/**
+ * scanChromeBrowsers() that never throws: returns the browsers, or an
+ * error string the caller returns directly. Dedupe for the identical
+ * scan try/catch in every chrome tool.
+ */
+async function safeScanChromeBrowsers(
+  what: string
+): Promise<{ browsers: ChromeBrowserInfo[] } | { error: string }> {
+  try {
+    return { browsers: await scanChromeBrowsers() };
+  } catch (err: any) {
+    return { error: `Failed to scan Chrome ${what}: ${err?.message || String(err)}` };
+  }
+}
+
 
 /** One browser block of the list_running_chrome output. Exported for tests. */
 export function formatBrowserBlock(b: ChromeBrowserInfo): string {
@@ -395,12 +402,9 @@ export const listRunningChromeTool: Tool = {
     properties: {},
   },
   execute: async () => {
-    let browsers: ChromeBrowserInfo[];
-    try {
-      browsers = await scanChromeBrowsers();
-    } catch (err: any) {
-      return `Failed to scan Chrome processes: ${err?.message || String(err)}`;
-    }
+    const scanned = await safeScanChromeBrowsers("processes");
+    if ("error" in scanned) return scanned.error;
+    const browsers = scanned.browsers;
     if (browsers.length === 0) {
       return "No running Chrome browser processes found.";
     }
@@ -426,7 +430,7 @@ export const listRunningChromeTool: Tool = {
 export const closeChromeProfileTool: Tool = {
   name: "close_chrome_profile",
   description:
-    'Close Google Chrome for ONE specific profile only (e.g. "Profile 1"). Only chrome.exe processes whose command line carries exactly --profile-directory="<profileName>" are terminated; every other profile is left untouched. "Profile 1" will NOT match "Profile 10".',
+    'Terminate the Chrome browser process whose command line carries exactly --profile-directory="<profileName>" (e.g. "Profile 1"; "Profile 1" will NOT match "Profile 10"). WARNING: Chrome hosts every profile of one instance in a SINGLE shared browser process -- terminating it closes EVERY visible window of EVERY profile using that process, not just the named profile. To close one window gracefully, use close_chrome_window instead.',
   parameters: {
     type: "object",
     properties: {
@@ -443,18 +447,17 @@ export const closeChromeProfileTool: Tool = {
     if (!target) {
       return "profileName is required and must not be empty.";
     }
-    let browsers: ChromeBrowserInfo[];
-    try {
-      browsers = await scanChromeBrowsers();
-    } catch (err: any) {
-      return `Failed to scan Chrome processes: ${err?.message || String(err)}`;
-    }
+    const scanned = await safeScanChromeBrowsers("processes");
+    if ("error" in scanned) return scanned.error;
+    const browsers = scanned.browsers;
     const victims = browsers.filter((b) => b.profileDir === target);
     if (victims.length === 0) {
       return `No running Chrome browser found for profile "${target}". Nothing was closed.`;
     }
     const killed: number[] = [];
     const failed: string[] = [];
+    // Windows enumerated BEFORE termination: the honest blast-radius figure.
+    const windowCount = victims.reduce((n, b) => n + b.windows.length, 0);
     for (const b of victims) {
       try {
         // b.pid comes from our own scan: always a plain integer, safe for shell.
@@ -472,11 +475,139 @@ export const closeChromeProfileTool: Tool = {
       `Closed Chrome profile "${target}": ${killed.length} process(es) terminated${
         killed.length > 0 ? ` (PID ${killed.join(", ")})` : ""
       }.`,
+      `WARNING: Chrome shares one browser process across profiles -- this closed ${windowCount} visible window(s) across ALL profiles using the terminated process, not just "${target}".`,
     ];
     if (failed.length > 0) parts.push(`Failed: ${failed.join("; ")}`);
     return parts.join("\n");
   },
 };
+/** A scanned window together with its owning browser. Pure shape. */
+export interface ChromeWindowHit {
+  browser: ChromeBrowserInfo;
+  window: ChromeWindowInfo;
+}
+
+/**
+ * Find a window by exact HWND across all scanned browsers. Pure.
+ * Only windows present in the scan can be targeted -- never send
+ * WM_CLOSE to a foreign handle.
+ */
+export function findWindowByHwnd(
+  browsers: ChromeBrowserInfo[],
+  hwnd: number
+): ChromeWindowHit | null {
+  for (const b of browsers) {
+    for (const w of b.windows) {
+      if (w.hwnd === hwnd) return { browser: b, window: w };
+    }
+  }
+  return null;
+}
+
+/**
+ * Find windows whose title contains the substring (case-insensitive). Pure.
+ */
+export function findWindowsByTitle(
+  browsers: ChromeBrowserInfo[],
+  titleSubstring: string
+): ChromeWindowHit[] {
+  const q = titleSubstring.toLowerCase();
+  const out: ChromeWindowHit[] = [];
+  for (const b of browsers) {
+    for (const w of b.windows) {
+      if (w.title.toLowerCase().includes(q)) out.push({ browser: b, window: w });
+    }
+  }
+  return out;
+}
+
+/**
+ * Send WM_CLOSE (0x0010) to a top-level window: graceful close, the
+ * browser process and every other window stay alive. Windows-only.
+ * PowerShell via -EncodedCommand (UTF-16LE base64) avoids quoting pitfalls.
+ */
+async function sendWmClose(hwnd: number): Promise<void> {
+  const ps = [
+    `Add-Type @"`,
+    `using System;`,
+    `using System.Runtime.InteropServices;`,
+    `public class W32WmClose {`,
+    `  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);`,
+    `}`,
+    `"@`,
+    `[W32WmClose]::SendMessage([IntPtr]${hwnd}, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null`,
+  ].join("\n");
+  await runPsEncoded(ps, { nonInteractive: true, maxBuffer: 1024 * 1024, timeout: 15000 });
+}
+
+export const closeChromeWindowTool: Tool = {
+  name: "close_chrome_window",
+  description:
+    "Gracefully close ONE Chrome window via WM_CLOSE (the window closes normally; the browser process and all other windows stay alive). Identify the window by HWND (from list_running_chrome) or by a title substring. Safer than close_chrome_profile, which terminates the whole shared browser process. Windows only.",
+  parameters: {
+    type: "object",
+    properties: {
+      hwnd: {
+        type: "number",
+        description:
+          "Window handle (HWND) from list_running_chrome output. Exact match; must belong to a scanned Chrome window.",
+      },
+      titleSubstring: {
+        type: "string",
+        description:
+          "Case-insensitive substring of the window title. Must match exactly ONE window; zero or ambiguous matches are rejected without action.",
+      },
+    },
+  },
+  execute: async ({
+    hwnd,
+    titleSubstring,
+  }: {
+    hwnd?: number;
+    titleSubstring?: string;
+  }) => {
+    if (os.platform() !== "win32") {
+      return "close_chrome_window is only supported on Windows.";
+    }
+    const sub = (titleSubstring || "").trim();
+    if (hwnd === undefined && !sub) {
+      return "Provide hwnd (from list_running_chrome) or titleSubstring.";
+    }
+    if (hwnd !== undefined && (!Number.isInteger(hwnd) || hwnd <= 0)) {
+      return `Invalid hwnd "${hwnd}": must be a positive integer from list_running_chrome.`;
+    }
+    const scanned = await safeScanChromeBrowsers("windows");
+    if ("error" in scanned) return scanned.error;
+    const browsers = scanned.browsers;
+    let target: ChromeWindowHit;
+    if (hwnd !== undefined) {
+      const hit = findWindowByHwnd(browsers, hwnd);
+      if (!hit) {
+        return `No scanned Chrome window has HWND ${hwnd}. Nothing was closed. Run list_running_chrome to see current windows.`;
+      }
+      target = hit;
+    } else {
+      const hits = findWindowsByTitle(browsers, sub);
+      if (hits.length === 0) {
+        return `No Chrome window title matches "${sub}". Nothing was closed.`;
+      }
+      if (hits.length > 1) {
+        const list = hits
+          .map((h) => `HWND ${h.window.hwnd}: "${h.window.title}"`)
+          .join("; ");
+        return `Title "${sub}" matched ${hits.length} windows -- refusing to guess. Nothing was closed. Be more specific or use hwnd. Matches: ${list}`;
+      }
+      target = hits[0];
+    }
+    try {
+      await sendWmClose(target.window.hwnd);
+    } catch (err: any) {
+      return `Failed to close window "${target.window.title}" (HWND ${target.window.hwnd}): ${err?.message || String(err)}`;
+    }
+    return `Sent WM_CLOSE to window "${target.window.title}" (HWND ${target.window.hwnd}, PID ${target.browser.pid}). The browser process was NOT terminated; other windows are unaffected.`;
+  },
+};
+
 
 
 

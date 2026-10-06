@@ -4,6 +4,7 @@ import os from "os";
 import { Tool } from "./types.js";
 import { getChromeUserDataPath } from "./chromeProfileTools.js";
 import { browserControlHandler } from "./browserMacroTools.js";
+import { callBrowser } from "./chromeCommon.js";
 
 export const manageChromeHistoryTool: Tool = {
   name: "manage_chrome_history",
@@ -103,16 +104,9 @@ export const getBrowserConsoleLogsTool: Tool = {
     },
   },
   execute: async ({ instanceId }: { instanceId?: string }) => {
-    if (!browserControlHandler) {
-      return "No active browser connection. Ensure `superagent --server` is running and Chrome Extension is active.";
-    }
-
-    try {
-      const logs = await browserControlHandler("errors", "", undefined, instanceId);
-      return logs || "No JS errors or console logs detected on current tab.";
-    } catch (err: any) {
-      return `Failed to retrieve console logs: ${err.message || String(err)}`;
-    }
+    return callBrowser("errors", "Failed to retrieve console logs", ["", undefined, instanceId], {
+      emptyFallback: "No JS errors or console logs detected on current tab.",
+    });
   },
 };
 
@@ -133,16 +127,9 @@ export const getBrowserNetworkLogsTool: Tool = {
     },
   },
   execute: async ({ filterPattern = "", instanceId }: { filterPattern?: string; instanceId?: string }) => {
-    if (!browserControlHandler) {
-      return "No active browser connection. Ensure `superagent --server` is running and Chrome Extension is active.";
-    }
-
-    try {
-      const logs = await browserControlHandler("dom_info", filterPattern, undefined, instanceId);
-      return logs || "No network logs recorded for current tab.";
-    } catch (err: any) {
-      return `Failed to retrieve network logs: ${err.message || String(err)}`;
-    }
+    return callBrowser("dom_info", "Failed to retrieve network logs", [filterPattern, undefined, instanceId], {
+      emptyFallback: "No network logs recorded for current tab.",
+    });
   },
 };
 

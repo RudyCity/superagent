@@ -9,6 +9,9 @@ import {
   formatBrowserBlock,
   listRunningChromeTool,
   closeChromeProfileTool,
+  findWindowByHwnd,
+  findWindowsByTitle,
+  closeChromeWindowTool,
 } from "../src/core/tools/chromeProcessTools.js";
 
 const BROWSER = (dir: string) =>
@@ -195,6 +198,94 @@ describe("closeChromeProfileTool safety", () => {
     const res = await listRunningChromeTool.execute({}, process.cwd());
     expect(typeof res).toBe("string");
     expect(res.length).toBeGreaterThan(0);
+  });
+});
+
+describe("close_chrome_window validation", () => {
+  const mkWindow = (hwnd: number, title: string) => ({
+    hwnd,
+    title,
+    tabs: [] as string[],
+    tabsAvailable: false,
+  });
+  const browsers = [
+    {
+      pid: 1111,
+      profileDir: "Default",
+      profileName: "Default",
+      startTime: "2026-10-06 10:00:00",
+      windows: [
+        mkWindow(1001, "Inbox - Google Chrome"),
+        mkWindow(1002, "Calendar - Google Chrome"),
+      ],
+    },
+    {
+      pid: 2222,
+      profileDir: "Profile 1",
+      profileName: "Profile 1",
+      startTime: "2026-10-06 10:05:00",
+      windows: [mkWindow(2001, "Docs - Google Chrome")],
+    },
+  ];
+
+  test("findWindowByHwnd returns the exact window", () => {
+    const hit = findWindowByHwnd(browsers, 1002);
+    expect(hit?.window.title).toBe("Calendar - Google Chrome");
+    expect(hit?.browser.pid).toBe(1111);
+  });
+
+  test("findWindowByHwnd returns null for an unknown handle", () => {
+    expect(findWindowByHwnd(browsers, 999999)).toBeNull();
+  });
+
+  test("findWindowsByTitle matches case-insensitively", () => {
+    const hits = findWindowsByTitle(browsers, "inbox");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].window.hwnd).toBe(1001);
+  });
+
+  test("findWindowsByTitle returns every ambiguous match", () => {
+    const hits = findWindowsByTitle(browsers, "google chrome");
+    expect(hits).toHaveLength(3);
+  });
+
+  test("findWindowsByTitle returns empty when nothing matches", () => {
+    expect(findWindowsByTitle(browsers, "no-such-window-xyz")).toHaveLength(0);
+  });
+
+  test("closeChromeWindowTool rejects an invalid hwnd without scanning", async () => {
+    const res = await closeChromeWindowTool.execute({ hwnd: 0 }, process.cwd());
+    expect(res).toContain("Invalid hwnd");
+  });
+
+  test("closeChromeWindowTool rejects a non-integer hwnd without scanning", async () => {
+    const res = await closeChromeWindowTool.execute({ hwnd: 1.5 }, process.cwd());
+    expect(res).toContain("Invalid hwnd");
+  });
+
+  test("closeChromeWindowTool requires hwnd or titleSubstring", async () => {
+    const res = await closeChromeWindowTool.execute({}, process.cwd());
+    expect(res).toContain("Provide hwnd");
+  });
+
+  test("closeChromeWindowTool refuses an unknown hwnd without closing anything", async () => {
+    const res = await closeChromeWindowTool.execute(
+      { hwnd: 999999999 },
+      process.cwd()
+    );
+    expect(res).toContain("No scanned Chrome window has HWND");
+    expect(res).toContain("Nothing was closed");
+  });
+
+  test("closeChromeWindowTool refuses an ambiguous title without closing anything", async () => {
+    const res = await closeChromeWindowTool.execute(
+      { titleSubstring: "Google Chrome" },
+      process.cwd()
+    );
+    expect(res).toMatch(
+      /matched \d+ windows -- refusing to guess|No Chrome window title matches/
+    );
+    expect(res).toContain("Nothing was closed");
   });
 });
 
