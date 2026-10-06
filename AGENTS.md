@@ -54,7 +54,7 @@ Master Agent  (orchestrator)
 
 - **Chrome process tools** (`src/core/tools/chromeProcessTools.ts`, v1.5.146): `list_running_chrome` (EnumWindows multi-window enumeration, profile display names from Local State, per-window tab lists via UI Automation) and `close_chrome_profile` (kills only the exact `--profile-directory` match). See README.
 - **Tunnel chat + ESC menu** (v1.5.147): `ESC` at the main input while a tunnel is active opens a menu (stop tunnel / message Muse / continue); `/muse tunnel msg <text>` sends a `chat` envelope via the active WS socket. Muse side: `listener.py` writes to `bridges/<name>/chat_inbox/` and the `ws-chat-inbox` hook wakes an agent to reply.
-- **MCP via tunnel** (`src/core/mcp/mcpHttpTransport.ts`, v1.6.0): `/muse tunnel start --mcp` serves MCP over Streamable HTTP on 127.0.0.1:9227 through the tunnel. Separate Bearer token (printed once, transient), 16-tool safe allowlist by default (`--allow-dangerous` opts into 21 destructive tools), JSONL audit log.
+- **MCP via tunnel** (`src/core/mcp/mcpHttpTransport.ts`, v1.6.0): `/muse tunnel start --mcp` serves MCP over Streamable HTTP on 127.0.0.1:9227 through the tunnel (MCP only, no WSS). Separate Bearer token (printed once, transient), 16-tool safe allowlist by default (`--allow-dangerous` opts into 21 destructive tools), JSONL audit log.
 - **Bridge kit** (`bridge/`): sanitized publishable copy of the Muse-side WS bridge (`listener.py`, `bridge.sh`, `hooks/`, `bridges.json.example`, `SETUP.md`). Keep in sync with the live instance (`~/workspace/ws-bridge/` on the Muse machine) — never copy it raw, it contains real URLs/tokens.
 
 ## Coding Guidelines & Constraints

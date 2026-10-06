@@ -59,7 +59,7 @@ Results appear under `bridges/superagent/spool/`.
 
 ## MCP via tunnel (v1.6.0+)
 
-Expose Superagent's tools as an MCP server through the tunnel:
+Expose Superagent's tools as an MCP server through the tunnel (MCP only — the WSS tunnel is not started):
 
 1. Laptop: `/muse tunnel start --mcp` (options: `--mcp-port <n>`, `--allow-dangerous`).
 2. Copy the **MCP endpoint** and **Bearer token** it prints (shown once,

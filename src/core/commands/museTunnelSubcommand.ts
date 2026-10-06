@@ -196,6 +196,52 @@ export async function handleMuseTunnelSubcommand(
     }
     const allowDangerous = rawArgs.some((a) => a.toLowerCase() === "--allow-dangerous");
 
+    // --- MCP-only mode: /muse tunnel start --mcp (WSS tunnel NOT started) ---
+    if (wantMcp) {
+      const { startMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+      if (listActiveMcpServers().includes(mcpPort)) {
+        ctx.addLine({
+          type: "system",
+          content: `[MCP Tunnel] MCP server is ALREADY ACTIVE on port ${mcpPort}.`,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+      try {
+        const mcpInfo = await startMcpTunnel({ port: mcpPort, allowDangerous });
+        ctx.addLine({
+          type: "system",
+          content: [
+            "-------------------------------------------------------------",
+            "  MCP via Tunnel Online!",
+            "-------------------------------------------------------------",
+            `- MCP Endpoint : ${mcpInfo.publicUrl}`,
+            `- Local        : ${mcpInfo.localUrl}`,
+            `- Bearer <redacted> : ${mcpInfo.bearerToken}`,
+            `- Tool mode    : ${mcpInfo.dangerous ? `FULL (${mcpInfo.toolCount} tools)` : `SAFE (${mcpInfo.toolCount} read-only)`}`,
+            `- Audit log    : ${mcpInfo.auditLogPath}`,
+            "",
+            "MCP client config (copy-paste):",
+            `{ "superagent": { "url": "${mcpInfo.publicUrl}", "headers": { "Authorization": "Bearer ${mcpInfo.bearerToken}" } } }`,
+            "",
+            "Flags: --allow-dangerous (destructive tools) | --mcp-port <n> (multi-project)",
+            "Stop: /muse tunnel stop",
+            "",
+            "!! URL is public - Bearer <redacted> is the ONLY access control.",
+            "!! Bearer <redacted> once, never stored. Rotate: /muse tunnel restart --mcp",
+          ].join("\n"),
+          timestamp: Date.now(),
+        });
+      } catch (mcpErr: any) {
+        ctx.addLine({
+          type: "error",
+          content: `[MCP Tunnel] Failed: ${mcpErr?.message || String(mcpErr)}`,
+          timestamp: Date.now(),
+        });
+      }
+      return;
+    }
+
     const initialTask = rawArgs
       .filter((a, idx, arr) => {
         if (a === "--port" || a === "-p" || a === "--https" || a === "--http" || a === "--web") return false;
@@ -435,42 +481,6 @@ export async function handleMuseTunnelSubcommand(
         timestamp: Date.now(),
       });
 
-      // --- MCP via tunnel (opt-in: /muse tunnel start --mcp) ---
-      if (wantMcp) {
-        try {
-          const { startMcpTunnel } = await import("../mcp/mcpTunnel.js");
-          const mcpInfo = await startMcpTunnel({ port: mcpPort, allowDangerous });
-          ctx.addLine({
-            type: "system",
-            content: [
-              "-------------------------------------------------------------",
-              "  MCP via Tunnel Online!",
-              "-------------------------------------------------------------",
-              `- MCP Endpoint : ${mcpInfo.publicUrl}`,
-              `- Local        : ${mcpInfo.localUrl}`,
-              `- Bearer token : ${mcpInfo.bearerToken}`,
-              `- Tool mode    : ${mcpInfo.dangerous ? `FULL (${mcpInfo.toolCount} tools)` : `SAFE (${mcpInfo.toolCount} read-only)`}`,
-              `- Audit log    : ${mcpInfo.auditLogPath}`,
-              "",
-              "MCP client config (copy-paste):",
-              `{ "superagent": { "url": "${mcpInfo.publicUrl}", "headers": { "Authorization": "Bearer ${mcpInfo.bearerToken}" } } }`,
-              "",
-              "Flags: --allow-dangerous (destructive tools) | --mcp-port <n> (multi-project)",
-              "Stop: /muse tunnel stop",
-              "",
-              "!! URL is public - bearer token is the ONLY access control.",
-              "!! Bearer shown once, never stored. Rotate: /muse tunnel restart --mcp",
-            ].join("\n"),
-            timestamp: Date.now(),
-          });
-        } catch (mcpErr: any) {
-          ctx.addLine({
-            type: "error",
-            content: `[MCP Tunnel] Failed: ${mcpErr?.message || String(mcpErr)}`,
-            timestamp: Date.now(),
-          });
-        }
-      }
     } catch (err: any) {
       ctx.addLine({
         type: "error",
@@ -528,26 +538,42 @@ export async function handleMuseTunnelSubcommand(
     }
 
     let stoppedAny = false;
+    const stoppedParts: string[] = [];
     if (isMuseWatcherActive(effectivePort)) {
       await stopMuseWatcher(effectivePort);
       stoppedAny = true;
+      stoppedParts.push("WebSocket watch daemon");
     }
     const existing = getTunnelStatus(effectivePort);
     if (existing.isRunning) {
       await stopQuickTunnel(effectivePort);
       stoppedAny = true;
+      stoppedParts.push(`quick tunnel (port ${effectivePort})`);
+    }
+    // MCP servers (MCP-only mode runs without WSS tunnel/watcher)
+    const mcpPortStopIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--mcp-port");
+    let mcpPortStop = 9227;
+    if (mcpPortStopIdx !== -1 && rawArgs[mcpPortStopIdx + 1]) {
+      const parsedMcpPort = parseInt(rawArgs[mcpPortStopIdx + 1], 10);
+      if (!isNaN(parsedMcpPort) && parsedMcpPort > 0 && parsedMcpPort < 65536) mcpPortStop = parsedMcpPort;
+    }
+    const { stopMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+    if (listActiveMcpServers().includes(mcpPortStop)) {
+      await stopMcpTunnel(mcpPortStop);
+      stoppedAny = true;
+      stoppedParts.push(`MCP server (port ${mcpPortStop})`);
     }
     if (!stoppedAny) {
       ctx.addLine({
         type: "system",
-        content: `[Cloudflare Tunnel] No quick tunnel is currently running${portOverride ? ` on port ${portOverride}` : ""}.`,
+        content: `[Cloudflare Tunnel] No quick tunnel or MCP server is currently running${portOverride ? ` on port ${portOverride}` : ""}.`,
         timestamp: now,
       });
       return;
     }
     ctx.addLine({
       type: "system",
-      content: `[Cloudflare Tunnel] Quick tunnel (port ${effectivePort}) and WebSocket watch daemon stopped successfully.`,
+      content: `[Cloudflare Tunnel] Stopped successfully: ${stoppedParts.join(", ")}.`,
       timestamp: Date.now(),
     });
     return;

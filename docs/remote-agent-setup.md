@@ -291,7 +291,8 @@ written to disk or committed.
 
 `/muse tunnel start --mcp` exposes Superagent's tools as an MCP server
 (Streamable HTTP on 127.0.0.1:9227) through a Cloudflare Tunnel, so any
-MCP client can use them remotely. Security: separate Bearer token printed
+MCP client can use them remotely. This is MCP-only mode: the WSS tunnel
+is not started. Security: separate Bearer token printed
 once per session, 16-tool safe allowlist by default (`--allow-dangerous`
 opts into destructive tools), JSONL audit log at
 `~/.superagent-r/mcp-audit.log`. Rotate via `/muse tunnel restart --mcp`.

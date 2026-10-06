@@ -38,7 +38,7 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 - **🛠️ Integrated Tooling**: Built-in file search, regex ripgrep, background command runners, terminal presets, system-level screenshots, and Playwright web page screenshots.
 - **🌐 Remote SSH Workspaces**: Secure connection to remote hosts with active boundary protection, interactive path expansion, local-to-remote file transfer, and workspace-based session continuation.
 - **🛰️ Remote AI Agent Coordination (Muse)**: Coordinate with a remote AI brain over Cloudflare Tunnel + WebSocket or Telegram bus, delegating high-level reasoning to Muse while Superagent executes batched tools locally with multi-project watch mode and multi-tunnel isolation.
-- **🔌 MCP via Tunnel (v1.6.0)**: Expose Superagent's tools as an MCP server over Streamable HTTP through Cloudflare Tunnel — separate Bearer token, safe-tools allowlist by default (dangerous tools opt-in), full audit logging (`/muse tunnel start --mcp`).
+- **🔌 MCP via Tunnel (v1.6.0)**: Expose Superagent's tools as an MCP server over Streamable HTTP through Cloudflare Tunnel (MCP only, no WSS tunnel) — separate Bearer token, safe-tools allowlist by default (dangerous tools opt-in), full audit logging (`/muse tunnel start --mcp`).
 - **🌐 Chrome Process Tools (v1.5.146)**: Built-in tools to list all running Chrome windows across profiles (with per-window tab lists) and close a targeted Chrome profile safely.
 - **🤖 3-Tier Multi-Agent Mode *(Experimental)***: Master Agent orchestrating isolated Superagents across parallel Git worktrees (`--multi`).
 
@@ -242,7 +242,7 @@ Superagent can pair with an external AI agent (**"Muse"**) acting as a remote co
    - **Multi-Terminal Isolation**: Run independent tunnels across multiple terminals using custom ports (`--port 9226`).
    - **Tunnel Inspection & Batch Stop**: Inspect all active tunnels via `/tunnel list` (or `superagent tunnel list`) and stop all via `/tunnel stop all`.
    - **Tunnel Chat & ESC Menu (v1.5.147)**: Press `ESC` while a tunnel is active for a quick menu (stop tunnel / send message to Muse / continue), or send directly via `/muse tunnel msg <text>`.
-   - **MCP via Tunnel (v1.6.0)**: `/muse tunnel start --mcp` exposes an MCP server (Streamable HTTP) through the tunnel — separate Bearer token (printed once), safe-tools allowlist by default, `--allow-dangerous` opts into destructive tools, audit log at `~/.superagent-r/mcp-audit.log`.
+   - **MCP via Tunnel (v1.6.0)**: `/muse tunnel start --mcp` exposes an MCP server (Streamable HTTP) through the tunnel (MCP only, no WSS) — separate Bearer token (printed once), safe-tools allowlist by default, `--allow-dangerous` opts into destructive tools, audit log at `~/.superagent-r/mcp-audit.log`.
 
 2. **Private Telegram Group Bus**:
    - Outbound long-polling communication requiring zero firewall or DNS configuration.

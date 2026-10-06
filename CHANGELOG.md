@@ -1,3 +1,16 @@
+## [1.6.1] - 2026-10-06
+
+### Changed
+
+- `/muse tunnel start --mcp` kini berarti **MCP-only**: tunnel WSS dan watcher
+  tidak dijalankan sama sekali — hanya server MCP + tunnel-nya. Output message
+  ringkas khusus MCP (endpoint, bearer, contoh config copy-paste, flags, stop).
+  `/muse tunnel stop` juga menghentikan sesi MCP.
+- Help `/muse` dilengkapi: baris `/muse tunnel start --mcp`,
+  `/muse tunnel msg <text>`, dan hint ESC menu saat tunnel aktif.
+- Suggestion `/muse tunnel` dan alias `/tunnel` mencakup action `msg` dan flag
+  `--mcp` / `--mcp-port`.
+
 ## [1.6.0] - 2026-10-06
 
 ### Added
