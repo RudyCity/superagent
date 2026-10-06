@@ -53,12 +53,13 @@ export async function handleMuseTunnelSubcommand(
     isMuseWatcherActive,
   } = await import("../remoteAgent/museWatcher.js");
 
-  // /muse tunnel list
+  // /muse tunnel list: WSS tunnels + cross-workspace MCP servers
   if (rawAction === "list" || rawAction === "ls" || rawAction === "active") {
     const tunnels = listActiveTunnels();
+    const { listActiveMcpServers, formatActiveMcpServers } = await import("../mcp/mcpTunnel.js");
     ctx.addLine({
       type: "system",
-      content: formatActiveTunnels(tunnels),
+      content: `${formatActiveTunnels(tunnels)}\n\n${formatActiveMcpServers(listActiveMcpServers())}`,
       timestamp: now,
     });
     return;
@@ -199,7 +200,7 @@ export async function handleMuseTunnelSubcommand(
     // --- MCP-only mode: /muse tunnel start --mcp (WSS tunnel NOT started) ---
     if (wantMcp) {
       const { startMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
-      if (listActiveMcpServers().includes(mcpPort)) {
+      if (listActiveMcpServers().some((m) => m.port === mcpPort)) {
         ctx.addLine({
           type: "system",
           content: `[MCP Tunnel] MCP server is ALREADY ACTIVE on port ${mcpPort}.`,
@@ -558,10 +559,17 @@ export async function handleMuseTunnelSubcommand(
       if (!isNaN(parsedMcpPort) && parsedMcpPort > 0 && parsedMcpPort < 65536) mcpPortStop = parsedMcpPort;
     }
     const { stopMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
-    if (listActiveMcpServers().includes(mcpPortStop)) {
+    const mcpTarget = listActiveMcpServers().find((m) => m.port === mcpPortStop);
+    if (mcpTarget && mcpTarget.pid === process.pid) {
       await stopMcpTunnel(mcpPortStop);
       stoppedAny = true;
       stoppedParts.push(`MCP server (port ${mcpPortStop})`);
+    } else if (mcpTarget) {
+      ctx.addLine({
+        type: "system",
+        content: `[Cloudflare Tunnel] MCP server on port ${mcpPortStop} is owned by another instance (PID ${mcpTarget.pid}, workspace ${mcpTarget.workspace || "unknown"}) and cannot be stopped from here.`,
+        timestamp: now,
+      });
     }
     if (!stoppedAny) {
       ctx.addLine({

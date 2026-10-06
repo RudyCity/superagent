@@ -118,8 +118,11 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
     if (action === "list" || action === "ls" || action === "active") {
       const tunnels = listActiveTunnels();
+      const { listActiveMcpServers, formatActiveMcpServers } = await import("../mcp/mcpTunnel.js");
       console.log("");
       console.log(formatActiveTunnels(tunnels));
+      console.log("");
+      console.log(formatActiveMcpServers(listActiveMcpServers()));
       console.log("");
       return;
     }

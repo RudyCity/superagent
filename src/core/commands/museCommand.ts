@@ -1119,7 +1119,7 @@ registry.register(museCommand);
 export const tunnelCommand: SlashCommand = {
   name: "tunnel",
   aliases: ["tunnels"],
-  description: "Manage Cloudflare quick tunnels (list, start [--https], stop, status, restart)",
+  description: "Manage Cloudflare quick tunnels (list, start [--https] [--mcp] [--mcp-port <n>], stop, status, restart)",
   async execute(args, ctx) {
     const rawTrimmed = args.trim();
     if (!rawTrimmed) {

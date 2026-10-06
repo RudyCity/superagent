@@ -1,3 +1,19 @@
+## [1.6.2] - 2026-10-06
+
+### Added
+
+- Cross-workspace MCP listing: state MCP dipersist ke disk
+  (`~/.superagent-r/mcp-<port>.json`, tanpa bearer token),
+  `listActiveMcpServers()` menggabungkan state in-memory + scan disk dengan
+  verifikasi PID — MCP server yang dijalankan instance superagent lain
+  (workspace lain) kini terlihat. `/tunnel list` (dan `/muse tunnel list`)
+  menampilkan dua section: WSS tunnels + MCP servers.
+
+### Fixed
+
+- Suggestion Tab `/tunnel` kini menyertakan `--mcp` dan `--mcp-port <n>`
+  (description `tunnelCommand`).
+
 ## [1.6.1] - 2026-10-06
 
 ### Changed
