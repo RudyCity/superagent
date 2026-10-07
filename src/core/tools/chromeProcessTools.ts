@@ -462,9 +462,9 @@ export const closeChromeProfileTool: Tool = {
       try {
         // b.pid comes from our own scan: always a plain integer, safe for shell.
         if (os.platform() === "win32") {
-          await execAsync(`taskkill /F /PID ${b.pid}`);
+          await execAsync(`taskkill /F /PID ${b.pid}`, { timeout: 10000 });
         } else {
-          await execAsync(`kill ${b.pid}`);
+          await execAsync(`kill ${b.pid}`, { timeout: 10000 });
         }
         killed.push(b.pid);
       } catch (err: any) {

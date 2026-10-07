@@ -1,3 +1,8 @@
+## [1.9.2] - 2026-10-07
+### Fixed
+- Fixed terminal layout corruption and line squishing caused by bare carriage returns (`\r`): stripped `\r` in `addLine`, `addToolChild`, `patchLastToolStart`, and `wrapChatLineToLines`.
+- Fixed viewport height overflow by reserving rows for conversation log and workspace/session headers in `chatHeightLimit` and preventing workspace header from wrapping.
+
 ## [1.9.1] - 2026-10-07
 ### Fixed
 - Fixed raw tool call leaks displaying `<tool_call>...<arg_key>...<arg_value>...</tool_call>` in chat output: added parser support for prefix tool names and `<arg_key>`/`<arg_value>` tag pairs in `xmlToolParser`, and ensured `generateText` mode sanitizes raw XML before emitting text events to UI.

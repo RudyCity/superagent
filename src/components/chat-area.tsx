@@ -654,7 +654,7 @@ function wrapNestedChild(
 }
 
 export function wrapChatLineToLines({
-  line,
+  line: rawLine,
   isFirst,
   lineIndex,
   tokensUp,
@@ -683,6 +683,11 @@ export function wrapChatLineToLines({
   isThinkingExpanded?: boolean;
 }): WrappedChatLine[] {
   const result: WrappedChatLine[] = [];
+
+  const line: ChatLine = {
+    ...rawLine,
+    content: typeof rawLine.content === "string" ? rawLine.content.replace(/\r\n/g, "\n").replace(/\r/g, "") : "",
+  };
 
   const marginSpaces = hideTimeline ? "  " : "│    ";
   const separatorSpaces = hideTimeline ? " " : "│ ";
@@ -1596,8 +1601,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       </Box>
 
       {/* Workspace Path & Session ID Indicator */}
-      <Box paddingX={1} marginLeft={5} marginBottom={0} flexDirection="row" flexWrap="wrap">
-        <Text color="cyan" dimColor>
+      <Box paddingX={1} marginLeft={5} marginBottom={0} flexDirection="row" flexWrap="nowrap">
+        <Text color="cyan" dimColor wrap="truncate-end">
           📁 Workspace: <Text bold color="cyan">{workspacePath || primaryWorkspacePath || process.cwd()}</Text>
           {resolvedSessionId ? (
             <>

@@ -4,7 +4,7 @@ import os from "os";
 import { Tool } from "./types.js";
 import { getChromeUserDataPath } from "./chromeProfileTools.js";
 import { browserControlHandler } from "./browserMacroTools.js";
-import { callBrowser } from "./chromeCommon.js";
+import { callBrowser, withTimeout } from "./chromeCommon.js";
 
 export const manageChromeHistoryTool: Tool = {
   name: "manage_chrome_history",
@@ -25,7 +25,7 @@ export const manageChromeHistoryTool: Tool = {
   execute: async ({ query = "", maxResults = 20 }: { query?: string; maxResults?: number }) => {
     if (browserControlHandler) {
       try {
-        const res = await browserControlHandler("history_search", query, String(maxResults));
+        const res = await withTimeout(browserControlHandler("history_search", query, String(maxResults)), 15000, "history_search");
         return res;
       } catch (err: any) {
         // Fall back to message if extension history search fails
@@ -51,7 +51,7 @@ export const listChromeExtensionsTool: Tool = {
   execute: async ({ profileName = "Default" }: { profileName?: string }) => {
     if (browserControlHandler) {
       try {
-        const res = await browserControlHandler("management_list", "");
+        const res = await withTimeout(browserControlHandler("management_list", ""), 15000, "management_list");
         if (res) return res;
       } catch {
         // Fallback to disk scan

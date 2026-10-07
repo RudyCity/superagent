@@ -5,7 +5,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { Tool } from "./types.js";
 import { getChromeUserDataPath, detectChromeProfiles } from "./chromeProfileTools.js";
-import { callBrowser, NO_BROWSER_CONTROL_CONNECTION_MSG } from "./chromeCommon.js";
+import { callBrowser, NO_BROWSER_CONTROL_CONNECTION_MSG, withTimeout } from "./chromeCommon.js";
 // PERF: `remoteChromeBridge` pulls in the `ws` websocket library and a
 // per-module HTTP server. It is only needed when a tool *actually* runs
 // — not at module-import time, when we are just constructing the
@@ -69,7 +69,7 @@ export const launchChromeProfileTool: Tool = {
     }
 
     try {
-      await execAsync(cmd);
+      await execAsync(cmd, { timeout: 15000 });
       return `Launched Chrome with profile \`${safeProfile}\`${url ? ` opening \`${url}\`` : ""}.`;
     } catch (err: any) {
       return `Failed to launch Chrome with profile \`${safeProfile}\`: ${err.message || String(err)}`;
@@ -85,15 +85,21 @@ export const getActiveBrowserTabsTool: Tool = {
     properties: {},
   },
   execute: async () => {
-    const { ensureRemoteChromeBridge } = await getRemoteBridge();
+    const bridge = await getRemoteBridge();
+    await bridge.ensureRemoteChromeBridge();
+    // NOTE: read the handler AFTER ensureRemoteChromeBridge() — ensure installs it.
     const { browserControlHandler } = await getBrowserMacro();
-    await ensureRemoteChromeBridge();
     if (!browserControlHandler) {
       return "No active browser control connection. Ensure `superagent --server` is running and Superagent Chrome Extension is active.";
     }
+    // Fail fast: when the remote bridge is listening but no extension client is
+    // attached, sending would burn the whole timeout budget — report immediately.
+    if (browserControlHandler === bridge.sendRemoteCommand && !bridge.isRemoteChromeConnected()) {
+      return "No active browser control connection. Ensure `superagent --server` is running and Superagent Chrome Extension is active (remote bridge is listening but no extension client is attached).";
+    }
 
     try {
-      const res = await browserControlHandler("list", "");
+      const res = await withTimeout(browserControlHandler("list", ""), 12000, "list");
       return res;
     } catch (err: any) {
       return `Failed to get active browser tabs: ${err.message || String(err)}`;

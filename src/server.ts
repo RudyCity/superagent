@@ -275,10 +275,26 @@ const pendingPermissions = new Map<string, (approval: boolean | "session") => vo
 const pendingQuestions = new Map<string, (answer: any) => void>();
 const pendingBrowserControls = new Map<string, { resolve: (val: string) => void, reject: (err: any) => void }>();
 
+/** Max time to wait for the sidepanel client to answer a browser-control request.
+ *  Without this, a dead-but-connected sidepanel would hang the caller forever. */
+const BROWSER_CONTROL_TIMEOUT_MS = 15000;
+
 function executeBrowserControlOnClient(action: string, target: string, value?: string, instanceId?: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const controlId = Math.random().toString(36).substring(2, 9);
-    pendingBrowserControls.set(controlId, { resolve, reject });
+    // Fail-fast: never leave the caller hanging if the sidepanel never answers.
+    const timer = setTimeout(() => {
+      if (pendingBrowserControls.delete(controlId)) {
+        reject(new Error(
+          `Timed out after ${BROWSER_CONTROL_TIMEOUT_MS / 1000}s waiting for the Chrome extension sidepanel to respond to '${action}'. ` +
+          `Ensure the Superagent Chrome Extension sidepanel is open and responsive.`
+        ));
+      }
+    }, BROWSER_CONTROL_TIMEOUT_MS);
+    pendingBrowserControls.set(controlId, {
+      resolve: (val: string) => { clearTimeout(timer); resolve(val); },
+      reject: (err: any) => { clearTimeout(timer); reject(err); },
+    });
     
     const event = {
       type: "browser_control_required",

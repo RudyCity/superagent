@@ -27,7 +27,21 @@ export function getChromeUserDataPath(): string {
   }
 }
 
+/**
+ * Default-path results are cached for PROFILES_CACHE_TTL_MS (profiles change rarely);
+ * custom paths always read fresh (tests / explicit overrides).
+ */
+const PROFILES_CACHE_TTL_MS = 30000;
+let _profilesCache: { at: number; profiles: ChromeProfileInfo[] } | null = null;
+
+export function clearChromeProfilesCache(): void {
+  _profilesCache = null;
+}
+
 export async function detectChromeProfiles(customUserDataPath?: string): Promise<ChromeProfileInfo[]> {
+  if (!customUserDataPath && _profilesCache && Date.now() - _profilesCache.at < PROFILES_CACHE_TTL_MS) {
+    return _profilesCache.profiles;
+  }
   const userDataPath = customUserDataPath || getChromeUserDataPath();
   const profiles: ChromeProfileInfo[] = [];
 
@@ -70,6 +84,9 @@ export async function detectChromeProfiles(customUserDataPath?: string): Promise
     }
   }
 
+  if (!customUserDataPath) {
+    _profilesCache = { at: Date.now(), profiles };
+  }
   return profiles;
 }
 

@@ -522,6 +522,10 @@ export function App({
   const originalWorkingDirectoryRef = useRef<string>(process.cwd());
 
   const addLine = useCallback((line: ChatLine) => {
+    const cleanLine: ChatLine = {
+      ...line,
+      content: typeof line.content === "string" ? line.content.replace(/\r\n/g, "\n").replace(/\r/g, "") : "",
+    };
     setLines((prev) => {
       const nextIdx = prev.length;
       setExpandedLines((expanded) => {
@@ -529,19 +533,23 @@ export function App({
         next.add(nextIdx);
         return next;
       });
-      return [...prev, line];
+      return [...prev, cleanLine];
     });
   }, []);
 
   /** Append a tool-related line (tool_start/tool_end) as a child of the last assistant message */
   const addToolChild = useCallback((child: ChatLine) => {
+    const cleanChild: ChatLine = {
+      ...child,
+      content: typeof child.content === "string" ? child.content.replace(/\r\n/g, "\n").replace(/\r/g, "") : "",
+    };
     setLines((prev) => {
       if (prev.length === 0) {
         const newAssistant: ChatLine = {
           type: "assistant",
           content: "",
           timestamp: Date.now(),
-          children: [child],
+          children: [cleanChild],
         };
         return [...prev, newAssistant];
       }
@@ -549,7 +557,7 @@ export function App({
       if (lastLine.type === "assistant") {
         const updated = [...prev];
         const parent = { ...updated[prev.length - 1] };
-        parent.children = [...(parent.children || []), child];
+        parent.children = [...(parent.children || []), cleanChild];
         updated[prev.length - 1] = parent;
         return updated;
       } else {
@@ -557,7 +565,7 @@ export function App({
           type: "assistant",
           content: "",
           timestamp: Date.now(),
-          children: [child],
+          children: [cleanChild],
         };
         return [...prev, newAssistant];
       }
@@ -569,6 +577,11 @@ export function App({
    * This avoids adding a separate tool_end child, keeping the display as a single merged row.
    */
   const patchLastToolStart = useCallback((result: { isError: boolean; content: string; description: string }) => {
+    const cleanResult = {
+      ...result,
+      content: typeof result.content === "string" ? result.content.replace(/\r\n/g, "\n").replace(/\r/g, "") : "",
+      description: typeof result.description === "string" ? result.description.replace(/\r\n/g, "\n").replace(/\r/g, "") : "",
+    };
     setLines((prev) => {
       for (let i = prev.length - 1; i >= 0; i--) {
         if (prev[i].type === "assistant") {
@@ -580,7 +593,7 @@ export function App({
                 const updated = [...prev];
                 const parent = { ...updated[i] };
                 const updatedChildren = [...children];
-                updatedChildren[c] = { ...updatedChildren[c], mergedResult: result };
+                updatedChildren[c] = { ...updatedChildren[c], mergedResult: cleanResult };
                 parent.children = updatedChildren;
                 updated[i] = parent;
                 return updated;
@@ -3156,7 +3169,8 @@ export function App({
   const chatAreaScreenHeight = mainContentHeight - bottomChromeTotalHeight;
 
   // Exact height limit for the scrollable chat messages to prevent any empty terminal gap
-  const chatHeightLimit = Math.max(5, chatAreaScreenHeight - bannerHeight - 1);
+  // Reserve 2 rows for Conversation Log header + Workspace/Session indicator
+  const chatHeightLimit = Math.max(3, chatAreaScreenHeight - bannerHeight - 2);
 
   // Build section boundaries (row numbers 1-indexed from top)
   const sectionBounds: SectionBoundary[] = [];
