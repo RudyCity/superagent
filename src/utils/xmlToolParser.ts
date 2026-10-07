@@ -92,25 +92,48 @@ function tryParseToolCallJson(rawBody: string): any {
   // Fallback for XML-like tags inside <tool_call>
   try {
     if (trimmed.includes("<") && trimmed.includes(">")) {
+      let name = "";
       const nameMatch = /<(?:tool_name|name)>([\s\S]*?)<\/(?:tool_name|name)>/i.exec(trimmed);
       if (nameMatch) {
-        const name = nameMatch[1].trim();
+        name = nameMatch[1].trim();
+      } else {
+        const prefixMatch = /^([a-zA-Z0-9_-]+)\s*(?:[\r\n]+|<)/i.exec(trimmed);
+        if (prefixMatch) {
+          name = prefixMatch[1].trim();
+        }
+      }
+
+      if (name) {
         const args: Record<string, any> = {};
-        const tagRegex = /<([a-zA-Z0-9_-]+)(?:\s+[^>]*)?>([\s\S]*?)<\/\1>/gi;
-        let tagMatch;
-        while ((tagMatch = tagRegex.exec(trimmed)) !== null) {
-          const key = tagMatch[1];
-          if (key.toLowerCase() !== "tool_name" && key.toLowerCase() !== "name") {
-            const val = tagMatch[2].trim();
-            if (val === "true") args[key] = true;
-            else if (val === "false") args[key] = false;
-            else if (val === "null") args[key] = null;
-            else if (/^-?\d+(?:\.\d+)?$/.test(val)) args[key] = Number(val);
-            else {
-              try {
-                args[key] = JSON.parse(val);
-              } catch {
-                args[key] = decodeHtmlEntities(val);
+
+        // Check for <arg_key>...</arg_key>\s*<arg_value>...</arg_value> pairs
+        const argKvRegex = /<arg_key>([\s\S]*?)<\/arg_key>\s*<arg_value>([\s\S]*?)<\/arg_value>/gi;
+        let kvMatch;
+        let hasKv = false;
+        while ((kvMatch = argKvRegex.exec(trimmed)) !== null) {
+          hasKv = true;
+          const key = kvMatch[1].trim();
+          const valStr = kvMatch[2].trim();
+          args[key] = parseXmlValue(valStr);
+        }
+
+        if (!hasKv) {
+          const tagRegex = /<([a-zA-Z0-9_-]+)(?:\s+[^>]*)?>([\s\S]*?)<\/\1>/gi;
+          let tagMatch;
+          while ((tagMatch = tagRegex.exec(trimmed)) !== null) {
+            const key = tagMatch[1];
+            if (key.toLowerCase() !== "tool_name" && key.toLowerCase() !== "name") {
+              const val = tagMatch[2].trim();
+              if (val === "true") args[key] = true;
+              else if (val === "false") args[key] = false;
+              else if (val === "null") args[key] = null;
+              else if (/^-?\d+(?:\.\d+)?$/.test(val)) args[key] = Number(val);
+              else {
+                try {
+                  args[key] = JSON.parse(val);
+                } catch {
+                  args[key] = decodeHtmlEntities(val);
+                }
               }
             }
           }
@@ -504,7 +527,7 @@ export class StreamXmlFilter {
   constructor(onText: (text: string) => void, toolDefs: { name: string }[]) {
     this.onText = onText;
     this.toolNames = toolDefs.map((t) => t.name);
-    this.activeTags = ["tool_calls", "tool_call", "function_calls", "invoke", "parameter", ...this.toolNames];
+    this.activeTags = ["tool_calls", "tool_call", "function_calls", "invoke", "parameter", "arg_key", "arg_value", ...this.toolNames];
   }
 
   push(delta: string) {

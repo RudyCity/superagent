@@ -1,3 +1,7 @@
+## [1.9.1] - 2026-10-07
+### Fixed
+- Fixed raw tool call leaks displaying `<tool_call>...<arg_key>...<arg_value>...</tool_call>` in chat output: added parser support for prefix tool names and `<arg_key>`/`<arg_value>` tag pairs in `xmlToolParser`, and ensured `generateText` mode sanitizes raw XML before emitting text events to UI.
+
 ## [1.9.0] - 2026-10-06
 ### Added
 - Tool baru `close_chrome_window`: menutup SATU window Chrome spesifik via WM_CLOSE (graceful, bukan kill process) — bisa by HWND dari output `list_running_chrome` atau by judul window (case-insensitive, harus match tepat 1 window). Validasi ketat: HWND asing ditolak, judul ambigu ditolak, non-Windows tidak didukung.

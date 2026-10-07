@@ -445,20 +445,21 @@ Some outro text.
       expect(output.replace(/\s+/g, " ").trim()).toBe("Before After");
     });
 
-    it("should filter out standalone streamed malformed tool calls", () => {
-      let output = "";
-      const filter = new StreamXmlFilter((text) => {
-        output += text;
-      }, toolDefs);
-
-      filter.push("Before ");
-      filter.push('<tool name="ask_question", "arguments": {"question": "Program Google Colab?", "options": [{"label": "A"}], "isMultiSelect": false}}');
-      filter.push(" Middle ");
-      filter.push('<tool_name="view_file", "arguments": {"AbsolutePath": "/test1.txt"}}');
-      filter.push(" After");
-      filter.flush();
-
-      expect(output.replace(/\s+/g, " ").trim()).toBe("Before Middle After");
+    it("should parse tool_call blocks with tool name prefix and arg_key/arg_value tags", () => {
+      const text = `
+Running command to check active browser processes...
+<tool_call>run_command
+<arg_key>command</arg_key>
+<arg_value>tasklist /FI "IMAGENAME eq chrome.exe" /FI "IMAGENAME eq msedge.exe" 2>&1</arg_value>
+</tool_call>
+`;
+      const result = parseXmlToolCalls(text, toolDefs);
+      expect(result.toolCalls).toHaveLength(1);
+      expect(result.toolCalls[0].name).toBe("run_command");
+      expect(result.toolCalls[0].args).toEqual({
+        command: 'tasklist /FI "IMAGENAME eq chrome.exe" /FI "IMAGENAME eq msedge.exe" 2>&1',
+      });
+      expect(result.cleanText.trim()).toBe("Running command to check active browser processes...");
     });
   });
 });

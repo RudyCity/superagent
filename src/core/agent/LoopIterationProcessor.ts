@@ -474,8 +474,17 @@ export class LoopIterationProcessor {
               textContent = cleaned.cleanText;
               reasoningContent = cleaned.reasoning;
 
-              if (textContent) {
-                agent.onEvent({ type: "text", content: textContent });
+              let displayCleanText = textContent;
+              if (displayCleanText && (displayCleanText.includes("<tool_call") || displayCleanText.includes("<tool_calls") || displayCleanText.includes("<invoke") || displayCleanText.includes("<function_calls"))) {
+                try {
+                  const { parseXmlToolCalls } = await import("../../utils/xmlToolParser.js");
+                  const parsed = parseXmlToolCalls(displayCleanText, toolDefs);
+                  displayCleanText = parsed.cleanText;
+                } catch {}
+              }
+
+              if (displayCleanText) {
+                agent.onEvent({ type: "text", content: displayCleanText });
               }
               if (reasoningContent) {
                 agent.onEvent({ type: "reasoning", content: reasoningContent });
