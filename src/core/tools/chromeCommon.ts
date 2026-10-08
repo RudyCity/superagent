@@ -11,11 +11,11 @@ const execAsync = promisify(exec);
 
 /** Exact user-facing message when the extension bridge is absent (standard variant). */
 export const NO_BROWSER_CONNECTION_MSG =
-  "No active browser connection. Ensure `superagent --server` is running and Chrome Extension is active.";
+  "No active browser connection. The Superagent Chrome Extension must be installed and connected on the target Chrome browser. Ensure `superagent --server` is running and the extension is active.";
 
 /** Exact user-facing message when the extension bridge is absent (control variant). */
 export const NO_BROWSER_CONTROL_CONNECTION_MSG =
-  "No active browser control connection. Ensure `superagent --server` is running and Superagent Chrome Extension is active.";
+  "No active browser control connection. The Superagent Chrome Extension must be installed and connected on the target Chrome browser. Ensure `superagent --server` is running and the extension is active.";
 
 export interface CallBrowserOpts {
   /** Override for the absent-bridge message. Defaults to NO_BROWSER_CONNECTION_MSG. */
@@ -36,7 +36,7 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, action: string):
     timer = setTimeout(() => {
       reject(new Error(
         `Timed out after ${ms}ms waiting for the browser extension to respond to '${action}'. ` +
-        `Ensure the Superagent Chrome Extension is connected and responsive.`
+        `The Superagent Chrome Extension must be installed and connected on the target Chrome browser. Ensure it is connected and responsive.`
       ));
     }, ms);
   });

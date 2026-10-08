@@ -18,12 +18,16 @@ async function getMacro() {
   return _macro;
 }
 
+/** Local no-connection message (kept local: this file lazy-loads heavy modules for perf, so no static import of chromeCommon). */
+const NO_BROWSER_CONTROL_MSG =
+  "No active browser control connection. The Superagent Chrome Extension must be installed and connected on the target Chrome browser. Ensure `superagent --server` is running and the extension is active.";
+
 /**
  * 1. Headless Browser Automation Tool
  */
 export const runHeadlessBrowserTool: Tool = {
   name: "run_headless_browser",
-  description: "Execute background headless browser operations (navigation, content extraction, or background form interaction) without taking over physical window focus.",
+  description: "Execute background headless browser operations (navigation, content extraction, or background form interaction) without taking over physical window focus. Requires the Superagent Chrome Extension to be installed and connected on the target Chrome browser. Without it, this tool fails fast with an explicit error.",
   parameters: {
     type: "object",
     properties: {
@@ -52,7 +56,7 @@ export const runHeadlessBrowserTool: Tool = {
 
     await ensureRemoteChromeBridge();
     if (!browserControlHandler) {
-      return "No active browser control connection. Ensure `superagent --server` is running and Chrome extension bridge is active.";
+      return NO_BROWSER_CONTROL_MSG;
     }
     try {
       if (action === "navigate") {
@@ -80,7 +84,7 @@ export const runHeadlessBrowserTool: Tool = {
  */
 export const simulateVirtualCursorTool: Tool = {
   name: "simulate_virtual_cursor",
-  description: "Simulate multi-cursor virtual caret movements, clicks, and text typing without disturbing the OS physical mouse or keyboard.",
+  description: "Simulate multi-cursor virtual caret movements, clicks, and text typing without disturbing the OS physical mouse or keyboard. Requires the Superagent Chrome Extension to be installed and connected on the target Chrome browser. Without it, this tool fails fast with an explicit error.",
   parameters: {
     type: "object",
     properties: {
@@ -109,7 +113,7 @@ export const simulateVirtualCursorTool: Tool = {
 
     await ensureRemoteChromeBridge();
     if (!browserControlHandler) {
-      return "No active browser control connection. Ensure `superagent --server` is running and Chrome extension bridge is active.";
+      return NO_BROWSER_CONTROL_MSG;
     }
     try {
       if (action === "click_caret") {
@@ -134,7 +138,7 @@ export const simulateVirtualCursorTool: Tool = {
  */
 export const controlIsolatedCdpTool: Tool = {
   name: "control_isolated_cdp",
-  description: "Route low-level Chrome DevTools Protocol (CDP) commands directly to isolated background tab targets.",
+  description: "Route low-level Chrome DevTools Protocol (CDP) commands directly to isolated background tab targets. Requires the Superagent Chrome Extension to be installed and connected on the target Chrome browser. Without it, this tool fails fast with an explicit error.",
   parameters: {
     type: "object",
     properties: {
@@ -163,7 +167,7 @@ export const controlIsolatedCdpTool: Tool = {
 
     await ensureRemoteChromeBridge();
     if (!browserControlHandler) {
-      return "No active browser control connection. Ensure `superagent --server` is running and Chrome extension bridge is active.";
+      return NO_BROWSER_CONTROL_MSG;
     }
     try {
       if (command === "Page.printToPDF") {

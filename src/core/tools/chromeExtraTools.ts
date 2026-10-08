@@ -3,7 +3,7 @@ import { callBrowser } from "./chromeCommon.js";
 
 export const manageBrowserCookiesStorageTool: Tool = {
   name: "manage_browser_cookies_storage",
-  description: "Read or clear cookies, localStorage, or sessionStorage on active Chrome tab domain.",
+  description: "Read or clear cookies, localStorage, or sessionStorage on active Chrome tab domain. Requires the Superagent Chrome Extension to be installed and connected on the target Chrome browser. Without it, this tool fails fast with an explicit error.",
   parameters: {
     type: "object",
     properties: {
@@ -32,7 +32,7 @@ export const manageBrowserCookiesStorageTool: Tool = {
 
 export const setBrowserEmulationTool: Tool = {
   name: "set_browser_emulation",
-  description: "Configure browser viewport emulation (device metrics, user-agent, touch mode).",
+  description: "Configure browser viewport emulation (device metrics, user-agent, touch mode). Requires the Superagent Chrome Extension to be installed and connected on the target Chrome browser. Without it, this tool fails fast with an explicit error.",
   parameters: {
     type: "object",
     properties: {
@@ -81,7 +81,7 @@ export const setBrowserEmulationTool: Tool = {
 
 export const setNetworkConditionsTool: Tool = {
   name: "set_network_conditions",
-  description: "Configure network throttling conditions or resource blocking (e.g. images, ads).",
+  description: "Configure network throttling conditions or resource blocking (e.g. images, ads). Requires the Superagent Chrome Extension to be installed and connected on the target Chrome browser. Without it, this tool fails fast with an explicit error.",
   parameters: {
     type: "object",
     properties: {

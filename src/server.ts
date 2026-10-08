@@ -287,7 +287,7 @@ function executeBrowserControlOnClient(action: string, target: string, value?: s
       if (pendingBrowserControls.delete(controlId)) {
         reject(new Error(
           `Timed out after ${BROWSER_CONTROL_TIMEOUT_MS / 1000}s waiting for the Chrome extension sidepanel to respond to '${action}'. ` +
-          `Ensure the Superagent Chrome Extension sidepanel is open and responsive.`
+          `The Superagent Chrome Extension must be installed and connected on the target Chrome browser, with its sidepanel open and responsive.`
         ));
       }
     }, BROWSER_CONTROL_TIMEOUT_MS);

@@ -8,7 +8,7 @@ import { callBrowser, withTimeout } from "./chromeCommon.js";
 
 export const manageChromeHistoryTool: Tool = {
   name: "manage_chrome_history",
-  description: "Read or search browsing history from Chrome profile via browser extension or local data.",
+  description: "Read or search browsing history from Chrome profile via browser extension or local data. Requires the Superagent Chrome Extension to be installed and connected on the target Chrome browser. Without it, this tool fails fast with an explicit error.",
   parameters: {
     type: "object",
     properties: {
@@ -93,7 +93,7 @@ export const listChromeExtensionsTool: Tool = {
 
 export const getBrowserConsoleLogsTool: Tool = {
   name: "get_browser_console_logs",
-  description: "Retrieve JavaScript console output, errors, and warnings from the active Chrome tab.",
+  description: "Retrieve JavaScript console output, errors, and warnings from the active Chrome tab. Requires the Superagent Chrome Extension to be installed and connected on the target Chrome browser. Without it, this tool fails fast with an explicit error.",
   parameters: {
     type: "object",
     properties: {
@@ -112,7 +112,7 @@ export const getBrowserConsoleLogsTool: Tool = {
 
 export const getBrowserNetworkLogsTool: Tool = {
   name: "get_browser_network_logs",
-  description: "Retrieve network requests/responses and XHR traffic from the active Chrome tab.",
+  description: "Retrieve network requests/responses and XHR traffic from the active Chrome tab. Requires the Superagent Chrome Extension to be installed and connected on the target Chrome browser. Without it, this tool fails fast with an explicit error.",
   parameters: {
     type: "object",
     properties: {

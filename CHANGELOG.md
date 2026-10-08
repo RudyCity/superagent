@@ -1,3 +1,7 @@
+## [1.9.3] - 2026-10-08
+### Changed
+- 12 extension-dependent Chrome tools now state explicitly in their descriptions and fail-fast error responses that the Superagent Chrome Extension must be installed and connected on the target Chrome browser. Error message templates centralized (no duplication across tools).
+
 ## [1.9.2] - 2026-10-07
 ### Fixed
 - Fixed terminal layout corruption and line squishing caused by bare carriage returns (`\r`): stripped `\r` in `addLine`, `addToolChild`, `patchLastToolStart`, and `wrapChatLineToLines`.

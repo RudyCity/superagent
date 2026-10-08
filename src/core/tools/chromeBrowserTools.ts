@@ -79,7 +79,7 @@ export const launchChromeProfileTool: Tool = {
 
 export const getActiveBrowserTabsTool: Tool = {
   name: "get_active_browser_tabs",
-  description: "List all active Chrome browser instances and open tabs connected via the Superagent Chrome Extension.",
+  description: "List all active Chrome browser instances and open tabs connected via the Superagent Chrome Extension. Requires the Superagent Chrome Extension to be installed and connected on the target Chrome browser. Without it, this tool fails fast with an explicit error.",
   parameters: {
     type: "object",
     properties: {},
@@ -90,12 +90,12 @@ export const getActiveBrowserTabsTool: Tool = {
     // NOTE: read the handler AFTER ensureRemoteChromeBridge() — ensure installs it.
     const { browserControlHandler } = await getBrowserMacro();
     if (!browserControlHandler) {
-      return "No active browser control connection. Ensure `superagent --server` is running and Superagent Chrome Extension is active.";
+      return NO_BROWSER_CONTROL_CONNECTION_MSG;
     }
     // Fail fast: when the remote bridge is listening but no extension client is
     // attached, sending would burn the whole timeout budget — report immediately.
     if (browserControlHandler === bridge.sendRemoteCommand && !bridge.isRemoteChromeConnected()) {
-      return "No active browser control connection. Ensure `superagent --server` is running and Superagent Chrome Extension is active (remote bridge is listening but no extension client is attached).";
+      return "No active browser control connection. The Superagent Chrome Extension must be installed and connected on the target Chrome browser (remote bridge is listening but no extension client is attached). Ensure `superagent --server` is running.";
     }
 
     try {
@@ -284,7 +284,7 @@ export const manageChromeBookmarksTool: Tool = {
 
 export const extractPageContentMarkdownTool: Tool = {
   name: "extract_page_content_markdown",
-  description: "Extract text/Markdown content from the user's currently active Chrome tab.",
+  description: "Extract text/Markdown content from the user's currently active Chrome tab. Requires the Superagent Chrome Extension to be installed and connected on the target Chrome browser. Without it, this tool fails fast with an explicit error.",
   parameters: {
     type: "object",
     properties: {
@@ -304,7 +304,7 @@ export const extractPageContentMarkdownTool: Tool = {
 
 export const captureTabFullpagePdfTool: Tool = {
   name: "capture_tab_fullpage_pdf",
-  description: "Capture visual screenshot or HTML content of the active browser tab.",
+  description: "Capture visual screenshot or HTML content of the active browser tab. Requires the Superagent Chrome Extension to be installed and connected on the target Chrome browser. Without it, this tool fails fast with an explicit error.",
   parameters: {
     type: "object",
     properties: {
