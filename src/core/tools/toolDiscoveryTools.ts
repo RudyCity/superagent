@@ -109,6 +109,49 @@ export function fuzzyScore(query: string, target: string): number {
 };
 
 /**
+ * Minimal tool shape needed for discovery listing.
+ */
+export interface DiscoveryDef {
+  name: string;
+  description: string;
+  parameters?: Record<string, unknown>;
+}
+
+/**
+ * Core list_tools logic over an explicit definition list.
+ * Extracted so mode-aware wrappers can list a filtered toolset
+ * instead of the static catalog.
+ */
+export async function runListTools(defs: DiscoveryDef[], args: unknown): Promise<string> {
+  const rawQuery = (args as any)?.query ?? (args as any)?.q ?? (args as any)?.filter ?? (args as any)?.keyword ?? "";
+  const q = String(rawQuery).toLowerCase().trim();
+  const filtered = q
+    ? defs
+        .map((d) => ({
+          def: d,
+          score: Math.max(
+            fuzzyScore(q, d.name),
+            0.5 * fuzzyScore(q, d.description)
+          ),
+        }))
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map((x) => x.def)
+    : defs;
+  if (filtered.length === 0) {
+    return `No tools match query "${rawQuery}".`;
+  }
+  return filtered
+    .map((d) => {
+      const firstLine = d.description.split("\n")[0].trim();
+      const shortDesc = firstLine.length > 70 ? firstLine.slice(0, 67) + "..." : firstLine;
+      return `- ${d.name}: ${shortDesc}`;
+    })
+    .join("\n");
+}
+
+
+/**
  * Lists available tool names with one-line descriptions.
  * Optional keyword query filters the list. Use describe_tool for full schemas.
  */
@@ -128,34 +171,94 @@ export const listToolsTool: Tool = {
   },
   async execute(args) {
     const { getToolDefinitions } = await import("./index.js");
-    const defs = getToolDefinitions();
-    const rawQuery = (args as any)?.query ?? (args as any)?.q ?? (args as any)?.filter ?? (args as any)?.keyword ?? "";
-    const q = String(rawQuery).toLowerCase().trim();
-    const filtered = q
-      ? defs
-          .map((d) => ({
-            def: d,
-            score: Math.max(
-              fuzzyScore(q, d.name),
-              0.5 * fuzzyScore(q, d.description)
-            ),
-          }))
-          .filter((x) => x.score > 0)
-          .sort((a, b) => b.score - a.score)
-          .map((x) => x.def)
-      : defs;
-    if (filtered.length === 0) {
-      return `No tools match query "${rawQuery}".`;
-    }
-    return filtered
-      .map((d) => {
-        const firstLine = d.description.split("\n")[0].trim();
-        const shortDesc = firstLine.length > 70 ? firstLine.slice(0, 67) + "..." : firstLine;
-        return `- ${d.name}: ${shortDesc}`;
-      })
-      .join("\n");
+    return runListTools(getToolDefinitions(), args);
   },
 };
+
+export interface RunDescribeToolOptions {
+  /**
+   * Custom tool resolver. Defaults to exact -> case-insensitive ->
+   * hyphen/underscore-normalized matching over `tools`.
+   */
+  findTool?: (name: string) => DiscoveryDef | undefined;
+  /**
+   * When a name can't be resolved, return this message instead of the
+   * generic "Unknown tool" error. Return undefined to fall through to
+   * the generic error.
+   */
+  unavailableMessage?: (name: string) => string | undefined;
+}
+
+/**
+ * Core describe_tool logic over an explicit tool list.
+ * Extracted so mode-aware wrappers can describe a filtered toolset
+ * and report hidden tools as unavailable instead of unknown.
+ */
+export async function runDescribeTool(
+  tools: DiscoveryDef[],
+  args: unknown,
+  opts: RunDescribeToolOptions = {}
+): Promise<string> {
+  const names = extractToolNames(args);
+  if (names.length === 0) {
+    return JSON.stringify(
+      [
+        {
+          error:
+            'No tool name provided. Please specify a tool name using { tool: "name" } or { names: ["name"] }, e.g. describe_tool({ tool: "run_background_process" }). Use list_tools to view all available tools.',
+        },
+      ],
+      null,
+      2
+    );
+  }
+
+  const findTool =
+    opts.findTool ??
+    ((name: string) => {
+      const clean = name.trim().replace(/^['"`]+|['"`]+$/g, "");
+      if (!clean) return undefined;
+      const exact = tools.find((t) => t.name === clean);
+      if (exact) return exact;
+      const lower = clean.toLowerCase();
+      const caseMatch = tools.find((t) => t.name.toLowerCase() === lower);
+      if (caseMatch) return caseMatch;
+      const norm = lower.replace(/[-_]/g, "_");
+      return tools.find((t) => t.name.toLowerCase().replace(/[-_]/g, "_") === norm);
+    });
+
+  const out = names.map((name) => {
+    const t = findTool(name);
+    if (!t) {
+      const custom = opts.unavailableMessage?.(name);
+      if (custom) return { name, error: custom };
+      const suggestions = tools
+        .map((tool) => ({
+          name: tool.name,
+          score: fuzzyScore(name, tool.name),
+        }))
+        .filter((x) => x.score >= Math.max(16, name.length * 8))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3)
+        .map((x) => x.name);
+
+      return {
+        name,
+        error:
+          suggestions.length > 0
+            ? `Unknown tool "${name}". Did you mean: ${suggestions.join(", ")}?`
+            : `Unknown tool "${name}". Use list_tools to see all available tools.`,
+      };
+    }
+    return {
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    };
+  });
+  return JSON.stringify(out, null, 2);
+}
+
 
 /**
  * Returns the full description and JSON argument schema for the named tools.
@@ -190,47 +293,8 @@ export const describeToolTool: Tool = {
   },
   async execute(args) {
     const { getToolByName, allTools } = await import("./index.js");
-    const names = extractToolNames(args);
-    if (names.length === 0) {
-      return JSON.stringify(
-        [
-          {
-            error:
-              'No tool name provided. Please specify a tool name using { tool: "name" } or { names: ["name"] }, e.g. describe_tool({ tool: "run_background_process" }). Use list_tools to view all available tools.',
-          },
-        ],
-        null,
-        2
-      );
-    }
-
-    const out = names.map((name) => {
-      const t = getToolByName(name);
-      if (!t) {
-        const suggestions = allTools
-          .map((tool) => ({
-            name: tool.name,
-            score: fuzzyScore(name, tool.name),
-          }))
-          .filter((x) => x.score >= Math.max(16, name.length * 8))
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 3)
-          .map((x) => x.name);
-
-        return {
-          name,
-          error:
-            suggestions.length > 0
-              ? `Unknown tool "${name}". Did you mean: ${suggestions.join(", ")}?`
-              : `Unknown tool "${name}". Use list_tools to see all available tools.`,
-        };
-      }
-      return {
-        name: t.name,
-        description: t.description,
-        parameters: t.parameters,
-      };
+    return runDescribeTool(allTools, args, {
+      findTool: (name: string) => getToolByName(name),
     });
-    return JSON.stringify(out, null, 2);
   },
 };

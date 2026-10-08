@@ -109,19 +109,33 @@ async function createAgentForMode(
     const { CHROME_EXTENSION_SYSTEM_PROMPT } = await import("./core/prompts.js");
     const { chromeExtensionToolset } = await import("./core/tools/toolsets.js");
     customSystemPrompt = CHROME_EXTENSION_SYSTEM_PROMPT;
+    // Extension-chat mode: the 12 extension-dependent browser tools STAY ACTIVE
+    // here -- this is the only mode where the extension is guaranteed present
+    // (the server serves the extension sidepanel chat).
     customTools = chromeExtensionToolset;
   } else {
-    // tline mode (SuperAgent CLI / Desktop equivalent)
+    // tline mode (SuperAgent CLI / Desktop equivalent): hide the 12
+    // extension-dependent browser tools -- the extension is not guaranteed
+    // present here. control_chrome_cdp remains as the extension-free path.
+    const { filterExtensionChatTools } = await import("./core/tools/toolsets.js");
     if (targetMode === "multi") {
       const { MASTER_AGENT_SYSTEM_PROMPT } = await import("./core/prompts.js");
       const { masterToolset } = await import("./core/tools/toolsets.js");
       customSystemPrompt = MASTER_AGENT_SYSTEM_PROMPT;
-      customTools = masterToolset;
+      customTools = filterExtensionChatTools(masterToolset);
     } else {
       const { superagentToolset } = await import("./core/tools/toolsets.js");
       customSystemPrompt = undefined;
-      customTools = superagentToolset;
+      customTools = filterExtensionChatTools(superagentToolset);
     }
+  }
+
+  // Mode-aware tool discovery: in non-extension modes list_tools /
+  // describe_tool reflect the filtered toolset (the 12 extension tools
+  // stay hidden); in chrome-extension chat mode the originals are kept.
+  if (targetClientMode !== "chrome-extension" && customTools) {
+    const { withModeAwareDiscoveryTools } = await import("./core/tools/toolsets.js");
+    customTools = withModeAwareDiscoveryTools(customTools, false);
   }
 
   const agent = new Agent(

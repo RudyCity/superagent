@@ -144,6 +144,7 @@ import {
   simulateVirtualCursorTool,
   controlIsolatedCdpTool,
 } from "./advancedAutomationTools.js";
+import { controlChromeCdpTool } from "./chromeCdpTools.js";
 import { transferSshFileTool } from "./sshTransferTools.js";
 import { cliBridgeTool } from "./cliBridgeTool.js";
 import { inspectSessionTool } from "./sessionTools.js";
@@ -178,6 +179,7 @@ export {
   runHeadlessBrowserTool,
   simulateVirtualCursorTool,
   controlIsolatedCdpTool,
+  controlChromeCdpTool,
   cliBridgeTool,
   inspectSessionTool,
   synthesizeSkillTool,
@@ -195,6 +197,7 @@ export const allTools: Tool[] = [
   runHeadlessBrowserTool,
   simulateVirtualCursorTool,
   controlIsolatedCdpTool,
+  controlChromeCdpTool,
   listRunningChromeTool,
   closeChromeProfileTool,
   closeChromeWindowTool,

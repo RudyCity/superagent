@@ -85,6 +85,8 @@ import {
   simulateVirtualCursorTool,
   controlIsolatedCdpTool,
 } from "./advancedAutomationTools.js";
+import { controlChromeCdpTool } from "./chromeCdpTools.js";
+import { runListTools, runDescribeTool } from "./toolDiscoveryTools.js";
 
 import {
   invokeSuperagentTool,
@@ -265,6 +267,82 @@ export const superagentToolset: Tool[] = [
 ];
 
 // ─── Chrome Extension Toolset (depth 1) ──────────────────────────────────────
+// --- Visible ONLY in chrome-extension chat mode --------------------------------
+// The 12 browser tools below require the Superagent Chrome Extension on the
+// TARGET Chrome. They are registered ONLY when this server serves the extension
+// sidepanel chat (clientMode "chrome-extension") -- the one mode where the
+// extension is guaranteed present. In every other mode, filterExtensionChatTools()
+// excludes them from the registered tool list (and therefore from the model
+// prompt). control_chrome_cdp is the extension-free path and is never filtered.
+export const EXTENSION_CHAT_HIDDEN_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "get_active_browser_tabs",
+  "control_isolated_cdp",
+  "extract_page_content_markdown",
+  "capture_tab_fullpage_pdf",
+  "manage_chrome_history",
+  "get_browser_console_logs",
+  "get_browser_network_logs",
+  "manage_browser_cookies_storage",
+  "set_browser_emulation",
+  "set_network_conditions",
+  "run_headless_browser",
+  "simulate_virtual_cursor",
+]);
+
+export function filterExtensionChatTools(tools: Tool[]): Tool[] {
+  return tools.filter((t) => !EXTENSION_CHAT_HIDDEN_TOOL_NAMES.has(t.name));
+}
+
+/**
+ * Replace list_tools / describe_tool with mode-aware versions bound to the
+ * given visible toolset. In non-extension modes the 12 extension-dependent
+ * browser tools (EXTENSION_CHAT_HIDDEN_TOOL_NAMES) are absent from listings,
+ * and describe_tool reports them as unavailable-in-this-mode instead of
+ * returning their schema. control_chrome_cdp is never hidden.
+ * In chrome-extension chat mode (isExtensionChatMode=true) listings cover
+ * the full toolset.
+ */
+export function withModeAwareDiscoveryTools(tools: Tool[], isExtensionChatMode: boolean): Tool[] {
+  const base = tools.filter((t) => t.name !== "list_tools" && t.name !== "describe_tool");
+  const visible: Tool[] = [...base];
+
+  const listTools: Tool = {
+    ...listToolsTool,
+    execute: async (args: Record<string, unknown>) =>
+      runListTools(
+        visible.map((t) => ({ name: t.name, description: t.description })),
+        args
+      ),
+  };
+
+  const matchVisible = (name: string) => {
+    const clean = name.trim().replace(/^['"`]+|['"`]+$/g, "");
+    if (!clean) return undefined;
+    return (
+      visible.find((t) => t.name === clean) ??
+      visible.find((t) => t.name.toLowerCase() === clean.toLowerCase()) ??
+      visible.find(
+        (t) => t.name.toLowerCase().replace(/[-_]/g, "_") === clean.toLowerCase().replace(/[-_]/g, "_")
+      )
+    );
+  };
+
+  const describeTool: Tool = {
+    ...describeToolTool,
+    execute: async (args: Record<string, unknown>) =>
+      runDescribeTool(visible, args, {
+        findTool: matchVisible,
+        unavailableMessage: (name: string) =>
+          !isExtensionChatMode && EXTENSION_CHAT_HIDDEN_TOOL_NAMES.has(name)
+            ? `"${name}" is not available in this mode. It requires the Superagent Chrome Extension and is only active in chrome-extension chat mode. For extension-free Chrome automation, use control_chrome_cdp.`
+            : undefined,
+      }),
+  };
+
+  visible.push(listTools, describeTool);
+  return visible;
+}
+
 export const chromeExtensionToolset: Tool[] = [
   readTool,
   writeToFileTool,
@@ -337,6 +415,7 @@ export const chromeExtensionToolset: Tool[] = [
   runHeadlessBrowserTool,
   simulateVirtualCursorTool,
   controlIsolatedCdpTool,
+  controlChromeCdpTool,
   screenshotTool,
   playwrightScreenshotTool,
   listRunningChromeTool,
@@ -482,6 +561,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     runHeadlessBrowserTool,
     simulateVirtualCursorTool,
     controlIsolatedCdpTool,
+    controlChromeCdpTool,
     screenshotTool,
     playwrightScreenshotTool,
     readTool,

@@ -1,3 +1,8 @@
+## [1.10.0] - 2026-10-08
+### Added
+- Tool baru control_chrome_cdp: otomatisasi Chrome asli via Chrome Remote Debugging (CDP) tanpa extension - commands: list_targets, navigate, evaluate, screenshot, pdf, get_cookies. Butuh Chrome dijalankan dengan --remote-debugging-port=9222; fail-fast dengan pesan jelas bila port tutup atau target tidak responsif.
+- 12 tools yang bergantung pada Chrome extension kini aktif hanya di mode chrome-extension chat (sidepanel); di semua mode lain disembunyikan dari daftar tool ter-register dan dari prompt (control_chrome_cdp tetap tersedia di semua mode).
+- list_tools dan describe_tool kini mode-aware: di mode non-extension-chat, 12 tools tidak tampil di list dan describe_tool mengembalikan pesan tidak tersedia di mode ini.
 ## [1.9.3] - 2026-10-08
 ### Changed
 - 12 extension-dependent Chrome tools now state explicitly in their descriptions and fail-fast error responses that the Superagent Chrome Extension must be installed and connected on the target Chrome browser. Error message templates centralized (no duplication across tools).
