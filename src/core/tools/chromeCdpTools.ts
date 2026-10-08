@@ -55,6 +55,18 @@ function httpGetJson(path: string): Promise<any> {
           data += chunk;
         });
         res.on("end", () => {
+          // Chrome 155+: the DevTools HTTP discovery endpoints (/json/version,
+          // /json/list) answer "426 Upgrade Required" to plain HTTP instead of
+          // 200 + JSON. Fall back to fetching the document over a WebSocket
+          // handshake (the server upgrades, then sends the JSON as a message).
+          if (res.statusCode === 426) {
+            wsGetJson(path).then(resolve, reject);
+            return;
+          }
+          if (res.statusCode !== 200) {
+            reject(new Error(`CDP endpoint ${path} returned HTTP ${res.statusCode}; expected 200 with a JSON body.`));
+            return;
+          }
           try {
             resolve(JSON.parse(data));
           } catch (e: any) {
@@ -74,6 +86,82 @@ function httpGetJson(path: string): Promise<any> {
         reject(err);
       }
     });
+  });
+}
+
+/**
+ * Chrome 155+ fallback for the 426 "Upgrade Required" returned by the DevTools
+ * HTTP discovery endpoints. Performs a WebSocket handshake against the same
+ * path (with the Origin header the DevTools WS origin check expects) and
+ * reads the JSON discovery document from the first text message the server
+ * sends. Plain-HTTP 200 responses are still preferred; this only runs when
+ * the server answered 426, so older Chrome versions are unaffected.
+ */
+function wsGetJson(path: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
+    const fail = (msg: string): void => {
+      done(() => reject(new Error(msg)));
+    };
+    (async () => {
+      try {
+        const { WebSocket } = await getWsModule();
+        const url = `ws://${cdpHost()}:${cdpPort()}${path}`;
+        const ws = new WebSocket(url, {
+          handshakeTimeout: cdpTimeoutMs(),
+          origin: `http://${cdpHost()}:${cdpPort()}`,
+        });
+        const timer = setTimeout(() => {
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
+          fail(
+            `CDP discovery via WebSocket timed out for ${path}: the DevTools server answered HTTP 426 ` +
+              `(Upgrade Required) but did not send the JSON document over the upgraded connection. ` +
+              `This Chrome version may have removed plain discovery; try an older Chrome build.`
+          );
+        }, cdpTimeoutMs());
+        ws.on("message", (data: any) => {
+          clearTimeout(timer);
+          const text = String(data);
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
+          done(() => {
+            try {
+              resolve(JSON.parse(text));
+            } catch (e: any) {
+              reject(new Error(`Invalid JSON from CDP WebSocket endpoint ${path}: ${e.message}`));
+            }
+          });
+        });
+        ws.on("error", (err: any) => {
+          clearTimeout(timer);
+          fail(
+            `CDP discovery via WebSocket failed for ${path}: ${(err && err.message) || String(err)}. ` +
+              `The DevTools server answered HTTP 426 (Upgrade Required) but the WebSocket fallback did not yield the JSON document.`
+          );
+        });
+        ws.on("close", (code: number) => {
+          clearTimeout(timer);
+          fail(
+            `CDP discovery via WebSocket closed (code ${code}) for ${path} without sending the JSON document. ` +
+              `The DevTools server answered HTTP 426 (Upgrade Required); this Chrome version may require a different discovery mechanism.`
+          );
+        });
+      } catch (e: any) {
+        fail(`CDP discovery via WebSocket could not start for ${path}: ${(e && e.message) || String(e)}`);
+      }
+    })();
   });
 }
 

@@ -1,22 +1,15 @@
 @echo off
 REM ============================================
 REM  Chrome Debug Launcher - untuk Superagent
-REM  Membuka Chrome dengan --remote-debugging-port=9222
-REM  (otomatisasi CDP tanpa extension)
+REM  Tutup paksa Chrome, lalu buka mode debug
+REM  (--remote-debugging-port=9222)
 REM ============================================
 
-tasklist /FI "IMAGENAME eq chrome.exe" 2>NUL | find /I "chrome.exe" >NUL
-if %errorlevel%==0 (
-    echo.
-    echo  [Chrome masih berjalan]
-    echo  Flag debug TIDAK akan aktif kalau Chrome sudah kebuka duluan.
-    echo.
-    echo  Tutup SEMUA window Chrome dulu, lalu
-    echo  double-click file ini lagi.
-    echo.
-    pause
-    exit /b 1
-)
+echo Menutup semua proses Chrome...
+taskkill /F /IM chrome.exe 2>NUL
+echo Menunggu 3 detik...
+timeout /t 3 /nobreak >NUL
 
 echo Membuka Chrome mode debug di port 9222...
 start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222
+echo Selesai.

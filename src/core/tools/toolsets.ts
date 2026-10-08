@@ -86,6 +86,7 @@ import {
   controlIsolatedCdpTool,
 } from "./advancedAutomationTools.js";
 import { controlChromeCdpTool } from "./chromeCdpTools.js";
+import { controlChromeVisionTool } from "./chromeVisionTools.js";
 import { runListTools, runDescribeTool } from "./toolDiscoveryTools.js";
 
 import {
@@ -416,6 +417,7 @@ export const chromeExtensionToolset: Tool[] = [
   simulateVirtualCursorTool,
   controlIsolatedCdpTool,
   controlChromeCdpTool,
+  controlChromeVisionTool,
   screenshotTool,
   playwrightScreenshotTool,
   listRunningChromeTool,
@@ -562,6 +564,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     simulateVirtualCursorTool,
     controlIsolatedCdpTool,
     controlChromeCdpTool,
+    controlChromeVisionTool,
     screenshotTool,
     playwrightScreenshotTool,
     readTool,

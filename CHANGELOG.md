@@ -1,3 +1,13 @@
+## [1.12.0] - 2026-10-09
+### Added
+- Tool baru `control_chrome_vision`: otomatisasi Chrome berbasis visual menggunakan OmniParser AI lokal (YOLOv8 + Florence-2) untuk mendeteksi elemen UI dengan bounding box dan label serta click/type tanpa selector DOM. Layanan OmniParser otomatis distart di background jika belum berjalan.
+- OmniParser local vision service di `services/omniparser/` lengkap dengan setup downloader model, YOLO utility, annotator, dan service daemon 127.0.0.1:9333.
+- WebSocket fallback di `control_chrome_cdp` untuk discovery target pada Chrome 155+ ketika `/json/list` menjawab HTTP 426 (Upgrade Required).
+- Unit test untuk Chrome 155+ 426 fallback pada `tests/chromeCdpTools.test.ts`.
+
+### Changed
+- `scripts/chrome-debug.bat`: menutup proses Chrome lama terlebih dahulu sebelum meluncurkan mode debug di port 9222 agar flag remote debugging aktif terjamin.
+
 ## [1.11.1] - 2026-10-08
 ### Added
 - `scripts/chrome-debug.bat`: launcher Windows sekali-klik untuk membuka Chrome dengan `--remote-debugging-port=9222` (otomatisasi CDP tanpa extension); memberi peringatan bila Chrome masih berjalan.

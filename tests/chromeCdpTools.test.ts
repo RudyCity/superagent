@@ -405,3 +405,90 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(_cdpTestHooks.connectionCount()).toBe(1);
   });
 });
+
+describe("control_chrome_cdp (Chrome 155+ 426 fallback)", () => {
+  let httpServer: Server;
+  let wss: WebSocketServer;
+  let port = 0;
+  let savedPort: string | undefined;
+  let savedTimeout: string | undefined;
+
+  beforeAll(async () => {
+    // Simulate Chrome 155+: plain HTTP to the discovery endpoint gets 426.
+    httpServer = createServer((req, res) => {
+      if (req.url === "/json/list") {
+        res.writeHead(426, { "Content-Type": "text/plain" });
+        res.end("Upgrade Required");
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+    await new Promise<void>((r) => httpServer.listen(0, "127.0.0.1", () => r()));
+    port = (httpServer.address() as AddressInfo).port;
+
+    // The same server upgrades /json/list to WebSocket and delivers the JSON
+    // discovery document as a single text message.
+    wss = new WebSocketServer({ server: httpServer });
+    wss.on("connection", (ws: WebSocket, req: any) => {
+      if (req.url === "/json/list") {
+        ws.send(
+          JSON.stringify([
+            {
+              id: "W1",
+              type: "page",
+              title: "WS Tab",
+              url: "https://ws.example/",
+              webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/page/W1`,
+            },
+          ])
+        );
+      } else {
+        ws.close(1008);
+      }
+    });
+
+    savedPort = process.env.SUPERAGENT_CDP_PORT;
+    savedTimeout = process.env.SUPERAGENT_CDP_TIMEOUT_MS;
+    process.env.SUPERAGENT_CDP_PORT = String(port);
+    process.env.SUPERAGENT_CDP_TIMEOUT_MS = "3000";
+  });
+
+  afterAll(async () => {
+    if (savedPort === undefined) delete process.env.SUPERAGENT_CDP_PORT;
+    else process.env.SUPERAGENT_CDP_PORT = savedPort;
+    if (savedTimeout === undefined) delete process.env.SUPERAGENT_CDP_TIMEOUT_MS;
+    else process.env.SUPERAGENT_CDP_TIMEOUT_MS = savedTimeout;
+    _cdpTestHooks.closeAll();
+    wss.close();
+    await new Promise<void>((r) => httpServer.close(() => r()));
+  });
+
+  test("list_targets works when /json/list answers 426 (WS fallback)", async () => {
+    const res = await controlChromeCdpTool.execute({ command: "list_targets" });
+    expect(res).toContain("W1");
+    expect(res).toContain("WS Tab");
+    expect(res).toContain("https://ws.example/");
+  });
+
+  test("426 with immediate WS close surfaces a clear error, not Invalid JSON", async () => {
+    const http2 = createServer((_req, res) => {
+      res.writeHead(426, { "Content-Type": "text/plain" });
+      res.end("Upgrade Required");
+    });
+    await new Promise<void>((r) => http2.listen(0, "127.0.0.1", () => r()));
+    const p2 = (http2.address() as AddressInfo).port;
+    const wss2 = new WebSocketServer({ server: http2 });
+    wss2.on("connection", (ws: WebSocket) => ws.close(1008));
+    process.env.SUPERAGENT_CDP_PORT = String(p2);
+    try {
+      const res = await controlChromeCdpTool.execute({ command: "list_targets" });
+      expect(res).toContain("426");
+      expect(res).not.toContain("Invalid JSON");
+    } finally {
+      process.env.SUPERAGENT_CDP_PORT = String(port);
+      wss2.close();
+      await new Promise<void>((r) => http2.close(() => r()));
+    }
+  });
+});
