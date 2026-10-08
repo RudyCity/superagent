@@ -90,6 +90,7 @@ async function pickTarget(targetId?: string): Promise<CdpTarget> {
   if (pages.length === 0) {
     throw new Error("No page targets found on the Chrome remote-debugging endpoint. Open a tab in Chrome and retry.");
   }
+  pruneCdpConnections(pages.map((p) => p.webSocketDebuggerUrl));
   if (targetId) {
     const found = pages.find((p) => p.id === targetId);
     if (!found) {
@@ -100,72 +101,473 @@ async function pickTarget(targetId?: string): Promise<CdpTarget> {
   return pages[0];
 }
 
-async function cdpSend(target: CdpTarget, method: string, params: Record<string, unknown> = {}): Promise<any> {
-  // PERF: lazy-load `ws` — this tool file stays light until it actually runs.
-  const { WebSocket } = await import("ws");
-  const timeoutMs = cdpTimeoutMs();
-  return new Promise<any>((resolve, reject) => {
-    let settled = false;
-    let ws: any = undefined;
-    const timer = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        try {
-          if (ws) ws.close();
-        } catch {
-          /* ignore */
-        }
-        reject(new Error(`Timed out after ${timeoutMs}ms waiting for CDP '${method}' response from the target tab.`));
+/**
+ * Last DOM snapshot per CDP target id. `snapshot` fills it; `click`/`type`
+ * consume it by index so the LLM never needs element IDs, coordinates, or
+ * screenshots. A snapshot belongs to the tab it was taken on.
+ */
+interface SnapshotEntry {
+  index: number;
+  tag: string;
+  text: string;
+  type?: string;
+  placeholder?: string;
+  ariaLabel?: string;
+  selector: string;
+}
+
+const snapshotStore = new Map<string, SnapshotEntry[]>();
+
+/** Previous snapshot per target id - powers `snapshot` with `diff: true`. */
+const snapshotPrevStore = new Map<string, SnapshotEntry[]>();
+
+/**
+ * Walks the DOM and returns the interactive elements, each with a generated
+ * unique selector. Runs inside the page via Runtime.evaluate.
+ */
+const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
+  const els = Array.from(document.querySelectorAll(
+    'button, a, input, select, textarea, [role="button"], [role="link"], [role="textbox"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [onclick], summary'
+  ));
+  function visible(el) {
+    const r = el.getBoundingClientRect();
+    if (!r || r.width === 0 || r.height === 0) return false;
+    const cs = getComputedStyle(el);
+    return cs.visibility !== 'hidden' && cs.display !== 'none';
+  }
+  function genSelector(el) {
+    if (el.id) return '#' + CSS.escape(el.id);
+    const parts = [];
+    let cur = el;
+    while (cur && cur.nodeType === 1 && cur !== document.documentElement && parts.length < 5) {
+      let seg = cur.tagName.toLowerCase();
+      const parent = cur.parentElement;
+      if (parent) {
+        const same = Array.from(parent.children).filter((c) => c.tagName === cur.tagName);
+        if (same.length > 1) seg += ':nth-of-type(' + (same.indexOf(cur) + 1) + ')';
       }
-    }, timeoutMs);
-    const done = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      fn();
+      parts.unshift(seg);
+      cur = parent;
+    }
+    return parts.join(' > ');
+  }
+  function label(el) {
+    const t = (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || '').replace(/\\s+/g, ' ').trim();
+    return t.slice(0, 80);
+  }
+  return els.filter(visible).slice(0, 120).map((el, i) => ({
+    index: i,
+    tag: el.tagName.toLowerCase(),
+    text: label(el),
+    type: el.getAttribute('type') || undefined,
+    placeholder: el.getAttribute('placeholder') || undefined,
+    ariaLabel: el.getAttribute('aria-label') || undefined,
+    selector: genSelector(el),
+  }));
+})()`;
+
+/**
+ * Builds page JS that clicks the element matching `selector`.
+ * Returns a JSON string: {ok, tag?, text?, reason?}.
+ */
+function buildClickJs(selector: string): string {
+  return `/*cdp-click*/(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) return JSON.stringify({ ok: false, reason: "no element matches selector" });
+    try { el.scrollIntoView({ block: "center" }); } catch (e) {}
+    el.click();
+    const t = (el.innerText || el.value || "").replace(/\\s+/g, " ").trim().slice(0, 80);
+    return JSON.stringify({ ok: true, tag: el.tagName.toLowerCase(), text: t });
+  })()`;
+}
+
+/**
+ * Builds page JS that types `text` into the element matching `selector`.
+ * Framework-friendly: uses the native value setter and dispatches
+ * input/change events (React/Vue detect the change). Handles input,
+ * textarea, and contenteditable. Returns a JSON string.
+ */
+function buildTypeJs(selector: string, text: string, clear: boolean): string {
+  return `/*cdp-type*/(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) return JSON.stringify({ ok: false, reason: "no element matches selector" });
+    try { el.scrollIntoView({ block: "center" }); } catch (e) {}
+    el.focus();
+    const tag = el.tagName.toLowerCase();
+    const text = ${JSON.stringify(text)};
+    const doClear = ${clear ? "true" : "false"};
+    function fire() {
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    if (tag === "input" || tag === "textarea") {
+      const proto = tag === "input" ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
+      const desc = Object.getOwnPropertyDescriptor(proto, "value");
+      const setter = desc && desc.set;
+      if (doClear) { if (setter) setter.call(el, ""); else el.value = ""; fire(); }
+      if (setter) setter.call(el, text); else el.value = text;
+      fire();
+    } else if (el.isContentEditable) {
+      const sel = window.getSelection();
+      if (doClear) el.textContent = "";
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+      let inserted = false;
+      try { inserted = document.execCommand("insertText", false, text); } catch (e) {}
+      if (!inserted) el.textContent = doClear ? text : el.textContent + text;
+      fire();
+    } else {
+      return JSON.stringify({ ok: false, reason: "element is not editable (not input/textarea/contenteditable)" });
+    }
+    return JSON.stringify({ ok: true, tag: tag, typed: text.slice(0, 80) });
+  })()`;
+}
+
+/** Parses the JSON string returned by the click/type page snippets. */
+function parseActionResult(raw: string): {
+  ok: boolean;
+  tag?: string;
+  text?: string;
+  typed?: string;
+  reason?: string;
+} {
+  try {
+    const o = JSON.parse(raw);
+    if (o && typeof o === "object") return o;
+  } catch {
+    /* fall through */
+  }
+  return { ok: false, reason: `unexpected result: ${truncate(raw, 200)}` };
+}
+
+/** Parses an optional timeout_ms payload field; falls back to `def` when missing/invalid. */
+function parseTimeoutMs(v: unknown, def: number): number {
+  if (v === undefined || v === null || v === "") return def;
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) && n >= 0 ? n : def;
+}
+
+/**
+ * Builds page JS that waits (in-page polling, ~200ms interval) for a CSS
+ * selector to match a visible element, or for a text to appear in the page.
+ * Resolves to a JSON string: {ok, kind?, selector?, text?, tag?, foundText?, reason?}.
+ * Must be run via Runtime.evaluate with awaitPromise: true so one CDP
+ * round-trip covers the whole wait - no polling from the LLM side.
+ */
+function buildWaitForJs(opts: { selector?: string; text?: string; timeoutMs: number }): string {
+  const optsJson = JSON.stringify(opts);
+  return `/*cdp-wait-for*/(() => {
+    const o = ${optsJson};
+    return new Promise((resolve) => {
+      const timeoutMs = o.timeoutMs;
+      const deadline = Date.now() + timeoutMs;
+      function visible(el) {
+        if (!el || el.nodeType !== 1) return false;
+        const r = el.getBoundingClientRect();
+        if (!r || r.width === 0 || r.height === 0) return false;
+        try {
+          const cs = getComputedStyle(el);
+          if (cs.visibility === "hidden" || cs.display === "none") return false;
+        } catch (e) {}
+        return true;
+      }
+      function finishOk(kind, el) {
+        const t = el ? ((el.innerText || el.value || "").replace(/\\s+/g, " ").trim()).slice(0, 80) : "";
+        resolve(JSON.stringify({
+          ok: true, kind: kind,
+          selector: o.selector || undefined, text: o.text || undefined,
+          tag: el ? el.tagName.toLowerCase() : undefined, foundText: t || undefined
+        }));
+      }
+      function finishTimeout() {
+        const waiting = o.selector ? ("selector '" + o.selector + "'") : ("text '" + o.text + "'");
+        resolve(JSON.stringify({ ok: false, reason: "timeout after " + timeoutMs + "ms waiting for " + waiting }));
+      }
+      function check() {
+        if (o.selector) {
+          let el = null;
+          try { el = document.querySelector(o.selector); } catch (e) {}
+          if (el && visible(el)) { finishOk("selector", el); return true; }
+        }
+        if (o.text) {
+          try {
+            const bodyText = (document.body && document.body.innerText) || "";
+            if (bodyText.indexOf(o.text) !== -1) { finishOk("text", null); return true; }
+          } catch (e) {}
+        }
+        return false;
+      }
+      if (check()) return;
+      const iv = setInterval(() => {
+        if (check()) { clearInterval(iv); return; }
+        if (Date.now() >= deadline) { clearInterval(iv); finishTimeout(); }
+      }, 200);
+    });
+  })()`;
+}
+
+/** Runs the in-page wait on the target and parses the JSON result. */
+async function waitForInPage(
+  target: CdpTarget,
+  opts: { selector?: string; text?: string; timeoutMs: number }
+): Promise<{
+  ok: boolean;
+  kind?: string;
+  selector?: string;
+  text?: string;
+  tag?: string;
+  foundText?: string;
+  reason?: string;
+}> {
+  const res: any = await cdpSend(target, "Runtime.evaluate", {
+    expression: buildWaitForJs(opts),
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  const value = res && res.result ? res.result.value : undefined;
+  const raw = typeof value === "string" ? value : JSON.stringify(value);
+  try {
+    const o = JSON.parse(raw);
+    if (o && typeof o === "object") return o;
+  } catch {
+    /* fall through */
+  }
+  return { ok: false, reason: `unexpected wait_for result: ${truncate(raw, 200)}` };
+};
+
+/**
+ * Resolves a click/type target from the payload: either {"index": N}
+ * (from the last `snapshot` of this tab) or {"selector": "<css>"}.
+ */
+function resolveActionSelector(
+  payload: Record<string, unknown>,
+  targetId: string
+): { selector: string } | { error: string } {
+  if (typeof payload.index === "number" && Number.isInteger(payload.index)) {
+    const entries = snapshotStore.get(targetId);
+    if (entries === undefined) {
+      return {
+        error:
+          'control_chrome_cdp failed: no snapshot for this tab yet. Run command \'snapshot\' first, then click/type with {"index": N}.',
+      };
+    }
+    if (entries.length === 0) {
+      return {
+        error:
+          "control_chrome_cdp failed: the snapshot for this tab is empty — 'snapshot' found no interactive elements on this page.",
+      };
+    }
+    const idx: number = payload.index;
+    const entry = entries[idx];
+    if (!entry) {
+      return {
+        error:
+          `control_chrome_cdp failed: index ${idx} out of range — snapshot has ${entries.length} element(s) ` +
+          `(indices 0..${entries.length - 1}). Run 'snapshot' again to refresh.`,
+      };
+    }
+    return { selector: entry.selector };
+  }
+  const selector = String(payload.selector || "");
+  if (!selector) {
+    return {
+      error:
+        'control_chrome_cdp failed: provide either {"index": N} (from \'snapshot\') or {"selector": "<css>"}.',
     };
+  }
+  return { selector };
+}
+
+/**
+ * Persistent CDP connections, keyed by the target's webSocketDebuggerUrl.
+ * One WebSocket serves many sequential (and parallel) commands - multiplexed
+ * by CDP message id - instead of opening a new socket per command. Dead or
+ * long-idle sockets are dropped and re-established on demand.
+ */
+interface PendingCdpCall {
+  resolve: (value: any) => void;
+  reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+  method: string;
+}
+
+interface CdpConnection {
+  ws: any;
+  url: string;
+  nextId: number;
+  pending: Map<number, PendingCdpCall>;
+  lastUsed: number;
+}
+
+const cdpConnections = new Map<string, CdpConnection>();
+
+/** Connections idle longer than this are closed and recreated on demand. */
+const CDP_CONN_IDLE_MS = 60000;
+
+/** Cached lazy `ws` module - this file stays light until it actually runs. */
+let wsModule: any = null;
+async function getWsModule(): Promise<any> {
+  if (!wsModule) wsModule = await import("ws");
+  return wsModule;
+}
+
+function closeCdpConnection(url: string, reason: string): void {
+  const conn = cdpConnections.get(url);
+  if (!conn) return;
+  cdpConnections.delete(url);
+  for (const p of conn.pending.values()) {
+    clearTimeout(p.timer);
+    p.reject(new Error(reason));
+  }
+  conn.pending.clear();
+  try {
+    conn.ws.close();
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Drops pooled connections whose target no longer exists in Chrome. */
+function pruneCdpConnections(liveUrls: string[]): void {
+  const live = new Set(liveUrls);
+  for (const url of Array.from(cdpConnections.keys())) {
+    if (!live.has(url)) {
+      closeCdpConnection(url, "CDP target is no longer open in Chrome; connection dropped.");
+    }
+  }
+}
+
+/**
+ * Returns a healthy shared WebSocket for the target, opening (and
+ * handshaking) one when needed. A dead or long-idle socket is discarded and
+ * replaced; a socket that fails to open raises a clear error - never a hang.
+ */
+async function getCdpConnection(target: CdpTarget): Promise<CdpConnection> {
+  const url = target.webSocketDebuggerUrl;
+  const existing = cdpConnections.get(url);
+  if (existing) {
+    let open = false;
     try {
-      ws = new WebSocket(target.webSocketDebuggerUrl, { handshakeTimeout: timeoutMs });
-    } catch (e: any) {
-      done(() => reject(e));
+      open = existing.ws.readyState === 1; // 1 = OPEN
+    } catch {
+      open = false;
+    }
+    if (open && Date.now() - existing.lastUsed <= CDP_CONN_IDLE_MS) {
+      existing.lastUsed = Date.now();
+      return existing;
+    }
+    closeCdpConnection(
+      url,
+      "CDP connection to the target tab was closed or idle too long; it will be re-established on the next command."
+    );
+  }
+  const { WebSocket } = await getWsModule();
+  const timeoutMs = cdpTimeoutMs();
+  const conn: CdpConnection = { ws: null as any, url, nextId: 1, pending: new Map(), lastUsed: Date.now() };
+  const ws = new WebSocket(url, { handshakeTimeout: timeoutMs });
+  conn.ws = ws;
+  cdpConnections.set(url, conn);
+  ws.on("message", (data: any) => {
+    let msg: any;
+    try {
+      msg = JSON.parse(String(data));
+    } catch {
       return;
     }
-    ws.on("open", () => {
-      ws.send(JSON.stringify({ id: 1, method, params }));
-    });
-    ws.on("message", (data: any) => {
-      let msg: any;
-      try {
-        msg = JSON.parse(String(data));
-      } catch {
-        return;
+    if (msg && typeof msg.id === "number") {
+      const p = conn.pending.get(msg.id);
+      if (!p) return;
+      conn.pending.delete(msg.id);
+      clearTimeout(p.timer);
+      if (msg.error) {
+        p.reject(new Error(`CDP '${p.method}' error: ${msg.error.message || JSON.stringify(msg.error)}`));
+      } else {
+        p.resolve(msg.result !== undefined ? msg.result : {});
       }
-      if (msg && msg.id === 1) {
-        done(() => {
-          try {
-            ws.close();
-          } catch {
-            /* ignore */
-          }
-          if (msg.error) {
-            reject(new Error(`CDP '${method}' error: ${msg.error.message || JSON.stringify(msg.error)}`));
-          } else {
-            resolve(msg.result !== undefined ? msg.result : {});
-          }
-        });
+    }
+  });
+  const onDead = (why: string) => {
+    if (cdpConnections.get(url) === conn) {
+      if (conn.pending.size > 0) {
+        closeCdpConnection(url, why);
+      } else {
+        cdpConnections.delete(url);
       }
+    }
+  };
+  ws.on("error", (err: any) => {
+    onDead(`CDP WebSocket error: ${(err && err.message) || String(err)}`);
+  });
+  ws.on("close", () => {
+    onDead("CDP WebSocket to the target tab closed unexpectedly.");
+  });
+  const opened = await new Promise<boolean>((resolve) => {
+    const t = setTimeout(() => resolve(false), timeoutMs);
+    ws.once("open", () => {
+      clearTimeout(t);
+      resolve(true);
     });
-    ws.on("error", (err: any) => {
-      done(() => reject(new Error(`CDP WebSocket error for '${method}': ${(err && err.message) || String(err)}`)));
+    ws.once("error", () => {
+      clearTimeout(t);
+      resolve(false);
     });
-    ws.on("close", () => {
-      done(() => reject(new Error(`CDP WebSocket closed before '${method}' responded.`)));
+    ws.once("close", () => {
+      clearTimeout(t);
+      resolve(false);
     });
+  });
+  if (!opened || cdpConnections.get(url) !== conn) {
+    closeCdpConnection(url, `Timed out after ${timeoutMs}ms opening CDP WebSocket to the target tab.`);
+    throw new Error(`Timed out after ${timeoutMs}ms opening CDP WebSocket to the target tab.`);
+  }
+  conn.lastUsed = Date.now();
+  return conn;
+}
+
+async function cdpSend(target: CdpTarget, method: string, params: Record<string, unknown> = {}): Promise<any> {
+  const conn = await getCdpConnection(target);
+  const timeoutMs = cdpTimeoutMs();
+  const id = conn.nextId++;
+  return new Promise<any>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      conn.pending.delete(id);
+      reject(new Error(`Timed out after ${timeoutMs}ms waiting for CDP '${method}' response from the target tab.`));
+    }, timeoutMs);
+    conn.pending.set(id, { resolve, reject, timer, method });
+    conn.lastUsed = Date.now();
+    try {
+      conn.ws.send(JSON.stringify({ id, method, params }));
+    } catch (e: any) {
+      conn.pending.delete(id);
+      clearTimeout(timer);
+      const msg = `CDP WebSocket send failed for '${method}': ${(e && e.message) || String(e)}`;
+      closeCdpConnection(conn.url, msg);
+      reject(new Error(msg));
+    }
   });
 }
 
 /**
- * Drive the real Chrome via remote debugging — no extension needed.
+ * Test-only hooks (not part of the tool surface): lets unit tests observe
+ * and reset the persistent-connection pool.
+ */
+export const _cdpTestHooks = {
+  connectionCount: (): number => cdpConnections.size,
+  closeAll: (): void => {
+    for (const url of Array.from(cdpConnections.keys())) {
+      closeCdpConnection(url, "CDP test teardown: connection closed.");
+    }
+  },
+  clearSnapshots: (): void => {
+    snapshotStore.clear();
+    snapshotPrevStore.clear();
+  },
+};
+
+/**
+ * Drive the real Chrome via remote debugging - no extension needed.
  */
 export const controlChromeCdpTool: Tool = {
   name: "control_chrome_cdp",
@@ -173,19 +575,22 @@ export const controlChromeCdpTool: Tool = {
     "Control the user's REAL Chrome browser directly via Chrome Remote Debugging (CDP) at http://127.0.0.1:9222 — no extension required and no isolated background tab. " +
     "REQUIRES Chrome to be running with --remote-debugging-port=9222 (close ALL Chrome windows, then reopen Chrome from the taskbar shortcut). " +
     "Without it, this tool fails fast with an explicit error. " +
-    "Commands: list_targets, navigate, evaluate (run JS in the tab to click, type, or read the DOM), screenshot, pdf, get_cookies.",
+    "Commands: list_targets, navigate, evaluate (run any JS in the tab), snapshot (numbered list of interactive elements; options: compact, max_elements, diff), click (click by index or CSS selector, auto-waits for the element), type (type by index or CSS selector, auto-waits for the element), wait_for (wait for a selector or text to appear), screenshot, pdf, get_cookies. " +
+    "RECOMMENDED WORKFLOW for page interaction (no element IDs, no coordinates, no screenshots needed): 1) run 'snapshot' to get a numbered list of interactive elements, 2) 'click' with {\"index\": N} or 'type' with {\"index\": N, \"text\": \"...\"}. " +
+    "click/type also accept {\"selector\": \"<css>\"} instead of an index. 'type' clears the field first by default (\"clear\": false to append) and dispatches input/change events so reactive frameworks detect the change. " +
+    "click/type auto-wait for the element to appear (payload \"timeout_ms\", default 10000, 0 disables). 'wait_for' with {\"selector\": \"<css>\"} or {\"text\": \"<teks>\"} waits for content to appear without acting.",
   parameters: {
     type: "object",
     properties: {
       command: {
         type: "string",
-        enum: ["list_targets", "navigate", "evaluate", "screenshot", "pdf", "get_cookies"],
+        enum: ["list_targets", "navigate", "evaluate", "snapshot", "click", "type", "wait_for", "screenshot", "pdf", "get_cookies"],
         description: "CDP command to execute on the real Chrome browser.",
       },
       payload: {
         type: "string",
         description:
-          'JSON string payload. navigate: {"url": "https://..."}. evaluate: {"expression": "document.title"} (any JavaScript). screenshot/pdf/get_cookies take {} or may be omitted. Any command also accepts {"targetId": "..."} to pick a tab from list_targets.',
+          'JSON string payload. navigate: {"url": "https://..."}. evaluate: {"expression": "document.title"} (any JavaScript). snapshot: {} (numbered interactive-element list). click: {\"index\": 3} or {\"selector\": \"#login\"}. type: {\"index\": 2, \"text\": \"hello\", \"clear\": true} (\"clear\" defaults true) or {\"selector\": \"input[name=q]\", \"text\": \"...\"}. screenshot/pdf/get_cookies/snapshot take {} or may be omitted. Any command also accepts {"targetId": "..."} to pick a tab from list_targets.',
       },
       targetId: {
         type: "string",
@@ -232,6 +637,149 @@ export const controlChromeCdpTool: Tool = {
           const out = typeof value === "string" ? value : JSON.stringify(value);
           return `control_chrome_cdp: evaluate result: ${truncate(out, 4000)}`;
         }
+        case "snapshot": {
+          const target = await pickTarget(targetId);
+          const compact = Boolean(payload.compact);
+          const diff = Boolean(payload.diff);
+          let maxElements: number | undefined;
+          if (payload.max_elements !== undefined && payload.max_elements !== null && payload.max_elements !== "") {
+            maxElements = Math.floor(Number(payload.max_elements));
+            if (!Number.isFinite(maxElements) || maxElements < 1) {
+              return `control_chrome_cdp failed: 'max_elements' must be a positive integer.`;
+            }
+          }
+          const res: any = await cdpSend(target, "Runtime.evaluate", { expression: SNAPSHOT_JS, returnByValue: true });
+          const value = res && res.result ? res.result.value : undefined;
+          const fresh: SnapshotEntry[] = Array.isArray(value) ? value : [];
+          const prev: SnapshotEntry[] = snapshotStore.get(target.id) ?? [];
+          snapshotPrevStore.set(target.id, prev);
+          snapshotStore.set(target.id, fresh);
+          const entries = maxElements !== undefined ? fresh.slice(0, maxElements) : fresh;
+          const title = `'${truncate(target.title, 60)}'`;
+          const fmt = (e: SnapshotEntry): string => {
+            const textStr = e.text ? ` "${e.text}"` : "";
+            if (compact) return `[${e.index}] <${e.tag}>${textStr}`;
+            const attrs: string[] = [];
+            if (e.type) attrs.push(`type="${e.type}"`);
+            if (e.placeholder) attrs.push(`placeholder="${e.placeholder}"`);
+            if (e.ariaLabel) attrs.push(`aria-label="${e.ariaLabel}"`);
+            const attrStr = attrs.length > 0 ? " " + attrs.join(" ") : "";
+            return `[${e.index}] <${e.tag}${attrStr}>${textStr}`;
+          };
+          if (diff) {
+            if (prev.length === 0) {
+              return (
+                `control_chrome_cdp: snapshot diff of ${title} - no previous snapshot, showing full list ` +
+                `(${entries.length} interactive element(s)).\n` +
+                `Use click/type with {"index": N}.\n${entries.map(fmt).join("\n")}`
+              );
+            }
+            const prevBySel = new Map(prev.map((e) => [e.selector, e] as [string, SnapshotEntry]));
+            const curBySel = new Map(fresh.map((e) => [e.selector, e] as [string, SnapshotEntry]));
+            const added = entries.filter((e) => !prevBySel.has(e.selector));
+            const removed = prev.filter((e) => !curBySel.has(e.selector));
+            const changed = entries.filter((e) => {
+              const p = prevBySel.get(e.selector);
+              return !!p && (p.text !== e.text || p.tag !== e.tag);
+            });
+            const dlines: string[] = [];
+            for (const e of added) dlines.push(`+ ${fmt(e)}`);
+            for (const e of removed) dlines.push(`- ${fmt(e)}`);
+            for (const e of changed) {
+              const p = prevBySel.get(e.selector)!;
+              dlines.push(`~ ${fmt(e)} (was "${p.text}")`);
+            }
+            return (
+              `control_chrome_cdp: snapshot diff of ${title} - ` +
+              `+${added.length} added, -${removed.length} removed, ~${changed.length} changed.\n` +
+              (dlines.length > 0 ? dlines.join("\n") : "(no changes)")
+            );
+          }
+          if (entries.length === 0) {
+            return "control_chrome_cdp: snapshot found no interactive elements on this page.";
+          }
+          return (
+            `control_chrome_cdp: snapshot of ${title} - ${entries.length} interactive element(s)` +
+            (compact ? " (compact)" : "") +
+            (maxElements !== undefined ? ` (limited to ${maxElements})` : "") +
+            `.\n` +
+            `Use click/type with {"index": N}.\n${entries.map(fmt).join("\n")}`
+          );
+        }
+        case "click": {
+          const target = await pickTarget(targetId);
+          const resolved = resolveActionSelector(payload, target.id);
+          if ("error" in resolved) return resolved.error;
+          const clickWaitMs = parseTimeoutMs(payload.timeout_ms, 10000);
+          if (clickWaitMs > 0) {
+            const w = await waitForInPage(target, { selector: resolved.selector, timeoutMs: clickWaitMs });
+            if (!w.ok) {
+              return (
+                `control_chrome_cdp: click timed out after ${clickWaitMs}ms waiting for '${resolved.selector}' to appear and become visible. ` +
+                `Run 'snapshot' to refresh the element list, or 'wait_for' with a longer timeout.`
+              );
+            }
+          }
+          const res: any = await cdpSend(target, "Runtime.evaluate", {
+            expression: buildClickJs(resolved.selector),
+            returnByValue: true,
+          });
+          const value = res && res.result ? res.result.value : undefined;
+          const parsed = parseActionResult(typeof value === "string" ? value : JSON.stringify(value));
+          if (!parsed.ok) return `control_chrome_cdp: click failed - ${parsed.reason || "unknown reason"}.`;
+          const textStr = parsed.text ? ` "${parsed.text}"` : "";
+          return `control_chrome_cdp: clicked <${parsed.tag}>${textStr}.`;
+        }
+        case "type": {
+          const text = String(payload.text ?? "");
+          if (!text) {
+            return 'control_chrome_cdp failed: command \'type\' needs payload {"text": "..."} plus {"index": N} (from \'snapshot\') or {"selector": "<css>"}.';
+          }
+          const clear = payload.clear === undefined ? true : Boolean(payload.clear);
+          const target = await pickTarget(targetId);
+          const resolved = resolveActionSelector(payload, target.id);
+          if ("error" in resolved) return resolved.error;
+          const typeWaitMs = parseTimeoutMs(payload.timeout_ms, 10000);
+          if (typeWaitMs > 0) {
+            const w = await waitForInPage(target, { selector: resolved.selector, timeoutMs: typeWaitMs });
+            if (!w.ok) {
+              return (
+                `control_chrome_cdp: type timed out after ${typeWaitMs}ms waiting for '${resolved.selector}' to appear and become visible. ` +
+                `Run 'snapshot' to refresh the element list, or 'wait_for' with a longer timeout.`
+              );
+            }
+          }
+          const res: any = await cdpSend(target, "Runtime.evaluate", {
+            expression: buildTypeJs(resolved.selector, text, clear),
+            returnByValue: true,
+          });
+          const value = res && res.result ? res.result.value : undefined;
+          const parsed = parseActionResult(typeof value === "string" ? value : JSON.stringify(value));
+          if (!parsed.ok) return `control_chrome_cdp: type failed - ${parsed.reason || "unknown reason"}.`;
+          return `control_chrome_cdp: typed into <${parsed.tag}>: "${truncate(parsed.typed || text, 80)}".`;
+        }
+        case "wait_for": {
+          const selector = String(payload.selector || "");
+          const text = String(payload.text || "");
+          if (!selector && !text) {
+            return `control_chrome_cdp failed: command 'wait_for' needs payload {"selector": "<css>"} or {"text": "<teks>"} (optionally "timeout_ms").`;
+          }
+          const waitMs = parseTimeoutMs(payload.timeout_ms, 15000);
+          const target = await pickTarget(targetId);
+          const w = await waitForInPage(target, {
+            selector: selector || undefined,
+            text: text || undefined,
+            timeoutMs: waitMs,
+          });
+          if (!w.ok) {
+            return `control_chrome_cdp: wait_for ${w.reason || "timed out"}.`;
+          }
+          const what =
+            w.kind === "text"
+              ? `text "${w.text}"`
+              : `selector '${selector}'` + (w.tag ? ` (<${w.tag}>${w.foundText ? ` "${w.foundText}"` : ""})` : "");
+          return `control_chrome_cdp: wait_for matched ${what}.`;
+        }
         case "screenshot": {
           const target = await pickTarget(targetId);
           const res: any = await cdpSend(target, "Page.captureScreenshot", { format: "png" });
@@ -258,7 +806,7 @@ export const controlChromeCdpTool: Tool = {
           return `control_chrome_cdp: ${cookies.length} cookie(s):\n${JSON.stringify(summary, null, 1)}`;
         }
         default:
-          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, navigate, evaluate, screenshot, pdf, get_cookies.`;
+          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, navigate, evaluate, snapshot, click, type, wait_for, screenshot, pdf, get_cookies.`;
       }
     } catch (err: any) {
       return `control_chrome_cdp failed: ${(err && err.message) || String(err)}`;

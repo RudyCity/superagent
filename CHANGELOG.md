@@ -1,3 +1,11 @@
+## [1.11.0] - 2026-10-08
+### Added
+- Command baru untuk control_chrome_cdp: snapshot (daftar bernomor elemen interaktif per target), click dan type berbasis index ({"index": N}) sebagai solusi elemen tanpa ID — fallback selector CSS tetap didukung; type memakai native setter + dispatch event input/change (terdeteksi React/Vue).
+- Command baru wait_for: tunggu selector atau teks muncul di halaman dalam satu CDP round-trip, tanpa polling dari sisi LLM.
+- Snapshot hemat token: opsi compact, max_elements, dan diff (hanya tampilkan perubahan vs snapshot sebelumnya).
+- Koneksi CDP persisten: satu WebSocket per target dipakai ulang antar command (multiplexing via CDP message id); cleanup saat target hilang, error, atau idle lebih dari 60 detik.
+- Auto-wait di click/type: tunggu elemen muncul dan visible sebelum bertindak (default 10 detik, memakai machinery wait_for yang sama).
+
 ## [1.10.0] - 2026-10-08
 ### Added
 - Tool baru control_chrome_cdp: otomatisasi Chrome asli via Chrome Remote Debugging (CDP) tanpa extension - commands: list_targets, navigate, evaluate, screenshot, pdf, get_cookies. Butuh Chrome dijalankan dengan --remote-debugging-port=9222; fail-fast dengan pesan jelas bila port tutup atau target tidak responsif.

@@ -2,7 +2,7 @@ import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import { createServer, Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { AddressInfo } from "net";
-import { controlChromeCdpTool } from "../src/core/tools/chromeCdpTools.js";
+import { controlChromeCdpTool, _cdpTestHooks } from "../src/core/tools/chromeCdpTools.js";
 
 describe("control_chrome_cdp (mock CDP server)", () => {
   let httpServer: Server;
@@ -13,6 +13,18 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   let blackholePort = 0;
   let savedPort: string | undefined;
   let savedTimeout: string | undefined;
+  let snapshotReturnsEmpty = false;
+  let snapshotChanged = false;
+  const mockElementsChanged = [
+    { index: 0, tag: "button", text: "Sign In", selector: "button" },
+    { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' },
+    { index: 2, tag: "a", text: "Help", selector: "a.help" },
+  ];
+  let lastTypeExpression = "";
+  const mockElements = [
+    { index: 0, tag: "button", text: "Login", selector: "button" },
+    { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' },
+  ];
 
   beforeAll(async () => {
     // 1. answering WS server (mock CDP target endpoint)
@@ -26,6 +38,48 @@ describe("control_chrome_cdp (mock CDP server)", () => {
           msg = JSON.parse(String(data));
         } catch {
           return;
+        }
+        // marker-aware Runtime.evaluate for the snapshot/click/type page snippets
+        if (msg.method === "Runtime.evaluate") {
+          const expr = String((msg.params && msg.params.expression) || "");
+          if (expr.includes("cdp-snapshot-walk")) {
+            const els = snapshotReturnsEmpty ? [] : snapshotChanged ? mockElementsChanged : mockElements;
+            ws.send(JSON.stringify({ id: msg.id, result: { result: { value: els } } }));
+            return;
+          }
+          if (expr.includes("cdp-wait-for")) {
+            // __NEVER__ simulates content that never appears (timeout path)
+            if (expr.includes("__NEVER__")) {
+              ws.send(
+                JSON.stringify({ id: msg.id, result: { result: { value: JSON.stringify({ ok: false, reason: "timeout after 800ms waiting for selector '__NEVER__'" }) } } })
+              );
+            } else {
+              // simulate a late-appearing element: the tool must actually wait
+              setTimeout(() => {
+                try {
+                  ws.send(
+                    JSON.stringify({ id: msg.id, result: { result: { value: JSON.stringify({ ok: true, kind: "selector", selector: "#login", tag: "button", foundText: "Login" }) } } })
+                  );
+                } catch {
+                  /* test may have torn down */
+                }
+              }, 300);
+            }
+            return;
+          }
+          if (expr.includes("cdp-click")) {
+            ws.send(
+              JSON.stringify({ id: msg.id, result: { result: { value: JSON.stringify({ ok: true, tag: "button", text: "Login" }) } } })
+            );
+            return;
+          }
+          if (expr.includes("cdp-type")) {
+            lastTypeExpression = expr;
+            ws.send(
+              JSON.stringify({ id: msg.id, result: { result: { value: JSON.stringify({ ok: true, tag: "input", typed: "hello" }) } } })
+            );
+            return;
+          }
         }
         const canned: Record<string, any> = {
           "Page.navigate": {},
@@ -86,6 +140,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     else process.env.SUPERAGENT_CDP_PORT = savedPort;
     if (savedTimeout === undefined) delete process.env.SUPERAGENT_CDP_TIMEOUT_MS;
     else process.env.SUPERAGENT_CDP_TIMEOUT_MS = savedTimeout;
+    _cdpTestHooks.closeAll();
     wss.close();
     blackhole.close();
     await new Promise<void>((r) => httpServer.close(() => r()));
@@ -94,7 +149,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   test("tool is registered with the right name and commands", () => {
     expect(controlChromeCdpTool.name).toBe("control_chrome_cdp");
     const cmds = (controlChromeCdpTool.parameters as any).properties.command.enum as string[];
-    expect(cmds).toEqual(["list_targets", "navigate", "evaluate", "screenshot", "pdf", "get_cookies"]);
+    expect(cmds).toEqual(["list_targets", "navigate", "evaluate", "snapshot", "click", "type", "wait_for", "screenshot", "pdf", "get_cookies"]);
     expect(controlChromeCdpTool.description).toContain("--remote-debugging-port=9222");
     expect(controlChromeCdpTool.description).toContain("no extension required");
   });
@@ -172,5 +227,181 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     } finally {
       process.env.SUPERAGENT_CDP_PORT = String(httpPort);
     }
+  });
+
+  test("snapshot returns a numbered element list", async () => {
+    const res = await controlChromeCdpTool.execute({ command: "snapshot" });
+    expect(res).toContain("[0] <button>");
+    expect(res).toContain("Login");
+    expect(res).toContain("[1] <input");
+    expect(res).toContain("Search...");
+  });
+
+  test("click by index uses the snapshot", async () => {
+    await controlChromeCdpTool.execute({ command: "snapshot" });
+    const res = await controlChromeCdpTool.execute({
+      command: "click",
+      payload: JSON.stringify({ index: 0 }),
+    });
+    expect(res).toContain("clicked <button>");
+    expect(res).toContain("Login");
+  });
+
+  test("click by selector works without a snapshot", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "click",
+      payload: JSON.stringify({ selector: "#login" }),
+    });
+    expect(res).toContain("clicked <button>");
+  });
+
+  test("type by index dispatches input/change via native setter", async () => {
+    await controlChromeCdpTool.execute({ command: "snapshot" });
+    const res = await controlChromeCdpTool.execute({
+      command: "type",
+      payload: JSON.stringify({ index: 1, text: "hello" }),
+    });
+    expect(res).toContain("typed into <input>");
+    expect(lastTypeExpression).toContain('new Event("input"');
+    expect(lastTypeExpression).toContain('new Event("change"');
+    expect(lastTypeExpression).toContain("HTMLInputElement");
+  });
+
+  test("click with out-of-range index fails clearly", async () => {
+    await controlChromeCdpTool.execute({ command: "snapshot" });
+    const res = await controlChromeCdpTool.execute({
+      command: "click",
+      payload: JSON.stringify({ index: 99 }),
+    });
+    expect(res).toContain("out of range");
+    expect(res).toContain("0..1");
+  });
+
+  test("click by index with no snapshot for the tab fails clearly", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "click",
+      targetId: "T2",
+      payload: JSON.stringify({ index: 0 }),
+    });
+    expect(res).toContain("no snapshot for this tab yet");
+    expect(res).toContain("'snapshot'");
+  });
+
+  test("empty snapshot reports clearly", async () => {
+    snapshotReturnsEmpty = true;
+    try {
+      const res = await controlChromeCdpTool.execute({ command: "snapshot" });
+      expect(res).toContain("no interactive elements");
+    } finally {
+      snapshotReturnsEmpty = false;
+    }
+  });
+
+  test("type without text fails clearly", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "type",
+      payload: JSON.stringify({ index: 0 }),
+    });
+    expect(res).toContain('needs payload {"text"');
+  });
+
+  test("wait_for succeeds when the element appears", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "wait_for",
+      payload: JSON.stringify({ selector: "#login", timeout_ms: 2000 }),
+    });
+    expect(res).toContain("wait_for matched");
+    expect(res).toContain("#login");
+  });
+
+  test("wait_for without selector or text fails clearly", async () => {
+    const res = await controlChromeCdpTool.execute({ command: "wait_for", payload: "{}" });
+    expect(res).toContain("needs payload");
+  });
+
+  test("wait_for times out with a clear message", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "wait_for",
+      payload: JSON.stringify({ selector: "__NEVER__", timeout_ms: 800 }),
+    });
+    expect(res).toContain("timeout");
+    expect(res).toContain("__NEVER__");
+  });
+
+  test("snapshot compact omits long attributes", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "snapshot",
+      payload: JSON.stringify({ compact: true }),
+    });
+    expect(res).toContain("[0] <button>");
+    expect(res).toContain("Login");
+    expect(res).not.toContain('placeholder="Search..."');
+    expect(res).toContain("(compact)");
+  });
+
+  test("snapshot max_elements limits the list", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "snapshot",
+      payload: JSON.stringify({ max_elements: 1 }),
+    });
+    expect(res).toContain("[0] <button>");
+    expect(res).not.toContain("[1] <input");
+    expect(res).toContain("(limited to 1)");
+  });
+
+  test("snapshot max_elements rejects invalid values", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "snapshot",
+      payload: JSON.stringify({ max_elements: 0 }),
+    });
+    expect(res).toContain("max_elements");
+    expect(res).toContain("positive integer");
+  });
+
+  test("snapshot diff reports added/changed vs previous snapshot", async () => {
+    await controlChromeCdpTool.execute({ command: "snapshot" });
+    snapshotChanged = true;
+    try {
+      const res = await controlChromeCdpTool.execute({
+        command: "snapshot",
+        payload: JSON.stringify({ diff: true }),
+      });
+      expect(res).toContain("snapshot diff");
+      expect(res).toContain("+1 added");
+      expect(res).toContain("~1 changed");
+      expect(res).toContain("Help");
+    } finally {
+      snapshotChanged = false;
+    }
+  });
+
+  test("snapshot diff with no previous snapshot shows full list", async () => {
+    _cdpTestHooks.clearSnapshots();
+    const res = await controlChromeCdpTool.execute({
+      command: "snapshot",
+      payload: JSON.stringify({ diff: true }),
+    });
+    expect(res).toContain("no previous snapshot");
+    expect(res).toContain("[0] <button>");
+  });
+
+  test("click auto-waits for a late-appearing element instead of failing instantly", async () => {
+    const start = Date.now();
+    const res = await controlChromeCdpTool.execute({
+      command: "click",
+      payload: JSON.stringify({ selector: "#late-button", timeout_ms: 5000 }),
+    });
+    const elapsed = Date.now() - start;
+    expect(res).toContain("clicked <button>");
+    // the mock delays the wait_for response ~300ms: proves we waited
+    expect(elapsed).toBeGreaterThanOrEqual(200);
+  });
+
+  test("sequential commands reuse one persistent CDP connection", async () => {
+    _cdpTestHooks.closeAll();
+    expect(_cdpTestHooks.connectionCount()).toBe(0);
+    await controlChromeCdpTool.execute({ command: "get_cookies" });
+    await controlChromeCdpTool.execute({ command: "screenshot" });
+    expect(_cdpTestHooks.connectionCount()).toBe(1);
   });
 });
