@@ -1,3 +1,8 @@
+## [1.11.1] - 2026-10-08
+### Added
+- `scripts/chrome-debug.bat`: launcher Windows sekali-klik untuk membuka Chrome dengan `--remote-debugging-port=9222` (otomatisasi CDP tanpa extension); memberi peringatan bila Chrome masih berjalan.
+- Dokumentasi extension-free Chrome automation di README.md (Key Features + section "Chrome Remote Debugging") dan catatan operasional di AGENTS.md repo.
+
 ## [1.11.0] - 2026-10-08
 ### Added
 - Command baru untuk control_chrome_cdp: snapshot (daftar bernomor elemen interaktif per target), click dan type berbasis index ({"index": N}) sebagai solusi elemen tanpa ID — fallback selector CSS tetap didukung; type memakai native setter + dispatch event input/change (terdeteksi React/Vue).

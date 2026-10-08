@@ -41,6 +41,7 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 - **🔌 MCP via Tunnel (v1.6.0)**: Expose Superagent's tools as an MCP server over Streamable HTTP through Cloudflare Tunnel (MCP only, no WSS tunnel) — separate Bearer token, safe-tools allowlist by default (dangerous tools opt-in), full audit logging (`/muse tunnel start --mcp`).
 - **🌐 Chrome Process Tools (v1.5.146)**: Built-in tools to list all running Chrome windows across profiles (with per-window tab lists) and close a targeted Chrome profile safely.
 - **🤖 3-Tier Multi-Agent Mode *(Experimental)***: Master Agent orchestrating isolated Superagents across parallel Git worktrees (`--multi`).
+- **🌐 Extension-Free Chrome Automation (v1.10.0)**: Drive the real Chrome browser directly over the Chrome DevTools Protocol — no extension required (`control_chrome_cdp`: navigate, snapshot/click/type by element index, `wait_for`, screenshot, PDF, cookies). Requires Chrome started with `--remote-debugging-port=9222` (see below).
 
 ---
 
@@ -102,6 +103,24 @@ superagent --multi
 Superagent connects **automatically** with **[t-line](https://github.com/RudyCity/t-line)**, the desktop version of Superagent. 
 
 No manual server configuration or extra CLI arguments are required—simply launch `t-line` alongside Superagent for a unified desktop experience.
+
+---
+
+## 🌐 Chrome Remote Debugging (Extension-Free)
+
+The `control_chrome_cdp` tool automates your real Chrome browser directly over the Chrome DevTools Protocol — no extension needed.
+
+**One-time setup (Windows):**
+
+1. Close **all** Chrome windows (Chrome is singleton: the debug flag is silently ignored if any window is already running).
+2. Double-click `scripts/chrome-debug.bat` — it launches Chrome with `--remote-debugging-port=9222`. If Chrome is still running, it warns you instead of killing anything.
+3. Verify: `curl http://127.0.0.1:9222/json/version` should return browser info.
+
+**Notes:**
+
+- The debug port binds to `127.0.0.1` only — it is not reachable from the network.
+- For a permanent setup, add `--remote-debugging-port=9222` to your Chrome shortcut (e.g. the taskbar-pinned shortcut).
+- The tool fails fast with a clear message if Chrome is not running in debug mode.
 
 ---
 

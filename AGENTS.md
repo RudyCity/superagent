@@ -126,3 +126,5 @@ All system prompts in the codebase (e.g., in [prompts.ts](file:///d:/backup%20fr
 - After modifying `subagentTools.ts` or `superagentTools.ts`, check for circular dependency issues — imports of `toolsets.ts`/`prompts.ts` must be dynamic.
 
 
+
+- **Chrome debug launcher** (`scripts/chrome-debug.bat`): Windows launcher that opens Chrome with `--remote-debugging-port=9222` for extension-free CDP automation via `control_chrome_cdp`. Warns (does not kill) if Chrome is already running. **Chrome singleton limitation**: the flag is silently ignored when any Chrome window is already running from the same user-data-dir — the browser must be fully closed first. Debug port is 127.0.0.1-only.
