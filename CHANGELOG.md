@@ -1,3 +1,9 @@
+## [1.13.8] - 2026-10-09
+### Changed
+- Re-architected Agent Identity & Prompt Execution Mandate: Upgraded Superagent from a passive "AI assistant" to an "Autonomous Executive Operator & Direct Proxy" (the user's digital hands and feet / "kaki tangan").
+- Enforced Action-Over-Talk Principle: Mandated immediate tool execution on turn 1 for all actionable tasks (file edits, test runs, command executions, browser automation). Strictly forbidden passive chatbot delays (e.g. telling the user "You can run X yourself" or asking "Should I proceed?" for safe non-destructive operations).
+- Added `EXECUTIVE_PROXY_DISCIPLINE` to `base.ts` and `EXECUTIVE_DIRECT_ACTION` to `prompts.ts`, enforcing direct execution across Master Agent, Superagents, and Subagents (`coder`, `reviewer`, `chrome-agent`).
+
 ## [1.13.7] - 2026-10-09
 ### Fixed
 - Fixed Chrome singleton lockup on Windows: `launch_chrome_profile` automatically creates and uses an isolated user-data-dir (`~/.superagent-r/chrome-debug-profile`) with `--remote-allow-origins=*` when `remoteDebuggingPort` is provided, preventing Chrome from delegating to existing processes and discarding the debug port.
