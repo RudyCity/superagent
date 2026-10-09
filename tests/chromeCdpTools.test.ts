@@ -124,6 +124,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
           "Page.captureScreenshot": { data: "iVBORw0KGgo=" },
           "Page.printToPDF": { data: "JVBERi0xLjQ=" },
           "Storage.getCookies": { cookies: [{ name: "sid", value: "abc123", domain: "example.com" }] },
+          "Input.insertText": {},
         };
         if (msg.method in canned) {
           ws.send(JSON.stringify({ id: msg.id, result: canned[msg.method] }));
@@ -317,7 +318,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(res).toContain("clicked <button>");
   });
 
-  test("type by index dispatches input/change via native setter", async () => {
+  test("type by index dispatches input/change via native setter, blur, and React valueTracker", async () => {
     await controlChromeCdpTool.execute({ command: "snapshot" });
     const res = await controlChromeCdpTool.execute({
       command: "type",
@@ -326,7 +327,19 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(res).toContain("typed into <input>");
     expect(lastTypeExpression).toContain('new Event("input"');
     expect(lastTypeExpression).toContain('new Event("change"');
+    expect(lastTypeExpression).toContain('new Event("blur"');
     expect(lastTypeExpression).toContain("HTMLInputElement");
+    expect(lastTypeExpression).toContain("_valueTracker");
+    expect(lastTypeExpression).toContain("shadowRoot");
+  });
+
+  test("type with native flag dispatches both evaluate and Input.insertText", async () => {
+    await controlChromeCdpTool.execute({ command: "snapshot" });
+    const res = await controlChromeCdpTool.execute({
+      command: "type",
+      payload: JSON.stringify({ index: 1, text: "secret123", native: true }),
+    });
+    expect(res).toContain("typed into <input>");
   });
 
   test("click with out-of-range index fails clearly", async () => {

@@ -558,6 +558,10 @@ export const controlChromeCdpTool: Tool = {
         type: "string",
         description: "Optional top-level keyword filter pattern for extract_links (e.g. 'verify', 'confirm', 'token').",
       },
+      native: {
+        type: "boolean",
+        description: "Optional top-level flag to dispatch native CDP Input keystrokes in addition to synthetic events.",
+      },
       targetId: {
         type: "string",
         description: "Optional CDP target id. Automatically defaults to the active tab.",
@@ -593,6 +597,7 @@ export const controlChromeCdpTool: Tool = {
       "max_elements",
       "timeout_ms",
       "clear",
+      "native",
       "wait_for_elements",
       "auto_snapshot",
     ];
@@ -883,6 +888,11 @@ export const controlChromeCdpTool: Tool = {
           const value = res && res.result ? res.result.value : undefined;
           const parsed = parseActionResult(typeof value === "string" ? value : JSON.stringify(value));
           if (!parsed.ok) return `control_chrome_cdp: type failed - ${parsed.reason || "unknown reason"}.`;
+          if (payload.native || payload.dispatch_keys) {
+            try {
+              await cdpSend(target, "Input.insertText", { text });
+            } catch (e) {}
+          }
           return `control_chrome_cdp: typed into <${parsed.tag}>: "${truncate(parsed.typed || text, 80)}".`;
         }
         case "wait_for": {

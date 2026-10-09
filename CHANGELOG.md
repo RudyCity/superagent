@@ -1,3 +1,10 @@
+## [1.13.21] - 2026-10-09
+### Improved
+- Chrome CDP Reactive Form and Shadow DOM Detection: Enhanced `control_chrome_cdp` element interactions and typing pipeline for modern reactive SPA frameworks (React, Vue, Svelte, Formik, React Hook Form) and complex registration forms:
+  - Shadow DOM Piercing: Extended `SNAPSHOT_JS`, `buildClickJs`, `buildTypeJs`, and `buildWaitForJs` in `src/core/tools/chromeCdpHelpers.ts` to recursively traverse open shadow roots (`shadowRoot`), allowing inputs, buttons, and custom components to be discovered and clicked/typed reliably.
+  - React State Synchronization: Updated `buildTypeJs` to synchronize React internal value trackers (`el._valueTracker.setValue(...)`) and dispatch composed `InputEvent` (`inputType: "insertText"`), `input`, `change`, and `blur` events with `composed: true` so reactive validators and required field checks clear immediately.
+  - Native CDP Input Support: Added optional `native` flag to `control_chrome_cdp` `type` command in `src/core/tools/chromeCdpTools.ts` that dispatches hardware-level `Input.insertText` directly to the active element alongside synthetic event propagation.
+
 ## [1.13.20] - 2026-10-09
 ### Fixed
 - Streaming Retry Countdown Overwrite Across Consecutive Attempts: Fixed an issue where consecutive retry countdown tickers (`Retrying in Xs...`) from multiple failed connection attempts stacked vertically across new lines in the streaming view. Updated the live text event handler in `src/app.tsx` to detect carriage-return countdown tickers (`\rRetrying in Xs...`) and replace any trailing ticker from previous retry attempts in `streamBufferRef.current` directly in place before updating the stream display.

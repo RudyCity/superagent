@@ -48,9 +48,25 @@ export const snapshotPrevStore = new Map<string, SnapshotEntry[]>();
  * the agent is never blind to page context, 404 errors, or verification requirements.
  */
 export const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
-  const els = Array.from(document.querySelectorAll(
-    'button, a, input, select, textarea, [role="button"], [role="link"], [role="textbox"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [onclick], summary'
-  ));
+  function collectInteractive(root, list) {
+    if (!root) return;
+    try {
+      const found = root.querySelectorAll(
+        'button, a, input, select, textarea, [role="button"], [role="link"], [role="textbox"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [onclick], summary'
+      );
+      for (let i = 0; i < found.length; i++) list.push(found[i]);
+    } catch (e) {}
+    try {
+      const all = root.querySelectorAll('*');
+      for (let i = 0; i < all.length; i++) {
+        if (all[i].shadowRoot) {
+          collectInteractive(all[i].shadowRoot, list);
+        }
+      }
+    } catch (e) {}
+  }
+  const els = [];
+  collectInteractive(document, els);
   function visible(el) {
     const r = el.getBoundingClientRect();
     if (!r || r.width === 0 || r.height === 0) return false;
@@ -183,7 +199,23 @@ export function buildExtractLinksJs(pattern?: string): string {
  */
 export function buildClickJs(selector: string): string {
   return `/*cdp-click*/(() => {
-    const el = document.querySelector(${JSON.stringify(selector)});
+    function findEl(sel) {
+      try { const el = document.querySelector(sel); if (el) return el; } catch (e) {}
+      function walk(root) {
+        const all = root.querySelectorAll('*');
+        for (let i = 0; i < all.length; i++) {
+          if (all[i].shadowRoot) {
+            try {
+              const found = all[i].shadowRoot.querySelector(sel) || walk(all[i].shadowRoot);
+              if (found) return found;
+            } catch (e) {}
+          }
+        }
+        return null;
+      }
+      return walk(document);
+    }
+    const el = findEl(${JSON.stringify(selector)});
     if (!el) return JSON.stringify({ ok: false, reason: "no element matches selector" });
     try { el.scrollIntoView({ block: "center" }); } catch (e) {}
     el.click();
@@ -194,28 +226,66 @@ export function buildClickJs(selector: string): string {
 
 /**
  * Builds page JS that types text into the element matching selector.
- * Dispatches input/change events for reactive frameworks (React, Vue, Svelte).
+ * Pierces open Shadow DOM roots, updates React _valueTracker, and
+ * dispatches InputEvent, input, change, and blur events for reactive frameworks (React, Vue, Svelte).
  */
 export function buildTypeJs(selector: string, text: string, clear: boolean): string {
   return `/*cdp-type*/(() => {
-    const el = document.querySelector(${JSON.stringify(selector)});
+    function findEl(sel) {
+      try { const el = document.querySelector(sel); if (el) return el; } catch (e) {}
+      function walk(root) {
+        const all = root.querySelectorAll('*');
+        for (let i = 0; i < all.length; i++) {
+          if (all[i].shadowRoot) {
+            try {
+              const found = all[i].shadowRoot.querySelector(sel) || walk(all[i].shadowRoot);
+              if (found) return found;
+            } catch (e) {}
+          }
+        }
+        return null;
+      }
+      return walk(document);
+    }
+    const el = findEl(${JSON.stringify(selector)});
     if (!el) return JSON.stringify({ ok: false, reason: "no element matches selector" });
     try { el.scrollIntoView({ block: "center" }); } catch (e) {}
-    el.focus();
+    try { el.focus(); } catch (e) {}
     const tag = el.tagName.toLowerCase();
     const text = ${JSON.stringify(text)};
     const doClear = ${clear ? "true" : "false"};
-    function fire() {
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
+    function fire(val) {
+      if (el._valueTracker) {
+        try { el._valueTracker.setValue(val !== undefined ? String(val) : ""); } catch (e) {}
+      }
+      try {
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: text }));
+      } catch (e) {
+        el.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+      }
+      el.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
     }
     if (tag === "input" || tag === "textarea") {
       const proto = tag === "input" ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
       const desc = Object.getOwnPropertyDescriptor(proto, "value");
       const setter = desc && desc.set;
-      if (doClear) { if (setter) setter.call(el, ""); else el.value = ""; fire(); }
-      if (setter) setter.call(el, text); else el.value = text;
-      fire();
+      if (doClear) {
+        if (setter) setter.call(el, ""); else el.value = "";
+        fire("");
+      }
+      const finalVal = doClear ? text : ((el.value || "") + text);
+      if (setter) setter.call(el, finalVal); else el.value = finalVal;
+      fire(finalVal);
+      try {
+        el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, composed: true, key: text.slice(-1) || "a" }));
+        el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, composed: true, key: text.slice(-1) || "a" }));
+      } catch (e) {}
+      try {
+        el.dispatchEvent(new FocusEvent("blur", { bubbles: true, composed: true }));
+      } catch (e) {
+        el.dispatchEvent(new Event("blur", { bubbles: true, composed: true }));
+      }
     } else if (el.isContentEditable) {
       const sel = window.getSelection();
       if (doClear) el.textContent = "";
@@ -226,7 +296,12 @@ export function buildTypeJs(selector: string, text: string, clear: boolean): str
       let inserted = false;
       try { inserted = document.execCommand("insertText", false, text); } catch (e) {}
       if (!inserted) el.textContent = doClear ? text : el.textContent + text;
-      fire();
+      fire(el.textContent);
+      try {
+        el.dispatchEvent(new FocusEvent("blur", { bubbles: true, composed: true }));
+      } catch (e) {
+        el.dispatchEvent(new Event("blur", { bubbles: true, composed: true }));
+      }
     } else {
       return JSON.stringify({ ok: false, reason: "element is not editable (not input/textarea/contenteditable)" });
     }
@@ -269,7 +344,20 @@ export function buildWaitForJs(opts: { selector?: string; text?: string; timeout
       function check() {
         if (o.selector) {
           let el = null;
-          try { el = document.querySelector(o.selector); } catch (e) {}
+          try {
+            el = document.querySelector(o.selector);
+            if (!el) {
+              const all = document.querySelectorAll('*');
+              for (let i = 0; i < all.length; i++) {
+                if (all[i].shadowRoot) {
+                  try {
+                    el = all[i].shadowRoot.querySelector(o.selector);
+                    if (el) break;
+                  } catch (e) {}
+                }
+              }
+            }
+          } catch (e) {}
           if (el && visible(el)) { finishOk("selector", el); return true; }
         }
         if (o.text) {
