@@ -44,13 +44,25 @@ export function getConfiguredProviders(): ConfiguredProvider[] {
   const insertionIndex = new Map(providers.map((p, i) => [p.id, i]));
   list.sort((a, b) => {
     if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
-    const aUsable = a.hasValidKey || !!(a.baseUrl && a.baseUrl.trim() !== "");
-    const bUsable = b.hasValidKey || !!(b.baseUrl && b.baseUrl.trim() !== "");
+    const aUsable = a.hasValidKey || isProviderSelfContained(a);
+    const bUsable = b.hasValidKey || isProviderSelfContained(b);
     if (aUsable !== bUsable) return aUsable ? -1 : 1;
     return (insertionIndex.get(a.id) ?? 0) - (insertionIndex.get(b.id) ?? 0);
   });
 
   return list;
+}
+
+/**
+ * Determine if a provider is self-contained and does not strictly require an API key
+ * (e.g. custom endpoints, Ollama, LM Studio, or local servers).
+ */
+export function isProviderSelfContained(profile?: { provider?: string; baseUrl?: string } | null): boolean {
+  if (!profile) return false;
+  const pType = (profile.provider || "").toLowerCase();
+  if (pType === "custom" || pType === "ollama" || pType === "lmstudio") return true;
+  if (profile.baseUrl && (profile.baseUrl.includes("localhost") || profile.baseUrl.includes("127.0.0.1"))) return true;
+  return false;
 }
 
 export function switchActiveProvider(name: string): boolean {
@@ -116,7 +128,7 @@ export function getProviderOptionsList(list: ConfiguredProvider[]): string[] {
  */
 export function getActiveProviderName(): string | null {
   const list = getConfiguredProviders();
-  const isUsable = (p: ConfiguredProvider) => p.hasValidKey || !!(p.baseUrl && p.baseUrl.trim() !== "");
+  const isUsable = (p: ConfiguredProvider) => p.hasValidKey || isProviderSelfContained(p);
   // Prefer the explicitly-active provider IF it is usable (valid key or custom baseUrl).
   const active = list.find((p) => p.isActive && isUsable(p));
   if (active) return active.type;

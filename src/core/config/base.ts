@@ -37,6 +37,7 @@ export interface Config {
 }
 
 import { loadModelConfig, getActivePreset, savePreset, getSettings, saveSessionPreset } from "./jsonConfig.js";
+import { isProviderSelfContained } from "./providers.js";
 import { ensureProtocol } from "./paths.js";
 
 export function getConfig(): Config {
@@ -61,7 +62,7 @@ export function getConfig(): Config {
 
   // Step 3: If provider requires a key but has none, fallback to same provider type with key
   if (providerProfile && (!providerProfile.apiKey || providerProfile.apiKey.trim() === "")) {
-    const isSelfContained = providerProfile.provider === "custom" || providerProfile.provider === "ollama" || providerProfile.provider === "lmstudio";
+    const isSelfContained = isProviderSelfContained(providerProfile);
     if (!isSelfContained) {
       const sameTypeWithKey = config.providers.find(
         (p) => p.id !== providerProfile?.id && p.provider === providerProfile?.provider && p.apiKey && p.apiKey.trim() !== ""

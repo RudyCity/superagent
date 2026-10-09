@@ -11,7 +11,7 @@ import { createAzure } from "@ai-sdk/azure";
 import { getStaticModelLimit } from "../model_limits.js";
 import { getRootConfigDir, ensureProtocol } from "./paths.js";
 import { getConfig } from "./base.js";
-import { getConfiguredProviders, getEffectiveMasterModel } from "./providers.js";
+import { getConfiguredProviders, getEffectiveMasterModel, isProviderSelfContained } from "./providers.js";
 import { loadModelConfig, getActivePreset, TierModelConfig, getSettings, getSingleAgentMode } from "./jsonConfig.js";
 import { saveModelCachesToDb, getModelCachesFromDb } from "../storage/historyDb.js";
 
@@ -925,7 +925,7 @@ export function getModelConnectionDetailsForTier(
 
   // Fallback 2: if matched profile requires a key but has none, look for same provider type with key
   if (providerProfile && (!providerProfile.apiKey || providerProfile.apiKey.trim() === "")) {
-    const isSelfContained = providerProfile.provider === "custom" || providerProfile.provider === "ollama" || providerProfile.provider === "lmstudio" || !!(providerProfile.baseUrl && providerProfile.baseUrl.trim() !== "");
+    const isSelfContained = isProviderSelfContained(providerProfile);
     if (!isSelfContained) {
       const sameType = config.providers.find(
         (p) => p.id !== providerProfile?.id && p.provider === providerProfile?.provider && p.apiKey && p.apiKey.trim() !== ""
