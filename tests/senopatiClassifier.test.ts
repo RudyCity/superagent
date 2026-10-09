@@ -16,6 +16,7 @@ import {
   clearLocalClassifierCache,
   getClassificationPromptAddendum,
   isDestructiveCommand,
+  isHighConfidenceConversation,
   type ClassificationResult,
 } from "../src/core/requestClassifier.js";
 
@@ -117,6 +118,23 @@ describe("Senopati System-1 ONNX Engine", () => {
 
     const resEdit = await classifyWithSenopatiONNX("ganti timeout fetch jadi 15000ms di config.ts", dummyHeuristic);
     expect(resEdit?.category).toBe("simple_edit");
+
+    // Pure neural classification for registration and web automation (no regex crutches)
+    const resRegGroq = await classifyWithSenopatiONNX("daftar groq dengan tempemail", dummyHeuristic);
+    expect(resRegGroq?.category).toBe("command");
+
+    const resCreateAcc = await classifyWithSenopatiONNX("buat akun di website ini", dummyHeuristic);
+    expect(resCreateAcc?.category).toBe("command");
+
+    const resLogin = await classifyWithSenopatiONNX("login ke dashboard", dummyHeuristic);
+    expect(resLogin?.category).toBe("command");
+
+    const resBun = await classifyWithSenopatiONNX("bun test", dummyHeuristic);
+    expect(resBun?.category).toBe("command");
+
+    // Verify conversational fast-path correctly respects pure neural decisions
+    expect(isHighConfidenceConversation(resConv!, "single", "IDLE", false, "halo selamat pagi, siap lanjut bos!")).toBe(true);
+    expect(isHighConfidenceConversation(resRegGroq!, "single", "IDLE", false, "daftar groq dengan tempemail")).toBe(false);
   });
 
   it("should generate proper system prompt addendums with urgency and destructive guardrails", () => {

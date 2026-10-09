@@ -1,3 +1,9 @@
+## [1.13.19] - 2026-10-09
+### Changed
+- Pure Senopati Neural Classification and Guardrail Removal: Eliminated `actionCommandsRegex` guardrail from `isHighConfidenceConversation` in `src/core/requestClassifier.ts`, moving request classification to 100% pure neural inference via Senopati System-1.
+- Retrained Senopati Model and Expanded Multilingual Dataset: Retrained the Senopati System-1 classifier in `G:\project\cika` using an expanded and balanced 1,244-sample dataset enriched with browser automation, registration flows, temporary email workflows, CLI invocations, conversational greetings, and code edits across English and Indonesian.
+- Fixed Tokenizer Normalization and ONNX Export: Aligned tokenizer character filtering with Superagent's ASCII cleaner, enforced UTF-8 file handling, trained for 60 epochs with calibrated Brier loss, and updated ONNX export to read fresh weights. Deployed updated `senopati_superagent.onnx` and vocabulary to `models/senopati/`.
+
 ## [1.13.18] - 2026-10-09
 ### Fixed
 - Custom Endpoint and Free Gateway Resolution Without API Key: Fixed an issue where switching to model presets pointing to custom providers with empty API keys (e.g. Kilo Direct or local servers) errored with `Cannot connect to API:` or `Invalid authentication token`. Resolved by:
