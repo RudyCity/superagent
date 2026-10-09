@@ -442,11 +442,22 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(res).toContain("T1");
   });
 
-  test("control_chrome_vision status command reports environment readiness", async () => {
-    const res = await controlChromeVisionTool.execute({ command: "status" });
-    expect(res).toContain("OmniParser Vision Status:");
-    expect(res).toContain("Chrome CDP");
-    expect(res).toContain("Model weights");
+  test("permissive argument parsing supports object payload and top-level url/index shortcuts", async () => {
+    // 1. Top-level url shortcut with auto-snapshot
+    const res1 = await controlChromeCdpTool.execute({
+      command: "navigate",
+      url: "https://example.com/shortcut",
+    });
+    expect(res1).toContain("navigated tab 'Mock Tab' to https://example.com/shortcut");
+    expect(res1).toContain("Interactive elements");
+
+    // 2. Object payload without JSON string serialization and auto_snapshot disabled
+    const res2 = await controlChromeCdpTool.execute({
+      command: "navigate",
+      payload: { url: "https://example.com/obj", auto_snapshot: false } as any,
+    });
+    expect(res2).toContain("navigated tab 'Mock Tab' to https://example.com/obj");
+    expect(res2).not.toContain("Interactive elements");
   });
 });
 

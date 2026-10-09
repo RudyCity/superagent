@@ -167,7 +167,13 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       }
 
       const effectivePort = portOverride || (isHttps ? 7888 : port);
-      const existing = getTunnelStatus(effectivePort);
+      let existing = getTunnelStatus(effectivePort);
+      if (!existing.isRunning && !portOverride && !isHttps) {
+        const active = listActiveTunnels();
+        if (active.length > 0) {
+          existing = { isRunning: true, ...active[0] };
+        }
+      }
 
       if (isHttps) {
         const { getServerAuthToken } = await import("../utils/serverSecurity.js");
@@ -403,9 +409,17 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         await stopMuseWatcher(effectivePort);
         stoppedAny = true;
       }
-      const existing = getTunnelStatus(effectivePort);
+      let targetPortToStop = effectivePort;
+      let existing = getTunnelStatus(effectivePort);
+      if (!existing.isRunning && !portOverride) {
+        const active = listActiveTunnels();
+        if (active.length === 1) {
+          targetPortToStop = active[0].port;
+          existing = getTunnelStatus(targetPortToStop);
+        }
+      }
       if (existing.isRunning) {
-        await stopQuickTunnel(effectivePort);
+        await stopQuickTunnel(targetPortToStop);
         stoppedAny = true;
       }
 
@@ -413,7 +427,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         console.log(`[Cloudflare Tunnel] No quick tunnel is currently running${portOverride ? ` on port ${portOverride}` : ""}.`);
         return;
       }
-      console.log(`[Cloudflare Tunnel] Quick tunnel (port ${effectivePort}) and watch daemon stopped successfully.`);
+      console.log(`[Cloudflare Tunnel] Quick tunnel (port ${targetPortToStop}) and watch daemon stopped successfully.`);
       return;
     }
 
@@ -426,7 +440,13 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       }
 
       const effectivePort = portOverride || (isHttps ? 7888 : port);
-      const existing = getTunnelStatus(effectivePort);
+      let existing = getTunnelStatus(effectivePort);
+      if (!existing.isRunning && !portOverride && !isHttps) {
+        const active = listActiveTunnels();
+        if (active.length > 0) {
+          existing = { isRunning: true, ...active[0] };
+        }
+      }
 
       if (isHttps) {
         const { getServerAuthToken } = await import("../utils/serverSecurity.js");

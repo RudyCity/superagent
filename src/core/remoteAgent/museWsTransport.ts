@@ -292,6 +292,43 @@ export class MuseWsServerTransport implements RemoteTransport {
           return;
         }
 
+        if (validation.envelope.kind === "ping") {
+          const resp = {
+            v: 1,
+            kind: "pong",
+            id: `pong_${crypto.randomUUID()}`,
+            ts: Date.now(),
+            nonce: crypto.randomUUID(),
+          };
+          socket.send(JSON.stringify(resp));
+          return;
+        }
+
+        if (validation.envelope.kind === "pong") {
+          socket.isAlive = true;
+          return;
+        }
+
+        if (validation.envelope.kind === "hello" || validation.envelope.kind === "ready") {
+          const resp = {
+            v: 1,
+            kind: "welcome",
+            id: `welcome_${crypto.randomUUID()}`,
+            connection_id: connectionId,
+            ts: Date.now(),
+            nonce: crypto.randomUUID(),
+          };
+          socket.send(JSON.stringify(resp));
+          logE2E("REMOTE-AGENT", `Handshake ${validation.envelope.kind} from ${connectionId}, sent welcome.`);
+          if (this.onEnvelopeHandler) {
+            await this.onEnvelopeHandler(validation.envelope, {
+              transport: "websocket",
+              connectionId,
+            });
+          }
+          return;
+        }
+
         if (this.onEnvelopeHandler) {
           await this.onEnvelopeHandler(validation.envelope, {
             transport: "websocket",

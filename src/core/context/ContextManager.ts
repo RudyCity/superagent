@@ -212,8 +212,15 @@ export class ContextManager {
       this.setState("COMPACTING");
       this.emit("compaction:start", { strategy: selectedStrategy.name });
 
+      const isBudgetedPruning =
+        selectedStrategy === this.budgetedPruningStrategy ||
+        selectedStrategy.name === "budgeted-pruning";
+      const defaultBudget = isBudgetedPruning
+        ? Math.floor(this.calculateThreshold() * 0.6)
+        : this.calculateThreshold();
+
       const result = await selectedStrategy.execute(messages, {
-        tokenBudget: options?.tokenBudget ?? this.calculateThreshold(),
+        tokenBudget: options?.tokenBudget ?? defaultBudget,
         pinnedMessageIds: options?.pinnedMessageIds ?? new Set(this.pinnedMessages.keys()),
         byteBudget: options?.byteBudget,
         preserveRecent: options?.preserveRecent,

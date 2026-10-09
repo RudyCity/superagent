@@ -232,12 +232,26 @@ export async function runDescribeTool(
     if (!t) {
       const custom = opts.unavailableMessage?.(name);
       if (custom) return { name, error: custom };
+      const lowerName = name.toLowerCase();
+      const tokens = lowerName.split(/[-_ \t]+/).filter((tok) => tok.length > 2);
+
       const suggestions = tools
-        .map((tool) => ({
-          name: tool.name,
-          score: fuzzyScore(name, tool.name),
-        }))
-        .filter((x) => x.score >= Math.max(16, name.length * 8))
+        .map((tool) => {
+          const tName = tool.name.toLowerCase();
+          const fScore = fuzzyScore(name, tool.name);
+          let tokenScore = 0;
+          if (tName.includes(lowerName) || lowerName.includes(tName)) {
+            tokenScore += 50;
+          }
+          for (const token of tokens) {
+            if (tName.includes(token)) {
+              tokenScore += 25;
+            }
+          }
+          const score = Math.max(fScore, tokenScore);
+          return { name: tool.name, score };
+        })
+        .filter((x) => x.score >= 16)
         .sort((a, b) => b.score - a.score)
         .slice(0, 3)
         .map((x) => x.name);

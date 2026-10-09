@@ -1,3 +1,11 @@
+## [1.13.12] - 2026-10-09
+### Fixed
+- Fixed Cloudflare tunnel and Muse bridge connection issues: Resolved bug where Muse could not connect or communicate with Superagent over quick tunnels.
+- Fixed stale default tunnel and multi-tunnel metadata tracking in `cloudflareTunnel.ts`: `getStatus()` now automatically falls back to active tunnels when default tunnel metadata points to dead processes or when custom ports are used; `clearTunnelState()` cleanly cleans up associated port files.
+- Added support for Muse handshake and keep-alive envelopes in `protocol.ts` and `museWsTransport.ts`: Added envelope schemas and message handling for `hello`, `ready`, `welcome`, `ping`, and `pong` so Muse lifecycle messages and health checks are accepted and replied to instead of rejected with protocol errors.
+- Enhanced Python bridge client (`bridge/listener.py`): Dynamically inspects `connect` function signature to support both `additional_headers` (websockets >= 14) and `extra_headers` (older websockets), and avoids passing unsupported proxy parameters.
+- Re-synchronized CLI tunnel commands in `museCli.ts` and `museTunnelSubcommand.ts`: Commands `/muse tunnel status`, `/muse tunnel prompt`, `/muse tunnel url`, and `/muse tunnel stop` dynamically discover single running tunnels on non-default ports instead of reporting false inactive states.
+
 ## [1.13.11] - 2026-10-09
 ### Fixed
 - Fixed Chrome DevTools Protocol (CDP) port binding mismatch on Windows: Added explicit `--remote-debugging-address=127.0.0.1` flag to `launch_chrome_profile`, `ensureCdpRunning`, and `scripts/chrome-debug.bat`, preventing Chromium from binding exclusively to IPv6 `::1:9222` when remote debugging is launched.

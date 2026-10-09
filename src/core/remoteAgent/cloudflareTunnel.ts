@@ -86,9 +86,7 @@ export function saveTunnelState(meta: TunnelMetadata, port?: number): void {
       try {
         const existing = JSON.parse(fs.readFileSync(defaultFile, "utf-8"));
         if (existing && typeof existing.port === "number" && existing.port !== targetPort) {
-          if (existing.pid && isProcessRunning(existing.pid)) {
-            writeDefault = false;
-          }
+          writeDefault = false;
         }
       } catch {
         // Unreadable default holds no valid claim; overwrite it below.
@@ -132,21 +130,6 @@ export function readTunnelState(portOrWorkspace?: number | string): TunnelMetada
     }
     const file = getTunnelStateFile();
     if (!fs.existsSync(file)) {
-      if (portOrWorkspace === undefined && fs.existsSync(dir)) {
-        const files = fs.readdirSync(dir);
-        for (const f of files) {
-          const match = f.match(/^tunnel-(\d+)\.json$/);
-          if (match) {
-            try {
-              const raw = fs.readFileSync(path.join(dir, f), "utf-8");
-              const parsed = JSON.parse(raw);
-              if (parsed?.pid && isProcessRunning(parsed.pid)) {
-                return parsed;
-              }
-            } catch {}
-          }
-        }
-      }
       return null;
     }
     const raw = fs.readFileSync(file, "utf-8");
@@ -194,7 +177,19 @@ export function clearTunnelState(port?: number | "all"): void {
     } else if (port === undefined) {
       const defaultFile = path.join(dir, "tunnel.json");
       if (fs.existsSync(defaultFile)) {
-        try { fs.unlinkSync(defaultFile); } catch {}
+        try {
+          const raw = fs.readFileSync(defaultFile, "utf-8");
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed.port === "number") {
+            const portFile = getTunnelStateFile(parsed.port);
+            if (fs.existsSync(portFile)) {
+              try { fs.unlinkSync(portFile); } catch {}
+            }
+          }
+          fs.unlinkSync(defaultFile);
+        } catch {
+          try { fs.unlinkSync(defaultFile); } catch {}
+        }
       }
     }
   } catch {}

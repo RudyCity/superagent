@@ -12,6 +12,22 @@
 import { Tool } from "./types.js";
 import { get as httpGet, request as httpRequest } from "http";
 import { ensureCdpRunning } from "./chromeCommon.js";
+import {
+  CdpTarget,
+  SnapshotEntry,
+  snapshotStore,
+  snapshotPrevStore,
+  SNAPSHOT_JS,
+  READY_STATE_JS,
+  buildClickJs,
+  buildTypeJs,
+  buildWaitForJs,
+  parseActionResult,
+  parseTimeoutMs,
+  formatSnapshotEntry,
+  formatSnapshotDiff,
+  resolveActionSelector,
+} from "./chromeCdpHelpers.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -23,15 +39,18 @@ function cdpHost(): string {
   if (process.env.SUPERAGENT_CDP_HOST) return process.env.SUPERAGENT_CDP_HOST;
   return resolvedHost || "127.0.0.1";
 }
+
 function alternateHost(current: string): string | null {
   if (process.env.SUPERAGENT_CDP_HOST) return null;
   if (current === "127.0.0.1") return "::1";
   if (current === "::1") return "127.0.0.1";
   return null;
 }
+
 function cdpPort(): number {
   return Number(process.env.SUPERAGENT_CDP_PORT) || 9222;
 }
+
 function cdpTimeoutMs(): number {
   return Number(process.env.SUPERAGENT_CDP_TIMEOUT_MS) || 20000;
 }
@@ -43,14 +62,6 @@ export const CDP_PORT_CLOSED_MSG =
   "or run scripts/chrome-debug.bat, then retry. " +
   "Note: launch_chrome_profile uses an isolated debug profile so it starts immediately without needing to close or kill running Chrome instances. " +
   "FORBIDDEN: Do NOT attempt to kill the user's running Chrome processes with taskkill or shell commands.";
-
-interface CdpTarget {
-  id: string;
-  type: string;
-  title: string;
-  url: string;
-  webSocketDebuggerUrl: string;
-}
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + `… [truncated, ${s.length} chars total]` : s;
@@ -67,10 +78,6 @@ function httpGetJson(path: string, isRetry = false, overrideHost?: string): Prom
           data += chunk;
         });
         res.on("end", () => {
-          // Chrome 155+: the DevTools HTTP discovery endpoints (/json/version,
-          // /json/list) answer "426 Upgrade Required" to plain HTTP instead of
-          // 200 + JSON. Fall back to fetching the document over a WebSocket
-          // handshake (the server upgrades, then sends the JSON as a message).
           if (res.statusCode === 426) {
             wsGetJson(path).then(resolve, reject);
             return;
@@ -96,7 +103,6 @@ function httpGetJson(path: string, isRetry = false, overrideHost?: string): Prom
     });
     req.on("error", async (err: any) => {
       if (err && (err.code === "ECONNREFUSED" || err.code === "ECONNRESET")) {
-        // First try alternate dual-stack host (e.g. 127.0.0.1 -> ::1 or ::1 -> 127.0.0.1)
         const alt = alternateHost(host);
         if (alt && !overrideHost) {
           try {
@@ -182,14 +188,6 @@ function httpPutJson(path: string, isRetry = false, overrideHost?: string): Prom
   });
 }
 
-/**
- * Chrome 155+ fallback for the 426 "Upgrade Required" returned by the DevTools
- * HTTP discovery endpoints. Performs a WebSocket handshake against the same
- * path (with the Origin header the DevTools WS origin check expects) and
- * reads the JSON discovery document from the first text message the server
- * sends. Plain-HTTP 200 responses are still preferred; this only runs when
- * the server answered 426, so older Chrome versions are unaffected.
- */
 function wsGetJson(path: string): Promise<any> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -269,7 +267,15 @@ async function listPageTargets(): Promise<CdpTarget[]> {
 }
 
 async function pickTarget(targetId?: string, autoActivate = true): Promise<CdpTarget> {
-  const pages = await listPageTargets();
+  let pages = await listPageTargets();
+  if (pages.length === 0) {
+    try {
+      await httpPutJson("/json/new");
+      pages = await listPageTargets();
+    } catch {
+      /* continue to check */
+    }
+  }
   if (pages.length === 0) {
     throw new Error("No page targets found on the Chrome remote-debugging endpoint. Open a tab in Chrome and retry.");
   }
@@ -284,297 +290,6 @@ async function pickTarget(targetId?: string, autoActivate = true): Promise<CdpTa
   return target;
 }
 
-/**
- * Last DOM snapshot per CDP target id. `snapshot` fills it; `click`/`type`
- * consume it by index so the LLM never needs element IDs, coordinates, or
- * screenshots. A snapshot belongs to the tab it was taken on.
- */
-interface SnapshotEntry {
-  index: number;
-  tag: string;
-  text: string;
-  type?: string;
-  placeholder?: string;
-  ariaLabel?: string;
-  selector: string;
-}
-
-const snapshotStore = new Map<string, SnapshotEntry[]>();
-
-/** Previous snapshot per target id - powers `snapshot` with `diff: true`. */
-const snapshotPrevStore = new Map<string, SnapshotEntry[]>();
-
-/**
- * Walks the DOM and returns the interactive elements, each with a generated
- * unique selector. Runs inside the page via Runtime.evaluate.
- */
-const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
-  const els = Array.from(document.querySelectorAll(
-    'button, a, input, select, textarea, [role="button"], [role="link"], [role="textbox"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [onclick], summary'
-  ));
-  function visible(el) {
-    const r = el.getBoundingClientRect();
-    if (!r || r.width === 0 || r.height === 0) return false;
-    const cs = getComputedStyle(el);
-    if (cs.visibility === 'hidden' || cs.display === 'none') return false;
-    if (el.getAttribute('aria-hidden') === 'true') return false;
-    const role = el.getAttribute('role');
-    if (role === 'presentation' || role === 'none') return false;
-    const tag = el.tagName.toLowerCase();
-    if (tag === 'a' && !el.getAttribute('href') && !el.getAttribute('onclick') && !role) return false;
-    return true;
-  }
-  function genSelector(el) {
-    if (el.id) return '#' + CSS.escape(el.id);
-    const parts = [];
-    let cur = el;
-    while (cur && cur.nodeType === 1 && cur !== document.documentElement && parts.length < 5) {
-      let seg = cur.tagName.toLowerCase();
-      const parent = cur.parentElement;
-      if (parent) {
-        const same = Array.from(parent.children).filter((c) => c.tagName === cur.tagName);
-        if (same.length > 1) seg += ':nth-of-type(' + (same.indexOf(cur) + 1) + ')';
-      }
-      parts.unshift(seg);
-      cur = parent;
-    }
-    return parts.join(' > ');
-  }
-  function label(el) {
-    const t = (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || '').replace(/\\s+/g, ' ').trim();
-    return t.slice(0, 80);
-  }
-  return els.filter(visible).slice(0, 120).map((el, i) => ({
-    index: i,
-    tag: el.tagName.toLowerCase(),
-    text: label(el),
-    type: el.getAttribute('type') || undefined,
-    placeholder: el.getAttribute('placeholder') || undefined,
-    ariaLabel: el.getAttribute('aria-label') || undefined,
-    selector: genSelector(el),
-  }));
-})()`;
-
-/**
- * Builds page JS that clicks the element matching `selector`.
- * Returns a JSON string: {ok, tag?, text?, reason?}.
- */
-function buildClickJs(selector: string): string {
-  return `/*cdp-click*/(() => {
-    const el = document.querySelector(${JSON.stringify(selector)});
-    if (!el) return JSON.stringify({ ok: false, reason: "no element matches selector" });
-    try { el.scrollIntoView({ block: "center" }); } catch (e) {}
-    el.click();
-    const t = (el.innerText || el.value || "").replace(/\\s+/g, " ").trim().slice(0, 80);
-    return JSON.stringify({ ok: true, tag: el.tagName.toLowerCase(), text: t });
-  })()`;
-}
-
-/**
- * Builds page JS that types `text` into the element matching `selector`.
- * Framework-friendly: uses the native value setter and dispatches
- * input/change events (React/Vue detect the change). Handles input,
- * textarea, and contenteditable. Returns a JSON string.
- */
-function buildTypeJs(selector: string, text: string, clear: boolean): string {
-  return `/*cdp-type*/(() => {
-    const el = document.querySelector(${JSON.stringify(selector)});
-    if (!el) return JSON.stringify({ ok: false, reason: "no element matches selector" });
-    try { el.scrollIntoView({ block: "center" }); } catch (e) {}
-    el.focus();
-    const tag = el.tagName.toLowerCase();
-    const text = ${JSON.stringify(text)};
-    const doClear = ${clear ? "true" : "false"};
-    function fire() {
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-    if (tag === "input" || tag === "textarea") {
-      const proto = tag === "input" ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
-      const desc = Object.getOwnPropertyDescriptor(proto, "value");
-      const setter = desc && desc.set;
-      if (doClear) { if (setter) setter.call(el, ""); else el.value = ""; fire(); }
-      if (setter) setter.call(el, text); else el.value = text;
-      fire();
-    } else if (el.isContentEditable) {
-      const sel = window.getSelection();
-      if (doClear) el.textContent = "";
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      range.collapse(false);
-      if (sel) { sel.removeAllRanges(); sel.addRange(range); }
-      let inserted = false;
-      try { inserted = document.execCommand("insertText", false, text); } catch (e) {}
-      if (!inserted) el.textContent = doClear ? text : el.textContent + text;
-      fire();
-    } else {
-      return JSON.stringify({ ok: false, reason: "element is not editable (not input/textarea/contenteditable)" });
-    }
-    return JSON.stringify({ ok: true, tag: tag, typed: text.slice(0, 80) });
-  })()`;
-}
-
-/** Parses the JSON string returned by the click/type page snippets. */
-function parseActionResult(raw: string): {
-  ok: boolean;
-  tag?: string;
-  text?: string;
-  typed?: string;
-  reason?: string;
-} {
-  try {
-    const o = JSON.parse(raw);
-    if (o && typeof o === "object") return o;
-  } catch {
-    /* fall through */
-  }
-  return { ok: false, reason: `unexpected result: ${truncate(raw, 200)}` };
-}
-
-/** Parses an optional timeout_ms payload field; falls back to `def` when missing/invalid. */
-function parseTimeoutMs(v: unknown, def: number): number {
-  if (v === undefined || v === null || v === "") return def;
-  const n = Math.floor(Number(v));
-  return Number.isFinite(n) && n >= 0 ? n : def;
-}
-
-/**
- * Builds page JS that waits (in-page polling, ~200ms interval) for a CSS
- * selector to match a visible element, or for a text to appear in the page.
- * Resolves to a JSON string: {ok, kind?, selector?, text?, tag?, foundText?, reason?}.
- * Must be run via Runtime.evaluate with awaitPromise: true so one CDP
- * round-trip covers the whole wait - no polling from the LLM side.
- */
-function buildWaitForJs(opts: { selector?: string; text?: string; timeoutMs: number }): string {
-  const optsJson = JSON.stringify(opts);
-  return `/*cdp-wait-for*/(() => {
-    const o = ${optsJson};
-    return new Promise((resolve) => {
-      const timeoutMs = o.timeoutMs;
-      const deadline = Date.now() + timeoutMs;
-      function visible(el) {
-        if (!el || el.nodeType !== 1) return false;
-        const r = el.getBoundingClientRect();
-        if (!r || r.width === 0 || r.height === 0) return false;
-        try {
-          const cs = getComputedStyle(el);
-          if (cs.visibility === "hidden" || cs.display === "none") return false;
-        } catch (e) {}
-        return true;
-      }
-      function finishOk(kind, el) {
-        const t = el ? ((el.innerText || el.value || "").replace(/\\s+/g, " ").trim()).slice(0, 80) : "";
-        resolve(JSON.stringify({
-          ok: true, kind: kind,
-          selector: o.selector || undefined, text: o.text || undefined,
-          tag: el ? el.tagName.toLowerCase() : undefined, foundText: t || undefined
-        }));
-      }
-      function finishTimeout() {
-        const waiting = o.selector ? ("selector '" + o.selector + "'") : ("text '" + o.text + "'");
-        resolve(JSON.stringify({ ok: false, reason: "timeout after " + timeoutMs + "ms waiting for " + waiting }));
-      }
-      function check() {
-        if (o.selector) {
-          let el = null;
-          try { el = document.querySelector(o.selector); } catch (e) {}
-          if (el && visible(el)) { finishOk("selector", el); return true; }
-        }
-        if (o.text) {
-          try {
-            const bodyText = (document.body && document.body.innerText) || "";
-            if (bodyText.indexOf(o.text) !== -1) { finishOk("text", null); return true; }
-          } catch (e) {}
-        }
-        return false;
-      }
-      if (check()) return;
-      const iv = setInterval(() => {
-        if (check()) { clearInterval(iv); return; }
-        if (Date.now() >= deadline) { clearInterval(iv); finishTimeout(); }
-      }, 200);
-    });
-  })()`;
-}
-
-/** Runs the in-page wait on the target and parses the JSON result. */
-async function waitForInPage(
-  target: CdpTarget,
-  opts: { selector?: string; text?: string; timeoutMs: number }
-): Promise<{
-  ok: boolean;
-  kind?: string;
-  selector?: string;
-  text?: string;
-  tag?: string;
-  foundText?: string;
-  reason?: string;
-}> {
-  const res: any = await cdpSend(target, "Runtime.evaluate", {
-    expression: buildWaitForJs(opts),
-    awaitPromise: true,
-    returnByValue: true,
-  });
-  const value = res && res.result ? res.result.value : undefined;
-  const raw = typeof value === "string" ? value : JSON.stringify(value);
-  try {
-    const o = JSON.parse(raw);
-    if (o && typeof o === "object") return o;
-  } catch {
-    /* fall through */
-  }
-  return { ok: false, reason: `unexpected wait_for result: ${truncate(raw, 200)}` };
-};
-
-/**
- * Resolves a click/type target from the payload: either {"index": N}
- * (from the last `snapshot` of this tab) or {"selector": "<css>"}.
- */
-function resolveActionSelector(
-  payload: Record<string, unknown>,
-  targetId: string
-): { selector: string } | { error: string } {
-  if (typeof payload.index === "number" && Number.isInteger(payload.index)) {
-    const entries = snapshotStore.get(targetId);
-    if (entries === undefined) {
-      return {
-        error:
-          'control_chrome_cdp failed: no snapshot for this tab yet. Run command \'snapshot\' first, then click/type with {"index": N}.',
-      };
-    }
-    if (entries.length === 0) {
-      return {
-        error:
-          "control_chrome_cdp failed: the snapshot for this tab is empty — 'snapshot' found no interactive elements on this page.",
-      };
-    }
-    const idx: number = payload.index;
-    const entry = entries[idx];
-    if (!entry) {
-      return {
-        error:
-          `control_chrome_cdp failed: index ${idx} out of range — snapshot has ${entries.length} element(s) ` +
-          `(indices 0..${entries.length - 1}). Run 'snapshot' again to refresh.`,
-      };
-    }
-    return { selector: entry.selector };
-  }
-  const selector = String(payload.selector || "");
-  if (!selector) {
-    return {
-      error:
-        'control_chrome_cdp failed: provide either {"index": N} (from \'snapshot\') or {"selector": "<css>"}.',
-    };
-  }
-  return { selector };
-}
-
-/**
- * Persistent CDP connections, keyed by the target's webSocketDebuggerUrl.
- * One WebSocket serves many sequential (and parallel) commands - multiplexed
- * by CDP message id - instead of opening a new socket per command. Dead or
- * long-idle sockets are dropped and re-established on demand.
- */
 interface PendingCdpCall {
   resolve: (value: any) => void;
   reject: (err: Error) => void;
@@ -591,12 +306,9 @@ interface CdpConnection {
 }
 
 const cdpConnections = new Map<string, CdpConnection>();
-
-/** Connections idle longer than this are closed and recreated on demand. */
 const CDP_CONN_IDLE_MS = 60000;
-
-/** Cached lazy `ws` module - this file stays light until it actually runs. */
 let wsModule: any = null;
+
 async function getWsModule(): Promise<any> {
   if (!wsModule) wsModule = await import("ws");
   return wsModule;
@@ -618,7 +330,6 @@ function closeCdpConnection(url: string, reason: string): void {
   }
 }
 
-/** Drops pooled connections whose target no longer exists in Chrome. */
 function pruneCdpConnections(liveUrls: string[]): void {
   const live = new Set(liveUrls);
   for (const url of Array.from(cdpConnections.keys())) {
@@ -628,11 +339,6 @@ function pruneCdpConnections(liveUrls: string[]): void {
   }
 }
 
-/**
- * Returns a healthy shared WebSocket for the target, opening (and
- * handshaking) one when needed. A dead or long-idle socket is discarded and
- * replaced; a socket that fails to open raises a clear error - never a hang.
- */
 async function getCdpConnection(target: CdpTarget): Promise<CdpConnection> {
   let url = target.webSocketDebuggerUrl;
   if (resolvedHost === "::1" && url.includes("://127.0.0.1:")) {
@@ -644,7 +350,7 @@ async function getCdpConnection(target: CdpTarget): Promise<CdpConnection> {
   if (existing) {
     let open = false;
     try {
-      open = existing.ws.readyState === 1; // 1 = OPEN
+      open = existing.ws.readyState === 1;
     } catch {
       open = false;
     }
@@ -743,10 +449,34 @@ async function cdpSend(target: CdpTarget, method: string, params: Record<string,
   });
 }
 
-/**
- * Test-only hooks (not part of the tool surface): lets unit tests observe
- * and reset the persistent-connection pool.
- */
+async function waitForInPage(
+  target: CdpTarget,
+  opts: { selector?: string; text?: string; timeoutMs: number }
+): Promise<{
+  ok: boolean;
+  kind?: string;
+  selector?: string;
+  text?: string;
+  tag?: string;
+  foundText?: string;
+  reason?: string;
+}> {
+  const res: any = await cdpSend(target, "Runtime.evaluate", {
+    expression: buildWaitForJs(opts),
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  const value = res && res.result ? res.result.value : undefined;
+  const raw = typeof value === "string" ? value : JSON.stringify(value);
+  try {
+    const o = JSON.parse(raw);
+    if (o && typeof o === "object") return o;
+  } catch {
+    /* fall through */
+  }
+  return { ok: false, reason: `unexpected wait_for result: ${truncate(raw, 200)}` };
+}
+
 export const _cdpTestHooks = {
   connectionCount: (): number => cdpConnections.size,
   closeAll: (): void => {
@@ -771,27 +501,55 @@ export const controlChromeCdpTool: Tool = {
   description:
     "Control the user's REAL Chrome browser directly via Chrome Remote Debugging (CDP) at http://127.0.0.1:9222 — no extension required and no isolated background tab. " +
     "REQUIRES Chrome to be running with --remote-debugging-port=9222 (close ALL Chrome windows, then reopen Chrome from the taskbar shortcut). " +
-    "Without it, this tool fails fast with an explicit error. " +
-    "Commands: list_targets, new_tab (open new tab with optional url), close_tab (close tab by targetId), activate (bring tab to front/unthrottle), navigate, evaluate (run any JS in the tab; auto-awaits Promises), snapshot (numbered list of interactive elements; options: compact, max_elements, diff), click (click by index or CSS selector, auto-waits for the element), type (type by index or CSS selector, auto-waits for the element), wait_for (wait for a selector or text to appear), screenshot, pdf, get_cookies. " +
-    "RECOMMENDED WORKFLOW for page interaction (no element IDs, no coordinates, no screenshots needed): 1) run 'snapshot' to get a numbered list of interactive elements, 2) 'click' with {\"index\": N} or 'type' with {\"index\": N, \"text\": \"...\"}. " +
-    "click/type also accept {\"selector\": \"<css>\"} instead of an index. 'type' clears the field first by default (\"clear\": false to append) and dispatches input/change events so reactive frameworks detect the change. " +
-    "click/type auto-wait for the element to appear (payload \"timeout_ms\", default 10000, 0 disables). 'wait_for' with {\"selector\": \"<css>\"} or {\"text\": \"<teks>\"} waits for content to appear without acting.",
+    "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, click, type, wait_for, screenshot, pdf, get_cookies. " +
+    "Convenience: 'navigate' automatically waits for page ready and returns an immediate interactive element snapshot in a single turn. " +
+    "Arguments like url, index, text, selector, expression can be provided directly at top-level or inside payload.",
   parameters: {
     type: "object",
     properties: {
       command: {
         type: "string",
-        enum: ["list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "click", "type", "wait_for", "screenshot", "pdf", "get_cookies"],
+        enum: [
+          "list_targets",
+          "new_tab",
+          "close_tab",
+          "activate",
+          "navigate",
+          "evaluate",
+          "snapshot",
+          "click",
+          "type",
+          "wait_for",
+          "screenshot",
+          "pdf",
+          "get_cookies",
+        ],
         description: "CDP command to execute on the real Chrome browser.",
       },
       payload: {
         type: "string",
         description:
-          'JSON string payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://..."}. evaluate: {"expression": "document.title"} (any JavaScript; awaits Promises). snapshot: {} (numbered interactive-element list). click: {\"index\": 3} or {\"selector\": \"#login\"}. type: {\"index\": 2, \"text\": \"hello\", \"clear\": true} (\"clear\" defaults true) or {\"selector\": \"input[name=q]\", \"text\": \"...\"}. screenshot/pdf/get_cookies/snapshot/activate/close_tab take {} or may be omitted. Any command also accepts {"targetId": "..."} to pick a tab from list_targets.',
+          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://..."}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). click: {"index": 3} or {"selector": "#login"}. type: {"index": 2, "text": "hello"}.',
+      },
+      url: {
+        type: "string",
+        description: "Optional top-level URL convenience shortcut for new_tab or navigate.",
+      },
+      index: {
+        type: "number",
+        description: "Optional top-level element index convenience shortcut for click or type.",
+      },
+      text: {
+        type: "string",
+        description: "Optional top-level text convenience shortcut for type or wait_for.",
+      },
+      selector: {
+        type: "string",
+        description: "Optional top-level CSS selector convenience shortcut for click, type, or wait_for.",
       },
       targetId: {
         type: "string",
-        description: "Optional CDP target id (from list_targets). Defaults to the first open page tab.",
+        description: "Optional CDP target id. Automatically defaults to the active tab.",
       },
     },
     required: ["command"],
@@ -800,10 +558,33 @@ export const controlChromeCdpTool: Tool = {
     const command = String(args.command || "");
     let payload: Record<string, unknown> = {};
     if (args.payload !== undefined && args.payload !== "") {
-      try {
-        payload = JSON.parse(String(args.payload));
-      } catch {
-        return "control_chrome_cdp failed: 'payload' must be a valid JSON string.";
+      if (typeof args.payload === "object" && args.payload !== null) {
+        payload = { ...(args.payload as Record<string, unknown>) };
+      } else {
+        try {
+          payload = JSON.parse(String(args.payload));
+        } catch {
+          return "control_chrome_cdp failed: 'payload' must be a valid JSON string.";
+        }
+      }
+    }
+    const convenienceKeys = [
+      "url",
+      "index",
+      "text",
+      "selector",
+      "expression",
+      "compact",
+      "diff",
+      "max_elements",
+      "timeout_ms",
+      "clear",
+      "wait_for_elements",
+      "auto_snapshot",
+    ];
+    for (const key of convenienceKeys) {
+      if (args[key] !== undefined && payload[key] === undefined) {
+        payload[key] = args[key];
       }
     }
     const targetId = args.targetId
@@ -811,6 +592,7 @@ export const controlChromeCdpTool: Tool = {
       : payload.targetId
         ? String(payload.targetId)
         : undefined;
+
     try {
       switch (command) {
         case "list_targets": {
@@ -823,6 +605,9 @@ export const controlChromeCdpTool: Tool = {
           const path = `/json/new?${encodeURIComponent(url)}`;
           const res: any = await httpPutJson(path);
           const newId = res && res.id ? res.id : undefined;
+          if (newId) {
+            httpPutJson(`/json/activate/${newId}`).catch(() => {});
+          }
           return `control_chrome_cdp: opened new tab '${url}'${newId ? ` (targetId: ${newId})` : ""}`;
         }
         case "close_tab": {
@@ -841,7 +626,43 @@ export const controlChromeCdpTool: Tool = {
           if (!url) return 'control_chrome_cdp failed: command \'navigate\' needs payload {"url": "https://..."}.';
           const target = await pickTarget(targetId);
           await cdpSend(target, "Page.navigate", { url });
-          return `control_chrome_cdp: navigated tab '${truncate(target.title, 80)}' to ${url}`;
+
+          const readyDeadline = Date.now() + 3000;
+          while (Date.now() < readyDeadline) {
+            try {
+              const r = await cdpSend(target, "Runtime.evaluate", { expression: READY_STATE_JS, returnByValue: true });
+              const state = r && r.result ? r.result.value : undefined;
+              if (state === "complete" || state === "interactive" || (state && state !== "loading")) {
+                break;
+              }
+            } catch {
+              break;
+            }
+            await new Promise((res) => setTimeout(res, 100));
+          }
+
+          const skipSnapshot = payload.auto_snapshot === false || payload.autoSnapshot === false || payload.snapshot === false;
+          let snapSuffix = "";
+          if (!skipSnapshot) {
+            try {
+              const sRes: any = await cdpSend(target, "Runtime.evaluate", { expression: SNAPSHOT_JS, returnByValue: true });
+              const sVal = sRes && sRes.result ? sRes.result.value : undefined;
+              const fresh: SnapshotEntry[] = Array.isArray(sVal) ? sVal : [];
+              snapshotPrevStore.set(target.id, snapshotStore.get(target.id) ?? []);
+              snapshotStore.set(target.id, fresh);
+              const maxElements = 35;
+              const entries = fresh.slice(0, maxElements);
+              if (entries.length > 0) {
+                snapSuffix =
+                  `\n\nInteractive elements (${entries.length}${fresh.length > maxElements ? ` of ${fresh.length}` : ""}):\n` +
+                  entries.map((e) => formatSnapshotEntry(e, true)).join("\n") +
+                  `\nUse click/type with {"index": N}.`;
+              }
+            } catch {
+              /* keep navigate response clean even if auto-snapshot errors */
+            }
+          }
+          return `control_chrome_cdp: navigated tab '${truncate(target.title, 80)}' to ${url}${snapSuffix}`;
         }
         case "evaluate": {
           const expression = String(payload.expression || "");
@@ -867,53 +688,35 @@ export const controlChromeCdpTool: Tool = {
               return `control_chrome_cdp failed: 'max_elements' must be a positive integer.`;
             }
           }
-          const res: any = await cdpSend(target, "Runtime.evaluate", { expression: SNAPSHOT_JS, returnByValue: true });
-          const value = res && res.result ? res.result.value : undefined;
-          const fresh: SnapshotEntry[] = Array.isArray(value) ? value : [];
+
+          let res: any = await cdpSend(target, "Runtime.evaluate", { expression: SNAPSHOT_JS, returnByValue: true });
+          let value = res && res.result ? res.result.value : undefined;
+          let fresh: SnapshotEntry[] = Array.isArray(value) ? value : [];
+
+          if (fresh.length === 0 && payload.wait_for_elements) {
+            const waitMs = parseTimeoutMs(payload.wait_for_elements, 2000);
+            const deadline = Date.now() + waitMs;
+            while (Date.now() < deadline) {
+              await new Promise((r) => setTimeout(r, 200));
+              try {
+                res = await cdpSend(target, "Runtime.evaluate", { expression: SNAPSHOT_JS, returnByValue: true });
+                value = res && res.result ? res.result.value : undefined;
+                fresh = Array.isArray(value) ? value : [];
+                if (fresh.length > 0) break;
+              } catch {
+                break;
+              }
+            }
+          }
+
           const prev: SnapshotEntry[] = snapshotStore.get(target.id) ?? [];
           snapshotPrevStore.set(target.id, prev);
           snapshotStore.set(target.id, fresh);
           const entries = fresh.slice(0, maxElements);
           const title = `'${truncate(target.title, 60)}'`;
-          const fmt = (e: SnapshotEntry): string => {
-            const labelText = e.text || e.placeholder || e.ariaLabel || "";
-            const textStr = labelText ? ` "${labelText}"` : "";
-            if (compact) return `[${e.index}] <${e.tag}>${textStr}`;
-            const attrs: string[] = [];
-            if (e.type) attrs.push(`type="${e.type}"`);
-            if (e.placeholder) attrs.push(`placeholder="${e.placeholder}"`);
-            if (e.ariaLabel) attrs.push(`aria-label="${e.ariaLabel}"`);
-            const attrStr = attrs.length > 0 ? " " + attrs.join(" ") : "";
-            return `[${e.index}] <${e.tag}${attrStr}>${textStr}`;
-          };
+
           if (diff) {
-            if (prev.length === 0) {
-              return (
-                `control_chrome_cdp: snapshot diff of ${title} - no previous snapshot, showing full list ` +
-                `(${entries.length} interactive element(s)).\n` +
-                `Use click/type with {"index": N}.\n${entries.map(fmt).join("\n")}`
-              );
-            }
-            const prevBySel = new Map(prev.map((e) => [e.selector, e] as [string, SnapshotEntry]));
-            const curBySel = new Map(fresh.map((e) => [e.selector, e] as [string, SnapshotEntry]));
-            const added = entries.filter((e) => !prevBySel.has(e.selector));
-            const removed = prev.filter((e) => !curBySel.has(e.selector));
-            const changed = entries.filter((e) => {
-              const p = prevBySel.get(e.selector);
-              return !!p && (p.text !== e.text || p.tag !== e.tag);
-            });
-            const dlines: string[] = [];
-            for (const e of added) dlines.push(`+ ${fmt(e)}`);
-            for (const e of removed) dlines.push(`- ${fmt(e)}`);
-            for (const e of changed) {
-              const p = prevBySel.get(e.selector)!;
-              dlines.push(`~ ${fmt(e)} (was "${p.text}")`);
-            }
-            return (
-              `control_chrome_cdp: snapshot diff of ${title} - ` +
-              `+${added.length} added, -${removed.length} removed, ~${changed.length} changed.\n` +
-              (dlines.length > 0 ? dlines.join("\n") : "(no changes)")
-            );
+            return formatSnapshotDiff(title, entries, prev, compact);
           }
           if (entries.length === 0) {
             return "control_chrome_cdp: snapshot found no interactive elements on this page.";
@@ -924,7 +727,7 @@ export const controlChromeCdpTool: Tool = {
             (compact ? " (compact)" : "") +
             (isLimited ? ` (limited to ${maxElements})` : "") +
             `.\n` +
-            `Use click/type with {"index": N}.\n${entries.map(fmt).join("\n")}`
+            `Use click/type with {"index": N}.\n${entries.map((e) => formatSnapshotEntry(e, compact)).join("\n")}`
           );
         }
         case "click": {

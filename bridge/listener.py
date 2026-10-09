@@ -109,15 +109,25 @@ async def main():
     backoff = 5
     while True:
         try:
-            async with connect(
-                URL,
-                additional_headers={"Authorization": f"Bearer {token}"},
-                open_timeout=25,
-                max_size=16 * 1024 * 1024,
-                ping_interval=20,
-                ping_timeout=20,
-                proxy=proxy,
-            ) as ws:
+            connect_kwargs = {
+                "open_timeout": 25,
+                "max_size": 16 * 1024 * 1024,
+                "ping_interval": 20,
+                "ping_timeout": 20,
+            }
+            if proxy:
+                connect_kwargs["proxy"] = proxy
+
+            import inspect
+            sig = inspect.signature(connect)
+            if "additional_headers" in sig.parameters:
+                connect_kwargs["additional_headers"] = {"Authorization": f"Bearer {token}"}
+            elif "extra_headers" in sig.parameters:
+                connect_kwargs["extra_headers"] = {"Authorization": f"Bearer {token}"}
+            else:
+                connect_kwargs["additional_headers"] = {"Authorization": f"Bearer {token}"}
+
+            async with connect(URL, **connect_kwargs) as ws:
                 log("CONNECTED, listening for tasks")
                 backoff = 5
                 pump = asyncio.create_task(outbox_pump(ws))

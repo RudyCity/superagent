@@ -128,6 +128,43 @@ export interface TokenAckEnvelope {
   nonce?: string;
 }
 
+export interface HelloEnvelope {
+  v: 1;
+  kind: "hello";
+  id?: string;
+  client?: string;
+  ts?: number;
+}
+
+export interface ReadyEnvelope {
+  v: 1;
+  kind: "ready";
+  id?: string;
+  ts?: number;
+}
+
+export interface WelcomeEnvelope {
+  v: 1;
+  kind: "welcome";
+  id?: string;
+  connection_id?: string;
+  ts?: number;
+}
+
+export interface PingEnvelope {
+  v: 1;
+  kind: "ping";
+  id?: string;
+  ts?: number;
+}
+
+export interface PongEnvelope {
+  v: 1;
+  kind: "pong";
+  id?: string;
+  ts?: number;
+}
+
 export const DEFAULT_MUSE_SYSTEM_PROMPT = `You are Muse, the remote cognitive brain for Superagent CLI running locally on the user's computer.
 You reason and plan high-level tasks; Superagent executes tool batches locally on the file system and terminal.
 
@@ -181,7 +218,12 @@ export type RemoteAgentEnvelope =
   | TokenRefreshRequestEnvelope
   | TokenRefreshResponseEnvelope
   | TokenRefreshEnvelope
-  | TokenAckEnvelope;
+  | TokenAckEnvelope
+  | HelloEnvelope
+  | ReadyEnvelope
+  | WelcomeEnvelope
+  | PingEnvelope
+  | PongEnvelope;
 
 export const CHUNK_HEADER_PREFIX = "MUSEBUS";
 export const DEFAULT_MAX_CHUNK_SIZE = 3800;
@@ -443,6 +485,11 @@ export function validateEnvelope(
     "token_refresh_response",
     "token_refresh",
     "token_ack",
+    "hello",
+    "ready",
+    "welcome",
+    "ping",
+    "pong",
   ];
   if (!validKinds.includes(envelope.kind)) {
     return { valid: false, error: `Unknown envelope kind: ${envelope.kind}` };
@@ -594,6 +641,14 @@ export function validateEnvelope(
       if (envelope.status !== "ok" && envelope.status !== "error") {
         return { valid: false, error: "token_ack invalid 'status': must be 'ok' or 'error'" };
       }
+      break;
+    }
+
+    case "hello":
+    case "ready":
+    case "welcome":
+    case "ping":
+    case "pong": {
       break;
     }
   }

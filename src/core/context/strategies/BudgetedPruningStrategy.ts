@@ -100,7 +100,7 @@ export class BudgetedPruningStrategy implements CompactionStrategy {
     );
     const keepBudget = Math.max(0, budget - pinnedTokens);
 
-    // Score unpinned messages by importance (lower score = prune first).
+    // Score unpinned messages by importance (higher score = keep first).
     const analyzer = new SemanticAnalyzer();
     const scored = unpinned.map((m, i) => ({
       msg: m,
@@ -108,14 +108,13 @@ export class BudgetedPruningStrategy implements CompactionStrategy {
       score: analyzer.scoreImportance(m),
     }));
 
-    // Sort ascending by importance, then by original order (oldest first) as tiebreak.
-    // This yields oldest/lowest-importance messages at the front of the prune queue.
+    // Sort descending by importance so that highest-importance messages are kept first.
     scored.sort((a, b) => {
-      if (a.score !== b.score) return a.score - b.score;
-      return a.originalIndex - b.originalIndex;
+      if (a.score !== b.score) return b.score - a.score;
+      return b.originalIndex - a.originalIndex;
     });
 
-    // Greedily prune from the front until estimated tokens fit the budget.
+    // Greedily keep from highest importance until keepBudget is reached.
     const toKeep: Message[] = [];
     const toPrune: Message[] = [];
     let runningTokens = 0;
@@ -127,6 +126,14 @@ export class BudgetedPruningStrategy implements CompactionStrategy {
       } else {
         toPrune.push(item.msg);
       }
+    }
+
+    // Guarantee forward progress: if nothing was pruned but messages exceed 75% of budget,
+    // prune at least 30% of lowest-importance messages.
+    if (toPrune.length === 0 && toKeep.length > 2 && (runningTokens + pinnedTokens) > Math.floor(budget * 0.75)) {
+      const forceCount = Math.max(1, Math.min(toKeep.length - 1, Math.floor(toKeep.length * 0.3)));
+      const evicted = toKeep.splice(toKeep.length - forceCount, forceCount);
+      toPrune.push(...evicted);
     }
 
     // Preserve original conversation order: pinned messages keep their positions,
