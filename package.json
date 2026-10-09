@@ -12,7 +12,6 @@
     "build": "tsc",
     "start": "node dist/cli.js",
     "test": "vitest run",
-    "sync:global": "node -e \"const fs=require('fs');try{fs.cpSync('dist','C:/Program Files/nodejs/node_modules/superagent/dist',{recursive:true});fs.copyFileSync('package.json','C:/Program Files/nodejs/node_modules/superagent/package.json');console.log('Global superagent synced successfully.');}catch(e){console.error('Cannot sync while superagent is running. Exit terminal first: '+e.message);}\"",
     "verify:extension-js": "node scripts/verify-extension-js.mjs",
     "verify:all": "bun run build && bun run verify:extension-js && bun run test",
     "ext:css": "tailwindcss -i chrome-extension/sidepanel.src.css -o chrome-extension/sidepanel.css",
