@@ -17,6 +17,20 @@ torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
 torch.set_grad_enabled(False)
 
+# Backward-compatibility shims for transformers >= 4.47 with rfdetr
+import transformers
+if not hasattr(transformers, "BackboneConfigMixin"):
+    try:
+        from transformers.utils.backbone_utils import BackboneConfigMixin, BackboneMixin
+        transformers.BackboneConfigMixin = BackboneConfigMixin
+        transformers.BackboneMixin = BackboneMixin
+        _orig_backbone_init = BackboneMixin._init_transformers_backbone
+        BackboneMixin._init_transformers_backbone = lambda self, config=None: _orig_backbone_init(
+            self, config if config is not None else getattr(self, "config", None)
+        )
+    except Exception:
+        pass
+
 from huggingface_hub import hf_hub_download
 from rfdetr.detr import RFDETRMedium
 

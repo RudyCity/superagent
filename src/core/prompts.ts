@@ -84,7 +84,7 @@ const POST_CHANGE_INTEGRITY_RULE = `- POST_CHANGE_INTEGRITY: After EVERY change,
 
 const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Chrome automation suite.
   - Native CDP (preferred, no extension): control_chrome_cdp (port 9222: list_targets, new_tab, close_tab, activate, snapshot, read_page, extract_links, click/type by index, wait_for, evaluate, cookies, screenshot, pdf). Auto-launches Chrome in isolated debug profile if closed.
-  - Vision AI: control_chrome_vision (port 9333: status, parse_screenshot, click_label, type_label, setup via local OmniParser YOLO+Florence-2).
+  - Vision AI: control_chrome_vision (port 8095: status, parse_screenshot, click_label, type_label via local UI-DETR-1).
   - Extension Bridge: control_browser_tab (port 9223: detect_ui, execute_chain, macros, storage, tabs).
   - Process/Windows: list_running_chrome, close_chrome_window, close_chrome_profile, list_chrome_profiles, launch_chrome_profile.
   - Headless/Sandbox: run_headless_browser, control_isolated_cdp, simulate_virtual_cursor, playwright_screenshot.
@@ -128,8 +128,8 @@ SUBAGENT REPORT
 const BROWSER_AUTOMATION_CORE = `- AUTOMATION_TRACKS:
   - Track 1 (Extension-free, default): control_chrome_cdp over 127.0.0.1:9222.
     Workflow: list_targets → snapshot(compact:true) → read_page/extract_links if reading content/emails → click/type by {"index":N} or {"selector":"..."} → wait_for if dynamic. Auto-unthrottles background tabs.
-  - Track 2 (Vision AI): control_chrome_vision over 127.0.0.1:9333.
-    Workflow: status → parse_screenshot → click_label/type_label by visible label text via local OmniParser (YOLO+Florence-2). Ideal for canvas/shadow-DOM/obfuscated UI.
+  - Track 2 (Vision AI): control_chrome_vision over 127.0.0.1:8095.
+    Workflow: status → parse_screenshot → click_label/type_label by visible label text via local UI-DETR-1. Ideal for canvas/shadow-DOM/obfuscated UI.
   - Track 3 (Extension Bridge): control_browser_tab over port 9223. Active when remote extension is connected (detect_ui, macros, storage).
 - STEALTH_AND_AUTO_WAIT: control_chrome_cdp click/type auto-wait for elements. Native input/change events dispatched for React/Vue reactivity.
 - DIAGNOSTICS: Inspect get_browser_console_logs, get_browser_network_logs, or evaluate on target tab on unexpected behavior.

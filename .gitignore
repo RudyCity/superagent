@@ -24,13 +24,12 @@ scratch/
 *remote-agent.json
 .superagent-r/
 
-# OmniParser model weights (downloaded by services/omniparser/setup.py, ~1.1GB)
-services/omniparser/weights/
-services/omniparser/__pycache__/
-services/omniparser/util/__pycache__/
-
 # Screenshots
 *screenshot_*.png
 cdp_screenshot_*.png
 screenshots/
+
+# Python cache
+__pycache__/
+*.pyc
 

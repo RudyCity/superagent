@@ -1,3 +1,11 @@
+## [1.13.29] - 2026-10-09
+### Refactored & Optimized
+- Focused UI-DETR-1 Vision Architecture & Removed OmniParser:
+  - Removed deprecated `services/omniparser/` (YOLOv8 + Florence-2, ~1.1GB footprint) in favor of the lightweight, fast `racineai/UI-DETR-1` RF-DETR model (~535MB).
+  - Refactored `control_chrome_vision` tool (`src/core/tools/chromeVisionTools.ts`) to route directly to the local UI-DETR-1 server (`scripts/vision_server.py` on port 8095) with auto-start daemon, CDP coordinate enrichment, and fuzzy label matching.
+  - Added compatibility shims for HuggingFace Transformers >= 4.47 in `scripts/vision_server.py` for seamless `BackboneMixin` initialization.
+  - Updated prompt definitions in `src/core/prompts.ts`, `src/core/config/base.ts`, and `src/core/tools/toolsets.ts` to reflect the unified UI-DETR-1 port 8095 architecture.
+
 ## [1.13.28] - 2026-10-09
 ### Added
 - Dynamic Operational Mode Switching (`switch_mode` Tool & System Prompt Guidance):

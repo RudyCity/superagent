@@ -42,7 +42,7 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 - **🌐 Chrome Process Tools (v1.5.146)**: Built-in tools to list all running Chrome windows across profiles (with per-window tab lists) and close a targeted Chrome profile safely.
 - **🤖 3-Tier Multi-Agent Mode *(Experimental)***: Master Agent orchestrating isolated Superagents across parallel Git worktrees (`--multi`).
 - **🌐 Extension-Free Chrome Automation (v1.10.0)**: Drive the real Chrome browser directly over the Chrome DevTools Protocol — no extension required (`control_chrome_cdp`: navigate, snapshot/click/type by element index, `wait_for`, screenshot, PDF, cookies). Requires Chrome started with `--remote-debugging-port=9222` (see below).
-- **👁️ Vision-Based UI Automation**: `control_chrome_vision` uses a local OmniParser AI (YOLO + Florence-2) to see the screen and click/type by element label — no DOM selectors needed. The AI service auto-starts on first use.
+- **👁️ Vision-Based UI Automation**: `control_chrome_vision` uses a local UI-DETR-1 AI (RF-DETR Medium ~535MB) to detect UI elements on screen and click/type by element label — no manual DOM selectors needed. The AI service auto-starts on demand (port 8095).
 
 ---
 
@@ -125,25 +125,17 @@ The `control_chrome_cdp` tool automates your real Chrome browser directly over t
 
 ---
 
-## 👁️ Vision-Based Chrome Automation (OmniParser)
+## 👁️ Vision-Based Chrome Automation (UI-DETR-1)
 
-The `control_chrome_vision` tool automates Chrome using a **local AI that sees the screen** — no DOM selectors needed. It takes a screenshot, detects UI elements (buttons, inputs, icons) with bounding boxes + labels, then clicks/types by label.
+The `control_chrome_vision` tool automates Chrome using a **local UI-DETR-1 AI that sees the screen** — no DOM selectors needed. It takes a screenshot, detects UI elements (buttons, inputs, links, text, headings) with bounding boxes + center coordinates, then clicks or types by label.
 
-**Zero manual setup for the AI service:** when you use `control_chrome_vision` for the first time, superagent **automatically starts** the OmniParser service locally (YOLO + Florence-2 on your GPU). You don't need to run anything manually.
+**Zero manual setup for the AI service:** when you use `control_chrome_vision` for the first time, superagent **automatically starts** the UI-DETR-1 service locally (`scripts/vision_server.py` on port 8095).
 
-**One-time setup (downloads ~1.1GB models):**
-
-```bash
-python services/omniparser/setup.py
-```
-
-Requires: Python 3.10+, internet connection. NVIDIA GPU recommended (works on CPU, slower).
-
-**Notes:**
-
-- The AI service listens on `127.0.0.1:9333` only — never exposed to the network.
-- The service is spawned as a background process and stays running; it shuts down when you close the terminal or kill it.
-- If auto-start fails, run manually: `python services/omniparser/omniparser_service.py`.
+**Model Details:**
+- **Model:** `racineai/UI-DETR-1` (~535MB, RF-DETR Medium).
+- **Classes:** `button`, `field`, `heading`, `iframe`, `image`, `label`, `link`, `text`.
+- **Automatic Caching:** Weights are downloaded once and cached locally via HuggingFace Hub.
+- **Port:** Listens on `127.0.0.1:8095` (localhost only).
 
 ---
 

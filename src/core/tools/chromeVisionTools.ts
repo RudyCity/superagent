@@ -1,30 +1,24 @@
 /**
- * Vision-based Chrome automation via local OmniParser.
+ * Vision-based Chrome automation via local UI-DETR-1.
  *
  * Workflow:
- *  1. `parse_screenshot` — capture tab screenshot via CDP, send to the local
- *     OmniParser service (http://127.0.0.1:9333), get back a numbered list of
- *     UI elements with bounding boxes + labels (vision-based, no DOM needed).
- *  2. `click_label` — fuzzy-match an element by its label, click its center
+ *  1. `parse_screenshot` — capture tab screenshot via CDP, send to local
+ *     UI-DETR-1 vision service (http://127.0.0.1:8095/detect), get back UI
+ *     elements with bounding boxes + center coordinates + labels (vision-based).
+ *  2. `click_label` — match an element by label or visible text, click its center
  *     via CDP Input.dispatchMouseEvent.
- *  3. `type_label` — click an element by label, then type text via
+ *  3. `type_label` — click an element by label/text, then type text via
  *     CDP Input.insertText.
  *
  * REQUIRES:
  *  - Chrome running with --remote-debugging-port=9222 (same as control_chrome_cdp).
- *  - OmniParser service: AUTO-STARTED by this tool on first use
- *    (spawns `python services/omniparser/omniparser_service.py` as a background
- *    process, listens on 127.0.0.1:9333).
- *  - FIRST TIME: model weights (~1.1GB) need a one-time download. If this tool
- *    returns OMNIPARSER_SETUP_NEEDED, the AGENT must ask the user via
- *    ask_question ("OmniParser needs ~1.1GB model download. Proceed?") and, on
- *    approval, run this tool's 'setup' command before retrying. Applies in ALL
- *    agent modes (CLI, chat, bridge).
+ *  - UI-DETR-1 vision service: auto-started on demand on port 8095
+ *    (spawns `python scripts/vision_server.py 8095` as a background process).
  */
 import { Tool } from "./types.js";
 import { get as httpGet, request as httpRequest } from "http";
 import { spawn } from "child_process";
-import { existsSync, readdirSync } from "fs";
+import { existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -37,11 +31,11 @@ function cdpPort(): number {
 function cdpTimeoutMs(): number {
   return Number(process.env.SUPERAGENT_CDP_TIMEOUT_MS) || 20000;
 }
-function omniHost(): string {
-  return process.env.SUPERAGENT_OMNI_HOST || "127.0.0.1";
+function visionHost(): string {
+  return process.env.SUPERAGENT_VISION_HOST || "127.0.0.1";
 }
-function omniPort(): number {
-  return Number(process.env.SUPERAGENT_OMNI_PORT) || 9333;
+function visionPort(): number {
+  return Number(process.env.SUPERAGENT_VISION_PORT) || 8095;
 }
 
 export const CDP_PORT_CLOSED_MSG =
@@ -49,22 +43,17 @@ export const CDP_PORT_CLOSED_MSG =
   "Close ALL Chrome windows and reopen Chrome from the taskbar shortcut " +
   "(or run scripts/chrome-debug.bat), then retry. This tool needs no extension.";
 
-export const OMNI_NOT_RUNNING_MSG =
-  "OmniParser service could not be started automatically. " +
-  "Start it manually with: python services/omniparser/omniparser_service.py " +
-  "(from the superagent repo root). It loads YOLO + Florence-2 locally. " +
-  "First-time setup: python services/omniparser/setup.py";
+export const VISION_NOT_RUNNING_MSG =
+  "UI-DETR-1 Vision service could not be started automatically. " +
+  "Start it manually with: python scripts/vision_server.py 8095 " +
+  "(from the superagent repo root).";
 
-export const OMNIPARSER_SETUP_NEEDED_MSG =
-  "OMNIPARSER_SETUP_NEEDED: OmniParser model weights (~1.1GB) are not installed yet. " +
-  "AGENT INSTRUCTION (applies in ALL modes - CLI, chat, bridge): use the ask_question tool to ask the user " +
-  "'OmniParser AI needs a one-time ~1.1GB model download to enable vision-based Chrome automation. Proceed with setup?'. " +
-  "If the user approves, run this tool with command='setup' and wait for it to finish, then retry the original command. " +
-  "If the user declines, explain that control_chrome_vision cannot be used without the models.";
+export const UI_DETR_SETUP_NEEDED_MSG =
+  "UI_DETR_SETUP_NEEDED: UI-DETR-1 model weights (~535MB) are not yet ready. " +
+  "Run this tool with command='setup' to download the weights.";
 
 /**
  * Find a usable Python interpreter. Tries `python`, `py`, `python3` in order.
- * Returns the command name, or null if none found.
  */
 async function findPython(): Promise<string | null> {
   const { execFile } = await import("child_process");
@@ -85,11 +74,9 @@ async function findPython(): Promise<string | null> {
 }
 
 /**
- * Locate the OmniParser service script, starting from this file's directory
- * and walking up to find the repo root (services/omniparser/).
+ * Locate scripts/vision_server.py starting from this directory and walking up.
  */
-function findServiceScript(): string | null {
-  // __dirname in CJS, or import.meta.dirname in ESM
+function findVisionServerScript(): string | null {
   let here: string;
   try {
     // @ts-ignore - ESM context
@@ -99,133 +86,67 @@ function findServiceScript(): string | null {
   }
   let dir = here;
   for (let i = 0; i < 6; i++) {
-    const candidate = join(dir, "services", "omniparser", "omniparser_service.py");
+    const candidate = join(dir, "scripts", "vision_server.py");
     if (existsSync(candidate)) return candidate;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-  // Fallback: env override or cwd-relative
-  const envPath = process.env.SUPERAGENT_OMNI_SERVICE;
-  if (envPath && existsSync(envPath)) return envPath;
-  const cwdCandidate = join(process.cwd(), "services", "omniparser", "omniparser_service.py");
+  const cwdCandidate = join(process.cwd(), "scripts", "vision_server.py");
   if (existsSync(cwdCandidate)) return cwdCandidate;
   return null;
 }
 
-/** Locate the services/omniparser directory (walk up from this file). */
-function findOmniDir(): string | null {
-  const script = findServiceScript();
-  if (script) return dirname(script);
-  let here: string;
+/** Quick check: is the UI-DETR-1 service responding on /health? */
+async function visionHealth(): Promise<boolean> {
   try {
-    // @ts-ignore - ESM context
-    here = typeof __dirname !== "undefined" ? __dirname : dirname(fileURLToPath(import.meta.url));
-  } catch {
-    here = process.cwd();
-  }
-  let dir = here;
-  for (let i = 0; i < 6; i++) {
-    const candidate = join(dir, "services", "omniparser");
-    if (existsSync(candidate)) return candidate;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
-
-/** True if OmniParser model weights are already downloaded (setup done). */
-function weightsReady(): boolean {
-  const omniDir = findOmniDir();
-  if (!omniDir) return false;
-  // Marker file written by setup.py on success
-  if (existsSync(join(omniDir, ".setup_done"))) return true;
-  // Fallback: actual weight FILES must exist (an empty subdir does not count)
-  try {
-    const entries = readdirSync(join(omniDir, "weights"), { recursive: true }) as string[];
-    return entries.some((e) => /\.(pt|bin|safetensors)$/i.test(e));
+    const res: any = await httpGetJson(visionHost(), visionPort(), "/health");
+    return res && (res.status === "healthy" || typeof res.status === "string");
   } catch {
     return false;
   }
 }
 
-/** Locate services/omniparser/setup.py */
-function findSetupScript(): string | null {
-  const omniDir = findOmniDir();
-  if (!omniDir) return null;
-  const candidate = join(omniDir, "setup.py");
-  return existsSync(candidate) ? candidate : null;
-}
+let visionStartInFlight: Promise<void> | null = null;
+async function ensureVisionRunning(): Promise<void> {
+  if (await visionHealth()) return;
 
-/** Quick check: is the OmniParser service responding on /health? */
-async function omniHealth(): Promise<boolean> {
-  try {
-    const res: any = await httpGetJson(omniHost(), omniPort(), "/health");
-    return res && (res.status === "ready" || typeof res.status === "string");
-  } catch {
-    return false;
+  if (visionStartInFlight) {
+    await visionStartInFlight;
+    if (await visionHealth()) return;
+    throw new Error(VISION_NOT_RUNNING_MSG);
   }
-}
 
-/**
- * Ensure the OmniParser service is running. If port 9333 refuses connections,
- * spawn `python services/omniparser/omniparser_service.py` as a detached
- * background process and poll /health until ready (up to 90s for first
- * model load). Throws a clear error if the service cannot be started.
- */
-let omniStartInFlight: Promise<void> | null = null;
-async function ensureOmniRunning(): Promise<void> {
-  // Never auto-download ~1.1GB of models without the user's approval.
-  // The agent must ask via ask_question and run the 'setup' command.
-  if (!weightsReady()) {
-    throw new Error(OMNIPARSER_SETUP_NEEDED_MSG);
-  }
-  if (await omniHealth()) return;
-  // De-dupe concurrent start attempts
-  if (omniStartInFlight) {
-    await omniStartInFlight;
-    if (await omniHealth()) return;
-    throw new Error(OMNI_NOT_RUNNING_MSG);
-  }
-  omniStartInFlight = (async () => {
-    const script = findServiceScript();
+  visionStartInFlight = (async () => {
+    const script = findVisionServerScript();
     if (!script) {
-      throw new Error(
-        "OmniParser service script not found (services/omniparser/omniparser_service.py). " +
-        "Run: python services/omniparser/setup.py (first time) from the superagent repo root."
-      );
+      throw new Error("Vision server script not found (scripts/vision_server.py).");
     }
     const python = await findPython();
     if (!python) {
-      throw new Error(
-        "No Python interpreter found (tried python, py, python3). " +
-        "Install Python 3.10+ to use control_chrome_vision."
-      );
+      throw new Error("No Python interpreter found (tried python, py, python3). Install Python 3.10+.");
     }
-    // Spawn detached so it survives after this call returns
-    const child = spawn(python, [script], {
+
+    const child = spawn(python, [script, String(visionPort())], {
       detached: true,
       stdio: "ignore",
-      cwd: dirname(script),
+      cwd: dirname(dirname(script)),
       windowsHide: true,
     });
     child.unref();
-    // Poll /health until ready (model load takes 10-60s first time)
-    const deadline = Date.now() + 90000;
+
+    const deadline = Date.now() + 60000;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 2000));
-      if (await omniHealth()) return;
+      if (await visionHealth()) return;
     }
-    throw new Error(
-      "OmniParser service started but did not become ready within 90s. " +
-      "Check that models are downloaded: python services/omniparser/setup.py"
-    );
+    throw new Error("UI-DETR-1 Vision service started but did not become ready within 60s.");
   })();
+
   try {
-    await omniStartInFlight;
+    await visionStartInFlight;
   } finally {
-    omniStartInFlight = null;
+    visionStartInFlight = null;
   }
 }
 
@@ -239,19 +160,14 @@ interface CdpTarget {
 
 interface VisionElement {
   id: number;
-  x: number;
-  y: number;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  width: number;
-  height: number;
   label: string;
-  type: string;
+  score: number;
+  box: [number, number, number, number];
+  center: [number, number];
+  text?: string;
+  domSelector?: string;
 }
 
-/** Minimal HTTP GET returning parsed JSON. Rejects with CDP_PORT_CLOSED_MSG on ECONNREFUSED. */
 function httpGetJson(host: string, port: number, path: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const req = httpGet(
@@ -274,7 +190,7 @@ function httpGetJson(host: string, port: number, path: string): Promise<any> {
     });
     req.on("error", (err: any) => {
       if (err && (err.code === "ECONNREFUSED" || err.code === "ECONNRESET")) {
-        reject(new Error(port === cdpPort() ? CDP_PORT_CLOSED_MSG : OMNI_NOT_RUNNING_MSG));
+        reject(new Error(port === cdpPort() ? CDP_PORT_CLOSED_MSG : VISION_NOT_RUNNING_MSG));
       } else {
         reject(err);
       }
@@ -282,7 +198,6 @@ function httpGetJson(host: string, port: number, path: string): Promise<any> {
   });
 }
 
-/** POST JSON, return parsed JSON response. */
 function httpPostJson(host: string, port: number, path: string, payload: any): Promise<any> {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(payload);
@@ -300,24 +215,24 @@ function httpPostJson(host: string, port: number, path: string, payload: any): P
         res.on("data", (c) => (data += c));
         res.on("end", () => {
           if (res.statusCode !== 200) {
-            reject(new Error(`OmniParser service returned HTTP ${res.statusCode}: ${data.substring(0, 200)}`));
+            reject(new Error(`Vision service returned HTTP ${res.statusCode}: ${data.substring(0, 200)}`));
             return;
           }
           try {
             resolve(JSON.parse(data));
           } catch (e: any) {
-            reject(new Error(`Invalid JSON from OmniParser service: ${e.message}`));
+            reject(new Error(`Invalid JSON from Vision service: ${e.message}`));
           }
         });
       }
     );
     req.on("timeout", () => {
       req.destroy();
-      reject(new Error("Timed out waiting for OmniParser service (model inference can take 10-30s on first run)."));
+      reject(new Error("Timed out waiting for UI-DETR-1 Vision service."));
     });
     req.on("error", (err: any) => {
       if (err && (err.code === "ECONNREFUSED" || err.code === "ECONNRESET")) {
-        reject(new Error(OMNI_NOT_RUNNING_MSG));
+        reject(new Error(VISION_NOT_RUNNING_MSG));
       } else {
         reject(err);
       }
@@ -344,7 +259,6 @@ async function pickTarget(targetId?: string): Promise<CdpTarget> {
   return pages[0];
 }
 
-/** Send one CDP command over a fresh WebSocket, return the result. */
 async function cdpSend(wsUrl: string, method: string, params: Record<string, unknown> = {}): Promise<any> {
   const { WebSocket } = await import("ws");
   return new Promise((resolve, reject) => {
@@ -391,96 +305,148 @@ async function typeText(target: CdpTarget, text: string): Promise<void> {
   await cdpSend(target.webSocketDebuggerUrl, "Input.insertText", { text });
 }
 
-/** Fuzzy match: all words of query appear in label (case-insensitive). */
-function matchLabel(label: string, query: string): boolean {
-  const l = (label || "").toLowerCase();
+async function inspectElementAtPoint(target: CdpTarget, x: number, y: number): Promise<{ text: string; selector?: string }> {
+  try {
+    const expr = `(() => {
+      const el = document.elementFromPoint(${x}, ${y});
+      if (!el) return null;
+      const text = (el.innerText || el.value || el.getAttribute('aria-label') || el.title || el.placeholder || '').trim().slice(0, 50);
+      let sel = el.id ? '#' + el.id : el.tagName.toLowerCase();
+      if (el.className && typeof el.className === 'string') {
+        const cls = el.className.trim().split(/\\s+/)[0];
+        if (cls) sel += '.' + cls;
+      }
+      return { text, selector: sel };
+    })()`;
+    const res: any = await cdpSend(target.webSocketDebuggerUrl, "Runtime.evaluate", {
+      expression: expr,
+      returnByValue: true,
+    });
+    return res.result?.value || { text: "" };
+  } catch {
+    return { text: "" };
+  }
+}
+
+function matchLabel(candidate: string, query: string): boolean {
+  const l = (candidate || "").toLowerCase();
   return query.toLowerCase().split(/\s+/).filter(Boolean).every((w) => l.includes(w));
 }
 
 function formatElements(elements: VisionElement[]): string {
-  if (!elements.length) return "No UI elements detected.";
+  if (!elements.length) return "No UI elements detected by UI-DETR-1.";
   const lines = elements.map((e) => {
-    const lbl = e.label ? ` "${e.label}"` : "";
-    return `[${e.id}] (${e.x},${e.y}) ${e.type}${lbl} [${e.width}x${e.height}]`;
+    const textHint = e.text ? ` text="${e.text}"` : "";
+    const selHint = e.domSelector ? ` (${e.domSelector})` : "";
+    const [xmin, ymin, xmax, ymax] = e.box;
+    const w = xmax - xmin;
+    const h = ymax - ymin;
+    return `[${e.id}] center:(${e.center[0]},${e.center[1]}) ${e.label}${textHint}${selHint} [${w}x${h}] score:${Math.round(e.score * 100)}%`;
   });
-  return `Detected ${elements.length} UI element(s) (vision-based):\n` + lines.join("\n");
+  return `Detected ${elements.length} UI element(s) via UI-DETR-1:\n` + lines.join("\n");
 }
 
-/**
- * One-time setup: download OmniParser model weights (~1.1GB) + install deps.
- * ONLY call this after the user approves via ask_question.
- */
-async function cmdSetup(): Promise<string> {
-  const script = findSetupScript();
-  if (!script) {
-    throw new Error("OmniParser setup script not found (services/omniparser/setup.py).");
-  }
-  const python = await findPython();
-  if (!python) {
-    throw new Error("No Python interpreter found (tried python, py, python3). Install Python 3.10+ first.");
-  }
-  const { execFile } = await import("child_process");
-  const output: string = await new Promise((resolve, reject) => {
-    execFile(
-      python,
-      [script],
-      { timeout: 30 * 60 * 1000, maxBuffer: 10 * 1024 * 1024, cwd: dirname(script), windowsHide: true },
-      (err: any, stdout: string, stderr: string) => {
-        const tail = String(stdout).slice(-2000) + "\n" + String(stderr).slice(-2000);
-        if (err) reject(new Error(`OmniParser setup failed: ${err.message}\n${tail}`));
-        else resolve(tail);
-      }
-    );
+async function detectElements(target: CdpTarget, threshold = 0.35): Promise<VisionElement[]> {
+  await ensureVisionRunning();
+  const pngBase64 = await captureScreenshot(target);
+  const res: any = await httpPostJson(visionHost(), visionPort(), "/detect", {
+    image_base64: pngBase64,
+    threshold,
   });
-  if (!weightsReady()) {
-    throw new Error("OmniParser setup finished but weights are still missing. Output:\n" + output);
+
+  const rawElements = res?.elements || [];
+  const elements: VisionElement[] = [];
+
+  for (let i = 0; i < rawElements.length; i++) {
+    const raw = rawElements[i];
+    const [cx, cy] = raw.center || [0, 0];
+    const dom = await inspectElementAtPoint(target, cx, cy);
+    elements.push({
+      id: i + 1,
+      label: raw.label,
+      score: raw.score,
+      box: raw.box,
+      center: raw.center,
+      text: dom.text,
+      domSelector: dom.selector,
+    });
   }
-  return "OmniParser setup complete - model weights downloaded. You can now use parse_screenshot / click_label / type_label.";
+
+  return elements;
 }
 
 async function cmdParseScreenshot(payload: any): Promise<string> {
   const target = await pickTarget(payload?.targetId);
-  // Auto-start the OmniParser service if not running
-  await ensureOmniRunning();
-  const pngBase64 = await captureScreenshot(target);
-  const res: any = await httpPostJson(omniHost(), omniPort(), "/parse", { image_base64: pngBase64 });
-  const elements: VisionElement[] = res.elements || [];
+  const threshold = typeof payload?.threshold === "number" ? payload.threshold : 0.35;
+  const elements = await detectElements(target, threshold);
   return formatElements(elements);
 }
 
 async function findByLabel(payload: any): Promise<{ target: CdpTarget; el: VisionElement }> {
-  const label = payload?.label;
-  if (!label || typeof label !== "string") throw new Error("click_label/type_label need payload {\"label\": \"...\"}.");
-  const target = await pickTarget(payload?.targetId);
-  // Auto-start the OmniParser service if not running
-  await ensureOmniRunning();
-  const pngBase64 = await captureScreenshot(target);
-  const res: any = await httpPostJson(omniHost(), omniPort(), "/parse", { image_base64: pngBase64 });
-  const elements: VisionElement[] = res.elements || [];
-  const matches = elements.filter((e) => matchLabel(e.label, label));
-  if (!matches.length) {
-    const available = elements.map((e) => e.label).filter(Boolean).slice(0, 15).join("; ");
-    throw new Error(`No element matches label "${label}". Available labels: ${available || "(none)"}`);
+  const query = payload?.label;
+  if (!query || typeof query !== "string") {
+    throw new Error("click_label/type_label need payload {\"label\": \"...\"}.");
   }
-  // Prefer smallest matching element (most specific)
-  matches.sort((a, b) => a.width * a.height - b.width * b.height);
+  const target = await pickTarget(payload?.targetId);
+  const elements = await detectElements(target, 0.25);
+
+  const matches = elements.filter(
+    (e) => matchLabel(e.label, query) || (e.text && matchLabel(e.text, query))
+  );
+
+  if (!matches.length) {
+    const available = elements
+      .map((e) => (e.text ? `${e.label}("${e.text}")` : e.label))
+      .slice(0, 20)
+      .join(", ");
+    throw new Error(`No UI-DETR-1 element matches label/text "${query}". Available: ${available || "(none)"}`);
+  }
+
+  // Sort by highest confidence score
+  matches.sort((a, b) => b.score - a.score);
   return { target, el: matches[0] };
 }
 
 async function cmdClickLabel(payload: any): Promise<string> {
   const { target, el } = await findByLabel(payload);
-  await clickAt(target, el.x, el.y);
-  return `Clicked "${el.label || el.type}" at (${el.x}, ${el.y}).`;
+  const [cx, cy] = el.center;
+  await clickAt(target, cx, cy);
+  const textHint = el.text ? ` ("${el.text}")` : "";
+  return `Clicked UI-DETR element ${el.label}${textHint} at center (${cx}, ${cy}).`;
 }
 
 async function cmdTypeLabel(payload: any): Promise<string> {
   const text = payload?.text;
-  if (typeof text !== "string") throw new Error("type_label need payload {\"label\": \"...\", \"text\": \"...\"}.");
+  if (typeof text !== "string") {
+    throw new Error("type_label need payload {\"label\": \"...\", \"text\": \"...\"}.");
+  }
   const { target, el } = await findByLabel(payload);
-  await clickAt(target, el.x, el.y);
-  await new Promise((r) => setTimeout(r, 300));
+  const [cx, cy] = el.center;
+  await clickAt(target, cx, cy);
+  await new Promise((r) => setTimeout(r, 200));
   await typeText(target, text);
-  return `Clicked "${el.label || el.type}" at (${el.x}, ${el.y}) and typed ${text.length} char(s).`;
+  const labelHint = el.text ? ` ("${el.text}")` : "";
+  return `Clicked UI-DETR element ${el.label}${labelHint} at center (${cx}, ${cy}) and typed ${text.length} char(s).`;
+}
+
+async function cmdSetup(): Promise<string> {
+  const python = await findPython();
+  if (!python) {
+    throw new Error("No Python interpreter found. Install Python 3.10+ first.");
+  }
+  const { execFile } = await import("child_process");
+  const code = `
+from huggingface_hub import hf_hub_download
+print("Verifying/downloading racineai/UI-DETR-1 model.pth...")
+path = hf_hub_download(repo_id="racineai/UI-DETR-1", filename="model.pth")
+print(f"UI-DETR-1 model cached at: {path}")
+`;
+  return new Promise((resolve, reject) => {
+    execFile(python, ["-c", code], { timeout: 10 * 60 * 1000 }, (err: any, stdout: string, stderr: string) => {
+      if (err) reject(new Error(`UI-DETR setup failed: ${err.message}\n${stderr}`));
+      else resolve(`UI-DETR-1 weights verified and ready.\n${stdout.trim()}`);
+    });
+  });
 }
 
 async function cmdStatus(): Promise<string> {
@@ -491,14 +457,13 @@ async function cmdStatus(): Promise<string> {
   } catch {
     cdpOk = false;
   }
-  const weights = weightsReady();
-  const serviceUp = await omniHealth();
+  const serviceUp = await visionHealth();
   const pythonCmd = await findPython();
   const lines = [
-    "OmniParser Vision Status:",
+    "UI-DETR-1 Vision Status:",
     `- Chrome CDP (port ${cdpPort()}): ${cdpOk ? "connected" : "not reachable"}`,
-    `- Model weights (~1.1GB): ${weights ? "installed" : "missing (run command='setup' to download)"}`,
-    `- Service daemon (port ${omniPort()}): ${serviceUp ? "running" : "stopped (auto-starts on demand)"}`,
+    `- Vision daemon (port ${visionPort()}): ${serviceUp ? "running" : "stopped (auto-starts on demand)"}`,
+    `- Model: racineai/UI-DETR-1 (~535MB RF-DETR Medium)`,
     `- Python runtime: ${pythonCmd || "not found in PATH"}`,
   ];
   return lines.join("\n");
@@ -507,16 +472,11 @@ async function cmdStatus(): Promise<string> {
 export const controlChromeVisionTool: Tool = {
   name: "control_chrome_vision",
   description:
-    "Vision-based Chrome automation using a local OmniParser AI (no DOM selectors needed). " +
-    "Takes a screenshot, detects UI elements (buttons, inputs, icons) with bounding boxes + labels via a local GPU model, then clicks/types by label. " +
-    "REQUIRES: (1) Chrome with --remote-debugging-port=9222 (same as control_chrome_cdp). " +
-    "(2) OmniParser AI service: started AUTOMATICALLY by this tool when needed (local GPU, 127.0.0.1:9333). " +
-    "FIRST TIME (applies in ALL agent modes - CLI, chat, bridge): model weights (~1.1GB) need a one-time download. " +
-    "If this tool returns OMNIPARSER_SETUP_NEEDED, use the ask_question tool to ask the user " +
-    "'OmniParser AI needs a one-time ~1.1GB model download to enable vision-based Chrome automation. Proceed with setup?'. " +
-    "If the user approves, run this tool with command='setup' and wait for it to finish, then retry the original command. " +
-    "Commands: status (check readiness of CDP, models, service), parse_screenshot (list detected elements with [id] (x,y) type \"label\"), click_label (payload {\"label\": \"Post\"}), type_label (payload {\"label\": \"Title\", \"text\": \"...\"}), setup (one-time model download - only after user approves via ask_question). " +
-    "Labels are fuzzy-matched (all query words must appear in the element label).",
+    "Vision-based Chrome automation using local UI-DETR-1 AI (no manual DOM selectors needed). " +
+    "Takes a screenshot, detects UI elements (button, field, link, text, heading, image) with bounding boxes + center coordinates, then clicks or types by label. " +
+    "REQUIRES: Chrome with --remote-debugging-port=9222 (same as control_chrome_cdp). " +
+    "UI-DETR-1 Vision service is started AUTOMATICALLY on demand on port 8095. " +
+    "Commands: status (check CDP and vision daemon readiness), parse_screenshot (list detected elements), click_label (payload {\"label\": \"Submit\"}), type_label (payload {\"label\": \"Search\", \"text\": \"...\"}), setup (verify model weights).",
   parameters: {
     type: "object",
     properties: {
@@ -528,10 +488,10 @@ export const controlChromeVisionTool: Tool = {
       payload: {
         type: "string",
         description:
-          "JSON string. status: no payload needed. parse_screenshot: {\"targetId\": \"...\"} (optional). " +
-          "click_label: {\"label\": \"Post\", \"targetId\": \"...\" (optional)}. " +
-          "type_label: {\"label\": \"Title\", \"text\": \"hello\", \"targetId\": \"...\" (optional)}. " +
-          "setup: no payload needed (one-time model download, needs user approval first).",
+          "JSON string. status: none. parse_screenshot: {\"threshold\": 0.35, \"targetId\": \"...\"} (optional). " +
+          "click_label: {\"label\": \"Submit\", \"targetId\": \"...\" (optional)}. " +
+          "type_label: {\"label\": \"Username\", \"text\": \"myname\", \"targetId\": \"...\" (optional)}. " +
+          "setup: none.",
       },
     },
     required: ["command"],

@@ -268,7 +268,7 @@ export const superagentToolset: Tool[] = [
   cliBridgeTool,           // delegate tasks to external AI CLIs (codex/claude/agy)
   // ─── Chrome Automation & Browser Control (Extension-Free) ───
   controlChromeCdpTool,    // extension-free native Chrome DevTools Protocol automation (port 9222)
-  controlChromeVisionTool, // local OmniParser vision AI automation (port 9333)
+  controlChromeVisionTool, // local UI-DETR-1 vision AI automation (port 8095)
   listRunningChromeTool,   // inspect running Chrome windows, tabs, and profiles
   closeChromeProfileTool,  // close target Chrome profile window
   listChromeProfilesTool,  // list available Chrome user profiles
