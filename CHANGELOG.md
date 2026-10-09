@@ -1,4 +1,7 @@
 ## [1.13.1] - 2026-10-09
+### Added
+- Added comprehensive Superagent optimization plan in `docs/plans/2026-10-09-superagent-optimization-plan.md` covering loop-turn wait patterns, context pruning, tool batching, and dual-track Chrome automation.
+
 ### Changed
 - Updated system prompt rules in `src/core/prompts.ts` (`BROWSER_CONTROL_RULE`, `BROWSER_AUTOMATION_CORE`, and `chrome-agent`) following Concepts A, B, and C to prioritize native Chrome CDP automation (port 9222) and OmniParser vision AI (port 9333).
 - Aligned prompt guidance test assertions in `tests/promptToolGuidance.test.ts` with minified prompt and base configuration strings.
