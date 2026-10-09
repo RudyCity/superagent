@@ -473,5 +473,45 @@ describe("Provider Credential Resolution Fixes", () => {
       const modelInstance = getModelInstanceForString("zyloo-anthropic@claude-sonnet-4-6");
       expect(modelInstance.provider).toBe("anthropic.messages");
     });
+
+    it("should preserve custom profile with empty apiKey and not hijack baseUrl from other custom profiles", async () => {
+      // Add another custom profile with a valid key (simulating local proxy/server)
+      addProvider({
+        id: "other-custom",
+        name: "Other Custom",
+        provider: "custom",
+        apiKey: "sk-other-custom-key",
+        baseUrl: "http://localhost:8092",
+      });
+
+      // Add kilo-direct with empty apiKey
+      addProvider({
+        id: "kilo-direct-test",
+        name: "kilo-direct-test",
+        provider: "custom",
+        apiKey: "",
+        baseUrl: "https://api.kilo.ai/api/gateway",
+      });
+
+      clearModelConfigCache();
+
+      saveModelPreset("kilo-direct-test-preset", "Kilo Direct Test Preset", {
+        MODEL_SINGLE_SUPERAGENT: "kilo-direct-test@stepfun/step-5-preview-free",
+      }, "single");
+
+      applyModelPreset("kilo-direct-test-preset", "single", true);
+      clearModelConfigCache();
+
+      const { getModelConnectionDetailsForTier } = await import("../src/core/config/models.js");
+      const details = getModelConnectionDetailsForTier("superagent", 0, undefined, true);
+
+      expect(details.profileId).toBe("kilo-direct-test");
+      expect(details.baseUrl).toBe("https://api.kilo.ai/api/gateway");
+      expect(details.apiKey).toBe("");
+
+      const instance = getModelInstanceForString("kilo-direct-test@stepfun/step-5-preview-free");
+      expect(instance).toBeDefined();
+      expect(instance.modelId).toBe("stepfun/step-5-preview-free");
+    });
   });
 });

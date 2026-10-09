@@ -102,7 +102,7 @@ export async function handlePresetStep(
 
       let updatedList = `\n\nUpdated Models:\n`;
       if (isSingle) {
-        const singleModel = getEffectiveMasterModel("single") || getDefaultModel();
+        const singleModel = getTierModelWithProvider("single", "superagent") || getEffectiveMasterModel("single") || getDefaultModel();
         const subagentModel = getTierModelWithProvider("single", "subagent") || "(use default)";
         updatedList += `  Single Agent Model: ${singleModel}\n` +
           `  Subagent (depth 2): ${subagentModel}`;
@@ -239,7 +239,7 @@ export async function handlePresetStep(
 
         let updatedList = `\n\nUpdated Models:\n`;
         if (isSingle) {
-          const singleModel = getEffectiveMasterModel("single") || getDefaultModel();
+          const singleModel = getTierModelWithProvider("single", "superagent") || getEffectiveMasterModel("single") || getDefaultModel();
           const subagentModel = getTierModelWithProvider("single", "subagent") || "(use default)";
           updatedList += `  Single Agent Model: ${singleModel}\n` +
             `  Subagent (depth 2): ${subagentModel}`;

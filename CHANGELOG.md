@@ -1,3 +1,12 @@
+## [1.13.18] - 2026-10-09
+### Fixed
+- Custom Endpoint and Free Gateway Resolution Without API Key: Fixed an issue where switching to model presets pointing to custom providers with empty API keys (e.g. Kilo Direct or local servers) errored with `Cannot connect to API:` or `Invalid authentication token`. Resolved by:
+  - Preventing `getModelConnectionDetailsForTier` and `getConfig` from discarding self-contained endpoints (`provider: "custom"`, `ollama`, `lmstudio`, or explicit custom `baseUrl`) when `apiKey` is empty.
+  - Stopping `getModelInstanceForString` from scanning other arbitrary custom profiles and hijacking their `baseUrl` (such as pointing to dead local ports).
+  - Removing false-positive missing key errors for free models (`free` in model identifier).
+  - Stripping the `Authorization` header when sending requests with empty API keys to endpoints that support unauthenticated or anonymous access.
+  - Updating `useModelPresets` and `mpCommand` to accurately format the active provider prefix in single-agent model displays.
+
 ## [1.13.17] - 2026-10-09
 ### Fixed
 - Terminal Retry Countdown Stacking: Applied `resolveCarriageReturns` in `wrapMarkdownToLines`, `wrapChatLineToLines`, and `wrapNestedChild` inside `src/components/chat-area.tsx`, as well as `wrapThinkingToLines` inside `src/components/chat-thinking.tsx`. Previously, `\r` carriage returns sent by countdown tickers (e.g. `\rRetrying in Xs...`) were stripped via `.replace(/\r/g, "")`, causing successive countdown intervals to concatenate horizontally across lines rather than overwriting in-place.

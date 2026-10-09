@@ -335,8 +335,9 @@ export function getModelInstanceForString(modelStr: string) {
         modelName = rest;
         const typeLower = (matchedProvider.provider || "").toLowerCase();
 
-        // Fallback: if matched profile has empty apiKey, scan for other profiles of same provider type
-        if (!apiKey || apiKey.trim() === "") {
+        // Fallback: if matched profile has empty apiKey, scan for other profiles of same provider type.
+        // DO NOT scan for 'custom' or local endpoints because each profile has its own unique baseUrl!
+        if ((!apiKey || apiKey.trim() === "") && typeLower !== "custom" && typeLower !== "ollama" && typeLower !== "lmstudio" && (!baseUrl || baseUrl.trim() === "")) {
           const fallbackProfile = modelConfig.providers.find(
             (p) => p.id !== matchedProvider.id && (p.provider || "").toLowerCase() === typeLower && p.apiKey && p.apiKey.trim() !== ""
           );
@@ -489,11 +490,11 @@ export function getModelInstanceForString(modelStr: string) {
     baseUrl = ensureProtocol(baseUrl);
   }
 
-  const isCloud = !baseUrl
+  const isFreeModel = modelName.toLowerCase().includes("free");
+  const isCloud = (!baseUrl
     || baseUrl.includes("openrouter.ai")
     || baseUrl.includes("openai.com")
     || baseUrl.includes("anthropic.com")
-    || baseUrl.includes("opencode.ai")
     || baseUrl.includes("api.deepseek.com")
     || baseUrl.includes("api.x.ai")
     || baseUrl.includes("api.mistral.ai")
@@ -507,7 +508,7 @@ export function getModelInstanceForString(modelStr: string) {
     || baseUrl.includes("tokenrouter.me")
     || baseUrl.includes("commandcode.ai")
     || baseUrl.includes("zenmux.ai")
-    || baseUrl.includes("kilo.ai");
+    || baseUrl.includes("kilo.ai")) && !isFreeModel;
   const isMissingKey = !apiKey || apiKey.trim() === "" || apiKey === "dummy";
   const isTest = (process.env.VITEST || process.env.NODE_ENV === "test") && !process.env.SUPERAGENT_FORCE_VAL_CHECK;
   if (!isTest && isCloud && isMissingKey) {
@@ -610,8 +611,9 @@ export function getModelInstanceForString(modelStr: string) {
     return oa(modelName);
   }
 
+  const hasKey = !!(apiKey && apiKey.trim() !== "" && apiKey !== "no-key-required" && apiKey !== "dummy");
   const openai = createOpenAI({
-    apiKey: apiKey && apiKey.trim() !== "" ? apiKey : "no-key-required",
+    apiKey: hasKey ? apiKey : "no-key-required",
     ...(baseUrl && { baseURL: baseUrl }),
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Superagent/1.0",
@@ -619,6 +621,16 @@ export function getModelInstanceForString(modelStr: string) {
       "X-Title": "SuperAgent CLI",
     },
     fetch: async (url, options) => {
+      // If no valid apiKey was configured, do not send Authorization header (e.g. for free endpoints or local servers)
+      if (!hasKey && options && options.headers) {
+        if (options.headers instanceof Headers) {
+          options.headers.delete("authorization");
+        } else if (typeof options.headers === "object") {
+          delete (options.headers as any)["authorization"];
+          delete (options.headers as any)["Authorization"];
+        }
+      }
+
       // Strip strict mode from tools if calling a custom base URL (e.g. OpenRouter, Nexotao)
       // because custom/proxy endpoints often reject "strict: true" for non-supported models.
       if (options && options.body && typeof options.body === "string" && baseUrl) {
@@ -911,10 +923,23 @@ export function getModelConnectionDetailsForTier(
     );
   }
 
-  // Fallback 2: any provider with a non-empty apiKey
-  if (!providerProfile || !providerProfile.apiKey || providerProfile.apiKey.trim() === "") {
+  // Fallback 2: if matched profile requires a key but has none, look for same provider type with key
+  if (providerProfile && (!providerProfile.apiKey || providerProfile.apiKey.trim() === "")) {
+    const isSelfContained = providerProfile.provider === "custom" || providerProfile.provider === "ollama" || providerProfile.provider === "lmstudio" || !!(providerProfile.baseUrl && providerProfile.baseUrl.trim() !== "");
+    if (!isSelfContained) {
+      const sameType = config.providers.find(
+        (p) => p.id !== providerProfile?.id && p.provider === providerProfile?.provider && p.apiKey && p.apiKey.trim() !== ""
+      );
+      if (sameType) {
+        providerProfile = sameType;
+      }
+    }
+  }
+
+  // Fallback 3: if still no providerProfile found at all
+  if (!providerProfile) {
     const anyWithKey = config.providers.find(
-      (p) => p.apiKey && p.apiKey.trim() !== ""
+      (p) => (p.apiKey && p.apiKey.trim() !== "") || (p.baseUrl && p.baseUrl.trim() !== "" && !p.id.startsWith("default-"))
     );
     if (anyWithKey) {
       providerProfile = anyWithKey;

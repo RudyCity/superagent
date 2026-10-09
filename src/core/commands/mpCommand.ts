@@ -14,7 +14,7 @@ function buildUpdatedModelsList(mode: PresetMode): string {
   const isSingle = mode === "single";
   let updatedList = "";
   if (isSingle) {
-    const singleModel = getEffectiveMasterModel("single") || getDefaultModel();
+    const singleModel = getTierModelWithProvider("single", "superagent") || getEffectiveMasterModel("single") || getDefaultModel();
     const subagentModel = getTierModelWithProvider("single", "subagent") || "(use default)";
     updatedList += `  Single Agent Model: ${singleModel}\n` +
       `  Subagent (depth 2): ${subagentModel}`;

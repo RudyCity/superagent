@@ -44,7 +44,9 @@ export function getConfiguredProviders(): ConfiguredProvider[] {
   const insertionIndex = new Map(providers.map((p, i) => [p.id, i]));
   list.sort((a, b) => {
     if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
-    if (a.hasValidKey !== b.hasValidKey) return a.hasValidKey ? -1 : 1;
+    const aUsable = a.hasValidKey || !!(a.baseUrl && a.baseUrl.trim() !== "");
+    const bUsable = b.hasValidKey || !!(b.baseUrl && b.baseUrl.trim() !== "");
+    if (aUsable !== bUsable) return aUsable ? -1 : 1;
     return (insertionIndex.get(a.id) ?? 0) - (insertionIndex.get(b.id) ?? 0);
   });
 
@@ -114,12 +116,13 @@ export function getProviderOptionsList(list: ConfiguredProvider[]): string[] {
  */
 export function getActiveProviderName(): string | null {
   const list = getConfiguredProviders();
-  // Prefer the explicitly-active provider IF it has a valid key.
-  const active = list.find((p) => p.isActive && p.hasValidKey);
+  const isUsable = (p: ConfiguredProvider) => p.hasValidKey || !!(p.baseUrl && p.baseUrl.trim() !== "");
+  // Prefer the explicitly-active provider IF it is usable (valid key or custom baseUrl).
+  const active = list.find((p) => p.isActive && isUsable(p));
   if (active) return active.type;
-  // Fall back to the first provider with a valid key (more informative than the previous hardcoded "openai").
-  const firstValid = list.find((p) => p.hasValidKey);
-  return firstValid ? firstValid.type : null;
+  // Fall back to the first provider with a valid key or custom baseUrl.
+  const firstUsable = list.find(isUsable);
+  return firstUsable ? firstUsable.type : (list.find((p) => p.isActive)?.type ?? null);
 }
 
 /**
