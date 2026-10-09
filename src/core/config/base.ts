@@ -179,11 +179,13 @@ ${shellPrompt}
 - COMMAND_LOGS: foreground commands (run_command, bash) stream to ~/.superagent-r/logs/latest-command.log + commands/cmd_*.log. Status tools reflect live paths.
 - TRUNCATED_OUTPUT: on "[Command output truncated. Full log saved to: <path>]", DO NOT re-run blindly. Read <path> via read (offset/limit) or ripgrep_search.
 - PIPE_AND_DAEMON_SAFETY: FORBIDDEN: unbuffered pipes (tail, head) or interactive-stdin commands in foreground. Long-running processes, dev servers, watchers MUST use run_background_process, NEVER run_command.
-- PROCESS_AND_PORT_SAFETY: FORBIDDEN: blanket termination (taskkill /IM bun.exe, taskkill /IM node.exe, killall, pkill). On EADDRINUSE: inspect_port(port) → free_port(port) or kill_process(pid) — ONLY the conflicting process tree.
+- PROCESS_AND_PORT_SAFETY: FORBIDDEN: blanket termination (taskkill /IM chrome.exe, taskkill /IM bun.exe, taskkill /IM node.exe, killall, pkill). NEVER kill user Chrome processes. On EADDRINUSE: inspect_port(port) → free_port(port) or kill_process(pid) — ONLY the conflicting process tree.
 
 # LOGIC GATES
-if user_requests_browser_or_web_interaction:
-    CALL control_chrome_cdp(command:'list_targets') or launch_chrome_profile(remoteDebuggingPort:9222). Do NOT reduce interactive browser tasks to curl/fetch or writing script files.
+if user_merely_wants_to_open_or_view_browser_or_url:
+    CALL launch_chrome_profile(profileName:'Default', url:targetUrl). Do NOT force CDP automation if no scraping or testing requested.
+else if user_requests_interactive_browser_automation_or_testing:
+    CALL control_chrome_cdp(command:'list_targets') or launch_chrome_profile(remoteDebuggingPort:9222). Do NOT reduce interactive browser tasks to curl/fetch. Launching with remoteDebuggingPort:9222 runs in an isolated debug profile alongside running Chrome.
 
 if delegating_to_external_cli:
     CALL cli_bridge(action:'list'); then 'delegate' (standalone/code: cli:name, prompt:taskPrompt, skills:referenceDirs) or 'session.create' (interactive: cli:name, message:initialPrompt).

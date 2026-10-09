@@ -39,7 +39,7 @@ const execAsync = promisify(exec);
 
 export const launchChromeProfileTool: Tool = {
   name: "launch_chrome_profile",
-  description: "Launch Google Chrome with a specific user profile (e.g. 'Default', 'Profile 1'), optional target URL, and optional remote debugging port for CDP automation (e.g. 9222).",
+  description: "Launch Google Chrome with a specific user profile (e.g. 'Default', 'Profile 1'), optional target URL, and optional remote debugging port for CDP automation (e.g. 9222). Note: When remoteDebuggingPort is provided, an isolated user-data-dir is used automatically so Chrome opens with CDP enabled without conflicting with or killing any already-running Chrome windows.",
   parameters: {
     type: "object",
     properties: {
@@ -53,29 +53,68 @@ export const launchChromeProfileTool: Tool = {
       },
       remoteDebuggingPort: {
         type: "integer",
-        description: "Optional remote debugging port to enable CDP automation (e.g. 9222). When provided, launches Chrome with --remote-debugging-port=<port>.",
+        description: "Optional remote debugging port to enable CDP automation (e.g. 9222). When provided, launches Chrome with --remote-debugging-port=<port> and an isolated debug profile.",
+      },
+      userDataDir: {
+        type: "string",
+        description: "Optional custom Chrome user-data-dir path. Defaults to ~/.superagent-r/chrome-debug-profile when remoteDebuggingPort is provided to avoid singleton conflict.",
+      },
+      isolated: {
+        type: "boolean",
+        description: "Whether to launch in an isolated user-data-dir (default true when remoteDebuggingPort is specified).",
       },
     },
   },
-  execute: async ({ profileName = "Default", url = "", remoteDebuggingPort }: { profileName?: string; url?: string; remoteDebuggingPort?: number }) => {
+  execute: async ({
+    profileName = "Default",
+    url = "",
+    remoteDebuggingPort,
+    userDataDir,
+    isolated,
+  }: {
+    profileName?: string;
+    url?: string;
+    remoteDebuggingPort?: number;
+    userDataDir?: string;
+    isolated?: boolean;
+  }) => {
     const platform = os.platform();
     let cmd = "";
 
     const safeProfile = profileName.replace(/["'\\]/g, "");
     const safeUrl = url ? `"${url.replace(/"/g, '\\"')}"` : "";
-    const debugFlag = remoteDebuggingPort ? ` --remote-debugging-port=${Number(remoteDebuggingPort)}` : "";
+    const debugFlag = remoteDebuggingPort
+      ? ` --remote-debugging-port=${Number(remoteDebuggingPort)} --remote-allow-origins=*`
+      : "";
+
+    const shouldIsolate = isolated ?? Boolean(remoteDebuggingPort);
+    let resolvedDataDir = userDataDir;
+    if (shouldIsolate && !resolvedDataDir) {
+      resolvedDataDir = path.join(os.homedir(), ".superagent-r", "chrome-debug-profile");
+    }
+
+    if (resolvedDataDir) {
+      try {
+        await fs.mkdir(resolvedDataDir, { recursive: true });
+      } catch {}
+    }
+
+    const dataDirFlag = resolvedDataDir
+      ? ` --user-data-dir="${resolvedDataDir.replace(/\\/g, "/")}" --no-first-run --no-default-browser-check`
+      : "";
 
     if (platform === "win32") {
-      cmd = `start chrome --profile-directory="${safeProfile}"${debugFlag} ${safeUrl}`;
+      cmd = `start "" chrome --profile-directory="${safeProfile}"${dataDirFlag}${debugFlag} ${safeUrl}`;
     } else if (platform === "darwin") {
-      cmd = `open -a "Google Chrome" --args --profile-directory="${safeProfile}"${debugFlag} ${safeUrl}`;
+      cmd = `open -a "Google Chrome" --args --profile-directory="${safeProfile}"${dataDirFlag}${debugFlag} ${safeUrl}`;
     } else {
-      cmd = `google-chrome --profile-directory="${safeProfile}"${debugFlag} ${safeUrl} &`;
+      cmd = `google-chrome --profile-directory="${safeProfile}"${dataDirFlag}${debugFlag} ${safeUrl} &`;
     }
 
     try {
       await execAsync(cmd, { timeout: 15000 });
-      return `Launched Chrome with profile \`${safeProfile}\`${remoteDebuggingPort ? ` (CDP port ${remoteDebuggingPort})` : ""}${url ? ` opening \`${url}\`` : ""}.`;
+      const isolatedNote = resolvedDataDir ? ` (isolated debug profile: \`${resolvedDataDir}\`)` : "";
+      return `Launched Chrome with profile \`${safeProfile}\`${isolatedNote}${remoteDebuggingPort ? ` (CDP port ${remoteDebuggingPort})` : ""}${url ? ` opening \`${url}\`` : ""}.`;
     } catch (err: any) {
       return `Failed to launch Chrome with profile \`${safeProfile}\`: ${err.message || String(err)}`;
     }

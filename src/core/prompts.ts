@@ -57,7 +57,7 @@ const AESTHETIC_AND_GATEWAY_RULES = `${READ_ONLY_GATEWAY_RULES}
 - COMMAND_LOGS: Foreground commands (run_command, bash) stream real-time logs to ~/.superagent-r/logs/latest-command.log and ~/.superagent-r/logs/commands/cmd_*.log. Live process tools reflect active log paths.
 - TRUNCATED_OUTPUT: When output is truncated ([Command output truncated. Full log saved to: <path>]), NEVER re-run identical command blindly. Read full log from <path> via read (with offset/limit) or ripgrep_search.
 - PIPE_AND_DAEMON_SAFETY: FORBIDDEN: Unbuffered pipes (tail, head) or commands expecting interactive stdin in foreground. Long-running processes, dev servers, and file watchers MUST use run_background_process.
-- PROCESS_AND_PORT_SAFETY: FORBIDDEN: Blanket process termination (taskkill /IM bun.exe, taskkill /IM node.exe, killall, pkill). When resolving port conflicts (EADDRINUSE), ALWAYS use inspect_port(port) to diagnose and free_port(port) or kill_process(pid) to terminate ONLY the conflicting process tree.
+- PROCESS_AND_PORT_SAFETY: FORBIDDEN: Blanket process termination (taskkill /IM chrome.exe, taskkill /IM bun.exe, taskkill /IM node.exe, killall, pkill). NEVER kill user Chrome processes. When resolving port conflicts (EADDRINUSE), ALWAYS use inspect_port(port) to diagnose and free_port(port) or kill_process(pid) to terminate ONLY the conflicting process tree.
 - REMOTE_ACCESS_AND_TUNNELS: Cloudflare Quick Tunnels expose local endpoints safely via trycloudflare.com. Default port 9225 for WebSocket (Muse agent coordination). Use '--https' flag (default port 7888) to expose Superagent HTTP/SSE REST server protected by Bearer token authentication. Commands: /tunnel start [--https], /tunnel stop [--https|all], superagent --server [port] --tunnel.`;
 
 const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify pre-action primary goal alignment + workspace limits.`;
@@ -136,14 +136,16 @@ const BROWSER_AUTOMATION_CORE = `- AUTOMATION_TRACKS:
 - Naming: snake_case only.
 
 # LOGIC GATES
-if remote_debugging_port_9222_open:
+if user_merely_wants_to_open_or_view_browser_or_url:
+    CALL launch_chrome_profile(profileName:'Default', url:targetUrl). Do NOT force CDP automation if no scraping or testing requested.
+else if remote_debugging_port_9222_open:
     CALL control_chrome_cdp(command:'list_targets')
 else if vision_requested_or_canvas_ui:
     CALL control_chrome_vision(command:'parse_screenshot')
 else if extension_bridge_connected:
     CALL control_browser_tab()
 else:
-    CALL ask_question("No active browser. Start Chrome debug mode or headless?", ["Start Chrome Debug (Port 9222)", "Headless Browser"])
+    CALL control_chrome_cdp(command:'list_targets') or launch_chrome_profile(remoteDebuggingPort:9222). Note: launch_chrome_profile uses an isolated debug profile to run alongside existing Chrome windows without singleton conflict.
 
 if user_requests_web_task:
     if auth_required:
@@ -573,8 +575,7 @@ ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 - DUAL_TRACK_PRIMACY: Prefer control_chrome_cdp (port 9222) for fast DOM snapshot & index-based click/type without extensions. Use control_chrome_vision for vision-based label interactions without DOM selectors.
-- EXTENSION_ISOLATION_GUARD: Do NOT confuse background/CDP browser automation with the Superagent Chrome Extension Sidepanel UI (chrome-extension/).
-- PORT_9222_RETRY: If CDP port 9222 closed: instruct user to run scripts/chrome-debug.bat.
+- PORT_9222_HANDLING: control_chrome_cdp automatically auto-launches Chrome in an isolated debug profile (~/.superagent-r/chrome-debug-profile) on port 9222 if closed. Or launch via launch_chrome_profile(remoteDebuggingPort: 9222). FORBIDDEN: NEVER attempt to kill the user's running Chrome processes with taskkill or shell commands.
 ${BROWSER_AUTOMATION_CORE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 

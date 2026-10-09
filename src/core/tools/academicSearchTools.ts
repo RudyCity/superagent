@@ -115,11 +115,18 @@ export const searchJournalTool: Tool = {
       }
     }
 
+    // Helper for per-request timeouts
+    const createTimeoutSignal = (ms = 8000): AbortSignal => {
+      const timeoutSignal = AbortSignal.timeout(ms);
+      return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+    };
+
     // Individual Provider Fetching Functions
     const fetchOpenAlex = async (): Promise<JournalResult[]> => {
-      const res = await fetch(`https://api.openalex.org/works?search=${encodeURIComponent(query)}&limit=${limit}`, {
+      const fetchSignal = createTimeoutSignal(8000);
+      const res = await fetch(`https://api.openalex.org/works?search=${encodeURIComponent(query)}&per-page=${limit}`, {
         headers: { "User-Agent": "Superagent/1.0 (mailto:info@superagent.ai)" },
-        signal
+        signal: fetchSignal
       });
       if (res.status === 429) {
         const retryAfter = res.headers.get("Retry-After");
@@ -137,7 +144,11 @@ export const searchJournalTool: Tool = {
     };
 
     const fetchArXiv = async (): Promise<JournalResult[]> => {
-      const res = await fetch(`http://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&max_results=${limit}`, { signal });
+      const fetchSignal = createTimeoutSignal(8000);
+      const res = await fetch(`https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&max_results=${limit}`, {
+        headers: { "User-Agent": "Superagent/1.0 (mailto:info@superagent.ai)" },
+        signal: fetchSignal
+      });
       if (res.status === 429) {
         throw new Error("ArXiv Rate Limited.");
       }
@@ -171,13 +182,16 @@ export const searchJournalTool: Tool = {
     };
 
     const fetchSemanticScholar = async (): Promise<JournalResult[]> => {
-      const headers: Record<string, string> = {};
+      const fetchSignal = createTimeoutSignal(8000);
+      const headers: Record<string, string> = {
+        "User-Agent": "Superagent/1.0 (mailto:info@superagent.ai)"
+      };
       if (semanticScholarKey) {
         headers["x-api-key"] = semanticScholarKey;
       }
       const res = await fetch(`https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&limit=${limit}&fields=title,authors,year,url,abstract`, {
         headers,
-        signal
+        signal: fetchSignal
       });
       if (res.status === 429) {
         throw new Error("Semantic Scholar Rate Limited.");
@@ -195,7 +209,11 @@ export const searchJournalTool: Tool = {
     };
 
     const fetchCrossref = async (): Promise<JournalResult[]> => {
-      const res = await fetch(`https://api.crossref.org/works?query=${encodeURIComponent(query)}&rows=${limit}`, { signal });
+      const fetchSignal = createTimeoutSignal(8000);
+      const res = await fetch(`https://api.crossref.org/works?query=${encodeURIComponent(query)}&rows=${limit}`, {
+        headers: { "User-Agent": "Superagent/1.0 (mailto:info@superagent.ai)" },
+        signal: fetchSignal
+      });
       if (res.status === 429) {
         throw new Error("Crossref Rate Limited.");
       }
@@ -212,9 +230,13 @@ export const searchJournalTool: Tool = {
 
     const fetchCore = async (): Promise<JournalResult[]> => {
       if (!coreKey) return [];
+      const fetchSignal = createTimeoutSignal(8000);
       const res = await fetch(`https://api.core.ac.uk/v3/search/works?q=${encodeURIComponent(query)}&limit=${limit}`, {
-        headers: { "Authorization": `Bearer ${coreKey}` },
-        signal
+        headers: {
+          "Authorization": `Bearer ${coreKey}`,
+          "User-Agent": "Superagent/1.0 (mailto:info@superagent.ai)"
+        },
+        signal: fetchSignal
       });
       if (res.status === 429) {
         throw new Error("CORE Rate Limited.");
@@ -235,13 +257,22 @@ export const searchJournalTool: Tool = {
 
     // Parallel execution for auto mode or target selection
     if (provider === "auto") {
-      const tasks = [
+      const tasks: Promise<JournalResult[]>[] = [
         fetchOpenAlex().catch(e => { errors.push(e.message); return []; }),
-        fetchArXiv().catch(e => { errors.push(e.message); return []; }),
-        fetchSemanticScholar().catch(e => { errors.push(e.message); return []; }),
         fetchCrossref().catch(e => { errors.push(e.message); return []; }),
-        ...(coreKey ? [fetchCore().catch(e => { errors.push(e.message); return []; })] : [])
+        fetchArXiv().catch(e => { errors.push(e.message); return []; })
       ];
+
+      if (semanticScholarKey) {
+        tasks.push(fetchSemanticScholar().catch(e => { errors.push(e.message); return []; }));
+      } else {
+        // Without an API key, Semantic Scholar enforces severe rate limits; attempt silently in auto mode
+        tasks.push(fetchSemanticScholar().catch(() => []));
+      }
+
+      if (coreKey) {
+        tasks.push(fetchCore().catch(e => { errors.push(e.message); return []; }));
+      }
 
       const resolved = await Promise.all(tasks);
       for (const list of resolved) {
@@ -263,9 +294,6 @@ export const searchJournalTool: Tool = {
 
     // Formatting Results
     const formatted: string[] = [];
-    if (errors.length > 0) {
-      formatted.push(`Warnings/Errors encountered:\n- ${errors.join("\n- ")}`);
-    }
 
     if (finalResults.length > 0) {
       // Group results by source
@@ -285,10 +313,15 @@ export const searchJournalTool: Tool = {
           formatted.push(str);
         }
       }
-    }
 
-    // FALLBACK to DuckDuckGo Web Search if no results found
-    if (finalResults.length === 0) {
+      if (errors.length > 0) {
+        formatted.push(`(Note: ${errors.length} upstream academic source(s) unavailable or rate-limited: ${errors.join("; ")})`);
+      }
+    } else {
+      if (errors.length > 0) {
+        formatted.push(`Academic engine warnings/errors encountered:\n- ${errors.join("\n- ")}`);
+      }
+      // FALLBACK to DuckDuckGo Web Search if no results found
       formatted.push("No academic journal results found. Falling back to general web search...");
       const fallbackQuery = `${query} academic journal paper`;
       try {

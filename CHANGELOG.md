@@ -1,3 +1,12 @@
+## [1.13.6] - 2026-10-09
+### Fixed
+- Fixed OpenAlex search error in `search_journal` tool by correcting pagination query parameter from `limit` to `per-page` (preventing HTTP 400 Bad Request rejection).
+- Added resilient request timeouts (8s via `AbortSignal.timeout`) across academic providers to eliminate long blocking delays when upstream APIs stall.
+- Added polite User-Agent headers to all academic engine requests (ArXiv, Crossref, OpenAlex, Semantic Scholar, CORE) and updated ArXiv endpoint to HTTPS.
+- Silenced unconfigured Semantic Scholar rate-limit warnings during `auto` mode when other academic sources return results.
+- Added `consecutive_errors_pause` to `AdvisorReason` type in `advisorLogger.ts`.
+- Added unit tests for `searchJournalTool` in `tests/academicSearchTools.test.ts`.
+
 ## [1.13.5] - 2026-10-09
 ### Added
 - Added extension-free Chrome automation tools directly to `superagentToolset` (`control_chrome_cdp`, `control_chrome_vision`, `list_running_chrome`, `close_chrome_profile`, `list_chrome_profiles`, `launch_chrome_profile`), empowering default Single Mode CLI and Superagent worktrees to use browser automation natively.

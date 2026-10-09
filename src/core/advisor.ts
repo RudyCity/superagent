@@ -694,7 +694,29 @@ export class RealtimeAdvisor {
     }
 
     // 3. Check for general consecutive errors threshold
-    if (state.consecutiveErrorsCount >= this.baseErrorThreshold) {
+    if (state.consecutiveErrorsCount >= this.baseErrorThreshold + 3) {
+      const suggestion = `Repeated tool execution failures (${state.consecutiveErrorsCount} consecutive errors). Halt automated retries, summarize the obstacles encountered, and provide direct feedback or status to the user.`;
+      const message = `Advisor paused execution: encountered ${state.consecutiveErrorsCount} consecutive tool execution errors without progress. Pausing execution to prevent infinite failure loops. Suggestion: ${suggestion}`;
+      const autoCorrectionHint = "[SYSTEM AUTO-CORRECTION SKILL]: Consecutive error threshold exceeded. STOP retrying failing tools. Conclude and explain to the user.";
+
+      if (this.enableLogging) {
+        logAdvisorEvent({
+          agentId,
+          action: "pause_execution",
+          reason: "consecutive_errors_pause",
+          consecutiveCount: state.consecutiveErrorsCount,
+          message,
+          suggestion,
+        });
+      }
+      return {
+        action: "pause_execution",
+        message,
+        suggestion,
+        healthScore: this.getHealthScore(agentId),
+        autoCorrectionHint,
+      };
+    } else if (state.consecutiveErrorsCount >= this.baseErrorThreshold) {
       const suggestion = `Multiple tool errors detected. Re-read recent tool outputs or error messages, verify parameters, or read target files before retrying.`;
       const message = `ADVISOR WARNING: You have encountered ${state.consecutiveErrorsCount} consecutive tool execution errors in recent steps. Please pause and carefully debug the root cause of these failures before calling more tools. Suggestion: ${suggestion}`;
       const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "warn_agent" });

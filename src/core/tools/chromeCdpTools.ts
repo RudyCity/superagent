@@ -11,6 +11,7 @@
  */
 import { Tool } from "./types.js";
 import { get as httpGet, request as httpRequest } from "http";
+import { ensureCdpRunning } from "./chromeCommon.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -29,11 +30,10 @@ function cdpTimeoutMs(): number {
 /** Exact user-facing message when the Chrome debug port is not reachable. */
 export const CDP_PORT_CLOSED_MSG =
   "Chrome is not running with --remote-debugging-port=9222. " +
-  "Close ALL Chrome windows and reopen Chrome from the taskbar shortcut " +
-  "(the --remote-debugging-port=9222 flag is already installed there), " +
-  "or launch Chrome via launch_chrome_profile(remoteDebuggingPort: 9222), " +
+  "Launch Chrome via launch_chrome_profile(remoteDebuggingPort: 9222) " +
   "or run scripts/chrome-debug.bat, then retry. " +
-  "This tool needs no extension.";
+  "Note: launch_chrome_profile uses an isolated debug profile so it starts immediately without needing to close or kill running Chrome instances. " +
+  "FORBIDDEN: Do NOT attempt to kill the user's running Chrome processes with taskkill or shell commands.";
 
 interface CdpTarget {
   id: string;
@@ -47,7 +47,7 @@ function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + `… [truncated, ${s.length} chars total]` : s;
 }
 
-function httpGetJson(path: string): Promise<any> {
+function httpGetJson(path: string, isRetry = false): Promise<any> {
   return new Promise((resolve, reject) => {
     const req = httpGet(
       { host: cdpHost(), port: cdpPort(), path, timeout: cdpTimeoutMs() },
@@ -81,8 +81,18 @@ function httpGetJson(path: string): Promise<any> {
       req.destroy();
       reject(new Error(`Timed out after ${cdpTimeoutMs()}ms reaching the CDP endpoint ${path}.`));
     });
-    req.on("error", (err: any) => {
+    req.on("error", async (err: any) => {
       if (err && (err.code === "ECONNREFUSED" || err.code === "ECONNRESET")) {
+        if (!isRetry) {
+          const started = await ensureCdpRunning(cdpHost(), cdpPort());
+          if (started) {
+            try {
+              const retryRes = await httpGetJson(path, true);
+              resolve(retryRes);
+              return;
+            } catch {}
+          }
+        }
         reject(new Error(CDP_PORT_CLOSED_MSG));
       } else {
         reject(err);
@@ -91,7 +101,7 @@ function httpGetJson(path: string): Promise<any> {
   });
 }
 
-function httpPutJson(path: string): Promise<any> {
+function httpPutJson(path: string, isRetry = false): Promise<any> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
       { host: cdpHost(), port: cdpPort(), path, method: "PUT", timeout: cdpTimeoutMs() },
@@ -113,8 +123,18 @@ function httpPutJson(path: string): Promise<any> {
       req.destroy();
       reject(new Error(`Timed out after ${cdpTimeoutMs()}ms reaching the CDP endpoint ${path}.`));
     });
-    req.on("error", (err: any) => {
+    req.on("error", async (err: any) => {
       if (err && (err.code === "ECONNREFUSED" || err.code === "ECONNRESET")) {
+        if (!isRetry) {
+          const started = await ensureCdpRunning(cdpHost(), cdpPort());
+          if (started) {
+            try {
+              const retryRes = await httpPutJson(path, true);
+              resolve(retryRes);
+              return;
+            } catch {}
+          }
+        }
         reject(new Error(CDP_PORT_CLOSED_MSG));
       } else {
         reject(err);

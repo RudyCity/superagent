@@ -3,11 +3,126 @@
  * PowerShell -EncodedCommand runner, and common user-facing messages.
  * Pure deduplication — no behavior change.
  */
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import { promisify } from "util";
+import path from "path";
+import os from "os";
+import fs from "fs";
+import net from "net";
 import { browserControlHandler } from "./browserMacroTools.js";
 
 const execAsync = promisify(exec);
+
+export function checkPortListening(host: string, port: number, timeoutMs = 400): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+    const finish = (val: boolean) => {
+      if (!settled) {
+        settled = true;
+        socket.destroy();
+        resolve(val);
+      }
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+    socket.connect(port, host);
+  });
+}
+
+let cdpStartInFlight: Promise<boolean> | null = null;
+
+/**
+ * Ensure Chrome is running with remote debugging port enabled.
+ * If port is not responding, auto-launches Chrome in isolated debug profile
+ * (~/.superagent-r/chrome-debug-profile) with remote debugging active.
+ */
+export async function ensureCdpRunning(host = "127.0.0.1", port = 9222): Promise<boolean> {
+  if (
+    process.env.NODE_ENV === "test" ||
+    process.env.VITEST === "true" ||
+    process.env.SUPERAGENT_CDP_AUTO_LAUNCH === "0" ||
+    port !== 9222
+  ) {
+    return false;
+  }
+
+  if (await checkPortListening(host, port, 300)) {
+    return true;
+  }
+
+  if (cdpStartInFlight) {
+    return await cdpStartInFlight;
+  }
+
+  cdpStartInFlight = (async () => {
+    const platform = os.platform();
+    const userDataDir = path.join(os.homedir(), ".superagent-r", "chrome-debug-profile");
+    try {
+      fs.mkdirSync(userDataDir, { recursive: true });
+    } catch {}
+
+    const chromeFlags = [
+      `--remote-debugging-port=${port}`,
+      `--remote-allow-origins=*`,
+      `--user-data-dir=${userDataDir}`,
+      `--no-first-run`,
+      `--no-default-browser-check`,
+    ];
+
+    let chromeExe: string | null = null;
+    if (platform === "win32") {
+      const candidates = [
+        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+        "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+        path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe"),
+        path.join(process.env.PROGRAMFILES || "", "Google", "Chrome", "Application", "chrome.exe"),
+        path.join(process.env["PROGRAMFILES(X86)"] || "", "Google", "Chrome", "Application", "chrome.exe"),
+      ];
+      for (const c of candidates) {
+        if (c && fs.existsSync(c)) {
+          chromeExe = c;
+          break;
+        }
+      }
+    } else if (platform === "darwin") {
+      const macPath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+      if (fs.existsSync(macPath)) chromeExe = macPath;
+    }
+
+    if (!chromeExe) {
+      chromeExe = platform === "win32" ? "chrome.exe" : "google-chrome";
+    }
+
+    try {
+      const child = spawn(chromeExe, chromeFlags, {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: false,
+      });
+      child.unref();
+
+      const deadline = Date.now() + 4500;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 250));
+        if (await checkPortListening(host, port, 200)) {
+          return true;
+        }
+      }
+    } catch {
+      return false;
+    }
+    return false;
+  })();
+
+  try {
+    return await cdpStartInFlight;
+  } finally {
+    cdpStartInFlight = null;
+  }
+}
 
 /** Exact user-facing message when the extension bridge is absent (standard variant). */
 export const NO_BROWSER_CONNECTION_MSG =

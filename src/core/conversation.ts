@@ -233,7 +233,12 @@ export class Conversation {
     const userMessages = this.messages.filter((m) => {
       if (m.role !== "user") return false;
       const text = contentToString(m.content);
-      return !text.startsWith("[RMemory Agent Memory Context]:");
+      return (
+        !text.startsWith("[RMemory Agent Memory Context]:") &&
+        !text.startsWith("[SYS]") &&
+        !text.startsWith("ADVISOR") &&
+        !text.startsWith("⚠️ [Advisor")
+      );
     });
     const firstUser = userMessages[0];
     const lastUser = userMessages[userMessages.length - 1];

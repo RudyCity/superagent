@@ -317,6 +317,21 @@ export class Agent {
     try {
       ensureGlobalConfigDir();
       const logPath = path.join(getGlobalConfigDir(), "superagent.log");
+
+      // Automatic log rotation at 10 MB to prevent unbounded disk growth
+      try {
+        if (fs.existsSync(logPath)) {
+          const stat = fs.statSync(logPath);
+          if (stat.size > 10 * 1024 * 1024) {
+            const oldPath = path.join(getGlobalConfigDir(), "superagent.1.log");
+            try {
+              if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+              fs.renameSync(logPath, oldPath);
+            } catch {}
+          }
+        }
+      } catch {}
+
       const timestamp = new Date().toISOString();
       const tier = this.tier;
       const depth = this.delegationDepth;
@@ -325,7 +340,9 @@ export class Agent {
       const subagentType = this.subagentType || "-";
       const prefix = `[${timestamp}] [tier:${tier}] [depth:${depth}] [multi:${multi}] [worktree:${worktree}] [subagentType:${subagentType}] [${level}]`;
       const lines = message.split("\n");
-      const formattedLines = lines.map(line => `${prefix} ${line}`).join("\n") + "\n";
+      const formattedLines = lines.length === 1
+        ? `${prefix} ${lines[0]}\n`
+        : `${prefix} ${lines[0]}\n${lines.slice(1).map(l => `  ${l}`).join("\n")}\n`;
       fs.appendFileSync(logPath, formattedLines, "utf-8");
       appendProcessLog(`[${level}] ${message}`);
     } catch (err) {

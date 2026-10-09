@@ -861,7 +861,7 @@ export class LoopIterationProcessor {
           );
           agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
           agent.conversation.addMessage({
-            role: "user",
+            role: "system",
             content: "[SYS] Continue immediately. Use the available tools to perform the search, inspection, or actions you described and provide the result.",
             timestamp: Date.now(),
           });
@@ -915,7 +915,7 @@ export class LoopIterationProcessor {
           content: `\n⚠️ [Advisor - Health Score: ${healthScore}%] Warning: ${advisorResult.message}\n`,
         });
         agent.conversation.addMessage({
-          role: "user",
+          role: "system",
           content: warningContent,
           timestamp: Date.now(),
         });

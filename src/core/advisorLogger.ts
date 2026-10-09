@@ -7,6 +7,7 @@ export type AdvisorReason =
   | "loop_pause"
   | "hallucinated_tool"
   | "consecutive_errors"
+  | "consecutive_errors_pause"
   | "pattern_memory_warning"
   | "repeated_read_warning"
   | "repeated_read_loop"

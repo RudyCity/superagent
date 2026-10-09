@@ -154,22 +154,22 @@ export function resolveWindowsPythonDirs(): string[] {
 }
 
 /**
- * Augments process environment on Windows so that installed Python is included in PATH if missing.
+ * Augments process environment on Windows so that installed Python is included in PATH if missing,
+ * and sets MSYS_NO_PATHCONV to prevent Git Bash / MSYS2 from mangling Windows command slash flags (e.g. /F, /IM).
  */
 export function augmentWindowsEnvPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (process.platform !== "win32") return env;
   const pyDirs = resolveWindowsPythonDirs();
-  if (pyDirs.length === 0) return env;
-
   const currentPath = env.PATH || env.Path || "";
   const dirsToAdd = pyDirs.filter((d) => !currentPath.toLowerCase().includes(d.toLowerCase()));
-  if (dirsToAdd.length === 0) return env;
+  const newPath = dirsToAdd.length > 0 ? `${dirsToAdd.join(";")};${currentPath}` : currentPath;
 
-  const newPath = `${dirsToAdd.join(";")};${currentPath}`;
   return {
     ...env,
     PATH: newPath,
     Path: newPath,
+    MSYS_NO_PATHCONV: "1",
+    MSYS2_ARG_CONV_EXCL: "*",
   };
 }
 
