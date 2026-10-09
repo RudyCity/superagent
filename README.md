@@ -42,7 +42,7 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 - **🌐 Chrome Process Tools (v1.5.146)**: Built-in tools to list all running Chrome windows across profiles (with per-window tab lists) and close a targeted Chrome profile safely.
 - **🤖 3-Tier Multi-Agent Mode *(Experimental)***: Master Agent orchestrating isolated Superagents across parallel Git worktrees (`--multi`).
 - **🌐 Extension-Free Chrome Automation (v1.10.0)**: Drive the real Chrome browser directly over the Chrome DevTools Protocol — no extension required (`control_chrome_cdp`: navigate, snapshot/click/type by element index, `wait_for`, screenshot, PDF, cookies). Requires Chrome started with `--remote-debugging-port=9222` (see below).
-- **👁️ Vision-Based UI Automation**: `control_chrome_vision` uses a local UI-DETR-1 AI (RF-DETR Medium ~535MB) to detect UI elements on screen and click/type by element label — no manual DOM selectors needed. The AI service auto-starts on demand (port 8095).
+- **👁️ Vision-Based UI Automation & Set-of-Mark Perception (v1.13.30+)**: `control_chrome_vision` uses a local UI-DETR-1 AI (RF-DETR Medium ~535MB) for Set-of-Mark (SoM) visual perception (`perceive_page`), direct coordinate click/type by visual ID (`click_id`, `type_id`), automated UI layout defect auditing (`audit_layout`), and before/after visual diff validation (`verify_visual_state`). No fragile CSS selectors, shadow-DOM, or canvas barriers.
 
 ---
 
@@ -125,17 +125,28 @@ The `control_chrome_cdp` tool automates your real Chrome browser directly over t
 
 ---
 
-## 👁️ Vision-Based Chrome Automation (UI-DETR-1)
+## 👁️ Vision-Based Chrome Automation & Set-of-Mark (SoM) Perception (UI-DETR-1)
 
-The `control_chrome_vision` tool automates Chrome using a **local UI-DETR-1 AI that sees the screen** — no DOM selectors needed. It takes a screenshot, detects UI elements (buttons, inputs, links, text, headings) with bounding boxes + center coordinates, then clicks or types by label.
+The `control_chrome_vision` tool provides **human-like visual perception and spatial grounding** using a local `racineai/UI-DETR-1` model (~535MB, RF-DETR Medium). It eliminates reliance on fragile CSS selectors, DOM tree dumps, or canvas/shadow-DOM limitations.
 
-**Zero manual setup for the AI service:** when you use `control_chrome_vision` for the first time, superagent **automatically starts** the UI-DETR-1 service locally (`scripts/vision_server.py` on port 8095).
+**Core Capabilities:**
+- **Set-of-Mark (SoM) Perception (`perceive_page`)**: Takes a screenshot, detects UI components, overlays numbered visual badges (`[1]`, `[2]`, `[3]...`) and color-coded bounding boxes, and injects the annotated image directly into multimodal LLMs (Claude 3.5 Sonnet, GPT-4o, Gemini, Qwen2.5-VL).
+- **Direct Visual Action (`click_id`, `type_id`)**: Dispatches native CDP mouse/keyboard events directly to the center coordinates of any visual ID (e.g. `click_id(id=3)`), enabling seamless interaction even with Canvas, WebGL, or complex shadow-DOM trees.
+- **Visual Layout Auditor (`audit_layout`)**: Automatically inspects the page for UI and accessibility defects:
+  - **Overlapping Elements**: Collision detection (>40% overlap) between interactive controls.
+  - **Touch Target Defects**: Flags buttons or fields smaller than 24×24px.
+  - **Off-Screen Elements**: Identifies elements clipped or rendered outside the active viewport.
+  - **Unlabeled Controls**: Highlights interactive controls missing accessibility labels or text.
+- **Visual State Verification (`verify_visual_state`)**: Compares screenshots before and after actions, computing pixel difference ratios (`/diff`) to guarantee UI transitions actually occurred on screen.
+- **Interactive Extension Sidepanel (`chrome-extension/`)**: Includes an interactive vision canvas where human auditors can click directly on screenshot elements (with auto-scaled coordinates dispatched to the active tab) and filter badges by category (`All`, `Buttons`, `Fields`, `Links`).
 
-**Model Details:**
+**Model Details & Zero-Config Setup:**
 - **Model:** `racineai/UI-DETR-1` (~535MB, RF-DETR Medium).
 - **Classes:** `button`, `field`, `heading`, `iframe`, `image`, `label`, `link`, `text`.
-- **Automatic Caching:** Weights are downloaded once and cached locally via HuggingFace Hub.
+- **Automatic Caching:** Weights (`model.pth`) are downloaded once on first run and permanently cached in HuggingFace Hub (`~/.cache/huggingface/hub/`).
+- **Auto-Daemon:** Superagent **automatically starts** the local UI-DETR-1 service (`scripts/vision_server.py` on port 8095) whenever `control_chrome_vision` is invoked.
 - **Port:** Listens on `127.0.0.1:8095` (localhost only).
+- **Lightweight Architecture:** OmniParser was removed in favor of this single ~535MB model, reducing memory consumption to ~2.8GB VRAM with 2-3× faster inference.
 
 ---
 

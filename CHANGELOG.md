@@ -1,3 +1,9 @@
+## [1.13.31] - 2026-10-09
+### Documentation & Specifications
+- Comprehensive Documentation of Set-of-Mark (SoM) Vision & Layout Audit Architecture:
+  - Updated `README.md` with comprehensive documentation of Set-of-Mark (SoM) visual perception (`perceive_page`), direct visual coordinate interaction (`click_id`, `type_id`), automated UI layout defect auditing (`audit_layout`), visual state diffing (`verify_visual_state`), and interactive extension canvas with category filtering.
+  - Updated `AGENTS.md` project specifications and operational guidelines with the UI-DETR-1 vision server lifecycle, Set-of-Mark visual perception workflow, and elimination of legacy OmniParser dependencies.
+
 ## [1.13.30] - 2026-10-09
 ### Added & Enhanced
 - Set-of-Mark (SoM) Visual Perception Engine & Interactive Vision Suite:

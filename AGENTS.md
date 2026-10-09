@@ -50,8 +50,15 @@ Master Agent  (orchestrator)
 - `src/components/startup-checker.tsx` — Parallelized dependency validator with decoupled background model warming.
 - `src/components/startup-prompt.tsx` — First-run interactive choice dialog when no AI provider is configured.
 
-## Recent Features (v1.5.146-v1.6.0)
+## Recent Features (v1.5.146-v1.13.31)
 
+- **Set-of-Mark (SoM) Vision & Layout Audit Engine** (`src/core/tools/chromeVisionTools.ts`, `scripts/vision_server.py`, v1.13.30+):
+  - Unified vision stack exclusively on `racineai/UI-DETR-1` (~535MB RF-DETR Medium); completely eliminated legacy Microsoft OmniParser.
+  - Implemented Set-of-Mark (SoM) perception (`perceive_page`): draws prominent numeric badge labels (`[1]`, `[2]`, `[3]...`) and color-coded bounding boxes on screenshots.
+  - Added direct coordinate interaction (`click_id`, `type_id`) via native CDP input dispatch to element centers, bypassing brittle CSS selectors, shadow-DOM, and canvas barriers.
+  - Added visual layout auditor (`audit_layout`): detects element collisions (>40%), touch-target defects (<24px), off-screen elements, and unlabeled interactive controls.
+  - Added visual state verification (`verify_visual_state`): computes before/after screenshot pixel diffs via `/diff`.
+  - Added interactive canvas and category filtering in Chrome Extension sidepanel (`chrome-extension/sidepanel-vision.js`).
 - **Chrome process tools** (`src/core/tools/chromeProcessTools.ts`, v1.5.146): `list_running_chrome` (EnumWindows multi-window enumeration, profile display names from Local State, per-window tab lists via UI Automation) and `close_chrome_profile` (kills only the exact `--profile-directory` match). See README.
 - **Tunnel chat + ESC menu** (v1.5.147): `ESC` at the main input while a tunnel is active opens a menu (stop tunnel / message Muse / continue); `/muse tunnel msg <text>` sends a `chat` envelope via the active WS socket. Muse side: `listener.py` writes to `bridges/<name>/chat_inbox/` and the `ws-chat-inbox` hook wakes an agent to reply.
 - **MCP via tunnel** (`src/core/mcp/mcpHttpTransport.ts`, v1.6.0): `/muse tunnel start --mcp` serves MCP over Streamable HTTP on 127.0.0.1:9227 through the tunnel (MCP only, no WSS). Separate Bearer token (printed once, transient), 16-tool safe allowlist by default (`--allow-dangerous` opts into 21 destructive tools), JSONL audit log.
@@ -128,4 +135,4 @@ All system prompts in the codebase (e.g., in [prompts.ts](file:///d:/backup%20fr
 
 
 - **Chrome debug launcher** (`scripts/chrome-debug.bat`): Windows launcher that opens Chrome with `--remote-debugging-port=9222` for extension-free CDP automation via `control_chrome_cdp`. Warns (does not kill) if Chrome is already running. **Chrome singleton limitation**: the flag is silently ignored when any Chrome window is already running from the same user-data-dir — the browser must be fully closed first. Debug port is 127.0.0.1-only.
-- **UI-DETR-1 vision service** (`scripts/vision_server.py`): Local AI (RF-DETR Medium ~535MB) for vision-based UI automation via `control_chrome_vision` (port 8095) and Chrome Extension Vision panel (`/api/browser/detect-ui`). **Auto-started by the tool on demand** — spawns `python scripts/vision_server.py 8095` as a background process and polls `/health`. Fast single-pass detection for button, field, link, text, heading, etc. Service binds 127.0.0.1 only. Model weights cached automatically via HuggingFace Hub.
+- **UI-DETR-1 Vision Service & Set-of-Mark (SoM) Engine** (`scripts/vision_server.py`): Local AI (RF-DETR Medium ~535MB) for vision-based UI automation via `control_chrome_vision` (port 8095) and Chrome Extension Vision panel (`/api/browser/detect-ui`). **Auto-started by the tool on demand** — spawns `python scripts/vision_server.py 8095` as a background process and polls `/health`. Fast single-pass detection for button, field, link, text, heading, etc. Service binds 127.0.0.1 only. Model weights cached automatically via HuggingFace Hub (`~/.cache/huggingface/hub/models--racineai--UI-DETR-1`). Powers Set-of-Mark perception (`perceive_page`), direct coordinate interaction (`click_id`, `type_id`), automated layout auditing (`audit_layout`), and before/after visual diff validation (`verify_visual_state`). Legacy OmniParser has been completely removed in favor of this single lightweight model.
