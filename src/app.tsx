@@ -3083,9 +3083,9 @@ export function App({
   }
 
   // --- Calculate section boundaries for mouse click detection ---
-  // Layout from bottom: StatusBar(1) + margin(1) + bottomChrome(content + margin) + ChatArea
-  const statusBarTotalRows = 2; // 1 content + 1 marginTop
-  const mainContentHeight = terminalHeight - statusBarTotalRows;
+  // Layout from bottom: StatusBar(2 content lines + 1 marginTop = 3) + bottomChrome(content + margin) + ChatArea
+  const statusBarTotalRows = 3;
+  const mainContentHeight = Math.max(1, terminalHeight - statusBarTotalRows);
 
   // Agent section heights (for boundary calc)
   let saSectionHeight = 0;
@@ -3150,8 +3150,11 @@ export function App({
     wizardSectionHeight += 2;
   }
 
-  // Input section height (border line + input text lines + optional wizard question) — hidden for selection-only wizard steps
+  // Input section height (border line + input text lines + optional wizard question + optional image attachment bar) — hidden for selection-only wizard steps
   let inputSectionHeight = isSelectionOnlyStep ? 0 : 1 + inputLinesCount;
+  if (!isSelectionOnlyStep && attachments.length > 0) {
+    inputSectionHeight += 1;
+  }
   if (!isSelectionOnlyStep && getWizardQuestion()) {
     inputSectionHeight += 2; // 1 question line + 1 marginBottom line
   }
@@ -3166,11 +3169,11 @@ export function App({
   const bottomChromeTotalHeight = 1 + bottomChromeContentHeight; // +1 for marginTop of the chrome box
 
   // Chat area height on screen
-  const chatAreaScreenHeight = mainContentHeight - bottomChromeTotalHeight;
+  const chatAreaScreenHeight = Math.max(1, mainContentHeight - bottomChromeTotalHeight);
 
   // Exact height limit for the scrollable chat messages to prevent any empty terminal gap
   // Reserve 2 rows for Conversation Log header + Workspace/Session indicator
-  const chatHeightLimit = Math.max(3, chatAreaScreenHeight - bannerHeight - 2);
+  const chatHeightLimit = Math.max(1, chatAreaScreenHeight - bannerHeight - 2);
 
   // Build section boundaries (row numbers 1-indexed from top)
   const sectionBounds: SectionBoundary[] = [];
@@ -3224,7 +3227,7 @@ export function App({
   }
 
   // Status bar
-  sectionBounds.push({ name: "statusbar", startRow: terminalHeight - 1, endRow: terminalHeight });
+  sectionBounds.push({ name: "statusbar", startRow: Math.max(1, terminalHeight - 2), endRow: terminalHeight });
 
   // Focused response scroll metrics
   const focusRespWidth = Math.max(20, terminalWidth - 6);

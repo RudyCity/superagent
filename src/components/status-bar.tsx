@@ -73,14 +73,14 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
   return (
     <Box flexDirection="column" paddingX={1} marginTop={1}>
       {/* Line 1: Environment & Session */}
-      <Box>
+      <Box flexWrap="nowrap">
         {isProcessing ? (
           <LoadingIndicator />
         ) : (
           <Text color="gray" bold>● READY</Text>
         )}
         <Text color="gray"> • </Text>
-        <Text color="cyanBright" bold>{modelName}</Text>
+        <Text color="cyanBright" bold wrap="truncate-end">{modelName}</Text>
         {presetName && (
           <>
             <Text color="gray"> • </Text>
@@ -96,7 +96,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
         {activeChainName && (
           <>
             <Text color="gray"> • </Text>
-            <Text color="magentaBright" bold>🔗 Chain: {activeChainName}{activeChainNodeCount ? ` (${activeChainNodeCount} nodes)` : ""}</Text>
+            <Text color="magentaBright" bold wrap="truncate-end">🔗 Chain: {activeChainName}{activeChainNodeCount ? ` (${activeChainNodeCount} nodes)` : ""}</Text>
           </>
         )}
         {fullYoloMode ? (
@@ -113,8 +113,8 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
       </Box>
 
       {/* Line 2: Metrics & Context */}
-      <Box justifyContent="space-between" marginTop={0}>
-        <Box>
+      <Box justifyContent="space-between" marginTop={0} flexWrap="nowrap">
+        <Box flexWrap="nowrap" flexShrink={1}>
           <Text color="white">Msg: {messageCount}</Text>
           {activeLocks && activeLocks > 0 ? (
             <>
@@ -157,7 +157,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
             </>
           )}
         </Box>
-        <Box>
+        <Box flexShrink={0}>
           <Text color="blueBright" bold>
             Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})
           </Text>

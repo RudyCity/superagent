@@ -1500,7 +1500,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
   const visibleLinePositions = useMemo(() => {
     if (focusedResponseIndex !== null) return [];
 
-    const endIdx = localWrappedLines.length - scrollOffset;
+    const endIdx = Math.max(0, Math.min(localWrappedLines.length, localWrappedLines.length - scrollOffset));
     const startIdx = Math.max(0, endIdx - chatHeightLimit);
     const visibleWrappedLines = localWrappedLines.slice(startIdx, endIdx);
 
@@ -1579,7 +1579,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     }
   }, [visibleLinePositions, onVisibleLinesChange]);
 
-  const endIdx = localWrappedLines.length - scrollOffset;
+  const endIdx = Math.max(0, Math.min(localWrappedLines.length, localWrappedLines.length - scrollOffset));
   const startIdx = Math.max(0, endIdx - chatHeightLimit);
   const visibleWrappedLines = localWrappedLines.slice(startIdx, endIdx);
 
@@ -1639,7 +1639,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
         })() : (
           <>
             {visibleWrappedLines.map((line, idx) => (
-              <Box key={idx} flexDirection="column">
+              <Box key={`${line.lineIndex}_${startIdx + idx}_${line.type}`} flexDirection="column">
                 {line.node}
               </Box>
             ))}

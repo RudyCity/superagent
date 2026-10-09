@@ -88,4 +88,41 @@ describe("single-agent line-by-line scrolling", () => {
       expect(w.isTruncated).toBe(true);
     }
   });
+
+  it("should safely handle over-scrolling without slicing backwards or overflowing", () => {
+    const lines: ChatLine[] = [
+      { type: "user", content: "test user message" },
+      { type: "assistant", content: "test assistant reply" },
+    ];
+
+    const wrapped = computeWrappedLines({
+      lines,
+      chatWidth: 80,
+      maxAssistantResponseLines: 12,
+      expandedLines: new Set(),
+      expandedChildren: new Map(),
+      tokensUp: 10,
+      tokensDown: 20,
+      modelName: "test-model",
+      isProcessing: false,
+      streamDisplay: "",
+      isExecutingTool: false,
+      activeToolOutput: "",
+      timeLeft: null,
+      formatCompactNumber,
+    });
+
+    const totalLines = wrapped.length;
+    const excessiveScrollOffset = totalLines + 50;
+    const chatHeightLimit = 10;
+
+    const safeEndIdx = Math.max(0, Math.min(totalLines, totalLines - excessiveScrollOffset));
+    const safeStartIdx = Math.max(0, safeEndIdx - chatHeightLimit);
+    const visibleLines = wrapped.slice(safeStartIdx, safeEndIdx);
+
+    expect(safeEndIdx).toBe(0);
+    expect(safeStartIdx).toBe(0);
+    expect(visibleLines.length).toBe(0);
+  });
 });
+

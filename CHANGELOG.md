@@ -1,3 +1,11 @@
+## [1.13.10] - 2026-10-09
+### Fixed
+- Fixed terminal UI line stacking and overlapping during scrolling: Corrected `statusBarTotalRows` calculation in `app.tsx` from 2 to 3 (accounting for 2 content lines + 1 top margin in `StatusBar`), eliminating a persistent 1-line height overflow that pushed lines into scrollback and caused Ink cursor-up repositioning to hit row 1 and overwrite shifted lines.
+- Prevented status bar line wrapping: Added `flexWrap="nowrap"` and `wrap="truncate-end"` to `StatusBar` container and text elements in `src/components/status-bar.tsx` so long model names or branch names never cause unexpected row wrapping.
+- Clamped scroll slice indices in `chat-area.tsx`: Guarded `endIdx` and `startIdx` calculation with `Math.max(0, Math.min(total, total - scrollOffset))` to prevent negative slice offsets when scrolling past the top, preventing array slices from wrapping backwards and dumping excess lines.
+- Fixed React DOM reconciliation during scrolling: Replaced generic index keys (`key={idx}`) with stable compound keys (`key={`${line.lineIndex}_${startIdx + idx}_${line.type}`}`) in `visibleWrappedLines` so Ink cleanly updates scrolled lines without layout ghosting.
+- Clamped `chatHeightLimit`: Changed floor from `Math.max(3, ...)` to `Math.max(1, ...)` in `app.tsx` to prevent forcing excess height in small terminal windows or when bottom chrome panels are expanded.
+
 ## [1.13.9] - 2026-10-09
 ### Fixed
 - Fixed autonomous browser follow-through: resolved issue where the agent halted after launching Chrome and outputted manual step-by-step tutorial guides instead of autonomously driving the web workflow.
