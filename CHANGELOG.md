@@ -1,3 +1,11 @@
+## [1.13.25] - 2026-10-09
+### Improved
+- RealtimeAdvisor Browser Audit Mode Enhancements:
+  - Adaptive Scaling for Browser Tools: Added `control_chrome_cdp`, `control_chrome_vision`, `remote_chrome`, and `chrome_*` tool categories to `getEffectiveThresholds()`. Browser automation workflows now automatically receive adaptive threshold headroom (+1 warning threshold and +1 pause threshold) to prevent premature loop warnings during exploratory page audits.
+  - Output-Aware Consecutive Call Deduplication: Updated `evaluateStep()` so that consecutive calls with the same tool signature (e.g. `read_page` or `snapshot`) verify whether the result signature (`resultSig`) changed. When dynamic page content loads or updates between steps, `consecutiveSameCallCount` resets, eliminating false warnings during live page audits and streaming checks.
+  - State Mutation Recognition: Expanded `hasStateMutatingAction()` to recognize all state-altering CDP and vision actions (`scroll`, `submit`, `key`, `wait_for`, `click_label`, `type_label`, `press_key`).
+  - Browser-Specific Recovery Guidance: Added targeted browser suggestions and auto-correction hints in `generateRecoverySuggestion()` and `getAutoCorrectionSkillHint()`, advising agents to navigate to new URLs or interact with other page elements rather than generically suggesting file edits.
+
 ## [1.13.24] - 2026-10-09
 ### Fixed
 - Fixed False-Positive Cycle Warning in RealtimeAdvisor: Resolved an issue where progressive sequential workflows (such as browser auditing with `control_chrome_cdp` visiting sequential admin pages, paginated data inspection, or test runs across edits) were falsely flagged with `ADVISOR WARNING: You are cycling between repeated tool actions across recent steps`:

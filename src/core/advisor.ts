@@ -30,6 +30,7 @@ interface AgentState {
   consecutiveErrorsCount: number;
   consecutiveSameCallCount: number;
   lastCallKey: string;
+  lastResultSig: string;
   successStreak: number;
   patternWarningHits: number;
   cycleWarningHits: number;
@@ -243,7 +244,8 @@ export class RealtimeAdvisor {
     if (this.enableAdaptiveScaling && toolCalls.length > 0) {
       const toolNames = toolCalls.map(tc => tc.name);
       const isComplexTool = toolNames.some(name => 
-        name.includes("replace_file") || name.includes("apply_patch") || name.includes("run_command")
+        name.includes("replace_file") || name.includes("apply_patch") || name.includes("run_command") ||
+        name.includes("chrome") || name.includes("browser")
       );
       if (isComplexTool) {
         warningThreshold += 1;
@@ -261,6 +263,7 @@ export class RealtimeAdvisor {
         consecutiveErrorsCount: 0,
         consecutiveSameCallCount: 0,
         lastCallKey: "",
+        lastResultSig: "",
         successStreak: 0,
         patternWarningHits: 0,
         cycleWarningHits: 0,
@@ -314,11 +317,17 @@ export class RealtimeAdvisor {
    */
   public getAutoCorrectionSkillHint(action: AdvisorAction, toolNames: string[] = []): string {
     if (action.action === "pause_execution") {
+      if (toolNames.some(t => t.includes("chrome") || t.includes("browser"))) {
+        return "[SYSTEM AUTO-CORRECTION SKILL]: Browser automation loop limit reached. Stop repeating the same page actions. Summarize test results, proceed to next verification target, or close audit.";
+      }
       return "[SYSTEM AUTO-CORRECTION SKILL]: Loop limit reached. STOP repeating current calls. Switch to 'systematic-debugging' skill: 1) Re-read file range using 'read', 2) Check parameters & paths, 3) Modify strategy before executing tools.";
     }
     if (action.action === "warn_agent") {
       if (toolNames.some(t => t.includes("edit") || t.includes("replace"))) {
         return "[SYSTEM AUTO-CORRECTION SKILL]: Edit pattern warning. Re-read target lines using 'read' to verify exact string match and whitespace before re-applying edit.";
+      }
+      if (toolNames.some(t => t.includes("chrome") || t.includes("browser"))) {
+        return "[SYSTEM AUTO-CORRECTION SKILL]: Browser action warning. Target element or page state is unchanged. Navigate to a different page or conclude verification.";
       }
       return "[SYSTEM AUTO-CORRECTION SKILL]: Execution warning triggered. Analyze prior tool output carefully and change parameters or tool selection.";
     }
@@ -459,12 +468,19 @@ export class RealtimeAdvisor {
         currentCallKey = callKeys.join("|");
       }
 
+      const currentResultSig = computeResultSignature(toolResults);
       if (currentCallKey === state.lastCallKey) {
-        state.consecutiveSameCallCount++;
+        // If results changed between calls, output or environment state updated
+        if (state.lastResultSig && currentResultSig !== state.lastResultSig) {
+          state.consecutiveSameCallCount = 1;
+        } else {
+          state.consecutiveSameCallCount++;
+        }
       } else {
         state.consecutiveSameCallCount = 1;
         state.lastCallKey = currentCallKey;
       }
+      state.lastResultSig = currentResultSig;
 
       // If repeating the exact same calls
       if (state.consecutiveSameCallCount >= warningThreshold) {
@@ -778,6 +794,11 @@ export class RealtimeAdvisor {
 }
 
 function generateRecoverySuggestion(toolNames: string[], hasError: boolean): string {
+  if (toolNames.some(t => t.includes("chrome") || t.includes("browser"))) {
+    return hasError
+      ? "Check Chrome connection, target tab, or selector syntax before retrying browser action."
+      : "Page content or state has not changed. Try navigating to another URL, interacting with a different element, or summarizing audit findings.";
+  }
   if (toolNames.includes("edit") || toolNames.includes("replace_file_content")) {
     return hasError
       ? "Check exact string match or line range using 'read' before editing."
@@ -848,12 +869,19 @@ function hasStateMutatingAction(toolCalls: ToolCall[], toolResults: ToolResult[]
     if (name === "control_chrome_cdp") {
       const args = tc.args as Record<string, unknown> | undefined;
       const cmd = String(args?.command || args?.cmd || "").toLowerCase();
-      if (["navigate", "click", "type", "activate", "new_tab", "close_tab"].includes(cmd)) {
+      if (["navigate", "click", "type", "activate", "new_tab", "close_tab", "scroll", "submit", "key", "wait_for"].includes(cmd)) {
         return true;
       }
     }
-    if (name.startsWith("chrome_")) {
-      if (["click", "type", "navigate", "select", "submit", "open_tab", "close_tab"].some(a => name.includes(a))) {
+    if (name === "control_chrome_vision") {
+      const args = tc.args as Record<string, unknown> | undefined;
+      const cmd = String(args?.command || args?.cmd || "").toLowerCase();
+      if (["click_label", "type_label", "press_key"].includes(cmd)) {
+        return true;
+      }
+    }
+    if (name.startsWith("chrome_") || name.includes("remote_chrome")) {
+      if (["click", "type", "navigate", "select", "submit", "open_tab", "close_tab", "press"].some(a => name.includes(a))) {
         return true;
       }
     }

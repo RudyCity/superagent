@@ -193,4 +193,39 @@ describe("RealtimeAdvisor - Loop Detection & Repeated Read Guard", () => {
     expect(thirdNav.suggestion).toContain("browser actions");
     expect(thirdNav.healthScore).toBeLessThan(100);
   });
+
+  it("does not falsely warn when consecutive read_page calls return changing dynamic content", () => {
+    const outputs = [
+      "Page state: Loading 10%",
+      "Page state: Loading 50%",
+      "Page state: Loading 90%",
+      "Page state: Completed table with 20 items",
+    ];
+
+    for (let i = 0; i < outputs.length; i++) {
+      const step = advisor.evaluateStep(
+        [{ id: `read-${i}`, name: "control_chrome_cdp", args: { command: "read_page" } }],
+        [{ toolCallId: `read-${i}`, name: "control_chrome_cdp", result: outputs[i] }]
+      );
+      expect(step.action).toBe("pass");
+    }
+  });
+
+  it("provides browser-specific recovery suggestion and auto-correction hint when browser tool repeated without change", () => {
+    for (let i = 0; i < 2; i++) {
+      advisor.evaluateStep(
+        [{ id: `read-${i}`, name: "control_chrome_cdp", args: { command: "read_page" } }],
+        [{ toolCallId: `read-${i}`, name: "control_chrome_cdp", result: "identical content" }]
+      );
+    }
+
+    const third = advisor.evaluateStep(
+      [{ id: "read-2", name: "control_chrome_cdp", args: { command: "read_page" } }],
+      [{ toolCallId: "read-2", name: "control_chrome_cdp", result: "identical content" }]
+    );
+
+    expect(third.action).toBe("warn_agent");
+    expect(third.suggestion).toContain("Page content or state has not changed");
+    expect(third.autoCorrectionHint).toContain("Browser action warning");
+  });
 });
