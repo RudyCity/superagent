@@ -97,6 +97,10 @@ function findVisionServerScript(): string | null {
 }
 
 /** Quick check: is the UI-DETR-1 service responding on /health? */
+export async function checkVisionServerHealth(): Promise<boolean> {
+  return await visionHealth();
+}
+
 async function visionHealth(): Promise<boolean> {
   try {
     const res: any = await httpGetJson(visionHost(), visionPort(), "/health");

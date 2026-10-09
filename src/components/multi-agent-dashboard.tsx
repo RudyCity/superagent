@@ -86,6 +86,7 @@ import { useDashboardSessions } from "../hooks/useDashboardSessions.js";
 import { useDashboardMouse } from "../hooks/useDashboardMouse.js";
 import { useDashboardKeyboard } from "../hooks/useDashboardKeyboard.js";
 import { useRmemoryStatus } from "../hooks/useRmemoryStatus.js";
+import { useVisionStatus } from "../hooks/useVisionStatus.js";
 
 
 // Read version from package.json
@@ -204,6 +205,7 @@ export function MultiAgentDashboard({
   });
   const [lastSpeed, setLastSpeed] = useState<number | null>(null);
   const rmemoryStatus = useRmemoryStatus();
+  const isVisionActive = useVisionStatus();
   const [isExecutingTool, setIsExecutingTool] = useState(false);
   const [activeToolOutput, setActiveToolOutput] = useState("");
   const [procsSelectedIndex, setProcsSelectedIndex] = useState(0);
@@ -1638,6 +1640,7 @@ export function MultiAgentDashboard({
         rmemoryStatus={rmemoryStatus}
         workspace={agent?.workingDirectory || process.cwd()}
         isProcessing={isProcessing}
+        isVisionActive={isVisionActive}
       />
     </Box>
   );

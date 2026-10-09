@@ -26,6 +26,7 @@ export interface StatusBarProps {
   activeLocks?: number;
   yoloMode?: boolean;
   fullYoloMode?: boolean;
+  isVisionActive?: boolean;
 }
 
 function LoadingIndicator() {
@@ -68,6 +69,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
     activeLocks,
     yoloMode,
     fullYoloMode,
+    isVisionActive,
   } = props;
 
   return (
@@ -132,6 +134,12 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
               <Text color="yellowBright" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
             </>
           )}
+          {isVisionActive ? (
+            <>
+              <Text color="gray"> • </Text>
+              <Text color="greenBright" bold>👁️ DETR: ON</Text>
+            </>
+          ) : null}
           {rmemoryStatus === "online" && (
             <>
               <Text color="gray"> • </Text>

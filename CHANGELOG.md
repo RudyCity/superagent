@@ -1,3 +1,11 @@
+## [1.13.33] - 2026-10-09
+### Added
+- Terminal Footer UI-DETR-1 Active Status Indicator:
+  - Added `useVisionStatus` hook (`src/hooks/useVisionStatus.ts`) to monitor local UI-DETR-1 vision service health (`http://127.0.0.1:8095/health`).
+  - Added prominent `👁️ DETR: ON` green badge in `StatusBar` (`src/components/status-bar.tsx`) and `DashboardStatusBar` (`src/components/dashboard/dashboard-status-bar.tsx`) whenever the vision server is active.
+  - Wired live vision status to both single-agent mode (`src/app.tsx`) and multi-agent dashboard (`src/components/multi-agent-dashboard.tsx`).
+  - Exported `checkVisionServerHealth` from `src/core/tools/chromeVisionTools.ts`.
+
 ## [1.13.32] - 2026-10-09
 ### Fixed & Resiliency
 - Vision Payload Safety & Unsupported Image Self-Healing:

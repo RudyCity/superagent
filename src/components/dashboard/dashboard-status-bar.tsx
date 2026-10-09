@@ -23,6 +23,7 @@ export interface DashboardStatusBarProps {
   rmemoryStatus?: "online" | "offline" | "checking" | "disabled";
   workspace?: string;
   isProcessing?: boolean;
+  isVisionActive?: boolean;
 }
 
 function StatusBarSpinner() {
@@ -61,6 +62,7 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
   rmemoryStatus,
   workspace,
   isProcessing = false,
+  isVisionActive,
 }: DashboardStatusBarProps) {
   const subagentTokens = Array.from(subagentInstances.values()).reduce(
     (acc: number, i: any) => acc + (i.tokenUsage?.prompt || 0) + (i.tokenUsage?.completion || 0),
@@ -87,6 +89,12 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
             <Text color="yellow" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
           </>
         )}
+        {isVisionActive ? (
+          <>
+            <Text color="gray"> • </Text>
+            <Text color="greenBright" bold>👁️ DETR: ON</Text>
+          </>
+        ) : null}
         <Text color="gray"> • </Text>
         {rmemoryStatus === "online" && (
           <Text color="magenta" bold>🧠 Mem: ON</Text>

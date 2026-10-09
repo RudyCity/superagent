@@ -54,6 +54,7 @@ import { useWizardSubmit } from "./hooks/useWizardSubmit.js";
 import { useKeyboardHandler } from "./hooks/useKeyboardHandler.js";
 import { useMouseScroll, type SectionBoundary, type ChatLinePosition } from "./hooks/useMouseScroll.js";
 import { useRmemoryStatus } from "./hooks/useRmemoryStatus.js";
+import { useVisionStatus } from "./hooks/useVisionStatus.js";
 
 export { stripSgrMouseSequences } from "./utils/text.js";
 
@@ -302,6 +303,7 @@ export function App({
   
   const [goalMode, setGoalMode] = useState<{ goal: string; startedAt: number } | null>(null);
   const rmemoryStatus = useRmemoryStatus();
+  const isVisionActive = useVisionStatus();
   const [toolTimeout, setToolTimeout] = useState<number | null>(null);
   const [toolStartTime, setToolStartTime] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
@@ -3614,6 +3616,7 @@ export function App({
         activeLocks={activeLocks}
         yoloMode={isYoloMode()}
         fullYoloMode={isFullYoloMode()}
+        isVisionActive={isVisionActive}
       />
     </Box>
   );
