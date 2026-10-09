@@ -1,3 +1,10 @@
+## [1.13.15] - 2026-10-09
+### Added
+- Browser Reading and Link Extraction in `control_chrome_cdp`: Added `read_page` and `extract_links` commands to `control_chrome_cdp`. `read_page` captures page title, headings (H1-H3), status alerts/notices, body paragraphs (up to 7,000 characters), and primary links. `extract_links` extracts hyperlinks matching optional keyword filters (e.g. `verify`, `confirm`, `token`, `magic`), curing browser agent blindness on email, article, and verification workflows.
+- Contextual Headings and Alerts in Snapshot: `snapshot` and auto-snapshot on navigation now extract and prepend page headings (H1-H2) and banner alerts/status messages (`[role="alert"]`, `.alert`, `.notice`, `.error-message`) directly above the element list. This ensures error pages, HTTP 404 responses, and status messages are immediately visible in the snapshot and cannot be mistaken for successful dashboards.
+- Increased Element Text Budget: Increased snapshot button/link text truncation limit from 80 to 140 characters, preserving email subject lines and contextual links in temporary email and webmail inboxes.
+- Anti-Hallucination Prompt Guidance: Updated system prompts in `src/core/prompts.ts` with explicit rules banning guessing or synthesizing verification URLs (`/verify?email=...`), instructing agents to call `read_page` or `extract_links` on confirmation flows and verify snapshot headings before assuming completion.
+
 ## [1.13.14] - 2026-10-09
 ### Optimized
 - Navigation Auto-Wait and Single-Turn Auto-Snapshot in `control_chrome_cdp`: `navigate` command now polls `document.readyState` until interactive/complete (up to 3000ms) and automatically attaches the compact snapshot of interactive elements directly in the response, eliminating redundant round-trips and allowing agents to navigate and inspect pages in a single turn.

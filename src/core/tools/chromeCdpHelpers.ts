@@ -23,6 +23,14 @@ export interface SnapshotEntry {
   selector: string;
 }
 
+export interface PageOverview {
+  title?: string;
+  url?: string;
+  headings?: Array<{ tag: string; text: string }>;
+  alerts?: string[];
+  elements?: SnapshotEntry[];
+}
+
 /**
  * Stores the last DOM snapshot per target ID.
  * Used by click and type to resolve elements by numerical index.
@@ -36,7 +44,8 @@ export const snapshotPrevStore = new Map<string, SnapshotEntry[]>();
 
 /**
  * In-page JavaScript snippet that traverses the DOM and extracts interactive elements.
- * Generates compact CSS selectors and identifies form controls with IDs and names.
+ * Also extracts page title, URL, top headings (h1, h2), and alerts/status messages so
+ * the agent is never blind to page context, 404 errors, or verification requirements.
  */
 export const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
   const els = Array.from(document.querySelectorAll(
@@ -72,9 +81,9 @@ export const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
   }
   function label(el) {
     const t = (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || '').replace(/\\s+/g, ' ').trim();
-    return t.slice(0, 80);
+    return t.slice(0, 140);
   }
-  return els.filter(visible).slice(0, 120).map((el, i) => ({
+  const elements = els.filter(visible).slice(0, 120).map((el, i) => ({
     index: i,
     tag: el.tagName.toLowerCase(),
     text: label(el),
@@ -85,7 +94,89 @@ export const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
     name: el.getAttribute('name') || undefined,
     selector: genSelector(el),
   }));
+
+  const headings = Array.from(document.querySelectorAll('h1, h2, [role="heading"]'))
+    .map(h => ({ tag: h.tagName.toLowerCase(), text: (h.innerText || '').replace(/\\s+/g, ' ').trim() }))
+    .filter(h => h.text.length > 0 && h.text.length < 150)
+    .slice(0, 6);
+
+  const alerts = Array.from(document.querySelectorAll('[role="alert"], [aria-live], .alert, .error, .notification, .banner'))
+    .map(a => (a.innerText || '').replace(/\\s+/g, ' ').trim())
+    .filter(t => t.length > 0 && t.length < 200)
+    .slice(0, 3);
+
+  return {
+    title: document.title,
+    url: window.location.href,
+    headings,
+    alerts,
+    elements
+  };
 })()`;
+
+/**
+ * In-page JavaScript snippet that reads the full visible page text, headings,
+ * status alerts, and hyperlinks. Eliminates blindness to non-interactive content
+ * such as incoming email bodies, verification tokens, or error descriptions.
+ */
+export const READ_PAGE_JS = `/*cdp-read-page*/(() => {
+  const url = window.location.href;
+  const title = document.title;
+  
+  const headings = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'))
+    .map(h => ({ tag: h.tagName.toLowerCase(), text: (h.innerText || '').replace(/\\s+/g, ' ').trim() }))
+    .filter(h => h.text.length > 0)
+    .slice(0, 10);
+
+  const alerts = Array.from(document.querySelectorAll('[role="alert"], [aria-live], .alert, .error, .notification, .toast, .banner'))
+    .map(a => (a.innerText || '').replace(/\\s+/g, ' ').trim())
+    .filter(t => t.length > 0)
+    .slice(0, 5);
+
+  let bodyText = "";
+  if (document.body) {
+    const clone = document.body.cloneNode(true);
+    const unneeded = clone.querySelectorAll('script, style, noscript, svg, iframe');
+    unneeded.forEach(el => el.remove());
+    bodyText = (clone.innerText || "").replace(/\\r\\n/g, "\\n").replace(/\\n{3,}/g, "\\n\\n").trim();
+  }
+
+  const links = Array.from(document.querySelectorAll('a[href]'))
+    .map(a => {
+      const text = (a.innerText || a.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim();
+      const href = a.href || '';
+      return { text: text.slice(0, 100), href };
+    })
+    .filter(l => l.href && !l.href.startsWith('javascript:') && !l.href.startsWith('#'))
+    .slice(0, 30);
+
+  return {
+    url,
+    title,
+    headings,
+    alerts,
+    bodyText: bodyText.slice(0, 7000),
+    links
+  };
+})()`;
+
+/**
+ * Builds page JS that extracts hyperlinks from the page, optionally matching a pattern.
+ */
+export function buildExtractLinksJs(pattern?: string): string {
+  return `/*cdp-extract-links*/(() => {
+    const filter = ${JSON.stringify(pattern || "")}.toLowerCase();
+    const links = Array.from(document.querySelectorAll('a[href]'))
+      .map(a => {
+        const text = (a.innerText || a.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim();
+        const href = a.href || '';
+        return { text: text.slice(0, 120), href };
+      })
+      .filter(l => l.href && !l.href.startsWith('javascript:') && !l.href.startsWith('#'))
+      .filter(l => !filter || l.text.toLowerCase().includes(filter) || l.href.toLowerCase().includes(filter));
+    return links.slice(0, 50);
+  })()`;
+}
 
 /**
  * Builds page JS that clicks the element matching selector.
@@ -96,7 +187,7 @@ export function buildClickJs(selector: string): string {
     if (!el) return JSON.stringify({ ok: false, reason: "no element matches selector" });
     try { el.scrollIntoView({ block: "center" }); } catch (e) {}
     el.click();
-    const t = (el.innerText || el.value || "").replace(/\\s+/g, " ").trim().slice(0, 80);
+    const t = (el.innerText || el.value || "").replace(/\\s+/g, " ").trim().slice(0, 120);
     return JSON.stringify({ ok: true, tag: el.tagName.toLowerCase(), text: t });
   })()`;
 }
@@ -139,7 +230,7 @@ export function buildTypeJs(selector: string, text: string, clear: boolean): str
     } else {
       return JSON.stringify({ ok: false, reason: "element is not editable (not input/textarea/contenteditable)" });
     }
-    return JSON.stringify({ ok: true, tag: tag, typed: text.slice(0, 80) });
+    return JSON.stringify({ ok: true, tag: tag, typed: text.slice(0, 120) });
   })()`;
 }
 
@@ -164,7 +255,7 @@ export function buildWaitForJs(opts: { selector?: string; text?: string; timeout
         return true;
       }
       function finishOk(kind, el) {
-        const t = el ? ((el.innerText || el.value || "").replace(/\\s+/g, " ").trim()).slice(0, 80) : "";
+        const t = el ? ((el.innerText || el.value || "").replace(/\\s+/g, " ").trim()).slice(0, 120) : "";
         resolve(JSON.stringify({
           ok: true, kind: kind,
           selector: o.selector || undefined, text: o.text || undefined,

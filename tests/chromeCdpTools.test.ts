@@ -81,6 +81,42 @@ describe("control_chrome_cdp (mock CDP server)", () => {
             );
             return;
           }
+          if (expr.includes("cdp-read-page")) {
+            ws.send(
+              JSON.stringify({
+                id: msg.id,
+                result: {
+                  result: {
+                    value: {
+                      title: "Mock Tab",
+                      url: "https://example.com/",
+                      headings: [{ tag: "h1", text: "Welcome to Groq Console" }],
+                      alerts: ["Email verification required"],
+                      bodyText: "Please check your email mmxzrmxljenlsndpnl@jbsze.com for the login link.",
+                      links: [{ text: "Verify Email", href: "https://auth.groq.com/verify-email?token=xyz123" }],
+                    },
+                  },
+                },
+              })
+            );
+            return;
+          }
+          if (expr.includes("cdp-extract-links")) {
+            ws.send(
+              JSON.stringify({
+                id: msg.id,
+                result: {
+                  result: {
+                    value: [
+                      { text: "Verify Email", href: "https://auth.groq.com/verify-email?token=xyz123" },
+                      { text: "Terms of Service", href: "https://groq.com/terms" },
+                    ],
+                  },
+                },
+              })
+            );
+            return;
+          }
         }
         const canned: Record<string, any> = {
           "Page.navigate": {},
@@ -159,7 +195,23 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   test("tool is registered with the right name and commands", () => {
     expect(controlChromeCdpTool.name).toBe("control_chrome_cdp");
     const cmds = (controlChromeCdpTool.parameters as any).properties.command.enum as string[];
-    expect(cmds).toEqual(["list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "click", "type", "wait_for", "screenshot", "pdf", "get_cookies"]);
+    expect(cmds).toEqual([
+      "list_targets",
+      "new_tab",
+      "close_tab",
+      "activate",
+      "navigate",
+      "evaluate",
+      "snapshot",
+      "read_page",
+      "extract_links",
+      "click",
+      "type",
+      "wait_for",
+      "screenshot",
+      "pdf",
+      "get_cookies",
+    ]);
     expect(controlChromeCdpTool.description).toContain("--remote-debugging-port=9222");
     expect(controlChromeCdpTool.description).toContain("no extension required");
   });
@@ -458,6 +510,24 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     });
     expect(res2).toContain("navigated tab 'Mock Tab' to https://example.com/obj");
     expect(res2).not.toContain("Interactive elements");
+  });
+
+  test("read_page extracts headings, alerts, body text, and key links", async () => {
+    const res = await controlChromeCdpTool.execute({ command: "read_page" });
+    expect(res).toContain("page content for 'Mock Tab'");
+    expect(res).toContain("[H1] Welcome to Groq Console");
+    expect(res).toContain("Email verification required");
+    expect(res).toContain("Please check your email");
+    expect(res).toContain("https://auth.groq.com/verify-email?token=xyz123");
+  });
+
+  test("extract_links extracts hyperlinks matching pattern", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "extract_links",
+      pattern: "verify",
+    });
+    expect(res).toContain("extracted 2 link(s)");
+    expect(res).toContain("https://auth.groq.com/verify-email?token=xyz123");
   });
 });
 

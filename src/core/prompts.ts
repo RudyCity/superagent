@@ -83,7 +83,7 @@ const POST_CHANGE_INTEGRITY_RULE = `- POST_CHANGE_INTEGRITY: After EVERY change,
   GAP_SCAN (uncovered paths, stubs, missing imports) → MISSING_CHECK (error handling, validation, types, tests, docs) → BOTTLENECK_DETECT (sync-in-async, N+1, mem leaks, unbounded ops) → CROSS_REF_VALIDATE (callers, consumers, config refs, dead code) → REGRESSION_SURFACE (adjacent modules, contract breaks, side-effects). Block completion until clean.`;
 
 const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Chrome automation suite.
-  - Native CDP (preferred, no extension): control_chrome_cdp (port 9222: list_targets, new_tab, close_tab, activate, snapshot, click/type by index, wait_for, evaluate, cookies, screenshot, pdf). Auto-launches Chrome in isolated debug profile if closed.
+  - Native CDP (preferred, no extension): control_chrome_cdp (port 9222: list_targets, new_tab, close_tab, activate, snapshot, read_page, extract_links, click/type by index, wait_for, evaluate, cookies, screenshot, pdf). Auto-launches Chrome in isolated debug profile if closed.
   - Vision AI: control_chrome_vision (port 9333: status, parse_screenshot, click_label, type_label, setup via local OmniParser YOLO+Florence-2).
   - Extension Bridge: control_browser_tab (port 9223: detect_ui, execute_chain, macros, storage, tabs).
   - Process/Windows: list_running_chrome, close_chrome_window, close_chrome_profile, list_chrome_profiles, launch_chrome_profile.
@@ -127,12 +127,16 @@ SUBAGENT REPORT
 
 const BROWSER_AUTOMATION_CORE = `- AUTOMATION_TRACKS:
   - Track 1 (Extension-free, default): control_chrome_cdp over 127.0.0.1:9222.
-    Workflow: list_targets → snapshot(compact:true) → click/type by {"index":N} or {"selector":"..."} → wait_for if dynamic. Auto-unthrottles background tabs.
+    Workflow: list_targets → snapshot(compact:true) → read_page/extract_links if reading content/emails → click/type by {"index":N} or {"selector":"..."} → wait_for if dynamic. Auto-unthrottles background tabs.
   - Track 2 (Vision AI): control_chrome_vision over 127.0.0.1:9333.
     Workflow: status → parse_screenshot → click_label/type_label by visible label text via local OmniParser (YOLO+Florence-2). Ideal for canvas/shadow-DOM/obfuscated UI.
   - Track 3 (Extension Bridge): control_browser_tab over port 9223. Active when remote extension is connected (detect_ui, macros, storage).
 - STEALTH_AND_AUTO_WAIT: control_chrome_cdp click/type auto-wait for elements. Native input/change events dispatched for React/Vue reactivity.
 - DIAGNOSTICS: Inspect get_browser_console_logs, get_browser_network_logs, or evaluate on target tab on unexpected behavior.
+- TEXT_AND_EMAIL_VERIFICATION:
+  - Never guess or synthesize verification/magic-link URLs (e.g. /verify?email=...).
+  - To read email or page text: CALL read_page or extract_links(pattern:'verify'|'confirm'|'token').
+  - Always check snapshot headings and alerts: if snapshot shows '[H1] 404' or error alerts, do NOT mistake it for success.
 
 # MACRO SYSTEM
 - Save: control_browser_macro_save step onError: retry(flaky), skip(cosmetic), stop(critical).
@@ -147,6 +151,7 @@ else if user_requests_web_action_or_automation (e.g. signup, registration, login
     2. CONTINUOUS EXECUTION LOOP (Track 1 default):
        - navigate/new_tab to target URL
        - snapshot(compact:true) to inspect interactive elements & input fields
+       - if inspecting emails/articles/messages: CALL read_page or extract_links
        - click/type by index or selector to fill fields and submit forms
        - NEVER stop after launching or output manual guides to the user. Execute end-to-end until finished.
 else if vision_requested_or_canvas_ui:

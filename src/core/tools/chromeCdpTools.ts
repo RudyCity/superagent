@@ -15,9 +15,12 @@ import { ensureCdpRunning } from "./chromeCommon.js";
 import {
   CdpTarget,
   SnapshotEntry,
+  PageOverview,
   snapshotStore,
   snapshotPrevStore,
   SNAPSHOT_JS,
+  READ_PAGE_JS,
+  buildExtractLinksJs,
   READY_STATE_JS,
   buildClickJs,
   buildTypeJs,
@@ -501,9 +504,11 @@ export const controlChromeCdpTool: Tool = {
   description:
     "Control the user's REAL Chrome browser directly via Chrome Remote Debugging (CDP) at http://127.0.0.1:9222 — no extension required and no isolated background tab. " +
     "REQUIRES Chrome to be running with --remote-debugging-port=9222 (close ALL Chrome windows, then reopen Chrome from the taskbar shortcut). " +
-    "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, click, type, wait_for, screenshot, pdf, get_cookies. " +
+    "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, screenshot, pdf, get_cookies. " +
     "Convenience: 'navigate' automatically waits for page ready and returns an immediate interactive element snapshot in a single turn. " +
-    "Arguments like url, index, text, selector, expression can be provided directly at top-level or inside payload.",
+    "'read_page' extracts full visible body text, headings, alerts/status banners, and email contents. " +
+    "'extract_links' extracts hyperlinks with an optional keyword/pattern filter (e.g. 'verify', 'confirm', 'token'). " +
+    "Arguments like url, index, text, selector, pattern, expression can be provided directly at top-level or inside payload.",
   parameters: {
     type: "object",
     properties: {
@@ -517,6 +522,8 @@ export const controlChromeCdpTool: Tool = {
           "navigate",
           "evaluate",
           "snapshot",
+          "read_page",
+          "extract_links",
           "click",
           "type",
           "wait_for",
@@ -529,7 +536,7 @@ export const controlChromeCdpTool: Tool = {
       payload: {
         type: "string",
         description:
-          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://..."}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). click: {"index": 3} or {"selector": "#login"}. type: {"index": 2, "text": "hello"}.',
+          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://..."}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3} or {"selector": "#login"}. type: {"index": 2, "text": "hello"}.',
       },
       url: {
         type: "string",
@@ -546,6 +553,10 @@ export const controlChromeCdpTool: Tool = {
       selector: {
         type: "string",
         description: "Optional top-level CSS selector convenience shortcut for click, type, or wait_for.",
+      },
+      pattern: {
+        type: "string",
+        description: "Optional top-level keyword filter pattern for extract_links (e.g. 'verify', 'confirm', 'token').",
       },
       targetId: {
         type: "string",
@@ -573,6 +584,9 @@ export const controlChromeCdpTool: Tool = {
       "index",
       "text",
       "selector",
+      "pattern",
+      "query",
+      "filter",
       "expression",
       "compact",
       "diff",
@@ -647,14 +661,31 @@ export const controlChromeCdpTool: Tool = {
             try {
               const sRes: any = await cdpSend(target, "Runtime.evaluate", { expression: SNAPSHOT_JS, returnByValue: true });
               const sVal = sRes && sRes.result ? sRes.result.value : undefined;
-              const fresh: SnapshotEntry[] = Array.isArray(sVal) ? sVal : [];
+              let fresh: SnapshotEntry[] = [];
+              let pageOverview: PageOverview | null = null;
+              if (Array.isArray(sVal)) {
+                fresh = sVal;
+              } else if (sVal && typeof sVal === "object" && Array.isArray((sVal as any).elements)) {
+                fresh = (sVal as any).elements;
+                pageOverview = sVal as any;
+              }
               snapshotPrevStore.set(target.id, snapshotStore.get(target.id) ?? []);
               snapshotStore.set(target.id, fresh);
               const maxElements = 35;
               const entries = fresh.slice(0, maxElements);
+              let contextHeader = "";
+              if (pageOverview) {
+                const hList = pageOverview.headings?.map((h) => `[${h.tag.toUpperCase()}] ${h.text}`).join(" | ");
+                const aList = pageOverview.alerts?.map((a) => `[ALERT] ${a}`).join(" | ");
+                const parts: string[] = [];
+                if (hList) parts.push(`Headings: ${hList}`);
+                if (aList) parts.push(`Alerts/Status: ${aList}`);
+                if (parts.length > 0) contextHeader = "\n" + parts.join("\n");
+              }
               if (entries.length > 0) {
                 snapSuffix =
-                  `\n\nInteractive elements (${entries.length}${fresh.length > maxElements ? ` of ${fresh.length}` : ""}):\n` +
+                  `\n\nInteractive elements (${entries.length}${fresh.length > maxElements ? ` of ${fresh.length}` : ""}):` +
+                  (contextHeader ? `${contextHeader}\n` : "\n") +
                   entries.map((e) => formatSnapshotEntry(e, true)).join("\n") +
                   `\nUse click/type with {"index": N}.`;
               }
@@ -691,7 +722,14 @@ export const controlChromeCdpTool: Tool = {
 
           let res: any = await cdpSend(target, "Runtime.evaluate", { expression: SNAPSHOT_JS, returnByValue: true });
           let value = res && res.result ? res.result.value : undefined;
-          let fresh: SnapshotEntry[] = Array.isArray(value) ? value : [];
+          let fresh: SnapshotEntry[] = [];
+          let pageOverview: PageOverview | null = null;
+          if (Array.isArray(value)) {
+            fresh = value;
+          } else if (value && typeof value === "object" && Array.isArray((value as any).elements)) {
+            fresh = (value as any).elements;
+            pageOverview = value as any;
+          }
 
           if (fresh.length === 0 && payload.wait_for_elements) {
             const waitMs = parseTimeoutMs(payload.wait_for_elements, 2000);
@@ -701,7 +739,12 @@ export const controlChromeCdpTool: Tool = {
               try {
                 res = await cdpSend(target, "Runtime.evaluate", { expression: SNAPSHOT_JS, returnByValue: true });
                 value = res && res.result ? res.result.value : undefined;
-                fresh = Array.isArray(value) ? value : [];
+                if (Array.isArray(value)) {
+                  fresh = value;
+                } else if (value && typeof value === "object" && Array.isArray((value as any).elements)) {
+                  fresh = (value as any).elements;
+                  pageOverview = value as any;
+                }
                 if (fresh.length > 0) break;
               } catch {
                 break;
@@ -722,13 +765,73 @@ export const controlChromeCdpTool: Tool = {
             return "control_chrome_cdp: snapshot found no interactive elements on this page.";
           }
           const isLimited = (payload.max_elements !== undefined && payload.max_elements !== "") || fresh.length > maxElements;
+          let contextHeader = "";
+          if (pageOverview) {
+            const hList = pageOverview.headings?.map((h) => `[${h.tag.toUpperCase()}] ${h.text}`).join(" | ");
+            const aList = pageOverview.alerts?.map((a) => `[ALERT] ${a}`).join(" | ");
+            const parts: string[] = [];
+            if (hList) parts.push(`Headings: ${hList}`);
+            if (aList) parts.push(`Alerts/Status: ${aList}`);
+            if (parts.length > 0) contextHeader = "\n" + parts.join("\n");
+          }
           return (
             `control_chrome_cdp: snapshot of ${title} - ${entries.length} interactive element(s)` +
             (compact ? " (compact)" : "") +
             (isLimited ? ` (limited to ${maxElements})` : "") +
             `.\n` +
+            (contextHeader ? `${contextHeader}\n` : "") +
             `Use click/type with {"index": N}.\n${entries.map((e) => formatSnapshotEntry(e, compact)).join("\n")}`
           );
+        }
+        case "read_page": {
+          const target = await pickTarget(targetId);
+          const res: any = await cdpSend(target, "Runtime.evaluate", {
+            expression: READ_PAGE_JS,
+            returnByValue: true,
+          });
+          const data = res && res.result ? res.result.value : undefined;
+          if (!data || typeof data !== "object") {
+            return `control_chrome_cdp: could not read page content from tab '${truncate(target.title, 80)}'.`;
+          }
+          const title = String(data.title || target.title);
+          const url = String(data.url || target.url);
+          const headings: Array<{ tag: string; text: string }> = Array.isArray(data.headings) ? data.headings : [];
+          const alerts: string[] = Array.isArray(data.alerts) ? data.alerts : [];
+          const bodyText: string = String(data.bodyText || "").trim();
+          const links: Array<{ text: string; href: string }> = Array.isArray(data.links) ? data.links : [];
+
+          const sections: string[] = [];
+          sections.push(`control_chrome_cdp: page content for '${title}' (${url}):`);
+          if (headings.length > 0) {
+            sections.push(`Headings:\n` + headings.map((h) => `- [${h.tag.toUpperCase()}] ${h.text}`).join("\n"));
+          }
+          if (alerts.length > 0) {
+            sections.push(`Alerts / Status:\n` + alerts.map((a) => `- ${a}`).join("\n"));
+          }
+          if (bodyText) {
+            sections.push(`Visible Content:\n${truncate(bodyText, 5000)}`);
+          } else {
+            sections.push(`Visible Content: (no visible text)`);
+          }
+          if (links.length > 0) {
+            sections.push(`Key Links (${links.length}):\n` + links.slice(0, 20).map((l) => `- "${l.text || '(no text)'}" -> ${l.href}`).join("\n"));
+          }
+          return sections.join("\n\n");
+        }
+        case "extract_links": {
+          const target = await pickTarget(targetId);
+          const pattern = String(payload.pattern || payload.query || payload.filter || "");
+          const res: any = await cdpSend(target, "Runtime.evaluate", {
+            expression: buildExtractLinksJs(pattern),
+            returnByValue: true,
+          });
+          const links: Array<{ text: string; href: string }> = res && res.result && Array.isArray(res.result.value) ? res.result.value : [];
+          const title = truncate(target.title, 60);
+          if (links.length === 0) {
+            return `control_chrome_cdp: found 0 links on '${title}'${pattern ? ` matching '${pattern}'` : ""}.`;
+          }
+          const formatted = links.map((l) => `- "${l.text || '(no text)'}" -> ${l.href}`).join("\n");
+          return `control_chrome_cdp: extracted ${links.length} link(s) on '${title}'${pattern ? ` matching '${pattern}'` : ""}:\n${formatted}`;
         }
         case "click": {
           const target = await pickTarget(targetId);
@@ -830,7 +933,7 @@ export const controlChromeCdpTool: Tool = {
           return `control_chrome_cdp: ${cookies.length} cookie(s):\n${JSON.stringify(summary, null, 1)}`;
         }
         default:
-          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, click, type, wait_for, screenshot, pdf, get_cookies.`;
+          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, screenshot, pdf, get_cookies.`;
       }
     } catch (err: any) {
       return `control_chrome_cdp failed: ${(err && err.message) || String(err)}`;
