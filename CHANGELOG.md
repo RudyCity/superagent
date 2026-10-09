@@ -1,3 +1,7 @@
+## [1.13.17] - 2026-10-09
+### Fixed
+- Terminal Retry Countdown Stacking: Applied `resolveCarriageReturns` in `wrapMarkdownToLines`, `wrapChatLineToLines`, and `wrapNestedChild` inside `src/components/chat-area.tsx`, as well as `wrapThinkingToLines` inside `src/components/chat-thinking.tsx`. Previously, `\r` carriage returns sent by countdown tickers (e.g. `\rRetrying in Xs...`) were stripped via `.replace(/\r/g, "")`, causing successive countdown intervals to concatenate horizontally across lines rather than overwriting in-place.
+
 ## [1.13.16] - 2026-10-09
 ### Fixed
 - Action and Automation Command Guard in Conversation Fast-Path: Updated `isHighConfidenceConversation` in `src/core/requestClassifier.ts` to strictly prohibit short-circuiting action and online workflow prompts (e.g. `daftar`, `register`, `login`, `buat akun`, `bikin`, `isi form`, `scrape`, `testing`, `buka browser`, etc.) into tool-less conversational fast-path. These commands now unconditionally retain their full execution toolset.

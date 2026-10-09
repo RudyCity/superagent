@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { wrapTextForDisplay, visibleLength } from "../utils/responseScroll.js";
+import { resolveCarriageReturns } from "../utils/text.js";
 import type { WrappedChatLine } from "./chat-area.js";
 
 /**
@@ -53,7 +54,7 @@ export function wrapThinkingToLines({
   hideTimeline,
   isStreaming = false,
 }: WrapThinkingOptions): WrappedChatLine[] {
-  const cleanReasoning = reasoning.trim();
+  const cleanReasoning = resolveCarriageReturns(reasoning.replace(/\r\n/g, "\n")).trim();
   if (!cleanReasoning) {
     return [];
   }

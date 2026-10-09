@@ -6,7 +6,7 @@ import { ChatLineComponent, renderMarkdown, truncateStreamDisplay, isCollapsible
 import { extractThinkingAndContent, wrapThinkingToLines } from "./chat-thinking.js";
 import { LoadingIndicator, ToolLoadingIndicator } from "./common/LoadingIndicators.js";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay, renderScrollBar, capDisplayLines, visibleLength } from "../utils/responseScroll.js";
-import { formatCompactNumber, minimizePathInDescription } from "../utils/text.js";
+import { formatCompactNumber, minimizePathInDescription, resolveCarriageReturns } from "../utils/text.js";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ChatLinePosition } from "../hooks/useMouseScroll.js";
 import { getSettings } from "../core/config.js";
@@ -207,7 +207,7 @@ export function wrapMarkdownToLines(
   lineIndex: number,
   hideTimeline: boolean
 ): WrappedChatLine[] {
-  const cleanContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
+  const cleanContent = resolveCarriageReturns(content.replace(/\r\n/g, "\n"));
   const rawLines = cleanContent.split("\n");
   const result: WrappedChatLine[] = [];
 
@@ -373,7 +373,7 @@ function wrapNestedChild(
 ): WrappedChatLine[] {
   const child = {
     ...rawChild,
-    content: rawChild.content.replace(/\r\n/g, "\n").replace(/\r/g, "")
+    content: resolveCarriageReturns(rawChild.content.replace(/\r\n/g, "\n"))
   };
   const result: WrappedChatLine[] = [];
 
@@ -686,7 +686,7 @@ export function wrapChatLineToLines({
 
   const line: ChatLine = {
     ...rawLine,
-    content: typeof rawLine.content === "string" ? rawLine.content.replace(/\r\n/g, "\n").replace(/\r/g, "") : "",
+    content: typeof rawLine.content === "string" ? resolveCarriageReturns(rawLine.content.replace(/\r\n/g, "\n")) : "",
   };
 
   const marginSpaces = hideTimeline ? "  " : "│    ";
