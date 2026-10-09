@@ -275,6 +275,8 @@ export class Agent {
         });
       } else if (event.type === "checkpoint_auto") {
         this.writeToLogFile("CHECKPOINT_AUTO", `ID: ${event.id}, Name: ${event.name}`);
+      } else if (event.type === "advisor_warning") {
+        this.writeToLogFile("ADVISOR_WARNING", `[Health: ${event.healthScore}%] ${event.action}: ${event.message}`);
       }
       onEvent(event);
     };

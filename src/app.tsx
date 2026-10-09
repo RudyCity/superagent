@@ -2387,6 +2387,17 @@ export function App({
             timestamp: Date.now(),
           });
           break;
+        case "advisor_warning": {
+          flushBuffer();
+          const icon = event.action === "pause_execution" ? "❌" : "⚠️";
+          const label = event.action === "pause_execution" ? "Critical" : "Warning";
+          addLine({
+            type: "system",
+            content: `${icon} [Advisor - Health Score: ${event.healthScore}%] ${label}: ${event.message}`,
+            timestamp: Date.now(),
+          });
+          break;
+        }
         case "model_download": {
           const { modelName, status, progress } = event;
           if (modelName === "classifier") {

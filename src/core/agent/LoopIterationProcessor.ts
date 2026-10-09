@@ -911,8 +911,11 @@ export class LoopIterationProcessor {
       if (advisorResult.action === "warn_agent" && advisorResult.message) {
         const warningContent = `${advisorResult.message}\n[Advisor Health Score: ${healthScore}%]${advisorResult.autoCorrectionHint ? `\n${advisorResult.autoCorrectionHint}` : ""}`;
         agent.onEvent({
-          type: "text",
-          content: `\n⚠️ [Advisor - Health Score: ${healthScore}%] Warning: ${advisorResult.message}\n`,
+          type: "advisor_warning",
+          action: "warn_agent",
+          message: advisorResult.message,
+          healthScore,
+          autoCorrectionHint: advisorResult.autoCorrectionHint,
         });
         agent.conversation.addMessage({
           role: "system",
@@ -933,8 +936,11 @@ export class LoopIterationProcessor {
       } else if (advisorResult.action === "pause_execution" && advisorResult.message) {
         const pauseContent = `${advisorResult.message}\n[Advisor Health Score: ${healthScore}%]${advisorResult.autoCorrectionHint ? `\n${advisorResult.autoCorrectionHint}` : ""}`;
         agent.onEvent({
-          type: "text",
-          content: `\n❌ [Advisor - Health Score: ${healthScore}%] Critical: ${advisorResult.message}\n`,
+          type: "advisor_warning",
+          action: "pause_execution",
+          message: advisorResult.message,
+          healthScore,
+          autoCorrectionHint: advisorResult.autoCorrectionHint,
         });
         agent.onEvent({
           type: "error",

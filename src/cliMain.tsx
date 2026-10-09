@@ -590,6 +590,8 @@ export async function runCli() {
             logHandler?.(`[ERROR] ${event.message}`);
           } else if (event.type === "token_usage") {
             addMasterTokens(event.promptTokens || 0, event.completionTokens || 0);
+          } else if (event.type === "advisor_warning") {
+            logHandler?.(`[ADVISOR] [${event.healthScore}%] ${event.action}: ${event.message}`);
           }
         },
         async (toolCall, description) => {
@@ -774,6 +776,9 @@ export async function runCli() {
           break;
         case "token_usage":
           // Quietly ignore or log in non-TTY mode
+          break;
+        case "advisor_warning":
+          process.stdout.write(`\n${event.action === "pause_execution" ? "❌" : "⚠️"} [Advisor - Health Score: ${event.healthScore}%] ${event.action === "pause_execution" ? "Critical" : "Warning"}: ${event.message}\n`);
           break;
         case "model_download":
           if (event.status === "downloading") {
