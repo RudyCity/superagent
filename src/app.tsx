@@ -1210,9 +1210,10 @@ export function App({
   );
 
   // ── TunnelMenuDialog (ESC menu) handlers ────────────────────────────────────
-  // Shown when the user presses ESC while a tunnel is active.
+  // Shown when the user presses ESC while in Muse mode AND a tunnel is active.
   const handleTunnelMenuEscape = useCallback(() => {
     if (tunnelMenuOpen) return;
+    if (!isMuseWatcherActive() && !isMuseRunnerActive()) return;
     import("./core/remoteAgent/cloudflareTunnel.js")
       .then(({ listActiveTunnels }) => {
         let count = 0;
@@ -3552,7 +3553,7 @@ export function App({
                   <ChatTextInput
                     ref={chatTextInputRef}
                     focus={focusMode === "input" && !pendingSubmitMessage && !tunnelMenuOpen}
-                    onEscapeKey={handleTunnelMenuEscape}
+                    onEscapeKey={(isMuseWatcherActive() || isMuseRunnerActive()) ? handleTunnelMenuEscape : undefined}
                     value={input}
                     onChange={handleInputChange}
                     onSubmit={pendingSubmitMessage ? () => {} : handleSubmit}

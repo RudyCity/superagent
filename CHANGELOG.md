@@ -1,3 +1,8 @@
+## [1.13.22] - 2026-10-09
+### Fixed
+- Tunnel ESC Menu Activation Restricted to Muse Mode: Fixed an issue where pressing the ESC key in the terminal chat input opened the inline Tunnel Menu dialog whenever any background Cloudflare quick tunnel process was active, even when operating in standard mode. Guarded `handleTunnelMenuEscape` in `src/app.tsx` and the `onEscapeKey` prop in `src/components/ChatTextInput.tsx` so the menu is strictly active only when Muse Watch mode (`isMuseWatcherActive()`) or Muse Remote Runner mode (`isMuseRunnerActive()`) is enabled.
+- English UI Localization for Tunnel Menu: Translated all user-facing labels, hints, headers, and footer shortcut navigation in `src/components/tunnel-menu-dialog.tsx` into English to strictly align with English-only UI specifications.
+
 ## [1.13.21] - 2026-10-09
 ### Improved
 - Chrome CDP Reactive Form and Shadow DOM Detection: Enhanced `control_chrome_cdp` element interactions and typing pipeline for modern reactive SPA frameworks (React, Vue, Svelte, Formik, React Hook Form) and complex registration forms:

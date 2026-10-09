@@ -21,17 +21,17 @@ const OPTIONS: Array<{ id: TunnelMenuChoice; label: string; hint: string }> = [
   {
     id: "stop",
     label: "Stop tunnel",
-    hint: "Hentikan semua tunnel + watcher yang aktif.",
+    hint: "Stop all active tunnels + watchers.",
   },
   {
     id: "message",
-    label: "Kirim pesan ke Muse",
-    hint: "Isi pesan di input, Enter untuk kirim via tunnel.",
+    label: "Send message to Muse",
+    hint: "Fill message in input, Enter to send via tunnel.",
   },
   {
     id: "back",
-    label: "Lanjut",
-    hint: "Tutup menu, kembali ke input.",
+    label: "Continue",
+    hint: "Close menu, return to input.",
   },
 ];
 
@@ -73,14 +73,14 @@ export function TunnelMenuDialog({ tunnelCount, onChoose }: TunnelMenuDialogProp
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-      <Text bold>🚇 Tunnel aktif ({tunnelCount}) — menu ESC</Text>
+      <Text bold>🚇 Active tunnel ({tunnelCount}) — ESC menu</Text>
       {OPTIONS.map((opt, idx) => (
         <Text key={opt.id} color={idx === selectedIndex ? "cyan" : undefined}>
           {idx === selectedIndex ? "❯" : "  "}[{idx + 1}] {opt.label}{" "}
           <Text dimColor>— {opt.hint}</Text>
         </Text>
       ))}
-      <Text dimColor>↑/↓ pilih • Enter ok • 1/2/3 shortcut • Esc tutup</Text>
+      <Text dimColor>↑/↓ select • Enter ok • 1/2/3 shortcut • Esc close</Text>
     </Box>
   );
 }

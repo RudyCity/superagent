@@ -316,9 +316,11 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
         return;
       }
 
-      // ── ESC — hook for tunnel menu (parent decides based on tunnel state) ──
-      if (key.escape && onEscapeKey) {
-        onEscapeKey();
+      // ── ESC — hook for tunnel menu when in Muse mode ──────────────────────
+      if (key.escape) {
+        if (onEscapeKey) {
+          onEscapeKey();
+        }
         return;
       }
 
