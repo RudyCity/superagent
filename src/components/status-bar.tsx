@@ -137,7 +137,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
           {isVisionActive ? (
             <>
               <Text color="gray"> • </Text>
-              <Text color="greenBright" bold>👁️ DETR: ON</Text>
+              <Text color="greenBright" bold>👁 DETR: ON </Text>
             </>
           ) : null}
           {rmemoryStatus === "online" && (

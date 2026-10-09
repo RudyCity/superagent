@@ -664,13 +664,16 @@ export function App({
     const rawContent = streamBufferRef.current.trim();
     const reasoning = reasoningBufferRef.current.trim();
     if (rawContent || reasoning) {
-      const content = textStreamCleaner.cleanFinal(rawContent).trim();
-      addLine({
-        type: "assistant",
-        content,
-        reasoning: reasoning || undefined,
-        timestamp: Date.now(),
-      });
+      let content = textStreamCleaner.cleanFinal(rawContent).trim();
+      content = content.replace(/(?:\r?\n|^)\s*(?:\[SYS\]\s*)?Retrying in \d+s\.\.\.\s*$/g, "").trim();
+      if (content || reasoning) {
+        addLine({
+          type: "assistant",
+          content,
+          reasoning: reasoning || undefined,
+          timestamp: Date.now(),
+        });
+      }
     }
     streamBufferRef.current = "";
     reasoningBufferRef.current = "";
@@ -2161,7 +2164,8 @@ export function App({
           }
           const content = streamBufferRef.current.trim();
           const reasoning = reasoningBufferRef.current.trim();
-          if (content || reasoning) {
+          const effectiveContent = content.replace(/(?:\r?\n|^)\s*(?:\[SYS\]\s*)?Retrying in \d+s\.\.\.\s*$/g, "").trim();
+          if (effectiveContent || reasoning) {
             flushBuffer();
           } else {
             streamBufferRef.current = "";

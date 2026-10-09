@@ -621,17 +621,18 @@ export class LoopIterationProcessor {
 
               if (isRateLimit || is503) {
                 const delay = overloadedDelays[attempt - 1] ?? 100000;
-                agent.onEvent({ type: "text", content: `\n[SYS] Retrying in ${delay / 1000}s...\n` });
+                const label = isRateLimit ? "Rate limit (429)" : "Server overloaded (503)";
+                agent.writeToLogFile("WARN", `${label}: ${rawMsg}. Retrying in ${delay / 1000}s (attempt ${attempt}/${currentMaxRetries})`);
+                agent.onEvent({ type: "text", content: `\n[SYS] ${label}. Retrying in ${delay / 1000}s...\n` });
                 await agent.delayWithCountdown(attempt, delay, signal);
                 continue;
               }
 
-              let delayMs = baseDelay * Math.pow(2, attempt - 1);
-              if (rawMsg.toLowerCase().includes("empty response")) {
-                if (attempt === 1) delayMs = 10000;
-                else if (attempt === 2) delayMs = 20000;
-                else if (attempt === 3) delayMs = 50000;
-              }
+              const delayMs = rawMsg.toLowerCase().includes("empty response")
+                ? ([10000, 20000, 50000][attempt - 1] ?? 50000)
+                : baseDelay * Math.pow(2, attempt - 1);
+              agent.writeToLogFile("WARN", `Communication error: ${rawMsg}. Retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt}/${currentMaxRetries})`);
+              agent.onEvent({ type: "text", content: `\n[SYS] Communication error: ${rawMsg}. Retrying in ${Math.round(delayMs / 1000)}s...\n` });
               await agent.delayWithCountdown(attempt, delayMs, signal);
             }
           }

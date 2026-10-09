@@ -1,3 +1,13 @@
+## [1.13.34] - 2026-10-09
+### Enhanced & Fixed
+- Base System Prompt Vision & Dual-Track Automation Optimization:
+  - Updated `CONTINUOUS_BROWSER_WORKFLOW` and `LOGIC GATES` in `src/core/config/base.ts` and `src/core/prompts.ts` to enforce Dual-Track browser automation: Track 1 (`control_chrome_vision` with canonical `perceive_page` over :8095) for dynamic SPAs, modals, canvas, and visual state verification, alongside Track 2 (`control_chrome_cdp`) for fast DOM inspection.
+  - Added explicit instructions clarifying that `perceive_page` provides structured element text tables grounding text-only LLMs without requiring multimodal image inputs.
+  - Added dedicated logic gate triggers for `audit_layout` when users request UI layout and accessibility defect audits.
+  - Fixed terminal status bar badge padding (`👁 DETR: ON `) in `src/components/status-bar.tsx` and `src/components/dashboard/dashboard-status-bar.tsx` to prevent terminal column truncation from turning `ON` into `O`.
+  - Filtered ephemeral retry countdown tickers (`Retrying in \d+s...`) from leaking into assistant response bubbles in `src/app.tsx`.
+  - Added diagnostic warning logs in `LoopIterationProcessor` non-streaming mode when encountering transient upstream rate limits or communication errors.
+
 ## [1.13.33] - 2026-10-09
 ### Added
 - Terminal Footer UI-DETR-1 Active Status Indicator:

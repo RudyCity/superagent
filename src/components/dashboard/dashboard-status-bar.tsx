@@ -92,7 +92,7 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
         {isVisionActive ? (
           <>
             <Text color="gray"> • </Text>
-            <Text color="greenBright" bold>👁️ DETR: ON</Text>
+            <Text color="greenBright" bold>👁 DETR: ON </Text>
           </>
         ) : null}
         <Text color="gray"> • </Text>

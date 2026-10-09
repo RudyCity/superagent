@@ -127,7 +127,7 @@ SUBAGENT REPORT
 
 const BROWSER_AUTOMATION_CORE = `- AUTOMATION_TRACKS:
   - Track 1 (Vision-Driven & Set-of-Mark SoM): control_chrome_vision over 127.0.0.1:8095.
-    Workflow: perceive_page (embeds visual screenshot with [1], [2], [3]... badges into your reasoning context) → visually inspect page state, modals, banners, and layout → click_id / type_id by visual ID without fragile DOM selectors → verify_visual_state (confirms UI transition). Essential for canvas, modal blockers, obfuscated SPAs, and visual state verification.
+    Workflow: perceive_page (embeds visual screenshot with [1], [2], [3]... badges for VLMs AND structured element text table for text-only LLMs) → visually inspect page state, modals, banners, and layout → click_id / type_id by visual ID without fragile DOM selectors → verify_visual_state (confirms UI transition). Essential for canvas, modal blockers, obfuscated SPAs, and visual state verification.
   - Track 2 (Extension-free CDP): control_chrome_cdp over 127.0.0.1:9222.
     Workflow: list_targets → snapshot(compact:true) → read_page/extract_links if reading content/emails → click/type by {"index":N} or {"selector":"..."} → wait_for if dynamic. Auto-unthrottles background tabs.
   - Track 3 (Extension Bridge): control_browser_tab over port 9223. Active when remote extension is connected (detect_ui, macros, storage).
@@ -152,16 +152,18 @@ const BROWSER_AUTOMATION_CORE = `- AUTOMATION_TRACKS:
 # LOGIC GATES
 if user_merely_wants_to_open_or_view_browser_or_url:
     CALL launch_chrome_profile(profileName:'Default', url:targetUrl). Do NOT force CDP automation if no scraping or testing requested.
+else if user_requests_ui_layout_or_accessibility_audit:
+    CALL control_chrome_vision(command:'audit_layout') or control_chrome_vision(command:'perceive_page')
 else if user_requests_web_action_or_automation (e.g. signup, registration, login, form fill, test, scrape):
     1. If port 9222 not open: launch_chrome_profile(url:targetUrl, remoteDebuggingPort:9222) or control_chrome_cdp(command:'list_targets'). Note: control_chrome_cdp auto-launches Chrome on port 9222.
-    2. CONTINUOUS EXECUTION LOOP (Track 1 default):
+    2. CONTINUOUS EXECUTION LOOP (Dual-Track):
        - navigate/new_tab to target URL
-       - snapshot(compact:true) to inspect interactive elements & input fields
+       - FOR DYNAMIC UI, CANVAS, MODALS, OR VISUAL CHECKS: CALL control_chrome_vision(command:'perceive_page') → click_id / type_id by detected element ID → verify_visual_state
+       - FOR FAST DOM FORMS & STATIC SITES: CALL control_chrome_cdp(command:'snapshot', payload:{compact:true}) → click/type by index or selector
        - if inspecting emails/articles/messages: CALL read_page or extract_links
-       - click/type by index or selector to fill fields and submit forms
        - NEVER stop after launching or output manual guides to the user. Execute end-to-end until finished.
 else if vision_requested_or_canvas_ui:
-    CALL control_chrome_vision(command:'parse_screenshot')
+    CALL control_chrome_vision(command:'perceive_page')
 else if extension_bridge_connected:
     CALL control_browser_tab()
 else:
