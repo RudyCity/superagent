@@ -14,7 +14,8 @@ export type AgentEvent =
   | { type: "token_usage"; promptTokens: number; completionTokens: number; durationMs?: number }
   | { type: "checkpoint_auto"; name: string; id: string }
   | { type: "tool_progress"; toolCallId: string; message: string }
-  | { type: "model_download"; modelName: "classifier" | "embedding"; status: "downloading" | "progress" | "loaded"; progress?: number };
+  | { type: "model_download"; modelName: "classifier" | "embedding"; status: "downloading" | "progress" | "loaded"; progress?: number }
+  | { type: "advisor_warning"; action: "warn_agent" | "pause_execution"; message: string; healthScore: number; autoCorrectionHint?: string };
 
 export type PermissionHandler = (
   toolCall: ToolCall,
