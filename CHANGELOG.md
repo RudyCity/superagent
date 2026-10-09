@@ -1,3 +1,9 @@
+## [1.13.4] - 2026-10-09
+### Cleaned
+- Purged legacy local TencentDB memory gateway directory (`vendor/tencentdb-memory/`) and empty `vendor/` directory (~686 MB freed).
+- Purged graphify AST output cache directory (`graphify-out/`, ~33 MB freed).
+- Pruned dangling worktree remnants and ephemeral test caches.
+
 ## [1.13.3] - 2026-10-09
 ### Cleaned
 - Removed unrelated external application audit scripts and artifacts (`audit.js`, `audit_admin.js`, `audit_admin.cjs`, `playwright_screenshot_1791512184491.png`, `goal-processor.diff`).
