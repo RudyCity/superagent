@@ -1,3 +1,7 @@
+## [1.13.20] - 2026-10-09
+### Fixed
+- Streaming Retry Countdown Overwrite Across Consecutive Attempts: Fixed an issue where consecutive retry countdown tickers (`Retrying in Xs...`) from multiple failed connection attempts stacked vertically across new lines in the streaming view. Updated the live text event handler in `src/app.tsx` to detect carriage-return countdown tickers (`\rRetrying in Xs...`) and replace any trailing ticker from previous retry attempts in `streamBufferRef.current` directly in place before updating the stream display.
+
 ## [1.13.19] - 2026-10-09
 ### Changed
 - Pure Senopati Neural Classification and Guardrail Removal: Eliminated `actionCommandsRegex` guardrail from `isHighConfidenceConversation` in `src/core/requestClassifier.ts`, moving request classification to 100% pure neural inference via Senopati System-1.

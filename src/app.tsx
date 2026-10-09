@@ -2081,7 +2081,28 @@ export function App({
             clearTimeout(streamTimeoutRef.current);
             streamTimeoutRef.current = null;
           }
-          streamBufferRef.current += event.content;
+          if (event.content.startsWith("\r") && !event.content.startsWith("\r\n")) {
+            // If incoming content is a retry countdown ticker, overwrite any preceding countdown line
+            if (/Retrying in \d+s\.\.\./.test(event.content)) {
+              const match = streamBufferRef.current.match(/(\n)?\s*Retrying in \d+s\.\.\.\s*$/);
+              if (match && match.index !== undefined) {
+                streamBufferRef.current = streamBufferRef.current.slice(0, match.index) + (match[1] || "") + event.content.replace(/^\r/, "");
+                textStreamCleaner.reset();
+              } else {
+                const lastNewlineIdx = streamBufferRef.current.lastIndexOf("\n");
+                const lineStart = lastNewlineIdx === -1 ? 0 : lastNewlineIdx + 1;
+                streamBufferRef.current = streamBufferRef.current.slice(0, lineStart) + event.content.slice(1);
+                textStreamCleaner.reset();
+              }
+            } else {
+              const lastNewlineIdx = streamBufferRef.current.lastIndexOf("\n");
+              const lineStart = lastNewlineIdx === -1 ? 0 : lastNewlineIdx + 1;
+              streamBufferRef.current = streamBufferRef.current.slice(0, lineStart) + event.content.slice(1);
+              textStreamCleaner.reset();
+            }
+          } else {
+            streamBufferRef.current += event.content;
+          }
 
           // Throttle state updates to at most once every 40ms to prevent Ink render overload.
           const now = Date.now();
