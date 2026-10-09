@@ -1,3 +1,9 @@
+## [1.13.13] - 2026-10-09
+### Fixed
+- Fixed `describe_tool` suggestions for unknown tools: Combined fuzzy subsequence scoring with tokenized keyword matching in `runDescribeTool` so unknown tool inputs with common prefixes/tokens (e.g., `background_unknown_xyz`) suggest matching tools (e.g., `run_background_process`) via "Did you mean ...?" while retaining clean rejection for arbitrary garbage.
+- Fixed `ContextManager` pre-emptive compaction budget: Configured `ContextManager` to pass a targeted default budget (60% of threshold) when `budgeted-pruning` strategy is selected within the pre-emptive threshold band, preventing no-op compaction passes where messages fit inside 100% threshold.
+- Fixed `BudgetedPruningStrategy` importance sorting and forward progress: Corrected unpinned message sort order to descending by importance so high-importance messages are preserved and lowest-importance messages are pruned, and added a forward-progress guarantee ensuring unpinned pruning occurs when compaction is triggered near the budget limit.
+
 ## [1.13.12] - 2026-10-09
 ### Fixed
 - Fixed Cloudflare tunnel and Muse bridge connection issues: Resolved bug where Muse could not connect or communicate with Superagent over quick tunnels.
