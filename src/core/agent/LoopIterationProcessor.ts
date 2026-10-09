@@ -103,7 +103,8 @@ export class LoopIterationProcessor {
         const modelTools: Record<string, any> = {};
         for (const t of activeTools) {
           const category = agent.currentClassification?.category;
-          const shouldBypassFilter = agent.planState !== "IDLE" || agent.tier === "subagent";
+          const isUnlockedMode = agent.activeModeOverride === "implement" || agent.activeModeOverride === "debug";
+          const shouldBypassFilter = isUnlockedMode || agent.planState !== "IDLE" || agent.tier === "subagent";
           if (category && !shouldBypassFilter) {
             const { getToolsetForCategory } = await import("../requestClassifier.js");
             const filtered = getToolsetForCategory(category, activeTools);

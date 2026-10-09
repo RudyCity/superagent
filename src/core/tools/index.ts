@@ -190,12 +190,15 @@ export {
   findProcessTool,
   killProcessTool,
   inspectBackgroundLogTool,
+  switchModeTool,
 };
 import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../workspace/workspaceChainTools.js";
 import { listToolsTool, describeToolTool } from "./toolDiscoveryTools.js";
+import { switchModeTool } from "./modeTools.js";
 
 
 export const allTools: Tool[] = [
+  switchModeTool,
   runHeadlessBrowserTool,
   simulateVirtualCursorTool,
   controlIsolatedCdpTool,

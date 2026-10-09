@@ -90,6 +90,8 @@ export class Agent {
   public simpleTaskApproved: boolean = false;
   /** Multi-category classification result from the request classifier */
   public currentClassification: import("./requestClassifier.js").ClassificationResult | null = null;
+  /** Manual operational mode override: implement | debug | plan | research | review | ask */
+  public activeModeOverride?: "implement" | "debug" | "plan" | "research" | "review" | "ask";
   public lastSpeed: number | null = null;
   public goalMode: string | null = null;
   public goalMaxIterations: number = DEFAULT_GOAL_MAX_ITERATIONS;
@@ -459,6 +461,57 @@ export class Agent {
     // Cache the resolved tools
     this._activeToolsCache = { tools: [...tools], cachedAt: now };
     return tools;
+  }
+
+  public setMode(
+    mode: "implement" | "debug" | "plan" | "research" | "review" | "ask",
+    reason?: string
+  ): { success: boolean; message: string; previousMode: string; newMode: string } {
+    const previousMode = this.activeModeOverride || (
+      this.currentClassification?.category === "conversation" || this.currentClassification?.category === "question"
+        ? "ask"
+        : "implement"
+    );
+    this.activeModeOverride = mode;
+    this._activeToolsCache = null;
+
+    let category: import("./requestClassifier.js").RequestCategory = "complex_task";
+    if (mode === "ask") {
+      category = "question";
+    } else if (mode === "research") {
+      category = "research";
+    } else if (mode === "debug") {
+      category = "debug";
+    } else if (mode === "implement" || mode === "plan" || mode === "review") {
+      category = "complex_task";
+    }
+
+    this.currentClassification = {
+      category,
+      confidence: "high",
+      reason: reason || `Mode transitioned to '${mode}'`,
+      heuristicOnly: true,
+      classificationTokens: 0,
+    };
+
+    if (mode === "implement" || mode === "debug") {
+      this.isSimpleTask = true;
+      this.simpleTaskApproved = true;
+      if (this.planState === "PLANNING_PENDING" && !this.hasRealPlanContent()) {
+        this.planState = "IDLE";
+      }
+    } else if (mode === "plan") {
+      this.isSimpleTask = false;
+      this.simpleTaskApproved = false;
+    }
+
+    this.writeToLogFile("INFO", `Active mode switched from '${previousMode}' to '${mode}'. Category set to '${category}'. Reason: ${reason || "none"}`);
+    return {
+      success: true,
+      message: `Mode successfully switched to '${mode}'.`,
+      previousMode,
+      newMode: mode,
+    };
   }
 
   public getTaskFilePath(): string {

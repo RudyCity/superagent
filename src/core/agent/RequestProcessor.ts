@@ -50,7 +50,23 @@ export class RequestProcessor {
         return words.some(w => w === word || (word.length >= 4 && w.startsWith(word)));
       });
 
-      if (hasToolCalls && isContinuation) {
+      const modeSwitchMatch = lowerInput.match(/^(?:ganti\s+mode|ubah\s+mode|switch\s+mode|change\s+mode|pindah\s+mode)(?:\s+(?:ke\s+|to\s+)?([a-z_]+))?$/i);
+      if (modeSwitchMatch) {
+        let targetMode: "implement" | "debug" | "plan" | "research" | "review" | "ask" = "implement";
+        const rawTarget = (modeSwitchMatch[1] || "").toLowerCase();
+        if (rawTarget === "debug" || rawTarget === "fix") targetMode = "debug";
+        else if (rawTarget === "plan") targetMode = "plan";
+        else if (rawTarget === "research" || rawTarget === "explore") targetMode = "research";
+        else if (rawTarget === "review") targetMode = "review";
+        else if (rawTarget === "ask" || rawTarget === "qna" || rawTarget === "tanya") targetMode = "ask";
+        else targetMode = "implement";
+
+        agent.setMode(targetMode, `User requested mode switch via message: "${textInput}"`);
+        if (agent.planState === "PLANNING_PENDING" && (targetMode === "implement" || targetMode === "debug")) {
+          agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
+          agent.simpleTaskApproved = true;
+        }
+      } else if (hasToolCalls && isContinuation) {
         const classification = {
           category: "complex_task" as const,
           confidence: "high" as const,
@@ -130,21 +146,16 @@ export class RequestProcessor {
                 "oke", "ok", "okay", "yes", "y", "sip", "siap", "lanjut", "lanjutkan", 
                 "proceed", "go", "approved", "approve", "lgtm", "agree", "yep", "yup", 
                 "sure", "mantap", "gas", "confirm", "konfirmasi", "confirmsi", "acc", 
-                "setuju", "deal", "perbaik", "perbaiki"
+                "setuju", "deal", "perbaik", "perbaiki", "izinkan", "ijinkan", "bolehkan",
+                "silakan", "silahkan", "boleh", "aku izinkan", "diizinkan", "edit aja",
+                "edit langsung", "lanjutkan edit", "ganti mode"
               ];
               const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
               const isConfirmation = confirmationWords.some(w => words.includes(w) || lowerInput.includes(w));
               if (isConfirmation) {
+                agent.setMode("implement", `User confirmed pending plan / authorized execution: "${userInputText}"`);
                 agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
                 agent.simpleTaskApproved = true;
-                // Reset current classification to complex_task (full toolset) so execution is not constrained by conversation category tools
-                agent.currentClassification = {
-                  category: "complex_task",
-                  confidence: "high",
-                  reason: "User confirmed pending plan; restored full execution toolset",
-                  heuristicOnly: true,
-                  classificationTokens: 0,
-                };
                 agent.writeToLogFile("INFO", `Plan state transitioned from PLANNING_PENDING to APPROVED via user confirmation: "${userInputText}"`);
               }
             }
@@ -256,14 +267,15 @@ Reply with EXACTLY "chat", "yes", or "no" ONLY.`;
         const { isHighConfidenceConversation, CONTINUATION_COMMANDS } = await import("../requestClassifier.js");
         const userText = typeof userInput === "string" ? userInput : "";
         const cleanLower = userText.toLowerCase().replace(/^[!?.,\s()'""-]+|[!?.,\s()'""-]+$/g, "").trim();
-        const isContinuation = messages.length > 0 && CONTINUATION_COMMANDS && CONTINUATION_COMMANDS.has(cleanLower);
+        const isModeCmd = /\b(?:ganti|ubah|switch|change|pindah)\s+mode\b/i.test(cleanLower);
+        const isContinuation = isModeCmd || (messages.length > 0 && CONTINUATION_COMMANDS && CONTINUATION_COMMANDS.has(cleanLower));
 
         if (isContinuation) {
-          // Promote continuation command ("lanjut", "continue", etc.) to command category so full toolset is available
+          // Promote continuation command ("lanjut", "continue", mode change, etc.) to command/task category so full toolset is available
           agent.currentClassification = {
             category: "command",
             confidence: "high",
-            reason: `User continuation command ("${cleanLower}") in active conversation`,
+            reason: `User continuation/mode command ("${cleanLower}") in active conversation`,
             heuristicOnly: true,
             classificationTokens: 0,
           };

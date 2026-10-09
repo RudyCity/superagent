@@ -1,3 +1,13 @@
+## [1.13.28] - 2026-10-09
+### Added
+- Dynamic Operational Mode Switching (`switch_mode` Tool & System Prompt Guidance):
+  - Added `switch_mode` tool (`src/core/tools/modeTools.ts`): Enables agents to dynamically switch between operational modes (`implement`, `debug`, `plan`, `ask`, `research`, `conversation`) when the request classifier miscategorizes user intent or when an exploratory question turns into an implementation/debugging task. Registered across `masterToolset`, `superagentToolset`, and `chromeExtensionToolset`.
+  - Category Toolset Access in Restricted Modes: Updated `CATEGORY_TOOLS` (`src/core/requestClassifier.ts`) to ensure `switch_mode` is always accessible even in restricted modes like `question`, `conversation`, and `research`.
+  - Mode Transition & Tool Filter Bypass: Enhanced `Agent.setMode()` in `src/core/agent.ts`, `ContextBuilder.ts`, and `LoopIterationProcessor.ts` with `activeModeOverride`. When transitioning from `ask` mode to `implement` or `debug`, toolset filtering is bypassed and write/execute tools are dynamically unlocked without waiting for a new user turn.
+  - Automatic Natural Language Mode Switch & Permission Parsing: Enhanced `RequestProcessor.ts` to detect user requests to switch modes (e.g., "ganti mode", "switch mode", "change mode") and permission confirmations (e.g., "aku izinkan untuk edit", "silakan ubah kodenya"), transitioning the agent directly into `implement` mode.
+  - New `/mode` Slash Command (`src/core/commands/modeCommand.ts`): Allows users to inspect active mode or explicitly switch modes anytime (`/mode [implement|debug|plan|ask|research]`).
+  - System Prompt Anti-Hallucination Guardrails: Updated `MODE_INSTRUCTIONS.ask` and system prompt in `ContextBuilder.ts` to explicitly instruct agents that they have full autonomy to call `switch_mode` and strictly forbids them from falsely claiming to the user that they cannot change mode themselves or that mode can only be toggled from the UI.
+
 ## [1.13.27] - 2026-10-09
 ### Enhanced
 - Chrome CDP UI Transition Detection & Action Verification:

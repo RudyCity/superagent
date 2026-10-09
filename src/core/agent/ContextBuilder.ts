@@ -110,7 +110,8 @@ export class ContextBuilder {
     let filteredToolDefs = toolDefs;
     if (agent.currentClassification) {
       try {
-        const shouldBypassFilter = agent.planState !== "IDLE" || agent.tier === "subagent";
+        const isUnlockedMode = agent.activeModeOverride === "implement" || agent.activeModeOverride === "debug";
+        const shouldBypassFilter = isUnlockedMode || agent.planState !== "IDLE" || agent.tier === "subagent";
         if (!shouldBypassFilter) {
           const { getToolsetForCategory } = await import("../requestClassifier.js");
           const filteredTools = getToolsetForCategory(agent.currentClassification.category, toolsToUse || []);
@@ -313,35 +314,39 @@ export class ContextBuilder {
     const lowerInput = userInputText.toLowerCase();
 
     let activeMode = "implement";
-    if (category === "conversation" || category === "question") {
-      activeMode = "ask";
-    } else if (category === "research") {
-      activeMode = "research";
-    } else if (category === "debug") {
-      activeMode = "debug";
-    } else if (category === "complex_task") {
-      if (/plan|design|architecture/i.test(lowerInput)) {
-        activeMode = "plan";
-      } else {
+    if (agent.activeModeOverride) {
+      activeMode = agent.activeModeOverride;
+    } else {
+      if (category === "conversation" || category === "question") {
+        activeMode = "ask";
+      } else if (category === "research") {
+        activeMode = "research";
+      } else if (category === "debug") {
+        activeMode = "debug";
+      } else if (category === "complex_task") {
+        if (/plan|design|architecture/i.test(lowerInput)) {
+          activeMode = "plan";
+        } else {
+          activeMode = "implement";
+        }
+      } else if (category === "simple_edit" || category === "command") {
         activeMode = "implement";
       }
-    } else if (category === "simple_edit" || category === "command") {
-      activeMode = "implement";
-    }
 
-    if (/review|audit|diff\b/i.test(lowerInput)) {
-      activeMode = "review";
+      if (/review|audit|diff\b/i.test(lowerInput)) {
+        activeMode = "review";
+      }
     }
 
     const MODE_INSTRUCTIONS: Record<string, string> = {
-      ask: `- Q&A mode. Use read/search tools (grep, ripgrep_search, glob, view_file) immediately to inspect codebase content when answering questions. No file write tools, no subagents, no modifying commands.`,
-      research: `- Read-only research mode. Use search/read tools to explore codebase. Do NOT modify files or run mutating commands.`,
-      plan: `- Propose implementation plan via 'manage_plan'. Do NOT edit source files before user approval.`,
-      implement: `- Implement code changes. Plan mandatory only for complex/risky changes. Run build+test if shell available. On completion, provide a structured conclusion before listing file changes.`,
+      ask: `- Q&A mode. Use read/search tools (grep, ripgrep_search, glob, view_file) immediately to inspect codebase content when answering questions. File modification and mutating shell commands are disabled in this mode. IMPORTANT: If the user request actually requires editing files, running terminal commands, creating a plan, or fixing bugs (e.g. because the classifier mistakenly selected ask mode), or if the user asks to switch mode, you MUST immediately call the 'switch_mode' tool (e.g. switch_mode({ mode: 'implement' })) to switch mode and unlock all tools. Never claim you cannot change mode yourself.`,
+      research: `- Read-only research mode. Use search/read tools to explore codebase. Do NOT modify files or run mutating commands. Call 'switch_mode' (e.g. mode: 'implement') if the task requires writing code or making edits.`,
+      plan: `- Propose implementation plan via 'manage_plan'. Do NOT edit source files before user approval. Call 'switch_mode' once ready to implement.`,
+      implement: `- Implement code changes. Full toolset enabled (file modifications, shell commands, builds, tests). Plan mandatory only for complex/risky changes. On completion, provide a structured conclusion before listing file changes.`,
       debug: `- Investigate and fix bugs. Debug via terminal execution first. Trace root cause. Run build or test on new/updated files at END of repair process. Conclude with a structured fix summary.`,
       review: `- Code quality/security review. No file edits unless requested. Output issues with severity and file/line refs.`,
     };
-    const activeModeNotice = `\n# ACTIVE MODE: '${activeMode}'\n${MODE_INSTRUCTIONS[activeMode] || ""}\n`;
+    const activeModeNotice = `\n# ACTIVE MODE: '${activeMode}'\n${MODE_INSTRUCTIONS[activeMode] || ""}\n- Mode Switching: You have the 'switch_mode' tool. If your current mode restricts tools you need, call 'switch_mode' immediately to transition into 'implement', 'debug', 'plan', or 'research'.\n`;
 
     let toolRestrictionNotice = "";
     if (!hasShell) {

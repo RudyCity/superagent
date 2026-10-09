@@ -222,6 +222,7 @@ export const helpCommand: SlashCommand = {
         "  /setup    - Run the interactive provider and initial setup wizard",
         "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
         "  /model    - Set or list active AI models (e.g. /model openai/gpt-4o)",
+        "  /mode     - View or switch active operational mode (/mode implement, /mode ask, /mode debug)",
         "  /mp       - Quick-switch model preset (e.g. /mp fast, /mp default). Shortcut: /mp-<name>",
         "  /settings - Show current rate limit & concurrency settings",
         "  /setting-concurrency <0|1> - Set LLM concurrency limit",

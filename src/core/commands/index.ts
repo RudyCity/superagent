@@ -14,6 +14,7 @@ import "./daemonCommand.js";
 import "./gatewayCommand.js";
 import "./museCommand.js";
 import "./selfdevCommand.js";
+import "./modeCommand.js";
 
 
 export { registry } from "./registry.js";

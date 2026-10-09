@@ -396,6 +396,9 @@ const COMMAND_KW = splitKeywords([
   "macro", "makro", "browser macro", "automation", "otomasi",
   "type", "click", "fill", "ketik", "klik", "isi", "input",
   "medium", "tab", "tabs", "chrome", "browser",
+  // Mode switching commands
+  "ganti mode", "ubah mode", "switch mode", "change mode", "pindah mode",
+  "mode implement", "mode debug", "mode plan", "mode code", "mode ask",
 ]);
 
 // ─── Precompiled RegExp Patterns ────────────────────────────────────────────
@@ -1312,8 +1315,9 @@ export async function classifyRequest(
 
 /** Tool names allowed per category (null means full toolset) */
 const CATEGORY_TOOLS: Record<RequestCategory, string[] | null> = {
-  conversation: [],
+  conversation: ["switch_mode"],
   question: [
+    "switch_mode",
     "read", "glob", "grep", "ripgrep_search", "web_search", "get_skills", "use_skill",
     "fetch_url", "search_history", "load_pinned_session", "search_pinned_knowledge",
     "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos", "ask_question",
@@ -1327,6 +1331,7 @@ const CATEGORY_TOOLS: Record<RequestCategory, string[] | null> = {
     "manage_browser_cookies_storage", "set_browser_emulation", "set_network_conditions"
   ],
   research: [
+    "switch_mode",
     "read", "glob", "grep", "ripgrep_search", "web_search", "fetch_url",
     "get_skills", "use_skill", "search_history", "load_pinned_session", "search_pinned_knowledge",
     "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos", "ask_question",
@@ -1482,7 +1487,9 @@ export async function isDestructiveCommand(cmd: string): Promise<boolean> {
 export const CONTINUATION_COMMANDS: ReadonlySet<string> = new Set([
   "lanjut", "lanjutkan", "continue", "proceed", "next", "go", "gas", "gass", "gaskeun",
   "ayo", "mari", "do it", "silakan", "silahkan", "jalan", "jalankan", "lakukan", "teruskan",
-  "gas bro", "lanjut bos", "lanjut boss", "lanjutkan bos", "lanjutkan boss"
+  "gas bro", "lanjut bos", "lanjut boss", "lanjutkan bos", "lanjutkan boss",
+  "ganti mode", "ubah mode", "switch mode", "change mode", "pindah mode",
+  "mode implement", "mode debug", "mode plan", "mode code", "mode ask",
 ]);
 
 /**
@@ -1502,11 +1509,16 @@ export function isHighConfidenceConversation(
   if (planState && planState !== "IDLE") {
     return false;
   }
-  if (userInput && hasPriorMessages) {
+  if (userInput) {
     const text = typeof userInput === "string" ? userInput : "";
-    const cleanLower = text.toLowerCase().replace(PUNCTUATION_STRIP_RE, "").trim();
-    if (CONTINUATION_COMMANDS.has(cleanLower)) {
+    if (/\b(?:ganti|ubah|switch|change|pindah)\s+mode\b/i.test(text)) {
       return false;
+    }
+    if (hasPriorMessages) {
+      const cleanLower = text.toLowerCase().replace(PUNCTUATION_STRIP_RE, "").trim();
+      if (CONTINUATION_COMMANDS.has(cleanLower)) {
+        return false;
+      }
     }
   }
   return (

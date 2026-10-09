@@ -12,6 +12,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/internal-hooks": "Manage custom internal hook tools — init, dev, or select active hooks",
   "/ih": "Manage custom internal hook tools — init, dev, or select active hooks",
   "/model": "Switch active LLM model or configure per-tier models",
+  "/mode": "View or switch active operational mode (/mode implement, /mode ask, /mode debug)",
   "/mp": "Quick-switch model preset (e.g. /mp fast, /mp default). Shortcut: /mp-<name>",
   "/login": "Add API credentials or switch active provider",
   "/resume": "Resume a previous session from history",
@@ -372,6 +373,18 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       return searchTerm
         ? filterSuggestions(possibilities, searchTerm)
         : possibilities.slice(0, 12);
+    }
+
+    if (mainCommand === "/mode") {
+      const modeOptions = [
+        "/mode implement",
+        "/mode ask",
+        "/mode debug",
+        "/mode plan",
+        "/mode research",
+        "/mode review",
+      ];
+      return filterSuggestions(modeOptions, query);
     }
     
     if (mainCommand === "/login") {

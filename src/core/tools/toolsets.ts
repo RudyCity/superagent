@@ -122,6 +122,7 @@ import {
   findProcessTool,
   killProcessTool,
 } from "./processInspectionTools.js";
+import { switchModeTool } from "./modeTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Orchestration only. The Master Agent MUST NOT directly modify code or
@@ -131,6 +132,7 @@ import {
 // sess_1787733100811_xetwt4_walkthrough.md (C3).
 export const masterToolset: Tool[] = [
   // ── Superagent orchestration (the core job of the Master) ──
+  switchModeTool,
   askQuestionTool,
   invokeSuperagentTool,
   awaitSuperagentsTool,
@@ -205,6 +207,7 @@ export const ORCHESTRATION_TOOL_NAMES: ReadonlySet<string> = new Set(
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────
 // Full development toolset. Scoped to own worktree at runtime via permission layer.
 export const superagentToolset: Tool[] = [
+  switchModeTool,
   transferSshFileTool,
   readTool,
   readDocumentTool,
@@ -352,6 +355,7 @@ export function withModeAwareDiscoveryTools(tools: Tool[], isExtensionChatMode: 
 }
 
 export const chromeExtensionToolset: Tool[] = [
+  switchModeTool,
   readTool,
   writeToFileTool,
   replaceFileContentTool,
