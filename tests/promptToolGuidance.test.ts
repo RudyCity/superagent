@@ -18,8 +18,10 @@ describe("prompt and command guidance", () => {
     const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
     const combined = `${config}\n${configBase}\n${prompts}`;
 
-    expect(combined).toContain("PowerShell on Windows");
-    expect(combined).toContain("Use \\`run_command\\` for validation commands");
+    expect(combined).toContain("PowerShell");
+    expect(combined).toContain("separates commands, NEVER '&&'");
+    expect(combined).toContain("run_command");
+    expect(combined).toContain("for validation");
   });
 
   it("does not reference unsupported prompt tool schemas", () => {
@@ -45,9 +47,9 @@ describe("prompt and command guidance", () => {
     const configBase = fs.readFileSync(path.resolve(process.cwd(), "src/core/config/base.ts"), "utf-8");
     const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
 
-    expect(configBase).toContain("Do not repeat stale exact-match edits");
-    expect(configBase).toContain("Pass one path per call");
-    expect(configBase).toContain("Use action 'report' (singular), not 'reports'");
+    expect(configBase).toContain("no stale exact-match repeats");
+    expect(configBase).toContain("one path/call, never combine");
+    expect(configBase).toContain("action 'report' singular");
 
     expect(prompts).toContain("Re-read range → line-range replace. Avoid stale edits.");
     expect(prompts).toContain("DIRTY_WORKSPACE");
@@ -85,10 +87,10 @@ describe("prompt and command guidance", () => {
     expect(prompts).toContain("NEVER re-run identical command");
     expect(prompts).toContain("PIPE_AND_DAEMON_SAFETY");
 
-    expect(base).toContain("COMMAND_LOGS: Foreground commands");
+    expect(base).toContain("COMMAND_LOGS: foreground commands");
     expect(base).toContain("latest-command.log");
     expect(base).toContain("TRUNCATED_OUTPUT");
-    expect(base).toContain("DO NOT re-run identical command");
+    expect(base).toContain("DO NOT re-run blindly");
     expect(base).toContain("PIPE_AND_DAEMON_SAFETY");
   });
 });

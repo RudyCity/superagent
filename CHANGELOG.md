@@ -1,3 +1,8 @@
+## [1.13.1] - 2026-10-09
+### Changed
+- Updated system prompt rules in `src/core/prompts.ts` (`BROWSER_CONTROL_RULE`, `BROWSER_AUTOMATION_CORE`, and `chrome-agent`) following Concepts A, B, and C to prioritize native Chrome CDP automation (port 9222) and OmniParser vision AI (port 9333).
+- Aligned prompt guidance test assertions in `tests/promptToolGuidance.test.ts` with minified prompt and base configuration strings.
+
 ## [1.13.0] - 2026-10-09
 ### Added
 - Command baru di `control_chrome_cdp`: `new_tab` (membuka tab baru dengan URL opsional via PUT `/json/new`), `close_tab` (menutup tab berdasarkan targetId via `/json/close`), dan `activate` (membawa tab ke depan dan unthrottle via `/json/activate`).

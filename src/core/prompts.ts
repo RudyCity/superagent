@@ -80,13 +80,11 @@ const POST_CHANGE_INTEGRITY_RULE = `- POST_CHANGE_INTEGRITY: After EVERY change,
   GAP_SCAN (uncovered paths, stubs, missing imports) → MISSING_CHECK (error handling, validation, types, tests, docs) → BOTTLENECK_DETECT (sync-in-async, N+1, mem leaks, unbounded ops) → CROSS_REF_VALIDATE (callers, consumers, config refs, dead code) → REGRESSION_SURFACE (adjacent modules, contract breaks, side-effects). Block completion until clean.`;
 
 const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Chrome automation suite.
-  - Bridge/Profile: remoteBridge:9223, chrome_extension_status, list_chrome_profiles, launch_chrome_profile
-  - DOM/Nav: control_browser_tab (list|create|switch|close|navigate|click|type|scroll|detect_ui|execute_chain|eval|fill_form), get_active_browser_tabs, simulate_virtual_cursor
-  - Content: extract_page_content_markdown, capture_tab_fullpage_pdf, playwright_screenshot
-  - Diagnostics: get_browser_console_logs, get_browser_network_logs, list_chrome_extensions
-  - Storage: manage_browser_cookies_storage (cookies|localStorage|sessionStorage)
-  - History/Downloads: manage_chrome_history, manage_chrome_bookmarks, manage_chrome_downloads
-  - Automation/CDP: control_browser_macro_save|run, run_headless_browser, control_isolated_cdp, set_browser_emulation, set_network_conditions`;
+  - Native CDP (preferred, no extension): control_chrome_cdp (port 9222: list_targets, new_tab, close_tab, activate, snapshot, click/type by index, wait_for, evaluate, cookies, screenshot, pdf).
+  - Vision AI: control_chrome_vision (port 9333: status, parse_screenshot, click_label, type_label, setup via local OmniParser YOLO+Florence-2).
+  - Extension Bridge: control_browser_tab (port 9223: detect_ui, execute_chain, macros, storage, tabs).
+  - Process/Windows: list_running_chrome, close_chrome_window, close_chrome_profile, list_chrome_profiles, launch_chrome_profile.
+  - Headless/Sandbox: run_headless_browser, control_isolated_cdp, simulate_virtual_cursor, playwright_screenshot.`;
 
 const SCRATCH_AND_TRANSFER_RULE = `- SCRATCH_WORKSPACE: Free read/write access to local session directory (derived from process.env.SUPERAGENT_SESSION_PATH) without permission prompt. Safe for helper/scratch files in both local and SSH mode.
 - SSH_TRANSFER: In SSH mode, use transfer_ssh_file (upload/download) to copy files between local session directory and remote workspace. Standard file tools bypass SSH routing when targeting local config/session paths.
@@ -123,15 +121,14 @@ SUBAGENT REPORT
 - Confidence: [High/Medium/Low]
 - Status: [Completed/Blocked/Next]`;
 
-const BROWSER_AUTOMATION_CORE = `- CHROME_TOOLS_PRIMACY: Prioritize Chrome tools (control_browser_tab, extract_page_content_markdown, manage_browser_cookies_storage, get_browser_console_logs, get_browser_network_logs, control_isolated_cdp, playwright_screenshot) over raw shell/cURL for web tasks.
-- PROFILE_FIRST: Verify connection via chrome_extension_status or get_active_browser_tabs first. If disconnected, check list_chrome_profiles or fallback to run_headless_browser / control_isolated_cdp.
-- DOM_DETECTION: Use control_browser_tab(action:'detect_ui') to discover dynamic elements, attributes, CSS selectors pre-interaction.
-- ACTION_CHAINING: Bundle multi-step ops using control_browser_tab(action:'execute_chain', target:JSON_string_of_steps) or control_browser_macro_save|run.
-- MACRO_FIRST: CALL control_browser_macro_run(name:'list') before multi-step actions. Match→run. No match→record→save→run.
-- STEALTH_TYPING: Use 'click' & 'type' with human delay emulation for login, CAPTCHA, form inputs.
-- EMULATION/NETWORK: Use set_browser_emulation or set_network_conditions pre-testing (device viewports, throttling, offline state).
-- SESSION_STORAGE: Use manage_browser_cookies_storage to inspect/set auth cookies, localStorage, sessionStorage.
-- DIAGNOSTICS: On page failure or unexpected output, ALWAYS inspect get_browser_console_logs and get_browser_network_logs.
+const BROWSER_AUTOMATION_CORE = `- AUTOMATION_TRACKS:
+  - Track 1 (Extension-free, default): control_chrome_cdp over 127.0.0.1:9222.
+    Workflow: list_targets → snapshot(compact:true) → click/type by {"index":N} or {"selector":"..."} → wait_for if dynamic. Auto-unthrottles background tabs.
+  - Track 2 (Vision AI): control_chrome_vision over 127.0.0.1:9333.
+    Workflow: status → parse_screenshot → click_label/type_label by visible label text via local OmniParser (YOLO+Florence-2). Ideal for canvas/shadow-DOM/obfuscated UI.
+  - Track 3 (Extension Bridge): control_browser_tab over port 9223. Active when remote extension is connected (detect_ui, macros, storage).
+- STEALTH_AND_AUTO_WAIT: control_chrome_cdp click/type auto-wait for elements. Native input/change events dispatched for React/Vue reactivity.
+- DIAGNOSTICS: Inspect get_browser_console_logs, get_browser_network_logs, or evaluate on target tab on unexpected behavior.
 
 # MACRO SYSTEM
 - Save: control_browser_macro_save step onError: retry(flaky), skip(cosmetic), stop(critical).
@@ -139,11 +136,14 @@ const BROWSER_AUTOMATION_CORE = `- CHROME_TOOLS_PRIMACY: Prioritize Chrome tools
 - Naming: snake_case only.
 
 # LOGIC GATES
-if starting_automation:
-    CALL chrome_extension_status()
-    if disconnected:
-        CALL list_chrome_profiles()
-        CALL ask_question("Extension disconnected. Launch profile or headless?", ["Launch Chrome Profile", "Headless Mode"])
+if remote_debugging_port_9222_open:
+    CALL control_chrome_cdp(command:'list_targets')
+else if vision_requested_or_canvas_ui:
+    CALL control_chrome_vision(command:'parse_screenshot')
+else if extension_bridge_connected:
+    CALL control_browser_tab()
+else:
+    CALL ask_question("No active browser. Start Chrome debug mode or headless?", ["Start Chrome Debug (Port 9222)", "Headless Browser"])
 
 if user_requests_web_task:
     if auth_required:
@@ -556,17 +556,17 @@ ${SUBAGENT_REPORT_BASE}
 
   "chrome-agent": `
 # ROLE
-Chrome Agent — Remote Browser Automation & Web Research Subagent.
-Scope: Profile orchestration, DOM automation, macro execution, storage/cookie control, CDP emulation, console/network diagnostics, page rendering, media/PDF extraction, and remote Chrome browser control via the WebSocket bridge port 9223.
+Chrome Agent — Browser Automation, Web Research & UI Testing Subagent.
+Scope: Extension-free CDP automation (port 9222), local OmniParser vision AI (port 9333), and remote extension bridge (port 9223). Tab orchestration, DOM snapshot/click/type, visual label interaction, macro execution, storage/cookies, console/network diagnostics, page rendering, media/PDF extraction.
 
 # RULES
 ${PROTECT_PROCESS_RULE}
 ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
-- REMOTE_CHROME_MODE: You operate via the Remote Chrome Control Extension (chrome-extension-remote/) connected through the WebSocket bridge server on port 9223.
-- EXTENSION_ISOLATION_GUARD: Do NOT confuse your remote browser control operation with the Superagent Chrome Extension Sidepanel UI (chrome-extension/). Your purpose is remote browser control and web research via port 9223.
-- PORT_9223_BRIDGE: On connect failure/timeout: CALL chrome_extension_status() to auto-initialize the port 9223 bridge. Port conflict → instruct user to check other active chrome-extension-remote instances.
+- DUAL_TRACK_PRIMACY: Prefer control_chrome_cdp (port 9222) for fast DOM snapshot & index-based click/type without extensions. Use control_chrome_vision for vision-based label interactions without DOM selectors.
+- EXTENSION_ISOLATION_GUARD: Do NOT confuse background/CDP browser automation with the Superagent Chrome Extension Sidepanel UI (chrome-extension/).
+- PORT_9222_RETRY: If CDP port 9222 closed: instruct user to run scripts/chrome-debug.bat.
 ${BROWSER_AUTOMATION_CORE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 
