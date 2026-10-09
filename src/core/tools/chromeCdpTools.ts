@@ -10,7 +10,7 @@
  * or a silent tab fails fast with an actionable message instead of hanging.
  */
 import { Tool } from "./types.js";
-import { get as httpGet } from "http";
+import { get as httpGet, request as httpRequest } from "http";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -86,6 +86,39 @@ function httpGetJson(path: string): Promise<any> {
         reject(err);
       }
     });
+  });
+}
+
+function httpPutJson(path: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(
+      { host: cdpHost(), port: cdpPort(), path, method: "PUT", timeout: cdpTimeoutMs() },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => {
+          data += chunk;
+        });
+        res.on("end", () => {
+          try {
+            resolve(data ? JSON.parse(data) : data);
+          } catch {
+            resolve(data);
+          }
+        });
+      }
+    );
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error(`Timed out after ${cdpTimeoutMs()}ms reaching the CDP endpoint ${path}.`));
+    });
+    req.on("error", (err: any) => {
+      if (err && (err.code === "ECONNREFUSED" || err.code === "ECONNRESET")) {
+        reject(new Error(CDP_PORT_CLOSED_MSG));
+      } else {
+        reject(err);
+      }
+    });
+    req.end();
   });
 }
 
@@ -173,20 +206,20 @@ async function listPageTargets(): Promise<CdpTarget[]> {
   return targets.filter((t: any) => t && t.type === "page" && t.webSocketDebuggerUrl);
 }
 
-async function pickTarget(targetId?: string): Promise<CdpTarget> {
+async function pickTarget(targetId?: string, autoActivate = true): Promise<CdpTarget> {
   const pages = await listPageTargets();
   if (pages.length === 0) {
     throw new Error("No page targets found on the Chrome remote-debugging endpoint. Open a tab in Chrome and retry.");
   }
   pruneCdpConnections(pages.map((p) => p.webSocketDebuggerUrl));
-  if (targetId) {
-    const found = pages.find((p) => p.id === targetId);
-    if (!found) {
-      throw new Error(`No page target with id '${targetId}'. Run command 'list_targets' to see available targets.`);
-    }
-    return found;
+  const target = targetId ? pages.find((p) => p.id === targetId) : pages[0];
+  if (!target) {
+    throw new Error(`No page target with id '${targetId}'. Run command 'list_targets' to see available targets.`);
   }
-  return pages[0];
+  if (autoActivate && target.id) {
+    httpPutJson(`/json/activate/${target.id}`).catch(() => {});
+  }
+  return target;
 }
 
 /**
@@ -663,7 +696,7 @@ export const controlChromeCdpTool: Tool = {
     "Control the user's REAL Chrome browser directly via Chrome Remote Debugging (CDP) at http://127.0.0.1:9222 — no extension required and no isolated background tab. " +
     "REQUIRES Chrome to be running with --remote-debugging-port=9222 (close ALL Chrome windows, then reopen Chrome from the taskbar shortcut). " +
     "Without it, this tool fails fast with an explicit error. " +
-    "Commands: list_targets, navigate, evaluate (run any JS in the tab), snapshot (numbered list of interactive elements; options: compact, max_elements, diff), click (click by index or CSS selector, auto-waits for the element), type (type by index or CSS selector, auto-waits for the element), wait_for (wait for a selector or text to appear), screenshot, pdf, get_cookies. " +
+    "Commands: list_targets, new_tab (open new tab with optional url), close_tab (close tab by targetId), activate (bring tab to front/unthrottle), navigate, evaluate (run any JS in the tab; auto-awaits Promises), snapshot (numbered list of interactive elements; options: compact, max_elements, diff), click (click by index or CSS selector, auto-waits for the element), type (type by index or CSS selector, auto-waits for the element), wait_for (wait for a selector or text to appear), screenshot, pdf, get_cookies. " +
     "RECOMMENDED WORKFLOW for page interaction (no element IDs, no coordinates, no screenshots needed): 1) run 'snapshot' to get a numbered list of interactive elements, 2) 'click' with {\"index\": N} or 'type' with {\"index\": N, \"text\": \"...\"}. " +
     "click/type also accept {\"selector\": \"<css>\"} instead of an index. 'type' clears the field first by default (\"clear\": false to append) and dispatches input/change events so reactive frameworks detect the change. " +
     "click/type auto-wait for the element to appear (payload \"timeout_ms\", default 10000, 0 disables). 'wait_for' with {\"selector\": \"<css>\"} or {\"text\": \"<teks>\"} waits for content to appear without acting.",
@@ -672,13 +705,13 @@ export const controlChromeCdpTool: Tool = {
     properties: {
       command: {
         type: "string",
-        enum: ["list_targets", "navigate", "evaluate", "snapshot", "click", "type", "wait_for", "screenshot", "pdf", "get_cookies"],
+        enum: ["list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "click", "type", "wait_for", "screenshot", "pdf", "get_cookies"],
         description: "CDP command to execute on the real Chrome browser.",
       },
       payload: {
         type: "string",
         description:
-          'JSON string payload. navigate: {"url": "https://..."}. evaluate: {"expression": "document.title"} (any JavaScript). snapshot: {} (numbered interactive-element list). click: {\"index\": 3} or {\"selector\": \"#login\"}. type: {\"index\": 2, \"text\": \"hello\", \"clear\": true} (\"clear\" defaults true) or {\"selector\": \"input[name=q]\", \"text\": \"...\"}. screenshot/pdf/get_cookies/snapshot take {} or may be omitted. Any command also accepts {"targetId": "..."} to pick a tab from list_targets.',
+          'JSON string payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://..."}. evaluate: {"expression": "document.title"} (any JavaScript; awaits Promises). snapshot: {} (numbered interactive-element list). click: {\"index\": 3} or {\"selector\": \"#login\"}. type: {\"index\": 2, \"text\": \"hello\", \"clear\": true} (\"clear\" defaults true) or {\"selector\": \"input[name=q]\", \"text\": \"...\"}. screenshot/pdf/get_cookies/snapshot/activate/close_tab take {} or may be omitted. Any command also accepts {"targetId": "..."} to pick a tab from list_targets.',
       },
       targetId: {
         type: "string",
@@ -709,6 +742,24 @@ export const controlChromeCdpTool: Tool = {
           if (pages.length === 0) return "control_chrome_cdp: connected, but no page targets are open in Chrome.";
           return pages.map((t) => `- id: ${t.id}\n  title: ${t.title}\n  url: ${t.url}`).join("\n");
         }
+        case "new_tab": {
+          const url = String(payload.url || "about:blank");
+          const path = `/json/new?${encodeURIComponent(url)}`;
+          const res: any = await httpPutJson(path);
+          const newId = res && res.id ? res.id : undefined;
+          return `control_chrome_cdp: opened new tab '${url}'${newId ? ` (targetId: ${newId})` : ""}`;
+        }
+        case "close_tab": {
+          const target = await pickTarget(targetId, false);
+          await httpPutJson(`/json/close/${target.id}`);
+          closeCdpConnection(target.webSocketDebuggerUrl, "Tab closed via close_tab command.");
+          return `control_chrome_cdp: closed tab '${truncate(target.title, 80)}' (id: ${target.id})`;
+        }
+        case "activate": {
+          const target = await pickTarget(targetId, false);
+          await httpPutJson(`/json/activate/${target.id}`);
+          return `control_chrome_cdp: activated tab '${truncate(target.title, 80)}' (id: ${target.id})`;
+        }
         case "navigate": {
           const url = String(payload.url || "");
           if (!url) return 'control_chrome_cdp failed: command \'navigate\' needs payload {"url": "https://..."}.';
@@ -720,7 +771,11 @@ export const controlChromeCdpTool: Tool = {
           const expression = String(payload.expression || "");
           if (!expression) return 'control_chrome_cdp failed: command \'evaluate\' needs payload {"expression": "..."}.';
           const target = await pickTarget(targetId);
-          const res: any = await cdpSend(target, "Runtime.evaluate", { expression, returnByValue: true });
+          const res: any = await cdpSend(target, "Runtime.evaluate", {
+            expression,
+            returnByValue: true,
+            awaitPromise: true,
+          });
           const value = res && res.result ? res.result.value : undefined;
           const out = typeof value === "string" ? value : JSON.stringify(value);
           return `control_chrome_cdp: evaluate result: ${truncate(out, 4000)}`;
@@ -894,7 +949,7 @@ export const controlChromeCdpTool: Tool = {
           return `control_chrome_cdp: ${cookies.length} cookie(s):\n${JSON.stringify(summary, null, 1)}`;
         }
         default:
-          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, navigate, evaluate, snapshot, click, type, wait_for, screenshot, pdf, get_cookies.`;
+          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, click, type, wait_for, screenshot, pdf, get_cookies.`;
       }
     } catch (err: any) {
       return `control_chrome_cdp failed: ${(err && err.message) || String(err)}`;

@@ -483,6 +483,27 @@ async function cmdTypeLabel(payload: any): Promise<string> {
   return `Clicked "${el.label || el.type}" at (${el.x}, ${el.y}) and typed ${text.length} char(s).`;
 }
 
+async function cmdStatus(): Promise<string> {
+  let cdpOk = false;
+  try {
+    await httpGetJson(cdpHost(), cdpPort(), "/json/version");
+    cdpOk = true;
+  } catch {
+    cdpOk = false;
+  }
+  const weights = weightsReady();
+  const serviceUp = await omniHealth();
+  const pythonCmd = await findPython();
+  const lines = [
+    "OmniParser Vision Status:",
+    `- Chrome CDP (port ${cdpPort()}): ${cdpOk ? "connected" : "not reachable"}`,
+    `- Model weights (~1.1GB): ${weights ? "installed" : "missing (run command='setup' to download)"}`,
+    `- Service daemon (port ${omniPort()}): ${serviceUp ? "running" : "stopped (auto-starts on demand)"}`,
+    `- Python runtime: ${pythonCmd || "not found in PATH"}`,
+  ];
+  return lines.join("\n");
+}
+
 export const controlChromeVisionTool: Tool = {
   name: "control_chrome_vision",
   description:
@@ -494,20 +515,20 @@ export const controlChromeVisionTool: Tool = {
     "If this tool returns OMNIPARSER_SETUP_NEEDED, use the ask_question tool to ask the user " +
     "'OmniParser AI needs a one-time ~1.1GB model download to enable vision-based Chrome automation. Proceed with setup?'. " +
     "If the user approves, run this tool with command='setup' and wait for it to finish, then retry the original command. " +
-    "Commands: parse_screenshot (list detected elements with [id] (x,y) type \"label\"), click_label (payload {\"label\": \"Post\"}), type_label (payload {\"label\": \"Title\", \"text\": \"...\"}), setup (one-time model download - only after user approves via ask_question). " +
+    "Commands: status (check readiness of CDP, models, service), parse_screenshot (list detected elements with [id] (x,y) type \"label\"), click_label (payload {\"label\": \"Post\"}), type_label (payload {\"label\": \"Title\", \"text\": \"...\"}), setup (one-time model download - only after user approves via ask_question). " +
     "Labels are fuzzy-matched (all query words must appear in the element label).",
   parameters: {
     type: "object",
     properties: {
       command: {
         type: "string",
-        enum: ["parse_screenshot", "click_label", "type_label", "setup"],
+        enum: ["status", "parse_screenshot", "click_label", "type_label", "setup"],
         description: "Vision command to execute.",
       },
       payload: {
         type: "string",
         description:
-          "JSON string. parse_screenshot: {\"targetId\": \"...\"} (optional). " +
+          "JSON string. status: no payload needed. parse_screenshot: {\"targetId\": \"...\"} (optional). " +
           "click_label: {\"label\": \"Post\", \"targetId\": \"...\" (optional)}. " +
           "type_label: {\"label\": \"Title\", \"text\": \"hello\", \"targetId\": \"...\" (optional)}. " +
           "setup: no payload needed (one-time model download, needs user approval first).",
@@ -526,6 +547,8 @@ export const controlChromeVisionTool: Tool = {
       }
     }
     switch (command) {
+      case "status":
+        return cmdStatus();
       case "parse_screenshot":
         return cmdParseScreenshot(payload);
       case "click_label":
@@ -535,7 +558,7 @@ export const controlChromeVisionTool: Tool = {
       case "setup":
         return cmdSetup();
       default:
-        throw new Error(`Unknown vision command '${command}'. Use parse_screenshot, click_label, type_label, or setup.`);
+        throw new Error(`Unknown vision command '${command}'. Use status, parse_screenshot, click_label, type_label, or setup.`);
     }
   },
 };

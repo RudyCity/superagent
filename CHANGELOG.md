@@ -1,3 +1,12 @@
+## [1.13.0] - 2026-10-09
+### Added
+- Command baru di `control_chrome_cdp`: `new_tab` (membuka tab baru dengan URL opsional via PUT `/json/new`), `close_tab` (menutup tab berdasarkan targetId via `/json/close`), dan `activate` (membawa tab ke depan dan unthrottle via `/json/activate`).
+- Support `awaitPromise: true` pada `evaluate` di `control_chrome_cdp` sehingga ekspresi asinkron dan Promise langsung resolve tanpa return wrapper object.
+- Command baru `status` di `control_chrome_vision`: diagnostik kesiapan CDP port, bobot model lokal (~1.1GB), Python environment, dan daemon service 9333 tanpa memicu error atau screenshot.
+
+### Performance
+- Auto-unthrottle target tab di `control_chrome_cdp`: aktivasi tab otomatis saat target dipilih mencegah Chrome menahan evaluasi JavaScript di background tabs (menghilangkan timeout 20 detik).
+
 ## [1.12.0] - 2026-10-09
 ### Added
 - Tool baru `control_chrome_vision`: otomatisasi Chrome berbasis visual menggunakan OmniParser AI lokal (YOLOv8 + Florence-2) untuk mendeteksi elemen UI dengan bounding box dan label serta click/type tanpa selector DOM. Layanan OmniParser otomatis distart di background jika belum berjalan.

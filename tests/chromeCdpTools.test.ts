@@ -3,6 +3,7 @@ import { createServer, Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { AddressInfo } from "net";
 import { controlChromeCdpTool, _cdpTestHooks } from "../src/core/tools/chromeCdpTools.js";
+import { controlChromeVisionTool } from "../src/core/tools/chromeVisionTools.js";
 
 describe("control_chrome_cdp (mock CDP server)", () => {
   let httpServer: Server;
@@ -121,6 +122,15 @@ describe("control_chrome_cdp (mock CDP server)", () => {
             },
           ])
         );
+      } else if (req.url?.startsWith("/json/new")) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ id: "T_NEW", url: "https://new.test/" }));
+      } else if (req.url?.startsWith("/json/close/")) {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("Target is closing");
+      } else if (req.url?.startsWith("/json/activate/")) {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("Target activated");
       } else {
         res.writeHead(404);
         res.end();
@@ -149,7 +159,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   test("tool is registered with the right name and commands", () => {
     expect(controlChromeCdpTool.name).toBe("control_chrome_cdp");
     const cmds = (controlChromeCdpTool.parameters as any).properties.command.enum as string[];
-    expect(cmds).toEqual(["list_targets", "navigate", "evaluate", "snapshot", "click", "type", "wait_for", "screenshot", "pdf", "get_cookies"]);
+    expect(cmds).toEqual(["list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "click", "type", "wait_for", "screenshot", "pdf", "get_cookies"]);
     expect(controlChromeCdpTool.description).toContain("--remote-debugging-port=9222");
     expect(controlChromeCdpTool.description).toContain("no extension required");
   });
@@ -403,6 +413,40 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     await controlChromeCdpTool.execute({ command: "get_cookies" });
     await controlChromeCdpTool.execute({ command: "screenshot" });
     expect(_cdpTestHooks.connectionCount()).toBe(1);
+  });
+
+  test("new_tab opens a new page and returns targetId", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "new_tab",
+      payload: JSON.stringify({ url: "https://new.test/" }),
+    });
+    expect(res).toContain("opened new tab");
+    expect(res).toContain("T_NEW");
+  });
+
+  test("activate brings the tab to front", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "activate",
+      targetId: "T1",
+    });
+    expect(res).toContain("activated tab");
+    expect(res).toContain("T1");
+  });
+
+  test("close_tab closes the target tab", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "close_tab",
+      targetId: "T1",
+    });
+    expect(res).toContain("closed tab");
+    expect(res).toContain("T1");
+  });
+
+  test("control_chrome_vision status command reports environment readiness", async () => {
+    const res = await controlChromeVisionTool.execute({ command: "status" });
+    expect(res).toContain("OmniParser Vision Status:");
+    expect(res).toContain("Chrome CDP");
+    expect(res).toContain("Model weights");
   });
 });
 
