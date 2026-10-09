@@ -16,6 +16,25 @@ export class MessageBuilder {
     if (!modelName) return false;
 
     const name = modelName.toLowerCase();
+
+    // Explicit known text-only models - override any accidental supportsVision: true in presets
+    if (
+      name.includes("liquid") ||
+      name.includes("lfm-") ||
+      name.includes("deepseek-chat") ||
+      name.includes("deepseek-coder") ||
+      name.includes("deepseek-r1") ||
+      name.includes("mistral-7b") ||
+      name.includes("llama-3-8b") ||
+      name.includes("llama-3-70b") ||
+      name.includes("llama-3.1-8b") ||
+      name.includes("llama-3.1-70b") ||
+      name.includes("llama-3.2-1b") ||
+      name.includes("llama-3.2-3b") ||
+      name.includes("gemma-2-")
+    ) {
+      return false;
+    }
     
     // Known vision-supporting models - name check overrides config misconfigurations
     if (

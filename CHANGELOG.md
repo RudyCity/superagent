@@ -1,3 +1,11 @@
+## [1.13.32] - 2026-10-09
+### Fixed & Resiliency
+- Vision Payload Safety & Unsupported Image Self-Healing:
+  - Added strict text-only model family guards in `MessageBuilder.modelSupportsVision` and `TokenTracker.modelSupportsVision` for `liquid/`, `lfm-`, `deepseek-chat`, `deepseek-coder`, `deepseek-r1`, `mistral-7b`, `llama-3-8b`, `llama-3-70b`, `llama-3.1-8b`, `llama-3.1-70b`, `llama-3.2-1b`, `llama-3.2-3b`, `gemma-2-`, overriding any accidental `supportsVision: true` preset flags.
+  - Added self-healing recovery in `LoopIterationProcessor` (streaming and non-streaming modes) and `AgentUtils.isImageUnsupportedError`: intercepts provider rejection errors (such as OpenRouter's 404 "No endpoints found that support image input" / "Filter by Image Support"), strips image blocks, and automatically retries in text-only mode with element layout descriptions preserved.
+  - Refactored `handleUnavailableTool` to eliminate code duplication and maintain `LoopIterationProcessor.ts` under 1000 lines.
+  - Fixed active preset `openrouter` in `~/.superagent-r/model-config.json` to properly set `supportsVision: false` for `liquid/lfm-2.5-2.6b:free`.
+
 ## [1.13.31] - 2026-10-09
 ### Documentation & Specifications
 - Comprehensive Documentation of Set-of-Mark (SoM) Vision & Layout Audit Architecture:

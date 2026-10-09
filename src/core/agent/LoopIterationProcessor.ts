@@ -14,13 +14,51 @@ import { ToolExecutor } from "./ToolExecutor.js";
 import { ContextBuilder } from "./ContextBuilder.js";
 import { formatError } from "./AgentEvents.js";
 import { type Agent, parsePayloadLimitBytes } from "../agent.js";
-import { isRetryableError as isRetryableErrorHelper, isContextLengthExceeded } from "./AgentUtils.js";
-
-function isRetryableError(err: unknown): boolean {
-  return isRetryableErrorHelper(err);
-}
-
+import {
+  isRetryableError,
+  isContextLengthExceeded,
+  isImageUnsupportedError,
+  stripImagesFromCoreMessages,
+} from "./AgentUtils.js";
 import { cleanThinkingTags } from "./FastPath.js";
+
+async function handleUnavailableTool(
+  rawMsg: string,
+  activeTools: any[],
+  agent: Agent,
+  textContent: string,
+  reasoningContent?: string
+): Promise<boolean> {
+  const isUnavailable =
+    rawMsg.toLowerCase().includes("tried to call unavailable tool") ||
+    rawMsg.toLowerCase().includes("tried to call tool that is not available");
+  if (!isUnavailable) return false;
+
+  const match = rawMsg.match(/(?:tried to call unavailable tool|tool that is not available|tool) ['"]([^'"]+)['"]/i);
+  const toolName = match ? match[1] : "bash";
+  const toolCallId = "call_unavail_" + Math.random().toString(36).substring(2, 11);
+  const mockToolCall = { id: toolCallId, name: toolName, args: {} };
+  const mockToolResult = {
+    toolCallId,
+    name: toolName,
+    result: `Error: Tool "${toolName}" is not available. Available tools: ${activeTools.map((t: any) => t.name).join(", ")}. Please use only the available tools.`,
+    isError: true,
+  };
+  agent.conversation.addAssistantMessage(
+    textContent || `Attempted to call tool "${toolName}"`,
+    [mockToolCall],
+    [mockToolResult],
+    reasoningContent
+  );
+  agent.conversation.addMessage({
+    role: "tool",
+    content: "",
+    toolResults: [mockToolResult],
+    timestamp: Date.now(),
+  });
+  await agent.saveHistory();
+  return true;
+}
 
 import { isGoalCompleteResponse } from "./GoalCompletion.js";
 export { isGoalCompleteResponse } from "./GoalCompletion.js";
@@ -333,35 +371,7 @@ export class LoopIterationProcessor {
               if (!rawMsg || rawMsg.trim() === "" || rawMsg.trim() === "Cannot connect to API:") {
                 rawMsg = `Cannot connect to API (${err.name || "ConnectionFailed"})`;
               }
-              const isUnavailableTool = rawMsg.toLowerCase().includes("tried to call unavailable tool") || rawMsg.toLowerCase().includes("tried to call tool that is not available");
-              if (isUnavailableTool) {
-                const match = rawMsg.match(/(?:tried to call unavailable tool|tool that is not available|tool) ['"]([^'"]+)['"]/i);
-                const toolName = match ? match[1] : "bash";
-                const toolCallId = "call_unavail_" + Math.random().toString(36).substring(2, 11);
-                const mockToolCall = {
-                  id: toolCallId,
-                  name: toolName,
-                  args: {},
-                };
-                const mockToolResult = {
-                  toolCallId,
-                  name: toolName,
-                  result: `Error: Tool "${toolName}" is not available. Available tools: ${activeTools.map((t: any) => t.name).join(", ")}. Please use only the available tools.`,
-                  isError: true,
-                };
-                agent.conversation.addAssistantMessage(
-                  textContent || `Attempted to call tool "${toolName}"`,
-                  [mockToolCall],
-                  [mockToolResult],
-                  reasoningContent
-                );
-                agent.conversation.addMessage({
-                  role: "tool",
-                  content: "",
-                  toolResults: [mockToolResult],
-                  timestamp: Date.now(),
-                });
-                await agent.saveHistory();
+              if (await handleUnavailableTool(rawMsg, activeTools, agent, textContent, reasoningContent)) {
                 return { shouldBreak: false };
               }
               const isRetryable = isRetryableError(err);
@@ -385,6 +395,15 @@ export class LoopIterationProcessor {
                   throw err;
                 }
                 throw new Error(`Stream error after ${attempt - 1} retries: ${rawMsg}`);
+              }
+
+              if (isImageUnsupportedError(err)) {
+                agent.onEvent({
+                  type: "text",
+                  content: `\n[SYS] Model endpoint does not support image input. Stripping visual attachments and retrying in text-only mode...\n`,
+                });
+                messages = stripImagesFromCoreMessages(messages);
+                continue;
               }
 
               if (isContextOverflow) {
@@ -529,35 +548,7 @@ export class LoopIterationProcessor {
               if (!rawMsg || rawMsg.trim() === "" || rawMsg.trim() === "Cannot connect to API:") {
                 rawMsg = `Cannot connect to API (${err.name || "ConnectionFailed"})`;
               }
-              const isUnavailableTool = rawMsg.toLowerCase().includes("tried to call unavailable tool") || rawMsg.toLowerCase().includes("tried to call tool that is not available");
-              if (isUnavailableTool) {
-                const match = rawMsg.match(/(?:tried to call unavailable tool|tool that is not available|tool) ['"]([^'"]+)['"]/i);
-                const toolName = match ? match[1] : "bash";
-                const toolCallId = "call_unavail_" + Math.random().toString(36).substring(2, 11);
-                const mockToolCall = {
-                  id: toolCallId,
-                  name: toolName,
-                  args: {},
-                };
-                const mockToolResult = {
-                  toolCallId,
-                  name: toolName,
-                  result: `Error: Tool "${toolName}" is not available. Available tools: ${activeTools.map((t: any) => t.name).join(", ")}. Please use only the available tools.`,
-                  isError: true,
-                };
-                agent.conversation.addAssistantMessage(
-                  textContent || `Attempted to call tool "${toolName}"`,
-                  [mockToolCall],
-                  [mockToolResult],
-                  reasoningContent
-                );
-                agent.conversation.addMessage({
-                  role: "tool",
-                  content: "",
-                  toolResults: [mockToolResult],
-                  timestamp: Date.now(),
-                });
-                await agent.saveHistory();
+              if (await handleUnavailableTool(rawMsg, activeTools, agent, textContent, reasoningContent)) {
                 return { shouldBreak: false };
               }
               const isRetryable = isRetryableError(err) || rawMsg.toLowerCase().includes("empty response");
@@ -581,6 +572,15 @@ export class LoopIterationProcessor {
                   throw err;
                 }
                 throw new Error(`Generate text failed after ${attempt - 1} retries: ${rawMsg}`);
+              }
+
+              if (isImageUnsupportedError(err)) {
+                agent.onEvent({
+                  type: "text",
+                  content: `\n[SYS] Model endpoint does not support image input. Stripping visual attachments and retrying in text-only mode...\n`,
+                });
+                messages = stripImagesFromCoreMessages(messages);
+                continue;
               }
 
               if (isContextOverflow) {

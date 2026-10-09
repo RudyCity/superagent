@@ -76,6 +76,23 @@ export class TokenTracker {
     if (!modelName) return false;
     const name = modelName.toLowerCase();
     if (
+      name.includes("liquid") ||
+      name.includes("lfm-") ||
+      name.includes("deepseek-chat") ||
+      name.includes("deepseek-coder") ||
+      name.includes("deepseek-r1") ||
+      name.includes("mistral-7b") ||
+      name.includes("llama-3-8b") ||
+      name.includes("llama-3-70b") ||
+      name.includes("llama-3.1-8b") ||
+      name.includes("llama-3.1-70b") ||
+      name.includes("llama-3.2-1b") ||
+      name.includes("llama-3.2-3b") ||
+      name.includes("gemma-2-")
+    ) {
+      return false;
+    }
+    if (
       name.includes("claude-3") ||
       name.includes("claude") ||
       name.includes("gpt-4o") ||

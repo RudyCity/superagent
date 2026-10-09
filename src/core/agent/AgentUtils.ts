@@ -131,10 +131,60 @@ export function getAgentActiveModelName(agent: Agent): string {
   return (agent as any)?.config?.model || getConfig().model;
 }
 
+export function isImageUnsupportedError(err: unknown): boolean {
+  if (!err) return false;
+  let msg = "";
+  if (err instanceof Error) {
+    msg = err.message;
+  } else if (typeof err === "object") {
+    const obj = err as any;
+    msg = obj.message || (obj.error && obj.error.message) || "";
+    if (!msg) {
+      try {
+        msg = JSON.stringify(obj);
+      } catch {
+        msg = String(err);
+      }
+    }
+  } else {
+    msg = String(err);
+  }
+  msg = msg.toLowerCase();
+  return (
+    msg.includes("no endpoints found that support image") ||
+    msg.includes("filter by image support") ||
+    msg.includes("does not support image") ||
+    msg.includes("does not support vision") ||
+    msg.includes("image input is not supported") ||
+    msg.includes("unsupported content: image") ||
+    msg.includes("expected a string, got image_url")
+  );
+}
+
+export function stripImagesFromCoreMessages(messages: any[]): any[] {
+  return messages.map((msg) => {
+    if (!Array.isArray(msg.content)) return msg;
+    const newContent = msg.content.map((part: any) => {
+      if (part.type === "image") {
+        return {
+          type: "text",
+          text: "[Image attachment omitted: endpoint does not support image input]",
+        };
+      }
+      return part;
+    });
+    return { ...msg, content: newContent };
+  });
+}
+
 export function isRetryableError(err: unknown): boolean {
   if (!err) return false;
 
   if (isContextLengthExceeded(err)) {
+    return true;
+  }
+
+  if (isImageUnsupportedError(err)) {
     return true;
   }
   
