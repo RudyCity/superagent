@@ -77,15 +77,18 @@ export function saveTunnelState(meta: TunnelMetadata, port?: number): void {
     }
     // The default tunnel.json is sticky, not last-write-wins: it keeps pointing
     // at the first-started tunnel and is only overwritten when it does not exist
-    // yet, is unreadable, or already belongs to the same port. This keeps
-    // getTunnelStatus() (no port) unambiguous with multiple tunnels active.
+    // yet, is unreadable, already belongs to the same port, or when the
+    // currently recorded tunnel process has died. This keeps getTunnelStatus()
+    // (no port) unambiguous while never leaving a dead tunnel as default.
     const defaultFile = getTunnelStateFile();
     let writeDefault = true;
     if (targetPort && fs.existsSync(defaultFile)) {
       try {
         const existing = JSON.parse(fs.readFileSync(defaultFile, "utf-8"));
         if (existing && typeof existing.port === "number" && existing.port !== targetPort) {
-          writeDefault = false;
+          if (existing.pid && isProcessRunning(existing.pid)) {
+            writeDefault = false;
+          }
         }
       } catch {
         // Unreadable default holds no valid claim; overwrite it below.
@@ -128,7 +131,24 @@ export function readTunnelState(portOrWorkspace?: number | string): TunnelMetada
       }
     }
     const file = getTunnelStateFile();
-    if (!fs.existsSync(file)) return null;
+    if (!fs.existsSync(file)) {
+      if (portOrWorkspace === undefined && fs.existsSync(dir)) {
+        const files = fs.readdirSync(dir);
+        for (const f of files) {
+          const match = f.match(/^tunnel-(\d+)\.json$/);
+          if (match) {
+            try {
+              const raw = fs.readFileSync(path.join(dir, f), "utf-8");
+              const parsed = JSON.parse(raw);
+              if (parsed?.pid && isProcessRunning(parsed.pid)) {
+                return parsed;
+              }
+            } catch {}
+          }
+        }
+      }
+      return null;
+    }
     const raw = fs.readFileSync(file, "utf-8");
     const parsed = JSON.parse(raw);
     if (typeof portOrWorkspace === "number" && parsed?.port && parsed.port !== portOrWorkspace) {
@@ -160,7 +180,7 @@ export function clearTunnelState(port?: number | "all"): void {
           try { fs.unlinkSync(defaultFile); } catch {}
         }
       }
-    } else if (port === "all" || port === undefined) {
+    } else if (port === "all") {
       if (fs.existsSync(dir)) {
         const files = fs.readdirSync(dir);
         for (const f of files) {
@@ -170,6 +190,11 @@ export function clearTunnelState(port?: number | "all"): void {
             } catch {}
           }
         }
+      }
+    } else if (port === undefined) {
+      const defaultFile = path.join(dir, "tunnel.json");
+      if (fs.existsSync(defaultFile)) {
+        try { fs.unlinkSync(defaultFile); } catch {}
       }
     }
   } catch {}
@@ -730,9 +755,29 @@ export class CloudflareTunnelManager {
    * Retrieves the current status of the quick tunnel.
    */
   public getStatus(port?: number): TunnelStatus {
-    const meta =
+    let meta =
       (port ? this.activeMetadata.get(port) : this.currentMetadata) ||
       readTunnelState(port);
+
+    if ((!meta || !meta.pid || !isProcessRunning(meta.pid)) && port === undefined) {
+      const active = this.listActive();
+      if (active.length > 0) {
+        const best = active[0];
+        meta = {
+          pid: best.pid,
+          publicUrl: best.publicUrl,
+          wssUrl: best.wssUrl,
+          localUrl: best.localUrl,
+          port: best.port,
+          workspace: best.workspace,
+          workspaces: best.workspaces,
+          startedAt: best.startedAt,
+        };
+        this.currentMetadata = meta;
+        saveTunnelState(meta, best.port);
+      }
+    }
+
     if (!meta || !meta.pid) {
       return { isRunning: false };
     }

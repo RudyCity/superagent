@@ -535,4 +535,45 @@ describe("control_chrome_cdp (Chrome 155+ 426 fallback)", () => {
       await new Promise<void>((r) => http2.close(() => r()));
     }
   });
+
+  test("dual-stack fallback seamlessly connects to ::1 when 127.0.0.1 is unreachable", async () => {
+    let ipv6Server: Server;
+    try {
+      ipv6Server = createServer((_req, res) => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify([{
+          id: "IPV6-T1",
+          type: "page",
+          title: "IPv6 Page",
+          url: "https://ipv6.example/",
+          webSocketDebuggerUrl: "ws://[::1]:9999/devtools/page/IPV6-T1"
+        }]));
+      });
+      await new Promise<void>((resolve, reject) => {
+        ipv6Server.listen(0, "::1", () => resolve());
+        ipv6Server.on("error", reject);
+      });
+    } catch {
+      // IPv6 loopback not supported on this host environment
+      return;
+    }
+    const ipv6Port = (ipv6Server.address() as AddressInfo).port;
+    const prevPort = process.env.SUPERAGENT_CDP_PORT;
+    const prevHost = process.env.SUPERAGENT_CDP_HOST;
+    delete process.env.SUPERAGENT_CDP_HOST;
+    process.env.SUPERAGENT_CDP_PORT = String(ipv6Port);
+    _cdpTestHooks.resetResolvedHost();
+
+    try {
+      const res = await controlChromeCdpTool.execute({ command: "list_targets" });
+      expect(res).toContain("IPV6-T1");
+      expect(res).toContain("IPv6 Page");
+    } finally {
+      if (prevPort !== undefined) process.env.SUPERAGENT_CDP_PORT = prevPort;
+      else delete process.env.SUPERAGENT_CDP_PORT;
+      if (prevHost !== undefined) process.env.SUPERAGENT_CDP_HOST = prevHost;
+      _cdpTestHooks.resetResolvedHost();
+      await new Promise<void>((r) => ipv6Server.close(() => r()));
+    }
+  });
 });

@@ -1,3 +1,10 @@
+## [1.13.11] - 2026-10-09
+### Fixed
+- Fixed Chrome DevTools Protocol (CDP) port binding mismatch on Windows: Added explicit `--remote-debugging-address=127.0.0.1` flag to `launch_chrome_profile`, `ensureCdpRunning`, and `scripts/chrome-debug.bat`, preventing Chromium from binding exclusively to IPv6 `::1:9222` when remote debugging is launched.
+- Added dual-stack (IPv4 & IPv6) automatic fallback in `control_chrome_cdp`: If connection to `127.0.0.1:9222` is refused, the HTTP and WebSocket clients seamlessly retry against IPv6 loopback (`::1`) and remember the working host, preventing false "Chrome is not running" error loops when Chrome binds to IPv6.
+- Added dual-stack port probe in `isCdpPortListening`: Probes both `127.0.0.1` and `::1` before attempting to auto-launch Chrome, preventing redundant window spawning when Chrome is already listening on an alternate loopback interface.
+- Resolved AI confusion loop in browser tasks: Eliminated the cycle where the AI launched Chrome, received ECONNREFUSED on IPv4 despite Chrome listening on IPv6, and repeatedly re-launched Chrome.
+
 ## [1.13.10] - 2026-10-09
 ### Fixed
 - Fixed terminal UI line stacking and overlapping during scrolling: Corrected `statusBarTotalRows` calculation in `app.tsx` from 2 to 3 (accounting for 2 content lines + 1 top margin in `StatusBar`), eliminating a persistent 1-line height overflow that pushed lines into scrollback and caused Ink cursor-up repositioning to hit row 1 and overwrite shifted lines.

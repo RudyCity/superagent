@@ -32,6 +32,13 @@ export function checkPortListening(host: string, port: number, timeoutMs = 400):
   });
 }
 
+/** Check whether port is listening on either IPv4 (127.0.0.1) or IPv6 (::1). */
+export async function isCdpPortListening(port = 9222, timeoutMs = 250): Promise<string | null> {
+  if (await checkPortListening("127.0.0.1", port, timeoutMs)) return "127.0.0.1";
+  if (await checkPortListening("::1", port, timeoutMs)) return "::1";
+  return null;
+}
+
 let cdpStartInFlight: Promise<boolean> | null = null;
 
 /**
@@ -49,7 +56,7 @@ export async function ensureCdpRunning(host = "127.0.0.1", port = 9222): Promise
     return false;
   }
 
-  if (await checkPortListening(host, port, 300)) {
+  if (await isCdpPortListening(port)) {
     return true;
   }
 
@@ -66,6 +73,7 @@ export async function ensureCdpRunning(host = "127.0.0.1", port = 9222): Promise
 
     const chromeFlags = [
       `--remote-debugging-port=${port}`,
+      `--remote-debugging-address=127.0.0.1`,
       `--remote-allow-origins=*`,
       `--user-data-dir=${userDataDir}`,
       `--no-first-run`,
@@ -107,7 +115,7 @@ export async function ensureCdpRunning(host = "127.0.0.1", port = 9222): Promise
       const deadline = Date.now() + 4500;
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 250));
-        if (await checkPortListening(host, port, 200)) {
+        if (await isCdpPortListening(port)) {
           return true;
         }
       }

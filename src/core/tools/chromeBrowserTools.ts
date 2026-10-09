@@ -84,7 +84,7 @@ export const launchChromeProfileTool: Tool = {
     const safeProfile = profileName.replace(/["'\\]/g, "");
     const safeUrl = url ? `"${url.replace(/"/g, '\\"')}"` : "";
     const debugFlag = remoteDebuggingPort
-      ? ` --remote-debugging-port=${Number(remoteDebuggingPort)} --remote-allow-origins=*`
+      ? ` --remote-debugging-port=${Number(remoteDebuggingPort)} --remote-debugging-address=127.0.0.1 --remote-allow-origins=*`
       : "";
 
     const shouldIsolate = isolated ?? Boolean(remoteDebuggingPort);

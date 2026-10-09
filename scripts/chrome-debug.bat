@@ -15,6 +15,6 @@ if not exist "%CHROME_EXE%" set "CHROME_EXE=C:\Program Files (x86)\Google\Chrome
 if not exist "%CHROME_EXE%" set "CHROME_EXE=%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
 if not exist "%CHROME_EXE%" set "CHROME_EXE=chrome.exe"
 
-start "" "%CHROME_EXE%" --remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="%DEBUG_DIR%" --no-first-run --no-default-browser-check
+start "" "%CHROME_EXE%" --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --remote-allow-origins=* --user-data-dir="%DEBUG_DIR%" --no-first-run --no-default-browser-check
 echo Chrome debug mode aktif di http://127.0.0.1:9222
 

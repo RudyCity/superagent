@@ -113,7 +113,13 @@ export async function handleMuseTunnelSubcommand(
       if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
     }
     const effectivePort = portOverride || (isHttps ? 7888 : port);
-    const existing = getTunnelStatus(effectivePort);
+    let existing = getTunnelStatus(effectivePort);
+    if (!existing.isRunning && !portOverride && !isHttps) {
+      const active = listActiveTunnels();
+      if (active.length > 0) {
+        existing = { isRunning: true, ...active[0] };
+      }
+    }
 
     if (!existing.isRunning) {
       ctx.addLine({

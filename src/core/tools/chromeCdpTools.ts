@@ -17,8 +17,17 @@ import { ensureCdpRunning } from "./chromeCommon.js";
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
  * server by setting env vars before each call.
  */
+let resolvedHost: string | null = null;
+
 function cdpHost(): string {
-  return process.env.SUPERAGENT_CDP_HOST || "127.0.0.1";
+  if (process.env.SUPERAGENT_CDP_HOST) return process.env.SUPERAGENT_CDP_HOST;
+  return resolvedHost || "127.0.0.1";
+}
+function alternateHost(current: string): string | null {
+  if (process.env.SUPERAGENT_CDP_HOST) return null;
+  if (current === "127.0.0.1") return "::1";
+  if (current === "::1") return "127.0.0.1";
+  return null;
 }
 function cdpPort(): number {
   return Number(process.env.SUPERAGENT_CDP_PORT) || 9222;
@@ -47,10 +56,11 @@ function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + `… [truncated, ${s.length} chars total]` : s;
 }
 
-function httpGetJson(path: string, isRetry = false): Promise<any> {
+function httpGetJson(path: string, isRetry = false, overrideHost?: string): Promise<any> {
+  const host = overrideHost || cdpHost();
   return new Promise((resolve, reject) => {
     const req = httpGet(
-      { host: cdpHost(), port: cdpPort(), path, timeout: cdpTimeoutMs() },
+      { host, port: cdpPort(), path, timeout: cdpTimeoutMs() },
       (res) => {
         let data = "";
         res.on("data", (chunk) => {
@@ -70,6 +80,9 @@ function httpGetJson(path: string, isRetry = false): Promise<any> {
             return;
           }
           try {
+            if (!overrideHost && !process.env.SUPERAGENT_CDP_HOST) {
+              resolvedHost = host;
+            }
             resolve(JSON.parse(data));
           } catch (e: any) {
             reject(new Error(`Invalid JSON from CDP endpoint ${path}: ${e.message}`));
@@ -83,6 +96,18 @@ function httpGetJson(path: string, isRetry = false): Promise<any> {
     });
     req.on("error", async (err: any) => {
       if (err && (err.code === "ECONNREFUSED" || err.code === "ECONNRESET")) {
+        // First try alternate dual-stack host (e.g. 127.0.0.1 -> ::1 or ::1 -> 127.0.0.1)
+        const alt = alternateHost(host);
+        if (alt && !overrideHost) {
+          try {
+            const altRes = await httpGetJson(path, isRetry, alt);
+            resolvedHost = alt;
+            resolve(altRes);
+            return;
+          } catch {
+            // Alternate host also failed, proceed to auto-launch check
+          }
+        }
         if (!isRetry) {
           const started = await ensureCdpRunning(cdpHost(), cdpPort());
           if (started) {
@@ -101,10 +126,11 @@ function httpGetJson(path: string, isRetry = false): Promise<any> {
   });
 }
 
-function httpPutJson(path: string, isRetry = false): Promise<any> {
+function httpPutJson(path: string, isRetry = false, overrideHost?: string): Promise<any> {
+  const host = overrideHost || cdpHost();
   return new Promise((resolve, reject) => {
     const req = httpRequest(
-      { host: cdpHost(), port: cdpPort(), path, method: "PUT", timeout: cdpTimeoutMs() },
+      { host, port: cdpPort(), path, method: "PUT", timeout: cdpTimeoutMs() },
       (res) => {
         let data = "";
         res.on("data", (chunk) => {
@@ -112,6 +138,9 @@ function httpPutJson(path: string, isRetry = false): Promise<any> {
         });
         res.on("end", () => {
           try {
+            if (!overrideHost && !process.env.SUPERAGENT_CDP_HOST) {
+              resolvedHost = host;
+            }
             resolve(data ? JSON.parse(data) : data);
           } catch {
             resolve(data);
@@ -125,6 +154,15 @@ function httpPutJson(path: string, isRetry = false): Promise<any> {
     });
     req.on("error", async (err: any) => {
       if (err && (err.code === "ECONNREFUSED" || err.code === "ECONNRESET")) {
+        const alt = alternateHost(host);
+        if (alt && !overrideHost) {
+          try {
+            const altRes = await httpPutJson(path, isRetry, alt);
+            resolvedHost = alt;
+            resolve(altRes);
+            return;
+          } catch {}
+        }
         if (!isRetry) {
           const started = await ensureCdpRunning(cdpHost(), cdpPort());
           if (started) {
@@ -166,10 +204,12 @@ function wsGetJson(path: string): Promise<any> {
     (async () => {
       try {
         const { WebSocket } = await getWsModule();
-        const url = `ws://${cdpHost()}:${cdpPort()}${path}`;
+        const host = cdpHost();
+        const hostUrl = host.includes(":") ? `[${host}]` : host;
+        const url = `ws://${hostUrl}:${cdpPort()}${path}`;
         const ws = new WebSocket(url, {
           handshakeTimeout: cdpTimeoutMs(),
-          origin: `http://${cdpHost()}:${cdpPort()}`,
+          origin: `http://${hostUrl}:${cdpPort()}`,
         });
         const timer = setTimeout(() => {
           try {
@@ -594,7 +634,12 @@ function pruneCdpConnections(liveUrls: string[]): void {
  * replaced; a socket that fails to open raises a clear error - never a hang.
  */
 async function getCdpConnection(target: CdpTarget): Promise<CdpConnection> {
-  const url = target.webSocketDebuggerUrl;
+  let url = target.webSocketDebuggerUrl;
+  if (resolvedHost === "::1" && url.includes("://127.0.0.1:")) {
+    url = url.replace("://127.0.0.1:", "://[::1]:");
+  } else if (resolvedHost === "127.0.0.1" && url.includes("://[::1]:")) {
+    url = url.replace("://[::1]:", "://127.0.0.1:");
+  }
   const existing = cdpConnections.get(url);
   if (existing) {
     let open = false;
@@ -712,6 +757,9 @@ export const _cdpTestHooks = {
   clearSnapshots: (): void => {
     snapshotStore.clear();
     snapshotPrevStore.clear();
+  },
+  resetResolvedHost: (): void => {
+    resolvedHost = null;
   },
 };
 
