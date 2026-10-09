@@ -1,3 +1,8 @@
+## [1.13.16] - 2026-10-09
+### Fixed
+- Action and Automation Command Guard in Conversation Fast-Path: Updated `isHighConfidenceConversation` in `src/core/requestClassifier.ts` to strictly prohibit short-circuiting action and online workflow prompts (e.g. `daftar`, `register`, `login`, `buat akun`, `bikin`, `isi form`, `scrape`, `testing`, `buka browser`, etc.) into tool-less conversational fast-path. These commands now unconditionally retain their full execution toolset.
+- Raw JSON Tool Call Fallback in Parser: Added fallback recovery for raw JSON tool calls (e.g. `{"tool": "launch_chrome_profile", "arguments": {...}}` or `{"name": "...", "arguments": {...}}`) in `parseXmlToolCalls` within `src/utils/xmlToolParser.ts`. Models that emit raw JSON tool calls directly in text content now have their calls properly parsed and executed as real tools instead of being printed as raw text strings.
+
 ## [1.13.15] - 2026-10-09
 ### Added
 - Browser Reading and Link Extraction in `control_chrome_cdp`: Added `read_page` and `extract_links` commands to `control_chrome_cdp`. `read_page` captures page title, headings (H1-H3), status alerts/notices, body paragraphs (up to 7,000 characters), and primary links. `extract_links` extracts hyperlinks matching optional keyword filters (e.g. `verify`, `confirm`, `token`, `magic`), curing browser agent blindness on email, article, and verification workflows.

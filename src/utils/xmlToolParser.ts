@@ -410,6 +410,28 @@ export function parseXmlToolCalls(
     }
   }
 
+  // 4. Match raw JSON tool calls emitted by models (e.g. {"tool": "...", "arguments": {...}})
+  const rawTrimmed = cleanText.trim();
+  if (rawTrimmed.startsWith("{") && rawTrimmed.endsWith("}")) {
+    try {
+      const parsedJson = JSON.parse(rawTrimmed);
+      const possibleName = parsedJson.tool || parsedJson.name || parsedJson.tool_name;
+      const possibleArgs = parsedJson.arguments || parsedJson.args || parsedJson.parameters;
+      if (typeof possibleName === "string" && possibleName.trim()) {
+        const targetToolName = possibleName.trim();
+        const isValidTool = toolNames.length === 0 || toolNames.includes(targetToolName);
+        if (isValidTool) {
+          toolCalls.push({
+            id: generateId(),
+            name: targetToolName,
+            args: typeof possibleArgs === "object" && possibleArgs !== null ? decodeEntitiesRecursive(possibleArgs) : {},
+          });
+          cleanText = "";
+        }
+      }
+    } catch {}
+  }
+
   // Clean up any leftover/stray XML tool tags and model system tags like [/SYS]
   cleanText = cleanText
     .replace(/([ \t]*│)?[ \t]*<\/function_calls\s*>/gi, "")

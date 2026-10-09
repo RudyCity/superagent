@@ -1502,10 +1502,14 @@ export function isHighConfidenceConversation(
   if (planState && planState !== "IDLE") {
     return false;
   }
-  if (hasPriorMessages && userInput) {
+  if (userInput) {
     const text = typeof userInput === "string" ? userInput : "";
     const cleanLower = text.toLowerCase().replace(PUNCTUATION_STRIP_RE, "").trim();
-    if (CONTINUATION_COMMANDS.has(cleanLower)) {
+    const actionCommandsRegex = /\b(daftar|register|sign\s*up|login|log\s*in|masuk|buat\s*akun|bikin\s*akun|buat|bikin|create|generate|order|beli|pesan|isi\s*form|download|unduh|upload|unggah|scrape|testing|test|jalankan|run|execute|buka|open|navigate)\b/i;
+    if (actionCommandsRegex.test(cleanLower)) {
+      return false;
+    }
+    if (hasPriorMessages && CONTINUATION_COMMANDS.has(cleanLower)) {
       return false;
     }
   }
