@@ -319,7 +319,13 @@ export async function handleMuseTunnelSubcommand(
 
     const effectivePort = portOverride || (isHttps ? 7888 : port);
     const watchedWorkspaces = getWatchedWorkspaces(cfg, ctx.agent?.workingDirectory);
-    const existing = getTunnelStatus(effectivePort);
+    let existing = getTunnelStatus(effectivePort);
+    if (!existing.isRunning && !portOverride && !isHttps) {
+      const active = listActiveTunnels();
+      if (active.length > 0) {
+        existing = { isRunning: true, ...active[0] };
+      }
+    }
     const watcherActive = isMuseWatcherActive(effectivePort);
 
     if (isHttps) {
@@ -609,11 +615,19 @@ export async function handleMuseTunnelSubcommand(
       stoppedAny = true;
       stoppedParts.push("WebSocket watch daemon");
     }
-    const existing = getTunnelStatus(effectivePort);
+    let targetPortToStop = effectivePort;
+    let existing = getTunnelStatus(effectivePort);
+    if (!existing.isRunning && !portOverride) {
+      const active = listActiveTunnels();
+      if (active.length === 1) {
+        targetPortToStop = active[0].port;
+        existing = getTunnelStatus(targetPortToStop);
+      }
+    }
     if (existing.isRunning) {
-      await stopQuickTunnel(effectivePort);
+      await stopQuickTunnel(targetPortToStop);
       stoppedAny = true;
-      stoppedParts.push(`quick tunnel (port ${effectivePort})`);
+      stoppedParts.push(`quick tunnel (port ${targetPortToStop})`);
     }
     // MCP servers (MCP-only mode runs without WSS tunnel/watcher)
     const mcpPortStopIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--mcp-port");
@@ -638,7 +652,7 @@ export async function handleMuseTunnelSubcommand(
     if (!stoppedAny) {
       ctx.addLine({
         type: "system",
-        content: `[Cloudflare Tunnel] No quick tunnel or MCP server is currently running${portOverride ? ` on port ${portOverride}` : ""}.`,
+        content: `[Cloudflare Tunnel] No quick tunnel is currently running${portOverride ? ` on port ${portOverride}` : ""}.`,
         timestamp: now,
       });
       return;
