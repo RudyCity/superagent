@@ -8,9 +8,11 @@ function initVisionPanel() {
   const thresholdVal = document.getElementById("vision-threshold-val");
   const canvas = document.getElementById("vision-canvas");
   const emptyScreenshot = document.getElementById("vision-screenshot-empty");
+  const canvasHint = document.getElementById("vision-canvas-hint");
   const elementsList = document.getElementById("vision-elements-list");
   const elementsEmpty = document.getElementById("vision-elements-empty");
   const navBadge = document.getElementById("vision-nav-badge");
+  const filterBtns = document.querySelectorAll(".vision-filter-btn");
 
   const LABEL_COLORS = {
     button: "#4285F4", input: "#34A853", select: "#FBBC05",
@@ -28,6 +30,48 @@ function initVisionPanel() {
   });
 
   let lastElements = [];
+  let currentScreenshotBase64 = "";
+  let activeFilter = "all";
+
+  // Filter buttons handler
+  filterBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      filterBtns.forEach((b) => {
+        b.classList.remove("bg-vscode-blue", "text-white");
+        b.classList.add("bg-vscode-inner", "text-vscode-muted");
+      });
+      btn.classList.remove("bg-vscode-inner", "text-vscode-muted");
+      btn.classList.add("bg-vscode-blue", "text-white");
+
+      activeFilter = btn.getAttribute("data-filter") || "all";
+      applyFilterAndRender();
+    });
+  });
+
+  function getFilteredElements() {
+    if (activeFilter === "all") return lastElements;
+    return lastElements.filter((el) => el.label === activeFilter || (activeFilter === "button" && el.label === "select"));
+  }
+
+  function applyFilterAndRender() {
+    const filtered = getFilteredElements();
+    renderDetections(currentScreenshotBase64, filtered);
+  }
+
+  // Interactive Direct Canvas Click Handler
+  canvas.addEventListener("click", (e) => {
+    if (!canvas.width || !canvas.height) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    const clickX = Math.round((e.clientX - rect.left) * scaleX);
+    const clickY = Math.round((e.clientY - rect.top) * scaleY);
+
+    if (typeof executeBrowserControl === "function") {
+      executeBrowserControl("vision-manual", "click", `${clickX},${clickY}`, "");
+    }
+  });
 
   detectBtn.addEventListener("click", async () => {
     detectBtn.disabled = true;
@@ -50,9 +94,11 @@ function initVisionPanel() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      
+
       lastElements = data.elements || [];
-      renderDetections(data.screenshotBase64, lastElements);
+      currentScreenshotBase64 = data.screenshotBase64 || "";
+      applyFilterAndRender();
+      if (canvasHint) canvasHint.classList.remove("hidden");
     } catch (err) {
       elementsList.innerHTML = `<div class="p-2.5 text-[11px] text-red-error-light bg-red-error/10 border border-red-error/20 rounded-sm">Error: ${err.message}</div>`;
     } finally {
@@ -63,8 +109,10 @@ function initVisionPanel() {
 
   clearBtn.addEventListener("click", () => {
     lastElements = [];
+    currentScreenshotBase64 = "";
     canvas.classList.add("hidden");
     emptyScreenshot.classList.remove("hidden");
+    if (canvasHint) canvasHint.classList.add("hidden");
     if (elementsEmpty) {
       elementsEmpty.classList.remove("hidden");
       elementsList.innerHTML = "";
@@ -73,8 +121,7 @@ function initVisionPanel() {
       elementsList.innerHTML = `<div class="p-3 text-center text-vscode-muted text-[11px]">Run detection to see elements</div>`;
     }
     if (navBadge) navBadge.classList.add("hidden");
-    
-    // Hide overlay in browser too
+
     if (typeof executeBrowserControl === "function") {
       executeBrowserControl("vision-manual", "hide_detections", "overlay", "");
     }
@@ -88,7 +135,7 @@ function initVisionPanel() {
       const ctx = canvas.getContext("2d");
       ctx.drawImage(currentImg, 0, 0);
 
-      elements.forEach(el => {
+      elements.forEach((el, index) => {
         const [x1, y1, x2, y2] = el.box;
         const isHovered = hoveredElement === el;
         const color = LABEL_COLORS[el.label] || LABEL_COLORS.default;
@@ -104,22 +151,21 @@ function initVisionPanel() {
           ctx.shadowBlur = 0;
         }
         ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-        ctx.shadowBlur = 0; // reset
+        ctx.shadowBlur = 0;
 
-        // Draw label background
+        // Set-of-Mark numbered badge tag
+        const tagText = `[${el.id || index + 1}] ${el.label} ${Math.round(el.score * 100)}%`;
+        ctx.font = "bold 13px monospace";
+        const textWidth = ctx.measureText(tagText).width;
+
         ctx.fillStyle = isHovered ? "#FFBC05" : color;
-        ctx.font = "bold 14px monospace";
-        const labelText = `${el.label} ${Math.round(el.score * 100)}%`;
-        const textWidth = ctx.measureText(labelText).width;
-        ctx.fillRect(x1, y1 - 20, textWidth + 8, 20);
+        ctx.fillRect(x1, Math.max(0, y1 - 20), textWidth + 8, 20);
 
-        // Draw label text
         ctx.fillStyle = isHovered ? "black" : "white";
-        ctx.fillText(labelText, x1 + 4, y1 - 5);
+        ctx.fillText(tagText, x1 + 4, Math.max(14, y1 - 5));
       });
     }
 
-    // Draw screenshot + bounding boxes on canvas
     if (screenshotBase64) {
       const img = new Image();
       img.onload = () => {
@@ -138,31 +184,32 @@ function initVisionPanel() {
       img.src = "data:image/png;base64," + screenshotBase64;
     }
 
-    // Render element list
     elementsList.innerHTML = "";
     if (elements.length === 0) {
       if (elementsEmpty) {
         elementsList.appendChild(elementsEmpty);
         elementsEmpty.classList.remove("hidden");
       } else {
-        elementsList.innerHTML = `<div class="p-3 text-center text-vscode-muted text-[11px]">Run detection to see elements</div>`;
+        elementsList.innerHTML = `<div class="p-3 text-center text-vscode-muted text-[11px]">No elements match current filter</div>`;
       }
       return;
     }
 
-    elements.forEach((el) => {
+    elements.forEach((el, index) => {
+      const eid = el.id || index + 1;
       const [cx, cy] = el.center;
       const color = LABEL_COLORS[el.label] || LABEL_COLORS.default;
       const item = document.createElement("div");
       item.className = "vision-element-item p-1.5 flex items-center justify-between gap-2 border border-vscode-dim rounded-sm bg-vscode-inner hover:border-vscode-bright transition-colors cursor-pointer";
-      
+
       const labelContainer = document.createElement("div");
       labelContainer.className = "flex items-center gap-1.5 overflow-hidden";
       labelContainer.innerHTML = `
+        <span class="px-1 py-0.2 bg-vscode-sidebar text-[9px] font-mono font-bold rounded-xs shrink-0 text-vscode-muted">[${eid}]</span>
         <span class="w-2 h-2 rounded-full shrink-0" style="background:${color};"></span>
         <span class="text-[11px] font-semibold text-vscode-light capitalize truncate">${el.label}</span>
       `;
-      
+
       const actionsContainer = document.createElement("div");
       actionsContainer.className = "flex items-center gap-1.5 shrink-0";
       actionsContainer.innerHTML = `
@@ -177,7 +224,6 @@ function initVisionPanel() {
         }
       });
 
-      // Hover on list item updates canvas and highlights element on real webpage
       item.addEventListener("mouseenter", () => {
         drawCanvas(el);
         if (typeof executeBrowserControl === "function") {

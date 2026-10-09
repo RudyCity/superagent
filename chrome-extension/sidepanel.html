@@ -150,9 +150,16 @@
             <input id="vision-threshold" type="range" min="10" max="90" value="35" class="flex-1 h-1 accent-vscode-blue cursor-pointer">
             <span id="vision-threshold-val" class="text-[9px] font-mono text-vscode-light w-8 text-right">0.35</span>
           </div>
-          <div id="vision-screenshot-container" class="relative overflow-hidden shrink-0 bg-vscode-inner border-b border-vscode-dim" style="min-height:80px;max-height:160px;">
+          <div id="vision-screenshot-container" class="relative overflow-hidden shrink-0 bg-vscode-inner border-b border-vscode-dim cursor-crosshair" style="min-height:80px;max-height:160px;" title="Click anywhere on canvas to click on target webpage">
             <div id="vision-screenshot-empty" class="flex items-center justify-center h-[80px] text-[10px] text-vscode-muted select-none">No screenshot yet</div>
             <canvas id="vision-canvas" class="hidden w-full" style="image-rendering:pixelated;"></canvas>
+          </div>
+          <div id="vision-canvas-hint" class="hidden px-2 py-0.5 text-[8px] text-vscode-muted text-center border-b border-vscode-dim bg-vscode-sidebar select-none">Crosshair: Click canvas to click webpage</div>
+          <div id="vision-filters" class="px-2 py-1 border-b border-vscode-dim shrink-0 flex items-center gap-1 overflow-x-auto text-[9px]">
+            <button class="vision-filter-btn px-1.5 py-0.5 rounded-sm bg-vscode-blue text-white cursor-pointer" data-filter="all">All</button>
+            <button class="vision-filter-btn px-1.5 py-0.5 rounded-sm bg-vscode-inner text-vscode-muted hover:text-white cursor-pointer" data-filter="button">Buttons</button>
+            <button class="vision-filter-btn px-1.5 py-0.5 rounded-sm bg-vscode-inner text-vscode-muted hover:text-white cursor-pointer" data-filter="field">Fields</button>
+            <button class="vision-filter-btn px-1.5 py-0.5 rounded-sm bg-vscode-inner text-vscode-muted hover:text-white cursor-pointer" data-filter="link">Links</button>
           </div>
           <div id="vision-elements-list" class="flex-1 overflow-y-auto p-1.5 flex flex-col gap-1">
             <div id="vision-elements-empty" class="p-3 text-center text-vscode-muted text-[11px]">Run detection to see elements</div>

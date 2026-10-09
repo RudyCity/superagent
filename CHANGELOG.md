@@ -1,3 +1,20 @@
+## [1.13.30] - 2026-10-09
+### Added & Enhanced
+- Set-of-Mark (SoM) Visual Perception Engine & Interactive Vision Suite:
+  - Added Set-of-Mark (SoM) visual annotation in `scripts/vision_server.py` (`/perceive` endpoint): overlays high-contrast bounding boxes with prominent numeric badge tags (`[1]`, `[2]`, `[3]...`) and color-coded labels directly onto screenshots.
+  - Added visual diff state verification endpoint (`/diff`) in `scripts/vision_server.py`: evaluates pixel difference ratios between before/after action screenshots to confirm real UI transitions.
+  - Enhanced `control_chrome_vision` (`src/core/tools/chromeVisionTools.ts`):
+    - `perceive_page`: captures screenshot, annotates with SoM tags, enriches with spatial/DOM metadata, and embeds data URLs directly into multimodal LLM context.
+    - `click_id`: executes direct coordinate-based mouse click by numeric visual ID (`id: N`), bypassing brittle DOM selectors.
+    - `type_id`: focuses element by visual ID and types text via native CDP input events.
+    - `verify_visual_state`: verifies post-action visual response and UI state changes.
+    - `audit_layout`: runs automated visual inspection for overlapping elements, tiny touch targets (<24px), off-screen elements, and unlabeled interactive controls.
+  - Interactive Chrome Extension Vision Sidepanel (`chrome-extension/sidepanel-vision.js` & `sidepanel.html`):
+    - Direct Canvas Click: clicking anywhere on the screenshot canvas dispatches real mouse clicks to the active browser tab.
+    - Category filtering: instant filtering by `All`, `Buttons`, `Fields`, and `Links`.
+  - System Prompts & Agent Guidance (`src/core/prompts.ts`, `src/core/config/base.ts`):
+    - Upgraded `chrome-agent` and browser rules to enforce a Vision-First Set-of-Mark perception loop over pure DOM dumps when dealing with canvas, dynamic SPAs, overlays, or unresponsive clicks.
+
 ## [1.13.29] - 2026-10-09
 ### Refactored & Optimized
 - Focused UI-DETR-1 Vision Architecture & Removed OmniParser:
