@@ -140,5 +140,57 @@ describe("RealtimeAdvisor - Loop Detection & Repeated Read Guard", () => {
     const resA3 = advisor.evaluateStep(callA, resA);
     expect(resA3.action).toBe("warn_agent");
     expect(resA3.message).toContain("cycling between repeated tool actions");
+    expect(resA3.healthScore).toBeLessThan(100);
+  });
+
+  it("does not falsely trigger cycling warning during sequential Chrome page audits", () => {
+    const pages = ["posts", "pages", "categories", "orders", "tickets", "settings"];
+
+    for (const page of pages) {
+      // Step 1: navigate to page
+      const navCall: ToolCall[] = [
+        { id: `nav-${page}`, name: "control_chrome_cdp", args: { command: "navigate", url: `http://localhost:7002/admin/cms/${page}` } },
+      ];
+      const navRes: ToolResult[] = [
+        { toolCallId: `nav-${page}`, name: "control_chrome_cdp", result: `navigated tab to http://localhost:7002/admin/cms/${page}` },
+      ];
+      const navEval = advisor.evaluateStep(navCall, navRes);
+      expect(navEval.action).toBe("pass");
+
+      // Step 2: read_page on the newly navigated page
+      const readCall: ToolCall[] = [
+        { id: `read-${page}`, name: "control_chrome_cdp", args: { command: "read_page" } },
+      ];
+      const readRes: ToolResult[] = [
+        { toolCallId: `read-${page}`, name: "control_chrome_cdp", result: `page content for '${page.toUpperCase()}' (http://localhost:7002/admin/cms/${page})` },
+      ];
+      const readEval = advisor.evaluateStep(readCall, readRes);
+      expect(readEval.action).toBe("pass");
+    }
+
+    expect(advisor.getHealthScore()).toBe(100);
+  });
+
+  it("detects genuine browser loop when navigating to the exact same page repeatedly with identical content", () => {
+    for (let i = 0; i < 2; i++) {
+      advisor.evaluateStep(
+        [{ id: `nav-${i}`, name: "control_chrome_cdp", args: { command: "navigate", url: "http://localhost:7002/admin/stuck" } }],
+        [{ toolCallId: `nav-${i}`, name: "control_chrome_cdp", result: "navigated tab to http://localhost:7002/admin/stuck" }]
+      );
+      advisor.evaluateStep(
+        [{ id: `read-${i}`, name: "control_chrome_cdp", args: { command: "read_page" } }],
+        [{ toolCallId: `read-${i}`, name: "control_chrome_cdp", result: "stuck page content" }]
+      );
+    }
+
+    const thirdNav = advisor.evaluateStep(
+      [{ id: "nav-2", name: "control_chrome_cdp", args: { command: "navigate", url: "http://localhost:7002/admin/stuck" } }],
+      [{ toolCallId: "nav-2", name: "control_chrome_cdp", result: "navigated tab to http://localhost:7002/admin/stuck" }]
+    );
+
+    expect(thirdNav.action).toBe("warn_agent");
+    expect(thirdNav.message).toContain("cycling between repeated tool actions");
+    expect(thirdNav.suggestion).toContain("browser actions");
+    expect(thirdNav.healthScore).toBeLessThan(100);
   });
 });

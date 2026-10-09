@@ -19,14 +19,22 @@ export interface AdvisorOptions {
   enablePatternMemory?: boolean;
 }
 
+export interface HistoryEntry {
+  callKey: string;
+  toolNames: string[];
+  resultSig: string;
+  isMutating: boolean;
+}
+
 interface AgentState {
   consecutiveErrorsCount: number;
   consecutiveSameCallCount: number;
   lastCallKey: string;
   successStreak: number;
   patternWarningHits: number;
+  cycleWarningHits: number;
   recentReads: Map<string, number>;
-  callHistory: string[];
+  callHistory: HistoryEntry[];
 }
 
 const WRITE_TOOLS = new Set([
@@ -255,6 +263,7 @@ export class RealtimeAdvisor {
         lastCallKey: "",
         successStreak: 0,
         patternWarningHits: 0,
+        cycleWarningHits: 0,
         recentReads: new Map(),
         callHistory: [],
       };
@@ -276,6 +285,10 @@ export class RealtimeAdvisor {
     // Penalize loop repetition
     if (state.consecutiveSameCallCount > 1) {
       score -= (state.consecutiveSameCallCount - 1) * 20;
+    }
+    // Penalize alternating cycle warning hits
+    if (state.cycleWarningHits > 0) {
+      score -= Math.min(state.cycleWarningHits * 25, 50);
     }
     // Penalize repeat pattern memory warnings
     if (state.patternWarningHits > 0) {
@@ -593,61 +606,73 @@ export class RealtimeAdvisor {
       }
 
       // Sliding window pattern detection for alternating non-consecutive loops
-      state.callHistory.push(currentCallKey);
-      if (state.callHistory.length > 10) {
+      const isMutating = hasStateMutatingAction(toolCalls, toolResults);
+      const resultSig = computeResultSignature(toolResults);
+      const currentEntry: HistoryEntry = {
+        callKey: currentCallKey,
+        toolNames: toolCalls.map(tc => tc.name),
+        resultSig,
+        isMutating,
+      };
+      state.callHistory.push(currentEntry);
+      if (state.callHistory.length > 12) {
         state.callHistory.shift();
       }
-      const windowOccurrences = state.callHistory.slice(-6).filter(k => k === currentCallKey).length;
-      if (windowOccurrences >= pauseThreshold && state.consecutiveSameCallCount < pauseThreshold) {
-        const toolNamesList = toolCalls.map(tc => tc.name);
-        const toolNames = toolNamesList.join(", ");
-        const suggestion = `Execution paused. Stop alternating between repeating tool calls (${toolNames}). Conclude your task or change strategy.`;
-        const message = `Advisor detected an alternating loop repeating the same tool actions (${toolNames}) ${windowOccurrences} times within the last 6 steps. Pausing execution. Suggestion: ${suggestion}`;
-        const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "pause_execution" }, toolNamesList);
 
-        if (this.enableLogging) {
-          logAdvisorEvent({
-            agentId,
+      const cycle = detectCycle(state.callHistory, warningThreshold, pauseThreshold);
+      if (cycle && state.consecutiveSameCallCount < cycle.occurrences) {
+        state.cycleWarningHits++;
+        const toolNamesList = cycle.toolNames;
+        const toolNames = toolNamesList.join(", ");
+        const suggestion = generateCycleSuggestion(toolNamesList);
+
+        if (cycle.isPause) {
+          const message = `Advisor detected an alternating loop repeating the same tool actions (${toolNames}) ${cycle.occurrences} times. Pausing execution. Suggestion: ${suggestion}`;
+          const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "pause_execution" }, toolNamesList);
+
+          if (this.enableLogging) {
+            logAdvisorEvent({
+              agentId,
+              action: "pause_execution",
+              reason: "alternating_loop_pause",
+              toolNames: toolNamesList,
+              consecutiveCount: cycle.occurrences,
+              message,
+              suggestion,
+            });
+          }
+          return {
             action: "pause_execution",
-            reason: "alternating_loop_pause",
-            toolNames: toolNamesList,
-            consecutiveCount: windowOccurrences,
             message,
             suggestion,
-          });
-        }
-        return {
-          action: "pause_execution",
-          message,
-          suggestion,
-          healthScore: this.getHealthScore(agentId),
-          autoCorrectionHint,
-        };
-      } else if (windowOccurrences >= warningThreshold && state.consecutiveSameCallCount < warningThreshold) {
-        const toolNamesList = toolCalls.map(tc => tc.name);
-        const toolNames = toolNamesList.join(", ");
-        const suggestion = `Do not alternate between the same repeated tool calls. Proceed with task synthesis or file modifications.`;
-        const message = `ADVISOR WARNING: You are cycling between repeated tool actions (${toolNames}) across recent steps. Suggestion: ${suggestion}`;
-        const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "warn_agent" }, toolNamesList);
+            healthScore: this.getHealthScore(agentId),
+            autoCorrectionHint,
+          };
+        } else {
+          const message = `ADVISOR WARNING: You are cycling between repeated tool actions (${toolNames}) across recent steps. Suggestion: ${suggestion}`;
+          const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "warn_agent" }, toolNamesList);
 
-        if (this.enableLogging) {
-          logAdvisorEvent({
-            agentId,
+          if (this.enableLogging) {
+            logAdvisorEvent({
+              agentId,
+              action: "warn_agent",
+              reason: "alternating_loop_warning",
+              toolNames: toolNamesList,
+              consecutiveCount: cycle.occurrences,
+              message,
+              suggestion,
+            });
+          }
+          return {
             action: "warn_agent",
-            reason: "alternating_loop_warning",
-            toolNames: toolNamesList,
-            consecutiveCount: windowOccurrences,
             message,
             suggestion,
-          });
+            healthScore: this.getHealthScore(agentId),
+            autoCorrectionHint,
+          };
         }
-        return {
-          action: "warn_agent",
-          message,
-          suggestion,
-          healthScore: this.getHealthScore(agentId),
-          autoCorrectionHint,
-        };
+      } else {
+        state.cycleWarningHits = 0;
       }
     }
 
@@ -809,4 +834,126 @@ function sortedJsonStringify(obj: unknown): string {
     sorted[key] = (obj as Record<string, unknown>)[key];
   }
   return JSON.stringify(sorted);
+}
+
+function hasStateMutatingAction(toolCalls: ToolCall[], toolResults: ToolResult[]): boolean {
+  for (let i = 0; i < toolCalls.length; i++) {
+    const tc = toolCalls[i];
+    const res = toolResults.find(r => r.toolCallId === tc.id) || toolResults[i];
+    if (res?.isError) continue;
+
+    const name = tc.name.toLowerCase();
+    if (WRITE_TOOLS.has(name)) return true;
+
+    if (name === "control_chrome_cdp") {
+      const args = tc.args as Record<string, unknown> | undefined;
+      const cmd = String(args?.command || args?.cmd || "").toLowerCase();
+      if (["navigate", "click", "type", "activate", "new_tab", "close_tab"].includes(cmd)) {
+        return true;
+      }
+    }
+    if (name.startsWith("chrome_")) {
+      if (["click", "type", "navigate", "select", "submit", "open_tab", "close_tab"].some(a => name.includes(a))) {
+        return true;
+      }
+    }
+    if (name.includes("invoke_subagent") || name.includes("invoke_superagent") || name.includes("merge_superagents")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function computeResultSignature(toolResults: ToolResult[]): string {
+  if (!toolResults || toolResults.length === 0) return "";
+  return toolResults
+    .map(r => `${r.name}:${r.isError ? "ERR" : "OK"}:${(r.result || "").trim().slice(0, 200)}`)
+    .join("|");
+}
+
+function generateCycleSuggestion(toolNames: string[]): string {
+  const isBrowser = toolNames.some(t => t.includes("chrome") || t.includes("browser") || t.includes("url"));
+  if (isBrowser) {
+    return "Do not alternate between the same repeated browser actions. Try a different interaction or summarize your findings.";
+  }
+  const isSearchOrRead = toolNames.some(t => t.includes("read") || t.includes("grep") || t.includes("find") || t.includes("list") || t.includes("view"));
+  if (isSearchOrRead) {
+    return "Do not alternate between repeated search or read calls. Synthesize collected findings or change your search criteria.";
+  }
+  const isEdit = toolNames.some(t => WRITE_TOOLS.has(t.toLowerCase()));
+  if (isEdit) {
+    return "Do not alternate between repeated failing edits. Inspect file contents directly before attempting another edit.";
+  }
+  return "Do not alternate between repeated tool calls. Change strategy, use alternative tools, or conclude your task.";
+}
+
+interface CycleDetectionResult {
+  detected: boolean;
+  isPause: boolean;
+  cyclePeriod: number;
+  occurrences: number;
+  toolNames: string[];
+}
+
+function detectCycle(
+  history: HistoryEntry[],
+  warningThreshold: number,
+  pauseThreshold: number
+): CycleDetectionResult | null {
+  const n = history.length - 1;
+  if (n < 4) return null;
+
+  for (const P of [2, 3]) {
+    const minStepsForWarning = (warningThreshold - 1) * P + 1;
+    if (history.length < minStepsForWarning) continue;
+
+    // Check distinct call keys within one period
+    const periodKeys = new Set<string>();
+    for (let i = 0; i < P; i++) {
+      periodKeys.add(history[n - i].callKey);
+    }
+    if (periodKeys.size !== P) {
+      continue;
+    }
+
+    let matchCount = 0;
+    let allResultsMatch = true;
+    for (let k = 0; k <= n; k++) {
+      const current = history[n - k];
+      const expected = history[n - (k % P)];
+
+      if (current.callKey !== expected.callKey) {
+        break;
+      }
+      if (current.resultSig !== expected.resultSig) {
+        allResultsMatch = false;
+        break;
+      }
+      matchCount++;
+    }
+
+    if (!allResultsMatch) {
+      continue;
+    }
+
+    const occurrences = Math.floor(matchCount / P) + (matchCount % P > 0 ? 1 : 0);
+
+    if (occurrences >= warningThreshold) {
+      const toolNamesSet = new Set<string>();
+      for (let i = 0; i < matchCount; i++) {
+        for (const name of history[n - i].toolNames) {
+          toolNamesSet.add(name);
+        }
+      }
+      return {
+        detected: true,
+        isPause: occurrences >= pauseThreshold,
+        cyclePeriod: P,
+        occurrences,
+        toolNames: Array.from(toolNamesSet),
+      };
+    }
+  }
+
+  return null;
 }

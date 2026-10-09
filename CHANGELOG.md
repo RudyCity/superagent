@@ -1,3 +1,12 @@
+## [1.13.24] - 2026-10-09
+### Fixed
+- Fixed False-Positive Cycle Warning in RealtimeAdvisor: Resolved an issue where progressive sequential workflows (such as browser auditing with `control_chrome_cdp` visiting sequential admin pages, paginated data inspection, or test runs across edits) were falsely flagged with `ADVISOR WARNING: You are cycling between repeated tool actions across recent steps`:
+  - Mathematical Periodic Cycle Detection: Replaced naive sliding-window occurrence counter with rigorous period-2 and period-3 cycle detection (`detectCycle` in `src/core/advisor.ts`) ensuring all steps in the cycle strictly oscillate with identical call signatures and identical result payloads before flagging a loop.
+  - State Mutation and Result Payload Awareness: Added `hasStateMutatingAction` and `computeResultSignature` to distinguish passive observations from state-changing operations (`navigate`, `click`, `type`, file modifications, subagent dispatches). When intermediate actions navigate to distinct targets or produce changing result payloads, cycle detection accurately passes without false alarms.
+  - Context-Aware Recovery Suggestions: Updated `generateCycleSuggestion` to tailor guidance based on active tool categories (browser navigation, search/read, or file edits) instead of generically demanding file modifications for browser automation tasks.
+  - Calibrated Cycle Health Score Penalty: Fixed an inconsistency where active cycling warnings reported contradictory 100% health scores by incorporating `cycleWarningHits` penalties into `getHealthScore`.
+  - Dedicated Advisor Warning Event Pipeline: Added `advisor_warning` event to `AgentEvents.ts` and updated `LoopIterationProcessor.ts`, `src/app.tsx`, and `src/cliMain.tsx`. Advisor warnings now render cleanly as distinct system timeline notifications rather than polluting the assistant's streaming buffer, preventing terminal text collisions and carriage-return overwrites.
+
 ## [1.13.23] - 2026-10-09
 ### Added
 - Integrated Visual Screenshot Support in Chrome CDP Automation: Enhanced `control_chrome_cdp` (`src/core/tools/chromeCdpTools.ts`, `src/core/tools/chromeCdpScreenshot.ts`) so CDP operations capture visual screenshots in addition to DOM analysis:
