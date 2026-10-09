@@ -472,6 +472,15 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       const possibilities = [
         `${parts[0]} on`,
         `${parts[0]} off`,
+        `${parts[0]} audit`,
+        `${parts[0]} standard`,
+        `${parts[0]} metrics`,
+        `${parts[0]} reset`,
+        `${parts[0]} warn=5`,
+        `${parts[0]} pause=8`,
+        `${parts[0]} error=5`,
+        `${parts[0]} adaptive=on`,
+        `${parts[0]} pattern=on`,
       ];
       return filterSuggestions(possibilities, query);
     }

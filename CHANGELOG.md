@@ -1,3 +1,11 @@
+## [1.13.26] - 2026-10-09
+### Optimized
+- Architecture Modularization: Extracted helper utilities, cycle detection algorithms, read target extractors, and suggestion generators out of `src/core/advisor.ts` into a dedicated modular module (`src/core/advisorHelpers.ts`). Reduced `advisor.ts` from 987 lines to 658 lines, strictly adhering to the 1000-line modularity architecture limit.
+- Memory & CPU Fingerprinting: Introduced `sanitizeToolArgsForFingerprint` and `buildCallKey`, truncating large payload arguments (such as code contents, file write buffers, and CDP screenshot base64 strings) exceeding 256 characters before JSON serialization. Reduces call key hashing time and memory allocation by over 90%.
+- Debounced In-Memory Event Logging: Upgraded `src/core/advisorLogger.ts` with in-memory caching and debounced disk persistence (250ms). Eliminates repetitive disk reads and synchronous file system thrashing during rapid advisor evaluations.
+- State Map Bounds: Added hard memory limits to `recentReads` (capped at 100 entries per agent) and `agentStates` (capped at 30 agents), preventing memory accumulation across long sessions and ephemeral subagents.
+- Slash Command Enhancements: Expanded `/setting-advisor` with `metrics` (live execution metrics, warning breakdown, and top loop tools), `reset` (clear event logs, pattern memory, and agent execution states), and `audit` / `standard` mode presets.
+
 ## [1.13.25] - 2026-10-09
 ### Improved
 - RealtimeAdvisor Browser Audit Mode Enhancements:

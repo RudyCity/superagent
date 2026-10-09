@@ -63,6 +63,7 @@ interface PatternEntry {
 
 const patternCache: Map<string, PatternEntry> = new Map();
 let patternCacheLoaded = false;
+let patternFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function ensurePatternCacheLoaded(): void {
   if (patternCacheLoaded) return;
@@ -84,7 +85,9 @@ function ensurePatternCacheLoaded(): void {
 }
 
 function persistPatternCacheAsync(): void {
-  Promise.resolve().then(async () => {
+  if (patternFlushTimer) return;
+  patternFlushTimer = setTimeout(async () => {
+    patternFlushTimer = null;
     try {
       ensureGlobalConfigDir();
       const filePath = getAdvisorPatternsFilePath();
@@ -96,41 +99,60 @@ function persistPatternCacheAsync(): void {
     } catch {
       // Non-blocking write failure
     }
-  });
+  }, 250);
 }
 
 // -------------------------------------------------------------------
+// In-memory events cache with debounced async flush
+// -------------------------------------------------------------------
+let eventsCache: AdvisorEvent[] | null = null;
+let eventsFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
-export function logAdvisorEvent(event: Omit<AdvisorEvent, "timestamp">): void {
-  // Fire-and-forget: async write so we don't block the event loop
-  Promise.resolve().then(async () => {
+function ensureEventsCacheLoaded(): AdvisorEvent[] {
+  if (eventsCache !== null) return eventsCache;
+  try {
+    const filePath = getAdvisorEventsFilePath();
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        eventsCache = parsed;
+        return eventsCache;
+      }
+    }
+  } catch {
+    // Non-blocking load fallback
+  }
+  eventsCache = [];
+  return eventsCache;
+}
+
+function scheduleEventsFlush(): void {
+  if (eventsFlushTimer) return;
+  eventsFlushTimer = setTimeout(async () => {
+    eventsFlushTimer = null;
     try {
+      if (!eventsCache) return;
       ensureGlobalConfigDir();
       const filePath = getAdvisorEventsFilePath();
-      const fullEvent: AdvisorEvent = {
-        timestamp: new Date().toISOString(),
-        ...event,
-      };
-
-      let events: AdvisorEvent[] = [];
-      try {
-        const raw = await fs.promises.readFile(filePath, "utf-8");
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) events = parsed;
-      } catch {
-        events = [];
-      }
-
-      events.push(fullEvent);
-      if (events.length > MAX_EVENTS) {
-        events = events.slice(events.length - MAX_EVENTS);
-      }
-
-      await fs.promises.writeFile(filePath, JSON.stringify(events, null, 2), "utf-8");
+      await fs.promises.writeFile(filePath, JSON.stringify(eventsCache, null, 2), "utf-8");
     } catch {
-      // Non-blocking log failure
+      // Non-blocking log write failure
     }
-  });
+  }, 250);
+}
+
+export function logAdvisorEvent(event: Omit<AdvisorEvent, "timestamp">): void {
+  const cache = ensureEventsCacheLoaded();
+  const fullEvent: AdvisorEvent = {
+    timestamp: new Date().toISOString(),
+    ...event,
+  };
+  cache.push(fullEvent);
+  if (cache.length > MAX_EVENTS) {
+    eventsCache = cache.slice(cache.length - MAX_EVENTS);
+  }
+  scheduleEventsFlush();
 }
 
 export function logFailedPattern(callSignature: string, toolName: string, errorMessage: string): void {
@@ -160,7 +182,7 @@ export function logFailedPattern(callSignature: string, toolName: string, errorM
   existing.errorMessage = errorMessage;
   patternCache.set(callSignature, existing);
 
-  // Persist to disk async (non-blocking)
+  // Debounced persist to disk
   persistPatternCacheAsync();
 }
 
@@ -177,28 +199,27 @@ export function getFailedPattern(callSignature: string): { toolName: string; err
 }
 
 export function getAdvisorEvents(limit = 50, agentId?: string): AdvisorEvent[] {
-  try {
-    const filePath = getAdvisorEventsFilePath();
-    if (!fs.existsSync(filePath)) return [];
-    const raw = fs.readFileSync(filePath, "utf-8");
-    let events: AdvisorEvent[] = JSON.parse(raw);
-    if (!Array.isArray(events)) return [];
-
-    if (agentId) {
-      events = events.filter(e => !e.agentId || e.agentId === agentId);
-    }
-
-    return events.slice(-limit);
-  } catch {
-    return [];
+  const cache = ensureEventsCacheLoaded();
+  let result = cache;
+  if (agentId) {
+    result = result.filter(e => !e.agentId || e.agentId === agentId);
   }
+  return result.slice(-limit);
 }
 
 export function clearAdvisorEvents(): boolean {
   try {
-    // Clear in-memory pattern cache
+    if (eventsFlushTimer) {
+      clearTimeout(eventsFlushTimer);
+      eventsFlushTimer = null;
+    }
+    if (patternFlushTimer) {
+      clearTimeout(patternFlushTimer);
+      patternFlushTimer = null;
+    }
     patternCache.clear();
-    patternCacheLoaded = true; // Mark as loaded so we don't re-read stale disk data
+    patternCacheLoaded = true;
+    eventsCache = [];
 
     const filePath = getAdvisorEventsFilePath();
     if (fs.existsSync(filePath)) {
@@ -217,11 +238,9 @@ export function clearAdvisorEvents(): boolean {
 export function exportAdvisorEvents(targetPath?: string): string | null {
   try {
     const filePath = getAdvisorEventsFilePath();
-    if (!fs.existsSync(filePath)) return null;
-
+    const cache = ensureEventsCacheLoaded();
     const exportPath = targetPath || path.join(process.cwd(), `advisor-events-export-${Date.now()}.json`);
-    const data = fs.readFileSync(filePath, "utf-8");
-    fs.writeFileSync(exportPath, data, "utf-8");
+    fs.writeFileSync(exportPath, JSON.stringify(cache, null, 2), "utf-8");
     return exportPath;
   } catch {
     return null;

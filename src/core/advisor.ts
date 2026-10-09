@@ -1,5 +1,24 @@
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { logAdvisorEvent, logFailedPattern, getFailedPattern } from "./advisorLogger.js";
+import {
+  WRITE_TOOLS,
+  READ_TOOLS,
+  type HistoryEntry,
+  type ReadTarget,
+  buildCallKey,
+  sortedJsonStringify,
+  extractReadTargets,
+  extractReadPaths,
+  isPollingOrStatusCall,
+  hasStateMutatingAction,
+  computeResultSignature,
+  generateCycleSuggestion,
+  generateRecoverySuggestion,
+  detectCycle,
+} from "./advisorHelpers.js";
+
+export type { HistoryEntry, ReadTarget };
+export { extractReadTargets, extractReadPaths };
 
 export interface AdvisorAction {
   action: "pass" | "warn_agent" | "pause_execution";
@@ -19,13 +38,6 @@ export interface AdvisorOptions {
   enablePatternMemory?: boolean;
 }
 
-export interface HistoryEntry {
-  callKey: string;
-  toolNames: string[];
-  resultSig: string;
-  isMutating: boolean;
-}
-
 interface AgentState {
   consecutiveErrorsCount: number;
   consecutiveSameCallCount: number;
@@ -38,157 +50,9 @@ interface AgentState {
   callHistory: HistoryEntry[];
 }
 
-const WRITE_TOOLS = new Set([
-  "write_to_file",
-  "replace_file_content",
-  "apply_patch",
-  "patch",
-  "edit_file",
-  "edit",
-  "write",
-  "write_file",
-  "superagent_write_file",
-]);
-
-const READ_TOOLS = new Set([
-  "read",
-  "view_file",
-  "view",
-  "cat",
-  "read_file",
-  "superagent_read_file",
-]);
-
-export interface ReadTarget {
-  filePath: string;
-  rangeKey: string;
-  rangeLabel: string;
-  isChunk: boolean;
-}
-
-export function extractReadTargets(tc: ToolCall): ReadTarget[] {
-  const targets: ReadTarget[] = [];
-  if (!tc.args || typeof tc.args !== "object") return targets;
-  const args = tc.args as Record<string, unknown>;
-
-  const globalOffset = args.offset !== undefined ? Number(args.offset) : undefined;
-  const globalLimit = args.limit !== undefined ? Number(args.limit) : undefined;
-  const globalStartLine =
-    args.StartLine !== undefined ? Number(args.StartLine)
-    : args.start_line !== undefined ? Number(args.start_line)
-    : args.startLine !== undefined ? Number(args.startLine)
-    : args.line_start !== undefined ? Number(args.line_start)
-    : undefined;
-  const globalEndLine =
-    args.EndLine !== undefined ? Number(args.EndLine)
-    : args.end_line !== undefined ? Number(args.end_line)
-    : args.endLine !== undefined ? Number(args.endLine)
-    : args.line_end !== undefined ? Number(args.line_end)
-    : undefined;
-  const globalContentOffset = args.ContentOffset !== undefined ? Number(args.ContentOffset) : undefined;
-
-  const buildRange = (
-    offset?: number,
-    limit?: number,
-    startLine?: number,
-    endLine?: number,
-    contentOffset?: number
-  ): { rangeKey: string; rangeLabel: string; isChunk: boolean } => {
-    if (startLine !== undefined || endLine !== undefined) {
-      const s = startLine ?? 1;
-      const e = endLine !== undefined ? String(endLine) : "end";
-      return {
-        rangeKey: `lines:${s}-${e}`,
-        rangeLabel: `lines ${s}-${e}`,
-        isChunk: true,
-      };
-    }
-    if (offset !== undefined || limit !== undefined) {
-      const o = offset ?? 1;
-      const l = limit !== undefined ? String(limit) : "all";
-      return {
-        rangeKey: `offset:${o},limit:${l}`,
-        rangeLabel: `offset ${o}, limit ${l}`,
-        isChunk: true,
-      };
-    }
-    if (contentOffset !== undefined) {
-      return {
-        rangeKey: `contentOffset:${contentOffset}`,
-        rangeLabel: `byte offset ${contentOffset}`,
-        isChunk: true,
-      };
-    }
-    return {
-      rangeKey: "full",
-      rangeLabel: "entire file",
-      isChunk: false,
-    };
-  };
-
-  const addPath = (
-    rawPath: string,
-    itemOffset?: number,
-    itemLimit?: number,
-    itemStartLine?: number,
-    itemEndLine?: number
-  ) => {
-    if (!rawPath || typeof rawPath !== "string") return;
-    const off = itemOffset ?? globalOffset;
-    const lim = itemLimit ?? globalLimit;
-    const sLine = itemStartLine ?? globalStartLine;
-    const eLine = itemEndLine ?? globalEndLine;
-    const { rangeKey, rangeLabel, isChunk } = buildRange(off, lim, sLine, eLine, globalContentOffset);
-    targets.push({
-      filePath: rawPath,
-      rangeKey,
-      rangeLabel,
-      isChunk,
-    });
-  };
-
-  if (typeof args.filePath === "string") addPath(args.filePath);
-  if (typeof args.path === "string") addPath(args.path);
-  if (typeof args.AbsolutePath === "string") addPath(args.AbsolutePath);
-
-  if (Array.isArray(args.filePaths)) {
-    for (const item of args.filePaths) {
-      if (typeof item === "string") {
-        addPath(item);
-      } else if (item && typeof item === "object") {
-        const itemObj = item as Record<string, unknown>;
-        const p =
-          typeof itemObj.path === "string" ? itemObj.path
-          : typeof itemObj.filePath === "string" ? itemObj.filePath
-          : undefined;
-        if (p) {
-          const itemOff = itemObj.offset !== undefined ? Number(itemObj.offset) : undefined;
-          const itemLim = itemObj.limit !== undefined ? Number(itemObj.limit) : undefined;
-          const itemStart =
-            itemObj.StartLine !== undefined ? Number(itemObj.StartLine)
-            : itemObj.start_line !== undefined ? Number(itemObj.start_line)
-            : itemObj.startLine !== undefined ? Number(itemObj.startLine)
-            : undefined;
-          const itemEnd =
-            itemObj.EndLine !== undefined ? Number(itemObj.EndLine)
-            : itemObj.end_line !== undefined ? Number(itemObj.end_line)
-            : itemObj.endLine !== undefined ? Number(itemObj.endLine)
-            : undefined;
-          addPath(p, itemOff, itemLim, itemStart, itemEnd);
-        }
-      }
-    }
-  }
-
-  return targets;
-}
-
-export function extractReadPaths(tc: ToolCall): string[] {
-  return extractReadTargets(tc).map(t => t.filePath);
-}
-
-const POLLING_STATUS_ACTIONS = new Set(["list", "status", "report", "logs", "violations"]);
-const BG_PROCESS_ACTIONS = new Set(["list", "status", "stream", "logs", "log", "tail", "head", "read", "slice", "grep", "search", "list_logs"]);
+const MAX_TRACKED_AGENTS = 30;
+const MAX_RECENT_READS_PER_AGENT = 100;
+const MAX_CALL_HISTORY_STEPS = 12;
 
 export class RealtimeAdvisor {
   private agentStates: Map<string, AgentState> = new Map();
@@ -221,7 +85,6 @@ export class RealtimeAdvisor {
    * Syncs live advisor settings from model-config.json.
    * Call this at the start of each agent loop run so runtime config changes
    * (e.g. /setting-advisor warn=2) take effect without restarting.
-   * Accepts a partial settings bag so the caller can pass getSettings() directly.
    */
   public syncSettings(s: {
     advisorWarningThreshold?: number;
@@ -243,7 +106,7 @@ export class RealtimeAdvisor {
 
     if (this.enableAdaptiveScaling && toolCalls.length > 0) {
       const toolNames = toolCalls.map(tc => tc.name);
-      const isComplexTool = toolNames.some(name => 
+      const isComplexTool = toolNames.some(name =>
         name.includes("replace_file") || name.includes("apply_patch") || name.includes("run_command") ||
         name.includes("chrome") || name.includes("browser")
       );
@@ -259,6 +122,14 @@ export class RealtimeAdvisor {
   private getAgentState(agentId = "default"): AgentState {
     let state = this.agentStates.get(agentId);
     if (!state) {
+      // Memory bound: prevent unbounded growth from ephemeral subagents
+      if (this.agentStates.size >= MAX_TRACKED_AGENTS) {
+        const oldestKey = this.agentStates.keys().next().value;
+        if (oldestKey && oldestKey !== "default" && oldestKey !== "single" && oldestKey !== "master") {
+          this.agentStates.delete(oldestKey);
+        }
+      }
+
       state = {
         consecutiveErrorsCount: 0,
         consecutiveSameCallCount: 0,
@@ -386,7 +257,7 @@ export class RealtimeAdvisor {
           const suggestion = `Tool signature '${tc.name}' previously failed ${pattern.failCount} times with error: "${pattern.errorMessage}". Double-check arguments before proceeding.`;
           const message = `ADVISOR PATTERN WARNING: This specific tool call pattern (${tc.name}) has failed repeatedly in previous sessions. Suggestion: ${suggestion}`;
           const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "warn_agent" }, [tc.name]);
-          
+
           if (this.enableLogging) {
             logAdvisorEvent({
               agentId,
@@ -454,21 +325,9 @@ export class RealtimeAdvisor {
     }
 
     if (!allArePolling) {
-      let currentCallKey: string;
-      if (toolCalls.length === 1) {
-        const tc = toolCalls[0];
-        currentCallKey = `${tc.name}:${JSON.stringify(tc.args)}`;
-      } else {
-        const callKeys = new Array<string>(toolCalls.length);
-        for (let i = 0; i < toolCalls.length; i++) {
-          const tc = toolCalls[i];
-          callKeys[i] = `${tc.name}:${JSON.stringify(tc.args)}`;
-        }
-        callKeys.sort();
-        currentCallKey = callKeys.join("|");
-      }
-
+      const currentCallKey = buildCallKey(toolCalls);
       const currentResultSig = computeResultSignature(toolResults);
+
       if (currentCallKey === state.lastCallKey) {
         // If results changed between calls, output or environment state updated
         if (state.lastResultSig && currentResultSig !== state.lastResultSig) {
@@ -563,6 +422,12 @@ export class RealtimeAdvisor {
               const norm = target.filePath.trim().toLowerCase();
               const targetKey = `${norm}::${target.rangeKey}`;
               const readCount = (state.recentReads.get(targetKey) || 0) + 1;
+
+              // Bound recentReads map size
+              if (state.recentReads.size >= MAX_RECENT_READS_PER_AGENT) {
+                const oldest = state.recentReads.keys().next().value;
+                if (oldest) state.recentReads.delete(oldest);
+              }
               state.recentReads.set(targetKey, readCount);
 
               if (readCount >= readPauseThreshold) {
@@ -631,7 +496,7 @@ export class RealtimeAdvisor {
         isMutating,
       };
       state.callHistory.push(currentEntry);
-      if (state.callHistory.length > 12) {
+      if (state.callHistory.length > MAX_CALL_HISTORY_STEPS) {
         state.callHistory.shift();
       }
 
@@ -701,7 +566,6 @@ export class RealtimeAdvisor {
     }
 
     if (stepErrorCount > 0) {
-      // Always increment error count FIRST so health score is accurate
       state.consecutiveErrorsCount += stepErrorCount;
       state.successStreak = 0;
 
@@ -720,13 +584,13 @@ export class RealtimeAdvisor {
             suggestion,
           });
         }
-
         return {
           action: "warn_agent",
           message,
           suggestion,
           recommendedBackoffMs: backoffMs,
           healthScore: this.getHealthScore(agentId),
+          autoCorrectionHint: "[SYSTEM AUTO-CORRECTION SKILL]: Transient error encountered. Allow backoff timer to complete before retrying.",
         };
       }
     } else {
@@ -734,11 +598,11 @@ export class RealtimeAdvisor {
       state.successStreak++;
     }
 
-    // 3. Check for general consecutive errors threshold
-    if (state.consecutiveErrorsCount >= this.baseErrorThreshold + 3) {
-      const suggestion = `Repeated tool execution failures (${state.consecutiveErrorsCount} consecutive errors). Halt automated retries, summarize the obstacles encountered, and provide direct feedback or status to the user.`;
+    // Consecutive error thresholds
+    if (state.consecutiveErrorsCount >= this.baseErrorThreshold * 2) {
+      const suggestion = `Stop attempting failing tool calls. Review error messages, inspect target environment, or switch approach.`;
       const message = `Advisor paused execution: encountered ${state.consecutiveErrorsCount} consecutive tool execution errors without progress. Pausing execution to prevent infinite failure loops. Suggestion: ${suggestion}`;
-      const autoCorrectionHint = "[SYSTEM AUTO-CORRECTION SKILL]: Consecutive error threshold exceeded. STOP retrying failing tools. Conclude and explain to the user.";
+      const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "pause_execution" });
 
       if (this.enableLogging) {
         logAdvisorEvent({
@@ -791,197 +655,4 @@ export class RealtimeAdvisor {
       this.agentStates.clear();
     }
   }
-}
-
-function generateRecoverySuggestion(toolNames: string[], hasError: boolean): string {
-  if (toolNames.some(t => t.includes("chrome") || t.includes("browser"))) {
-    return hasError
-      ? "Check Chrome connection, target tab, or selector syntax before retrying browser action."
-      : "Page content or state has not changed. Try navigating to another URL, interacting with a different element, or summarizing audit findings.";
-  }
-  if (toolNames.includes("edit") || toolNames.includes("replace_file_content")) {
-    return hasError
-      ? "Check exact string match or line range using 'read' before editing."
-      : "The file might already contain the requested changes. Verify file content using 'read'.";
-  }
-  if (toolNames.includes("run_command") || toolNames.includes("bash")) {
-    return "Check command syntax, dependencies, or environment variables.";
-  }
-  if (toolNames.includes("manage_subagents")) {
-    return "Use 'schedule' or allow subagent background execution to proceed without continuous polling.";
-  }
-  return "Try an alternative tool or read relevant context before repeating the action.";
-}
-
-function isPollingOrStatusCall(name: string, args: any): boolean {
-  const normalizedName = name.startsWith("default_api:") ? name.slice(12) : name;
-
-  switch (normalizedName) {
-    case "manage_subagents":
-    case "manage_superagents": {
-      const action = args?.action;
-      return typeof action === "string" && POLLING_STATUS_ACTIONS.has(action);
-    }
-    case "manage_background_process": {
-      const action = args?.action;
-      return typeof action === "string" && BG_PROCESS_ACTIONS.has(action);
-    }
-    case "inspect_background_log": {
-      return true;
-    }
-    case "view_background_processes":
-      return true;
-    case "manage_tasks":
-      return args?.action === "list";
-    case "manage_task": {
-      const action = args?.action;
-      return action === "status" || action === "list";
-    }
-    default:
-      return false;
-  }
-}
-
-/**
- * Stable JSON serialization with sorted keys.
- * Prevents key-insertion-order differences from creating false pattern cache misses.
- */
-function sortedJsonStringify(obj: unknown): string {
-  if (obj === null || typeof obj !== "object" || Array.isArray(obj)) {
-    return JSON.stringify(obj);
-  }
-  const sorted: Record<string, unknown> = {};
-  for (const key of Object.keys(obj as Record<string, unknown>).sort()) {
-    sorted[key] = (obj as Record<string, unknown>)[key];
-  }
-  return JSON.stringify(sorted);
-}
-
-function hasStateMutatingAction(toolCalls: ToolCall[], toolResults: ToolResult[]): boolean {
-  for (let i = 0; i < toolCalls.length; i++) {
-    const tc = toolCalls[i];
-    const res = toolResults.find(r => r.toolCallId === tc.id) || toolResults[i];
-    if (res?.isError) continue;
-
-    const name = tc.name.toLowerCase();
-    if (WRITE_TOOLS.has(name)) return true;
-
-    if (name === "control_chrome_cdp") {
-      const args = tc.args as Record<string, unknown> | undefined;
-      const cmd = String(args?.command || args?.cmd || "").toLowerCase();
-      if (["navigate", "click", "type", "activate", "new_tab", "close_tab", "scroll", "submit", "key", "wait_for"].includes(cmd)) {
-        return true;
-      }
-    }
-    if (name === "control_chrome_vision") {
-      const args = tc.args as Record<string, unknown> | undefined;
-      const cmd = String(args?.command || args?.cmd || "").toLowerCase();
-      if (["click_label", "type_label", "press_key"].includes(cmd)) {
-        return true;
-      }
-    }
-    if (name.startsWith("chrome_") || name.includes("remote_chrome")) {
-      if (["click", "type", "navigate", "select", "submit", "open_tab", "close_tab", "press"].some(a => name.includes(a))) {
-        return true;
-      }
-    }
-    if (name.includes("invoke_subagent") || name.includes("invoke_superagent") || name.includes("merge_superagents")) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function computeResultSignature(toolResults: ToolResult[]): string {
-  if (!toolResults || toolResults.length === 0) return "";
-  return toolResults
-    .map(r => `${r.name}:${r.isError ? "ERR" : "OK"}:${(r.result || "").trim().slice(0, 200)}`)
-    .join("|");
-}
-
-function generateCycleSuggestion(toolNames: string[]): string {
-  const isBrowser = toolNames.some(t => t.includes("chrome") || t.includes("browser") || t.includes("url"));
-  if (isBrowser) {
-    return "Do not alternate between the same repeated browser actions. Try a different interaction or summarize your findings.";
-  }
-  const isSearchOrRead = toolNames.some(t => t.includes("read") || t.includes("grep") || t.includes("find") || t.includes("list") || t.includes("view"));
-  if (isSearchOrRead) {
-    return "Do not alternate between repeated search or read calls. Synthesize collected findings or change your search criteria.";
-  }
-  const isEdit = toolNames.some(t => WRITE_TOOLS.has(t.toLowerCase()));
-  if (isEdit) {
-    return "Do not alternate between repeated failing edits. Inspect file contents directly before attempting another edit.";
-  }
-  return "Do not alternate between repeated tool calls. Change strategy, use alternative tools, or conclude your task.";
-}
-
-interface CycleDetectionResult {
-  detected: boolean;
-  isPause: boolean;
-  cyclePeriod: number;
-  occurrences: number;
-  toolNames: string[];
-}
-
-function detectCycle(
-  history: HistoryEntry[],
-  warningThreshold: number,
-  pauseThreshold: number
-): CycleDetectionResult | null {
-  const n = history.length - 1;
-  if (n < 4) return null;
-
-  for (const P of [2, 3]) {
-    const minStepsForWarning = (warningThreshold - 1) * P + 1;
-    if (history.length < minStepsForWarning) continue;
-
-    // Check distinct call keys within one period
-    const periodKeys = new Set<string>();
-    for (let i = 0; i < P; i++) {
-      periodKeys.add(history[n - i].callKey);
-    }
-    if (periodKeys.size !== P) {
-      continue;
-    }
-
-    let matchCount = 0;
-    let allResultsMatch = true;
-    for (let k = 0; k <= n; k++) {
-      const current = history[n - k];
-      const expected = history[n - (k % P)];
-
-      if (current.callKey !== expected.callKey) {
-        break;
-      }
-      if (current.resultSig !== expected.resultSig) {
-        allResultsMatch = false;
-        break;
-      }
-      matchCount++;
-    }
-
-    if (!allResultsMatch) {
-      continue;
-    }
-
-    const occurrences = Math.floor(matchCount / P) + (matchCount % P > 0 ? 1 : 0);
-
-    if (occurrences >= warningThreshold) {
-      const toolNamesSet = new Set<string>();
-      for (let i = 0; i < matchCount; i++) {
-        for (const name of history[n - i].toolNames) {
-          toolNamesSet.add(name);
-        }
-      }
-      return {
-        detected: true,
-        isPause: occurrences >= pauseThreshold,
-        cyclePeriod: P,
-        occurrences,
-        toolNames: Array.from(toolNamesSet),
-      };
-    }
-  }
-
-  return null;
 }

@@ -1,6 +1,7 @@
 import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
 import { getSettings, updateSettings, getContextWindowLimit, getEffectiveMasterModel } from "../config.js";
+import { getAdvisorMetrics, clearAdvisorEvents } from "../advisorLogger.js";
 
 import { getConfiguredProviders, getTierModelWithProvider } from "../config/providers.js";
 import fs from "fs";
@@ -1009,10 +1010,91 @@ export const settingAdvisorCommand: SlashCommand = {
           `  adaptive  : ${s.advisorAdaptiveScaling !== false ? "on" : "off"}   (scale thresholds for benign tools)`,
           `  pattern   : ${s.advisorPatternMemory !== false ? "on" : "off"}   (warn on historically failing patterns)`,
           "",
-          "Usage: /setting-advisor <on|off|warn=N|pause=N|error=N|adaptive=on/off|pattern=on/off>",
+          "Usage: /setting-advisor <on|off|warn=N|pause=N|error=N|adaptive=on/off|pattern=on/off|metrics|reset|audit|standard>",
         ].join("\n"),
         timestamp: now,
       });
+      return;
+    }
+
+    // metrics
+    if (val === "metrics" || val === "stats") {
+      const m = getAdvisorMetrics();
+      const reasonsList = Object.entries(m.reasonsCount)
+        .map(([k, v]) => `    ${k}: ${v}`)
+        .join("\n") || "    (none)";
+      const toolsList = m.topLoopTools
+        .map(t => `    ${t.tool}: ${t.count}`)
+        .join("\n") || "    (none)";
+      ctx.addLine({
+        type: "system",
+        content: [
+          "Advisor Execution Metrics:",
+          `  Total Events   : ${m.totalEvents}`,
+          `  Total Warnings : ${m.totalWarnings}`,
+          `  Total Pauses   : ${m.totalPauses}`,
+          "  Warning Breakdown:",
+          reasonsList,
+          "  Top Repeated Tools:",
+          toolsList,
+        ].join("\n"),
+        timestamp: now,
+      });
+      return;
+    }
+
+    // reset
+    if (val === "reset" || val === "clear") {
+      clearAdvisorEvents();
+      if (ctx.agent?.advisor) {
+        ctx.agent.advisor.reset();
+      }
+      ctx.addLine({
+        type: "system",
+        content: "✓ Advisor event logs, pattern memory, and agent execution states cleared.",
+        timestamp: now,
+      });
+      return;
+    }
+
+    // mode presets (audit, standard, lenient)
+    if (val === "audit" || val === "mode audit") {
+      try {
+        updateSettings({
+          advisorWarningThreshold: 5,
+          advisorPauseThreshold: 8,
+          advisorErrorThreshold: 6,
+          advisorAdaptiveScaling: true,
+          enableAdvisor: true,
+        });
+        ctx.addLine({
+          type: "system",
+          content: "✓ Advisor configured for Browser/Audit Mode: warn=5, pause=8, adaptive=on (optimal for Chrome testing and web exploration).",
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({ type: "error", content: `Failed to apply audit mode: ${err.message}`, timestamp: now });
+      }
+      return;
+    }
+
+    if (val === "standard" || val === "mode standard") {
+      try {
+        updateSettings({
+          advisorWarningThreshold: 3,
+          advisorPauseThreshold: 5,
+          advisorErrorThreshold: 5,
+          advisorAdaptiveScaling: true,
+          enableAdvisor: true,
+        });
+        ctx.addLine({
+          type: "system",
+          content: "✓ Advisor reset to Standard Mode: warn=3, pause=5, adaptive=on.",
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({ type: "error", content: `Failed to apply standard mode: ${err.message}`, timestamp: now });
+      }
       return;
     }
 
@@ -1036,7 +1118,7 @@ export const settingAdvisorCommand: SlashCommand = {
     if (!match) {
       ctx.addLine({
         type: "error",
-        content: `Unknown option "${val}". Use: on | off | warn=N | pause=N | error=N | adaptive=on/off | pattern=on/off`,
+        content: `Unknown option "${val}". Use: on | off | warn=N | pause=N | error=N | adaptive=on/off | pattern=on/off | metrics | reset | audit | standard`,
         timestamp: now,
       });
       return;
