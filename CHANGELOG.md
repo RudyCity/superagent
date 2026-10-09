@@ -1,3 +1,10 @@
+## [1.13.3] - 2026-10-09
+### Cleaned
+- Removed unrelated external application audit scripts and artifacts (`audit.js`, `audit_admin.js`, `audit_admin.cjs`, `playwright_screenshot_1791512184491.png`, `goal-processor.diff`).
+- Removed extraneous `Notepad++/` editor directory.
+- Removed erroneously git-tracked test and scratch files (`metadata.json`, `tsc-output.txt`, `demo-tools.md`, `prompt-optimization-verification.md`, `scratch/*`).
+- Cleaned up leftover test caches and benchmark snapshots (~1.8 GB in `tmp/`, `tests/temp-home-*`, `tests/goal-verification.log`, `.goal-baseline/`).
+
 ## [1.13.2] - 2026-10-09
 ### Added
 - Implemented core optimizations from `docs/plans/2026-10-09-superagent-optimization-plan.md`.
