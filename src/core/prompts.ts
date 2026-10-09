@@ -133,10 +133,14 @@ const BROWSER_AUTOMATION_CORE = `- AUTOMATION_TRACKS:
   - Track 3 (Extension Bridge): control_browser_tab over port 9223. Active when remote extension is connected (detect_ui, macros, storage).
 - STEALTH_AND_AUTO_WAIT: control_chrome_cdp click/type auto-wait for elements. Native input/change events dispatched for React/Vue reactivity.
 - DIAGNOSTICS: Inspect get_browser_console_logs, get_browser_network_logs, or evaluate on target tab on unexpected behavior.
+- UI_ACTION_VERIFICATION:
+  - Do NOT assume create/edit actions only open modal popups. Web apps widely use Full-Page Sub-View Forms (swapping table for form), URL query state (?action=create), Drawers/Sheets, or Dedicated Routes.
+  - When verifying buttons: verify if the UI transitioned (table swapped for form, new inputs rendered, URL query changed, drawer opened, or modal opened).
+  - PREFER verify_action or click(observe:true) for automated transition feedback instead of naive [role="dialog"] queries.
 - TEXT_AND_EMAIL_VERIFICATION:
   - Never guess or synthesize verification/magic-link URLs (e.g. /verify?email=...).
   - To read email or page text: CALL read_page or extract_links(pattern:'verify'|'confirm'|'token').
-  - Always check snapshot headings and alerts: if snapshot shows '[H1] 404' or error alerts, do NOT mistake it for success.
+  - Always check snapshot headings, viewMode, and alerts: if snapshot shows '[H1] 404' or error alerts, do NOT mistake it for success.
 
 # MACRO SYSTEM
 - Save: control_browser_macro_save step onError: retry(flaky), skip(cosmetic), stop(critical).

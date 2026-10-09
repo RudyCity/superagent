@@ -28,6 +28,7 @@ export interface PageOverview {
   url?: string;
   headings?: Array<{ tag: string; text: string }>;
   alerts?: string[];
+  viewMode?: string;
   elements?: SnapshotEntry[];
 }
 
@@ -121,11 +122,24 @@ export const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
     .filter(t => t.length > 0 && t.length < 200)
     .slice(0, 3);
 
+  const hasModal = Boolean(document.querySelector('[role="dialog"], dialog[open], [class*="modal" i]:not(body), div.fixed.inset-0:not(#__next):not(#root)'));
+  const hasDrawer = Boolean(document.querySelector('[role="region"][class*="drawer" i], [class*="slide-over" i], aside.fixed'));
+  const formInputs = els.filter(e => visible(e) && (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA' || e.tagName === 'SELECT') && e.type !== 'hidden' && e.type !== 'search');
+  const hasForm = (formInputs.length >= 2 && !hasModal) || Boolean(document.querySelector('form, [data-form], #form'));
+  const hasTable = Boolean(document.querySelector('table, [role="table"], [role="grid"], tbody tr'));
+
+  let viewMode = 'general_view';
+  if (hasModal) viewMode = 'modal_view';
+  else if (hasDrawer) viewMode = 'drawer_view';
+  else if (hasForm && (!hasTable || formInputs.length >= 3)) viewMode = 'form_view';
+  else if (hasTable) viewMode = 'table_list_view';
+
   return {
     title: document.title,
     url: window.location.href,
     headings,
     alerts,
+    viewMode,
     elements
   };
 })()`;
@@ -166,11 +180,24 @@ export const READ_PAGE_JS = `/*cdp-read-page*/(() => {
     .filter(l => l.href && !l.href.startsWith('javascript:') && !l.href.startsWith('#'))
     .slice(0, 30);
 
+  const hasModal = Boolean(document.querySelector('[role="dialog"], dialog[open], [class*="modal" i]:not(body), div.fixed.inset-0:not(#__next):not(#root)'));
+  const hasDrawer = Boolean(document.querySelector('[role="region"][class*="drawer" i], [class*="slide-over" i], aside.fixed'));
+  const editableInputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="search"]), select, textarea'));
+  const hasForm = (editableInputs.length >= 2 && !hasModal) || Boolean(document.querySelector('form, [data-form], #form'));
+  const hasTable = Boolean(document.querySelector('table, [role="table"], [role="grid"], tbody tr'));
+
+  let viewMode = 'general_view';
+  if (hasModal) viewMode = 'modal_view';
+  else if (hasDrawer) viewMode = 'drawer_view';
+  else if (hasForm && (!hasTable || editableInputs.length >= 3)) viewMode = 'form_view';
+  else if (hasTable) viewMode = 'table_list_view';
+
   return {
     url,
     title,
     headings,
     alerts,
+    viewMode,
     bodyText: bodyText.slice(0, 7000),
     links
   };
@@ -473,6 +500,20 @@ export function formatSnapshotDiff(
     `+${added.length} added, -${removed.length} removed, ~${changed.length} changed.\n` +
     (dlines.length > 0 ? dlines.join("\n") : "(no changes)")
   );
+}
+
+/**
+ * Formats context header (view mode, headings, alerts) for snapshot / navigate output.
+ */
+export function formatContextHeader(overview: PageOverview | null): string {
+  if (!overview) return "";
+  const parts: string[] = [];
+  if (overview.viewMode) parts.push(`View Mode: [${String(overview.viewMode).toUpperCase()}]`);
+  const hList = overview.headings?.map((h) => `[${h.tag.toUpperCase()}] ${h.text}`).join(" | ");
+  if (hList) parts.push(`Headings: ${hList}`);
+  const aList = overview.alerts?.map((a) => `[ALERT] ${a}`).join(" | ");
+  if (aList) parts.push(`Alerts/Status: ${aList}`);
+  return parts.length > 0 ? "\n" + parts.join("\n") : "";
 }
 
 /**

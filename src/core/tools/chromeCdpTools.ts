@@ -29,6 +29,7 @@ import {
   parseTimeoutMs,
   formatSnapshotEntry,
   formatSnapshotDiff,
+  formatContextHeader,
   resolveActionSelector,
   waitForInPage,
 } from "./chromeCdpHelpers.js";
@@ -37,6 +38,13 @@ import {
   formatScreenshotResult,
   attachScreenshotIfRequested,
 } from "./chromeCdpScreenshot.js";
+import {
+  executeVerifyAction,
+  captureDomState,
+  observeActionTransition,
+  formatTransitionSummary,
+  DomStateSnapshot,
+} from "./chromeCdpTransition.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -482,8 +490,9 @@ export const controlChromeCdpTool: Tool = {
   description:
     "Control the user's REAL Chrome browser directly via Chrome Remote Debugging (CDP) at http://127.0.0.1:9222 — no extension required and no isolated background tab. " +
     "REQUIRES Chrome to be running with --remote-debugging-port=9222 (close ALL Chrome windows, then reopen Chrome from the taskbar shortcut). " +
-    "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, screenshot, pdf, get_cookies. " +
+    "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, screenshot, pdf, get_cookies. " +
     "Convenience: 'navigate' automatically waits for page ready, captures a visual screenshot saved to disk (with vision data URL), and returns an interactive element snapshot. " +
+    "'verify_action' performs an action (click) and analyzes UI transitions (detects Full-Page Form transition, Modal Dialog, Drawer, URL query/route navigation, Alerts, Table changes). " +
     "'screenshot' captures full or viewport screenshots saved to disk and returns vision data URL. " +
     "Actions like click, type, snapshot, evaluate, and wait_for also support optional 'screenshot: true' to capture visual feedback after the action. " +
     "'read_page' extracts full visible body text, headings, alerts/status banners, and email contents. " +
@@ -507,6 +516,7 @@ export const controlChromeCdpTool: Tool = {
           "click",
           "type",
           "wait_for",
+          "verify_action",
           "screenshot",
           "pdf",
           "get_cookies",
@@ -516,7 +526,7 @@ export const controlChromeCdpTool: Tool = {
       payload: {
         type: "string",
         description:
-          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "screenshot": true} or {"selector": "#login"}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
+          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true} or {"selector": "#login"}. verify_action: {"index": 3} (verifies UI transition: full-page form, modal, drawer, route/query change). type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
       },
       url: {
         type: "string",
@@ -609,6 +619,9 @@ export const controlChromeCdpTool: Tool = {
       "full_page",
       "format",
       "quality",
+      "verify",
+      "observe",
+      "debounce_ms",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) {
@@ -687,15 +700,7 @@ export const controlChromeCdpTool: Tool = {
               snapshotStore.set(target.id, fresh);
               const maxElements = 35;
               const entries = fresh.slice(0, maxElements);
-              let contextHeader = "";
-              if (pageOverview) {
-                const hList = pageOverview.headings?.map((h) => `[${h.tag.toUpperCase()}] ${h.text}`).join(" | ");
-                const aList = pageOverview.alerts?.map((a) => `[ALERT] ${a}`).join(" | ");
-                const parts: string[] = [];
-                if (hList) parts.push(`Headings: ${hList}`);
-                if (aList) parts.push(`Alerts/Status: ${aList}`);
-                if (parts.length > 0) contextHeader = "\n" + parts.join("\n");
-              }
+              const contextHeader = formatContextHeader(pageOverview);
               if (entries.length > 0) {
                 snapSuffix =
                   `\n\nInteractive elements (${entries.length}${fresh.length > maxElements ? ` of ${fresh.length}` : ""}):` +
@@ -783,15 +788,7 @@ export const controlChromeCdpTool: Tool = {
             return await attachScreenshotIfRequested(cdpSend, target, payload, emptyResult, false);
           }
           const isLimited = (payload.max_elements !== undefined && payload.max_elements !== "") || fresh.length > maxElements;
-          let contextHeader = "";
-          if (pageOverview) {
-            const hList = pageOverview.headings?.map((h) => `[${h.tag.toUpperCase()}] ${h.text}`).join(" | ");
-            const aList = pageOverview.alerts?.map((a) => `[ALERT] ${a}`).join(" | ");
-            const parts: string[] = [];
-            if (hList) parts.push(`Headings: ${hList}`);
-            if (aList) parts.push(`Alerts/Status: ${aList}`);
-            if (parts.length > 0) contextHeader = "\n" + parts.join("\n");
-          }
+          const contextHeader = formatContextHeader(pageOverview);
           const snapshotResult =
             `control_chrome_cdp: snapshot of ${title} - ${entries.length} interactive element(s)` +
             (compact ? " (compact)" : "") +
@@ -820,6 +817,9 @@ export const controlChromeCdpTool: Tool = {
 
           const sections: string[] = [];
           sections.push(`control_chrome_cdp: page content for '${title}' (${url}):`);
+          if (data.viewMode) {
+            sections.push(`View Mode: [${String(data.viewMode).toUpperCase()}]`);
+          }
           if (headings.length > 0) {
             sections.push(`Headings:\n` + headings.map((h) => `- [${h.tag.toUpperCase()}] ${h.text}`).join("\n"));
           }
@@ -865,6 +865,10 @@ export const controlChromeCdpTool: Tool = {
               );
             }
           }
+          let beforeState: DomStateSnapshot | undefined;
+          if (payload.verify || payload.observe) {
+            beforeState = await captureDomState(cdpSend, target);
+          }
           const res: any = await cdpSend(target, "Runtime.evaluate", {
             expression: buildClickJs(resolved.selector),
             returnByValue: true,
@@ -873,7 +877,12 @@ export const controlChromeCdpTool: Tool = {
           const parsed = parseActionResult(typeof value === "string" ? value : JSON.stringify(value));
           if (!parsed.ok) return `control_chrome_cdp: click failed - ${parsed.reason || "unknown reason"}.`;
           const textStr = parsed.text ? ` "${parsed.text}"` : "";
-          const clickResult = `control_chrome_cdp: clicked <${parsed.tag}>${textStr}.`;
+          let clickResult = `control_chrome_cdp: clicked <${parsed.tag}>${textStr}.`;
+          if (beforeState) {
+            const debounceMs = parseTimeoutMs(payload.debounce_ms, 200);
+            const diff = await observeActionTransition(cdpSend, target, beforeState, debounceMs);
+            clickResult += `\n${formatTransitionSummary(diff)}`;
+          }
           return await attachScreenshotIfRequested(cdpSend, target, payload, clickResult, false);
         }
         case "type": {
@@ -933,6 +942,10 @@ export const controlChromeCdpTool: Tool = {
           const waitResult = `control_chrome_cdp: wait_for matched ${what}.`;
           return await attachScreenshotIfRequested(cdpSend, target, payload, waitResult, false);
         }
+        case "verify_action": {
+          const target = await pickTarget(targetId);
+          return await executeVerifyAction(cdpSend, target, payload, attachScreenshotIfRequested);
+        }
         case "screenshot": {
           const target = await pickTarget(targetId);
           const outPath = payload.outputPath || payload.output_path;
@@ -966,7 +979,7 @@ export const controlChromeCdpTool: Tool = {
           return `control_chrome_cdp: ${cookies.length} cookie(s):\n${JSON.stringify(summary, null, 1)}`;
         }
         default:
-          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, screenshot, pdf, get_cookies.`;
+          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, screenshot, pdf, get_cookies.`;
       }
     } catch (err: any) {
       return `control_chrome_cdp failed: ${(err && err.message) || String(err)}`;

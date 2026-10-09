@@ -18,6 +18,8 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   let savedTimeout: string | undefined;
   let snapshotReturnsEmpty = false;
   let snapshotChanged = false;
+  let captureDomStateReturnsForm = false;
+  let simulateTransitionOnNextClick = false;
   const mockElementsChanged = [
     { index: 0, tag: "button", text: "Sign In", selector: "button" },
     { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' },
@@ -71,9 +73,49 @@ describe("control_chrome_cdp (mock CDP server)", () => {
             return;
           }
           if (expr.includes("cdp-click")) {
+            if (simulateTransitionOnNextClick) {
+              captureDomStateReturnsForm = true;
+            }
             ws.send(
               JSON.stringify({ id: msg.id, result: { result: { value: JSON.stringify({ ok: true, tag: "button", text: "Login" }) } } })
             );
+            return;
+          }
+          if (expr.includes("cdp-capture-dom-state")) {
+            const state = captureDomStateReturnsForm
+              ? {
+                  url: "https://example.com/admin/coupons?action=create",
+                  pathname: "/admin/coupons",
+                  search: "?action=create",
+                  title: "Mock Tab",
+                  viewMode: "form_view",
+                  hasModal: false,
+                  hasDrawer: false,
+                  hasForm: true,
+                  formInputsCount: 4,
+                  formFields: ["input:code", "select:type"],
+                  hasTable: false,
+                  tableRowsCount: 0,
+                  headings: ["Tambah Kupon"],
+                  alerts: [],
+                }
+              : {
+                  url: "https://example.com/admin/coupons",
+                  pathname: "/admin/coupons",
+                  search: "",
+                  title: "Mock Tab",
+                  viewMode: "table_list_view",
+                  hasModal: false,
+                  hasDrawer: false,
+                  hasForm: false,
+                  formInputsCount: 0,
+                  formFields: [],
+                  hasTable: true,
+                  tableRowsCount: 5,
+                  headings: ["Daftar Kupon"],
+                  alerts: [],
+                };
+            ws.send(JSON.stringify({ id: msg.id, result: { result: { value: state } } }));
             return;
           }
           if (expr.includes("cdp-type")) {
@@ -211,6 +253,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       "click",
       "type",
       "wait_for",
+      "verify_action",
       "screenshot",
       "pdf",
       "get_cookies",
@@ -591,6 +634,43 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     });
     expect(res).toContain("extracted 2 link(s)");
     expect(res).toContain("https://auth.groq.com/verify-email?token=xyz123");
+  });
+
+  test("verify_action executes click and detects full-page form transition", async () => {
+    simulateTransitionOnNextClick = true;
+    captureDomStateReturnsForm = false;
+    try {
+      const res = await controlChromeCdpTool.execute({
+        command: "verify_action",
+        selector: "button.create",
+      });
+      expect(res).toContain("control_chrome_cdp: verified action on <button> \"Login\"");
+      expect(res).toContain("Transition: [FULL_PAGE_FORM]");
+      expect(res).toContain("View Mode: table_list_view -> form_view");
+      expect(res).toContain("Form Fields: input:code, select:type");
+      expect(res).toContain("Interactive elements updated");
+    } finally {
+      simulateTransitionOnNextClick = false;
+      captureDomStateReturnsForm = false;
+    }
+  });
+
+  test("click with observe: true includes UI transition summary", async () => {
+    simulateTransitionOnNextClick = true;
+    captureDomStateReturnsForm = false;
+    try {
+      const res = await controlChromeCdpTool.execute({
+        command: "click",
+        selector: "button",
+        observe: true,
+      });
+      expect(res).toContain("control_chrome_cdp: clicked <button> \"Login\".");
+      expect(res).toContain("Transition: [FULL_PAGE_FORM]");
+      expect(res).toContain("View Mode: table_list_view -> form_view");
+    } finally {
+      simulateTransitionOnNextClick = false;
+      captureDomStateReturnsForm = false;
+    }
   });
 });
 

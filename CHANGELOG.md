@@ -1,3 +1,12 @@
+## [1.13.27] - 2026-10-09
+### Enhanced
+- Chrome CDP UI Transition Detection & Action Verification:
+  - Added UI Transition Classifier (`src/core/tools/chromeCdpTransition.ts`): Automatically classifies DOM transitions into `full_page_form`, `modal_dialog`, `drawer_panel`, `navigation`, `query_change`, `toast_notification`, and `table_update`. Eliminates false-positive audit errors where full-page sub-view forms or URL query changes were misdiagnosed as unresponsive.
+  - New `verify_action` Command in `control_chrome_cdp`: Performs interactive clicks and reports verified semantic UI state diffs (form input counts, modal titles, active routes, and view modes) while automatically refreshing the interactive element snapshot store.
+  - Auto-Observation on `click`: Added `observe: true` support to `click` command for inline transition diff feedback without manual evaluate scripts.
+  - Layout & View Mode Awareness in Snapshot & Read Page: Upgraded `SNAPSHOT_JS` and `READ_PAGE_JS` (`src/core/tools/chromeCdpHelpers.ts`) to detect and report `viewMode` (`form_view`, `table_list_view`, `modal_view`, `drawer_view`), keeping agents informed of layout changes.
+  - System Prompt Verification Guardrails (`src/core/prompts.ts`): Added explicit browser audit instructions reminding agents that modern web apps frequently use full-page forms and query parameter state rather than pop-up modals.
+
 ## [1.13.26] - 2026-10-09
 ### Optimized
 - Architecture Modularization: Extracted helper utilities, cycle detection algorithms, read target extractors, and suggestion generators out of `src/core/advisor.ts` into a dedicated modular module (`src/core/advisorHelpers.ts`). Reduced `advisor.ts` from 987 lines to 658 lines, strictly adhering to the 1000-line modularity architecture limit.
