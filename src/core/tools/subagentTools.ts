@@ -694,6 +694,17 @@ export const invokeSubagentTool: Tool = {
         instance.agent = undefined;
         notifySubagentsChanged();
         appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
+
+        // Reactive background wakeup: automatically inform parent agent of completion
+        if (parentAgent && typeof parentAgent.getHistory === "function") {
+          try {
+            parentAgent.getHistory().addMessage({
+              role: "system",
+              content: `[SUBAGENT_COMPLETED]\nSubagent "${typeName}" (Role: ${role}, ID: ${subagentId}) finished successfully.\nReport:\n${instance.result || "(no report)"}`,
+              timestamp: Date.now(),
+            });
+          } catch {}
+        }
       };
 
       const finalizeError = (message: string) => {
@@ -713,6 +724,17 @@ export const invokeSubagentTool: Tool = {
           instance.agent.writeToLogFile("SUBAGENT_FAILED", message);
         }
         instance.agent = undefined;
+
+        // Reactive background wakeup: automatically inform parent agent of error
+        if (parentAgent && typeof parentAgent.getHistory === "function") {
+          try {
+            parentAgent.getHistory().addMessage({
+              role: "system",
+              content: `[SUBAGENT_FAILED]\nSubagent "${typeName}" (Role: ${role}, ID: ${subagentId}) failed: ${message}\n${instance.result ? `Report:\n${instance.result}` : ""}`,
+              timestamp: Date.now(),
+            });
+          } catch {}
+        }
       };
 
       if (timeoutMs !== undefined) {
@@ -1027,6 +1049,16 @@ export const sendMessageTool: Tool = {
         instance.result = result;
         instance.agent = undefined;
         notifySubagentsChanged();
+
+        if (sendParentAgent && typeof sendParentAgent.getHistory === "function") {
+          try {
+            sendParentAgent.getHistory().addMessage({
+              role: "system",
+              content: `[SUBAGENT_MESSAGE_COMPLETED]\nSubagent "${recipientId}" processed follow-up message successfully.\nOutput:\n${result || "(no output)"}`,
+              timestamp: Date.now(),
+            });
+          } catch {}
+        }
       }).catch((err: any) => {
         instance.status = "error";
         instance.result = extractSubagentReport(agentInstance, recipientId) || instance.result;
@@ -1035,6 +1067,16 @@ export const sendMessageTool: Tool = {
           agentInstance.writeToLogFile("SUBAGENT_FAILED", err.message || String(err));
         }
         instance.agent = undefined;
+
+        if (sendParentAgent && typeof sendParentAgent.getHistory === "function") {
+          try {
+            sendParentAgent.getHistory().addMessage({
+              role: "system",
+              content: `[SUBAGENT_MESSAGE_FAILED]\nSubagent "${recipientId}" failed to process follow-up message: ${err.message || String(err)}`,
+              timestamp: Date.now(),
+            });
+          } catch {}
+        }
       });
 
       return `Message sent to subagent "${recipientId}". Subagent is processing.`;

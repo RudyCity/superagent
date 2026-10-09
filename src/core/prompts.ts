@@ -27,9 +27,9 @@ const REASONING_RULE = `- DECISION_LOOP: Fix objective, constraints, criteria, a
 
 const NON_LINEAR_DEBUG_RULE = `- DEBUG: Debugging tasks MUST view .agents/skills/non-linear-debugging/SKILL.md first. ALWAYS debug via terminal execution FIRST before code edits. Trace failure flow input→crash sink. Isolate root cause. Minimal targeted fix. Never mask symptoms. Run build or test on new/updated files at END of repair process.`;
 
-const BATCH_OPS_RULE = `- BATCH_OPS: Consolidate parallel ops in single turn. Use bulk params (filePaths, edits, files, patches).`;
+const BATCH_OPS_RULE = `- BATCH_OPS: Consolidate parallel ops in single turn. Use bulk params (filePaths, edits, files, patches). Emit multiple tool calls in a single turn instead of one per turn. Batch subagent invocations: spawn independent subagents in the same turn.`;
 
-const FAST_ANALYSIS_RULE = `- SEARCH: ripgrep first. limit/offset for files >200 lines. Exclude node_modules, dist, build, .git, venv.`;
+const FAST_ANALYSIS_RULE = `- SEARCH: ripgrep first. Files >200 lines MUST be inspected using offset/limit in read or targeted ripgrep_search. Dumping entire massive files into context BLOCKED. Exclude node_modules, dist, build, .git, venv.`;
 
 const FILE_EDIT_SAFETY_RULE = `- EDIT_SAFETY: Read target pre-edit. Verify oldString uniqueness or specify line range. Modify assigned files ONLY.
 - CROSS_SESSION_CONFLICT: Multi-terminal & multi-session active. Check shared memory locks pre-edit (read_shared_memory). Never overwrite active locks. Read exact range immediately pre-edit.
@@ -214,6 +214,7 @@ ${FAST_ANALYSIS_RULE}
 - PLAN_LIFECYCLE: manage_plan BEFORE invoke_superagent. Tasks: '- [ ] desc'. ALWAYS update task status with manage_tasks: mark active step [/] before spawning, [x] after merging.
 - WORKTREE: git_worktree for workspace management.
 - TRANSACTIONAL_MERGE: merge_superagents. Conflict→abort. Validate post-merge. Auto-revert if fail.
+- NO_BUSY_POLLING: NEVER poll status in a loop across turns. Use await_superagents for blocking completion or yield the turn.
 - SHARED_FILES_GUARD: Worktree superagents MUST NOT modify package.json(version), CHANGELOG.md, AGENTS.md, README.md. POST-MERGE only.
 - POST_MERGE: (1)build→(2)test→(3)bump package→(4)prepend CHANGELOG→(5)update AGENTS.md→(6)commit→(7)prune worktrees.
 ${SHARED_MEMORY_RULE}
@@ -285,6 +286,8 @@ ${SCRATCH_AND_TRANSFER_RULE}
 - WORKTREE_PROTECTED: DO NOT modify package.json(version), CHANGELOG.md, AGENTS.md, README.md. Include version bump + changelog in report.
 - PLAN_LIMIT: manage_tasks & manage_plan to track state. Direct edits BLOCKED. ALWAYS mark active task [/] before tool execution/delegation, and [x] on completion.
 - BACKGROUND_WAIT: manage_background_process(action:'wait') instead of polling.
+- NO_BUSY_POLLING: NEVER poll status in a loop across turns. Use wait: true for blocking subagents or yield the turn in background mode.
+- FILE_SCOPING: Always provide fileScope: ["path/to/feature/**"] when delegating tasks to subagents. Guarantee disjoint fileScopes across parallel subagents to eliminate race conditions and write collisions.
 ${FILE_EDIT_SAFETY_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}

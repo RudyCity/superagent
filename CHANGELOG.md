@@ -1,3 +1,15 @@
+## [1.13.2] - 2026-10-09
+### Added
+- Implemented core optimizations from `docs/plans/2026-10-09-superagent-optimization-plan.md`.
+- Added reactive background subagent wakeups: subagents running in background mode (`wait: false`) automatically notify and inject wake-up events into the parent agent conversation history upon completion or failure.
+- Added binary availability caching for `bun`, `node`, `git`, `python`, and `ripgrep` in `~/.superagent-r/system-cache.json` with a 24-hour TTL to ensure sub-second startup without shell spawns.
+- Added unit tests in `tests/optimizationPlanVerification.test.ts` verifying compact snapshot defaults, token footprint reduction, binary cache lookup, and reactive background wakeup.
+
+### Changed
+- Defaulted `control_chrome_cdp` snapshot action to `compact: true` and capped default `max_elements: 100` to prevent token flooding while retaining informative label fallback.
+- Added DOM filtering in `SNAPSHOT_JS` for decorative/hidden elements (`aria-hidden="true"`, `role="presentation"`, non-interactive anchor tags).
+- Updated system prompt rules in `src/core/prompts.ts` and `src/core/config/base.ts` to strictly prohibit busy polling loops, mandate disjoint subagent `fileScope` definitions, enforce single-turn tool batching, and ban unpaginated large file dumps (>200 lines).
+
 ## [1.13.1] - 2026-10-09
 ### Added
 - Added comprehensive Superagent optimization plan in `docs/plans/2026-10-09-superagent-optimization-plan.md` covering loop-turn wait patterns, context pruning, tool batching, and dual-track Chrome automation.

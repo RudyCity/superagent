@@ -11,6 +11,9 @@ export interface SystemCheckCache {
   paddleOcr?: boolean;
   officeCli?: boolean;
   rmemory?: boolean;
+  bun?: boolean;
+  node?: boolean;
+  git?: boolean;
   lastChecked?: number;
 }
 
@@ -55,4 +58,25 @@ export function clearSystemCheckCache(): void {
       fs.unlinkSync(cacheFile);
     }
   } catch {}
+}
+
+export function isBinaryCached(name: keyof Omit<SystemCheckCache, "lastChecked">): boolean | undefined {
+  const cache = getSystemCheckCache();
+  return cache ? cache[name] : undefined;
+}
+
+export async function checkBinaryAvailability(name: "bun" | "node" | "git" | "python" | "rg"): Promise<boolean> {
+  const cached = isBinaryCached(name);
+  if (cached !== undefined) return cached;
+  const isWin = process.platform === "win32";
+  let available = false;
+  try {
+    const { execa } = await import("execa");
+    await execa(isWin ? "where.exe" : "which", [name]);
+    available = true;
+  } catch {
+    available = false;
+  }
+  updateSystemCheckCache({ [name]: available });
+  return available;
 }

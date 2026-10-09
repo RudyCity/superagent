@@ -254,7 +254,13 @@ const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
     const r = el.getBoundingClientRect();
     if (!r || r.width === 0 || r.height === 0) return false;
     const cs = getComputedStyle(el);
-    return cs.visibility !== 'hidden' && cs.display !== 'none';
+    if (cs.visibility === 'hidden' || cs.display === 'none') return false;
+    if (el.getAttribute('aria-hidden') === 'true') return false;
+    const role = el.getAttribute('role');
+    if (role === 'presentation' || role === 'none') return false;
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'a' && !el.getAttribute('href') && !el.getAttribute('onclick') && !role) return false;
+    return true;
   }
   function genSelector(el) {
     if (el.id) return '#' + CSS.escape(el.id);
@@ -782,9 +788,9 @@ export const controlChromeCdpTool: Tool = {
         }
         case "snapshot": {
           const target = await pickTarget(targetId);
-          const compact = Boolean(payload.compact);
+          const compact = payload.compact !== undefined ? Boolean(payload.compact) : true;
           const diff = Boolean(payload.diff);
-          let maxElements: number | undefined;
+          let maxElements: number = 100;
           if (payload.max_elements !== undefined && payload.max_elements !== null && payload.max_elements !== "") {
             maxElements = Math.floor(Number(payload.max_elements));
             if (!Number.isFinite(maxElements) || maxElements < 1) {
@@ -797,10 +803,11 @@ export const controlChromeCdpTool: Tool = {
           const prev: SnapshotEntry[] = snapshotStore.get(target.id) ?? [];
           snapshotPrevStore.set(target.id, prev);
           snapshotStore.set(target.id, fresh);
-          const entries = maxElements !== undefined ? fresh.slice(0, maxElements) : fresh;
+          const entries = fresh.slice(0, maxElements);
           const title = `'${truncate(target.title, 60)}'`;
           const fmt = (e: SnapshotEntry): string => {
-            const textStr = e.text ? ` "${e.text}"` : "";
+            const labelText = e.text || e.placeholder || e.ariaLabel || "";
+            const textStr = labelText ? ` "${labelText}"` : "";
             if (compact) return `[${e.index}] <${e.tag}>${textStr}`;
             const attrs: string[] = [];
             if (e.type) attrs.push(`type="${e.type}"`);
@@ -841,10 +848,11 @@ export const controlChromeCdpTool: Tool = {
           if (entries.length === 0) {
             return "control_chrome_cdp: snapshot found no interactive elements on this page.";
           }
+          const isLimited = (payload.max_elements !== undefined && payload.max_elements !== "") || fresh.length > maxElements;
           return (
             `control_chrome_cdp: snapshot of ${title} - ${entries.length} interactive element(s)` +
             (compact ? " (compact)" : "") +
-            (maxElements !== undefined ? ` (limited to ${maxElements})` : "") +
+            (isLimited ? ` (limited to ${maxElements})` : "") +
             `.\n` +
             `Use click/type with {"index": N}.\n${entries.map(fmt).join("\n")}`
           );
