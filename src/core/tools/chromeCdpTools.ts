@@ -30,7 +30,9 @@ function cdpTimeoutMs(): number {
 export const CDP_PORT_CLOSED_MSG =
   "Chrome is not running with --remote-debugging-port=9222. " +
   "Close ALL Chrome windows and reopen Chrome from the taskbar shortcut " +
-  "(the --remote-debugging-port=9222 flag is already installed there), then retry. " +
+  "(the --remote-debugging-port=9222 flag is already installed there), " +
+  "or launch Chrome via launch_chrome_profile(remoteDebuggingPort: 9222), " +
+  "or run scripts/chrome-debug.bat, then retry. " +
   "This tool needs no extension.";
 
 interface CdpTarget {

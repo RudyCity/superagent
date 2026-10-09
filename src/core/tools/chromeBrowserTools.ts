@@ -39,7 +39,7 @@ const execAsync = promisify(exec);
 
 export const launchChromeProfileTool: Tool = {
   name: "launch_chrome_profile",
-  description: "Launch Google Chrome with a specific user profile (e.g. 'Default', 'Profile 1') and optional target URL.",
+  description: "Launch Google Chrome with a specific user profile (e.g. 'Default', 'Profile 1'), optional target URL, and optional remote debugging port for CDP automation (e.g. 9222).",
   parameters: {
     type: "object",
     properties: {
@@ -51,26 +51,31 @@ export const launchChromeProfileTool: Tool = {
         type: "string",
         description: "Optional URL to open on Chrome launch.",
       },
+      remoteDebuggingPort: {
+        type: "integer",
+        description: "Optional remote debugging port to enable CDP automation (e.g. 9222). When provided, launches Chrome with --remote-debugging-port=<port>.",
+      },
     },
   },
-  execute: async ({ profileName = "Default", url = "" }: { profileName?: string; url?: string }) => {
+  execute: async ({ profileName = "Default", url = "", remoteDebuggingPort }: { profileName?: string; url?: string; remoteDebuggingPort?: number }) => {
     const platform = os.platform();
     let cmd = "";
 
     const safeProfile = profileName.replace(/["'\\]/g, "");
     const safeUrl = url ? `"${url.replace(/"/g, '\\"')}"` : "";
+    const debugFlag = remoteDebuggingPort ? ` --remote-debugging-port=${Number(remoteDebuggingPort)}` : "";
 
     if (platform === "win32") {
-      cmd = `start chrome --profile-directory="${safeProfile}" ${safeUrl}`;
+      cmd = `start chrome --profile-directory="${safeProfile}"${debugFlag} ${safeUrl}`;
     } else if (platform === "darwin") {
-      cmd = `open -a "Google Chrome" --args --profile-directory="${safeProfile}" ${safeUrl}`;
+      cmd = `open -a "Google Chrome" --args --profile-directory="${safeProfile}"${debugFlag} ${safeUrl}`;
     } else {
-      cmd = `google-chrome --profile-directory="${safeProfile}" ${safeUrl} &`;
+      cmd = `google-chrome --profile-directory="${safeProfile}"${debugFlag} ${safeUrl} &`;
     }
 
     try {
       await execAsync(cmd, { timeout: 15000 });
-      return `Launched Chrome with profile \`${safeProfile}\`${url ? ` opening \`${url}\`` : ""}.`;
+      return `Launched Chrome with profile \`${safeProfile}\`${remoteDebuggingPort ? ` (CDP port ${remoteDebuggingPort})` : ""}${url ? ` opening \`${url}\`` : ""}.`;
     } catch (err: any) {
       return `Failed to launch Chrome with profile \`${safeProfile}\`: ${err.message || String(err)}`;
     }

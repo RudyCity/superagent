@@ -220,6 +220,7 @@ ${FAST_ANALYSIS_RULE}
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
 - CLI_BRIDGE_DELEGATION: Superagents possess 'cli_bridge' to delegate sub-tasks to external AI CLIs (Codex, Claude Code, AGY, or custom binaries).
+${BROWSER_CONTROL_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
 ${MASTER_DECISION_RIGHTS_RULE}
 
@@ -292,12 +293,16 @@ ${FILE_EDIT_SAFETY_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 ${CLI_BRIDGE_RULE}
+${BROWSER_CONTROL_RULE}
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
 ${POST_CHANGE_INTEGRITY_RULE}
 ${SUPERAGENT_DECISION_RIGHTS_RULE}
 
 # LOGIC GATES
+if user_requests_browser_or_web_interaction:
+    CALL control_chrome_cdp(command:'list_targets') or launch_chrome_profile(remoteDebuggingPort:9222)
+    Do NOT reduce browser tasks to bash/curl or script writing when interactive browser use is requested.
 if delegating_to_external_cli:
     CALL cli_bridge(action:'list')
     if standalone_task_or_code_work:

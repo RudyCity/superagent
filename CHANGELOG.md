@@ -1,3 +1,15 @@
+## [1.13.5] - 2026-10-09
+### Added
+- Added extension-free Chrome automation tools directly to `superagentToolset` (`control_chrome_cdp`, `control_chrome_vision`, `list_running_chrome`, `close_chrome_profile`, `list_chrome_profiles`, `launch_chrome_profile`), empowering default Single Mode CLI and Superagent worktrees to use browser automation natively.
+- Added browser testing tools (`control_chrome_cdp`, `control_chrome_vision`, `playwright_screenshot`, `screenshot`) to the `software-tester` subagent toolset.
+- Added process management tools (`list_running_chrome`, `close_chrome_profile`) to the `chrome-agent` subagent toolset.
+- Added `remoteDebuggingPort` parameter to `launch_chrome_profile` so Chrome can be launched in debug mode (e.g. port 9222) directly from tools without manual flags.
+
+### Fixed
+- Fixed orphaned `BROWSER_CONTROL_RULE` by injecting it into `MASTER_AGENT_SYSTEM_PROMPT` and `SUPERAGENT_SYSTEM_PROMPT`.
+- Updated `basePrompt` in `src/core/config/base.ts` to include browser automation in identity, subagents, logic gates, and tool usage guidelines, preventing the agent from exclusively defaulting to coding or script creation when browser use is requested.
+- Enhanced `CDP_PORT_CLOSED_MSG` with clear, actionable guidance to launch debug Chrome via `launch_chrome_profile(remoteDebuggingPort: 9222)` or `scripts/chrome-debug.bat`.
+
 ## [1.13.4] - 2026-10-09
 ### Cleaned
 - Purged legacy local TencentDB memory gateway directory (`vendor/tencentdb-memory/`) and empty `vendor/` directory (~686 MB freed).
