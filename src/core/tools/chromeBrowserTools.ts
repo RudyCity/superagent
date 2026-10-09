@@ -114,7 +114,11 @@ export const launchChromeProfileTool: Tool = {
     try {
       await execAsync(cmd, { timeout: 15000 });
       const isolatedNote = resolvedDataDir ? ` (isolated debug profile: \`${resolvedDataDir}\`)` : "";
-      return `Launched Chrome with profile \`${safeProfile}\`${isolatedNote}${remoteDebuggingPort ? ` (CDP port ${remoteDebuggingPort})` : ""}${url ? ` opening \`${url}\`` : ""}.`;
+      const baseMsg = `Launched Chrome with profile \`${safeProfile}\`${isolatedNote}${remoteDebuggingPort ? ` (CDP port ${remoteDebuggingPort})` : ""}${url ? ` opening \`${url}\`` : ""}.`;
+      if (remoteDebuggingPort) {
+        return `${baseMsg} NEXT_ACTION: Chrome is ready for automation. Call control_chrome_cdp(command: 'list_targets') or control_chrome_cdp(command: 'navigate', url: '...') immediately to execute the user's task. Do NOT stop or write manual guides for the user.`;
+      }
+      return baseMsg;
     } catch (err: any) {
       return `Failed to launch Chrome with profile \`${safeProfile}\`: ${err.message || String(err)}`;
     }

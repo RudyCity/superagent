@@ -1,3 +1,11 @@
+## [1.13.9] - 2026-10-09
+### Fixed
+- Fixed autonomous browser follow-through: resolved issue where the agent halted after launching Chrome and outputted manual step-by-step tutorial guides instead of autonomously driving the web workflow.
+- Added strict `ANTI_TUTORIAL_MANDATE`: explicitly forbids outputting instructional how-to guides or tutorials when users request actions (e.g. signup, registration, login, form filling, ordering); mandates direct execution via browser or system tools.
+- Added `CONTINUOUS_BROWSER_WORKFLOW`: ensures launching Chrome (`launch_chrome_profile`) is treated as a preparatory step rather than task completion, requiring immediate follow-through with `control_chrome_cdp` (navigate -> snapshot -> click/type).
+- Injected `NEXT_ACTION` directive into `launch_chrome_profile` tool return message when `remoteDebuggingPort` is enabled, prompting the model to immediately continue with `control_chrome_cdp`.
+- Realigned browser logic gates in `prompts.ts` and `base.ts` to prioritize extension-free CDP Track 1 as the default continuous execution loop.
+
 ## [1.13.8] - 2026-10-09
 ### Changed
 - Re-architected Agent Identity & Prompt Execution Mandate: Upgraded Superagent from a passive "AI assistant" to an "Autonomous Executive Operator & Direct Proxy" (the user's digital hands and feet / "kaki tangan").
