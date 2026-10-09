@@ -1,3 +1,13 @@
+## [1.13.7] - 2026-10-09
+### Fixed
+- Fixed Chrome singleton lockup on Windows: `launch_chrome_profile` automatically creates and uses an isolated user-data-dir (`~/.superagent-r/chrome-debug-profile`) with `--remote-allow-origins=*` when `remoteDebuggingPort` is provided, preventing Chrome from delegating to existing processes and discarding the debug port.
+- Prevented destructive process killing: Removed `taskkill /F /IM chrome.exe` from `scripts/chrome-debug.bat` and updated system prompts/error messages to strictly forbid killing user Chrome processes.
+- Added auto-launch capability to `control_chrome_cdp`: If port 9222 is closed when CDP commands run, `ensureCdpRunning` automatically starts Chrome in the isolated debug profile without manual intervention or test failures.
+- Fixed MSYS2 argument mangling on Windows: Added `MSYS_NO_PATHCONV: "1"` and `MSYS2_ARG_CONV_EXCL: "*"` in `augmentWindowsEnvPath` to prevent Git Bash from converting Windows slash flags (e.g. `/F`, `/IM`, `/c`) into invalid drive letters.
+- Fixed synthetic message and loop poisoning: Changed `role` of `[SYS]` continuation nudges and `RealtimeAdvisor` warnings in `LoopIterationProcessor` from `user` to `system`, and filtered synthetic alert prefixes from conversation `userMessages` to prevent session title and transcript corruption.
+- Added infinite loop breaker in `RealtimeAdvisor`: Pauses execution if tool errors reach `baseErrorThreshold + 3` (8 consecutive errors) rather than cycling endless warning nudges.
+- Added automatic 10 MB log rotation to `writeToLogFile` in `src/core/agent.ts` to prevent unbounded log growth and synchronous blocking.
+
 ## [1.13.6] - 2026-10-09
 ### Fixed
 - Fixed OpenAlex search error in `search_journal` tool by correcting pagination query parameter from `limit` to `per-page` (preventing HTTP 400 Bad Request rejection).
