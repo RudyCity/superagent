@@ -547,6 +547,9 @@ export class MessageBuilder {
                 cleanedResult = cleanedResult.replace(vm.fullMatch, `[Image (${vm.mimeType}) attached as a vision image part]`);
               }
             }
+          } else {
+            const dataUriRegex = /data:(image\/[a-zA-Z+.-]+);base64,([a-zA-Z0-9+/=]+(?:\r?\n)?[a-zA-Z0-9+/=]*)/g;
+            cleanedResult = cleanedResult.replace(dataUriRegex, `[Image ($1) omitted - model does not support vision]`);
           }
 
           contentParts.push({

@@ -28,3 +28,9 @@ scratch/
 services/omniparser/weights/
 services/omniparser/__pycache__/
 services/omniparser/util/__pycache__/
+
+# Screenshots
+*screenshot_*.png
+cdp_screenshot_*.png
+screenshots/
+

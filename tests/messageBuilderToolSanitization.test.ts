@@ -95,4 +95,39 @@ describe("MessageBuilder tool sequence sanitization", () => {
       expect(assistantContent.some((p: any) => p.type === "tool-call")).toBe(false);
     }
   });
+
+  it("should omit raw base64 data URIs in tool results when model does not support vision", () => {
+    const coreMessages: CoreMessage[] = [];
+    const mockAgent = {
+      conversation: {
+        getMessages: () => [
+          {
+            role: "assistant",
+            content: "inspecting",
+            toolCalls: [{ id: "call_1", name: "control_chrome_cdp", args: {} }],
+          },
+          {
+            role: "tool",
+            toolResults: [
+              {
+                toolCallId: "call_1",
+                name: "control_chrome_cdp",
+                result: "screenshot captured:\ndata:image/png;base64,iVBORw0KGgo=",
+              },
+            ],
+          },
+        ],
+      },
+      writeToLogFile: () => {},
+    } as any;
+
+    (messageBuilder as any).buildPlaintextMessages(mockAgent, coreMessages, true, "senopati-1", false);
+
+    const toolMsg = coreMessages.find((m) => m.role === "tool");
+    expect(toolMsg).toBeDefined();
+    const parts = toolMsg!.content as any[];
+    expect(parts[0].result).toContain("[Image (image/png) omitted - model does not support vision]");
+    expect(parts[0].result).not.toContain("data:image/png;base64,iVBORw0KGgo=");
+  });
 });
+

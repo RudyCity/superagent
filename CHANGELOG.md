@@ -1,3 +1,11 @@
+## [1.13.23] - 2026-10-09
+### Added
+- Integrated Visual Screenshot Support in Chrome CDP Automation: Enhanced `control_chrome_cdp` (`src/core/tools/chromeCdpTools.ts`, `src/core/tools/chromeCdpScreenshot.ts`) so CDP operations capture visual screenshots in addition to DOM analysis:
+  - Automated Navigation Screenshot: `navigate` command now automatically captures a visual screenshot upon page ready, saves the PNG to disk (`cdp_screenshot_<timestamp>.png` or custom `outputPath`), and returns a vision data URI (`data:image/png;base64,...`) alongside the interactive elements snapshot (can be opted out via `screenshot: false`).
+  - Action Visual Feedback: Added `screenshot: true` option to `click`, `type`, `snapshot`, `wait_for`, and `evaluate` commands, capturing and attaching the updated visual page state to confirm action results.
+  - Disk-Backed Screenshot Command: Updated `screenshot` command to save captured screenshots to disk and return structured size, file path, and vision data URI instead of dumping raw unformatted base64.
+  - Multimodal Vision and Context Guarding: Enhanced `MessageBuilder` (`src/core/agent/MessageBuilder.ts`) to cleanly strip large base64 data URIs for non-vision models to prevent prompt bloat while converting them into multimodal vision blocks for vision-capable models.
+
 ## [1.13.22] - 2026-10-09
 ### Fixed
 - Tunnel ESC Menu Activation Restricted to Muse Mode: Fixed an issue where pressing the ESC key in the terminal chat input opened the inline Tunnel Menu dialog whenever any background Cloudflare quick tunnel process was active, even when operating in standard mode. Guarded `handleTunnelMenuEscape` in `src/app.tsx` and the `onEscapeKey` prop in `src/components/ChatTextInput.tsx` so the menu is strictly active only when Muse Watch mode (`isMuseWatcherActive()`) or Muse Remote Runner mode (`isMuseRunnerActive()`) is enabled.

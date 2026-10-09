@@ -30,7 +30,13 @@ import {
   formatSnapshotEntry,
   formatSnapshotDiff,
   resolveActionSelector,
+  waitForInPage,
 } from "./chromeCdpHelpers.js";
+import {
+  captureCdpScreenshot,
+  formatScreenshotResult,
+  attachScreenshotIfRequested,
+} from "./chromeCdpScreenshot.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -452,34 +458,6 @@ async function cdpSend(target: CdpTarget, method: string, params: Record<string,
   });
 }
 
-async function waitForInPage(
-  target: CdpTarget,
-  opts: { selector?: string; text?: string; timeoutMs: number }
-): Promise<{
-  ok: boolean;
-  kind?: string;
-  selector?: string;
-  text?: string;
-  tag?: string;
-  foundText?: string;
-  reason?: string;
-}> {
-  const res: any = await cdpSend(target, "Runtime.evaluate", {
-    expression: buildWaitForJs(opts),
-    awaitPromise: true,
-    returnByValue: true,
-  });
-  const value = res && res.result ? res.result.value : undefined;
-  const raw = typeof value === "string" ? value : JSON.stringify(value);
-  try {
-    const o = JSON.parse(raw);
-    if (o && typeof o === "object") return o;
-  } catch {
-    /* fall through */
-  }
-  return { ok: false, reason: `unexpected wait_for result: ${truncate(raw, 200)}` };
-}
-
 export const _cdpTestHooks = {
   connectionCount: (): number => cdpConnections.size,
   closeAll: (): void => {
@@ -505,10 +483,12 @@ export const controlChromeCdpTool: Tool = {
     "Control the user's REAL Chrome browser directly via Chrome Remote Debugging (CDP) at http://127.0.0.1:9222 — no extension required and no isolated background tab. " +
     "REQUIRES Chrome to be running with --remote-debugging-port=9222 (close ALL Chrome windows, then reopen Chrome from the taskbar shortcut). " +
     "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, screenshot, pdf, get_cookies. " +
-    "Convenience: 'navigate' automatically waits for page ready and returns an immediate interactive element snapshot in a single turn. " +
+    "Convenience: 'navigate' automatically waits for page ready, captures a visual screenshot saved to disk (with vision data URL), and returns an interactive element snapshot. " +
+    "'screenshot' captures full or viewport screenshots saved to disk and returns vision data URL. " +
+    "Actions like click, type, snapshot, evaluate, and wait_for also support optional 'screenshot: true' to capture visual feedback after the action. " +
     "'read_page' extracts full visible body text, headings, alerts/status banners, and email contents. " +
     "'extract_links' extracts hyperlinks with an optional keyword/pattern filter (e.g. 'verify', 'confirm', 'token'). " +
-    "Arguments like url, index, text, selector, pattern, expression can be provided directly at top-level or inside payload.",
+    "Arguments like url, index, text, selector, pattern, expression, screenshot, outputPath, fullPage can be provided directly at top-level or inside payload.",
   parameters: {
     type: "object",
     properties: {
@@ -536,7 +516,7 @@ export const controlChromeCdpTool: Tool = {
       payload: {
         type: "string",
         description:
-          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://..."}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3} or {"selector": "#login"}. type: {"index": 2, "text": "hello"}.',
+          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "screenshot": true} or {"selector": "#login"}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
       },
       url: {
         type: "string",
@@ -561,6 +541,27 @@ export const controlChromeCdpTool: Tool = {
       native: {
         type: "boolean",
         description: "Optional top-level flag to dispatch native CDP Input keystrokes in addition to synthetic events.",
+      },
+      screenshot: {
+        type: "boolean",
+        description: "Optional top-level flag to capture a visual screenshot alongside the action (saved to disk and returned as vision data URL). Defaults to true for navigate; optional for click, type, snapshot, evaluate, wait_for.",
+      },
+      outputPath: {
+        type: "string",
+        description: "Optional custom file path to save the screenshot image PNG. Defaults to cdp_screenshot_<timestamp>.png in current directory.",
+      },
+      fullPage: {
+        type: "boolean",
+        description: "Optional flag to capture full scrollable page beyond current viewport (default false).",
+      },
+      format: {
+        type: "string",
+        enum: ["png", "jpeg", "webp"],
+        description: "Optional image format for screenshot (default 'png').",
+      },
+      quality: {
+        type: "number",
+        description: "Optional compression quality for jpeg/webp screenshot (0-100).",
       },
       targetId: {
         type: "string",
@@ -600,6 +601,14 @@ export const controlChromeCdpTool: Tool = {
       "native",
       "wait_for_elements",
       "auto_snapshot",
+      "screenshot",
+      "auto_screenshot",
+      "outputPath",
+      "output_path",
+      "fullPage",
+      "full_page",
+      "format",
+      "quality",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) {
@@ -698,7 +707,8 @@ export const controlChromeCdpTool: Tool = {
               /* keep navigate response clean even if auto-snapshot errors */
             }
           }
-          return `control_chrome_cdp: navigated tab '${truncate(target.title, 80)}' to ${url}${snapSuffix}`;
+          const baseNavResult = `control_chrome_cdp: navigated tab '${truncate(target.title, 80)}' to ${url}${snapSuffix}`;
+          return await attachScreenshotIfRequested(cdpSend, target, payload, baseNavResult, true);
         }
         case "evaluate": {
           const expression = String(payload.expression || "");
@@ -711,7 +721,8 @@ export const controlChromeCdpTool: Tool = {
           });
           const value = res && res.result ? res.result.value : undefined;
           const out = typeof value === "string" ? value : JSON.stringify(value);
-          return `control_chrome_cdp: evaluate result: ${truncate(out, 4000)}`;
+          const baseResult = `control_chrome_cdp: evaluate result: ${truncate(out, 4000)}`;
+          return await attachScreenshotIfRequested(cdpSend, target, payload, baseResult, false);
         }
         case "snapshot": {
           const target = await pickTarget(targetId);
@@ -764,10 +775,12 @@ export const controlChromeCdpTool: Tool = {
           const title = `'${truncate(target.title, 60)}'`;
 
           if (diff) {
-            return formatSnapshotDiff(title, entries, prev, compact);
+            const diffResult = formatSnapshotDiff(title, entries, prev, compact);
+            return await attachScreenshotIfRequested(cdpSend, target, payload, diffResult, false);
           }
           if (entries.length === 0) {
-            return "control_chrome_cdp: snapshot found no interactive elements on this page.";
+            const emptyResult = "control_chrome_cdp: snapshot found no interactive elements on this page.";
+            return await attachScreenshotIfRequested(cdpSend, target, payload, emptyResult, false);
           }
           const isLimited = (payload.max_elements !== undefined && payload.max_elements !== "") || fresh.length > maxElements;
           let contextHeader = "";
@@ -779,14 +792,14 @@ export const controlChromeCdpTool: Tool = {
             if (aList) parts.push(`Alerts/Status: ${aList}`);
             if (parts.length > 0) contextHeader = "\n" + parts.join("\n");
           }
-          return (
+          const snapshotResult =
             `control_chrome_cdp: snapshot of ${title} - ${entries.length} interactive element(s)` +
             (compact ? " (compact)" : "") +
             (isLimited ? ` (limited to ${maxElements})` : "") +
             `.\n` +
             (contextHeader ? `${contextHeader}\n` : "") +
-            `Use click/type with {"index": N}.\n${entries.map((e) => formatSnapshotEntry(e, compact)).join("\n")}`
-          );
+            `Use click/type with {"index": N}.\n${entries.map((e) => formatSnapshotEntry(e, compact)).join("\n")}`;
+          return await attachScreenshotIfRequested(cdpSend, target, payload, snapshotResult, false);
         }
         case "read_page": {
           const target = await pickTarget(targetId);
@@ -844,7 +857,7 @@ export const controlChromeCdpTool: Tool = {
           if ("error" in resolved) return resolved.error;
           const clickWaitMs = parseTimeoutMs(payload.timeout_ms, 10000);
           if (clickWaitMs > 0) {
-            const w = await waitForInPage(target, { selector: resolved.selector, timeoutMs: clickWaitMs });
+            const w = await waitForInPage(cdpSend, target, { selector: resolved.selector, timeoutMs: clickWaitMs });
             if (!w.ok) {
               return (
                 `control_chrome_cdp: click timed out after ${clickWaitMs}ms waiting for '${resolved.selector}' to appear and become visible. ` +
@@ -860,7 +873,8 @@ export const controlChromeCdpTool: Tool = {
           const parsed = parseActionResult(typeof value === "string" ? value : JSON.stringify(value));
           if (!parsed.ok) return `control_chrome_cdp: click failed - ${parsed.reason || "unknown reason"}.`;
           const textStr = parsed.text ? ` "${parsed.text}"` : "";
-          return `control_chrome_cdp: clicked <${parsed.tag}>${textStr}.`;
+          const clickResult = `control_chrome_cdp: clicked <${parsed.tag}>${textStr}.`;
+          return await attachScreenshotIfRequested(cdpSend, target, payload, clickResult, false);
         }
         case "type": {
           const text = String(payload.text ?? "");
@@ -873,7 +887,7 @@ export const controlChromeCdpTool: Tool = {
           if ("error" in resolved) return resolved.error;
           const typeWaitMs = parseTimeoutMs(payload.timeout_ms, 10000);
           if (typeWaitMs > 0) {
-            const w = await waitForInPage(target, { selector: resolved.selector, timeoutMs: typeWaitMs });
+            const w = await waitForInPage(cdpSend, target, { selector: resolved.selector, timeoutMs: typeWaitMs });
             if (!w.ok) {
               return (
                 `control_chrome_cdp: type timed out after ${typeWaitMs}ms waiting for '${resolved.selector}' to appear and become visible. ` +
@@ -893,7 +907,8 @@ export const controlChromeCdpTool: Tool = {
               await cdpSend(target, "Input.insertText", { text });
             } catch (e) {}
           }
-          return `control_chrome_cdp: typed into <${parsed.tag}>: "${truncate(parsed.typed || text, 80)}".`;
+          const typeResult = `control_chrome_cdp: typed into <${parsed.tag}>: "${truncate(parsed.typed || text, 80)}".`;
+          return await attachScreenshotIfRequested(cdpSend, target, payload, typeResult, false);
         }
         case "wait_for": {
           const selector = String(payload.selector || "");
@@ -903,7 +918,7 @@ export const controlChromeCdpTool: Tool = {
           }
           const waitMs = parseTimeoutMs(payload.timeout_ms, 15000);
           const target = await pickTarget(targetId);
-          const w = await waitForInPage(target, {
+          const w = await waitForInPage(cdpSend, target, {
             selector: selector || undefined,
             text: text || undefined,
             timeoutMs: waitMs,
@@ -915,14 +930,22 @@ export const controlChromeCdpTool: Tool = {
             w.kind === "text"
               ? `text "${w.text}"`
               : `selector '${selector}'` + (w.tag ? ` (<${w.tag}>${w.foundText ? ` "${w.foundText}"` : ""})` : "");
-          return `control_chrome_cdp: wait_for matched ${what}.`;
+          const waitResult = `control_chrome_cdp: wait_for matched ${what}.`;
+          return await attachScreenshotIfRequested(cdpSend, target, payload, waitResult, false);
         }
         case "screenshot": {
           const target = await pickTarget(targetId);
-          const res: any = await cdpSend(target, "Page.captureScreenshot", { format: "png" });
-          const data = String((res && res.data) || "");
-          if (!data) return "control_chrome_cdp: screenshot returned no data.";
-          return `control_chrome_cdp: PNG screenshot captured (${data.length} base64 chars):\n${data}`;
+          const outPath = payload.outputPath || payload.output_path;
+          const format = payload.format as any;
+          const quality = payload.quality !== undefined ? Number(payload.quality) : undefined;
+          const fullPage = Boolean(payload.full_page || payload.fullPage);
+          const shot = await captureCdpScreenshot(cdpSend, target, {
+            outputPath: outPath ? String(outPath) : undefined,
+            format,
+            quality,
+            fullPage,
+          });
+          return formatScreenshotResult(shot);
         }
         case "pdf": {
           const target = await pickTarget(targetId);

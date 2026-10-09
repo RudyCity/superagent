@@ -2,6 +2,8 @@ import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import { createServer, Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { AddressInfo } from "net";
+import * as path from "path";
+import { existsSync, unlinkSync } from "fs";
 import { controlChromeCdpTool, _cdpTestHooks } from "../src/core/tools/chromeCdpTools.js";
 import { controlChromeVisionTool } from "../src/core/tools/chromeVisionTools.js";
 
@@ -246,9 +248,57 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(res).toContain("mock-title");
   });
 
-  test("screenshot returns base64 PNG data", async () => {
-    const res = await controlChromeCdpTool.execute({ command: "screenshot" });
-    expect(res).toContain("iVBORw0KGgo=");
+  test("screenshot returns base64 PNG data, dataUrl, and saves to disk", async () => {
+    const tmpOut = path.join(process.cwd(), `test_cdp_shot_${Date.now()}.png`);
+    try {
+      const res = await controlChromeCdpTool.execute({
+        command: "screenshot",
+        payload: JSON.stringify({ outputPath: tmpOut }),
+      });
+      expect(res).toContain("screenshot captured");
+      expect(res).toContain("saved to");
+      expect(res).toContain(tmpOut);
+      expect(res).toContain("data:image/png;base64,iVBORw0KGgo=");
+      expect(existsSync(tmpOut)).toBe(true);
+    } finally {
+      if (existsSync(tmpOut)) unlinkSync(tmpOut);
+    }
+  });
+
+  test("navigate automatically captures screenshot unless disabled", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "navigate",
+      payload: JSON.stringify({ url: "https://example.com" }),
+    });
+    expect(res).toContain("navigated tab 'Mock Tab' to https://example.com");
+    expect(res).toContain("Screenshot saved:");
+    expect(res).toContain("data:image/png;base64,iVBORw0KGgo=");
+
+    const resNoShot = await controlChromeCdpTool.execute({
+      command: "navigate",
+      payload: JSON.stringify({ url: "https://example.com", screenshot: false }),
+    });
+    expect(resNoShot).toContain("navigated tab 'Mock Tab' to https://example.com");
+    expect(resNoShot).not.toContain("Screenshot saved:");
+  });
+
+  test("click and type with screenshot: true captures visual feedback", async () => {
+    await controlChromeCdpTool.execute({ command: "snapshot" });
+    const clickRes = await controlChromeCdpTool.execute({
+      command: "click",
+      payload: JSON.stringify({ index: 0, screenshot: true }),
+    });
+    expect(clickRes).toContain("clicked <button>");
+    expect(clickRes).toContain("Screenshot saved:");
+    expect(clickRes).toContain("data:image/png;base64,iVBORw0KGgo=");
+
+    const typeRes = await controlChromeCdpTool.execute({
+      command: "type",
+      payload: JSON.stringify({ index: 1, text: "query", screenshot: true }),
+    });
+    expect(typeRes).toContain("typed into <input>");
+    expect(typeRes).toContain("Screenshot saved:");
+    expect(typeRes).toContain("data:image/png;base64,iVBORw0KGgo=");
   });
 
   test("pdf returns base64 data", async () => {

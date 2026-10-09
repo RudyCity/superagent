@@ -516,3 +516,36 @@ export function resolveActionSelector(
   }
   return { selector };
 }
+
+/**
+ * Polls in-page for selector or text appearance via evaluate.
+ */
+export async function waitForInPage(
+  cdpSend: (target: CdpTarget, method: string, params?: Record<string, unknown>) => Promise<any>,
+  target: CdpTarget,
+  opts: { selector?: string; text?: string; timeoutMs: number }
+): Promise<{
+  ok: boolean;
+  kind?: string;
+  selector?: string;
+  text?: string;
+  tag?: string;
+  foundText?: string;
+  reason?: string;
+}> {
+  const res: any = await cdpSend(target, "Runtime.evaluate", {
+    expression: buildWaitForJs(opts),
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  const value = res && res.result ? res.result.value : undefined;
+  const raw = typeof value === "string" ? value : JSON.stringify(value);
+  try {
+    const o = JSON.parse(raw);
+    if (o && typeof o === "object") return o;
+  } catch {
+    /* fall through */
+  }
+  return { ok: false, reason: `unexpected wait_for result: ${raw.slice(0, 200)}` };
+}
+
