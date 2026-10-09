@@ -1,3 +1,12 @@
+## [1.13.14] - 2026-10-09
+### Optimized
+- Navigation Auto-Wait and Single-Turn Auto-Snapshot in `control_chrome_cdp`: `navigate` command now polls `document.readyState` until interactive/complete (up to 3000ms) and automatically attaches the compact snapshot of interactive elements directly in the response, eliminating redundant round-trips and allowing agents to navigate and inspect pages in a single turn.
+- Permissive Argument and Payload Parsing: `control_chrome_cdp` now accepts `payload` as either an object or JSON string, and automatically parses convenience top-level parameters (`url`, `index`, `text`, `selector`, `expression`, `timeout_ms`, etc.), eliminating stringification friction and schema mismatch errors.
+- Dynamic SPA Element Polling in `snapshot`: Added configurable in-page polling (`wait_for_elements`) to `snapshot` so pages with client-side JavaScript rendering (React, Next.js, Vue) wait for interactive elements to mount rather than immediately returning an empty list.
+- Enhanced Compact Form Element Identifiers: Form inputs, textareas, buttons, and selects in compact snapshot view now display `id`, `name`, and non-text `type` attributes (e.g. `[1] <input> [type="password" id="pass"]`), allowing LLMs to pinpoint input targets immediately without verbose DOM inspection.
+- Auto-Tab Recovery: `pickTarget` automatically calls `/json/new` to create a new page tab when Chrome is running with zero open page targets, avoiding hard failure.
+- Modularized CDP Automation Helpers: Extracted DOM extraction scripts, formatting helpers, and in-page action builders into `src/core/tools/chromeCdpHelpers.ts`, keeping both `chromeCdpTools.ts` and `chromeCdpHelpers.ts` strictly under 1000 lines.
+
 ## [1.13.13] - 2026-10-09
 ### Fixed
 - Fixed `describe_tool` suggestions for unknown tools: Combined fuzzy subsequence scoring with tokenized keyword matching in `runDescribeTool` so unknown tool inputs with common prefixes/tokens (e.g., `background_unknown_xyz`) suggest matching tools (e.g., `run_background_process`) via "Did you mean ...?" while retaining clean rejection for arbitrary garbage.
