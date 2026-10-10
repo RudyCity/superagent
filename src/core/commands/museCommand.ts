@@ -470,13 +470,36 @@ export const museCommand: SlashCommand = {
       return;
     }
 
-    const { isMuseWatcherActive } = await import("../remoteAgent/museWatcher.js");
+    const { isMuseWatcherActive, sendMuseSteerMessage } = await import("../remoteAgent/museWatcher.js");
     if (isMuseWatcherActive()) {
-      ctx.addLine({
-        type: "system",
-        content: "[Muse Watch] Watch mode is currently active (Superagent is controlled by Muse). You can instruct Muse directly via Telegram, or run '/muse watch stop' to return to manual control.",
-        timestamp: now,
-      });
+      let sentBrain = false;
+      try {
+        sentBrain = await sendMuseSteerMessage(rawTrimmed);
+      } catch {}
+
+      let sentTgText = false;
+      const cfg = loadRemoteAgentConfig();
+      if (cfg.botToken && cfg.groupId) {
+        try {
+          const { MuseClient } = await import("../remoteAgent/museClient.js");
+          const client = new MuseClient(cfg);
+          sentTgText = await client.sendMessage(cfg.groupId, rawTrimmed);
+        } catch {}
+      }
+
+      if (sentBrain || sentTgText) {
+        ctx.addLine({
+          type: "system",
+          content: `[Muse Watch] Delivered instruction to Telegram & Muse: "${rawTrimmed}"`,
+          timestamp: now,
+        });
+      } else {
+        ctx.addLine({
+          type: "error",
+          content: "[Muse Watch] Watch mode is active, but failed to deliver message to Telegram or Muse.",
+          timestamp: now,
+        });
+      }
       return;
     }
 

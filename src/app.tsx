@@ -1098,11 +1098,42 @@ export function App({
       });
 
       if (isMuseWatcherActive()) {
-        addLine({
-          type: "system",
-          content: "[Muse Watch] Superagent is currently controlled by Muse in Watch Mode. You can send instructions directly to Muse via Telegram, or run '/muse watch stop' to return to manual control.",
-          timestamp: Date.now(),
-        });
+        try {
+          const { loadRemoteAgentConfig } = await import("./core/remoteAgent/config.js");
+          const { sendMuseSteerMessage } = await import("./core/remoteAgent/museWatcher.js");
+          const cfg = loadRemoteAgentConfig();
+
+          const sentBrain = await sendMuseSteerMessage(trimmed);
+
+          let sentTgText = false;
+          if (cfg.botToken && cfg.groupId) {
+            try {
+              const { MuseClient } = await import("./core/remoteAgent/museClient.js");
+              const client = new MuseClient(cfg);
+              sentTgText = await client.sendMessage(cfg.groupId, trimmed);
+            } catch {}
+          }
+
+          if (sentBrain || sentTgText) {
+            addLine({
+              type: "system",
+              content: `[Muse Watch] Delivered message to Telegram & Muse: "${trimmed}"`,
+              timestamp: Date.now(),
+            });
+          } else {
+            addLine({
+              type: "error",
+              content: `[Muse Watch] Failed to deliver message to Telegram or Muse.`,
+              timestamp: Date.now(),
+            });
+          }
+        } catch (err: any) {
+          addLine({
+            type: "error",
+            content: `[Muse Watch] Error sending message: ${err?.message || err}`,
+            timestamp: Date.now(),
+          });
+        }
         return;
       }
 
