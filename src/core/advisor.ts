@@ -15,6 +15,7 @@ import {
   generateCycleSuggestion,
   generateRecoverySuggestion,
   detectCycle,
+  extractCycleTargetDetails,
 } from "./advisorHelpers.js";
 
 export type { HistoryEntry, ReadTarget };
@@ -186,10 +187,11 @@ export class RealtimeAdvisor {
   /**
    * Returns contextual auto-self-correction skill instructions.
    */
-  public getAutoCorrectionSkillHint(action: AdvisorAction, toolNames: string[] = []): string {
+  public getAutoCorrectionSkillHint(action: AdvisorAction, toolNames: string[] = [], targetDetails?: string): string {
     if (action.action === "pause_execution") {
       if (toolNames.some(t => t.includes("chrome") || t.includes("browser"))) {
-        return "[SYSTEM AUTO-CORRECTION SKILL]: Browser automation loop limit reached. Stop repeating the same page actions. Summarize test results, proceed to next verification target, or close audit.";
+        const detailSuffix = targetDetails ? ` on ${targetDetails}` : "";
+        return `[SYSTEM AUTO-CORRECTION SKILL]: Browser automation loop limit reached${detailSuffix}. Stop repeating the same page actions. Summarize test results, proceed to next verification target, or close audit.`;
       }
       return "[SYSTEM AUTO-CORRECTION SKILL]: Loop limit reached. STOP repeating current calls. Switch to 'systematic-debugging' skill: 1) Re-read file range using 'read', 2) Check parameters & paths, 3) Modify strategy before executing tools.";
     }
@@ -198,7 +200,8 @@ export class RealtimeAdvisor {
         return "[SYSTEM AUTO-CORRECTION SKILL]: Edit pattern warning. Re-read target lines using 'read' to verify exact string match and whitespace before re-applying edit.";
       }
       if (toolNames.some(t => t.includes("chrome") || t.includes("browser"))) {
-        return "[SYSTEM AUTO-CORRECTION SKILL]: Browser action warning. Target element or page state is unchanged. Navigate to a different page or conclude verification.";
+        const detailSuffix = targetDetails ? ` on ${targetDetails}. Do NOT interact with ${targetDetails} again.` : ".";
+        return `[SYSTEM AUTO-CORRECTION SKILL]: Browser action warning. Target element or page state is unchanged${detailSuffix} Navigate to a different page, choose another element, or conclude verification.`;
       }
       return "[SYSTEM AUTO-CORRECTION SKILL]: Execution warning triggered. Analyze prior tool output carefully and change parameters or tool selection.";
     }
@@ -345,11 +348,12 @@ export class RealtimeAdvisor {
       if (state.consecutiveSameCallCount >= warningThreshold) {
         const toolNamesList = toolCalls.map(tc => tc.name);
         const toolNames = toolNamesList.join(", ");
+        const targetDetails = extractCycleTargetDetails([currentCallKey]);
 
         if (state.consecutiveSameCallCount >= pauseThreshold) {
           const suggestion = `Execution paused. Modify file contents directly or try a different strategy instead of repeating ${toolNames}.`;
           const message = `Advisor detected an infinite loop of executing the same tool calls (${toolNames}) consecutively ${state.consecutiveSameCallCount} times. Pausing execution. Suggestion: ${suggestion}`;
-          const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "pause_execution" }, toolNamesList);
+          const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "pause_execution" }, toolNamesList, targetDetails);
 
           if (this.enableLogging) {
             logAdvisorEvent({
@@ -379,12 +383,12 @@ export class RealtimeAdvisor {
           }
         }
 
-        const suggestion = generateRecoverySuggestion(toolNamesList, hasError);
+        const suggestion = generateRecoverySuggestion(toolNamesList, hasError, targetDetails);
         const message = hasError
           ? `ADVISOR WARNING: You have executed the exact same tool calls (${toolNames}) consecutively ${state.consecutiveSameCallCount} times, and they returned errors. Do not repeat the same failing actions. Change your approach or inspect your input parameters. Suggestion: ${suggestion}`
           : `ADVISOR WARNING: You have executed the exact same tool calls (${toolNames}) consecutively ${state.consecutiveSameCallCount} times without any state changes. Check if you are stuck in a loop and try a different action. Suggestion: ${suggestion}`;
 
-        const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "warn_agent" }, toolNamesList);
+        const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "warn_agent" }, toolNamesList, targetDetails);
 
         if (this.enableLogging) {
           logAdvisorEvent({
@@ -505,11 +509,11 @@ export class RealtimeAdvisor {
         state.cycleWarningHits++;
         const toolNamesList = cycle.toolNames;
         const toolNames = toolNamesList.join(", ");
-        const suggestion = generateCycleSuggestion(toolNamesList);
+        const suggestion = generateCycleSuggestion(toolNamesList, cycle.targetDetails);
 
         if (cycle.isPause) {
           const message = `Advisor detected an alternating loop repeating the same tool actions (${toolNames}) ${cycle.occurrences} times. Pausing execution. Suggestion: ${suggestion}`;
-          const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "pause_execution" }, toolNamesList);
+          const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "pause_execution" }, toolNamesList, cycle.targetDetails);
 
           if (this.enableLogging) {
             logAdvisorEvent({
@@ -531,7 +535,7 @@ export class RealtimeAdvisor {
           };
         } else {
           const message = `ADVISOR WARNING: You are cycling between repeated tool actions (${toolNames}) across recent steps. Suggestion: ${suggestion}`;
-          const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "warn_agent" }, toolNamesList);
+          const autoCorrectionHint = this.getAutoCorrectionSkillHint({ action: "warn_agent" }, toolNamesList, cycle.targetDetails);
 
           if (this.enableLogging) {
             logAdvisorEvent({

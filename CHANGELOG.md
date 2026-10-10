@@ -1,3 +1,17 @@
+## [1.13.46] - 2026-10-11
+### Added & Enhanced
+- Targeted Advisor Loop Recovery & Actionable Element Guidance (`src/core/advisor.ts`, `src/core/advisorHelpers.ts`):
+  - Added `extractCycleTargetDetails` helper to extract human-readable interaction targets (`element [N]`, `selector '...'`, `url '...'`, `file '...'`) from tool fingerprints in alternating and consecutive loops.
+  - Enhanced `generateCycleSuggestion` and `generateRecoverySuggestion` to inject concrete, actionable negative constraints (e.g. `Do not alternate between the same repeated browser actions on element [31]. Target state is unchanged. Interact with a different element, scroll, or summarize findings`).
+  - Enhanced `getAutoCorrectionSkillHint` across warning and pause thresholds to explicitly warn agents against repeating actions on unchanged target elements.
+- CDP Interactive Snapshot Accessibility & Control Inspection (`src/core/tools/chromeCdpHelpers.ts`):
+  - Expanded `SNAPSHOT_JS` interactive element discovery to capture `[role="combobox"]`, `[role="option"]`, `[role="menuitem"]`, `[role="searchbox"]`, and `[contenteditable="true"]` elements across light DOM and shadow roots.
+  - Added `role`, `disabled`, and `ariaExpanded` extraction to `SnapshotEntry` to expose element accessibility state.
+  - Enhanced `formatSnapshotEntry` in both compact and full modes to render `[role="combobox"]`, `[disabled]`, `[expanded]`, and `[collapsed]` indicators directly in the interactive element index list.
+- Test Coverage & Quality Gates:
+  - Enhanced `tests/advisorLoopDetection.test.ts` with test cases verifying target element extraction and negative constraint suggestion injection during alternating and consecutive loops.
+  - Added `tests/chromeCdpSnapshotAccessibility.test.ts` verifying compact and full snapshot formatting for dropdown buttons, comboboxes, and accessibility state indicators.
+
 ## [1.13.45] - 2026-10-11
 ### Added & Enhanced
 - Muse Watch Mode Formal Task Request Dispatch (`src/core/commands/museCommand.ts`, `src/core/remoteAgent/museWatcher.ts`, `src/core/remoteAgent/museWatcherRegistry.ts`):

@@ -41,6 +41,7 @@ export interface CycleDetectionResult {
   cyclePeriod: number;
   occurrences: number;
   toolNames: string[];
+  targetDetails?: string;
 }
 
 const POLLING_STATUS_ACTIONS = new Set(["list", "status", "report", "logs", "violations"]);
@@ -300,29 +301,82 @@ export function computeResultSignature(toolResults: ToolResult[]): string {
     .join("|");
 }
 
-export function generateCycleSuggestion(toolNames: string[]): string {
+/**
+ * Extracts human-readable target details from a set of callKeys in a cycle
+ * (e.g. element index, selector, target URL, or target file).
+ */
+export function extractCycleTargetDetails(callKeys: string[]): string | undefined {
+  for (const ck of callKeys) {
+    // Check for element index (e.g. "index": 31, \"index\": 31, or index: 31)
+    const indexMatch = ck.match(/\\*"?index\\*"?\s*:\s*(\d+)/i);
+    if (indexMatch) {
+      return `element [${indexMatch[1]}]`;
+    }
+    // Check for CSS selector
+    const selectorMatch = ck.match(/\\*"?selector\\*"?\s*:\s*\\*"?([^"\\{}]+)\\*"?/i);
+    if (selectorMatch) {
+      return `selector '${selectorMatch[1].trim()}'`;
+    }
+    // Check for URL
+    const urlMatch = ck.match(/\\*"?url\\*"?\s*:\s*\\*"?([^"\\{}]+)\\*"?/i);
+    if (urlMatch) {
+      return `url '${urlMatch[1].trim()}'`;
+    }
+    // Check for filePath or TargetFile
+    const fileMatch = ck.match(/\\*"?(?:filePath|TargetFile|path)\\*"?\s*:\s*\\*"?([^"\\{}]+)\\*"?/i);
+    if (fileMatch) {
+      const parts = fileMatch[1].trim().replace(/\\/g, "/").split("/");
+      return `file '${parts[parts.length - 1]}'`;
+    }
+  }
+  return undefined;
+}
+
+export function generateCycleSuggestion(toolNames: string[], targetDetails?: string): string {
   const isBrowser = toolNames.some(t => t.includes("chrome") || t.includes("browser") || t.includes("url"));
   if (isBrowser) {
+    if (targetDetails) {
+      return `Do not alternate between the same repeated browser actions on ${targetDetails}. Target state is unchanged. Interact with a different element, scroll, or summarize findings.`;
+    }
     return "Do not alternate between the same repeated browser actions. Try a different interaction or summarize your findings.";
   }
   const isSearchOrRead = toolNames.some(t => t.includes("read") || t.includes("grep") || t.includes("find") || t.includes("list") || t.includes("view"));
   if (isSearchOrRead) {
+    if (targetDetails) {
+      return `Do not alternate between repeated search or read calls on ${targetDetails}. Synthesize collected findings or change your search criteria.`;
+    }
     return "Do not alternate between repeated search or read calls. Synthesize collected findings or change your search criteria.";
   }
   const isEdit = toolNames.some(t => WRITE_TOOLS.has(t.toLowerCase()));
   if (isEdit) {
+    if (targetDetails) {
+      return `Do not alternate between repeated failing edits on ${targetDetails}. Inspect file contents directly before attempting another edit.`;
+    }
     return "Do not alternate between repeated failing edits. Inspect file contents directly before attempting another edit.";
+  }
+  if (targetDetails) {
+    return `Do not alternate between repeated tool calls on ${targetDetails}. Change strategy, use alternative tools, or conclude your task.`;
   }
   return "Do not alternate between repeated tool calls. Change strategy, use alternative tools, or conclude your task.";
 }
 
-export function generateRecoverySuggestion(toolNames: string[], hasError: boolean): string {
+export function generateRecoverySuggestion(toolNames: string[], hasError: boolean, targetDetails?: string): string {
   if (toolNames.some(t => t.includes("chrome") || t.includes("browser"))) {
+    if (targetDetails) {
+      return hasError
+        ? `Check Chrome connection, target tab, or selector syntax before retrying browser action on ${targetDetails}.`
+        : `Page content or state has not changed after interacting with ${targetDetails}. Do not repeat action on ${targetDetails}. Try navigating to another URL, interacting with a different element, or summarizing audit findings.`;
+    }
     return hasError
       ? "Check Chrome connection, target tab, or selector syntax before retrying browser action."
       : "Page content or state has not changed. Try navigating to another URL, interacting with a different element, or summarizing audit findings.";
   }
   if (toolNames.includes("edit") || toolNames.includes("replace_file_content")) {
+    if (targetDetails) {
+      return hasError
+        ? `Check exact string match or line range using 'read' before editing ${targetDetails}.`
+        : `The file ${targetDetails} might already contain the requested changes. Verify file content using 'read'.`;
+    }
     return hasError
       ? "Check exact string match or line range using 'read' before editing."
       : "The file might already contain the requested changes. Verify file content using 'read'.";
@@ -332,6 +386,9 @@ export function generateRecoverySuggestion(toolNames: string[], hasError: boolea
   }
   if (toolNames.includes("manage_subagents")) {
     return "Use 'schedule' or allow subagent background execution to proceed without continuous polling.";
+  }
+  if (targetDetails) {
+    return `Try an alternative tool or read relevant context before repeating the action on ${targetDetails}.`;
   }
   return "Try an alternative tool or read relevant context before repeating the action.";
 }
@@ -390,12 +447,14 @@ export function detectCycle(
           toolNamesSet.add(name);
         }
       }
+      const targetDetails = extractCycleTargetDetails(Array.from(periodKeys));
       return {
         detected: true,
         isPause: occurrences >= pauseThreshold,
         cyclePeriod: P,
         occurrences,
         toolNames: Array.from(toolNamesSet),
+        targetDetails,
       };
     }
   }

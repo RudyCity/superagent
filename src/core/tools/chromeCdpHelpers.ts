@@ -21,6 +21,9 @@ export interface SnapshotEntry {
   id?: string;
   name?: string;
   selector: string;
+  role?: string;
+  disabled?: boolean;
+  ariaExpanded?: boolean;
 }
 
 export interface PageOverview {
@@ -53,7 +56,7 @@ export const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
     if (!root) return;
     try {
       const found = root.querySelectorAll(
-        'button, a, input, select, textarea, [role="button"], [role="link"], [role="textbox"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [onclick], summary'
+        'button, a, input, select, textarea, [role="button"], [role="link"], [role="textbox"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="combobox"], [role="option"], [role="menuitem"], [role="searchbox"], [contenteditable="true"], [onclick], summary'
       );
       for (let i = 0; i < found.length; i++) list.push(found[i]);
     } catch (e) {}
@@ -100,17 +103,26 @@ export const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
     const t = (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || '').replace(/\\s+/g, ' ').trim();
     return t.slice(0, 140);
   }
-  const elements = els.filter(visible).slice(0, 120).map((el, i) => ({
-    index: i,
-    tag: el.tagName.toLowerCase(),
-    text: label(el),
-    type: el.getAttribute('type') || undefined,
-    placeholder: el.getAttribute('placeholder') || undefined,
-    ariaLabel: el.getAttribute('aria-label') || undefined,
-    id: el.id || undefined,
-    name: el.getAttribute('name') || undefined,
-    selector: genSelector(el),
-  }));
+  const elements = els.filter(visible).slice(0, 120).map((el, i) => {
+    const roleAttr = el.getAttribute('role') || undefined;
+    const isDis = el.disabled || el.getAttribute('aria-disabled') === 'true' || undefined;
+    const expAttr = el.getAttribute('aria-expanded');
+    const ariaExp = expAttr === 'true' ? true : expAttr === 'false' ? false : undefined;
+    return {
+      index: i,
+      tag: el.tagName.toLowerCase(),
+      text: label(el),
+      type: el.getAttribute('type') || undefined,
+      placeholder: el.getAttribute('placeholder') || undefined,
+      ariaLabel: el.getAttribute('aria-label') || undefined,
+      id: el.id || undefined,
+      name: el.getAttribute('name') || undefined,
+      selector: genSelector(el),
+      role: roleAttr,
+      disabled: isDis,
+      ariaExpanded: ariaExp,
+    };
+  });
 
   const headings = Array.from(document.querySelectorAll('h1, h2, [role="heading"]'))
     .map(h => ({ tag: h.tagName.toLowerCase(), text: (h.innerText || '').replace(/\\s+/g, ' ').trim() }))
@@ -445,21 +457,27 @@ export function formatSnapshotEntry(e: SnapshotEntry, compact: boolean): string 
   const textStr = labelText ? ` "${labelText}"` : "";
   if (compact) {
     let extra = "";
-    if (e.tag === "input" || e.tag === "textarea" || e.tag === "select" || e.tag === "button") {
+    if (e.tag === "input" || e.tag === "textarea" || e.tag === "select" || e.tag === "button" || e.role) {
       const parts: string[] = [];
       if (e.type && e.type !== "text") parts.push(`type="${e.type}"`);
+      if (e.role && e.role !== "button" && e.role !== "link") parts.push(`role="${e.role}"`);
       if (e.id) parts.push(`id="${e.id}"`);
       else if (e.name) parts.push(`name="${e.name}"`);
+      if (e.disabled) parts.push("disabled");
+      if (e.ariaExpanded !== undefined) parts.push(e.ariaExpanded ? "expanded" : "collapsed");
       if (parts.length > 0) extra = ` [${parts.join(" ")}]`;
     }
     return `[${e.index}] <${e.tag}>${extra}${textStr}`;
   }
   const attrs: string[] = [];
+  if (e.role) attrs.push(`role="${e.role}"`);
   if (e.type) attrs.push(`type="${e.type}"`);
   if (e.placeholder) attrs.push(`placeholder="${e.placeholder}"`);
   if (e.ariaLabel) attrs.push(`aria-label="${e.ariaLabel}"`);
   if (e.id) attrs.push(`id="${e.id}"`);
   if (e.name) attrs.push(`name="${e.name}"`);
+  if (e.disabled) attrs.push("disabled");
+  if (e.ariaExpanded !== undefined) attrs.push(`aria-expanded="${e.ariaExpanded}"`);
   const attrStr = attrs.length > 0 ? " " + attrs.join(" ") : "";
   return `[${e.index}] <${e.tag}${attrStr}>${textStr}`;
 }

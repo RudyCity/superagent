@@ -228,4 +228,48 @@ describe("RealtimeAdvisor - Loop Detection & Repeated Read Guard", () => {
     expect(third.suggestion).toContain("Page content or state has not changed");
     expect(third.autoCorrectionHint).toContain("Browser action warning");
   });
+
+  it("extracts specific element index and injects targeted negative constraint when cycling on browser element", () => {
+    const clickCall: ToolCall[] = [
+      { id: "click", name: "control_chrome_cdp", args: { command: "click", payload: '{"index": 31}' } },
+    ];
+    const clickRes: ToolResult[] = [
+      { toolCallId: "click", name: "control_chrome_cdp", result: 'clicked <button> "Tidak ada upsell"' },
+    ];
+    const snapCall: ToolCall[] = [
+      { id: "snap", name: "control_chrome_cdp", args: { command: "snapshot", payload: '{"compact": true}' } },
+    ];
+    const snapRes: ToolResult[] = [
+      { toolCallId: "snap", name: "control_chrome_cdp", result: "snapshot unchanged" },
+    ];
+
+    advisor.evaluateStep(clickCall, clickRes);
+    advisor.evaluateStep(snapCall, snapRes);
+    advisor.evaluateStep(clickCall, clickRes);
+    advisor.evaluateStep(snapCall, snapRes);
+
+    const warnStep = advisor.evaluateStep(clickCall, clickRes);
+    expect(warnStep.action).toBe("warn_agent");
+    expect(warnStep.suggestion).toContain("element [31]");
+    expect(warnStep.suggestion).toContain("Target state is unchanged");
+    expect(warnStep.autoCorrectionHint).toContain("element [31]");
+    expect(warnStep.autoCorrectionHint).toContain("Do NOT interact with element [31] again");
+  });
+
+  it("extracts specific element index in consecutive identical click calls", () => {
+    const clickCall: ToolCall[] = [
+      { id: "click", name: "control_chrome_cdp", args: { command: "click", payload: '{"index": 31}' } },
+    ];
+    const clickRes: ToolResult[] = [
+      { toolCallId: "click", name: "control_chrome_cdp", result: 'clicked <button> "Tidak ada upsell"' },
+    ];
+
+    advisor.evaluateStep(clickCall, clickRes);
+    advisor.evaluateStep(clickCall, clickRes);
+    const warnStep = advisor.evaluateStep(clickCall, clickRes);
+
+    expect(warnStep.action).toBe("warn_agent");
+    expect(warnStep.suggestion).toContain("element [31]");
+    expect(warnStep.autoCorrectionHint).toContain("element [31]");
+  });
 });
