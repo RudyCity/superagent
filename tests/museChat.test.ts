@@ -24,7 +24,7 @@ describe("sendChatToMuse", () => {
   it("menolak pesan kosong tanpa menyentuh watcher", async () => {
     const res = await sendChatToMuse("   ");
     expect(res.ok).toBe(false);
-    expect(res.detail).toMatch(/kosong/i);
+    expect(res.detail).toMatch(/empty/i);
     expect(state.lastPort).toBeUndefined();
   });
 
@@ -62,7 +62,7 @@ describe("sendChatToMuse", () => {
     };
     const res = await sendChatToMuse("halo");
     expect(res.ok).toBe(false);
-    expect(res.detail).toMatch(/koneksi/i);
+    expect(res.detail).toMatch(/connection/i);
   });
 
   it("tidak throw bila transport melempar error", async () => {

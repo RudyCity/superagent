@@ -130,6 +130,7 @@ export const museCommand: SlashCommand = {
         "  /muse watch remove <dir>     - Remove project from active watch session",
         "  /muse stop                   - Cancel active remote task and notify Muse",
         "  /muse cancel                 - Cancel active remote task and notify Muse",
+        "  /muse msg <text>             - Send chat message directly to Telegram group (aliases: /muse send, /muse tg)",
         "  /muse steer <msg>            - Intervene and steer Muse with counter-instructions (alias: /muse chat)",
         "  /muse doctor                 - Run diagnostic checks (cloudflared, ports, credentials)",
         "  /muse connect                - Test connection to remote Muse endpoint",
@@ -194,256 +195,8 @@ export const museCommand: SlashCommand = {
 
     // /muse config [key] [val]
     if (subcommand === "config") {
-      const key = parts[1]?.toLowerCase();
-      const val = parts.slice(2).join(" ").trim();
-
-      if (!key) {
-        const cfg = loadRemoteAgentConfig();
-        const watchedList = getWatchedWorkspaces(cfg);
-        const lines = [
-          "Remote Agent Configuration:",
-          `- transport          : ${cfg.transport || "telegram"}`,
-          `- as_runner_model    : ${cfg.asRunner ? "on (enabled)" : "off (disabled)"}`,
-          `- botToken           : ${maskToken(cfg.botToken)}`,
-          `- groupId            : ${cfg.groupId || "(not set)"}`,
-          `- museBotId          : ${cfg.museBotId || "(not set)"}`,
-          `- wsPort             : ${cfg.wsPort || 9225}`,
-          `- wsHost             : ${cfg.wsHost || "127.0.0.1"}`,
-          `- wsToken            : ${maskSecret(cfg.wsToken)}`,
-          `- wsPath             : ${cfg.wsPath || "/muse"}`,
-          `- wsMode             : ${cfg.wsMode || "server"}`,
-          `- wsRemoteUrl        : ${cfg.wsRemoteUrl || "(not set)"}`,
-          `- cfAccessClientId   : ${cfg.cfAccessClientId || "(not set)"}`,
-          `- autoTokenRefresh   : ${cfg.autoTokenRefresh ? "on (enabled)" : "off (disabled)"}`,
-          `- defaultWorkspace   : ${cfg.defaultWorkspace || "(default to current workspace)"}`,
-          `- watchedWorkspaces (${watchedList.length}):\n${watchedList.map((w, i) => `   ${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`,
-          `- systemPrompt       : ${cfg.systemPrompt ? `configured (${cfg.systemPrompt.length} chars)` : "default (auto-injected)"}`,
-          "",
-          "Usage: /muse config <key> <value>",
-          "Keys:",
-          "  transport        - Transport type: 'websocket' or 'telegram'",
-          "  as_runner_model  - Route all terminal prompts to Muse directly without /muse (on/off)",
-          "  wsPort           - Local WebSocket listen port (default: 9225)",
-          "  wsHost           - Local WebSocket listen host (default: 127.0.0.1)",
-          "  wsToken          - Bearer token ('generate', 'refresh', 'rotate', or raw string)",
-          "  wsMode           - WebSocket mode: 'server' or 'client'",
-          "  wsRemoteUrl      - Remote WebSocket URL when in client mode",
-          "  cfAccessClientId - Cloudflare Access Service Token Client ID",
-          "  cfAccessClientSecret - Cloudflare Access Service Token Client Secret",
-          "  autoTokenRefresh - Background automatic token refresh (on/off)",
-          "  botToken         - Telegram runner bot token (Bot B)",
-          "  groupId          - Numeric private group chat ID (e.g. -100xxxxxxxxxx)",
-          "  museBotId        - Numeric Telegram user ID of Muse bot (Bot A)",
-          "  defaultWorkspace - Default project workspace path",
-          "  workspaces       - Configure watched workspaces (add <dir>, remove <dir>, or comma list)",
-          "  systemPrompt     - Custom system instructions injected into Muse requests",
-          "",
-          "Examples:",
-          "  /muse config transport websocket",
-          "  /muse config wsToken generate",
-          "  /muse config wsPort 9225",
-          "  /muse config workspaces add ./backend",
-          "  /muse config as_runner_model on",
-          "  /muse config botToken 123456789:ABCdef...",
-        ];
-        ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
-        return;
-      }
-
-      if (key === "workspaces" || key === "workspace" || key === "projects") {
-        if (!val || val === "list") {
-          const list = getWatchedWorkspaces();
-          ctx.addLine({
-            type: "system",
-            content: `Watched workspaces (${list.length}):\n${list.map((w, i) => `  ${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`,
-            timestamp: now,
-          });
-          return;
-        }
-        if (val.startsWith("add ")) {
-          const p = val.slice(4).trim();
-          const updated = addWatchedWorkspace(p);
-          ctx.addLine({
-            type: "system",
-            content: `Watched workspace added: ${p}\nTotal configured: ${updated.workspaces?.length || 1}`,
-            timestamp: now,
-          });
-          return;
-        }
-        if (val.startsWith("remove ")) {
-          const p = val.slice(7).trim();
-          const updated = removeWatchedWorkspace(p);
-          ctx.addLine({
-            type: "system",
-            content: `Watched workspace removed: ${p}\nTotal configured: ${updated.workspaces?.length || 0}`,
-            timestamp: now,
-          });
-          return;
-        }
-        const paths = val.split(/[,\s]+/).filter(Boolean);
-        const updated = setWatchedWorkspaces(paths);
-        ctx.addLine({
-          type: "system",
-          content: `Watched workspaces set to (${updated.workspaces?.length || 0}):\n${(updated.workspaces || []).map((w, i) => `  ${i + 1}. ${w}`).join("\n")}`,
-          timestamp: now,
-        });
-        return;
-      }
-
-      const validKeys: Record<string, keyof RemoteAgentConfig> = {
-        transport: "transport",
-        bottoken: "botToken",
-        bot_token: "botToken",
-        groupid: "groupId",
-        group_id: "groupId",
-        musebotid: "museBotId",
-        muse_bot_id: "museBotId",
-        defaultworkspace: "defaultWorkspace",
-        default_workspace: "defaultWorkspace",
-        asrunner: "asRunner",
-        as_runner: "asRunner",
-        asrunnermodel: "asRunner",
-        as_runner_model: "asRunner",
-        defaultrunner: "asRunner",
-        default_runner: "asRunner",
-        systemprompt: "systemPrompt",
-        system_prompt: "systemPrompt",
-        prompt: "systemPrompt",
-        wsport: "wsPort",
-        ws_port: "wsPort",
-        port: "wsPort",
-        wshost: "wsHost",
-        ws_host: "wsHost",
-        wstoken: "wsToken",
-        ws_token: "wsToken",
-        token: "wsToken",
-        wspath: "wsPath",
-        ws_path: "wsPath",
-        wsmode: "wsMode",
-        ws_mode: "wsMode",
-        wsremoteurl: "wsRemoteUrl",
-        ws_remote_url: "wsRemoteUrl",
-        remoteurl: "wsRemoteUrl",
-        cfaccessclientid: "cfAccessClientId",
-        cf_access_client_id: "cfAccessClientId",
-        cfid: "cfAccessClientId",
-        cfaccessclientsecret: "cfAccessClientSecret",
-        cf_access_client_secret: "cfAccessClientSecret",
-        cfsecret: "cfAccessClientSecret",
-        tokenttl: "tokenTtlSeconds",
-        token_ttl: "tokenTtlSeconds",
-        ttl: "tokenTtlSeconds",
-        tokengrace: "tokenGracePeriodMs",
-        token_grace: "tokenGracePeriodMs",
-        autotokenrefresh: "autoTokenRefresh",
-        auto_token_refresh: "autoTokenRefresh",
-      };
-
-      const mappedKey = validKeys[key];
-      if (!mappedKey) {
-        ctx.addLine({
-          type: "error",
-          content: `Unknown config key: "${key}". Valid keys: transport, wsToken, wsPort, wsHost, wsPath, wsMode, cfAccessClientId, cfAccessClientSecret, tokenTtl, as_runner_model, botToken, groupId, museBotId, defaultWorkspace, workspaces, systemPrompt`,
-          timestamp: now,
-        });
-        return;
-      }
-
-      if (!val) {
-        ctx.addLine({
-          type: "error",
-          content: `Usage: /muse config ${key} <value>`,
-          timestamp: now,
-        });
-        return;
-      }
-
-      const patch: Partial<RemoteAgentConfig> = {};
-      if (mappedKey === "asRunner" || mappedKey === "autoTokenRefresh") {
-        const lowerVal = val.toLowerCase();
-        if (["on", "true", "1", "yes", "enable", "enabled"].includes(lowerVal)) {
-          (patch as any)[mappedKey] = true;
-        } else if (["off", "false", "0", "no", "disable", "disabled"].includes(lowerVal)) {
-          (patch as any)[mappedKey] = false;
-        } else {
-          ctx.addLine({
-            type: "error",
-            content: `Invalid value for ${key}: "${val}". Use "on" or "off".`,
-            timestamp: now,
-          });
-          return;
-        }
-      } else if (mappedKey === "transport") {
-        const lower = val.toLowerCase();
-        if (lower === "websocket" || lower === "ws") {
-          patch.transport = "websocket";
-        } else if (lower === "telegram" || lower === "tg") {
-          patch.transport = "telegram";
-        } else {
-          ctx.addLine({
-            type: "error",
-            content: `Invalid transport: "${val}". Supported: "telegram" or "websocket".`,
-            timestamp: now,
-          });
-          return;
-        }
-      } else if (mappedKey === "wsPort" || mappedKey === "tokenTtlSeconds" || mappedKey === "tokenGracePeriodMs") {
-        const p = parseInt(val, 10);
-        if (isNaN(p) || p <= 0) {
-          ctx.addLine({
-            type: "error",
-            content: `Invalid integer for ${key}: "${val}".`,
-            timestamp: now,
-          });
-          return;
-        }
-        (patch as any)[mappedKey] = p;
-      } else if (mappedKey === "wsToken") {
-        if (
-          val.toLowerCase() === "generate" ||
-          val.toLowerCase() === "gen" ||
-          val.toLowerCase() === "refresh" ||
-          val.toLowerCase() === "rotate"
-        ) {
-          const { rotateWsToken } = await import("../remoteAgent/config.js");
-          const rotation = rotateWsToken();
-          ctx.addLine({
-            type: "system",
-            content: `Generated and rotated secure Bearer token (with 5-minute handover grace period):\n${rotation.newToken}`,
-            timestamp: now,
-          });
-          return;
-        }
-        patch.wsToken = val;
-      } else if (mappedKey === "wsMode") {
-        const lower = val.toLowerCase();
-        if (lower === "client" || lower === "server") {
-          patch.wsMode = lower;
-        } else {
-          ctx.addLine({
-            type: "error",
-            content: `Invalid wsMode: "${val}". Use "server" or "client".`,
-            timestamp: now,
-          });
-          return;
-        }
-      } else {
-        (patch as any)[mappedKey] = val;
-      }
-
-      updateRemoteAgentConfig(patch);
-      const maskedConfirmation =
-        mappedKey === "botToken" || mappedKey === "wsToken" || mappedKey === "cfAccessClientSecret"
-          ? maskSecret(String((patch as any)[mappedKey]))
-          : mappedKey === "asRunner"
-            ? (patch.asRunner ? "on (enabled)" : "off (disabled)")
-            : (patch as any)[mappedKey];
-
-      ctx.addLine({
-        type: "system",
-        content: `Remote agent configuration updated: ${mappedKey} = ${maskedConfirmation}`,
-        timestamp: now,
-      });
+      const { handleMuseConfigSubcommand } = await import("./museConfigSubcommand.js");
+      await handleMuseConfigSubcommand(parts, ctx, now);
       return;
     }
 
@@ -533,8 +286,8 @@ export const museCommand: SlashCommand = {
       return;
     }
 
-    // /muse steer, /muse chat, /muse say, /muse sanggah
-    if (subcommand === "steer" || subcommand === "chat" || subcommand === "say" || subcommand === "sanggah") {
+    // /muse steer or /muse sanggah (intervention during active batch)
+    if (subcommand === "steer" || subcommand === "sanggah") {
       const text = parts.slice(1).join(" ").trim();
       if (!text) {
         ctx.addLine({
@@ -547,9 +300,7 @@ export const museCommand: SlashCommand = {
 
       const { isMuseWatcherActive, sendMuseSteerMessage, abortActiveMuseBatch } = await import("../remoteAgent/museWatcher.js");
       if (isMuseWatcherActive()) {
-        if (subcommand === "steer" || subcommand === "sanggah") {
-          abortActiveMuseBatch(`Operator intervention: ${text}`);
-        }
+        abortActiveMuseBatch(`Operator intervention: ${text}`);
         const sent = await sendMuseSteerMessage(text);
         if (sent) {
           ctx.addLine({
@@ -569,286 +320,110 @@ export const museCommand: SlashCommand = {
 
       ctx.addLine({
         type: "system",
-        content: "[Muse] Muse Watch mode is not currently running. Use /muse <task> to start a remote task.",
+        content: "[Muse] Muse Watch mode is not currently running. Use /muse <task> to start a remote task, or /muse msg <text> to send a message to Telegram.",
         timestamp: now,
       });
       return;
     }
 
-    // /muse watch [start|stop|status] or /muse unwatch
-    if (subcommand === "watch" || subcommand === "unwatch") {
-      const action = subcommand === "unwatch" ? "stop" : (parts[1]?.toLowerCase() || "start");
-      const {
-        startMuseWatcher,
-        stopMuseWatcher,
-        isMuseWatcherActive,
-        getMuseWatcher,
-      } = await import("../remoteAgent/museWatcher.js");
-
-      if (action === "stop") {
-        let stoppedAny = false;
-        if (isMuseWatcherActive()) {
-          await stopMuseWatcher();
-          stoppedAny = true;
-        }
-        const { getTunnelStatus, stopQuickTunnel } = await import("../remoteAgent/cloudflareTunnel.js");
-        const httpsTunnel = getTunnelStatus(7888);
-        if (httpsTunnel.isRunning) {
-          await stopQuickTunnel(7888);
-          stoppedAny = true;
-        }
-        if (!stoppedAny) {
-          ctx.addLine({
-            type: "system",
-            content: "[Muse Watch] Watch mode is not currently running.",
-            timestamp: now,
-          });
-          return;
-        }
+    // /muse msg, /muse send, /muse message, /muse tg, /muse chat, /muse say
+    if (
+      subcommand === "msg" ||
+      subcommand === "send" ||
+      subcommand === "message" ||
+      subcommand === "tg" ||
+      subcommand === "chat" ||
+      subcommand === "say"
+    ) {
+      const text = parts.slice(1).join(" ").trim();
+      if (!text) {
         ctx.addLine({
-          type: "system",
-          content: "[Muse Watch] Watch mode stopped successfully.",
+          type: "error",
+          content: `Usage: /muse ${subcommand} <message>`,
           timestamp: now,
         });
         return;
       }
 
-      if (action === "status") {
-        const watcher = getMuseWatcher();
-        const stats = watcher?.getStats();
-        const { getTunnelStatus } = await import("../remoteAgent/cloudflareTunnel.js");
-        const httpsTunnel = getTunnelStatus(7888);
+      const cfg = loadRemoteAgentConfig();
+      const { isMuseWatcherActive, sendMuseSteerMessage } = await import("../remoteAgent/museWatcher.js");
+      const watcherActive = isMuseWatcherActive();
 
-        if (!stats || !stats.isRunning) {
-          if (httpsTunnel.isRunning) {
-            const { getServerAuthToken } = await import("../utils/serverSecurity.js");
-            const serverToken = getServerAuthToken();
+      let tgSent = false;
+      let tgError: string | null = null;
+
+      // 1. Direct send to Telegram group if configured
+      if (cfg.botToken && cfg.groupId) {
+        try {
+          const { MuseClient } = await import("../remoteAgent/museClient.js");
+          const client = new MuseClient(cfg);
+          tgSent = await client.sendMessage(cfg.groupId, text);
+          if (tgSent) {
             ctx.addLine({
               type: "system",
-              content: [
-                "Muse Watch Mode: ACTIVE (HTTPS REST/SSE Server)",
-                `- Transport         : HTTP REST/SSE Server (port ${httpsTunnel.port || 7888})`,
-                `- Public HTTPS URL  : ${httpsTunnel.publicUrl}`,
-                `- Local Target      : ${httpsTunnel.localUrl || `http://127.0.0.1:${httpsTunnel.port || 7888}`}`,
-                `- Server Port       : ${httpsTunnel.port || 7888}`,
-                `- Process PID       : ${httpsTunnel.pid}`,
-                `- Uptime            : ${httpsTunnel.uptimeSeconds}s`,
-                `- Bearer Token      : ${serverToken}`,
-                "",
-                "Run '/muse watch stop' or '/muse tunnel stop --https' to stop.",
-              ].join("\n"),
+              content: `[Muse Telegram] Sent message to Telegram group (${cfg.groupId}): "${text}"`,
+              timestamp: now,
+            });
+          } else {
+            tgError = `Failed to deliver message to Telegram group (${cfg.groupId}). Check bot permissions.`;
+          }
+        } catch (err: any) {
+          tgError = err?.message || String(err);
+        }
+      }
+
+      // 2. If Watcher is active, also dispatch chat envelope to Muse brain
+      if (watcherActive) {
+        try {
+          const sentBrain = await sendMuseSteerMessage(text);
+          if (sentBrain) {
+            ctx.addLine({
+              type: "system",
+              content: `[Muse Brain] Forwarded chat message to active Muse brain session.`,
+              timestamp: now,
+            });
+          }
+        } catch {}
+      }
+
+      // 3. Fallback to WebSocket tunnel chat if Telegram is not configured
+      if (!tgSent && !cfg.botToken && !cfg.groupId) {
+        try {
+          const { sendChatToMuse } = await import("../remoteAgent/museChat.js");
+          const res = await sendChatToMuse(text);
+          if (res.ok) {
+            ctx.addLine({
+              type: "system",
+              content: `[Muse Chat] ${res.detail}`,
               timestamp: now,
             });
             return;
           }
+        } catch {}
 
-          ctx.addLine({
-            type: "system",
-            content: "[Muse Watch] Watch mode is INACTIVE. Run '/muse watch' or '/muse watch start' to activate.",
-            timestamp: now,
-          });
-          return;
-        }
-
-        const wsLines = stats.workspaces && stats.workspaces.length > 1
-          ? `- Watched Projects (${stats.workspaces.length}):\n${stats.workspaces.map((w, i) => `   ${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`
-          : `- Workspace         : ${stats.workspace}`;
-
-        const lines = [
-          "Muse Watch Mode: ACTIVE",
-          `- Transport         : ${stats.transportDetails || stats.transport || "telegram"}`,
-          stats.tunnelUrl ? `- Public URL        : ${stats.tunnelUrl}` : null,
-          wsLines,
-          `- Uptime            : ${stats.uptimeSeconds}s`,
-          `- Batches Executed  : ${stats.batchesExecuted}`,
-          `- Tasks Completed   : ${stats.tasksCompleted}`,
-          `- Active Task       : ${stats.activeTaskId || "none (idle, waiting for remote requests)"}`,
-        ].filter(Boolean);
-        ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
-        return;
-      }
-
-      if (action === "add") {
-        const dirToAdd = parts.slice(2).join(" ").trim();
-        if (!dirToAdd) {
-          ctx.addLine({
-            type: "error",
-            content: "Usage: /muse watch add <project_directory>",
-            timestamp: now,
-          });
-          return;
-        }
-        const resolved = path.resolve(dirToAdd);
-        addWatchedWorkspace(resolved);
-        const watcher = getMuseWatcher();
-        if (watcher && isMuseWatcherActive()) {
-          watcher.addWorkspace(resolved);
-        }
-        ctx.addLine({
-          type: "system",
-          content: `[Muse Watch] Added project "${path.basename(resolved)}" (${resolved}) to watched projects.`,
-          timestamp: now,
-        });
-        return;
-      }
-
-      if (action === "remove") {
-        const dirToRem = parts.slice(2).join(" ").trim();
-        if (!dirToRem) {
-          ctx.addLine({
-            type: "error",
-            content: "Usage: /muse watch remove <project_directory>",
-            timestamp: now,
-          });
-          return;
-        }
-        const resolved = path.resolve(dirToRem);
-        removeWatchedWorkspace(resolved);
-        const watcher = getMuseWatcher();
-        if (watcher && isMuseWatcherActive()) {
-          watcher.removeWorkspace(resolved);
-        }
-        ctx.addLine({
-          type: "system",
-          content: `[Muse Watch] Removed project "${path.basename(resolved)}" (${resolved}) from watched projects.`,
-          timestamp: now,
-        });
-        return;
-      }
-
-      // Collect directories and flags: /muse watch [start] [--ws] [--tunnel] [--https] [dir1] [dir2] ...
-      const isWs = parts.some((p) => p === "--ws" || p === "--websocket");
-      const isTg = parts.some((p) => p === "--telegram" || p === "--tg");
-      const isTunnel = parts.some((p) => p === "--tunnel" || p === "--quick-tunnel");
-      const isHttps = parts.some((p) => p === "--https" || p === "--http" || p === "--web");
-      const portArgIdx = parts.findIndex((p) => p === "--port" || p === "-p");
-      let portOverride: number | undefined;
-      if (portArgIdx !== -1 && parts[portArgIdx + 1]) {
-        const parsed = parseInt(parts[portArgIdx + 1], 10);
-        if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
-      }
-
-      const cfg = loadRemoteAgentConfig();
-      const transportType: RemoteAgentTransport = isHttps
-        ? "https"
-        : (isWs || isTunnel)
-          ? "websocket"
-          : isTg
-            ? "telegram"
-            : (cfg.transport || "telegram");
-
-      const rawDirs = parts.slice(1).filter((p) => {
-        if (p.toLowerCase() === "start") return false;
-        if (
-          p === "--ws" ||
-          p === "--websocket" ||
-          p === "--telegram" ||
-          p === "--tg" ||
-          p === "--tunnel" ||
-          p === "--quick-tunnel" ||
-          p === "--https" ||
-          p === "--http" ||
-          p === "--web" ||
-          p === "--port" ||
-          p === "-p"
-        )
-          return false;
-        if (portArgIdx !== -1 && (p === parts[portArgIdx + 1])) return false;
-        return true;
-      });
-      const targetDirs = rawDirs
-        .map((d) => d.trim())
-        .filter((d) => d.length > 0)
-        .map((d) => path.resolve(d));
-
-      const allWatched = targetDirs.length > 0
-        ? targetDirs
-        : getWatchedWorkspaces(cfg, ctx.agent?.workingDirectory);
-
-      // If already active:
-      if (isMuseWatcherActive()) {
-        const watcher = getMuseWatcher();
-        if (targetDirs.length > 0 && watcher) {
-          for (const d of targetDirs) {
-            watcher.addWorkspace(d);
-          }
-          ctx.addLine({
-            type: "system",
-            content: `[Muse Watch] Added ${targetDirs.length} project(s) to running watch session:\n${targetDirs.map((d, i) => `  ${i + 1}. ${path.basename(d)} (${d})`).join("\n")}`,
-            timestamp: now,
-          });
-          return;
-        }
-        ctx.addLine({
-          type: "system",
-          content: "[Muse Watch] Watch mode is already running. Superagent is actively controlled by Muse.\nRun '/muse watch stop' to deactivate.",
-          timestamp: now,
-        });
-        return;
-      }
-
-      try {
-        await startMuseWatcher({
-          workspace: allWatched[0] || ctx.agent?.workingDirectory || process.cwd(),
-          workspaces: allWatched,
-          transportType,
-          tunnel: isTunnel || isHttps,
-          isHttps: isHttps,
-          wsPort: portOverride || (isHttps ? 7888 : undefined),
-          agent: ctx.agent,
-          onProgress: (msg) => {
-            ctx.addLine({
-              type: "system",
-              content: `[Muse Progress] ${msg}`,
-              timestamp: Date.now(),
-            });
-          },
-          onToolStart: (toolCall, description) => {
-            if (ctx.agent?.onEvent) {
-              ctx.agent.onEvent({
-                type: "tool_start",
-                toolCall,
-                description,
-              });
-              return;
-            }
-            ctx.addLine({
-              type: "tool_start",
-              content: `⚡ ${description}\n   Detail: ${toolCall.name}(${JSON.stringify(toolCall.args || {})})`,
-              timestamp: Date.now(),
-            });
-          },
-          onToolEnd: (toolCall, toolResult, description) => {
-            if (ctx.agent?.onEvent) {
-              ctx.agent.onEvent({
-                type: "tool_end",
-                toolCall,
-                toolResult,
-                description,
-              });
-              return;
-            }
-            ctx.addLine({
-              type: "tool_end",
-              content: `✔ ${description}`,
-              timestamp: Date.now(),
-            });
-          },
-          onLine: (line) => {
-            ctx.addLine({
-              type: (line.type as any) || "system",
-              content: line.content,
-              timestamp: line.timestamp || Date.now(),
-            });
-          },
-        });
-      } catch (err: any) {
         ctx.addLine({
           type: "error",
-          content: `[Muse Watch] Failed to start watch mode: ${err.message}`,
+          content: "Remote agent is not configured for Telegram. Run /muse config botToken <token> and /muse config groupId <id>.",
+          timestamp: now,
+        });
+        return;
+      }
+
+      if (!tgSent && tgError) {
+        ctx.addLine({
+          type: "error",
+          content: `[Muse Telegram] Error sending message to Telegram: ${tgError}`,
           timestamp: now,
         });
       }
+
+      return;
+    }
+
+    // /muse watch [start|stop|status] or /muse unwatch
+    if (subcommand === "watch" || subcommand === "unwatch") {
+      const { handleMuseWatchSubcommand } = await import("./museWatchSubcommand.js");
+      await handleMuseWatchSubcommand(parts, ctx, now);
       return;
     }
 
@@ -875,7 +450,8 @@ export const museCommand: SlashCommand = {
           "  /muse watch status           - Show watch mode statistics",
           "  /muse watch add <dir>        - Add workspace directory to watch list",
           "  /muse watch remove <dir>     - Remove workspace directory from watch list",
-          "  /muse steer <instruction>    - Intervene and steer active Muse task (alias: /muse chat)",
+          "  /muse steer <instruction>    - Intervene and steer active Muse task",
+          "  /muse msg <text>             - Send chat message directly to Telegram (aliases: /muse send, /muse tg, /muse chat)",
           "  /muse doctor                 - Run diagnostic checks (cloudflared, ports, credentials)",
           "  /muse connect                - Test connection to remote Muse endpoint",
           "  /muse stop                   - Cancel active remote task",

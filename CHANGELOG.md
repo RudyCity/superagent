@@ -1,3 +1,12 @@
+## [1.13.40] - 2026-10-10
+### Enhanced & Fixed
+- Direct Telegram Message Delivery & Slash Command Unification (`src/core/commands/museCommand.ts`, `src/core/commands/museConfigSubcommand.ts`, `src/core/commands/museWatchSubcommand.ts`):
+  - Added dedicated `/muse msg <text>` subcommand with `/muse send`, `/muse message`, `/muse tg`, `/muse chat`, and `/muse say` aliases, delivering messages directly to configured Telegram groups via `MuseClient.sendMessage` with instant terminal confirmation.
+  - Eliminated watch-mode dependency for outbound chat messages: operator messages are delivered immediately to the Telegram chat even when watch mode is inactive, with fallback WebSocket support.
+  - Synchronized dual delivery when watch mode is active: messages are simultaneously delivered to human group participants via Telegram Bot API and forwarded to the active Muse brain as steering envelopes.
+  - Modularized `museCommand.ts` by extracting configuration commands into `src/core/commands/museConfigSubcommand.ts` and watch daemon management into `src/core/commands/museWatchSubcommand.ts`, ensuring all files stay strictly below the 1000-line limit (reduced `museCommand.ts` from 1132 lines to 659 lines).
+  - Added comprehensive unit test coverage in `tests/museMessageCommand.test.ts` verifying argument validation, direct Telegram group delivery, alias routing, and Muse brain forwarding.
+
 ## [1.13.39] - 2026-10-10
 ### Enhanced & Fixed
 - Real-Time Telegram Watch Ingress, Live Typing Indicators & Sub-Second Cancellation (`src/core/remoteAgent/museClient.ts`, `src/core/remoteAgent/museWatcher.ts`, `src/core/remoteAgent/transport.ts`):
