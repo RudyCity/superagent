@@ -1,3 +1,22 @@
+## [1.13.36] - 2026-10-10
+### Added & Enhanced
+- Media Devices Debugging & Inspection in Chrome CDP (`src/core/tools/chromeCdpMedia.ts`, `src/core/tools/chromeCdpTools.ts`):
+  - Added dedicated `chromeCdpMedia.ts` companion module maintaining all source files strictly under 1000 lines.
+  - Implemented `inspect_media_devices` (and `media_devices` alias) in `control_chrome_cdp` command suite with automated media inspection across audio inputs (microphones), audio outputs (speakers/headphones), and video inputs (webcams).
+  - Added automated device label unmasking via CDP `Browser.grantPermissions` (`audioCapture`, `videoCapture`, `speakerSelection`) and `Browser.resetPermissions`.
+  - Added inspection for audio output routing (`HTMLMediaElement.prototype.setSinkId`), `AudioContext` state, and autoplay policies (`navigator.getAutoplayPolicy`).
+  - Added active media element auditing tracking playing `<audio>` and `<video>` tags with volume, muted status, sinkId routing, duration, and media playback errors.
+  - Added comprehensive unit tests in `tests/chromeCdpMedia.test.ts` and `tests/chromeCdpTools.test.ts`.
+
+## [1.13.35] - 2026-10-10
+### Added & Enhanced
+- Native Browser Dialog Interception & Unified Alert Detection in Chrome CDP (`src/core/tools/chromeCdpTools.ts`, `src/core/tools/chromeCdpHelpers.ts`, `src/core/tools/chromeCdpTransition.ts`):
+  - Enabled automatic `Page.enable` and real-time `Page.javascriptDialogOpening` WebSocket event interception across all persistent CDP target connections.
+  - Automatically handles synchronous native JavaScript dialogs (`window.alert`, `window.confirm`, `window.prompt`, `beforeunload`) via `Page.handleJavaScriptDialog` so `click` and `evaluate` actions never hang the main browser thread.
+  - Added per-target dialog history store (`dialogStore`) and configurable dialog handling policy (`dialogPolicyStore`) with new `get_dialogs` and `handle_dialog` commands in `control_chrome_cdp`.
+  - Added `native_dialog` UI transition classification in `computeTransitionDiff` (`src/core/tools/chromeCdpTransition.ts`) and automatic native dialog reporting in `click`, `evaluate`, `verify_action`, and `read_page`.
+  - Unified DOM alert/toast selectors across `SNAPSHOT_JS`, `READ_PAGE_JS`, and `CAPTURE_DOM_STATE_JS` to detect modern notification libraries (`[data-sonner-toast]`, `[data-radix-toast-viewport] > *`, `[role="status"]`, `[role="alertdialog"]`, `.toast`, `.snackbar`).
+
 ## [1.13.34] - 2026-10-09
 ### Enhanced & Fixed
 - Base System Prompt Vision & Dual-Track Automation Optimization:

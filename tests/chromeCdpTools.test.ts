@@ -20,6 +20,8 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   let snapshotChanged = false;
   let captureDomStateReturnsForm = false;
   let simulateTransitionOnNextClick = false;
+  let simulateNativeDialogOnNextClick = false;
+  let lastHandledDialogParams: Record<string, unknown> | null = null;
   const mockElementsChanged = [
     { index: 0, tag: "button", text: "Sign In", selector: "button" },
     { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' },
@@ -75,6 +77,19 @@ describe("control_chrome_cdp (mock CDP server)", () => {
           if (expr.includes("cdp-click")) {
             if (simulateTransitionOnNextClick) {
               captureDomStateReturnsForm = true;
+            }
+            if (simulateNativeDialogOnNextClick) {
+              ws.send(
+                JSON.stringify({
+                  method: "Page.javascriptDialogOpening",
+                  params: {
+                    url: "https://example.com/",
+                    message: "Confirm delete widget?",
+                    type: "confirm",
+                    hasBrowserHandler: true,
+                  },
+                })
+              );
             }
             ws.send(
               JSON.stringify({ id: msg.id, result: { result: { value: JSON.stringify({ ok: true, tag: "button", text: "Login" }) } } })
@@ -161,14 +176,58 @@ describe("control_chrome_cdp (mock CDP server)", () => {
             );
             return;
           }
+          if (expr.includes("enumerateDevices")) {
+            ws.send(
+              JSON.stringify({
+                id: msg.id,
+                result: {
+                  result: {
+                    value: {
+                      url: "https://example.com/",
+                      origin: "https://example.com",
+                      permissions: { microphone: "granted", camera: "prompt", speakerSelection: "granted" },
+                      audioInputs: [{ deviceId: "mic-1", kind: "audioinput", label: "Mock Mic", groupId: "grp-1" }],
+                      audioOutputs: [{ deviceId: "spk-1", kind: "audiooutput", label: "Mock Speakers", groupId: "grp-1" }],
+                      videoInputs: [{ deviceId: "cam-1", kind: "videoinput", label: "Mock Cam", groupId: "grp-2" }],
+                      sinkIdSupported: true,
+                      audioContextState: "running",
+                      autoplayPolicy: { mediaElement: "allowed", audioContext: "allowed" },
+                      mediaElements: [{
+                        tag: "audio",
+                        selector: "#audio1",
+                        isPlaying: true,
+                        paused: false,
+                        muted: false,
+                        volume: 0.9,
+                        currentTime: 10,
+                        duration: 50,
+                        sinkId: "spk-1",
+                        readyState: 4,
+                        currentSrc: "https://example.com/sound.mp3",
+                      }],
+                    },
+                  },
+                },
+              })
+            );
+            return;
+          }
+        }
+        if (msg.method === "Page.handleJavaScriptDialog") {
+          lastHandledDialogParams = msg.params || {};
+          ws.send(JSON.stringify({ id: msg.id, result: {} }));
+          return;
         }
         const canned: Record<string, any> = {
+          "Page.enable": {},
           "Page.navigate": {},
           "Runtime.evaluate": { result: { value: "mock-title" } },
           "Page.captureScreenshot": { data: "iVBORw0KGgo=" },
           "Page.printToPDF": { data: "JVBERi0xLjQ=" },
           "Storage.getCookies": { cookies: [{ name: "sid", value: "abc123", domain: "example.com" }] },
           "Input.insertText": {},
+          "Browser.grantPermissions": {},
+          "Browser.resetPermissions": {},
         };
         if (msg.method in canned) {
           ws.send(JSON.stringify({ id: msg.id, result: canned[msg.method] }));
@@ -254,9 +313,13 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       "type",
       "wait_for",
       "verify_action",
+      "get_dialogs",
+      "handle_dialog",
       "screenshot",
       "pdf",
       "get_cookies",
+      "inspect_media_devices",
+      "media_devices",
     ]);
     expect(controlChromeCdpTool.description).toContain("--remote-debugging-port=9222");
     expect(controlChromeCdpTool.description).toContain("no extension required");
@@ -671,6 +734,90 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       simulateTransitionOnNextClick = false;
       captureDomStateReturnsForm = false;
     }
+  });
+
+  test("automatically intercepts Page.javascriptDialogOpening during click, handles it, and reports in click and get_dialogs", async () => {
+    _cdpTestHooks.clearSnapshots();
+    simulateNativeDialogOnNextClick = true;
+    lastHandledDialogParams = null;
+    try {
+      const res = await controlChromeCdpTool.execute({
+        command: "click",
+        selector: "button",
+      });
+      expect(res).toContain("control_chrome_cdp: clicked <button> \"Login\".");
+      expect(res).toContain('[NATIVE CONFIRM] "Confirm delete widget?" (accepted)');
+
+      // Wait briefly for the WS server to receive the Page.handleJavaScriptDialog command
+      await new Promise((r) => setTimeout(r, 50));
+      expect(lastHandledDialogParams).toEqual({ accept: true });
+
+      const dialogsRes = await controlChromeCdpTool.execute({
+        command: "get_dialogs",
+      });
+      expect(dialogsRes).toContain('[NATIVE CONFIRM] "Confirm delete widget?" (accepted)');
+    } finally {
+      simulateNativeDialogOnNextClick = false;
+    }
+  });
+
+  test("handle_dialog configures dialog policy (dismiss / custom promptText) for subsequent native dialogs", async () => {
+    _cdpTestHooks.clearSnapshots();
+    const policyRes = await controlChromeCdpTool.execute({
+      command: "handle_dialog",
+      payload: { accept: false, promptText: "Cancel Action" } as any,
+    });
+    expect(policyRes).toContain("dialog policy updated");
+    expect(policyRes).toContain("autoAccept=false");
+
+    simulateNativeDialogOnNextClick = true;
+    lastHandledDialogParams = null;
+    try {
+      const clickRes = await controlChromeCdpTool.execute({
+        command: "click",
+        selector: "button",
+      });
+      expect(clickRes).toContain('[NATIVE CONFIRM] "Confirm delete widget?" (dismissed');
+      await new Promise((r) => setTimeout(r, 50));
+      expect(lastHandledDialogParams).toEqual({ accept: false, promptText: "Cancel Action" });
+    } finally {
+      simulateNativeDialogOnNextClick = false;
+      await controlChromeCdpTool.execute({
+        command: "handle_dialog",
+        payload: { accept: true } as any,
+      });
+    }
+  });
+
+  test("controlChromeCdpTool inspect_media_devices returns formatted speaker, mic, and media element state", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "inspect_media_devices",
+      grantPermissions: true,
+    });
+
+    expect(res).toContain("control_chrome_cdp: media device inspection for 'https://example.com/':");
+    expect(res).toContain("Permissions:");
+    expect(res).toContain("Microphone: GRANTED");
+    expect(res).toContain("Audio Input Devices / Microphones (1):");
+    expect(res).toContain('1. "Mock Mic" [mic-1] (group: grp-1)');
+    expect(res).toContain("Audio Output Devices / Speakers (1):");
+    expect(res).toContain('1. "Mock Speakers" [spk-1] (group: grp-1)');
+    expect(res).toContain("Video Input Devices / Cameras (1):");
+    expect(res).toContain('1. "Mock Cam" [cam-1] (group: grp-2)');
+    expect(res).toContain("Audio Output Routing (setSinkId): SUPPORTED");
+    expect(res).toContain("AudioContext State: RUNNING");
+    expect(res).toContain("Active Media Elements (1):");
+    expect(res).toContain('- <audio#audio1>: [PLAYING] volume=90%, muted=false, sinkId="spk-1"');
+  });
+
+  test("controlChromeCdpTool media_devices alias works with resetPermissions", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "media_devices",
+      resetPermissions: true,
+    });
+
+    expect(res).toContain("control_chrome_cdp: media device inspection");
+    expect(res).toContain("Audio Output Devices / Speakers (1):");
   });
 });
 

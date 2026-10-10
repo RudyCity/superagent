@@ -17,6 +17,8 @@ import {
   waitForInPage,
   buildClickJs,
   parseActionResult,
+  getRecentDialogs,
+  formatDialogEntry,
 } from "./chromeCdpHelpers.js";
 
 export type UiTransitionType =
@@ -25,6 +27,7 @@ export type UiTransitionType =
   | "drawer_panel"
   | "navigation"
   | "query_change"
+  | "native_dialog"
   | "toast_notification"
   | "table_update"
   | "none";
@@ -151,10 +154,10 @@ export const CAPTURE_DOM_STATE_JS = `/*cdp-capture-dom-state*/(() => {
     .filter(t => t.length > 0 && t.length < 100)
     .slice(0, 5);
 
-  const alerts = Array.from(document.querySelectorAll('[role="alert"], [aria-live], .alert, .toast, [class*="toast" i]'))
+  const alerts = Array.from(document.querySelectorAll('[role="alert"], [role="status"], [role="alertdialog"], [aria-live="assertive"], [aria-live="polite"], [data-sonner-toast], [data-radix-toast-viewport] > *, .toast, .alert, .error, .notification, .banner, [class*="toast" i], [class*="snackbar" i]'))
     .map(a => (a.innerText || '').replace(/\\s+/g, ' ').trim())
     .filter(t => t.length > 0 && t.length < 150)
-    .slice(0, 3);
+    .slice(0, 5);
 
   // 6. View Mode classification
   let viewMode = 'general_view';
@@ -199,6 +202,9 @@ export function computeTransitionDiff(
     (before.viewMode === "table_list_view" && after.viewMode === "form_view") ||
     (!before.hasModal && after.formInputsCount > before.formInputsCount + 1);
 
+  const newAlerts = after.alerts.filter((a) => !before.alerts.includes(a));
+  const nativeAlert = newAlerts.find((a) => a.startsWith("[NATIVE "));
+
   let type: UiTransitionType = "none";
   let description = "no visible view transition detected";
 
@@ -218,9 +224,12 @@ export function computeTransitionDiff(
   } else if (searchChanged) {
     type = "query_change";
     description = `URL search query changed to '${after.search || "(empty)"}'`;
-  } else if (after.alerts.length > before.alerts.length) {
+  } else if (nativeAlert) {
+    type = "native_dialog";
+    description = `native browser dialog intercepted: ${nativeAlert}`;
+  } else if (after.alerts.length > before.alerts.length || newAlerts.length > 0) {
     type = "toast_notification";
-    description = `notification/toast displayed: "${after.alerts[0]}"`;
+    description = `notification/toast displayed: "${newAlerts[0] || after.alerts[0]}"`;
   } else if (before.hasTable && after.hasTable && before.tableRowsCount !== after.tableRowsCount) {
     type = "table_update";
     description = `table updated (rows changed from ${before.tableRowsCount} to ${after.tableRowsCount})`;
@@ -311,12 +320,19 @@ export async function observeActionTransition(
   cdpSend: (target: any, method: string, params?: Record<string, unknown>) => Promise<any>,
   target: any,
   beforeState: DomStateSnapshot,
-  debounceMs: number = 200
+  debounceMs: number = 200,
+  actionStartTs: number = 0
 ): Promise<TransitionDiff> {
   if (debounceMs > 0) {
     await new Promise((r) => setTimeout(r, debounceMs));
   }
   const afterState = await captureDomState(cdpSend, target);
+  if (target && target.id && actionStartTs > 0) {
+    const recentDialogs = getRecentDialogs(target.id, actionStartTs).map(formatDialogEntry);
+    if (recentDialogs.length > 0) {
+      afterState.alerts = [...recentDialogs, ...(afterState.alerts || [])];
+    }
+  }
   return computeTransitionDiff(beforeState, afterState);
 }
 
@@ -352,6 +368,7 @@ export async function executeVerifyAction(
 
   // 1. Capture before state
   const beforeState = await captureDomState(cdpSend, target);
+  const actionStartTs = Date.now() - 2;
 
   // 2. Perform click
   const res: any = await cdpSend(target, "Runtime.evaluate", {
@@ -366,7 +383,7 @@ export async function executeVerifyAction(
 
   // 3. Settle and observe transition
   const debounceMs = parseTimeoutMs(payload.debounce_ms, 250);
-  const diff = await observeActionTransition(cdpSend, target, beforeState, debounceMs);
+  const diff = await observeActionTransition(cdpSend, target, beforeState, debounceMs, actionStartTs);
 
   // 4. Refresh snapshot store so subsequent interactions by index are immediate
   try {

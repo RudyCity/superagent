@@ -32,6 +32,12 @@ import {
   formatContextHeader,
   resolveActionSelector,
   waitForInPage,
+  handleIncomingCdpEvent,
+  getRecentDialogs,
+  clearCdpDialogs,
+  formatDialogEntry,
+  executeGetDialogsCommand,
+  executeHandleDialogCommand,
 } from "./chromeCdpHelpers.js";
 import {
   captureCdpScreenshot,
@@ -45,6 +51,7 @@ import {
   formatTransitionSummary,
   DomStateSnapshot,
 } from "./chromeCdpTransition.js";
+import { executeInspectMediaDevices } from "./chromeCdpMedia.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -403,42 +410,35 @@ async function getCdpConnection(target: CdpTarget): Promise<CdpConnection> {
       } else {
         p.resolve(msg.result !== undefined ? msg.result : {});
       }
+    } else if (msg && msg.id === undefined && typeof msg.method === "string") {
+      handleIncomingCdpEvent(target.id, msg.method, msg.params, (m, p) => {
+        try {
+          ws.send(JSON.stringify({ id: conn.nextId++, method: m, params: p }));
+        } catch {}
+      });
     }
   });
   const onDead = (why: string) => {
     if (cdpConnections.get(url) === conn) {
-      if (conn.pending.size > 0) {
-        closeCdpConnection(url, why);
-      } else {
-        cdpConnections.delete(url);
-      }
+      if (conn.pending.size > 0) closeCdpConnection(url, why);
+      else cdpConnections.delete(url);
     }
   };
-  ws.on("error", (err: any) => {
-    onDead(`CDP WebSocket error: ${(err && err.message) || String(err)}`);
-  });
-  ws.on("close", () => {
-    onDead("CDP WebSocket to the target tab closed unexpectedly.");
-  });
+  ws.on("error", (err: any) => onDead(`CDP WebSocket error: ${(err && err.message) || String(err)}`));
+  ws.on("close", () => onDead("CDP WebSocket to the target tab closed unexpectedly."));
   const opened = await new Promise<boolean>((resolve) => {
     const t = setTimeout(() => resolve(false), timeoutMs);
-    ws.once("open", () => {
-      clearTimeout(t);
-      resolve(true);
-    });
-    ws.once("error", () => {
-      clearTimeout(t);
-      resolve(false);
-    });
-    ws.once("close", () => {
-      clearTimeout(t);
-      resolve(false);
-    });
+    ws.once("open", () => { clearTimeout(t); resolve(true); });
+    ws.once("error", () => { clearTimeout(t); resolve(false); });
+    ws.once("close", () => { clearTimeout(t); resolve(false); });
   });
   if (!opened || cdpConnections.get(url) !== conn) {
     closeCdpConnection(url, `Timed out after ${timeoutMs}ms opening CDP WebSocket to the target tab.`);
     throw new Error(`Timed out after ${timeoutMs}ms opening CDP WebSocket to the target tab.`);
   }
+  try {
+    ws.send(JSON.stringify({ id: conn.nextId++, method: "Page.enable", params: {} }));
+  } catch {}
   conn.lastUsed = Date.now();
   return conn;
 }
@@ -476,6 +476,7 @@ export const _cdpTestHooks = {
   clearSnapshots: (): void => {
     snapshotStore.clear();
     snapshotPrevStore.clear();
+    clearCdpDialogs();
   },
   resetResolvedHost: (): void => {
     resolvedHost = null;
@@ -490,9 +491,11 @@ export const controlChromeCdpTool: Tool = {
   description:
     "Control the user's REAL Chrome browser directly via Chrome Remote Debugging (CDP) at http://127.0.0.1:9222 — no extension required and no isolated background tab. " +
     "REQUIRES Chrome to be running with --remote-debugging-port=9222 (close ALL Chrome windows, then reopen Chrome from the taskbar shortcut). " +
-    "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, screenshot, pdf, get_cookies. " +
+    "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies. " +
     "Convenience: 'navigate' automatically waits for page ready, captures a visual screenshot saved to disk (with vision data URL), and returns an interactive element snapshot. " +
-    "'verify_action' performs an action (click) and analyzes UI transitions (detects Full-Page Form transition, Modal Dialog, Drawer, URL query/route navigation, Alerts, Table changes). " +
+    "'verify_action' performs an action (click) and analyzes UI transitions (detects Full-Page Form transition, Modal Dialog, Drawer, URL query/route navigation, Native Dialogs, Alerts, Table changes). " +
+    "'get_dialogs' returns intercepted native browser dialogs (window.alert, confirm, prompt, beforeunload). " +
+    "'handle_dialog' configures autoAccept (true/false) and promptText for native dialogs. " +
     "'screenshot' captures full or viewport screenshots saved to disk and returns vision data URL. " +
     "Actions like click, type, snapshot, evaluate, and wait_for also support optional 'screenshot: true' to capture visual feedback after the action. " +
     "'read_page' extracts full visible body text, headings, alerts/status banners, and email contents. " +
@@ -517,66 +520,35 @@ export const controlChromeCdpTool: Tool = {
           "type",
           "wait_for",
           "verify_action",
+          "get_dialogs",
+          "handle_dialog",
           "screenshot",
           "pdf",
           "get_cookies",
+          "inspect_media_devices",
+          "media_devices",
         ],
         description: "CDP command to execute on the real Chrome browser.",
       },
       payload: {
         type: "string",
         description:
-          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true} or {"selector": "#login"}. verify_action: {"index": 3} (verifies UI transition: full-page form, modal, drawer, route/query change). type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
+          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true} or {"selector": "#login"}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
       },
-      url: {
-        type: "string",
-        description: "Optional top-level URL convenience shortcut for new_tab or navigate.",
-      },
-      index: {
-        type: "number",
-        description: "Optional top-level element index convenience shortcut for click or type.",
-      },
-      text: {
-        type: "string",
-        description: "Optional top-level text convenience shortcut for type or wait_for.",
-      },
-      selector: {
-        type: "string",
-        description: "Optional top-level CSS selector convenience shortcut for click, type, or wait_for.",
-      },
-      pattern: {
-        type: "string",
-        description: "Optional top-level keyword filter pattern for extract_links (e.g. 'verify', 'confirm', 'token').",
-      },
-      native: {
-        type: "boolean",
-        description: "Optional top-level flag to dispatch native CDP Input keystrokes in addition to synthetic events.",
-      },
-      screenshot: {
-        type: "boolean",
-        description: "Optional top-level flag to capture a visual screenshot alongside the action (saved to disk and returned as vision data URL). Defaults to true for navigate; optional for click, type, snapshot, evaluate, wait_for.",
-      },
-      outputPath: {
-        type: "string",
-        description: "Optional custom file path to save the screenshot image PNG. Defaults to cdp_screenshot_<timestamp>.png in current directory.",
-      },
-      fullPage: {
-        type: "boolean",
-        description: "Optional flag to capture full scrollable page beyond current viewport (default false).",
-      },
-      format: {
-        type: "string",
-        enum: ["png", "jpeg", "webp"],
-        description: "Optional image format for screenshot (default 'png').",
-      },
-      quality: {
-        type: "number",
-        description: "Optional compression quality for jpeg/webp screenshot (0-100).",
-      },
-      targetId: {
-        type: "string",
-        description: "Optional CDP target id. Automatically defaults to the active tab.",
-      },
+      url: { type: "string", description: "Optional top-level URL convenience shortcut for new_tab or navigate." },
+      index: { type: "number", description: "Optional top-level element index convenience shortcut for click or type." },
+      text: { type: "string", description: "Optional top-level text convenience shortcut for type or wait_for." },
+      selector: { type: "string", description: "Optional top-level CSS selector convenience shortcut for click, type, or wait_for." },
+      pattern: { type: "string", description: "Optional top-level keyword filter pattern for extract_links." },
+      native: { type: "boolean", description: "Optional top-level flag to dispatch native CDP Input keystrokes." },
+      screenshot: { type: "boolean", description: "Optional top-level flag to capture a visual screenshot alongside the action." },
+      outputPath: { type: "string", description: "Optional custom file path to save the screenshot image PNG." },
+      fullPage: { type: "boolean", description: "Optional flag to capture full scrollable page beyond current viewport." },
+      format: { type: "string", enum: ["png", "jpeg", "webp"], description: "Optional image format for screenshot (default 'png')." },
+      quality: { type: "number", description: "Optional compression quality for jpeg/webp screenshot (0-100)." },
+      grantPermissions: { type: "boolean", description: "Optional flag to grant microphone, camera, and speakerSelection permissions via CDP." },
+      resetPermissions: { type: "boolean", description: "Optional flag to reset permissions via CDP." },
+      targetId: { type: "string", description: "Optional CDP target id. Automatically defaults to the active tab." },
     },
     required: ["command"],
   },
@@ -595,38 +567,15 @@ export const controlChromeCdpTool: Tool = {
       }
     }
     const convenienceKeys = [
-      "url",
-      "index",
-      "text",
-      "selector",
-      "pattern",
-      "query",
-      "filter",
-      "expression",
-      "compact",
-      "diff",
-      "max_elements",
-      "timeout_ms",
-      "clear",
-      "native",
-      "wait_for_elements",
-      "auto_snapshot",
-      "screenshot",
-      "auto_screenshot",
-      "outputPath",
-      "output_path",
-      "fullPage",
-      "full_page",
-      "format",
-      "quality",
-      "verify",
-      "observe",
-      "debounce_ms",
+      "url", "index", "text", "selector", "pattern", "query", "filter", "expression",
+      "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements",
+      "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path",
+      "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms",
+      "accept", "promptText", "prompt_text", "grantPermissions", "grant_permissions",
+      "resetPermissions", "reset_permissions",
     ];
     for (const key of convenienceKeys) {
-      if (args[key] !== undefined && payload[key] === undefined) {
-        payload[key] = args[key];
-      }
+      if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
     }
     const targetId = args.targetId
       ? String(args.targetId)
@@ -646,9 +595,7 @@ export const controlChromeCdpTool: Tool = {
           const path = `/json/new?${encodeURIComponent(url)}`;
           const res: any = await httpPutJson(path);
           const newId = res && res.id ? res.id : undefined;
-          if (newId) {
-            httpPutJson(`/json/activate/${newId}`).catch(() => {});
-          }
+          if (newId) httpPutJson(`/json/activate/${newId}`).catch(() => {});
           return `control_chrome_cdp: opened new tab '${url}'${newId ? ` (targetId: ${newId})` : ""}`;
         }
         case "close_tab": {
@@ -673,9 +620,7 @@ export const controlChromeCdpTool: Tool = {
             try {
               const r = await cdpSend(target, "Runtime.evaluate", { expression: READY_STATE_JS, returnByValue: true });
               const state = r && r.result ? r.result.value : undefined;
-              if (state === "complete" || state === "interactive" || (state && state !== "loading")) {
-                break;
-              }
+              if (state === "complete" || state === "interactive" || (state && state !== "loading")) break;
             } catch {
               break;
             }
@@ -719,6 +664,7 @@ export const controlChromeCdpTool: Tool = {
           const expression = String(payload.expression || "");
           if (!expression) return 'control_chrome_cdp failed: command \'evaluate\' needs payload {"expression": "..."}.';
           const target = await pickTarget(targetId);
+          const evalStartTs = Date.now() - 2;
           const res: any = await cdpSend(target, "Runtime.evaluate", {
             expression,
             returnByValue: true,
@@ -726,7 +672,12 @@ export const controlChromeCdpTool: Tool = {
           });
           const value = res && res.result ? res.result.value : undefined;
           const out = typeof value === "string" ? value : JSON.stringify(value);
-          const baseResult = `control_chrome_cdp: evaluate result: ${truncate(out, 4000)}`;
+          const recentDialogs = getRecentDialogs(target.id, evalStartTs);
+          const dialogSuffix =
+            recentDialogs.length > 0
+              ? `\nIntercepted Native Dialog(s): ${recentDialogs.map(formatDialogEntry).join(" | ")}`
+              : "";
+          const baseResult = `control_chrome_cdp: evaluate result: ${truncate(out, 4000)}${dialogSuffix}`;
           return await attachScreenshotIfRequested(cdpSend, target, payload, baseResult, false);
         }
         case "snapshot": {
@@ -811,26 +762,18 @@ export const controlChromeCdpTool: Tool = {
           const title = String(data.title || target.title);
           const url = String(data.url || target.url);
           const headings: Array<{ tag: string; text: string }> = Array.isArray(data.headings) ? data.headings : [];
-          const alerts: string[] = Array.isArray(data.alerts) ? data.alerts : [];
+          const domAlerts: string[] = Array.isArray(data.alerts) ? data.alerts : [];
+          const nativeDialogs = getRecentDialogs(target.id).map(formatDialogEntry);
+          const alerts = [...nativeDialogs, ...domAlerts];
           const bodyText: string = String(data.bodyText || "").trim();
           const links: Array<{ text: string; href: string }> = Array.isArray(data.links) ? data.links : [];
 
           const sections: string[] = [];
           sections.push(`control_chrome_cdp: page content for '${title}' (${url}):`);
-          if (data.viewMode) {
-            sections.push(`View Mode: [${String(data.viewMode).toUpperCase()}]`);
-          }
-          if (headings.length > 0) {
-            sections.push(`Headings:\n` + headings.map((h) => `- [${h.tag.toUpperCase()}] ${h.text}`).join("\n"));
-          }
-          if (alerts.length > 0) {
-            sections.push(`Alerts / Status:\n` + alerts.map((a) => `- ${a}`).join("\n"));
-          }
-          if (bodyText) {
-            sections.push(`Visible Content:\n${truncate(bodyText, 5000)}`);
-          } else {
-            sections.push(`Visible Content: (no visible text)`);
-          }
+          if (data.viewMode) sections.push(`View Mode: [${String(data.viewMode).toUpperCase()}]`);
+          if (headings.length > 0) sections.push(`Headings:\n` + headings.map((h) => `- [${h.tag.toUpperCase()}] ${h.text}`).join("\n"));
+          if (alerts.length > 0) sections.push(`Alerts / Status:\n` + alerts.map((a) => `- ${a}`).join("\n"));
+          sections.push(bodyText ? `Visible Content:\n${truncate(bodyText, 5000)}` : `Visible Content: (no visible text)`);
           if (links.length > 0) {
             sections.push(`Key Links (${links.length}):\n` + links.slice(0, 20).map((l) => `- "${l.text || '(no text)'}" -> ${l.href}`).join("\n"));
           }
@@ -869,6 +812,7 @@ export const controlChromeCdpTool: Tool = {
           if (payload.verify || payload.observe) {
             beforeState = await captureDomState(cdpSend, target);
           }
+          const clickStartTs = Date.now() - 2;
           const res: any = await cdpSend(target, "Runtime.evaluate", {
             expression: buildClickJs(resolved.selector),
             returnByValue: true,
@@ -878,9 +822,13 @@ export const controlChromeCdpTool: Tool = {
           if (!parsed.ok) return `control_chrome_cdp: click failed - ${parsed.reason || "unknown reason"}.`;
           const textStr = parsed.text ? ` "${parsed.text}"` : "";
           let clickResult = `control_chrome_cdp: clicked <${parsed.tag}>${textStr}.`;
+          const recentDialogs = getRecentDialogs(target.id, clickStartTs);
+          if (recentDialogs.length > 0) {
+            clickResult += `\nIntercepted Native Dialog(s): ${recentDialogs.map(formatDialogEntry).join(" | ")}`;
+          }
           if (beforeState) {
             const debounceMs = parseTimeoutMs(payload.debounce_ms, 200);
-            const diff = await observeActionTransition(cdpSend, target, beforeState, debounceMs);
+            const diff = await observeActionTransition(cdpSend, target, beforeState, debounceMs, clickStartTs);
             clickResult += `\n${formatTransitionSummary(diff)}`;
           }
           return await attachScreenshotIfRequested(cdpSend, target, payload, clickResult, false);
@@ -912,9 +860,7 @@ export const controlChromeCdpTool: Tool = {
           const parsed = parseActionResult(typeof value === "string" ? value : JSON.stringify(value));
           if (!parsed.ok) return `control_chrome_cdp: type failed - ${parsed.reason || "unknown reason"}.`;
           if (payload.native || payload.dispatch_keys) {
-            try {
-              await cdpSend(target, "Input.insertText", { text });
-            } catch (e) {}
+            try { await cdpSend(target, "Input.insertText", { text }); } catch {}
           }
           const typeResult = `control_chrome_cdp: typed into <${parsed.tag}>: "${truncate(parsed.typed || text, 80)}".`;
           return await attachScreenshotIfRequested(cdpSend, target, payload, typeResult, false);
@@ -932,9 +878,7 @@ export const controlChromeCdpTool: Tool = {
             text: text || undefined,
             timeoutMs: waitMs,
           });
-          if (!w.ok) {
-            return `control_chrome_cdp: wait_for ${w.reason || "timed out"}.`;
-          }
+          if (!w.ok) return `control_chrome_cdp: wait_for ${w.reason || "timed out"}.`;
           const what =
             w.kind === "text"
               ? `text "${w.text}"`
@@ -945,6 +889,14 @@ export const controlChromeCdpTool: Tool = {
         case "verify_action": {
           const target = await pickTarget(targetId);
           return await executeVerifyAction(cdpSend, target, payload, attachScreenshotIfRequested);
+        }
+        case "get_dialogs": {
+          const target = await pickTarget(targetId, false);
+          return executeGetDialogsCommand(target, payload);
+        }
+        case "handle_dialog": {
+          const target = await pickTarget(targetId, false);
+          return await executeHandleDialogCommand(cdpSend, target, payload);
         }
         case "screenshot": {
           const target = await pickTarget(targetId);
@@ -978,8 +930,18 @@ export const controlChromeCdpTool: Tool = {
           }));
           return `control_chrome_cdp: ${cookies.length} cookie(s):\n${JSON.stringify(summary, null, 1)}`;
         }
+        case "inspect_media_devices":
+        case "media_devices": {
+          const target = await pickTarget(targetId);
+          const grant = Boolean(payload.grantPermissions ?? payload.grant_permissions);
+          const reset = Boolean(payload.resetPermissions ?? payload.reset_permissions);
+          return await executeInspectMediaDevices(cdpSend, target, {
+            grantPermissions: grant,
+            resetPermissions: reset,
+          });
+        }
         default:
-          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, screenshot, pdf, get_cookies.`;
+          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices.`;
       }
     } catch (err: any) {
       return `control_chrome_cdp failed: ${(err && err.message) || String(err)}`;

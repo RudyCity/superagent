@@ -117,10 +117,10 @@ export const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
     .filter(h => h.text.length > 0 && h.text.length < 150)
     .slice(0, 6);
 
-  const alerts = Array.from(document.querySelectorAll('[role="alert"], [aria-live], .alert, .error, .notification, .banner'))
+  const alerts = Array.from(document.querySelectorAll('[role="alert"], [role="status"], [role="alertdialog"], [aria-live="assertive"], [aria-live="polite"], [data-sonner-toast], [data-radix-toast-viewport] > *, .toast, .alert, .error, .notification, .banner, [class*="toast" i], [class*="snackbar" i]'))
     .map(a => (a.innerText || '').replace(/\\s+/g, ' ').trim())
     .filter(t => t.length > 0 && t.length < 200)
-    .slice(0, 3);
+    .slice(0, 5);
 
   const hasModal = Boolean(document.querySelector('[role="dialog"], dialog[open], [class*="modal" i]:not(body), div.fixed.inset-0:not(#__next):not(#root)'));
   const hasDrawer = Boolean(document.querySelector('[role="region"][class*="drawer" i], [class*="slide-over" i], aside.fixed'));
@@ -158,7 +158,7 @@ export const READ_PAGE_JS = `/*cdp-read-page*/(() => {
     .filter(h => h.text.length > 0)
     .slice(0, 10);
 
-  const alerts = Array.from(document.querySelectorAll('[role="alert"], [aria-live], .alert, .error, .notification, .toast, .banner'))
+  const alerts = Array.from(document.querySelectorAll('[role="alert"], [role="status"], [role="alertdialog"], [aria-live="assertive"], [aria-live="polite"], [data-sonner-toast], [data-radix-toast-viewport] > *, .toast, .alert, .error, .notification, .banner, [class*="toast" i], [class*="snackbar" i]'))
     .map(a => (a.innerText || '').replace(/\\s+/g, ' ').trim())
     .filter(t => t.length > 0)
     .slice(0, 5);
@@ -590,3 +590,150 @@ export async function waitForInPage(
   return { ok: false, reason: `unexpected wait_for result: ${raw.slice(0, 200)}` };
 }
 
+export interface CdpDialogEntry {
+  type: string;
+  message: string;
+  url?: string;
+  defaultPrompt?: string;
+  timestamp: number;
+  accepted: boolean;
+  promptText?: string;
+}
+
+export interface CdpDialogPolicy {
+  autoAccept: boolean;
+  promptText?: string;
+}
+
+const MAX_DIALOG_HISTORY = 25;
+export const dialogStore = new Map<string, CdpDialogEntry[]>();
+export const dialogPolicyStore = new Map<string, CdpDialogPolicy>();
+const defaultDialogPolicy: CdpDialogPolicy = { autoAccept: true };
+
+export function setDialogPolicy(targetId: string, policy: CdpDialogPolicy): void {
+  dialogPolicyStore.set(targetId || "*", {
+    autoAccept: policy.autoAccept !== undefined ? Boolean(policy.autoAccept) : true,
+    ...(policy.promptText !== undefined ? { promptText: String(policy.promptText) } : {}),
+  });
+}
+
+export function getDialogPolicy(targetId: string): CdpDialogPolicy {
+  return dialogPolicyStore.get(targetId) ?? dialogPolicyStore.get("*") ?? defaultDialogPolicy;
+}
+
+export function recordCdpDialog(targetId: string, entry: CdpDialogEntry): void {
+  const list = dialogStore.get(targetId) ?? [];
+  list.push(entry);
+  if (list.length > MAX_DIALOG_HISTORY) {
+    list.splice(0, list.length - MAX_DIALOG_HISTORY);
+  }
+  dialogStore.set(targetId, list);
+}
+
+export function getRecentDialogs(targetId: string, sinceTimestamp = 0): CdpDialogEntry[] {
+  const list = dialogStore.get(targetId) ?? [];
+  if (sinceTimestamp <= 0) return [...list];
+  return list.filter((d) => d.timestamp >= sinceTimestamp);
+}
+
+export function clearCdpDialogs(targetId?: string): void {
+  if (targetId) {
+    dialogStore.delete(targetId);
+    dialogPolicyStore.delete(targetId);
+  } else {
+    dialogStore.clear();
+    dialogPolicyStore.clear();
+  }
+}
+
+export function formatDialogEntry(d: CdpDialogEntry): string {
+  const kind = String(d.type || "alert").toUpperCase();
+  const status = d.accepted ? "accepted" : "dismissed";
+  const promptSuffix = d.promptText !== undefined ? `, promptText="${d.promptText}"` : "";
+  return `[NATIVE ${kind}] "${d.message}" (${status}${promptSuffix})`;
+}
+
+/**
+ * Handles server-initiated CDP events on an active target WebSocket connection.
+ * Specifically intercepts Page.javascriptDialogOpening (window.alert, confirm, prompt, beforeunload),
+ * records the dialog metadata, and immediately dispatches Page.handleJavaScriptDialog
+ * according to the active target policy so synchronous JS execution never deadlocks.
+ */
+export function handleIncomingCdpEvent(
+  targetId: string,
+  method: string,
+  params: Record<string, unknown> | undefined,
+  sendRaw: (method: string, params: Record<string, unknown>) => void
+): void {
+  if (method !== "Page.javascriptDialogOpening") return;
+  const type = String(params?.type || "alert");
+  const message = String(params?.message ?? "");
+  const url = params?.url ? String(params.url) : undefined;
+  const defaultPrompt =
+    params?.defaultPrompt !== undefined && params?.defaultPrompt !== ""
+      ? String(params.defaultPrompt)
+      : undefined;
+
+  const policy = getDialogPolicy(targetId);
+  const promptText = policy.promptText !== undefined ? policy.promptText : defaultPrompt;
+
+  const entry: CdpDialogEntry = {
+    type,
+    message,
+    url,
+    defaultPrompt,
+    timestamp: Date.now(),
+    accepted: policy.autoAccept,
+    ...(promptText !== undefined ? { promptText } : {}),
+  };
+  recordCdpDialog(targetId, entry);
+
+  const handleParams: Record<string, unknown> = { accept: policy.autoAccept };
+  if (promptText !== undefined) {
+    handleParams.promptText = promptText;
+  }
+  sendRaw("Page.handleJavaScriptDialog", handleParams);
+}
+
+export function executeGetDialogsCommand(target: CdpTarget, payload: Record<string, unknown>): string {
+  const dialogs = getRecentDialogs(target.id);
+  const shouldClear = Boolean(payload.clear);
+  if (shouldClear) {
+    dialogStore.delete(target.id);
+  }
+  if (dialogs.length === 0) {
+    return `control_chrome_cdp: 0 native JavaScript dialogs recorded on '${target.title}'.`;
+  }
+  const lines = dialogs.map((d, idx) => `${idx + 1}. ${formatDialogEntry(d)}`);
+  return `control_chrome_cdp: ${dialogs.length} native JavaScript dialog(s) captured on '${target.title}':\n${lines.join("\n")}`;
+}
+
+export async function executeHandleDialogCommand(
+  cdpSend: (target: CdpTarget, method: string, params?: Record<string, unknown>) => Promise<any>,
+  target: CdpTarget,
+  payload: Record<string, unknown>
+): Promise<string> {
+  const accept = payload.accept !== undefined ? Boolean(payload.accept) : true;
+  const promptText =
+    payload.promptText !== undefined
+      ? String(payload.promptText)
+      : payload.prompt_text !== undefined
+        ? String(payload.prompt_text)
+        : payload.text !== undefined
+          ? String(payload.text)
+          : undefined;
+
+  setDialogPolicy(target.id, { autoAccept: accept, promptText });
+  try {
+    await cdpSend(target, "Page.handleJavaScriptDialog", {
+      accept,
+      ...(promptText !== undefined ? { promptText } : {}),
+    });
+  } catch {
+    /* No active blocking dialog open right now; policy is stored for future dialogs */
+  }
+  return (
+    `control_chrome_cdp: dialog policy updated for '${target.title}' ` +
+    `(autoAccept=${accept}${promptText !== undefined ? `, promptText="${promptText}"` : ""}).`
+  );
+}

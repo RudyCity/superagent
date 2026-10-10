@@ -4,7 +4,18 @@ import {
   formatTransitionSummary,
   DomStateSnapshot,
 } from "../src/core/tools/chromeCdpTransition.js";
-import { formatContextHeader, PageOverview } from "../src/core/tools/chromeCdpHelpers.js";
+import {
+  formatContextHeader,
+  PageOverview,
+  handleIncomingCdpEvent,
+  getRecentDialogs,
+  clearCdpDialogs,
+  setDialogPolicy,
+  formatDialogEntry,
+  SNAPSHOT_JS,
+  READ_PAGE_JS,
+} from "../src/core/tools/chromeCdpHelpers.js";
+import { CAPTURE_DOM_STATE_JS } from "../src/core/tools/chromeCdpTransition.js";
 
 describe("chromeCdpTransition", () => {
   const baseState: DomStateSnapshot = {
@@ -111,6 +122,82 @@ describe("chromeCdpTransition", () => {
     const diff = computeTransitionDiff(baseState, alertState);
     expect(diff.type).toBe("toast_notification");
     expect(diff.description).toContain("Kupon berhasil disimpan");
+  });
+
+  test("detects native_dialog transition when a native browser alert/confirm is captured", () => {
+    const nativeAlertState: DomStateSnapshot = {
+      ...baseState,
+      alerts: ['[NATIVE CONFIRM] "Delete this item?" (accepted)'],
+    };
+
+    const diff = computeTransitionDiff(baseState, nativeAlertState);
+    expect(diff.type).toBe("native_dialog");
+    expect(diff.description).toContain("Delete this item?");
+
+    const summary = formatTransitionSummary(diff);
+    expect(summary).toContain("[NATIVE_DIALOG]");
+    expect(summary).toContain("Alerts: [NATIVE CONFIRM]");
+  });
+
+  test("handleIncomingCdpEvent intercepts Page.javascriptDialogOpening and dispatches Page.handleJavaScriptDialog", () => {
+    clearCdpDialogs();
+    const sentCalls: Array<{ method: string; params: Record<string, unknown> }> = [];
+    handleIncomingCdpEvent(
+      "T_TEST",
+      "Page.javascriptDialogOpening",
+      {
+        url: "http://localhost:7002/admin",
+        message: "Are you sure you want to reset layout?",
+        type: "confirm",
+        hasBrowserHandler: true,
+      },
+      (method, params) => sentCalls.push({ method, params })
+    );
+
+    expect(sentCalls).toHaveLength(1);
+    expect(sentCalls[0].method).toBe("Page.handleJavaScriptDialog");
+    expect(sentCalls[0].params.accept).toBe(true);
+
+    const dialogs = getRecentDialogs("T_TEST");
+    expect(dialogs).toHaveLength(1);
+    expect(dialogs[0].type).toBe("confirm");
+    expect(dialogs[0].message).toBe("Are you sure you want to reset layout?");
+    expect(dialogs[0].accepted).toBe(true);
+    expect(formatDialogEntry(dialogs[0])).toContain('[NATIVE CONFIRM] "Are you sure you want to reset layout?" (accepted)');
+  });
+
+  test("setDialogPolicy configures custom dismiss and promptText for native dialogs", () => {
+    clearCdpDialogs();
+    setDialogPolicy("T_PROMPT", { autoAccept: false, promptText: "Custom Layout Name" });
+    const sentCalls: Array<{ method: string; params: Record<string, unknown> }> = [];
+
+    handleIncomingCdpEvent(
+      "T_PROMPT",
+      "Page.javascriptDialogOpening",
+      {
+        url: "http://localhost:7002/admin",
+        message: "Enter layout name:",
+        type: "prompt",
+        defaultPrompt: "Untitled",
+      },
+      (method, params) => sentCalls.push({ method, params })
+    );
+
+    expect(sentCalls).toHaveLength(1);
+    expect(sentCalls[0].params).toEqual({ accept: false, promptText: "Custom Layout Name" });
+
+    const dialogs = getRecentDialogs("T_PROMPT");
+    expect(dialogs).toHaveLength(1);
+    expect(dialogs[0].accepted).toBe(false);
+    expect(dialogs[0].promptText).toBe("Custom Layout Name");
+  });
+
+  test("DOM alert selectors include Sonner, Radix toast, status, and alertdialog roles across all snippets", () => {
+    for (const snippet of [SNAPSHOT_JS, READ_PAGE_JS, CAPTURE_DOM_STATE_JS]) {
+      expect(snippet).toContain("[data-sonner-toast]");
+      expect(snippet).toContain('[role="status"]');
+      expect(snippet).toContain('[role="alertdialog"]');
+    }
   });
 
   test("formatContextHeader includes View Mode when present", () => {
