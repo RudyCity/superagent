@@ -7,6 +7,12 @@
 - CDP Parameter Schema & Tool Description Enhancement (`src/core/tools/chromeCdpTools.ts`):
   - Documented and exposed explicit schema parameters for `control_chrome_cdp` (`preset`, `device`, `orientation`, `width`, `height`, `scale`, `touch`, `userAgent`) for first-class schema introspection via `describe_tool`.
   - Added usage guidelines, payloads, and examples for `emulate_device` and `drag_and_drop` commands.
+- Bidirectional Real-Time Telegram Ingress & Operator Chat Catching (`src/core/remoteAgent/museClient.ts`, `src/core/remoteAgent/museWatcher.ts`):
+  - Upgraded Telegram polling engine to capture plain text chat and human operator commands in real time while strictly enforcing task batch sender isolation.
+  - Operator cancel commands (`/cancel`, `/stop`, `cancel`, `stop`) sent in the Telegram group immediately trigger sub-second in-flight execution aborts.
+  - Human operator chat messages are captured as real-time chat envelopes and rendered directly to the terminal console (`[Telegram Operator @username]: ...`).
+  - Strengthened defense-in-depth: only authorized Muse bot (`museBotId`) may issue `task_batch` and `task_done` execution envelopes; non-Muse attempts are rejected with security logs.
+  - Added unit test suite `tests/museTelegramRealtime.test.ts` validating real-time operator chat/cancel ingestion and non-Muse batch rejection.
 - System Prompt & Help Optimization (`src/core/prompts.ts`, `src/core/config/base.ts`, `src/core/commands/coreCommands.ts`):
   - Updated `/help` listing to include `/tools`, `/macro`, and `/gateway`.
   - Updated system prompts across tiers (`BROWSER_CONTROL_RULE`, `BROWSER_AUTOMATION_CORE`, `chrome-agent`, `base.ts`) ensuring agents leverage native CDP device emulation and drag-and-drop capabilities while adhering strictly to `TOOL_FIRST` discipline.
