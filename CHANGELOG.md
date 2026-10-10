@@ -1,3 +1,20 @@
+## [1.13.48] - 2026-10-11
+### Added & Enhanced
+- Cross-Process IPC Mailbox & Standalone Process Steering (`src/core/ipc/processMailbox.ts`, `src/core/mcp/processJournal.ts`, `src/core/mcp/tools/processTools.ts`, `src/core/mcp/tools/executionTools.ts`, `src/core/agent.ts`):
+  - Created atomic JSON-based IPC mailbox system (`~/.superagent-r/ipc/<pid>.json`) enabling external MCP tools (`superagent_send_message`, `superagent_pause`, `superagent_resume`, `superagent_interrupt`) to steer, pause, resume, and interrupt standalone Superagent CLI processes by PID or session ID.
+  - Active CLI sessions auto-register a non-blocking background mailbox listener on startup with automatic mailbox cleanup on process exit.
+  - Added native `isPaused`, `pause()`, and `resume()` lifecycle controls to `Agent`, ensuring paused processes pause between loop iterations and resume seamlessly on signal.
+- Atomic Dropdown Selection & Pre-Flight Form Audit Engine (`src/core/tools/chromeCdpForm.ts`, `src/core/tools/chromeCdpTools.ts`, `src/core/tools/index.ts`):
+  - Added atomic `select_option` (aliases: `select_dropdown`, `pick_option`) supporting both native `<select>` and modern custom headless UI dropdowns (Radix UI, Shadcn, React-Select, Ant Design, Headless UI, ARIA comboboxes). Automatically triggers overlay, polls for options, scrolls into view, clicks, and dispatches native events. Returns formatted available options on mismatch so agents never loop or hallucinate unavailable options.
+  - Added pre-flight `check_form` (aliases: `check_form_readiness`, `audit_form`) to inspect interactive form fields, required attributes, unfilled inputs, visible validation errors, and submit button readiness before submission.
+  - Registered resilient tool aliases (`select_option`, `select_dropdown`, `check_form`, `check_form_readiness`) in tool registry.
+- Proactive Candidate Element Recommendations in RealtimeAdvisor (`src/core/advisorHelpers.ts`):
+  - Added `getCandidateBrowserElements` to extract alternative interactive elements (`<button>`, `<select>`, `<input>`, `<a>`) from the active DOM snapshot when an agent loops on an unchanged target element.
+  - Injected proactive alternative candidate suggestions alongside negative constraints in `generateCycleSuggestion` and `generateRecoverySuggestion`.
+- Test Suite Partitioning & Comprehensive Test Coverage:
+  - Added `test:unit` and `test:integration` npm scripts in `package.json` for sub-second focused unit test execution.
+  - Added unit test suites `tests/processMailbox.test.ts`, `tests/chromeCdpForm.test.ts`, and `tests/advisorCandidateElements.test.ts`.
+
 ## [1.13.47] - 2026-10-11
 ### Added & Enhanced
 - Full Native Tool Registration to Model Context Protocol (MCP) Server (`src/core/mcp/superagentMcpServer.ts`, `src/core/mcp/tools/`):

@@ -1,4 +1,5 @@
 import type { ToolCall, ToolResult } from "./conversation.js";
+import { snapshotStore } from "./tools/chromeCdpHelpers.js";
 
 export const WRITE_TOOLS = new Set([
   "write_to_file",
@@ -332,11 +333,55 @@ export function extractCycleTargetDetails(callKeys: string[]): string | undefine
   return undefined;
 }
 
+/**
+ * Extracts candidate alternative interactive elements from the active DOM snapshot
+ * to recommend to the agent when it is looping or repeating actions on a single target.
+ */
+export function getCandidateBrowserElements(excludedTargetDetails?: string, limit: number = 3): string[] {
+  try {
+    if (!snapshotStore || snapshotStore.size === 0) return [];
+    const excludedIndexMatch = excludedTargetDetails?.match(/element \[(\d+)\]/i);
+    const excludedIndex = excludedIndexMatch ? parseInt(excludedIndexMatch[1], 10) : undefined;
+
+    const allEntries = Array.from(snapshotStore.values());
+    const latestEntries = allEntries[allEntries.length - 1];
+    if (!latestEntries || !Array.isArray(latestEntries)) return [];
+
+    const candidates: string[] = [];
+    for (const e of latestEntries) {
+      if (excludedIndex !== undefined && e.index === excludedIndex) continue;
+      const tag = (e.tag || "").toLowerCase();
+      const role = (e.role || "").toLowerCase();
+      const type = (e.type || "").toLowerCase();
+      const isActionable =
+        tag === "button" ||
+        tag === "select" ||
+        role === "button" ||
+        role === "combobox" ||
+        (tag === "input" && type !== "hidden") ||
+        tag === "a";
+
+      if (isActionable) {
+        const rawLabel = (e.text || e.placeholder || e.ariaLabel || "").trim();
+        const label = rawLabel.length > 28 ? rawLabel.slice(0, 25) + "..." : rawLabel;
+        const labelPart = label ? ` "${label}"` : "";
+        candidates.push(`[${e.index}] <${tag}>${labelPart}`);
+        if (candidates.length >= limit) break;
+      }
+    }
+    return candidates;
+  } catch {
+    return [];
+  }
+}
+
 export function generateCycleSuggestion(toolNames: string[], targetDetails?: string): string {
   const isBrowser = toolNames.some(t => t.includes("chrome") || t.includes("browser") || t.includes("url"));
   if (isBrowser) {
     if (targetDetails) {
-      return `Do not alternate between the same repeated browser actions on ${targetDetails}. Target state is unchanged. Interact with a different element, scroll, or summarize findings.`;
+      const candidates = getCandidateBrowserElements(targetDetails);
+      const candStr = candidates.length > 0 ? ` Candidate alternative elements: ${candidates.join(", ")}.` : "";
+      return `Do not alternate between the same repeated browser actions on ${targetDetails}. Target state is unchanged.${candStr} Interact with a different element, run 'check_form', scroll, or summarize findings.`;
     }
     return "Do not alternate between the same repeated browser actions. Try a different interaction or summarize your findings.";
   }
@@ -363,9 +408,11 @@ export function generateCycleSuggestion(toolNames: string[], targetDetails?: str
 export function generateRecoverySuggestion(toolNames: string[], hasError: boolean, targetDetails?: string): string {
   if (toolNames.some(t => t.includes("chrome") || t.includes("browser"))) {
     if (targetDetails) {
+      const candidates = getCandidateBrowserElements(targetDetails);
+      const candStr = candidates.length > 0 ? ` Candidate alternative elements: ${candidates.join(", ")}.` : "";
       return hasError
-        ? `Check Chrome connection, target tab, or selector syntax before retrying browser action on ${targetDetails}.`
-        : `Page content or state has not changed after interacting with ${targetDetails}. Do not repeat action on ${targetDetails}. Try navigating to another URL, interacting with a different element, or summarizing audit findings.`;
+        ? `Check Chrome connection, target tab, or selector syntax before retrying browser action on ${targetDetails}.${candStr}`
+        : `Page content or state has not changed after interacting with ${targetDetails}. Do not repeat action on ${targetDetails}.${candStr} Try checking form readiness with 'check_form', navigating to another URL, or interacting with an alternative element.`;
     }
     return hasError
       ? "Check Chrome connection, target tab, or selector syntax before retrying browser action."

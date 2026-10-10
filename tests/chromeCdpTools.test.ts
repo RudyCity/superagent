@@ -304,6 +304,8 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(cmds).toEqual([
       "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate",
       "snapshot", "read_page", "extract_links", "click", "type", "wait_for",
+      "select_option", "select_dropdown", "pick_option",
+      "check_form", "check_form_readiness", "audit_form",
       "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
       "get_cookies", "inspect_media_devices", "media_devices",
       "move_cursor", "move_mouse", "show_cursor", "hide_cursor", "get_cursor",

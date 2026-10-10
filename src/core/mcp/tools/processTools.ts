@@ -357,6 +357,16 @@ export async function handleInterrupt(args: any): Promise<McpToolResult> {
     }
   }
 
+  if (id && stopped.length === 0) {
+    try {
+      const { sendEnvelopeToProcess } = await import("../../ipc/processMailbox.js");
+      const ipcRes = sendEnvelopeToProcess(id, { type: "interrupt", sender: "mcp" });
+      if (ipcRes.success) {
+        stopped.push(`Process PID ${ipcRes.pid} (via IPC mailbox)`);
+      }
+    } catch {}
+  }
+
   const msg = stopped.length > 0
     ? `Successfully interrupted: ${stopped.join(", ")}`
     : "No active agents or processes were running.";
@@ -372,15 +382,40 @@ export async function handlePause(args: any): Promise<McpToolResult> {
     };
   }
 
-  await callServerApi("/api/superagents/pause", "POST", { superagentId });
+  const serverRes = await callServerApi("/api/superagents/pause", "POST", { superagentId });
+  if (serverRes.success) {
+    return {
+      content: [{ type: "text", text: `Superagent ${superagentId} paused (server).` }],
+    };
+  }
 
   const inst = superagentInstances.get(superagentId);
   if (inst) {
     inst.status = "paused";
+    if (inst.agent?.pause) inst.agent.pause();
     return {
       content: [{ type: "text", text: `Superagent ${superagentId} (${inst.role}) paused.` }],
     };
   }
+
+  if ((superagentId === "master" || superagentId === "all") && masterAgentRef) {
+    if (masterAgentRef.pause) masterAgentRef.pause();
+    else masterAgentRef.isPaused = true;
+    return {
+      content: [{ type: "text", text: "Master Agent execution paused." }],
+    };
+  }
+
+  // Fallback to IPC mailbox for standalone CLI process
+  try {
+    const { sendEnvelopeToProcess } = await import("../../ipc/processMailbox.js");
+    const ipcRes = sendEnvelopeToProcess(superagentId, { type: "pause", sender: "mcp" });
+    if (ipcRes.success) {
+      return {
+        content: [{ type: "text", text: `Pause signal delivered to process PID ${ipcRes.pid} via IPC mailbox.` }],
+      };
+    }
+  } catch {}
 
   return {
     content: [{ type: "text", text: `Superagent ${superagentId} paused (dispatched).` }],
@@ -396,15 +431,40 @@ export async function handleResume(args: any): Promise<McpToolResult> {
     };
   }
 
-  await callServerApi("/api/superagents/resume", "POST", { superagentId });
+  const serverRes = await callServerApi("/api/superagents/resume", "POST", { superagentId });
+  if (serverRes.success) {
+    return {
+      content: [{ type: "text", text: `Superagent ${superagentId} resumed (server).` }],
+    };
+  }
 
   const inst = superagentInstances.get(superagentId);
   if (inst) {
     inst.status = "running";
+    if (inst.agent?.resume) inst.agent.resume();
     return {
       content: [{ type: "text", text: `Superagent ${superagentId} (${inst.role}) resumed.` }],
     };
   }
+
+  if ((superagentId === "master" || superagentId === "all") && masterAgentRef) {
+    if (masterAgentRef.resume) masterAgentRef.resume();
+    else masterAgentRef.isPaused = false;
+    return {
+      content: [{ type: "text", text: "Master Agent execution resumed." }],
+    };
+  }
+
+  // Fallback to IPC mailbox for standalone CLI process
+  try {
+    const { sendEnvelopeToProcess } = await import("../../ipc/processMailbox.js");
+    const ipcRes = sendEnvelopeToProcess(superagentId, { type: "resume", sender: "mcp" });
+    if (ipcRes.success) {
+      return {
+        content: [{ type: "text", text: `Resume signal delivered to process PID ${ipcRes.pid} via IPC mailbox.` }],
+      };
+    }
+  } catch {}
 
   return {
     content: [{ type: "text", text: `Superagent ${superagentId} resumed (dispatched).` }],

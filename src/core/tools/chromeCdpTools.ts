@@ -13,31 +13,12 @@ import { Tool } from "./types.js";
 import { get as httpGet, request as httpRequest } from "http";
 import { ensureCdpRunning } from "./chromeCommon.js";
 import {
-  CdpTarget,
-  SnapshotEntry,
-  PageOverview,
-  snapshotStore,
-  snapshotPrevStore,
-  SNAPSHOT_JS,
-  READ_PAGE_JS,
-  buildExtractLinksJs,
-  READY_STATE_JS,
-  buildClickJs,
-  buildTypeJs,
-  buildWaitForJs,
-  parseActionResult,
-  parseTimeoutMs,
-  formatSnapshotEntry,
-  formatSnapshotDiff,
-  formatContextHeader,
-  resolveActionSelector,
-  waitForInPage,
-  handleIncomingCdpEvent,
-  getRecentDialogs,
-  clearCdpDialogs,
-  formatDialogEntry,
-  executeGetDialogsCommand,
-  executeHandleDialogCommand,
+  CdpTarget, SnapshotEntry, PageOverview, snapshotStore, snapshotPrevStore,
+  SNAPSHOT_JS, READ_PAGE_JS, buildExtractLinksJs, READY_STATE_JS,
+  buildClickJs, buildTypeJs, buildWaitForJs, parseActionResult, parseTimeoutMs,
+  formatSnapshotEntry, formatSnapshotDiff, formatContextHeader, resolveActionSelector,
+  waitForInPage, handleIncomingCdpEvent, getRecentDialogs, clearCdpDialogs,
+  formatDialogEntry, executeGetDialogsCommand, executeHandleDialogCommand,
 } from "./chromeCdpHelpers.js";
 import {
   captureCdpScreenshot,
@@ -59,6 +40,7 @@ import {
   executeDragAndDropCommand,
 } from "./chromeCdpCursor.js";
 import { executeDeviceEmulationCommand } from "./chromeCdpEmulation.js";
+import { executeSelectOptionCommand, executeCheckFormCommand } from "./chromeCdpForm.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -509,6 +491,8 @@ export const controlChromeCdpTool: Tool = {
         enum: [
           "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate",
           "snapshot", "read_page", "extract_links", "click", "type", "wait_for",
+          "select_option", "select_dropdown", "pick_option",
+          "check_form", "check_form_readiness", "audit_form",
           "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
           "get_cookies", "inspect_media_devices", "media_devices", "move_cursor",
           "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
@@ -520,12 +504,14 @@ export const controlChromeCdpTool: Tool = {
       payload: {
         type: "string",
         description:
-          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. drag_and_drop: {"source": "#card", "target": "#column", "mode": "mouse"|"html5", "screenshot": true}. emulate_device: {"preset": "mobile"|"tablet"|"desktop"|"reset", "orientation": "portrait"|"landscape", "screenshot": true}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
+          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. select_option: {"index": 5, "option": "Paket Basic"} or {"selector": "[role=combobox]", "option": "Yes"}. check_form: {"selector": "form"} (pre-flight check for missing required fields & submit readiness). drag_and_drop: {"source": "#card", "target": "#column", "mode": "mouse"|"html5", "screenshot": true}. emulate_device: {"preset": "mobile"|"tablet"|"desktop"|"reset", "orientation": "portrait"|"landscape", "screenshot": true}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
       },
       url: { type: "string", description: "Optional top-level URL convenience shortcut for new_tab or navigate." },
-      index: { type: "number", description: "Optional top-level element index convenience shortcut for click or type." },
+      index: { type: "number", description: "Optional top-level element index convenience shortcut for click, type, or select_option." },
       text: { type: "string", description: "Optional top-level text convenience shortcut for type or wait_for." },
-      selector: { type: "string", description: "Optional top-level CSS selector convenience shortcut for click, type, or wait_for." },
+      selector: { type: "string", description: "Optional top-level CSS selector convenience shortcut for click, type, wait_for, select_option, or check_form." },
+      option: { type: "string", description: "Optional option label, text, or value to select for select_option." },
+      exact: { type: "boolean", description: "Optional exact match flag for select_option." },
       pattern: { type: "string", description: "Optional top-level keyword filter pattern for extract_links." },
       source: { type: "string", description: "Optional source selector or index for drag_and_drop." },
       target: { type: "string", description: "Optional target selector or index for drag_and_drop." },
@@ -570,20 +556,16 @@ export const controlChromeCdpTool: Tool = {
       }
     }
     const convenienceKeys = [
-      "url", "index", "text", "selector", "pattern", "query", "filter", "expression",
-      "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements",
-      "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path",
-      "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms",
-      "accept", "promptText", "prompt_text", "grantPermissions", "grant_permissions",
-      "resetPermissions", "reset_permissions", "smooth", "human", "realistic",
-      "x", "y", "steps", "step_delay_ms", "visualCursor", "visual",
-      "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index",
-      "sourceSelector", "targetSelector", "source_selector", "target_selector",
-      "sourceX", "sourceY", "fromX", "fromY", "startX", "startY",
-      "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
-      "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms",
-      "preset", "device", "mode", "orientation", "screenOrientation", "width", "height",
-      "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets",
+      "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms",
+      "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear",
+      "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path",
+      "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text",
+      "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic",
+      "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex",
+      "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector",
+      "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
+      "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation",
+      "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
@@ -983,8 +965,22 @@ export const controlChromeCdpTool: Tool = {
           const emuResult = await executeDeviceEmulationCommand(cdpSend, target, payload);
           return await attachScreenshotIfRequested(cdpSend, target, payload, emuResult, false);
         }
+        case "select_option":
+        case "select_dropdown":
+        case "pick_option": {
+          const target = await pickTarget(targetId);
+          const selResult = await executeSelectOptionCommand(cdpSend, target, payload);
+          return await attachScreenshotIfRequested(cdpSend, target, payload, selResult, false);
+        }
+        case "check_form":
+        case "check_form_readiness":
+        case "audit_form": {
+          const target = await pickTarget(targetId);
+          const formResult = await executeCheckFormCommand(cdpSend, target, payload);
+          return await attachScreenshotIfRequested(cdpSend, target, payload, formResult, false);
+        }
         default:
-          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, move_cursor, get_cursor, show_cursor, hide_cursor, drag_and_drop, emulate_device.`;
+          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, select_option, check_form, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, move_cursor, drag_and_drop, emulate_device.`;
       }
     } catch (err: any) {
       return `control_chrome_cdp failed: ${(err && err.message) || String(err)}`;

@@ -96,6 +96,7 @@ export class Agent {
   public goalMode: string | null = null;
   public goalMaxIterations: number = DEFAULT_GOAL_MAX_ITERATIONS;
   public wasRunningBeforeAbort = false;
+  public isPaused = false;
   public allowSessionOutOfBounds = false;
   /** Separate flag — file write tools (write_to_file, replace_file_content, etc.) are NEVER granted session-wide bypass. */
   public allowSessionFileWriteOutOfBounds = false;
@@ -514,26 +515,11 @@ export class Agent {
     };
   }
 
-  public getTaskFilePath(): string {
-    return PathResolver.getTaskFilePath(this);
-  }
-
-  public getWalkthroughFilePath(): string {
-    return PathResolver.getWalkthroughFilePath(this);
-  }
-
-  public getTaskHistoryFilePath(): string {
-    return PathResolver.getTaskHistoryFilePath(this);
-  }
-
-
-  public resolveHistoryFilePath(autoResume: boolean | string): string {
-    return PathResolver.resolveHistoryFilePath(this, autoResume);
-  }
-
-  public getCurrentHistoryFilePath(): string {
-    return PathResolver.getCurrentHistoryFilePath(this);
-  }
+  public getTaskFilePath(): string { return PathResolver.getTaskFilePath(this); }
+  public getWalkthroughFilePath(): string { return PathResolver.getWalkthroughFilePath(this); }
+  public getTaskHistoryFilePath(): string { return PathResolver.getTaskHistoryFilePath(this); }
+  public resolveHistoryFilePath(autoResume: boolean | string): string { return PathResolver.resolveHistoryFilePath(this, autoResume); }
+  public getCurrentHistoryFilePath(): string { return PathResolver.getCurrentHistoryFilePath(this); }
 
   public getSessionId(): string {
     if (this.sessionId) return this.sessionId;
@@ -545,26 +531,11 @@ export class Agent {
     return "";
   }
 
-
-  getConversationMessages(): Message[] {
-    return this.conversation.getMessages();
-  }
-
-  async loadHistory(autoResume: boolean | string = false): Promise<void> {
-    await HistoryManager.loadHistory(this, autoResume);
-  }
-
-  async loadHistoryFromPath(filePath: string): Promise<void> {
-    await HistoryManager.loadHistoryFromPath(this, filePath);
-  }
-
-  async saveHistory(): Promise<void> {
-    await HistoryManager.saveHistory(this);
-  }
-
-  saveHistorySync(): void {
-    HistoryManager.saveHistorySync(this);
-  }
+  getConversationMessages(): Message[] { return this.conversation.getMessages(); }
+  async loadHistory(autoResume: boolean | string = false): Promise<void> { await HistoryManager.loadHistory(this, autoResume); }
+  async loadHistoryFromPath(filePath: string): Promise<void> { await HistoryManager.loadHistoryFromPath(this, filePath); }
+  async saveHistory(): Promise<void> { await HistoryManager.saveHistory(this); }
+  saveHistorySync(): void { HistoryManager.saveHistorySync(this); }
 
 
   public getModel() {
@@ -736,6 +707,15 @@ export class Agent {
     const maxContinues = isGoalMode ? 10 : 3;
     try {
       for (let i = 0; i < maxIterations; i++) {
+        if (signal?.aborted) {
+          const err = new Error("AbortError");
+          err.name = "AbortError";
+          throw err;
+        }
+
+        while (this.isPaused && !signal?.aborted) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
         if (signal?.aborted) {
           const err = new Error("AbortError");
           err.name = "AbortError";
@@ -914,7 +894,20 @@ export class Agent {
     this.onEvent({ type: "text", content: `\r\n` });
   }
 
+  pause(): void {
+    this.isPaused = true;
+    this.onEvent({ type: "text", content: "\n[SYS] Process execution paused.\n" });
+    this.updateRootProcessActivity({ currentStatus: "Paused" });
+  }
+
+  resume(): void {
+    this.isPaused = false;
+    this.onEvent({ type: "text", content: "\n[SYS] Process execution resumed.\n" });
+    this.updateRootProcessActivity({ currentStatus: "Active" });
+  }
+
   abort(): void {
+    this.isPaused = false;
     if (this.isRunning) {
       this.wasRunningBeforeAbort = true;
       setTimeout(() => {

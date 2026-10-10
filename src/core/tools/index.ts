@@ -342,6 +342,10 @@ const TOOL_ALIASES: Record<string, string> = {
   set_device: "control_chrome_cdp",
   set_viewport: "control_chrome_cdp",
   drag_and_drop: "control_chrome_cdp",
+  select_option: "control_chrome_cdp",
+  select_dropdown: "control_chrome_cdp",
+  check_form: "control_chrome_cdp",
+  check_form_readiness: "control_chrome_cdp",
 };
 
 export function getToolByName(name: string): Tool | undefined {

@@ -141,6 +141,24 @@ export async function handleSendMessage(args: any): Promise<McpToolResult> {
     { superagentId, message, wait },
     process.cwd()
   );
+  if (typeof result === "string" && result.includes("not found")) {
+    const { sendEnvelopeToProcess } = await import("../../ipc/processMailbox.js");
+    const ipcRes = sendEnvelopeToProcess(superagentId, {
+      type: "message",
+      message,
+      sender: "mcp",
+    });
+    if (ipcRes.success) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Message successfully delivered to CLI process PID ${ipcRes.pid} via IPC mailbox. Target process will execute it on its next turn.`,
+          },
+        ],
+      };
+    }
+  }
   return {
     content: [{ type: "text", text: String(result) }],
   };

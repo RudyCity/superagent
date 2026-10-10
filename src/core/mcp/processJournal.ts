@@ -299,11 +299,51 @@ export function registerCurrentProcess(mode: "single" | "multi" | "server" | "mc
     heartbeatTimer.unref();
   }
 
+  // Start IPC mailbox listener so external MCP tools and agents can steer or pause this process
+  try {
+    import("../ipc/processMailbox.js").then(({ startMailboxListener }) => {
+      startMailboxListener(pid, (env) => {
+        try {
+          if (env.type === "message" && env.message) {
+            if (masterAgentRef) {
+              if (masterAgentRef.isAgentRunning?.()) {
+                masterAgentRef.queueMessage(env.message);
+              } else if (masterAgentRef.sendMessage) {
+                masterAgentRef.sendMessage(env.message).catch(() => {});
+              }
+            }
+          } else if (env.type === "pause") {
+            if (masterAgentRef?.pause) {
+              masterAgentRef.pause();
+            } else if (masterAgentRef) {
+              masterAgentRef.isPaused = true;
+            }
+          } else if (env.type === "resume") {
+            if (masterAgentRef?.resume) {
+              masterAgentRef.resume();
+            } else if (masterAgentRef) {
+              masterAgentRef.isPaused = false;
+            }
+          } else if (env.type === "interrupt") {
+            if (masterAgentRef?.abort) {
+              masterAgentRef.abort();
+            }
+          }
+        } catch (err) {
+          console.error("[processJournal] Error handling mailbox envelope:", err);
+        }
+      });
+    }).catch(() => {});
+  } catch {}
+
   const cleanup = () => {
     try {
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       const remaining = loadActiveProcesses().filter((p) => p.pid !== pid);
       saveActiveProcesses(remaining);
+      import("../ipc/processMailbox.js").then(({ cleanupProcessMailbox }) => {
+        cleanupProcessMailbox(pid);
+      }).catch(() => {});
     } catch {}
   };
 
