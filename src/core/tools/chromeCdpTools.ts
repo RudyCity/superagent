@@ -58,6 +58,7 @@ import {
   resolveElementCenterPoint,
   executeDragAndDropCommand,
 } from "./chromeCdpCursor.js";
+import { executeDeviceEmulationCommand } from "./chromeCdpEmulation.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -497,43 +498,22 @@ export const controlChromeCdpTool: Tool = {
   description:
     "Control the user's REAL Chrome browser directly via Chrome Remote Debugging (CDP) at http://127.0.0.1:9222 — no extension required and no isolated background tab. " +
     "REQUIRES Chrome to be running with --remote-debugging-port=9222 (close ALL Chrome windows, then reopen Chrome from the taskbar shortcut). " +
-    "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, move_cursor, drag_and_drop. " +
-    "Supports human-like Bézier cursor movement, realistic drag-and-drop, visual pointer overlay, native dialog interception, and UI transition verification. " +
-    "Arguments like url, index, text, selector, source, target, dx, dy, pattern, expression, screenshot, outputPath can be provided directly at top-level or inside payload.",
+    "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, move_cursor, drag_and_drop, emulate_device. " +
+    "Supports device/viewport emulation (mobile, tablet, desktop, reset), human-like Bézier cursor movement, realistic drag-and-drop, visual pointer overlay, native dialog interception, and UI transition verification. " +
+    "Arguments like url, index, text, selector, source, target, dx, dy, preset, device, orientation, screenshot, outputPath can be provided directly at top-level or inside payload.",
   parameters: {
     type: "object",
     properties: {
       command: {
         type: "string",
         enum: [
-          "list_targets",
-          "new_tab",
-          "close_tab",
-          "activate",
-          "navigate",
-          "evaluate",
-          "snapshot",
-          "read_page",
-          "extract_links",
-          "click",
-          "type",
-          "wait_for",
-          "verify_action",
-          "get_dialogs",
-          "handle_dialog",
-          "screenshot",
-          "pdf",
-          "get_cookies",
-          "inspect_media_devices",
-          "media_devices",
-          "move_cursor",
-          "move_mouse",
-          "show_cursor",
-          "hide_cursor",
-          "get_cursor",
-          "drag_and_drop",
-          "drag",
-          "drag_drop",
+          "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate",
+          "snapshot", "read_page", "extract_links", "click", "type", "wait_for",
+          "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
+          "get_cookies", "inspect_media_devices", "media_devices", "move_cursor",
+          "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
+          "drag_and_drop", "drag", "drag_drop",
+          "emulate_device", "set_device", "set_viewport", "emulate_viewport",
         ],
         description: "CDP command to execute on the real Chrome browser.",
       },
@@ -594,6 +574,8 @@ export const controlChromeCdpTool: Tool = {
       "sourceX", "sourceY", "fromX", "fromY", "startX", "startY",
       "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
       "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms",
+      "preset", "device", "mode", "orientation", "screenOrientation", "width", "height",
+      "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
@@ -985,8 +967,16 @@ export const controlChromeCdpTool: Tool = {
           const dragResult = await executeDragAndDropCommand(cdpSend, target, payload);
           return await attachScreenshotIfRequested(cdpSend, target, payload, dragResult, false);
         }
+        case "emulate_device":
+        case "set_device":
+        case "set_viewport":
+        case "emulate_viewport": {
+          const target = await pickTarget(targetId);
+          const emuResult = await executeDeviceEmulationCommand(cdpSend, target, payload);
+          return await attachScreenshotIfRequested(cdpSend, target, payload, emuResult, false);
+        }
         default:
-          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, move_cursor, get_cursor, show_cursor, hide_cursor, drag_and_drop.`;
+          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, move_cursor, get_cursor, show_cursor, hide_cursor, drag_and_drop, emulate_device.`;
       }
     } catch (err: any) {
       return `control_chrome_cdp failed: ${(err && err.message) || String(err)}`;

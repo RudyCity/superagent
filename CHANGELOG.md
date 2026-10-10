@@ -1,3 +1,18 @@
+## [1.13.42] - 2026-10-10
+### Added & Enhanced
+- Native CDP Device & Viewport Emulation Engine (`src/core/tools/chromeCdpEmulation.ts`, `src/core/tools/chromeCdpTools.ts`):
+  - Added dedicated `emulate_device` command (with `set_device`, `set_viewport`, and `emulate_viewport` aliases) to `control_chrome_cdp`, enabling full responsive design and mobile/tablet testing directly over extension-free Chrome DevTools Protocol.
+  - Implemented built-in device presets with accurate dimensions, pixel ratios, touch simulation, and mobile user-agents:
+    - `mobile` / `iphone`: 390x844 @3x, touch enabled, iPhone Mobile Safari UA.
+    - `android` / `pixel`: 412x915 @2.625x, touch enabled, Pixel/Android Chrome UA.
+    - `tablet` / `ipad`: 820x1180 @2x, touch enabled, iPad Safari UA.
+    - `desktop` / `laptop`: 1920x1080 @1x and 1366x768 @1x desktop viewports.
+    - `reset`: clears device metrics overrides, disables touch emulation, and restores host window dimensions and native desktop UA.
+  - Added support for screen orientations (`orientation: "landscape"` vs `"portrait"`), custom dimensions (`width`, `height`, `scale`, `mobile`, `touch`, `userAgent`), and post-emulation visual verification via `screenshot: true`.
+  - Added in-page verification querying `window.innerWidth`, `window.innerHeight`, `window.devicePixelRatio`, and `navigator.userAgent` to verify layout adaptation in real-time.
+  - Added comprehensive test suites in `tests/chromeCdpEmulation.test.ts` and `tests/chromeCdpTools.test.ts`.
+  - Maintained strict code limits ensuring all touched files remain well under 1000 lines.
+
 ## [1.13.41] - 2026-10-10
 ### Added & Enhanced
 - High-Level Drag-and-Drop CDP Automation Engine (`src/core/tools/chromeCdpCursor.ts`, `src/core/tools/chromeCdpTools.ts`):

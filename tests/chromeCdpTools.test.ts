@@ -226,6 +226,10 @@ describe("control_chrome_cdp (mock CDP server)", () => {
           "Input.dispatchMouseEvent": {},
           "Browser.grantPermissions": {},
           "Browser.resetPermissions": {},
+          "Emulation.setDeviceMetricsOverride": {},
+          "Emulation.clearDeviceMetricsOverride": {},
+          "Emulation.setTouchEmulationEnabled": {},
+          "Emulation.setUserAgentOverride": {},
         };
         if (msg.method in canned) {
           ws.send(JSON.stringify({ id: msg.id, result: canned[msg.method] }));
@@ -304,6 +308,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       "get_cookies", "inspect_media_devices", "media_devices",
       "move_cursor", "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
       "drag_and_drop", "drag", "drag_drop",
+      "emulate_device", "set_device", "set_viewport", "emulate_viewport",
     ]);
     expect(controlChromeCdpTool.description).toContain("--remote-debugging-port=9222");
     expect(controlChromeCdpTool.description).toContain("no extension required");
@@ -820,31 +825,30 @@ describe("control_chrome_cdp (mock CDP server)", () => {
 
   test("controlChromeCdpTool drag_and_drop and drag commands smoothly move elements", async () => {
     const dragRes = await controlChromeCdpTool.execute({
-      command: "drag_and_drop",
-      sourceX: 100,
-      sourceY: 100,
-      targetX: 400,
-      targetY: 300,
-      steps: 3,
-      step_delay_ms: 1,
-      hold_duration_ms: 1,
-      drop_dwell_ms: 1,
+      command: "drag_and_drop", sourceX: 100, sourceY: 100, targetX: 400, targetY: 300,
+      steps: 3, step_delay_ms: 1, hold_duration_ms: 1, drop_dwell_ms: 1,
     });
     expect(dragRes).toContain("dragged successfully from coordinates (100, 100) to coordinates (400, 300)");
 
     const aliasRes = await controlChromeCdpTool.execute({
-      command: "drag",
-      sourceX: 400,
-      sourceY: 300,
-      dx: 50,
-      dy: 20,
-      steps: 2,
-      step_delay_ms: 1,
-      hold_duration_ms: 1,
-      drop_dwell_ms: 1,
+      command: "drag", sourceX: 400, sourceY: 300, dx: 50, dy: 20,
+      steps: 2, step_delay_ms: 1, hold_duration_ms: 1, drop_dwell_ms: 1,
     });
     expect(aliasRes).toContain("dragged successfully");
     expect(aliasRes).toContain("(450, 320)");
+  });
+
+  test("controlChromeCdpTool emulate_device switches viewport to mobile, tablet, and reset", async () => {
+    const resMobile = await controlChromeCdpTool.execute({ command: "emulate_device", preset: "mobile" });
+    expect(resMobile).toContain("device emulation set to 'mobile'");
+    expect(resMobile).toContain("390x844");
+
+    const resTablet = await controlChromeCdpTool.execute({ command: "set_device", payload: { device: "tablet", orientation: "landscape" } });
+    expect(resTablet).toContain("tablet");
+    expect(resTablet).toContain("landscape");
+
+    const resReset = await controlChromeCdpTool.execute({ command: "set_viewport", preset: "reset" });
+    expect(resReset).toContain("cleared");
   });
 });
 
