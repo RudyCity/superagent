@@ -411,18 +411,60 @@ export class MuseClient {
               }
             }
 
-            // Rule 2: Ignore any message where sender is not Muse's bot ID
-            if (this.config.museBotId !== undefined && this.config.museBotId !== "") {
-              if (String(senderId) !== String(this.config.museBotId)) {
-                logE2E("REMOTE-AGENT", `Update ${updateId} ignored: sender ID ${senderId} != expected ${this.config.museBotId}`);
-                continue;
+            // Determine if sender is authorized Muse Bot
+            const isMuseSender =
+              !this.config.museBotId ||
+              String(senderId) === String(this.config.museBotId);
+
+            // Feed chunk or message to reassembler
+            let envelope = this.reassembler.processMessage(msg.text);
+
+            // If not an envelope, handle plain text chat or operator commands
+            if (!envelope) {
+              const trimmed = msg.text.trim();
+              const lower = trimmed.toLowerCase();
+              const senderTag = msg.from?.username
+                ? `@${msg.from.username}`
+                : msg.from?.first_name || String(senderId);
+
+              if (
+                lower === "/cancel" ||
+                lower === "/stop" ||
+                lower === "cancel" ||
+                lower === "stop" ||
+                lower.startsWith("/cancel@") ||
+                lower.startsWith("/stop@")
+              ) {
+                envelope = {
+                  v: 1,
+                  kind: "task_cancel",
+                  task_id: "current",
+                  reason: `Cancelled via Telegram by ${senderTag}`,
+                };
+              } else if (trimmed.length > 0) {
+                const chatText = isMuseSender
+                  ? trimmed
+                  : `[Telegram Operator ${senderTag}]: ${trimmed}`;
+                envelope = {
+                  v: 1,
+                  kind: "chat",
+                  text: chatText,
+                };
               }
             }
 
-            // Feed chunk or message to reassembler
-            const envelope = this.reassembler.processMessage(msg.text);
             if (!envelope) {
-              logE2E("REMOTE-AGENT", `Update ${updateId}: message did not yield complete envelope yet (pending assembly or non-envelope text)`);
+              logE2E("REMOTE-AGENT", `Update ${updateId}: message did not yield envelope (pending assembly or empty text)`);
+              continue;
+            }
+
+            // Security: Only Muse bot is authorized to trigger task batches or completion
+            if (
+              (envelope.kind === "task_batch" || envelope.kind === "task_done") &&
+              !isMuseSender
+            ) {
+              logE2E("REMOTE-AGENT", `Update ${updateId}: rejected unauthorized ${envelope.kind} from non-Muse sender ${senderId}`);
+              console.warn(`[MuseClient] Rejected unauthorized ${envelope.kind} from sender ${senderId}`);
               continue;
             }
 

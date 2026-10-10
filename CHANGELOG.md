@@ -1,3 +1,20 @@
+## [1.13.44] - 2026-10-11
+### Added & Enhanced
+- Interactive Tool Discovery & Schema Introspection (`src/core/commands/coreCommands.ts`, `src/core/tools/toolDiscoveryTools.ts`, `src/core/tools/index.ts`):
+  - Added dedicated `/tools` slash command (with `/tool`, `/list-tools`, `/describe-tool` aliases) supporting tool listing, fuzzy search (`/tools search <query>`), and comprehensive schema introspection (`/tools describe <name>`).
+  - Added resilient tool aliases in registry (`get_tools`, `get_tool`, `describe_tools`, `tools_list`, `tools_describe`, `cdp`, `chrome_cdp`, `emulate_device`, `set_device`, `set_viewport`, `drag_and_drop`) to seamlessly resolve varied model calling conventions.
+  - Exported `getToolsTool` and `describeToolsTool` aliases from `toolDiscoveryTools.ts`.
+- CDP Parameter Schema & Tool Description Enhancement (`src/core/tools/chromeCdpTools.ts`):
+  - Documented and exposed explicit schema parameters for `control_chrome_cdp` (`preset`, `device`, `orientation`, `width`, `height`, `scale`, `touch`, `userAgent`) for first-class schema introspection via `describe_tool`.
+  - Added usage guidelines, payloads, and examples for `emulate_device` and `drag_and_drop` commands.
+- System Prompt & Help Optimization (`src/core/prompts.ts`, `src/core/config/base.ts`, `src/core/commands/coreCommands.ts`):
+  - Updated `/help` listing to include `/tools`, `/macro`, and `/gateway`.
+  - Updated system prompts across tiers (`BROWSER_CONTROL_RULE`, `BROWSER_AUTOMATION_CORE`, `chrome-agent`, `base.ts`) ensuring agents leverage native CDP device emulation and drag-and-drop capabilities while adhering strictly to `TOOL_FIRST` discipline.
+- Test Coverage & Quality Gates:
+  - Added unit test suite `tests/toolsSlashCommand.test.ts` verifying `/tools` list, describe, and search functionality.
+  - Enhanced `tests/describeTool.test.ts` verifying new tool aliases.
+  - Aligned prompt length baselines and assertions in `tests/promptOptimization.test.ts` and `tests/basePrompt.test.ts`.
+
 ## [1.13.43] - 2026-10-11
 ### Enhanced & Fixed
 - Multi-Agent Dashboard Main Prompt Telegram & Muse Routing (`src/hooks/useDashboardWizard.ts`):

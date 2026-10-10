@@ -144,6 +144,12 @@ describe("getToolByName resilience", () => {
     expect(getToolByName("background_process")?.name).toBe("run_background_process");
     expect(getToolByName("read_file")?.name).toBe("read");
     expect(getToolByName("write_file")?.name).toBe("write_to_file");
+    expect(getToolByName("get_tools")?.name).toBe("list_tools");
+    expect(getToolByName("describe_tools")?.name).toBe("describe_tool");
+    expect(getToolByName("get_tool")?.name).toBe("describe_tool");
+    expect(getToolByName("cdp")?.name).toBe("control_chrome_cdp");
+    expect(getToolByName("emulate_device")?.name).toBe("control_chrome_cdp");
+    expect(getToolByName("drag_and_drop")?.name).toBe("control_chrome_cdp");
   });
 });
 

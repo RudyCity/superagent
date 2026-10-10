@@ -856,13 +856,16 @@ export class MuseWatcher {
     logE2E("REMOTE-AGENT", `MuseWatcher received task_cancel for task ${envelope.task_id}`);
 
     const targetTaskId = envelope.task_id?.trim();
-    if (!targetTaskId || !this.activeTaskId || targetTaskId === this.activeTaskId.trim()) {
+    const isGlobalOrCurrent =
+      !targetTaskId || targetTaskId === "current" || targetTaskId === "*";
+
+    if (isGlobalOrCurrent || !this.activeTaskId || targetTaskId === this.activeTaskId.trim()) {
       this.abortAllBatches();
       this.activeTaskId = undefined;
     }
 
-    // Filter out queued items for this task_id (or all if task_id not specified)
-    if (targetTaskId) {
+    // Filter out queued items for this task_id (or all if task_id not specified / global)
+    if (!isGlobalOrCurrent && targetTaskId) {
       this.batchQueue = this.batchQueue.filter((item) => {
         if (item.envelope.task_id?.trim() === targetTaskId) {
           const batchId = (item.envelope as TaskBatchEnvelope).id;
@@ -934,7 +937,11 @@ export class MuseWatcher {
     }
 
     logE2E("REMOTE-AGENT", `MuseWatcher received chat note: ${envelope.text}`);
-    this.emitLine("assistant", `[Muse Note]: ${envelope.text}`);
+    if (envelope.text.startsWith("[Telegram Operator")) {
+      this.emitLine("user", envelope.text);
+    } else {
+      this.emitLine("assistant", `[Muse Note]: ${envelope.text}`);
+    }
   }
 
   private async handleTaskRequest(

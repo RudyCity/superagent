@@ -520,7 +520,7 @@ export const controlChromeCdpTool: Tool = {
       payload: {
         type: "string",
         description:
-          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. drag_and_drop: {"source": "#card", "target": "#column"} or {"sourceIndex": 2, "targetIndex": 5, "mode": "mouse"|"html5", "screenshot": true}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
+          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. drag_and_drop: {"source": "#card", "target": "#column", "mode": "mouse"|"html5", "screenshot": true}. emulate_device: {"preset": "mobile"|"tablet"|"desktop"|"reset", "orientation": "portrait"|"landscape", "screenshot": true}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
       },
       url: { type: "string", description: "Optional top-level URL convenience shortcut for new_tab or navigate." },
       index: { type: "number", description: "Optional top-level element index convenience shortcut for click or type." },
@@ -530,6 +530,14 @@ export const controlChromeCdpTool: Tool = {
       source: { type: "string", description: "Optional source selector or index for drag_and_drop." },
       target: { type: "string", description: "Optional target selector or index for drag_and_drop." },
       mode: { type: "string", enum: ["mouse", "html5", "both"], description: "Optional drag_and_drop mode ('mouse' [default], 'html5', or 'both')." },
+      preset: { type: "string", description: "Optional device preset for emulate_device ('mobile', 'tablet', 'desktop', 'android', 'laptop', 'reset')." },
+      device: { type: "string", description: "Alias for preset in emulate_device." },
+      orientation: { type: "string", enum: ["portrait", "landscape"], description: "Optional screen orientation for emulate_device ('portrait' or 'landscape')." },
+      width: { type: "number", description: "Optional custom viewport width in pixels for emulate_device or set_viewport." },
+      height: { type: "number", description: "Optional custom viewport height in pixels for emulate_device or set_viewport." },
+      scale: { type: "number", description: "Optional device pixel ratio scale factor (e.g. 1, 2, 3) for emulate_device." },
+      touch: { type: "boolean", description: "Optional flag to enable or disable touch emulation for emulate_device." },
+      userAgent: { type: "string", description: "Optional custom User-Agent override for emulate_device." },
       native: { type: "boolean", description: "Optional top-level flag to dispatch native CDP Input keystrokes." },
       screenshot: { type: "boolean", description: "Optional top-level flag to capture a visual screenshot alongside the action." },
       outputPath: { type: "string", description: "Optional custom file path to save the screenshot image PNG." },

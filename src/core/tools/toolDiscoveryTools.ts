@@ -312,3 +312,7 @@ export const describeToolTool: Tool = {
     });
   },
 };
+
+export const getToolsTool = listToolsTool;
+export const describeToolsTool = describeToolTool;
+

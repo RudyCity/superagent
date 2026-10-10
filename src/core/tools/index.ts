@@ -331,6 +331,17 @@ const TOOL_ALIASES: Record<string, string> = {
   ps_search: "find_process",
   terminate_process: "kill_process",
   stop_process: "kill_process",
+  get_tools: "list_tools",
+  get_tool: "describe_tool",
+  describe_tools: "describe_tool",
+  tools_list: "list_tools",
+  tools_describe: "describe_tool",
+  cdp: "control_chrome_cdp",
+  chrome_cdp: "control_chrome_cdp",
+  emulate_device: "control_chrome_cdp",
+  set_device: "control_chrome_cdp",
+  set_viewport: "control_chrome_cdp",
+  drag_and_drop: "control_chrome_cdp",
 };
 
 export function getToolByName(name: string): Tool | undefined {

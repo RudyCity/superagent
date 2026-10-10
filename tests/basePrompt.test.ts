@@ -13,9 +13,9 @@ describe("base system prompt", () => {
     const prompt = getSystemPrompt();
 
     expect(prompt).toContain("# CREATIVE PROBLEM SOLVING");
-    expect(prompt).toContain("Evidence before inference");
-    expect(prompt).toContain("Think deeply in private");
-    expect(prompt).toContain("2–3 materially different approaches");
+    expect(prompt).toContain("Evidence > Inference");
+    expect(prompt).toContain("deep private reasoning");
+    expect(prompt).toContain("2-3 materially different approaches");
     expect(prompt).not.toContain("Mental MCTS & UCB");
     expect(prompt).not.toContain("Maximum Compression Mode");
   });
@@ -23,8 +23,8 @@ describe("base system prompt", () => {
   it("enforces project completion summary and conclusion rules", () => {
     const prompt = getSystemPrompt();
     expect(prompt).toContain("PROJECT_COMPLETION_SUMMARY");
-    expect(prompt).toContain("Final Outcome & Goal Summary");
-    expect(prompt).toContain("4. CONCLUSION: Provide a clear project completion conclusion");
+    expect(prompt).toContain("Outcome & goal");
+    expect(prompt).toContain("4. CONCLUSION: project completion conclusion");
   });
 });
 

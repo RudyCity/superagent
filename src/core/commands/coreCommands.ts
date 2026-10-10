@@ -200,6 +200,9 @@ export const helpCommand: SlashCommand = {
         "              Usage: /memory [status|sync|search <query>|add <key> <val>|delete <key>|list-scenes|read-scene <path>|read-persona]",
         "  /mcp      - Manage Model Context Protocol (MCP) servers",
         "              Usage: /mcp [list|add <name> <command> [args...]|remove <name>|reload]",
+        "  /tools    - List and describe AI tools (usage: /tools [list|describe <name>|search <q>])",
+        "  /macro    - Manage and run browser macros (usage: /macro [list|run <name>|delete <name>])",
+        "  /gateway  - Omnichannel messaging gateway for Telegram, Discord, Slack (usage: /gateway [status|start|stop])",
         "  /image paste      - Attach an image from the system clipboard",
         "  /image attach <p> - Attach an image from the specified file path",
         "  /ih       - Manage custom internal hook tools (alias: /internal-hooks)",
@@ -759,6 +762,91 @@ export const yoloCommand: SlashCommand = {
   },
 };
 
+// /tools command
+export const toolsCommand: SlashCommand = {
+  name: "tools",
+  aliases: ["tool", "list-tools", "describe-tool"],
+  description: "List, search, and describe available AI tools (/tools [list|describe <name>|search <query>])",
+  async execute(args, ctx) {
+    const rawTrimmed = (typeof args === "string" ? args : "").trim();
+    const parts = rawTrimmed.split(/\s+/).filter(Boolean);
+    const sub = parts[0]?.toLowerCase();
+    const now = Date.now();
+
+    if (!rawTrimmed || sub === "list") {
+      const query = sub === "list" ? parts.slice(1).join(" ").trim() : "";
+      const { runListTools } = await import("../tools/toolDiscoveryTools.js");
+      const listOutput = await runListTools(allTools, query ? { query } : undefined);
+      ctx.addLine({
+        type: "system",
+        content: `Available AI Tools (${allTools.length})${query ? ` (filtered by "${query}")` : ""}:\n\n${listOutput}`,
+        timestamp: now,
+      });
+      return;
+    }
+
+    if (sub === "describe" || sub === "info" || sub === "show") {
+      const toolName = parts[1];
+      if (!toolName) {
+        ctx.addLine({
+          type: "error",
+          content: "Usage: /tools describe <tool_name>\nExample: /tools describe control_chrome_cdp",
+          timestamp: now,
+        });
+        return;
+      }
+      const { runDescribeTool } = await import("../tools/toolDiscoveryTools.js");
+      const { getToolByName } = await import("../tools/index.js");
+      const desc = await runDescribeTool(allTools, { tool: toolName }, {
+        findTool: (name: string) => getToolByName(name),
+      });
+      ctx.addLine({
+        type: "system",
+        content: `Tool Specification: ${toolName}\n\n${desc}`,
+        timestamp: now,
+      });
+      return;
+    }
+
+    if (sub === "search" || sub === "find") {
+      const query = parts.slice(1).join(" ").trim();
+      const { runListTools } = await import("../tools/toolDiscoveryTools.js");
+      const listOutput = await runListTools(allTools, { query });
+      ctx.addLine({
+        type: "system",
+        content: `Search Results for "${query}":\n\n${listOutput}`,
+        timestamp: now,
+      });
+      return;
+    }
+
+    // Default: describe the tool directly if the first argument matches a tool name, or search
+    const { getToolByName } = await import("../tools/index.js");
+    const matched = getToolByName(parts[0]);
+    if (matched) {
+      const { runDescribeTool } = await import("../tools/toolDiscoveryTools.js");
+      const desc = await runDescribeTool(allTools, { tool: parts[0] }, {
+        findTool: (name: string) => getToolByName(name),
+      });
+      ctx.addLine({
+        type: "system",
+        content: `Tool Specification: ${matched.name}\n\n${desc}`,
+        timestamp: now,
+      });
+      return;
+    }
+
+    // Otherwise, treat as search query
+    const { runListTools } = await import("../tools/toolDiscoveryTools.js");
+    const listOutput = runListTools(allTools, { query: rawTrimmed });
+    ctx.addLine({
+      type: "system",
+      content: `Tools matching "${rawTrimmed}":\n\n${listOutput}`,
+      timestamp: now,
+    });
+  },
+};
+
 // Register core commands
 registry.register(newCommand);
 registry.register(exitCommand);
@@ -769,3 +857,4 @@ registry.register(setupCommand);
 registry.register(stopCommand);
 registry.register(steerCommand);
 registry.register(yoloCommand);
+registry.register(toolsCommand);

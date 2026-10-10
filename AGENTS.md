@@ -50,8 +50,16 @@ Master Agent  (orchestrator)
 - `src/components/startup-checker.tsx` — Parallelized dependency validator with decoupled background model warming.
 - `src/components/startup-prompt.tsx` — First-run interactive choice dialog when no AI provider is configured.
 
-## Recent Features (v1.5.146-v1.13.31)
+## Recent Features (v1.5.146-v1.13.43)
 
+- **CDP Responsive Device Emulation & Kinematic Drag-and-Drop** (`src/core/tools/chromeCdpTools.ts`, v1.13.43):
+  - Added `emulate_device` command to `control_chrome_cdp` supporting built-in presets (`mobile` / iPhone 14, `tablet` / iPad, `desktop` / 1920x1080, and `reset`) with metrics override, touch emulation, and optional user-agent overrides.
+  - Added realistic `drag_and_drop` (alias `drag`) with Bezier trajectory interpolation, customizable duration and steps, and automated DOM drag/drop events.
+  - Added explicit schema parameters (`preset`, `device`, `orientation`, `width`, `height`, `scale`, `touch`, `userAgent`) to `control_chrome_cdp` for full model visibility and `describe_tool` introspection.
+- **Interactive Tool Discovery & Inspection** (`src/core/commands/coreCommands.ts`, `src/core/tools/toolDiscoveryTools.ts`, `src/core/tools/index.ts`, v1.13.43):
+  - Added `/tools` slash command supporting interactive tool listing (`/tools [list]`), tool schema inspection (`/tools describe <name>`), and fuzzy tool search (`/tools search <query>`).
+  - Added resilient tool aliases: `get_tools`, `describe_tools`, `get_tool`, `cdp`, `emulate_device`, `drag_and_drop` to prevent invocation errors when models use alternate phrasing.
+  - Updated `/help` listing and system prompts across all tiers and configurations to enforce `TOOL_FIRST` discipline and responsive browser testing workflows.
 - **Set-of-Mark (SoM) Vision & Layout Audit Engine** (`src/core/tools/chromeVisionTools.ts`, `scripts/vision_server.py`, v1.13.30+):
   - Unified vision stack exclusively on `racineai/UI-DETR-1` (~535MB RF-DETR Medium); completely eliminated legacy Microsoft OmniParser.
   - Implemented Set-of-Mark (SoM) perception (`perceive_page`): draws prominent numeric badge labels (`[1]`, `[2]`, `[3]...`) and color-coded bounding boxes on screenshots.

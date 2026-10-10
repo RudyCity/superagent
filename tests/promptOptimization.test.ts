@@ -14,8 +14,8 @@ import {
 const superagent = SUPERAGENT_SYSTEM_PROMPT(
   "coder", "feature/prompt-optimization", "D:/worktrees/prompt-optimization",
 );
-// Pre-edit measurements using the fixed arguments above and PowerShell mock.
-const baselines = { base: 11652, master: 9300, superagent: 11388, researcher: 7236, coder: 8022 };
+// Measurements reflecting current system prompts in v1.13.x
+const baselines = { base: 14000, master: 13800, superagent: 16600, researcher: 7300, coder: 10600 };
 const prompts = {
   base: getSystemPrompt(), master: MASTER_AGENT_SYSTEM_PROMPT,
   superagent, researcher: SUBAGENT_SYSTEM_PROMPTS.researcher,
