@@ -7,7 +7,6 @@ import { logE2E } from "../utils/unifiedLogger.js";
 import { loadRemoteAgentConfig, updateRemoteAgentConfig } from "./config.js";
 import { scrubSecrets } from "./contextSanitizer.js";
 
-
 export interface TunnelMetadata {
   pid: number;
   publicUrl: string;
@@ -31,7 +30,6 @@ export interface TunnelStatus {
   workspaces?: string[];
   error?: string;
 }
-
 export interface ActiveTunnelInfo {
   port: number;
   pid: number;
@@ -43,8 +41,6 @@ export interface ActiveTunnelInfo {
   workspace?: string;
   workspaces?: string[];
 }
-
-
 export interface StartTunnelOptions {
   port?: number;
   host?: string;
@@ -72,6 +68,7 @@ export function saveTunnelState(meta: TunnelMetadata, port?: number): void {
   try {
     const targetPort = port || meta.port;
     if (targetPort) {
+      CloudflareTunnelManager.getInstance().setMemoryState(targetPort, meta);
       const portFile = getTunnelStateFile(targetPort);
       fs.writeFileSync(portFile, JSON.stringify(meta, null, 2), "utf-8");
     }
@@ -145,6 +142,7 @@ export function readTunnelState(portOrWorkspace?: number | string): TunnelMetada
 
 export function clearTunnelState(port?: number | "all"): void {
   try {
+    CloudflareTunnelManager.getInstance().clearMemoryState(port);
     const dir = path.join(os.homedir(), ".superagent-r");
     if (typeof port === "number") {
       const portFile = getTunnelStateFile(port);
@@ -382,6 +380,35 @@ export class CloudflareTunnelManager {
       CloudflareTunnelManager.instance = new CloudflareTunnelManager();
     }
     return CloudflareTunnelManager.instance;
+  }
+
+  public clearMemoryState(port?: number | "all"): void {
+    if (typeof port === "number") {
+      this.activeProcesses.delete(port);
+      this.activeMetadata.delete(port);
+      if (this.currentMetadata?.port === port) {
+        this.currentMetadata = null;
+      }
+    } else if (port === "all") {
+      this.activeProcesses.clear();
+      this.activeMetadata.clear();
+      this.currentProcess = null;
+      this.currentMetadata = null;
+    } else {
+      if (this.currentMetadata?.port) {
+        this.activeProcesses.delete(this.currentMetadata.port);
+        this.activeMetadata.delete(this.currentMetadata.port);
+      }
+      this.currentProcess = null;
+      this.currentMetadata = null;
+    }
+  }
+
+  public setMemoryState(port: number, meta: TunnelMetadata): void {
+    this.activeMetadata.set(port, meta);
+    if (!this.currentMetadata || this.currentMetadata.port === port) {
+      this.currentMetadata = meta;
+    }
   }
 
   /**
@@ -860,17 +887,9 @@ export function formatActiveTunnels(tunnels: ActiveTunnelInfo[]): string {
     }
   });
 
-  lines.push(
-    "",
-    "Commands:",
-    "  Stop specific tunnel : /muse tunnel stop --port <port>",
-    "  Stop all tunnels     : /muse tunnel stop all  (all running tunnels and watchers across all workspaces)",
-  );
-
+  lines.push("", "Commands:", "  Stop specific tunnel : /muse tunnel stop --port <port>", "  Stop all tunnels     : /muse tunnel stop all  (all running tunnels and watchers across all workspaces)");
   return lines.join("\n");
 }
-
-
 
 export interface BuildMusePromptOptions {
   wssUrl: string;
@@ -884,38 +903,21 @@ export interface BuildMusePromptOptions {
 }
 
 export function buildMuseConnectionPrompt(opts: BuildMusePromptOptions): string {
-  const lines: string[] = [
-    "Connect to my local Superagent workstation via WebSocket:",
-    `- Endpoint: ${opts.wssUrl}`,
-  ];
-  if (opts.token) {
-    lines.push(`- Bearer Token: ${opts.token}`);
-  }
-  if (opts.cfClientId) {
-    lines.push(`- CF-Access-Client-Id: ${opts.cfClientId}`);
-  }
-  if (opts.cfClientSecret) {
-    lines.push(`- CF-Access-Client-Secret: ${opts.cfClientSecret}`);
-  }
+  const lines: string[] = ["Connect to my local Superagent workstation via WebSocket:", `- Endpoint: ${opts.wssUrl}`];
+  if (opts.token) lines.push(`- Bearer Token: ${opts.token}`);
+  if (opts.cfClientId) lines.push(`- CF-Access-Client-Id: ${opts.cfClientId}`);
+  if (opts.cfClientSecret) lines.push(`- CF-Access-Client-Secret: ${opts.cfClientSecret}`);
   if (opts.workspaces && opts.workspaces.length > 0) {
     lines.push(`- Watched Projects: ${opts.workspaces.map((w) => path.basename(w)).join(", ")}`);
   }
   lines.push("");
   if (opts.task && opts.task.trim()) {
     const cleanTask = scrubSecrets(opts.task.trim(), [opts.token, opts.cfClientSecret]);
-    lines.push("Task:");
-    lines.push(cleanTask);
-    lines.push("");
-    lines.push("Please connect to the WebSocket endpoint, inspect the workspace, and execute the task above.");
+    lines.push("Task:", cleanTask, "", "Please connect to the WebSocket endpoint, inspect the workspace, and execute the task above.");
   } else {
     lines.push("Please connect to the WebSocket endpoint and confirm when you are ready to receive tasks.");
   }
-  lines.push("");
-  lines.push("Notes:");
-  lines.push("- Tunnel URL is ephemeral: it changes on every cloudflared restart. If the connection drops, run `/muse tunnel start` again and send the new URL + bearer token.");
-  lines.push("- Bearer token is shown once: treat it like a password, never share it.");
-  lines.push("- Stop the tunnel anytime: `/muse tunnel stop`.");
-
+  lines.push("", "Notes:", "- Tunnel URL is ephemeral: it changes on every cloudflared restart. If the connection drops, run `/muse tunnel start` again and send the new URL + bearer token.", "- Bearer token is shown once: treat it like a password, never share it.", "- Stop the tunnel anytime: `/muse tunnel stop`.");
   return lines.join("\n");
 }
 
@@ -929,11 +931,7 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
       });
       return true;
     } else if (process.platform === "darwin") {
-      await execa("pbcopy", [], {
-        input: text,
-        timeout: 2000,
-        reject: false,
-      });
+      await execa("pbcopy", [], { input: text, timeout: 2000, reject: false });
       return true;
     } else if (process.platform === "linux") {
       try {
@@ -944,9 +942,7 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
         return true;
       }
     }
-  } catch {
-    // Non-fatal fallback
-  }
+  } catch {}
   return false;
 }
 
@@ -965,10 +961,7 @@ export function buildHttpsConnectionPrompt(opts: BuildHttpsPromptOptions): strin
     `- Server Port      : ${opts.port}`,
   ];
   if (opts.token) {
-    lines.push(`- Bearer Token     : ${opts.token}`);
-    lines.push("");
-    lines.push("Test with curl:");
-    lines.push(`curl -H "Authorization: Bearer ${opts.token}" ${opts.publicUrl}/api/status`);
+    lines.push(`- Bearer Token     : ${opts.token}`, "", "Test with curl:", `curl -H "Authorization: Bearer ${opts.token}" ${opts.publicUrl}/api/status`);
   }
   return lines.join("\n");
 }
@@ -989,9 +982,7 @@ export function isServerRunningOnPort(port = 7888): boolean {
 }
 
 export async function ensureSuperagentServer(port = 7888): Promise<void> {
-  if (isServerRunningOnPort(port)) {
-    return;
-  }
+  if (isServerRunningOnPort(port)) return;
   try {
     const { runServer } = await import("../../server.js");
     await runServer(port, true, "tline");
@@ -999,5 +990,3 @@ export async function ensureSuperagentServer(port = 7888): Promise<void> {
     logE2E("REMOTE-AGENT", `ensureSuperagentServer error: ${err?.message}`);
   }
 }
-
-

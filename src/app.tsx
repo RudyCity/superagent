@@ -1248,12 +1248,14 @@ export function App({
       // choice === "stop": stop all tunnels + watchers
       (async () => {
         try {
-          const [{ stopAllQuickTunnels }, { stopAllMuseWatchers }] = await Promise.all([
+          const [{ stopAllQuickTunnels }, { stopAllMuseWatchers }, { stopAllMcpServers }] = await Promise.all([
             import("./core/remoteAgent/cloudflareTunnel.js"),
             import("./core/remoteAgent/museWatcher.js"),
+            import("./core/mcp/mcpTunnel.js"),
           ]);
           const watchers = await stopAllMuseWatchers();
           const tunnels = await stopAllQuickTunnels();
+          await stopAllMcpServers();
           addLine({
             type: "system",
             content: `[Tunnel] Stopped ${tunnels} quick tunnel(s) and ${watchers} watcher(s).`,

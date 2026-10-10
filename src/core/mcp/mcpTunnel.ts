@@ -19,6 +19,7 @@ import path from "path";
 import os from "os";
 import {
   startQuickTunnel,
+  stopQuickTunnel,
   getTunnelStatus,
   isProcessRunning,
   type TunnelMetadata,
@@ -239,6 +240,7 @@ export async function stopMcpTunnel(port = DEFAULT_MCP_PORT): Promise<void> {
     activeServers.delete(port);
     await active.handle.close().catch(() => {});
   }
+  await stopQuickTunnel(port).catch(() => {});
   // Only remove the disk state when this instance owns it - a foreign
   // instance's MCP server lives in ITS process and cannot be stopped from here.
   const state = readMcpStateFile(getMcpStateFile(port));

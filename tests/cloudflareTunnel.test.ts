@@ -17,16 +17,24 @@ import { getDashboardSuggestions, getSuggestionDescriptions } from "../src/utils
 
 describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
   let tmpDir: string;
+  let homedirSpy: { mockRestore(): void };
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cf-tunnel-test-"));
+    homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(tmpDir);
+    clearTunnelState("all");
   });
 
   afterEach(() => {
     try {
+      clearTunnelState("all");
+    } catch {}
+    try {
+      homedirSpy?.mockRestore?.();
+    } catch {}
+    try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch {}
-    clearTunnelState();
   });
 
   describe("Binary Detection & State File Persistence", () => {
@@ -927,16 +935,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
 
       expect(lines.length).toBeGreaterThan(0);
       const text = lines[0].content;
-      expect(text).toContain("Remote Agent Configuration:");
-      expect(text).toContain("transport");
-      expect(text).toContain("wsPort");
-      expect(text).toContain("wsHost");
-      expect(text).toContain("wsToken");
-      expect(text).toContain("wsMode");
-      expect(text).toContain("cfAccessClientId");
-      expect(text).toContain("autoTokenRefresh");
-      expect(text).toContain("botToken");
-      expect(text).toContain("defaultWorkspace");
+      ["Remote Agent Configuration:", "transport", "wsPort", "wsHost", "wsToken", "wsMode", "cfAccessClientId", "autoTokenRefresh", "botToken", "defaultWorkspace"].forEach((k) => expect(text).toContain(k));
     });
 
     it("should run diagnostic checks on /muse doctor", async () => {
@@ -948,9 +947,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
 
       expect(lines.length).toBeGreaterThan(0);
       const text = lines.map((l) => l.content).join("\n");
-      expect(text).toContain("Muse Health & Diagnostics (Doctor)");
-      expect(text).toContain("Cloudflare Binary");
-      expect(text).toContain("Active Transport");
+      ["Muse Health & Diagnostics (Doctor)", "Cloudflare Binary", "Active Transport"].forEach((k) => expect(text).toContain(k));
     });
 
     it("should run connectivity check on /muse connect", async () => {
@@ -974,26 +971,15 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
 
       expect(lines.length).toBeGreaterThan(0);
       const text = lines[0].content;
-      // Inactive tunnel reports clear message with start instruction
       expect(text).toContain("No quick tunnel is currently active");
       expect(text).toContain("/muse tunnel start");
     });
 
     it("should provide suggestions for restart, prompt, doctor, connect", () => {
       const suggestions = getDashboardSuggestions("/muse ");
-      expect(suggestions).toContain("/muse tunnel restart");
-      expect(suggestions).toContain("/muse tunnel prompt");
-      expect(suggestions).toContain("/muse doctor");
-      expect(suggestions).toContain("/muse connect");
-      expect(suggestions).toContain("/muse start");
-      expect(suggestions).toContain("/muse restart");
-
+      ["/muse tunnel restart", "/muse tunnel prompt", "/muse doctor", "/muse connect", "/muse start", "/muse restart"].forEach((s) => expect(suggestions).toContain(s));
       const tunnelSubs = getDashboardSuggestions("/muse tunnel ");
-      expect(tunnelSubs).toContain("/muse tunnel restart");
-      expect(tunnelSubs).toContain("/muse tunnel prompt");
+      ["/muse tunnel restart", "/muse tunnel prompt"].forEach((s) => expect(tunnelSubs).toContain(s));
     });
   });
 });
-
-
-

@@ -145,24 +145,91 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       if (promptArgIdx !== -1 && args[promptArgIdx + 1]) {
         promptTask = args[promptArgIdx + 1];
       } else {
+        const flagsToSkip = new Set(["--detach", "-d", "--background", "--bg", "--verbose", "--https", "--http", "--web", "--port", "-p", "--mcp", "--allow-dangerous"]);
         const leftover = args.slice(2).filter((a, idx, arr) => {
-          if (
-            a === "--detach" ||
-            a === "-d" ||
-            a === "--background" ||
-            a === "--bg" ||
-            a === "--verbose" ||
-            a === "--https" ||
-            a === "--http" ||
-            a === "--web"
-          )
-            return false;
-          if (a === "--port" || a === "-p") return false;
-          if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p")) return false;
+          if (flagsToSkip.has(a)) return false;
+          if (idx > 0 && ["--port", "-p", "--mcp-port", "--mcp-auth"].includes(arr[idx - 1])) return false;
           return true;
         });
         if (leftover.length > 0) {
           promptTask = leftover.join(" ");
+        }
+      }
+
+      const wantMcp = args.some((a) => a.toLowerCase() === "--mcp");
+      const mcpPortArgIdx = args.findIndex((a) => a.toLowerCase() === "--mcp-port");
+      let mcpPort = 9227;
+      if (mcpPortArgIdx !== -1 && args[mcpPortArgIdx + 1]) {
+        const parsed = parseInt(args[mcpPortArgIdx + 1], 10);
+        if (!isNaN(parsed) && parsed > 0 && parsed < 65536) mcpPort = parsed;
+      }
+      const allowDangerous = args.some((a) => a.toLowerCase() === "--allow-dangerous");
+      const mcpAuthArgIdx = args.findIndex((a) => a.toLowerCase() === "--mcp-auth");
+      let mcpAuthMode: "static-bearer" | "oauth" = "static-bearer";
+      if (mcpAuthArgIdx !== -1 && args[mcpAuthArgIdx + 1]) {
+        const v = args[mcpAuthArgIdx + 1].toLowerCase();
+        if (v === "oauth" || v === "static-bearer") {
+          mcpAuthMode = v;
+        } else {
+          console.error(`[MCP Tunnel] Invalid --mcp-auth value "${args[mcpAuthArgIdx + 1]}". Use static-bearer or oauth.`);
+          return;
+        }
+      }
+
+      if (wantMcp) {
+        const { startMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+        if (listActiveMcpServers().some((m) => m.port === mcpPort)) {
+          console.log(`[MCP Tunnel] MCP server is ALREADY ACTIVE on port ${mcpPort}.`);
+          return;
+        }
+        if (allowDangerous && mcpAuthMode === "static-bearer") {
+          console.log([
+            "!! WARNING: --allow-dangerous in static-bearer mode exposes destructive tools",
+            "!! (command execution, file writes, agent control) to anyone holding the bearer token.",
+            "!! For ChatGPT write access, prefer --mcp-auth oauth instead."
+          ].join("\n"));
+        }
+        try {
+          const mcpInfo = await startMcpTunnel({ port: mcpPort, allowDangerous, authMode: mcpAuthMode });
+          const toolModeLine = `  Tool mode     : ${mcpInfo.dangerous ? `FULL (${mcpInfo.toolCount} tools)` : `SAFE (${mcpInfo.toolCount} read-only)`}`;
+          const mcpLines = [
+            "",
+            "═════════════════════════════════════════════════════════════════════════════",
+            `  Superagent MCP Server & Cloudflare Quick Tunnel Online! (${mcpInfo.authMode} mode)`,
+            "═════════════════════════════════════════════════════════════════════════════",
+            `  MCP Endpoint  : ${mcpInfo.publicUrl}`,
+            `  Local Target  : ${mcpInfo.localUrl}`,
+            `  Auth Mode     : ${mcpInfo.authMode}`,
+          ];
+          if (mcpInfo.authMode === "oauth") {
+            mcpLines.push(`  Discovery     : ${mcpInfo.oauthDiscoveryUrl}`, `  Scopes        : mcp:tools${mcpInfo.dangerous ? " mcp:tools:write" : ""}`, toolModeLine, `  Audit log     : ${mcpInfo.auditLogPath}`, "", "One-time bootstrap approval code (shown ONCE, never stored):", `  - ${mcpInfo.bootstrapCode}`);
+          } else {
+            mcpLines.push(`  Bearer token  : ${mcpInfo.bearerToken}`, toolModeLine, `  Audit log     : ${mcpInfo.auditLogPath}`, "", "MCP client config (copy-paste):", `{ "superagent": { "url": "${mcpInfo.publicUrl}", "headers": { "Authorization": "Bearer token ${mcpInfo.bearerToken}" } } }`);
+          }
+          mcpLines.push("═════════════════════════════════════════════════════════════════════════════", "\nPress Ctrl+C to stop MCP tunnel and exit.\n");
+          console.log(mcpLines.join("\n"));
+
+          if (isDetach) {
+            console.log(`[MCP Tunnel] Running in background on port ${mcpPort}.`);
+            return;
+          }
+
+          let isExiting = false;
+          const cleanExit = async () => {
+            if (isExiting) return;
+            isExiting = true;
+            console.log("\n[MCP Tunnel] Stopping MCP server and tunnel...");
+            const { stopMcpTunnel } = await import("../mcp/mcpTunnel.js");
+            await stopMcpTunnel(mcpPort);
+            process.exit(0);
+          };
+          process.on("SIGINT", cleanExit);
+          process.on("SIGTERM", cleanExit);
+          await new Promise<void>(() => {});
+          return;
+        } catch (err: any) {
+          console.error(`\n[MCP Tunnel Error] ${err?.message}\n`);
+          return;
         }
       }
 
@@ -182,18 +249,20 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         if (existing.isRunning) {
           const serverToken = getServerAuthToken(effectivePort);
           const curlSnippet = `curl -H "Authorization: Bearer ${serverToken}" ${existing.publicUrl}/api/status`;
-          console.log("[Cloudflare HTTPS Tunnel] Quick tunnel and HTTP server are already ACTIVE:");
-          console.log(`  Public HTTPS URL  : ${existing.publicUrl}`);
-          console.log(`  Local Target      : ${existing.localUrl || `http://${host}:${effectivePort}`}`);
-          console.log(`  Server Port       : ${effectivePort}`);
-          console.log(`  Process PID       : ${existing.pid}`);
-          console.log(`  Uptime            : ${existing.uptimeSeconds}s`);
-          console.log(`  Bearer Token      : ${serverToken}`);
-          console.log("");
-          console.log("Test with curl (ready to run):");
-          console.log("-----------------------------------------------------------------------------");
-          console.log(curlSnippet);
-          console.log("-----------------------------------------------------------------------------");
+          console.log([
+            "[Cloudflare HTTPS Tunnel] Quick tunnel and HTTP server are already ACTIVE:",
+            `  Public HTTPS URL  : ${existing.publicUrl}`,
+            `  Local Target      : ${existing.localUrl || `http://${host}:${effectivePort}`}`,
+            `  Server Port       : ${effectivePort}`,
+            `  Process PID       : ${existing.pid}`,
+            `  Uptime            : ${existing.uptimeSeconds}s`,
+            `  Bearer Token      : ${serverToken}`,
+            "",
+            "Test with curl (ready to run):",
+            "-----------------------------------------------------------------------------",
+            curlSnippet,
+            "-----------------------------------------------------------------------------"
+          ].join("\n"));
           await copyTextToClipboard(curlSnippet);
           return;
         }
@@ -212,23 +281,26 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         const curlSnippet = `curl -H "Authorization: Bearer ${serverToken}" ${meta.publicUrl}/api/status`;
         await copyTextToClipboard(curlSnippet);
 
-        console.log("");
-        console.log("═════════════════════════════════════════════════════════════════════════════");
-        console.log("  Superagent HTTP REST/SSE Server & Cloudflare Quick Tunnel Online!");
-        console.log("═════════════════════════════════════════════════════════════════════════════");
-        console.log(`  Public HTTPS URL  : ${meta.publicUrl}`);
-        console.log(`  Local Target      : ${meta.localUrl}`);
-        console.log(`  Server Port       : ${effectivePort}`);
-        console.log(`  Process PID       : ${meta.pid}`);
-        console.log(`  Bearer Token      : ${serverToken}`);
-        console.log("═════════════════════════════════════════════════════════════════════════════");
-        console.log("");
-        console.log("Test with curl (copied to clipboard, ready to run):");
-        console.log("-----------------------------------------------------------------------------");
-        console.log(curlSnippet);
-        console.log("-----------------------------------------------------------------------------");
-        console.log("\nSuperagent HTTP server is listening over Cloudflare HTTPS tunnel.");
-        console.log("Press Ctrl+C to stop tunnel and exit.\n");
+        console.log([
+          "",
+          "═════════════════════════════════════════════════════════════════════════════",
+          "  Superagent HTTP REST/SSE Server & Cloudflare Quick Tunnel Online!",
+          "═════════════════════════════════════════════════════════════════════════════",
+          `  Public HTTPS URL  : ${meta.publicUrl}`,
+          `  Local Target      : ${meta.localUrl}`,
+          `  Server Port       : ${effectivePort}`,
+          `  Process PID       : ${meta.pid}`,
+          `  Bearer Token      : ${serverToken}`,
+          "═════════════════════════════════════════════════════════════════════════════",
+          "",
+          "Test with curl (copied to clipboard, ready to run):",
+          "-----------------------------------------------------------------------------",
+          curlSnippet,
+          "-----------------------------------------------------------------------------",
+          "",
+          "Superagent HTTP server is listening over Cloudflare HTTPS tunnel.",
+          "Press Ctrl+C to stop tunnel and exit.\n"
+        ].join("\n"));
 
         if (isDetach) {
           console.log("[Cloudflare HTTPS Tunnel] Running in background. Tunnel PID: " + meta.pid);
@@ -252,13 +324,15 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       }
 
       if (existing.isRunning) {
-        console.log("[Cloudflare Tunnel] Quick tunnel and WebSocket server are already ACTIVE:");
-        console.log(`  Public URL        : ${existing.publicUrl}`);
-        console.log(`  WSS Endpoint      : ${existing.wssUrl}`);
-        console.log(`  Local Target      : ${existing.localUrl}`);
-        console.log(`  Process PID       : ${existing.pid}`);
-        console.log(`  Uptime            : ${existing.uptimeSeconds}s`);
-        console.log(`  Bearer Token      : ${token}`);
+        console.log([
+          "[Cloudflare Tunnel] Quick tunnel and WebSocket server are already ACTIVE:",
+          `  Public URL        : ${existing.publicUrl}`,
+          `  WSS Endpoint      : ${existing.wssUrl}`,
+          `  Local Target      : ${existing.localUrl}`,
+          `  Process PID       : ${existing.pid}`,
+          `  Uptime            : ${existing.uptimeSeconds}s`,
+          `  Bearer Token      : ${token}`
+        ].join("\n"));
 
         const watched = getWatchedWorkspaces(cfg, process.cwd());
         const musePrompt = buildMuseConnectionPrompt({
@@ -306,16 +380,18 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         const meta = getTunnelStatus(effectivePort);
         const effectiveWss = meta.wssUrl || `wss://${meta.publicUrl?.replace(/^https?:\/\//, "")}${pathEndpoint}`;
 
-        console.log("");
-        console.log("═════════════════════════════════════════════════════════════════════════════");
-        console.log("  Superagent WebSocket Server & Cloudflare Quick Tunnel Online!");
-        console.log("═════════════════════════════════════════════════════════════════════════════");
-        console.log(`  Public URL        : ${meta.publicUrl}`);
-        console.log(`  WSS Endpoint      : ${effectiveWss}`);
-        console.log(`  Local Target      : ${meta.localUrl || `http://${host}:${effectivePort}`}`);
-        console.log(`  Process PID       : ${meta.pid}`);
-        console.log(`  Bearer Token      : ${token}`);
-        console.log("═════════════════════════════════════════════════════════════════════════════");
+        console.log([
+          "",
+          "═════════════════════════════════════════════════════════════════════════════",
+          "  Superagent WebSocket Server & Cloudflare Quick Tunnel Online!",
+          "═════════════════════════════════════════════════════════════════════════════",
+          `  Public URL        : ${meta.publicUrl}`,
+          `  WSS Endpoint      : ${effectiveWss}`,
+          `  Local Target      : ${meta.localUrl || `http://${host}:${effectivePort}`}`,
+          `  Process PID       : ${meta.pid}`,
+          `  Bearer Token      : ${token}`,
+          "═════════════════════════════════════════════════════════════════════════════"
+        ].join("\n"));
 
         const musePrompt = buildMuseConnectionPrompt({
           wssUrl: effectiveWss,
@@ -339,9 +415,12 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         console.log(musePrompt);
         console.log("-----------------------------------------------------------------------------");
 
-        console.log("\nSuperagent is actively listening in WATCH mode over WebSocket (controlled by Muse).");
-        console.log("When Muse connects and sends remote tasks or tool batches, Superagent will execute them and report back.");
-        console.log("Press Ctrl+C to stop tunnel and exit watch daemon.\n");
+        console.log([
+          "",
+          "Superagent is actively listening in WATCH mode over WebSocket (controlled by Muse).",
+          "When Muse connects and sends remote tasks or tool batches, Superagent will execute them and report back.",
+          "Press Ctrl+C to stop tunnel and exit watch daemon.\n"
+        ].join("\n"));
 
         let isExiting = false;
         const cleanExit = async () => {
@@ -380,6 +459,8 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       if (isAll) {
         const watcherCount = await stopAllMuseWatchers();
         const count = await stopAllQuickTunnels();
+        const { stopAllMcpServers } = await import("../mcp/mcpTunnel.js");
+        await stopAllMcpServers();
         console.log(`[Cloudflare Tunnel] Stopped ${count} quick tunnel${count === 1 ? "" : "s"} and ${watcherCount} watch daemon${watcherCount === 1 ? "" : "s"} across all workspaces.`);
         return;
       }
@@ -423,6 +504,20 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         stoppedAny = true;
       }
 
+      const wantMcpStop = args.some((a) => a.toLowerCase() === "--mcp");
+      const mcpPortStopIdx = args.findIndex((a) => a.toLowerCase() === "--mcp-port");
+      let mcpPortStop = portOverride || (wantMcpStop ? 9227 : 9227);
+      if (mcpPortStopIdx !== -1 && args[mcpPortStopIdx + 1]) {
+        const parsedMcpPort = parseInt(args[mcpPortStopIdx + 1], 10);
+        if (!isNaN(parsedMcpPort) && parsedMcpPort > 0 && parsedMcpPort < 65536) mcpPortStop = parsedMcpPort;
+      }
+      const { stopMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+      const mcpTarget = listActiveMcpServers().find((m) => m.port === mcpPortStop);
+      if (mcpTarget && mcpTarget.pid === process.pid) {
+        await stopMcpTunnel(mcpPortStop);
+        stoppedAny = true;
+      }
+
       if (!stoppedAny) {
         console.log(`[Cloudflare Tunnel] No quick tunnel is currently running${portOverride ? ` on port ${portOverride}` : ""}.`);
         return;
@@ -452,33 +547,60 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         const { getServerAuthToken } = await import("../utils/serverSecurity.js");
         const serverToken = getServerAuthToken();
         if (existing.isRunning) {
-          console.log(`Cloudflare HTTPS Tunnel Status (port ${effectivePort}): ACTIVE`);
-          console.log(`  Public HTTPS URL  : ${existing.publicUrl}`);
-          console.log(`  Local Target      : ${existing.localUrl}`);
-          console.log(`  Server Port       : ${effectivePort}`);
-          console.log(`  Process PID       : ${existing.pid}`);
-          console.log(`  Uptime            : ${existing.uptimeSeconds}s`);
-          console.log(`  Bearer Token      : ${serverToken}`);
-          console.log("");
-          console.log(`  Test: curl -H "Authorization: Bearer ${serverToken}" ${existing.publicUrl}/api/status`);
+          console.log([
+            `Cloudflare HTTPS Tunnel Status (port ${effectivePort}): ACTIVE`,
+            `  Public HTTPS URL  : ${existing.publicUrl}`,
+            `  Local Target      : ${existing.localUrl}`,
+            `  Server Port       : ${effectivePort}`,
+            `  Process PID       : ${existing.pid}`,
+            `  Uptime            : ${existing.uptimeSeconds}s`,
+            `  Bearer Token      : ${serverToken}`,
+            "",
+            `  Test: curl -H "Authorization: Bearer ${serverToken}" ${existing.publicUrl}/api/status`
+          ].join("\n"));
         } else {
-          console.log(`Cloudflare HTTPS Tunnel Status (port ${effectivePort}): INACTIVE`);
-          console.log(`  Run 'superagent tunnel start --https' to launch.`);
+          console.log(`Cloudflare HTTPS Tunnel Status (port ${effectivePort}): INACTIVE\n  Run 'superagent tunnel start --https' to launch.`);
         }
         return;
       }
 
+      const wantMcpStatus = args.some((a) => a.toLowerCase() === "--mcp");
+      const { listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+      const mcpServers = listActiveMcpServers();
+      const activeMcp = mcpServers.find((m) => m.port === (portOverride || existing.port || effectivePort)) || (wantMcpStatus ? mcpServers[0] : undefined);
+
+      if (activeMcp) {
+        console.log([
+          `MCP Server via Tunnel Status (port ${activeMcp.port}): ACTIVE`,
+          `  Public Endpoint   : ${activeMcp.publicUrl}`,
+          `  Local Target      : ${activeMcp.localUrl}`,
+          `  Tool Mode         : ${activeMcp.toolMode === "dangerous" ? "FULL (37 tools)" : "SAFE (read-only)"}`,
+          `  Auth Mode         : ${activeMcp.authMode || "static-bearer"}`,
+          `  Process PID       : ${activeMcp.pid}`,
+          `  Uptime            : ${activeMcp.uptimeSeconds}s`,
+          "",
+          `  To stop it, run: superagent muse tunnel stop --mcp-port ${activeMcp.port}`
+        ].join("\n"));
+        return;
+      }
+
+      if (wantMcpStatus) {
+        console.log(`MCP Server via Tunnel Status (port ${effectivePort}): INACTIVE\n  Run 'superagent muse tunnel start --mcp' to launch.`);
+        return;
+      }
+
       if (existing.isRunning) {
-        console.log(`Cloudflare Quick Tunnel Status${portOverride ? ` (port ${portOverride})` : ""}: ACTIVE`);
-        console.log(`  Public URL        : ${existing.publicUrl}`);
-        console.log(`  WSS Endpoint      : ${existing.wssUrl}`);
-        console.log(`  Local Target      : ${existing.localUrl}`);
-        console.log(`  Process PID       : ${existing.pid}`);
-        console.log(`  Uptime            : ${existing.uptimeSeconds}s`);
-        console.log(`  Bearer Token      : ${token ? maskSecret(token) : "(none)"}`);
+        console.log([
+          `Cloudflare Quick Tunnel Status${portOverride ? ` (port ${portOverride})` : ""}: ACTIVE`,
+          `  Public URL        : ${existing.publicUrl}`,
+          `  WSS Endpoint      : ${existing.wssUrl}`,
+          `  Local Target      : ${existing.localUrl}`,
+          `  Process PID       : ${existing.pid}`,
+          `  Uptime            : ${existing.uptimeSeconds}s`,
+          `  Bearer Token      : ${token ? maskSecret(token) : "(none)"}`
+        ].join("\n"));
       } else {
-        console.log(`Cloudflare Quick Tunnel Status${portOverride ? ` (port ${portOverride})` : ""}: INACTIVE`);
-        console.log(`  Run 'superagent muse tunnel start${portOverride ? ` --port ${portOverride}` : ""}' to launch a quick development tunnel.`);
+        console.log(`Cloudflare Quick Tunnel Status${portOverride ? ` (port ${portOverride})` : ""}: INACTIVE\n  Run 'superagent muse tunnel start${portOverride ? ` --port ${portOverride}` : ""}' to launch a quick development tunnel.`);
       }
       return;
     }
@@ -488,67 +610,45 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       console.log(`[Cloudflare Tunnel] Quick tunnel is currently ACTIVE (PID: ${currentStatus.pid}, URL: ${currentStatus.publicUrl})\n`);
     }
 
-    console.log("═════════════════════════════════════════════════════════════════════════════");
-    console.log("  Cloudflare Tunnel Setup & Ephemeral Subcommands for Muse");
-    console.log("═════════════════════════════════════════════════════════════════════════════");
-    console.log("");
-    console.log("Subcommands:");
-    console.log("  superagent muse tunnel list            - List all active quick tunnels across all ports");
-    console.log("  superagent muse tunnel start           - Start quick ephemeral tunnel (foreground, optional: --port <n>)");
-    console.log("  superagent muse tunnel start --https   - Start Cloudflare HTTPS tunnel for Superagent REST/SSE server (port 7888)");
-    console.log("  superagent muse tunnel start --detach  - Start quick ephemeral tunnel in background (optional: --port <n>)");
-    console.log("  superagent muse tunnel stop            - Stop running ephemeral tunnel (optional: --port <n> or all)");
-    console.log("  superagent muse tunnel stop --https    - Stop Cloudflare HTTPS tunnel (port 7888)");
-    console.log("  superagent muse tunnel status          - Check current tunnel status (optional: --port <n>)");
-    console.log("  superagent muse tunnel status --https  - Check Cloudflare HTTPS tunnel status (port 7888)");
-    console.log("  superagent muse tunnel guide           - View full manual Cloudflare setup guide");
-    console.log("");
-    console.log("1. Prerequisites:");
-    console.log("   - Install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/");
-    console.log("   - Windows: winget install Cloudflare.cloudflared (or choco install cloudflared)");
-    console.log("   - macOS  : brew install cloudflared");
-    console.log("   - Linux  : sudo apt install cloudflared");
-    console.log("");
-    console.log("2. Quick Ephemeral Tunnel (Development / Testing):");
-    console.log(`   cloudflared tunnel --url http://${host}:${port}`);
-    console.log("   - Cloudflare will generate a public hostname: https://*.trycloudflare.com");
-    console.log(`   - Connect Muse via WSS: wss://<subdomain>.trycloudflare.com${pathEndpoint}`);
-    console.log("");
-    console.log("3. Production Named Tunnel (Recommended):");
-    console.log("   cloudflared tunnel login");
-    console.log("   cloudflared tunnel create superagent-muse");
-    console.log("   In ~/.cloudflared/config.yml:");
-    console.log("   -------------------------------------------------");
-    console.log("   tunnel: <TUNNEL_UUID>");
-    console.log("   credentials-file: ~/.cloudflared/<TUNNEL_UUID>.json");
-    console.log("   ingress:");
-    console.log("     - hostname: muse.yourdomain.com");
-    console.log(`       service: ws://${host}:${port}`);
-    console.log("     - service: http_status:404");
-    console.log("   -------------------------------------------------");
-    console.log("   cloudflared tunnel route dns superagent-muse muse.yourdomain.com");
-    console.log("   cloudflared tunnel run superagent-muse");
-    console.log("");
-    console.log("4. Edge Security with Cloudflare Access (Zero Trust):");
-    console.log("   - Dashboard -> Zero Trust -> Access -> Applications -> Add application");
-    console.log("   - Add Service Token under Access -> Service Auth");
-    console.log("   - Set headers in Superagent:");
-    console.log("     superagent muse config cfAccessClientId <CF_CLIENT_ID>");
-    console.log("     superagent muse config cfAccessClientSecret <CF_CLIENT_SECRET>");
-    console.log("");
-    console.log("5. Multi-Project & Multi-Tunnel Isolation:");
-    console.log("   - Run multiple tunnels on separate ports concurrently:");
-    console.log("     Terminal 1 (Project A): cd project-a ; superagent muse tunnel start");
-    console.log("     Terminal 2 (Project B): cd project-b ; superagent muse tunnel start --port 9226");
-    console.log("   - Or watch multiple projects under a single tunnel:");
-    console.log("     superagent muse watch /path/to/project-a /path/to/project-b --tunnel");
-    console.log("");
-    console.log("6. Muse Authentication Header:");
-    console.log(`   Authorization: Bearer ${token}`);
-    console.log("");
-    console.log("7. Start Watch Daemon with Tunnel:");
-    console.log("   superagent muse watch --tunnel");
-    console.log("═════════════════════════════════════════════════════════════════════════════");
+    console.log([
+      "═════════════════════════════════════════════════════════════════════════════",
+      "  Cloudflare Tunnel Setup & Ephemeral Subcommands for Muse",
+      "═════════════════════════════════════════════════════════════════════════════",
+      "",
+      "Subcommands:",
+      "  superagent muse tunnel list            - List all active quick tunnels across all ports",
+      "  superagent muse tunnel start           - Start quick ephemeral tunnel (foreground, optional: --port <n>)",
+      "  superagent muse tunnel start --mcp     - Start MCP server via tunnel (Streamable HTTP, port 9227)",
+      "  superagent muse tunnel start --https   - Start Cloudflare HTTPS tunnel for Superagent REST/SSE server (port 7888)",
+      "  superagent muse tunnel start --detach  - Start quick ephemeral tunnel in background (optional: --port <n>)",
+      "  superagent muse tunnel stop            - Stop running ephemeral tunnel (optional: --port <n> or all)",
+      "  superagent muse tunnel stop --mcp      - Stop active MCP server tunnel (port 9227)",
+      "  superagent muse tunnel stop --https    - Stop Cloudflare HTTPS tunnel (port 7888)",
+      "  superagent muse tunnel status          - Check current tunnel status (optional: --port <n>)",
+      "  superagent muse tunnel status --mcp    - Check MCP server tunnel status (port 9227)",
+      "  superagent muse tunnel status --https  - Check Cloudflare HTTPS tunnel status (port 7888)",
+      "  superagent muse tunnel prompt          - View and copy connection prompt for Muse without starting",
+      "  superagent muse tunnel guide           - View full manual Cloudflare setup guide",
+      "",
+      "1. Prerequisites:",
+      "   Install cloudflared: winget install Cloudflare.cloudflared (or brew install cloudflared)",
+      "",
+      "2. Quick Ephemeral Tunnel (Development / Testing):",
+      `   cloudflared tunnel --url http://${host}:${port}`,
+      `   Connect Muse via WSS: wss://<subdomain>.trycloudflare.com${pathEndpoint}`,
+      "",
+      "3. Edge Security with Cloudflare Access (Zero Trust):",
+      "   superagent muse config cfAccessClientId <CF_CLIENT_ID>",
+      "   superagent muse config cfAccessClientSecret <CF_CLIENT_SECRET>",
+      "",
+      "4. Multi-Project & Multi-Tunnel Isolation:",
+      "   Terminal 1 (Project A): cd project-a ; superagent muse tunnel start",
+      "   Terminal 2 (Project B): cd project-b ; superagent muse tunnel start --port 9226",
+      "",
+      "5. Muse Authentication Header:",
+      `   Authorization: Bearer ${token}`,
+      "═════════════════════════════════════════════════════════════════════════════",
+    ].join("\n"));
     return;
   }
 
@@ -559,29 +659,31 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     if (!key) {
       const cfg = loadRemoteAgentConfig();
       const watched = getWatchedWorkspaces(cfg);
-      console.log("Current Remote Agent Configuration:");
-      console.log(`  transport        : ${cfg.transport || "telegram"}`);
-      console.log(`  as_runner_model  : ${cfg.asRunner ? "on (enabled)" : "off (disabled)"}`);
-      console.log(`  botToken         : ${maskToken(cfg.botToken)}`);
-      console.log(`  groupId          : ${cfg.groupId || "(not set)"}`);
-      console.log(`  museBotId        : ${cfg.museBotId || "(not set)"}`);
-      console.log(`  wsPort           : ${cfg.wsPort || 9225}`);
-      console.log(`  wsHost           : ${cfg.wsHost || "127.0.0.1"}`);
-      console.log(`  wsToken          : ${maskSecret(cfg.wsToken)}`);
-      console.log(`  wsPath           : ${cfg.wsPath || "/muse"}`);
-      console.log(`  wsMode           : ${cfg.wsMode || "server"}`);
-      console.log(`  wsRemoteUrl      : ${cfg.wsRemoteUrl || "(not set)"}`);
-      console.log(`  cfAccessClientId : ${cfg.cfAccessClientId || "(not set)"}`);
-      console.log(`  defaultWorkspace : ${cfg.defaultWorkspace || "(not set)"}`);
-      console.log(`  watchedWorkspaces (${watched.length}):`);
-      watched.forEach((w, i) => console.log(`    ${i + 1}. ${path.basename(w)} (${w})`));
-      console.log("");
-      console.log("Usage: superagent muse config <key> <value>");
-      console.log("Examples:");
-      console.log("  superagent muse config transport websocket");
-      console.log("  superagent muse config wsToken generate");
-      console.log("  superagent muse config wsPort 9225");
-      console.log("  superagent muse config workspaces add ./backend");
+      console.log([
+        "Current Remote Agent Configuration:",
+        `  transport        : ${cfg.transport || "telegram"}`,
+        `  as_runner_model  : ${cfg.asRunner ? "on (enabled)" : "off (disabled)"}`,
+        `  botToken         : ${maskToken(cfg.botToken)}`,
+        `  groupId          : ${cfg.groupId || "(not set)"}`,
+        `  museBotId        : ${cfg.museBotId || "(not set)"}`,
+        `  wsPort           : ${cfg.wsPort || 9225}`,
+        `  wsHost           : ${cfg.wsHost || "127.0.0.1"}`,
+        `  wsToken          : ${maskSecret(cfg.wsToken)}`,
+        `  wsPath           : ${cfg.wsPath || "/muse"}`,
+        `  wsMode           : ${cfg.wsMode || "server"}`,
+        `  wsRemoteUrl      : ${cfg.wsRemoteUrl || "(not set)"}`,
+        `  cfAccessClientId : ${cfg.cfAccessClientId || "(not set)"}`,
+        `  defaultWorkspace : ${cfg.defaultWorkspace || "(not set)"}`,
+        `  watchedWorkspaces (${watched.length}):`,
+        ...watched.map((w, i) => `    ${i + 1}. ${path.basename(w)} (${w})`),
+        "",
+        "Usage: superagent muse config <key> <value>",
+        "Examples:",
+        "  superagent muse config transport websocket",
+        "  superagent muse config wsToken generate",
+        "  superagent muse config wsPort 9225",
+        "  superagent muse config workspaces add ./backend"
+      ].join("\n"));
       return;
     }
 
@@ -613,48 +715,22 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
     const validKeys: Record<string, keyof RemoteAgentConfig> = {
       transport: "transport",
-      bottoken: "botToken",
-      bot_token: "botToken",
-      groupid: "groupId",
-      group_id: "groupId",
-      musebotid: "museBotId",
-      muse_bot_id: "museBotId",
-      defaultworkspace: "defaultWorkspace",
-      default_workspace: "defaultWorkspace",
-      asrunner: "asRunner",
-      as_runner: "asRunner",
-      asrunnermodel: "asRunner",
-      as_runner_model: "asRunner",
-      defaultrunner: "asRunner",
-      default_runner: "asRunner",
-      wsport: "wsPort",
-      ws_port: "wsPort",
-      port: "wsPort",
-      wshost: "wsHost",
-      ws_host: "wsHost",
-      wstoken: "wsToken",
-      ws_token: "wsToken",
-      token: "wsToken",
-      wspath: "wsPath",
-      ws_path: "wsPath",
-      wsmode: "wsMode",
-      ws_mode: "wsMode",
-      wsremoteurl: "wsRemoteUrl",
-      ws_remote_url: "wsRemoteUrl",
-      remoteurl: "wsRemoteUrl",
-      cfaccessclientid: "cfAccessClientId",
-      cf_access_client_id: "cfAccessClientId",
-      cfid: "cfAccessClientId",
-      cfaccessclientsecret: "cfAccessClientSecret",
-      cf_access_client_secret: "cfAccessClientSecret",
-      cfsecret: "cfAccessClientSecret",
-      tokenttl: "tokenTtlSeconds",
-      token_ttl: "tokenTtlSeconds",
-      ttl: "tokenTtlSeconds",
-      tokengrace: "tokenGracePeriodMs",
-      token_grace: "tokenGracePeriodMs",
-      autotokenrefresh: "autoTokenRefresh",
-      auto_token_refresh: "autoTokenRefresh",
+      bottoken: "botToken", bot_token: "botToken",
+      groupid: "groupId", group_id: "groupId",
+      musebotid: "museBotId", muse_bot_id: "museBotId",
+      defaultworkspace: "defaultWorkspace", default_workspace: "defaultWorkspace",
+      asrunner: "asRunner", as_runner: "asRunner", asrunnermodel: "asRunner", as_runner_model: "asRunner", defaultrunner: "asRunner", default_runner: "asRunner",
+      wsport: "wsPort", ws_port: "wsPort", port: "wsPort",
+      wshost: "wsHost", ws_host: "wsHost",
+      wstoken: "wsToken", ws_token: "wsToken", token: "wsToken",
+      wspath: "wsPath", ws_path: "wsPath",
+      wsmode: "wsMode", ws_mode: "wsMode",
+      wsremoteurl: "wsRemoteUrl", ws_remote_url: "wsRemoteUrl", remoteurl: "wsRemoteUrl",
+      cfaccessclientid: "cfAccessClientId", cf_access_client_id: "cfAccessClientId", cfid: "cfAccessClientId",
+      cfaccessclientsecret: "cfAccessClientSecret", cf_access_client_secret: "cfAccessClientSecret", cfsecret: "cfAccessClientSecret",
+      tokenttl: "tokenTtlSeconds", token_ttl: "tokenTtlSeconds", ttl: "tokenTtlSeconds",
+      tokengrace: "tokenGracePeriodMs", token_grace: "tokenGracePeriodMs",
+      autotokenrefresh: "autoTokenRefresh", auto_token_refresh: "autoTokenRefresh",
     };
 
     const mappedKey = validKeys[key];

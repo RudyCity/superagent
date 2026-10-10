@@ -1,3 +1,15 @@
+## [1.13.38] - 2026-10-10
+### Enhanced & Fixed
+- Cloudflare, MCP, and Muse Tunnel Synchronization & Stability:
+  - Resolved in-memory state desynchronization in `CloudflareTunnelManager` (`src/core/remoteAgent/cloudflareTunnel.ts`) by introducing `clearMemoryState` and `setMemoryState` hooks wired to `clearTunnelState` and `saveTunnelState`.
+  - Fixed orphaned `cloudflared` quick tunnel processes in `src/core/mcp/mcpTunnel.ts` by ensuring `stopMcpTunnel` properly invokes `stopQuickTunnel(port)`.
+  - Added MCP tunnel teardown (`stopAllMcpServers`) to the interactive ESC menu in `src/app.tsx` alongside `stopAllQuickTunnels` and `stopAllMuseWatchers`.
+  - Added full MCP tunnel parity to `superagent muse tunnel` CLI (`src/core/remoteAgent/museCli.ts`) supporting `--mcp`, `--mcp-port`, `--allow-dangerous`, and `--mcp-auth` flags across `start`, `stop`, and `status` subcommands.
+  - Enhanced `/muse tunnel` slash command (`src/core/commands/museTunnelSubcommand.ts`) with active MCP server detection, copy-paste client configuration snippets, and active server status reporting.
+  - Standardized English language across all user-facing tunnel strings, notifications, prompts, and CLI logging.
+  - Isolated test fixtures in `tests/cloudflareTunnel.test.ts` by mocking `os.homedir()` with a temporary test directory and ensuring full state cleanup in `afterEach`.
+  - Maintained all modified source and test files strictly under 1000 lines.
+
 ## [1.13.37] - 2026-10-10
 ### Added & Enhanced
 - Human-Like Simulated Cursor Movement & Visual Pointer Kinematics (`src/core/tools/chromeCdpCursor.ts`, `src/core/tools/chromeCdpTools.ts`, `src/core/tools/chromeVisionTools.ts`):

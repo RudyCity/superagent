@@ -113,6 +113,34 @@ export async function handleMuseTunnelSubcommand(
       if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
     }
     const effectivePort = portOverride || (isHttps ? 7888 : port);
+    const wantMcpPrompt = rawArgs.some((a) => a.toLowerCase() === "--mcp");
+    const { listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+    const mcpServers = listActiveMcpServers();
+    const activeMcp = mcpServers.find((m) => m.port === (portOverride || effectivePort)) || (wantMcpPrompt ? mcpServers[0] : undefined);
+
+    if (activeMcp) {
+      const configJson = JSON.stringify({
+        superagent: {
+          url: activeMcp.publicUrl,
+        },
+      }, null, 2);
+      const copied = await copyTextToClipboard(configJson);
+      ctx.addLine({
+        type: "system",
+        content: [
+          `MCP Server via Tunnel (port ${activeMcp.port}):`,
+          `- Public Endpoint : ${activeMcp.publicUrl}`,
+          `- Tool Mode      : ${activeMcp.toolMode === "dangerous" ? "FULL (37 tools)" : "SAFE (read-only)"}`,
+          `- Auth Mode      : ${activeMcp.authMode || "static-bearer"}`,
+          "",
+          copied ? "MCP client config (copied to clipboard):" : "MCP client config:",
+          configJson,
+        ].join("\n"),
+        timestamp: now,
+      });
+      return;
+    }
+
     let existing = getTunnelStatus(effectivePort);
     if (!existing.isRunning && !portOverride && !isHttps) {
       const active = listActiveTunnels();
@@ -715,6 +743,39 @@ export async function handleMuseTunnelSubcommand(
       return;
     }
 
+    const wantMcpStatus = rawArgs.some((a) => a.toLowerCase() === "--mcp");
+    const { listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+    const mcpServers = listActiveMcpServers();
+    const activeMcp = mcpServers.find((m) => m.port === (portOverride || existing.port || effectivePort)) || (wantMcpStatus ? mcpServers[0] : undefined);
+
+    if (activeMcp) {
+      ctx.addLine({
+        type: "system",
+        content: [
+          `MCP Server via Tunnel Status (port ${activeMcp.port}): ACTIVE`,
+          `- Public Endpoint : ${activeMcp.publicUrl}`,
+          `- Local Target   : ${activeMcp.localUrl}`,
+          `- Tool Mode      : ${activeMcp.toolMode === "dangerous" ? "FULL (37 tools)" : "SAFE (read-only)"}`,
+          `- Auth Mode      : ${activeMcp.authMode || "static-bearer"}`,
+          `- Process PID    : ${activeMcp.pid}`,
+          `- Uptime         : ${activeMcp.uptimeSeconds}s`,
+          "",
+          `To stop it, run: /muse tunnel stop --mcp-port ${activeMcp.port}`,
+        ].join("\n"),
+        timestamp: now,
+      });
+      return;
+    }
+
+    if (wantMcpStatus) {
+      ctx.addLine({
+        type: "system",
+        content: `MCP Server via Tunnel Status (port ${effectivePort}): INACTIVE\nRun '/muse tunnel start --mcp' to launch.`,
+        timestamp: now,
+      });
+      return;
+    }
+
     const reportPort = portOverride || existing.port;
     const titlePrefix = reportPort
       ? `Cloudflare Quick Tunnel Status (port ${reportPort}):`
@@ -746,14 +807,14 @@ export async function handleMuseTunnelSubcommand(
     return;
   }
 
-  // /muse tunnel msg <text> — kirim pesan ke Muse yang terkoneksi via tunnel
+  // /muse tunnel msg <text> — send message to connected Muse via tunnel
   if (rawAction === "msg" || rawAction === "message" || rawAction === "chat") {
     const actionIdx = parts.findIndex((p) => p.toLowerCase() === rawAction);
     const text = parts.slice(actionIdx + 1).join(" ").trim();
     if (!text) {
       ctx.addLine({
         type: "system",
-        content: "Usage: /muse tunnel msg <pesan> — kirim pesan ke Muse yang terkoneksi.",
+        content: "Usage: /muse tunnel msg <message> — send chat message to connected Muse.",
         timestamp: now,
       });
       return;
@@ -788,8 +849,8 @@ export async function handleMuseTunnelSubcommand(
     "  /muse tunnel restart         - Restart active Cloudflare Tunnel and watch daemon",
     "  /muse tunnel status          - Check current tunnel status (optional: --port <n>)",
     "  /muse tunnel status --https  - Check Cloudflare HTTPS tunnel status (port 7888)",
-    "  /muse tunnel msg <pesan>     - Kirim pesan ke Muse yang terkoneksi via tunnel",
-    "  /muse tunnel start --mcp    - Sertakan MCP server via tunnel (Streamable HTTP, port 9227)",
+    "  /muse tunnel msg <message>   - Send message to connected Muse via tunnel",
+    "  /muse tunnel start --mcp     - Start MCP server via tunnel (Streamable HTTP, port 9227)",
     "  /muse tunnel prompt          - View and copy connection prompt for Muse without starting",
     "  /muse tunnel guide           - View full manual Cloudflare setup guide",
     "  /tunnel start [--https]      - Shortcut: start quick tunnel with optional --https",
