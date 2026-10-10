@@ -44,6 +44,7 @@ import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTest
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 import { contentToString } from "../core/conversation.js";
 import { isMuseRunnerActive } from "../core/remoteAgent/config.js";
+import { isMuseWatcherActive, sendMuseSteerMessage } from "../core/remoteAgent/museWatcher.js";
 import { attachmentToImagePart, type ImageAttachment } from "../utils/imageUtils.js";
 import { useModelWizard } from "./wizard/useModelWizard.js";
 import { reconstructDashboardLogs } from "../utils/uiHelpers.js";
@@ -1866,6 +1867,48 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         ...attachments.map(attachmentToImagePart),
       ];
       messageContent = parts;
+    }
+
+    if (isMuseWatcherActive()) {
+      setMasterLogs((prev) => [...prev, `[USER] ${displayLine}`].slice(-500));
+      setQuery("");
+      setAttachments([]);
+
+      (async () => {
+        try {
+          const { loadRemoteAgentConfig } = await import("../core/remoteAgent/config.js");
+          const cfg = loadRemoteAgentConfig();
+
+          const sentBrain = await sendMuseSteerMessage(commandInput);
+
+          let sentTgText = false;
+          if (cfg.botToken && cfg.groupId) {
+            try {
+              const { MuseClient } = await import("../core/remoteAgent/museClient.js");
+              const client = new MuseClient(cfg);
+              sentTgText = await client.sendMessage(cfg.groupId, commandInput);
+            } catch {}
+          }
+
+          if (sentBrain || sentTgText) {
+            setMasterLogs((prev) => [
+              ...prev,
+              `[MUSE WATCH] Delivered to Telegram & Muse: "${commandInput}"`,
+            ].slice(-500));
+          } else {
+            setMasterLogs((prev) => [
+              ...prev,
+              `[ERROR] Failed to deliver message to Telegram or Muse.`,
+            ].slice(-500));
+          }
+        } catch (err: any) {
+          setMasterLogs((prev) => [
+            ...prev,
+            `[ERROR] Error sending message: ${err?.message || err}`,
+          ].slice(-500));
+        }
+      })();
+      return;
     }
 
     if (isMuseRunnerActive()) {

@@ -1,3 +1,10 @@
+## [1.13.43] - 2026-10-11
+### Enhanced & Fixed
+- Multi-Agent Dashboard Main Prompt Telegram & Muse Routing (`src/hooks/useDashboardWizard.ts`):
+  - Enabled active dispatch from the main prompt in Multi-Agent Dashboard (`useDashboardWizard.ts`) to Telegram and Muse when Watch Mode is active.
+  - User inputs entered in the multi-agent dashboard prompt are simultaneously delivered to the configured Telegram group via `MuseClient.sendMessage` and forwarded as steering chat envelopes to the active Muse brain via `sendMuseSteerMessage`.
+  - Resolved prompt interception gap ensuring consistent message delivery regardless of single-agent or multi-agent (`--multi`) mode.
+
 ## [1.13.42] - 2026-10-10
 ### Added & Enhanced
 - Native CDP Device & Viewport Emulation Engine (`src/core/tools/chromeCdpEmulation.ts`, `src/core/tools/chromeCdpTools.ts`):
