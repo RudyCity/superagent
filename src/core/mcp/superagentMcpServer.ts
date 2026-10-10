@@ -67,6 +67,26 @@ import {
   handleCompactContext,
   handleServerHealth,
 } from "./tools/configTools.js";
+import {
+  CHROME_MCP_TOOL_DEFS,
+  CHROME_MCP_TOOL_CLASSIFICATIONS,
+  dispatchChromeMcpTool,
+} from "./tools/chromeMcpTools.js";
+import {
+  DIAGNOSTICS_MCP_TOOL_DEFS,
+  DIAGNOSTICS_MCP_TOOL_CLASSIFICATIONS,
+  dispatchDiagnosticsMcpTool,
+} from "./tools/diagnosticsMcpTools.js";
+import {
+  PLAN_SKILLS_MCP_TOOL_DEFS,
+  PLAN_SKILLS_MCP_TOOL_CLASSIFICATIONS,
+  dispatchPlanSkillsMcpTool,
+} from "./tools/planSkillsMcpTools.js";
+import {
+  NETWORK_CONTENT_MCP_TOOL_DEFS,
+  NETWORK_CONTENT_MCP_TOOL_CLASSIFICATIONS,
+  dispatchNetworkContentMcpTool,
+} from "./tools/networkContentMcpTools.js";
 
 const MCP_LOG_FILE = path.join(os.homedir(), ".superagent-r", "superagent-mcp.log");
 
@@ -127,6 +147,10 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   superagent_switch_workspace: "dangerous",
   superagent_compact_context: "dangerous",
   superagent_remote_chrome: "dangerous",
+  ...CHROME_MCP_TOOL_CLASSIFICATIONS,
+  ...DIAGNOSTICS_MCP_TOOL_CLASSIFICATIONS,
+  ...PLAN_SKILLS_MCP_TOOL_CLASSIFICATIONS,
+  ...NETWORK_CONTENT_MCP_TOOL_CLASSIFICATIONS,
 };
 
 export interface McpToolAnnotations {
@@ -444,6 +468,10 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           description: "Check health of the Superagent background HTTP server, all active CLI sessions, and Remote Chrome bridge. Use to diagnose connectivity issues.",
           inputSchema: { type: "object", properties: {} },
         },
+        ...CHROME_MCP_TOOL_DEFS,
+        ...DIAGNOSTICS_MCP_TOOL_DEFS,
+        ...PLAN_SKILLS_MCP_TOOL_DEFS,
+        ...NETWORK_CONTENT_MCP_TOOL_DEFS,
     ];
     // Allowlist: hide non-allowed tools from MCP clients.
     const tools = allowedTools ? allTools.filter((t) => allowedTools.includes(t.name)) : allTools;
@@ -538,8 +566,17 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           return await handleManage(args);
         case "superagent_server_health":
           return await handleServerHealth();
-        default:
+        default: {
+          const chromeRes = await dispatchChromeMcpTool(name, args);
+          if (chromeRes) return chromeRes;
+          const diagRes = await dispatchDiagnosticsMcpTool(name, args);
+          if (diagRes) return diagRes;
+          const planSkillsRes = await dispatchPlanSkillsMcpTool(name, args);
+          if (planSkillsRes) return planSkillsRes;
+          const networkRes = await dispatchNetworkContentMcpTool(name, args);
+          if (networkRes) return networkRes;
           throw new McpError(ErrorCode.MethodNotFound, `Tool '${name}' not recognized.`);
+        }
       }
     } catch (err: any) {
       logMcp(`Error executing tool ${name}: ${err?.stack || err?.message || String(err)}`);

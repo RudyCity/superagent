@@ -16,9 +16,9 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 38;
+const EXPECTED_TOOL_COUNT = 62;
 
-describe("Superagent Complete 3-Pillar MCP Server Suite (38 Tools, Resources, Prompts)", () => {
+describe("Superagent Complete 3-Pillar MCP Server Suite (62 Tools, Resources, Prompts)", () => {
   const testDir = path.join(os.tmpdir(), `superagent_mcp_test_${Date.now()}`);
 
   beforeEach(() => {
@@ -92,6 +92,38 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (38 Tools, Resources, Pr
     expect(toolNames).toContain("superagent_get_token_usage");
     expect(toolNames).toContain("superagent_remote_chrome");
     expect(toolNames).toContain("superagent_server_health");
+
+    // Chrome CDP & Vision
+    expect(toolNames).toContain("superagent_chrome_cdp");
+    expect(toolNames).toContain("superagent_chrome_vision");
+    expect(toolNames).toContain("superagent_list_running_chrome");
+    expect(toolNames).toContain("superagent_close_chrome_profile");
+    expect(toolNames).toContain("superagent_close_chrome_window");
+    expect(toolNames).toContain("superagent_launch_chrome");
+    expect(toolNames).toContain("superagent_list_chrome_profiles");
+
+    // Diagnostics & Process/Port
+    expect(toolNames).toContain("superagent_inspect_port");
+    expect(toolNames).toContain("superagent_free_port");
+    expect(toolNames).toContain("superagent_find_process");
+    expect(toolNames).toContain("superagent_kill_process");
+
+    // Planning & Skills & Mutation
+    expect(toolNames).toContain("superagent_manage_plan");
+    expect(toolNames).toContain("superagent_manage_tasks");
+    expect(toolNames).toContain("superagent_get_skills");
+    expect(toolNames).toContain("superagent_use_skill");
+    expect(toolNames).toContain("superagent_synthesize_skill");
+    expect(toolNames).toContain("superagent_replace_file_content");
+    expect(toolNames).toContain("superagent_apply_patch");
+
+    // Network & Content
+    expect(toolNames).toContain("superagent_web_search");
+    expect(toolNames).toContain("superagent_fetch_url");
+    expect(toolNames).toContain("superagent_search_journal");
+    expect(toolNames).toContain("superagent_read_document");
+    expect(toolNames).toContain("superagent_office_cli");
+    expect(toolNames).toContain("superagent_git_action");
   });
 
   it("lists and reads all 5 MCP Resources", async () => {

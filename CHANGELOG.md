@@ -1,3 +1,19 @@
+## [1.13.47] - 2026-10-11
+### Added & Enhanced
+- Full Native Tool Registration to Model Context Protocol (MCP) Server (`src/core/mcp/superagentMcpServer.ts`, `src/core/mcp/tools/`):
+  - Expanded Superagent's 3-Pillar MCP server from 38 tools to 62 native tools, fully exposing Superagent's core capabilities over standard MCP stdio and HTTP tunnel transports.
+  - Added dedicated modular MCP tool handlers in `src/core/mcp/tools/`:
+    - `chromeMcpTools.ts`: registered `superagent_chrome_cdp` (and `superagent_control_chrome_cdp`), `superagent_chrome_vision` (and `superagent_control_chrome_vision`), `superagent_list_running_chrome`, `superagent_close_chrome_profile`, `superagent_close_chrome_window`, `superagent_launch_chrome`, and `superagent_list_chrome_profiles`.
+    - `diagnosticsMcpTools.ts`: registered `superagent_inspect_port`, `superagent_free_port`, `superagent_find_process`, and `superagent_kill_process`.
+    - `planSkillsMcpTools.ts`: registered `superagent_manage_plan`, `superagent_manage_tasks`, `superagent_get_skills`, `superagent_use_skill`, `superagent_synthesize_skill`, `superagent_replace_file_content`, and `superagent_apply_patch`.
+    - `networkContentMcpTools.ts`: registered `superagent_web_search`, `superagent_fetch_url`, `superagent_search_journal`, `superagent_read_document`, `superagent_office_cli`, and `superagent_git_action`.
+  - Added safe vs dangerous classification for all new tools in `MCP_TOOL_CLASSIFICATION` with automatic derivation of read-only, destructive, idempotent, and open-world behavior annotations.
+- Unit Testing & Quality Verification:
+  - Updated `tests/mcpServer.test.ts` to assert all 62 registered MCP tools, resources, and prompts.
+  - Added `tests/mcpExtendedTools.test.ts` verifying real execution of diagnostic, skill, mutation, plan, chrome, and content tools through MCP `CallToolRequestSchema`.
+- Fail-Closed Remote Agent Server Security (`src/core/remoteAgent/museWsTransport.ts`):
+  - Enforced fail-closed authentication policy ensuring unauthenticated WebSocket upgrades are rejected with HTTP 403 Forbidden.
+
 ## [1.13.46] - 2026-10-11
 ### Added & Enhanced
 - Targeted Advisor Loop Recovery & Actionable Element Guidance (`src/core/advisor.ts`, `src/core/advisorHelpers.ts`):

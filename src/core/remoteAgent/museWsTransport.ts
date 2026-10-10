@@ -83,6 +83,22 @@ export class MuseWsServerTransport implements RemoteTransport {
               return;
             }
 
+            // Fail-closed: never run an unauthenticated server. If no auth is
+            // configured at all (no bearer token, no previous token, no Cloudflare
+            // Access credentials), reject the upgrade instead of silently granting
+            // open access to anyone who reaches the tunnel URL.
+            const authConfigured = Boolean(
+              this.config.wsToken ||
+              this.config.previousWsToken ||
+              this.config.cfAccessClientId ||
+              this.config.cfAccessClientSecret
+            );
+            if (!authConfigured) {
+              logE2E("REMOTE-AGENT", "WebSocket upgrade rejected: server has no authentication configured (set wsToken or Cloudflare Access credentials)");
+              callback(false, 403, "Forbidden: server requires authentication - configure wsToken or Cloudflare Access");
+              return;
+            }
+
             // Step 2: Bearer token verification if token provided in request header or query
             if (this.config.wsToken || this.config.previousWsToken) {
               const token = extractBearerToken(info.req.headers.authorization, info.req.url);
