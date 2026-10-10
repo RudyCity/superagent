@@ -99,3 +99,9 @@ export async function sendMuseSteerMessage(text: string): Promise<boolean> {
   if (!globalMuseWatcher) return false;
   return await globalMuseWatcher.sendSteeringMessage(text);
 }
+
+export async function sendMuseTaskRequest(task: string, workspace?: string): Promise<boolean> {
+  if (!globalMuseWatcher) return false;
+  return await globalMuseWatcher.sendTaskRequest(task, workspace);
+}
+

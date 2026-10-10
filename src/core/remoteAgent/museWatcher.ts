@@ -59,14 +59,7 @@ export class MuseWatcher {
   private seenChatIds = new Set<string>();
   private seenBatchIds = new Set<string>();
   private activeBatchIds = new Set<string>();
-  private completedBatchResults = new Map<
-    string,
-    {
-      resultEnvelope: TaskResultEnvelope;
-      completedAt: number;
-      hasError: boolean;
-    }
-  >();
+  private completedBatchResults = new Map<string, { resultEnvelope: TaskResultEnvelope; completedAt: number; hasError: boolean }>();
   private pendingReplyMessageIds = new Map<string, Set<number>>();
   private batchQueue: BatchQueueItem[] = [];
   private isProcessingQueue = false;
@@ -284,12 +277,9 @@ export class MuseWatcher {
 
     this.options.onStatusChange?.(true);
 
-    const wsInfoStr =
-      this.workspaces.length > 1
-        ? `- Watched Projects (${this.workspaces.length}):\n${this.workspaces
-            .map((w, i) => `  ${i + 1}. ${path.basename(w)} (${w})`)
-            .join("\n")}`
-        : `- Workspace: ${primaryWs}`;
+    const wsInfoStr = this.workspaces.length > 1
+      ? `- Watched Projects (${this.workspaces.length}):\n${this.workspaces.map((w, i) => `  ${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`
+      : `- Workspace: ${primaryWs}`;
 
     this.emitLine(
       "system",
@@ -298,9 +288,7 @@ export class MuseWatcher {
 
     if (
       this.options.tunnel &&
-      (this.transport.type === "websocket" ||
-        this.transport.type === "https" ||
-        this.options.isHttps)
+      (this.transport.type === "websocket" || this.transport.type === "https" || this.options.isHttps)
     ) {
       const res = await startWatcherTunnel({
         isHttps: this.transport.type === "https" || Boolean(this.options.isHttps),
@@ -320,16 +308,11 @@ export class MuseWatcher {
 
     // Optional presence greeting in background
     if (this.options.announce !== false) {
-      const presenceText =
-        this.workspaces.length > 1
-          ? `🟢 Superagent is now active in WATCH mode (controlled by Muse) on ${this.workspaces.length} projects:\n${this.workspaces
-              .map((w, i) => `${i + 1}. ${path.basename(w)} (${w})`)
-              .join("\n")}`
-          : `🟢 Superagent is now active in WATCH mode (controlled by Muse) on workspace: ${primaryWs}`;
+      const presenceText = this.workspaces.length > 1
+        ? `🟢 Superagent is now active in WATCH mode (controlled by Muse) on ${this.workspaces.length} projects:\n${this.workspaces.map((w, i) => `${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`
+        : `🟢 Superagent is now active in WATCH mode (controlled by Muse) on workspace: ${primaryWs}`;
 
-      this.transport
-        .sendEnvelope({ v: 1, kind: "chat", text: presenceText })
-        .catch(() => {});
+      this.transport.sendEnvelope({ v: 1, kind: "chat", text: presenceText }).catch(() => {});
     }
 
     // Start background transport loop
@@ -849,6 +832,45 @@ export class MuseWatcher {
     };
     await this.transport.sendEnvelope(steerEnvelope);
     this.emitLine("system", `[Muse Steer] Sent intervention to Muse: "${text}"`);
+    return true;
+  }
+
+  /**
+   * Dispatches a formal task_request envelope to Muse with workspace and standard tools.
+   */
+  public async sendTaskRequest(taskText: string, targetWs?: string): Promise<boolean> {
+    if (!this.transport || !this.isRunning) return false;
+    const ws = targetWs || this.workspaces[0] || process.cwd();
+    const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    this.activeTaskId = taskId;
+
+    const requestEnvelope: TaskRequestEnvelope = {
+      v: 1,
+      kind: "task_request",
+      id: taskId,
+      task: taskText,
+      workspace: ws,
+      tools: [
+        "read",
+        "glob",
+        "grep",
+        "ripgrep_search",
+        "write",
+        "edit",
+        "write_to_file",
+        "replace_file_content",
+        "apply_patch",
+        "run_command",
+        "bash",
+      ],
+      system_prompt: this.config.systemPrompt,
+    };
+
+    await this.transport.sendEnvelope(requestEnvelope);
+    this.emitLine(
+      "system",
+      `⚡ [Muse Task Request] Dispatched task to Muse: "${taskText}" (Workspace: ${path.basename(ws)})`
+    );
     return true;
   }
 

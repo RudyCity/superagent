@@ -470,6 +470,39 @@ export const museCommand: SlashCommand = {
       return;
     }
 
+    // /muse task or /muse run or /muse do
+    if (subcommand === "task" || subcommand === "run" || subcommand === "do") {
+      const taskText = parts.slice(1).join(" ").trim();
+      if (!taskText) {
+        ctx.addLine({
+          type: "error",
+          content: `Usage: /muse ${subcommand} <task description>`,
+          timestamp: now,
+        });
+        return;
+      }
+
+      const { isMuseWatcherActive, sendMuseTaskRequest } = await import("../remoteAgent/museWatcher.js");
+      if (isMuseWatcherActive()) {
+        const workspace = ctx.agent?.workingDirectory || process.cwd();
+        const sent = await sendMuseTaskRequest(taskText, workspace);
+        if (sent) {
+          ctx.addLine({
+            type: "system",
+            content: `⚡ [Muse Watch] Dispatched task_request to Muse: "${taskText}"\nMuse will now explore the repository and execute tool batches.`,
+            timestamp: now,
+          });
+        } else {
+          ctx.addLine({
+            type: "error",
+            content: "[Muse Watch] Failed to dispatch task_request to Muse.",
+            timestamp: now,
+          });
+        }
+        return;
+      }
+    }
+
     const { isMuseWatcherActive, sendMuseSteerMessage } = await import("../remoteAgent/museWatcher.js");
     if (isMuseWatcherActive()) {
       let sentBrain = false;

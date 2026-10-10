@@ -234,4 +234,38 @@ describe("Muse Telegram Watch Real-Time Ingress & Cancellation", () => {
 
     fetchSpy.mockRestore();
   });
+
+  it("should dispatch formal task_request envelope with tools and workspace via sendTaskRequest", async () => {
+    const sentEnvelopes: any[] = [];
+    const client = new MuseClient({
+      botToken: "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+      groupId: -1001234567890,
+      museBotId: 987654321,
+    });
+
+    const sendSpy = vi.spyOn(MuseClient.prototype, "sendEnvelope").mockImplementation(async (env) => {
+      sentEnvelopes.push(env);
+      return true;
+    });
+
+    const watcher = await startMuseWatcher({
+      workspace: process.cwd(),
+      announce: false,
+    });
+
+    const sent = await watcher.sendTaskRequest("audit superagent perihal muse fitur");
+    expect(sent).toBe(true);
+    expect(sentEnvelopes).toHaveLength(1);
+
+    const taskEnv = sentEnvelopes[0];
+    expect(taskEnv.kind).toBe("task_request");
+    expect(taskEnv.task).toBe("audit superagent perihal muse fitur");
+    expect(taskEnv.workspace).toBe(process.cwd());
+    expect(Array.isArray(taskEnv.tools)).toBe(true);
+    expect(taskEnv.tools).toContain("read");
+    expect(taskEnv.tools).toContain("ripgrep_search");
+    expect(taskEnv.tools).toContain("run_command");
+
+    sendSpy.mockRestore();
+  });
 });

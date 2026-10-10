@@ -1,3 +1,11 @@
+## [1.13.45] - 2026-10-11
+### Added & Enhanced
+- Muse Watch Mode Formal Task Request Dispatch (`src/core/commands/museCommand.ts`, `src/core/remoteAgent/museWatcher.ts`, `src/core/remoteAgent/museWatcherRegistry.ts`):
+  - Added dedicated `/muse task <task>`, `/muse run <task>`, and `/muse do <task>` subcommands enabling operators to dispatch formal `task_request` envelopes directly to Muse while in Watch Mode.
+  - Automatically equips Muse with the active workspace directory, system prompt, and standard toolset (`read`, `glob`, `grep`, `ripgrep_search`, `write`, `edit`, `write_to_file`, `replace_file_content`, `apply_patch`, `run_command`, `bash`), enabling Muse to immediately explore repositories and execute `task_batch` operations.
+  - Added `sendTaskRequest` method on `MuseWatcher` and exported `sendMuseTaskRequest` in `museWatcherRegistry.ts`.
+  - Added comprehensive unit tests in `tests/museTelegramRealtime.test.ts` validating envelope creation and tool delivery.
+
 ## [1.13.44] - 2026-10-11
 ### Added & Enhanced
 - Interactive Tool Discovery & Schema Introspection (`src/core/commands/coreCommands.ts`, `src/core/tools/toolDiscoveryTools.ts`, `src/core/tools/index.ts`):
