@@ -212,6 +212,10 @@ describe("control_chrome_cdp (mock CDP server)", () => {
             );
             return;
           }
+          if (expr.includes("getBoundingClientRect")) {
+            ws.send(JSON.stringify({ id: msg.id, result: { result: { value: { x: 300, y: 150 } } } }));
+            return;
+          }
         }
         if (msg.method === "Page.handleJavaScriptDialog") {
           lastHandledDialogParams = msg.params || {};
@@ -226,6 +230,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
           "Page.printToPDF": { data: "JVBERi0xLjQ=" },
           "Storage.getCookies": { cookies: [{ name: "sid", value: "abc123", domain: "example.com" }] },
           "Input.insertText": {},
+          "Input.dispatchMouseEvent": {},
           "Browser.grantPermissions": {},
           "Browser.resetPermissions": {},
         };
@@ -320,6 +325,11 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       "get_cookies",
       "inspect_media_devices",
       "media_devices",
+      "move_cursor",
+      "move_mouse",
+      "show_cursor",
+      "hide_cursor",
+      "get_cursor",
     ]);
     expect(controlChromeCdpTool.description).toContain("--remote-debugging-port=9222");
     expect(controlChromeCdpTool.description).toContain("no extension required");
@@ -818,6 +828,34 @@ describe("control_chrome_cdp (mock CDP server)", () => {
 
     expect(res).toContain("control_chrome_cdp: media device inspection");
     expect(res).toContain("Audio Output Devices / Speakers (1):");
+  });
+
+  test("controlChromeCdpTool move_cursor and get_cursor smoothly update position", async () => {
+    const moveRes = await controlChromeCdpTool.execute({
+      command: "move_cursor",
+      x: 520,
+      y: 340,
+      steps: 4,
+      step_delay_ms: 1,
+    });
+    expect(moveRes).toContain("cursor moved naturally to (520, 340)");
+
+    const posRes = await controlChromeCdpTool.execute({
+      command: "get_cursor",
+    });
+    expect(posRes).toContain("Current cursor position: (520, 340)");
+  });
+
+  test("controlChromeCdpTool click with smooth: true glides cursor before clicking", async () => {
+    const clickRes = await controlChromeCdpTool.execute({
+      command: "click",
+      selector: "button",
+      smooth: true,
+      steps: 3,
+      step_delay_ms: 1,
+    });
+    expect(clickRes).toContain("clicked <button>");
+    expect(clickRes).toContain("[human-like cursor at (300, 150)");
   });
 });
 

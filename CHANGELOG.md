@@ -1,3 +1,17 @@
+## [1.13.37] - 2026-10-10
+### Added & Enhanced
+- Human-Like Simulated Cursor Movement & Visual Pointer Kinematics (`src/core/tools/chromeCdpCursor.ts`, `src/core/tools/chromeCdpTools.ts`, `src/core/tools/chromeVisionTools.ts`):
+  - Created dedicated `chromeCdpCursor.ts` companion module maintaining all source files strictly under 1000 lines.
+  - Implemented human-like kinematics using cubic Bézier curve trajectories with randomized perpendicular normal deflection, preventing robotic linear movements or teleportation.
+  - Implemented Fitts's law velocity profiling with cubic ease-in-out acceleration, rapid transit, and gentle target approach deceleration.
+  - Added physiological micro-jitters simulating human hand tremors along intermediate trajectory points while converging smoothly onto target coordinates.
+  - Added natural human dwell pauses and button press holding times (50-70ms) before mouse release.
+  - Added real-time sequential CDP `Input.dispatchMouseEvent` (`mouseMoved` event stream) triggering real browser `:hover`, mouseover, and DOM listeners.
+  - Added optional DOM virtual pointer overlay with SVG cursor icon and expanding click ripple animations for headful / screenshot feedback.
+  - Integrated `move_cursor`, `move_mouse`, `get_cursor`, `show_cursor`, and `hide_cursor` commands into `control_chrome_cdp`.
+  - Added `smooth: true` (and `human: true`) options to `click` in `control_chrome_cdp` and `click_id`/`click_label`/`type_id` in `control_chrome_vision`.
+  - Added comprehensive unit tests in `tests/chromeCdpCursor.test.ts` and `tests/chromeCdpTools.test.ts`.
+
 ## [1.13.36] - 2026-10-10
 ### Added & Enhanced
 - Media Devices Debugging & Inspection in Chrome CDP (`src/core/tools/chromeCdpMedia.ts`, `src/core/tools/chromeCdpTools.ts`):

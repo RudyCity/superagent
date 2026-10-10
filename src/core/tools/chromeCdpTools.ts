@@ -52,6 +52,11 @@ import {
   DomStateSnapshot,
 } from "./chromeCdpTransition.js";
 import { executeInspectMediaDevices } from "./chromeCdpMedia.js";
+import {
+  executeCursorCommand,
+  dispatchHumanMouseClick,
+  resolveElementCenterPoint,
+} from "./chromeCdpCursor.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -527,13 +532,18 @@ export const controlChromeCdpTool: Tool = {
           "get_cookies",
           "inspect_media_devices",
           "media_devices",
+          "move_cursor",
+          "move_mouse",
+          "show_cursor",
+          "hide_cursor",
+          "get_cursor",
         ],
         description: "CDP command to execute on the real Chrome browser.",
       },
       payload: {
         type: "string",
         description:
-          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true} or {"selector": "#login"}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
+          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
       },
       url: { type: "string", description: "Optional top-level URL convenience shortcut for new_tab or navigate." },
       index: { type: "number", description: "Optional top-level element index convenience shortcut for click or type." },
@@ -548,6 +558,11 @@ export const controlChromeCdpTool: Tool = {
       quality: { type: "number", description: "Optional compression quality for jpeg/webp screenshot (0-100)." },
       grantPermissions: { type: "boolean", description: "Optional flag to grant microphone, camera, and speakerSelection permissions via CDP." },
       resetPermissions: { type: "boolean", description: "Optional flag to reset permissions via CDP." },
+      smooth: { type: "boolean", description: "Optional flag to glide cursor along a human-like Bezier curve before clicking." },
+      x: { type: "number", description: "Optional x coordinate for cursor movement or positioning." },
+      y: { type: "number", description: "Optional y coordinate for cursor movement or positioning." },
+      steps: { type: "number", description: "Optional step count for cursor trajectory interpolation." },
+      visualCursor: { type: "boolean", description: "Optional flag to display an animated virtual pointer overlay in the DOM." },
       targetId: { type: "string", description: "Optional CDP target id. Automatically defaults to the active tab." },
     },
     required: ["command"],
@@ -572,7 +587,8 @@ export const controlChromeCdpTool: Tool = {
       "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path",
       "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms",
       "accept", "promptText", "prompt_text", "grantPermissions", "grant_permissions",
-      "resetPermissions", "reset_permissions",
+      "resetPermissions", "reset_permissions", "smooth", "human", "realistic",
+      "x", "y", "steps", "step_delay_ms", "visualCursor", "visual",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
@@ -812,6 +828,15 @@ export const controlChromeCdpTool: Tool = {
           if (payload.verify || payload.observe) {
             beforeState = await captureDomState(cdpSend, target);
           }
+          let smoothInfo = "";
+          if (payload.smooth || payload.human || payload.realistic) {
+            const centerPt = await resolveElementCenterPoint(cdpSend, target, resolved.selector);
+            if (centerPt) {
+              const visual = Boolean(payload.visualCursor ?? payload.visual);
+              const clickHuman = await dispatchHumanMouseClick(cdpSend, target, centerPt, { visualCursor: visual });
+              smoothInfo = ` [human-like cursor at (${clickHuman.x}, ${clickHuman.y}) across ${clickHuman.steps} steps]`;
+            }
+          }
           const clickStartTs = Date.now() - 2;
           const res: any = await cdpSend(target, "Runtime.evaluate", {
             expression: buildClickJs(resolved.selector),
@@ -821,7 +846,7 @@ export const controlChromeCdpTool: Tool = {
           const parsed = parseActionResult(typeof value === "string" ? value : JSON.stringify(value));
           if (!parsed.ok) return `control_chrome_cdp: click failed - ${parsed.reason || "unknown reason"}.`;
           const textStr = parsed.text ? ` "${parsed.text}"` : "";
-          let clickResult = `control_chrome_cdp: clicked <${parsed.tag}>${textStr}.`;
+          let clickResult = `control_chrome_cdp: clicked <${parsed.tag}>${textStr}${smoothInfo}.`;
           const recentDialogs = getRecentDialogs(target.id, clickStartTs);
           if (recentDialogs.length > 0) {
             clickResult += `\nIntercepted Native Dialog(s): ${recentDialogs.map(formatDialogEntry).join(" | ")}`;
@@ -940,8 +965,16 @@ export const controlChromeCdpTool: Tool = {
             resetPermissions: reset,
           });
         }
+        case "move_cursor":
+        case "move_mouse":
+        case "show_cursor":
+        case "hide_cursor":
+        case "get_cursor": {
+          const target = await pickTarget(targetId);
+          return await executeCursorCommand(cdpSend, target, command, payload);
+        }
         default:
-          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices.`;
+          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, move_cursor, get_cursor, show_cursor, hide_cursor.`;
       }
     } catch (err: any) {
       return `control_chrome_cdp failed: ${(err && err.message) || String(err)}`;

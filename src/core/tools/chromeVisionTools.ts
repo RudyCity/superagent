@@ -300,8 +300,14 @@ async function captureScreenshot(target: CdpTarget): Promise<string> {
   return res.data as string;
 }
 
-async function clickAt(target: CdpTarget, x: number, y: number): Promise<void> {
+async function clickAt(target: CdpTarget, x: number, y: number, smooth = false): Promise<void> {
   const wsUrl = target.webSocketDebuggerUrl;
+  if (smooth) {
+    const { dispatchHumanMouseClick } = await import("./chromeCdpCursor.js");
+    const send = async (_t: any, method: string, params?: any) => cdpSend(wsUrl, method, params);
+    await dispatchHumanMouseClick(send, { id: target.id }, { x, y });
+    return;
+  }
   for (const type of ["mousePressed", "mouseReleased"]) {
     await cdpSend(wsUrl, "Input.dispatchMouseEvent", {
       type, x, y, button: "left", clickCount: 1,
@@ -428,7 +434,7 @@ async function cmdClickId(payload: any): Promise<string> {
   }
 
   const [cx, cy] = el.center;
-  await clickAt(target!, cx, cy);
+  await clickAt(target!, cx, cy, Boolean(payload?.smooth || payload?.human));
   const textHint = el.text ? ` ("${el.text}")` : "";
 
   // Brief pause and post-action diff check if requested
@@ -468,7 +474,7 @@ async function cmdTypeId(payload: any): Promise<string> {
   }
 
   const [cx, cy] = el.center;
-  await clickAt(target!, cx, cy);
+  await clickAt(target!, cx, cy, Boolean(payload?.smooth || payload?.human));
   await new Promise((r) => setTimeout(r, 200));
   await typeText(target!, text);
 
@@ -578,7 +584,7 @@ async function findByLabel(payload: any): Promise<{ target: CdpTarget; el: Visio
 async function cmdClickLabel(payload: any): Promise<string> {
   const { target, el } = await findByLabel(payload);
   const [cx, cy] = el.center;
-  await clickAt(target, cx, cy);
+  await clickAt(target, cx, cy, Boolean(payload?.smooth || payload?.human));
   const textHint = el.text ? ` ("${el.text}")` : "";
   return `Clicked UI-DETR element ${el.label}${textHint} at center (${cx}, ${cy}).`;
 }
@@ -590,7 +596,7 @@ async function cmdTypeLabel(payload: any): Promise<string> {
   }
   const { target, el } = await findByLabel(payload);
   const [cx, cy] = el.center;
-  await clickAt(target, cx, cy);
+  await clickAt(target, cx, cy, Boolean(payload?.smooth || payload?.human));
   await new Promise((r) => setTimeout(r, 200));
   await typeText(target, text);
   const labelHint = el.text ? ` ("${el.text}")` : "";
