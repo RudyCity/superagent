@@ -56,6 +56,7 @@ import {
   executeCursorCommand,
   dispatchHumanMouseClick,
   resolveElementCenterPoint,
+  executeDragAndDropCommand,
 } from "./chromeCdpCursor.js";
 
 /**
@@ -496,16 +497,9 @@ export const controlChromeCdpTool: Tool = {
   description:
     "Control the user's REAL Chrome browser directly via Chrome Remote Debugging (CDP) at http://127.0.0.1:9222 — no extension required and no isolated background tab. " +
     "REQUIRES Chrome to be running with --remote-debugging-port=9222 (close ALL Chrome windows, then reopen Chrome from the taskbar shortcut). " +
-    "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies. " +
-    "Convenience: 'navigate' automatically waits for page ready, captures a visual screenshot saved to disk (with vision data URL), and returns an interactive element snapshot. " +
-    "'verify_action' performs an action (click) and analyzes UI transitions (detects Full-Page Form transition, Modal Dialog, Drawer, URL query/route navigation, Native Dialogs, Alerts, Table changes). " +
-    "'get_dialogs' returns intercepted native browser dialogs (window.alert, confirm, prompt, beforeunload). " +
-    "'handle_dialog' configures autoAccept (true/false) and promptText for native dialogs. " +
-    "'screenshot' captures full or viewport screenshots saved to disk and returns vision data URL. " +
-    "Actions like click, type, snapshot, evaluate, and wait_for also support optional 'screenshot: true' to capture visual feedback after the action. " +
-    "'read_page' extracts full visible body text, headings, alerts/status banners, and email contents. " +
-    "'extract_links' extracts hyperlinks with an optional keyword/pattern filter (e.g. 'verify', 'confirm', 'token'). " +
-    "Arguments like url, index, text, selector, pattern, expression, screenshot, outputPath, fullPage can be provided directly at top-level or inside payload.",
+    "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, move_cursor, drag_and_drop. " +
+    "Supports human-like Bézier cursor movement, realistic drag-and-drop, visual pointer overlay, native dialog interception, and UI transition verification. " +
+    "Arguments like url, index, text, selector, source, target, dx, dy, pattern, expression, screenshot, outputPath can be provided directly at top-level or inside payload.",
   parameters: {
     type: "object",
     properties: {
@@ -537,19 +531,25 @@ export const controlChromeCdpTool: Tool = {
           "show_cursor",
           "hide_cursor",
           "get_cursor",
+          "drag_and_drop",
+          "drag",
+          "drag_drop",
         ],
         description: "CDP command to execute on the real Chrome browser.",
       },
       payload: {
         type: "string",
         description:
-          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
+          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. drag_and_drop: {"source": "#card", "target": "#column"} or {"sourceIndex": 2, "targetIndex": 5, "mode": "mouse"|"html5", "screenshot": true}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
       },
       url: { type: "string", description: "Optional top-level URL convenience shortcut for new_tab or navigate." },
       index: { type: "number", description: "Optional top-level element index convenience shortcut for click or type." },
       text: { type: "string", description: "Optional top-level text convenience shortcut for type or wait_for." },
       selector: { type: "string", description: "Optional top-level CSS selector convenience shortcut for click, type, or wait_for." },
       pattern: { type: "string", description: "Optional top-level keyword filter pattern for extract_links." },
+      source: { type: "string", description: "Optional source selector or index for drag_and_drop." },
+      target: { type: "string", description: "Optional target selector or index for drag_and_drop." },
+      mode: { type: "string", enum: ["mouse", "html5", "both"], description: "Optional drag_and_drop mode ('mouse' [default], 'html5', or 'both')." },
       native: { type: "boolean", description: "Optional top-level flag to dispatch native CDP Input keystrokes." },
       screenshot: { type: "boolean", description: "Optional top-level flag to capture a visual screenshot alongside the action." },
       outputPath: { type: "string", description: "Optional custom file path to save the screenshot image PNG." },
@@ -589,6 +589,11 @@ export const controlChromeCdpTool: Tool = {
       "accept", "promptText", "prompt_text", "grantPermissions", "grant_permissions",
       "resetPermissions", "reset_permissions", "smooth", "human", "realistic",
       "x", "y", "steps", "step_delay_ms", "visualCursor", "visual",
+      "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index",
+      "sourceSelector", "targetSelector", "source_selector", "target_selector",
+      "sourceX", "sourceY", "fromX", "fromY", "startX", "startY",
+      "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
+      "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
@@ -973,8 +978,15 @@ export const controlChromeCdpTool: Tool = {
           const target = await pickTarget(targetId);
           return await executeCursorCommand(cdpSend, target, command, payload);
         }
+        case "drag_and_drop":
+        case "drag":
+        case "drag_drop": {
+          const target = await pickTarget(targetId);
+          const dragResult = await executeDragAndDropCommand(cdpSend, target, payload);
+          return await attachScreenshotIfRequested(cdpSend, target, payload, dragResult, false);
+        }
         default:
-          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, move_cursor, get_cursor, show_cursor, hide_cursor.`;
+          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, move_cursor, get_cursor, show_cursor, hide_cursor, drag_and_drop.`;
       }
     } catch (err: any) {
       return `control_chrome_cdp failed: ${(err && err.message) || String(err)}`;

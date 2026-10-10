@@ -22,16 +22,9 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   let simulateTransitionOnNextClick = false;
   let simulateNativeDialogOnNextClick = false;
   let lastHandledDialogParams: Record<string, unknown> | null = null;
-  const mockElementsChanged = [
-    { index: 0, tag: "button", text: "Sign In", selector: "button" },
-    { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' },
-    { index: 2, tag: "a", text: "Help", selector: "a.help" },
-  ];
+  const mockElementsChanged = [{ index: 0, tag: "button", text: "Sign In", selector: "button" }, { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' }, { index: 2, tag: "a", text: "Help", selector: "a.help" }];
   let lastTypeExpression = "";
-  const mockElements = [
-    { index: 0, tag: "button", text: "Login", selector: "button" },
-    { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' },
-  ];
+  const mockElements = [{ index: 0, tag: "button", text: "Login", selector: "button" }, { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' }];
 
   beforeAll(async () => {
     // 1. answering WS server (mock CDP target endpoint)
@@ -305,31 +298,12 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(controlChromeCdpTool.name).toBe("control_chrome_cdp");
     const cmds = (controlChromeCdpTool.parameters as any).properties.command.enum as string[];
     expect(cmds).toEqual([
-      "list_targets",
-      "new_tab",
-      "close_tab",
-      "activate",
-      "navigate",
-      "evaluate",
-      "snapshot",
-      "read_page",
-      "extract_links",
-      "click",
-      "type",
-      "wait_for",
-      "verify_action",
-      "get_dialogs",
-      "handle_dialog",
-      "screenshot",
-      "pdf",
-      "get_cookies",
-      "inspect_media_devices",
-      "media_devices",
-      "move_cursor",
-      "move_mouse",
-      "show_cursor",
-      "hide_cursor",
-      "get_cursor",
+      "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate",
+      "snapshot", "read_page", "extract_links", "click", "type", "wait_for",
+      "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
+      "get_cookies", "inspect_media_devices", "media_devices",
+      "move_cursor", "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
+      "drag_and_drop", "drag", "drag_drop",
     ]);
     expect(controlChromeCdpTool.description).toContain("--remote-debugging-port=9222");
     expect(controlChromeCdpTool.description).toContain("no extension required");
@@ -418,8 +392,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   });
 
   test("pdf returns base64 data", async () => {
-    const res = await controlChromeCdpTool.execute({ command: "pdf" });
-    expect(res).toContain("JVBERi0xLjQ=");
+    expect(await controlChromeCdpTool.execute({ command: "pdf" })).toContain("JVBERi0xLjQ=");
   });
 
   test("get_cookies returns the cookie list", async () => {
@@ -431,7 +404,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   test("unknown command fails with the valid list", async () => {
     const res = await controlChromeCdpTool.execute({ command: "frobnicate" });
     expect(res).toContain("unknown command");
-    expect(res).toContain("list_targets");
+    expect(res).toContain("drag_and_drop");
   });
 
   test("silent target fails fast on timeout", async () => {
@@ -510,20 +483,13 @@ describe("control_chrome_cdp (mock CDP server)", () => {
 
   test("click with out-of-range index fails clearly", async () => {
     await controlChromeCdpTool.execute({ command: "snapshot" });
-    const res = await controlChromeCdpTool.execute({
-      command: "click",
-      payload: JSON.stringify({ index: 99 }),
-    });
+    const res = await controlChromeCdpTool.execute({ command: "click", payload: JSON.stringify({ index: 99 }) });
     expect(res).toContain("out of range");
     expect(res).toContain("0..1");
   });
 
   test("click by index with no snapshot for the tab fails clearly", async () => {
-    const res = await controlChromeCdpTool.execute({
-      command: "click",
-      targetId: "T2",
-      payload: JSON.stringify({ index: 0 }),
-    });
+    const res = await controlChromeCdpTool.execute({ command: "click", targetId: "T2", payload: JSON.stringify({ index: 0 }) });
     expect(res).toContain("no snapshot for this tab yet");
     expect(res).toContain("'snapshot'");
   });
@@ -581,20 +547,14 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   });
 
   test("snapshot max_elements limits the list", async () => {
-    const res = await controlChromeCdpTool.execute({
-      command: "snapshot",
-      payload: JSON.stringify({ max_elements: 1 }),
-    });
+    const res = await controlChromeCdpTool.execute({ command: "snapshot", payload: JSON.stringify({ max_elements: 1 }) });
     expect(res).toContain("[0] <button>");
     expect(res).not.toContain("[1] <input");
     expect(res).toContain("(limited to 1)");
   });
 
   test("snapshot max_elements rejects invalid values", async () => {
-    const res = await controlChromeCdpTool.execute({
-      command: "snapshot",
-      payload: JSON.stringify({ max_elements: 0 }),
-    });
+    const res = await controlChromeCdpTool.execute({ command: "snapshot", payload: JSON.stringify({ max_elements: 0 }) });
     expect(res).toContain("max_elements");
     expect(res).toContain("positive integer");
   });
@@ -856,6 +816,35 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     });
     expect(clickRes).toContain("clicked <button>");
     expect(clickRes).toContain("[human-like cursor at (300, 150)");
+  });
+
+  test("controlChromeCdpTool drag_and_drop and drag commands smoothly move elements", async () => {
+    const dragRes = await controlChromeCdpTool.execute({
+      command: "drag_and_drop",
+      sourceX: 100,
+      sourceY: 100,
+      targetX: 400,
+      targetY: 300,
+      steps: 3,
+      step_delay_ms: 1,
+      hold_duration_ms: 1,
+      drop_dwell_ms: 1,
+    });
+    expect(dragRes).toContain("dragged successfully from coordinates (100, 100) to coordinates (400, 300)");
+
+    const aliasRes = await controlChromeCdpTool.execute({
+      command: "drag",
+      sourceX: 400,
+      sourceY: 300,
+      dx: 50,
+      dy: 20,
+      steps: 2,
+      step_delay_ms: 1,
+      hold_duration_ms: 1,
+      drop_dwell_ms: 1,
+    });
+    expect(aliasRes).toContain("dragged successfully");
+    expect(aliasRes).toContain("(450, 320)");
   });
 });
 

@@ -11,7 +11,11 @@ import {
   INJECT_CURSOR_OVERLAY_JS,
   UPDATE_CURSOR_OVERLAY_JS,
   REMOVE_CURSOR_OVERLAY_JS,
+  dispatchHumanDragAndDrop,
+  executeDragAndDropCommand,
+  buildHtml5DragDropJs,
 } from "../src/core/tools/chromeCdpCursor.js";
+import { snapshotStore } from "../src/core/tools/chromeCdpHelpers.js";
 
 describe("chromeCdpCursor - Human-Like Cursor Movement", () => {
   beforeEach(() => {
@@ -205,6 +209,184 @@ describe("chromeCdpCursor - Human-Like Cursor Movement", () => {
 
       const hideOut = await executeCursorCommand(mockCdpSend, target, "hide_cursor", {});
       expect(hideOut).toContain("visual cursor overlay removed");
+    });
+  });
+
+  describe("dispatchHumanDragAndDrop & executeDragAndDropCommand", () => {
+    test("dispatchHumanDragAndDrop dispatches realistic mousePressed, dragging trajectory with buttons:1, and mouseReleased", async () => {
+      const sentEvents: Array<{ method: string; params: any }> = [];
+      const mockCdpSend = async (_target: any, method: string, params: any) => {
+        sentEvents.push({ method, params });
+        return {};
+      };
+      const target = { id: "tab-drag-1" };
+      setCursorPosition("tab-drag-1", { x: 50, y: 50 });
+
+      const res = await dispatchHumanDragAndDrop(
+        mockCdpSend,
+        target,
+        { x: 100, y: 100 },
+        { x: 300, y: 250 },
+        { steps: 10, stepDelayMs: 0, holdDurationMs: 0, dropDwellMs: 0 }
+      );
+
+      expect(res.ok).toBe(true);
+      expect(res.startX).toBe(100);
+      expect(res.startY).toBe(100);
+      expect(res.endX).toBe(300);
+      expect(res.endY).toBe(250);
+
+      const pressEvent = sentEvents.find((e) => e.method === "Input.dispatchMouseEvent" && e.params?.type === "mousePressed");
+      expect(pressEvent).toBeDefined();
+      expect(pressEvent?.params?.x).toBe(100);
+      expect(pressEvent?.params?.y).toBe(100);
+      expect(pressEvent?.params?.buttons).toBe(1);
+
+      const dragMoves = sentEvents.filter((e) => e.method === "Input.dispatchMouseEvent" && e.params?.type === "mouseMoved" && e.params?.buttons === 1);
+      expect(dragMoves.length).toBeGreaterThanOrEqual(10);
+
+      const releaseEvent = sentEvents.find((e) => e.method === "Input.dispatchMouseEvent" && e.params?.type === "mouseReleased");
+      expect(releaseEvent).toBeDefined();
+      expect(releaseEvent?.params?.x).toBe(300);
+      expect(releaseEvent?.params?.y).toBe(250);
+      expect(releaseEvent?.params?.buttons).toBe(0);
+
+      expect(getCursorPosition("tab-drag-1")).toEqual({ x: 300, y: 250 });
+    });
+
+    test("executeDragAndDropCommand handles coordinate-based drag", async () => {
+      const mockCdpSend = async () => ({});
+      const target = { id: "tab-coords" };
+
+      const out = await executeDragAndDropCommand(mockCdpSend, target, {
+        sourceX: 120,
+        sourceY: 150,
+        targetX: 450,
+        targetY: 300,
+        step_delay_ms: 0,
+        hold_duration_ms: 0,
+        drop_dwell_ms: 0,
+      });
+
+      expect(out).toContain("control_chrome_cdp: dragged successfully");
+      expect(out).toContain("coordinates (120, 150)");
+      expect(out).toContain("coordinates (450, 300)");
+      expect(getCursorPosition("tab-coords")).toEqual({ x: 450, y: 300 });
+    });
+
+    test("executeDragAndDropCommand handles relative delta dx and dy", async () => {
+      const mockCdpSend = async () => ({});
+      const target = { id: "tab-delta" };
+      setCursorPosition("tab-delta", { x: 200, y: 200 });
+
+      const out = await executeDragAndDropCommand(mockCdpSend, target, {
+        sourceX: 200,
+        sourceY: 200,
+        dx: 150,
+        dy: -50,
+        step_delay_ms: 0,
+        hold_duration_ms: 0,
+        drop_dwell_ms: 0,
+      });
+
+      expect(out).toContain("dragged successfully");
+      expect(out).toContain("offset (+150, -50)");
+      expect(getCursorPosition("tab-delta")).toEqual({ x: 350, y: 150 });
+    });
+
+    test("executeDragAndDropCommand resolves CSS selectors to center points", async () => {
+      const mockCdpSend = async (_target: any, method: string, params: any) => {
+        if (method === "Runtime.evaluate" && params?.expression?.includes("querySelector")) {
+          if (params.expression.includes("#source-card")) return { result: { value: { x: 150, y: 220 } } };
+          if (params.expression.includes("#target-col")) return { result: { value: { x: 600, y: 400 } } };
+        }
+        return {};
+      };
+      const target = { id: "tab-sel" };
+
+      const out = await executeDragAndDropCommand(mockCdpSend, target, {
+        sourceSelector: "#source-card",
+        targetSelector: "#target-col",
+        step_delay_ms: 0,
+        hold_duration_ms: 0,
+        drop_dwell_ms: 0,
+      });
+
+      expect(out).toContain("dragged successfully");
+      expect(out).toContain("selector '#source-card'");
+      expect(out).toContain("selector '#target-col'");
+      expect(getCursorPosition("tab-sel")).toEqual({ x: 600, y: 400 });
+    });
+
+    test("executeDragAndDropCommand resolves snapshot indices", async () => {
+      const targetId = "tab-snap";
+      snapshotStore.set(targetId, [
+        { index: 0, tag: "div", text: "Root", selector: "#app" },
+        { index: 1, tag: "div", text: "Draggable Card", selector: "#item-1" },
+        { index: 2, tag: "div", text: "Drop Column", selector: "#col-2" },
+      ]);
+
+      const mockCdpSend = async (_target: any, method: string, params: any) => {
+        if (method === "Runtime.evaluate" && params?.expression?.includes("querySelector")) {
+          if (params.expression.includes("#item-1")) return { result: { value: { x: 180, y: 120 } } };
+          if (params.expression.includes("#col-2")) return { result: { value: { x: 520, y: 380 } } };
+        }
+        return {};
+      };
+
+      const out = await executeDragAndDropCommand(mockCdpSend, { id: targetId }, {
+        sourceIndex: 1,
+        targetIndex: 2,
+        step_delay_ms: 0,
+        hold_duration_ms: 0,
+        drop_dwell_ms: 0,
+      });
+
+      expect(out).toContain("dragged successfully");
+      expect(out).toContain("index 1");
+      expect(out).toContain("index 2");
+      expect(getCursorPosition(targetId)).toEqual({ x: 520, y: 380 });
+    });
+
+    test("executeDragAndDropCommand supports html5 mode with synthetic DataTransfer and CDP drag events", async () => {
+      const sentEvents: Array<{ method: string; params: any }> = [];
+      const mockCdpSend = async (_target: any, method: string, params: any) => {
+        sentEvents.push({ method, params });
+        if (method === "Runtime.evaluate" && params?.expression?.includes("querySelector")) {
+          if (params.expression.includes("#drag-src")) return { result: { value: { x: 100, y: 100 } } };
+          if (params.expression.includes("#drag-dst")) return { result: { value: { x: 300, y: 300 } } };
+        }
+        return {};
+      };
+      const target = { id: "tab-html5" };
+
+      const out = await executeDragAndDropCommand(mockCdpSend, target, {
+        sourceSelector: "#drag-src",
+        targetSelector: "#drag-dst",
+        mode: "html5",
+      });
+
+      expect(out).toContain("dragged successfully");
+      expect(out).toContain("[mode: html5]");
+
+      const dragEnter = sentEvents.find((e) => e.method === "Input.dispatchDragEvent" && e.params?.type === "dragEnter");
+      const dragOver = sentEvents.find((e) => e.method === "Input.dispatchDragEvent" && e.params?.type === "dragOver");
+      const drop = sentEvents.find((e) => e.method === "Input.dispatchDragEvent" && e.params?.type === "drop");
+      expect(dragEnter).toBeDefined();
+      expect(dragOver).toBeDefined();
+      expect(drop).toBeDefined();
+    });
+
+    test("executeDragAndDropCommand reports clear error when target is missing", async () => {
+      const mockCdpSend = async () => ({});
+      const target = { id: "tab-err" };
+
+      const out = await executeDragAndDropCommand(mockCdpSend, target, {
+        sourceX: 100,
+        sourceY: 100,
+      });
+
+      expect(out).toContain("control_chrome_cdp failed: drag_and_drop requires a target");
     });
   });
 });

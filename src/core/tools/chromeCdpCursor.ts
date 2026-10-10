@@ -10,6 +10,8 @@
  * - Optional visual virtual pointer overlay in the DOM with click ripple animations for headful / screenshot feedback
  */
 
+import { snapshotStore } from "./chromeCdpHelpers.js";
+
 export interface Point {
   x: number;
   y: number;
@@ -24,6 +26,7 @@ export interface TrajectoryOptions {
 export interface CursorMoveOptions extends TrajectoryOptions {
   stepDelayMs?: number;
   visualCursor?: boolean;
+  smooth?: boolean;
 }
 
 export interface CursorClickOptions extends CursorMoveOptions {
@@ -360,3 +363,387 @@ export async function executeCursorCommand(
       return `control_chrome_cdp: unknown cursor command '${command}'.`;
   }
 }
+
+export interface DragAndDropOptions extends CursorMoveOptions {
+  startDwellMs?: number;
+  holdDurationMs?: number;
+  dropDwellMs?: number;
+  mode?: "mouse" | "html5" | "both";
+  button?: "left" | "middle" | "right";
+  sourceSelector?: string;
+  targetSelector?: string;
+  useThreshold?: boolean;
+}
+
+/** DOM JavaScript to trigger synthetic HTML5 drag-and-drop events via DataTransfer. */
+export function buildHtml5DragDropJs(sourceSelector: string, targetSelector: string): string {
+  return `(() => {
+    function findEl(sel) {
+      try { const el = document.querySelector(sel); if (el) return el; } catch (e) {}
+      function walk(root) {
+        const all = root.querySelectorAll('*');
+        for (let i = 0; i < all.length; i++) {
+          if (all[i].shadowRoot) {
+            try {
+              const found = all[i].shadowRoot.querySelector(sel) || walk(all[i].shadowRoot);
+              if (found) return found;
+            } catch (e) {}
+          }
+        }
+        return null;
+      }
+      return walk(document);
+    }
+    const src = findEl(${JSON.stringify(sourceSelector)});
+    const dst = findEl(${JSON.stringify(targetSelector)});
+    if (!src) return { ok: false, error: "source element not found: " + ${JSON.stringify(sourceSelector)} };
+    if (!dst) return { ok: false, error: "target element not found: " + ${JSON.stringify(targetSelector)} };
+    try { src.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) {}
+    try { dst.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) {}
+    let dt;
+    try {
+      dt = new DataTransfer();
+    } catch (e) {
+      dt = { data: {}, setData: function(k, v) { this.data[k] = v; }, getData: function(k) { return this.data[k]; } };
+    }
+    src.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    dst.dispatchEvent(new DragEvent('dragenter', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    dst.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    dst.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    src.dispatchEvent(new DragEvent('dragend', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    return { ok: true, sourceTag: src.tagName.toLowerCase(), targetTag: dst.tagName.toLowerCase() };
+  })()`;
+}
+
+/**
+ * Executes a realistic human-like drag and drop sequence using CDP mouse events
+ * (with buttons: 1 bitmask maintained across trajectory), and optionally HTML5 drag events.
+ */
+export async function dispatchHumanDragAndDrop(
+  cdpSend: (target: any, method: string, params?: any) => Promise<any>,
+  target: any,
+  startPoint: Point,
+  targetPoint: Point,
+  options?: DragAndDropOptions
+): Promise<{
+  ok: boolean;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  steps: number;
+  mode: string;
+}> {
+  const mode = options?.mode || "mouse";
+  const button = options?.button || "left";
+  const visual = Boolean(options?.visualCursor);
+  let totalSteps = 0;
+
+  if (mode === "mouse" || mode === "both") {
+    // 1. Move smoothly to source start point
+    const preMove = await dispatchHumanMouseMove(cdpSend, target, startPoint, {
+      steps: 8,
+      visualCursor: visual,
+    });
+    totalSteps += preMove.stepsDispatched;
+
+    // 2. Pause naturally over source element
+    const startDwell = options?.startDwellMs ?? 50;
+    if (startDwell > 0) {
+      await new Promise((r) => setTimeout(r, startDwell));
+    }
+
+    // 3. Mouse Pressed (mousedown with buttons: 1)
+    await cdpSend(target, "Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: startPoint.x,
+      y: startPoint.y,
+      button,
+      buttons: 1,
+      clickCount: 1,
+    });
+
+    if (visual) {
+      try {
+        await cdpSend(target, "Runtime.evaluate", {
+          expression: UPDATE_CURSOR_OVERLAY_JS(startPoint.x, startPoint.y, true),
+        });
+      } catch {}
+    }
+
+    // 4. Hold duration before movement to allow drag listeners to register
+    const holdDuration = options?.holdDurationMs ?? 60;
+    if (holdDuration > 0) {
+      await new Promise((r) => setTimeout(r, holdDuration));
+    }
+
+    // 5. Initial drag threshold nudge (triggers drag threshold in React DnD, SortableJS, etc.)
+    const dx = targetPoint.x - startPoint.x;
+    const dy = targetPoint.y - startPoint.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (options?.useThreshold !== false && dist > 8) {
+      const thresholdX = Math.round((startPoint.x + (dx / dist) * 5) * 10) / 10;
+      const thresholdY = Math.round((startPoint.y + (dy / dist) * 5) * 10) / 10;
+      await cdpSend(target, "Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: thresholdX,
+        y: thresholdY,
+        button,
+        buttons: 1,
+      });
+    }
+
+    // 6. Multi-step trajectory interpolation to target
+    const trajectory = generateBezierTrajectory(startPoint, targetPoint, options);
+    const stepDelay = options?.stepDelayMs ?? 8;
+    for (let i = 0; i < trajectory.length; i++) {
+      const pt = trajectory[i];
+      await cdpSend(target, "Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: pt.x,
+        y: pt.y,
+        button,
+        buttons: 1,
+      });
+
+      if (visual) {
+        try {
+          await cdpSend(target, "Runtime.evaluate", {
+            expression: UPDATE_CURSOR_OVERLAY_JS(pt.x, pt.y, false),
+          });
+        } catch {}
+      }
+
+      if (stepDelay > 0 && i < trajectory.length - 1) {
+        await new Promise((r) => setTimeout(r, stepDelay));
+      }
+    }
+    totalSteps += trajectory.length;
+
+    // 7. Drop Dwell over target before releasing
+    const dropDwell = options?.dropDwellMs ?? 60;
+    if (dropDwell > 0) {
+      await new Promise((r) => setTimeout(r, dropDwell));
+    }
+
+    // 8. Mouse Released (mouseup with buttons: 0)
+    await cdpSend(target, "Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: targetPoint.x,
+      y: targetPoint.y,
+      button,
+      buttons: 0,
+      clickCount: 1,
+    });
+
+    setCursorPosition(target.id, targetPoint);
+  }
+
+  if (mode === "html5" || mode === "both") {
+    if (options?.sourceSelector && options?.targetSelector) {
+      try {
+        await cdpSend(target, "Runtime.evaluate", {
+          expression: buildHtml5DragDropJs(options.sourceSelector, options.targetSelector),
+          returnByValue: true,
+        });
+      } catch {}
+    }
+
+    // Native CDP Drag events
+    try {
+      await cdpSend(target, "Input.dispatchDragEvent", {
+        type: "dragEnter",
+        x: targetPoint.x,
+        y: targetPoint.y,
+        data: { dragOperationsMask: 1, items: [] },
+      });
+      await cdpSend(target, "Input.dispatchDragEvent", {
+        type: "dragOver",
+        x: targetPoint.x,
+        y: targetPoint.y,
+        data: { dragOperationsMask: 1, items: [] },
+      });
+      await cdpSend(target, "Input.dispatchDragEvent", {
+        type: "drop",
+        x: targetPoint.x,
+        y: targetPoint.y,
+        data: { dragOperationsMask: 1, items: [] },
+      });
+    } catch {}
+  }
+
+  return {
+    ok: true,
+    startX: startPoint.x,
+    startY: startPoint.y,
+    endX: targetPoint.x,
+    endY: targetPoint.y,
+    steps: totalSteps,
+    mode,
+  };
+}
+
+/** Resolves source or target position from coordinates, index, selector, or relative delta. */
+async function resolveDragLocation(
+  cdpSend: (target: any, method: string, params?: any) => Promise<any>,
+  target: any,
+  role: "source" | "target",
+  payload: Record<string, unknown>,
+  referencePoint?: Point
+): Promise<{ point: Point | null; desc: string; selector?: string; error?: string }> {
+  // 1. Direct coordinates
+  let x: unknown = role === "source"
+    ? (payload.sourceX ?? payload.fromX ?? payload.startX)
+    : (payload.targetX ?? payload.toX ?? payload.endX);
+  let y: unknown = role === "source"
+    ? (payload.sourceY ?? payload.fromY ?? payload.startY)
+    : (payload.targetY ?? payload.toY ?? payload.endY);
+
+  const obj = role === "source" ? payload.source : payload.target;
+  if (typeof obj === "object" && obj !== null) {
+    if ("x" in obj) x = (obj as any).x;
+    if ("y" in obj) y = (obj as any).y;
+  }
+
+  if (typeof x === "number" && typeof y === "number") {
+    return { point: { x, y }, desc: `coordinates (${x}, ${y})` };
+  }
+
+  // 2. Relative offset (target only)
+  if (role === "target") {
+    const dx = payload.dx ?? payload.deltaX ?? payload.delta_x;
+    const dy = payload.dy ?? payload.deltaY ?? payload.delta_y;
+    if (typeof dx === "number" || typeof dy === "number") {
+      const base = referencePoint || getCursorPosition(target.id);
+      const targetPt = {
+        x: base.x + Number(dx || 0),
+        y: base.y + Number(dy || 0),
+      };
+      const signX = Number(dx || 0) >= 0 ? "+" : "";
+      const signY = Number(dy || 0) >= 0 ? "+" : "";
+      return {
+        point: targetPt,
+        desc: `offset (${signX}${dx || 0}, ${signY}${dy || 0}) to (${targetPt.x}, ${targetPt.y})`,
+      };
+    }
+  }
+
+  // 3. Index lookup
+  let rawIdx: unknown = role === "source"
+    ? (payload.sourceIndex ?? payload.source_index ?? payload.fromIndex)
+    : (payload.targetIndex ?? payload.target_index ?? payload.toIndex);
+  if (rawIdx === undefined && typeof obj === "number") {
+    rawIdx = obj;
+  }
+
+  if (typeof rawIdx === "number" && Number.isInteger(rawIdx)) {
+    const entries = snapshotStore.get(target.id);
+    if (!entries) {
+      return {
+        point: null,
+        desc: `index ${rawIdx}`,
+        error: `control_chrome_cdp failed: no snapshot for tab '${target.id}'. Run 'snapshot' first before referencing index ${rawIdx}.`,
+      };
+    }
+    const entry = entries[rawIdx];
+    if (!entry) {
+      return {
+        point: null,
+        desc: `index ${rawIdx}`,
+        error: `control_chrome_cdp failed: index ${rawIdx} out of range — snapshot has ${entries.length} elements (0..${entries.length - 1}).`,
+      };
+    }
+    const center = await resolveElementCenterPoint(cdpSend, target, entry.selector);
+    if (!center) {
+      return {
+        point: null,
+        desc: `index ${rawIdx} (${entry.selector})`,
+        error: `control_chrome_cdp failed: element at index ${rawIdx} (${entry.selector}) could not be resolved in the DOM.`,
+      };
+    }
+    const tag = entry.tag || "element";
+    const label = (entry.text || entry.ariaLabel || entry.name || entry.selector || "").replace(/\s+/g, " ").trim();
+    return {
+      point: center,
+      desc: `index ${rawIdx} (<${tag}> "${label.slice(0, 40)}")`,
+      selector: entry.selector,
+    };
+  }
+
+  // 4. Selector lookup
+  let rawSel: unknown = role === "source"
+    ? (payload.sourceSelector ?? payload.source_selector ?? payload.fromSelector)
+    : (payload.targetSelector ?? payload.target_selector ?? payload.toSelector);
+  if (rawSel === undefined && typeof obj === "string") {
+    rawSel = obj;
+  }
+
+  if (typeof rawSel === "string" && rawSel.trim()) {
+    const sel = rawSel.trim();
+    const center = await resolveElementCenterPoint(cdpSend, target, sel);
+    if (!center) {
+      return {
+        point: null,
+        desc: `selector '${sel}'`,
+        error: `control_chrome_cdp failed: could not locate element with selector '${sel}'.`,
+      };
+    }
+    return { point: center, desc: `selector '${sel}'`, selector: sel };
+  }
+
+  // 5. Default fallback for source only: current cursor position
+  if (role === "source") {
+    const current = getCursorPosition(target.id);
+    return { point: current, desc: `current cursor position (${current.x}, ${current.y})` };
+  }
+
+  return {
+    point: null,
+    desc: "unknown target",
+    error: "control_chrome_cdp failed: drag_and_drop requires a target (targetSelector, targetIndex, target {x,y}, or dx/dy offsets).",
+  };
+}
+
+/** Unified executor for drag-and-drop command in control_chrome_cdp. */
+export async function executeDragAndDropCommand(
+  cdpSend: (target: any, method: string, params?: any) => Promise<any>,
+  target: any,
+  payload: Record<string, unknown>
+): Promise<string> {
+  const sourceRes = await resolveDragLocation(cdpSend, target, "source", payload);
+  if (sourceRes.error) return sourceRes.error;
+  if (!sourceRes.point) return "control_chrome_cdp failed: could not determine source position for drag_and_drop.";
+
+  const targetRes = await resolveDragLocation(cdpSend, target, "target", payload, sourceRes.point);
+  if (targetRes.error) return targetRes.error;
+  if (!targetRes.point) return "control_chrome_cdp failed: could not determine target position for drag_and_drop.";
+
+  const mode = payload.mode === "html5" || payload.mode === "both" ? payload.mode : "mouse";
+  const smooth = payload.smooth !== false;
+  const steps = typeof payload.steps === "number" ? payload.steps : undefined;
+  const stepDelayMs = typeof payload.step_delay_ms === "number"
+    ? payload.step_delay_ms
+    : (typeof payload.stepDelayMs === "number" ? payload.stepDelayMs : undefined);
+  const holdDurationMs = typeof payload.hold_duration_ms === "number"
+    ? payload.hold_duration_ms
+    : (typeof payload.holdDurationMs === "number" ? payload.holdDurationMs : undefined);
+  const dropDwellMs = typeof payload.drop_dwell_ms === "number"
+    ? payload.drop_dwell_ms
+    : (typeof payload.dropDwellMs === "number" ? payload.dropDwellMs : undefined);
+  const visualCursor = Boolean(payload.visualCursor ?? payload.visual);
+
+  const res = await dispatchHumanDragAndDrop(cdpSend, target, sourceRes.point, targetRes.point, {
+    mode,
+    smooth,
+    steps,
+    stepDelayMs,
+    holdDurationMs,
+    dropDwellMs,
+    visualCursor,
+    sourceSelector: sourceRes.selector,
+    targetSelector: targetRes.selector,
+  });
+
+  return `control_chrome_cdp: dragged successfully from ${sourceRes.desc} to ${targetRes.desc} in ${res.steps} trajectory steps [mode: ${res.mode}].`;
+}
+

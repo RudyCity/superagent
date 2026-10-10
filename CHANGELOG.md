@@ -1,3 +1,14 @@
+## [1.13.41] - 2026-10-10
+### Added & Enhanced
+- High-Level Drag-and-Drop CDP Automation Engine (`src/core/tools/chromeCdpCursor.ts`, `src/core/tools/chromeCdpTools.ts`):
+  - Added dedicated `drag_and_drop` command (with `drag` and `drag_drop` aliases) to `control_chrome_cdp`, enabling seamless end-to-end drag-and-drop testing in web applications (page builders, draggable modals, kanban boards, list sorting, and dropzones).
+  - Implemented `dispatchHumanDragAndDrop` with realistic kinematics: pre-movement glide to source, initial dwelling, mouse pressed with `buttons: 1` bitmask, drag threshold nudge (5px) for DnD libraries (React DnD, SortableJS, etc.), smooth Bézier curve trajectory interpolation, target dwell time, and mouse release.
+  - Implemented flexible location resolution (`resolveDragLocation`): accepts direct coordinates (`sourceX`/`sourceY`, `targetX`/`targetY`), CSS selectors (`sourceSelector`/`targetSelector`), numeric DOM snapshot indices (`sourceIndex`/`targetIndex`), and relative delta offsets (`dx`/`dy`).
+  - Added multi-mode drag support: `mode: "mouse"` (realistic CDP pointer trajectory), `mode: "html5"` (synthetic `DataTransfer` drag events + native CDP `Input.dispatchDragEvent`), and `mode: "both"`.
+  - Added DOM virtual pointer overlay visualization (`visualCursor: true`) and post-drag screenshot capture (`screenshot: true`).
+  - Added comprehensive test suites in `tests/chromeCdpCursor.test.ts` and `tests/chromeCdpTools.test.ts` with 100% pass rate.
+  - Ensured all code and test files strictly adhere to the <1000 lines architecture rule.
+
 ## [1.13.40] - 2026-10-10
 ### Enhanced & Fixed
 - Direct Telegram Message Delivery & Slash Command Unification (`src/core/commands/museCommand.ts`, `src/core/commands/museConfigSubcommand.ts`, `src/core/commands/museWatchSubcommand.ts`):
