@@ -1,3 +1,19 @@
+## [1.13.39] - 2026-10-10
+### Enhanced & Fixed
+- Real-Time Telegram Watch Ingress, Live Typing Indicators & Sub-Second Cancellation (`src/core/remoteAgent/museClient.ts`, `src/core/remoteAgent/museWatcher.ts`, `src/core/remoteAgent/transport.ts`):
+  - Decoupled Telegram long-polling ingress from tool execution in `MuseWatcher` (`src/core/remoteAgent/museWatcher.ts`): `enqueueBatch` and `enqueueDone` now asynchronously enqueue tasks and advance Telegram update offset immediately rather than blocking the long-poll loop during tool runs.
+  - Enabled true real-time cancellation: incoming `task_cancel` envelopes received over Telegram are dispatched and processed immediately during active tool runs, aborting in-flight tasks and child processes via `AbortController` within milliseconds.
+  - Implemented real-time Telegram typing status indicators (`sendChatAction("typing")`) in `MuseClient` (`src/core/remoteAgent/museClient.ts`) and `TelegramTransport` (`src/core/remoteAgent/transport.ts`), periodically refreshing every 4 seconds and on every tool start to provide live visual feedback in Telegram chats.
+  - Added stale message filtering in `MuseClient` poller loop to ignore updates older than 30 seconds before watch daemon startup, preventing duplicate replays of historical batches.
+  - Added `edited_message` support to allowed Telegram update types and long-polling handler.
+  - Modularized `MuseWatcher` architecture to strictly adhere to the <1000 lines code limit:
+    - Extracted data types and options into `src/core/remoteAgent/museWatcherTypes.ts`.
+    - Extracted multi-instance daemon registry and lifecycle helpers into `src/core/remoteAgent/museWatcherRegistry.ts`.
+    - Extracted Cloudflare quick tunnel lifecycle management into `src/core/remoteAgent/museWatcherTunnel.ts`.
+    - Reduced `src/core/remoteAgent/museWatcher.ts` from 1204 lines down to 966 lines.
+  - Added comprehensive automated test suite in `tests/museTelegramRealtime.test.ts` covering non-blocking ingress, real-time in-flight task cancellation, and `sendChatAction` API invocation.
+  - Updated `tests/remoteAgentSession.test.ts` to utilize `waitForIdle` state synchronization for asynchronous batch queue execution.
+
 ## [1.13.38] - 2026-10-10
 ### Enhanced & Fixed
 - Cloudflare, MCP, and Muse Tunnel Synchronization & Stability:

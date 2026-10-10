@@ -523,6 +523,7 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
           },
         ],
       });
+      await getMuseWatcher()?.waitForIdle();
 
       expect(sentEnvelopes.length).toBeGreaterThan(0);
       const resultEnv = sentEnvelopes.find((e) => e.kind === "task_result");
@@ -550,6 +551,7 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
           },
         ],
       });
+      await getMuseWatcher()?.waitForIdle();
 
       expect(getMuseWatcher()?.getStats().batchesExecuted).toBe(1);
 
@@ -597,6 +599,7 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
           },
         ],
       });
+      await getMuseWatcher()?.waitForIdle();
 
       const resultEnv = sentEnvelopes.find((e) => e.kind === "task_result");
       expect(resultEnv).toBeDefined();
@@ -706,6 +709,7 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
           },
         ],
       });
+      await getMuseWatcher()?.waitForIdle();
 
       // Verify that chat envelopes were sent for waiting permission and approval
       const chatEnvelopes = sentEnvelopes.filter((e) => e.kind === "chat");
@@ -765,6 +769,7 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
         },
         { messageId: 101 }
       );
+      await getMuseWatcher()?.waitForIdle();
 
       // Verify first result was sent
       expect(sentEnvelopes.some((s) => s.env.kind === "task_result" && s.env.id === "batch_fhash_cached")).toBe(true);
@@ -787,6 +792,7 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
         },
         { messageId: 102 }
       );
+      await getMuseWatcher()?.waitForIdle();
 
       // Verify cached result was re-sent replying to the new messageId
       const resultSends = sentEnvelopes.filter((s) => s.env.kind === "task_result" && s.env.id === "batch_fhash_cached");
@@ -840,6 +846,7 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
         },
         { messageId: 201 }
       );
+      await getMuseWatcher()?.waitForIdle();
 
       // Verify failed result was sent
       const firstResult = sentEnvelopes.find(
@@ -869,6 +876,7 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
         },
         { messageId: 202 }
       );
+      await getMuseWatcher()?.waitForIdle();
 
       // Verify the batch was re-executed instead of being ignored!
       const afterResults = sentEnvelopes.filter(

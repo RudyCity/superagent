@@ -24,6 +24,7 @@ export interface RemoteTransport {
     replyToMeta?: RemoteEnvelopeMeta,
     onProgress?: (message: string) => void
   ): Promise<boolean>;
+  sendChatAction?(action?: string): Promise<boolean>;
   isConnected(): boolean;
   getTransportInfo(): { type: "telegram" | "websocket" | "https"; details: string };
 }
@@ -82,6 +83,10 @@ export class TelegramTransport implements RemoteTransport {
       replyToMeta?.messageId,
       onProgress
     );
+  }
+
+  public async sendChatAction(action: string = "typing"): Promise<boolean> {
+    return this.client.sendChatAction(this.config.groupId, action);
   }
 
   public isConnected(): boolean {

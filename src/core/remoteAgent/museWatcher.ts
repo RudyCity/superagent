@@ -1,11 +1,8 @@
-import crypto from "crypto";
 import path from "path";
 import {
   loadRemoteAgentConfig,
-  maskToken,
   RemoteAgentConfig,
   getWatchedWorkspaces,
-  RemoteAgentTransport,
 } from "./config.js";
 import {
   RemoteAgentEnvelope,
@@ -16,7 +13,6 @@ import {
   ChatEnvelope,
   SessionResetEnvelope,
   TaskCancelEnvelope,
-  DEFAULT_MUSE_SYSTEM_PROMPT,
 } from "./protocol.js";
 import { MuseClient } from "./museClient.js";
 import {
@@ -28,51 +24,20 @@ import {
 import { createMuseWsTransport, MuseWsServerTransport } from "./museWsTransport.js";
 import { executeBatch } from "./batchExecutor.js";
 import { formatReadableSummary } from "./formatSummary.js";
-import type { Agent } from "../agent.js";
 import { logE2E } from "../utils/unifiedLogger.js";
+import {
+  MuseWatcherStats,
+  MuseWatcherOptions,
+  BatchQueueItem,
+} from "./museWatcherTypes.js";
+import {
+  startWatcherTunnel,
+  stopWatcherTunnel,
+  WatcherTunnelMetadata,
+} from "./museWatcherTunnel.js";
 
-export interface MuseWatcherStats {
-  isRunning: boolean;
-  startedAt?: number;
-  uptimeSeconds: number;
-  tasksCompleted: number;
-  batchesExecuted: number;
-  lastActiveAt?: number;
-  activeTaskId?: string;
-  workspace: string;
-  workspaces: string[];
-  groupId?: string | number;
-  museBotId?: string | number;
-  queuedBatches?: number;
-  transport?: string;
-  transportDetails?: string;
-  tunnel?: boolean;
-  tunnelUrl?: string;
-  tunnelPort?: number;
-}
-
-export interface MuseWatcherOptions {
-  workspace?: string;
-  workspaces?: string[];
-  agent?: Agent | null;
-  customConfigPath?: string;
-  announce?: boolean;
-  autoApproveWorkspace?: boolean;
-  tunnel?: boolean;
-  wsPort?: number;
-  isHttps?: boolean;
-  transport?: RemoteTransport;
-  transportType?: RemoteAgentTransport;
-  onProgress?: (message: string) => void;
-  onLog?: (message: string) => void;
-  onLine?: (line: { type: string; content: string; timestamp?: number }) => void;
-  onToolStart?: (toolCall: any, description: string) => void;
-  onToolEnd?: (toolCall: any, toolResult: any, description: string) => void;
-  onStatusChange?: (isRunning: boolean) => void;
-  onPermissionPrompt?: (toolCall: any, description: string) => Promise<boolean | "session">;
-  onWaitingPermission?: (toolCall: any, description: string) => void | Promise<void>;
-  onPermissionDecision?: (toolCall: any, description: string, approved: boolean) => void | Promise<void>;
-}
+export type { MuseWatcherStats, MuseWatcherOptions } from "./museWatcherTypes.js";
+export * from "./museWatcherRegistry.js";
 
 /**
  * MuseWatcher: Persistent watch daemon where Superagent is continuously controlled by Muse.
@@ -103,18 +68,12 @@ export class MuseWatcher {
     }
   >();
   private pendingReplyMessageIds = new Map<string, Set<number>>();
-  private batchQueue: Array<{
-    type: "batch" | "done";
-    envelope: TaskBatchEnvelope | TaskDoneEnvelope;
-    meta?: RemoteEnvelopeMeta;
-    resolve?: () => void;
-    reject?: (err: any) => void;
-  }> = [];
+  private batchQueue: BatchQueueItem[] = [];
   private isProcessingQueue = false;
   private workspaces: string[] = [];
   private transport!: RemoteTransport;
   private quickTunnelStarted = false;
-  private tunnelMetadata: { publicUrl?: string; wssUrl?: string; localUrl?: string; pid?: number; port?: number } | null = null;
+  private tunnelMetadata: WatcherTunnelMetadata | null = null;
 
   constructor(options: MuseWatcherOptions = {}) {
     this.options = options;
@@ -133,7 +92,11 @@ export class MuseWatcher {
       return;
     }
 
-    const effectiveType = this.options.transportType || (this.options.isHttps ? "https" : this.config.transport) || "telegram";
+    const effectiveType =
+      this.options.transportType ||
+      (this.options.isHttps ? "https" : this.config.transport) ||
+      "telegram";
+
     if (effectiveType === "https" || this.options.isHttps) {
       const port = this.options.wsPort || 7888;
       this.transport = new HttpsTransport(port);
@@ -144,17 +107,12 @@ export class MuseWatcher {
       const wsTransport = createMuseWsTransport(effectiveCfg, this.options.customConfigPath);
       if (wsTransport instanceof MuseWsServerTransport) {
         wsTransport.onConnectionChange = (connected, connId) => {
-          if (connected) {
-            this.emitLine(
-              "system",
-              `🟢 [Muse Watch] Muse connected via WebSocket! Real-time session active (Conn: ${connId ? connId.slice(0, 8) : "active"}).`
-            );
-          } else {
-            this.emitLine(
-              "system",
-              "🟡 [Muse Watch] Muse WebSocket connection closed."
-            );
-          }
+          const msg = connected
+            ? `🟢 [Muse Watch] Muse connected via WebSocket! Real-time session active (Conn: ${
+                connId ? connId.slice(0, 8) : "active"
+              }).`
+            : "🟡 [Muse Watch] Muse WebSocket connection closed.";
+          this.emitLine("system", msg);
         };
       }
       this.transport = wsTransport;
@@ -173,29 +131,23 @@ export class MuseWatcher {
   }
 
   private initWorkspaces(): void {
-    const list: string[] = [];
-    if (Array.isArray(this.options.workspaces) && this.options.workspaces.length > 0) {
-      list.push(...this.options.workspaces);
-    }
-    if (this.options.workspace) {
-      list.push(this.options.workspace);
-    }
-    if (list.length === 0) {
-      list.push(...getWatchedWorkspaces(this.config));
-    }
+    const list = [
+      ...(Array.isArray(this.options.workspaces) ? this.options.workspaces : []),
+      ...(this.options.workspace ? [this.options.workspace] : []),
+    ];
+    if (list.length === 0) list.push(...getWatchedWorkspaces(this.config));
 
     const seen = new Set<string>();
-    const normalized: string[] = [];
-    for (const item of list) {
-      if (typeof item === "string" && item.trim()) {
-        const resolved = path.resolve(item.trim());
-        const key = process.platform === "win32" ? resolved.toLowerCase() : resolved;
-        if (!seen.has(key)) {
-          seen.add(key);
-          normalized.push(resolved);
-        }
-      }
-    }
+    const isWin = process.platform === "win32";
+    const normalized = list
+      .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+      .map((item) => path.resolve(item.trim()))
+      .filter((resolved) => {
+        const key = isWin ? resolved.toLowerCase() : resolved;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     this.workspaces = normalized.length > 0 ? normalized : [path.resolve(process.cwd())];
   }
 
@@ -259,9 +211,11 @@ export class MuseWatcher {
   public getStats(): MuseWatcherStats {
     const now = Date.now();
     const uptimeSeconds = this.startedAt ? Math.floor((now - this.startedAt) / 1000) : 0;
-    const ws = this.workspaces[0] || path.resolve(
-      this.options.workspace || this.config.defaultWorkspace || process.cwd()
-    );
+    const ws =
+      this.workspaces[0] ||
+      path.resolve(
+        this.options.workspace || this.config.defaultWorkspace || process.cwd()
+      );
     const transportInfo = this.transport ? this.transport.getTransportInfo() : undefined;
 
     return {
@@ -330,112 +284,52 @@ export class MuseWatcher {
 
     this.options.onStatusChange?.(true);
 
-    const wsInfoStr = this.workspaces.length > 1
-      ? `- Watched Projects (${this.workspaces.length}):\n${this.workspaces.map((w, i) => `  ${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`
-      : `- Workspace: ${primaryWs}`;
+    const wsInfoStr =
+      this.workspaces.length > 1
+        ? `- Watched Projects (${this.workspaces.length}):\n${this.workspaces
+            .map((w, i) => `  ${i + 1}. ${path.basename(w)} (${w})`)
+            .join("\n")}`
+        : `- Workspace: ${primaryWs}`;
 
     this.emitLine(
       "system",
       `[Muse Watch] Superagent is now controlled by Muse.\n${wsInfoStr}\n- Transport: ${transportInfo.details}\n- Listening for incoming tool batches from Muse...`
     );
 
-    if (this.options.tunnel && (this.transport.type === "websocket" || this.transport.type === "https" || this.options.isHttps)) {
-      try {
-        const isHttpsMode = this.transport.type === "https" || this.options.isHttps;
-        const effectivePort = this.options.wsPort || (isHttpsMode ? 7888 : this.config.wsPort || 9225);
-        this.emitLine("system", `[Cloudflare Tunnel] Launching quick ephemeral tunnel for port ${effectivePort}...`);
-        const { startQuickTunnel, getTunnelStatus } = await import("./cloudflareTunnel.js");
-        let tunnelMeta: { publicUrl?: string; wssUrl?: string; localUrl?: string; pid?: number; port?: number } | null = null;
-        const existingStatus = getTunnelStatus(effectivePort);
-        if (existingStatus.isRunning) {
-          tunnelMeta = existingStatus;
-        } else {
-          tunnelMeta = await startQuickTunnel({
-            port: effectivePort,
-            host: isHttpsMode ? "127.0.0.1" : (this.config.wsHost || "127.0.0.1"),
-            path: isHttpsMode ? "" : (this.config.wsPath || "/muse"),
-            customConfigPath: this.options.customConfigPath,
-            workspace: primaryWs,
-            workspaces: this.workspaces,
-            onLog: (msg) => this.options.onLog?.(`[Tunnel] ${msg.trim()}`),
-          });
-        }
-        this.quickTunnelStarted = true;
-        this.tunnelMetadata = tunnelMeta;
-
-        if (isHttpsMode) {
-          const { getServerAuthToken } = await import("../utils/serverSecurity.js");
-          const { copyTextToClipboard } = await import("./cloudflareTunnel.js");
-          const serverToken = getServerAuthToken(effectivePort);
-          const publicHttpsUrl = tunnelMeta.publicUrl || `http://127.0.0.1:${effectivePort}`;
-          const curlSnippet = `curl -H "Authorization: Bearer ${serverToken}" ${publicHttpsUrl}/api/status`;
-          const copied = await copyTextToClipboard(curlSnippet);
-
-          this.emitLine(
-            "system",
-            [
-              "═════════════════════════════════════════════════════════════════════════════",
-              "  Superagent HTTP REST/SSE Server Watch Online (Cloudflare Quick Tunnel)!",
-              "═════════════════════════════════════════════════════════════════════════════",
-              `- Public HTTPS URL : ${tunnelMeta.publicUrl || "(initializing)"}`,
-              `- Local Target     : ${tunnelMeta.localUrl || `http://127.0.0.1:${effectivePort}`}`,
-              `- Server Port      : ${effectivePort}`,
-              `- Process PID      : ${tunnelMeta.pid || process.pid}`,
-              `- Bearer Token     : ${serverToken}`,
-              "═════════════════════════════════════════════════════════════════════════════",
-              "",
-              copied
-                ? "Test with curl (copied to clipboard, ready to run):"
-                : "Test with curl (copy & run):",
-              "-----------------------------------------------------------------------------",
-              curlSnippet,
-              "-----------------------------------------------------------------------------",
-              "",
-              "Superagent is actively listening in WATCH mode over HTTPS (REST API & SSE).",
-              "External clients or Muse can connect using Bearer token authentication.",
-              "Run '/muse watch stop' or '/muse tunnel stop --https' to stop watch mode.",
-            ].join("\n")
-          );
-        } else {
-          const { buildMuseConnectionPrompt, copyTextToClipboard } = await import("./cloudflareTunnel.js");
-          const musePrompt = buildMuseConnectionPrompt({
-            wssUrl: tunnelMeta.wssUrl || "",
-            token: this.config.wsToken,
-            publicUrl: tunnelMeta.publicUrl,
-            localUrl: tunnelMeta.localUrl,
-            workspaces: this.workspaces,
-            cfClientId: this.config.cfAccessClientId,
-            cfClientSecret: this.config.cfAccessClientSecret,
-          });
-          const copied = await copyTextToClipboard(musePrompt);
-
-          this.emitLine(
-            "system",
-            `[Cloudflare Tunnel] Quick tunnel online!\n- Public WSS URL : ${tunnelMeta.wssUrl}\n- Bearer Token   : ${this.config.wsToken}\n- Local Target   : ${tunnelMeta.localUrl}\n\n${copied ? "Prompt for Muse (copied to clipboard, ready to send):" : "Prompt for Muse (copy & send to Muse):"}\n-----------------------------------------------------------------------------\n${musePrompt}\n-----------------------------------------------------------------------------`
-          );
-        }
-      } catch (err: any) {
-        this.emitLine(
-          "system",
-          `[Cloudflare Tunnel] Warning: Failed to establish quick tunnel: ${err?.message}`
-        );
-      }
+    if (
+      this.options.tunnel &&
+      (this.transport.type === "websocket" ||
+        this.transport.type === "https" ||
+        this.options.isHttps)
+    ) {
+      const res = await startWatcherTunnel({
+        isHttps: this.transport.type === "https" || Boolean(this.options.isHttps),
+        wsPort: this.options.wsPort,
+        config: this.config,
+        customConfigPath: this.options.customConfigPath,
+        primaryWorkspace: primaryWs,
+        workspaces: this.workspaces,
+        emitLine: (t, c) => this.emitLine(t, c),
+        onLog: (m) => this.options.onLog?.(m),
+      });
+      this.quickTunnelStarted = res.started;
+      this.tunnelMetadata = res.metadata;
     }
 
     const abortSignal = this.abortController.signal;
 
     // Optional presence greeting in background
     if (this.options.announce !== false) {
-      const presenceText = this.workspaces.length > 1
-        ? `🟢 Superagent is now active in WATCH mode (controlled by Muse) on ${this.workspaces.length} projects:\n${this.workspaces.map((w, i) => `${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`
-        : `🟢 Superagent is now active in WATCH mode (controlled by Muse) on workspace: ${primaryWs}`;
+      const presenceText =
+        this.workspaces.length > 1
+          ? `🟢 Superagent is now active in WATCH mode (controlled by Muse) on ${this.workspaces.length} projects:\n${this.workspaces
+              .map((w, i) => `${i + 1}. ${path.basename(w)} (${w})`)
+              .join("\n")}`
+          : `🟢 Superagent is now active in WATCH mode (controlled by Muse) on workspace: ${primaryWs}`;
 
-      const presenceEnvelope: RemoteAgentEnvelope = {
-        v: 1,
-        kind: "chat",
-        text: presenceText,
-      };
-      this.transport.sendEnvelope(presenceEnvelope).catch(() => {});
+      this.transport
+        .sendEnvelope({ v: 1, kind: "chat", text: presenceText })
+        .catch(() => {});
     }
 
     // Start background transport loop
@@ -454,18 +348,12 @@ export class MuseWatcher {
   }
 
   public async stop(): Promise<void> {
-    if (!this.isRunning) {
-      return;
-    }
+    if (!this.isRunning) return;
 
     this.isRunning = false;
-    for (const item of this.batchQueue) {
-      item.resolve?.();
-    }
     this.batchQueue = [];
     this.activeBatchIds.clear();
     this.pendingReplyMessageIds.clear();
-
     this.abortAllBatches();
 
     if (this.abortController) {
@@ -478,12 +366,9 @@ export class MuseWatcher {
     logE2E("REMOTE-AGENT", "MuseWatcher stopped.");
 
     if (this.options.announce !== false && this.transport) {
-      const offlineEnvelope: RemoteAgentEnvelope = {
-        v: 1,
-        kind: "chat",
-        text: "🔴 Superagent WATCH mode stopped.",
-      };
-      this.transport.sendEnvelope(offlineEnvelope).catch(() => {});
+      this.transport
+        .sendEnvelope({ v: 1, kind: "chat", text: "🔴 Superagent WATCH mode stopped." })
+        .catch(() => {});
     }
 
     if (this.transport) {
@@ -493,12 +378,9 @@ export class MuseWatcher {
     }
 
     if (this.quickTunnelStarted) {
-      try {
-        const isHttpsMode = this.transport?.type === "https" || this.options.isHttps;
-        const effectivePort = this.options.wsPort || (isHttpsMode ? 7888 : this.config.wsPort || 9225);
-        const { stopQuickTunnel } = await import("./cloudflareTunnel.js");
-        await stopQuickTunnel(effectivePort);
-      } catch {}
+      const isHttps = this.transport?.type === "https" || this.options.isHttps;
+      const port = this.options.wsPort || (isHttps ? 7888 : this.config.wsPort || 9225);
+      await stopWatcherTunnel(port);
       this.quickTunnelStarted = false;
       this.tunnelMetadata = null;
     }
@@ -509,9 +391,9 @@ export class MuseWatcher {
 
   /**
    * Dispatches incoming validated envelopes from Muse.
-   * Batch execution is enqueued to ensure orderly execution.
+   * Real-time: Batch and done ingress are enqueued asynchronously without blocking the transport poller.
    */
-  private async handleEnvelope(
+  public async handleEnvelope(
     envelope: RemoteAgentEnvelope,
     meta?: RemoteEnvelopeMeta
   ): Promise<void> {
@@ -519,12 +401,12 @@ export class MuseWatcher {
 
     switch (envelope.kind) {
       case "task_batch": {
-        await this.enqueueBatch(envelope as TaskBatchEnvelope, meta);
+        this.enqueueBatch(envelope as TaskBatchEnvelope, meta);
         break;
       }
 
       case "task_done": {
-        await this.enqueueDone(envelope as TaskDoneEnvelope);
+        this.enqueueDone(envelope as TaskDoneEnvelope);
         break;
       }
 
@@ -554,10 +436,10 @@ export class MuseWatcher {
     }
   }
 
-  private async enqueueBatch(
+  private enqueueBatch(
     envelope: TaskBatchEnvelope,
     meta?: RemoteEnvelopeMeta
-  ): Promise<void> {
+  ): void {
     const batchId = envelope.id;
     if (batchId) {
       // 1. If this batch is currently in progress (in queue or executing):
@@ -603,11 +485,9 @@ export class MuseWatcher {
             "system",
             `⚡ [Muse Watch] Re-sending cached result for duplicate batch ${batchId}`
           );
-          await this.transport.sendEnvelope(
-            cached.resultEnvelope,
-            meta,
-            this.options.onProgress
-          );
+          this.transport
+            .sendEnvelope(cached.resultEnvelope, meta, this.options.onProgress)
+            .catch(() => {});
           return;
         }
       }
@@ -625,41 +505,27 @@ export class MuseWatcher {
       `MuseWatcher enqueued task_batch: id=${envelope.id}, task_id=${envelope.task_id}, queue_len=${this.batchQueue.length + 1}`
     );
 
-    return new Promise<void>((resolve, reject) => {
-      this.batchQueue.push({
-        type: "batch",
-        envelope,
-        meta,
-        resolve: () => {
-          if (batchId) this.activeBatchIds.delete(batchId);
-          resolve();
-        },
-        reject: (err) => {
-          if (batchId) this.activeBatchIds.delete(batchId);
-          reject(err);
-        },
-      });
+    this.batchQueue.push({
+      type: "batch",
+      envelope,
+      meta,
+    });
 
-      this.processBatchQueue().catch((err) => {
-        logE2E("REMOTE-AGENT", `MuseWatcher queue processing error: ${err?.message || err}`);
-      });
+    this.processBatchQueue().catch((err) => {
+      logE2E("REMOTE-AGENT", `MuseWatcher queue processing error: ${err?.message || err}`);
     });
   }
 
-  private enqueueDone(envelope: TaskDoneEnvelope): Promise<void> {
+  private enqueueDone(envelope: TaskDoneEnvelope): void {
     logE2E("REMOTE-AGENT", `MuseWatcher enqueued task_done for task: ${envelope.task_id}`);
 
-    return new Promise<void>((resolve, reject) => {
-      this.batchQueue.push({
-        type: "done",
-        envelope,
-        resolve,
-        reject,
-      });
+    this.batchQueue.push({
+      type: "done",
+      envelope,
+    });
 
-      this.processBatchQueue().catch((err) => {
-        logE2E("REMOTE-AGENT", `MuseWatcher queue processing error: ${err?.message || err}`);
-      });
+    this.processBatchQueue().catch((err) => {
+      logE2E("REMOTE-AGENT", `MuseWatcher queue processing error: ${err?.message || err}`);
     });
   }
 
@@ -680,13 +546,26 @@ export class MuseWatcher {
           } else if (item.type === "done") {
             await this.handleTaskDone(item.envelope as TaskDoneEnvelope);
           }
-          item.resolve?.();
         } catch (err: any) {
-          item.reject?.(err);
+          logE2E("REMOTE-AGENT", `MuseWatcher queue item processing error: ${err?.message || err}`);
         }
       }
     } finally {
       this.isProcessingQueue = false;
+    }
+  }
+
+  /**
+   * Waits for all queued batches and in-flight executions to finish.
+   * Useful for tests, graceful shutdown, and state synchronization.
+   */
+  public async waitForIdle(timeoutMs = 15000): Promise<void> {
+    const start = Date.now();
+    while (this.batchQueue.length > 0 || this.isProcessingQueue) {
+      if (Date.now() - start > timeoutMs) {
+        throw new Error(`MuseWatcher.waitForIdle timed out after ${timeoutMs}ms`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 15));
     }
   }
 
@@ -710,9 +589,7 @@ export class MuseWatcher {
         if (isWin ? path.basename(w).toLowerCase() === trimmedTarget.toLowerCase() : path.basename(w) === trimmedTarget) return true;
         return isWin ? w.toLowerCase().includes(trimmedTarget.toLowerCase()) : w.includes(trimmedTarget);
       });
-      if (matched) {
-        targetWs = matched;
-      }
+      if (matched) targetWs = matched;
     }
 
     logE2E(
@@ -733,6 +610,23 @@ export class MuseWatcher {
       ? AbortSignal.any([this.abortController.signal, batchAbort.signal])
       : batchAbort.signal;
 
+    // Start real-time typing status indicators for Telegram or supported transports
+    let typingTimer: NodeJS.Timeout | null = null;
+    const sendTyping = () => {
+      if (typeof (this.transport as any).sendChatAction === "function") {
+        (this.transport as any).sendChatAction("typing").catch(() => {});
+      }
+    };
+
+    sendTyping();
+    typingTimer = setInterval(() => {
+      if (!this.isRunning || batchAbort.signal.aborted) {
+        if (typingTimer) clearInterval(typingTimer);
+        return;
+      }
+      sendTyping();
+    }, 4000);
+
     try {
       const results = await executeBatch(envelope.calls || [], {
         workspace: targetWs,
@@ -742,46 +636,33 @@ export class MuseWatcher {
         agent: this.options.agent,
         signal: batchSignal,
         autoApproveWorkspace: this.options.autoApproveWorkspace ?? true,
-        onToolStart: this.options.onToolStart,
+        onToolStart: (toolCall, description) => {
+          sendTyping();
+          this.options.onToolStart?.(toolCall, description);
+        },
         onToolEnd: this.options.onToolEnd,
         onProgress: this.options.onProgress,
         onPermissionPrompt: this.options.onPermissionPrompt,
         onWaitingPermission: async (toolCall, reason) => {
-          const waitingMsg = `⏳ Waiting for human permission approval in Superagent terminal:\n- Reason: ${reason}\n- Status: Idle (awaiting operator input)`;
-          this.emitLine("system", `[Muse Watch] ${waitingMsg}`);
+          const msg = `⏳ Waiting for human permission approval in Superagent terminal:\n- Reason: ${reason}\n- Status: Idle (awaiting operator input)`;
+          this.emitLine("system", `[Muse Watch] ${msg}`);
+          try { await this.options.onWaitingPermission?.(toolCall, reason); } catch {}
           try {
-            await this.options.onWaitingPermission?.(toolCall, reason);
-          } catch {}
-
-          try {
-            const chatEnv: RemoteAgentEnvelope = {
-              v: 1,
-              kind: "chat",
-              text: waitingMsg,
-            };
-            await this.transport.sendEnvelope(chatEnv, meta);
-          } catch (err: any) {
-            logE2E("REMOTE-AGENT", `Failed to send waiting permission notice to Muse: ${err?.message || err}`);
+            await this.transport.sendEnvelope({ v: 1, kind: "chat", text: msg }, meta);
+          } catch (e: any) {
+            logE2E("REMOTE-AGENT", `Failed to send waiting permission notice to Muse: ${e?.message || e}`);
           }
         },
         onPermissionDecision: async (toolCall, reason, approved) => {
-          const decisionMsg = approved
+          const msg = approved
             ? `✅ Human operator approved permission for: ${reason}. Resuming execution.`
             : `❌ Human operator denied permission for: ${reason}.`;
-          this.emitLine("system", `[Muse Watch] ${decisionMsg}`);
+          this.emitLine("system", `[Muse Watch] ${msg}`);
+          try { await this.options.onPermissionDecision?.(toolCall, reason, approved); } catch {}
           try {
-            await this.options.onPermissionDecision?.(toolCall, reason, approved);
-          } catch {}
-
-          try {
-            const chatEnv: RemoteAgentEnvelope = {
-              v: 1,
-              kind: "chat",
-              text: decisionMsg,
-            };
-            await this.transport.sendEnvelope(chatEnv, meta);
-          } catch (err: any) {
-            logE2E("REMOTE-AGENT", `Failed to send permission decision notice to Muse: ${err?.message || err}`);
+            await this.transport.sendEnvelope({ v: 1, kind: "chat", text: msg }, meta);
+          } catch (e: any) {
+            logE2E("REMOTE-AGENT", `Failed to send permission decision notice to Muse: ${e?.message || e}`);
           }
         },
       });
@@ -853,6 +734,9 @@ export class MuseWatcher {
       logE2E("REMOTE-AGENT", `MuseWatcher batch execution error: ${err?.message || err}`);
       this.emitLine("error", `[Muse Watch] Error executing tool batch: ${err?.message || err}`);
     } finally {
+      if (typingTimer) {
+        clearInterval(typingTimer);
+      }
       this.activeBatchAborts.delete(batchAbort);
       if (envelope.id) {
         this.activeBatchIds.delete(envelope.id);
@@ -928,9 +812,6 @@ export class MuseWatcher {
     this.activeTaskId = undefined;
 
     // Drain queued batches for this task
-    for (const item of this.batchQueue) {
-      item.resolve?.();
-    }
     this.batchQueue = [];
     this.activeBatchIds.clear();
 
@@ -982,34 +863,21 @@ export class MuseWatcher {
 
     // Filter out queued items for this task_id (or all if task_id not specified)
     if (targetTaskId) {
-      const remaining: typeof this.batchQueue = [];
-      for (const item of this.batchQueue) {
+      this.batchQueue = this.batchQueue.filter((item) => {
         if (item.envelope.task_id?.trim() === targetTaskId) {
-          if (item.type === "batch") {
-            const batchId = (item.envelope as TaskBatchEnvelope).id;
-            if (batchId) {
-              this.activeBatchIds.delete(batchId);
-              this.pendingReplyMessageIds.delete(batchId);
-            }
-          }
-          item.resolve?.();
-        } else {
-          remaining.push(item);
-        }
-      }
-      this.batchQueue = remaining;
-    } else {
-      for (const item of this.batchQueue) {
-        if (item.type === "batch") {
           const batchId = (item.envelope as TaskBatchEnvelope).id;
           if (batchId) {
             this.activeBatchIds.delete(batchId);
             this.pendingReplyMessageIds.delete(batchId);
           }
+          return false;
         }
-        item.resolve?.();
-      }
+        return true;
+      });
+    } else {
       this.batchQueue = [];
+      this.activeBatchIds.clear();
+      this.pendingReplyMessageIds.clear();
     }
 
     this.emitLine(
@@ -1026,10 +894,7 @@ export class MuseWatcher {
     // Stop any in-flight batch so stale results don't pollute the fresh session
     this.abortAllBatches();
 
-    // Clear queue and resolve pending promises
-    for (const item of this.batchQueue) {
-      item.resolve?.();
-    }
+    // Clear queue
     this.batchQueue = [];
 
     // Clear dedup sets so legitimate retries after reset are not ignored
@@ -1069,7 +934,6 @@ export class MuseWatcher {
     }
 
     logE2E("REMOTE-AGENT", `MuseWatcher received chat note: ${envelope.text}`);
-
     this.emitLine("assistant", `[Muse Note]: ${envelope.text}`);
   }
 
@@ -1100,104 +964,3 @@ export class MuseWatcher {
     this.transport.sendEnvelope(ackEnvelope).catch(() => {});
   }
 }
-
-// ─── Multi-Instance Watcher Registry ────────────────────────────────────────
-
-const activeWatchers = new Map<number, MuseWatcher>();
-let globalMuseWatcher: MuseWatcher | null = null;
-
-export function getMuseWatcher(port?: number): MuseWatcher | null {
-  if (port && activeWatchers.has(port)) {
-    return activeWatchers.get(port) || null;
-  }
-  return globalMuseWatcher;
-}
-
-export function isMuseWatcherActive(port?: number): boolean {
-  if (port) {
-    const watcher = activeWatchers.get(port);
-    return Boolean(watcher && watcher.isActive());
-  }
-  return Boolean(globalMuseWatcher && globalMuseWatcher.isActive());
-}
-
-export async function startMuseWatcher(options: MuseWatcherOptions = {}): Promise<MuseWatcher> {
-  const isHttpsMode = options.transportType === "https" || options.isHttps;
-  const effectivePort = options.wsPort || (isHttpsMode ? 7888 : 9225);
-
-  const existing = activeWatchers.get(effectivePort);
-  if (existing && existing.isActive()) {
-    if (options.workspaces && options.workspaces.length > 0) {
-      for (const w of options.workspaces) {
-        existing.addWorkspace(w);
-      }
-    } else if (options.workspace) {
-      existing.addWorkspace(options.workspace);
-    }
-    return existing;
-  }
-
-  const watcher = new MuseWatcher(options);
-  await watcher.start();
-  activeWatchers.set(effectivePort, watcher);
-  globalMuseWatcher = watcher;
-  return watcher;
-}
-
-export async function stopMuseWatcher(port?: number): Promise<boolean> {
-  if (port) {
-    const watcher = activeWatchers.get(port);
-    if (!watcher) {
-      return false;
-    }
-    await watcher.stop();
-    activeWatchers.delete(port);
-    if (globalMuseWatcher === watcher) {
-      globalMuseWatcher = activeWatchers.values().next().value || null;
-    }
-    return true;
-  }
-
-  if (globalMuseWatcher) {
-    const target = globalMuseWatcher;
-    for (const [p, w] of activeWatchers.entries()) {
-      if (w === target) {
-        activeWatchers.delete(p);
-      }
-    }
-    await target.stop();
-    globalMuseWatcher = activeWatchers.values().next().value || null;
-    return true;
-  }
-
-  return false;
-}
-
-export async function stopAllMuseWatchers(): Promise<number> {
-  const watchers = Array.from(activeWatchers.values());
-  activeWatchers.clear();
-  globalMuseWatcher = null;
-  let count = 0;
-  for (const w of watchers) {
-    try {
-      await w.stop();
-      count++;
-    } catch {}
-  }
-  return count;
-}
-
-export function hasActiveMuseBatch(): boolean {
-  return Boolean(globalMuseWatcher && globalMuseWatcher.hasActiveBatch());
-}
-
-export function abortActiveMuseBatch(reason?: string): boolean {
-  if (!globalMuseWatcher) return false;
-  return globalMuseWatcher.abortActiveBatch(reason);
-}
-
-export async function sendMuseSteerMessage(text: string): Promise<boolean> {
-  if (!globalMuseWatcher) return false;
-  return await globalMuseWatcher.sendSteeringMessage(text);
-}
-

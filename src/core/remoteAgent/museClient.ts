@@ -260,6 +260,33 @@ export class MuseClient {
   }
 
   /**
+   * Sends a chat action (e.g. "typing") to the Telegram chat.
+   * Provides real-time visual feedback while processing batches or commands.
+   */
+  public async sendChatAction(
+    chatId?: string | number,
+    action: string = "typing"
+  ): Promise<boolean> {
+    const token = this.config.botToken;
+    const targetChat = chatId || this.config.groupId;
+    if (!token || !targetChat) return false;
+
+    try {
+      const url = `https://api.telegram.org/bot${token}/sendChatAction`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: targetChat, action }),
+        signal: AbortSignal.timeout(5000),
+      });
+      const data = (await res.json().catch(() => ({}))) as any;
+      return Boolean(data && data.ok);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Starts the long-polling loop.
    * Only one poller loop is permitted per MuseClient instance.
    * Yields validated envelopes received from Muse bot in the configured group.
@@ -283,6 +310,7 @@ export class MuseClient {
     this.isPolling = true;
     let offset = 0;
     let consecutiveErrors = 0;
+    const pollerStartTime = Math.floor(Date.now() / 1000);
 
     logE2E("REMOTE-AGENT", `Starting envelope polling loop for group ${this.config.groupId}, museBotId: ${this.config.museBotId}`);
 
@@ -290,17 +318,17 @@ export class MuseClient {
       // Step 1: Ensure webhooks are deleted before polling
       await this.deleteWebhook();
 
-      // Step 2: Main polling loop
+      // Step 2: Main polling loop with responsive real-time polling
       while (!signal?.aborted) {
         try {
-          const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${offset}&timeout=30&allowed_updates=${encodeURIComponent(
-            JSON.stringify(["message"])
+          const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${offset}&timeout=25&allowed_updates=${encodeURIComponent(
+            JSON.stringify(["message", "edited_message"])
           )}`;
 
-          // Create a per-request signal with a 35s timeout to prevent hanging sockets
+          // 30s timeout per poll: keeps connection fresh and avoids NAT drops
           const fetchSignal = signal
-            ? AbortSignal.any([signal, AbortSignal.timeout(35000)])
-            : AbortSignal.timeout(35000);
+            ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
+            : AbortSignal.timeout(30000);
 
           const res = await fetch(url, { signal: fetchSignal });
 
@@ -357,8 +385,16 @@ export class MuseClient {
               }
             }
 
-            const msg = update.message;
+            const msg = update.message || update.edited_message;
             if (!msg || typeof msg.text !== "string") {
+              if (typeof updateId === "number") offset = Math.max(offset, updateId + 1);
+              continue;
+            }
+
+            // Skip stale historical updates sent before watch session started (>30s old)
+            if (typeof msg.date === "number" && msg.date < pollerStartTime - 30) {
+              logE2E("REMOTE-AGENT", `Update ${updateId} skipped: pre-dates watch session (date: ${msg.date}, started: ${pollerStartTime})`);
+              if (typeof updateId === "number") offset = Math.max(offset, updateId + 1);
               continue;
             }
 
