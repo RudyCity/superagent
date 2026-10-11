@@ -177,6 +177,52 @@ export function stripImagesFromCoreMessages(messages: any[]): any[] {
   });
 }
 
+export function extractErrorStatusCode(err: unknown): number | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  let current: any = err;
+  while (current && typeof current === "object") {
+    const s = current.statusCode ?? current.status ?? (current.error && (current.error.statusCode ?? current.error.status));
+    if (s !== undefined && !isNaN(Number(s))) {
+      return Number(s);
+    }
+    if (current.lastError) {
+      current = current.lastError;
+    } else if (Array.isArray(current.errors) && current.errors.length > 0) {
+      current = current.errors[current.errors.length - 1];
+    } else if (current.cause) {
+      current = current.cause;
+    } else if (current.error && typeof current.error === "object" && current.error !== current) {
+      current = current.error;
+    } else {
+      break;
+    }
+  }
+  return undefined;
+}
+
+export function extractErrorResponseBody(err: unknown): string | undefined {
+  if (!err || typeof err !== "object") return undefined;
+  let current: any = err;
+  while (current && typeof current === "object") {
+    const b = current.responseBody ?? current.text ?? (current.error && (current.error.responseBody ?? current.error.text));
+    if (typeof b === "string" && b.trim()) {
+      return b.trim();
+    }
+    if (current.lastError) {
+      current = current.lastError;
+    } else if (Array.isArray(current.errors) && current.errors.length > 0) {
+      current = current.errors[current.errors.length - 1];
+    } else if (current.cause) {
+      current = current.cause;
+    } else if (current.error && typeof current.error === "object" && current.error !== current) {
+      current = current.error;
+    } else {
+      break;
+    }
+  }
+  return undefined;
+}
+
 export function isRetryableError(err: unknown): boolean {
   if (!err) return false;
 
@@ -189,15 +235,16 @@ export function isRetryableError(err: unknown): boolean {
   }
   
   let msg = "";
-  let statusCode: number | undefined;
+  const statusCode = extractErrorStatusCode(err);
 
   if (err instanceof Error) {
     if (err.name === "AbortError" || err.message.toLowerCase().includes("aborted") || err.message.toLowerCase().includes("abort")) return false;
     msg = err.message;
-    statusCode = (err as any).statusCode || (err as any).status;
+    if ((err as any).lastError?.message) {
+      msg += " " + (err as any).lastError.message;
+    }
   } else if (typeof err === "object") {
     const obj = err as any;
-    statusCode = obj.statusCode || obj.status || (obj.error && (obj.error.statusCode || obj.error.status));
     if (obj.message && typeof obj.message === "string") {
       msg = obj.message;
     } else if (obj.error && typeof obj.error === "object" && obj.error.message && typeof obj.error.message === "string") {

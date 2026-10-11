@@ -1,3 +1,13 @@
+## [1.13.52] - 2026-10-11
+### Fixed & Enhanced
+- AI SDK Error Unwrapping, Upstream Status Parsing, and Retry Resilience (`src/core/agent/AgentEvents.ts`, `src/core/agent/AgentUtils.ts`, `src/core/agent/LoopIterationProcessor.ts`, `src/core/agent/FastPath.ts`, `src/app.tsx`):
+  - Fixed `formatError` and `isRetryableError` masking underlying HTTP status codes (e.g. 502 Bad Gateway, 402 Payment Required, 429 Rate Limit) when wrapped in Vercel AI SDK's `RetryError` ("Failed after X attempts...").
+  - Added recursive `extractErrorStatusCode` and `extractErrorResponseBody` utilities to traverse nested `errors`, `lastError`, and `cause` chains.
+  - Set `maxRetries: 0` on internal `streamText` and `generateText` invocations across `LoopIterationProcessor` and `FastPath` to delegate retry scheduling directly to Superagent's controlled backoff engine.
+  - Added rich diagnostic hints in `formatError` for 502 Bad Gateway, 503 Overloaded, 429 Rate Limit, 402 Balance Depleted, 401 Unauthorized, and 404 Not Found.
+  - Added automatic countdown ticker cleanup in `App.tsx` (`streamBufferRef`) when real streamed response content resumes.
+  - Added unit test suite `tests/providerErrorUnwrapping.test.ts`.
+
 ## [1.13.51] - 2026-10-11
 ### Fixed & Enhanced
 - Chrome CDP Controlled Input & Evaluate Hardening (`src/core/tools/chromeCdpHelpers.ts`, `src/core/tools/chromeCdpTools.ts`):

@@ -142,6 +142,7 @@ export class FastPath {
               system: convSystemPrompt,
               messages: coreMessages,
               abortSignal: signal,
+              maxRetries: 0,
             });
 
             let inThinkTagState = false;
@@ -300,6 +301,7 @@ export class FastPath {
               system: convSystemPrompt,
               messages: coreMessages,
               abortSignal: signal,
+              maxRetries: 0,
             });
             const cleaned = cleanThinkingTags(result.text || "", (result as any).reasoning || "");
             textContent = cleaned.cleanText;

@@ -2140,6 +2140,12 @@ export function App({
               textStreamCleaner.reset();
             }
           } else {
+            // If previous content ended with a transient countdown ticker, strip it when real content or next SYS line arrives
+            const countdownMatch = streamBufferRef.current.match(/(\n)?\s*Retrying in \d+s\.\.\.\s*$/);
+            if (countdownMatch && countdownMatch.index !== undefined) {
+              streamBufferRef.current = streamBufferRef.current.slice(0, countdownMatch.index);
+              textStreamCleaner.reset();
+            }
             streamBufferRef.current += event.content;
           }
 

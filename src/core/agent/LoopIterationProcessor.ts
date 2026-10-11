@@ -19,6 +19,7 @@ import {
   isContextLengthExceeded,
   isImageUnsupportedError,
   stripImagesFromCoreMessages,
+  extractErrorStatusCode,
 } from "./AgentUtils.js";
 import { cleanThinkingTags } from "./FastPath.js";
 
@@ -177,6 +178,7 @@ export class LoopIterationProcessor {
                 messages: callMessages,
                 ...(Object.keys(modelTools).length > 0 && { tools: modelTools }),
                 abortSignal: signal,
+                maxRetries: 0,
                 ...(isAnthropic && {
                   experimental_providerMetadata: {
                     anthropic: { cacheControl: { type: "ephemeral" } },
@@ -367,7 +369,8 @@ export class LoopIterationProcessor {
 
               break; // Success
             } catch (err: any) {
-              let rawMsg = err.message || String(err);
+              const statusCode = extractErrorStatusCode(err);
+              let rawMsg = formatError(err);
               if (!rawMsg || rawMsg.trim() === "" || rawMsg.trim() === "Cannot connect to API:") {
                 rawMsg = `Cannot connect to API (${err.name || "ConnectionFailed"})`;
               }
@@ -375,25 +378,17 @@ export class LoopIterationProcessor {
                 return { shouldBreak: false };
               }
               const isRetryable = isRetryableError(err);
-              const isPayloadTooLarge = err.status === 413 || /payload too large/i.test(err.message) || /request entity too large/i.test(err.message);
+              const isPayloadTooLarge = statusCode === 413 || err.status === 413 || /payload too large/i.test(rawMsg) || /request entity too large/i.test(rawMsg);
               const isContextOverflow = isContextLengthExceeded(err);
-              const isOverloaded = err.status === 429 || err.status === 503 || /overloaded/i.test(err.message) || /rate limit/i.test(err.message);
+              const isOverloaded = statusCode === 429 || statusCode === 503 || err.status === 429 || err.status === 503 || /overloaded/i.test(rawMsg) || /rate limit/i.test(rawMsg);
 
               attempt++;
               const currentMaxRetries = isOverloaded ? 5 : maxRetries;
               if (attempt > currentMaxRetries || (!isRetryable && !isContextOverflow)) {
-                if (isPayloadTooLarge) {
-                  throw new Error(`Payload size limit exceeded (413). System prompt (${(Buffer.byteLength(system, "utf-8") / 1024).toFixed(1)} KB) and tool schemas exceed model payload limit. Try reducing history length.`);
-                }
-                if (isContextOverflow) {
-                  throw new Error(`Context length limit exceeded (${rawMsg}). Prompt and history exceed model context limit.`);
-                }
-                if (rawMsg.toLowerCase().includes("empty response")) {
-                  throw new Error("Empty response from model. Check your endpoint/model config.");
-                }
-                if (!isRetryable) {
-                  throw err;
-                }
+                if (isPayloadTooLarge) throw new Error(`Payload size limit exceeded (413). System prompt (${(Buffer.byteLength(system, "utf-8") / 1024).toFixed(1)} KB) and tool schemas exceed model payload limit. Try reducing history length.`);
+                if (isContextOverflow) throw new Error(`Context length limit exceeded (${rawMsg}). Prompt and history exceed model context limit.`);
+                if (rawMsg.toLowerCase().includes("empty response")) throw new Error("Empty response from model. Check your endpoint/model config.");
+                if (!isRetryable) throw err;
                 throw new Error(`Stream error after ${attempt - 1} retries: ${rawMsg}`);
               }
 
@@ -438,8 +433,8 @@ export class LoopIterationProcessor {
                 continue;
               }
 
-              const isRateLimit = err.status === 429 || /rate limit/i.test(rawMsg);
-              const is503 = err.status === 503 || /overloaded/i.test(rawMsg);
+              const isRateLimit = statusCode === 429 || err.status === 429 || /rate limit/i.test(rawMsg);
+              const is503 = statusCode === 503 || err.status === 503 || /overloaded/i.test(rawMsg);
               const overloadedDelays = [5000, 10000, 20000, 50000, 100000];
 
               if (isRateLimit || is503) {
@@ -483,6 +478,7 @@ export class LoopIterationProcessor {
                 ...(Object.keys(modelTools).length > 0 && { tools: modelTools }),
                 maxSteps: 1,
                 abortSignal: signal,
+                maxRetries: 0,
                 ...(isAnthropic && {
                   experimental_providerMetadata: {
                     anthropic: { cacheControl: { type: "ephemeral" } },
@@ -544,7 +540,8 @@ export class LoopIterationProcessor {
 
               break;
             } catch (err: any) {
-              let rawMsg = err.message || String(err);
+              const statusCode = extractErrorStatusCode(err);
+              let rawMsg = formatError(err);
               if (!rawMsg || rawMsg.trim() === "" || rawMsg.trim() === "Cannot connect to API:") {
                 rawMsg = `Cannot connect to API (${err.name || "ConnectionFailed"})`;
               }
@@ -552,25 +549,17 @@ export class LoopIterationProcessor {
                 return { shouldBreak: false };
               }
               const isRetryable = isRetryableError(err) || rawMsg.toLowerCase().includes("empty response");
-              const isPayloadTooLarge = err.status === 413 || /payload too large/i.test(err.message) || /request entity too large/i.test(err.message);
+              const isPayloadTooLarge = statusCode === 413 || err.status === 413 || /payload too large/i.test(rawMsg) || /request entity too large/i.test(rawMsg);
               const isContextOverflow = isContextLengthExceeded(err);
-              const isOverloaded = err.status === 429 || err.status === 503 || /overloaded/i.test(err.message) || /rate limit/i.test(err.message);
+              const isOverloaded = statusCode === 429 || statusCode === 503 || err.status === 429 || err.status === 503 || /overloaded/i.test(rawMsg) || /rate limit/i.test(rawMsg);
 
               attempt++;
               const currentMaxRetries = isOverloaded ? 5 : maxRetries;
               if (attempt > currentMaxRetries || (!isRetryable && !isContextOverflow)) {
-                if (isPayloadTooLarge) {
-                  throw new Error(`Payload size limit exceeded (413).`);
-                }
-                if (isContextOverflow) {
-                  throw new Error(`Context length limit exceeded (${rawMsg}). Prompt and history exceed model context limit.`);
-                }
-                if (rawMsg.toLowerCase().includes("empty response")) {
-                  throw new Error("Empty response from model. Check your endpoint/model config.");
-                }
-                if (!isRetryable) {
-                  throw err;
-                }
+                if (isPayloadTooLarge) throw new Error(`Payload size limit exceeded (413).`);
+                if (isContextOverflow) throw new Error(`Context length limit exceeded (${rawMsg}). Prompt and history exceed model context limit.`);
+                if (rawMsg.toLowerCase().includes("empty response")) throw new Error("Empty response from model. Check your endpoint/model config.");
+                if (!isRetryable) throw err;
                 throw new Error(`Generate text failed after ${attempt - 1} retries: ${rawMsg}`);
               }
 
@@ -615,8 +604,8 @@ export class LoopIterationProcessor {
                 continue;
               }
 
-              const isRateLimit = err.status === 429 || /rate limit/i.test(rawMsg);
-              const is503 = err.status === 503 || /overloaded/i.test(rawMsg);
+              const isRateLimit = statusCode === 429 || err.status === 429 || /rate limit/i.test(rawMsg);
+              const is503 = statusCode === 503 || err.status === 503 || /overloaded/i.test(rawMsg);
               const overloadedDelays = [5000, 10000, 20000, 50000, 100000];
 
               if (isRateLimit || is503) {
@@ -658,6 +647,7 @@ export class LoopIterationProcessor {
               messages: callMessages,
               maxSteps: 1,
               abortSignal: signal,
+              maxRetries: 0,
               ...(isAnthropic && {
                 experimental_providerMetadata: {
                   anthropic: { cacheControl: { type: "ephemeral" } },
@@ -704,7 +694,8 @@ export class LoopIterationProcessor {
 
             break;
           } catch (err: any) {
-            const rawMsg = err.message || String(err);
+            const statusCode = extractErrorStatusCode(err);
+            const rawMsg = formatError(err);
             const isUnavailableTool = rawMsg.toLowerCase().includes("tried to call unavailable tool") || rawMsg.toLowerCase().includes("tried to call tool that is not available");
             if (isUnavailableTool) {
               const match = rawMsg.match(/(?:tried to call unavailable tool|tool that is not available|tool) ['"]([^'"]+)['"]/i);
@@ -737,8 +728,8 @@ export class LoopIterationProcessor {
               return { shouldBreak: false };
             }
             const isRetryable = isRetryableError(err) || rawMsg.toLowerCase().includes("empty response");
-            const isPayloadTooLarge = err.status === 413 || /payload too large/i.test(err.message) || /request entity too large/i.test(err.message);
-            const isOverloaded = err.status === 429 || err.status === 503 || /overloaded/i.test(err.message) || /rate limit/i.test(err.message);
+            const isPayloadTooLarge = statusCode === 413 || err.status === 413 || /payload too large/i.test(rawMsg) || /request entity too large/i.test(rawMsg);
+            const isOverloaded = statusCode === 429 || statusCode === 503 || err.status === 429 || err.status === 503 || /overloaded/i.test(rawMsg) || /rate limit/i.test(rawMsg);
 
             attempt++;
             const currentMaxRetries = isOverloaded ? 5 : maxRetries;

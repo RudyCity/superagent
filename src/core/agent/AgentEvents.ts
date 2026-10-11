@@ -54,6 +54,14 @@ export function formatError(err: unknown): string {
     }
   }
 
+  // If baseMessage is wrapped by AI SDK's RetryError ("Failed after X attempts. Last error: ..."),
+  // unwrap it to surface the root error message directly.
+  if (baseMessage.startsWith("Failed after") && baseMessage.includes("Last error: ")) {
+    baseMessage = baseMessage.replace(/^Failed after \d+ attempts\. Last error:\s*/i, "").trim();
+  } else if (obj && obj.lastError && typeof obj.lastError.message === "string" && obj.lastError.message) {
+    baseMessage = obj.lastError.message;
+  }
+
   if (baseMessage) {
     try {
       let status: number | undefined;
@@ -63,18 +71,22 @@ export function formatError(err: unknown): string {
       let current = obj;
       while (current && typeof current === "object") {
         if (status === undefined) {
-          const s = current.statusCode || current.status || (current.error && (current.error.statusCode || current.error.status));
-          if (s) {
+          const s = current.statusCode ?? current.status ?? (current.error && (current.error.statusCode ?? current.error.status));
+          if (s !== undefined && !isNaN(Number(s))) {
             status = Number(s);
           }
         }
         if (bodyText === undefined) {
           const b = current.text || current.responseBody || (current.error && (current.error.text || current.error.responseBody));
           if (typeof b === "string" && b.trim()) {
-            bodyText = b;
+            bodyText = b.trim();
           }
         }
-        if (current.cause) {
+        if (current.lastError) {
+          current = current.lastError;
+        } else if (Array.isArray(current.errors) && current.errors.length > 0) {
+          current = current.errors[current.errors.length - 1];
+        } else if (current.cause) {
           currentCause = current.cause;
           current = current.cause;
         } else if (current.error && typeof current.error === "object" && current.error !== current) {
@@ -131,6 +143,20 @@ export function formatError(err: unknown): string {
                 }
               }
 
+              // Upstream metadata blob (e.g. OpenRouter metadata: { provider_name, raw })
+              let metaInfo = "";
+              if (errObj && typeof errObj === "object" && errObj.metadata && typeof errObj.metadata === "object") {
+                const pName = errObj.metadata.provider_name;
+                const raw = errObj.metadata.raw;
+                if (pName && raw) {
+                  metaInfo = `${pName}: ${typeof raw === "string" ? raw : JSON.stringify(raw)}`;
+                } else if (raw) {
+                  metaInfo = typeof raw === "string" ? raw : JSON.stringify(raw);
+                } else if (pName) {
+                  metaInfo = `provider: ${pName}`;
+                }
+              }
+
               // (2) Fallback: error.message looks like the real cause
               // (only when no details blob was present).
               if (
@@ -140,6 +166,10 @@ export function formatError(err: unknown): string {
                 !hasDetailsBlob
               ) {
                 innerMessage = errObj.message;
+              }
+
+              if (metaInfo) {
+                innerMessage = innerMessage ? `${innerMessage} (${metaInfo})` : metaInfo;
               }
 
               // (3) Top-level details blob.
@@ -197,6 +227,31 @@ export function formatError(err: unknown): string {
           // Friendly hint when provider returns 402 Payment Required
           if (status === 402) {
             extra += " [hint: Provider balance or credits depleted. Top up your account balance or switch provider/preset with /model]";
+          }
+
+          // Friendly hint when provider returns 502 Bad Gateway
+          if (status === 502) {
+            extra += " [hint: Upstream model host returned 502 Bad Gateway. Try switching model/provider with /model or retry shortly]";
+          }
+
+          // Friendly hint when provider returns 503 Service Unavailable / Overloaded
+          if (status === 503) {
+            extra += " [hint: Upstream model host is temporarily overloaded (503). Retrying with backoff or switch model with /model]";
+          }
+
+          // Friendly hint when provider returns 429 Rate Limit
+          if (status === 429) {
+            extra += " [hint: Rate limit reached (429). Retrying with backoff or consider switching provider/model]";
+          }
+
+          // Friendly hint when provider returns 401 Unauthorized
+          if (status === 401) {
+            extra += " [hint: Invalid API key or unauthorized (401). Check credentials with /login]";
+          }
+
+          // Friendly hint when provider returns 404 Not Found
+          if (status === 404) {
+            extra += " [hint: Model endpoint not found (404). Verify model name and provider configuration with /model]";
           }
         }
       }
