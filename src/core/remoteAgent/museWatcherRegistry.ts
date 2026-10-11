@@ -4,6 +4,9 @@ import type { MuseWatcherOptions } from "./museWatcherTypes.js";
 const activeWatchers = new Map<number, MuseWatcher>();
 let globalMuseWatcher: MuseWatcher | null = null;
 
+/** Reserved registry key for the Telegram fallback watcher (Telegram uses no port). */
+export const TELEGRAM_FALLBACK_KEY = -1;
+
 export function getMuseWatcher(port?: number): MuseWatcher | null {
   if (port && activeWatchers.has(port)) {
     return activeWatchers.get(port) || null;
@@ -21,7 +24,10 @@ export function isMuseWatcherActive(port?: number): boolean {
 
 export async function startMuseWatcher(options: MuseWatcherOptions = {}): Promise<MuseWatcher> {
   const isHttpsMode = options.transportType === "https" || options.isHttps;
-  const effectivePort = options.wsPort || (isHttpsMode ? 7888 : 9225);
+  const effectivePort =
+    options.transportType === "telegram" && options.fallback
+      ? TELEGRAM_FALLBACK_KEY
+      : options.wsPort || (isHttpsMode ? 7888 : 9225);
 
   const existing = activeWatchers.get(effectivePort);
   if (existing && existing.isActive()) {
@@ -39,7 +45,11 @@ export async function startMuseWatcher(options: MuseWatcherOptions = {}): Promis
   const watcher = new MuseWatcher(options);
   await watcher.start();
   activeWatchers.set(effectivePort, watcher);
-  globalMuseWatcher = watcher;
+  // The Telegram fallback watcher stays secondary: the primary watcher remains
+  // the global one so status/steer/stop keep targeting the primary transport.
+  if (!options.fallback) {
+    globalMuseWatcher = watcher;
+  }
   return watcher;
 }
 

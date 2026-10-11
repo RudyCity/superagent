@@ -35,6 +35,8 @@ export interface MuseWatcherOptions {
   isHttps?: boolean;
   transport?: RemoteTransport;
   transportType?: RemoteAgentTransport;
+  /** Marks this watcher as a Telegram fallback instance (registered under a reserved key). */
+  fallback?: boolean;
   onProgress?: (message: string) => void;
   onLog?: (message: string) => void;
   onLine?: (line: { type: string; content: string; timestamp?: number }) => void;

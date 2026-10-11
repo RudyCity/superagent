@@ -77,6 +77,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     console.log("  superagent muse tunnel status    - Check Cloudflare Tunnel process status (optional: --port <n>)");
     console.log("  superagent muse watch --ws       - Watch projects via WebSocket");
     console.log("  superagent muse watch --tunnel   - Watch projects and expose via Cloudflare Tunnel");
+    console.log("  superagent muse watch --tg-fallback - Also activate Telegram as fallback transport");
     console.log("  superagent muse config transport websocket|telegram");
     console.log("  superagent muse config wsToken generate");
     console.log("  superagent muse config wsPort 9225");

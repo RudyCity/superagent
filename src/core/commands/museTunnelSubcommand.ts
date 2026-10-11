@@ -19,6 +19,12 @@ export async function handleMuseTunnelSubcommand(
   const isHttps = parts
     .slice(1)
     .some((p) => p.toLowerCase() === "--https" || p.toLowerCase() === "--http" || p.toLowerCase() === "--web");
+  const isTgFallback = parts
+    .slice(1)
+    .some((p) => {
+      const flag = p.toLowerCase();
+      return flag === "--tg-fallback" || flag === "--telegram-fallback";
+    });
   const nonFlagParts = parts.slice(1).filter((p) => !p.startsWith("-"));
   const rawAction = (nonFlagParts[0] || (isHttps ? "start" : "")).toLowerCase();
   const cfg = loadRemoteAgentConfig();
@@ -51,7 +57,54 @@ export async function handleMuseTunnelSubcommand(
     startMuseWatcher,
     stopMuseWatcher,
     isMuseWatcherActive,
+    TELEGRAM_FALLBACK_KEY,
   } = await import("../remoteAgent/museWatcher.js");
+
+  // Optional Telegram fallback watcher: when --tg-fallback is passed, keep a
+  // Telegram-transport watcher active alongside the tunnel so Muse stays
+  // reachable if the tunnel drops.
+  const startTelegramFallback = async (workspaces: string[]) => {
+    if (!isTgFallback) return;
+    if (isMuseWatcherActive(TELEGRAM_FALLBACK_KEY)) return;
+    try {
+      await startMuseWatcher({
+        workspace: workspaces[0] || ctx.agent?.workingDirectory || process.cwd(),
+        workspaces,
+        transportType: "telegram",
+        fallback: true,
+        tunnel: false,
+        isHttps: false,
+        wsPort: undefined,
+        agent: ctx.agent,
+        onProgress: (msg: string) => {
+          ctx.addLine({
+            type: "system",
+            content: `[Muse Progress] ${msg}`,
+            timestamp: Date.now(),
+          });
+        },
+        onLine: (line: { type: string; content: string; timestamp?: number }) => {
+          ctx.addLine({
+            type: (line.type as any) || "system",
+            content: line.content,
+            timestamp: line.timestamp || Date.now(),
+          });
+        },
+      });
+      ctx.addLine({
+        type: "system",
+        content:
+          "[Muse Watch] Telegram fallback transport is ACTIVE \u2014 Muse stays reachable via Telegram if the tunnel drops.",
+        timestamp: Date.now(),
+      });
+    } catch (fallbackErr: any) {
+      ctx.addLine({
+        type: "error",
+        content: `[Muse Watch] Telegram fallback failed to start: ${fallbackErr.message}`,
+        timestamp: Date.now(),
+      });
+    }
+  };
 
   // /muse tunnel list: WSS tunnels + cross-workspace MCP servers
   if (rawAction === "list" || rawAction === "ls" || rawAction === "active") {
@@ -387,6 +440,7 @@ export async function handleMuseTunnelSubcommand(
           ].join("\n"),
           timestamp: now,
         });
+        await startTelegramFallback(watchedWorkspaces);
         return;
       }
 
@@ -538,6 +592,8 @@ export async function handleMuseTunnelSubcommand(
         },
       });
 
+      await startTelegramFallback(watchedWorkspaces);
+
       const meta = getTunnelStatus(effectivePort);
       const effectiveWss = meta.wssUrl || `wss://${meta.publicUrl?.replace(/^https?:\/\//, "")}${pathEndpoint}`;
 
@@ -642,6 +698,11 @@ export async function handleMuseTunnelSubcommand(
       await stopMuseWatcher(effectivePort);
       stoppedAny = true;
       stoppedParts.push("WebSocket watch daemon");
+    }
+    if (isMuseWatcherActive(TELEGRAM_FALLBACK_KEY)) {
+      await stopMuseWatcher(TELEGRAM_FALLBACK_KEY);
+      stoppedAny = true;
+      stoppedParts.push("Telegram fallback watcher");
     }
     let targetPortToStop = effectivePort;
     let existing = getTunnelStatus(effectivePort);
