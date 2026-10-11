@@ -53,6 +53,58 @@ export class GuidelineLoader {
     ].join("\n");
   }
 
+  public static buildFastPathWorkspaceContext(workingDirectory: string): string {
+    const workspaceDir = workingDirectory || process.cwd();
+    const sections: string[] = [
+      `# ACTIVE WORKSPACE: "${workspaceDir}"`,
+      `- WORKSPACE_GROUNDING: The active workspace directory is "${workspaceDir}". NEVER invent, guess, or hallucinate other workspace paths (such as default user home directories) or claim there is no active project when project files exist in this workspace.`,
+      `- RESPONSE_FORMAT: Terminal-rendered plain text and flat single-level bullet points (-) only. Do NOT use **bold**, ## headings, *italic*, __underline__, or markdown tables.`,
+    ];
+
+    const scopedRulePaths = [
+      path.join(workspaceDir, ".agents", "AGENTS.md"),
+      path.join(workspaceDir, ".agents", "agents.md"),
+    ];
+    for (const p of scopedRulePaths) {
+      if (fs.existsSync(p)) {
+        try {
+          sections.push(`PROJECT-SCOPED RULES (.agents/AGENTS.md):\n${fs.readFileSync(p, "utf-8").trim()}`);
+        } catch {}
+        break;
+      }
+    }
+
+    const pkgPath = path.join(workspaceDir, "package.json");
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+        if (pkg && (pkg.name || pkg.description)) {
+          sections.push(
+            `PROJECT METADATA (package.json):\n- Name: ${pkg.name || "unknown"}\n- Version: ${pkg.version || "unknown"}${pkg.description ? `\n- Description: ${pkg.description}` : ""}`
+          );
+        }
+      } catch {}
+    }
+
+    const agentsPaths = [
+      path.join(workspaceDir, "agents.md"),
+      path.join(workspaceDir, "AGENTS.md"),
+    ];
+    for (const p of agentsPaths) {
+      if (fs.existsSync(p)) {
+        try {
+          const lines = fs.readFileSync(p, "utf-8").split("\n").slice(0, 60).join("\n").trim();
+          if (lines) {
+            sections.push(`PROJECT OVERVIEW (agents.md):\n${lines}`);
+          }
+        } catch {}
+        break;
+      }
+    }
+
+    return sections.join("\n\n");
+  }
+
   public static buildGuidelines(opts: {
     workingDirectory: string;
     workspaceCacheAgentsMd?: string;
@@ -64,16 +116,49 @@ export class GuidelineLoader {
     preloadedSkillKeys: Set<string>;
   }): string {
     let text = "";
+    const baseDir = opts.workingDirectory || process.cwd();
+
+    const scopedRulePaths = [
+      path.join(baseDir, ".agents", "AGENTS.md"),
+      path.join(baseDir, ".agents", "agents.md"),
+      path.join(process.cwd(), ".agents", "AGENTS.md"),
+      path.join(process.cwd(), ".agents", "agents.md"),
+    ];
+    for (const p of scopedRulePaths) {
+      if (fs.existsSync(p)) {
+        try {
+          text += `\n\nPROJECT-SCOPED RULES (.agents/AGENTS.md):\n${fs.readFileSync(p, "utf-8")}\n`;
+        } catch {}
+        break;
+      }
+    }
+
     // We accept both the legacy lowercase `agents.md` and the
     // conventional `AGENTS.md` (uppercase, AGENTS.md-spec). Lowercase
     // wins if both exist, to preserve existing behavior.
     const searchPaths = [
+      path.join(baseDir, "agents.md"),
+      path.join(baseDir, "AGENTS.md"),
       path.join(process.cwd(), "agents.md"),
       path.join(process.cwd(), "AGENTS.md"),
-      path.join(opts.workingDirectory, "agents.md"),
-      path.join(opts.workingDirectory, "AGENTS.md"),
     ];
     if (!opts.workspaceCacheAgentsMd) {
+      const pkgPaths = [
+        path.join(baseDir, "package.json"),
+        path.join(process.cwd(), "package.json"),
+      ];
+      for (const pkgPath of pkgPaths) {
+        if (fs.existsSync(pkgPath)) {
+          try {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+            if (pkg && (pkg.name || pkg.description)) {
+              text += `\n\nPROJECT METADATA (package.json):\n- Name: ${pkg.name || "unknown"}\n- Version: ${pkg.version || "unknown"}${pkg.description ? `\n- Description: ${pkg.description}` : ""}\n`;
+            }
+          } catch {}
+          break;
+        }
+      }
+
       for (const p of searchPaths) {
         if (fs.existsSync(p)) {
           text += `\n\nPROJECT GUIDELINES (agents.md):\n${fs.readFileSync(p, "utf-8")}\n`;

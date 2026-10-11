@@ -1,3 +1,14 @@
+## [1.13.49] - 2026-10-11
+### Fixed & Enhanced
+- Workspace Grounding & FastPath Context Injection (`src/core/agent/FastPath.ts`, `src/core/agent/GuidelineLoader.ts`, `src/core/agent/ContextBuilder.ts`, `src/core/config/base.ts`):
+  - Fixed a bug where conversational FastPath stripped all workspace directory paths, project metadata (`package.json`), and project guidelines (`AGENTS.md`, `.agents/AGENTS.md`), causing models to hallucinate non-existent default workspace paths (such as `C:\Users\lenovo\superagent-workspace`) and claim no project was active.
+  - Added `GuidelineLoader.buildFastPathWorkspaceContext()` and injected `# ACTIVE WORKSPACE`, `.agents/AGENTS.md` project-scoped rules, `package.json` metadata, and `AGENTS.md` project overview into `FastPath` and `ContextBuilder`.
+  - Prioritized `workingDirectory` over `process.cwd()` in `GuidelineLoader.buildGuidelines()` and enforced no-markdown formatting rules across single-agent `getSystemPrompt()`.
+- Senopati ONNX & Heuristic Request Classifier Calibration (`src/core/requestClassifier.ts`, `tests/requestClassifier.test.ts`):
+  - Fixed misclassification of Indonesian/English workspace and project inquiries (`"project apa"`, `"ini project apa"`, `"project ap"`, `"workspace apa"`, `"repo apa"`) and shell commands (`"pwd coba"`, `"pwd"`, `"ls"`, `"whoami"`) as casual `conversation`.
+  - Added defense-in-depth guards in `isHighConfidenceConversation()` so workspace/project questions and shell commands never enter the tool-less conversational fast-path.
+  - Fixed destructive command detection in `classifyWithSenopatiONNX()` so dangerous shell commands (`rm -rf /`) are never suppressed by conversational category mispredictions.
+
 ## [1.13.48] - 2026-10-11
 ### Added & Enhanced
 - Cross-Process IPC Mailbox & Standalone Process Steering (`src/core/ipc/processMailbox.ts`, `src/core/mcp/processJournal.ts`, `src/core/mcp/tools/processTools.ts`, `src/core/mcp/tools/executionTools.ts`, `src/core/agent.ts`):

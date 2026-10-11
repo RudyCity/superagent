@@ -389,6 +389,7 @@ const COMPLEX_KW = splitKeywords([
 const COMMAND_KW = splitKeywords([
   "run", "execute", "start", "stop", "test", "deploy", "commit", "push", "pull",
   "install", "pnpm", "npm", "yarn", "bun", "git", "docker", "cargo", "pip", "npx",
+  "pwd", "ls", "dir", "whoami", "rm", "mkdir",
   // Note: "coba" removed from here — it lives in CONVERSATION_EXACT only.
   // "coba jalankan" / "coba run" is caught by other command keywords in the phrase.
   "jalankan", "jalanin", "running", "tes", "uji",
@@ -411,6 +412,15 @@ const EDIT_INTENT_RE = /\b(change|edit|modify|update|add|remove|delete|fix|repla
 
 /** Match a complete identity question, not model names or embedded task text. */
 const MODEL_IDENTITY_RE = /^(?:kamu|anda)\s+model\s+ap(?:a)?$/i;
+
+/** Workspace, project, repository, or codebase inquiry subject keywords */
+const WORKSPACE_INQUIRY_RE = /\b(project|proyek|projek|repo|repository|workspace|worktree|codebase|folder|directory|direktori|path|lokasi|file|files|berkas|code|kode|source|script|package|module|modul|component|komponen|class|function|fungsi|method|api|endpoint|route|database|db|schema|table|config|konfigurasi|setting|branch|commit|pr|issue|fitur|feature|stack|tech|teknologi|framework|library|dependency|dependencies|struktur|structure|architecture|arsitektur|aplikasi|app|sistem|system|session|sesi|log|logs|task|tasks|plan|agents\.md|readme|package\.json|tsconfig)\b/i;
+
+/** Indonesian/English trailing or infix question words (e.g., "project apa", "project ap", "workspace dimana") */
+const TRAILING_QUESTION_WORD_RE = /\b(apa|ap|apakah|dimana|di\s+mana|kemana|ke\s+mana|darimana|dari\s+mana|bagaimana|gimana|kenapa|mengapa|kapan|siapa|siapakah|berapa|mana)(?:\s+(?:ini|itu|ya|sih|nya|aja|saja|disini|di\s+sini|sekarang))?$/i;
+
+/** Shell / CLI command execution keywords that must never be treated as casual conversation */
+const SHELL_COMMAND_INQUIRY_RE = /\b(pwd|ls|dir|cd|cat|echo|whoami|hostname|uname|git|bun|npm|npx|pnpm|yarn|node|python|python3|pip|uv|cargo|rustc|docker|kubectl|curl|wget|ssh|scp|rm|del|mkdir|rmdir|cp|mv|ps|kill|tasklist|taskkill|netstat|ipconfig|ifconfig|ping|jalankan|jalanin|run|execute|test|tes|uji|build|compile|deploy)\b/i;
 
 /** Explicit operational requests must not lose shell access to research keywords. */
 const OPERATIONAL_REQUEST_RE = /^(?:(?:please|tolong|silakan)\s+)?(?:(?:clean\s+up|cleanup|clean|delete|remove|hapus|bersihkan)\b|(?:cek|check|verify|validate)\s+runtime\b)/i;
@@ -557,14 +567,15 @@ export function classifyHeuristic(
   const startsWithQuestion = QUESTION_STARTERS.some(q => cleanLower.startsWith(q));
   const hasQuestionPhrase = QUESTION_PHRASES.some(p => cleanLower.includes(p));
   const endsWithQuestion = cleanLower.endsWith("?") || trimmed.endsWith("?");
+  const isWorkspaceQuestion = WORKSPACE_INQUIRY_RE.test(cleanLower) && TRAILING_QUESTION_WORD_RE.test(cleanLower);
 
-  if ((startsWithQuestion && endsWithQuestion) || hasQuestionPhrase) {
-    // Strong question signal: question word + question mark, or explicit question phrase
-    if (!EDIT_INTENT_RE.test(trimmed)) {
+  if ((startsWithQuestion && endsWithQuestion) || hasQuestionPhrase || isWorkspaceQuestion) {
+    // Strong question signal: question word + question mark, explicit question phrase, or workspace/project inquiry
+    if (!EDIT_INTENT_RE.test(trimmed) && !hasActionIntent) {
       return {
         category: "question",
         confidence: "high",
-        reason: `Question pattern: starts with question word=${startsWithQuestion}, ends with ?=${endsWithQuestion}, has phrase=${hasQuestionPhrase}`,
+        reason: `Question pattern: starts with question word=${startsWithQuestion}, ends with ?=${endsWithQuestion}, has phrase=${hasQuestionPhrase}, workspace inquiry=${isWorkspaceQuestion}`,
         heuristicOnly: true,
         classificationTokens: 0,
       };
@@ -1027,10 +1038,44 @@ export async function classifyWithSenopatiONNX(
     }
   }
 
-  const category = SENOPATI_CATEGORIES[maxIdx] || "question";
+  let category: RequestCategory = SENOPATI_CATEGORIES[maxIdx] || "question";
   const confidenceScore = choiceProbs[maxIdx];
-  const confidence: ClassificationConfidence =
+  let confidence: ClassificationConfidence =
     confidenceScore >= 0.60 ? "high" : confidenceScore >= 0.30 ? "medium" : "low";
+
+  const trimmed = text.trim();
+  const cleanLower = trimmed.toLowerCase().replace(PUNCTUATION_STRIP_RE, "").trim();
+  const dangerousShellRegex = /(rm\s+(-rf|-fr|-r\s+-f|-f\s+-r)\b|git\s+reset\s+--hard|git\s+clean\s+-f[xd]*|mkfs|dd\s+if=|drop\s+database|format\s+[c-z]:)/i;
+  const researchVerbRegex = /\b(cari|cek|check|inspect|lihat|baca|scan|explore|find|search|list|tampilkan|show|telusuri|temukan)\b/i;
+  const debugTermRegex = /\b(bug|error|eror|fix|perbaiki|benerin|betulkan|gagal|rusak|crash|failed|failing|broken|issue|problem|masalah)\b/i;
+
+  if (MODEL_IDENTITY_RE.test(cleanLower)) {
+    category = "conversation";
+    confidence = "high";
+  } else if (dangerousShellRegex.test(trimmed)) {
+    category = "command";
+    confidence = "high";
+  } else if (WORKSPACE_INQUIRY_RE.test(cleanLower) && TRAILING_QUESTION_WORD_RE.test(cleanLower) && !SHELL_COMMAND_INQUIRY_RE.test(cleanLower) && !debugTermRegex.test(cleanLower)) {
+    category = researchVerbRegex.test(cleanLower) ? "research" : "question";
+    confidence = "high";
+  } else if (category === "conversation") {
+    if (debugTermRegex.test(cleanLower)) {
+      category = "debug";
+      confidence = "high";
+    } else if (SHELL_COMMAND_INQUIRY_RE.test(cleanLower) && !trimmed.endsWith("?")) {
+      category = "command";
+      confidence = "high";
+    } else if (WORKSPACE_INQUIRY_RE.test(cleanLower)) {
+      category = researchVerbRegex.test(cleanLower) ? "research" : "question";
+      confidence = "high";
+    } else {
+      const heur = heuristicResult || classifyHeuristic(text);
+      if (heur.category !== "conversation" && heur.confidence === "high") {
+        category = heur.category;
+        confidence = "high";
+      }
+    }
+  }
 
   // Expected urgency score: sum((i + 1) * p_i) for i in 0..4
   let expScore = 0;
@@ -1041,8 +1086,8 @@ export async function classifyWithSenopatiONNX(
   // Destructive guardrail: noulProbs[1] is P(destructive)
   // Guard against false positives: questions/conversations or queries without destructive action keywords are not destructive
   const destructiveActionRegex = /\b(rm|del|delete|remove|drop|truncate|kill|destroy|format|wipe|hapus|hilangkan|bersihkan|uninstall|unlink|purge|reset\s+--hard)\b/i;
-  const isQuestionOrChat = category === "conversation" || category === "question" || text.trim().endsWith("?");
-  const isDestructive = !isQuestionOrChat && (noulProbs[1] > 0.5 || destructiveActionRegex.test(text));
+  const isQuestionOrChat = (category === "conversation" || category === "question" || trimmed.endsWith("?")) && !dangerousShellRegex.test(trimmed);
+  const isDestructive = dangerousShellRegex.test(trimmed) || (!isQuestionOrChat && (noulProbs[1] > 0.5 || destructiveActionRegex.test(text)));
 
   // Detect second-best category for secondaryCategory
   let secondIdx = -1;
@@ -1511,14 +1556,15 @@ export function isHighConfidenceConversation(
   }
   if (userInput) {
     const text = typeof userInput === "string" ? userInput : "";
+    const cleanLower = text.toLowerCase().replace(PUNCTUATION_STRIP_RE, "").trim();
     if (/\b(?:ganti|ubah|switch|change|pindah)\s+mode\b/i.test(text)) {
       return false;
     }
-    if (hasPriorMessages) {
-      const cleanLower = text.toLowerCase().replace(PUNCTUATION_STRIP_RE, "").trim();
-      if (CONTINUATION_COMMANDS.has(cleanLower)) {
-        return false;
-      }
+    if (!MODEL_IDENTITY_RE.test(cleanLower) && (WORKSPACE_INQUIRY_RE.test(cleanLower) || SHELL_COMMAND_INQUIRY_RE.test(cleanLower))) {
+      return false;
+    }
+    if (hasPriorMessages && CONTINUATION_COMMANDS.has(cleanLower)) {
+      return false;
     }
   }
   return (

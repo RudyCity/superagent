@@ -118,11 +118,14 @@ export class FastPath {
             }
           }
 
-          // Minimal system prompt for conversational replies
+          // Minimal system prompt for conversational replies, grounded with active workspace and project overview
           const baseSystemPrompt = (agent as any).customSystemPrompt || (agent as any).config.systemPrompt || "";
+          const workspaceDir = agent.worktreePath || agent.workingDirectory || process.cwd();
+          const { GuidelineLoader } = await import("./GuidelineLoader.js");
+          const workspaceContext = GuidelineLoader.buildFastPathWorkspaceContext(workspaceDir);
           const convSystemPrompt = baseSystemPrompt
-            ? `${baseSystemPrompt}\n\nCLASSIFICATION: Conversational message detected. Respond directly and concisely. No tools needed.`
-            : "You are a helpful AI coding assistant. The user sent a short conversational message. Respond naturally and concisely.";
+            ? `${baseSystemPrompt}\n\n${workspaceContext}\n\nCLASSIFICATION: Conversational message detected. Respond directly and concisely. No tools needed.`
+            : `You are a helpful AI coding assistant. The user sent a short conversational message. Respond naturally and concisely.\n\n${workspaceContext}`;
 
           const startTime = Date.now();
           const useStreaming = !(agent as any).config.disableStreaming;

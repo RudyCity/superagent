@@ -788,7 +788,7 @@ describe("optimizations (Jaro-Winkler, Trie, Soundex, TF-IDF)", () => {
   });
 });
 
-describe("isHighConfidenceConversation with planState", () => {
+describe("isHighConfidenceConversation with planState and workspace/command guards", () => {
   it("should return true when planState is IDLE or undefined", () => {
     const classRes = { category: "conversation" as const, confidence: "high" as const, reason: "", heuristicOnly: true, classificationTokens: 0 };
     expect(isHighConfidenceConversation(classRes, "single", "IDLE")).toBe(true);
@@ -800,8 +800,51 @@ describe("isHighConfidenceConversation with planState", () => {
     expect(isHighConfidenceConversation(classRes, "single", "PLANNING_PENDING")).toBe(false);
     expect(isHighConfidenceConversation(classRes, "single", "APPROVED")).toBe(false);
   });
+
+  it.each(["project apa", "ini project apa", "project ap", "workspace apa", "pwd coba", "git status"])(
+    "should return false for workspace/command query '%s' even if misclassified as conversation",
+    (input) => {
+      const classRes = { category: "conversation" as const, confidence: "high" as const, reason: "", heuristicOnly: true, classificationTokens: 0 };
+      expect(isHighConfidenceConversation(classRes, "single", "IDLE", false, input)).toBe(false);
+    }
+  );
 });
 
+describe("workspace inquiry and shell command regression (sess_1791681803342_i9v18g)", () => {
+  beforeEach(() => {
+    clearLocalClassifierCache();
+  });
 
+  it.each(["project apa", "ini project apa", "project ap", "workspace apa", "repo apa"])(
+    "classifies '%s' as question in both heuristic and Senopati ONNX pipelines",
+    async (input) => {
+      const heur = classifyHeuristic(input);
+      expect(heur.category).toBe("question");
+      expect(heur.confidence).toBe("high");
 
+      const onnx = await classifyRequest(input, {});
+      expect(onnx.category).toBe("question");
+      expect(onnx.confidence).toBe("high");
+    }
+  );
 
+  it.each(["pwd coba", "pwd", "ls", "whoami"])(
+    "classifies shell command '%s' as command in both heuristic and Senopati ONNX pipelines",
+    async (input) => {
+      const heur = classifyHeuristic(input);
+      expect(heur.category).toBe("command");
+
+      const onnx = await classifyRequest(input, {});
+      expect(onnx.category).toBe("command");
+    }
+  );
+
+  it("builds FastPath workspace context with active workspace path, package metadata, and .agents/AGENTS.md", async () => {
+    const { GuidelineLoader } = await import("../src/core/agent/GuidelineLoader.js");
+    const ctx = GuidelineLoader.buildFastPathWorkspaceContext(process.cwd());
+    expect(ctx).toContain(`# ACTIVE WORKSPACE: "${process.cwd()}"`);
+    expect(ctx).toContain("PROJECT-SCOPED RULES (.agents/AGENTS.md):");
+    expect(ctx).toContain("No markdown decoration in AI responses");
+    expect(ctx).toContain("PROJECT METADATA (package.json):");
+  });
+});

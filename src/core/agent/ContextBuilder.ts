@@ -307,7 +307,7 @@ export class ContextBuilder {
       }
     }
 
-    const runtimeCapabilitiesText = `\n# RUNTIME\n- Shell: ${hasShell ? "enabled" : "disabled"} | Write: ${hasWrite ? "enabled" : "disabled"} | Network: ${hasNetwork ? "enabled" : "disabled"} | Subagents: ${hasSubagents ? "enabled" : "disabled"}\n- Verification: ${verificationStatus} | Platform: ${activeShellType} | Separator: ${shellSep}\n`;
+    const runtimeCapabilitiesText = `\n# RUNTIME\n- Workspace: ${workspaceDir || process.cwd()}\n- Shell: ${hasShell ? "enabled" : "disabled"} | Write: ${hasWrite ? "enabled" : "disabled"} | Network: ${hasNetwork ? "enabled" : "disabled"} | Subagents: ${hasSubagents ? "enabled" : "disabled"}\n- Verification: ${verificationStatus} | Platform: ${activeShellType} | Separator: ${shellSep}\n`;
 
     const lastUserMessage = messages.slice().reverse().find((m: any) => m.role === "user");
     const userInputText = lastUserMessage ? (typeof lastUserMessage.content === "string" ? lastUserMessage.content : "") : "";
@@ -339,7 +339,7 @@ export class ContextBuilder {
     }
 
     const MODE_INSTRUCTIONS: Record<string, string> = {
-      ask: `- Q&A mode. Use read/search tools (grep, ripgrep_search, glob, view_file) immediately to inspect codebase content when answering questions. File modification and mutating shell commands are disabled in this mode. IMPORTANT: If the user request actually requires editing files, running terminal commands, creating a plan, or fixing bugs (e.g. because the classifier mistakenly selected ask mode), or if the user asks to switch mode, you MUST immediately call the 'switch_mode' tool (e.g. switch_mode({ mode: 'implement' })) to switch mode and unlock all tools. Never claim you cannot change mode yourself.`,
+      ask: `- Q&A mode. Use read/search tools (read, glob, grep, ripgrep_search) immediately to inspect codebase content when answering questions. File modification and mutating shell commands are disabled in this mode. IMPORTANT: If the user request actually requires editing files, running terminal commands, creating a plan, or fixing bugs (e.g. because the classifier mistakenly selected ask mode), or if the user asks to switch mode, you MUST immediately call the 'switch_mode' tool (e.g. switch_mode({ mode: 'implement' })) to switch mode and unlock all tools. Never claim you cannot change mode yourself.`,
       research: `- Read-only research mode. Use search/read tools to explore codebase. Do NOT modify files or run mutating commands. Call 'switch_mode' (e.g. mode: 'implement') if the task requires writing code or making edits.`,
       plan: `- Propose implementation plan via 'manage_plan'. Do NOT edit source files before user approval. Call 'switch_mode' once ready to implement.`,
       implement: `- Implement code changes. Full toolset enabled (file modifications, shell commands, builds, tests). Plan mandatory only for complex/risky changes. On completion, provide a structured conclusion before listing file changes.`,
