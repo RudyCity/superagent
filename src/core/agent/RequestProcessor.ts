@@ -271,7 +271,7 @@ Reply with EXACTLY "chat", "yes", or "no" ONLY.`;
         const isContinuation = isModeCmd || (messages.length > 0 && CONTINUATION_COMMANDS && CONTINUATION_COMMANDS.has(cleanLower));
 
         if (isContinuation) {
-          // Promote continuation command ("lanjut", "continue", mode change, etc.) to command/task category so full toolset is available
+          // Promote continuation command ("lanjut", "continue", "iya", mode change, etc.) to command/task category so full toolset is available
           agent.currentClassification = {
             category: "command",
             confidence: "high",
@@ -279,6 +279,11 @@ Reply with EXACTLY "chat", "yes", or "no" ONLY.`;
             heuristicOnly: true,
             classificationTokens: 0,
           };
+          agent.isSimpleTask = true;
+          agent.simpleTaskApproved = true;
+          if (agent.planState === "PLANNING_PENDING") {
+            agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
+          }
         } else if (!hasToolCalls && isHighConfidenceConversation(agent.currentClassification, agent.tier, agent.planState, messages.length > 0, userText)) {
           agent.writeToLogFile("INFO", `Conversation fast-path activated (category=conversation, confidence=high)`);
           const { FastPath } = await import("./FastPath.js");
@@ -288,6 +293,10 @@ Reply with EXACTLY "chat", "yes", or "no" ONLY.`;
       } catch (err: any) {
         agent.writeToLogFile("WARN", `Conversation fast-path check failed, falling through to agent loop: ${err.message}`);
       }
+    }
+
+    if (agent.tier === "superagent" || agent.tier === "subagent") {
+      agent.planState = "APPROVED";
     }
 
     agent.writeToLogFile("INFO", `Agent execution started (tier: ${agent.tier}, depth: ${agent.delegationDepth}, isMultiAgent: ${agent.isMultiAgent}, workingDirectory: ${agent.workingDirectory}, worktreePath: ${agent.worktreePath})`);
@@ -301,7 +310,7 @@ Reply with EXACTLY "chat", "yes", or "no" ONLY.`;
 
     (agent as any).tasksJustArchived = false;
     (agent as any).archivedTaskCount = 0;
-    if (agent.planState === "APPROVED") {
+    if (agent.planState === "APPROVED" && agent.tier !== "superagent" && agent.tier !== "subagent") {
       try {
         const taskPath = agent.getTaskFilePath();
         const allDone = await allTasksCompleted(taskPath);

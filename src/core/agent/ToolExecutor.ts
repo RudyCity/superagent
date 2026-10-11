@@ -161,7 +161,10 @@ export class ToolExecutor {
       }
 
       if (tc.name === "invoke_superagent" || tc.name === "merge_superagents") {
-        if (agent.planState !== "APPROVED") {
+        const isApprovedForSuperagent =
+          agent.planState === "APPROVED" ||
+          (agent.planState === "IDLE" && agent.isSimpleTask && agent.simpleTaskApproved);
+        if (!isApprovedForSuperagent) {
           let msg = "";
           if (agent.planState === "PLANNING_PENDING") {
             msg = `Error: Spawning or merging Superagents is blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before starting execution.`;
@@ -260,24 +263,20 @@ export class ToolExecutor {
         }
 
         if (agent.tier === "master" && !isPlanFile && !isTaskFile && !isWalkthroughFile) {
-          if (agent.isSimpleTask) {
-            // Bypass the Master Agent direct file modification block
-          } else {
-            const blocked: ToolResult = {
-              toolCallId: tc.id,
-              name: tc.name,
-              result: "Error: The Master Agent is restricted from directly modifying source code files in the codebase. You must delegate all code modifications to Superagents by invoking them.",
-              isError: true,
-            };
-            try {
-              const { appendToolsErrorLog } = await import("../tools/state.js");
-              appendToolsErrorLog(agent.tier, agent.delegationDepth, tc.name, blocked.result, { filePath, reason: "master_direct_modify_blocked" });
-            } catch {}
-            (agent as any).emitViolation("master_direct_modify_blocked", tc.name, "Master Agent attempted to directly modify source code files. Must delegate to Superagents.", "critical", { filePath });
-            toolResults.push(blocked);
-            agent.onEvent({ type: "tool_end", toolResult: blocked, description });
-            continue;
-          }
+          const blocked: ToolResult = {
+            toolCallId: tc.id,
+            name: tc.name,
+            result: "Error: The Master Agent is restricted from directly modifying source code files in the codebase. You must delegate all code modifications to Superagents by invoking them.",
+            isError: true,
+          };
+          try {
+            const { appendToolsErrorLog } = await import("../tools/state.js");
+            appendToolsErrorLog(agent.tier, agent.delegationDepth, tc.name, blocked.result, { filePath, reason: "master_direct_modify_blocked" });
+          } catch {}
+          (agent as any).emitViolation("master_direct_modify_blocked", tc.name, "Master Agent attempted to directly modify source code files. Must delegate to Superagents.", "critical", { filePath });
+          toolResults.push(blocked);
+          agent.onEvent({ type: "tool_end", toolResult: blocked, description });
+          continue;
         }
 
         if (isPlanFile) {

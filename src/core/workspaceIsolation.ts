@@ -6,8 +6,8 @@ import { addTrustedDirectory, ensureDirectoryTrusted } from "./config/jsonConfig
 /**
  * Ensures the project-local .gitignore ignores the .worktrees directory
  */
-export function ensureGitIgnore(): void {
-  const gitignorePath = path.join(process.cwd(), ".gitignore");
+export function ensureGitIgnore(cwd: string = process.cwd()): void {
+  const gitignorePath = path.join(cwd, ".gitignore");
   if (!fs.existsSync(gitignorePath)) {
     fs.writeFileSync(gitignorePath, ".worktrees/\n", "utf-8");
     return;
@@ -24,9 +24,9 @@ export function ensureGitIgnore(): void {
 /**
  * Prunes orphaned worktrees from git metadata
  */
-export async function pruneWorktrees(): Promise<void> {
+export async function pruneWorktrees(cwd: string = process.cwd()): Promise<void> {
   try {
-    await execa("git", ["worktree", "prune"], { cwd: process.cwd() });
+    await execa("git", ["worktree", "prune"], { cwd });
   } catch (err) {
     // Ignore error if git is not initialized
   }

@@ -1,3 +1,21 @@
+## [1.13.50] - 2026-10-11
+### Fixed & Enhanced
+- 3-Tier Multi-Agent Orchestration (`--multi`) Audit & Lifecycle Hardening (`src/core/tools/superagentTools.ts`, `src/core/tools/subagentTools.ts`, `src/core/tools/superagentRegistry.ts`, `src/core/masterAgent.ts`, `src/core/workspaceIsolation.ts`):
+  - Fixed a destructive cleanup hazard in `merge_superagents` and `cleanupWorktreeRobust` where `mode: "patch"` Superagents (whose `worktreePath` equals the main workspace `cwd`) could trigger `fs.rmSync(cwd, { recursive: true, force: true })` if `git worktree remove` failed. Added `isMainWorkspacePath` guard to strictly protect the main repository directory.
+  - Fixed `await_superagents` and `manage_superagents` (`kill_all`) ignoring `"waiting"` (`dependsOn`) Superagents, preventing premature exit when dependency-chained Superagents are still queued.
+  - Fixed `TypeError: Cannot read properties of undefined (reading 'abort')` when calling `manage_superagents` or `manage_subagents` `kill` / `kill_all` on rehydrated or waiting instances (`inst.agent?.abort?.()`).
+  - Fixed stale pre-merge validation report extraction in `invoke_superagent` and `send_message_to_superagent` so `result` is refreshed after auto-debug retry loops and multi-part array `lastMsg.content` is converted via `contentToString()`.
+  - Fixed `reconcileRegistry` dropping `entry.task` and `entry.historyFilePath` when rehydrating orphan worktree entries on startup.
+  - Fixed `MasterAgent.mergeBranch` spawning its `conflict-resolver` subagent with a read-only toolset (`defaultSubagentToolset`); now equips `resolveSubagentToolset("coder")` with write and shell tools, passes `this.model` to `validatePostMerge`, and threads `cwd` to git operations.
+  - Fixed `send_message` to paused subagents resetting `planState` to `"IDLE"` after `loadHistoryFromPath`; now preserves `agentInstance.planState = "APPROVED"`.
+- Master Agent & Superagent Request Classifier, FastPath, and Plan Gate Fixes (`src/core/requestClassifier.ts`, `src/core/agent/ContextBuilder.ts`, `src/core/agent/LoopIterationProcessor.ts`, `src/core/agent/RequestProcessor.ts`, `src/core/agent/ToolExecutor.ts`, `src/core/tools/fileEditTools.ts`):
+  - Fixed `classifyWithSenopatiONNX` and `isHighConfidenceConversation` misclassifying imperative audit/review/inspection prompts (`"audit"`, `"review"`, `"periksa"`, `"analisa"`, `"inspect"`, `"check"`, `"cek"`) as casual conversation (`FastPath` with 0 tools).
+  - Expanded `CONTINUATION_COMMANDS` with Indonesian and English confirmation tokens (`"iya"`, `"ya"`, `"yap"`, `"yoi"`, `"oke"`, `"ok"`, `"sip"`, `"siap"`, `"setuju"`, `"boleh"`, `"acc"`, `"approve"`, `"lgtm"`, `"sure"`, etc.) so follow-up confirmations in active sessions bypass `FastPath` and mark `isSimpleTask = true` / `simpleTaskApproved = true`.
+  - Bypassed category-based tool filtering (`shouldBypassFilter`) for `agent.tier === "master"` and `agent.tier === "superagent"`, and added Master Agent orchestration tools (`invoke_superagent`, `await_superagents`, `merge_superagents`, `manage_superagents`, `manage_subagents`, `git_worktree`, `manage_plan`, `manage_tasks`) to `question` and `research` category sets.
+  - Fixed `merge_superagents` and `invoke_superagent` plan-gate deadlock when Master Agent executes approved simple or continuation tasks in `IDLE` state (`isSimpleTask && simpleTaskApproved`).
+  - Removed the `if (agent.isSimpleTask)` write-guard bypass in `ToolExecutor.ts` and added `enforceMasterWriteAllowlist` to `multiReplaceFileContentTool` so the Master Agent is strictly prevented from directly editing codebase files.
+  - Preserved `agent.planState = "APPROVED"` for `superagent` and `subagent` tiers across turns even when all task items are marked completed.
+
 ## [1.13.49] - 2026-10-11
 ### Fixed & Enhanced
 - Workspace Grounding & FastPath Context Injection (`src/core/agent/FastPath.ts`, `src/core/agent/GuidelineLoader.ts`, `src/core/agent/ContextBuilder.ts`, `src/core/config/base.ts`):

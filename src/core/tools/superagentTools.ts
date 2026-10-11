@@ -383,7 +383,11 @@ export const invokeSuperagentTool: Tool = {
     }
     ensureRegistryReconciled();
 
-    if (parentAgent && parentAgent.planState !== "APPROVED") {
+    const isApproved =
+      !parentAgent ||
+      parentAgent.planState === "APPROVED" ||
+      (parentAgent.planState === "IDLE" && (parentAgent as any).isSimpleTask && (parentAgent as any).simpleTaskApproved);
+    if (!isApproved && parentAgent) {
       if (parentAgent.planState === "PLANNING_PENDING") {
         return `Error: Spawning or merging Superagents is blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before starting execution.`;
       } else {
@@ -421,9 +425,9 @@ export const invokeSuperagentTool: Tool = {
       // ── Full mode: create isolated git worktree ──────────────────────────
 
       // Ensure .gitignore has .worktrees and prune orphaned worktrees
-      ensureGitIgnore();
+      ensureGitIgnore(cwd);
       try {
-        await pruneWorktrees();
+        await pruneWorktrees(cwd);
       } catch {
         // Ignore if not in git
       }
@@ -766,9 +770,12 @@ export const invokeSuperagentTool: Tool = {
         closeThinkingNode();
 
         // Capture final report from last assistant message
-        const msgs = agentInstance.getHistory().getMessages();
-        const lastMsg = [...msgs].reverse().find((m) => m.role === "assistant");
-        const result = lastMsg ? contentToString(lastMsg.content) : "(no report)";
+        const extractLatestReport = (): string => {
+          const msgs = agentInstance.getHistory().getMessages();
+          const lastMsg = [...msgs].reverse().find((m) => m.role === "assistant");
+          return lastMsg ? contentToString(lastMsg.content) : "(no report)";
+        };
+        let result = extractLatestReport();
 
         // Run pre-merge verification in worktree directory with Auto-Debugging retries
         let retries = 3;
@@ -822,6 +829,7 @@ export const invokeSuperagentTool: Tool = {
               appendMasterLog(`[INFO] Pre-merge verification failed. Auto-debugging retry ${3 - retries}/3...`);
               const debugMessage = `Pre-merge verification failed with the following error:\n\n${verificationError?.message || verificationError}\n\nPlease analyze this failure, fix the issue by editing the code, verify the syntax is correct, commit your changes using git, and report back when finished.`;
               await agentInstance.sendMessage(debugMessage);
+              result = extractLatestReport();
             } else {
               throw new Error(`Pre-merge verification failed after 3 retries: ${verificationError?.message || verificationError}`);
             }
@@ -911,7 +919,7 @@ export const awaitSuperagentsTool: Tool = {
     const start = Date.now();
 
     const running = [...superagentInstances.values()].filter(
-      (i) => i.status === "running"
+      (i) => i.status === "running" || i.status === "waiting"
     );
     const paused = [...superagentInstances.values()].filter(
       (i) => i.status === "paused"
@@ -940,7 +948,7 @@ export const awaitSuperagentsTool: Tool = {
       );
       if (finishers.length === 0) return;
       for (const inst of all) {
-        if (inst.status !== "running" || !inst.allowEarlyTermination) continue;
+        if ((inst.status !== "running" && inst.status !== "waiting") || !inst.allowEarlyTermination) continue;
         const redundant = finishers.some(
           (f) => f.id !== inst.id && f.role.split("-")[0] === inst.role.split("-")[0]
         );
@@ -965,13 +973,13 @@ export const awaitSuperagentsTool: Tool = {
       terminateRedundantSuperagents();
       if (Date.now() - start > timeoutMs) {
         const stillRunning = [...superagentInstances.values()]
-          .filter((i) => i.status === "running")
+          .filter((i) => i.status === "running" || i.status === "waiting")
           .map((i) => `"${i.role}" (${i.branch})`);
         return `Timeout after ${timeoutMs / 1000}s. Still running: ${stillRunning.join(", ")}`;
       }
 
       const hasRunning = [...superagentInstances.values()].some(
-        (i) => i.status === "running"
+        (i) => i.status === "running" || i.status === "waiting"
       );
       const hasPaused = [...superagentInstances.values()].some(
         (i) => i.status === "paused"
@@ -1029,6 +1037,14 @@ export const awaitSuperagentsTool: Tool = {
   },
 };
 
+function isMainWorkspacePath(worktreePath: string, cwd: string): boolean {
+  if (!worktreePath) return true;
+  const resolvedWt = path.resolve(worktreePath).toLowerCase();
+  const resolvedCwd = path.resolve(cwd).toLowerCase();
+  const resolvedProcessCwd = path.resolve(process.cwd()).toLowerCase();
+  return resolvedWt === resolvedCwd || resolvedWt === resolvedProcessCwd;
+}
+
 // ─── merge_superagents ────────────────────────────────────────────────────────
 
 export const mergeSuperagentsTool: Tool = {
@@ -1059,7 +1075,11 @@ export const mergeSuperagentsTool: Tool = {
       return `Error: merge_superagents can only be called by the Master Agent (depth 0).`;
     }
 
-    if (parentAgent && parentAgent.planState !== "APPROVED") {
+    const isApproved =
+      !parentAgent ||
+      parentAgent.planState === "APPROVED" ||
+      (parentAgent.planState === "IDLE" && (parentAgent as any).isSimpleTask && (parentAgent as any).simpleTaskApproved);
+    if (!isApproved && parentAgent) {
       if (parentAgent.planState === "PLANNING_PENDING") {
         return `Error: Spawning or merging Superagents is blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before starting execution.`;
       } else {
@@ -1118,7 +1138,7 @@ export const mergeSuperagentsTool: Tool = {
         // If diff fails, pass empty list — MasterAgent will resolve all conflicts
       }
 
-      const mergeResult = await master.mergeBranch(inst.branch, changedFiles);
+      const mergeResult = await master.mergeBranch(inst.branch, changedFiles, inst, cwd);
 
       if (mergeResult === "merged" || mergeResult === "already-merged") {
         if (mergeResult === "already-merged") {
@@ -1127,8 +1147,8 @@ export const mergeSuperagentsTool: Tool = {
           results.push(`  ✅ Merged: ${inst.branch} (${inst.role})`);
         }
 
-        // Cleanup worktree
-        if (cleanup && inst.worktreePath && fs.existsSync(inst.worktreePath)) {
+        // Cleanup worktree (never delete main workspace directory in patch mode)
+        if (cleanup && inst.worktreePath && !isMainWorkspacePath(inst.worktreePath, cwd) && fs.existsSync(inst.worktreePath)) {
           try {
             await execa("git", ["worktree", "remove", inst.worktreePath, "--force"], { cwd });
             results.push(`     Worktree removed: ${inst.worktreePath}`);
@@ -1168,8 +1188,12 @@ export const mergeSuperagentsTool: Tool = {
 };
 
 async function cleanupWorktreeRobust(worktreePath: string, logs: string[], cwd: string, branch?: string) {
+  if (!worktreePath || isMainWorkspacePath(worktreePath, cwd)) {
+    logs.push(`[CLEANUP] Skipped worktree removal for main workspace directory: ${worktreePath}\n`);
+    return;
+  }
   let removed = false;
-  if (worktreePath && fs.existsSync(worktreePath)) {
+  if (fs.existsSync(worktreePath)) {
     try {
       // Cooldown delay for Windows file handles
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -1349,7 +1373,7 @@ export const manageSuperagentsTool: Tool = {
       for (const id of superagentIds) {
         const inst = superagentInstances.get(id);
         if (inst) {
-          inst.agent.abort();
+          inst.agent?.abort?.();
           inst.status = "error";
           inst.completedAt = Date.now();
           appendCapped(inst.logs, "[TERMINATED] Superagent terminated by Master Agent.\n");
@@ -1367,8 +1391,8 @@ export const manageSuperagentsTool: Tool = {
     if (action === "kill_all") {
       const terminated: string[] = [];
       for (const [id, inst] of superagentInstances.entries()) {
-        if (inst.status === "running") {
-          inst.agent.abort();
+        if (inst.status === "running" || inst.status === "waiting") {
+          inst.agent?.abort?.();
           inst.status = "error";
           inst.completedAt = Date.now();
           appendCapped(inst.logs, "[TERMINATED] Superagent terminated by Master Agent.\n");
@@ -1762,17 +1786,18 @@ export const sendMessageToSuperagentTool: Tool = {
         await agentInstance.sendMessage(message);
 
         // Capture final report from last assistant message
-        let result = inst.result;
-        if (agentInstance && typeof agentInstance.getHistory === "function") {
-          const msgs = agentInstance.getHistory().getMessages();
-          const lastMsg = [...msgs].reverse().find((m) => m.role === "assistant");
-          if (lastMsg?.content) {
-            result = lastMsg.content;
+        const extractLatestReport = (): string => {
+          let latest = inst.result;
+          if (agentInstance && typeof agentInstance.getHistory === "function") {
+            const msgs = agentInstance.getHistory().getMessages();
+            const lastMsg = [...msgs].reverse().find((m) => m.role === "assistant");
+            if (lastMsg?.content) {
+              latest = contentToString(lastMsg.content);
+            }
           }
-        }
-        if (!result) {
-          result = "(no report)";
-        }
+          return latest || "(no report)";
+        };
+        let result = extractLatestReport();
 
         // Run pre-merge verification in worktree directory with Auto-Debugging retries
         let retries = 3;
@@ -1826,6 +1851,7 @@ export const sendMessageToSuperagentTool: Tool = {
               appendMasterLog(`[INFO] Pre-merge verification failed. Auto-debugging retry ${3 - retries}/3...`);
               const debugMessage = `Pre-merge verification failed with the following error:\n\n${verificationError?.message || verificationError}\n\nPlease analyze this failure, fix the issue by editing the code, verify the syntax is correct, commit your changes using git, and report back when finished.`;
               await agentInstance.sendMessage(debugMessage);
+              result = extractLatestReport();
             } else {
               throw new Error(`Pre-merge verification failed after 3 retries: ${verificationError?.message || verificationError}`);
             }

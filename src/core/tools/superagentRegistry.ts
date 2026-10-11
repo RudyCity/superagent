@@ -105,9 +105,10 @@ export function reconcileRegistry(instances: Map<string, SuperagentInstance>): R
     const rehydrated: SuperagentInstance = {
       id: entry.id,
       role: entry.role,
-      task: `(restored from worktree registry) ${entry.name}`,
+      task: entry.task || `(restored from worktree registry) ${entry.name}`,
       branch: entry.branch,
       worktreePath: entry.worktreePath,
+      historyFilePath: entry.historyFilePath,
       agent: undefined as any,
       status: isTerminal ? entry.status : "error",
       logs: [],

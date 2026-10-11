@@ -111,7 +111,7 @@ export class ContextBuilder {
     if (agent.currentClassification) {
       try {
         const isUnlockedMode = agent.activeModeOverride === "implement" || agent.activeModeOverride === "debug";
-        const shouldBypassFilter = isUnlockedMode || agent.planState !== "IDLE" || agent.tier === "subagent";
+        const shouldBypassFilter = isUnlockedMode || agent.planState !== "IDLE" || agent.tier === "subagent" || agent.tier === "superagent" || agent.tier === "master";
         if (!shouldBypassFilter) {
           const { getToolsetForCategory } = await import("../requestClassifier.js");
           const filteredTools = getToolsetForCategory(agent.currentClassification.category, toolsToUse || []);
@@ -415,7 +415,7 @@ export class ContextBuilder {
         const { shouldSkipPlanInjection, getClassificationPromptAddendum, getCategoryPromptAddendum } = await import("../requestClassifier.js");
         const category = agent.currentClassification.category;
         const isDestructive = !!agent.currentClassification.isDestructive;
-        const shouldBypassFilter = agent.planState !== "IDLE" || agent.tier === "subagent";
+        const shouldBypassFilter = agent.planState !== "IDLE" || agent.tier === "subagent" || agent.tier === "superagent" || agent.tier === "master";
         // Never skip plan injection if destructive safety guardrail is active
         classifierSkipPlan = !isDestructive && shouldSkipPlanInjection(category) && !shouldBypassFilter;
         classifierPromptAddendum = typeof getClassificationPromptAddendum === "function"

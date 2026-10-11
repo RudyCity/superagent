@@ -1483,6 +1483,21 @@ export const multiReplaceFileContentTool: Tool = {
       }));
       return await sshMultiEditToolExecute(targetPath, normalizedChunks);
     }
+    // Tier-aware allowlist: Master Agent cannot edit codebase files.
+    const tier = (currentAgent as any)?.tier;
+    {
+      const blockedSingle = enforceMasterWriteAllowlist(targetPath, tier);
+      if (blockedSingle) return blockedSingle;
+      if (args.files && Array.isArray(args.files)) {
+        for (const f of args.files as any[]) {
+          const blocked = enforceMasterWriteAllowlist(
+            f?.filePath || f?.TargetFile || f?.targetFile || f?.target_file || f?.path || f?.file,
+            tier
+          );
+          if (blocked) return blocked;
+        }
+      }
+    }
     const targetMultiReplacePath = (args.filePath as string) || ((args.files as any[])?.[0]?.filePath);
     if (targetMultiReplacePath) {
       let lockStatus = checkFileLock(targetMultiReplacePath, sessionId, cwd);

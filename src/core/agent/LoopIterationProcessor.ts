@@ -142,7 +142,7 @@ export class LoopIterationProcessor {
         for (const t of activeTools) {
           const category = agent.currentClassification?.category;
           const isUnlockedMode = agent.activeModeOverride === "implement" || agent.activeModeOverride === "debug";
-          const shouldBypassFilter = isUnlockedMode || agent.planState !== "IDLE" || agent.tier === "subagent";
+          const shouldBypassFilter = isUnlockedMode || agent.planState !== "IDLE" || agent.tier === "subagent" || agent.tier === "superagent" || agent.tier === "master";
           if (category && !shouldBypassFilter) {
             const { getToolsetForCategory } = await import("../requestClassifier.js");
             const filtered = getToolsetForCategory(category, activeTools);

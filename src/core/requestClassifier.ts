@@ -1048,6 +1048,7 @@ export async function classifyWithSenopatiONNX(
   const dangerousShellRegex = /(rm\s+(-rf|-fr|-r\s+-f|-f\s+-r)\b|git\s+reset\s+--hard|git\s+clean\s+-f[xd]*|mkfs|dd\s+if=|drop\s+database|format\s+[c-z]:)/i;
   const researchVerbRegex = /\b(cari|cek|check|inspect|lihat|baca|scan|explore|find|search|list|tampilkan|show|telusuri|temukan)\b/i;
   const debugTermRegex = /\b(bug|error|eror|fix|perbaiki|benerin|betulkan|gagal|rusak|crash|failed|failing|broken|issue|problem|masalah)\b/i;
+  const actionOrAuditRegex = /\b(audit|review|periksa|analisa|analisis|inspect|evaluate|evaluasi|refactor|refaktor|implement|implementasi|migrate|migrasi)\b/i;
 
   if (MODEL_IDENTITY_RE.test(cleanLower)) {
     category = "conversation";
@@ -1065,7 +1066,10 @@ export async function classifyWithSenopatiONNX(
     } else if (SHELL_COMMAND_INQUIRY_RE.test(cleanLower) && !trimmed.endsWith("?")) {
       category = "command";
       confidence = "high";
-    } else if (WORKSPACE_INQUIRY_RE.test(cleanLower)) {
+    } else if (actionOrAuditRegex.test(cleanLower)) {
+      category = "complex_task";
+      confidence = "high";
+    } else if (WORKSPACE_INQUIRY_RE.test(cleanLower) || researchVerbRegex.test(cleanLower)) {
       category = researchVerbRegex.test(cleanLower) ? "research" : "question";
       confidence = "high";
     } else {
@@ -1362,7 +1366,9 @@ export async function classifyRequest(
 const CATEGORY_TOOLS: Record<RequestCategory, string[] | null> = {
   conversation: ["switch_mode"],
   question: [
-    "switch_mode",
+    "switch_mode", "list_tools", "describe_tool",
+    "manage_plan", "manage_tasks", "manage_superagents", "manage_subagents", "git_worktree",
+    "invoke_superagent", "await_superagents", "merge_superagents", "define_superagent", "send_message_to_superagent",
     "read", "glob", "grep", "ripgrep_search", "web_search", "get_skills", "use_skill",
     "fetch_url", "search_history", "load_pinned_session", "search_pinned_knowledge",
     "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos", "ask_question",
@@ -1376,7 +1382,9 @@ const CATEGORY_TOOLS: Record<RequestCategory, string[] | null> = {
     "manage_browser_cookies_storage", "set_browser_emulation", "set_network_conditions"
   ],
   research: [
-    "switch_mode",
+    "switch_mode", "list_tools", "describe_tool",
+    "manage_plan", "manage_tasks", "manage_superagents", "manage_subagents", "git_worktree",
+    "invoke_superagent", "await_superagents", "merge_superagents", "define_superagent", "send_message_to_superagent",
     "read", "glob", "grep", "ripgrep_search", "web_search", "fetch_url",
     "get_skills", "use_skill", "search_history", "load_pinned_session", "search_pinned_knowledge",
     "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos", "ask_question",
@@ -1533,9 +1541,14 @@ export const CONTINUATION_COMMANDS: ReadonlySet<string> = new Set([
   "lanjut", "lanjutkan", "continue", "proceed", "next", "go", "gas", "gass", "gaskeun",
   "ayo", "mari", "do it", "silakan", "silahkan", "jalan", "jalankan", "lakukan", "teruskan",
   "gas bro", "lanjut bos", "lanjut boss", "lanjutkan bos", "lanjutkan boss",
+  "iya", "ya", "yap", "yoi", "yup", "yep", "yes", "y", "ok", "oke", "okay", "sip", "siap",
+  "setuju", "boleh", "deal", "acc", "approve", "approved", "confirm", "konfirmasi", "lgtm", "sure", "mantap",
+  "oke lanjut", "lanjut aja", "silakan lanjut", "bisa lanjut", "oke siap", "siap bos", "siap boss",
   "ganti mode", "ubah mode", "switch mode", "change mode", "pindah mode",
   "mode implement", "mode debug", "mode plan", "mode code", "mode ask",
 ]);
+
+const ACTION_INQUIRY_RE = /\b(audit|review|periksa|analisa|analisis|inspect|evaluate|evaluasi|refactor|refaktor|implement|implementasi|migrate|migrasi|cari|cek|check|lihat|baca|scan|explore|find|search|list|tampilkan|show|telusuri|temukan|fix|perbaiki|benerin|betulkan|debug)\b/i;
 
 /**
  * Returns true when the classification is a high-confidence conversational
@@ -1560,7 +1573,7 @@ export function isHighConfidenceConversation(
     if (/\b(?:ganti|ubah|switch|change|pindah)\s+mode\b/i.test(text)) {
       return false;
     }
-    if (!MODEL_IDENTITY_RE.test(cleanLower) && (WORKSPACE_INQUIRY_RE.test(cleanLower) || SHELL_COMMAND_INQUIRY_RE.test(cleanLower))) {
+    if (!MODEL_IDENTITY_RE.test(cleanLower) && (WORKSPACE_INQUIRY_RE.test(cleanLower) || SHELL_COMMAND_INQUIRY_RE.test(cleanLower) || ACTION_INQUIRY_RE.test(cleanLower))) {
       return false;
     }
     if (hasPriorMessages && CONTINUATION_COMMANDS.has(cleanLower)) {

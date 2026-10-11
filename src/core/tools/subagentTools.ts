@@ -11,6 +11,7 @@ import {
   appendCapped
 } from "./state.js";
 import { Agent, agentLocalStorage } from "../agent.js";
+import { contentToString } from "../conversation.js";
 import { resolveCarriageReturns } from "../../utils/text.js";
 import fs from "fs";
 import path from "path";
@@ -103,7 +104,7 @@ function extractSubagentReport(agentInstance: any, subagentId?: string): string 
 
   // 2. Look for messages containing the SUBAGENT TASK REPORT marker
   for (let i = assistantMsgs.length - 1; i >= 0; i--) {
-    const content = assistantMsgs[i].content || "";
+    const content = contentToString(assistantMsgs[i].content || "");
     if (content.includes("SUBAGENT TASK REPORT") || content.includes("### SUBAGENT TASK REPORT")) {
       return content;
     }
@@ -111,7 +112,7 @@ function extractSubagentReport(agentInstance: any, subagentId?: string): string 
 
   // 3. Look for any message with substantial text content (not just tool calls)
   for (let i = assistantMsgs.length - 1; i >= 0; i--) {
-    const content = assistantMsgs[i].content || "";
+    const content = contentToString(assistantMsgs[i].content || "");
     if (content.trim().length > 20) {
       return content;
     }
@@ -119,7 +120,7 @@ function extractSubagentReport(agentInstance: any, subagentId?: string): string 
 
   // 4. Fallback: last assistant message (even if short)
   const last = assistantMsgs[assistantMsgs.length - 1];
-  return last?.content || "";
+  return last ? contentToString(last.content || "") : "";
 }
 
 /**
@@ -999,6 +1000,7 @@ export const sendMessageTool: Tool = {
       if (historyFilePath) {
         await agentInstance.loadHistoryFromPath(historyFilePath);
       }
+      agentInstance.planState = "APPROVED";
 
       instance.agent = agentInstance;
       instance.status = "running";
@@ -1018,7 +1020,7 @@ export const sendMessageTool: Tool = {
           const msgs = agentInstance.getHistory().getMessages();
           const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
           if (lastAssistantMsg) {
-            result = lastAssistantMsg.content;
+            result = contentToString(lastAssistantMsg.content);
           }
         }
         instance.result = result;
@@ -1043,7 +1045,7 @@ export const sendMessageTool: Tool = {
           const msgs = agentInstance.getHistory().getMessages();
           const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
           if (lastAssistantMsg) {
-            result = lastAssistantMsg.content;
+            result = contentToString(lastAssistantMsg.content);
           }
         }
         instance.result = result;
@@ -1217,7 +1219,7 @@ export const manageSubagentsTool: Tool = {
       for (const id of conversationIds) {
         const inst = resolveSubagentInstance(id);
         if (inst) {
-          inst.agent.abort();
+          inst.agent?.abort?.();
           subagentInstances.delete(inst.id);
         }
       }
@@ -1227,7 +1229,7 @@ export const manageSubagentsTool: Tool = {
 
     if (action === "kill_all") {
       for (const [id, inst] of subagentInstances.entries()) {
-        inst.agent.abort();
+        inst.agent?.abort?.();
       }
       subagentInstances.clear();
       notifySubagentsChanged();

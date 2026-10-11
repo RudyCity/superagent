@@ -594,8 +594,7 @@ export class MasterAgent {
    * walkthrough file (AGGREGATED_REPORT.md) after a successful merge.
    * Implements the "Aggregation" optimization from M1-Parallel (Zhang 2025).
    */
-  public async aggregateSuperagentReport(inst: MergeInstanceInput): Promise<void> {
-    const cwd = process.cwd();
+  public async aggregateSuperagentReport(inst: MergeInstanceInput, cwd: string = process.cwd()): Promise<void> {
     const reportPath = path.resolve(cwd, "AGGREGATED_REPORT.md");
 
     const role = inst.role || "unknown";
@@ -642,8 +641,7 @@ export class MasterAgent {
     return match ? match[1].trim() : "";
   }
 
-  public async mergeBranch(branchName: string, targetFiles: string[], instance?: MergeInstanceInput): Promise<"merged" | "already-merged" | false> {
-    const cwd = process.cwd();
+  public async mergeBranch(branchName: string, targetFiles: string[], instance?: MergeInstanceInput, cwd: string = process.cwd()): Promise<"merged" | "already-merged" | false> {
     this.lastMergeErrors = [];
     this.lastMergeWarnings = [];
 
@@ -697,7 +695,7 @@ export class MasterAgent {
 
       // Validation passed — commit the merge
       await execa("git", ["commit", "-m", `Merge branch '${branchName}' via Master Agent`], { cwd });
-      if (instance) await this.aggregateSuperagentReport(instance);
+      if (instance) await this.aggregateSuperagentReport(instance, cwd);
       return "merged";
 
     } catch (err: any) {
@@ -748,7 +746,7 @@ export class MasterAgent {
                 `Resolved: ${resolvedFiles.join(", ")}\n` +
                 validation.warnings.map(w => `  ⚠️ ${w}`).join("\n")
               );
-              if (instance) await this.aggregateSuperagentReport(instance);
+              if (instance) await this.aggregateSuperagentReport(instance, cwd);
               return "merged";
             } else {
               // Validation failed after line-based resolution — abort
@@ -769,7 +767,11 @@ export class MasterAgent {
           console.log(`[INFO] Line-based resolution failed. Spawning programmatic conflict-resolver subagent for branch "${branchName}"...`);
           try {
             const { Agent } = await import("./agent.js");
-            const { defaultSubagentToolset } = await import("./tools/toolsets.js");
+            const { resolveSubagentToolset, defaultSubagentToolset } = await import("./tools/toolsets.js");
+            const conflictResolverToolset =
+              typeof resolveSubagentToolset === "function"
+                ? resolveSubagentToolset("coder")
+                : defaultSubagentToolset;
 
             // ── Fix 4: Collect branch intent context from git log (Tasks 10-12) ────
             // Give the conflict-resolver the commit history so it understands WHAT
@@ -836,7 +838,7 @@ Instructions:
               async () => true, // auto-approve non-destructive tools
               async (q, opts) => (opts && opts[0]) ?? "", // auto-answer questions
               conflictResolverPrompt,
-              defaultSubagentToolset,
+              conflictResolverToolset,
               cwd
             );
 
@@ -863,14 +865,14 @@ Instructions:
             if (allMarkersResolved) {
               console.log("[INFO] Conflict-resolver subagent successfully removed all conflict markers. Verifying post-merge...");
               await execa("git", ["add", "-A"], { cwd });
-              const validation = await validatePostMerge(cwd, branchName, targetFiles);
+              const validation = await validatePostMerge(cwd, branchName, targetFiles, this.model);
               if (validation.valid) {
                 await execa("git", ["commit", "-m", `Merge branch '${branchName}' (resolved via conflict-resolver subagent) via Master Agent`], { cwd });
                 this.lastMergeWarnings = [
                   ...validation.warnings,
                   `Resolved conflicts via subagent for: ${conflictedFiles.join(", ")}`,
                 ];
-                if (instance) await this.aggregateSuperagentReport(instance);
+                if (instance) await this.aggregateSuperagentReport(instance, cwd);
                 return "merged";
               } else {
                 console.error("[ERROR] Post-merge validation failed after conflict-resolver subagent run.");
