@@ -663,13 +663,14 @@ export const controlChromeCdpTool: Tool = {
             returnByValue: true,
             awaitPromise: true,
           });
+          if (res?.exceptionDetails) {
+            const errMsg = res.exceptionDetails.exception?.description || res.exceptionDetails.text || "Evaluation threw an exception";
+            return `control_chrome_cdp: evaluate error: ${truncate(String(errMsg), 4000)}`;
+          }
           const value = res && res.result ? res.result.value : undefined;
-          const out = typeof value === "string" ? value : JSON.stringify(value);
+          const out = value === undefined ? "undefined" : typeof value === "string" ? value : (JSON.stringify(value) ?? String(value));
           const recentDialogs = getRecentDialogs(target.id, evalStartTs);
-          const dialogSuffix =
-            recentDialogs.length > 0
-              ? `\nIntercepted Native Dialog(s): ${recentDialogs.map(formatDialogEntry).join(" | ")}`
-              : "";
+          const dialogSuffix = recentDialogs.length > 0 ? `\nIntercepted Native Dialog(s): ${recentDialogs.map(formatDialogEntry).join(" | ")}` : "";
           const baseResult = `control_chrome_cdp: evaluate result: ${truncate(out, 4000)}${dialogSuffix}`;
           return await attachScreenshotIfRequested(cdpSend, target, payload, baseResult, false);
         }

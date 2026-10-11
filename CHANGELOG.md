@@ -1,3 +1,9 @@
+## [1.13.51] - 2026-10-11
+### Fixed & Enhanced
+- Chrome CDP Controlled Input & Evaluate Hardening (`src/core/tools/chromeCdpHelpers.ts`, `src/core/tools/chromeCdpTools.ts`):
+  - Fixed `buildTypeJs` in `chromeCdpHelpers.ts` passing `finalVal` instead of `prevVal` to `el._valueTracker.setValue(prevVal)` before dispatching `input` and `change` events, ensuring React 18/19 controlled inputs reliably detect state changes and trigger `onChange` handlers.
+  - Fixed `evaluate` in `chromeCdpTools.ts` throwing `TypeError: undefined is not an object (evaluating 's.length')` when `Runtime.evaluate` returned `undefined` or encountered an uncaught runtime exception (`res.exceptionDetails`).
+
 ## [1.13.50] - 2026-10-11
 ### Fixed & Enhanced
 - 3-Tier Multi-Agent Orchestration (`--multi`) Audit & Lifecycle Hardening (`src/core/tools/superagentTools.ts`, `src/core/tools/subagentTools.ts`, `src/core/tools/superagentRegistry.ts`, `src/core/masterAgent.ts`, `src/core/workspaceIsolation.ts`):

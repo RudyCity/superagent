@@ -293,9 +293,9 @@ export function buildTypeJs(selector: string, text: string, clear: boolean): str
     const tag = el.tagName.toLowerCase();
     const text = ${JSON.stringify(text)};
     const doClear = ${clear ? "true" : "false"};
-    function fire(val) {
+    function fire(prevVal) {
       if (el._valueTracker) {
-        try { el._valueTracker.setValue(val !== undefined ? String(val) : ""); } catch (e) {}
+        try { el._valueTracker.setValue(prevVal !== undefined ? String(prevVal) : ""); } catch (e) {}
       }
       try {
         el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: text }));
@@ -310,12 +310,14 @@ export function buildTypeJs(selector: string, text: string, clear: boolean): str
       const desc = Object.getOwnPropertyDescriptor(proto, "value");
       const setter = desc && desc.set;
       if (doClear) {
+        const beforeClear = el.value || "";
         if (setter) setter.call(el, ""); else el.value = "";
-        fire("");
+        fire(beforeClear);
       }
-      const finalVal = doClear ? text : ((el.value || "") + text);
+      const prevVal = el.value || "";
+      const finalVal = doClear ? text : (prevVal + text);
       if (setter) setter.call(el, finalVal); else el.value = finalVal;
-      fire(finalVal);
+      fire(prevVal);
       try {
         el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, composed: true, key: text.slice(-1) || "a" }));
         el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, composed: true, key: text.slice(-1) || "a" }));
