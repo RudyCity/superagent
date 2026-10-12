@@ -59,6 +59,8 @@ import {
   handleGetPlanAndTasks,
   handleUpdateTasks,
   handleGetCurrentTask,
+  handleUnlockFile,
+  UNLOCK_FILE_MCP_TOOL_DEF,
 } from "./tools/workspaceTools.js";
 import {
   handleGetConfig,
@@ -136,6 +138,7 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   // ---- dangerous: mutation / execution / control ----
   superagent_exec_command: "dangerous",
   superagent_write_file: "dangerous",
+  superagent_unlock_file: "dangerous",
   superagent_interrupt: "dangerous",
   superagent_pause: "dangerous",
   superagent_resume: "dangerous",
@@ -364,6 +367,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           description: "Write or create a file in the workspace or worktree with directory creation and overwrite guards.",
           inputSchema: { type: "object", properties: { filePath: { type: "string" }, content: { type: "string" }, overwrite: { type: "boolean" }, cwd: { type: "string" } }, required: ["filePath", "content"] },
         },
+        UNLOCK_FILE_MCP_TOOL_DEF,
         {
           name: "superagent_list_files",
           description: "List files and directories in the workspace or a specific subfolder.",
@@ -570,6 +574,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           return await handleReadFile(args);
         case "superagent_write_file":
           return await handleWriteFile(args);
+        case "superagent_unlock_file":
+          return await handleUnlockFile(args);
         case "superagent_list_files":
           return await handleListFiles(args);
         case "superagent_grep_search":

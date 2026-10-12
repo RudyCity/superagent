@@ -1,5 +1,15 @@
 ## [1.13.62] - 2026-10-12
 ### Added & Hardened
+- Self-Healing Concurrency & Zero-Friction File Lock Engine for MCP (`src/core/mcp/superagentMcpServer.ts`, `src/core/mcp/tools/workspaceTools.ts`, `src/core/mcp/tools/planSkillsMcpTools.ts`, `src/core/mcp/mcpTunnel.ts`, `tests/mcpServer.test.ts`):
+  - Added `superagent_unlock_file` tool to the MCP tool catalog (expanding tunnel tools from 62 to 63):
+    - Inspect lock status (`action: "status"`): reports whether a file or line range is locked, lock owner session ID, terminal type, PID, TTL, soft lock status, and heartbeat timestamp.
+    - Graceful release (`action: "unlock"`): allows session owner to gracefully release lock. Blocks unauthorized evictions from third-party sessions with explicit guidance.
+    - Force override (`action: "force_unlock"` or `force: true`): unconditionally breaks stale locks, zombie sessions, and crashed processes with audit trail logging.
+  - Autonomous YOLO Auto-Preemption:
+    - Automatically detects conflicting locks in `superagent_write_file`, `superagent_replace_file_content`, and `superagent_apply_patch` when YOLO mode (`/yolo` or `/yolo full`) is enabled, force-releasing conflicting locks before execution to ensure zero `[LOCK_CONFLICT]` failures for MCP clients.
+  - Resilient Windows Atomic Temp-Write (`writeAtomicWithRetry`):
+    - Implemented atomic write-and-rename with exponential backoff retry for transient Windows `EBUSY`, `EPERM`, or antivirus file contention in `handleWriteFile`.
+  - Updated `MCP_TUNNEL_TOOL_COUNT` and test assertions to 63 tools.
 - Save Chrome CDP PDF output as a bounded workspace artifact by default, with optional bounded inline base64 and guarded external paths.
 - Enforce the read_page max_links limit and prevent duplicate text insertion in the type command.
 - Add artifact output tests for PDF creation, external-path rejection, and payload-size limits.

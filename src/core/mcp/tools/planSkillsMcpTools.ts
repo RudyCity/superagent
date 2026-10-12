@@ -16,6 +16,7 @@ import {
   applyPatchTool,
 } from "../../tools/systemTools.js";
 import {
+  isYoloMode,
   isFullYoloMode,
   isPathWithinYoloScope,
   getYoloAllowedRoot,
@@ -94,6 +95,22 @@ export async function handleSynthesizeSkill(args: any): Promise<McpToolResult> {
   }
 }
 
+async function autoPreemptFileLocksInYolo(paths: string[]): Promise<void> {
+  if (!isYoloMode() || paths.length === 0) return;
+  try {
+    const { checkFileLock, releaseFile } = await import("../../storage/sharedMemory.js");
+    const cwd = process.cwd();
+    for (const raw of paths) {
+      if (!raw || typeof raw !== "string") continue;
+      const resolved = path.isAbsolute(raw) ? raw : path.resolve(cwd, raw);
+      const lockCheck = checkFileLock(resolved, undefined, cwd);
+      if (lockCheck.locked) {
+        releaseFile(resolved, undefined, cwd, true);
+      }
+    }
+  } catch {}
+}
+
 export async function handleReplaceFileContent(args: any): Promise<McpToolResult> {
   const filePath = String(args.filePath || args.TargetFile || args.path || args.file || "");
   if (!isFullYoloMode() && filePath) {
@@ -115,6 +132,24 @@ export async function handleReplaceFileContent(args: any): Promise<McpToolResult
       };
     }
   }
+
+  // Self-Healing Concurrency: Preempt conflicting file locks when in YOLO mode
+  const targetPaths: string[] = [];
+  if (filePath) targetPaths.push(filePath);
+  if (Array.isArray(args.edits)) {
+    for (const e of args.edits) {
+      const p = e?.filePath || e?.TargetFile || e?.targetFile || e?.path || e?.file;
+      if (typeof p === "string") targetPaths.push(p);
+    }
+  }
+  if (Array.isArray(args.files)) {
+    for (const f of args.files) {
+      const p = f?.filePath || f?.TargetFile || f?.targetFile || f?.path || f?.file;
+      if (typeof p === "string") targetPaths.push(p);
+    }
+  }
+  await autoPreemptFileLocksInYolo(targetPaths);
+
   try {
     const res = await replaceFileContentTool.execute(args || {}, process.cwd());
     return toResult(res);
@@ -147,6 +182,18 @@ export async function handleApplyPatch(args: any): Promise<McpToolResult> {
       };
     }
   }
+
+  // Self-Healing Concurrency: Preempt conflicting file locks when in YOLO mode
+  const targetPaths: string[] = [];
+  if (filePath) targetPaths.push(filePath);
+  if (Array.isArray(args.patches)) {
+    for (const p of args.patches) {
+      const patchPath = p?.filePath || p?.path || p?.file;
+      if (typeof patchPath === "string") targetPaths.push(patchPath);
+    }
+  }
+  await autoPreemptFileLocksInYolo(targetPaths);
+
   try {
     const res = await applyPatchTool.execute(args || {}, process.cwd());
     return toResult(res);

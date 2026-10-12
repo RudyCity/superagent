@@ -35,7 +35,7 @@ import type { McpAuthMode } from "./mcpAuth.js";
 import { getYoloModeState } from "../permissions.js";
 
 export const DEFAULT_MCP_PORT = 9227;
-export const MCP_TUNNEL_TOOL_COUNT = 62;
+export const MCP_TUNNEL_TOOL_COUNT = 63;
 
 interface ActiveMcp {
   handle: McpHttpServerHandle;

@@ -16,10 +16,10 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 62;
+const EXPECTED_TOOL_COUNT = 63;
 
-describe("Superagent Complete 3-Pillar MCP Server Suite (62 Tools, Resources, Prompts)", () => {
-  const testDir = path.join(os.tmpdir(), `superagent_mcp_test_${Date.now()}`);
+describe("Superagent Complete 3-Pillar MCP Server Suite (63 Tools, Resources, Prompts)", () => {
+  const testDir = path.join(process.cwd(), `.tmp_mcp_test_${Date.now()}`);
 
   beforeEach(() => {
     superagentInstances.clear();
@@ -68,6 +68,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (62 Tools, Resources, Pr
     expect(toolNames).toContain("superagent_exec_command");
     expect(toolNames).toContain("superagent_read_file");
     expect(toolNames).toContain("superagent_write_file");
+    expect(toolNames).toContain("superagent_unlock_file");
     expect(toolNames).toContain("superagent_list_files");
     expect(toolNames).toContain("superagent_grep_search");
     expect(toolNames).toContain("superagent_find_files");
@@ -358,5 +359,123 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (62 Tools, Resources, Pr
     });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain("disabled");
+  });
+
+  it("superagent_unlock_file inspects status, unlocks, and force-unlocks file locks", async () => {
+    const server = createSuperagentMcpServer({ workspace: testDir, allowDangerous: true });
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+
+    const testFile = path.join(testDir, "test_lock.txt");
+    fs.writeFileSync(testFile, "Hello Concurrency", "utf-8");
+
+    const { lockFile } = await import("../src/core/storage/sharedMemory.js");
+
+    // 1. Initial status -> UNLOCKED
+    const statusBefore = await callHandler({
+      method: "tools/call",
+      params: {
+        name: "superagent_unlock_file",
+        arguments: { filePath: testFile, action: "status" },
+      },
+    });
+    expect(statusBefore.content[0].text).toContain("Status: UNLOCKED");
+
+    // 2. Lock file by external session
+    lockFile(testFile, "external-session-999", "tline", 60000, testDir);
+
+    // 3. Status now -> LOCKED with details
+    const statusLocked = await callHandler({
+      method: "tools/call",
+      params: {
+        name: "superagent_unlock_file",
+        arguments: { filePath: testFile, action: "status" },
+      },
+    });
+    expect(statusLocked.content[0].text).toContain("Status: LOCKED");
+    expect(statusLocked.content[0].text).toContain("Owner Session ID: external-session-999");
+
+    // 4. Graceful unlock from another session without force -> rejected
+    const gracefulUnlock = await callHandler({
+      method: "tools/call",
+      params: {
+        name: "superagent_unlock_file",
+        arguments: { filePath: testFile, action: "unlock" },
+      },
+    });
+    expect(gracefulUnlock.isError).toBe(true);
+    expect(gracefulUnlock.content[0].text).toContain("force_unlock");
+
+    // 5. Force unlock with audit reason -> succeeds
+    const forceUnlock = await callHandler({
+      method: "tools/call",
+      params: {
+        name: "superagent_unlock_file",
+        arguments: {
+          filePath: testFile,
+          action: "force_unlock",
+          reason: "Emergency unlock for dead task",
+        },
+      },
+    });
+    expect(forceUnlock.isError).toBeUndefined();
+    expect(forceUnlock.content[0].text).toContain("Forcibly unlocked");
+
+    // 6. Verify now unlocked
+    const statusAfter = await callHandler({
+      method: "tools/call",
+      params: {
+        name: "superagent_unlock_file",
+        arguments: { filePath: testFile, action: "status" },
+      },
+    });
+    expect(statusAfter.content[0].text).toContain("Status: UNLOCKED");
+  });
+
+  it("auto-preempts conflicting locks during YOLO mode for write and mutation tools", async () => {
+    const server = createSuperagentMcpServer({ workspace: testDir, allowDangerous: true });
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+
+    const testFile = path.join(testDir, "test_preempt.txt");
+    fs.writeFileSync(testFile, "initial text line", "utf-8");
+
+    const { lockFile, releaseFile, checkFileLock } = await import("../src/core/storage/sharedMemory.js");
+    const { setYoloMode, isYoloMode } = await import("../src/core/permissions.js");
+
+    // Ensure YOLO is off initially
+    setYoloMode(false);
+
+    // Lock file by another session
+    lockFile(testFile, "competing-session-123", "cli", 60000, testDir);
+
+    // Write file while locked without YOLO -> blocked by lock conflict
+    const writeBlocked = await callHandler({
+      method: "tools/call",
+      params: {
+        name: "superagent_write_file",
+        arguments: { filePath: testFile, content: "Blocked content", overwrite: true },
+      },
+    });
+    expect(writeBlocked.isError).toBe(true);
+    expect(writeBlocked.content[0].text).toContain("[LOCK_CONFLICT]");
+
+    // Turn ON YOLO mode
+    setYoloMode(true);
+    expect(isYoloMode()).toBe(true);
+
+    // Now write file -> auto-preempts lock and writes cleanly!
+    const writeSuccess = await callHandler({
+      method: "tools/call",
+      params: {
+        name: "superagent_write_file",
+        arguments: { filePath: testFile, content: "YOLO auto-preempted content", overwrite: true },
+      },
+    });
+    expect(writeSuccess.isError).toBeUndefined();
+    expect(writeSuccess.content[0].text).toContain("Successfully wrote");
+    expect(fs.readFileSync(testFile, "utf-8")).toBe("YOLO auto-preempted content");
+
+    // Clean up YOLO mode
+    setYoloMode(false);
+    releaseFile(testFile, undefined, testDir, true);
   });
 });
