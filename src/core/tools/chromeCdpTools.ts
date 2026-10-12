@@ -479,7 +479,7 @@ export const controlChromeCdpTool: Tool = {
     "Control the user's REAL Chrome browser directly via Chrome Remote Debugging (CDP) at http://127.0.0.1:9222 — no extension required and no isolated background tab. " +
     "REQUIRES Chrome to be running with --remote-debugging-port=9222 (close ALL Chrome windows, then reopen Chrome from the taskbar shortcut). " +
     "Commands include tab/navigation, DOM snapshot and extraction, click/type/forms, dialogs, screenshots/PDF, cookies, media, cursor/drag-and-drop, device emulation, page/accessibility/SEO/responsive audits, and performance metrics. " +
-    "Use page_audit, accessibility_audit, seo_audit, responsive_audit, or performance_metrics for structured reports. Use evaluate only for trusted, intentional page JavaScript. Cookie values and large artifacts are summarized by default. " +
+    "Use page_audit, accessibility_audit, seo_audit, responsive_audit, and performance_metrics for structured reports. Use start_debug_capture/read_debug_capture/stop_debug_capture for bounded console, exception, and network diagnostics. Use evaluate only for trusted, intentional page JavaScript. Cookie values and large artifacts are summarized by default. " +
     "Supports device/viewport emulation (mobile, tablet, desktop, reset), human-like Bézier cursor movement, realistic drag-and-drop, visual pointer overlay, native dialog interception, and UI transition verification. " +
     "Arguments like url, index, text, selector, source, target, dx, dy, preset, device, orientation, screenshot, outputPath can be provided directly at top-level or inside payload.",
   parameters: {
@@ -574,7 +574,7 @@ export const controlChromeCdpTool: Tool = {
       "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex",
       "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
       "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets",
-      "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "max_chars", "maxChars", "max_links", "maxLinks",
+      "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
