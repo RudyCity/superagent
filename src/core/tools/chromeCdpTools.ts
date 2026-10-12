@@ -488,18 +488,10 @@ export const controlChromeCdpTool: Tool = {
       command: {
         type: "string",
         enum: [
-          "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate",
-          "snapshot", "read_page", "extract_links", "click", "type", "wait_for",
-          "select_option", "select_dropdown", "pick_option",
-          "check_form", "check_form_readiness", "audit_form",
-          "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
-          "get_cookies", "inspect_media_devices", "media_devices",
-          "mock_display_media", "mock_screen_share", "bypass_screen_share", "handle_screen_share", "accept_screen_share", "dismiss_screen_share",
-          "move_cursor", "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
-          "drag_and_drop", "drag", "drag_drop",
-          "emulate_device", "set_device", "set_viewport", "emulate_viewport",
-          ...CDP_AUDIT_COMMANDS,
-          ...CDP_DIAGNOSTIC_COMMANDS,
+          "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "extract_links", "click", "type", "wait_for",
+          "select_option", "select_dropdown", "pick_option", "check_form", "check_form_readiness", "audit_form", "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
+          "get_cookies", "inspect_media_devices", "media_devices", "mock_display_media", "mock_screen_share", "bypass_screen_share", "handle_screen_share", "accept_screen_share", "dismiss_screen_share", "move_cursor", "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
+          "drag_and_drop", "drag", "drag_drop", "emulate_device", "set_device", "set_viewport", "emulate_viewport", ...CDP_AUDIT_COMMANDS, ...CDP_DIAGNOSTIC_COMMANDS,
         ],
         description: "CDP command to execute on the real Chrome browser.",
       },
@@ -545,6 +537,7 @@ export const controlChromeCdpTool: Tool = {
       includeBase64: { type: "boolean", description: "Include a bounded PDF base64 payload; disabled by default." },
       max_chars: { type: "number", description: "Maximum output characters for page/audit reports, clamped to safe limits." },
       max_links: { type: "number", description: "Maximum links returned by read_page." },
+      limit: { type: "number", description: "Maximum retained debug events returned by read_debug_capture (1-300)." }
     },
     required: ["command"],
   },
@@ -569,12 +562,9 @@ export const controlChromeCdpTool: Tool = {
       }
     }
     const convenienceKeys = [
-      "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear",
-      "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text",
-      "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex",
-      "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
-      "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets",
-      "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
+      "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text",
+      "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
+      "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
@@ -999,23 +989,17 @@ export const controlChromeCdpTool: Tool = {
           const formResult = await executeCheckFormCommand(cdpSend, target, payload);
           return await attachScreenshotIfRequested(cdpSend, target, payload, formResult, false);
         }
-        case "page_audit":
-        case "accessibility_audit":
-        case "seo_audit":
-        case "responsive_audit":
-        case "performance_metrics": {
+        case "page_audit": case "accessibility_audit": case "seo_audit": case "responsive_audit": case "performance_metrics": {
           const target = await pickTarget(targetId);
           return await executeCdpAuditCommand(cdpSend, target, command as CdpAuditCommand, payload);
         }
-        case "start_debug_capture":
-        case "read_debug_capture":
-        case "stop_debug_capture":
-        case "clear_debug_capture": {
+        case "start_debug_capture": case "read_debug_capture": case "stop_debug_capture": case "clear_debug_capture": {
           const target = await pickTarget(targetId, false);
           return await executeCdpDiagnosticsCommand(cdpSend, target, command as CdpDiagnosticCommand, payload);
         }
         default:
-          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, select_option, check_form, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, mock_display_media, handle_screen_share, move_cursor, drag_and_drop, emulate_device.`;
+          const validCommands = (controlChromeCdpTool.parameters as any).properties.command.enum as string[];
+          return "control_chrome_cdp failed: unknown command '" + command + "'. Valid commands: " + validCommands.join(", ") + ".";
       }
     } catch (err: any) {
       return `control_chrome_cdp failed: ${(err && err.message) || String(err)}`;
