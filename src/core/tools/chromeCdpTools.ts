@@ -538,7 +538,13 @@ export const controlChromeCdpTool: Tool = {
     required: ["command"],
   },
   execute: async (args: Record<string, unknown>) => {
-    const command = String(args.command || "");
+    let command = String(args.command || args.cmd || "");
+    if (!command) {
+      if (args.preset || args.device || args.orientation) command = "emulate_device";
+      else if (args.source && args.target) command = "drag_and_drop";
+      else if (args.option || args.optionText) command = "select_option";
+      else if (args.action === "accept" || args.action === "dismiss" || args.tabIndex !== undefined) command = "handle_screen_share";
+    }
     let payload: Record<string, unknown> = {};
     if (args.payload !== undefined && args.payload !== "") {
       if (typeof args.payload === "object" && args.payload !== null) {

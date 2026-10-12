@@ -6,6 +6,8 @@
   - Added `mock_display_media` command (aliases: `mock_screen_share`, `bypass_screen_share`) to `control_chrome_cdp` via `executeMockDisplayMedia`, overriding `navigator.mediaDevices.getDisplayMedia` to return an immediate synthetic video/audio `MediaStream` and avoid native modal dialogs.
   - Added `handle_screen_share` command (aliases: `accept_screen_share`, `dismiss_screen_share`) to `control_chrome_cdp` via `executeHandleScreenSharePrompt`, dispatching automated keystrokes on Windows to select tabs and confirm or dismiss active native `DesktopMediaPicker` dialogs.
   - Expanded `Browser.grantPermissions` in `executeInspectMediaDevices` to include `"displayCapture"` alongside audio and video permissions.
+  - Updated `BROWSER_CONTROL_RULE`, `BROWSER_AUTOMATION_CORE`, `LOGIC GATES`, and `chrome-agent` prompt in `src/core/prompts.ts` and `AGENTS.md` to guide agents on handling screen share pickers.
+  - Added resilient tool aliases in `src/core/tools/index.ts` (`mock_display_media`, `mock_screen_share`, `handle_screen_share`, `accept_screen_share`, `dismiss_screen_share`) and automatic fallback command derivation in `control_chrome_cdp`.
 
 ## [1.13.52] - 2026-10-11
 ### Fixed & Enhanced

@@ -50,8 +50,13 @@ Master Agent  (orchestrator)
 - `src/components/startup-checker.tsx` — Parallelized dependency validator with decoupled background model warming.
 - `src/components/startup-prompt.tsx` — First-run interactive choice dialog when no AI provider is configured.
 
-## Recent Features (v1.5.146-v1.13.43)
+## Recent Features (v1.5.146-v1.13.53)
 
+- **Chrome Screen Sharing & Display Media Capture Automation** (`src/core/tools/chromeCdpMedia.ts`, `src/core/tools/chromeCdpTools.ts`, `scripts/chrome-debug.bat`, v1.13.53):
+  - Added `mock_display_media` (aliases `mock_screen_share`, `bypass_screen_share`) to `control_chrome_cdp` to intercept `navigator.mediaDevices.getDisplayMedia` and return a synthetic stream without triggering native browser dialogs.
+  - Added `handle_screen_share` (aliases `accept_screen_share`, `dismiss_screen_share`) to `control_chrome_cdp` to automate OS-level tab selection and confirmation on active Windows `DesktopMediaPicker` dialogs.
+  - Added `--auto-select-desktop-capture-source="Entire screen"`, `--use-fake-ui-for-media-stream`, and `--enable-usermedia-screen-capturing` flags to `scripts/chrome-debug.bat` and `chromeCommon.ts`.
+  - Added `displayCapture` to `Browser.grantPermissions` in `executeInspectMediaDevices`.
 - **CDP Responsive Device Emulation & Kinematic Drag-and-Drop** (`src/core/tools/chromeCdpTools.ts`, v1.13.43):
   - Added `emulate_device` command to `control_chrome_cdp` supporting built-in presets (`mobile` / iPhone 14, `tablet` / iPad, `desktop` / 1920x1080, and `reset`) with metrics override, touch emulation, and optional user-agent overrides.
   - Added realistic `drag_and_drop` (alias `drag`) with Bezier trajectory interpolation, customizable duration and steps, and automated DOM drag/drop events.

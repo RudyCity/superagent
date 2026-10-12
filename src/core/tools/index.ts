@@ -346,6 +346,12 @@ const TOOL_ALIASES: Record<string, string> = {
   select_dropdown: "control_chrome_cdp",
   check_form: "control_chrome_cdp",
   check_form_readiness: "control_chrome_cdp",
+  mock_display_media: "control_chrome_cdp",
+  mock_screen_share: "control_chrome_cdp",
+  bypass_screen_share: "control_chrome_cdp",
+  handle_screen_share: "control_chrome_cdp",
+  accept_screen_share: "control_chrome_cdp",
+  dismiss_screen_share: "control_chrome_cdp",
 };
 
 export function getToolByName(name: string): Tool | undefined {

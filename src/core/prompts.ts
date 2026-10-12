@@ -84,9 +84,10 @@ const POST_CHANGE_INTEGRITY_RULE = `- POST_CHANGE_INTEGRITY: After EVERY change,
 
 const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Chrome automation suite.
   - Vision & Spatial Perception (Set-of-Mark SoM): control_chrome_vision (port 8095: perceive_page, click_id, type_id, verify_visual_state, audit_layout, click_label, type_label). Embeds annotated screenshot tags [1, 2, 3...] directly into multimodal context. Use perceive_page for visual layout understanding, canvas/shadow-DOM/obfuscated UI, modal blockers, and pure-pixel coordinate actions.
-  - Native CDP (DOM inspection, responsive emulation & fast navigation): control_chrome_cdp (port 9222: list_targets, new_tab, close_tab, activate, navigate, snapshot, read_page, extract_links, click/type by index, wait_for, evaluate, cookies, screenshot, pdf, move_cursor, drag_and_drop, emulate_device). Auto-launches Chrome in isolated debug profile if closed.
+  - Native CDP (DOM inspection, responsive emulation & fast navigation): control_chrome_cdp (port 9222: list_targets, new_tab, close_tab, activate, navigate, snapshot, read_page, extract_links, click/type by index, wait_for, evaluate, cookies, screenshot, pdf, move_cursor, drag_and_drop, emulate_device, mock_display_media, handle_screen_share). Auto-launches Chrome in isolated debug profile if closed.
     * Responsive Emulation: emulate_device (set_device, set_viewport) with presets ('mobile', 'tablet', 'desktop', 'android', 'laptop', 'reset'), orientation ('portrait'|'landscape'), custom width/height/scale/touch, and screenshot:true.
     * Realistic Drag & Drop: drag_and_drop (drag) with realistic Bézier kinematics, mouse/html5/both modes, source/target selectors, coordinates, indices, delta offsets (dx/dy), and visualCursor.
+    * Screen Sharing & Media Capture: mock_display_media (bypasses getDisplayMedia prompts with synthetic stream) and handle_screen_share (accept_screen_share / dismiss_screen_share to confirm or dismiss active native OS dialogs).
   - Extension Bridge: control_browser_tab (port 9223: detect_ui, execute_chain, macros, storage, tabs).
   - Process/Windows: list_running_chrome, close_chrome_window, close_chrome_profile, list_chrome_profiles, launch_chrome_profile.
   - Headless/Sandbox: run_headless_browser, control_isolated_cdp, simulate_virtual_cursor, playwright_screenshot.
@@ -134,6 +135,7 @@ const BROWSER_AUTOMATION_CORE = `- AUTOMATION_TRACKS:
     Workflow: list_targets → snapshot(compact:true) → read_page/extract_links if reading content/emails → click/type by {"index":N} or {"selector":"..."} → wait_for if dynamic. Auto-unthrottles background tabs.
     * Responsive & Device Testing: CALL emulate_device (presets: mobile, tablet, desktop, android, laptop, reset; orientation: portrait/landscape, screenshot:true).
     * Drag & Drop Interaction: CALL drag_and_drop (source, target, mode: mouse/html5, screenshot:true) for kanban, sliders, and dropzones.
+    * Screen Sharing & Media Bypass: CALL mock_display_media to bypass getDisplayMedia picker prompts with synthetic video/audio, or CALL handle_screen_share(action:'accept') / accept_screen_share to auto-confirm native desktop capture modals on Windows.
   - Track 3 (Extension Bridge): control_browser_tab over port 9223. Active when remote extension is connected (detect_ui, macros, storage).
 - DUAL_PERCEPTION_PRINCIPLE: Never rely blindly on CDP DOM trees alone. When encountering dynamic SPAs, canvas, overlays, or unexpected unresponsive clicks, CALL perceive_page to see the actual visual rendered pixels.
 - VISUAL_VERIFICATION: After critical actions (login, submit, checkout), verify visual state with verify_visual_state or observe post-action screenshot to confirm the UI actually transitioned.
@@ -172,6 +174,9 @@ else if extension_bridge_connected:
     CALL control_browser_tab()
 else:
     CALL control_chrome_cdp(command:'list_targets') or launch_chrome_profile(remoteDebuggingPort:9222). Note: launch_chrome_profile uses an isolated debug profile to run alongside existing Chrome windows without singleton conflict.
+
+if screen_sharing_or_media_prompt_blocks_page:
+    CALL control_chrome_cdp(command:'accept_screen_share') to auto-confirm native picker on Windows, OR CALL control_chrome_cdp(command:'mock_display_media') to inject mock stream.
 
 if automation_fails:
     CALL NON_LINEAR_DEBUG_ENGINE
@@ -578,7 +583,7 @@ ${SUBAGENT_REPORT_BASE}
   "chrome-agent": `
 # ROLE
 Chrome Agent — Autonomous Visual & Browser Operator ("kaki tangan").
-Scope: Direct autonomous browser control, visual Set-of-Mark (SoM) perception, spatial coordinate interaction, layout defect auditing, responsive device emulation (mobile/tablet/desktop), realistic drag-and-drop kinematics, navigation, DOM snapshot/click/type, macro execution, storage/cookies, console/network diagnostics, page rendering. Execute browser tools directly without manual delay.
+Scope: Direct autonomous browser control, visual Set-of-Mark (SoM) perception, spatial coordinate interaction, layout defect auditing, responsive device emulation (mobile/tablet/desktop), realistic drag-and-drop kinematics, screen sharing & media bypass (mock_display_media, accept_screen_share), navigation, DOM snapshot/click/type, macro execution, storage/cookies, console/network diagnostics, page rendering. Execute browser tools directly without manual delay.
 
 # RULES
 ${PROTECT_PROCESS_RULE}
