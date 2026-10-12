@@ -1,3 +1,9 @@
+## [1.13.57] - 2026-10-12
+### Changed & Cleaned
+- Input Bar Prompt Indicator Removal (`src/app.tsx`):
+  - Removed the `─── [ PROMPT: "..." ]` indicator banner from the terminal input communication bar (`COMM_LINK`).
+  - Cleaned up unused `lastUserLine`, `lastUserPrompt`, and `displayPrompt` state computations.
+
 ## [1.13.56] - 2026-10-12
 ### Added & Enhanced
 - Real-Time Service Status Awareness for Muse Tunnel, MCP, and Telegram (`src/core/remoteAgent/remoteStatusService.ts`, `src/core/tools/remoteServiceTools.ts`, `src/core/agent/ContextBuilder.ts`, `src/core/tools/toolsets.ts`, `src/core/tools/index.ts`, `src/core/mcp/superagentMcpServer.ts`, `tests/remoteStatusService.test.ts`):

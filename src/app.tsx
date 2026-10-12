@@ -3121,9 +3121,6 @@ export function App({
   }
   
   const contextPercentage = parseFloat(contextLimit > 0 ? ((activeContextUsage / contextLimit) * 100).toFixed(2) : "0.00");
-  const lastUserLine = [...lines].reverse().find((l) => l.type === "user");
-  const lastUserPrompt = lastUserLine ? lastUserLine.content.replace(/^❯ /, "").replace(/\n/g, " ") : "";
-  const displayPrompt = lastUserPrompt.length > 50 ? lastUserPrompt.slice(0, 47) + "..." : lastUserPrompt;
 
   const planPath = agentRef.current ? agentRef.current.getPlanFilePath() : path.join(process.cwd(), "implementation_plan.md");
   const planUrl = `file:///${path.resolve(planPath).replace(/\\/g, "/")}`;
@@ -3611,9 +3608,6 @@ export function App({
                 └───[ <Text bold color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>
                   {activeWizard ? `⚙️ WIZARD: ${activeWizard.type.toUpperCase()} (Step ${activeWizard.step})` : isMuseWatcherActive() ? "👁️ COMM_LINK: MUSE WATCH (CONTROLLED BY MUSE)" : isMuseRunnerActive() ? "⌨️ COMM_LINK: MUSE REMOTE RUNNER" : "⌨️ COMM_LINK: ACTIVE"}
                 </Text> ]
-                {isProcessing && displayPrompt && (
-                  <Text color="cyan" bold> ─── [ PROMPT: "{displayPrompt}" ]</Text>
-                )}
               </Text>
               <Box flexDirection="row">
                 <Text color={activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>│ ❯ </Text>
