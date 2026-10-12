@@ -164,7 +164,8 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         const parsed = parseInt(args[mcpPortArgIdx + 1], 10);
         if (!isNaN(parsed) && parsed > 0 && parsed < 65536) mcpPort = parsed;
       }
-      const allowDangerous = args.some((a) => a.toLowerCase() === "--allow-dangerous");
+      const { getYoloModeState } = await import("../permissions.js");
+      const allowDangerous = args.some((a) => a.toLowerCase() === "--allow-dangerous") || (getYoloModeState() !== "off");
       const mcpAuthArgIdx = args.findIndex((a) => a.toLowerCase() === "--mcp-auth");
       let mcpAuthMode: "static-bearer" | "oauth" = "static-bearer";
       if (mcpAuthArgIdx !== -1 && args[mcpAuthArgIdx + 1]) {

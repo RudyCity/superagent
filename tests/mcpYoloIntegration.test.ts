@@ -297,4 +297,66 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
     expect(errorThrown).not.toBeNull();
     expect(errorThrown.message).toContain("blocked by MCP tool allowlist");
   });
+
+  it("server advertises tools.listChanged capability", () => {
+    const server = createSuperagentMcpServer({
+      allowedTools: safeTools,
+      workspace: testWorkspace,
+    });
+    expect((server as any)._capabilities?.tools?.listChanged).toBe(true);
+  });
+
+  it("OAuth client with read-only scope can execute dangerous tools when YOLO is active", async () => {
+    // Client has only read-only scope 'mcp:tools'
+    const readOnlyIdentity = {
+      mode: "oauth",
+      subject: "chatgpt",
+      scopes: ["mcp:tools"],
+    };
+
+    const server = createSuperagentMcpServer({
+      allowedTools: safeTools,
+      workspace: testWorkspace,
+      authMode: "oauth",
+      getIdentity: () => readOnlyIdentity,
+    });
+
+    const callHandler = (server as any)._requestHandlers?.get(CallToolRequestSchema.shape.method.value);
+    const targetFile = path.join(testWorkspace, "oauth_yolo.txt");
+
+    // 1. In safe mode (YOLO off), calling dangerous tool should fail
+    setYoloMode(false);
+    let errSafe: any = null;
+    try {
+      await callHandler(
+        {
+          method: "tools/call",
+          params: {
+            name: "superagent_write_file",
+            arguments: { filePath: targetFile, content: "test" },
+          },
+        },
+        {}
+      );
+    } catch (e: any) {
+      errSafe = e;
+    }
+    expect(errSafe).not.toBeNull();
+
+    // 2. Turn on YOLO mode: dangerous tool is now executable even with mcp:tools scope
+    setFullYoloMode(true);
+    const result = await callHandler(
+      {
+        method: "tools/call",
+        params: {
+          name: "superagent_write_file",
+          arguments: { filePath: targetFile, content: "oauth yolo success" },
+        },
+      },
+      {}
+    );
+    expect(result.isError).toBeFalsy();
+    expect(fs.readFileSync(targetFile, "utf-8")).toBe("oauth yolo success");
+  });
 });
+

@@ -32,9 +32,10 @@ import {
 } from "./mcpHttpTransport.js";
 import { generateBootstrapCode } from "./mcpOAuthRoutes.js";
 import type { McpAuthMode } from "./mcpAuth.js";
+import { getYoloModeState } from "../permissions.js";
 
 export const DEFAULT_MCP_PORT = 9227;
-export const MCP_TUNNEL_TOOL_COUNT = 37;
+export const MCP_TUNNEL_TOOL_COUNT = 63;
 
 interface ActiveMcp {
   handle: McpHttpServerHandle;
@@ -147,7 +148,8 @@ export async function startMcpTunnel(opts: {
   allowNoOrigin?: boolean;
 }): Promise<McpTunnelInfo> {
   const port = opts.port ?? DEFAULT_MCP_PORT;
-  const dangerous = !!opts.allowDangerous;
+  const yoloActive = getYoloModeState() !== "off";
+  const dangerous = Boolean(opts.allowDangerous || yoloActive);
   const authMode: McpAuthMode = opts.authMode ?? "static-bearer";
 
   // The public tunnel URL is needed up-front: OAuth discovery metadata must

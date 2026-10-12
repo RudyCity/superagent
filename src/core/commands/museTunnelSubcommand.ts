@@ -282,7 +282,8 @@ export async function handleMuseTunnelSubcommand(
       const parsed = parseInt(rawArgs[mcpPortArgIdx + 1], 10);
       if (!isNaN(parsed) && parsed > 0 && parsed < 65536) mcpPort = parsed;
     }
-    const allowDangerous = rawArgs.some((a) => a.toLowerCase() === "--allow-dangerous");
+    const { getYoloModeState } = await import("../permissions.js");
+    const allowDangerous = rawArgs.some((a) => a.toLowerCase() === "--allow-dangerous") || (getYoloModeState() !== "off");
     const mcpAuthArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--mcp-auth");
     let mcpAuthMode: "static-bearer" | "oauth" = "static-bearer";
     if (mcpAuthArgIdx !== -1 && rawArgs[mcpAuthArgIdx + 1]) {

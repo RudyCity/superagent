@@ -229,6 +229,19 @@ export interface McpServerOptions {
   workspace?: string;
 }
 
+const activeMcpServerInstances = new Set<Server>();
+
+export async function notifyMcpToolsListChanged(): Promise<void> {
+  const promises = Array.from(activeMcpServerInstances).map(async (s) => {
+    try {
+      await s.sendToolListChanged();
+    } catch {
+      // ignore
+    }
+  });
+  await Promise.all(promises);
+}
+
 export function createSuperagentMcpServer(options: McpServerOptions = {}): Server {
   const { allowedTools, onToolCall, authMode = "static-bearer", allowDangerous, getIdentity, workspace } = options;
   const version = getSuperAgentVersion();
@@ -239,12 +252,21 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     },
     {
       capabilities: {
-        tools: {},
+        tools: {
+          listChanged: true,
+        },
         resources: {},
         prompts: {},
       },
     }
   );
+
+  activeMcpServerInstances.add(server);
+  const existingOnClose = server.onclose;
+  server.onclose = () => {
+    activeMcpServerInstances.delete(server);
+    if (existingOnClose) existingOnClose();
+  };
 
   // Register Standard MCP Resources & Prompts
   registerResourcesAndPrompts(server);
@@ -668,7 +690,9 @@ function extractMcpResultText(result: unknown): string {
     }
 
     // OAuth scope validation for dangerous tools
-    if (authMode === "oauth" && isDangerous) {
+    // If dangerous tools are unlocked (via --allow-dangerous or active YOLO mode),
+    // full autonomous execution is authorized by the SuperAgent owner.
+    if (authMode === "oauth" && isDangerous && !isDangerousUnlocked) {
       const identity = getIdentity?.();
       if (identity && identity.scopes && !identity.scopes.includes("mcp:tools:write")) {
         const errReason = "missing required scope 'mcp:tools:write'";
@@ -684,7 +708,7 @@ function extractMcpResultText(result: unknown): string {
         });
         throw new McpError(
           ErrorCode.InvalidRequest,
-          `Tool '${toolName}' requires 'mcp:tools:write' OAuth scope. Current token only has: ${identity.scopes.join(" ")}`
+          `Tool '${toolName}' requires 'mcp:tools:write' OAuth scope. Current token only has: ${identity?.scopes?.join(" ") || "none"}`
         );
       }
     }

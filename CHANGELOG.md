@@ -1,3 +1,12 @@
+## [1.13.60] - 2026-10-12
+### Added & Enhanced
+- MCP Tool List Dynamic Notification & OAuth Scope Bypass for YOLO Mode (`src/core/mcp/superagentMcpServer.ts`, `src/core/mcp/mcpTunnel.ts`, `src/core/permissions.ts`, `src/core/commands/museTunnelSubcommand.ts`, `src/core/remoteAgent/museCli.ts`, `tests/mcpYoloIntegration.test.ts`):
+  - Added MCP `notifications/tools/list_changed` broadcast capability (`tools.listChanged: true`) in `createSuperagentMcpServer` and exported `notifyMcpToolsListChanged()`.
+  - Hooked `persistYoloState` in `src/core/permissions.ts` to automatically trigger `notifyMcpToolsListChanged()` whenever `/yolo` or `/yolo full` mode is enabled or changed, alerting connected clients to refresh tools.
+  - Relaxed OAuth scope check in `superagentMcpServer.ts` when YOLO mode is active (`isDangerousUnlocked`), allowing authorized dangerous tools to execute smoothly even if the client's token was initially granted with read-only `mcp:tools` scope.
+  - Updated `startMcpTunnel`, `museTunnelSubcommand.ts`, and `museCli.ts` to automatically default `allowDangerous: true` whenever YOLO mode is active, ensuring tunnels started or restarted while YOLO is enabled advertise `mcp:tools:write` scope and expose all 63 tools.
+  - Added automated unit tests in `tests/mcpYoloIntegration.test.ts` verifying `tools.listChanged` capability advertising and OAuth read-only scope bypass under active YOLO mode.
+
 ## [1.13.59] - 2026-10-12
 ### Added & Enhanced
 - Dynamic CLI YOLO & MCP Tunnel Synchronization with Multi-Layer Safety Boundaries (`src/core/permissions.ts`, `src/core/mcp/superagentMcpServer.ts`, `src/core/mcp/tools/workspaceTools.ts`, `src/core/mcp/tools/planSkillsMcpTools.ts`, `src/core/mcp/mcpHttpTransport.ts`, `src/core/commands/coreCommands.ts`, `tests/mcpYoloIntegration.test.ts`):

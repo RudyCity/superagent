@@ -860,6 +860,10 @@ function persistYoloState(state: "off" | "scoped" | "full"): void {
       JSON.stringify({ mode: state, updatedAt: Date.now(), workspace: process.cwd() }, null, 2),
       "utf-8"
     );
+    // Broadcast MCP tool list change notification to connected clients
+    import("./mcp/superagentMcpServer.js")
+      .then(({ notifyMcpToolsListChanged }) => notifyMcpToolsListChanged().catch(() => {}))
+      .catch(() => {});
   } catch {}
 }
 
