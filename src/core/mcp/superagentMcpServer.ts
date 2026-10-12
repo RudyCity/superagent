@@ -67,6 +67,7 @@ import {
   handleExportSession,
   handleCompactContext,
   handleServerHealth,
+  handleGetRemoteStatus,
 } from "./tools/configTools.js";
 import {
   CHROME_MCP_TOOL_DEFS,
@@ -125,6 +126,7 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   superagent_query_history: "safe",
   superagent_get_token_usage: "safe",
   superagent_server_health: "safe",
+  superagent_get_remote_status: "safe",
   superagent_export_session: "safe",
   // ---- dangerous: mutation / execution / control ----
   superagent_exec_command: "dangerous",
@@ -469,6 +471,17 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           description: "Check health of the Superagent background HTTP server, all active CLI sessions, and Remote Chrome bridge. Use to diagnose connectivity issues.",
           inputSchema: { type: "object", properties: {} },
         },
+        {
+          name: "superagent_get_remote_status",
+          description: "Inspect the real-time operational status of /muse tunnel (Cloudflare quick tunnels & WebSocket bridge), MCP (exposed MCP servers & connected client MCPs), and Telegram (Muse Watcher and Gateway).",
+          inputSchema: {
+            type: "object",
+            properties: {
+              service: { type: "string", enum: ["all", "tunnel", "mcp", "telegram"], description: "Filter by specific service or 'all'. Defaults to 'all'." },
+              detailed: { type: "boolean", description: "Whether to return detailed diagnostics and tool list." },
+            },
+          },
+        },
         ...CHROME_MCP_TOOL_DEFS,
         ...DIAGNOSTICS_MCP_TOOL_DEFS,
         ...PLAN_SKILLS_MCP_TOOL_DEFS,
@@ -567,6 +580,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           return await handleManage(args);
         case "superagent_server_health":
           return await handleServerHealth();
+        case "superagent_get_remote_status":
+          return await handleGetRemoteStatus(args);
         default: {
           const chromeRes = await dispatchChromeMcpTool(name, args);
           if (chromeRes) return chromeRes;

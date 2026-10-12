@@ -123,6 +123,7 @@ import {
   killProcessTool,
 } from "./processInspectionTools.js";
 import { switchModeTool } from "./modeTools.js";
+import { getRemoteServiceStatusTool } from "./remoteServiceTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Orchestration only. The Master Agent MUST NOT directly modify code or
@@ -158,6 +159,7 @@ export const masterToolset: Tool[] = [
   describeToolTool,
   inspectPortTool,
   findProcessTool,
+  getRemoteServiceStatusTool,
   inspectBackgroundLogTool,
   officeCliTool,
   // ── Planning & session management (writes only to ~/.superagent-r/) ──
@@ -228,6 +230,7 @@ export const superagentToolset: Tool[] = [
   freePortTool,
   findProcessTool,
   killProcessTool,
+  getRemoteServiceStatusTool,
   inspectBackgroundLogTool,
   webSearchTool,
   fetchUrlTool,
@@ -453,6 +456,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     searchPinnedKnowledgeTool,
     inspectSessionTool,
     inspectBackgroundLogTool,
+    getRemoteServiceStatusTool,
     askQuestionTool,
     getSkillsTool,
     useSkillTool,
@@ -528,6 +532,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     findProcessTool,
     killProcessTool,
     inspectBackgroundLogTool,
+    getRemoteServiceStatusTool,
     webSearchTool,
     controlChromeCdpTool,
     controlChromeVisionTool,
@@ -604,6 +609,7 @@ export const defaultSubagentToolset: Tool[] = [
   ripgrepSearchTool,
   webSearchTool,
   inspectSessionTool,
+  getRemoteServiceStatusTool,
   askQuestionTool,
   getSkillsTool,
   useSkillTool,

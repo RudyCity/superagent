@@ -466,3 +466,12 @@ export async function handleServerHealth(): Promise<McpToolResult> {
 
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
+
+export async function handleGetRemoteStatus(args: any): Promise<McpToolResult> {
+  const service = (args?.service as "all" | "tunnel" | "mcp" | "telegram") || "all";
+  const detailed = args?.detailed !== false;
+  const { getRemoteServiceStatus, formatRemoteServiceStatus } = await import("../../remoteAgent/remoteStatusService.js");
+  const status = await getRemoteServiceStatus(service);
+  const text = formatRemoteServiceStatus(status, service, detailed);
+  return { content: [{ type: "text", text }] };
+}

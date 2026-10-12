@@ -157,8 +157,10 @@ import {
   findProcessTool,
   killProcessTool,
 } from "./processInspectionTools.js";
+import { getRemoteServiceStatusTool } from "./remoteServiceTools.js";
 
 export {
+  getRemoteServiceStatusTool,
   listChromeProfilesTool,
   launchChromeProfileTool,
   getActiveBrowserTabsTool,
@@ -295,9 +297,19 @@ export const allTools: Tool[] = [
   findProcessTool,
   killProcessTool,
   inspectBackgroundLogTool,
+  getRemoteServiceStatusTool,
 ];
 
 const TOOL_ALIASES: Record<string, string> = {
+  get_remote_service_status: "get_remote_service_status",
+  get_remote_status: "get_remote_service_status",
+  remote_status: "get_remote_service_status",
+  remote_service_status: "get_remote_service_status",
+  check_remote_services: "get_remote_service_status",
+  get_tunnel_status: "get_remote_service_status",
+  tunnel_status: "get_remote_service_status",
+  mcp_status: "get_remote_service_status",
+  telegram_status: "get_remote_service_status",
   background_process: "run_background_process",
   run_background: "run_background_process",
   background: "run_background_process",

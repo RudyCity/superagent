@@ -1,3 +1,12 @@
+## [1.13.56] - 2026-10-12
+### Added & Enhanced
+- Real-Time Service Status Awareness for Muse Tunnel, MCP, and Telegram (`src/core/remoteAgent/remoteStatusService.ts`, `src/core/tools/remoteServiceTools.ts`, `src/core/agent/ContextBuilder.ts`, `src/core/tools/toolsets.ts`, `src/core/tools/index.ts`, `src/core/mcp/superagentMcpServer.ts`, `tests/remoteStatusService.test.ts`):
+  - Created unified remote status detection service `remoteStatusService.ts` providing real-time operational status for Cloudflare Quick Tunnels (`/muse tunnel`), MCP servers (tunnel-exposed and client connections), and Telegram (Muse Watcher Telegram transport, fallback watcher, and Gateway Telegram channel).
+  - Added native tool `get_remote_service_status` (with aliases `remote_service_status`, `check_remote_services`, `get_tunnel_status`, `mcp_status`, `telegram_status`) to Master Agent, Superagent, Researcher, and Software Tester toolsets.
+  - Injected dynamic `# ACTIVE REMOTE SERVICES (TUNNELS / MCP / TELEGRAM)` awareness block into `ContextBuilder.ts`, automatically notifying the agent on every turn when any tunnel, MCP, or Telegram transport is online.
+  - Exposed `superagent_get_remote_status` as a safe tool in `superagentMcpServer.ts` for desktop clients and external MCP tool runners.
+  - Added unit test suite `tests/remoteStatusService.test.ts` verifying detection, formatting, dynamic prompt blocks, and tool executions.
+
 ## [1.13.55] - 2026-10-12
 ### Added & Enhanced
 - Real-Time MCP Tool Execution & Activity Streaming in Chat Sheet (`src/core/mcp/mcpActivityBus.ts`, `src/core/mcp/superagentMcpServer.ts`, `src/components/chat-line.tsx`, `src/app.tsx`, `tests/mcpActivityBus.test.ts`):

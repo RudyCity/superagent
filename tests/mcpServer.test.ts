@@ -16,9 +16,9 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 62;
+const EXPECTED_TOOL_COUNT = 63;
 
-describe("Superagent Complete 3-Pillar MCP Server Suite (62 Tools, Resources, Prompts)", () => {
+describe("Superagent Complete 3-Pillar MCP Server Suite (63 Tools, Resources, Prompts)", () => {
   const testDir = path.join(os.tmpdir(), `superagent_mcp_test_${Date.now()}`);
 
   beforeEach(() => {
@@ -92,6 +92,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (62 Tools, Resources, Pr
     expect(toolNames).toContain("superagent_get_token_usage");
     expect(toolNames).toContain("superagent_remote_chrome");
     expect(toolNames).toContain("superagent_server_health");
+    expect(toolNames).toContain("superagent_get_remote_status");
 
     // Chrome CDP & Vision
     expect(toolNames).toContain("superagent_chrome_cdp");

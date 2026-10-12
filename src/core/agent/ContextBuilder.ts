@@ -367,12 +367,26 @@ export class ContextBuilder {
       selfdevLessonsText = await buildSelfDevInjectionBlock(agent.workingDirectory || process.cwd());
     } catch {}
 
+    // Check live status of remote services (/muse tunnel, MCP servers, Telegram)
+    let remoteServicesNotice = "";
+    try {
+      const { getRemoteServiceStatus, formatDynamicRemoteNotice } = await import("../remoteAgent/remoteStatusService.js");
+      const remoteStatus = await getRemoteServiceStatus();
+      if (remoteStatus.anyActive) {
+        const notice = formatDynamicRemoteNotice(remoteStatus);
+        if (notice) {
+          remoteServicesNotice = `\n\n${notice}`;
+        }
+      }
+    } catch {}
+
     const budgetedSystemContext = buildBudgetedPromptContext([
       { id: "guidelines", content: guidelinesText, maxTokens: 3_200 },
       { id: "workspace-chain", content: workspaceChainNotice, maxTokens: 900 },
       { id: "pinned-knowledge", content: pinnedKnowledgeNotice, maxTokens: 700 },
       { id: "shared-memory", content: sharedMemoryNotice, maxTokens: 500 },
       { id: "running-processes", content: processNotice, maxTokens: 300 },
+      { id: "remote-services", content: remoteServicesNotice, maxTokens: 400 },
       { id: "developer-hook", content: devHookNotice, maxTokens: 150 },
       { id: "selfdev-lessons", content: selfdevLessonsText, maxTokens: 400 },
     ], systemContextBudget);
