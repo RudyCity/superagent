@@ -580,3 +580,57 @@ Before any payload leaves the local workstation over WebSocket or Telegram, sens
 - Output Scrubbing: Tool outputs (`task_result`) are also automatically scrubbed to prevent accidental leakage of environment variables or secrets during shell commands.
 
 
+
+
+---
+
+## 12. ChatGPT Custom MCP Server Setup Guide & Troubleshooting
+
+Superagent can function as a remote Model Context Protocol (MCP) server for ChatGPT over an encrypted Cloudflare quick tunnel using OAuth 2.1 with PKCE (`RFC 8414` / `RFC 9728`).
+
+### 12.1 Launching the MCP Server
+
+Start the tunnel with OAuth authentication enabled:
+
+```bash
+# Terminal CLI:
+superagent muse tunnel start --mcp --mcp-auth oauth
+
+# Or inside interactive Superagent terminal:
+/muse tunnel start --mcp --mcp-auth oauth
+
+# Opt-in to destructive tools (file writes, shell execution):
+superagent muse tunnel start --mcp --mcp-auth oauth --allow-dangerous
+```
+
+Upon launch, Superagent outputs:
+- Public MCP Endpoint (e.g. `https://xxxx.trycloudflare.com/mcp`)
+- OAuth Discovery URL (`/.well-known/oauth-authorization-server`)
+- One-time bootstrap approval code (e.g. `LC1-967sNj...`)
+
+### 12.2 Configuring ChatGPT Custom MCP Server
+
+1. In ChatGPT, navigate to **Settings > Connected Apps** and click **Add custom MCP server**.
+2. Set **Name**: `superagent` (or your preferred name).
+3. Set **Connection**: `Server URL` and paste the public MCP Endpoint (`https://xxxx.trycloudflare.com/mcp`).
+4. Set **Authentication**: `OAuth`.
+
+### 12.3 Resolving "Enter an OAuth client ID in Advanced OAuth settings"
+
+When adding custom MCP servers without Dynamic Client Registration (DCR), ChatGPT prompts with:
+> *"Enter an OAuth client ID in Advanced OAuth settings"*
+
+To resolve this:
+1. Click **Advanced OAuth settings**.
+2. In **OAuth client ID**, enter any arbitrary identifier (e.g. `chatgpt` or `superagent`). Superagent's internal OAuth store automatically registers any client ID on first handshake.
+3. In **OAuth client secret**, leave it completely blank. Superagent uses PKCE S256 (`token_endpoint_auth_methods_supported: ["none"]`), so client secrets are neither needed nor expected.
+4. Verify **Token endpoint auth method** is `none`.
+5. Return to the main modal and check **I understand and want to continue**.
+6. Click **Create as a plugin**.
+
+### 12.4 Completing Authorization
+
+1. ChatGPT will automatically redirect to the local consent page in your default browser (`/oauth/authorize`).
+2. Paste the one-time **bootstrap approval code** displayed in your Superagent terminal console.
+3. Click **Approve**.
+4. ChatGPT exchanges the authorization code via PKCE, retrieves the access token, and loads all available Superagent MCP tools.

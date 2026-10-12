@@ -361,6 +361,27 @@ superagent muse watch ./frontend ./backend --tunnel
 superagent muse "find all unhandled promise rejections in src"
 ```
 
+#### 🤖 Connecting ChatGPT as Custom MCP Client (OAuth 2.1)
+
+1. Launch Superagent in OAuth MCP tunnel mode:
+```bash
+superagent muse tunnel start --mcp --mcp-auth oauth
+# or with write/exec permissions:
+superagent muse tunnel start --mcp --mcp-auth oauth --allow-dangerous
+```
+2. In ChatGPT, open Settings > Connected Apps / Custom MCP, and choose **Add custom MCP server**.
+3. Fill in:
+   - **Connection**: Server URL
+   - **Server URL**: The public endpoint URL (e.g. `https://<subdomain>.trycloudflare.com/mcp`)
+   - **Authentication**: OAuth
+4. Click **Advanced OAuth settings** to resolve *"Enter an OAuth client ID"*:
+   - **Registration method**: User-Defined OAuth Client
+   - **OAuth client ID**: Enter any name (e.g. `chatgpt` or `superagent`). Superagent dynamically registers any client identifier.
+   - **OAuth client secret**: Leave blank (empty). PKCE S256 requires no secret.
+   - **Token endpoint auth method**: `none`.
+5. Return to the main dialog and click **Create as a plugin**.
+6. When ChatGPT opens the authorization consent page in your browser, enter the one-time **bootstrap approval code** printed in your terminal and click **Approve**.
+
 For the complete end-to-end setup guide, Zero Trust configuration, multi-project workflows, and the Muse system prompt, see **[docs/remote-agent-setup.md](docs/remote-agent-setup.md)**.
 
 ### Keyboard Shortcuts

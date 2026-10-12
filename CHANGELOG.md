@@ -1,3 +1,10 @@
+## [1.13.54] - 2026-10-12
+### Added & Enhanced
+- ChatGPT Custom MCP Server Setup Guide & CLI Output Hardening (`src/core/commands/museTunnelSubcommand.ts`, `src/core/remoteAgent/museCli.ts`, `README.md`, `docs/remote-agent-setup.md`):
+  - Added explicit step-by-step guidance to MCP OAuth tunnel output explaining how to resolve ChatGPT's "Enter an OAuth client ID in Advanced OAuth settings" validation prompt.
+  - Documented that Superagent auto-registers any incoming client ID under User-Defined OAuth Client mode and requires no client secret (PKCE S256 with `token_endpoint_auth_methods_supported: ["none"]`).
+  - Added comprehensive ChatGPT Custom MCP Server setup guide in `README.md` and `docs/remote-agent-setup.md` covering endpoint configuration, Advanced OAuth settings, and one-time bootstrap code approval.
+
 ## [1.13.53] - 2026-10-12
 ### Added & Enhanced
 - Chrome Screen Sharing & Display Capture Optimization (`scripts/chrome-debug.bat`, `src/core/tools/chromeCommon.ts`, `src/core/tools/chromeBrowserTools.ts`, `src/core/tools/chromeCdpMedia.ts`, `src/core/tools/chromeCdpTools.ts`):

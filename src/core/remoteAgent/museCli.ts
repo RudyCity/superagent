@@ -203,7 +203,21 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
             `  Auth Mode     : ${mcpInfo.authMode}`,
           ];
           if (mcpInfo.authMode === "oauth") {
-            mcpLines.push(`  Discovery     : ${mcpInfo.oauthDiscoveryUrl}`, `  Scopes        : mcp:tools${mcpInfo.dangerous ? " mcp:tools:write" : ""}`, toolModeLine, `  Audit log     : ${mcpInfo.auditLogPath}`, "", "One-time bootstrap approval code (shown ONCE, never stored):", `  - ${mcpInfo.bootstrapCode}`);
+            mcpLines.push(
+              `  Discovery     : ${mcpInfo.oauthDiscoveryUrl}`,
+              `  Scopes        : mcp:tools${mcpInfo.dangerous ? " mcp:tools:write" : ""}`,
+              toolModeLine,
+              `  Audit log     : ${mcpInfo.auditLogPath}`,
+              "",
+              "One-time bootstrap approval code (shown ONCE, never stored):",
+              `  - ${mcpInfo.bootstrapCode}`,
+              "",
+              "ChatGPT setup:",
+              "  1. In ChatGPT, add an MCP server with the MCP Endpoint URL above.",
+              "  2. In Advanced OAuth settings, enter any OAuth client ID (e.g. chatgpt) and leave secret blank.",
+              "  3. Complete the OAuth authorization in your browser using the bootstrap code.",
+              "  4. Approve scopes; safe tools are callable after approval."
+            );
           } else {
             mcpLines.push(`  Bearer token  : ${mcpInfo.bearerToken}`, toolModeLine, `  Audit log     : ${mcpInfo.auditLogPath}`, "", "MCP client config (copy-paste):", `{ "superagent": { "url": "${mcpInfo.publicUrl}", "headers": { "Authorization": "Bearer token ${mcpInfo.bearerToken}" } } }`);
           }
