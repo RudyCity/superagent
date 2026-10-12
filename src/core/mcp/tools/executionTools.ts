@@ -88,20 +88,34 @@ export async function handleSpawnSubagent(args: any): Promise<McpToolResult> {
   const typeName = String(args.type || args.typeName || args.subagentType || "researcher");
   const prompt = String(args.prompt || args.task || args.instruction || "");
   const role = String(args.role || typeName);
+  const wait = args.wait === true;
+  const timeoutMs = typeof args.timeoutMs === "number" ? args.timeoutMs : undefined;
 
-  if (!prompt) {
+  if (!prompt.trim()) {
     return {
       content: [{ type: "text", text: "Error: 'prompt' is required to spawn a subagent." }],
       isError: true,
     };
   }
 
-  const { invokeSubagentTool } = await import("../../tools/subagentTools.js");
-  const result = await invokeSubagentTool.execute(
-    { typeName, role, prompt, wait: true },
-    process.cwd()
-  );
-  return { content: [{ type: "text", text: String(result) }] };
+  try {
+    const { invokeSubagentTool } = await import("../../tools/subagentTools.js");
+    const result = await invokeSubagentTool.execute(
+      { typeName, role, prompt, wait, timeoutMs },
+      process.cwd()
+    );
+    const output = String(result);
+    const isError = output.startsWith("Error:") || output.startsWith("Subagent failed:");
+    return {
+      content: [{ type: "text", text: output }],
+      ...(isError ? { isError: true } : {}),
+    };
+  } catch (err: any) {
+    return {
+      content: [{ type: "text", text: `spawn_subagent error: ${err?.message || String(err)}` }],
+      isError: true,
+    };
+  }
 }
 
 export async function handleSendMessage(args: any): Promise<McpToolResult> {

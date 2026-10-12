@@ -38,7 +38,6 @@ import {
 } from "./tools/processTools.js";
 import {
   handleRunTask,
-  handleSpawnSubagent,
   handleSendMessage,
   handleInvoke,
   handleAwait,
@@ -142,7 +141,6 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   superagent_resume: "dangerous",
   superagent_send_message: "dangerous",
   superagent_run_task: "dangerous",
-  superagent_spawn_subagent: "dangerous",
   superagent_invoke: "dangerous",
   superagent_cli_bridge: "dangerous",
   superagent_await: "dangerous",
@@ -317,11 +315,6 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           name: "superagent_run_task",
           description: "Delegate a task to Superagent to execute as a powerful subagent for Antigravity, and return complete generated results and file modifications.",
           inputSchema: { type: "object", properties: { task: { type: "string" }, role: { type: "string" }, mode: { type: "string", enum: ["single", "multi"] }, workspace: { type: "string" } }, required: ["task"] },
-        },
-        {
-          name: "superagent_spawn_subagent",
-          description: "Directly launch a specialized atomic Subagent ('researcher', 'coder', 'reviewer', 'software-tester', 'chrome-agent') and get its report.",
-          inputSchema: { type: "object", properties: { type: { type: "string" }, prompt: { type: "string" }, role: { type: "string" } }, required: ["type", "prompt"] },
         },
         {
           name: "superagent_cli_bridge",
@@ -561,7 +554,10 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         case "superagent_run_task":
           return await handleRunTask(args);
         case "superagent_spawn_subagent":
-          return await handleSpawnSubagent(args);
+          return {
+            content: [{ type: "text", text: "Tool 'superagent_spawn_subagent' is disabled on this MCP server." }],
+            isError: true,
+          };
         case "superagent_cli_bridge":
           return await handleCliBridge(args);
         case "superagent_switch_workspace":

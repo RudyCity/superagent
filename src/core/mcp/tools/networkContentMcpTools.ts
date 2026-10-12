@@ -150,11 +150,11 @@ export const NETWORK_CONTENT_MCP_TOOL_DEFS = [
   {
     name: "superagent_read_document",
     description:
-      "Read and extract text content from PDF, Excel (.xlsx, .xls), and Word (.docx) document files.",
+      "Read and extract text from PDF, Excel (.xlsx, .xls), Word (.docx), Markdown, TXT, CSV, JSON, YAML, XML, HTML, logs, and common source-code text files.",
     inputSchema: {
       type: "object",
       properties: {
-        filePath: { type: "string", description: "Path to document file (PDF, XLSX, XLS, DOCX)." },
+        filePath: { type: "string", description: "Path to PDF/XLSX/XLS/DOCX or readable text file such as MD, TXT, CSV, JSON, YAML, XML, HTML, logs, or source code." },
       },
       required: ["filePath"],
     },

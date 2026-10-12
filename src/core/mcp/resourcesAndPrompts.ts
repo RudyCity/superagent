@@ -299,9 +299,8 @@ export function registerResourcesAndPrompts(server: Server): void {
           `# Systematic Debugging Task`,
           `Target Issue / Error:\n${error}`,
           file ? `\nSuspected File: ${file}` : "",
-          `\n## Debugging Plan:`,
-          `1. Dispatch a 'researcher' subagent using 'superagent_spawn_subagent' to trace the error call stack.`,
-          `2. Search for relevant definitions using 'superagent_grep_search'.`,
+          `1. Search for relevant definitions using 'superagent_grep_search' and inspect files with 'superagent_read_file'.`,
+          `2. Trace the error call stack and inspect recent execution logs with 'superagent_get_logs'.`,
           `3. Isolate minimal failing test case and verify fix before committing.`,
         ].filter(Boolean).join("\n");
 

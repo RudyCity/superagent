@@ -15,13 +15,13 @@ const OFFICE_CLI_TIMEOUT = 30_000; // 30 seconds
 export const readDocumentTool: Tool = {
   name: "read_document",
   description:
-    "Read and extract text content from PDF, Excel (.xlsx, .xls), and Word (.docx) document files. Uses officecli when available, falling back to local parsers and PaddleOCR for scanned PDF images.",
+    "Read and extract text from PDF, Excel (.xlsx, .xls), Word (.docx), and common text/document formats including Markdown, TXT, CSV, JSON, YAML, XML, HTML, logs, and source-code text files. Uses officecli when available for office/PDF formats, with local parser and OCR fallbacks.",
   parameters: {
     type: "object",
     properties: {
       filePath: {
         type: "string",
-        description: "Path to the document file (PDF, XLSX, XLS, DOCX)",
+        description: "Path to a PDF, XLSX, XLS, DOCX, or readable text file (e.g. .md, .txt, .csv, .json, .yaml, .xml, .html, .log, or source code)",
       },
     },
     required: ["filePath"],
@@ -105,6 +105,23 @@ async function parseDocumentBuffer(
   precomputedExt?: string,
 ): Promise<string> {
   const ext = (precomputedExt || path.extname(resolvedPath).toLowerCase()).replace(/^\./, "");
+
+  // Plain-text documents and source files can be returned directly as UTF-8.
+  // Keep this branch before binary document parsers so README.md/TXT work.
+  const textExtensions = new Set([
+    "md", "markdown", "txt", "text", "rst", "log", "csv", "tsv",
+    "json", "jsonc", "yaml", "yml", "xml", "html", "htm", "ini", "toml",
+    "sql", "js", "jsx", "ts", "tsx", "mjs", "cjs", "css", "scss", "less",
+    "py", "sh", "bash", "ps1", "bat", "cmd", "c", "h", "cpp", "hpp",
+    "java", "go", "rs", "php", "rb", "vue", "svelte", "env", "gitignore",
+  ]);
+  if (textExtensions.has(ext)) {
+    const text = buffer.toString("utf8").replace(/^\uFEFF/, "");
+    if (text.includes("\u0000")) {
+      return "Error: File appears to be binary, not a readable text document: " + path.basename(resolvedPath);
+    }
+    return "--- Text Document Content (" + path.basename(resolvedPath) + ") ---\n\n" + text;
+  }
 
   // Office files: try officecli on local binary with fetched buffer saved to temp file.
   if (ext === "docx" || ext === "xlsx" || ext === "xls" || ext === "pdf") {
@@ -202,7 +219,7 @@ async function parseDocumentBuffer(
       return `--- Word Document Content (${path.basename(resolvedPath)}) ---\n\n${markdown || "No text content found."}`;
     }
 
-    return `Error: Unsupported document type "${ext}". Supported formats are: .pdf, .xlsx, .xls, .docx`;
+    return `Error: Unsupported document type "${ext}". Supported formats include PDF, XLSX, XLS, DOCX, and common text formats such as MD, TXT, CSV, JSON, YAML, XML, HTML, and source-code files.`;
   } catch (error: any) {
     return `Error parsing document: ${error.message}`;
   }

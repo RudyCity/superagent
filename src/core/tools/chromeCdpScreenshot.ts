@@ -46,12 +46,18 @@ export async function captureCdpScreenshot(
   let savedPath: string;
   if (options?.outputPath) {
     savedPath = path.resolve(options.outputPath);
+    const root = path.resolve(process.cwd());
+    const relative = path.relative(root, savedPath);
+    if ((relative.startsWith("..") || path.isAbsolute(relative)) && process.env.SUPERAGENT_CDP_ALLOW_EXTERNAL_OUTPUT !== "true") {
+      throw new Error("Screenshot outputPath must remain inside the current workspace. Set SUPERAGENT_CDP_ALLOW_EXTERNAL_OUTPUT=true only when external output paths are intentional.");
+    }
   } else {
     savedPath = path.resolve(process.cwd(), `cdp_screenshot_${Date.now()}.${ext}`);
   }
 
-  await fs.mkdir(path.dirname(savedPath), { recursive: true });
   const buf = Buffer.from(rawData, "base64");
+  if (buf.byteLength > 25 * 1024 * 1024) throw new Error("Screenshot exceeds the 25 MiB output limit; use a smaller viewport or a compressed format.");
+  await fs.mkdir(path.dirname(savedPath), { recursive: true });
   await fs.writeFile(savedPath, buf);
 
   const mimeType = format === "jpeg" ? "image/jpeg" : format === "webp" ? "image/webp" : "image/png";
@@ -68,8 +74,9 @@ export async function captureCdpScreenshot(
 /**
  * Format screenshot result string for the CLI / agent tool output.
  */
-export function formatScreenshotResult(result: CdpScreenshotResult, prefix = "control_chrome_cdp:"): string {
-  return `${prefix} screenshot captured (${result.byteSize} bytes) and saved to ${result.savedPath}\n${result.dataUrl}`;
+export function formatScreenshotResult(result: CdpScreenshotResult, prefix = "control_chrome_cdp:", includeImageData = false): string {
+  const metadata = `${prefix} screenshot captured (${result.byteSize} bytes) and saved to ${result.savedPath}`;
+  return includeImageData ? `${metadata}\n${result.dataUrl}` : `${metadata}. Pass includeImageData: true to include inline image data.`;
 }
 
 /**
@@ -103,7 +110,8 @@ export async function attachScreenshotIfRequested(
       quality,
       fullPage,
     });
-    return `${baseResult}\n\nScreenshot saved: ${shot.savedPath}\n${shot.dataUrl}`;
+    const suffix = payload.includeImageData === true || payload.include_image_data === true ? `\n${shot.dataUrl}` : ". Set includeImageData: true to include inline image data.";
+    return `${baseResult}\n\nScreenshot saved: ${shot.savedPath}${suffix}`;
   } catch {
     // If screenshot capture fails, preserve the original action result
     return baseResult;

@@ -214,7 +214,7 @@ export class Agent {
   ) {
     this.customSystemPrompt = customSystemPrompt;
     this.customTools = customTools;
-    this.workingDirectory = workingDirectory || getConfig().workingDirectory;
+    this.workingDirectory = workingDirectory || getConfig()?.workingDirectory || process.cwd();
     this.conversation = new Conversation();
     // ContextManager initializes async via ensureContextManager() on first use
     this.onEvent = (event: AgentEvent) => {

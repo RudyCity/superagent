@@ -36,6 +36,8 @@ import { executeInspectMediaDevices, executeMockDisplayMedia, executeHandleScree
 import { executeCursorCommand, dispatchHumanMouseClick, resolveElementCenterPoint, executeDragAndDropCommand } from "./chromeCdpCursor.js";
 import { executeDeviceEmulationCommand } from "./chromeCdpEmulation.js";
 import { executeSelectOptionCommand, executeCheckFormCommand } from "./chromeCdpForm.js";
+import { CDP_AUDIT_COMMANDS, executeCdpAuditCommand, type CdpAuditCommand } from "./chromeCdpAudits.js";
+import { CDP_DIAGNOSTIC_COMMANDS, executeCdpDiagnosticsCommand, recordCdpDebugEvent, type CdpDiagnosticCommand } from "./chromeCdpDiagnostics.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -395,6 +397,7 @@ async function getCdpConnection(target: CdpTarget): Promise<CdpConnection> {
         p.resolve(msg.result !== undefined ? msg.result : {});
       }
     } else if (msg && msg.id === undefined && typeof msg.method === "string") {
+      recordCdpDebugEvent(target.id, msg.method, msg.params);
       handleIncomingCdpEvent(target.id, msg.method, msg.params, (m, p) => {
         try {
           ws.send(JSON.stringify({ id: conn.nextId++, method: m, params: p }));
@@ -475,7 +478,8 @@ export const controlChromeCdpTool: Tool = {
   description:
     "Control the user's REAL Chrome browser directly via Chrome Remote Debugging (CDP) at http://127.0.0.1:9222 — no extension required and no isolated background tab. " +
     "REQUIRES Chrome to be running with --remote-debugging-port=9222 (close ALL Chrome windows, then reopen Chrome from the taskbar shortcut). " +
-    "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, move_cursor, drag_and_drop, emulate_device. " +
+    "Commands include tab/navigation, DOM snapshot and extraction, click/type/forms, dialogs, screenshots/PDF, cookies, media, cursor/drag-and-drop, device emulation, page/accessibility/SEO/responsive audits, and performance metrics. " +
+    "Use page_audit, accessibility_audit, seo_audit, responsive_audit, or performance_metrics for structured reports. Use evaluate only for trusted, intentional page JavaScript. Cookie values and large artifacts are summarized by default. " +
     "Supports device/viewport emulation (mobile, tablet, desktop, reset), human-like Bézier cursor movement, realistic drag-and-drop, visual pointer overlay, native dialog interception, and UI transition verification. " +
     "Arguments like url, index, text, selector, source, target, dx, dy, preset, device, orientation, screenshot, outputPath can be provided directly at top-level or inside payload.",
   parameters: {
@@ -490,10 +494,12 @@ export const controlChromeCdpTool: Tool = {
           "check_form", "check_form_readiness", "audit_form",
           "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
           "get_cookies", "inspect_media_devices", "media_devices",
-          "mock_display_media", "mock_screen_share", "handle_screen_share", "accept_screen_share", "dismiss_screen_share",
+          "mock_display_media", "mock_screen_share", "bypass_screen_share", "handle_screen_share", "accept_screen_share", "dismiss_screen_share",
           "move_cursor", "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
           "drag_and_drop", "drag", "drag_drop",
           "emulate_device", "set_device", "set_viewport", "emulate_viewport",
+          ...CDP_AUDIT_COMMANDS,
+          ...CDP_DIAGNOSTIC_COMMANDS,
         ],
         description: "CDP command to execute on the real Chrome browser.",
       },
@@ -534,6 +540,11 @@ export const controlChromeCdpTool: Tool = {
       steps: { type: "number", description: "Optional step count for cursor trajectory interpolation." },
       visualCursor: { type: "boolean", description: "Optional flag to display an animated virtual pointer overlay in the DOM." },
       targetId: { type: "string", description: "Optional CDP target id. Automatically defaults to the active tab." },
+      includeImageData: { type: "boolean", description: "Include screenshot data inline instead of returning file metadata only; disabled by default." },
+      includeValues: { type: "boolean", description: "Expose cookie values in get_cookies; sensitive and disabled by default." },
+      includeBase64: { type: "boolean", description: "Include a bounded PDF base64 payload; disabled by default." },
+      max_chars: { type: "number", description: "Maximum output characters for page/audit reports, clamped to safe limits." },
+      max_links: { type: "number", description: "Maximum links returned by read_page." },
     },
     required: ["command"],
   },
@@ -563,7 +574,7 @@ export const controlChromeCdpTool: Tool = {
       "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex",
       "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
       "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets",
-      "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label",
+      "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "max_chars", "maxChars", "max_links", "maxLinks",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
@@ -759,7 +770,9 @@ export const controlChromeCdpTool: Tool = {
           if (data.viewMode) sections.push(`View Mode: [${String(data.viewMode).toUpperCase()}]`);
           if (headings.length > 0) sections.push(`Headings:\n` + headings.map((h) => `- [${h.tag.toUpperCase()}] ${h.text}`).join("\n"));
           if (alerts.length > 0) sections.push(`Alerts / Status:\n` + alerts.map((a) => `- ${a}`).join("\n"));
-          sections.push(bodyText ? `Visible Content:\n${truncate(bodyText, 5000)}` : `Visible Content: (no visible text)`);
+          const requestedChars = Number(payload.max_chars ?? payload.maxChars ?? 5000);
+          const maxChars = Number.isFinite(requestedChars) ? Math.max(500, Math.min(20000, Math.floor(requestedChars))) : 5000;
+          sections.push(bodyText ? `Visible Content:\n${truncate(bodyText, maxChars)}` : `Visible Content: (no visible text)`);
           if (links.length > 0) {
             sections.push(`Key Links (${links.length}):\n` + links.slice(0, 20).map((l) => `- "${l.text || '(no text)'}" -> ${l.href}`).join("\n"));
           }
@@ -905,14 +918,15 @@ export const controlChromeCdpTool: Tool = {
             quality,
             fullPage,
           });
-          return formatScreenshotResult(shot);
+          return formatScreenshotResult(shot, "control_chrome_cdp:", payload.includeImageData === true || payload.include_image_data === true);
         }
         case "pdf": {
           const target = await pickTarget(targetId);
           const res: any = await cdpSend(target, "Page.printToPDF", {});
           const data = String((res && res.data) || "");
           if (!data) return "control_chrome_cdp: printToPDF returned no data.";
-          return `control_chrome_cdp: PDF captured (${data.length} base64 chars):\n${data}`;
+          const includeBase64 = payload.includeBase64 === true || payload.include_base64 === true;
+          return `control_chrome_cdp: PDF captured (${Math.floor(data.length * 3 / 4)} bytes estimated). ${includeBase64 ? `Base64 (limited to 1,000,000 chars):\n${truncate(data, 1000000)}` : "Binary payload omitted by default; pass includeBase64: true to request a bounded inline payload."}`;
         }
         case "get_cookies": {
           const target = await pickTarget(targetId);
@@ -920,10 +934,10 @@ export const controlChromeCdpTool: Tool = {
           const cookies = res && Array.isArray(res.cookies) ? res.cookies : [];
           const summary = cookies.map((c: any) => ({
             name: c.name,
-            value: String(c.value).slice(0, 48),
+            value: payload.includeValues === true || payload.include_values === true ? String(c.value).slice(0, 48) : "[REDACTED]",
             domain: c.domain,
           }));
-          return `control_chrome_cdp: ${cookies.length} cookie(s):\n${JSON.stringify(summary, null, 1)}`;
+          return `control_chrome_cdp: ${cookies.length} cookie(s)${payload.includeValues === true || payload.include_values === true ? "" : " (values redacted; set includeValues: true to expose them)"}:\n${JSON.stringify(summary, null, 1)}`;
         }
         case "inspect_media_devices":
         case "media_devices": {
@@ -984,6 +998,21 @@ export const controlChromeCdpTool: Tool = {
           const target = await pickTarget(targetId);
           const formResult = await executeCheckFormCommand(cdpSend, target, payload);
           return await attachScreenshotIfRequested(cdpSend, target, payload, formResult, false);
+        }
+        case "page_audit":
+        case "accessibility_audit":
+        case "seo_audit":
+        case "responsive_audit":
+        case "performance_metrics": {
+          const target = await pickTarget(targetId);
+          return await executeCdpAuditCommand(cdpSend, target, command as CdpAuditCommand, payload);
+        }
+        case "start_debug_capture":
+        case "read_debug_capture":
+        case "stop_debug_capture":
+        case "clear_debug_capture": {
+          const target = await pickTarget(targetId, false);
+          return await executeCdpDiagnosticsCommand(cdpSend, target, command as CdpDiagnosticCommand, payload);
         }
         default:
           return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, select_option, check_form, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, mock_display_media, handle_screen_share, move_cursor, drag_and_drop, emulate_device.`;

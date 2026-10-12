@@ -309,10 +309,11 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       "check_form", "check_form_readiness", "audit_form",
       "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
       "get_cookies", "inspect_media_devices", "media_devices",
-      "mock_display_media", "mock_screen_share", "handle_screen_share", "accept_screen_share", "dismiss_screen_share",
+      "mock_display_media", "mock_screen_share", "bypass_screen_share", "handle_screen_share", "accept_screen_share", "dismiss_screen_share",
       "move_cursor", "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
       "drag_and_drop", "drag", "drag_drop",
       "emulate_device", "set_device", "set_viewport", "emulate_viewport",
+      "page_audit", "accessibility_audit", "seo_audit", "responsive_audit", "performance_metrics",
     ]);
     expect(controlChromeCdpTool.description).toContain("--remote-debugging-port=9222");
     expect(controlChromeCdpTool.description).toContain("no extension required");
@@ -352,7 +353,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     try {
       const res = await controlChromeCdpTool.execute({
         command: "screenshot",
-        payload: JSON.stringify({ outputPath: tmpOut }),
+        payload: JSON.stringify({ outputPath: tmpOut, includeImageData: true }),
       });
       expect(res).toContain("screenshot captured");
       expect(res).toContain("saved to");
@@ -367,7 +368,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   test("navigate automatically captures screenshot unless disabled", async () => {
     const res = await controlChromeCdpTool.execute({
       command: "navigate",
-      payload: JSON.stringify({ url: "https://example.com" }),
+      payload: JSON.stringify({ url: "https://example.com", includeImageData: true }),
     });
     expect(res).toContain("navigated tab 'Mock Tab' to https://example.com");
     expect(res).toContain("Screenshot saved:");
@@ -385,7 +386,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     await controlChromeCdpTool.execute({ command: "snapshot" });
     const clickRes = await controlChromeCdpTool.execute({
       command: "click",
-      payload: JSON.stringify({ index: 0, screenshot: true }),
+      payload: JSON.stringify({ index: 0, screenshot: true, includeImageData: true }),
     });
     expect(clickRes).toContain("clicked <button>");
     expect(clickRes).toContain("Screenshot saved:");
@@ -393,7 +394,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
 
     const typeRes = await controlChromeCdpTool.execute({
       command: "type",
-      payload: JSON.stringify({ index: 1, text: "query", screenshot: true }),
+      payload: JSON.stringify({ index: 1, text: "query", screenshot: true, includeImageData: true }),
     });
     expect(typeRes).toContain("typed into <input>");
     expect(typeRes).toContain("Screenshot saved:");
@@ -401,7 +402,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   });
 
   test("pdf returns base64 data", async () => {
-    expect(await controlChromeCdpTool.execute({ command: "pdf" })).toContain("JVBERi0xLjQ=");
+    expect(await controlChromeCdpTool.execute({ command: "pdf", payload: JSON.stringify({ includeBase64: true }) })).toContain("JVBERi0xLjQ=");
   });
 
   test("get_cookies returns the cookie list", async () => {

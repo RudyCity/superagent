@@ -1,4 +1,12 @@
-## [1.13.60] - 2026-10-12
+## [1.13.61] - 2026-10-12
+### Added & Hardened
+- Disabled `superagent_spawn_subagent` specifically for the MCP server (`src/core/mcp/superagentMcpServer.ts`, `src/core/mcp/mcpTunnel.ts`, `tests/mcpServer.test.ts`):
+  - Removed `superagent_spawn_subagent` from the MCP `tools/list` catalog and classifications to prevent external MCP clients (such as ChatGPT) from attempting to spawn internal subagent instances.
+  - Added graceful rejection in `dispatchMcpToolCall` returning an explicit disabled notice if an MCP client attempts to call `superagent_spawn_subagent`.
+  - Updated `MCP_TUNNEL_TOOL_COUNT` to 62 tools.
+- Expanded Direct Chrome CDP auditing with structured page, accessibility, SEO, responsive-layout, and performance-timing reports; added bounded structured-output tests.
+- Reduced default browser artifact and credential exposure: screenshot/PDF inline data is opt-in, and cookie values are redacted unless explicitly requested.
+- Added configurable bounded page-content extraction and updated CDP tool discovery metadata.
 ### Added & Enhanced
 - MCP Tool List Dynamic Notification & OAuth Scope Bypass for YOLO Mode (`src/core/mcp/superagentMcpServer.ts`, `src/core/mcp/mcpTunnel.ts`, `src/core/permissions.ts`, `src/core/commands/museTunnelSubcommand.ts`, `src/core/remoteAgent/museCli.ts`, `tests/mcpYoloIntegration.test.ts`):
   - Added MCP `notifications/tools/list_changed` broadcast capability (`tools.listChanged: true`) in `createSuperagentMcpServer` and exported `notifyMcpToolsListChanged()`.
