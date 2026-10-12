@@ -78,6 +78,9 @@ export async function ensureCdpRunning(host = "127.0.0.1", port = 9222): Promise
       `--user-data-dir=${userDataDir}`,
       `--no-first-run`,
       `--no-default-browser-check`,
+      `--auto-select-desktop-capture-source="Entire screen"`,
+      `--use-fake-ui-for-media-stream`,
+      `--enable-usermedia-screen-capturing`,
     ];
 
     let chromeExe: string | null = null;

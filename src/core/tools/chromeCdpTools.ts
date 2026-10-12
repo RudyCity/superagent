@@ -32,13 +32,8 @@ import {
   formatTransitionSummary,
   DomStateSnapshot,
 } from "./chromeCdpTransition.js";
-import { executeInspectMediaDevices } from "./chromeCdpMedia.js";
-import {
-  executeCursorCommand,
-  dispatchHumanMouseClick,
-  resolveElementCenterPoint,
-  executeDragAndDropCommand,
-} from "./chromeCdpCursor.js";
+import { executeInspectMediaDevices, executeMockDisplayMedia, executeHandleScreenSharePrompt } from "./chromeCdpMedia.js";
+import { executeCursorCommand, dispatchHumanMouseClick, resolveElementCenterPoint, executeDragAndDropCommand } from "./chromeCdpCursor.js";
 import { executeDeviceEmulationCommand } from "./chromeCdpEmulation.js";
 import { executeSelectOptionCommand, executeCheckFormCommand } from "./chromeCdpForm.js";
 
@@ -494,8 +489,9 @@ export const controlChromeCdpTool: Tool = {
           "select_option", "select_dropdown", "pick_option",
           "check_form", "check_form_readiness", "audit_form",
           "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
-          "get_cookies", "inspect_media_devices", "media_devices", "move_cursor",
-          "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
+          "get_cookies", "inspect_media_devices", "media_devices",
+          "mock_display_media", "mock_screen_share", "handle_screen_share", "accept_screen_share", "dismiss_screen_share",
+          "move_cursor", "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
           "drag_and_drop", "drag", "drag_drop",
           "emulate_device", "set_device", "set_viewport", "emulate_viewport",
         ],
@@ -556,16 +552,12 @@ export const controlChromeCdpTool: Tool = {
       }
     }
     const convenienceKeys = [
-      "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms",
-      "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear",
-      "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path",
-      "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text",
-      "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic",
-      "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex",
-      "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector",
-      "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
-      "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation",
-      "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets",
+      "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear",
+      "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text",
+      "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex",
+      "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
+      "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets",
+      "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
@@ -612,11 +604,9 @@ export const controlChromeCdpTool: Tool = {
           while (Date.now() < readyDeadline) {
             try {
               const r = await cdpSend(target, "Runtime.evaluate", { expression: READY_STATE_JS, returnByValue: true });
-              const state = r && r.result ? r.result.value : undefined;
-              if (state === "complete" || state === "interactive" || (state && state !== "loading")) break;
-            } catch {
-              break;
-            }
+              const s = r?.result?.value;
+              if (s === "complete" || s === "interactive" || (s && s !== "loading")) break;
+            } catch { break; }
             await new Promise((res) => setTimeout(res, 100));
           }
 
@@ -698,23 +688,19 @@ export const controlChromeCdpTool: Tool = {
           }
 
           if (fresh.length === 0 && payload.wait_for_elements) {
-            const waitMs = parseTimeoutMs(payload.wait_for_elements, 2000);
-            const deadline = Date.now() + waitMs;
+            const deadline = Date.now() + parseTimeoutMs(payload.wait_for_elements, 2000);
             while (Date.now() < deadline) {
               await new Promise((r) => setTimeout(r, 200));
               try {
                 res = await cdpSend(target, "Runtime.evaluate", { expression: SNAPSHOT_JS, returnByValue: true });
-                value = res && res.result ? res.result.value : undefined;
-                if (Array.isArray(value)) {
-                  fresh = value;
-                } else if (value && typeof value === "object" && Array.isArray((value as any).elements)) {
+                value = res?.result?.value;
+                if (Array.isArray(value)) fresh = value;
+                else if (value && typeof value === "object" && Array.isArray((value as any).elements)) {
                   fresh = (value as any).elements;
                   pageOverview = value as any;
                 }
                 if (fresh.length > 0) break;
-              } catch {
-                break;
-              }
+              } catch { break; }
             }
           }
 
@@ -943,6 +929,19 @@ export const controlChromeCdpTool: Tool = {
             resetPermissions: reset,
           });
         }
+        case "mock_display_media":
+        case "mock_screen_share":
+        case "bypass_screen_share": {
+          const target = await pickTarget(targetId);
+          return await executeMockDisplayMedia(cdpSend, target, payload);
+        }
+        case "handle_screen_share":
+        case "accept_screen_share":
+        case "dismiss_screen_share": {
+          const action = command === "dismiss_screen_share" ? "dismiss" : ((payload.action as any) || "accept");
+          const tabIndex = payload.tabIndex !== undefined ? payload.tabIndex : payload.tab_index;
+          return await executeHandleScreenSharePrompt({ action, tabIndex: tabIndex as any });
+        }
         case "move_cursor":
         case "move_mouse":
         case "show_cursor":
@@ -981,7 +980,7 @@ export const controlChromeCdpTool: Tool = {
           return await attachScreenshotIfRequested(cdpSend, target, payload, formResult, false);
         }
         default:
-          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, select_option, check_form, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, move_cursor, drag_and_drop, emulate_device.`;
+          return `control_chrome_cdp failed: unknown command '${command}'. Valid commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, extract_links, click, type, wait_for, select_option, check_form, verify_action, get_dialogs, handle_dialog, screenshot, pdf, get_cookies, inspect_media_devices, mock_display_media, handle_screen_share, move_cursor, drag_and_drop, emulate_device.`;
       }
     } catch (err: any) {
       return `control_chrome_cdp failed: ${(err && err.message) || String(err)}`;

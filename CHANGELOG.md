@@ -1,3 +1,12 @@
+## [1.13.53] - 2026-10-12
+### Added & Enhanced
+- Chrome Screen Sharing & Display Capture Optimization (`scripts/chrome-debug.bat`, `src/core/tools/chromeCommon.ts`, `src/core/tools/chromeBrowserTools.ts`, `src/core/tools/chromeCdpMedia.ts`, `src/core/tools/chromeCdpTools.ts`):
+  - Added `--auto-select-desktop-capture-source="Entire screen"`, `--use-fake-ui-for-media-stream`, and `--enable-usermedia-screen-capturing` flags to `scripts/chrome-debug.bat` and `ensureCdpRunning` in `chromeCommon.ts` to automatically bypass native browser screen share and device permission prompts.
+  - Added `autoSelectDesktopCaptureSource` and `useFakeMediaUi` parameters to `launch_chrome_profile` (`chromeBrowserTools.ts`) for custom automated capture source targeting.
+  - Added `mock_display_media` command (aliases: `mock_screen_share`, `bypass_screen_share`) to `control_chrome_cdp` via `executeMockDisplayMedia`, overriding `navigator.mediaDevices.getDisplayMedia` to return an immediate synthetic video/audio `MediaStream` and avoid native modal dialogs.
+  - Added `handle_screen_share` command (aliases: `accept_screen_share`, `dismiss_screen_share`) to `control_chrome_cdp` via `executeHandleScreenSharePrompt`, dispatching automated keystrokes on Windows to select tabs and confirm or dismiss active native `DesktopMediaPicker` dialogs.
+  - Expanded `Browser.grantPermissions` in `executeInspectMediaDevices` to include `"displayCapture"` alongside audio and video permissions.
+
 ## [1.13.52] - 2026-10-11
 ### Fixed & Enhanced
 - AI SDK Error Unwrapping, Upstream Status Parsing, and Retry Resilience (`src/core/agent/AgentEvents.ts`, `src/core/agent/AgentUtils.ts`, `src/core/agent/LoopIterationProcessor.ts`, `src/core/agent/FastPath.ts`, `src/app.tsx`):

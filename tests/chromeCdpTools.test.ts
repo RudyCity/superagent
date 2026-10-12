@@ -218,6 +218,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
         const canned: Record<string, any> = {
           "Page.enable": {},
           "Page.navigate": {},
+          "Page.addScriptToEvaluateOnNewDocument": {},
           "Runtime.evaluate": { result: { value: "mock-title" } },
           "Page.captureScreenshot": { data: "iVBORw0KGgo=" },
           "Page.printToPDF": { data: "JVBERi0xLjQ=" },
@@ -308,6 +309,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       "check_form", "check_form_readiness", "audit_form",
       "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
       "get_cookies", "inspect_media_devices", "media_devices",
+      "mock_display_media", "mock_screen_share", "handle_screen_share", "accept_screen_share", "dismiss_screen_share",
       "move_cursor", "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
       "drag_and_drop", "drag", "drag_drop",
       "emulate_device", "set_device", "set_viewport", "emulate_viewport",
@@ -795,6 +797,19 @@ describe("control_chrome_cdp (mock CDP server)", () => {
 
     expect(res).toContain("control_chrome_cdp: media device inspection");
     expect(res).toContain("Audio Output Devices / Speakers (1):");
+  });
+
+  test("controlChromeCdpTool mock_display_media injects stream override into page", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "mock_display_media",
+      label: "Automated Screen Stream",
+      width: 1280,
+      height: 720,
+      fps: 30,
+    });
+
+    expect(res).toContain("mock navigator.mediaDevices.getDisplayMedia active");
+    expect(res).toContain("1280x720 @ 30fps");
   });
 
   test("controlChromeCdpTool move_cursor and get_cursor smoothly update position", async () => {

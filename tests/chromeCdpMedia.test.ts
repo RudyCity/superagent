@@ -4,6 +4,7 @@ import {
   formatMediaInspectionResult,
   MediaInspectionResult,
   executeInspectMediaDevices,
+  executeMockDisplayMedia,
 } from "../src/core/tools/chromeCdpMedia.js";
 
 describe("chromeCdpMedia", () => {
@@ -159,7 +160,7 @@ describe("chromeCdpMedia", () => {
 
     expect(sentCalls.some((c) => c.method === "Browser.grantPermissions")).toBe(true);
     const grantCall = sentCalls.find((c) => c.method === "Browser.grantPermissions");
-    expect(grantCall?.params.permissions).toEqual(["audioCapture", "videoCapture", "speakerSelection"]);
+    expect(grantCall?.params.permissions).toEqual(["audioCapture", "videoCapture", "displayCapture", "speakerSelection"]);
     expect(grantCall?.params.origin).toBe("https://example.com");
 
     expect(output).toContain("Audio Input Devices / Microphones (2):");
@@ -190,5 +191,36 @@ describe("chromeCdpMedia", () => {
     });
 
     expect(sentCalls.some((c) => c.method === "Browser.resetPermissions")).toBe(true);
+  });
+
+  test("executeMockDisplayMedia installs script on new document and evaluates in-page", async () => {
+    const sentCalls: Array<{ method: string; params: any }> = [];
+    const mockCdpSend = async (_target: any, method: string, params: any) => {
+      sentCalls.push({ method, params });
+      if (method === "Runtime.evaluate") {
+        return { result: { value: { ok: true } } };
+      }
+      return {};
+    };
+
+    const target = {
+      id: "T1",
+      title: "Conference Page",
+      url: "https://example.com/conference",
+      type: "page",
+      webSocketDebuggerUrl: "ws://127.0.0.1:9222/page/T1",
+    };
+
+    const res = await executeMockDisplayMedia(mockCdpSend, target, {
+      label: "Test Screen Stream",
+      width: 1920,
+      height: 1080,
+      fps: 60,
+    });
+
+    expect(sentCalls.some((c) => c.method === "Page.addScriptToEvaluateOnNewDocument")).toBe(true);
+    expect(sentCalls.some((c) => c.method === "Runtime.evaluate")).toBe(true);
+    expect(res).toContain("mock navigator.mediaDevices.getDisplayMedia active on 'Conference Page'");
+    expect(res).toContain("1920x1080 @ 60fps");
   });
 });

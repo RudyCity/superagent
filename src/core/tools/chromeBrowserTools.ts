@@ -63,6 +63,14 @@ export const launchChromeProfileTool: Tool = {
         type: "boolean",
         description: "Whether to launch in an isolated user-data-dir (default true when remoteDebuggingPort is specified).",
       },
+      autoSelectDesktopCaptureSource: {
+        type: "string",
+        description: "Optional title or 'Entire screen' to automatically select and confirm screen sharing without prompting.",
+      },
+      useFakeMediaUi: {
+        type: "boolean",
+        description: "Whether to bypass screen sharing and webcam/mic prompts with fake media UI (default true when remoteDebuggingPort is specified).",
+      },
     },
   },
   execute: async ({
@@ -71,21 +79,30 @@ export const launchChromeProfileTool: Tool = {
     remoteDebuggingPort,
     userDataDir,
     isolated,
+    autoSelectDesktopCaptureSource,
+    useFakeMediaUi,
   }: {
     profileName?: string;
     url?: string;
     remoteDebuggingPort?: number;
     userDataDir?: string;
     isolated?: boolean;
+    autoSelectDesktopCaptureSource?: string;
+    useFakeMediaUi?: boolean;
   }) => {
     const platform = os.platform();
     let cmd = "";
 
     const safeProfile = profileName.replace(/["'\\]/g, "");
     const safeUrl = url ? `"${url.replace(/"/g, '\\"')}"` : "";
-    const debugFlag = remoteDebuggingPort
-      ? ` --remote-debugging-port=${Number(remoteDebuggingPort)} --remote-debugging-address=127.0.0.1 --remote-allow-origins=*`
+    const shouldFakeMedia = useFakeMediaUi ?? Boolean(remoteDebuggingPort);
+    const captureSource = autoSelectDesktopCaptureSource ? autoSelectDesktopCaptureSource.replace(/["'\\]/g, "") : "Entire screen";
+    const mediaFlags = shouldFakeMedia
+      ? ` --auto-select-desktop-capture-source="${captureSource}" --use-fake-ui-for-media-stream --enable-usermedia-screen-capturing`
       : "";
+    const debugFlag = remoteDebuggingPort
+      ? ` --remote-debugging-port=${Number(remoteDebuggingPort)} --remote-debugging-address=127.0.0.1 --remote-allow-origins=*${mediaFlags}`
+      : mediaFlags;
 
     const shouldIsolate = isolated ?? Boolean(remoteDebuggingPort);
     let resolvedDataDir = userDataDir;
