@@ -9,6 +9,13 @@ import { McpToolResult } from "../types.js";
 import { callServerApi } from "./processTools.js";
 import { loadRegistry, removeEntries } from "../../tools/superagentRegistry.js";
 import { addTrustedDirectory, ensureDirectoryTrusted } from "../../config.js";
+import {
+  isFullYoloMode,
+  isSystemDestructiveCommand,
+  isPathWithinYoloScope,
+  isToolCallWithinYoloScope,
+  getYoloAllowedRoot,
+} from "../../permissions.js";
 
 export async function handleSwitchWorkspace(args: any): Promise<McpToolResult> {
   const ws = String(args.workspacePath || args.workspace || args.path || args.dir || "");
@@ -19,6 +26,19 @@ export async function handleSwitchWorkspace(args: any): Promise<McpToolResult> {
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
     return { content: [{ type: "text", text: `Directory not found: ${resolved}` }], isError: true };
   }
+
+  // Layer 2: Scoped YOLO boundary check
+  if (!isFullYoloMode() && !isPathWithinYoloScope(resolved, process.cwd())) {
+    const allowedRoot = getYoloAllowedRoot(process.cwd());
+    return {
+      content: [{
+        type: "text",
+        text: `Error: Switching workspace to "${resolved}" is blocked by Scoped YOLO boundary (allowed scope: ${allowedRoot}). Use /yolo full in SuperAgent CLI for unrestricted directory switching.`,
+      }],
+      isError: true,
+    };
+  }
+
   addTrustedDirectory(resolved);
   await ensureDirectoryTrusted(resolved);
   process.chdir(resolved);
@@ -54,6 +74,30 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
 
   if (!command) {
     return { content: [{ type: "text", text: "Error: 'command' is required." }], isError: true };
+  }
+
+  // Layer 2: Defense-in-depth safety checks for command execution
+  if (!isFullYoloMode()) {
+    if (isSystemDestructiveCommand(command)) {
+      return {
+        content: [{
+          type: "text",
+          text: "Error: Command execution blocked by safety policy. Destructive system operations are prohibited in Scoped YOLO mode. Use /yolo full in SuperAgent CLI if this was intentional.",
+        }],
+        isError: true,
+      };
+    }
+    const inScope = isToolCallWithinYoloScope({ name: "superagent_exec_command", args: { command, cwd: targetCwd } }, targetCwd);
+    if (!inScope) {
+      const allowedRoot = getYoloAllowedRoot(targetCwd);
+      return {
+        content: [{
+          type: "text",
+          text: `Error: Command execution blocked by Scoped YOLO boundary. Target directory or command traverses outside allowed scope (${allowedRoot}) or accesses protected config files. Use /yolo full in SuperAgent CLI for unrestricted access.`,
+        }],
+        isError: true,
+      };
+    }
   }
 
   try {
@@ -131,6 +175,27 @@ export async function handleWriteFile(args: any): Promise<McpToolResult> {
   }
 
   const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(targetCwd, filePath);
+
+  // Layer 2: Defense-in-depth safety checks for file write
+  if (!isFullYoloMode()) {
+    if (path.basename(resolved).toLowerCase() === "model-config.json") {
+      return {
+        content: [{ type: "text", text: "Error: Writing to model-config.json is strictly protected and prohibited via MCP." }],
+        isError: true,
+      };
+    }
+    if (!isPathWithinYoloScope(resolved, targetCwd)) {
+      const allowedRoot = getYoloAllowedRoot(targetCwd);
+      return {
+        content: [{
+          type: "text",
+          text: `Error: File write blocked by Scoped YOLO boundary: "${resolved}" is outside allowed scope (${allowedRoot}). Use /yolo full in SuperAgent CLI for unrestricted access.`,
+        }],
+        isError: true,
+      };
+    }
+  }
+
   if (fs.existsSync(resolved) && !overwrite) {
     return { content: [{ type: "text", text: `File already exists: ${resolved}. Set overwrite: true to overwrite.` }], isError: true };
   }

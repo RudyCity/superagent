@@ -21,6 +21,12 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import { getSuperAgentVersion } from "../config/paths.js";
+import {
+  getYoloModeState,
+  isFullYoloMode,
+  isToolCallWithinYoloScope,
+  getYoloAllowedRoot,
+} from "../permissions.js";
 import { registerResourcesAndPrompts } from "./resourcesAndPrompts.js";
 import {
   handleListActive,
@@ -215,10 +221,16 @@ export interface McpServerOptions {
   onToolCall?: (info: { tool: string; args: unknown; ok: boolean; error?: string; durationMs?: number }) => void;
   /** Auth mode for per-tool security metadata. Default "static-bearer". */
   authMode?: "static-bearer" | "oauth";
+  /** If true, explicitly allow dangerous tools regardless of YOLO mode (e.g. CLI flag --allow-dangerous). */
+  allowDangerous?: boolean;
+  /** Optional getter for active client identity (OAuth scopes / subject). */
+  getIdentity?: () => { mode: string; subject?: string; scopes?: string[] } | null;
+  /** Optional workspace root for YOLO scope validation. Defaults to process.cwd(). */
+  workspace?: string;
 }
 
 export function createSuperagentMcpServer(options: McpServerOptions = {}): Server {
-  const { allowedTools, onToolCall, authMode = "static-bearer" } = options;
+  const { allowedTools, onToolCall, authMode = "static-bearer", allowDangerous, getIdentity, workspace } = options;
   const version = getSuperAgentVersion();
   const server = new Server(
     {
@@ -488,7 +500,12 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         ...NETWORK_CONTENT_MCP_TOOL_DEFS,
     ];
     // Allowlist: hide non-allowed tools from MCP clients.
-    const tools = allowedTools ? allTools.filter((t) => allowedTools.includes(t.name)) : allTools;
+    // If allowDangerous is true OR CLI YOLO mode is active ("scoped" | "full"),
+    // dangerous tools are dynamically unlocked for discovery.
+    const yoloState = getYoloModeState();
+    const isDangerousUnlocked = Boolean(allowDangerous || yoloState !== "off");
+    const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
+    const tools = effectiveAllowedTools ? allTools.filter((t) => effectiveAllowedTools.includes(t.name)) : allTools;
     const annotated = tools.map((t) => ({
       ...t,
       annotations: getToolAnnotations(t.name),
@@ -619,11 +636,17 @@ function extractMcpResultText(result: unknown): string {
   return "";
 }
 
-  // Allowlist + audit wrapper around the dispatcher above.
+  // Allowlist + audit + YOLO boundary wrapper around the dispatcher above.
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const toolName = String((request.params as any)?.name || "");
-    const rawArgs = (request.params as any)?.arguments;
-    if (allowedTools && !allowedTools.includes(toolName)) {
+    const rawArgs = (request.params as any)?.arguments || {};
+    const yoloState = getYoloModeState();
+    const isDangerousUnlocked = Boolean(allowDangerous || yoloState !== "off");
+    const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
+    const level = MCP_TOOL_CLASSIFICATION[toolName];
+    const isDangerous = level === "dangerous";
+
+    if (effectiveAllowedTools && !effectiveAllowedTools.includes(toolName)) {
       const errReason = "blocked by MCP tool allowlist";
       onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: errReason });
       emitMcpActivity({
@@ -635,14 +658,63 @@ function extractMcpResultText(result: unknown): string {
         durationMs: 0,
         timestamp: Date.now(),
       });
-      const level = MCP_TOOL_CLASSIFICATION[toolName];
       throw new McpError(
         ErrorCode.InvalidRequest,
-        level === "dangerous"
-          ? `Tool '${toolName}' is classified as dangerous and is not enabled on this MCP server. ` +
-            `Enable it with --allow-dangerous (static-bearer mode) or use OAuth mode with the mcp:tools:write scope.`
-          : `Tool '${toolName}' is not enabled on this MCP server (allowlist).`
+        isDangerous
+          ? `Tool '${toolName}' is classified as dangerous and is blocked by MCP tool allowlist. ` +
+            `Enable it dynamically via SuperAgent CLI (/yolo or /yolo full) or restart the tunnel with --allow-dangerous.`
+          : `Tool '${toolName}' is not enabled on this MCP server (blocked by MCP tool allowlist).`
       );
+    }
+
+    // OAuth scope validation for dangerous tools
+    if (authMode === "oauth" && isDangerous) {
+      const identity = getIdentity?.();
+      if (identity && identity.scopes && !identity.scopes.includes("mcp:tools:write")) {
+        const errReason = "missing required scope 'mcp:tools:write'";
+        onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: errReason });
+        emitMcpActivity({
+          type: "tool_call",
+          tool: toolName,
+          args: rawArgs,
+          ok: false,
+          error: "Missing required scope 'mcp:tools:write'",
+          durationMs: 0,
+          timestamp: Date.now(),
+        });
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `Tool '${toolName}' requires 'mcp:tools:write' OAuth scope. Current token only has: ${identity.scopes.join(" ")}`
+        );
+      }
+    }
+
+    // Scoped YOLO boundary guard (Layer 1)
+    // If Full YOLO is active, system-wide access is permitted.
+    // If Scoped YOLO is active (or allowDangerous without full YOLO), enforce scope boundary!
+    if (isDangerous && !isFullYoloMode()) {
+      const effectiveWs =
+        (rawArgs.cwd as string) ||
+        (rawArgs.workspace as string) ||
+        (rawArgs.worktreePath as string) ||
+        workspace ||
+        process.cwd();
+      const inScope = isToolCallWithinYoloScope({ name: toolName, args: rawArgs }, effectiveWs);
+      if (!inScope) {
+        const allowedRoot = getYoloAllowedRoot(effectiveWs);
+        const errReason = `Tool '${toolName}' call was blocked by Scoped YOLO boundary: operation targets path or resource outside allowed scope (${allowedRoot}) or accesses protected config files. Use /yolo full in SuperAgent CLI for unrestricted system-wide access.`;
+        onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: errReason });
+        emitMcpActivity({
+          type: "tool_call",
+          tool: toolName,
+          args: rawArgs,
+          ok: false,
+          error: "Blocked by Scoped YOLO boundary",
+          durationMs: 0,
+          timestamp: Date.now(),
+        });
+        throw new McpError(ErrorCode.InvalidParams, errReason);
+      }
     }
     const startedAt = Date.now();
     try {

@@ -2,6 +2,7 @@
  * planSkillsMcpTools.ts — Plan management, checklist synchronization, skill engine, and surgical file mutation tools for MCP.
  */
 
+import path from "path";
 import { McpToolResult } from "../types.js";
 import {
   managePlanTool,
@@ -14,6 +15,11 @@ import {
   replaceFileContentTool,
   applyPatchTool,
 } from "../../tools/systemTools.js";
+import {
+  isFullYoloMode,
+  isPathWithinYoloScope,
+  getYoloAllowedRoot,
+} from "../../permissions.js";
 
 function toResult(res: unknown): McpToolResult {
   const text = typeof res === "string" ? res : JSON.stringify(res, null, 2);
@@ -89,6 +95,26 @@ export async function handleSynthesizeSkill(args: any): Promise<McpToolResult> {
 }
 
 export async function handleReplaceFileContent(args: any): Promise<McpToolResult> {
+  const filePath = String(args.filePath || args.TargetFile || args.path || args.file || "");
+  if (!isFullYoloMode() && filePath) {
+    const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+    if (path.basename(resolved).toLowerCase() === "model-config.json") {
+      return {
+        content: [{ type: "text", text: "Error: Editing model-config.json is strictly protected and prohibited via MCP." }],
+        isError: true,
+      };
+    }
+    if (!isPathWithinYoloScope(resolved, process.cwd())) {
+      const allowedRoot = getYoloAllowedRoot(process.cwd());
+      return {
+        content: [{
+          type: "text",
+          text: `Error: File editing blocked by Scoped YOLO boundary: "${resolved}" is outside allowed scope (${allowedRoot}). Use /yolo full in SuperAgent CLI for unrestricted access.`,
+        }],
+        isError: true,
+      };
+    }
+  }
   try {
     const res = await replaceFileContentTool.execute(args || {}, process.cwd());
     return toResult(res);
@@ -101,6 +127,26 @@ export async function handleReplaceFileContent(args: any): Promise<McpToolResult
 }
 
 export async function handleApplyPatch(args: any): Promise<McpToolResult> {
+  const filePath = String(args.filePath || args.path || args.file || "");
+  if (!isFullYoloMode() && filePath) {
+    const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+    if (path.basename(resolved).toLowerCase() === "model-config.json") {
+      return {
+        content: [{ type: "text", text: "Error: Patching model-config.json is strictly protected and prohibited via MCP." }],
+        isError: true,
+      };
+    }
+    if (!isPathWithinYoloScope(resolved, process.cwd())) {
+      const allowedRoot = getYoloAllowedRoot(process.cwd());
+      return {
+        content: [{
+          type: "text",
+          text: `Error: Patch application blocked by Scoped YOLO boundary: "${resolved}" is outside allowed scope (${allowedRoot}). Use /yolo full in SuperAgent CLI for unrestricted access.`,
+        }],
+        isError: true,
+      };
+    }
+  }
   try {
     const res = await applyPatchTool.execute(args || {}, process.cwd());
     return toResult(res);

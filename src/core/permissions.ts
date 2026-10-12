@@ -1,3 +1,4 @@
+import fs from "fs";
 import path from "path";
 import os from "os";
 import type { ToolCall, ToolResult } from "./conversation.js";
@@ -143,8 +144,8 @@ export function isDeleteToolCall(toolCall: { name: string; args?: Record<string,
   }
 
   // 2. Shell tools executing deletion commands
-  if (["bash", "run_command", "run_background_process", "shell", "exec", "terminal", "cmd", "sh"].includes(name)) {
-    const cmd = (args.command ?? args.cmd ?? args.script ?? args.input) as string | undefined;
+  if (["bash", "run_command", "run_background_process", "shell", "exec", "terminal", "cmd", "sh", "superagent_exec_command"].includes(name)) {
+    const cmd = (args.command ?? args.cmd ?? args.commandLine ?? args.CommandLine ?? args.script ?? args.input) as string | undefined;
     if (cmd && isDeleteCommand(cmd)) {
       return { isDelete: true, reason: `Deletion command detected in command: "${cmd.trim().slice(0, 80)}"` };
     }
@@ -245,6 +246,7 @@ export function isSuperagentOutOfBounds(
   const fileModifyingTools = [
     "write", "write_to_file", "edit", "replace_file_content",
     "multi_replace_file_content", "apply_patch",
+    "superagent_write_file", "superagent_replace_file_content", "superagent_apply_patch",
   ];
   const fileReadingTools = [
     "read", "grep", "glob", "ripgrep_search",
@@ -838,12 +840,67 @@ export function isSensitiveEnvFileAccess(
 let _isYoloMode = false;
 let _isFullYoloMode = false;
 
+const YOLO_STATE_FILE = "yolo-mode.json";
+
+function getYoloStateFilePath(): string {
+  try {
+    return path.join(getRootConfigDir(), YOLO_STATE_FILE);
+  } catch {
+    return path.join(os.homedir(), ".superagent-r", YOLO_STATE_FILE);
+  }
+}
+
+function persistYoloState(state: "off" | "scoped" | "full"): void {
+  try {
+    const filePath = getYoloStateFilePath();
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({ mode: state, updatedAt: Date.now(), workspace: process.cwd() }, null, 2),
+      "utf-8"
+    );
+  } catch {}
+}
+
+function readPersistedYoloState(): "off" | "scoped" | "full" | null {
+  try {
+    const filePath = getYoloStateFilePath();
+    if (!fs.existsSync(filePath)) return null;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const data = JSON.parse(raw);
+    if (data && (data.mode === "full" || data.mode === "scoped" || data.mode === "off")) {
+      return data.mode;
+    }
+  } catch {}
+  return null;
+}
+
 export function isYoloMode(): boolean {
-  return _isYoloMode || _isFullYoloMode;
+  if (_isFullYoloMode || _isYoloMode) return true;
+  const persisted = readPersistedYoloState();
+  if (persisted === "full") {
+    _isFullYoloMode = true;
+    _isYoloMode = true;
+    return true;
+  }
+  if (persisted === "scoped") {
+    _isFullYoloMode = false;
+    _isYoloMode = true;
+    return true;
+  }
+  return false;
 }
 
 export function isFullYoloMode(): boolean {
-  return _isFullYoloMode;
+  if (_isFullYoloMode) return true;
+  const persisted = readPersistedYoloState();
+  if (persisted === "full") {
+    _isFullYoloMode = true;
+    _isYoloMode = true;
+    return true;
+  }
+  return false;
 }
 
 export function setYoloMode(enabled: boolean): void {
@@ -851,6 +908,7 @@ export function setYoloMode(enabled: boolean): void {
   if (!enabled) {
     _isFullYoloMode = false;
   }
+  persistYoloState(enabled ? "scoped" : "off");
 }
 
 export function setFullYoloMode(enabled: boolean): void {
@@ -858,11 +916,23 @@ export function setFullYoloMode(enabled: boolean): void {
   if (enabled) {
     _isYoloMode = true;
   }
+  persistYoloState(enabled ? "full" : "off");
 }
 
 export function getYoloModeState(): "off" | "scoped" | "full" {
   if (_isFullYoloMode) return "full";
   if (_isYoloMode) return "scoped";
+  const persisted = readPersistedYoloState();
+  if (persisted === "full") {
+    _isFullYoloMode = true;
+    _isYoloMode = true;
+    return "full";
+  }
+  if (persisted === "scoped") {
+    _isFullYoloMode = false;
+    _isYoloMode = true;
+    return "scoped";
+  }
   return "off";
 }
 
@@ -931,6 +1001,7 @@ export function isToolCallWithinYoloScope(
     args.filePath, args.file_path, args.TargetFile, args.path,
     args.cwd, args.DirectoryPath, args.SearchPath, args.AbsolutePath,
     args.targetPath, args.sourcePath, args.destination,
+    args.workspacePath, args.worktreePath, args.workspace, args.dir, args.dirPath,
   ].filter((v): v is string => typeof v === "string");
 
   if (args.filePaths && Array.isArray(args.filePaths)) {
@@ -965,7 +1036,7 @@ export function isToolCallWithinYoloScope(
     const isAbs = path.isAbsolute(fp) || (process.platform === "win32" && /^\/[a-zA-Z]\//.test(fp));
     const resolved = isAbs
       ? resolveNormalizedPath(fp)
-      : resolveNormalizedPath(fp, (args.cwd as string) || primaryWs);
+      : resolveNormalizedPath(fp, (args.cwd as string) || (args.workspace as string) || primaryWs);
 
     if (
       path.basename(resolved).toLowerCase() === "model-config.json" ||
@@ -981,17 +1052,23 @@ export function isToolCallWithinYoloScope(
   }
 
   // Check shell commands for paths and relative traversals
-  const shellTools = ["bash", "run_command", "run_background_process", "shell", "exec", "terminal", "cmd", "sh"];
+  const shellTools = [
+    "bash", "run_command", "run_background_process", "shell", "exec",
+    "terminal", "cmd", "sh", "superagent_exec_command",
+  ];
   if (shellTools.includes(toolCall.name)) {
-    const cwdArg = args.cwd as string | undefined;
+    const cwdArg = (args.cwd ?? args.workspace ?? args.worktreePath) as string | undefined;
     const resolvedCwd = cwdArg ? resolveNormalizedPath(cwdArg, primaryWs) : resolveNormalizedPath(primaryWs);
     const inAnyYoloRoot = allowedRoots.some((root) => normalizeAndCheckSubpath(resolvedCwd, root));
     if (!inAnyYoloRoot) {
       return false;
     }
 
-    const command = (args.command ?? args.cmd ?? args.CommandLine ?? args.script ?? args.input) as string | undefined;
+    const command = (args.command ?? args.cmd ?? args.CommandLine ?? args.commandLine ?? args.script ?? args.input) as string | undefined;
     if (command && typeof command === "string") {
+      if (isSystemDestructiveCommand(command)) {
+        return false;
+      }
       if (command.toLowerCase().includes("model-config.json")) {
         return false;
       }

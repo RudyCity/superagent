@@ -695,7 +695,7 @@ export const yoloCommand: SlashCommand = {
       setFullYoloMode(true);
       ctx.addLine({
         type: "system",
-        content: `[Full YOLO Mode Enabled]\n- Scope: Full System (Unrestricted)\n- All commands, out-of-bounds operations, and file actions are auto-approved without confirmation.\n- Standard safety confirmation prompts disabled system-wide.`,
+        content: `[Full YOLO Mode Enabled]\n- Scope: Full System (Unrestricted)\n- All commands, out-of-bounds operations, and file actions are auto-approved without confirmation.\n- Standard safety confirmation prompts disabled system-wide.\n- MCP Tunnel: Unrestricted Full YOLO enabled for remote clients (ChatGPT).`,
         timestamp: Date.now(),
       });
       return;
@@ -706,7 +706,7 @@ export const yoloCommand: SlashCommand = {
       setYoloMode(true);
       ctx.addLine({
         type: "system",
-        content: `[YOLO Mode Enabled]\n- Scope: Project workspace and 1 parent level above\n- Allowed Root: ${allowedRoot}\n- Actions inside scope are auto-approved without confirmation.\n- Actions beyond 1 parent level or targeting model-config.json still require explicit human permission.`,
+        content: `[YOLO Mode Enabled]\n- Scope: Project workspace and 1 parent level above\n- Allowed Root: ${allowedRoot}\n- Actions inside scope are auto-approved without confirmation.\n- Actions beyond 1 parent level or targeting model-config.json still require explicit human permission.\n- MCP Tunnel: Scoped YOLO active for remote clients (ChatGPT) within allowed root.`,
         timestamp: Date.now(),
       });
       return;
@@ -717,7 +717,7 @@ export const yoloCommand: SlashCommand = {
       setYoloMode(false);
       ctx.addLine({
         type: "system",
-        content: "[YOLO Mode Disabled]\n- Standard safety confirmation prompts restored for dangerous commands and out-of-bounds operations.",
+        content: "[YOLO Mode Disabled]\n- Standard safety confirmation prompts restored for dangerous commands and out-of-bounds operations.\n- MCP Tunnel: Reverted to SAFE mode (read-only tools only).",
         timestamp: Date.now(),
       });
       return;
@@ -727,6 +727,11 @@ export const yoloCommand: SlashCommand = {
       const full = isFullYoloMode();
       const active = isYoloMode();
       const statusStr = full ? "ACTIVE (FULL)" : active ? "ACTIVE (SCOPED)" : "INACTIVE";
+      const mcpStatusStr = full
+        ? "- MCP Tunnel: Unrestricted Full YOLO enabled for remote clients (ChatGPT)."
+        : active
+        ? `- MCP Tunnel: Scoped YOLO active for remote clients within ${allowedRoot}.`
+        : "- MCP Tunnel: Safe mode active (read-only tools only).";
       ctx.addLine({
         type: "system",
         content: `[YOLO Mode Status: ${statusStr}]\n${
@@ -735,7 +740,7 @@ export const yoloCommand: SlashCommand = {
             : active
             ? `- Allowed Root (1 parent level): ${allowedRoot}\n- Grandparents, drive roots, and model-config.json always require human approval.`
             : "- Standard confirmation prompts active."
-        }`,
+        }\n${mcpStatusStr}`,
         timestamp: Date.now(),
       });
       return;
@@ -747,7 +752,7 @@ export const yoloCommand: SlashCommand = {
       setYoloMode(false);
       ctx.addLine({
         type: "system",
-        content: "[YOLO Mode Disabled]\n- Standard safety confirmation prompts restored for dangerous commands and out-of-bounds operations.",
+        content: "[YOLO Mode Disabled]\n- Standard safety confirmation prompts restored for dangerous commands and out-of-bounds operations.\n- MCP Tunnel: Reverted to SAFE mode (read-only tools only).",
         timestamp: Date.now(),
       });
     } else {
@@ -755,7 +760,7 @@ export const yoloCommand: SlashCommand = {
       setYoloMode(true);
       ctx.addLine({
         type: "system",
-        content: `[YOLO Mode Enabled]\n- Scope: Project workspace and 1 parent level above\n- Allowed Root: ${allowedRoot}\n- Actions inside scope are auto-approved without confirmation.\n- Actions beyond 1 parent level or targeting model-config.json still require explicit human permission.`,
+        content: `[YOLO Mode Enabled]\n- Scope: Project workspace and 1 parent level above\n- Allowed Root: ${allowedRoot}\n- Actions inside scope are auto-approved without confirmation.\n- Actions beyond 1 parent level or targeting model-config.json still require explicit human permission.\n- MCP Tunnel: Scoped YOLO active for remote clients (ChatGPT) within allowed root.`,
         timestamp: Date.now(),
       });
     }

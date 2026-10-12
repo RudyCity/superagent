@@ -1,3 +1,14 @@
+## [1.13.59] - 2026-10-12
+### Added & Enhanced
+- Dynamic CLI YOLO & MCP Tunnel Synchronization with Multi-Layer Safety Boundaries (`src/core/permissions.ts`, `src/core/mcp/superagentMcpServer.ts`, `src/core/mcp/tools/workspaceTools.ts`, `src/core/mcp/tools/planSkillsMcpTools.ts`, `src/core/mcp/mcpHttpTransport.ts`, `src/core/commands/coreCommands.ts`, `tests/mcpYoloIntegration.test.ts`):
+  - Connected `/yolo` and `/yolo full` CLI modes dynamically to the MCP Server and Cloudflare Tunnel:
+    - In Safe mode (YOLO off, default): Dangerous mutating tools (command execution, file writes, patches, workspace switches) are hidden from `tools/list` and rejected in `tools/call` with informative guidance.
+    - In Scoped YOLO mode (`/yolo` on): Exposes all tools while enforcing Layer 1 and Layer 2 boundary guards—file operations and shell execution are strictly bounded to the project workspace and 1 parent directory level above (`getYoloAllowedRoot`), prohibiting access to `model-config.json`, sensitive `.env` files, and destructive system commands (`rm -rf /`, `Format-Volume`, blanket process kills).
+    - In Full YOLO mode (`/yolo full`): Exposes all tools system-wide for remote clients without path restrictions.
+  - Added cross-process and persistent YOLO state tracking (`~/.superagent-r/yolo-mode.json`) so CLI state toggles are shared in real time across sessions and background workers.
+  - Added OAuth write scope verification (`mcp:tools:write`) for dangerous tool invocations under OAuth 2.1 authentication mode.
+  - Added automated unit and integration test suite `tests/mcpYoloIntegration.test.ts` covering safe allowlists, dynamic scoped unlocking, model-config protection, out-of-bounds rejection, system-destructive command prevention, full YOLO mode, and safe reversion.
+
 ## [1.13.58] - 2026-10-12
 ### Added & Fixed
 - OAuth 2.1 RFC Compliance, DCR, Resource Indicators & Streamable HTTP Hardening (`src/core/mcp/mcpOAuthRoutes.ts`, `src/core/mcp/mcpOAuthStore.ts`, `src/core/mcp/mcpHttpTransport.ts`, `src/serverRoutes.ts`, `src/core/mcp/tools/configTools.ts`, `tests/mcpOAuthRoutes.test.ts`, `tests/mcpOAuthStore.test.ts`, `tests/mcpChatgptCompatibility.test.ts`):

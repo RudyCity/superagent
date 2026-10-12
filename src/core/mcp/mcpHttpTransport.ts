@@ -460,7 +460,14 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           sessionHash: (identity as McpIdentity).credentialHash.slice(0, 16),
         };
         const sessionAudit = (info: McpAuditInfo) => audit({ ...info, sessionHash: sessionCtx.sessionHash });
-        const newServer = createSuperagentMcpServer({ allowedTools, onToolCall: sessionAudit, authMode } as McpServerOptions);
+        const newServer = createSuperagentMcpServer({
+          allowedTools,
+          onToolCall: sessionAudit,
+          authMode,
+          allowDangerous: opts.allowDangerous,
+          getIdentity: () => identity,
+          workspace: process.cwd(),
+        } as McpServerOptions);
         await newServer.connect(newTransport);
         try {
           await newTransport.handleRequest(req, res, rb.body);
@@ -496,7 +503,14 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         sessionHash: (identity as McpIdentity).credentialHash.slice(0, 16),
       };
       const sessionAudit = (info: McpAuditInfo) => audit({ ...info, sessionHash: sessionCtx.sessionHash });
-      const statelessServer = createSuperagentMcpServer({ allowedTools, onToolCall: sessionAudit, authMode } as McpServerOptions);
+      const statelessServer = createSuperagentMcpServer({
+        allowedTools,
+        onToolCall: sessionAudit,
+        authMode,
+        allowDangerous: opts.allowDangerous,
+        getIdentity: () => identity,
+        workspace: process.cwd(),
+      } as McpServerOptions);
       await statelessServer.connect(statelessTransport);
       try {
         await statelessTransport.handleRequest(req, res, rb.body);
