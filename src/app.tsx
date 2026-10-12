@@ -522,7 +522,6 @@ export function App({
   const [worktreeCount, setWorktreeCount] = useState<number>(0);
   const [activeDevHook, setActiveDevHook] = useState<string | null>(null);
   const originalWorkingDirectoryRef = useRef<string>(process.cwd());
-
   const addLine = useCallback((line: ChatLine) => {
     const cleanLine: ChatLine = {
       ...line,
@@ -538,6 +537,26 @@ export function App({
       return [...prev, cleanLine];
     });
   }, []);
+
+// Subscribe to real-time MCP activity (tool calls & results) from local or cross-process MCP servers
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    import("./core/mcp/mcpActivityBus.js")
+      .then(({ subscribeToMcpActivity }) => {
+        unsubscribe = subscribeToMcpActivity((lineContent) => {
+          addLine({
+            type: "system",
+            content: lineContent,
+            timestamp: Date.now(),
+          });
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [addLine]);
 
   /** Append a tool-related line (tool_start/tool_end) as a child of the last assistant message */
   const addToolChild = useCallback((child: ChatLine) => {

@@ -922,7 +922,51 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
         </Box>
       );
     }
-    case "system":
+    case "system": {
+      const isMcp = line.content.startsWith("[MCP]");
+      if (isMcp) {
+        const firstLine = line.content.split("\n")[0].replace(/^\[MCP\]\s*/, "");
+        const isError = line.content.includes("❌") || line.content.includes("✗ Failed");
+        const headerColor = isError ? "red" : "magenta";
+        const tagText = isError ? "🔌 MCP_TOOL_FAILED" : "🔌 MCP_ACTIVITY";
+        if (isCollapsed) {
+          const preview = firstLine.length > 55 ? firstLine.slice(0, 52) + "..." : firstLine;
+          return (
+            <Box flexDirection="column">
+              <Text color="gray" dimColor>
+                ├─── [ <Text bold color={headerColor}>▶ {tagText}:</Text> <Text color={headerColor}>{preview}</Text> ] <Text dimColor italic>Ctrl+O</Text>
+              </Text>
+            </Box>
+          );
+        }
+        return (
+          <Box flexDirection="column">
+            <Text color="gray" dimColor>
+              ├─── [ <Text bold color={headerColor}>{tagText}</Text> ] <Text dimColor italic>Ctrl+O</Text>
+            </Text>
+            {line.content.split("\n").map((l, idx) => {
+              let lineCol = "gray";
+              if (idx === 0) lineCol = headerColor;
+              else if (l.startsWith("Status:") && l.includes("✓")) lineCol = "green";
+              else if (l.startsWith("Status:") && l.includes("✗")) lineCol = "red";
+              else if (l.startsWith("Error:")) lineCol = "red";
+              else if (l.startsWith("Arguments:")) lineCol = "cyan";
+              else if (l.startsWith("Output:")) lineCol = "white";
+              return (
+                <Box key={idx} flexDirection="row">
+                  <Text color="gray" dimColor>│    </Text>
+                  <Text color={lineCol as any} bold={idx === 0}>
+                    {l}
+                  </Text>
+                </Box>
+              );
+            })}
+            <Box flexDirection="row">
+              <Text color="gray" dimColor>│ </Text>
+            </Box>
+          </Box>
+        );
+      }
       if (isCollapsed) {
         const firstLine = line.content.split("\n")[0];
         const preview = firstLine.length > 50 ? firstLine.slice(0, 47) + "..." : firstLine;
@@ -950,6 +994,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
           </Box>
         </Box>
       );
+    }
     default:
       return (
         <Box flexDirection="column">

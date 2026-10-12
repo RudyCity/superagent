@@ -12,6 +12,7 @@ import path from "path";
 import os from "os";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { summarizeArgs } from "./mcpLogSanitizer.js";
+import { emitMcpActivity } from "./mcpActivityBus.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
@@ -587,12 +588,38 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     }
   };
 
+
+function extractMcpResultText(result: unknown): string {
+  if (!result || typeof result !== "object") return "";
+  const r = result as Record<string, unknown>;
+  if (Array.isArray(r.content)) {
+    const texts = r.content
+      .filter((item: any) => item && typeof item === "object" && item.type === "text" && typeof item.text === "string")
+      .map((item: any) => item.text);
+    if (texts.length > 0) return texts.join("\n");
+  }
+  if (typeof r.text === "string") return r.text;
+  if (typeof r.error === "string") return r.error;
+  if (typeof r.message === "string") return r.message;
+  return "";
+}
+
   // Allowlist + audit wrapper around the dispatcher above.
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const toolName = String((request.params as any)?.name || "");
     const rawArgs = (request.params as any)?.arguments;
     if (allowedTools && !allowedTools.includes(toolName)) {
-      onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: "blocked by MCP tool allowlist" });
+      const errReason = "blocked by MCP tool allowlist";
+      onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: errReason });
+      emitMcpActivity({
+        type: "tool_call",
+        tool: toolName,
+        args: rawArgs,
+        ok: false,
+        error: "Blocked by MCP tool allowlist",
+        durationMs: 0,
+        timestamp: Date.now(),
+      });
       const level = MCP_TOOL_CLASSIFICATION[toolName];
       throw new McpError(
         ErrorCode.InvalidRequest,
@@ -606,15 +633,38 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     try {
       const result: any = await dispatchMcpToolCall(request);
       const failed = !!(result && typeof result === "object" && (result as any).isError);
-      onToolCall?.({ tool: toolName, args: rawArgs, ok: !failed, durationMs: Date.now() - startedAt });
+      const durationMs = Date.now() - startedAt;
+      const outputText = extractMcpResultText(result);
+      onToolCall?.({ tool: toolName, args: rawArgs, ok: !failed, durationMs });
+      emitMcpActivity({
+        type: "tool_call",
+        tool: toolName,
+        args: rawArgs,
+        ok: !failed,
+        error: failed ? outputText : undefined,
+        output: failed ? undefined : outputText,
+        durationMs,
+        timestamp: Date.now(),
+      });
       return result;
     } catch (err: any) {
+      const durationMs = Date.now() - startedAt;
+      const errorMsg = err?.message || String(err);
       onToolCall?.({
         tool: toolName,
         args: rawArgs,
         ok: false,
-        error: err?.message || String(err),
-        durationMs: Date.now() - startedAt,
+        error: errorMsg,
+        durationMs,
+      });
+      emitMcpActivity({
+        type: "tool_call",
+        tool: toolName,
+        args: rawArgs,
+        ok: false,
+        error: errorMsg,
+        durationMs,
+        timestamp: Date.now(),
       });
       throw err;
     }

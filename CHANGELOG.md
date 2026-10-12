@@ -1,3 +1,12 @@
+## [1.13.55] - 2026-10-12
+### Added & Enhanced
+- Real-Time MCP Tool Execution & Activity Streaming in Chat Sheet (`src/core/mcp/mcpActivityBus.ts`, `src/core/mcp/superagentMcpServer.ts`, `src/components/chat-line.tsx`, `src/app.tsx`, `tests/mcpActivityBus.test.ts`):
+  - Created `mcpActivityBus` event dispatcher and cross-process journal (`~/.superagent-r/mcp-activity.jsonl`) to broadcast all external MCP tool calls, parameters, durations, and output previews in real time.
+  - Connected `App.tsx` conversation log (`[ 💬 CONVERSATION LOG ]`) to `subscribeToMcpActivity`, streaming live tool execution lines directly into the active terminal chat sheet.
+  - Enhanced `chat-line.tsx` with dedicated cyberpunk styled `[ 🔌 MCP_ACTIVITY ]` and `[ 🔌 MCP_TOOL_FAILED ]` collapsible card components featuring color-coded statuses (success green, failure red, arguments cyan, output white).
+  - Instrumented `superagentMcpServer.ts` `CallToolRequestSchema` and `ListToolsRequestSchema` with bounded output summaries and argument redaction via `mcpLogSanitizer.ts`.
+  - Added unit test suite `tests/mcpActivityBus.test.ts` verifying formatting, in-process broadcasting, and subscription cleanup.
+
 ## [1.13.54] - 2026-10-12
 ### Added & Enhanced
 - ChatGPT Custom MCP Server Setup Guide & CLI Output Hardening (`src/core/commands/museTunnelSubcommand.ts`, `src/core/remoteAgent/museCli.ts`, `README.md`, `docs/remote-agent-setup.md`):
