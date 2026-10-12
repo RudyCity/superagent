@@ -13,6 +13,7 @@
 - Save Chrome CDP PDF output as a bounded workspace artifact by default, with optional bounded inline base64 and guarded external paths.
 - Enforce the read_page max_links limit and prevent duplicate text insertion in the type command.
 - Add artifact output tests for PDF creation, external-path rejection, and payload-size limits.
+- Bound default Vitest worker allocation on high-core Windows systems while preserving explicit SUPERAGENT_TEST_MAX_WORKERS overrides (`vitest.config.ts`).
 
 ## [1.13.61] - 2026-10-12
 ### Added & Hardened
