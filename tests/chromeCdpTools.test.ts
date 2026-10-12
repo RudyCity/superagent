@@ -314,6 +314,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       "drag_and_drop", "drag", "drag_drop",
       "emulate_device", "set_device", "set_viewport", "emulate_viewport",
       "page_audit", "accessibility_audit", "seo_audit", "responsive_audit", "performance_metrics",
+      "start_debug_capture", "read_debug_capture", "stop_debug_capture", "clear_debug_capture",
     ]);
     expect(controlChromeCdpTool.description).toContain("--remote-debugging-port=9222");
     expect(controlChromeCdpTool.description).toContain("no extension required");
