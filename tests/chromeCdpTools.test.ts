@@ -22,6 +22,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   let simulateTransitionOnNextClick = false;
   let simulateNativeDialogOnNextClick = false;
   let lastHandledDialogParams: Record<string, unknown> | null = null;
+  let nativeInsertCalls = 0;
   const mockElementsChanged = [{ index: 0, tag: "button", text: "Sign In", selector: "button" }, { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' }, { index: 2, tag: "a", text: "Help", selector: "a.help" }];
   let lastTypeExpression = "";
   const mockElements = [{ index: 0, tag: "button", text: "Login", selector: "button" }, { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' }];
@@ -215,6 +216,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
           ws.send(JSON.stringify({ id: msg.id, result: {} }));
           return;
         }
+        if (msg.method === "Input.insertText") nativeInsertCalls++;
         const canned: Record<string, any> = {
           "Page.enable": {},
           "Page.navigate": {},
@@ -402,8 +404,17 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(typeRes).toContain("data:image/png;base64,iVBORw0KGgo=");
   });
 
-  test("pdf returns base64 data", async () => {
-    expect(await controlChromeCdpTool.execute({ command: "pdf", payload: JSON.stringify({ includeBase64: true }) })).toContain("JVBERi0xLjQ=");
+  test("pdf saves a bounded artifact and optionally returns base64 data", async () => {
+    const outputPath = path.join(process.cwd(), "cdp_test_output.pdf");
+    try {
+      const result = await controlChromeCdpTool.execute({ command: "pdf", payload: JSON.stringify({ includeBase64: true, outputPath }) });
+      expect(result).toContain("PDF saved to");
+      expect(result).toContain("cdp_test_output.pdf");
+      expect(result).toContain("JVBERi0xLjQ=");
+      expect(existsSync(outputPath)).toBe(true);
+    } finally {
+      if (existsSync(outputPath)) unlinkSync(outputPath);
+    }
   });
 
   test("get_cookies returns the cookie list", async () => {
@@ -483,13 +494,16 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(lastTypeExpression).toContain("shadowRoot");
   });
 
-  test("type with native flag dispatches both evaluate and Input.insertText", async () => {
+  test("native type mode prepares the field and inserts text exactly once", async () => {
     await controlChromeCdpTool.execute({ command: "snapshot" });
+    nativeInsertCalls = 0;
     const res = await controlChromeCdpTool.execute({
       command: "type",
       payload: JSON.stringify({ index: 1, text: "secret123", native: true }),
     });
     expect(res).toContain("typed into <input>");
+    expect(nativeInsertCalls).toBe(1);
+    expect(lastTypeExpression).toContain("cdp-type");
   });
 
   test("click with out-of-range index fails clearly", async () => {

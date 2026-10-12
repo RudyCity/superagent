@@ -38,6 +38,7 @@ import { executeDeviceEmulationCommand } from "./chromeCdpEmulation.js";
 import { executeSelectOptionCommand, executeCheckFormCommand } from "./chromeCdpForm.js";
 import { CDP_AUDIT_COMMANDS, executeCdpAuditCommand, type CdpAuditCommand } from "./chromeCdpAudits.js";
 import { CDP_DIAGNOSTIC_COMMANDS, executeCdpDiagnosticsCommand, recordCdpDebugEvent, type CdpDiagnosticCommand } from "./chromeCdpDiagnostics.js";
+import { saveCdpPdfArtifact } from "./chromeCdpArtifacts.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -476,12 +477,9 @@ export const _cdpTestHooks = {
 export const controlChromeCdpTool: Tool = {
   name: "control_chrome_cdp",
   description:
-    "Control the user's REAL Chrome browser directly via Chrome Remote Debugging (CDP) at http://127.0.0.1:9222 — no extension required and no isolated background tab. " +
-    "REQUIRES Chrome to be running with --remote-debugging-port=9222 (close ALL Chrome windows, then reopen Chrome from the taskbar shortcut). " +
-    "Commands include tab/navigation, DOM snapshot and extraction, click/type/forms, dialogs, screenshots/PDF, cookies, media, cursor/drag-and-drop, device emulation, page/accessibility/SEO/responsive audits, and performance metrics. " +
-    "Use page_audit, accessibility_audit, seo_audit, responsive_audit, and performance_metrics for structured reports. Use start_debug_capture/read_debug_capture/stop_debug_capture for bounded console, exception, and network diagnostics. Use evaluate only for trusted, intentional page JavaScript. Cookie values and large artifacts are summarized by default. " +
-    "Supports device/viewport emulation (mobile, tablet, desktop, reset), human-like Bézier cursor movement, realistic drag-and-drop, visual pointer overlay, native dialog interception, and UI transition verification. " +
-    "Arguments like url, index, text, selector, source, target, dx, dy, preset, device, orientation, screenshot, outputPath can be provided directly at top-level or inside payload.",
+    "Control the user's real Chrome via CDP port 9222 (--remote-debugging-port=9222); no extension required. Supports tabs/navigation, DOM snapshot/extraction, click/type/forms, dialogs, screenshots/PDF, cookies, media, cursor/drag-and-drop, device emulation, and UI transition verification. " +
+    "Audits: page_audit, accessibility_audit, seo_audit, responsive_audit, performance_metrics. Diagnostics: start_debug_capture/read_debug_capture/stop_debug_capture/clear_debug_capture for bounded console, exception, and network metadata. " +
+    "Use evaluate only for trusted, intentional page JavaScript. Cookie values and large artifacts are summarized by default. Arguments can be passed at top level or inside payload.",
   parameters: {
     type: "object",
     properties: {
@@ -532,12 +530,7 @@ export const controlChromeCdpTool: Tool = {
       steps: { type: "number", description: "Optional step count for cursor trajectory interpolation." },
       visualCursor: { type: "boolean", description: "Optional flag to display an animated virtual pointer overlay in the DOM." },
       targetId: { type: "string", description: "Optional CDP target id. Automatically defaults to the active tab." },
-      includeImageData: { type: "boolean", description: "Include screenshot data inline instead of returning file metadata only; disabled by default." },
-      includeValues: { type: "boolean", description: "Expose cookie values in get_cookies; sensitive and disabled by default." },
-      includeBase64: { type: "boolean", description: "Include a bounded PDF base64 payload; disabled by default." },
-      max_chars: { type: "number", description: "Maximum output characters for page/audit reports, clamped to safe limits." },
-      max_links: { type: "number", description: "Maximum links returned by read_page." },
-      limit: { type: "number", description: "Maximum retained debug events returned by read_debug_capture (1-300)." }
+      includeImageData: { type: "boolean", description: "Include screenshot data inline; disabled by default." }, includeValues: { type: "boolean", description: "Expose sensitive cookie values; disabled by default." }, includeBase64: { type: "boolean", description: "Include bounded PDF base64; disabled by default." }, max_chars: { type: "number", description: "Bounded page/audit report output." }, max_links: { type: "number", description: "Maximum links returned by read_page." }, limit: { type: "number", description: "Maximum debug events returned (1-300)." }
     },
     required: ["command"],
   },
@@ -569,11 +562,7 @@ export const controlChromeCdpTool: Tool = {
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
     }
-    const targetId = args.targetId
-      ? String(args.targetId)
-      : payload.targetId
-        ? String(payload.targetId)
-        : undefined;
+    const targetId = args.targetId ? String(args.targetId) : payload.targetId ? String(payload.targetId) : undefined;
 
     try {
       switch (command) {
@@ -763,8 +752,10 @@ export const controlChromeCdpTool: Tool = {
           const requestedChars = Number(payload.max_chars ?? payload.maxChars ?? 5000);
           const maxChars = Number.isFinite(requestedChars) ? Math.max(500, Math.min(20000, Math.floor(requestedChars))) : 5000;
           sections.push(bodyText ? `Visible Content:\n${truncate(bodyText, maxChars)}` : `Visible Content: (no visible text)`);
-          if (links.length > 0) {
-            sections.push(`Key Links (${links.length}):\n` + links.slice(0, 20).map((l) => `- "${l.text || '(no text)'}" -> ${l.href}`).join("\n"));
+          const requestedLinks = Number(payload.max_links ?? payload.maxLinks ?? 20);
+          const maxLinks = Number.isFinite(requestedLinks) ? Math.max(0, Math.min(30, Math.floor(requestedLinks))) : 20;
+          if (links.length > 0 && maxLinks > 0) {
+            sections.push(`Key Links (showing ${Math.min(links.length, maxLinks)} of ${links.length}):\n` + links.slice(0, maxLinks).map((l) => `- "${truncate(l.text || '(no text)', 100)}" -> ${truncate(l.href, 500)}`).join("\n"));
           }
           return sections.join("\n\n");
         }
@@ -851,15 +842,13 @@ export const controlChromeCdpTool: Tool = {
             }
           }
           const res: any = await cdpSend(target, "Runtime.evaluate", {
-            expression: buildTypeJs(resolved.selector, text, clear),
+            expression: buildTypeJs(resolved.selector, text, clear, Boolean(payload.native || payload.dispatch_keys)),
             returnByValue: true,
           });
           const value = res && res.result ? res.result.value : undefined;
           const parsed = parseActionResult(typeof value === "string" ? value : JSON.stringify(value));
           if (!parsed.ok) return `control_chrome_cdp: type failed - ${parsed.reason || "unknown reason"}.`;
-          if (payload.native || payload.dispatch_keys) {
-            try { await cdpSend(target, "Input.insertText", { text }); } catch {}
-          }
+          if (payload.native || payload.dispatch_keys) await cdpSend(target, "Input.insertText", { text });
           const typeResult = `control_chrome_cdp: typed into <${parsed.tag}>: "${truncate(parsed.typed || text, 80)}".`;
           return await attachScreenshotIfRequested(cdpSend, target, payload, typeResult, false);
         }
@@ -915,8 +904,10 @@ export const controlChromeCdpTool: Tool = {
           const res: any = await cdpSend(target, "Page.printToPDF", {});
           const data = String((res && res.data) || "");
           if (!data) return "control_chrome_cdp: printToPDF returned no data.";
+          const outPath = payload.outputPath || payload.output_path;
+          const artifact = await saveCdpPdfArtifact(data, outPath ? String(outPath) : undefined);
           const includeBase64 = payload.includeBase64 === true || payload.include_base64 === true;
-          return `control_chrome_cdp: PDF captured (${Math.floor(data.length * 3 / 4)} bytes estimated). ${includeBase64 ? `Base64 (limited to 1,000,000 chars):\n${truncate(data, 1000000)}` : "Binary payload omitted by default; pass includeBase64: true to request a bounded inline payload."}`;
+          return `control_chrome_cdp: PDF saved to ${artifact.savedPath} (${artifact.byteSize} bytes). ${includeBase64 ? `Base64 (limited to 1,000,000 chars):\n${truncate(data, 1000000)}` : "Binary payload omitted by default."}`;
         }
         case "get_cookies": {
           const target = await pickTarget(targetId);

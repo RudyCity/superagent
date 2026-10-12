@@ -268,7 +268,7 @@ export function buildClickJs(selector: string): string {
  * Pierces open Shadow DOM roots, updates React _valueTracker, and
  * dispatches InputEvent, input, change, and blur events for reactive frameworks (React, Vue, Svelte).
  */
-export function buildTypeJs(selector: string, text: string, clear: boolean): string {
+export function buildTypeJs(selector: string, text: string, clear: boolean, native = false): string {
   return `/*cdp-type*/(() => {
     function findEl(sel) {
       try { const el = document.querySelector(sel); if (el) return el; } catch (e) {}
@@ -293,6 +293,7 @@ export function buildTypeJs(selector: string, text: string, clear: boolean): str
     const tag = el.tagName.toLowerCase();
     const text = ${JSON.stringify(text)};
     const doClear = ${clear ? "true" : "false"};
+    if (${native ? "true" : "false"}) { if (tag === "input" || tag === "textarea") { const end = el.value.length; el.setSelectionRange(doClear ? 0 : end, end); } else if (el.isContentEditable) { const range = document.createRange(); range.selectNodeContents(el); if (!doClear) range.collapse(false); const selection = window.getSelection(); if (selection) { selection.removeAllRanges(); selection.addRange(range); } } else return JSON.stringify({ ok: false, reason: "element is not editable" }); return JSON.stringify({ ok: true, tag, typed: "" }); }
     function fire(prevVal) {
       if (el._valueTracker) {
         try { el._valueTracker.setValue(prevVal !== undefined ? String(prevVal) : ""); } catch (e) {}

@@ -1,3 +1,9 @@
+## [1.13.62] - 2026-10-12
+### Added & Hardened
+- Save Chrome CDP PDF output as a bounded workspace artifact by default, with optional bounded inline base64 and guarded external paths.
+- Enforce the read_page max_links limit and prevent duplicate text insertion in the type command.
+- Add artifact output tests for PDF creation, external-path rejection, and payload-size limits.
+
 ## [1.13.61] - 2026-10-12
 ### Added & Hardened
 - Disabled `superagent_spawn_subagent` specifically for the MCP server (`src/core/mcp/superagentMcpServer.ts`, `src/core/mcp/mcpTunnel.ts`, `tests/mcpServer.test.ts`):

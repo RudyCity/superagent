@@ -10,6 +10,7 @@ import { callServerApi } from "./processTools.js";
 import { loadRegistry, removeEntries } from "../../tools/superagentRegistry.js";
 import { addTrustedDirectory, ensureDirectoryTrusted } from "../../config.js";
 import {
+  isYoloMode,
   isFullYoloMode,
   isSystemDestructiveCommand,
   isPathWithinYoloScope,
@@ -198,6 +199,17 @@ export async function handleWriteFile(args: any): Promise<McpToolResult> {
 
   if (fs.existsSync(resolved) && !overwrite) {
     return { content: [{ type: "text", text: `File already exists: ${resolved}. Set overwrite: true to overwrite.` }], isError: true };
+  }
+
+  try {
+    const { checkFileLock, releaseFile } = await import("../../storage/sharedMemory.js");
+    const lockCheck = checkFileLock(resolved, undefined, targetCwd);
+    if (lockCheck.locked) {
+      if (isYoloMode()) releaseFile(resolved, undefined, targetCwd, true);
+      else return { content: [{ type: "text", text: `Error: [LOCK_CONFLICT] File "${resolved}" is locked by session ${lockCheck.owner?.sessionId || "unknown"}. Use superagent_unlock_file with action: "force_unlock" or switch to /yolo mode to override.` }], isError: true };
+    }
+  } catch (err: any) {
+    if (err?.code === "LOCK_CONFLICT") return { content: [{ type: "text", text: `Error: [LOCK_CONFLICT] ${err.message}` }], isError: true };
   }
 
   try {
@@ -570,4 +582,124 @@ export async function handleUpdateTasks(args: any): Promise<McpToolResult> {
   } catch {}
 
   return { content: [{ type: "text", text: String(result) }] };
+}
+
+export const UNLOCK_FILE_MCP_TOOL_DEF = {
+  name: "superagent_unlock_file",
+  description: "Inspect, release, or force-unlock cross-session file locks in the Superagent workspace. Diagnoses zombie/deadlocks and forcibly clears contention.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      filePath: { type: "string", description: "Path to the file to inspect or unlock." },
+      action: {
+        type: "string",
+        enum: ["status", "unlock", "force_unlock"],
+        description: "Operation to perform: 'status' (inspect active lock/owner), 'unlock' (gracefully release lock), 'force_unlock' (forcibly evict lock from any session). Defaults to 'unlock'.",
+      },
+      force: { type: "boolean", description: "Set to true to force-unlock even if the lock is held by another active session." },
+      reason: { type: "string", description: "Audit reason for force unlocking (recommended when force is true or action is 'force_unlock')." },
+      cwd: { type: "string", description: "Optional working directory / project path." },
+      lineRange: {
+        type: "object",
+        description: "Optional line range for partial lock { startLine, endLine }.",
+        properties: {
+          startLine: { type: "number" },
+          endLine: { type: "number" },
+        },
+      },
+    },
+    required: ["filePath"],
+  },
+};
+
+export async function handleUnlockFile(args: any): Promise<McpToolResult> {
+  const filePath = String(args.filePath || args.path || args.file || "");
+  const targetCwd = String(args.cwd || args.workspace || process.cwd());
+  if (!filePath) return { content: [{ type: "text", text: "Error: 'filePath' is required." }], isError: true };
+  const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(targetCwd, filePath);
+  const action = String(args.action || (args.force ? "force_unlock" : "unlock")).toLowerCase();
+  if (!["status", "unlock", "force_unlock"].includes(action)) {
+    return { content: [{ type: "text", text: 'Unknown action. Use "status", "unlock", or "force_unlock".' }], isError: true };
+  }
+  const lineRange =
+    args.lineRange && typeof args.lineRange.startLine === "number" && typeof args.lineRange.endLine === "number"
+      ? { startLine: args.lineRange.startLine, endLine: args.lineRange.endLine }
+      : undefined;
+
+  try {
+    const { checkFileLock, releaseFile } = await import("../../storage/sharedMemory.js");
+    const lock = checkFileLock(resolved, undefined, targetCwd, lineRange);
+    if (action === "status") {
+      if (!lock.locked) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `File Lock Status for ${resolved}:\nStatus: UNLOCKED\nNo active lock or contention detected on this path.`,
+            },
+          ],
+        };
+      }
+      const owner = lock.owner;
+      const rangeStr = owner?.lineRange
+        ? `lines ${owner.lineRange.startLine}-${owner.lineRange.endLine}`
+        : "entire file";
+      const statusLines = [
+        `File Lock Status for ${resolved}:`,
+        `Status: LOCKED`,
+        `Owner Session ID: ${owner?.sessionId || "unknown"}`,
+        `Terminal Type: ${owner?.terminalType || "unknown"}`,
+        `PID: ${owner?.pid ?? "unknown"}`,
+        `Locked Range: ${rangeStr}`,
+        `Locked At: ${owner?.lockedAt ? new Date(owner.lockedAt).toISOString() : "unknown"}`,
+        `TTL: ${owner?.ttlMs ?? 30000}ms`,
+        `Intent Soft Lock: ${owner?.isIntentSoftLock ? "true" : "false"}`,
+        `Heartbeat Ping: ${owner?.heartbeatPingAt ? new Date(owner.heartbeatPingAt).toISOString() : "unknown"}`,
+      ];
+      return { content: [{ type: "text", text: statusLines.join("\n") }] };
+    }
+
+    if (!lock.locked) {
+      return { content: [{ type: "text", text: `File "${resolved}" is not currently locked. No action needed.` }] };
+    }
+
+    const force = action === "force_unlock" || Boolean(args.force);
+    const callerSessionId = String(args.sessionId || process.env.SUPERAGENT_SESSION_ID || "");
+    if (!force && lock.owner?.sessionId && lock.owner.sessionId !== callerSessionId) {
+      return {
+        content: [{ type: "text", text: `Failed to unlock "${resolved}": lock is held by another session (${lock.owner.sessionId}). Use action: "force_unlock" or set force: true with a reason to forcibly override.` }],
+        isError: true,
+      };
+    }
+    const auditReason =
+      String(args.reason || args.details || "") ||
+      (force
+        ? "Manual force-unlock via superagent_unlock_file MCP"
+        : "Unlocked via superagent_unlock_file MCP");
+
+    const result = releaseFile(resolved, callerSessionId || undefined, targetCwd, force, lineRange);
+    if (!result.success) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to unlock "${resolved}": ${result.message || "Lock is held by another session"}. Use action: "force_unlock" or set force: true with a reason to forcibly override.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const modeLabel = force ? "Forcibly unlocked" : "Successfully unlocked";
+    return {
+      content: [
+        {
+          type: "text",
+          text: `${modeLabel} "${resolved}".\nPrevious Owner: ${lock.owner?.sessionId || "unknown"} (${lock.owner?.terminalType || "cli"})\nReason: ${auditReason}`,
+        },
+      ],
+    };
+  } catch (err: any) {
+    return { content: [{ type: "text", text: `Error handling lock for ${resolved}: ${err?.message || String(err)}` }], isError: true };
+  }
 }
