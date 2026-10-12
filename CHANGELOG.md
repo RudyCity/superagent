@@ -1,3 +1,16 @@
+## [1.13.58] - 2026-10-12
+### Added & Fixed
+- OAuth 2.1 RFC Compliance, DCR, Resource Indicators & Streamable HTTP Hardening (`src/core/mcp/mcpOAuthRoutes.ts`, `src/core/mcp/mcpOAuthStore.ts`, `src/core/mcp/mcpHttpTransport.ts`, `src/serverRoutes.ts`, `src/core/mcp/tools/configTools.ts`, `tests/mcpOAuthRoutes.test.ts`, `tests/mcpOAuthStore.test.ts`, `tests/mcpChatgptCompatibility.test.ts`):
+  - Implemented RFC 7591 Dynamic Client Registration (`POST /oauth/register`) returning 201 Created with client ID generation, redirect URI validation (HTTPS/loopback strict, fragment prohibition), and client metadata registration.
+  - Implemented RFC 8707 Resource Indicators across the entire authorization and token lifecycle: canonical resource URI validation (`${base}/mcp`), audience binding to authorization codes and token records, token rotation preservation, and audience verification in `verifyAccessToken`.
+  - Added discovery endpoint alias `/.well-known/openid-configuration` mirroring `/.well-known/oauth-authorization-server` with `registration_endpoint` and `resource_indicators_supported: true` metadata advertising.
+  - Solved ChatGPT connector "The tool failed internally" errors:
+    - Normalizes client `Accept` headers to satisfy `@modelcontextprotocol/sdk` requirement for both `application/json` and `text/event-stream` across Node.js and `@hono/node-server` rawHeaders parsing (preventing 406 Not Acceptable).
+    - Added stateless MCP transport fallback for direct POST tool calls and stale/restarted session recovery without session headers, eliminating "400 Bad Request: Server not initialized" rejections.
+    - Added root path `/` route alias for `/mcp` to support MCP clients addressing the base tunnel URL directly.
+    - Added missing `/api/ping` route to HTTP server (port 7888) with fallback to `/api/status` in `handleServerHealth`, restoring green server health status.
+  - Added comprehensive test suites in `tests/mcpOAuthRoutes.test.ts`, `tests/mcpOAuthStore.test.ts`, and `tests/mcpChatgptCompatibility.test.ts` verifying DCR, resource indicators, stateless tool calls, and Accept header normalization.
+
 ## [1.13.57] - 2026-10-12
 ### Changed & Cleaned
 - Input Bar Prompt Indicator Removal (`src/app.tsx`):

@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
+import crypto from "node:crypto";
 import { createSuperagentMcpServer, getToolAnnotations, getToolSecuritySchemes } from "../src/core/mcp/superagentMcpServer.js";
 import {
   startMcpHttpServer,
@@ -14,6 +15,12 @@ import {
   MCP_HTTP_PATH,
   type McpHttpServerHandle,
 } from "../src/core/mcp/mcpHttpTransport.js";
+
+function pkcePair() {
+  const verifier = "verifier-" + Math.random().toString(36).slice(2) + Date.now();
+  const challenge = crypto.createHash("sha256").update(verifier, "utf8").digest("base64url");
+  return { verifier, challenge };
+}
 
 async function listTools(server: ReturnType<typeof createSuperagentMcpServer>): Promise<any[]> {
   const handler = (server as any)._requestHandlers.get("tools/list");
@@ -292,5 +299,92 @@ describe("oauth end-to-end: discovery -> PKCE -> MCP session", () => {
     });
     expect(noAuth.status).toBe(401);
     await noAuth.text();
+  });
+
+  it("handles stateless tool calls without prior initialize and normalizes Accept headers", async () => {
+    // Obtain a valid token via full flow
+    const store = handle.oauthStore!;
+    const clientId = "stateless-client";
+    const redirectUri = "https://chatgpt.com/callback";
+    store.registerClient(clientId, [redirectUri]);
+
+    const { verifier, challenge } = pkcePair();
+    const canonicalResource = `${base}/mcp`;
+    const pending = store.createAuthorizationRequest({
+      clientId,
+      redirectUri,
+      codeChallenge: challenge,
+      codeChallengeMethod: "S256",
+      scope: ["mcp:tools"],
+      resource: canonicalResource,
+      state: "st-state",
+    });
+    const approved = store.approveAuthorizationRequest(pending.requestId, true);
+    expect(approved.ok).toBe(true);
+    if (!approved.ok) return;
+
+    const exchange = store.exchangeCode({
+      code: approved.code,
+      clientId,
+      redirectUri,
+      codeVerifier: verifier,
+      resource: canonicalResource,
+    });
+    expect(exchange.ok).toBe(true);
+    if (!exchange.ok) return;
+
+    const token = exchange.accessToken;
+
+    // Direct stateless tool call without mcp-session-id and standard Accept header (application/json only)
+    const directRes = await fetch(url("/mcp"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 101,
+        method: "tools/call",
+        params: { name: "superagent_server_health", arguments: {} },
+      }),
+    });
+    expect(directRes.status).toBe(200);
+    const directBody = await directRes.text();
+    expect(directBody).toContain("Superagent Server Health");
+
+    // Root path alias "/"
+    const rootRes = await fetch(url("/"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 102,
+        method: "tools/list",
+        params: {},
+      }),
+    });
+    expect(rootRes.status).toBe(200);
+    const rootBody = await rootRes.text();
+    expect(rootBody).toContain("superagent_server_health");
+  });
+
+  it("registers dynamic clients via POST /oauth/register", async () => {
+    const regRes = await fetch(url("/oauth/register"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_name: "ChatGPT Live",
+        redirect_uris: ["https://chatgpt.com/api/aip/callback"],
+      }),
+    });
+    expect(regRes.status).toBe(201);
+    const regBody: any = await regRes.json();
+    expect(regBody.client_id).toMatch(/^client_/);
+    expect(regBody.client_name).toBe("ChatGPT Live");
   });
 });

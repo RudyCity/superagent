@@ -135,18 +135,76 @@ export async function handleOAuthRoute(
     });
   }
 
-  // ---- RFC 8414 authorization-server metadata (public) ----
-  if (req.method === "GET" && pathname === "/.well-known/oauth-authorization-server") {
+  // ---- RFC 8414 authorization-server metadata / OIDC discovery (public) ----
+  if (req.method === "GET" && (pathname === "/.well-known/oauth-authorization-server" || pathname === "/.well-known/openid-configuration")) {
     return json(200, {
       issuer: base,
       authorization_endpoint: `${base}/oauth/authorize`,
       token_endpoint: `${base}/oauth/token`,
+      registration_endpoint: `${base}/oauth/register`,
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       scopes_supported: OAUTH_SCOPES,
       token_endpoint_auth_methods_supported: ["none"],
+      resource_indicators_supported: true,
     });
+  }
+
+  // ---- RFC 7591 Dynamic Client Registration endpoint (public) ----
+  if (req.method === "POST" && pathname === "/oauth/register") {
+    const ctype = (req.headers["content-type"] || "").toString();
+    let params: Record<string, any>;
+    try {
+      const raw = await readBody(req);
+      params = ctype.includes("application/json") ? JSON.parse(raw) : parseForm(raw);
+    } catch {
+      return json(400, { error: "invalid_request", error_description: "unreadable registration body" });
+    }
+    const redirectUris: string[] = Array.isArray(params["redirect_uris"])
+      ? params["redirect_uris"]
+      : typeof params["redirect_uris"] === "string"
+      ? [params["redirect_uris"]]
+      : [];
+    if (!redirectUris.length) {
+      return json(400, { error: "invalid_redirect_uri", error_description: "redirect_uris array is required" });
+    }
+    for (const r of redirectUris) {
+      if (typeof r !== "string" || (!/^https:\/\//.test(r) && !/^http:\/\/127\.0\.0\.1/.test(r) && !/^http:\/\/localhost/.test(r)) || r.includes("#")) {
+        return json(400, { error: "invalid_redirect_uri", error_description: "redirect_uris must be https or loopback URIs without fragments" });
+      }
+    }
+    const clientId = typeof params["client_id"] === "string" && params["client_id"].trim()
+      ? params["client_id"].trim()
+      : `client_${randomToken(16)}`;
+    const clientName = typeof params["client_name"] === "string" ? params["client_name"] : clientId;
+    try {
+      config.store.registerClient(clientId, redirectUris, {
+        clientName,
+        tokenEndpointAuthMethod: "none",
+        grantTypes: ["authorization_code", "refresh_token"],
+        responseTypes: ["code"],
+      });
+      return {
+        handled: true,
+        statusCode: 201,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+          "Pragma": "no-cache",
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_name: clientName,
+          redirect_uris: redirectUris,
+          grant_types: ["authorization_code", "refresh_token"],
+          response_types: ["code"],
+          token_endpoint_auth_method: "none",
+        }),
+      };
+    } catch (e: any) {
+      return json(400, { error: "invalid_client_metadata", error_description: e.message || "registration failed" });
+    }
   }
 
   // ---- Authorization endpoint: show owner-consent page ----
@@ -157,18 +215,46 @@ export async function handleOAuthRoute(
     const codeChallengeMethod = url.searchParams.get("code_challenge_method") || "";
     const state = url.searchParams.get("state") || "";
     const scope = (url.searchParams.get("scope") || "mcp:tools").split(/\s+/).filter(Boolean);
+    const requestedResource = url.searchParams.get("resource") || undefined;
     if (!clientId || !redirectUri || !codeChallenge) {
       return json(400, { error: "invalid_request", error_description: "client_id, redirect_uri, and code_challenge are required" });
     }
-    if (!/^https:\/\//.test(redirectUri) && !/^http:\/\/127\.0\.0\.1/.test(redirectUri)) {
+    if (!/^https:\/\//.test(redirectUri) && !/^http:\/\/127\.0\.0\.1/.test(redirectUri) && !/^http:\/\/localhost/.test(redirectUri)) {
       return json(400, { error: "invalid_request", error_description: "redirect_uri must be https (or http loopback)" });
+    }
+    if (redirectUri.includes("#")) {
+      return json(400, { error: "invalid_request", error_description: "redirect_uri must not contain fragments" });
+    }
+    // RFC 8707 Resource validation:
+    const canonicalResource = `${base}/mcp`;
+    if (requestedResource) {
+      try {
+        const u = new URL(requestedResource);
+        if (u.hash) {
+          return json(400, { error: "invalid_target", error_description: "resource URI must not contain a fragment" });
+        }
+      } catch {
+        return json(400, { error: "invalid_target", error_description: "resource must be a valid absolute URI" });
+      }
+      const cleanResource = requestedResource.replace(/\/$/, "");
+      const cleanCanonical = canonicalResource.replace(/\/$/, "");
+      const cleanBase = base.replace(/\/$/, "");
+      if (cleanResource !== cleanCanonical && cleanResource !== cleanBase) {
+        return json(400, { error: "invalid_target", error_description: "requested resource is not supported by this server" });
+      }
     }
     try {
       if (autoRegister && !config.store.getClient(clientId)) {
         config.store.registerClient(clientId, [redirectUri]);
       }
       const pending = config.store.createAuthorizationRequest({
-        clientId, redirectUri, codeChallenge, codeChallengeMethod, scope, state,
+        clientId,
+        redirectUri,
+        codeChallenge,
+        codeChallengeMethod,
+        scope,
+        state,
+        resource: requestedResource || canonicalResource,
       });
       return html(200, consentPage({
         requestId: pending.requestId,
@@ -224,26 +310,62 @@ export async function handleOAuthRoute(
         clientId: params["client_id"] || "",
         redirectUri: params["redirect_uri"] || "",
         codeVerifier: params["code_verifier"] || "",
+        resource: params["resource"] || undefined,
       });
-      if (!r.ok) return json(400, { error: "invalid_grant", error_description: r.error });
-      return json(200, {
-        access_token: r.accessToken,
-        token_type: "Bearer",
-        expires_in: 3600,
-        refresh_token: r.refreshToken,
-        scope: r.scope.join(" "),
-      });
+      if (!r.ok) {
+        const isTargetErr = r.error.includes("resource mismatch");
+        return json(400, {
+          error: isTargetErr ? "invalid_target" : "invalid_grant",
+          error_description: r.error,
+        });
+      }
+      return {
+        handled: true,
+        statusCode: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+          "Pragma": "no-cache",
+        },
+        body: JSON.stringify({
+          access_token: r.accessToken,
+          token_type: "Bearer",
+          expires_in: 3600,
+          refresh_token: r.refreshToken,
+          scope: r.scope.join(" "),
+          ...(r.resource ? { resource: r.resource } : {}),
+        }),
+      };
     }
     if (params["grant_type"] === "refresh_token") {
-      const r = config.store.rotateRefreshToken(params["refresh_token"] || "");
-      if (!r.ok) return json(400, { error: "invalid_grant", error_description: r.error });
-      return json(200, {
-        access_token: r.accessToken,
-        token_type: "Bearer",
-        expires_in: 3600,
-        refresh_token: r.refreshToken,
-        scope: r.scope.join(" "),
-      });
+      const r = config.store.rotateRefreshToken(
+        params["refresh_token"] || "",
+        params["resource"] || undefined
+      );
+      if (!r.ok) {
+        const isTargetErr = r.error.includes("resource mismatch");
+        return json(400, {
+          error: isTargetErr ? "invalid_target" : "invalid_grant",
+          error_description: r.error,
+        });
+      }
+      return {
+        handled: true,
+        statusCode: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+          "Pragma": "no-cache",
+        },
+        body: JSON.stringify({
+          access_token: r.accessToken,
+          token_type: "Bearer",
+          expires_in: 3600,
+          refresh_token: r.refreshToken,
+          scope: r.scope.join(" "),
+          ...(r.resource ? { resource: r.resource } : {}),
+        }),
+      };
     }
     return json(400, { error: "unsupported_grant_type", error_description: "grant_type must be authorization_code or refresh_token" });
   }

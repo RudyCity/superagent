@@ -432,7 +432,10 @@ export async function handleServerHealth(): Promise<McpToolResult> {
   const lines = ["=== Superagent Server Health ==="];
 
   // Check background HTTP server (port 7888)
-  const ping = await callServerApi("/api/ping", "GET", undefined, 2000);
+  let ping = await callServerApi("/api/ping", "GET", undefined, 2000);
+  if (!ping.success) {
+    ping = await callServerApi("/api/status", "GET", undefined, 2000);
+  }
   if (ping.success) {
     lines.push(`Background HTTP Server (port 7888): Online`);
     if (ping.data?.version) lines.push(`  Version: ${ping.data.version}`);

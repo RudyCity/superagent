@@ -134,6 +134,39 @@ function readJsonBody(req: http.IncomingMessage, maxBytes = 16 * 1024 * 1024): P
 }
 
 /**
+ * Normalizes the incoming Accept header to ensure compatibility with
+ * @modelcontextprotocol/sdk Streamable HTTP requirements (requires both
+ * application/json and text/event-stream).
+ */
+export function normalizeAcceptHeader(req: http.IncomingMessage): void {
+  const desired = "application/json, text/event-stream";
+  const rawAccept = req.headers["accept"];
+  if (!rawAccept || rawAccept === "*/*" || !rawAccept.includes("text/event-stream") || !rawAccept.includes("application/json")) {
+    req.headers["accept"] = desired;
+    let found = false;
+    if (Array.isArray(req.rawHeaders)) {
+      for (let i = 0; i < req.rawHeaders.length; i += 2) {
+        if (req.rawHeaders[i].toLowerCase() === "accept") {
+          req.rawHeaders[i + 1] = desired;
+          found = true;
+        }
+      }
+      if (!found) {
+        req.rawHeaders.push("Accept", desired);
+      }
+    }
+  }
+}
+
+export function isInitializePayload(body: unknown): boolean {
+  if (!body || typeof body !== "object") return false;
+  if (Array.isArray(body)) {
+    return body.some((item) => item && typeof item === "object" && (item as any).method === "initialize");
+  }
+  return (body as any).method === "initialize";
+}
+
+/**
  * Host/Origin validation policy (defense in depth).
  * Validation runs before auth and before any session is created.
  */
@@ -299,11 +332,12 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         }
       }
       const pathname = new URL(req.url || "/", "http://127.0.0.1").pathname;
-      if (pathname !== MCP_HTTP_PATH) {
+      if (pathname !== MCP_HTTP_PATH && pathname !== "/") {
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "not found" }));
         return;
       }
+      normalizeAcceptHeader(req);
       if (req.method !== "POST" && req.method !== "GET" && req.method !== "DELETE") {
         res.writeHead(405, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "method not allowed" }));
@@ -314,7 +348,8 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
       let identity: McpIdentity | null = null;
       if (authMode === "oauth" && oauthStore) {
         const token = extractBearerToken(req);
-        const record = token ? oauthStore.verifyAccessToken(token) : null;
+        const canonicalResource = `${metadataBase}/mcp`;
+        const record = token ? oauthStore.verifyAccessToken(token, canonicalResource) : null;
         if (record && token) {
           identity = {
             mode: "oauth",
@@ -402,51 +437,71 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         return;
       }
 
-      // No session ID: this must be an initialize POST.
+      // No active session in registry: this must be a POST request.
       if (req.method !== "POST") {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "mcp-session-id header required for non-initialize requests" }));
         return;
       }
-      if (registry.isFull()) {
-        res.writeHead(503, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "too many concurrent MCP sessions" }));
-        return;
-      }
       const rb = await readBody();
       if (!rb.ok) return;
-      const newTransport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => crypto.randomUUID(),
-      });
+
+      const isInit = isInitializePayload(rb.body);
+      if (isInit) {
+        if (registry.isFull()) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "too many concurrent MCP sessions" }));
+          return;
+        }
+        const newTransport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => crypto.randomUUID(),
+        });
+        const sessionCtx: { sessionHash?: string } = {
+          sessionHash: (identity as McpIdentity).credentialHash.slice(0, 16),
+        };
+        const sessionAudit = (info: McpAuditInfo) => audit({ ...info, sessionHash: sessionCtx.sessionHash });
+        const newServer = createSuperagentMcpServer({ allowedTools, onToolCall: sessionAudit, authMode } as McpServerOptions);
+        await newServer.connect(newTransport);
+        try {
+          await newTransport.handleRequest(req, res, rb.body);
+        } finally {
+          const assignedId = newTransport.sessionId;
+          if (assignedId) {
+            try {
+              registry.add({
+                sessionId: assignedId,
+                transport: newTransport,
+                identity: identity as McpIdentity,
+                createdAt: Date.now(),
+                lastActivityAt: Date.now(),
+              });
+            } catch {
+              try { await newTransport.close(); } catch { /* ignore */ }
+              return;
+            }
+            newTransport.onclose = () => {
+              void registry.remove(assignedId);
+            };
+          } else {
+            try { await newTransport.close(); } catch { /* ignore */ }
+          }
+        }
+        return;
+      }
+
+      // Stateless execution: handles direct POST requests without prior initialization
+      // (e.g. tools/call, tools/list) as well as graceful recovery from stale/evicted session IDs.
+      const statelessTransport = new StreamableHTTPServerTransport();
       const sessionCtx: { sessionHash?: string } = {
         sessionHash: (identity as McpIdentity).credentialHash.slice(0, 16),
       };
       const sessionAudit = (info: McpAuditInfo) => audit({ ...info, sessionHash: sessionCtx.sessionHash });
-      const newServer = createSuperagentMcpServer({ allowedTools, onToolCall: sessionAudit, authMode } as McpServerOptions);
-      await newServer.connect(newTransport);
+      const statelessServer = createSuperagentMcpServer({ allowedTools, onToolCall: sessionAudit, authMode } as McpServerOptions);
+      await statelessServer.connect(statelessTransport);
       try {
-        await newTransport.handleRequest(req, res, rb.body);
+        await statelessTransport.handleRequest(req, res, rb.body);
       } finally {
-        const assignedId = newTransport.sessionId;
-        if (assignedId) {
-          try {
-            registry.add({
-              sessionId: assignedId,
-              transport: newTransport,
-              identity: identity as McpIdentity,
-              createdAt: Date.now(),
-              lastActivityAt: Date.now(),
-            });
-          } catch {
-            try { await newTransport.close(); } catch { /* ignore */ }
-            return;
-          }
-          newTransport.onclose = () => {
-            void registry.remove(assignedId);
-          };
-        } else {
-          try { await newTransport.close(); } catch { /* ignore */ }
-        }
+        try { await statelessTransport.close(); } catch { /* ignore */ }
       }
     } catch {
       if (!res.headersSent) {

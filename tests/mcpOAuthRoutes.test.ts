@@ -107,6 +107,17 @@ describe("discovery endpoints", () => {
     expect(body.authorization_endpoint).toBe(`${BASE}/oauth/authorize`);
     expect(body.token_endpoint).toBe(`${BASE}/oauth/token`);
     expect(body.code_challenge_methods_supported).toContain("S256");
+    expect(body.registration_endpoint).toBe(`${BASE}/oauth/register`);
+    expect(body.resource_indicators_supported).toBe(true);
+  });
+
+  it("serves openid-configuration as an alias for authorization-server metadata", async () => {
+    const r = await handleOAuthRoute(getReq("/.well-known/openid-configuration"), config);
+    expect(r.handled).toBe(true);
+    expect(r.statusCode).toBe(200);
+    const body = JSON.parse(r.body);
+    expect(body.issuer).toBe(BASE);
+    expect(body.registration_endpoint).toBe(`${BASE}/oauth/register`);
   });
 
   it("does not handle unrelated paths", async () => {
@@ -223,3 +234,91 @@ describe("generateBootstrapCode", () => {
     expect(codeHash).toBe(sha256Hex(code));
   });
 });
+
+describe("RFC 7591 dynamic client registration", () => {
+  let store: McpOAuthStore;
+  let config: McpOAuthRoutesConfig;
+  beforeEach(() => {
+    store = new McpOAuthStore();
+    config = makeConfig(store, "bootstrap");
+  });
+
+  it("registers a client via POST /oauth/register", async () => {
+    const req = postReq("/oauth/register", JSON.stringify({
+      client_name: "ChatGPT Dynamic",
+      redirect_uris: ["https://chatgpt.com/api/aip/callback"],
+    }), "application/json");
+    const res = await handleOAuthRoute(req, config);
+    expect(res.handled).toBe(true);
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body);
+    expect(body.client_id).toMatch(/^client_/);
+    expect(body.client_name).toBe("ChatGPT Dynamic");
+    expect(body.redirect_uris).toEqual(["https://chatgpt.com/api/aip/callback"]);
+    expect(body.token_endpoint_auth_method).toBe("none");
+
+    const registered = store.getClient(body.client_id);
+    expect(registered).toBeDefined();
+    expect(registered?.clientName).toBe("ChatGPT Dynamic");
+  });
+
+  it("rejects registration with invalid redirect URIs", async () => {
+    const req = postReq("/oauth/register", JSON.stringify({
+      redirect_uris: ["http://insecure.example.com/callback"],
+    }), "application/json");
+    const res = await handleOAuthRoute(req, config);
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.body);
+    expect(body.error).toBe("invalid_redirect_uri");
+  });
+});
+
+describe("RFC 8707 resource indicators", () => {
+  let store: McpOAuthStore;
+  let config: McpOAuthRoutesConfig;
+  const bootstrap = "bootstrap-secret";
+  beforeEach(() => {
+    store = new McpOAuthStore();
+    config = makeConfig(store, bootstrap);
+  });
+
+  it("rejects authorization request for unsupported resource", async () => {
+    const { challenge } = pkcePair();
+    const badUrl = `/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code_challenge=${challenge}&code_challenge_method=S256&resource=https://evil.example.com/mcp`;
+    const res = await handleOAuthRoute(getReq(badUrl), config);
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toBe("invalid_target");
+  });
+
+  it("accepts canonical resource and binds it through token exchange", async () => {
+    const { challenge, verifier } = pkcePair();
+    const canonicalResource = `${BASE}/mcp`;
+    const authUrl = `/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code_challenge=${challenge}&code_challenge_method=S256&resource=${encodeURIComponent(canonicalResource)}`;
+    const page = await handleOAuthRoute(getReq(authUrl), config);
+    expect(page.statusCode).toBe(200);
+    const m = /name="request_id" value="([^"]+)"/.exec(page.body);
+    const approve = await handleOAuthRoute(
+      postReq("/oauth/authorize", `request_id=${m![1]}&bootstrap_code=${bootstrap}&decision=approve`),
+      config
+    );
+    const code = new URL(approve.headers["Location"]).searchParams.get("code");
+
+    // Mismatched resource on token exchange is rejected
+    const badToken = await handleOAuthRoute(
+      postReq("/oauth/token", `grant_type=authorization_code&code=${code}&client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code_verifier=${verifier}&resource=${encodeURIComponent("https://wrong.example.com")}`),
+      config
+    );
+    expect(badToken.statusCode).toBe(400);
+    expect(JSON.parse(badToken.body).error).toBe("invalid_target");
+
+    // Matching resource succeeds
+    const goodToken = await handleOAuthRoute(
+      postReq("/oauth/token", `grant_type=authorization_code&code=${code}&client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code_verifier=${verifier}&resource=${encodeURIComponent(canonicalResource)}`),
+      config
+    );
+    expect(goodToken.statusCode).toBe(200);
+    const tokens = JSON.parse(goodToken.body);
+    expect(tokens.resource).toBe(canonicalResource);
+  });
+});
+

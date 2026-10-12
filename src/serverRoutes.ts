@@ -198,6 +198,16 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Ping
+  if (pathname === "/api/ping" && req.method === "GET") {
+    sendJSON(res, 200, {
+      status: "ok",
+      version: getSuperAgentVersion(),
+      timestamp: Date.now(),
+    });
+    return true;
+  }
+
   // Status
   if (pathname === "/api/status" && req.method === "GET") {
     const session = resolveSession(req);

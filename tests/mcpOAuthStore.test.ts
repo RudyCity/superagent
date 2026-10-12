@@ -163,4 +163,92 @@ describe("token lifecycle", () => {
     expect(store.revokeToken(r.accessToken)).toBe(true);
     expect(store.verifyAccessToken(r.accessToken)).toBeNull();
   });
+
+  it("verifies access token against expected resource and rejects mismatch", () => {
+    store.registerClient(CLIENT_ID, [REDIRECT_URI]);
+    const { verifier, challenge } = pkcePair();
+    const req = store.createAuthorizationRequest({
+      clientId: CLIENT_ID,
+      redirectUri: REDIRECT_URI,
+      codeChallenge: challenge,
+      codeChallengeMethod: "S256",
+      scope: ["mcp:tools"],
+      resource: "https://example.com/mcp",
+      state: "st",
+    });
+    const app = store.approveAuthorizationRequest(req.requestId, true);
+    if (!app.ok) throw new Error("failed");
+    const ex = store.exchangeCode({
+      code: app.code,
+      clientId: CLIENT_ID,
+      redirectUri: REDIRECT_URI,
+      codeVerifier: verifier,
+      resource: "https://example.com/mcp",
+    });
+    if (!ex.ok) throw new Error("exchange failed");
+
+    // Matching resource succeeds (exact and canonical)
+    expect(store.verifyAccessToken(ex.accessToken, "https://example.com/mcp")).not.toBeNull();
+    expect(store.verifyAccessToken(ex.accessToken, "https://example.com")).not.toBeNull();
+
+    // Mismatched target resource is rejected
+    expect(store.verifyAccessToken(ex.accessToken, "https://other.com/mcp")).toBeNull();
+  });
+
+  it("preserves resource across refresh token rotation and rejects resource switching", () => {
+    store.registerClient(CLIENT_ID, [REDIRECT_URI]);
+    const { verifier, challenge } = pkcePair();
+    const req = store.createAuthorizationRequest({
+      clientId: CLIENT_ID,
+      redirectUri: REDIRECT_URI,
+      codeChallenge: challenge,
+      codeChallengeMethod: "S256",
+      scope: ["mcp:tools"],
+      resource: "https://example.com/mcp",
+      state: "st",
+    });
+    const app = store.approveAuthorizationRequest(req.requestId, true);
+    if (!app.ok) throw new Error("failed");
+    const ex = store.exchangeCode({
+      code: app.code,
+      clientId: CLIENT_ID,
+      redirectUri: REDIRECT_URI,
+      codeVerifier: verifier,
+    });
+    if (!ex.ok) throw new Error("exchange failed");
+
+    // Switching to a different resource is rejected
+    const badRot = store.rotateRefreshToken(ex.refreshToken, "https://unauthorized.com/mcp");
+    expect(badRot.ok).toBe(false);
+
+    // Matching resource succeeds and preserves resource
+    const goodRot = store.rotateRefreshToken(ex.refreshToken, "https://example.com/mcp");
+    expect(goodRot.ok).toBe(true);
+    if (goodRot.ok) {
+      expect(goodRot.resource).toBe("https://example.com/mcp");
+      expect(store.verifyAccessToken(goodRot.accessToken, "https://example.com/mcp")).not.toBeNull();
+    }
+  });
+
+  it("rejects resource with fragments in createAuthorizationRequest", () => {
+    store.registerClient(CLIENT_ID, [REDIRECT_URI]);
+    const { challenge } = pkcePair();
+    expect(() =>
+      store.createAuthorizationRequest({
+        clientId: CLIENT_ID,
+        redirectUri: REDIRECT_URI,
+        codeChallenge: challenge,
+        codeChallengeMethod: "S256",
+        scope: ["mcp:tools"],
+        resource: "https://example.com/mcp#frag",
+        state: "st",
+      })
+    ).toThrow("fragment");
+  });
+
+  it("rejects invalid redirect URIs in registerClient", () => {
+    expect(() => store.registerClient("client-bad-1", ["http://insecure.example.com/cb"])).toThrow("https");
+    expect(() => store.registerClient("client-bad-2", ["https://example.com/cb#frag"])).toThrow("fragment");
+    expect(() => store.registerClient("client-good", ["https://example.com/cb", "http://127.0.0.1:8080/cb"])).not.toThrow();
+  });
 });
