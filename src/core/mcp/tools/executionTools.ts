@@ -4,14 +4,18 @@
 
 import path from "path";
 import { McpToolResult } from "../types.js";
-import { callServerApi } from "./processTools.js";
+import { callServerApi, resolveMcpWorkspace, isServerRejection } from "./processTools.js";
 import { superagentInstances } from "../../tools/state.js";
 
 export async function handleRunTask(args: any): Promise<McpToolResult> {
   const task = String(args.task || args.prompt || args.message || args.instruction || "");
   const role = String(args.role || args.agentRole || "assistant");
   const mode = args.mode === "multi" ? "multi" : "single";
-  const targetWs = args.workspace ? path.resolve(String(args.workspace)) : process.cwd();
+  const ws = resolveMcpWorkspace(args.workspace);
+  const targetWs = ws.path;
+  const workspaceNote = ws.explicit
+    ? ""
+    : `Note: no 'workspace' given, so the server uses its active session. Pass 'workspace' to target a specific project.\n`;
 
   if (!task) {
     return {
@@ -20,7 +24,9 @@ export async function handleRunTask(args: any): Promise<McpToolResult> {
     };
   }
 
-  // Forward to running server if active
+  // Forward to running server if active. /api/chat resolves the session from the
+  // x-workspace-path header (or ?workspace= / sessionId), NOT from the JSON body,
+  // so the target workspace has to travel as a header when it was given explicitly.
   const serverRes = await callServerApi(
     "/api/chat",
     "POST",
@@ -29,7 +35,8 @@ export async function handleRunTask(args: any): Promise<McpToolResult> {
       workspace: targetWs,
       mode,
     },
-    300000
+    300000,
+    ws.explicit ? { workspace: targetWs } : {}
   );
 
   if (serverRes.success) {
@@ -38,11 +45,29 @@ export async function handleRunTask(args: any): Promise<McpToolResult> {
         {
           type: "text",
           text:
-            typeof serverRes.data === "string"
+            workspaceNote +
+            (typeof serverRes.data === "string"
               ? serverRes.data
-              : JSON.stringify(serverRes.data, null, 2),
+              : JSON.stringify(serverRes.data, null, 2)),
         },
       ],
+    };
+  }
+
+  // The server answered but refused (e.g. no session for this workspace). Falling back to
+  // headless execution here would auto-approve every permission in an arbitrary directory,
+  // so report the rejection instead.
+  if (ws.explicit && isServerRejection(serverRes)) {
+    return {
+      content: [
+        {
+          type: "text",
+          text:
+            `Error: ${serverRes.error || `Server rejected the request (status ${serverRes.status}).`}\n` +
+            `No session is available for workspace ${targetWs}. Open or initialize a session for it first, then retry.`,
+        },
+      ],
+      isError: true,
     };
   }
 
@@ -102,7 +127,7 @@ export async function handleSpawnSubagent(args: any): Promise<McpToolResult> {
     const { invokeSubagentTool } = await import("../../tools/subagentTools.js");
     const result = await invokeSubagentTool.execute(
       { typeName, role, prompt, wait, timeoutMs },
-      process.cwd()
+      resolveMcpWorkspace(args.workspace).path
     );
     const output = String(result);
     const isError = output.startsWith("Error:") || output.startsWith("Subagent failed:");
@@ -195,33 +220,59 @@ export async function handleInvoke(args: any): Promise<McpToolResult> {
     };
   }
 
+  const ws = resolveMcpWorkspace(args.workspace);
+  const workspaceNote = ws.explicit
+    ? ""
+    : `Note: no 'workspace' given, so the server uses its active session. Pass 'workspace' to target a specific project.\n`;
+
   const serverRes = await callServerApi(
     "/api/superagents/invoke",
     "POST",
     { role, task, branch, wait, constraints, acceptanceCriteria },
-    wait ? 600000 : 10000
+    wait ? 600000 : 10000,
+    ws.explicit ? { workspace: ws.path } : {}
   );
   if (serverRes.success) {
+    // The route answers 200 even when the tool itself refuses (e.g. plan not approved),
+    // so surface that refusal as an error instead of a success payload.
+    const toolText = typeof serverRes.data?.result === "string" ? serverRes.data.result : "";
     return {
       content: [
         {
           type: "text",
           text:
-            typeof serverRes.data === "string"
+            workspaceNote +
+            (typeof serverRes.data === "string"
               ? serverRes.data
-              : JSON.stringify(serverRes.data, null, 2),
+              : JSON.stringify(serverRes.data, null, 2)),
         },
       ],
+      ...(toolText.startsWith("Error:") ? { isError: true } : {}),
     };
   }
 
+  // An explicit server rejection (bad workspace, no session) must not fall back to local
+  // execution: that would bypass the server's workspace guard and plan gate.
+  if (isServerRejection(serverRes)) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `${workspaceNote}Error: ${serverRes.error || `Server rejected the request (status ${serverRes.status}).`}`,
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  // Server unreachable: run standalone in the target workspace (not process.cwd()).
   const { invokeSuperagentTool } = await import("../../tools/superagentTools.js");
   const result = await invokeSuperagentTool.execute(
     { role, task, branch, wait, constraints, acceptanceCriteria },
-    process.cwd()
+    ws.path
   );
   return {
-    content: [{ type: "text", text: String(result) }],
+    content: [{ type: "text", text: workspaceNote + String(result) }],
   };
 }
 

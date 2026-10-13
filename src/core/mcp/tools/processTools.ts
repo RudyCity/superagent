@@ -37,15 +37,53 @@ export function getServerInfo(): ServerInfo | null {
   }
 }
 
+function isRemoteWorkspaceTarget(p: string): boolean {
+  return p.startsWith("ssh:") || p.startsWith("ssh://") || p.startsWith("chain:");
+}
+
+/**
+ * Resolves the target workspace for an MCP call.
+ * - An explicit `workspace` argument is normalized (path.resolve for local paths).
+ * - Without one, falls back to the MCP process working directory and reports
+ *   `explicit: false`, so callers can say so in their response instead of
+ *   silently landing in whatever session the server picks first.
+ */
+export function resolveMcpWorkspace(workspaceArg?: unknown): { path: string; explicit: boolean } {
+  if (typeof workspaceArg === "string" && workspaceArg.trim()) {
+    const raw = workspaceArg.trim();
+    return { path: isRemoteWorkspaceTarget(raw) ? raw : path.resolve(raw), explicit: true };
+  }
+  return { path: process.cwd(), explicit: false };
+}
+
+/**
+ * True when the server explicitly rejected the request (bad/unregistered workspace,
+ * no matching session). Callers must NOT fall back to local execution in that case,
+ * because that would bypass the server's workspace guard.
+ */
+export function isServerRejection(res: { status?: number }): boolean {
+  return res.status === 400 || res.status === 403 || res.status === 404 || res.status === 409;
+}
+
 export async function callServerApi(
   apiPath: string,
   method: "GET" | "POST" | "DELETE" = "GET",
   body?: any,
-  timeoutMs: number = 5000
+  timeoutMs: number = 5000,
+  opts: { workspace?: string } = {}
 ): Promise<{ success: boolean; status?: number; data?: any; error?: string }> {
   const info = getServerInfo();
   const port = info?.port || 7888;
   const token = info?.authToken || "";
+
+  // The server reads the workspace from the x-workspace-path header or the ?workspace= query.
+  // Header values must be latin1-safe, so non-ASCII paths go through the query string instead.
+  const headerSafe = !!opts.workspace && /^[\x20-\x7e]+$/.test(opts.workspace);
+  const wsHeader = headerSafe ? opts.workspace : undefined;
+  const finalPath =
+    opts.workspace && !headerSafe
+      ? `${apiPath}${apiPath.includes("?") ? "&" : "?"}workspace=${encodeURIComponent(opts.workspace)}`
+      : apiPath;
 
   return new Promise((resolve) => {
     const postData = body ? JSON.stringify(body) : undefined;
@@ -53,12 +91,13 @@ export async function callServerApi(
       {
         hostname: "127.0.0.1",
         port,
-        path: apiPath,
+        path: finalPath,
         method,
         timeout: timeoutMs,
         headers: {
           "Content-Type": "application/json",
           ...(token ? { "x-auth-token": token, Authorization: `Bearer ${token}` } : {}),
+          ...(wsHeader ? { "x-workspace-path": wsHeader } : {}),
           ...(postData ? { "Content-Length": Buffer.byteLength(postData) } : {}),
         },
       },
@@ -307,7 +346,20 @@ export async function handleInterrupt(args: any): Promise<McpToolResult> {
   const id = args.id ? String(args.id) : (args.superagentId ? String(args.superagentId) : undefined);
   const stopped: string[] = [];
 
-  await callServerApi("/api/abort", "POST", { target, id });
+  // Scope the server-side abort to one workspace. Only an explicit `all: true` aborts every session.
+  const abortAll = args.all === true;
+  const abortWs = resolveMcpWorkspace(args.workspace);
+  const abortRes = await callServerApi(
+    "/api/abort",
+    "POST",
+    { target, id, ...(abortAll ? { all: true } : {}) },
+    5000,
+    abortAll || !abortWs.explicit ? {} : { workspace: abortWs.path }
+  );
+  const serverAbortNote =
+    !abortRes.success && isServerRejection(abortRes)
+      ? ` (server abort not delivered: ${abortRes.error || `status ${abortRes.status}`}; pass 'workspace' or 'all: true')`
+      : "";
 
   if (target === "all" || target === "master") {
     if (masterAgentRef?.isAgentRunning?.()) {
@@ -367,9 +419,9 @@ export async function handleInterrupt(args: any): Promise<McpToolResult> {
     } catch {}
   }
 
-  const msg = stopped.length > 0
+  const msg = (stopped.length > 0
     ? `Successfully interrupted: ${stopped.join(", ")}`
-    : "No active agents or processes were running.";
+    : "No active agents or processes were running.") + serverAbortNote;
   return { content: [{ type: "text", text: msg }] };
 }
 

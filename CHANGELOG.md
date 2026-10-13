@@ -1,3 +1,12 @@
+## [1.13.63] - 2026-10-13
+### Fixed
+- Harden MCP multi-project routing and execution isolation (`src/core/mcp/tools/processTools.ts`, `src/core/mcp/tools/executionTools.ts`, `src/serverRoutes.ts`):
+  - Forward explicit workspace targets using `x-workspace-path` or a URL-encoded `workspace` query for non-ASCII paths.
+  - Prevent run-task and invoke handlers from silently falling back to local execution when the server explicitly rejects a workspace/session.
+  - Run HTTP invoke inside the owning session's async-local agent context so plan approval checks remain active.
+  - Require an explicit global-abort flag and scope ordinary aborts to the resolved session without clearing permission/question state belonging to other projects.
+- Add MCP workspace routing regression tests in `tests/mcpWorkspaceRouting.test.ts`.
+
 ## [1.13.62] - 2026-10-12
 ### Added & Hardened
 - Self-Healing Concurrency & Zero-Friction File Lock Engine for MCP (`src/core/mcp/superagentMcpServer.ts`, `src/core/mcp/tools/workspaceTools.ts`, `src/core/mcp/tools/planSkillsMcpTools.ts`, `src/core/mcp/mcpTunnel.ts`, `tests/mcpServer.test.ts`):

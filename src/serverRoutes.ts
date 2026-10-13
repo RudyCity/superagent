@@ -948,28 +948,73 @@ export async function handleServerRoute(
 
   // Abort agent execution
   if (pathname === "/api/abort" && req.method === "POST") {
-    const session = resolveSession(req);
-    if (session) {
-      session.agent.abort();
-    } else {
+    let abortBody: any = {};
+    try {
+      const rawAbortBody = await readBody(req);
+      abortBody = rawAbortBody ? JSON.parse(rawAbortBody) : {};
+    } catch {}
+    const abortAll = abortBody?.all === true || parsedUrl.searchParams.get("all") === "true";
+
+    // Global abort is opt-in: it is the only path that touches every session / every project.
+    if (abortAll) {
       for (const s of activeSessions.values()) s.agent.abort();
+      for (const sub of subagentInstances.values()) {
+        if (sub.status === "running") sub.status = "error";
+      }
+      for (const superInst of superagentInstances.values()) {
+        if (superInst.status === "running") superInst.status = "terminated";
+      }
+      pendingPermissions.clear();
+      pendingQuestions.clear();
+      broadcastEvent({ type: "status", text: "Agent execution aborted by user." });
+      broadcastEvent({ type: "agent_event", event: { type: "done", stats: { totalTimeMs: 0 } } });
+      sendJSON(res, 200, { success: true, scope: "all" });
+      return true;
     }
 
+    const session = resolveSession(req);
+    if (!session) {
+      sendJSON(res, 400, {
+        error: "No matching session to abort. Pass a sessionId, an x-workspace-path header, or all=true to abort every session.",
+      });
+      return true;
+    }
+    session.agent.abort();
+
+    // Only touch instances that belong to this session. Ownership follows parentAgent
+    // (including nested subagents); instances without a parent fall back to workspace match.
+    const ownedAgents = new Set<any>([session.agent]);
+    const isOwned = (inst: any): boolean => {
+      if (inst.parentAgent) return ownedAgents.has(inst.parentAgent);
+      const wd = inst.agent?.workingDirectory;
+      return typeof wd === "string" && path.resolve(session.workspace) === path.resolve(wd);
+    };
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const inst of [...superagentInstances.values(), ...subagentInstances.values()]) {
+        if (inst.agent && !ownedAgents.has(inst.agent) && isOwned(inst)) {
+          ownedAgents.add(inst.agent);
+          grew = true;
+        }
+      }
+    }
     for (const sub of subagentInstances.values()) {
-      if (sub.status === "running") sub.status = "error";
+      if (sub.status === "running" && sub.agent && ownedAgents.has(sub.agent)) sub.status = "error";
     }
     for (const superInst of superagentInstances.values()) {
-      if (superInst.status === "running") superInst.status = "terminated";
+      if (superInst.status === "running" && superInst.agent && ownedAgents.has(superInst.agent)) superInst.status = "terminated";
     }
 
-    pendingPermissions.clear();
-    pendingQuestions.clear();
+    // pendingPermissions / pendingQuestions are keyed by random ids with no session attached,
+    // so they cannot be cleared per session. Leave them alone: clearing them globally would
+    // orphan prompts that belong to other projects.
 
-    const metadata = session ? { sessionId: session.sessionId, workspace: session.workspace } : {};
+    const metadata = { sessionId: session.sessionId, workspace: session.workspace };
     broadcastEvent({ type: "status", text: "Agent execution aborted by user.", ...metadata });
     broadcastEvent({ type: "agent_event", event: { type: "done", stats: { totalTimeMs: 0 } }, ...metadata });
 
-    sendJSON(res, 200, { success: true });
+    sendJSON(res, 200, { success: true, scope: "session", sessionId: session.sessionId });
     return true;
   }
 
@@ -1089,12 +1134,30 @@ export async function handleServerRoute(
       return true;
     }
 
+    // resolveWorkspacePath() returns null when a supplied workspace is outside the registered
+    // roots. Never fall back to lastActiveWorkspace here: that is how a task lands in the wrong project.
+    const targetWorkspace = resolveWorkspacePath(req);
+    if (!targetWorkspace) {
+      sendJSON(res, 403, { error: "Workspace is outside the registered roots. Initialize a session for it first." });
+      return true;
+    }
+
+    // The plan gate inside invoke_superagent reads the calling agent from agentLocalStorage.
+    // Without a store the gate is skipped (treated as approved), so run inside the owning session.
+    const invokeSession = resolveSession(req);
+    if (!invokeSession) {
+      sendJSON(res, 400, { error: "No active session for this workspace. Initialize a session before invoking a Superagent." });
+      return true;
+    }
+
     try {
       const { invokeSuperagentTool } = await import("./core/tools/superagentTools.js");
-      const targetWorkspace = resolveWorkspacePath(req) || lastActiveWorkspace;
-      const result = await invokeSuperagentTool.execute(
-        { role, task, branch, wait: wait === true, constraints, acceptanceCriteria },
-        targetWorkspace
+      const { agentLocalStorage } = await import("./core/agent.js");
+      const result = await agentLocalStorage.run(invokeSession.agent, () =>
+        invokeSuperagentTool.execute(
+          { role, task, branch, wait: wait === true, constraints, acceptanceCriteria },
+          targetWorkspace
+        )
       );
       sendJSON(res, 200, { success: true, result });
     } catch (err: any) {
