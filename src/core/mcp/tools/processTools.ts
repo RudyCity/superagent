@@ -21,6 +21,8 @@ import {
   getProcessActivity,
 } from "../../tools/state.js";
 import { killProcessTree } from "../../tools/shellTools.js";
+import { resolveMcpWorkspace, isServerRejection } from "./workspaceContext.js";
+export { resolveMcpWorkspace, isServerRejection } from "./workspaceContext.js";
 
 export function getServerInfo(): ServerInfo | null {
   try {
@@ -37,33 +39,6 @@ export function getServerInfo(): ServerInfo | null {
   }
 }
 
-function isRemoteWorkspaceTarget(p: string): boolean {
-  return p.startsWith("ssh:") || p.startsWith("ssh://") || p.startsWith("chain:");
-}
-
-/**
- * Resolves the target workspace for an MCP call.
- * - An explicit `workspace` argument is normalized (path.resolve for local paths).
- * - Without one, falls back to the MCP process working directory and reports
- *   `explicit: false`, so callers can say so in their response instead of
- *   silently landing in whatever session the server picks first.
- */
-export function resolveMcpWorkspace(workspaceArg?: unknown): { path: string; explicit: boolean } {
-  if (typeof workspaceArg === "string" && workspaceArg.trim()) {
-    const raw = workspaceArg.trim();
-    return { path: isRemoteWorkspaceTarget(raw) ? raw : path.resolve(raw), explicit: true };
-  }
-  return { path: process.cwd(), explicit: false };
-}
-
-/**
- * True when the server explicitly rejected the request (bad/unregistered workspace,
- * no matching session). Callers must NOT fall back to local execution in that case,
- * because that would bypass the server's workspace guard.
- */
-export function isServerRejection(res: { status?: number }): boolean {
-  return res.status === 400 || res.status === 403 || res.status === 404 || res.status === 409;
-}
 
 export async function callServerApi(
   apiPath: string,

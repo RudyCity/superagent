@@ -1,7 +1,7 @@
 # Plan Perbaikan Superagent: Routing Multi-Project, Gerbang Plan, dan Scope Abort
 
 Disusun: 13 Oktober 2026
-Status: implementasi awal dan verifikasi terarah selesai; verifikasi penuh dan review akhir masih diperlukan
+Status: routing MCP mulai dimodularisasi; isolasi state per-session dan verifikasi penuh masih berjalan
 Versi dokumen interaktif: https://claude.ai/code/artifact/d6b844ed-a983-407a-9347-69a81724260c
 
 ## 1. Tujuan
@@ -12,7 +12,27 @@ Membuat Superagent aman dipakai dari MCP untuk beberapa project sekaligus. Ada t
 
 - Subagent tidak tersedia lewat MCP untuk sementara. Eksplorasi dan implementasi dikerjakan langsung, sehingga aturan di AGENTS.md tentang delegasi eksplorasi ke subagent belum bisa dipenuhi.
 - Grep di tool MCP rusak (selalu mengembalikan seluruh file). Pembacaan repo memakai list dan read per file.
-- Semua temuan di dokumen ini berasal dari pembacaan kode. Belum ada yang diuji runtime.
+- Temuan awal sudah sebagian diuji runtime melalui tes regresi terarah; suite penuh dan build setelah perubahan lanjutan tetap harus dijalankan.
+
+### Progress dan gap setelah implementasi fase 1
+
+- Selesai di fase 1: routing workspace untuk `run_task`/`invoke`, penolakan fallback lokal saat server menolak workspace, gerbang plan pada route invoke HTTP, dan abort yang meminta scope eksplisit.
+- Belum selesai: inisialisasi otomatis workspace yang belum terdaftar. Untuk keamanan, perilaku saat ini tetap menolak request dan meminta session diinisialisasi secara eksplisit; jangan auto-call `/api/init` sebelum kontrak keamanan dan efek sampingnya diverifikasi.
+- Belum selesai: `workspaceMode` masih state global yang dapat berubah oleh request paralel untuk target workspace berbeda.
+- Belum selesai: pending permissions/questions belum menyimpan kepemilikan session; abort per-session sengaja tidak membersihkan map global agar tidak mematikan prompt milik project lain.
+- Sebagian routing MCP kini memakai modul pusat `workspaceContext.ts` sebagai SSOT untuk normalisasi target workspace dan klasifikasi penolakan server. `processTools.ts` mempertahankan re-export kompatibel; `executionTools.ts` dan handler Chrome memakai modul pusat langsung.
+- Diperbaiki pada putaran ini: `handleSendMessage` meneruskan workspace eksplisit ke server dan menggunakan target sama untuk fallback; bila server menolak target, handler tidak melakukan fallback lokal. Handler Chrome juga menerima `args.workspace` dan tidak menentukan root lewat `process.cwd()` secara langsung.
+- Verifikasi terbaru: 33 tes pada lima file terarah lulus; `bun run build` dan `git diff --check` lulus. Suite penuh `bun test` sebelumnya timeout pada batas tool, jadi hasil keseluruhan belum diketahui. Belum ada tes isolasi `workspaceMode`.
+- Diperbaiki: referensi `fileTools.ts` yang tidak ada pada diagram arsitektur diganti dengan `fileReadTools.ts` dan `fileEditTools.ts`. Aturan `.gitignore` yang diperlukan sudah tercakup oleh `*.log`, `cdp_screenshot_*.png`, dan `tests/temp-home*`; tidak ditambahkan duplikasi.
+- Masih menjadi gap arsitektur utama: `workspaceMode` global dan pending permissions/questions belum session-scoped. SSOT workspace yang baru belum menyelesaikan state global ini; perubahan lintas consumer perlu audit dan tes concurrency terpisah.
+
+### Urutan lanjutan yang aman
+
+1. Audit seluruh consumer `workspaceMode` dan tentukan perubahan API agar mode/config dibawa per request/session.
+2. Tambahkan tes isolasi untuk dua request bersamaan dengan target local dan SSH sebelum mengubah state global.
+3. Audit sisa pemakaian `process.cwd()` pada handler MCP; ubah jalur yang menerima atau dapat menentukan workspace eksplisit.
+4. Jalankan tes terarah dan build; jalankan suite penuh dengan runner/timeout memadai dan catat hasil aktual.
+5. Baru setelah isolasi teruji, pertimbangkan inisialisasi workspace otomatis dan perubahan perilaku `switch_workspace`.
 
 ## 3. Temuan
 
@@ -24,7 +44,7 @@ Membuat Superagent aman dipakai dari MCP untuk beberapa project sekaligus. Ada t
 | T4 | /api/abort tanpa session menghentikan semua session dan menandai semua superagent sebagai terminated, lintas project. | src/serverRoutes.ts (949-974) | Tinggi |
 | T5 | workspaceMode (local/ssh) diubah secara global di setiap request. Request paralel dari workspace berbeda bisa saling menimpa. | src/server.ts (751-774) | Tinggi |
 | T6 | process.cwd() dan process.chdir() masih dipakai di jalur MCP. | workspaceTools.ts (45); executionTools.ts (105, 156); src/core/workspaceIsolation.ts (47, 57, 65) | Tinggi |
-| T7 | Lokasi worktree di dokumen (~/.superagent-r/worktrees) berbeda dengan kode (<repo>/.worktrees). | AGENTS.md; docs/wiki/01-architecture-overview.md; superagentTools.ts (436); workspaceIsolation.ts (47) | Tinggi |
+| T7 | Ada dua jenis worktree yang sempat tercampur dalam audit: worktree fitur Superagent (`~/.superagent-r/worktrees`) dan worktree isolasi session (`<repo>/.worktrees`). Dokumentasi harus membedakan keduanya, bukan menyamakan path. | AGENTS.md; docs/wiki/01-architecture-overview.md; superagentTools.ts; workspaceIsolation.ts | Tinggi |
 | T8 | Dokumen wiki menyebut fileTools.ts, file yang tidak ada. | docs/wiki/01-architecture-overview.md | Tinggi |
 
 ## 4. Perbaikan
@@ -58,9 +78,10 @@ File: src/serverRoutes.ts (route /api/abort).
 
 ### P2 Hilangkan state global (T5, T6, T7)
 
-- workspaceMode: pindahkan ke session atau teruskan sebagai argumen eksplisit. Tahap awal: ubah hanya jika nilainya berbeda, dengan mutex sederhana.
-- process.cwd() di jalur MCP diganti workspace target. setupWorkspaceForSession menerima repoRoot sebagai parameter.
-- switch_workspace: dari process.chdir() menjadi aktivasi session. Ini perubahan perilaku dan harus ditandai di CHANGELOG.
+- SSOT workspace: `workspaceContext.ts` menjadi satu pintu untuk resolusi/validasi konteks workspace MCP; handler tidak boleh mengimplementasikan normalisasi sendiri-sendiri.
+- State runtime: `workspaceMode`, izin, pertanyaan pending, dan session identity harus dimiliki session/context, bukan mutable global. Teruskan context eksplisit ke fungsi yang membutuhkannya; jangan mengandalkan mutex untuk menutupi desain global.
+- process.cwd() di jalur MCP diganti konteks workspace yang telah di-resolve. Fungsi setup menerima repoRoot/context sebagai parameter.
+- switch_workspace: ubah dari process.chdir() menjadi aktivasi session hanya setelah semua consumer memakai context eksplisit. Ini perubahan perilaku dan harus ditandai di CHANGELOG.
 
 ### P3 Dokumentasi dan kebersihan repo (T7, T8)
 
@@ -87,7 +108,7 @@ Verifikasi: bun test dan bun run build.
 2. Kirim rencana perubahan per file, tunggu persetujuan.
 3. Kerjakan P1-a dan P1-c, lalu P1-b.
 4. Tulis dan jalankan test.
-5. Versi: 1.13.62 menjadi 1.13.63 untuk bug fix. Menjadi 1.14.0 jika P2 ikut dengan perubahan perilaku switch_workspace.
+5. Versi fase routing awal 1.13.63; perbaikan lanjutan terarah saat ini 1.13.64. Jika P2 mengubah perilaku `switch_workspace`, tentukan versi breaking terpisah setelah review.
 6. Update CHANGELOG.md, lalu commit.
 
 ## 7. Keputusan yang perlu diambil

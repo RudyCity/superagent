@@ -1,3 +1,10 @@
+## [1.13.64] - 2026-10-13
+### Fixed
+- Introduce `src/core/mcp/tools/workspaceContext.ts` as the shared source of truth for MCP workspace normalization and server-rejection classification; keep compatibility re-exports in `processTools.ts`.
+- Forward explicit workspace routing for MCP `send_message`, prevent unsafe local fallback after a server rejection, and pass explicit workspace context into Chrome MCP handlers.
+- Add route-level regression tests for MCP invoke plan approval and session-scoped abort (`tests/invokePlanGate.test.ts`, `tests/abortScope.test.ts`).
+- Correct the architecture diagram's stale file-tools references (`docs/wiki/01-architecture-overview.md`).
+
 ## [1.13.63] - 2026-10-13
 ### Fixed
 - Harden MCP multi-project routing and execution isolation (`src/core/mcp/tools/processTools.ts`, `src/core/mcp/tools/executionTools.ts`, `src/serverRoutes.ts`):

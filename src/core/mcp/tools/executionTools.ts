@@ -4,7 +4,8 @@
 
 import path from "path";
 import { McpToolResult } from "../types.js";
-import { callServerApi, resolveMcpWorkspace, isServerRejection } from "./processTools.js";
+import { callServerApi } from "./processTools.js";
+import { resolveMcpWorkspace, isServerRejection } from "./workspaceContext.js";
 import { superagentInstances } from "../../tools/state.js";
 
 export async function handleRunTask(args: any): Promise<McpToolResult> {
@@ -147,6 +148,7 @@ export async function handleSendMessage(args: any): Promise<McpToolResult> {
   const superagentId = String(args.superagentId || args.id || args.target || "");
   const message = String(args.message || args.prompt || args.instruction || "");
   const wait = args.wait === true;
+  const ws = resolveMcpWorkspace(args.workspace);
 
   if (!superagentId || !message) {
     return {
@@ -159,7 +161,8 @@ export async function handleSendMessage(args: any): Promise<McpToolResult> {
     "/api/superagents/message",
     "POST",
     { superagentId, message, wait },
-    wait ? 300000 : 10000
+    wait ? 300000 : 10000,
+    ws.explicit ? { workspace: ws.path } : {}
   );
   if (serverRes.success) {
     return {
@@ -175,10 +178,20 @@ export async function handleSendMessage(args: any): Promise<McpToolResult> {
     };
   }
 
+  if (ws.explicit && isServerRejection(serverRes)) {
+    return {
+      content: [{
+        type: "text",
+        text: `Error: ${serverRes.error || `Server rejected the request (status ${serverRes.status}).`}\nNo session is available for workspace ${ws.path}. Open or initialize a session for it first, then retry.`,
+      }],
+      isError: true,
+    };
+  }
+
   const { sendMessageToSuperagentTool } = await import("../../tools/superagentTools.js");
   const result = await sendMessageToSuperagentTool.execute(
     { superagentId, message, wait },
-    process.cwd()
+    ws.path
   );
   if (typeof result === "string" && result.includes("not found")) {
     const { sendEnvelopeToProcess } = await import("../../ipc/processMailbox.js");

@@ -9,7 +9,8 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import http from "http";
 import path from "path";
 import { EventEmitter } from "events";
-import { callServerApi, resolveMcpWorkspace } from "../src/core/mcp/tools/processTools.js";
+import { callServerApi } from "../src/core/mcp/tools/processTools.js";
+import { resolveMcpWorkspace } from "../src/core/mcp/tools/workspaceContext.js";
 import { handleRunTask, handleInvoke } from "../src/core/mcp/tools/executionTools.js";
 import { handleInterrupt } from "../src/core/mcp/tools/processTools.js";
 

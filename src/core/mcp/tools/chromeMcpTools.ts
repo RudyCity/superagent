@@ -12,6 +12,7 @@ import {
 } from "../../tools/chromeProcessTools.js";
 import { launchChromeProfileTool } from "../../tools/chromeBrowserTools.js";
 import { listChromeProfilesTool } from "../../tools/chromeProfileTools.js";
+import { resolveMcpWorkspace } from "./workspaceContext.js";
 
 function toResult(res: unknown): McpToolResult {
   const text = typeof res === "string" ? res : JSON.stringify(res, null, 2);
@@ -28,7 +29,7 @@ function toResult(res: unknown): McpToolResult {
 
 export async function handleControlChromeCdp(args: any): Promise<McpToolResult> {
   try {
-    const res = await controlChromeCdpTool.execute(args || {}, process.cwd());
+    const res = await controlChromeCdpTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
     return toResult(res);
   } catch (err: any) {
     return {
@@ -46,7 +47,7 @@ export async function handleControlChromeVision(args: any): Promise<McpToolResul
     }
     const res = await controlChromeVisionTool.execute(
       { command: args?.command, payload: payloadStr },
-      process.cwd()
+      resolveMcpWorkspace(args?.workspace).path
     );
     return toResult(res);
   } catch (err: any) {
@@ -59,7 +60,7 @@ export async function handleControlChromeVision(args: any): Promise<McpToolResul
 
 export async function handleListRunningChrome(args: any): Promise<McpToolResult> {
   try {
-    const res = await listRunningChromeTool.execute(args || {}, process.cwd());
+    const res = await listRunningChromeTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
     return toResult(res);
   } catch (err: any) {
     return {
@@ -71,7 +72,7 @@ export async function handleListRunningChrome(args: any): Promise<McpToolResult>
 
 export async function handleCloseChromeProfile(args: any): Promise<McpToolResult> {
   try {
-    const res = await closeChromeProfileTool.execute(args || {}, process.cwd());
+    const res = await closeChromeProfileTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
     return toResult(res);
   } catch (err: any) {
     return {
@@ -83,7 +84,7 @@ export async function handleCloseChromeProfile(args: any): Promise<McpToolResult
 
 export async function handleCloseChromeWindow(args: any): Promise<McpToolResult> {
   try {
-    const res = await closeChromeWindowTool.execute(args || {}, process.cwd());
+    const res = await closeChromeWindowTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
     return toResult(res);
   } catch (err: any) {
     return {
@@ -95,7 +96,7 @@ export async function handleCloseChromeWindow(args: any): Promise<McpToolResult>
 
 export async function handleLaunchChromeProfile(args: any): Promise<McpToolResult> {
   try {
-    const res = await launchChromeProfileTool.execute(args || {}, process.cwd());
+    const res = await launchChromeProfileTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
     return toResult(res);
   } catch (err: any) {
     return {
@@ -107,7 +108,7 @@ export async function handleLaunchChromeProfile(args: any): Promise<McpToolResul
 
 export async function handleListChromeProfiles(args: any): Promise<McpToolResult> {
   try {
-    const res = await listChromeProfilesTool.execute(args || {}, process.cwd());
+    const res = await listChromeProfilesTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
     return toResult(res);
   } catch (err: any) {
     return {

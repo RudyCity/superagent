@@ -86,7 +86,7 @@ graph TB
     subgraph ToolEcosystem["src/core/tools/"]
         SuperTools["superagentTools.ts<br/>(invoke/await/merge)"]:::tool
         SubTools["subagentTools.ts<br/>(ephemeral spawners)"]:::tool
-        FileTools["fileTools.ts & systemTools.ts<br/>(execa, read, write, patch)"]:::tool
+        FileTools["fileReadTools.ts & fileEditTools.ts<br/>(read, write, patch)"]:::tool
         ChromeBridge["remoteChromeBridge.ts<br/>(WS Port 9223 Server)"]:::tool
         Toolsets["toolsets.ts<br/>(Tier Permissions Map)"]:::tool
     end
