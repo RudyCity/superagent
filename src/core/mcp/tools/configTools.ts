@@ -4,6 +4,7 @@
  */
 
 import { McpToolResult } from "../types.js";
+import { getMcpWorkspacePath } from "./workspaceContext.js";
 import {
   listSessionsFromDb,
   loadSessionFromDb,
@@ -215,8 +216,8 @@ export async function handleMemorySave(args: any): Promise<McpToolResult> {
     role: "assistant",
     pinnedAt: now,
     timestamp: now,
-    sourceSessionPath: process.cwd(),
-    workingDirectory: process.cwd(),
+    sourceSessionPath: getMcpWorkspacePath(),
+    workingDirectory: getMcpWorkspacePath(),
   });
 
   return { content: [{ type: "text", text: `Knowledge snippet saved to persistent memory under tag [${tag}]. ID: ${id}` }] };

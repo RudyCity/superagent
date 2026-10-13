@@ -387,7 +387,7 @@ function buildResultSuffix(toolCall, toolResult) {
 }
 
 // Append inline question bubble directly into chat
-function appendInlineQuestion(questionId, question, options, isMultiSelect) {
+function appendInlineQuestion(questionId, question, options, isMultiSelect, sessionId) {
   hideSpinner();
   currentIsMultiSelect = !!isMultiSelect;
   currentQuestionIsArray = Array.isArray(question);
@@ -395,6 +395,7 @@ function appendInlineQuestion(questionId, question, options, isMultiSelect) {
   const msgDiv = document.createElement("div");
   msgDiv.className = "msg msg-question";
   msgDiv.dataset.questionId = questionId;
+  if (sessionId) msgDiv.dataset.sessionId = sessionId;
 
   const header = document.createElement("div");
   header.className = "msg-header";
@@ -557,7 +558,7 @@ async function submitInlineAnswer(msgDiv, questionId, customInput) {
     const res = await fetch(`${BASE_URL}/api/answer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ questionId, answer })
+      body: JSON.stringify({ questionId, answer, sessionId: msgDiv.dataset.sessionId || window.currentSessionId || null })
     });
     if (res.ok) {
       // Replace question bubble with compact answered state

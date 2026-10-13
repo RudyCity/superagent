@@ -1,15 +1,23 @@
 import path from "path";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 /**
- * Canonical workspace context for MCP handlers.
- *
- * Resolve the target exactly once at the tool boundary and pass this context
- * through downstream calls. Do not use process.chdir() to select a request's
- * workspace: it is process-global and unsafe for concurrent MCP requests.
+ * Canonical async-local workspace context for MCP handlers. Never use
+ * process.chdir() to select a request workspace: it is process-global.
  */
 export interface McpWorkspaceContext {
   path: string;
   explicit: boolean;
+}
+
+const workspaceStorage = new AsyncLocalStorage<string>();
+
+export function runWithMcpWorkspace<T>(workspacePath: string, callback: () => T): T {
+  return workspaceStorage.run(workspacePath, callback);
+}
+
+export function getMcpWorkspacePath(): string {
+  return workspaceStorage.getStore() || process.cwd();
 }
 
 export function isRemoteWorkspaceTarget(workspacePath: string): boolean {
@@ -19,13 +27,17 @@ export function isRemoteWorkspaceTarget(workspacePath: string): boolean {
 export function resolveMcpWorkspace(workspaceArg?: unknown): McpWorkspaceContext {
   if (typeof workspaceArg === "string" && workspaceArg.trim()) {
     const raw = workspaceArg.trim();
+    const base = getMcpWorkspacePath();
+    const localBase = isRemoteWorkspaceTarget(base) ? process.cwd() : base;
     return {
-      path: isRemoteWorkspaceTarget(raw) ? raw : path.resolve(raw),
+      path: isRemoteWorkspaceTarget(raw)
+        ? raw
+        : path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(localBase, raw),
       explicit: true,
     };
   }
 
-  return { path: process.cwd(), explicit: false };
+  return { path: getMcpWorkspacePath(), explicit: false };
 }
 
 export function isServerRejection(res: { status?: number }): boolean {

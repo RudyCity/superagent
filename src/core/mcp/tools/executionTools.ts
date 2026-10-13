@@ -5,7 +5,7 @@
 import path from "path";
 import { McpToolResult } from "../types.js";
 import { callServerApi } from "./processTools.js";
-import { resolveMcpWorkspace, isServerRejection } from "./workspaceContext.js";
+import { resolveMcpWorkspace, isServerRejection, getMcpWorkspacePath } from "./workspaceContext.js";
 import { superagentInstances } from "../../tools/state.js";
 
 export async function handleRunTask(args: any): Promise<McpToolResult> {
@@ -278,7 +278,7 @@ export async function handleInvoke(args: any): Promise<McpToolResult> {
     };
   }
 
-  // Server unreachable: run standalone in the target workspace (not process.cwd()).
+  // Server unreachable: run standalone in the target workspace (not getMcpWorkspacePath()).
   const { invokeSuperagentTool } = await import("../../tools/superagentTools.js");
   const result = await invokeSuperagentTool.execute(
     { role, task, branch, wait, constraints, acceptanceCriteria },
@@ -298,7 +298,7 @@ export async function handleAwait(args: any): Promise<McpToolResult> {
   const { awaitSuperagentsTool } = await import("../../tools/superagentTools.js");
   const result = await awaitSuperagentsTool.execute(
     { timeoutSeconds, superagentIds },
-    process.cwd()
+    getMcpWorkspacePath()
   );
   return {
     content: [{ type: "text", text: String(result) }],
@@ -308,7 +308,7 @@ export async function handleAwait(args: any): Promise<McpToolResult> {
 export async function handleMerge(args: any): Promise<McpToolResult> {
   const cleanupWorktrees = args.cleanupWorktrees !== false;
   const { mergeSuperagentsTool } = await import("../../tools/superagentTools.js");
-  const result = await mergeSuperagentsTool.execute({ cleanupWorktrees }, process.cwd());
+  const result = await mergeSuperagentsTool.execute({ cleanupWorktrees }, getMcpWorkspacePath());
   return {
     content: [{ type: "text", text: String(result) }],
   };
@@ -342,7 +342,7 @@ export async function handleManage(args: any): Promise<McpToolResult> {
   }
 
   const { manageSuperagentsTool } = await import("../../tools/superagentTools.js");
-  const result = await manageSuperagentsTool.execute({ action, superagentIds }, process.cwd());
+  const result = await manageSuperagentsTool.execute({ action, superagentIds }, getMcpWorkspacePath());
   return {
     content: [{ type: "text", text: String(result) }],
   };
@@ -421,6 +421,6 @@ export async function handleGetStatus(args: any): Promise<McpToolResult> {
 
 export async function handleCliBridge(args: any): Promise<McpToolResult> {
   const { cliBridgeTool } = await import("../../tools/cliBridgeTool.js");
-  const result = await cliBridgeTool.execute(args, process.cwd());
+  const result = await cliBridgeTool.execute(args, getMcpWorkspacePath());
   return { content: [{ type: "text", text: String(result) }] };
 }

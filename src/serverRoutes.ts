@@ -46,6 +46,7 @@ import { getRMemoryClient, isRmemoryActive } from "./core/rmemoryUtil.js";
 import { getRootConfigDir } from "./core/config/paths.js";
 import { buildCorsHeaders, isPathInsideOrEqual } from "./core/utils/serverSecurity.js";
 import { maskApiKey, isMaskedApiKey } from "./core/config.js";
+import { isPendingPromptOwner } from "./core/agent/pendingPromptOwnership.js";
 
 export async function handleServerRoute(
   req: http.IncomingMessage,
@@ -60,9 +61,10 @@ export async function handleServerRoute(
     setIsBrowseDialogOpen: (v: boolean) => void;
     serverDefaultClientMode: any;
     sseClients: Set<http.ServerResponse>;
+    sseClientContexts: Map<http.ServerResponse, { sessionId?: string; workspace?: string }>;
     browserInstances: Map<string, any>;
-    pendingPermissions: Map<string, (approval: boolean | "session") => void>;
-    pendingQuestions: Map<string, (answer: any) => void>;
+    pendingPermissions: Map<string, { resolve: (approval: boolean | "session") => void; ownerAgent?: any; sessionId?: string; workspace: string }>;
+    pendingQuestions: Map<string, { resolve: (answer: any) => void; ownerAgent?: any; sessionId?: string; workspace: string }>;
     pendingBrowserControls: Map<string, { resolve: (val: string) => void; reject: (err: any) => void }>;
     resolveSession: (req: http.IncomingMessage, sessionId?: string) => any;
     resolveWorkspacePath: (req: http.IncomingMessage) => string | null;
@@ -81,6 +83,7 @@ export async function handleServerRoute(
     setLastActiveWorkspace,
     serverDefaultClientMode,
     sseClients,
+    sseClientContexts,
     browserInstances,
     pendingPermissions,
     pendingQuestions,
@@ -165,6 +168,18 @@ export async function handleServerRoute(
     });
     try { (res.socket as any)?.setNoDelay(true); } catch {}
     sseClients.add(res);
+    const requestedSessionId = parsedUrl.searchParams.get("sessionId") || undefined;
+    const resolvedSession = resolveSession(req, requestedSessionId);
+    const requestedWorkspace = parsedUrl.searchParams.get("workspace") || undefined;
+    const resolvedWorkspace = requestedWorkspace ? resolveWorkspacePath(req) || undefined : resolvedSession?.workspace;
+    sseClientContexts.set(res, {
+      ...(resolvedSession?.sessionId ? { sessionId: resolvedSession.sessionId } : {}),
+      ...(resolvedWorkspace ? { workspace: resolvedWorkspace } : {}),
+    });
+    res.on("close", () => {
+      sseClients.delete(res);
+      sseClientContexts.delete(res);
+    });
 
     const clientId = parsedUrl.searchParams.get("clientId") || "";
     const windowId = parsedUrl.searchParams.get("windowId") || "";
@@ -721,20 +736,24 @@ export async function handleServerRoute(
     return true;
   }
 
-  // Handle Permission Approval
+  // Handle Permission Approval — a prompt can only be resolved by its owning session.
   if (pathname === "/api/approve" && req.method === "POST") {
     const bodyStr = await readBody(req);
     const body = JSON.parse(bodyStr || "{}");
-    const { permissionId, approval } = body;
-
-    const resolver = pendingPermissions.get(permissionId);
-    if (resolver) {
-      resolver(approval);
-      pendingPermissions.delete(permissionId);
-      sendJSON(res, 200, { success: true });
-    } else {
+    const { permissionId, approval, sessionId } = body;
+    const pending = pendingPermissions.get(permissionId);
+    if (!pending) {
       sendJSON(res, 404, { error: "Permission request not found" });
+      return true;
     }
+    const session = resolveSession(req, sessionId);
+    if (!isPendingPromptOwner(pending, session)) {
+      sendJSON(res, 403, { error: "Permission request belongs to a different session" });
+      return true;
+    }
+    pending.resolve(approval);
+    pendingPermissions.delete(permissionId);
+    sendJSON(res, 200, { success: true });
     return true;
   }
 
@@ -758,7 +777,24 @@ export async function handleServerRoute(
     } else if (action === "reject") {
       session.agent.planState = "IDLE";
       session.agent.abort();
-      broadcastEvent({ type: "plan_approval_required", planState: "IDLE" });
+      for (const [id, pending] of pendingPermissions) {
+        if (pending.ownerAgent === session.agent || pending.sessionId === session.sessionId) {
+          pending.resolve(false);
+          pendingPermissions.delete(id);
+        }
+      }
+      for (const [id, pending] of pendingQuestions) {
+        if (pending.ownerAgent === session.agent || pending.sessionId === session.sessionId) {
+          pending.resolve(null);
+          pendingQuestions.delete(id);
+        }
+      }
+      broadcastEvent({
+        type: "plan_approval_required",
+        planState: "IDLE",
+        sessionId: session.sessionId,
+        workspace: session.workspace,
+      });
       sendJSON(res, 200, { success: true });
     } else {
       sendJSON(res, 400, { error: "Invalid action. Use approve or reject." });
@@ -766,20 +802,24 @@ export async function handleServerRoute(
     return true;
   }
 
-  // Handle Question Answer
+  // Handle Question Answer — a prompt can only be resolved by its owning session.
   if (pathname === "/api/answer" && req.method === "POST") {
     const bodyStr = await readBody(req);
     const body = JSON.parse(bodyStr || "{}");
-    const { questionId, answer } = body;
-
-    const resolver = pendingQuestions.get(questionId);
-    if (resolver) {
-      resolver(answer);
-      pendingQuestions.delete(questionId);
-      sendJSON(res, 200, { success: true });
-    } else {
+    const { questionId, answer, sessionId } = body;
+    const pending = pendingQuestions.get(questionId);
+    if (!pending) {
       sendJSON(res, 404, { error: "Question request not found" });
+      return true;
     }
+    const session = resolveSession(req, sessionId);
+    if (!isPendingPromptOwner(pending, session)) {
+      sendJSON(res, 403, { error: "Question request belongs to a different session" });
+      return true;
+    }
+    pending.resolve(answer);
+    pendingQuestions.delete(questionId);
+    sendJSON(res, 200, { success: true });
     return true;
   }
 
@@ -964,6 +1004,8 @@ export async function handleServerRoute(
       for (const superInst of superagentInstances.values()) {
         if (superInst.status === "running") superInst.status = "terminated";
       }
+      for (const pending of pendingPermissions.values()) pending.resolve(false);
+      for (const pending of pendingQuestions.values()) pending.resolve(null);
       pendingPermissions.clear();
       pendingQuestions.clear();
       broadcastEvent({ type: "status", text: "Agent execution aborted by user." });
@@ -1006,9 +1048,19 @@ export async function handleServerRoute(
       if (superInst.status === "running" && superInst.agent && ownedAgents.has(superInst.agent)) superInst.status = "terminated";
     }
 
-    // pendingPermissions / pendingQuestions are keyed by random ids with no session attached,
-    // so they cannot be cleared per session. Leave them alone: clearing them globally would
-    // orphan prompts that belong to other projects.
+    // Cancel only prompts owned by this session; never orphan prompts from other projects.
+    for (const [id, pending] of pendingPermissions) {
+      if (pending.ownerAgent === session.agent || pending.sessionId === session.sessionId) {
+        pending.resolve(false);
+        pendingPermissions.delete(id);
+      }
+    }
+    for (const [id, pending] of pendingQuestions) {
+      if (pending.ownerAgent === session.agent || pending.sessionId === session.sessionId) {
+        pending.resolve(null);
+        pendingQuestions.delete(id);
+      }
+    }
 
     const metadata = { sessionId: session.sessionId, workspace: session.workspace };
     broadcastEvent({ type: "status", text: "Agent execution aborted by user.", ...metadata });
@@ -2159,7 +2211,7 @@ export async function handleServerRoute(
         if (activeChainId) {
           activeChain = matchingChains.find((c) => c.id === activeChainId) || null;
         }
-        if (!activeChain && workspaceChainManager.isChainActive()) {
+        if (!activeChain && workspaceChainManager.isChainActive(workspace)) {
           const mgrChain = workspaceChainManager.getActiveChain(workspace);
           if (mgrChain && matchingChains.some((c) => c.id === mgrChain.id)) {
             activeChain = mgrChain;
@@ -2274,7 +2326,9 @@ export async function handleServerRoute(
     try {
       const bodyStr = await readBody(req);
       const { nodeId } = JSON.parse(bodyStr || "{}");
+      const workspace = resolveWorkspacePath(req) || lastActiveWorkspace;
       const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
+      workspaceChainManager.getActiveChain(workspace);
       const success = workspaceChainManager.setActiveNode(nodeId);
       if (success) {
         sendJSON(res, 200, { success: true, activeNodeId: nodeId });

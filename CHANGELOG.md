@@ -1,3 +1,11 @@
+## [1.13.67] - 2026-10-13
+### Fixed
+- Bind pending permission/question prompts to their owning agent/session and reject cross-session approval or answers; cancel only the owning session's prompts on abort.
+- Scope SSE events carrying session/workspace metadata to matching clients, and include the active session/workspace in Chrome extension SSE subscriptions.
+- Replace MCP handler dependence on process-global cwd with AsyncLocalStorage workspace context; make `switch_workspace` update only the MCP server instance instead of calling `process.chdir()` or mutating the shared server's last-active workspace.
+- Run workspace-chain tools inside request-local chain contexts and synchronize workspace mode when loading a persisted chain.
+- Add regression tests for prompt ownership, SSE event scope, and concurrent MCP workspace contexts.
+
 ## [1.13.66] - 2026-10-13
 ### Fixed
 - Scope active workspace chain and active node state to each HTTP request using AsyncLocalStorage, and namespace SSH connections by chain ID plus node ID.

@@ -1,7 +1,7 @@
 # Plan Perbaikan Superagent: Routing Multi-Project, Gerbang Plan, dan Scope Abort
 
 Disusun: 13 Oktober 2026
-Status: routing MCP mulai dimodularisasi; isolasi state per-session dan verifikasi penuh masih berjalan
+Status: isolasi prompt, event SSE, workspace MCP, dan chain request-scoped diimplementasikan; build dan tes terarah lulus; suite penuh belum bersih
 Versi dokumen interaktif: https://claude.ai/code/artifact/d6b844ed-a983-407a-9347-69a81724260c
 
 ## 1. Tujuan
@@ -19,23 +19,24 @@ Membuat Superagent aman dipakai dari MCP untuk beberapa project sekaligus. Ada t
 - Selesai di fase 1: routing workspace untuk `run_task`/`invoke`, penolakan fallback lokal saat server menolak workspace, gerbang plan pada route invoke HTTP, dan abort yang meminta scope eksplisit.
 - Belum selesai: inisialisasi otomatis workspace yang belum terdaftar. Untuk keamanan, perilaku saat ini tetap menolak request dan meminta session diinisialisasi secara eksplisit; jangan auto-call `/api/init` sebelum kontrak keamanan dan efek sampingnya diverifikasi.
 - Belum selesai: `workspaceMode` masih state global yang dapat berubah oleh request paralel untuk target workspace berbeda.
-- Belum selesai: pending permissions/questions belum menyimpan kepemilikan session; abort per-session sengaja tidak membersihkan map global agar tidak mematikan prompt milik project lain.
+- Diperbaiki pada fase terbaru: pending permissions/questions kini menyimpan pemilik agent, session ID, dan workspace; endpoint approve/answer memvalidasi pemilik; abort membatalkan prompt milik session terkait tanpa menyentuh prompt project lain.
 - Sebagian routing MCP kini memakai modul pusat `workspaceContext.ts` sebagai SSOT untuk normalisasi target workspace dan klasifikasi penolakan server. `processTools.ts` mempertahankan re-export kompatibel; `executionTools.ts` dan handler Chrome memakai modul pusat langsung.
 - Diperbaiki pada putaran ini: `handleSendMessage` meneruskan workspace eksplisit ke server dan menggunakan target sama untuk fallback; bila server menolak target, handler tidak melakukan fallback lokal. Handler Chrome juga menerima `args.workspace` dan tidak menentukan root lewat `process.cwd()` secara langsung.
 - Verifikasi sebelum request-scoped mode: 33 tes pada lima file terarah lulus; hasil terbaru setelah AsyncLocalStorage: 44 tes pada tujuh file lulus, `bun run build` dan `git diff --check` lulus. Suite penuh `bun test` sebelumnya timeout pada batas tool, jadi hasil keseluruhan belum diketahui.
 - Diperbaiki: referensi `fileTools.ts` yang tidak ada pada diagram arsitektur diganti dengan `fileReadTools.ts` dan `fileEditTools.ts`. Aturan `.gitignore` yang diperlukan sudah tercakup oleh `*.log`, `cdp_screenshot_*.png`, dan `tests/temp-home*`; tidak ditambahkan duplikasi.
-- Perbaikan lanjutan: `workspaceMode` dan state active chain/node kini menggunakan AsyncLocalStorage request context di handler HTTP. Koneksi SSH disimpan dengan key gabungan chain ID dan node ID sehingga node ID yang sama pada chain berbeda tidak berbagi koneksi.
-- Perbaikan lanjutan: pemilihan active chain dipersist per workspace melalui `activeWorkspaceChainIds`, dengan fallback kompatibilitas untuk `activeWorkspaceChainId` lama. Target eksplisit `chain:<id>` juga di-resolve sebagai chain ID, bukan diperlakukan sebagai path filesystem.
-- Tes concurrency manager membuktikan active chain/node terisolasi; tes tambahan memverifikasi namespace koneksi dan penyimpanan pilihan chain per workspace. Verifikasi terbaru: 50 tes terarah lulus di enam file, build TypeScript dan `git diff --check` lulus. Suite penuh belum dijalankan setelah perubahan ini.
-- Gap yang masih terbuka: pending permissions/questions belum sepenuhnya session-owned; sebagian consumer non-HTTP masih memakai manager fallback di luar request context; audit lengkap `process.cwd()` pada handler MCP dan suite penuh masih diperlukan.
+- Perbaikan lanjutan: `workspaceMode` dan state active chain/node menggunakan AsyncLocalStorage; koneksi SSH dipisahkan per chain+node; pemilihan active chain dipersist per workspace dengan fallback konfigurasi legacy.
+- Perbaikan lanjutan: tool chain pada agent dijalankan dalam request context; load chain menyinkronkan local/SSH mode. Endpoint chain status, health, delete, dan switch-node menggunakan workspace request.
+- Perbaikan prompt: permission/question terikat ke agent/session; API approve/answer menolak sesi lain; abort menyelesaikan prompt yang dibatalkan agar tidak menggantung. Event SSE dengan metadata session/workspace kini difilter server-side dan Chrome extension menyertakan session/workspace saat berlangganan.
+- Perbaikan MCP workspace: workspace disimpan per instance server MCP dengan AsyncLocalStorage untuk setiap tool call. `switch_workspace` tidak lagi memakai `process.chdir()` atau mengubah `lastActiveWorkspace` global. Handler MCP yang sebelumnya memakai `process.cwd()` kini membaca konteks workspace; sisa penggunaan cwd hanya untuk default/inisialisasi transport dan fallback.
+- Tes regresi mencakup chain context, prompt ownership, SSE scope, workspace routing, MCP server, server HTTP, transport MCP, chain permissions, dan workspace isolation. Verifikasi terbaru: 138 tes terarah lulus pada 16 file; build TypeScript dan `git diff --check` lulus.
+- Suite penuh belum bersih. Shard pertama dari empat menjalankan 820 tes di 77 file: 809 lulus, 1 skip, 10 gagal. Kegagalan yang terlihat termasuk konflik UNIQUE pada SQLite file-lock, tes Muse tanpa watcher aktif, mock `generateText` yang tidak terpasang, tes Chrome window yang menyentuh jendela browser nyata, serta timeout auto-checkpoint/PDF OCR. Karena test shard ini memengaruhi browser dan ada kegagalan environment-sensitive, shard sisanya tidak dijalankan pada sesi ini. Ini bukan bukti bahwa seluruh suite lulus.
 
 ### Urutan lanjutan yang aman
 
-1. Audit semua consumer manager di luar HTTP untuk memastikan context eksplisit atau perilaku CLI fallback yang disengaja.
-2. Scope pending permissions/questions ke session ID dan tambahkan tes lintas-project.
-3. Audit sisa pemakaian `process.cwd()` pada handler MCP.
-4. Jalankan tes terarah, build, lalu suite penuh dengan runner/timeout memadai dan catat hasil aktual.
-5. Baru setelah isolasi teruji, pertimbangkan inisialisasi workspace otomatis dan perubahan perilaku `switch_workspace`.
+1. Jalankan suite penuh dan catat hasil aktual; perbaiki regresi jika ditemukan.
+2. Audit integrasi runtime SSE dan Chrome extension lintas dua session/project nyata.
+3. Pertimbangkan inisialisasi workspace otomatis hanya setelah kontrak keamanan dan efek samping diuji.
+4. Verifikasi bahwa transport MCP HTTP/tunnel meneruskan workspace eksplisit sesuai konfigurasi per session.
 
 ## 3. Temuan
 

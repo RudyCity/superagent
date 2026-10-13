@@ -6,7 +6,8 @@ import fs from "fs";
 import path from "path";
 import { execa } from "execa";
 import { McpToolResult } from "../types.js";
-import { callServerApi } from "./processTools.js";
+
+import { getMcpWorkspacePath } from "./workspaceContext.js";
 import { loadRegistry, removeEntries } from "../../tools/superagentRegistry.js";
 import { addTrustedDirectory, ensureDirectoryTrusted } from "../../config.js";
 import {
@@ -18,19 +19,23 @@ import {
   getYoloAllowedRoot,
 } from "../../permissions.js";
 
-export async function handleSwitchWorkspace(args: any): Promise<McpToolResult> {
+export async function handleSwitchWorkspace(
+  args: any,
+  onWorkspaceChange?: (workspacePath: string) => void,
+): Promise<McpToolResult> {
   const ws = String(args.workspacePath || args.workspace || args.path || args.dir || "");
   if (!ws) {
     return { content: [{ type: "text", text: "Error: 'workspacePath' is required." }], isError: true };
   }
-  const resolved = path.resolve(ws);
+  const resolved = path.resolve(getMcpWorkspacePath(), ws);
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
     return { content: [{ type: "text", text: `Directory not found: ${resolved}` }], isError: true };
   }
 
-  // Layer 2: Scoped YOLO boundary check
-  if (!isFullYoloMode() && !isPathWithinYoloScope(resolved, process.cwd())) {
-    const allowedRoot = getYoloAllowedRoot(process.cwd());
+  // Scoped checks use the current MCP connection's workspace, not process-global cwd.
+  const currentWorkspace = getMcpWorkspacePath();
+  if (!isFullYoloMode() && !isPathWithinYoloScope(resolved, currentWorkspace)) {
+    const allowedRoot = getYoloAllowedRoot(currentWorkspace);
     return {
       content: [{
         type: "text",
@@ -42,14 +47,14 @@ export async function handleSwitchWorkspace(args: any): Promise<McpToolResult> {
 
   addTrustedDirectory(resolved);
   await ensureDirectoryTrusted(resolved);
-  process.chdir(resolved);
-
-  await callServerApi("/api/switch-workspace", "POST", { workspace: resolved });
+  // Keep selection per MCP server instance. process.chdir() and the shared HTTP
+  // server's last-active workspace are process-global and unsafe for concurrency.
+  onWorkspaceChange?.(resolved);
   return { content: [{ type: "text", text: `Switched active Superagent workspace to: ${resolved}` }] };
 }
 
 export async function handleGetWorkspace(): Promise<McpToolResult> {
-  const cwd = process.cwd();
+  const cwd = getMcpWorkspacePath();
   let branch = "unknown";
   try {
     const { execSync } = await import("child_process");
@@ -70,7 +75,7 @@ export async function handleGetWorkspace(): Promise<McpToolResult> {
 
 export async function handleExecCommand(args: any): Promise<McpToolResult> {
   const command = String(args.command || args.cmd || args.commandLine || "");
-  const targetCwd = args.cwd || args.workspace || (args.worktreePath ? path.resolve(String(args.worktreePath)) : process.cwd());
+  const targetCwd = args.cwd || args.workspace || (args.worktreePath ? path.resolve(String(args.worktreePath)) : getMcpWorkspacePath());
   const timeoutMs = typeof args.timeoutMs === "number" ? args.timeoutMs : 30000;
 
   if (!command) {
@@ -136,7 +141,7 @@ export async function handleReadFile(args: any): Promise<McpToolResult> {
   const filePath = String(args.filePath || args.path || args.file || "");
   const startLine = typeof args.startLine === "number" ? Math.max(1, args.startLine) : 1;
   const endLine = typeof args.endLine === "number" ? args.endLine : undefined;
-  const targetCwd = args.cwd || args.workspace || process.cwd();
+  const targetCwd = args.cwd || args.workspace || getMcpWorkspacePath();
 
   if (!filePath) {
     return { content: [{ type: "text", text: "Error: 'filePath' is required." }], isError: true };
@@ -169,7 +174,7 @@ export async function handleWriteFile(args: any): Promise<McpToolResult> {
   const filePath = String(args.filePath || args.path || args.file || "");
   const content = String(args.content ?? args.code ?? args.text ?? "");
   const overwrite = args.overwrite !== false;
-  const targetCwd = args.cwd || args.workspace || process.cwd();
+  const targetCwd = args.cwd || args.workspace || getMcpWorkspacePath();
 
   if (!filePath) {
     return { content: [{ type: "text", text: "Error: 'filePath' is required." }], isError: true };
@@ -222,7 +227,7 @@ export async function handleWriteFile(args: any): Promise<McpToolResult> {
 }
 
 export async function handleListFiles(args: any): Promise<McpToolResult> {
-  const dirPath = String(args.dirPath || args.path || args.directory || args.workspace || process.cwd());
+  const dirPath = String(args.dirPath || args.path || args.directory || args.workspace || getMcpWorkspacePath());
   const resolved = path.resolve(dirPath);
 
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
@@ -247,7 +252,7 @@ export async function handleListFiles(args: any): Promise<McpToolResult> {
 
 export async function handleGrepSearch(args: any): Promise<McpToolResult> {
   const query = String(args.query || args.pattern || args.search || "");
-  const searchPath = args.path ? path.resolve(String(args.path)) : process.cwd();
+  const searchPath = args.path ? path.resolve(getMcpWorkspacePath(), String(args.path)) : getMcpWorkspacePath();
   if (!query) {
     return { content: [{ type: "text", text: "Error: 'query' is required for grep search." }], isError: true };
   }
@@ -269,7 +274,7 @@ export async function handleGrepSearch(args: any): Promise<McpToolResult> {
 
 export async function handleFindFiles(args: any): Promise<McpToolResult> {
   const pattern = String(args.pattern || args.query || args.name || "*");
-  const searchPath = args.path ? path.resolve(String(args.path)) : process.cwd();
+  const searchPath = args.path ? path.resolve(getMcpWorkspacePath(), String(args.path)) : getMcpWorkspacePath();
 
   const { globTool } = await import("../../tools/fileReadTools.js");
   const result = await globTool.execute(
@@ -440,7 +445,7 @@ export async function handleGetPlanAndTasks(args: any): Promise<McpToolResult> {
   }
 
   if (!ws) {
-    ws = process.cwd();
+    ws = getMcpWorkspacePath();
   }
 
   let foundTasks: any[] = [];
@@ -564,7 +569,7 @@ export async function handleUpdateTasks(args: any): Promise<McpToolResult> {
   }
 
   if (!ws) {
-    ws = process.cwd();
+    ws = getMcpWorkspacePath();
   }
 
   const action = String(args.action || "get_status");
@@ -614,7 +619,7 @@ export const UNLOCK_FILE_MCP_TOOL_DEF = {
 
 export async function handleUnlockFile(args: any): Promise<McpToolResult> {
   const filePath = String(args.filePath || args.path || args.file || "");
-  const targetCwd = String(args.cwd || args.workspace || process.cwd());
+  const targetCwd = String(args.cwd || args.workspace || getMcpWorkspacePath());
   if (!filePath) return { content: [{ type: "text", text: "Error: 'filePath' is required." }], isError: true };
   const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(targetCwd, filePath);
   const action = String(args.action || (args.force ? "force_unlock" : "unlock")).toLowerCase();

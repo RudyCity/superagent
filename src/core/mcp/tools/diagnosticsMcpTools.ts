@@ -9,6 +9,7 @@ import {
   findProcessTool,
   killProcessTool,
 } from "../../tools/processInspectionTools.js";
+import { getMcpWorkspacePath } from "./workspaceContext.js";
 
 function toResult(res: unknown): McpToolResult {
   const text = typeof res === "string" ? res : JSON.stringify(res, null, 2);
@@ -25,7 +26,7 @@ function toResult(res: unknown): McpToolResult {
 
 export async function handleInspectPort(args: any): Promise<McpToolResult> {
   try {
-    const res = await inspectPortTool.execute(args || {}, process.cwd());
+    const res = await inspectPortTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -37,7 +38,7 @@ export async function handleInspectPort(args: any): Promise<McpToolResult> {
 
 export async function handleFreePort(args: any): Promise<McpToolResult> {
   try {
-    const res = await freePortTool.execute(args || {}, process.cwd());
+    const res = await freePortTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -49,7 +50,7 @@ export async function handleFreePort(args: any): Promise<McpToolResult> {
 
 export async function handleFindProcess(args: any): Promise<McpToolResult> {
   try {
-    const res = await findProcessTool.execute(args || {}, process.cwd());
+    const res = await findProcessTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -61,7 +62,7 @@ export async function handleFindProcess(args: any): Promise<McpToolResult> {
 
 export async function handleKillProcess(args: any): Promise<McpToolResult> {
   try {
-    const res = await killProcessTool.execute(args || {}, process.cwd());
+    const res = await killProcessTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {

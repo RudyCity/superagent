@@ -114,6 +114,7 @@ export const manageWorkspaceChainTool: Tool = {
     required: ["action"],
   },
   async execute(args, _cwd, _signal) {
+    return workspaceChainManager.runWithRequestContext(async () => {
     const action = args.action as string;
     const validActions = ["create", "list", "activate", "deactivate", "delete", "add-node", "remove-node", "status", "topology", "update", "health"];
     if (!validActions.includes(action)) {
@@ -121,6 +122,9 @@ export const manageWorkspaceChainTool: Tool = {
     }
 
     try {
+      if (!workspaceChainManager.isChainActive(_cwd)) {
+        workspaceChainManager.loadActiveChain(_cwd);
+      }
       if (action === "health") {
         return await workspaceChainManager.getChainHealth();
       }
@@ -178,7 +182,7 @@ export const manageWorkspaceChainTool: Tool = {
       }
 
       if (action === "deactivate") {
-        await workspaceChainManager.deactivateChain();
+        await workspaceChainManager.deactivateChain(_cwd);
         return "Workspace chain deactivated. All SSH connections closed.";
       }
 
@@ -188,7 +192,7 @@ export const manageWorkspaceChainTool: Tool = {
         const chain = getWorkspaceChain(chainId, _cwd);
         if (!chain) return `Error: Chain not found: ${chainId}`;
         if (getActiveChainId(_cwd) === chainId) {
-          await workspaceChainManager.deactivateChain();
+          await workspaceChainManager.deactivateChain(_cwd);
         }
         deleteWorkspaceChain(chainId);
         return `Workspace chain deleted: ${chainId}`;
@@ -223,7 +227,7 @@ export const manageWorkspaceChainTool: Tool = {
       }
 
       if (action === "status") {
-        if (!workspaceChainManager.isChainActive()) {
+        if (!workspaceChainManager.isChainActive(_cwd)) {
           return "No active workspace chain. Use 'activate' to activate one.";
         }
         const status = workspaceChainManager.getConnectionStatus();
@@ -267,6 +271,7 @@ export const manageWorkspaceChainTool: Tool = {
     } catch (err: any) {
       return `Error: ${err.message || err}`;
     }
+    });
   },
 };
 
@@ -343,6 +348,7 @@ export const crossWorkspaceExecTool: Tool = {
     required: ["operation"],
   },
   async execute(args, _cwd, _signal) {
+    return workspaceChainManager.runWithRequestContext(async () => {
     const operation = args.operation as string;
     const validOps = ["exec", "read", "write", "exec-all", "exec-deps", "connect", "disconnect", "switch-node", "health", "diff", "sync"];
     if (!validOps.includes(operation)) {
@@ -350,10 +356,10 @@ export const crossWorkspaceExecTool: Tool = {
     }
 
     try {
-      if (!workspaceChainManager.isChainActive()) {
-        workspaceChainManager.loadActiveChain();
+      if (!workspaceChainManager.isChainActive(_cwd)) {
+        workspaceChainManager.loadActiveChain(_cwd);
       }
-      if (!workspaceChainManager.isChainActive()) {
+      if (!workspaceChainManager.isChainActive(_cwd)) {
         return "Error: No active workspace chain. Use 'manage_workspace_chain' with action 'activate' first.";
       }
 
@@ -500,5 +506,6 @@ export const crossWorkspaceExecTool: Tool = {
     } catch (err: any) {
       return `Error: ${err.message || err}`;
     }
+    });
   },
 };

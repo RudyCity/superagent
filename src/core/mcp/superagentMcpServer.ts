@@ -28,6 +28,7 @@ import {
   getYoloAllowedRoot,
 } from "../permissions.js";
 import { registerResourcesAndPrompts } from "./resourcesAndPrompts.js";
+import { runWithMcpWorkspace } from "./tools/workspaceContext.js";
 import {
   handleListActive,
   handleGetProcessStatus,
@@ -533,12 +534,17 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     return { tools: annotated };
   });
 
+  let activeWorkspace = workspace || process.cwd();
   const dispatchMcpToolCall = async (request: any) => {
     const { name, arguments: args = {} } = request.params;
-    logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(args)}`);
+    const targetWorkspace = name === "superagent_switch_workspace"
+      ? activeWorkspace
+      : String(args.workspace || args.cwd || args.worktreePath || activeWorkspace);
+    return runWithMcpWorkspace(targetWorkspace, async () => {
+      logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(args)}`);
 
-    try {
-      switch (name) {
+      try {
+        switch (name) {
         case "superagent_list_active":
           return await handleListActive(args);
         case "superagent_get_process_status":
@@ -565,7 +571,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         case "superagent_cli_bridge":
           return await handleCliBridge(args);
         case "superagent_switch_workspace":
-          return await handleSwitchWorkspace(args);
+          return await handleSwitchWorkspace(args, (nextWorkspace) => { activeWorkspace = nextWorkspace; });
         case "superagent_get_workspace":
           return await handleGetWorkspace();
         case "superagent_exec_command":
@@ -642,6 +648,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         isError: true,
       };
     }
+      });
   };
 
 
@@ -723,7 +730,7 @@ function extractMcpResultText(result: unknown): string {
         (rawArgs.cwd as string) ||
         (rawArgs.workspace as string) ||
         (rawArgs.worktreePath as string) ||
-        workspace ||
+        activeWorkspace ||
         process.cwd();
       const inScope = isToolCallWithinYoloScope({ name: toolName, args: rawArgs }, effectiveWs);
       if (!inScope) {

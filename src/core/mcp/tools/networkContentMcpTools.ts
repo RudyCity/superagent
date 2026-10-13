@@ -8,6 +8,7 @@ import { searchJournalTool } from "../../tools/academicSearchTools.js";
 import { readDocumentTool } from "../../tools/documentReadTools.js";
 import { officeCliTool } from "../../tools/officeCliTools.js";
 import { gitActionTool } from "../../tools/otherTools.js";
+import { getMcpWorkspacePath } from "./workspaceContext.js";
 
 function toResult(res: unknown): McpToolResult {
   const text = typeof res === "string" ? res : JSON.stringify(res, null, 2);
@@ -24,7 +25,7 @@ function toResult(res: unknown): McpToolResult {
 
 export async function handleWebSearch(args: any): Promise<McpToolResult> {
   try {
-    const res = await webSearchTool.execute(args || {}, process.cwd());
+    const res = await webSearchTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -36,7 +37,7 @@ export async function handleWebSearch(args: any): Promise<McpToolResult> {
 
 export async function handleFetchUrl(args: any): Promise<McpToolResult> {
   try {
-    const res = await fetchUrlTool.execute(args || {}, process.cwd());
+    const res = await fetchUrlTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -48,7 +49,7 @@ export async function handleFetchUrl(args: any): Promise<McpToolResult> {
 
 export async function handleSearchJournal(args: any): Promise<McpToolResult> {
   try {
-    const res = await searchJournalTool.execute(args || {}, process.cwd());
+    const res = await searchJournalTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -60,7 +61,7 @@ export async function handleSearchJournal(args: any): Promise<McpToolResult> {
 
 export async function handleReadDocument(args: any): Promise<McpToolResult> {
   try {
-    const res = await readDocumentTool.execute(args || {}, process.cwd());
+    const res = await readDocumentTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -72,7 +73,7 @@ export async function handleReadDocument(args: any): Promise<McpToolResult> {
 
 export async function handleOfficeCli(args: any): Promise<McpToolResult> {
   try {
-    const res = await officeCliTool.execute(args || {}, process.cwd());
+    const res = await officeCliTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -84,7 +85,7 @@ export async function handleOfficeCli(args: any): Promise<McpToolResult> {
 
 export async function handleGitAction(args: any): Promise<McpToolResult> {
   try {
-    const res = await gitActionTool.execute(args || {}, process.cwd());
+    const res = await gitActionTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {

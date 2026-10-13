@@ -9,6 +9,7 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { getMcpWorkspacePath } from "./tools/workspaceContext.js";
 import {
   superagentInstances,
   subagentInstances,
@@ -153,7 +154,7 @@ export function registerResourcesAndPrompts(server: Server): void {
       }
 
       case "superagent://workspace/info": {
-        const cwd = process.cwd();
+        const cwd = getMcpWorkspacePath();
         let branch = "unknown";
         try {
           const { execSync } = await import("child_process");

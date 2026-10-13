@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { getMcpWorkspacePath } from "./workspaceContext.js";
 import {
   ChecklistTask,
   CurrentTaskInfo,
@@ -618,7 +619,7 @@ export async function resolveInstanceCurrentTask(
   }
 
   // 3g. Default fallback to current working directory task files
-  const cwd = process.cwd();
+  const cwd = getMcpWorkspacePath();
   const { tasks, taskFilePath } = await findTaskFileAndRead([cwd]);
   const { planContent, planFilePath } = findPlanFileAndRead([cwd]);
   const taskInfo = getCurrentTaskFromChecklist(tasks);

@@ -97,6 +97,12 @@ class WorkspaceChainManagerClass {
     }
     this.activeChain = chain;
     this.activeNodeId = chain.primaryNodeId;
+    const primaryNode = chain.nodes.find(node => node.id === chain.primaryNodeId);
+    if (primaryNode?.type === "ssh" && primaryNode.sshConfig) {
+      workspaceMode.setSshMode(primaryNode.sshConfig);
+    } else {
+      workspaceMode.setLocalMode();
+    }
     return chain;
   }
 

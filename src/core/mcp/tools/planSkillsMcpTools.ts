@@ -21,6 +21,7 @@ import {
   isPathWithinYoloScope,
   getYoloAllowedRoot,
 } from "../../permissions.js";
+import { getMcpWorkspacePath } from "./workspaceContext.js";
 
 function toResult(res: unknown): McpToolResult {
   const text = typeof res === "string" ? res : JSON.stringify(res, null, 2);
@@ -37,7 +38,7 @@ function toResult(res: unknown): McpToolResult {
 
 export async function handleManagePlan(args: any): Promise<McpToolResult> {
   try {
-    const res = await managePlanTool.execute(args || {}, process.cwd());
+    const res = await managePlanTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -49,7 +50,7 @@ export async function handleManagePlan(args: any): Promise<McpToolResult> {
 
 export async function handleManageTasks(args: any): Promise<McpToolResult> {
   try {
-    const res = await manageTasksTool.execute(args || {}, process.cwd());
+    const res = await manageTasksTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -61,7 +62,7 @@ export async function handleManageTasks(args: any): Promise<McpToolResult> {
 
 export async function handleGetSkills(args: any): Promise<McpToolResult> {
   try {
-    const res = await getSkillsTool.execute(args || {}, process.cwd());
+    const res = await getSkillsTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -73,7 +74,7 @@ export async function handleGetSkills(args: any): Promise<McpToolResult> {
 
 export async function handleUseSkill(args: any): Promise<McpToolResult> {
   try {
-    const res = await useSkillTool.execute(args || {}, process.cwd());
+    const res = await useSkillTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -85,7 +86,7 @@ export async function handleUseSkill(args: any): Promise<McpToolResult> {
 
 export async function handleSynthesizeSkill(args: any): Promise<McpToolResult> {
   try {
-    const res = await synthesizeSkillTool.execute(args || {}, process.cwd());
+    const res = await synthesizeSkillTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -99,7 +100,7 @@ async function autoPreemptFileLocksInYolo(paths: string[]): Promise<void> {
   if (!isYoloMode() || paths.length === 0) return;
   try {
     const { checkFileLock, releaseFile } = await import("../../storage/sharedMemory.js");
-    const cwd = process.cwd();
+    const cwd = getMcpWorkspacePath();
     for (const raw of paths) {
       if (!raw || typeof raw !== "string") continue;
       const resolved = path.isAbsolute(raw) ? raw : path.resolve(cwd, raw);
@@ -114,15 +115,15 @@ async function autoPreemptFileLocksInYolo(paths: string[]): Promise<void> {
 export async function handleReplaceFileContent(args: any): Promise<McpToolResult> {
   const filePath = String(args.filePath || args.TargetFile || args.path || args.file || "");
   if (!isFullYoloMode() && filePath) {
-    const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+    const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(getMcpWorkspacePath(), filePath);
     if (path.basename(resolved).toLowerCase() === "model-config.json") {
       return {
         content: [{ type: "text", text: "Error: Editing model-config.json is strictly protected and prohibited via MCP." }],
         isError: true,
       };
     }
-    if (!isPathWithinYoloScope(resolved, process.cwd())) {
-      const allowedRoot = getYoloAllowedRoot(process.cwd());
+    if (!isPathWithinYoloScope(resolved, getMcpWorkspacePath())) {
+      const allowedRoot = getYoloAllowedRoot(getMcpWorkspacePath());
       return {
         content: [{
           type: "text",
@@ -151,7 +152,7 @@ export async function handleReplaceFileContent(args: any): Promise<McpToolResult
   await autoPreemptFileLocksInYolo(targetPaths);
 
   try {
-    const res = await replaceFileContentTool.execute(args || {}, process.cwd());
+    const res = await replaceFileContentTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {
@@ -164,15 +165,15 @@ export async function handleReplaceFileContent(args: any): Promise<McpToolResult
 export async function handleApplyPatch(args: any): Promise<McpToolResult> {
   const filePath = String(args.filePath || args.path || args.file || "");
   if (!isFullYoloMode() && filePath) {
-    const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+    const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(getMcpWorkspacePath(), filePath);
     if (path.basename(resolved).toLowerCase() === "model-config.json") {
       return {
         content: [{ type: "text", text: "Error: Patching model-config.json is strictly protected and prohibited via MCP." }],
         isError: true,
       };
     }
-    if (!isPathWithinYoloScope(resolved, process.cwd())) {
-      const allowedRoot = getYoloAllowedRoot(process.cwd());
+    if (!isPathWithinYoloScope(resolved, getMcpWorkspacePath())) {
+      const allowedRoot = getYoloAllowedRoot(getMcpWorkspacePath());
       return {
         content: [{
           type: "text",
@@ -195,7 +196,7 @@ export async function handleApplyPatch(args: any): Promise<McpToolResult> {
   await autoPreemptFileLocksInYolo(targetPaths);
 
   try {
-    const res = await applyPatchTool.execute(args || {}, process.cwd());
+    const res = await applyPatchTool.execute(args || {}, getMcpWorkspacePath());
     return toResult(res);
   } catch (err: any) {
     return {

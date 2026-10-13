@@ -11,6 +11,7 @@ let streamStartTime = null;
 let streamCharCount = 0;
 
 let pendingPermissionId = null;
+let pendingPermissionSessionId = null;
 let pendingQuestionId = null;
 let selectedQuestionOption = null;
 let currentIsMultiSelect = false;
@@ -864,6 +865,9 @@ function setupSSE() {
     if (extensionClientId) params.set("clientId", extensionClientId);
     if (extensionWindowId) params.set("windowId", extensionWindowId);
     if (window.extensionProfileName) params.set("profileName", window.extensionProfileName);
+    if (window.currentSessionId) params.set("sessionId", window.currentSessionId);
+    const selectedWorkspace = activeWorkspaceText?.textContent?.trim();
+    if (selectedWorkspace && selectedWorkspace !== "Not Selected") params.set("workspace", selectedWorkspace);
     params.set("source", extensionSource);
     
     if (currentActiveTab) {
@@ -1188,6 +1192,7 @@ function handleSSEEvent(data) {
   // Handle Permission Request
   else if (data.type === "permission_required") {
     pendingPermissionId = data.permissionId;
+    pendingPermissionSessionId = data.sessionId || window.currentSessionId || null;
     permissionTool.textContent = data.toolCall.name;
     permissionDesc.textContent = data.description;
     permissionOverlay.classList.add("active");
@@ -1196,7 +1201,7 @@ function handleSSEEvent(data) {
   // Handle Question Request — inline in chat, no modal
   else if (data.type === "question_required") {
     pendingQuestionId = data.questionId;
-    appendInlineQuestion(data.questionId, data.question, data.options, data.isMultiSelect);
+    appendInlineQuestion(data.questionId, data.question, data.options, data.isMultiSelect, data.sessionId || window.currentSessionId || null);
   }
 
   // Handle Plan Approval Required
@@ -1223,11 +1228,12 @@ async function resolvePermission(approval) {
     const res = await fetch(`${BASE_URL}/api/approve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ permissionId: pendingPermissionId, approval })
+      body: JSON.stringify({ permissionId: pendingPermissionId, approval, sessionId: pendingPermissionSessionId })
     });
     if (res.ok) {
       permissionOverlay.classList.remove("active");
       pendingPermissionId = null;
+      pendingPermissionSessionId = null;
     }
   } catch (err) {
     alert("Error sending approval: " + err.message);

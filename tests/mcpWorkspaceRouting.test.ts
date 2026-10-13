@@ -10,7 +10,7 @@ import http from "http";
 import path from "path";
 import { EventEmitter } from "events";
 import { callServerApi } from "../src/core/mcp/tools/processTools.js";
-import { resolveMcpWorkspace } from "../src/core/mcp/tools/workspaceContext.js";
+import { getMcpWorkspacePath, resolveMcpWorkspace, runWithMcpWorkspace } from "../src/core/mcp/tools/workspaceContext.js";
 import { handleRunTask, handleInvoke } from "../src/core/mcp/tools/executionTools.js";
 import { handleInterrupt } from "../src/core/mcp/tools/processTools.js";
 
@@ -157,5 +157,25 @@ describe("handleInterrupt", () => {
 
     expect(calls[0].options.headers["x-workspace-path"]).toBeUndefined();
     expect(JSON.parse(calls[0].body).all).toBe(true);
+  });
+});
+
+describe("MCP workspace async context", () => {
+  it("isolates concurrent tool workspace contexts without process.chdir", async () => {
+    const initialCwd = process.cwd();
+    const [a, b] = await Promise.all([
+      runWithMcpWorkspace("D:/project-a", async () => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return { cwd: getMcpWorkspacePath(), resolved: resolveMcpWorkspace().path };
+      }),
+      runWithMcpWorkspace("D:/project-b", async () => {
+        await new Promise(resolve => setTimeout(resolve, 1));
+        return { cwd: getMcpWorkspacePath(), resolved: resolveMcpWorkspace().path };
+      }),
+    ]);
+
+    expect(a).toEqual({ cwd: "D:/project-a", resolved: "D:/project-a" });
+    expect(b).toEqual({ cwd: "D:/project-b", resolved: "D:/project-b" });
+    expect(process.cwd()).toBe(initialCwd);
   });
 });

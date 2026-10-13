@@ -8,6 +8,7 @@
 
 import fs from "fs";
 import path from "path";
+import { getMcpWorkspacePath } from "./tools/workspaceContext.js";
 import { getRootConfigDir } from "../config/paths.js";
 import {
   superagentInstances,
@@ -206,7 +207,7 @@ export function triggerProcessUpdate(): void {
 
 export function registerCurrentProcess(mode: "single" | "multi" | "server" | "mcp" | "cli"): void {
   const pid = process.pid;
-  const cwd = process.cwd();
+  const cwd = getMcpWorkspacePath();
   const startedAt = Date.now();
 
   const update = () => {

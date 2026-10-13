@@ -16,6 +16,7 @@ import { execSync } from "child_process";
 import { handleServerRoute } from "./serverRoutes.js";
 import { lockEventEmitter } from "./core/storage/sharedMemory.js";
 import { buildCorsHeaders, ensureServerAuthToken, isRequestAuthorized, isPathInsideOrEqual } from "./core/utils/serverSecurity.js";
+import { shouldDeliverEventToClient } from "./core/utils/sessionEventScope.js";
 
 // Forward lock events to connected t-line desktop clients
 lockEventEmitter.on("tline_bridge_sync", (syncPayload) => {
@@ -138,10 +139,12 @@ async function createAgentForMode(
     customTools = withModeAwareDiscoveryTools(customTools, false);
   }
 
-  const agent = new Agent(
+  let agent: Agent;
+  agent = new Agent(
     (event: AgentEvent) => onEvent(event, agent),
-    onPermission,
-    onQuestion,
+    (toolCall: any, description: string) => onPermission(toolCall, description, agent),
+    (question: any, options?: string[], isMultiSelect?: boolean, initialCheckedIndices?: number[], inputType?: string) =>
+      onQuestion(question, options, isMultiSelect, initialCheckedIndices, inputType, agent),
     customSystemPrompt,
     customTools,
     targetWorkspace
@@ -283,10 +286,18 @@ interface BrowserInstance {
   lastActive: number;
 }
 const sseClients = new Set<http.ServerResponse>();
+const sseClientContexts = new Map<http.ServerResponse, { sessionId?: string; workspace?: string }>();
 const browserInstances = new Map<string, BrowserInstance>();
 
-const pendingPermissions = new Map<string, (approval: boolean | "session") => void>();
-const pendingQuestions = new Map<string, (answer: any) => void>();
+interface PendingPrompt<T> {
+  resolve: (value: T) => void;
+  ownerAgent?: Agent;
+  sessionId?: string;
+  workspace: string;
+}
+
+const pendingPermissions = new Map<string, PendingPrompt<boolean | "session">>();
+const pendingQuestions = new Map<string, PendingPrompt<any>>();
 const pendingBrowserControls = new Map<string, { resolve: (val: string) => void, reject: (err: any) => void }>();
 
 /** Max time to wait for the sidepanel client to answer a browser-control request.
@@ -394,13 +405,19 @@ function broadcastEvent(event: any) {
     }
   }
   for (const client of sseClients) {
+    const context = sseClientContexts.get(client);
+    if (!shouldDeliverEventToClient(normalizedEvent, context)) continue;
+
     try {
       client.write(data);
     } catch {
       sseClients.delete(client);
+      sseClientContexts.delete(client);
     }
   }
 }
+
+
 
 function sendJSON(res: http.ServerResponse, status: number, data: any) {
   logToSuperAgentServerFile(`[Response] Status: ${status}`);
@@ -541,29 +558,74 @@ subscribeToSuperagents(() => {
   });
 });
 
-const onPermission = (toolCall: any, description: string) => {
+function getPromptOwner(ownerAgent?: Agent): { sessionId?: string; workspace: string } {
+  if (ownerAgent) {
+    for (const session of activeSessions.values()) {
+      if (session.agent === ownerAgent) {
+        return { sessionId: session.sessionId, workspace: session.workspace };
+      }
+    }
+    const agentWorkspace = (ownerAgent as any).workingDirectory;
+    return {
+      workspace: typeof agentWorkspace === "string" && agentWorkspace ? agentWorkspace : process.cwd(),
+      sessionId: (ownerAgent as any).sessionId,
+    };
+  }
+
+  // Global/subagent question handlers have no direct agent reference. Only associate
+  // them when there is one unambiguous running session in the last active workspace.
+  const candidates = [...activeSessions.values()].filter(session =>
+    session.agent.isAgentRunning() &&
+    session.workspace.toLowerCase() === lastActiveWorkspace.toLowerCase()
+  );
+  if (candidates.length === 1) {
+    return { sessionId: candidates[0].sessionId, workspace: candidates[0].workspace };
+  }
+  return { workspace: lastActiveWorkspace };
+}
+
+const onPermission = (toolCall: any, description: string, ownerAgent: Agent) => {
   return new Promise<boolean | "session">((resolve) => {
     const permissionId = Math.random().toString(36).substring(2, 9);
-    pendingPermissions.set(permissionId, resolve);
+    const owner = getPromptOwner(ownerAgent);
+    pendingPermissions.set(permissionId, { resolve, ownerAgent, ...owner });
     broadcastEvent({
       type: "permission_required",
       permissionId,
       toolCall,
-      description
+      description,
+      sessionId: owner.sessionId,
+      workspace: owner.workspace,
     });
   });
 };
 
-const onQuestion = (question: any, options?: string[], isMultiSelect?: boolean) => {
+const onQuestion = (
+  question: any,
+  options?: string[],
+  isMultiSelect?: boolean,
+  initialCheckedIndices?: number[],
+  inputType?: string,
+  ownerAgent?: Agent,
+) => {
   return new Promise<any>((resolve) => {
+    const owner = getPromptOwner(ownerAgent);
+    if (!owner.sessionId) {
+      resolve(null);
+      return;
+    }
     const questionId = Math.random().toString(36).substring(2, 9);
-    pendingQuestions.set(questionId, resolve);
+    pendingQuestions.set(questionId, { resolve, ownerAgent, ...owner });
     broadcastEvent({
       type: "question_required",
       questionId,
       question,
       options,
-      isMultiSelect
+      isMultiSelect,
+      initialCheckedIndices,
+      inputType,
+      sessionId: owner.sessionId,
+      workspace: owner.workspace,
     });
   });
 };
@@ -784,6 +846,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
             setIsBrowseDialogOpen: (v: boolean) => { isBrowseDialogOpen = v; },
             serverDefaultClientMode,
             sseClients,
+            sseClientContexts,
             browserInstances,
             pendingPermissions,
             pendingQuestions,
