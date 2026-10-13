@@ -1,3 +1,8 @@
+## [1.13.68] - 2026-10-13
+### Improved
+- Corrected the Master toolset documentation to distinguish guarded plan-artifact writes from prohibited direct code edits and arbitrary shell execution.
+- Added registry regression coverage to prevent duplicate tool names within any tier toolset.
+
 ## [1.13.67] - 2026-10-13
 ### Fixed
 - Bind pending permission/question prompts to their owning agent/session and reject cross-session approval or answers; cancel only the owning session's prompts on abort.

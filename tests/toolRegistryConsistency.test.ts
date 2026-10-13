@@ -8,6 +8,26 @@ import {
 } from "../src/core/tools/toolsets.js";
 
 describe("tool registry consistency", () => {
+  it("does not expose duplicate names within any tier toolset", () => {
+    const tierToolsets: Array<[string, Array<{ name: string }>]> = [
+      ["master", masterToolset],
+      ["superagent", superagentToolset],
+      ["defaultSubagent", defaultSubagentToolset],
+      ...Object.entries(subagentToolsets).map(([name, tools]) => [`subagent:${name}`, tools] as [string, Array<{ name: string }>]),
+    ];
+
+    const duplicatesByTier = tierToolsets.flatMap(([tier, tools]) => {
+      const seen = new Set<string>();
+      const duplicates = new Set<string>();
+      for (const tool of tools) {
+        if (seen.has(tool.name)) duplicates.add(tool.name);
+        seen.add(tool.name);
+      }
+      return duplicates.size > 0 ? [`${tier}: ${[...duplicates].join(", ")}`] : [];
+    });
+
+    expect(duplicatesByTier).toEqual([]);
+  });
   it("registers every tool exposed by tier toolsets", () => {
     const exposedTools = [
       ...masterToolset,

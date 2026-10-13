@@ -88,9 +88,44 @@ Saran versi: perubahan perilaku tool, termasuk konsolidasi dan default MCP, seba
 2. Pemuatan bertahap diaktifkan untuk semua model, atau hanya model tertentu?
 3. Default MCP non-tunnel diubah ke daftar aman?
 
-## 7. Belum diverifikasi
+## 7. Not Yet Verified
 
-- Jumlah tool dihitung dari toolsets.ts secara manual, sehingga angkanya perkiraan. Belum dihitung dari runtime.
-- Frekuensi pemakaian setiap tool belum diukur.
-- masterAgent.ts dan cara dispatcher memanggil tool serta alias belum dibaca.
-- Isi tool browser belum dibaca, jadi belum diketahui apakah konsolidasi kehilangan fungsi.
+- Per-tool invocation and failure frequencies are not available from the inspected evidence.
+- Browser-tool consolidation has not been validated against all current actions and compatibility contracts.
+
+## 8. Execution Update — 2026-10-13
+
+### Verified against current code
+
+- Repository baseline: branch `main`, HEAD `71fe761f`, working tree clean before changes.
+- A one-off runtime baseline was captured from current TypeScript toolset exports. Counts and approximate `cl100k_base` schema estimates (serialized name, description, and parameters; not provider-billed token counts):
+
+| Tier | Tool entries | Unique names | Serialized schema chars | Approx. tokens |
+|---|---:|---:|---:|---:|
+| Master | 48 | 48 | 35,800 | 7,692 |
+| Superagent | 68 | 68 | 70,167 | 15,392 |
+| Default subagent | 13 | 13 | 7,514 | 1,657 |
+| Researcher | 23 | 23 | 13,926 | 3,019 |
+| Coder | 30 | 30 | 20,630 | 4,447 |
+| Reviewer | 16 | 16 | 9,313 | 2,083 |
+| Software tester | 24 | 24 | 23,768 | 5,282 |
+| Security engineer | 12 | 12 | 6,221 | 1,352 |
+| Chrome agent | 36 | 36 | 33,548 | 7,143 |
+
+- `masterToolset` intentionally includes `write_to_file`, `replace_file_content`, and `multi_replace_file_content` for Master-owned planning artifacts. `src/core/tools/fileEditTools.ts` applies `enforceMasterWriteAllowlist()` in the relevant write/replace execution paths, and `tests/masterWriteAllowlist.test.ts` verifies codebase writes are rejected while config-root artifact writes are allowed.
+- Removing all three tools from the Master schema without a replacement artifact-writing contract is not safe. This step is deferred; do not treat the original O5 recommendation as a direct deletion instruction.
+- `Agent.getActiveTools()` sources the Master tools from `masterToolset`; runtime tool availability and MCP multi-mode execution also depend on this array. `ORCHESTRATION_TOOL_NAMES` is derived from the same array.
+- Before edits, focused tests passed: 3 files, 18 tests. After edits, the same test group passed: 3 files, 19 tests.
+
+### Changes in this iteration
+
+- Corrected the stale comment in `src/core/tools/toolsets.ts` so it accurately describes guarded artifact writes versus prohibited code edits and arbitrary shell execution.
+- Added a registry regression test ensuring each tier toolset has unique tool names.
+- Bumped package version to `1.13.68` and recorded the changes in `CHANGELOG.md`.
+- `bun run build` passed with TypeScript compilation at version `1.13.68`.
+
+### Deferred work and risks
+
+- No tool consolidation, alias removal, staged tool discovery, or MCP default-policy change was made. Those changes require action-by-action compatibility tests and usage data first.
+- The token figures are approximate `cl100k_base` estimates for serialized tool definitions, not guaranteed provider token billing or the exact API payload. Keep this baseline for directional comparison only.
+- Next phase: collect invocation/failure frequency, then consolidate one tool family at a time with compatibility tests before changing MCP public behavior.

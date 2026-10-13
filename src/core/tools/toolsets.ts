@@ -127,10 +127,10 @@ import { getRemoteServiceStatusTool } from "./remoteServiceTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Orchestration only. The Master Agent MUST NOT directly modify code or
-// run arbitrary shell — those are the Superagent's job. This was previously
-// violated (writeToFileTool, bashTool, etc. were in the master toolset).
-// See: AGENTS.md §"Master Agent Planning" + the security audit in
-// sess_1787733100811_xetwt4_walkthrough.md (C3).
+// Arbitrary shell execution and direct code editing belong to Superagent.
+// The Master retains guarded file-write tools only for its own plan/task/
+// walkthrough artifacts under ~/.superagent-r; enforceMasterWriteAllowlist()
+// blocks codebase paths at execution time. See AGENTS.md §"Master Agent Planning".
 export const masterToolset: Tool[] = [
   // ── Superagent orchestration (the core job of the Master) ──
   switchModeTool,
