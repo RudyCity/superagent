@@ -31,4 +31,4 @@ Package version: 1.13.73
 
 ## Working-tree Notes
 
-The working tree had unrelated staged and unstaged changes before this feature. They were preserved. No commit or merge was performed to avoid including unrelated user changes.
+At final inspection, HEAD was `af8985d6` (`feat(mcp): add mcp-agentic-tooling skill, agentic prompt & resource, and remote agent tools (v1.13.73)`) and the working tree was clean. That commit contains this feature together with other MCP agentic-tooling changes already present in the workspace; it was not created through a separate explicit commit action in this run.
