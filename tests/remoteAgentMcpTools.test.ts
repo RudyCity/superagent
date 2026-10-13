@@ -92,6 +92,7 @@ const {
   handleMuseTunnelStart,
   handleMuseTunnelRestart,
   handleTelegramSendToMuse,
+  handleMuseChatStatus,
   handleMuseChat,
   REMOTE_AGENT_MCP_TOOL_CLASSIFICATIONS,
 } = await import("../src/core/mcp/tools/remoteAgentMcpTools.js");
@@ -125,8 +126,24 @@ describe("Remote-agent MCP tools", () => {
       superagent_muse_tunnel_start: "dangerous",
       superagent_muse_tunnel_restart: "dangerous",
       superagent_telegram_send_to_muse: "dangerous",
+      superagent_muse_chat_status: "safe",
       superagent_muse_chat: "dangerous",
     });
+  });
+
+  it("reports when two-way Muse chat is ready", async () => {
+    testState.watcherActive = true;
+    testState.watcher = {
+      getTransport: () => ({ type: "websocket", isConnected: () => true }),
+    };
+
+    const result = await handleMuseChatStatus({});
+    const text = result.content[0].text;
+
+    expect(result.isError).toBeUndefined();
+    expect(text).toContain('"ok": true');
+    expect(text).toContain('"canChat": true');
+    expect(text).toContain('"transportType": "websocket"');
   });
 
   it("starts the Muse tunnel without returning the WebSocket token", async () => {

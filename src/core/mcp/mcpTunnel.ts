@@ -28,6 +28,7 @@ import {
   startMcpHttpServer,
   generateMcpBearerToken,
   getDefaultSafeTools,
+  MCP_TOOL_CLASSIFICATION,
   type McpHttpServerHandle,
 } from "./mcpHttpTransport.js";
 import { generateBootstrapCode } from "./mcpOAuthRoutes.js";
@@ -35,8 +36,26 @@ import type { McpAuthMode } from "./mcpAuth.js";
 import { getYoloModeState } from "../permissions.js";
 
 export const DEFAULT_MCP_PORT = 9227;
-// Full exposed tool count after permanently disabled MCP agent-control tools are filtered.
-export const MCP_TUNNEL_TOOL_COUNT = 57;
+
+const DISABLED_MCP_TOOL_NAMES = new Set([
+  "superagent_run_task",
+  "superagent_send_message",
+  "superagent_interrupt",
+  "superagent_pause",
+  "superagent_resume",
+  "superagent_cli_bridge",
+  "superagent_invoke",
+  "superagent_await",
+  "superagent_merge",
+  "superagent_manage",
+]);
+
+function getExposedMcpToolCount(allowDangerous: boolean): number {
+  if (!allowDangerous) {
+    return getDefaultSafeTools().length;
+  }
+  return Object.keys(MCP_TOOL_CLASSIFICATION).filter((name) => !DISABLED_MCP_TOOL_NAMES.has(name)).length;
+}
 
 interface ActiveMcp {
   handle: McpHttpServerHandle;
@@ -278,7 +297,7 @@ export async function startMcpTunnel(opts: {
     localUrl,
     auditLogPath: active.auditLogPath,
     dangerous,
-    toolCount: dangerous ? MCP_TUNNEL_TOOL_COUNT : getDefaultSafeTools().length,
+    toolCount: getExposedMcpToolCount(dangerous),
     authMode,
     bootstrapCode: active.bootstrapCode,
     oauthDiscoveryUrl: authMode === "oauth" ? `${publicBaseClean}/.well-known/oauth-authorization-server` : undefined,

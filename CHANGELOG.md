@@ -1,3 +1,13 @@
+## [1.13.75] - 2026-10-13
+### Added
+- Split remote-agent MCP tools into smaller tunnel, Telegram, and chat modules, with a new safe chat-readiness tool and a two-way Muse conversation tool.
+- Added dynamic MCP tool counting derived from the exposed registry instead of a hardcoded tunnel constant.
+- Added a walkthrough document for when to use tunnel restart, Telegram send, readiness status, and direct WebSocket chat.
+
+### Fixed
+- Formalized reply-correlation metadata for chat envelopes and kept Muse direct chat guarded by explicit readiness checks and timeouts.
+- Preserved two-way chat behavior while keeping the existing tunnel and Telegram flows intact.
+
 ## [1.13.74] - 2026-10-13
 ### Added
 - Added `superagent_muse_chat`, an MCP tool for correlated two-way conversation with Muse over the authenticated WebSocket tunnel.

@@ -17,9 +17,9 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 57;
+const EXPECTED_TOOL_COUNT = 58;
 
-describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Prompts)", () => {
+describe("Superagent Complete 3-Pillar MCP Server Suite (58 Tools, Resources, Prompts)", () => {
   const testDir = path.join(process.cwd(), `.tmp_mcp_test_${Date.now()}`);
 
   beforeEach(() => {
@@ -67,6 +67,8 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Pr
     expect(toolNames).toContain("superagent_muse_tunnel_start");
     expect(toolNames).toContain("superagent_muse_tunnel_restart");
     expect(toolNames).toContain("superagent_telegram_send_to_muse");
+    expect(toolNames).toContain("superagent_muse_chat_status");
+    expect(toolNames).toContain("superagent_muse_chat");
     expect(toolNames).toContain("superagent_muse_chat");
 
     // Workspace & files
@@ -148,6 +150,9 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Pr
       expect(MCP_TOOL_CLASSIFICATION[name]).toBe("dangerous");
       expect(safeTools).not.toContain(name);
     }
+
+    expect(MCP_TOOL_CLASSIFICATION.superagent_muse_chat_status).toBe("safe");
+    expect(safeTools).toContain("superagent_muse_chat_status");
   });
 
   it("lists and reads all 5 MCP Resources", async () => {
