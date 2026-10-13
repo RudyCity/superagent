@@ -137,6 +137,19 @@ print(json.dumps(res))
  * 4. Parallel page rendering & processing
  */
 export async function runEnhancedPdfOcr(filePath: string, signal?: AbortSignal): Promise<string> {
+  // Fail fast for invalid paths before spawning Python or probing OCR dependencies.
+  try {
+    const fileStat = await fs.stat(filePath);
+    if (!fileStat.isFile()) {
+      throw new Error(`PDF path is not a file: ${filePath}`);
+    }
+  } catch (err: any) {
+    if (err?.code === "ENOENT" || err?.code === "ENOTDIR") {
+      throw new Error(`PDF file does not exist: ${filePath}`);
+    }
+    throw err;
+  }
+
   // 1. Check Persistent Disk Cache
   let fileHash = "";
   try {

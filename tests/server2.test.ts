@@ -184,10 +184,10 @@ describe("DELETE /api/browser/macros", () => {
 // POST /api/abort
 // ═══════════════════════════════════════════════════════════════════════════════
 describe("POST /api/abort", () => {
-  it("returns 200 even when no session is running", async () => {
+  it("rejects an abort when no matching session is available", async () => {
     const { status, body } = await postJSON(port, "/api/abort", {});
-    expect(status).toBe(200);
-    expect(body.success).toBe(true);
+    expect(status).toBe(400);
+    expect(body.error).toContain("No matching session to abort");
   });
 
   it("aborts the session for the given workspace", async () => {

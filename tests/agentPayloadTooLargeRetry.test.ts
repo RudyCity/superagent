@@ -3,7 +3,12 @@ import os from "os";
 import path from "path";
 import fs from "fs";
 
-const tempHome = path.join(process.cwd(), "tests", "temp-home-payload-retry");
+const originalWorkingDirectory = process.cwd();
+const tempHome = path.join(originalWorkingDirectory, "tests", "temp-home-payload-retry");
+// Keep agent Git-diff collection independent of unrelated repository changes.
+// This directory is process-unique and retained until exit because Windows may
+// keep a workspace open as the agent changes its current working directory.
+const tempWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-payload-retry-workspace-"));
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
 import { Agent, parsePayloadLimitBytes } from "../src/core/agent.js";
@@ -18,6 +23,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
   let generateTextSpy: any;
 
   beforeEach(() => {
+    process.chdir(originalWorkingDirectory);
     if (fs.existsSync(tempHome)) {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
@@ -27,7 +33,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
       model: "gpt-4",
       apiKey: "fake-key",
       disableStreaming: false,
-      workingDirectory: process.cwd(),
+      workingDirectory: tempWorkspace,
       systemPrompt: "Base Master Agent Prompt Content",
     } as any);
 
@@ -49,6 +55,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
   });
 
   afterEach(() => {
+    process.chdir(originalWorkingDirectory);
     if (fs.existsSync(tempHome)) {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
@@ -99,7 +106,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
         model: "gpt-4",
         apiKey: "fake-key",
         disableStreaming: true,
-        workingDirectory: process.cwd(),
+        workingDirectory: tempWorkspace,
         systemPrompt: "Base Master Agent Prompt Content",
       } as any);
     });

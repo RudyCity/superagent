@@ -3,7 +3,10 @@ import os from "os";
 import path from "path";
 import fs from "fs";
 
-const tempHome = path.join(process.cwd(), "tests", "temp-home-context-retry");
+const originalWorkingDirectory = process.cwd();
+const tempHome = path.join(originalWorkingDirectory, "tests", "temp-home-context-retry");
+// Keep agent diff collection independent of unrelated changes in the repository.
+const tempWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-context-retry-workspace-"));
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
 import { Agent } from "../src/core/agent.js";
@@ -27,16 +30,18 @@ describe("Context Length Exceeded (400) Recovery & Robustness", () => {
   let generateTextSpy: any;
 
   beforeEach(() => {
+    // Agent execution can change CWD; restore the test runner directory first.
+    // Keep the workspace until process exit because Windows may hold it open.
+    process.chdir(originalWorkingDirectory);
     if (fs.existsSync(tempHome)) {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
-
     getConfigSpy = vi.spyOn(configModule, "getConfig").mockReturnValue({
       provider: "openai",
       model: "gpt-4",
       apiKey: "fake-key",
       disableStreaming: false,
-      workingDirectory: process.cwd(),
+      workingDirectory: tempWorkspace,
       systemPrompt: "Base Master Agent Prompt Content",
     } as any);
 
@@ -55,6 +60,8 @@ describe("Context Length Exceeded (400) Recovery & Robustness", () => {
   });
 
   afterEach(() => {
+    // Agent execution can change CWD; restore the test runner directory for later tests.
+    process.chdir(originalWorkingDirectory);
     if (fs.existsSync(tempHome)) {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
@@ -162,7 +169,7 @@ describe("Context Length Exceeded (400) Recovery & Robustness", () => {
         model: "gpt-4",
         apiKey: "fake-key",
         disableStreaming: true,
-        workingDirectory: process.cwd(),
+        workingDirectory: tempWorkspace,
         systemPrompt: "Base Master Agent Prompt Content",
       } as any);
     });

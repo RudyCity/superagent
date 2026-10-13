@@ -3,6 +3,11 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 
+// Keep an interactive parent session from leaking its task-artifact context into
+// child processes spawned by tests (notably CLI Bridge tests). Tests covering
+// session-path behavior set SUPERAGENT_SESSION_PATH explicitly.
+delete process.env.SUPERAGENT_SESSION_PATH;
+
 // Keep optional ML/model dependencies deterministic in unit tests. Real model
 // downloads and ONNX initialization belong in explicit integration tests.
 vi.mock("@huggingface/transformers", () => ({
