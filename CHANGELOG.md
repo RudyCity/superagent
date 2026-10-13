@@ -1,3 +1,8 @@
+## [1.13.70] - 2026-10-13
+### Improved
+- Reduced redundant aliases in the public `control_chrome_cdp` command enum while retaining dispatcher support for legacy command names.
+- Added regression coverage for canonical browser command schema and legacy alias acceptance.
+
 ## [1.13.69] - 2026-10-13
 ### Improved
 - Removed redundant `AllowMultiple` aliases from edit-tool schemas while retaining runtime compatibility for older callers that still send the legacy field.

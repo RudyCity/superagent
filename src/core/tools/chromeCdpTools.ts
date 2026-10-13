@@ -487,9 +487,9 @@ export const controlChromeCdpTool: Tool = {
         type: "string",
         enum: [
           "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "extract_links", "click", "type", "wait_for",
-          "select_option", "select_dropdown", "pick_option", "check_form", "check_form_readiness", "audit_form", "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
-          "get_cookies", "inspect_media_devices", "media_devices", "mock_display_media", "mock_screen_share", "bypass_screen_share", "handle_screen_share", "accept_screen_share", "dismiss_screen_share", "move_cursor", "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
-          "drag_and_drop", "drag", "drag_drop", "emulate_device", "set_device", "set_viewport", "emulate_viewport", ...CDP_AUDIT_COMMANDS, ...CDP_DIAGNOSTIC_COMMANDS,
+          "select_option", "check_form", "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
+          "get_cookies", "inspect_media_devices", "mock_display_media", "handle_screen_share", "move_cursor", "show_cursor", "hide_cursor", "get_cursor",
+          "drag_and_drop", "drag", "emulate_device", ...CDP_AUDIT_COMMANDS, ...CDP_DIAGNOSTIC_COMMANDS,
         ],
         description: "CDP command to execute on the real Chrome browser.",
       },

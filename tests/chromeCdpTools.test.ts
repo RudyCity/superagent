@@ -307,14 +307,14 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(cmds).toEqual([
       "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate",
       "snapshot", "read_page", "extract_links", "click", "type", "wait_for",
-      "select_option", "select_dropdown", "pick_option",
-      "check_form", "check_form_readiness", "audit_form",
+      "select_option",
+      "check_form",
       "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
-      "get_cookies", "inspect_media_devices", "media_devices",
-      "mock_display_media", "mock_screen_share", "bypass_screen_share", "handle_screen_share", "accept_screen_share", "dismiss_screen_share",
-      "move_cursor", "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
-      "drag_and_drop", "drag", "drag_drop",
-      "emulate_device", "set_device", "set_viewport", "emulate_viewport",
+      "get_cookies", "inspect_media_devices",
+      "mock_display_media", "handle_screen_share",
+      "move_cursor", "show_cursor", "hide_cursor", "get_cursor",
+      "drag_and_drop", "drag",
+      "emulate_device",
       "page_audit", "accessibility_audit", "seo_audit", "responsive_audit", "performance_metrics",
       "start_debug_capture", "read_debug_capture", "stop_debug_capture", "clear_debug_capture",
     ]);
@@ -1009,6 +1009,24 @@ describe("control_chrome_cdp (Chrome 155+ 426 fallback)", () => {
       if (prevHost !== undefined) process.env.SUPERAGENT_CDP_HOST = prevHost;
       _cdpTestHooks.resetResolvedHost();
       await new Promise<void>((r) => ipv6Server.close(() => r()));
+    }
+  });
+});
+
+describe("control_chrome_cdp public command schema", () => {
+  test("publishes canonical command names while retaining legacy dispatcher aliases", () => {
+    const commands = (controlChromeCdpTool.parameters as any).properties.command.enum as string[];
+    const hiddenAliases = [
+      "select_dropdown", "pick_option", "check_form_readiness", "audit_form",
+      "media_devices", "mock_screen_share", "bypass_screen_share",
+      "accept_screen_share", "dismiss_screen_share", "move_mouse", "drag_drop",
+      "set_device", "set_viewport", "emulate_viewport",
+    ];
+    expect(commands).not.toEqual(expect.arrayContaining(hiddenAliases));
+
+    const dispatcher = controlChromeCdpTool.execute.toString();
+    for (const alias of hiddenAliases) {
+      expect(dispatcher, `legacy command ${alias} should remain accepted`).toContain(`"${alias}"`);
     }
   });
 });
