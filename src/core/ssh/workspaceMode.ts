@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 export interface SshWorkspaceConfig {
   host: string;
   port: number;
@@ -15,19 +17,43 @@ export interface SshWorkspaceConfig {
   proxyJump?: string;
   /** Bandwidth throttle limit in bytes/sec (0 = unlimited) */
   bandwidthLimit?: number;
-  /** Extra absolute paths allowed in addition to remoteCwd (e.g. ["/var/www/html"]) */
+  /** Extra absolute paths allowed in addition to remoteCwd (e.g., ["/var/www/html"]) */
   additionalAllowedPaths?: string[];
 }
 
 import { sshLogger } from "./sshLogger.js";
 
+type WorkspaceModeState = { mode: "local" | "ssh-proxy"; config?: SshWorkspaceConfig };
+
 class WorkspaceModeManager {
   private mode: "local" | "ssh-proxy" = "local";
   private config?: SshWorkspaceConfig;
+  private readonly requestContext = new AsyncLocalStorage<WorkspaceModeState>();
+
+  /**
+   * Bind workspace mode to the current async call chain. This keeps concurrent
+   * HTTP requests from changing one another's SSH/local execution context.
+   */
+  public runWithWorkspaceConfig<T>(config: SshWorkspaceConfig | undefined, callback: () => T): T {
+    return this.requestContext.run(
+      config ? { mode: "ssh-proxy", config: structuredClone(config) } : { mode: "local" },
+      callback,
+    );
+  }
+
+  private getState(): WorkspaceModeState {
+    return this.requestContext.getStore() ?? { mode: this.mode, config: this.config };
+  }
 
   public setSshMode(config: SshWorkspaceConfig) {
-    this.mode = "ssh-proxy";
-    this.config = config;
+    const state = this.requestContext.getStore();
+    if (state) {
+      state.mode = "ssh-proxy";
+      state.config = config;
+    } else {
+      this.mode = "ssh-proxy";
+      this.config = config;
+    }
     sshLogger.info("workspace.mode", "switched to ssh-proxy", {
       host: config.host,
       user: config.username,
@@ -36,22 +62,28 @@ class WorkspaceModeManager {
   }
 
   public setLocalMode() {
-    const prev = this.mode;
-    this.mode = "local";
-    this.config = undefined;
+    const state = this.requestContext.getStore();
+    const prev = this.getState().mode;
+    if (state) {
+      state.mode = "local";
+      state.config = undefined;
+    } else {
+      this.mode = "local";
+      this.config = undefined;
+    }
     sshLogger.info("workspace.mode", "switched to local", { meta: { previous: prev } });
   }
 
   public getMode(): "local" | "ssh-proxy" {
-    return this.mode;
+    return this.getState().mode;
   }
 
   public getConfig(): SshWorkspaceConfig | undefined {
-    return this.config;
+    return this.getState().config;
   }
 
   public isSsh(): boolean {
-    return this.mode === "ssh-proxy";
+    return this.getMode() === "ssh-proxy";
   }
 
   /**

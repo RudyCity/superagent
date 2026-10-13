@@ -1,3 +1,8 @@
+## [1.13.65] - 2026-10-13
+### Fixed
+- Scope SSH/local workspace mode to each HTTP request using AsyncLocalStorage, preventing concurrent local and SSH requests from overwriting each other's mode.
+- Add concurrency regression tests for request-scoped workspace mode (`tests/workspaceModeContext.test.ts`).
+
 ## [1.13.64] - 2026-10-13
 ### Fixed
 - Introduce `src/core/mcp/tools/workspaceContext.ts` as the shared source of truth for MCP workspace normalization and server-rejection classification; keep compatibility re-exports in `processTools.ts`.

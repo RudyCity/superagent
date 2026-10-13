@@ -742,36 +742,19 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       return;
     }
 
-    // Dynamically configure workspace mode based on the request's workspace path
+    // Resolve a request-local workspace mode; never mutate the process-global mode
+    // while handling HTTP requests because multiple workspaces may run concurrently.
     const targetWorkspace = resolveWorkspacePath(req);
     if (targetWorkspace === null) {
       sendJSON(res, 403, { error: "Forbidden workspace" });
       return;
     }
-    if (targetWorkspace) {
-      try {
-        const { workspaceMode } = await import("./core/ssh/workspaceMode.js");
-        const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
-        if (targetWorkspace.startsWith("ssh:") || targetWorkspace.startsWith("ssh://")) {
-          const sshConfig = workspaceMode.parseSshTarget(targetWorkspace);
-          if (sshConfig) {
-            workspaceMode.setSshMode(sshConfig);
-          } else {
-            workspaceMode.setLocalMode();
-          }
-        } else if (targetWorkspace.startsWith("chain:")) {
-          const chainId = targetWorkspace.substring(6);
-          const activeChain = workspaceChainManager.getActiveChain(targetWorkspace);
-          if (!activeChain || activeChain.id !== chainId) {
-            await workspaceChainManager.activateChain(chainId, targetWorkspace);
-          }
-        } else {
-          workspaceMode.setLocalMode();
-        }
-      } catch (err: any) {
-        logToSuperAgentServerFile(`[workspaceMode auto-config error] ${err.message}`);
-      }
-    }
+
+    const { workspaceMode } = await import("./core/ssh/workspaceMode.js");
+    const requestSshConfig =
+      targetWorkspace && (targetWorkspace.startsWith("ssh:") || targetWorkspace.startsWith("ssh://"))
+        ? workspaceMode.parseSshTarget(targetWorkspace) ?? undefined
+        : undefined;
 
     // CORS preflight for non-API routes (none mutate state today)
     if (req.method === "OPTIONS") {
@@ -780,38 +763,51 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       return;
     }
 
-    try {
-      const handled = await handleServerRoute(req, res, pathname, parsedUrl, {
-        activeSessions,
-        lastActiveWorkspace,
-        setLastActiveWorkspace: (ws: string) => { lastActiveWorkspace = ws; },
-        isBrowseDialogOpen,
-        setIsBrowseDialogOpen: (v: boolean) => { isBrowseDialogOpen = v; },
-        serverDefaultClientMode,
-        sseClients,
-        browserInstances,
-        pendingPermissions,
-        pendingQuestions,
-        pendingBrowserControls,
-        resolveSession,
-        resolveWorkspacePath,
-        resolveClientMode,
-        createAgentForMode,
-        broadcastEvent,
-        sendJSON,
-        readBody,
-        executeBrowserControlOnClient,
-        killVisionServerProcess
-      });
+    await workspaceMode.runWithWorkspaceConfig(requestSshConfig, async () => {
+      try {
+        // Chain activation may configure the workspace mode; run it inside the
+        // same async-local context as the route that will consume that mode.
+        if (targetWorkspace?.startsWith("chain:")) {
+          const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
+          const chainId = targetWorkspace.substring(6);
+          const activeChain = workspaceChainManager.getActiveChain(targetWorkspace);
+          if (!activeChain || activeChain.id !== chainId) {
+            await workspaceChainManager.activateChain(chainId, targetWorkspace);
+          }
+        }
 
-      if (!handled) {
-        sendJSON(res, 404, { error: "Not Found" });
+        const handled = await handleServerRoute(req, res, pathname, parsedUrl, {
+          activeSessions,
+          lastActiveWorkspace,
+          setLastActiveWorkspace: (ws: string) => { lastActiveWorkspace = ws; },
+          isBrowseDialogOpen,
+          setIsBrowseDialogOpen: (v: boolean) => { isBrowseDialogOpen = v; },
+          serverDefaultClientMode,
+          sseClients,
+          browserInstances,
+          pendingPermissions,
+          pendingQuestions,
+          pendingBrowserControls,
+          resolveSession,
+          resolveWorkspacePath,
+          resolveClientMode,
+          createAgentForMode,
+          broadcastEvent,
+          sendJSON,
+          readBody,
+          executeBrowserControlOnClient,
+          killVisionServerProcess
+        });
+
+        if (!handled) {
+          sendJSON(res, 404, { error: "Not Found" });
+        }
+      } catch (err: any) {
+        console.error("[SERVER ERROR]", err);
+        logToSuperAgentServerFile(`[SERVER ROUTE ERROR] ${err?.stack || err?.message || String(err)}`);
+        sendJSON(res, 500, { error: err.message || String(err) });
       }
-    } catch (err: any) {
-      console.error("[SERVER ERROR]", err);
-      logToSuperAgentServerFile(`[SERVER ROUTE ERROR] ${err?.stack || err?.message || String(err)}`);
-      sendJSON(res, 500, { error: err.message || String(err) });
-    }
+    });
   });
 
   server.on("error", (err: any) => {
