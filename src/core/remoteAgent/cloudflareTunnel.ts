@@ -7,13 +7,18 @@ import { logE2E } from "../utils/unifiedLogger.js";
 import { loadRemoteAgentConfig, updateRemoteAgentConfig } from "./config.js";
 import { scrubSecrets } from "./contextSanitizer.js";
 
+export type TunnelServiceKind = "muse-websocket" | "mcp-http" | "superagent-http" | "unknown";
+
 export interface TunnelMetadata {
   pid: number;
   publicUrl: string;
-  wssUrl: string;
+  /** Present only when this tunnel exposes a Muse WebSocket endpoint. */
+  wssUrl?: string;
   localUrl: string;
   port: number;
   startedAt: number;
+  /** Missing on legacy state files; unknown legacy records must not be assumed to be Muse. */
+  serviceKind?: TunnelServiceKind;
   workspace?: string;
   workspaces?: string[];
 }
@@ -26,6 +31,7 @@ export interface TunnelStatus {
   port?: number;
   startedAt?: number;
   uptimeSeconds?: number;
+  serviceKind?: TunnelServiceKind;
   workspace?: string;
   workspaces?: string[];
   error?: string;
@@ -34,10 +40,12 @@ export interface ActiveTunnelInfo {
   port: number;
   pid: number;
   publicUrl: string;
-  wssUrl: string;
+  /** Present only for Muse WebSocket tunnels. */
+  wssUrl?: string;
   localUrl: string;
   startedAt: number;
   uptimeSeconds: number;
+  serviceKind?: TunnelServiceKind;
   workspace?: string;
   workspaces?: string[];
 }
@@ -49,8 +57,26 @@ export interface StartTunnelOptions {
   customConfigPath?: string;
   workspace?: string;
   workspaces?: string[];
+  /** Defaults to Muse WebSocket for backwards compatibility with legacy Muse callers. */
+  serviceKind?: Exclude<TunnelServiceKind, "unknown">;
   onLog?: (line: string) => void;
-  onUrlDetected?: (publicUrl: string, wssUrl: string) => void;
+  onUrlDetected?: (publicUrl: string, wssUrl?: string) => void;
+  /** Service-owned cleanup hook; generic tunnel management never changes service config. */
+  onExit?: (metadata: TunnelMetadata) => void;
+}
+
+/** Compare the local HTTP origin a tunnel forwards to, independent of path/trailing slash. */
+export function isSameTunnelTarget(actualUrl: string | undefined, expectedUrl: string): boolean {
+  if (!actualUrl || !expectedUrl) return false;
+  try {
+    const actual = new URL(actualUrl);
+    const expected = new URL(expectedUrl);
+    return actual.protocol === expected.protocol &&
+      actual.hostname.toLowerCase() === expected.hostname.toLowerCase() &&
+      actual.port === expected.port;
+  } catch {
+    return false;
+  }
 }
 
 export function getTunnelStateFile(port?: number): string {
@@ -253,6 +279,45 @@ export async function isOwnQuickTunnelProcess(
   return lower.includes(`tunnel --url ${localUrl.toLowerCase()}`);
 }
 
+/** Synchronous identity check for status/list APIs, which intentionally remain synchronous. */
+const OWN_PROCESS_CACHE_TTL_MS = 2000;
+const ownProcessCache = new Map<string, { checkedAt: number; owns: boolean }>();
+
+export function isOwnQuickTunnelProcessSync(pid: number, localUrl: string): boolean {
+  if (!pid || pid <= 0 || !Number.isInteger(pid) || !localUrl) return false;
+  const cacheKey = `${pid}:${localUrl.toLowerCase()}`;
+  if (!isProcessRunning(pid)) {
+    ownProcessCache.delete(cacheKey);
+    return false;
+  }
+  const cached = ownProcessCache.get(cacheKey);
+  if (cached?.owns && Date.now() - cached.checkedAt < OWN_PROCESS_CACHE_TTL_MS) return true;
+  let owns = false;
+  try {
+    let cmdline = "";
+    if (process.platform === "win32") {
+      cmdline = execSync(
+        `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -eq ${pid} } | Select-Object -ExpandProperty CommandLine"`,
+        { encoding: "utf-8", timeout: 2500, stdio: ["ignore", "pipe", "ignore"] }
+      );
+    } else if (process.platform === "darwin") {
+      cmdline = execSync(`ps -p ${pid} -o command=`, {
+        encoding: "utf-8",
+        timeout: 2500,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } else {
+      cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, "utf-8").replace(/\0/g, " ");
+    }
+    const lower = cmdline.toLowerCase();
+    owns = lower.includes("cloudflared") && lower.includes(`tunnel --url ${localUrl.toLowerCase()}`);
+  } catch {
+    owns = false;
+  }
+  ownProcessCache.set(cacheKey, { checkedAt: Date.now(), owns });
+  return owns;
+}
+
 /**
  * Reads a process command line cross-platform. Returns "" when unavailable.
  */
@@ -411,6 +476,51 @@ export class CloudflareTunnelManager {
     }
   }
 
+  private isTunnelCommandOwned(meta: TunnelMetadata): boolean {
+    if (!meta.pid || !meta.localUrl || !isProcessRunning(meta.pid)) return false;
+    const child = this.activeProcesses.get(meta.port);
+    if (child?.pid === meta.pid && child.exitCode === null && child.signalCode === null) return true;
+    return isOwnQuickTunnelProcessSync(meta.pid, meta.localUrl);
+  }
+
+  private isTunnelProcessAlive(meta: TunnelMetadata): boolean {
+    return this.hasExpectedTargetPort(meta) && this.isTunnelCommandOwned(meta);
+  }
+
+  private hasExpectedTargetPort(meta: TunnelMetadata): boolean {
+    if (typeof meta.port !== "number" || !meta.localUrl) return false;
+    try {
+      const target = new URL(meta.localUrl);
+      const targetPort = target.port ? Number(target.port) : (target.protocol === "https:" ? 443 : 80);
+      return target.protocol === "http:" && targetPort === meta.port;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Claims a legacy/unknown tunnel only after the caller has confirmed its local
+   * service is ready. A known, different service kind can never be reclassified.
+   */
+  public claimServiceKind(
+    port: number,
+    serviceKind: Exclude<TunnelServiceKind, "unknown">,
+    customConfigPath?: string
+  ): TunnelMetadata | null {
+    const meta = this.activeMetadata.get(port) || readTunnelState(port);
+    if (!meta || !this.hasExpectedTargetPort(meta)) return null;
+    if (meta.serviceKind && meta.serviceKind !== "unknown" && meta.serviceKind !== serviceKind) {
+      return null;
+    }
+    const next: TunnelMetadata = { ...meta, serviceKind };
+    if (serviceKind !== "muse-websocket") delete next.wssUrl;
+    this.activeMetadata.set(port, next);
+    if (this.currentMetadata?.port === port) this.currentMetadata = next;
+    saveTunnelState(next, port);
+    // Config publication belongs to the service owner, not the generic tunnel manager.
+    return next;
+  }
+
   /**
    * Starts a quick ephemeral tunnel pointing to the local WebSocket server port.
    * Scans stderr/stdout for the https://*.trycloudflare.com URL and resolves once ready.
@@ -419,23 +529,49 @@ export class CloudflareTunnelManager {
     const cfg = loadRemoteAgentConfig(options.customConfigPath);
     const host = options.host || cfg.wsHost || "127.0.0.1";
     const port = options.port || cfg.wsPort || 9225;
-    const wsPath = options.path || cfg.wsPath || "/muse";
+    const serviceKind = options.serviceKind || "muse-websocket";
+    const localTarget = `http://${host}:${port}`;
+    // An explicitly empty path means the HTTP service is mounted at the root.
+    const wsPath = options.path !== undefined ? options.path : (cfg.wsPath || "/muse");
     const workspace = options.workspace || (options.workspaces && options.workspaces[0]) || process.cwd();
     const workspaces = options.workspaces && options.workspaces.length > 0 ? options.workspaces : [workspace];
+    const assertCompatibleService = (meta: TunnelMetadata) => {
+      if (meta.serviceKind && meta.serviceKind !== "unknown" && meta.serviceKind !== serviceKind) {
+        throw new Error(
+          `Cloudflare tunnel on port ${port} belongs to ${meta.serviceKind}, not ${serviceKind}. Stop that service or choose another port.`
+        );
+      }
+      if (!isSameTunnelTarget(meta.localUrl, localTarget)) {
+        throw new Error(
+          `Cloudflare tunnel state on port ${port} forwards to ${meta.localUrl || "an unknown local target"}, not ${localTarget}. Reconcile/stop that tunnel before reuse.`
+        );
+      }
+    };
 
-    // Check if in-process instance is active for this port
+    // Check if in-process instance is active for this port.
     const inProcChild = this.activeProcesses.get(port);
     const inProcMeta = this.activeMetadata.get(port);
-    if (inProcChild && inProcMeta && inProcMeta.pid && isProcessRunning(inProcMeta.pid)) {
+    if (
+      inProcChild && inProcMeta && inProcMeta.pid === inProcChild.pid &&
+      inProcChild.exitCode === null && inProcChild.signalCode === null &&
+      isProcessRunning(inProcMeta.pid)
+    ) {
+      assertCompatibleService(inProcMeta);
       return inProcMeta;
     }
 
-    // Check if an external detached instance is active for this port
+    // Reuse a detached tunnel only if its PID still belongs to cloudflared
+    // and its command line targets this exact local endpoint.
     const persisted = readTunnelState(port);
     if (persisted && isProcessRunning(persisted.pid)) {
-      this.activeMetadata.set(port, persisted);
-      this.currentMetadata = persisted;
-      return persisted;
+      const localTarget = persisted.localUrl || `http://127.0.0.1:${port}`;
+      if (await isOwnQuickTunnelProcess(persisted.pid, localTarget)) {
+        assertCompatibleService(persisted);
+        this.activeMetadata.set(port, persisted);
+        this.currentMetadata = persisted;
+        return persisted;
+      }
+      clearTunnelState(port);
     }
 
     const binary = await findCloudflaredBinary();
@@ -447,7 +583,6 @@ export class CloudflareTunnelManager {
           "  Linux  : sudo apt install cloudflared"
       );
     }
-    const localTarget = `http://${host}:${port}`;
     const timeoutMs = options.timeoutMs || 30000;
 
     logE2E("REMOTE-AGENT", `Launching quick Cloudflare tunnel targeting ${localTarget}...`);
@@ -477,10 +612,10 @@ export class CloudflareTunnelManager {
             }
           }
         } catch {}
-        // The tunnel goes down with this process; its published URL is now stale.
+        // Notify the owning service; the generic manager must not mutate service config.
         try {
           const meta = this.activeMetadata.get(port);
-          if (meta?.wssUrl) clearWsRemoteUrl(meta.wssUrl);
+          if (meta) options.onExit?.(meta);
         } catch {}
       };
 
@@ -511,14 +646,16 @@ export class CloudflareTunnelManager {
             isResolved = true;
             clearTimeout(timeoutTimer);
 
-            const wssUrl = `wss://${publicUrl.slice("https://".length)}${wsPath}`;
-
+            const wssUrl = serviceKind === "muse-websocket"
+              ? `wss://${publicUrl.slice("https://".length)}${wsPath}`
+              : undefined;
             const meta: TunnelMetadata = {
               pid: child.pid!,
               publicUrl,
-              wssUrl,
+              ...(wssUrl ? { wssUrl } : {}),
               localUrl: localTarget,
               port,
+              serviceKind,
               workspace,
               workspaces,
               startedAt: Date.now(),
@@ -528,11 +665,7 @@ export class CloudflareTunnelManager {
             this.currentMetadata = meta;
             saveTunnelState(meta);
 
-            try {
-              updateRemoteAgentConfig({ wsRemoteUrl: wssUrl }, options.customConfigPath);
-            } catch {}
-
-            logE2E("REMOTE-AGENT", `Cloudflare quick tunnel established: ${publicUrl} -> ${wssUrl}`);
+            logE2E("REMOTE-AGENT", `Cloudflare quick tunnel established (${serviceKind}): ${publicUrl}${wssUrl ? ` -> ${wssUrl}` : ""}`);
             options.onUrlDetected?.(publicUrl, wssUrl);
             resolve(meta);
           }
@@ -563,8 +696,10 @@ export class CloudflareTunnelManager {
         clearTunnelState(port);
         this.activeProcesses.delete(port);
         this.activeMetadata.delete(port);
-        // Unexpected cloudflared exit: the published URL is dead, clear it.
-        if (closedMeta?.wssUrl) clearWsRemoteUrl(closedMeta.wssUrl);
+        // Service-specific cleanup is performed through the caller-owned hook.
+        if (closedMeta) {
+          try { options.onExit?.(closedMeta); } catch {}
+        }
         if (this.currentProcess === child) {
           this.currentProcess = null;
           this.currentMetadata = null;
@@ -582,7 +717,10 @@ export class CloudflareTunnelManager {
    * Stops the active quick Cloudflare tunnel if running.
    * If port is "all", stops all active quick tunnels across all ports.
    */
-  public async stopQuickTunnel(port?: number | "all"): Promise<boolean> {
+  public async stopQuickTunnel(
+    port?: number | "all",
+    expectedServiceKind?: TunnelServiceKind
+  ): Promise<boolean> {
     if (port === "all") {
       const count = await this.stopAll();
       return count > 0;
@@ -607,8 +745,47 @@ export class CloudflareTunnelManager {
     }
 
     for (const p of targetPorts) {
-      const proc = this.activeProcesses.get(p);
       const inProcMeta = this.activeMetadata.get(p);
+      const persistedForKind = inProcMeta || readTunnelState(p);
+      const proc = this.activeProcesses.get(p);
+      if (!persistedForKind) {
+        // A URL may not have been detected yet; the child reference is still proof
+        // that this process created the pending tunnel, so timeout rollback can stop it.
+        if (proc && !expectedServiceKind) {
+          try {
+            if (proc.pid && process.platform === "win32") {
+              try { execSync(`taskkill /pid ${proc.pid} /T /F`, { stdio: "ignore" }); }
+              catch { proc.kill("SIGTERM"); }
+            } else {
+              proc.kill("SIGTERM");
+            }
+            stopped = true;
+          } catch {}
+          this.activeProcesses.delete(p);
+          if (this.currentProcess === proc) this.currentProcess = null;
+          clearTunnelState(p);
+          continue;
+        }
+        logE2E("REMOTE-AGENT", `Skipped tunnel stop on port ${p}: no verifiable tunnel state or owned pending child.`);
+        continue;
+      }
+      if (!this.hasExpectedTargetPort(persistedForKind)) {
+        logE2E("REMOTE-AGENT", `Skipped tunnel stop on port ${p}: local target/port identity is inconsistent.`);
+        continue;
+      }
+      if (
+        expectedServiceKind &&
+        (!persistedForKind.serviceKind ||
+          persistedForKind.serviceKind === "unknown" ||
+          persistedForKind.serviceKind !== expectedServiceKind)
+      ) {
+        logE2E(
+          "REMOTE-AGENT",
+          `Skipped tunnel stop on port ${p}: expected ${expectedServiceKind}, found ${persistedForKind.serviceKind || "unknown (legacy state)"}.`
+        );
+        continue;
+      }
+      // Use the manager-owned child captured above, if present.
       if (proc) {
         try {
           if (proc.pid) {
@@ -632,7 +809,7 @@ export class CloudflareTunnelManager {
           this.currentProcess = null;
           this.currentMetadata = null;
         }
-        if (inProcMeta?.wssUrl) clearWsRemoteUrl(inProcMeta.wssUrl);
+        // No service configuration is changed by a generic stop.
       }
 
       const persisted = readTunnelState(p);
@@ -660,7 +837,7 @@ export class CloudflareTunnelManager {
           }
         } catch {}
         clearTunnelState(p);
-        if (persisted.wssUrl) clearWsRemoteUrl(persisted.wssUrl);
+        // No service configuration is changed by a generic stop.
       }
     }
 
@@ -679,9 +856,10 @@ export class CloudflareTunnelManager {
     const dir = path.join(os.homedir(), ".superagent-r");
     const activeMap = new Map<number, ActiveTunnelInfo>();
 
-    // 1. Check in-memory metadata if running in this process
+    // 1. Check in-memory metadata. A cached PID is not sufficient evidence
+    // unless this manager owns its child or the OS command line still matches.
     for (const [p, meta] of this.activeMetadata.entries()) {
-      if (meta && meta.pid && isProcessRunning(meta.pid)) {
+      if (meta && this.isTunnelProcessAlive(meta)) {
         const uptime = Math.floor((Date.now() - meta.startedAt) / 1000);
         activeMap.set(meta.port, {
           port: meta.port,
@@ -689,11 +867,14 @@ export class CloudflareTunnelManager {
           publicUrl: meta.publicUrl,
           wssUrl: meta.wssUrl,
           localUrl: meta.localUrl,
+          serviceKind: meta.serviceKind,
           workspace: meta.workspace,
           workspaces: meta.workspaces,
           startedAt: meta.startedAt,
           uptimeSeconds: Math.max(0, uptime),
         });
+      } else if (meta && !this.isTunnelCommandOwned(meta)) {
+        clearTunnelState(p);
       }
     }
 
@@ -708,7 +889,7 @@ export class CloudflareTunnelManager {
               const raw = fs.readFileSync(filePath, "utf-8");
               const meta = JSON.parse(raw) as TunnelMetadata;
               if (meta && meta.pid) {
-                if (isProcessRunning(meta.pid)) {
+                if (isProcessRunning(meta.pid) && isOwnQuickTunnelProcessSync(meta.pid, meta.localUrl || "")) {
                   let effectivePort = meta.port;
                   if (!effectivePort) {
                     const match = f.match(/^tunnel-(\d+)\.json$/);
@@ -720,19 +901,23 @@ export class CloudflareTunnelManager {
                     }
                     effectivePort = effectivePort || 9225;
                   }
-                  const uptime = Math.floor((Date.now() - (meta.startedAt || Date.now())) / 1000);
-                  if (!activeMap.has(effectivePort)) {
-                    activeMap.set(effectivePort, {
-                      port: effectivePort,
-                      pid: meta.pid,
-                      publicUrl: meta.publicUrl,
-                      wssUrl: meta.wssUrl,
-                      localUrl: meta.localUrl,
-                      workspace: meta.workspace,
-                      workspaces: meta.workspaces,
-                      startedAt: meta.startedAt,
-                      uptimeSeconds: Math.max(0, uptime),
-                    });
+                  const candidate: TunnelMetadata = { ...meta, port: effectivePort };
+                  if (this.hasExpectedTargetPort(candidate)) {
+                    const uptime = Math.floor((Date.now() - (meta.startedAt || Date.now())) / 1000);
+                    if (!activeMap.has(effectivePort)) {
+                      activeMap.set(effectivePort, {
+                        port: effectivePort,
+                        pid: meta.pid,
+                        publicUrl: meta.publicUrl,
+                        wssUrl: meta.wssUrl,
+                        localUrl: meta.localUrl,
+                        serviceKind: meta.serviceKind,
+                        workspace: meta.workspace,
+                        workspaces: meta.workspaces,
+                        startedAt: meta.startedAt,
+                        uptimeSeconds: Math.max(0, uptime),
+                      });
+                    }
                   }
                 } else {
                   // Clean up stale file
@@ -763,11 +948,9 @@ export class CloudflareTunnelManager {
         if (stopped) stoppedCount++;
       } catch {}
     }
-    // Deliberately no broad process scan: only state-tracked tunnels are ever
-    // terminated (stopQuickTunnel + isOwnQuickTunnelProcess). Foreign
-    // cloudflared processes are always left alone.
-    clearTunnelState("all");
-    clearWsRemoteUrl();
+    // Deliberately no broad process scan or global state purge: only tunnels
+    // whose recorded process identity was verified above are stopped/cleared.
+    // Unclassified or foreign-owner state remains available for diagnostics.
     return stoppedCount;
   }
 
@@ -791,6 +974,7 @@ export class CloudflareTunnelManager {
           wssUrl: best.wssUrl,
           localUrl: best.localUrl,
           port: best.port,
+          serviceKind: best.serviceKind,
           workspace: best.workspace,
           workspaces: best.workspaces,
           startedAt: best.startedAt,
@@ -804,7 +988,14 @@ export class CloudflareTunnelManager {
       return { isRunning: false };
     }
 
-    const alive = isProcessRunning(meta.pid);
+    const alive = this.isTunnelProcessAlive(meta);
+    if (!alive && this.isTunnelCommandOwned(meta) && !this.hasExpectedTargetPort(meta)) {
+      return {
+        isRunning: false,
+        port: meta.port,
+        error: `Tunnel state on port ${meta.port} points to local target ${meta.localUrl}; state is preserved for explicit reconciliation.`,
+      };
+    }
     if (!alive) {
       if (typeof meta.port === "number") {
         clearTunnelState(meta.port);
@@ -813,7 +1004,7 @@ export class CloudflareTunnelManager {
       } else {
         clearTunnelState(undefined);
       }
-      if (meta.wssUrl) clearWsRemoteUrl(meta.wssUrl);
+      // Status/cleanup of generic tunnel state must not mutate remote-agent config.
       if (meta.port) {
         this.activeProcesses.delete(meta.port);
         this.activeMetadata.delete(meta.port);
@@ -832,6 +1023,7 @@ export class CloudflareTunnelManager {
       wssUrl: meta.wssUrl,
       localUrl: meta.localUrl,
       port: meta.port,
+      serviceKind: meta.serviceKind,
       workspace: meta.workspace,
       workspaces: meta.workspaces,
       startedAt: meta.startedAt,
@@ -846,8 +1038,18 @@ export async function startQuickTunnel(options?: StartTunnelOptions): Promise<Tu
   return cloudflareTunnel.startQuickTunnel(options);
 }
 
-export async function stopQuickTunnel(port?: number | "all"): Promise<boolean> {
-  return cloudflareTunnel.stopQuickTunnel(port);
+export async function stopQuickTunnel(port?: number | "all", expectedServiceKind?: TunnelServiceKind): Promise<boolean> {
+  return expectedServiceKind === undefined
+    ? cloudflareTunnel.stopQuickTunnel(port)
+    : cloudflareTunnel.stopQuickTunnel(port, expectedServiceKind);
+}
+
+export function claimTunnelServiceKind(
+  port: number,
+  serviceKind: Exclude<TunnelServiceKind, "unknown">,
+  customConfigPath?: string
+): TunnelMetadata | null {
+  return cloudflareTunnel.claimServiceKind(port, serviceKind, customConfigPath);
 }
 
 export function listActiveTunnels(): ActiveTunnelInfo[] {
@@ -878,8 +1080,9 @@ export function formatActiveTunnels(tunnels: ActiveTunnelInfo[]): string {
   tunnels.forEach((t, i) => {
     lines.push(
       `${i + 1}. Port ${t.port} (PID: ${t.pid}, Uptime: ${t.uptimeSeconds}s)`,
+      `   - Service kind : ${t.serviceKind || "unknown (legacy state)"}`,
       `   - Public URL   : ${t.publicUrl}`,
-      `   - WSS Endpoint : ${t.wssUrl}`,
+      ...(t.wssUrl ? [`   - WSS Endpoint : ${t.wssUrl}`] : []),
       `   - Local Target : ${t.localUrl}`,
     );
     if (t.workspace) {

@@ -43,6 +43,8 @@ interface ActiveMcp {
   auditLogPath: string;
   startedAt: number;
   authMode: McpAuthMode;
+  /** True only when this invocation created the shared Quick Tunnel process. */
+  ownsTunnel: boolean;
   bootstrapCode?: string;
 }
 
@@ -155,57 +157,103 @@ export async function startMcpTunnel(opts: {
   // The public tunnel URL is needed up-front: OAuth discovery metadata must
   // carry the canonical public URL from the first request.
   const existing = getTunnelStatus(port);
+  if (
+    existing.isRunning &&
+    existing.serviceKind &&
+    existing.serviceKind !== "unknown" &&
+    existing.serviceKind !== "mcp-http"
+  ) {
+    throw new Error(
+      `Port ${port} already has a ${existing.serviceKind} tunnel. Choose a different --mcp-port or stop that service first.`
+    );
+  }
+  if (existing.isRunning) {
+    const { isSameTunnelTarget } = await import("../remoteAgent/cloudflareTunnel.js");
+    const expectedLocalTarget = `http://127.0.0.1:${port}`;
+    if (!isSameTunnelTarget(existing.localUrl, expectedLocalTarget)) {
+      throw new Error(
+        `Tunnel on port ${port} forwards to ${existing.localUrl || "an unknown local target"}, not ${expectedLocalTarget}. Stop/reconcile it before starting MCP.`
+      );
+    }
+  }
   let meta: TunnelMetadata | undefined;
+  let createdTunnel = false;
   if (!existing.isRunning || !existing.publicUrl) {
-    meta = await startQuickTunnel({ port, host: "127.0.0.1" });
+    meta = await startQuickTunnel({ port, host: "127.0.0.1", path: "", serviceKind: "mcp-http" });
+    createdTunnel = true;
   }
   const publicBase = (existing.isRunning && existing.publicUrl) || meta?.publicUrl;
-  if (!publicBase) throw new Error("Cloudflare tunnel did not return a public URL");
+  if (!publicBase) {
+    if (createdTunnel) await stopQuickTunnel(port, "mcp-http").catch(() => {});
+    throw new Error("Cloudflare tunnel did not return a public URL");
+  }
   const publicBaseClean = publicBase.replace(/\/$/, "");
 
   // Reuse an already-running MCP server on this port (idempotent start),
   // but never silently reuse a server started in a different auth mode.
   let active = activeServers.get(port);
-  if (active && active.authMode !== authMode) {
-    throw new Error(
-      `MCP server on port ${port} is already running in ${active.authMode} mode; ` +
-        `stop it first before starting in ${authMode} mode.`
-    );
+  let createdServer = false;
+  try {
+    if (active && active.authMode !== authMode) {
+      throw new Error(
+        `MCP server on port ${port} is already running in ${active.authMode} mode; ` +
+          `stop it first before starting in ${authMode} mode.`
+      );
+    }
+    if (!active) {
+      const bearerToken = generateMcpBearerToken();
+      let bootstrapCode: string | undefined;
+      const oauth =
+        authMode === "oauth"
+          ? (() => {
+              const bc = generateBootstrapCode();
+              bootstrapCode = bc.code;
+              return { publicBaseUrl: publicBaseClean, bootstrapCodeHash: bc.codeHash };
+            })()
+          : undefined;
+      const handle = await startMcpHttpServer({
+        port,
+        bearerToken,
+        allowDangerous: dangerous,
+        auditLogPath: opts.auditLogPath,
+        authMode,
+        oauth,
+        publicBaseUrl: publicBaseClean,
+        hostOriginPolicy: {
+          allowedOrigins: opts.allowedOrigins,
+          allowNoOrigin: opts.allowNoOrigin,
+        },
+      });
+      const prev = readMcpStateFile(getMcpStateFile(port));
+      active = {
+        handle,
+        bearerToken,
+        auditLogPath: opts.auditLogPath ?? "default",
+        startedAt: prev?.startedAt ?? Date.now(),
+        authMode,
+        ownsTunnel: createdTunnel,
+        bootstrapCode,
+      };
+      activeServers.set(port, active);
+      createdServer = true;
+    }
+  } catch (error) {
+    // Roll back only a tunnel created by this invocation; never stop a reused tunnel.
+    if (createdTunnel) await stopQuickTunnel(port, "mcp-http").catch(() => {});
+    throw error;
   }
   if (!active) {
-    const bearerToken = generateMcpBearerToken();
-    let bootstrapCode: string | undefined;
-    const oauth =
-      authMode === "oauth"
-        ? (() => {
-            const bc = generateBootstrapCode();
-            bootstrapCode = bc.code;
-            return { publicBaseUrl: publicBaseClean, bootstrapCodeHash: bc.codeHash };
-          })()
-        : undefined;
-    const handle = await startMcpHttpServer({
-      port,
-      bearerToken,
-      allowDangerous: dangerous,
-      auditLogPath: opts.auditLogPath,
-      authMode,
-      oauth,
-      publicBaseUrl: publicBaseClean,
-      hostOriginPolicy: {
-        allowedOrigins: opts.allowedOrigins,
-        allowNoOrigin: opts.allowNoOrigin,
-      },
-    });
-    const prev = readMcpStateFile(getMcpStateFile(port));
-    active = {
-      handle,
-      bearerToken,
-      auditLogPath: opts.auditLogPath ?? "default",
-      startedAt: prev?.startedAt ?? Date.now(),
-      authMode,
-      bootstrapCode,
-    };
-    activeServers.set(port, active);
+    if (createdTunnel) await stopQuickTunnel(port, "mcp-http").catch(() => {});
+    throw new Error(`MCP server startup failed on port ${port}.`);
+  }
+  const { claimTunnelServiceKind } = await import("../remoteAgent/cloudflareTunnel.js");
+  if (!claimTunnelServiceKind(port, "mcp-http")) {
+    if (createdServer && activeServers.get(port) === active) {
+      activeServers.delete(port);
+      await active.handle.close().catch(() => {});
+    }
+    if (createdTunnel) await stopQuickTunnel(port, "mcp-http").catch(() => {});
+    throw new Error(`Tunnel on port ${port} could not be safely claimed by the MCP service.`);
   }
 
   const publicUrl = `${publicBaseClean}/mcp`;
@@ -241,12 +289,19 @@ export async function stopMcpTunnel(port = DEFAULT_MCP_PORT): Promise<void> {
   if (active) {
     activeServers.delete(port);
     await active.handle.close().catch(() => {});
+    // This instance may stop only the tunnel it created, not a shared/reused one.
+    if (active.ownsTunnel) {
+      await stopQuickTunnel(port, "mcp-http").catch(() => {});
+    }
   }
-  await stopQuickTunnel(port).catch(() => {});
-  // Only remove the disk state when this instance owns it - a foreign
-  // instance's MCP server lives in ITS process and cannot be stopped from here.
+
+  // If this process does not own an active HTTP server handle, it cannot stop
+  // a server in another process and must not kill that server's shared tunnel.
+  // Only this instance's persisted state can be removed here.
   const state = readMcpStateFile(getMcpStateFile(port));
-  if (!state || state.pid === process.pid) {
+  if (state?.pid === process.pid) {
+    deleteMcpState(port);
+  } else if (!state) {
     deleteMcpState(port);
   }
 }

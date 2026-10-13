@@ -14,6 +14,7 @@ import {
   clearWsRemoteUrl,
   TunnelUrlScanner,
 } from "../src/core/remoteAgent/cloudflareTunnel.js";
+import { stopOwnedMuseTunnel } from "../src/core/remoteAgent/museWatcherTunnel.js";
 import {
   loadRemoteAgentConfig,
   updateRemoteAgentConfig,
@@ -167,28 +168,37 @@ describe("Tunnel bug fixes (regression)", () => {
       expect(loadRemoteAgentConfig().wsRemoteUrl).toBeUndefined();
     });
 
-    it("stopQuickTunnel clears the stopped tunnel's wsRemoteUrl", async () => {
+    it("generic stop does not mutate Muse config for legacy/unknown tunnel state", async () => {
       const m = metaFor(59997);
       updateRemoteAgentConfig({ wsRemoteUrl: m.wssUrl });
-      saveTunnelState(m); // pid 424242 is not running: stale state
+      saveTunnelState(m); // pid 424242 is not running: stale legacy state
       await stopQuickTunnel(59997);
-      expect(loadRemoteAgentConfig().wsRemoteUrl).toBeUndefined();
+      expect(loadRemoteAgentConfig().wsRemoteUrl).toBe(m.wssUrl);
       expect(readTunnelState(59997)).toBeNull();
     });
 
-    it("stopQuickTunnel preserves another tunnel's wsRemoteUrl", async () => {
-      const m = metaFor(59996);
+    it("explicit Muse-owned stop clears only its matching stale remote URL", async () => {
+      const m = { ...metaFor(59996), serviceKind: "muse-websocket" as const };
+      updateRemoteAgentConfig({ wsRemoteUrl: m.wssUrl });
+      saveTunnelState(m);
+      await stopOwnedMuseTunnel(59996);
+      expect(loadRemoteAgentConfig().wsRemoteUrl).toBeUndefined();
+      expect(readTunnelState(59996)).toBeNull();
+    });
+
+    it("generic stop preserves another tunnel's wsRemoteUrl", async () => {
+      const m = metaFor(59994);
       updateRemoteAgentConfig({ wsRemoteUrl: "wss://live-other.trycloudflare.com/muse" });
       saveTunnelState(m);
-      await stopQuickTunnel(59996);
+      await stopQuickTunnel(59994);
       expect(loadRemoteAgentConfig().wsRemoteUrl).toBe("wss://live-other.trycloudflare.com/muse");
     });
 
-    it("stopAll clears wsRemoteUrl unconditionally", async () => {
+    it("generic stopAll does not mutate Muse config implicitly", async () => {
       updateRemoteAgentConfig({ wsRemoteUrl: "wss://whatever.trycloudflare.com/muse" });
       saveTunnelState(metaFor(59995));
       await stopAllQuickTunnels();
-      expect(loadRemoteAgentConfig().wsRemoteUrl).toBeUndefined();
+      expect(loadRemoteAgentConfig().wsRemoteUrl).toBe("wss://whatever.trycloudflare.com/muse");
     });
   });
 });

@@ -17,7 +17,18 @@ import { loadRemoteAgentConfig } from "./config.js";
 export interface TunnelServiceStatus {
   active: boolean;
   count: number;
+  /** Whether a verified Muse WebSocket tunnel process is present. */
+  tunnelProcessActive?: boolean;
+  /** Routine status does not probe the local/public protocol endpoint. */
+  endpointProbe?: "not-probed";
+  /** True only when the Muse transport reports an authenticated live session. */
+  museSessionAuthenticated?: boolean;
+  /** Confirmed Muse WebSocket tunnels only. */
   tunnels: ActiveTunnelInfo[];
+  /** Other known HTTP tunnels are reported here, not presented as Muse WSS. */
+  otherTunnels?: ActiveTunnelInfo[];
+  /** Legacy records without a service kind are surfaced separately, never assumed to be Muse. */
+  unclassifiedTunnels?: ActiveTunnelInfo[];
   watcherActive: boolean;
   watcherTransport?: string;
   watcherDetails?: string;
@@ -83,13 +94,25 @@ export async function getRemoteServiceStatus(
   let tunnelStatus: TunnelServiceStatus = {
     active: false,
     count: 0,
+    tunnelProcessActive: false,
+    endpointProbe: "not-probed",
+    museSessionAuthenticated: false,
     tunnels: [],
     watcherActive: false,
   };
 
   if (checkTunnel) {
     try {
-      const activeTunnels = listActiveTunnels();
+      const allActiveTunnels = listActiveTunnels();
+      const activeMcpPorts = new Set(listActiveMcpServers().map((server) => server.port));
+      const activeTunnels = allActiveTunnels.filter((t) => t.serviceKind === "muse-websocket");
+      const otherTunnels = allActiveTunnels.filter(
+        (t) => t.serviceKind === "superagent-http" ||
+          (t.serviceKind === "mcp-http" && !activeMcpPorts.has(t.port))
+      );
+      const unclassifiedTunnels = allActiveTunnels.filter(
+        (t) => (!t.serviceKind || t.serviceKind === "unknown") && !activeMcpPorts.has(t.port)
+      );
       const watcherActive = isMuseWatcherActive();
       const watcher = getMuseWatcher();
       let watcherTransport: string | undefined;
@@ -123,7 +146,12 @@ export async function getRemoteServiceStatus(
       tunnelStatus = {
         active: isTunnelActive,
         count: activeTunnels.length,
+        tunnelProcessActive: activeTunnels.length > 0,
+        endpointProbe: "not-probed",
+        museSessionAuthenticated: museConnected,
         tunnels: activeTunnels,
+        otherTunnels,
+        unclassifiedTunnels,
         watcherActive,
         watcherTransport,
         watcherDetails,
@@ -263,7 +291,12 @@ export async function getRemoteServiceStatus(
     } catch {}
   }
 
-  const anyActive = tunnelStatus.active || mcpStatus.active || telegramStatus.active;
+  const anyActive =
+    tunnelStatus.active ||
+    Boolean(tunnelStatus.otherTunnels?.length) ||
+    Boolean(tunnelStatus.unclassifiedTunnels?.length) ||
+    mcpStatus.active ||
+    telegramStatus.active;
 
   return {
     timestamp: Date.now(),
@@ -294,6 +327,9 @@ export function formatRemoteServiceStatus(
     lines.push("");
     lines.push("[1] Muse Tunnel (/muse tunnel):");
     lines.push(`- Status: ${status.tunnel.active ? "ACTIVE" : "INACTIVE"}`);
+    lines.push(`- Verified Muse tunnel process: ${status.tunnel.tunnelProcessActive ? "ACTIVE" : "INACTIVE"}`);
+    lines.push("- Endpoint protocol probe: NOT PERFORMED (non-invasive status check)");
+    lines.push(`- Muse authenticated session: ${status.tunnel.museSessionAuthenticated ? "YES" : "NO"}`);
     if (status.tunnel.tunnels.length > 0) {
       lines.push(`- Running Cloudflare tunnels: ${status.tunnel.tunnels.length}`);
       status.tunnel.tunnels.forEach((t, i) => {
@@ -304,7 +340,19 @@ export function formatRemoteServiceStatus(
         if (t.workspace) lines.push(`    Workspace  : ${t.workspace}`);
       });
     } else {
-      lines.push("- Running Cloudflare tunnels: 0");
+      lines.push("- Running Muse WebSocket tunnels: 0");
+    }
+    if (status.tunnel.otherTunnels && status.tunnel.otherTunnels.length > 0) {
+      lines.push(`- Other service tunnels (not Muse WebSocket): ${status.tunnel.otherTunnels.length}`);
+      status.tunnel.otherTunnels.forEach((t) => {
+        lines.push(`  - Port ${t.port} (${t.serviceKind}) : ${t.publicUrl}`);
+      });
+    }
+    if (status.tunnel.unclassifiedTunnels && status.tunnel.unclassifiedTunnels.length > 0) {
+      lines.push(`- Unclassified quick tunnels: ${status.tunnel.unclassifiedTunnels.length} (legacy state; service type not verified)`);
+      status.tunnel.unclassifiedTunnels.forEach((t) => {
+        lines.push(`  - Port ${t.port} (PID: ${t.pid}) : ${t.publicUrl}`);
+      });
     }
     if (status.tunnel.watcherActive) {
       lines.push("- Muse Watcher: ACTIVE");
@@ -326,6 +374,7 @@ export function formatRemoteServiceStatus(
     lines.push(`- Status: ${status.mcp.active ? "ACTIVE" : "INACTIVE"}`);
     lines.push(`- Exposed MCP tunnel servers: ${status.mcp.tunnelServerCount}`);
     if (status.mcp.tunnelServers.length > 0) {
+      lines.push("- Endpoint protocol/auth probe: NOT PERFORMED (state metadata only)");
       status.mcp.tunnelServers.forEach((s, i) => {
         lines.push(`  - Server ${i + 1}: Port ${s.port} (PID: ${s.pid}, Uptime: ${s.uptimeSeconds}s)`);
         lines.push(`    Public URL : ${s.publicUrl}`);
@@ -386,6 +435,12 @@ export function formatDynamicRemoteNotice(status: RemoteServiceStatusResult): st
     lines.push(`- Muse Tunnel: ACTIVE [${tunnelDetails}${musePart}]`);
   } else {
     lines.push("- Muse Tunnel: INACTIVE");
+  }
+  if (status.tunnel.otherTunnels?.length) {
+    lines.push(`- Other service tunnels: ${status.tunnel.otherTunnels.map((t) => `${t.serviceKind} port ${t.port} -> ${t.publicUrl}`).join(", ")}`);
+  }
+  if (status.tunnel.unclassifiedTunnels?.length) {
+    lines.push(`- Unclassified quick tunnels: ${status.tunnel.unclassifiedTunnels.length} (service kind not verified)`);
   }
 
   if (status.mcp.active) {

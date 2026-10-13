@@ -37,10 +37,13 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       const port = cfg.wsPort || 9225;
       const wsPath = cfg.wsPath || "/muse";
       const { getTunnelStatus, listActiveTunnels } = await import("./cloudflareTunnel.js");
-      const activeTunnels = listActiveTunnels();
+      const allActiveTunnels = listActiveTunnels();
+      const activeTunnels = allActiveTunnels.filter((t) => t.serviceKind === "muse-websocket");
       const wsTunnel = getTunnelStatus(port);
-      const firstActive = activeTunnels[0];
-      const tunnel = wsTunnel.isRunning ? wsTunnel : (firstActive ? { isRunning: true, ...firstActive } : wsTunnel);
+      const tunnel = wsTunnel.serviceKind === "muse-websocket"
+        ? wsTunnel
+        : (activeTunnels[0] ? { isRunning: true, ...activeTunnels[0] } : { isRunning: false });
+      const unclassifiedCount = allActiveTunnels.filter((t) => !t.serviceKind || t.serviceKind === "unknown").length;
       console.log(`  WS Mode         : ${(cfg.wsMode || "server").toUpperCase()}`);
       console.log(`  WS Endpoint     : ws://${host}:${port}${wsPath}`);
       if (activeTunnels.length > 1) {
@@ -94,8 +97,11 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     const port = cfg.wsPort || 9225;
     const pathEndpoint = cfg.wsPath || "/muse";
     let token = cfg.wsToken;
+    const mcpOnlyRequested = args.some((a) => a.toLowerCase() === "--mcp");
+    const needsMuseToken = ["start", "quick", "run", "dev", "prompt", "url", "link"].includes(action);
 
-    if (!token && !isHttps) {
+    // MCP-only and informational commands must not change Muse transport/configuration.
+    if (!token && !isHttps && !mcpOnlyRequested && needsMuseToken) {
       token = generateSecureWsToken();
       updateRemoteAgentConfig({ wsToken: token, transport: "websocket" });
       console.log(`[Muse Security] Generated new Bearer token: ${token}\n`);
@@ -252,10 +258,18 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       const effectivePort = portOverride || (isHttps ? 7888 : port);
       let existing = getTunnelStatus(effectivePort);
       if (!existing.isRunning && !portOverride && !isHttps) {
-        const active = listActiveTunnels();
+        const active = listActiveTunnels().filter((t) => t.serviceKind === "muse-websocket");
         if (active.length > 0) {
           existing = { isRunning: true, ...active[0] };
         }
+      }
+      const expectedServiceKind = isHttps ? "superagent-http" : "muse-websocket";
+      if (
+        existing.isRunning && existing.serviceKind &&
+        existing.serviceKind !== "unknown" && existing.serviceKind !== expectedServiceKind
+      ) {
+        console.error(`[Cloudflare Tunnel] Port ${effectivePort} belongs to ${existing.serviceKind}, not ${expectedServiceKind}.`);
+        return;
       }
 
       if (isHttps) {
@@ -292,7 +306,13 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
           port: effectivePort,
           host: "127.0.0.1",
           path: "",
+          serviceKind: "superagent-http",
         });
+        const { claimTunnelServiceKind } = await import("./cloudflareTunnel.js");
+        if (!claimTunnelServiceKind(effectivePort, "superagent-http")) {
+          await stopQuickTunnel(effectivePort, "superagent-http").catch(() => {});
+          throw new Error(`Could not claim tunnel on port ${effectivePort} as superagent-http.`);
+        }
 
         const curlSnippet = `curl -H "Authorization: Bearer ${serverToken}" ${meta.publicUrl}/api/status`;
         await copyTextToClipboard(curlSnippet);
@@ -328,7 +348,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
           if (isExiting) return;
           isExiting = true;
           console.log("\n[Cloudflare HTTPS Tunnel] Stopping tunnel...");
-          await stopQuickTunnel(effectivePort);
+          await stopQuickTunnel(effectivePort, "superagent-http");
           process.exit(0);
         };
 
@@ -443,8 +463,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
           if (isExiting) return;
           isExiting = true;
           console.log("\n[Cloudflare Tunnel] Stopping tunnel and watch daemon...");
-          await watcher.stop();
-          await stopQuickTunnel(effectivePort);
+          await watcher.stop(); // Owns Muse-specific URL cleanup.
           process.exit(0);
         };
 
@@ -469,15 +488,44 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
     if (action === "stop") {
       const { stopMuseWatcher, isMuseWatcherActive, stopAllMuseWatchers } = await import("./museWatcher.js");
-      const { stopQuickTunnel, stopAllQuickTunnels, getTunnelStatus } = await import("./cloudflareTunnel.js");
+      const { stopQuickTunnel, stopAllQuickTunnels, getTunnelStatus, listActiveTunnels, clearWsRemoteUrl } = await import("./cloudflareTunnel.js");
 
       const isAll = args.includes("all") || args.includes("--all") || args.includes("-a");
       if (isAll) {
+        const museTunnelUrls = listActiveTunnels()
+          .filter((t) => t.serviceKind === "muse-websocket" && t.wssUrl)
+          .map((t) => t.wssUrl!);
         const watcherCount = await stopAllMuseWatchers();
         const count = await stopAllQuickTunnels();
+        for (const wssUrl of museTunnelUrls) clearWsRemoteUrl(wssUrl);
         const { stopAllMcpServers } = await import("../mcp/mcpTunnel.js");
         await stopAllMcpServers();
         console.log(`[Cloudflare Tunnel] Stopped ${count} quick tunnel${count === 1 ? "" : "s"} and ${watcherCount} watch daemon${watcherCount === 1 ? "" : "s"} across all workspaces.`);
+        return;
+      }
+
+      const wantMcpStop = args.some((a) => a.toLowerCase() === "--mcp");
+      const mcpPortStopIdx = args.findIndex((a) => a.toLowerCase() === "--mcp-port");
+      if (wantMcpStop || mcpPortStopIdx !== -1) {
+        let mcpPortStop = 9227;
+        if (mcpPortStopIdx !== -1 && args[mcpPortStopIdx + 1]) {
+          const parsed = parseInt(args[mcpPortStopIdx + 1], 10);
+          if (!Number.isInteger(parsed) || parsed <= 0 || parsed >= 65536) {
+            console.error("Invalid --mcp-port value.");
+            return;
+          }
+          mcpPortStop = parsed;
+        }
+        const { stopMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+        const mcpTarget = listActiveMcpServers().find((m) => m.port === mcpPortStop);
+        if (!mcpTarget) {
+          console.log(`[MCP Tunnel] No MCP server is active on port ${mcpPortStop}.`);
+        } else if (mcpTarget.pid !== process.pid) {
+          console.error(`[MCP Tunnel] Server on port ${mcpPortStop} is owned by PID ${mcpTarget.pid}; use its owning instance to stop it.`);
+        } else {
+          await stopMcpTunnel(mcpPortStop);
+          console.log(`[MCP Tunnel] MCP server and its owned tunnel stopped on port ${mcpPortStop}.`);
+        }
         return;
       }
 
@@ -492,11 +540,15 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
       if (isHttps) {
         const existing = getTunnelStatus(effectivePort);
-        if (existing.isRunning) {
-          await stopQuickTunnel(effectivePort);
-          console.log(`[Cloudflare HTTPS Tunnel] Quick tunnel (port ${effectivePort}) stopped successfully.`);
+        if (existing.isRunning && existing.serviceKind === "superagent-http") {
+          const stopped = await stopQuickTunnel(effectivePort, "superagent-http");
+          console.log(stopped
+            ? `[Cloudflare HTTPS Tunnel] Quick tunnel (port ${effectivePort}) stopped successfully.`
+            : `[Cloudflare HTTPS Tunnel] Tunnel on port ${effectivePort} was not stopped; ownership could not be verified.`);
+        } else if (existing.isRunning) {
+          console.error(`[Cloudflare HTTPS Tunnel] Refusing to stop port ${effectivePort}: kind is ${existing.serviceKind || "unknown (legacy state)"}, not superagent-http.`);
         } else {
-          console.log(`[Cloudflare HTTPS Tunnel] No quick tunnel is currently running on port ${effectivePort}.`);
+          console.log(`[Cloudflare HTTPS Tunnel] No owned quick tunnel is currently running on port ${effectivePort}.`);
         }
         return;
       }
@@ -509,29 +561,17 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       let targetPortToStop = effectivePort;
       let existing = getTunnelStatus(effectivePort);
       if (!existing.isRunning && !portOverride) {
-        const active = listActiveTunnels();
+        const active = listActiveTunnels().filter((t) => t.serviceKind === "muse-websocket");
         if (active.length === 1) {
           targetPortToStop = active[0].port;
           existing = getTunnelStatus(targetPortToStop);
         }
       }
-      if (existing.isRunning) {
-        await stopQuickTunnel(targetPortToStop);
-        stoppedAny = true;
-      }
-
-      const wantMcpStop = args.some((a) => a.toLowerCase() === "--mcp");
-      const mcpPortStopIdx = args.findIndex((a) => a.toLowerCase() === "--mcp-port");
-      let mcpPortStop = portOverride || (wantMcpStop ? 9227 : 9227);
-      if (mcpPortStopIdx !== -1 && args[mcpPortStopIdx + 1]) {
-        const parsedMcpPort = parseInt(args[mcpPortStopIdx + 1], 10);
-        if (!isNaN(parsedMcpPort) && parsedMcpPort > 0 && parsedMcpPort < 65536) mcpPortStop = parsedMcpPort;
-      }
-      const { stopMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
-      const mcpTarget = listActiveMcpServers().find((m) => m.port === mcpPortStop);
-      if (mcpTarget && mcpTarget.pid === process.pid) {
-        await stopMcpTunnel(mcpPortStop);
-        stoppedAny = true;
+      if (existing.isRunning && existing.serviceKind === "muse-websocket") {
+        const { stopOwnedMuseTunnel } = await import("./museWatcherTunnel.js");
+        stoppedAny = await stopOwnedMuseTunnel(targetPortToStop);
+      } else if (existing.isRunning) {
+        console.error(`[Cloudflare Tunnel] Refusing to stop port ${targetPortToStop}: kind is ${existing.serviceKind || "unknown (legacy state)"}, not muse-websocket.`);
       }
 
       if (!stoppedAny) {

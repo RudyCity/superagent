@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import os from "os";
 import fs from "fs";
+import { spawn, type ChildProcess } from "child_process";
 import {
   findCloudflaredBinary,
   saveTunnelState,
@@ -14,6 +15,23 @@ import {
 import { handleMuseCliCommand } from "../src/core/remoteAgent/museCli.js";
 import { museCommand } from "../src/core/commands/museCommand.js";
 import { getDashboardSuggestions, getSuggestionDescriptions } from "../src/utils/dashboardSuggestions.js";
+
+const tunnelFixtureChildren: ChildProcess[] = [];
+
+async function spawnTunnelFixture(port: number): Promise<number> {
+  const target = `http://127.0.0.1:${port}`;
+  const child = spawn(process.execPath, [
+    "-e",
+    `const identity = ${JSON.stringify(`cloudflared tunnel --url ${target}`)}; setInterval(() => {}, 1000);`,
+  ], { stdio: "ignore", windowsHide: true });
+  tunnelFixtureChildren.push(child);
+  await new Promise<void>((resolve, reject) => {
+    child.once("spawn", () => setTimeout(resolve, 75));
+    child.once("error", reject);
+  });
+  if (!child.pid) throw new Error(`Failed to start tunnel fixture for port ${port}`);
+  return child.pid;
+}
 
 describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
   let tmpDir: string;
@@ -32,6 +50,9 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
     try {
       homedirSpy?.mockRestore?.();
     } catch {}
+    for (const child of tunnelFixtureChildren.splice(0)) {
+      try { child.kill(); } catch {}
+    }
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch {}
@@ -120,6 +141,72 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
   });
 
   describe("Slash Command: /muse tunnel", () => {
+    it("stopping Muse tunnel does not stop an independent MCP-only server", async () => {
+      const { getMcpStateFile } = await import("../src/core/mcp/mcpTunnel.js");
+      const mcpPort = 9227;
+      const mcpStateFile = getMcpStateFile(mcpPort);
+      fs.writeFileSync(mcpStateFile, JSON.stringify({
+        port: mcpPort,
+        pid: process.pid,
+        publicUrl: "https://mcp-only.trycloudflare.com/mcp",
+        localUrl: `http://127.0.0.1:${mcpPort}/mcp`,
+        toolMode: "safe",
+        startedAt: Date.now(),
+        workspace: process.cwd(),
+        authMode: "oauth",
+      }), "utf-8");
+      saveTunnelState({
+        pid: await spawnTunnelFixture(9225),
+        port: 9225,
+        serviceKind: "muse-websocket",
+        publicUrl: "https://muse-only.trycloudflare.com",
+        wssUrl: "wss://muse-only.trycloudflare.com/muse",
+        localUrl: "http://127.0.0.1:9225",
+        startedAt: Date.now(),
+      }, 9225);
+
+      try {
+        const lines: any[] = [];
+        await museCommand.execute("tunnel stop", {
+          addLine: (line) => lines.push(line),
+          exit: () => {},
+        } as any);
+        expect(fs.existsSync(mcpStateFile), `Command output: ${lines.map((line) => line.content).join(" | ")}; file: ${mcpStateFile}`).toBe(true);
+      } finally {
+        try { fs.unlinkSync(mcpStateFile); } catch {}
+      }
+    });
+    it("MCP-only slash command does not generate a Muse token or change transport", async () => {
+      const { loadRemoteAgentConfig } = await import("../src/core/remoteAgent/config.js");
+      const before = loadRemoteAgentConfig();
+      const lines: any[] = [];
+      await museCommand.execute("tunnel start --mcp --mcp-auth invalid", {
+        addLine: (line) => lines.push(line),
+        exit: () => {},
+      } as any);
+      const after = loadRemoteAgentConfig();
+
+      expect(after.wsToken).toBe(before.wsToken);
+      expect(after.transport).toBe(before.transport);
+      expect(lines.some((line) => String(line.content).includes("Invalid --mcp-auth value"))).toBe(true);
+    });
+
+    it("MCP-only CLI command does not generate a Muse token or change transport", async () => {
+      const { loadRemoteAgentConfig } = await import("../src/core/remoteAgent/config.js");
+      const { handleMuseCliCommand } = await import("../src/core/remoteAgent/museCli.js");
+      const before = loadRemoteAgentConfig();
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        await handleMuseCliCommand(["tunnel", "start", "--mcp", "--mcp-auth", "invalid"]);
+      } finally {
+        errorSpy.mockRestore();
+      }
+      const after = loadRemoteAgentConfig();
+
+      expect(after.wsToken).toBe(before.wsToken);
+      expect(after.transport).toBe(before.transport);
+    });
+
     it("should return tunnel status via /muse tunnel status", async () => {
       const lines: any[] = [];
       await museCommand.execute("tunnel status", {
@@ -139,7 +226,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       } as any);
 
       expect(lines.length).toBeGreaterThan(0);
-      expect(lines[0].content).toContain("No quick tunnel is currently running");
+      expect(lines[0].content).toContain("No owned Muse tunnel is currently running");
     });
 
     it("should display subcommands and guide on /muse tunnel", async () => {
@@ -262,7 +349,8 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
     it("should output ready-to-use prompt when tunnel is already active via /muse tunnel start", async () => {
       const { saveTunnelState, clearTunnelState } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
       saveTunnelState({
-        pid: process.pid,
+        pid: await spawnTunnelFixture(9225),
+        serviceKind: "muse-websocket",
         publicUrl: "https://test.trycloudflare.com",
         wssUrl: "wss://test.trycloudflare.com/muse",
         localUrl: "http://127.0.0.1:9225",
@@ -277,7 +365,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       } as any);
 
       expect(lines.length).toBeGreaterThan(0);
-      const text = lines[0].content;
+      const text = lines.map((line) => String(line.content)).join("\n");
       expect(text).toContain("Prompt for Muse");
       expect(text).toContain("wss://test.trycloudflare.com/muse");
 
@@ -287,7 +375,8 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
     it("should output ready-to-use prompt when tunnel is already active via superagent muse tunnel start", async () => {
       const { saveTunnelState, clearTunnelState } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
       saveTunnelState({
-        pid: process.pid,
+        pid: await spawnTunnelFixture(9225),
+        serviceKind: "muse-websocket",
         publicUrl: "https://test.trycloudflare.com",
         wssUrl: "wss://test.trycloudflare.com/muse",
         localUrl: "http://127.0.0.1:9225",
@@ -317,7 +406,8 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
 
       const tunnelA = {
-        pid: process.pid,
+        pid: await spawnTunnelFixture(9225),
+        serviceKind: "muse-websocket" as const,
         publicUrl: "https://project-a.trycloudflare.com",
         wssUrl: "wss://project-a.trycloudflare.com/muse",
         localUrl: "http://127.0.0.1:9225",
@@ -326,7 +416,8 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       };
 
       const tunnelB = {
-        pid: process.pid,
+        pid: await spawnTunnelFixture(9226),
+        serviceKind: "muse-websocket" as const,
         publicUrl: "https://project-b.trycloudflare.com",
         wssUrl: "wss://project-b.trycloudflare.com/muse",
         localUrl: "http://127.0.0.1:9226",
@@ -370,7 +461,8 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(formatActiveTunnels([])).toContain("NONE ACTIVE");
 
       const tunnel1 = {
-        pid: process.pid,
+        pid: await spawnTunnelFixture(9225),
+        serviceKind: "muse-websocket" as const,
         publicUrl: "https://site-1.trycloudflare.com",
         wssUrl: "wss://site-1.trycloudflare.com/muse",
         localUrl: "http://127.0.0.1:9225",
@@ -379,7 +471,8 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       };
 
       const tunnel2 = {
-        pid: process.pid,
+        pid: await spawnTunnelFixture(9226),
+        serviceKind: "muse-websocket" as const,
         publicUrl: "https://site-2.trycloudflare.com",
         wssUrl: "wss://site-2.trycloudflare.com/muse",
         localUrl: "http://127.0.0.1:9226",
@@ -521,9 +614,9 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
     it("should report HTTPS tunnel status and existing session via /muse tunnel start --https", async () => {
       const { saveTunnelState, clearTunnelState } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
       saveTunnelState({
-        pid: process.pid,
+        pid: await spawnTunnelFixture(7888),
+        serviceKind: "superagent-http",
         publicUrl: "https://my-https-agent.trycloudflare.com",
-        wssUrl: "wss://my-https-agent.trycloudflare.com/muse",
         localUrl: "http://127.0.0.1:7888",
         port: 7888,
         startedAt: Date.now() - 5000,
@@ -549,9 +642,9 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       const { tunnelCommand } = await import("../src/core/commands/museCommand.js");
 
       saveTunnelState({
-        pid: process.pid,
+        pid: await spawnTunnelFixture(7888),
+        serviceKind: "superagent-http",
         publicUrl: "https://my-status-tunnel.trycloudflare.com",
-        wssUrl: "wss://my-status-tunnel.trycloudflare.com/muse",
         localUrl: "http://127.0.0.1:7888",
         port: 7888,
         startedAt: Date.now() - 3000,
@@ -574,7 +667,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
         exit: () => {},
       } as any);
 
-      expect(stopSpy).toHaveBeenCalledWith(7888);
+      expect(stopSpy).toHaveBeenCalledWith(7888, "superagent-http");
       stopSpy.mockRestore();
       clearTunnelState(7888);
     });
@@ -584,9 +677,9 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       const { handleMuseCliCommand } = await import("../src/core/remoteAgent/museCli.js");
 
       saveTunnelState({
-        pid: process.pid,
+        pid: await spawnTunnelFixture(7888),
+        serviceKind: "superagent-http",
         publicUrl: "https://cli-test-https.trycloudflare.com",
-        wssUrl: "wss://cli-test-https.trycloudflare.com/muse",
         localUrl: "http://127.0.0.1:7888",
         port: 7888,
         startedAt: Date.now() - 4000,
@@ -614,9 +707,9 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       const { museCommand } = await import("../src/core/commands/museCommand.js");
 
       saveTunnelState({
-        pid: process.pid,
+        pid: await spawnTunnelFixture(7888),
+        serviceKind: "superagent-http",
         publicUrl: "https://watch-https-test.trycloudflare.com",
-        wssUrl: "wss://watch-https-test.trycloudflare.com/muse",
         localUrl: "http://127.0.0.1:7888",
         port: 7888,
         startedAt: Date.now() - 2000,
@@ -650,9 +743,9 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       const { museCommand } = await import("../src/core/commands/museCommand.js");
 
       saveTunnelState({
-        pid: process.pid,
+        pid: await spawnTunnelFixture(7888),
+        serviceKind: "superagent-http",
         publicUrl: "https://watch-stop-test.trycloudflare.com",
-        wssUrl: "wss://watch-stop-test.trycloudflare.com/muse",
         localUrl: "http://127.0.0.1:7888",
         port: 7888,
         startedAt: Date.now() - 1000,
@@ -665,7 +758,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
         exit: () => {},
       } as any);
 
-      expect(stopSpy).toHaveBeenCalledWith(7888);
+      expect(stopSpy).toHaveBeenCalledWith(7888, "superagent-http");
       expect(lines.some((l) => l.content.includes("stopped successfully"))).toBe(true);
 
       stopSpy.mockRestore();

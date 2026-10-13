@@ -17,6 +17,7 @@ import {
   executeBatch,
 } from "../src/core/remoteAgent/batchExecutor.js";
 import { MuseWatcher } from "../src/core/remoteAgent/museWatcher.js";
+import { MuseWsServerTransport } from "../src/core/remoteAgent/museWsTransport.js";
 
 describe("Muse Multi-Project Watch Mode", () => {
   let tmpConfigDir: string;
@@ -247,6 +248,67 @@ describe("Muse Multi-Project Watch Mode", () => {
       expect(results[0].output).toContain("hello from alpha");
       expect(results[1].ok).toBe(true);
       expect(results[1].output).toContain("hello from beta");
+    });
+  });
+
+  describe("Watcher startup rollback", () => {
+    it("does not create a public tunnel if the local WebSocket transport fails to start", async () => {
+      saveRemoteAgentConfig({
+        transport: "websocket",
+        wsMode: "server",
+        wsHost: "127.0.0.1",
+        wsPort: 19331,
+        wsPath: "/muse",
+        wsToken: "test-token",
+        defaultWorkspace: projectA,
+        workspaces: [projectA, projectB],
+      }, tmpConfigFile);
+
+      const transport = new MuseWsServerTransport({
+        transport: "websocket",
+        wsMode: "server",
+        wsHost: "127.0.0.1",
+        wsPort: 19331,
+        wsPath: "/muse",
+        wsToken: "test-token",
+      }, tmpConfigFile);
+      const transportStart = vi.spyOn(transport, "start").mockRejectedValue(
+        new Error("EADDRINUSE: test WebSocket bind conflict")
+      );
+      const transportStop = vi.spyOn(transport, "stop").mockResolvedValue();
+      const tunnelModule = await import("../src/core/remoteAgent/museWatcherTunnel.js");
+      const startTunnel = vi.spyOn(tunnelModule, "startWatcherTunnel").mockResolvedValue({
+        started: true,
+        metadata: {
+          pid: process.pid,
+          port: 19331,
+          serviceKind: "muse-websocket",
+          publicUrl: "https://must-not-start.trycloudflare.com",
+          wssUrl: "wss://must-not-start.trycloudflare.com/muse",
+          localUrl: "http://127.0.0.1:19331",
+        },
+        owned: true,
+      });
+      const statusChanges: boolean[] = [];
+      const watcher = new MuseWatcher({
+        workspace: projectA,
+        workspaces: [projectA, projectB],
+        customConfigPath: tmpConfigFile,
+        transport,
+        transportType: "websocket",
+        tunnel: true,
+        wsPort: 19331,
+        announce: false,
+        onLine: () => {},
+        onStatusChange: (active) => statusChanges.push(active),
+      });
+
+      await expect(watcher.start()).rejects.toThrow("EADDRINUSE");
+      expect(transportStart).toHaveBeenCalledOnce();
+      expect(startTunnel).not.toHaveBeenCalled();
+      expect(transportStop).toHaveBeenCalled();
+      expect(watcher.isActive()).toBe(false);
+      expect(statusChanges.at(-1)).toBe(false);
     });
   });
 });

@@ -1,3 +1,11 @@
+## [1.13.72] - 2026-10-13
+### Fixed
+- Isolated Muse WebSocket, MCP HTTP, and Superagent HTTP tunnel metadata and stop/restart behavior so MCP-only commands do not mutate Muse token/transport or `wsRemoteUrl`.
+- Started the local Muse transport before publishing a public tunnel endpoint and added ownership-aware rollback for partial Muse/MCP startup failures.
+- Validated tunnel service kind, local target port, and process command line before reuse or targeted stop; preserved owned-but-mis-keyed state for explicit reconciliation.
+- Split remote status by service kind and labelled endpoint/authentication probes that are intentionally not performed.
+- Added regression tests for process identity, MCP startup rollback, service-kind/target collisions, URL cleanup ownership, cross-mode status/command behavior, and shared/foreign MCP tunnel ownership.
+
 ## [1.13.71] - 2026-10-13
 ### Added
 - Added an automatic 5-second countdown timer (`~ Hide in (5s)`) to auto-hide the ACTIVE TASK CHECKLIST once all tasks are completed.

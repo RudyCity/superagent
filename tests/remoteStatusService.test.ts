@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { spawn, type ChildProcess } from "child_process";
 import {
   getRemoteServiceStatus,
   formatRemoteServiceStatus,
@@ -12,6 +13,8 @@ import { getRemoteServiceStatusTool } from "../src/core/tools/remoteServiceTools
 import {
   saveTunnelState,
   clearTunnelState,
+  getTunnelStatus,
+  listActiveTunnels,
   type TunnelMetadata,
 } from "../src/core/remoteAgent/cloudflareTunnel.js";
 import { getMcpStateFile } from "../src/core/mcp/mcpTunnel.js";
@@ -19,28 +22,42 @@ import { gatewayManager } from "../src/core/gateway/gatewayManager.js";
 import { allTools } from "../src/core/tools/index.js";
 import { masterToolset, superagentToolset } from "../src/core/tools/toolsets.js";
 
+const tunnelFixtureChildren: ChildProcess[] = [];
+
+async function spawnTunnelFixture(port: number): Promise<number> {
+  const target = `http://127.0.0.1:${port}`;
+  const child = spawn(process.execPath, [
+    "-e",
+    `const identity = ${JSON.stringify(`cloudflared tunnel --url ${target}`)}; setInterval(() => {}, 1000);`,
+  ], { stdio: "ignore", windowsHide: true });
+  tunnelFixtureChildren.push(child);
+  await new Promise<void>((resolve, reject) => {
+    child.once("spawn", () => setTimeout(resolve, 75));
+    child.once("error", reject);
+  });
+  if (!child.pid) throw new Error(`Failed to start tunnel fixture for port ${port}`);
+  return child.pid;
+}
+
 describe("Remote Status Service (/muse tunnel, MCP, Telegram)", () => {
   const TEST_TUNNEL_PORT = 9981;
   const TEST_MCP_PORT = 9982;
+  let tmpHome: string;
+  let homedirSpy: { mockRestore(): void };
 
   beforeEach(() => {
-    clearTunnelState(TEST_TUNNEL_PORT);
-    const mcpFile = getMcpStateFile(TEST_MCP_PORT);
-    if (fs.existsSync(mcpFile)) {
-      try {
-        fs.unlinkSync(mcpFile);
-      } catch {}
-    }
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "remote-status-test-"));
+    homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(tmpHome);
+    clearTunnelState("all");
   });
 
   afterEach(() => {
-    clearTunnelState(TEST_TUNNEL_PORT);
-    const mcpFile = getMcpStateFile(TEST_MCP_PORT);
-    if (fs.existsSync(mcpFile)) {
-      try {
-        fs.unlinkSync(mcpFile);
-      } catch {}
+    clearTunnelState("all");
+    homedirSpy?.mockRestore();
+    for (const child of tunnelFixtureChildren.splice(0)) {
+      try { child.kill(); } catch {}
     }
+    fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
   it("should return valid inactive structure when no services are running", async () => {
@@ -56,8 +73,9 @@ describe("Remote Status Service (/muse tunnel, MCP, Telegram)", () => {
 
   it("should detect active Cloudflare quick tunnels", async () => {
     const meta: TunnelMetadata = {
-      pid: process.pid,
+      pid: await spawnTunnelFixture(TEST_TUNNEL_PORT),
       port: TEST_TUNNEL_PORT,
+      serviceKind: "muse-websocket",
       publicUrl: "https://test-tunnel-active.trycloudflare.com",
       wssUrl: "wss://test-tunnel-active.trycloudflare.com/muse",
       localUrl: `http://127.0.0.1:${TEST_TUNNEL_PORT}`,
@@ -73,6 +91,38 @@ describe("Remote Status Service (/muse tunnel, MCP, Telegram)", () => {
     expect(found).toBeDefined();
     expect(found?.publicUrl).toBe("https://test-tunnel-active.trycloudflare.com");
     expect(found?.wssUrl).toBe("wss://test-tunnel-active.trycloudflare.com/muse");
+  });
+
+  it("rejects a live but unrelated PID as tunnel process ownership", () => {
+    saveTunnelState({
+      pid: process.pid,
+      port: TEST_TUNNEL_PORT,
+      serviceKind: "muse-websocket",
+      publicUrl: "https://reused-pid.trycloudflare.com",
+      wssUrl: "wss://reused-pid.trycloudflare.com/muse",
+      localUrl: `http://127.0.0.1:${TEST_TUNNEL_PORT}`,
+      startedAt: Date.now(),
+    }, TEST_TUNNEL_PORT);
+
+    expect(getTunnelStatus(TEST_TUNNEL_PORT).isRunning).toBe(false);
+    expect(listActiveTunnels().some((t) => t.port === TEST_TUNNEL_PORT)).toBe(false);
+  });
+
+  it("does not report an MCP-only quick tunnel as a Muse WebSocket tunnel", async () => {
+    const meta = ({
+      pid: await spawnTunnelFixture(TEST_TUNNEL_PORT),
+      port: TEST_TUNNEL_PORT,
+      serviceKind: "mcp-http",
+      publicUrl: "https://mcp-only.trycloudflare.com",
+      localUrl: `http://127.0.0.1:${TEST_TUNNEL_PORT}`,
+      startedAt: Date.now() - 5000,
+      workspace: process.cwd(),
+    } as TunnelMetadata);
+    saveTunnelState(meta, TEST_TUNNEL_PORT);
+
+    const status = await getRemoteServiceStatus("tunnel");
+    expect(status.tunnel.tunnels.some((t) => t.port === TEST_TUNNEL_PORT)).toBe(false);
+    expect(status.tunnel.tunnels.some((t) => t.publicUrl === meta.publicUrl)).toBe(false);
   });
 
   it("should detect active MCP tunnel servers from disk state", async () => {
@@ -99,8 +149,9 @@ describe("Remote Status Service (/muse tunnel, MCP, Telegram)", () => {
 
   it("should format detailed and filtered output correctly", async () => {
     const meta: TunnelMetadata = {
-      pid: process.pid,
+      pid: await spawnTunnelFixture(TEST_TUNNEL_PORT),
       port: TEST_TUNNEL_PORT,
+      serviceKind: "muse-websocket",
       publicUrl: "https://format-test.trycloudflare.com",
       wssUrl: "wss://format-test.trycloudflare.com/muse",
       localUrl: `http://127.0.0.1:${TEST_TUNNEL_PORT}`,

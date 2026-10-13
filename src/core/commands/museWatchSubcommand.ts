@@ -39,9 +39,8 @@ export async function handleMuseWatchSubcommand(
     }
     const { getTunnelStatus, stopQuickTunnel } = await import("../remoteAgent/cloudflareTunnel.js");
     const httpsTunnel = getTunnelStatus(7888);
-    if (httpsTunnel.isRunning) {
-      await stopQuickTunnel(7888);
-      stoppedAny = true;
+    if (httpsTunnel.isRunning && httpsTunnel.serviceKind === "superagent-http") {
+      stoppedAny = await stopQuickTunnel(7888, "superagent-http");
     }
     if (!stoppedAny) {
       ctx.addLine({

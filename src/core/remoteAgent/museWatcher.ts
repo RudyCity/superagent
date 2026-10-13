@@ -255,6 +255,11 @@ export class MuseWatcher {
           "Remote agent (Muse) WebSocket client mode requires wsRemoteUrl. Run '/muse config' to configure."
         );
       }
+      if (this.options.tunnel && !(this.transport instanceof MuseWsServerTransport)) {
+        throw new Error(
+          "Cannot create an inbound Muse tunnel in WebSocket client mode. Use server mode or disable tunnel creation."
+        );
+      }
     }
 
     // Cancel any running single-task runner to ensure token or port is exclusively polled
@@ -286,27 +291,62 @@ export class MuseWatcher {
       `[Muse Watch] Superagent is now controlled by Muse.\n${wsInfoStr}\n- Transport: ${transportInfo.details}\n- Listening for incoming tool batches from Muse...`
     );
 
+    const abortSignal = this.abortController.signal;
+    const transportStart = this.transport.start(async (envelope, meta) => {
+      await this.handleEnvelope(envelope, meta);
+    }, abortSignal);
+
+    // Establish local service readiness before creating a public tunnel to it.
+    if (this.transport.type === "telegram") {
+      transportStart.catch((err: any) => {
+        if (!abortSignal.aborted) {
+          logE2E("REMOTE-AGENT", `MuseWatcher transport error: ${err?.message || err}`);
+          this.emitLine("error", `[Muse Watch] Transport error: ${err?.message || err}`);
+          this.stop().catch(() => {});
+        }
+      });
+    } else {
+      try {
+        await transportStart;
+        if (abortSignal.aborted) {
+          await this.stop();
+          return;
+        }
+      } catch (err: any) {
+        logE2E("REMOTE-AGENT", `MuseWatcher transport startup failed: ${err?.message || err}`);
+        await this.stop();
+        throw err;
+      }
+    }
+
     if (
       this.options.tunnel &&
       (this.transport.type === "websocket" || this.transport.type === "https" || this.options.isHttps)
     ) {
-      const res = await startWatcherTunnel({
-        isHttps: this.transport.type === "https" || Boolean(this.options.isHttps),
-        wsPort: this.options.wsPort,
-        config: this.config,
-        customConfigPath: this.options.customConfigPath,
-        primaryWorkspace: primaryWs,
-        workspaces: this.workspaces,
-        emitLine: (t, c) => this.emitLine(t, c),
-        onLog: (m) => this.options.onLog?.(m),
-      });
-      this.quickTunnelStarted = res.started;
-      this.tunnelMetadata = res.metadata;
+      const isHttpsTunnel = this.transport.type === "https" || Boolean(this.options.isHttps);
+      try {
+        const res = await startWatcherTunnel({
+          isHttps: isHttpsTunnel,
+          wsPort: this.options.wsPort,
+          config: this.config,
+          customConfigPath: this.options.customConfigPath,
+          primaryWorkspace: primaryWs,
+          workspaces: this.workspaces,
+          emitLine: (t, c) => this.emitLine(t, c),
+          onLog: (m) => this.options.onLog?.(m),
+        });
+        if (!res.started || !res.metadata) {
+          throw new Error("Requested Cloudflare tunnel did not start; rolling back Muse Watch mode.");
+        }
+        this.quickTunnelStarted = res.owned;
+        this.tunnelMetadata = res.metadata;
+      } catch (err: any) {
+        await this.stop();
+        throw err;
+      }
     }
 
-    const abortSignal = this.abortController.signal;
-
-    // Optional presence greeting in background
+    // Presence is sent only after transport startup has completed (or the Telegram poller is launched).
     if (this.options.announce !== false) {
       const presenceText = this.workspaces.length > 1
         ? `🟢 Superagent is now active in WATCH mode (controlled by Muse) on ${this.workspaces.length} projects:\n${this.workspaces.map((w, i) => `${i + 1}. ${path.basename(w)} (${w})`).join("\n")}`
@@ -314,24 +354,11 @@ export class MuseWatcher {
 
       this.transport.sendEnvelope({ v: 1, kind: "chat", text: presenceText }).catch(() => {});
     }
-
-    // Start background transport loop
-    this.transport
-      .start(async (envelope, meta) => {
-        await this.handleEnvelope(envelope, meta);
-      }, abortSignal)
-      .catch((err: any) => {
-        if (!abortSignal.aborted) {
-          logE2E("REMOTE-AGENT", `MuseWatcher transport error: ${err?.message || err}`);
-          this.emitLine("error", `[Muse Watch] Transport error: ${err?.message || err}`);
-          this.isRunning = false;
-          this.options.onStatusChange?.(false);
-        }
-      });
   }
 
   public async stop(): Promise<void> {
-    if (!this.isRunning) return;
+    const wasRunning = this.isRunning;
+    if (!wasRunning && !this.abortController && !this.quickTunnelStarted && !this.tunnelMetadata) return;
 
     this.isRunning = false;
     this.batchQueue = [];
@@ -346,9 +373,9 @@ export class MuseWatcher {
       this.abortController = null;
     }
 
-    logE2E("REMOTE-AGENT", "MuseWatcher stopped.");
+    if (wasRunning) logE2E("REMOTE-AGENT", "MuseWatcher stopped.");
 
-    if (this.options.announce !== false && this.transport) {
+    if (wasRunning && this.options.announce !== false && this.transport) {
       this.transport
         .sendEnvelope({ v: 1, kind: "chat", text: "🔴 Superagent WATCH mode stopped." })
         .catch(() => {});
@@ -360,16 +387,19 @@ export class MuseWatcher {
       } catch {}
     }
 
+    // Only stop the Cloudflare process created by this watcher; reused tunnels belong to another owner.
     if (this.quickTunnelStarted) {
-      const isHttps = this.transport?.type === "https" || this.options.isHttps;
-      const port = this.options.wsPort || (isHttps ? 7888 : this.config.wsPort || 9225);
-      await stopWatcherTunnel(port);
-      this.quickTunnelStarted = false;
-      this.tunnelMetadata = null;
+      const isHttps = this.transport?.type === "https" || Boolean(this.options.isHttps);
+      const port = this.tunnelMetadata?.port || this.options.wsPort || (isHttps ? 7888 : this.config.wsPort || 9225);
+      await stopWatcherTunnel(port, isHttps ? "superagent-http" : "muse-websocket", this.options.customConfigPath);
     }
+    this.quickTunnelStarted = false;
+    this.tunnelMetadata = null;
 
     this.options.onStatusChange?.(false);
-    this.emitLine("system", "[Muse Watch] Watch mode stopped. Superagent is back in manual mode.");
+    if (wasRunning) {
+      this.emitLine("system", "[Muse Watch] Watch mode stopped. Superagent is back in manual mode.");
+    }
   }
 
   /**
