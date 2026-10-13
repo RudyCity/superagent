@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { allTools, getToolByName } from "../src/core/tools/index.js";
+import { replaceFileContentTool, multiReplaceFileContentTool } from "../src/core/tools/fileEditTools.js";
 import {
   defaultSubagentToolset,
   masterToolset,
@@ -8,6 +9,13 @@ import {
 } from "../src/core/tools/toolsets.js";
 
 describe("tool registry consistency", () => {
+  it("keeps legacy AllowMultiple accepted by execution but omits duplicate schema aliases", () => {
+    for (const tool of [replaceFileContentTool, multiReplaceFileContentTool]) {
+      const schema = JSON.stringify(tool.parameters);
+      expect(schema).not.toContain("AllowMultiple");
+      expect(tool.execute.toString()).toContain("AllowMultiple");
+    }
+  });
   it("does not expose duplicate names within any tier toolset", () => {
     const tierToolsets: Array<[string, Array<{ name: string }>]> = [
       ["master", masterToolset],

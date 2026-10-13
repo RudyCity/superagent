@@ -127,15 +127,23 @@ A read-only exploratory parse of `~/.superagent-r/superagent-tools.log` found 1,
 - `Agent.getActiveTools()` sources the Master tools from `masterToolset`; runtime tool availability and MCP multi-mode execution also depend on this array. `ORCHESTRATION_TOOL_NAMES` is derived from the same array.
 - Before edits, focused tests passed: 3 files, 18 tests. After edits, the same test group passed: 3 files, 19 tests.
 
-### Changes in this iteration
+### Phase 1 changes
 
 - Corrected the stale comment in `src/core/tools/toolsets.ts` so it accurately describes guarded artifact writes versus prohibited code edits and arbitrary shell execution.
 - Added a registry regression test ensuring each tier toolset has unique tool names.
 - Bumped package version to `1.13.68` and recorded the changes in `CHANGELOG.md`.
 - `bun run build` passed with TypeScript compilation at version `1.13.68`.
 
+### Phase 2 changes — edit-tool schema cleanup
+
+- Removed the redundant `AllowMultiple` alias property from the public schemas for `replace_file_content` and `multi_replace_file_content`, including nested batch schemas. The canonical `allowMultiple` remains documented.
+- Kept runtime compatibility handling for legacy `AllowMultiple` inputs; no execution behavior or tool names changed.
+- Added a regression test confirming the duplicate schema alias is absent while legacy compatibility handling remains present.
+- Focused tests passed: 3 files, 21 tests. Build and diff validation are run before committing this phase.
+- Bumped package version to `1.13.69` and recorded the schema cleanup in `CHANGELOG.md`.
+
 ### Deferred work and risks
 
-- No tool consolidation, alias removal, staged tool discovery, or MCP default-policy change was made. Those changes require action-by-action compatibility tests and usage data first.
-- The token figures are approximate `cl100k_base` estimates for serialized tool definitions, not guaranteed provider token billing or the exact API payload. Keep this baseline for directional comparison only.
-- Next phase: collect invocation/failure frequency, then consolidate one tool family at a time with compatibility tests before changing MCP public behavior.
+- No tool consolidation, alias removal, staged tool discovery, or MCP default-policy change was made. Those changes require action-by-action compatibility tests and reliable usage data first.
+- The token figures are approximate `cl100k_base` estimates for serialized tool definitions, not guaranteed provider-billed tokens or the exact API payload. Keep this baseline for directional comparison only.
+- Next: evaluate overlapping edit tools with representative execution tests before deciding whether their schemas can share a canonical contract.

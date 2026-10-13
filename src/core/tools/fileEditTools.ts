@@ -966,10 +966,7 @@ export const replaceFileContentTool: Tool = {
         type: "boolean",
         description: "If true, allow multiple occurrences of targetContent within the line range to be replaced. Default is false.",
       },
-      AllowMultiple: {
-        type: "boolean",
-        description: "Alias for allowMultiple.",
-      },
+
       edits: {
         type: "array",
         description: "Optional list of replacements to perform across multiple files.",
@@ -1000,10 +997,7 @@ export const replaceFileContentTool: Tool = {
               type: "boolean",
               description: "Allow multiple replacements within range",
             },
-            AllowMultiple: {
-              type: "boolean",
-              description: "Alias for allowMultiple",
-            },
+
           },
           required: ["filePath", "targetContent", "replacementContent", "startLine", "endLine"],
         },
@@ -1387,10 +1381,7 @@ export const multiReplaceFileContentTool: Tool = {
               type: "boolean",
               description: "If true, allow multiple occurrences of targetContent within the line range to be replaced. Default is false.",
             },
-            AllowMultiple: {
-              type: "boolean",
-              description: "Alias for allowMultiple.",
-            },
+
           },
           required: ["targetContent", "replacementContent", "startLine", "endLine"],
         },
@@ -1431,10 +1422,7 @@ export const multiReplaceFileContentTool: Tool = {
                     type: "boolean",
                     description: "If true, allow multiple occurrences of targetContent within the line range to be replaced. Default is false.",
                   },
-                  AllowMultiple: {
-                    type: "boolean",
-                    description: "Alias for allowMultiple.",
-                  },
+
                 },
                 required: ["targetContent", "replacementContent", "startLine", "endLine"],
               },

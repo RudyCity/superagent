@@ -1,3 +1,8 @@
+## [1.13.69] - 2026-10-13
+### Improved
+- Removed redundant `AllowMultiple` aliases from edit-tool schemas while retaining runtime compatibility for older callers that still send the legacy field.
+- Added regression coverage for edit-tool schema aliases and registry consistency.
+
 ## [1.13.68] - 2026-10-13
 ### Improved
 - Corrected the Master toolset documentation to distinguish guarded plan-artifact writes from prohibited direct code edits and arbitrary shell execution.
