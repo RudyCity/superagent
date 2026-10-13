@@ -1,10 +1,16 @@
 import { beforeEach, afterEach, mock, vi } from "vitest";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 
-// Globally mock @huggingface/transformers to prevent ONNX runtime hangs on Windows
+// Keep optional ML/model dependencies deterministic in unit tests. Real model
+// downloads and ONNX initialization belong in explicit integration tests.
 vi.mock("@huggingface/transformers", () => ({
   pipeline: () => Promise.resolve(() => ({})),
+}));
+vi.mock("@xenova/transformers", () => ({
+  env: { allowRemoteModels: false, useBrowserCache: false, backends: { onnx: {} }, logLevel: "error" },
+  pipeline: async () => async (text: string) => [{ translation_text: text }],
 }));
 
 // Globally enable spying on read-only ESM modules
@@ -16,32 +22,33 @@ vi.mock("fast-glob", { spy: true });
 vi.mock("child_process", { spy: true });
 vi.mock("node:child_process", { spy: true });
 
-// Globally mock os.homedir() to return the isolated worker home directory
+// Each test file gets its own home/config directory. Worker IDs are reused
+// across files, so using only VITEST_WORKER_ID lets a later file delete a prior
+// file's directory while unawaited background work is still flushing.
 vi.mock("os", async (importOriginal) => {
   const original = await importOriginal<typeof import("os")>();
   return {
     ...original,
     homedir: () => {
+      const configuredHome = process.env.SUPERAGENT_TEST_HOME_DIR;
+      if (configuredHome) return configuredHome;
       const workerId = process.env.VITEST_WORKER_ID || `bun-${process.pid}`;
-      const path = require("path");
       return path.join(process.cwd(), "tests", `temp-home-worker-${workerId}`);
     }
   };
 });
 
-// Isolate configuration directory per Vitest worker to prevent parallel test lock contention
 const workerId = process.env.VITEST_WORKER_ID || `bun-${process.pid}`;
-const workerHomeDir = path.join(process.cwd(), "tests", `temp-home-worker-${workerId}`);
+const workerHomeDir = path.join(
+  process.cwd(),
+  "tests",
+  `temp-home-worker-${workerId}-${process.pid}-${crypto.randomUUID()}`,
+);
 const workerConfigDir = path.join(workerHomeDir, ".superagent-r");
-
-// Clean up any stale directory from a previous Vitest run for this worker
-if (fs.existsSync(workerHomeDir)) {
-  try {
-    fs.rmSync(workerHomeDir, { recursive: true, force: true });
-  } catch {}
-}
-
+process.env.SUPERAGENT_TEST_HOME_DIR = workerHomeDir;
 process.env.SUPERAGENT_CONFIG_DIR = workerConfigDir;
+
+fs.mkdirSync(workerConfigDir, { recursive: true });
 
 // Protect tests against global environment and command-line argument pollution
 let originalArgv: string[];

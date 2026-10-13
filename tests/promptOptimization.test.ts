@@ -14,8 +14,9 @@ import {
 const superagent = SUPERAGENT_SYSTEM_PROMPT(
   "coder", "feature/prompt-optimization", "D:/worktrees/prompt-optimization",
 );
-// Measurements reflecting current system prompts in v1.13.x
-const baselines = { base: 14000, master: 13800, superagent: 16600, researcher: 7300, coder: 10600 };
+// Current v1.13.x prompt-size ceilings, refreshed after the latest prompt/tool updates.
+// Keep ceilings close to measured output so accidental prompt growth remains visible.
+const baselines = { base: 14250, master: 14400, superagent: 17200, researcher: 6500, coder: 10900 };
 const prompts = {
   base: getSystemPrompt(), master: MASTER_AGENT_SYSTEM_PROMPT,
   superagent, researcher: SUBAGENT_SYSTEM_PROMPTS.researcher,

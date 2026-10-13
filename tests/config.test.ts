@@ -841,7 +841,8 @@ describe("config", () => {
 
       try {
         expect(() => {
-          getModelInstanceForString("openrouter:nex-agi/nex-n2-pro:free");
+          // Use a paid model ID so the free-model key exemption does not apply.
+          getModelInstanceForString("openrouter:nex-agi/nex-n2-pro");
         }).toThrow(/API key is missing or not configured/);
       } finally {
         delete process.env.SUPERAGENT_FORCE_VAL_CHECK;

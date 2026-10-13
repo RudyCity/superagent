@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { controlChromeCdpTool, _cdpTestHooks } from "../src/core/tools/chromeCdpTools.js";
 import { invokeSubagentTool } from "../src/core/tools/subagentTools.js";
 import { checkBinaryAvailability, isBinaryCached, updateSystemCheckCache, clearSystemCheckCache } from "../src/core/config/systemCache.js";

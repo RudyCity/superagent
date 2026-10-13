@@ -257,7 +257,12 @@ export function formatError(err: unknown): string {
       }
 
       if (currentCause) {
-        const causeMsg = currentCause instanceof Error ? currentCause.message : String(currentCause);
+        const causeMsg =
+          currentCause instanceof Error
+            ? currentCause.message
+            : typeof currentCause.message === "string"
+              ? currentCause.message
+              : String(currentCause);
         if (causeMsg && causeMsg !== baseMessage) {
           extra += ` - cause: ${causeMsg}`;
         }

@@ -136,7 +136,7 @@ const BROWSER_AUTOMATION_CORE = `- AUTOMATION_TRACKS:
     * Responsive & Device Testing: CALL emulate_device (presets: mobile, tablet, desktop, android, laptop, reset; orientation: portrait/landscape, screenshot:true).
     * Drag & Drop Interaction: CALL drag_and_drop (source, target, mode: mouse/html5, screenshot:true) for kanban, sliders, and dropzones.
     * Screen Sharing & Media Bypass: CALL mock_display_media to bypass getDisplayMedia picker prompts with synthetic video/audio, or CALL handle_screen_share(action:'accept') / accept_screen_share to auto-confirm native desktop capture modals on Windows.
-  - Track 3 (Extension Bridge): control_browser_tab over port 9223. Active when remote extension is connected (detect_ui, macros, storage).
+  - Track 3 (Remote Extension Bridge): control_browser_tab over port 9223. Active when Remote Chrome Control Extension (chrome-extension-remote/) is connected (detect_ui, macros, storage).
 - DUAL_PERCEPTION_PRINCIPLE: Never rely blindly on CDP DOM trees alone. When encountering dynamic SPAs, canvas, overlays, or unexpected unresponsive clicks, CALL perceive_page to see the actual visual rendered pixels.
 - VISUAL_VERIFICATION: After critical actions (login, submit, checkout), verify visual state with verify_visual_state or observe post-action screenshot to confirm the UI actually transitioned.
 - STEALTH_AND_AUTO_WAIT: control_chrome_cdp click/type auto-wait for elements. Native input/change events dispatched for React/Vue reactivity.
@@ -592,6 +592,7 @@ ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 - VISION_AND_SPATIAL_AWARENESS: Never rely blindly on CDP DOM trees alone. For dynamic web apps, canvas, modal blockers, or visual state checks, CALL control_chrome_vision(command:'perceive_page') to visually see the page with Set-of-Mark [1, 2, 3...] tags. Interact via click_id or type_id. Verify visual response via verify_visual_state.
 - PORT_9222_HANDLING: control_chrome_cdp automatically auto-launches Chrome in an isolated debug profile (~/.superagent-r/chrome-debug-profile) on port 9222 if closed. Or launch via launch_chrome_profile(remoteDebuggingPort: 9222). FORBIDDEN: NEVER attempt to kill the user's running Chrome processes with taskkill or shell commands.
+- EXTENSION_ISOLATION_GUARD: Keep Sidepanel UI (chrome-extension/) direct-client control separate from the Remote Chrome Control Extension (chrome-extension-remote/) bridge on port 9223. Use the bridge only when that remote extension is connected.
 ${BROWSER_AUTOMATION_CORE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 

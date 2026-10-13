@@ -29,9 +29,12 @@ describe("formatError", () => {
     });
     
     const formatted = formatError(err);
-    expect(formatted).toContain("Failed after 3 attempts. Last error: Upstream request failed");
+    // RetryError wrappers are intentionally unwrapped to surface the root cause.
+    expect(formatted).toContain("Upstream request failed");
+    expect(formatted).not.toContain("Failed after 3 attempts");
     expect(formatted).toContain("(status: 502)");
     expect(formatted).toContain("response body snippet: \"<html>Bad Gateway</html>\"");
+    expect(formatted).not.toContain("[object Object]");
   });
 
   it("should format string or other non-object inputs", () => {

@@ -946,8 +946,11 @@ export async function sendToSession(opts: {
     return { code: "STDIN_WRITE_FAILED", error: `Failed to write to session stdin: ${msg}` };
   }
 
-  // Wait for the prompt to "stabilize": output begins, then no new output for `idleMs`.
-  const idleMs = 1500;
+  // Wait for output to settle before returning. A short quiet window keeps
+  // streamed responses intact without adding a 1.5s delay to every message.
+  // Output changes reset this window, so slower chunks are still captured.
+  const idleMs = 300;
+  const pollIntervalMs = 50;
   const deadline = start + timeout;
   let hasReceivedNewOutput = false;
   let lastLen = captureFromBytes;
@@ -1030,7 +1033,7 @@ export async function sendToSession(opts: {
           pendingPrompt: session.pendingPrompt,
         });
       }
-    }, 200);
+    }, pollIntervalMs);
     // Do not keep the event loop alive solely for this timer.
     tick.unref?.();
   });

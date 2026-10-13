@@ -91,6 +91,9 @@ const a = 2;
         return "" as any;
       });
       const spyWrite = vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
+      // Config persistence uses a copy fallback on Windows; keep the filesystem
+      // fully mocked so this test cannot emit ENOENT from its no-op write spy.
+      vi.spyOn(fs, "copyFileSync").mockImplementation(() => {});
 
       const result = await resolveFileConflicts("conflict.js", {} as any);
 

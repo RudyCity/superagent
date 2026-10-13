@@ -330,9 +330,7 @@ describe("cli_bridge session.* actions", () => {
     const m = created.match(/Session created: (clb_[\w]+)/);
     const sessionId = m![1];
 
-    // Give the REPL a moment to print its first prompt.
-    await new Promise((r) => setTimeout(r, 800));
-
+    // session.send waits for fresh output to settle; no fixed startup sleep needed.
     const sent = await cliBridgeTool.execute(
       { action: "session.send", sessionId, message: "hello" },
       process.cwd()
@@ -400,7 +398,6 @@ describe("cli_bridge session.* actions", () => {
       process.cwd()
     );
     const sessionId = created.match(/Session created: (clb_[\w]+)/)![1];
-    await new Promise((r) => setTimeout(r, 800));
     await cliBridgeTool.execute(
       { action: "session.send", sessionId, message: "world" },
       process.cwd()
@@ -790,12 +787,16 @@ describe("cli_bridge v1.5.17 — lifecycle, streaming, auto-send, detach", () =>
     );
     const sessionId = r.match(/Session created: (clb_[\w]+)/)![1];
 
-    // Wait long enough for the ready probe to fire, then verify nothing
-    // has been sent automatically.
-    await new Promise((r) => setTimeout(r, 2_000));
-    const s = getSessionAny(sessionId);
+    // Wait for the mock REPL's initial prompt, not an arbitrary 2-second delay.
+    const readyDeadline = Date.now() + 2_000;
+    let s = getSessionAny(sessionId);
+    while (s && !/repl>/i.test(s.stdoutBuffer) && Date.now() < readyDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      s = getSessionAny(sessionId);
+    }
     expect(s).toBeTruthy();
-    expect(s.stdoutBuffer).not.toMatch(/ECHO:queued-message/i);
+    expect(s?.stdoutBuffer).toMatch(/repl>/i);
+    expect(s?.stdoutBuffer).not.toMatch(/ECHO:queued-message/i);
 
     await cliBridgeTool.execute({ action: "session.kill", sessionId }, process.cwd());
   }, 30_000);
@@ -927,15 +928,14 @@ describe("cli_bridge v1.5.17 — lifecycle, streaming, auto-send, detach", () =>
 
     await sendToSession({ sessionId, message: "stream-test", timeoutMs: 5_000 });
 
-    // Wait briefly for the event to land.
-    await new Promise((r) => setTimeout(r, 200));
+    // sendToSession resolves only after output has settled, so the stdout event
+    // must already have been delivered to the subscriber.
     expect(received.some((l) => /ECHO:stream-test/i.test(l))).toBe(true);
 
     // Unsubscribing stops further events.
     sub!.unsubscribe();
     const beforeCount = received.length;
     await sendToSession({ sessionId, message: "after-unsub", timeoutMs: 5_000 });
-    await new Promise((r) => setTimeout(r, 200));
     expect(received.length).toBe(beforeCount);
 
     await import("../src/core/tools/cliBridgeTool.js").then((m) =>
@@ -963,13 +963,19 @@ describe("cli_bridge v1.5.17 — lifecycle, streaming, auto-send, detach", () =>
     );
     const sessionId = r.match(/Session created: (clb_[\w]+)/)![1];
 
-    // Wait for auto-send to land and produce at least one stdout event.
-    await new Promise((r) => setTimeout(r, 2_000));
+    // Wait for the actual event rather than sleeping for a fixed 2 seconds.
+    const eventDeadline = Date.now() + 2_000;
+    let all = tailEvents(sessionId, 0, 200);
+    while (
+      !all.some((event) => event.type === "stdout" && /ECHO:first-message/i.test(event.data.line ?? "")) &&
+      Date.now() < eventDeadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      all = tailEvents(sessionId, 0, 200);
+    }
 
     const lastSeq = getLastEventSeq(sessionId);
     expect(lastSeq).toBeGreaterThan(0);
-
-    const all = tailEvents(sessionId, 0, 200);
     expect(all.length).toBeGreaterThan(0);
     // Monotonic seq.
     for (let i = 1; i < all.length; i++) {

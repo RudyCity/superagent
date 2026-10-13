@@ -8,29 +8,17 @@ process.env.HOME = tempHome;
 process.env.USERPROFILE = tempHome;
 process.env.SUPERAGENT_CONFIG_DIR = path.join(tempHome, ".superagent-r");
 
-// Mock the ai module for Bun test runner
-if (typeof Bun !== "undefined") {
-  const { mock } = await import("bun:test");
-  mock.module("ai", () => ({
-    streamText: vi.fn(),
-    generateText: vi.fn(),
-    jsonSchema: (s: any) => s,
-  }));
-}
+// Vitest hoists this mock before the dynamic imports below.
+vi.mock("ai", () => ({
+  streamText: vi.fn(),
+  generateText: vi.fn(),
+  jsonSchema: (s: any) => s,
+}));
 
 const { Agent } = await import("../src/core/agent.js");
 const { streamText } = await import("ai");
 const jsonConfigModule = await import("../src/core/config/jsonConfig.js");
 const providersModule = await import("../src/core/config/providers.js");
-
-// Mock the ai module for Vitest runner
-if (typeof Bun === "undefined") {
-  vi.mock("ai", () => ({
-    streamText: vi.fn(),
-    generateText: vi.fn(),
-    jsonSchema: (s: any) => s,
-  }));
-}
 
 
 describe("Agent – Message Queueing", () => {
