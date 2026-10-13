@@ -24,15 +24,17 @@ Membuat Superagent aman dipakai dari MCP untuk beberapa project sekaligus. Ada t
 - Diperbaiki pada putaran ini: `handleSendMessage` meneruskan workspace eksplisit ke server dan menggunakan target sama untuk fallback; bila server menolak target, handler tidak melakukan fallback lokal. Handler Chrome juga menerima `args.workspace` dan tidak menentukan root lewat `process.cwd()` secara langsung.
 - Verifikasi sebelum request-scoped mode: 33 tes pada lima file terarah lulus; hasil terbaru setelah AsyncLocalStorage: 44 tes pada tujuh file lulus, `bun run build` dan `git diff --check` lulus. Suite penuh `bun test` sebelumnya timeout pada batas tool, jadi hasil keseluruhan belum diketahui.
 - Diperbaiki: referensi `fileTools.ts` yang tidak ada pada diagram arsitektur diganti dengan `fileReadTools.ts` dan `fileEditTools.ts`. Aturan `.gitignore` yang diperlukan sudah tercakup oleh `*.log`, `cdp_screenshot_*.png`, dan `tests/temp-home*`; tidak ditambahkan duplikasi.
-- Perbaikan lanjutan: `workspaceMode` kini mendukung AsyncLocalStorage context, dan handler HTTP menjalankan route di dalam konteks local/SSH request-scoped. Tes concurrency membuktikan dua async request tidak saling menimpa mode. Ini melindungi consumer yang membaca `workspaceMode` selama async chain request.
-- Gap yang masih terbuka: `WorkspaceChainManager` tetap menyimpan active chain/node dalam singleton mutable global; aktivasi dua chain bersamaan belum terisolasi. Pending permissions/questions juga belum sepenuhnya session-owned. Jangan menandai multi-project concurrency selesai sampai dua area ini diaudit dan dites.
+- Perbaikan lanjutan: `workspaceMode` dan state active chain/node kini menggunakan AsyncLocalStorage request context di handler HTTP. Koneksi SSH disimpan dengan key gabungan chain ID dan node ID sehingga node ID yang sama pada chain berbeda tidak berbagi koneksi.
+- Perbaikan lanjutan: pemilihan active chain dipersist per workspace melalui `activeWorkspaceChainIds`, dengan fallback kompatibilitas untuk `activeWorkspaceChainId` lama. Target eksplisit `chain:<id>` juga di-resolve sebagai chain ID, bukan diperlakukan sebagai path filesystem.
+- Tes concurrency manager membuktikan active chain/node terisolasi; tes tambahan memverifikasi namespace koneksi dan penyimpanan pilihan chain per workspace. Verifikasi terbaru: 50 tes terarah lulus di enam file, build TypeScript dan `git diff --check` lulus. Suite penuh belum dijalankan setelah perubahan ini.
+- Gap yang masih terbuka: pending permissions/questions belum sepenuhnya session-owned; sebagian consumer non-HTTP masih memakai manager fallback di luar request context; audit lengkap `process.cwd()` pada handler MCP dan suite penuh masih diperlukan.
 
 ### Urutan lanjutan yang aman
 
-1. Audit seluruh consumer `workspaceMode` dan tentukan perubahan API agar mode/config dibawa per request/session.
-2. Tambahkan tes isolasi untuk dua request bersamaan dengan target local dan SSH sebelum mengubah state global.
-3. Audit sisa pemakaian `process.cwd()` pada handler MCP; ubah jalur yang menerima atau dapat menentukan workspace eksplisit.
-4. Jalankan tes terarah dan build; jalankan suite penuh dengan runner/timeout memadai dan catat hasil aktual.
+1. Audit semua consumer manager di luar HTTP untuk memastikan context eksplisit atau perilaku CLI fallback yang disengaja.
+2. Scope pending permissions/questions ke session ID dan tambahkan tes lintas-project.
+3. Audit sisa pemakaian `process.cwd()` pada handler MCP.
+4. Jalankan tes terarah, build, lalu suite penuh dengan runner/timeout memadai dan catat hasil aktual.
 5. Baru setelah isolasi teruji, pertimbangkan inisialisasi workspace otomatis dan perubahan perilaku `switch_workspace`.
 
 ## 3. Temuan

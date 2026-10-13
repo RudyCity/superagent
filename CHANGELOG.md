@@ -1,3 +1,10 @@
+## [1.13.66] - 2026-10-13
+### Fixed
+- Scope active workspace chain and active node state to each HTTP request using AsyncLocalStorage, and namespace SSH connections by chain ID plus node ID.
+- Persist active chain selection per normalized workspace path via `activeWorkspaceChainIds`, while retaining legacy `activeWorkspaceChainId` fallback compatibility.
+- Ensure explicit `chain:<id>` targets resolve the requested chain instead of incorrectly filtering the chain URI as a filesystem path.
+- Add regression tests for concurrent chain contexts, node ID collisions across chains, and per-workspace active-chain persistence.
+
 ## [1.13.65] - 2026-10-13
 ### Fixed
 - Scope SSH/local workspace mode to each HTTP request using AsyncLocalStorage, preventing concurrent local and SSH requests from overwriting each other's mode.

@@ -246,6 +246,27 @@ describe("WorkspaceChainConfig", () => {
     setActiveChainId(null);
   });
 
+  it("stores active chain selection separately for each workspace", () => {
+    const chainA = createWorkspaceChain("Scoped Chain A", "A", [
+      { id: "scoped-a", label: "A", type: "local", role: "main", path: "/workspace-scoped-a" },
+    ], "scoped-a");
+    const chainB = createWorkspaceChain("Scoped Chain B", "B", [
+      { id: "scoped-b", label: "B", type: "local", role: "main", path: "/workspace-scoped-b" },
+    ], "scoped-b");
+
+    setActiveChainId(chainA.id);
+    setActiveChainId(chainA.id, "/workspace-scoped-a");
+    setActiveChainId(chainB.id, "/workspace-scoped-b");
+
+    expect(getActiveChainId("/workspace-scoped-a")).toBe(chainA.id);
+    expect(getActiveChainId("/workspace-scoped-b")).toBe(chainB.id);
+
+    setActiveChainId(null, "/workspace-scoped-a");
+    expect(getActiveChainId("/workspace-scoped-a")).toBeNull();
+    setActiveChainId(null, "/workspace-scoped-b");
+    setActiveChainId(null);
+  });
+
   it("should filter getWorkspaceChains by workspace path and isolate unrelated chains", () => {
     // Create a mock chain for workspace A (local path) and workspace B (local path)
     const nodes: WorkspaceNode[] = [

@@ -2191,13 +2191,11 @@ export async function handleServerRoute(
       const workspace = resolveWorkspacePath(req) || lastActiveWorkspace;
       const bodyStr = await readBody(req);
       const { chainId } = JSON.parse(bodyStr || "{}");
-      const { setActiveChainId } = await import("./core/workspace/WorkspaceChainConfig.js");
       const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
-      setActiveChainId(chainId);
       if (chainId) {
         await workspaceChainManager.activateChain(chainId, workspace);
       } else {
-        await workspaceChainManager.deactivateChain();
+        await workspaceChainManager.deactivateChain(workspace);
       }
       sendJSON(res, 200, { success: true });
     } catch (err: any) {
@@ -2232,10 +2230,11 @@ export async function handleServerRoute(
         sendJSON(res, 400, { success: false, error: "chainId is required" });
         return true;
       }
+      const workspace = resolveWorkspacePath(req) || lastActiveWorkspace;
       const { deleteWorkspaceChain } = await import("./core/workspace/WorkspaceChainConfig.js");
       const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
-      if (workspaceChainManager.getActiveChain()?.id === chainId) {
-        await workspaceChainManager.deactivateChain();
+      if (workspaceChainManager.getActiveChain(workspace)?.id === chainId) {
+        await workspaceChainManager.deactivateChain(workspace);
       }
       deleteWorkspaceChain(chainId);
       sendJSON(res, 200, { success: true });
@@ -2290,9 +2289,10 @@ export async function handleServerRoute(
 
   if (pathname === "/api/workspace/chains/health" && req.method === "GET") {
     try {
+      const workspace = resolveWorkspacePath(req) || lastActiveWorkspace;
       const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
-      if (workspaceChainManager.isChainActive()) {
-        const activeChain = workspaceChainManager.getActiveChain();
+      if (workspaceChainManager.isChainActive(workspace)) {
+        const activeChain = workspaceChainManager.getActiveChain(workspace);
         const promises = activeChain!.nodes.map((node) => {
           const healthPromise = workspaceChainManager.getNodeHealth(node.id);
           const timeoutPromise = new Promise((_, reject) =>
@@ -2326,8 +2326,9 @@ export async function handleServerRoute(
 
   if (pathname === "/api/workspace/chains/status" && req.method === "GET") {
     try {
+      const workspace = resolveWorkspacePath(req) || lastActiveWorkspace;
       const { workspaceChainManager } = await import("./core/workspace/WorkspaceChainManager.js");
-      if (workspaceChainManager.isChainActive()) {
+      if (workspaceChainManager.isChainActive(workspace)) {
         sendJSON(res, 200, {
           success: true,
           status: workspaceChainManager.getConnectionStatus(),

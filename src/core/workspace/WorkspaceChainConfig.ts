@@ -57,26 +57,48 @@ export function getWorkspaceChain(chainId: string, currentWorkspacePath?: string
   return getWorkspaceChains(currentWorkspacePath, filterByWorkspace).find(c => c.id === chainId) || null;
 }
 
-/** Get the active chain ID from config */
-export function getActiveChainId(currentWorkspacePath?: string): string | null {
-  const config = loadModelConfig();
-  const chainId = (config as any).activeWorkspaceChainId || null;
-  if (!chainId) return null;
-
-  // Validate that the active chain belongs to the current workspace
-  const matchingChains = getWorkspaceChains(currentWorkspacePath, true);
-  const chainExists = matchingChains.some(c => c.id === chainId);
-  return chainExists ? chainId : null;
+function normalizeWorkspaceKey(currentWorkspacePath?: string): string {
+  const target = currentWorkspacePath || process.cwd();
+  if (target.startsWith("ssh:") || target.startsWith("chain:")) {
+    return target.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  }
+  return path.resolve(target).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
-/** Set the active chain ID in config */
-export function setActiveChainId(chainId: string | null): void {
+/** Get the active chain ID scoped to the current workspace, with legacy-config fallback. */
+export function getActiveChainId(currentWorkspacePath?: string): string | null {
+  const config = loadModelConfig() as any;
+  const workspaceKey = normalizeWorkspaceKey(currentWorkspacePath);
+  const scopedIds = config.activeWorkspaceChainIds;
+  const hasScopedSelection = scopedIds && typeof scopedIds === "object"
+    && Object.prototype.hasOwnProperty.call(scopedIds, workspaceKey);
+  const chainId = hasScopedSelection
+    ? scopedIds[workspaceKey] || null
+    : config.activeWorkspaceChainId || null;
+  if (!chainId) return null;
+
+  const matchingChains = getWorkspaceChains(currentWorkspacePath, true);
+  return matchingChains.some(c => c.id === chainId) ? chainId : null;
+}
+
+/** Set the active chain ID for one workspace. Omitting the path preserves legacy default behavior. */
+export function setActiveChainId(chainId: string | null, currentWorkspacePath?: string): void {
   mutateModelConfig((config: any) => {
-    if (chainId === null) {
-      delete config.activeWorkspaceChainId;
-    } else {
-      config.activeWorkspaceChainId = chainId;
+    if (!currentWorkspacePath) {
+      if (chainId === null) {
+        delete config.activeWorkspaceChainId;
+      } else {
+        config.activeWorkspaceChainId = chainId;
+      }
+      return;
     }
+
+    if (!config.activeWorkspaceChainIds || typeof config.activeWorkspaceChainIds !== "object") {
+      config.activeWorkspaceChainIds = {};
+    }
+    const key = normalizeWorkspaceKey(currentWorkspacePath);
+    // Store null explicitly so a workspace can override a legacy global selection.
+    config.activeWorkspaceChainIds[key] = chainId;
   });
 }
 

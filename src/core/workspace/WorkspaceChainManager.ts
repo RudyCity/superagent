@@ -5,6 +5,7 @@
  * and provides cross-workspace execution capabilities.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Client } from "ssh2";
 import SFTPClient from "ssh2-sftp-client";
 import fs from "fs";
@@ -34,21 +35,61 @@ interface ChainSshConnection {
   config: WorkspaceNode["sshConfig"];
 }
 
+interface WorkspaceChainRequestContext {
+  activeChain: WorkspaceChain | null;
+  activeNodeId: string | null;
+}
+
 class WorkspaceChainManagerClass {
-  private activeChain: WorkspaceChain | null = null;
-  private activeNodeId: string | null = null;
+  private readonly requestContext = new AsyncLocalStorage<WorkspaceChainRequestContext>();
+  private fallbackContext: WorkspaceChainRequestContext = { activeChain: null, activeNodeId: null };
+  // Connections are shared as resources but namespaced by chain ID to prevent node-ID collisions.
   private sshConnections: Map<string, ChainSshConnection> = new Map();
   private connectingPromises: Map<string, Promise<void>> = new Map();
 
-  /** Load the active chain from config */
+  private get context(): WorkspaceChainRequestContext {
+    return this.requestContext.getStore() ?? this.fallbackContext;
+  }
+
+  private get activeChain(): WorkspaceChain | null {
+    return this.context.activeChain;
+  }
+
+  private set activeChain(chain: WorkspaceChain | null) {
+    this.context.activeChain = chain;
+  }
+
+  private get activeNodeId(): string | null {
+    return this.context.activeNodeId;
+  }
+
+  private set activeNodeId(nodeId: string | null) {
+    this.context.activeNodeId = nodeId;
+  }
+
+  private connectionKey(nodeId: string): string {
+    return `${this.activeChain?.id ?? "__default__"}::${nodeId}`;
+  }
+
+  /** Run an operation with an isolated chain/node selection for this async request. */
+  public runWithRequestContext<T>(callback: () => T): T {
+    return this.requestContext.run({ activeChain: null, activeNodeId: null }, callback);
+  }
+
+  /** Load the active chain from config or an explicit chain: target. */
   public loadActiveChain(currentWorkspacePath?: string): WorkspaceChain | null {
-    const chainId = getActiveChainId(currentWorkspacePath);
+    const explicitChainId = currentWorkspacePath?.startsWith("chain:")
+      ? currentWorkspacePath.slice("chain:".length)
+      : null;
+    const chainId = explicitChainId || getActiveChainId(currentWorkspacePath);
     if (!chainId) {
       this.activeChain = null;
       this.activeNodeId = null;
       return null;
     }
-    const chain = getWorkspaceChain(chainId);
+    const chain = explicitChainId
+      ? getWorkspaceChain(chainId, undefined, false)
+      : getWorkspaceChain(chainId);
     if (!chain) {
       this.activeChain = null;
       this.activeNodeId = null;
@@ -59,8 +100,12 @@ class WorkspaceChainManagerClass {
     return chain;
   }
 
-  /** Get the currently active chain */
+  /** Get the current request's chain, loading persisted state only when no request context exists. */
   public getActiveChain(currentWorkspacePath?: string): WorkspaceChain | null {
+    if (this.requestContext.getStore()) {
+      if (this.activeChain) return this.activeChain;
+      return currentWorkspacePath ? this.loadActiveChain(currentWorkspacePath) : null;
+    }
     return this.loadActiveChain(currentWorkspacePath);
   }
 
@@ -85,14 +130,19 @@ class WorkspaceChainManagerClass {
 
   /** Activate a chain by ID */
   public async activateChain(chainId: string, currentWorkspacePath?: string): Promise<WorkspaceChain> {
-    const chain = getWorkspaceChain(chainId, currentWorkspacePath);
+    const chain = currentWorkspacePath?.startsWith("chain:")
+      ? getWorkspaceChain(chainId, undefined, false)
+      : getWorkspaceChain(chainId, currentWorkspacePath);
     if (!chain) {
       throw new Error(`Workspace chain not found: ${chainId}`);
+    }
+    if (!this.activeChain && currentWorkspacePath) {
+      this.loadActiveChain(currentWorkspacePath);
     }
     await this.disconnectAll();
     this.activeChain = chain;
     this.activeNodeId = chain.primaryNodeId;
-    setActiveChainId(chainId);
+    setActiveChainId(chainId, currentWorkspacePath);
     
     const primaryNode = chain.nodes.find(n => n.id === chain.primaryNodeId);
     if (primaryNode && primaryNode.type === "ssh" && primaryNode.sshConfig) {
@@ -103,12 +153,15 @@ class WorkspaceChainManagerClass {
     return chain;
   }
 
-  /** Deactivate the current chain */
-  public async deactivateChain(): Promise<void> {
+  /** Deactivate the current chain for the given workspace. */
+  public async deactivateChain(currentWorkspacePath?: string): Promise<void> {
+    if (!this.activeChain && currentWorkspacePath) {
+      this.loadActiveChain(currentWorkspacePath);
+    }
     await this.disconnectAll();
     this.activeChain = null;
     this.activeNodeId = null;
-    setActiveChainId(null);
+    setActiveChainId(null, currentWorkspacePath);
     workspaceMode.setLocalMode();
   }
 
@@ -137,9 +190,10 @@ class WorkspaceChainManagerClass {
 
   /** Connect to an SSH node in the chain with exponential backoff retry */
   public async connectSshNode(nodeId: string, maxRetries = 3, initialBackoffMs = 1000): Promise<void> {
-    if (this.sshConnections.has(nodeId)) return;
-    if (this.connectingPromises.has(nodeId)) {
-      return this.connectingPromises.get(nodeId)!;
+    const key = this.connectionKey(nodeId);
+    if (this.sshConnections.has(key)) return;
+    if (this.connectingPromises.has(key)) {
+      return this.connectingPromises.get(key)!;
     }
 
     const node = this.getNode(nodeId);
@@ -151,14 +205,14 @@ class WorkspaceChainManagerClass {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         const promise = this._doConnectSsh(nodeId, node.sshConfig).finally(() => {
-          this.connectingPromises.delete(nodeId);
+          this.connectingPromises.delete(key);
         });
-        this.connectingPromises.set(nodeId, promise);
+        this.connectingPromises.set(key, promise);
         await promise;
         return;
       } catch (err: any) {
         lastErr = err;
-        this.sshConnections.delete(nodeId);
+        this.sshConnections.delete(key);
         if (attempt < maxRetries - 1) {
           const backoff = initialBackoffMs * Math.pow(2, attempt);
           sshLogger.warn("chain.connect", `retrying SSH connection for node ${nodeId} in ${backoff}ms (attempt ${attempt + 1}/${maxRetries}): ${err.message}`);
@@ -262,7 +316,8 @@ class WorkspaceChainManagerClass {
 
     const client = (sftp as any).client as Client;
 
-    this.sshConnections.set(nodeId, {
+    const key = this.connectionKey(nodeId);
+    this.sshConnections.set(key, {
       nodeId,
       client,
       sftp,
@@ -272,9 +327,9 @@ class WorkspaceChainManagerClass {
     sshLogger.info("chain.connect", `SSH node ${nodeId} connected (single TCP session)`, { host: config.host });
   }
 
-  /** Get SSH connection for a node */
+  /** Get SSH connection for a node in the current chain context */
   public getSshConnection(nodeId: string): ChainSshConnection | null {
-    return this.sshConnections.get(nodeId) || null;
+    return this.sshConnections.get(this.connectionKey(nodeId)) || null;
   }
 
   /** Secure path normalization and boundary check */
@@ -555,19 +610,26 @@ class WorkspaceChainManagerClass {
     return results;
   }
 
-  /** Disconnect a specific SSH node */
+  /** Disconnect a specific SSH node in the current chain context */
   public async disconnectNode(nodeId: string): Promise<void> {
-    const conn = this.sshConnections.get(nodeId);
+    const key = this.connectionKey(nodeId);
+    const conn = this.sshConnections.get(key);
     if (!conn) return;
     try { await conn.sftp.end(); } catch {}
     try { conn.client.end(); } catch {}
-    this.sshConnections.delete(nodeId);
+    this.sshConnections.delete(key);
+    this.connectingPromises.delete(key);
     sshLogger.info("chain.disconnect", `SSH node ${nodeId} disconnected`);
   }
 
-  /** Disconnect all SSH connections */
+  /** Disconnect connections belonging to the current chain only. */
   public async disconnectAll(): Promise<void> {
-    const nodeIds = Array.from(this.sshConnections.keys());
+    const chain = this.activeChain;
+    const nodeIds = chain
+      ? chain.nodes.filter(node => node.type === "ssh").map(node => node.id)
+      : Array.from(this.sshConnections.keys())
+          .filter(key => key.startsWith("__default__::"))
+          .map(key => key.slice("__default__::".length));
     for (const nodeId of nodeIds) {
       await this.disconnectNode(nodeId);
     }
@@ -578,7 +640,7 @@ class WorkspaceChainManagerClass {
     if (!this.activeChain) return [];
     return this.activeChain.nodes.map(node => ({
       nodeId: node.id,
-      connected: node.type === "local" ? true : this.sshConnections.has(node.id),
+      connected: node.type === "local" ? true : this.sshConnections.has(this.connectionKey(node.id)),
       type: node.type,
     }));
   }
