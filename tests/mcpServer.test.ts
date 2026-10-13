@@ -17,9 +17,9 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 56;
+const EXPECTED_TOOL_COUNT = 57;
 
-describe("Superagent Complete 3-Pillar MCP Server Suite (56 Tools, Resources, Prompts)", () => {
+describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Prompts)", () => {
   const testDir = path.join(process.cwd(), `.tmp_mcp_test_${Date.now()}`);
 
   beforeEach(() => {
@@ -67,6 +67,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (56 Tools, Resources, Pr
     expect(toolNames).toContain("superagent_muse_tunnel_start");
     expect(toolNames).toContain("superagent_muse_tunnel_restart");
     expect(toolNames).toContain("superagent_telegram_send_to_muse");
+    expect(toolNames).toContain("superagent_muse_chat");
 
     // Workspace & files
     expect(toolNames).toContain("superagent_switch_workspace");
@@ -134,12 +135,13 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (56 Tools, Resources, Pr
     expect(toolNames).toContain("superagent_git_action");
   });
 
-  it("requires dangerous opt-in for Muse tunnel and Telegram send tools", () => {
+  it("requires dangerous opt-in for Muse tunnel and two-way chat tools", () => {
     const safeTools = getDefaultSafeTools();
     const remoteMutationTools = [
       "superagent_muse_tunnel_start",
       "superagent_muse_tunnel_restart",
       "superagent_telegram_send_to_muse",
+      "superagent_muse_chat",
     ];
 
     for (const name of remoteMutationTools) {

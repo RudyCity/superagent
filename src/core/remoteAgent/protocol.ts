@@ -65,6 +65,8 @@ export interface ChatEnvelope {
   v: 1;
   kind: "chat";
   id?: string;
+  /** Correlates a chat reply to the exact request that prompted it. */
+  reply_to?: string;
   text: string;
 }
 
@@ -205,7 +207,10 @@ COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
    When connected over WebSocket, you can refresh your Bearer token at any time by sending:
    {"v": 1, "kind": "token_refresh_request", "id": "req_<uuid>"}
    Superagent will return a fresh Bearer token in a token_refresh_response with a dual-token grace period.
-   Reply with {"v": 1, "kind": "token_ack", "refresh_id": "...", "status": "ok"} to acknowledge.`;
+   Reply with {"v": 1, "kind": "token_ack", "refresh_id": "...", "status": "ok"} to acknowledge.
+9. Correlated two-way chat (including MCP direct chat):
+   When a normal conversation or question arrives as a chat envelope with an id, reply with a chat envelope using a NEW unique id and reply_to set to the exact incoming id. Put the natural-language answer in text. Example: {"v":1,"kind":"chat","id":"chat_<uuid>","reply_to":"<incoming_chat_id>","text":"..."}.
+   Keep reply_to unchanged so Superagent can match the response to the caller. For ordinary discussion, answer as chat instead of starting a task batch. If the message explicitly asks you to inspect, change, or execute project work, use the existing task_batch/task_result/task_done workflow and do not claim the work is complete before results are received.`;
 
 export type RemoteAgentEnvelope =
   | TaskRequestEnvelope
@@ -606,6 +611,12 @@ export function validateEnvelope(
     case "chat": {
       if (typeof envelope.text !== "string") {
         return { valid: false, error: "chat missing valid 'text'" };
+      }
+      if (envelope.id !== undefined && typeof envelope.id !== "string") {
+        return { valid: false, error: "chat invalid 'id': must be a string" };
+      }
+      if (envelope.reply_to !== undefined && typeof envelope.reply_to !== "string") {
+        return { valid: false, error: "chat invalid 'reply_to': must be a string" };
       }
       break;
     }

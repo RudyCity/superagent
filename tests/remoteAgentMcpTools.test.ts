@@ -92,6 +92,7 @@ const {
   handleMuseTunnelStart,
   handleMuseTunnelRestart,
   handleTelegramSendToMuse,
+  handleMuseChat,
   REMOTE_AGENT_MCP_TOOL_CLASSIFICATIONS,
 } = await import("../src/core/mcp/tools/remoteAgentMcpTools.js");
 
@@ -124,6 +125,7 @@ describe("Remote-agent MCP tools", () => {
       superagent_muse_tunnel_start: "dangerous",
       superagent_muse_tunnel_restart: "dangerous",
       superagent_telegram_send_to_muse: "dangerous",
+      superagent_muse_chat: "dangerous",
     });
   });
 
@@ -243,6 +245,38 @@ describe("Remote-agent MCP tools", () => {
     expect(envelope.id).toMatch(/^mcp-chat-/);
     expect(groupId).toBe("-100123456789");
     expect(result.content[0].text).not.toContain("telegram-test-token-not-real");
+  });
+
+  it("waits for a correlated reply through direct MCP-to-Muse WebSocket chat", async () => {
+    const requestChat = vi.fn(async (text: string, timeoutMs: number) => ({
+      requestId: "mcp-muse-chat-request",
+      responseId: "muse-chat-reply",
+      reply: "Halo juga dari Muse.",
+    }));
+    testState.watcherActive = true;
+    testState.watcher = {
+      getTransport: () => ({ type: "websocket", isConnected: () => true }),
+      requestChat,
+    };
+
+    const result = await handleMuseChat({ text: "Halo Muse", timeoutMs: 5000 });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toContain('"state": "reply_received"');
+    expect(result.content[0].text).toContain("Halo juga dari Muse.");
+    expect(requestChat).toHaveBeenCalledWith("Halo Muse", 5000);
+  });
+
+  it("requires a connected Muse WebSocket for direct chat", async () => {
+    testState.watcherActive = true;
+    testState.watcher = {
+      getTransport: () => ({ type: "websocket", isConnected: () => false }),
+    };
+
+    const result = await handleMuseChat({ text: "Halo Muse" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("not connected");
   });
 
   it("does not attempt to send when Muse Telegram is not configured", async () => {

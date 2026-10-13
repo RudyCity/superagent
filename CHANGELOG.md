@@ -1,3 +1,9 @@
+## [1.13.74] - 2026-10-13
+### Added
+- Added `superagent_muse_chat`, an MCP tool for correlated two-way conversation with Muse over the authenticated WebSocket tunnel.
+- Added `reply_to` correlation for chat envelopes, bounded reply timeouts, connection-loss cleanup, and protocol guidance so Muse can answer MCP-initiated conversations.
+- Added regression coverage for reply correlation, timeout/disconnect behavior, and MCP tool exposure.
+
 ## [1.13.73] - 2026-10-13
 ### Added
 - Added `.agents/skills/mcp-agentic-tooling/SKILL.md` skill providing authoritative instructions and system prompts for ChatGPT and Claude when executing via MCP, enforcing strict `TOOL_FIRST` behavior, multi-turn autonomous loops, and resilient error recovery.

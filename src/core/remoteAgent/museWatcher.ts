@@ -1,4 +1,5 @@
 import path from "path";
+import { randomUUID } from "node:crypto";
 import {
   loadRemoteAgentConfig,
   RemoteAgentConfig,
@@ -67,6 +68,11 @@ export class MuseWatcher {
   private transport!: RemoteTransport;
   private quickTunnelStarted = false;
   private tunnelMetadata: WatcherTunnelMetadata | null = null;
+  private pendingChatReplies = new Map<string, {
+    resolve: (reply: ChatEnvelope) => void;
+    reject: (error: Error) => void;
+    timer: NodeJS.Timeout;
+  }>();
 
   constructor(options: MuseWatcherOptions = {}) {
     this.options = options;
@@ -106,6 +112,9 @@ export class MuseWatcher {
               }).`
             : "🟡 [Muse Watch] Muse WebSocket connection closed.";
           this.emitLine("system", msg);
+          if (!connected) {
+            this.rejectPendingChatReplies(new Error("Muse WebSocket disconnected before replying."));
+          }
         };
       }
       this.transport = wsTransport;
@@ -361,6 +370,7 @@ export class MuseWatcher {
     if (!wasRunning && !this.abortController && !this.quickTunnelStarted && !this.tunnelMetadata) return;
 
     this.isRunning = false;
+    this.rejectPendingChatReplies(new Error("Muse watcher stopped before the chat reply arrived."));
     this.batchQueue = [];
     this.activeBatchIds.clear();
     this.pendingReplyMessageIds.clear();
@@ -866,6 +876,74 @@ export class MuseWatcher {
   }
 
   /**
+   * Sends a conversational message to Muse over the active WebSocket and waits
+   * for a correlated chat reply. This is separate from task requests: callers
+   * receive a reply only when Muse sends reply_to matching this request ID.
+   */
+  public async requestChat(
+    text: string,
+    timeoutMs = 30_000
+  ): Promise<{ requestId: string; responseId?: string; reply: string }> {
+    const trimmed = text.trim();
+    if (!trimmed) throw new Error("Message must not be empty.");
+    if (!this.isRunning) throw new Error("Muse watcher is not active. Start the Muse tunnel first.");
+    if (this.transport.type !== "websocket") {
+      throw new Error("Two-way MCP chat requires the Muse WebSocket transport; the active watcher uses another transport.");
+    }
+    if (!this.transport.isConnected()) {
+      throw new Error("Muse WebSocket is not connected. Start the Muse tunnel and connect the Muse client first.");
+    }
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 120_000) {
+      throw new Error("timeoutMs must be an integer between 1000 and 120000.");
+    }
+
+    const requestId = `mcp-muse-chat-${randomUUID()}`;
+    const requestEnvelope: ChatEnvelope = {
+      v: 1,
+      kind: "chat",
+      id: requestId,
+      text: `${trimmed}\n\n[Superagent MCP direct-chat protocol: reply with a chat envelope using a new unique id and reply_to set exactly to "${requestId}". Put your conversational response in text.]`,
+    };
+
+    const replyPromise = new Promise<ChatEnvelope>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const pending = this.pendingChatReplies.get(requestId);
+        if (!pending) return;
+        this.pendingChatReplies.delete(requestId);
+        reject(new Error(`Timed out after ${timeoutMs}ms waiting for Muse to reply to ${requestId}.`));
+      }, timeoutMs);
+      this.pendingChatReplies.set(requestId, { resolve, reject, timer });
+    });
+    // A send failure can happen before this promise is awaited; avoid an unhandled rejection.
+    void replyPromise.catch(() => undefined);
+
+    try {
+      const sent = await this.transport.sendEnvelope(requestEnvelope);
+      if (!sent) throw new Error("No active Muse WebSocket connection; the message was not sent.");
+
+      this.emitLine("user", `[MCP → Muse]: ${trimmed}`);
+      const reply = await replyPromise;
+      return { requestId, responseId: reply.id, reply: reply.text };
+    } catch (error) {
+      const pending = this.pendingChatReplies.get(requestId);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pendingChatReplies.delete(requestId);
+        pending.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+      throw error;
+    }
+  }
+
+  private rejectPendingChatReplies(error: Error): void {
+    for (const [requestId, pending] of this.pendingChatReplies) {
+      clearTimeout(pending.timer);
+      this.pendingChatReplies.delete(requestId);
+      pending.reject(error);
+    }
+  }
+
+  /**
    * Dispatches a formal task_request envelope to Muse with workspace and standard tools.
    */
   public async sendTaskRequest(taskText: string, targetWs?: string): Promise<boolean> {
@@ -989,7 +1067,14 @@ export class MuseWatcher {
     }
 
     logE2E("REMOTE-AGENT", `MuseWatcher received chat note: ${envelope.text}`);
-    if (envelope.text.startsWith("[Telegram Operator")) {
+    const replyTo = typeof envelope.reply_to === "string" ? envelope.reply_to : undefined;
+    const pending = replyTo ? this.pendingChatReplies.get(replyTo) : undefined;
+    if (pending && replyTo) {
+      clearTimeout(pending.timer);
+      this.pendingChatReplies.delete(replyTo);
+      pending.resolve(envelope);
+      this.emitLine("assistant", `[Muse Reply to MCP]: ${envelope.text}`);
+    } else if (envelope.text.startsWith("[Telegram Operator")) {
       this.emitLine("user", envelope.text);
     } else {
       this.emitLine("assistant", `[Muse Note]: ${envelope.text}`);
