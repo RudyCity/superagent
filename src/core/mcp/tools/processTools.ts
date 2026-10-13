@@ -39,6 +39,46 @@ export function getServerInfo(): ServerInfo | null {
   }
 }
 
+/** Extra connectivity visibility for MCP operators. */
+function getConnectivitySummary(): string[] {
+  const lines = ["\nConnectivity Services:"];
+  const serverInfo = getServerInfo();
+  lines.push(serverInfo ? `  MCP Server: ACTIVE | Port: ${serverInfo.port}` : "  MCP Server: unavailable");
+
+  const tunnelCandidates = [
+    path.join(getRootConfigDir(), "tunnel.json"),
+    path.join(getGlobalConfigDir(), "tunnel.json"),
+  ];
+  const tunnelFile = tunnelCandidates.find((f) => fs.existsSync(f));
+  if (tunnelFile) {
+    try {
+      const tunnel = JSON.parse(fs.readFileSync(tunnelFile, "utf8"));
+      lines.push(`  Tunnel: ACTIVE | URL: ${tunnel.url || tunnel.publicUrl || "metadata available"}`);
+    } catch {
+      lines.push("  Tunnel: configured | metadata unavailable");
+    }
+  } else {
+    lines.push("  Tunnel: no active metadata");
+  }
+
+  const configCandidates = [
+    path.join(getRootConfigDir(), "config.json"),
+    path.join(getGlobalConfigDir(), "config.json"),
+  ];
+  const configFile = configCandidates.find((f) => fs.existsSync(f));
+  if (configFile) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(configFile, "utf8"));
+      lines.push(`  Telegram: ${cfg.channels?.telegram?.botToken ? "CONFIGURED" : "NOT CONFIGURED"}`);
+    } catch {
+      lines.push("  Telegram: config unreadable");
+    }
+  } else {
+    lines.push("  Telegram: config unavailable");
+  }
+
+  return lines;
+}
 
 export async function callServerApi(
   apiPath: string,
@@ -122,6 +162,8 @@ export async function callServerApi(
 
 export async function handleListActive(args: any): Promise<McpToolResult> {
   const lines: string[] = ["=== Active Superagent Instances & Processes ==="];
+
+  lines.push(...getConnectivitySummary());
 
   // 1. Check live active processes across machine via process journal
   const processes = loadActiveProcesses();

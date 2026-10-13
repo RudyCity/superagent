@@ -38,7 +38,6 @@ import {
   handleGetLogs,
 } from "./tools/processTools.js";
 import {
-  handleRunTask,
   handleSendMessage,
   handleInvoke,
   handleAwait,
@@ -97,6 +96,11 @@ import {
   NETWORK_CONTENT_MCP_TOOL_CLASSIFICATIONS,
   dispatchNetworkContentMcpTool,
 } from "./tools/networkContentMcpTools.js";
+import {
+  REMOTE_AGENT_MCP_TOOL_DEFS,
+  REMOTE_AGENT_MCP_TOOL_CLASSIFICATIONS,
+  dispatchRemoteAgentMcpTool,
+} from "./tools/remoteAgentMcpTools.js";
 
 const MCP_LOG_FILE = path.join(os.homedir(), ".superagent-r", "superagent-mcp.log");
 
@@ -162,7 +166,24 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   ...DIAGNOSTICS_MCP_TOOL_CLASSIFICATIONS,
   ...PLAN_SKILLS_MCP_TOOL_CLASSIFICATIONS,
   ...NETWORK_CONTENT_MCP_TOOL_CLASSIFICATIONS,
+  ...REMOTE_AGENT_MCP_TOOL_CLASSIFICATIONS,
 };
+
+/** Tools that must never be discoverable or callable over the MCP interface. */
+export const DISABLED_MCP_TOOLS: ReadonlySet<string> = new Set([
+  // Agent execution/control is disabled from MCP exposure.
+  // These actions must only be performed through local SuperAgent runtime.
+  "superagent_run_task",
+  "superagent_send_message",
+  "superagent_interrupt",
+  "superagent_pause",
+  "superagent_resume",
+  "superagent_cli_bridge",
+  "superagent_invoke",
+  "superagent_await",
+  "superagent_merge",
+  "superagent_manage",
+]);
 
 export interface McpToolAnnotations {
   readOnlyHint?: boolean;
@@ -518,6 +539,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         ...DIAGNOSTICS_MCP_TOOL_DEFS,
         ...PLAN_SKILLS_MCP_TOOL_DEFS,
         ...NETWORK_CONTENT_MCP_TOOL_DEFS,
+        ...REMOTE_AGENT_MCP_TOOL_DEFS,
     ];
     // Allowlist: hide non-allowed tools from MCP clients.
     // If allowDangerous is true OR CLI YOLO mode is active ("scoped" | "full"),
@@ -525,7 +547,10 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     const yoloState = getYoloModeState();
     const isDangerousUnlocked = Boolean(allowDangerous || yoloState !== "off");
     const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
-    const tools = effectiveAllowedTools ? allTools.filter((t) => effectiveAllowedTools.includes(t.name)) : allTools;
+    // Disabled tools stay hidden regardless of dangerous/YOLO mode or allowlists.
+    const tools = allTools.filter(
+      (t) => !DISABLED_MCP_TOOLS.has(t.name) && (!effectiveAllowedTools || effectiveAllowedTools.includes(t.name))
+    );
     const annotated = tools.map((t) => ({
       ...t,
       annotations: getToolAnnotations(t.name),
@@ -562,7 +587,10 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         case "superagent_resume":
           return await handleResume(args);
         case "superagent_run_task":
-          return await handleRunTask(args);
+          return {
+            content: [{ type: "text", text: "Tool 'superagent_run_task' is disabled and not exposed by this MCP server." }],
+            isError: true,
+          };
         case "superagent_spawn_subagent":
           return {
             content: [{ type: "text", text: "Tool 'superagent_spawn_subagent' is disabled on this MCP server." }],
@@ -630,6 +658,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         case "superagent_get_remote_status":
           return await handleGetRemoteStatus(args);
         default: {
+          const remoteAgentRes = await dispatchRemoteAgentMcpTool(name, args);
+          if (remoteAgentRes) return remoteAgentRes;
           const chromeRes = await dispatchChromeMcpTool(name, args);
           if (chromeRes) return chromeRes;
           const diagRes = await dispatchDiagnosticsMcpTool(name, args);
@@ -676,6 +706,22 @@ function extractMcpResultText(result: unknown): string {
     const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
     const level = MCP_TOOL_CLASSIFICATION[toolName];
     const isDangerous = level === "dangerous";
+
+    // Block direct calls too, including clients that cached an old tools/list response.
+    if (DISABLED_MCP_TOOLS.has(toolName)) {
+      const errReason = "disabled and hidden from MCP tool discovery";
+      onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: errReason });
+      emitMcpActivity({
+        type: "tool_call",
+        tool: toolName,
+        args: rawArgs,
+        ok: false,
+        error: "Tool is disabled and hidden from MCP tool discovery",
+        durationMs: 0,
+        timestamp: Date.now(),
+      });
+      throw new McpError(ErrorCode.MethodNotFound, `Tool '${toolName}' is disabled and not exposed by this MCP server.`);
+    }
 
     if (effectiveAllowedTools && !effectiveAllowedTools.includes(toolName)) {
       const errReason = "blocked by MCP tool allowlist";

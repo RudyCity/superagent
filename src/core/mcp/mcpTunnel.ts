@@ -35,7 +35,8 @@ import type { McpAuthMode } from "./mcpAuth.js";
 import { getYoloModeState } from "../permissions.js";
 
 export const DEFAULT_MCP_PORT = 9227;
-export const MCP_TUNNEL_TOOL_COUNT = 63;
+// Full exposed tool count after permanently disabled MCP agent-control tools are filtered.
+export const MCP_TUNNEL_TOOL_COUNT = 56;
 
 interface ActiveMcp {
   handle: McpHttpServerHandle;

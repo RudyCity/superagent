@@ -64,6 +64,12 @@ export function registerResourcesAndPrompts(server: Server): void {
           description: "List of pinned facts, architectural decisions, and knowledge snippets.",
           mimeType: "application/json",
         },
+        {
+          uri: "superagent://instructions/agentic-mcp",
+          name: "Superagent Agentic MCP Instructions",
+          description: "Authoritative instructions and system prompt for ChatGPT, Claude, and external LLMs to enforce tool-first agentic execution over MCP.",
+          mimeType: "text/markdown",
+        },
       ],
     };
   });
@@ -205,6 +211,31 @@ export function registerResourcesAndPrompts(server: Server): void {
         };
       }
 
+      case "superagent://instructions/agentic-mcp": {
+        const instructions = [
+          `# SUPERAGENT MCP AGENTIC INSTRUCTION PROTOCOL`,
+          ``,
+          `You are an autonomous senior software engineering agent connected to a real codebase via Superagent MCP tools.`,
+          ``,
+          `## CRITICAL DIRECTIVES:`,
+          `1. TOOL_FIRST: Always invoke MCP tools ('superagent_*') on turn 1. Never guess file contents or speculate.`,
+          `2. ACTION OVER ADVICE: Never ask the user to run commands or make edits manually. Use 'superagent_exec_command', 'superagent_read_file', and 'superagent_replace_file_content'.`,
+          `3. AUTONOMOUS LOOP: Complete the entire task end-to-end (Inspect -> Plan -> Act -> Verify -> Report) without unnecessary intermediate pauses.`,
+          `4. RIGOROUS VERIFICATION: Always run test suites and build scripts before declaring a task complete.`,
+          `5. ERROR RECOVERY: If a tool fails, diagnose the error, fix the root cause, and retry.`,
+        ].join("\n");
+
+        return {
+          contents: [
+            {
+              uri,
+              mimeType: "text/markdown",
+              text: instructions,
+            },
+          ],
+        };
+      }
+
       default:
         throw new Error(`Resource not found: ${uri}`);
     }
@@ -253,6 +284,27 @@ export function registerResourcesAndPrompts(server: Server): void {
             {
               name: "targetBranch",
               description: "The feature branch to review",
+              required: false,
+            },
+          ],
+        },
+        {
+          name: "superagent_agentic_mcp",
+          description: "Enforces strict agentic execution, TOOL_FIRST discipline, and autonomous loop for ChatGPT, Claude, and external MCP clients.",
+          arguments: [
+            {
+              name: "task",
+              description: "The task or objective to execute autonomously via MCP tools",
+              required: true,
+            },
+            {
+              name: "targetWorkspace",
+              description: "Target workspace or project directory path (optional)",
+              required: false,
+            },
+            {
+              name: "constraints",
+              description: "Optional execution constraints, rules, or testing commands",
               required: false,
             },
           ],
@@ -332,6 +384,37 @@ export function registerResourcesAndPrompts(server: Server): void {
 
         return {
           description: `Code Review: ${targetBranch}`,
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: promptText,
+              },
+            },
+          ],
+        };
+      }
+
+      case "superagent_agentic_mcp": {
+        const task = String(args.task || "");
+        const targetWorkspace = args.targetWorkspace ? String(args.targetWorkspace) : "";
+        const constraints = args.constraints ? String(args.constraints) : "";
+        const promptText = [
+          `# AUTONOMOUS MCP AGENTIC EXECUTION MANDATE`,
+          `Task Objective: ${task}`,
+          targetWorkspace ? `Target Workspace: ${targetWorkspace}` : "",
+          constraints ? `Specific Constraints:\n${constraints}` : "",
+          `\n## EXECUTION PROTOCOL (TOOL_FIRST):`,
+          `1. ZERO CONVERSATIONAL FILLER: Never start with conversational greetings, speculation, or hypothetical advice. Invoke MCP tools on your very first turn.`,
+          `2. NEVER DELEGATE TO USER: Never tell the user to run commands, edit files, or test changes manually. Execute commands yourself with 'superagent_exec_command' and read/write files with 'superagent_read_file' / 'superagent_replace_file_content'.`,
+          `3. AUTONOMOUS CONTINUOUS LOOP: Progress through Inspect -> Plan -> Act -> Verify -> Conclude without pausing for permission between steps.`,
+          `4. RIGOROUS VERIFICATION: Run project tests and build scripts via 'superagent_exec_command' to verify all changes before finishing.`,
+          `5. RESILIENT RECOVERY: If a tool fails, analyze the error output, adapt your parameters, and retry. Never output raw error dumps or surrender.`,
+        ].filter(Boolean).join("\n");
+
+        return {
+          description: `Agentic MCP: ${task.slice(0, 60)}...`,
           messages: [
             {
               role: "user",

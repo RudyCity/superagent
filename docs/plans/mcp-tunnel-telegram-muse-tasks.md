@@ -1,0 +1,9 @@
+- [x] Read project guidance and inspect all pre-existing Git changes.
+- [x] Trace MCP registration/dispatch/classification, tunnel lifecycle, Muse watcher lifecycle, and Telegram envelope semantics.
+- [x] Reuse the existing read-only remote status tool for Muse/tunnel status.
+- [x] Implement MCP tools to start/restart the Muse tunnel using existing lifecycle APIs, with safe ownership checks and sanitized structured results.
+- [x] Implement a single-purpose MCP tool to send a text/chat envelope to Muse via the existing configured Telegram transport.
+- [x] Add focused Vitest coverage for tool registration/classification, tunnel state cases, and mocked Telegram success/failure/config errors.
+- [x] Run focused Vitest tests and TypeScript build. Full repository test run was attempted; unrelated/pre-existing failures are documented in the task report.
+- [x] Review changes, preserve unrelated changes, update CHANGELOG/package version. Do not commit because the working tree contains unrelated staged and unstaged changes.
+- [x] Report final outcomes, changed files, remaining runtime setup, and whether live behavior was verified. Build and focused regression suites pass; full `verify:all` invocation timed out, so full repository verification is not claimed.

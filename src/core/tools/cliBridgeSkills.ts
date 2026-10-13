@@ -49,6 +49,8 @@ export const SKILL_REGISTRY_FILE_NAME = "cli-bridge/skills.json";
 export const AUTO_DETECT_FILES = [
   "AGENTS.md",
   "AGENTS.local.md",
+  path.join(".agents", "AGENTS.md"),
+  path.join(".agents", "agents.md"),
   "CLAUDE.md",
   "AGY.md",
   "CODEX.md",

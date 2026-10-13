@@ -65,10 +65,12 @@ export class GuidelineLoader {
       path.join(workspaceDir, ".agents", "AGENTS.md"),
       path.join(workspaceDir, ".agents", "agents.md"),
     ];
+    let loadedScopedPath: string | null = null;
     for (const p of scopedRulePaths) {
       if (fs.existsSync(p)) {
         try {
           sections.push(`PROJECT-SCOPED RULES (.agents/AGENTS.md):\n${fs.readFileSync(p, "utf-8").trim()}`);
+          loadedScopedPath = p;
         } catch {}
         break;
       }
@@ -89,9 +91,11 @@ export class GuidelineLoader {
     const agentsPaths = [
       path.join(workspaceDir, "agents.md"),
       path.join(workspaceDir, "AGENTS.md"),
+      path.join(workspaceDir, ".agents", "agents.md"),
+      path.join(workspaceDir, ".agents", "AGENTS.md"),
     ];
     for (const p of agentsPaths) {
-      if (fs.existsSync(p)) {
+      if (p !== loadedScopedPath && fs.existsSync(p)) {
         try {
           const lines = fs.readFileSync(p, "utf-8").split("\n").slice(0, 60).join("\n").trim();
           if (lines) {
@@ -124,10 +128,12 @@ export class GuidelineLoader {
       path.join(process.cwd(), ".agents", "AGENTS.md"),
       path.join(process.cwd(), ".agents", "agents.md"),
     ];
+    let loadedScopedRulePath: string | null = null;
     for (const p of scopedRulePaths) {
       if (fs.existsSync(p)) {
         try {
           text += `\n\nPROJECT-SCOPED RULES (.agents/AGENTS.md):\n${fs.readFileSync(p, "utf-8")}\n`;
+          loadedScopedRulePath = p;
         } catch {}
         break;
       }
@@ -139,8 +145,12 @@ export class GuidelineLoader {
     const searchPaths = [
       path.join(baseDir, "agents.md"),
       path.join(baseDir, "AGENTS.md"),
+      path.join(baseDir, ".agents", "agents.md"),
+      path.join(baseDir, ".agents", "AGENTS.md"),
       path.join(process.cwd(), "agents.md"),
       path.join(process.cwd(), "AGENTS.md"),
+      path.join(process.cwd(), ".agents", "agents.md"),
+      path.join(process.cwd(), ".agents", "AGENTS.md"),
     ];
     if (!opts.workspaceCacheAgentsMd) {
       const pkgPaths = [
@@ -160,7 +170,7 @@ export class GuidelineLoader {
       }
 
       for (const p of searchPaths) {
-        if (fs.existsSync(p)) {
+        if (p !== loadedScopedRulePath && fs.existsSync(p)) {
           text += `\n\nPROJECT GUIDELINES (agents.md):\n${fs.readFileSync(p, "utf-8")}\n`;
           break;
         }

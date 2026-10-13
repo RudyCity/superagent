@@ -21,6 +21,7 @@ export interface MuseWatcherStats {
   tunnel?: boolean;
   tunnelUrl?: string;
   tunnelPort?: number;
+  museConnected?: boolean;
 }
 
 export interface MuseWatcherOptions {

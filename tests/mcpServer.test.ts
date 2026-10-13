@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
+import { createSuperagentMcpServer, MCP_TOOL_CLASSIFICATION } from "../src/core/mcp/superagentMcpServer.js";
+import { getDefaultSafeTools } from "../src/core/mcp/mcpHttpTransport.js";
 import {
   superagentInstances,
   subagentInstances,
@@ -16,9 +17,9 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 63;
+const EXPECTED_TOOL_COUNT = 56;
 
-describe("Superagent Complete 3-Pillar MCP Server Suite (63 Tools, Resources, Prompts)", () => {
+describe("Superagent Complete 3-Pillar MCP Server Suite (56 Tools, Resources, Prompts)", () => {
   const testDir = path.join(process.cwd(), `.tmp_mcp_test_${Date.now()}`);
 
   beforeEach(() => {
@@ -47,20 +48,25 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (63 Tools, Resources, Pr
     expect(toolNames).toContain("superagent_get_status");
     expect(toolNames).toContain("superagent_get_logs");
 
-    // Execution control
-    expect(toolNames).toContain("superagent_interrupt");
-    expect(toolNames).toContain("superagent_pause");
-    expect(toolNames).toContain("superagent_resume");
-    expect(toolNames).toContain("superagent_send_message");
+    // Local agent execution/control tools are intentionally not exposed over MCP.
+    expect(toolNames).not.toContain("superagent_interrupt");
+    expect(toolNames).not.toContain("superagent_pause");
+    expect(toolNames).not.toContain("superagent_resume");
+    expect(toolNames).not.toContain("superagent_send_message");
 
     // Subagent & multi-agent
-    expect(toolNames).toContain("superagent_run_task");
+    expect(toolNames).not.toContain("superagent_run_task");
     expect(toolNames).not.toContain("superagent_spawn_subagent");
-    expect(toolNames).toContain("superagent_cli_bridge");
-    expect(toolNames).toContain("superagent_invoke");
-    expect(toolNames).toContain("superagent_await");
-    expect(toolNames).toContain("superagent_merge");
-    expect(toolNames).toContain("superagent_manage");
+    expect(toolNames).not.toContain("superagent_cli_bridge");
+    expect(toolNames).not.toContain("superagent_invoke");
+    expect(toolNames).not.toContain("superagent_await");
+    expect(toolNames).not.toContain("superagent_merge");
+    expect(toolNames).not.toContain("superagent_manage");
+
+    // Explicit remote operations are separately permission-gated tools.
+    expect(toolNames).toContain("superagent_muse_tunnel_start");
+    expect(toolNames).toContain("superagent_muse_tunnel_restart");
+    expect(toolNames).toContain("superagent_telegram_send_to_muse");
 
     // Workspace & files
     expect(toolNames).toContain("superagent_switch_workspace");
@@ -128,6 +134,20 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (63 Tools, Resources, Pr
     expect(toolNames).toContain("superagent_git_action");
   });
 
+  it("requires dangerous opt-in for Muse tunnel and Telegram send tools", () => {
+    const safeTools = getDefaultSafeTools();
+    const remoteMutationTools = [
+      "superagent_muse_tunnel_start",
+      "superagent_muse_tunnel_restart",
+      "superagent_telegram_send_to_muse",
+    ];
+
+    for (const name of remoteMutationTools) {
+      expect(MCP_TOOL_CLASSIFICATION[name]).toBe("dangerous");
+      expect(safeTools).not.toContain(name);
+    }
+  });
+
   it("lists and reads all 5 MCP Resources", async () => {
     const server = createSuperagentMcpServer();
     const listHandler = (server as any)._requestHandlers.get(ListResourcesRequestSchema.shape.method.value);
@@ -142,6 +162,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (63 Tools, Resources, Pr
     expect(uris).toContain("superagent://workspace/info");
     expect(uris).toContain("superagent://history/sessions");
     expect(uris).toContain("superagent://memory/pinned");
+    expect(uris).toContain("superagent://instructions/agentic-mcp");
 
     // Read live status
     const statusRead = await readHandler({
@@ -160,19 +181,28 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (63 Tools, Resources, Pr
     });
     const config = JSON.parse(configRead.contents[0].text);
     expect(config).toHaveProperty("settings");
+
+    // Read agentic MCP instructions resource
+    const instructionsRead = await readHandler({
+      method: "resources/read",
+      params: { uri: "superagent://instructions/agentic-mcp" },
+    });
+    expect(instructionsRead.contents[0].text).toContain("SUPERAGENT MCP AGENTIC INSTRUCTION PROTOCOL");
+    expect(instructionsRead.contents[0].text).toContain("TOOL_FIRST");
   });
 
-  it("lists and renders all 3 MCP Prompts", async () => {
+  it("lists and renders all 4 MCP Prompts", async () => {
     const server = createSuperagentMcpServer();
     const listHandler = (server as any)._requestHandlers.get(ListPromptsRequestSchema.shape.method.value);
     const getHandler = (server as any)._requestHandlers.get(GetPromptRequestSchema.shape.method.value);
 
     const listRes = await listHandler({ method: "prompts/list", params: {} });
-    expect(listRes.prompts.length).toBe(3);
+    expect(listRes.prompts.length).toBe(4);
     const names = listRes.prompts.map((p: any) => p.name);
     expect(names).toContain("superagent_orchestrate");
     expect(names).toContain("superagent_debug");
     expect(names).toContain("superagent_review");
+    expect(names).toContain("superagent_agentic_mcp");
 
     // Render orchestrate prompt
     const orchestrate = await getHandler({
@@ -194,6 +224,15 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (63 Tools, Resources, Pr
       params: { name: "superagent_review", arguments: { targetBranch: "feat/websocket-streaming" } },
     });
     expect(review.messages[0].content.text).toContain("feat/websocket-streaming");
+
+    // Render agentic MCP prompt
+    const agentic = await getHandler({
+      method: "prompts/get",
+      params: { name: "superagent_agentic_mcp", arguments: { task: "Fix authentication race condition" } },
+    });
+    expect(agentic.messages[0].content.text).toContain("AUTONOMOUS MCP AGENTIC EXECUTION MANDATE");
+    expect(agentic.messages[0].content.text).toContain("Fix authentication race condition");
+    expect(agentic.messages[0].content.text).toContain("TOOL_FIRST");
   });
 
   it("executes file, search, workspace, config, and health tools", async () => {
@@ -359,6 +398,20 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (63 Tools, Resources, Pr
     });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain("disabled");
+  });
+
+  it("superagent_run_task is hidden and rejected even when dangerous tools are enabled", async () => {
+    const server = createSuperagentMcpServer({ workspace: testDir, allowDangerous: true });
+    const listHandler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+
+    const listResult = await listHandler({ method: "tools/list", params: {} });
+    expect(listResult.tools.map((tool: any) => tool.name)).not.toContain("superagent_run_task");
+
+    await expect(callHandler({
+      method: "tools/call",
+      params: { name: "superagent_run_task", arguments: { task: "should not execute" } },
+    })).rejects.toThrow("disabled and not exposed by this MCP server");
   });
 
   it("superagent_unlock_file inspects status, unlocks, and force-unlocks file locks", async () => {

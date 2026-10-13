@@ -1,3 +1,14 @@
+## [1.13.73] - 2026-10-13
+### Added
+- Added `.agents/skills/mcp-agentic-tooling/SKILL.md` skill providing authoritative instructions and system prompts for ChatGPT and Claude when executing via MCP, enforcing strict `TOOL_FIRST` behavior, multi-turn autonomous loops, and resilient error recovery.
+- Added `superagent_agentic_mcp` MCP Prompt template and `superagent://instructions/agentic-mcp` MCP Resource for automated agentic execution instructions across MCP clients.
+- Added dangerous, opt-in MCP tools to start or restart the Muse WebSocket tunnel and send an explicit chat envelope to Muse through the configured Telegram transport.
+- Added mocked regression tests for tunnel ownership checks, duplicate-start handling, secret redaction, and Telegram success/failure paths.
+
+### Fixed
+- Report tunnel endpoints without exposing Muse or Telegram credentials, and avoid starting a duplicate watcher when a verified Muse tunnel is already active in another runtime.
+- Align the full MCP tool count and test expectations with the actual catalog after disabled tools are filtered.
+
 ## [1.13.72] - 2026-10-13
 ### Fixed
 - Isolated Muse WebSocket, MCP HTTP, and Superagent HTTP tunnel metadata and stop/restart behavior so MCP-only commands do not mutate Muse token/transport or `wsRemoteUrl`.

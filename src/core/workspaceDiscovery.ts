@@ -210,7 +210,13 @@ export async function discoverWorkspace(
 
   // Workspace has changed or no cache exists. Read agents.md and package.json to populate context.
   const packageJsonPath = path.join(resolvedDir, "package.json");
-  const agentsMdPath = path.join(resolvedDir, "agents.md");
+  const candidateAgentsMdPaths = [
+    path.join(resolvedDir, "agents.md"),
+    path.join(resolvedDir, "AGENTS.md"),
+    path.join(resolvedDir, ".agents", "agents.md"),
+    path.join(resolvedDir, ".agents", "AGENTS.md"),
+  ];
+  const agentsMdPath = candidateAgentsMdPaths.find((p) => fs.existsSync(p)) || path.join(resolvedDir, "agents.md");
 
   let agentsMd: string | undefined = undefined;
   if (fs.existsSync(agentsMdPath)) {

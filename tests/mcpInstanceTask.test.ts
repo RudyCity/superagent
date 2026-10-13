@@ -389,28 +389,15 @@ describe("Instance Current Task Tracking via MCP", () => {
       expect(res.content[0].text).toBe("Current item in progress");
     });
 
-    it("superagent_manage supports action current_task", async () => {
+    it("superagent_manage is hidden and rejected by the MCP server", async () => {
       const server = createSuperagentMcpServer();
+      const listHandler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
       const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
-      const worktreeDir = path.join(testDir, "worktree_manage_test");
-      fs.mkdirSync(worktreeDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(worktreeDir, "task.md"),
-        "- [/] Managed task step\n"
-      );
+      const listed = await listHandler({ method: "tools/list", params: {} });
+      expect(listed.tools.map((tool: any) => tool.name)).not.toContain("superagent_manage");
 
-      superagentInstances.set("agent-manage-1", {
-        id: "agent-manage-1",
-        role: "architect",
-        branch: "feat-m",
-        worktreePath: worktreeDir,
-        status: "running",
-        task: "Architectural revamp",
-        logs: [],
-      } as any);
-
-      const res = await callHandler({
+      await expect(callHandler({
         method: "tools/call",
         params: {
           name: "superagent_manage",
@@ -420,10 +407,7 @@ describe("Instance Current Task Tracking via MCP", () => {
             currentOnly: true,
           },
         },
-      });
-
-      expect(res.isError).toBeFalsy();
-      expect(res.content[0].text).toBe("Managed task step");
+      })).rejects.toThrow("disabled and not exposed by this MCP server");
     });
   });
 
