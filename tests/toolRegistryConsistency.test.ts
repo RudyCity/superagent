@@ -28,6 +28,22 @@ describe("tool registry consistency", () => {
 
     expect(duplicatesByTier).toEqual([]);
   });
+  it("resolves documented compatibility aliases without exposing them as separate tools", () => {
+    const aliases: Array<[string, string]> = [
+      ["get_tools", "list_tools"],
+      ["get_tool", "describe_tool"],
+      ["describe_tools", "describe_tool"],
+      ["cdp", "control_chrome_cdp"],
+      ["emulate_device", "control_chrome_cdp"],
+      ["drag_and_drop", "control_chrome_cdp"],
+    ];
+
+    for (const [alias, canonicalName] of aliases) {
+      expect(getToolByName(alias)?.name, `alias ${alias}`).toBe(canonicalName);
+      expect(allTools.some((tool) => tool.name === alias), `alias ${alias} should not be separately registered`).toBe(false);
+    }
+  });
+
   it("registers every tool exposed by tier toolsets", () => {
     const exposedTools = [
       ...masterToolset,

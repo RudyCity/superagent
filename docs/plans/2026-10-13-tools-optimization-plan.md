@@ -88,12 +88,22 @@ Saran versi: perubahan perilaku tool, termasuk konsolidasi dan default MCP, seba
 2. Pemuatan bertahap diaktifkan untuk semua model, atau hanya model tertentu?
 3. Default MCP non-tunnel diubah ke daftar aman?
 
-## 7. Not Yet Verified
+## 7. Operational Log Audit — 2026-10-13
 
-- Per-tool invocation and failure frequencies are not available from the inspected evidence.
+A read-only exploratory parse of `~/.superagent-r/superagent-tools.log` found 1,425 tagged tool-call lines spanning 2026-08-13 through 2026-10-13. The log covers multiple project directories and historical sessions, so this is directional evidence rather than a clean per-version benchmark. The most frequent canonical names in this sample were `bash` (428), `run_command` (289), `edit` (188), `write_to_file` (131), `manage_tasks` (80), `read` (77), and `replace_file_content` (51).
+
+- This log does not establish model-schema token savings or tool-family equivalence.
+- Error markers in the log are not a reliable success-rate metric by themselves; permission denials, nonzero shell exit codes, stale edit anchors, and real implementation failures need separate classification.
+- No calls were found under the sampled compatibility alias names `get_tools`, `get_tool`, `describe_tools`, `cdp`, `emulate_device`, or `drag_and_drop`. This does not prove they are unused by other clients or unobserved periods, so aliases remain enabled.
+- A regression test now checks that these documented aliases resolve to canonical tools without being separately registered in `allTools`.
+
+## 8. Not Yet Verified
+
+- The historical log is not a complete or version-isolated telemetry dataset; per-tool success/failure rates remain unverified.
 - Browser-tool consolidation has not been validated against all current actions and compatibility contracts.
+- No alias should be removed based on this sample alone.
 
-## 8. Execution Update — 2026-10-13
+## 9. Execution Update — 2026-10-13
 
 ### Verified against current code
 
