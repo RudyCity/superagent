@@ -12,6 +12,8 @@ interface TaskChecklistProps {
   completedHistory?: { status: string; text: string; remainingSeconds?: number }[];
   maxHistoryVisible?: number;
   collapsedSections?: { superagents: boolean; subagents: boolean; procs: boolean; checklist: boolean };
+  isAutoHidden?: boolean;
+  autoHideRemainingSeconds?: number;
 }
 
 export const TaskChecklist = memo(function TaskChecklist({
@@ -24,13 +26,15 @@ export const TaskChecklist = memo(function TaskChecklist({
   completedHistory = [],
   maxHistoryVisible = 3,
   collapsedSections,
+  isAutoHidden = false,
+  autoHideRemainingSeconds,
 }: TaskChecklistProps) {
   const hasActiveTasks = checklistTasks.length > 0;
   const hasHistory = completedHistory.length > 0;
 
   // Show whenever there are active tasks OR completed history,
-  // except during pending plan approval review.
-  if (planState === "PLANNING_PENDING" || (!hasActiveTasks && !hasHistory)) {
+  // except during pending plan approval review or when auto-hidden after all tasks complete.
+  if (planState === "PLANNING_PENDING" || isAutoHidden || (!hasActiveTasks && !hasHistory)) {
     return null;
   }
 
@@ -96,12 +100,13 @@ export const TaskChecklist = memo(function TaskChecklist({
   const headerTimeText = maxRemaining !== undefined ? ` ~ Hide in (${maxRemaining}s)` : "";
 
   const statusText = `(${completedTasks}/${totalTasks} completed | ${ongoingTasks} ongoing)`;
+  const activeAutoHideText = autoHideRemainingSeconds !== undefined ? ` ~ Hide in (${autoHideRemainingSeconds}s)` : "";
 
   if (isCollapsed) {
     return (
       <Box flexDirection="column">
         <Text bold color={focusMode === "checklist" ? "green" : "cyan"}>
-          {collapseIcon} ACTIVE TASK CHECKLIST {statusText}
+          {collapseIcon} ACTIVE TASK CHECKLIST {statusText}{activeAutoHideText}
         </Text>
       </Box>
     );
@@ -117,7 +122,7 @@ export const TaskChecklist = memo(function TaskChecklist({
           {/* Header */}
           <Box flexDirection="row" justifyContent="space-between">
             <Text bold color={focusMode === "checklist" ? "green" : "cyan"}>
-              {collapseIcon} ACTIVE TASK CHECKLIST {statusText}{scrollIndicator}{helpText}
+              {collapseIcon} ACTIVE TASK CHECKLIST {statusText}{activeAutoHideText}{scrollIndicator}{helpText}
             </Text>
           </Box>
 

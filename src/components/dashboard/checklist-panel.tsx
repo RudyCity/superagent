@@ -11,6 +11,8 @@ interface ChecklistPanelProps {
   superagentInstances: any;
   completedHistory?: { status: string; text: string; remainingSeconds?: number }[];
   maxHistoryVisible?: number;
+  isAutoHidden?: boolean;
+  autoHideRemainingSeconds?: number;
 }
 
 export function ChecklistPanel({
@@ -23,13 +25,15 @@ export function ChecklistPanel({
   superagentInstances,
   completedHistory = [],
   maxHistoryVisible = 3,
+  isAutoHidden = false,
+  autoHideRemainingSeconds,
 }: ChecklistPanelProps) {
   const hasActiveTasks = checklistTasks.length > 0;
   const hasHistory = completedHistory.length > 0;
 
   // Show whenever there are active tasks OR completed history,
-  // except during pending plan approval review.
-  if (planState === "PLANNING_PENDING" || (!hasActiveTasks && !hasHistory)) {
+  // except during pending plan approval review or when auto-hidden after all tasks complete.
+  if (planState === "PLANNING_PENDING" || isAutoHidden || (!hasActiveTasks && !hasHistory)) {
     return null;
   }
 
@@ -54,6 +58,7 @@ export function ChecklistPanel({
     return max;
   }, undefined as number | undefined);
   const headerTimeText = maxRemaining !== undefined ? ` ~ Hide in (${maxRemaining}s)` : "";
+  const autoHideText = autoHideRemainingSeconds !== undefined ? ` ~ Hide in (${autoHideRemainingSeconds}s)` : "";
 
   return (
     <Box
@@ -66,7 +71,7 @@ export function ChecklistPanel({
           {/* Header */}
           <Box flexDirection="row" justifyContent="space-between">
             <Text bold color={focusArea === "checklist" ? "gray" : "cyan"}>
-              📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed){scrollIndicator}{helpText}
+              📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed){autoHideText}{scrollIndicator}{helpText}
             </Text>
           </Box>
 

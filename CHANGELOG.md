@@ -1,3 +1,9 @@
+## [1.13.71] - 2026-10-13
+### Added
+- Added an automatic 5-second countdown timer (`~ Hide in (5s)`) to auto-hide the ACTIVE TASK CHECKLIST once all tasks are completed.
+- Implemented `useChecklistAutoHide` hook with multi-agent dynamic status resolution, automatic height reclamation, and keyboard focus recovery.
+- Added regression tests for `areAllTasksCompleted` helper and auto-hide countdown decay logic.
+
 ## [1.13.70] - 2026-10-13
 ### Improved
 - Reduced redundant aliases in the public `control_chrome_cdp` command enum while retaining dispatcher support for legacy command names.

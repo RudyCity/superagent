@@ -87,6 +87,7 @@ import { useDashboardMouse } from "../hooks/useDashboardMouse.js";
 import { useDashboardKeyboard } from "../hooks/useDashboardKeyboard.js";
 import { useRmemoryStatus } from "../hooks/useRmemoryStatus.js";
 import { useVisionStatus } from "../hooks/useVisionStatus.js";
+import { useChecklistAutoHide } from "../hooks/useChecklistAutoHide.js";
 
 
 // Read version from package.json
@@ -304,6 +305,25 @@ export function MultiAgentDashboard({
   const [completedHistory, setCompletedHistory] = useState<{ status: string; text: string; remainingSeconds?: number }[]>([]);
   const [rawCompletedHistory, setRawCompletedHistory] = useState<{ status: string; text: string }[]>([]);
   const historyTimestampsRef = useRef<Map<string, number>>(new Map());
+
+  // Active task checklist auto-hide countdown when all tasks are completed
+  const {
+    isAutoHidden: isChecklistAutoHidden,
+    remainingSeconds: checklistRemainingSeconds,
+  } = useChecklistAutoHide({
+    checklistTasks,
+    planState,
+    isMultiAgent: !!agent?.isMultiAgent,
+    instances: superagentInstances,
+    delaySeconds: 5,
+  });
+
+  // Revert focusArea from checklist if it auto-hides while focused
+  useEffect(() => {
+    if (isChecklistAutoHidden && focusArea === "checklist") {
+      setFocusArea("list");
+    }
+  }, [isChecklistAutoHidden, focusArea]);
 
   const [checklistScrollOffset, setChecklistScrollOffset] = useState(0);
   const [agentsScrollOffset, setAgentsScrollOffset] = useState(0);
@@ -1066,12 +1086,12 @@ export function MultiAgentDashboard({
   const fixedHeight = 5 + statusBarHeight; // 3 (header) + 2 (divider) + statusBarHeight
   const workspaceHeight = Math.max(10, terminalSize.height - fixedHeight - bottomPromptHeight - liveListHeight - wizardHeight);
   let checklistHeight = 0;
-  if (planState !== "PLANNING_PENDING" && checklistTasks.length > 0) {
+  if (planState !== "PLANNING_PENDING" && checklistTasks.length > 0 && !isChecklistAutoHidden) {
     const checklistCount = Math.min(checklistTasks.length, maxChecklistVisible);
     checklistHeight += 1 + checklistCount;
   }
-  // Account for completed history section height
-  if (planState !== "PLANNING_PENDING" && completedHistory.length > 0) {
+  // Account for completed history section height (hidden when active checklist is auto-hidden)
+  if (planState !== "PLANNING_PENDING" && completedHistory.length > 0 && !isChecklistAutoHidden) {
     const historyVisible = Math.min(completedHistory.length, 3);
     checklistHeight += 1 + historyVisible + (completedHistory.length > 3 ? 1 : 0);
   }
@@ -1233,6 +1253,7 @@ export function MultiAgentDashboard({
     planState,
     checklistTasks,
     completedHistory,
+    isChecklistAutoHidden,
     runningSubagentsCount,
     runningTasksCount,
     setSelectedIndex,
@@ -1451,6 +1472,8 @@ export function MultiAgentDashboard({
               superagentInstances={superagentInstances}
               completedHistory={completedHistory}
               maxHistoryVisible={maxHistoryVisible}
+              isAutoHidden={isChecklistAutoHidden}
+              autoHideRemainingSeconds={checklistRemainingSeconds}
             />
           </Box>
         </Box>

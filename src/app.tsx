@@ -55,6 +55,7 @@ import { useKeyboardHandler } from "./hooks/useKeyboardHandler.js";
 import { useMouseScroll, type SectionBoundary, type ChatLinePosition } from "./hooks/useMouseScroll.js";
 import { useRmemoryStatus } from "./hooks/useRmemoryStatus.js";
 import { useVisionStatus } from "./hooks/useVisionStatus.js";
+import { useChecklistAutoHide } from "./hooks/useChecklistAutoHide.js";
 
 export { stripSgrMouseSequences } from "./utils/text.js";
 
@@ -1903,6 +1904,24 @@ export function App({
 
   const suggestions = (activeWizard && activeWizard.type !== "question" && activeWizard.type !== "model") ? [] : getSuggestions(lastTabPrefix || input);
 
+  // Active task checklist auto-hide countdown when all tasks are completed
+  const {
+    isAutoHidden: isChecklistAutoHidden,
+    remainingSeconds: checklistRemainingSeconds,
+  } = useChecklistAutoHide({
+    checklistTasks,
+    planState,
+    isMultiAgent: !!agentRef.current?.isMultiAgent,
+    delaySeconds: 5,
+  });
+
+  // Revert focus to input if checklist auto-hides while focused
+  useEffect(() => {
+    if (isChecklistAutoHidden && focusMode === "checklist") {
+      setFocusMode("input");
+    }
+  }, [isChecklistAutoHidden, focusMode]);
+
   // Bind Keyboard Handler Hook
   useKeyboardHandler({
     input,
@@ -1956,6 +1975,7 @@ export function App({
     terminalWidth,
     checklistTasks,
     completedHistory,
+    isChecklistAutoHidden,
     agentRef,
     pendingPermission,
     setPendingPermission,
@@ -3210,12 +3230,13 @@ export function App({
 
   // Checklist height — the ACTIVE TASK CHECKLIST is always expanded, so
   // we no longer honor collapsedSections.checklist when computing height.
+  // When all tasks are completed and auto-hidden, height becomes 0.
   let checklistSectionHeight = 0;
-  if (planState !== "PLANNING_PENDING" && checklistTasks.length > 0) {
+  if (planState !== "PLANNING_PENDING" && checklistTasks.length > 0 && !isChecklistAutoHidden) {
     checklistSectionHeight = 1 + Math.min(checklistTasks.length, maxChecklistVisible);
   }
-  // Account for completed history section height
-  if (planState !== "PLANNING_PENDING" && completedHistory.length > 0) {
+  // Account for completed history section height (hidden when active checklist is auto-hidden)
+  if (planState !== "PLANNING_PENDING" && completedHistory.length > 0 && !isChecklistAutoHidden) {
     const historyVisible = Math.min(completedHistory.length, 3);
     checklistSectionHeight += 1 + historyVisible + (completedHistory.length > 3 ? 1 : 0);
   }
@@ -3539,6 +3560,8 @@ export function App({
               completedHistory={completedHistory}
               maxHistoryVisible={maxHistoryVisible}
               collapsedSections={collapsedSections}
+              isAutoHidden={isChecklistAutoHidden}
+              autoHideRemainingSeconds={checklistRemainingSeconds}
             />
 
             {/* Input History Panel — shown when Ctrl+H is pressed */}

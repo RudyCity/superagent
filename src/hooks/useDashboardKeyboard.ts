@@ -46,6 +46,7 @@ export interface DashboardKeyboardContext {
   planState: string;
   checklistTasks: any[];
   completedHistory?: any[];
+  isChecklistAutoHidden?: boolean;
   runningSubagentsCount: number;
   runningTasksCount: number;
   setSelectedIndex: React.Dispatch<React.SetStateAction<number>>;
@@ -114,6 +115,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     planState,
     checklistTasks,
     completedHistory = [],
+    isChecklistAutoHidden = false,
     runningSubagentsCount,
     runningTasksCount,
     setSelectedIndex,
@@ -703,7 +705,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
       if (focusArea === "input") {
         setFocusArea("list");
       } else if (focusArea === "list") {
-        if (planState !== "PLANNING_PENDING" && (checklistTasks.length > 0 || completedHistory.length > 0)) {
+        if (planState !== "PLANNING_PENDING" && !isChecklistAutoHidden && (checklistTasks.length > 0 || completedHistory.length > 0)) {
           setFocusArea("checklist");
         } else if (runningSubagentsCount > 0) {
           setFocusArea("agents");

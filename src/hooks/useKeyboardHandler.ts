@@ -89,6 +89,7 @@ export interface KeyboardHandlerContext {
   terminalWidth: number;
   checklistTasks: { status: string; text: string }[];
   completedHistory?: { status: string; text: string; remainingSeconds?: number }[];
+  isChecklistAutoHidden?: boolean;
   agentRef: React.MutableRefObject<Agent | null>;
   pendingPermission: {
     toolCall: ToolCall;
@@ -181,6 +182,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     terminalWidth,
     checklistTasks,
     completedHistory = [],
+    isChecklistAutoHidden = false,
     agentRef,
     pendingPermission,
     setPendingPermission,
@@ -492,7 +494,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
 
     // Ctrl+T: Toggle checklist focus mode
     if (key.ctrl && inputChar === "t" && !activeWizard) {
-      if (planState !== "PLANNING_PENDING" && (checklistTasks.length > 0 || completedHistory.length > 0)) {
+      if (planState !== "PLANNING_PENDING" && !isChecklistAutoHidden && (checklistTasks.length > 0 || completedHistory.length > 0)) {
         setFocusMode((prev: any) => (prev === "checklist" ? "input" : "checklist"));
       }
       return;
