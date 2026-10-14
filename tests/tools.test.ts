@@ -191,21 +191,21 @@ describe("File tools", () => {
 
   it("should read a file using readTool and handle binary content check", async () => {
     const tool = getToolByName("read");
-    const result = await tool?.execute({ filePath: "temp_unit_test.txt", offset: 1, limit: 2 }, process.cwd());
+    const result = await tool?.execute({ filePaths: ["temp_unit_test.txt"], offset: 1, limit: 2 }, process.cwd());
     expect(result).toContain("1: line A\n2: line B");
     expect(result).toContain("(lines 1-2 of 4)");
     
     // Write binary content and verify it fails
     const binaryFile = path.resolve(process.cwd(), "temp_binary_test.bin");
     await fs.writeFile(binaryFile, Buffer.from([0, 1, 2, 3, 4]));
-    const binResult = await tool?.execute({ filePath: "temp_binary_test.bin" }, process.cwd());
+    const binResult = await tool?.execute({ filePaths: ["temp_binary_test.bin"] }, process.cwd());
     expect(binResult).toContain("Error: Cannot read binary file");
     await fs.unlink(binaryFile);
 
     // Write image file and verify it reads as base64 Data URI
     const pngFile = path.resolve(process.cwd(), "temp_image_test.png");
     await fs.writeFile(pngFile, Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
-    const pngResult = await tool?.execute({ filePath: "temp_image_test.png" }, process.cwd());
+    const pngResult = await tool?.execute({ filePaths: ["temp_image_test.png"] }, process.cwd());
     expect(pngResult).toContain("data:image/png;base64,");
     await fs.unlink(pngFile);
   });
@@ -213,7 +213,7 @@ describe("File tools", () => {
   it("should replace file content using replaceFileContentTool and show a diff summary", async () => {
     const tool = getToolByName("replace_file_content");
     const result = await tool?.execute(
-      { filePath: "temp_unit_test.txt", targetContent: "line B", replacementContent: "line B Edited", startLine: 1, endLine: 3 },
+      { edits: [{ filePath: "temp_unit_test.txt", targetContent: "line B", replacementContent: "line B Edited", startLine: 1, endLine: 3 }] },
       process.cwd()
     );
     expect(result).toContain("File updated successfully");
@@ -227,11 +227,11 @@ describe("File tools", () => {
     const tool = getToolByName("write_to_file");
     const createdFile = path.resolve(process.cwd(), "temp_created_unit_test.txt");
     try { await fs.unlink(createdFile); } catch {}
-    const result = await tool?.execute({ filePath: "temp_created_unit_test.txt", content: "created content", overwrite: false }, process.cwd());
+    const result = await tool?.execute({ files: [{ filePath: "temp_created_unit_test.txt", content: "created content", overwrite: false }] }, process.cwd());
     expect(result).toContain("Created file");
     expect(result).toContain("Created: +1 -0");
 
-    const noOpResult = await tool?.execute({ filePath: "temp_created_unit_test.txt", content: "created content", overwrite: true }, process.cwd());
+    const noOpResult = await tool?.execute({ files: [{ filePath: "temp_created_unit_test.txt", content: "created content", overwrite: true }] }, process.cwd());
     expect(noOpResult).toContain("No changes made");
     await fs.unlink(createdFile);
   });
@@ -239,10 +239,10 @@ describe("File tools", () => {
   it("should apply patch and multi-replace with diff summaries", async () => {
     const patchTool = getToolByName("apply_patch");
     const patchResult = await patchTool?.execute(
-      {
+      { patches: [{
         filePath: "temp_unit_test.txt",
         patchContent: "<<<<<<< SEARCH\nline B\n=======\nline B Patched\n>>>>>>> REPLACE",
-      },
+      }] },
       process.cwd()
     );
     expect(patchResult).toContain("Patch applied successfully");
@@ -250,13 +250,13 @@ describe("File tools", () => {
 
     const multiTool = getToolByName("multi_replace_file_content");
     const multiResult = await multiTool?.execute(
-      {
+      { files: [{
         filePath: "temp_unit_test.txt",
         chunks: [
           { targetContent: "line A", replacementContent: "line A Multi", startLine: 1, endLine: 2 },
           { targetContent: "line C", replacementContent: "line C Multi", startLine: 2, endLine: 4 },
         ],
-      },
+      }] },
       process.cwd()
     );
     expect(multiResult).toContain("File updated successfully with 2 changes");
@@ -266,7 +266,7 @@ describe("File tools", () => {
   it("should include edit summary when syntax warning is returned", async () => {
     const tool = getToolByName("write_to_file");
     const brokenFile = path.resolve(process.cwd(), "temp_broken_syntax.ts");
-    const result = await tool?.execute({ filePath: "temp_broken_syntax.ts", content: "const x = ;", overwrite: true }, process.cwd());
+    const result = await tool?.execute({ files: [{ filePath: "temp_broken_syntax.ts", content: "const x = ;", overwrite: true }] }, process.cwd());
     expect(result).toContain("Warning: Syntax check failed");
     expect(result).toContain("Created: +1 -0");
     await fs.unlink(brokenFile);
@@ -279,7 +279,7 @@ describe("File tools", () => {
       await fs.writeFile(crlfFile, "line A\r\nline B\r\nline C\r\n", "utf-8");
       const replaceTool = getToolByName("replace_file_content");
       const rResult = await replaceTool?.execute(
-        { filePath: "temp_crlf_test.txt", targetContent: "line B", replacementContent: "line B\nline B2", startLine: 1, endLine: 3 },
+        { edits: [{ filePath: "temp_crlf_test.txt", targetContent: "line B", replacementContent: "line B\nline B2", startLine: 1, endLine: 3 }] },
         process.cwd()
       );
       expect(rResult).toContain("File updated successfully");
@@ -290,13 +290,13 @@ describe("File tools", () => {
       await fs.writeFile(crlfFile, "line A\r\nline B\r\nline C\r\n", "utf-8");
       const multiTool = getToolByName("multi_replace_file_content");
       const mResult = await multiTool?.execute(
-        {
+        { files: [{
           filePath: "temp_crlf_test.txt",
           chunks: [
             { targetContent: "line A", replacementContent: "line A edited", startLine: 1, endLine: 2 },
             { targetContent: "line C", replacementContent: "line C edited", startLine: 2, endLine: 3 },
           ],
-        },
+        }] },
         process.cwd()
       );
       expect(mResult).toContain("File updated successfully with 2 changes");
@@ -307,10 +307,10 @@ describe("File tools", () => {
       await fs.writeFile(crlfFile, "line A\r\nline B\r\nline C\r\n", "utf-8");
       const patchTool = getToolByName("apply_patch");
       const pResult1 = await patchTool?.execute(
-        {
+        { patches: [{
           filePath: "temp_crlf_test.txt",
           patchContent: "--- a/temp_crlf_test.txt\n+++ b/temp_crlf_test.txt\n@@ -1,3 +1,3 @@\n line A\n-line B\n+line B edited\n line C",
-        },
+        }] },
         process.cwd()
       );
       expect(pResult1).toContain("Patch applied successfully");
@@ -320,10 +320,10 @@ describe("File tools", () => {
       // 4. apply_patch (search-replace block)
       await fs.writeFile(crlfFile, "line A\r\nline B\r\nline C\r\n", "utf-8");
       const pResult2 = await patchTool?.execute(
-        {
+        { patches: [{
           filePath: "temp_crlf_test.txt",
           patchContent: "<<<<<<< SEARCH\nline B\n=======\nline B edited search-replace\n>>>>>>> REPLACE",
-        },
+        }] },
         process.cwd()
       );
       expect(pResult2).toContain("Patch applied successfully");
@@ -343,13 +343,13 @@ describe("File tools", () => {
       await fs.writeFile(wsFile, "line A    \nline B \nline C\n", "utf-8");
       const multiTool = getToolByName("multi_replace_file_content");
       const result = await multiTool?.execute(
-        {
+        { files: [{
           filePath: "temp_ws_test.txt",
           chunks: [
             { targetContent: "line A", replacementContent: "line A edited", startLine: 1, endLine: 2 },
             { targetContent: "line B", replacementContent: "line B edited", startLine: 2, endLine: 3 },
           ],
-        },
+        }] },
         process.cwd()
       );
       expect(result).toContain("File updated successfully with 2 changes");
@@ -368,13 +368,13 @@ describe("File tools", () => {
       await fs.writeFile(offsetFile, "line 1\nline 2\n{/* Sidebar Panel */}\n<div className=\"sidebar\">\n  content\n</div>\nline 7\n", "utf-8");
       const replaceTool = getToolByName("replace_file_content");
       const result = await replaceTool?.execute(
-        {
+        { edits: [{
           filePath: "temp_offset_test.txt",
           targetContent: "{/* Sidebar Panel */}\n<div className=\"sidebar\">",
           replacementContent: "{/* New Sidebar Panel */}\n<div className=\"new-sidebar\">",
           startLine: 4,
           endLine: 6,
-        },
+        }] },
         process.cwd()
       );
       expect(result).toContain("File updated successfully");
@@ -434,7 +434,7 @@ describe("File tools", () => {
       // 2. Test multi_replace_file_content single mode auto-locate
       const multiReplaceTool = getToolByName("multi_replace_file_content");
       const multiReplaceResult = await multiReplaceTool?.execute(
-        {
+        { files: [{
           filePath: "temp_auto_locate_multi_test.txt",
           chunks: [
             {
@@ -450,7 +450,7 @@ describe("File tools", () => {
               endLine: 12,
             }
           ]
-        },
+        }] },
         process.cwd()
       );
       expect(multiReplaceResult).toContain("File updated successfully");
@@ -461,10 +461,10 @@ describe("File tools", () => {
       // 3. Test apply_patch search-replace mode auto-locate
       const applyPatchTool = getToolByName("apply_patch");
       const patchResult = await applyPatchTool?.execute(
-        {
+        { patches: [{
           filePath: "temp_auto_locate_multi_test.txt",
           patchContent: "<<<<<<<\n{/* Multi Target 1 */}\n<div className=\"multi-t1\">\n=======\n{/* Patched Target 1 */}\n<div className=\"patched-t1\">\n>>>>>>>"
-        },
+        }] },
         process.cwd()
       );
       expect(patchResult).toContain("Patch applied successfully");
@@ -488,13 +488,13 @@ describe("File tools", () => {
 
       const replaceTool = getToolByName("replace_file_content");
       const result = await replaceTool?.execute(
-        {
+        { edits: [{
           filePath: "temp_auto_locate_fuzzy_test.txt",
           targetContent: "const value = \"hello\"\n\nconst another = \"world\",",
           replacementContent: "const value = 'fixed';\n\nconst another = 'fixed';",
           startLine: 3,
           endLine: 5,
-        },
+        }] },
         process.cwd()
       );
       expect(result).toContain("File updated successfully");
@@ -742,7 +742,7 @@ original line
 patched line
 >>>>>>>
 `;
-    const result = await tool?.execute({ filePath: "temp_patch_test.txt", patchContent: patch }, process.cwd());
+    const result = await tool?.execute({ patches: [{ filePath: "temp_patch_test.txt", patchContent: patch }] }, process.cwd());
     expect(result).toContain("Patch applied successfully");
     let data = await fs.readFile(testFile, "utf-8");
     expect(data).toContain("patched line");
@@ -756,7 +756,7 @@ patched line
 -original line
 +patched unified line
 `;
-    const uniResult = await tool?.execute({ filePath: "temp_patch_test.txt", patchContent: unifiedDiff }, process.cwd());
+    const uniResult = await tool?.execute({ patches: [{ filePath: "temp_patch_test.txt", patchContent: unifiedDiff }] }, process.cwd());
     expect(uniResult).toContain("Patch applied successfully");
     data = await fs.readFile(testFile, "utf-8");
     expect(data).toContain("patched unified line");

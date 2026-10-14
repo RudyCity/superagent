@@ -51,6 +51,38 @@ describe("Bulk File Tools Operations", () => {
     }
   });
 
+  it("should overwrite orchestration task artifacts by default in a batch write", async () => {
+    const taskFile = path.resolve(__dirname, "bulk-write_task.md");
+    await fs.writeFile(taskFile, "old task content", "utf-8");
+
+    try {
+      const result = await writeToFileTool.execute({
+        files: [{ filePath: taskFile, content: "updated task content" }]
+      }, process.cwd());
+
+      expect(result).toContain("File written successfully");
+      expect(await fs.readFile(taskFile, "utf-8")).toBe("updated task content");
+    } finally {
+      await fs.unlink(taskFile).catch(() => {});
+    }
+  });
+
+  it("should respect explicit overwrite=false for orchestration artifacts", async () => {
+    const taskFile = path.resolve(__dirname, "bulk-write-explicit-false_task.md");
+    await fs.writeFile(taskFile, "original task content", "utf-8");
+
+    try {
+      const result = await writeToFileTool.execute({
+        files: [{ filePath: taskFile, content: "must not replace", overwrite: false }]
+      }, process.cwd());
+
+      expect(result).toContain("overwrite was set to false");
+      expect(await fs.readFile(taskFile, "utf-8")).toBe("original task content");
+    } finally {
+      await fs.unlink(taskFile).catch(() => {});
+    }
+  });
+
   it("should perform bulk exact match editing across multiple files", async () => {
     const file1 = path.resolve(__dirname, "bulk-edit-1.txt");
     const file2 = path.resolve(__dirname, "bulk-edit-2.txt");

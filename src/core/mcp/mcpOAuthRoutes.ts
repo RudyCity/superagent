@@ -19,6 +19,7 @@
 import type http from "node:http";
 import { McpOAuthStore, randomToken } from "./mcpOAuthStore.js";
 import { sha256Hex, constantTimeEqual } from "./mcpAuth.js";
+import { recordMcpOAuthAudit, type McpOAuthAuditStage } from "./mcpOAuthAudit.js";
 
 export const OAUTH_SCOPES = ["mcp:tools", "mcp:tools:write"];
 
@@ -116,7 +117,7 @@ type PendingSummary = {
   scope: string[];
 };
 
-export async function handleOAuthRoute(
+async function handleOAuthRouteInternal(
   req: http.IncomingMessage,
   config: McpOAuthRoutesConfig
 ): Promise<McpOAuthRouteResult> {
@@ -126,7 +127,12 @@ export async function handleOAuthRoute(
   const autoRegister = config.autoRegisterClients !== false;
 
   // ---- RFC 9728 protected-resource metadata (public) ----
-  if (req.method === "GET" && pathname === "/.well-known/oauth-protected-resource") {
+  // Accept both origin-level and path-specific discovery conventions.
+  if (
+    req.method === "GET" &&
+    (pathname === "/.well-known/oauth-protected-resource" ||
+      pathname === "/.well-known/oauth-protected-resource/mcp")
+  ) {
     return json(200, {
       resource: `${base}/mcp`,
       authorization_servers: [base],
@@ -371,6 +377,59 @@ export async function handleOAuthRoute(
   }
 
   return notHandled();
+}
+
+function auditStageForRequest(req: http.IncomingMessage): McpOAuthAuditStage | null {
+  const pathname = new URL(req.url || "/", "http://127.0.0.1").pathname;
+  if (
+    req.method === "GET" &&
+    (pathname === "/.well-known/oauth-protected-resource" ||
+      pathname === "/.well-known/oauth-protected-resource/mcp")
+  ) return "oauth.protected_resource_metadata";
+  if (
+    req.method === "GET" &&
+    (pathname === "/.well-known/oauth-authorization-server" ||
+      pathname === "/.well-known/openid-configuration")
+  ) return "oauth.authorization_server_metadata";
+  if (req.method === "POST" && pathname === "/oauth/register") return "oauth.client_registration";
+  if (req.method === "GET" && pathname === "/oauth/authorize") return "oauth.authorization_request";
+  if (req.method === "POST" && pathname === "/oauth/authorize") return "oauth.authorization_decision";
+  if (req.method === "POST" && pathname === "/oauth/token") return "oauth.token_request";
+  return null;
+}
+
+/**
+ * Record OAuth route outcomes with an explicit allow-list. The URL/query,
+ * request body, client ID, state, authorization code, and tokens are omitted.
+ */
+export async function handleOAuthRoute(
+  req: http.IncomingMessage,
+  config: McpOAuthRoutesConfig
+): Promise<McpOAuthRouteResult> {
+  const stage = auditStageForRequest(req);
+  const start = performance.now();
+  try {
+    const result = await handleOAuthRouteInternal(req, config);
+    if (result.handled && stage) {
+      recordMcpOAuthAudit({
+        stage,
+        method: req.method as "GET" | "POST",
+        statusCode: result.statusCode,
+        durationMs: performance.now() - start,
+      });
+    }
+    return result;
+  } catch (error) {
+    if (stage) {
+      recordMcpOAuthAudit({
+        stage,
+        method: req.method as "GET" | "POST",
+        statusCode: 500,
+        durationMs: performance.now() - start,
+      });
+    }
+    throw error;
+  }
 }
 
 /** Generate a one-time bootstrap approval code; returns { code, codeHash }.

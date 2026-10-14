@@ -33,12 +33,19 @@ export const mcpCommand: SlashCommand = {
           ? conn.status === "connected"
             ? "✅ Connected"
             : conn.status === "connecting"
-            ? "⏳ Connecting"
+            ? conn.error?.includes("waiting for the local callback") ? "🔐 Waiting for OAuth approval" : "⏳ Connecting"
             : `❌ Error (${conn.error || "Unknown error"})`
           : "💤 Disconnected/Idle";
 
         output += `\n• [${name}] - ${statusStr}\n`;
-        output += `  Command: ${srvConfig.command} ${(srvConfig.args || []).join(" ")}\n`;
+        if (srvConfig.transport === "http" || srvConfig.transport === "streamable-http") {
+          output += "  Transport: " + srvConfig.transport + "\n";
+          output += "  URL: " + srvConfig.url + "\n";
+          if (srvConfig.oauth) output += "  OAuth: enabled\n";
+        } else if (srvConfig.transport === "stdio") {
+          output += "  Command: " + srvConfig.command + " " + (srvConfig.args || []).join(" ") + "\n";
+        }
+        if (conn?.status === "connecting" && conn.error) output += "  Details: " + conn.error + "\n";
         if (conn && conn.tools && conn.tools.length > 0) {
           output += `  Tools (${conn.tools.length}): ${conn.tools.join(", ")}\n`;
         } else if (conn && conn.status === "connected") {
@@ -51,6 +58,58 @@ export const mcpCommand: SlashCommand = {
         content: output,
         timestamp: now,
       });
+      return;
+    }
+
+    if (subcommand === "add-http") {
+      const name = parts[1];
+      const rawUrl = parts[2];
+      if (!name || !rawUrl) {
+        ctx.addLine({
+          type: "error",
+          content: "Usage: /mcp add-http <name> <url> [--oauth]",
+          timestamp: now,
+        });
+        return;
+      }
+      let url: URL;
+      try {
+        url = new URL(rawUrl);
+        if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("HTTP(S) URL required");
+      } catch {
+        ctx.addLine({
+          type: "error",
+          content: "URL must be a valid absolute HTTP(S) URL.",
+          timestamp: now,
+        });
+        return;
+      }
+
+      const config = loadModelConfig();
+      if (!config.mcpServers) config.mcpServers = {};
+      config.mcpServers[name] = {
+        transport: "http",
+        url: url.toString(),
+        oauth: parts.slice(3).some((part) => part.toLowerCase() === "--oauth"),
+      };
+      if (!saveModelConfig(config)) {
+        ctx.addLine({ type: "error", content: "Failed to save MCP configuration.", timestamp: Date.now() });
+        return;
+      }
+
+      try {
+        await initMcpServers();
+        const conn = connectedServers.get(name.toLowerCase());
+        if (conn?.status === "connected") {
+          ctx.addLine({ type: "system", content: "Connected remote MCP server \"" + name + "\". Tools: " + conn.tools.join(", "), timestamp: Date.now() });
+        } else if (conn?.status === "connecting" && conn.error?.includes("waiting for the local callback")) {
+          ctx.addLine({ type: "system", content: "OAuth browser login opened for \"" + name + "\". Complete approval in the browser; SuperAgent will load its tools afterward.", timestamp: Date.now() });
+        } else {
+          ctx.addLine({ type: "error", content: "Remote MCP server \"" + name + "\" did not connect: " + (conn?.error || "Unknown error"), timestamp: Date.now() });
+        }
+      } catch (error) {
+        ctx.addLine({ type: "error", content: "Failed to initialize MCP servers: " + (error instanceof Error ? error.message : String(error)), timestamp: Date.now() });
+      }
       return;
     }
 
@@ -79,6 +138,7 @@ export const mcpCommand: SlashCommand = {
         config.mcpServers = {};
       }
       config.mcpServers[name] = {
+        transport: "stdio",
         command,
         args: serverArgs,
       };

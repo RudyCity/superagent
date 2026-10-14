@@ -386,8 +386,8 @@ describe("Muse WebSocket & Cloudflare Security Suite", () => {
         calls: [
           {
             id: "call_read_beta",
-            tool: "read_file",
-            args: { path: "beta.txt" },
+            tool: "read",
+            args: { filePaths: ["beta.txt"] },
           },
         ],
       };

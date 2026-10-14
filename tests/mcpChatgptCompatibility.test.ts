@@ -170,10 +170,18 @@ describe("oauth end-to-end: discovery -> PKCE -> MCP session", () => {
   it("completes discovery, PKCE, initialize, tools/list, tools/call, reconnect, DELETE", async () => {
     const crypto = await import("node:crypto");
     // 1. Discovery
+    const head = await fetch(url("/mcp"), { method: "HEAD" });
+    expect(head.status).toBe(401);
+    expect(head.headers.get("www-authenticate")).toContain("/.well-known/oauth-protected-resource");
+    expect(await head.text()).toBe("");
+
     const prm = await fetch(url("/.well-known/oauth-protected-resource"));
     expect(prm.status).toBe(200);
     const prmBody: any = await prm.json();
     expect(prmBody.resource).toBe(`${base}/mcp`);
+    const pathSpecificPrm = await fetch(url("/.well-known/oauth-protected-resource/mcp"));
+    expect(pathSpecificPrm.status).toBe(200);
+    expect((await pathSpecificPrm.json()).resource).toBe(`${base}/mcp`);
     const asm = await fetch(url("/.well-known/oauth-authorization-server"));
     expect(asm.status).toBe(200);
 

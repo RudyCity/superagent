@@ -82,11 +82,36 @@ export interface SystemSettings {
   singleAgentMode?: boolean;
 }
 
-export interface McpServerConfig {
+export interface McpServerConfigBase {
+  /** Optional legacy fields used by array-shaped configurations. */
+  id?: string;
+  name?: string;
+  disabled?: boolean;
+}
+
+export interface StdioMcpServerConfig extends McpServerConfigBase {
+  /** Canonical stdio discriminator. Legacy configs are normalized by configSchema. */
+  transport: "stdio";
   command: string;
-  args: string[];
+  args?: string[];
   env?: Record<string, string>;
 }
+
+export interface HttpMcpServerConfig extends McpServerConfigBase {
+  transport: "http" | "streamable-http";
+  /** Streamable HTTP endpoint, e.g. https://mcp.example.com/mcp */
+  url: string;
+  /** Header name -> environment variable name. Raw secret values should not be stored in config. */
+  headersFromEnv?: Record<string, string>;
+  /** Enables OAuth 2.1 browser authorization through a loopback callback. */
+  oauth?: boolean | {
+    enabled?: boolean;
+    scopes?: string[];
+    clientName?: string;
+  };
+}
+
+export type McpServerConfig = StdioMcpServerConfig | HttpMcpServerConfig;
 
 export interface GlobalModelConfig {
   providers: ProviderProfile[];

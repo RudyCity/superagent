@@ -70,11 +70,15 @@ export function normalizeToolName(tool: string): string {
  */
 function normalizeArgs(tool: string, rawArgs?: Record<string, any>): Record<string, any> {
   const args = { ...(rawArgs || {}) };
-  if (
-    ["read", "write", "edit", "write_to_file", "replace_file_content", "apply_patch"].includes(
-      tool
-    )
-  ) {
+  // Keep compatibility with older remote Muse clients while executing reads
+  // through the current batch-only read contract.
+  if (tool === "read" && !Array.isArray(args.filePaths)) {
+    const legacyPath = args.filePath ?? args.file_path ?? args.TargetFile ?? args.path;
+    if (typeof legacyPath === "string" && legacyPath.trim()) {
+      args.filePaths = [legacyPath.trim()];
+    }
+  }
+  if (["read", "write", "edit", "write_to_file", "replace_file_content", "apply_patch"].includes(tool)) {
     if (args.path && !args.filePath && !args.TargetFile) {
       args.filePath = args.path;
     }
@@ -314,12 +318,20 @@ export function resolveCallWorkspace(
     if (matched) return matched;
   }
 
-  // 4. File path argument in file tools (filePath, TargetFile, path)
-  const candidateFilePath = args.filePath || args.TargetFile || args.path;
+  // 4. File path argument in file tools. Prefer explicit single-path fields;
+  // for a batch, select the first valid file entry while skipping malformed items.
+  const firstMultiRead = Array.isArray(args.filePaths)
+    ? args.filePaths.map((entry: unknown) => {
+        if (typeof entry === "string") return entry;
+        if (entry && typeof entry === "object" && typeof (entry as any).path === "string") return (entry as any).path;
+        return undefined;
+      }).find((entry: unknown) => typeof entry === "string" && entry.trim())
+    : undefined;
+  const candidateFilePath = args.filePath || args.TargetFile || args.path || firstMultiRead;
   if (typeof candidateFilePath === "string" && candidateFilePath.trim()) {
     const isAbs =
       path.isAbsolute(candidateFilePath) ||
-      (process.platform === "win32" && /^\/[a-zA-Z]\//.test(candidateFilePath));
+      (process.platform === "win32" && new RegExp("^/[a-zA-Z]/").test(candidateFilePath));
     if (isAbs) {
       const resolvedFp = path.resolve(candidateFilePath);
       const matched = allWorkspaces.find((w) => {
@@ -331,7 +343,7 @@ export function resolveCallWorkspace(
       });
       if (matched) return matched;
     } else {
-      const firstSegment = candidateFilePath.split(/[\/\\]/)[0];
+      const firstSegment = candidateFilePath.split(/[\\/\\\\]/)[0];
       const matched = allWorkspaces.find((w) => {
         const isWin = process.platform === "win32";
         return isWin
@@ -341,7 +353,6 @@ export function resolveCallWorkspace(
       if (matched) return matched;
     }
   }
-
   return defaultCwd;
 }
 

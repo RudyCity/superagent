@@ -396,26 +396,17 @@ export class Agent {
    */
   public hasRealPlanContent(): boolean {
     try {
+      // Only the session-bound plan may authorize a plan-dependent workflow.
+      // A stale workspace implementation_plan.md can belong to another task.
       const planPath = this.getPlanFilePath();
-      if (planPath && fs.existsSync(planPath)) {
-        const content = fs.readFileSync(planPath, "utf-8").trim();
-        if (content.length > 40 && /(implementation|plan|task|feature|fix|refactor|phase|\n#{1,6}\s)/i.test(content)) {
-          return true;
-        }
-      }
-      const cwdPlan = this.workingDirectory ? path.join(this.workingDirectory, "implementation_plan.md") : "";
-      if (cwdPlan && fs.existsSync(cwdPlan)) {
-        const content = fs.readFileSync(cwdPlan, "utf-8").trim();
-        if (content.length > 40 && /(implementation|plan|task|feature|fix|refactor|phase|\n#{1,6}\s)/i.test(content)) {
-          return true;
-        }
-      }
-      return false;
+      if (!planPath || !fs.existsSync(planPath)) return false;
+      const content = fs.readFileSync(planPath, "utf-8").trim();
+      return content.length > 40 &&
+        /(implementation|plan|task|feature|fix|refactor|phase|\n#{1,6}\s)/i.test(content);
     } catch {
       return false;
     }
   }
-
 
   public async getActiveTools(): Promise<Tool[]> {
     // Return cached tools if within TTL

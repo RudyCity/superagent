@@ -95,7 +95,7 @@ describe("New Slash Commands & Handlers Gap Coverage", () => {
           kind: "task_started",
           summary: "test summary",
         })
-      ).resolves.toBeUndefined();
+      ).resolves.toBeTypeOf("boolean");
     });
   });
 });

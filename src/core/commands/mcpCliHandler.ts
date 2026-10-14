@@ -7,12 +7,14 @@ Usage: superagent mcp <command> [options]
 Commands:
   list, ls                              List configured MCP servers
   add <name> <command> [args...]        Add an MCP server configuration
+  add-http <name> <url> [--oauth]       Add a remote Streamable HTTP MCP server
   remove, rm <name>                     Remove an MCP server configuration
   register                              Register Superagent as an MCP server to Antigravity (AGY)
 
 Examples:
   superagent mcp list
   superagent mcp add everything npx -y @modelcontextprotocol/server-everything
+  superagent mcp add-http google https://mcp.example.com/mcp --oauth
   superagent mcp remove everything
   superagent mcp register
 `);
@@ -40,8 +42,13 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
     console.log(`Configured MCP Servers (${names.length}):`);
     for (const name of names) {
       const srv = servers[name];
-      const argsStr = (srv.args || []).join(" ");
-      console.log(`- ${name}: ${srv.command} ${argsStr}`);
+      if (srv.transport === "http" || srv.transport === "streamable-http") {
+        const oauth = srv.oauth ? " | OAuth enabled" : "";
+        console.log("- " + name + ": " + srv.transport + " " + srv.url + oauth);
+      } else if (srv.transport === "stdio") {
+        const argsStr = (srv.args || []).join(" ");
+        console.log("- " + name + ": " + srv.command + " " + argsStr);
+      }
     }
     process.exit(0);
   }
@@ -64,6 +71,7 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
     }
 
     config.mcpServers[name] = {
+      transport: "stdio",
       command,
       args: serverArgs,
     };
@@ -77,6 +85,40 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       console.log("Error: Failed to save configuration to model-config.json");
       process.exit(1);
     }
+  }
+
+  if (subcommand === "add-http") {
+    const name = args[1];
+    const rawUrl = args[2];
+    if (!name || !rawUrl) {
+      console.log("Usage: superagent mcp add-http <name> <url> [--oauth]");
+      process.exit(1);
+    }
+    let url: URL;
+    try {
+      url = new URL(rawUrl);
+      if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("HTTP(S) URL required");
+    } catch {
+      console.log("Error: URL must be a valid absolute HTTP(S) URL.");
+      process.exit(1);
+    }
+
+    const config = loadModelConfig();
+    if (!config.mcpServers) config.mcpServers = {};
+    config.mcpServers[name] = {
+      transport: "http",
+      url: url.toString(),
+      oauth: args.slice(3).some((arg) => arg.toLowerCase() === "--oauth"),
+    };
+    if (!saveModelConfig(config)) {
+      console.log("Error: Failed to save configuration to model-config.json");
+      process.exit(1);
+    }
+    console.log("Successfully added remote MCP server \"" + name + "\".");
+    console.log("URL: " + url.toString());
+    console.log("OAuth: " + (config.mcpServers[name].oauth ? "enabled" : "disabled"));
+    console.log("Restart SuperAgent or reload MCP servers in its active session to connect.");
+    process.exit(0);
   }
 
   if (subcommand === "remove" || subcommand === "rm" || subcommand === "delete") {

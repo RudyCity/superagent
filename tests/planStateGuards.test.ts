@@ -26,8 +26,10 @@ describe("Plan State and Destructive Classifier Guards", () => {
     const agent = new Agent(onEvent, onPermission, onQuestion);
     agent.tier = "single";
     agent.planState = "IDLE";
+    const definitelyMissingSessionPlan = path.join(os.tmpdir(), "missing-plan-" + Date.now() + "-" + Math.random() + ".md");
+    vi.spyOn(agent, "getPlanFilePath").mockReturnValue(definitelyMissingSessionPlan);
 
-    // Ensure no plan file exists
+    // Ensure this session has no plan, independently of repository/workspace files.
     expect(agent.hasRealPlanContent()).toBe(false);
 
     // Process a user request that might have destructive flag
@@ -42,10 +44,10 @@ describe("Plan State and Destructive Classifier Guards", () => {
     try {
       const agent = new Agent(vi.fn(), vi.fn(), vi.fn());
       agent.workingDirectory = tmpDir;
+      const planPath = path.join(tmpDir, "session_456_implementation_plan.md");
+      vi.spyOn(agent, "getPlanFilePath").mockReturnValue(planPath);
 
       expect(agent.hasRealPlanContent()).toBe(false);
-
-      const planPath = path.join(tmpDir, "implementation_plan.md");
       fs.writeFileSync(
         planPath,
         "# Test Implementation Plan\n\n## Proposed Changes\n- [ ] Task 1\n\n## Verification Plan\n### Automated Tests\n- npm test\n### Manual Verification\n- check\n",

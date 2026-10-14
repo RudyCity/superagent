@@ -172,9 +172,14 @@ describe("Orphaned Tool Messages & Error Handling", () => {
       });
       
       const keptMessages = result.messages.slice(1); // skip summary message
-      expect(keptMessages[0].role).not.toBe("tool");
-      expect(keptMessages.length).toBe(1);
+      // Pinning keeps the active request in addition to the recent assistant/tool pair.
+      expect(keptMessages).toHaveLength(3);
+      expect(keptMessages[0].role).toBe("user");
       expect(keptMessages[0].content).toBe("User 3");
+      expect(keptMessages[1].role).toBe("assistant");
+      expect(keptMessages[1].toolCalls?.[0].id).toBe("call-99");
+      expect(keptMessages[2].role).toBe("tool");
+      expect(keptMessages[2].toolResults?.[0].toolCallId).toBe("call-99");
     });
 
     it("conversation.replaceOldMessagesWithSummary should not start kept slice with a tool message", () => {

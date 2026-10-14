@@ -253,32 +253,99 @@ function validateSettings(input: unknown): ValidationResult<SystemSettings> {
   return ok(input as unknown as SystemSettings);
 }
 
-function validateMcpServerConfig(input: unknown, path: string): ValidationResult<McpServerConfig> {
+function validateMcpServerConfig(
+  input: unknown,
+  path: string,
+  requireLegacyIdentity = false,
+): ValidationResult<McpServerConfig> {
   if (!isObject(input)) return fail([`${path}: must be an object`]);
   const errors: string[] = [];
-  if (!isString(input.id) || input.id.trim() === "") errors.push(`${path}.id: non-empty string required`);
-  if (!isString(input.name) || input.name.trim() === "") errors.push(`${path}.name: non-empty string required`);
-  if (!isString(input.command) || input.command.trim() === "") errors.push(`${path}.command: non-empty string required`);
-  if (input.args !== undefined && !isStringArray(input.args) && !Array.isArray(input.args)) {
-    errors.push(`${path}.args: string[] or undefined`);
+  if (requireLegacyIdentity || input.id !== undefined) {
+    if (!isString(input.id) || input.id.trim() === "") errors.push(`${path}.id: non-empty string required`);
   }
-  if (input.env !== undefined && !isObject(input.env)) {
-    errors.push(`${path}.env: object or undefined`);
-  } else if (isObject(input.env)) {
-    for (const [k, v] of Object.entries(input.env)) {
-      if (!isString(v)) errors.push(`${path}.env.${k}: string required`);
+  if (requireLegacyIdentity || input.name !== undefined) {
+    if (!isString(input.name) || input.name.trim() === "") errors.push(`${path}.name: non-empty string required`);
+  }
+
+  const transport = input.transport === undefined ? "stdio" : input.transport;
+  if (transport === "stdio") {
+    if (input.url !== undefined) errors.push("MCP server URL is not valid for stdio transport");
+    if (input.headersFromEnv !== undefined) errors.push("MCP server headersFromEnv is not valid for stdio transport");
+    if (input.oauth !== undefined) errors.push("MCP server oauth is not valid for stdio transport");
+    if (!isString(input.command) || input.command.trim() === "") errors.push(`${path}.command: non-empty string required for stdio transport`);
+    if (input.args !== undefined && !isStringArray(input.args)) {
+      errors.push(`${path}.args: string[] or undefined`);
     }
+    if (input.env !== undefined && !isObject(input.env)) {
+      errors.push(`${path}.env: object or undefined`);
+    } else if (isObject(input.env)) {
+      for (const [k, v] of Object.entries(input.env)) {
+        if (!isString(v)) errors.push(`${path}.env.${k}: string required`);
+      }
+    }
+  } else if (transport === "http" || transport === "streamable-http") {
+    if (input.command !== undefined) errors.push("MCP server command is not valid for HTTP transport");
+    if (input.args !== undefined) errors.push("MCP server args are not valid for HTTP transport");
+    if (input.env !== undefined) errors.push("MCP server env is not valid for HTTP transport");
+    if (!isString(input.url) || input.url.trim() === "") {
+      errors.push(`${path}.url: non-empty URL required for HTTP transport`);
+    } else {
+      try {
+        const url = new URL(input.url);
+        if (url.protocol !== "https:" && url.protocol !== "http:") {
+          errors.push(`${path}.url: must use http or https`);
+        }
+      } catch {
+        errors.push(`${path}.url: valid absolute URL required`);
+      }
+    }
+    if (input.headersFromEnv !== undefined && !isObject(input.headersFromEnv)) {
+      errors.push(`${path}.headersFromEnv: object or undefined`);
+    } else if (isObject(input.headersFromEnv)) {
+      for (const [header, variable] of Object.entries(input.headersFromEnv)) {
+        if (!isString(variable) || variable.trim() === "") {
+          errors.push(`${path}.headersFromEnv.${header}: non-empty environment variable name required`);
+        }
+      }
+    }
+    if (input.oauth !== undefined && typeof input.oauth !== "boolean" && !isObject(input.oauth)) {
+      errors.push(`${path}.oauth: boolean, object, or undefined`);
+    } else if (isObject(input.oauth)) {
+      if (input.oauth.enabled !== undefined && !isBoolean(input.oauth.enabled)) errors.push(`${path}.oauth.enabled: boolean required`);
+      if (input.oauth.scopes !== undefined && !isStringArray(input.oauth.scopes)) errors.push(`${path}.oauth.scopes: string[] required`);
+      if (input.oauth.clientName !== undefined && !isString(input.oauth.clientName)) errors.push(`${path}.oauth.clientName: string required`);
+    }
+  } else {
+    errors.push(`${path}.transport: expected stdio, http, or streamable-http`);
+  }
+  if (input.disabled !== undefined && !isBoolean(input.disabled)) {
+    errors.push(`${path}.disabled: boolean required`);
   }
   if (errors.length) return fail(errors);
-  return ok(input as unknown as McpServerConfig);
+  // Normalize legacy stdio entries at the JSON boundary so downstream code
+  // can narrow the union on an explicit discriminator.
+  return ok({ ...input, transport } as unknown as McpServerConfig);
 }
 
-function validateMcpServers(input: unknown): ValidationResult<McpServerConfig[]> {
-  if (!Array.isArray(input)) return fail(["mcpServers must be an array"]);
+function validateMcpServers(input: unknown): ValidationResult<Record<string, McpServerConfig> | McpServerConfig[]> {
+  // The historic schema used arrays with id/name, while the runtime manager
+  // consumes a name-keyed map. Accept both formats for backward compatibility.
+  if (isObject(input)) {
+    const out: Record<string, McpServerConfig> = {};
+    const errors: string[] = [];
+    for (const [name, value] of Object.entries(input)) {
+      const r = validateMcpServerConfig(value, `mcpServers.${name}`);
+      if (!r.ok) for (const e of r.errors) errors.push(e);
+      else out[name] = r.value;
+    }
+    if (errors.length) return fail(errors);
+    return ok(out);
+  }
+  if (!Array.isArray(input)) return fail(["mcpServers must be an array or a name-keyed object"]);
   const out: McpServerConfig[] = [];
   const errors: string[] = [];
   for (let i = 0; i < input.length; i++) {
-    const r = validateMcpServerConfig(input[i], `mcpServers[${i}]`);
+    const r = validateMcpServerConfig(input[i], `mcpServers[${i}]`, true);
     if (!r.ok) for (const e of r.errors) errors.push(e);
     else out.push(r.value);
   }

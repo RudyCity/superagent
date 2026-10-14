@@ -7,13 +7,13 @@ describe("tool error status propagation", () => {
       {
         id: "missing-read",
         name: "read",
-        args: { filePath: "definitely-missing-file.txt" },
+        args: { filePaths: ["definitely-missing-file.txt"] },
       } as any,
       process.cwd()
     );
 
     expect(result.isError).toBe(true);
-    expect(result.result).toContain("Error reading file:");
+    expect(result.result).toContain("Error: ENOENT:");
   });
 
   it("marks invalid grep regexes as tool errors", async () => {

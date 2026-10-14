@@ -100,59 +100,29 @@ describe("ask_question and ReplacementChunks robustness", () => {
   });
 
   describe("ReplacementChunks parser resilience in agent loop", () => {
-    it("recovers gracefully when LLM sends JSON string instead of array for ReplacementChunks", async () => {
-      const onEvent = vi.fn();
-      const onPermission = vi.fn().mockResolvedValue(true);
-      const onQuestion = vi.fn();
-
-      const agent = new Agent(onEvent, onPermission, onQuestion);
-      agent.tier = "superagent";
-      agent.planState = "APPROVED";
-
+    it("parses JSON-string ReplacementChunks in the required batch tool schema", async () => {
+      const tool = getToolByName("multi_replace_file_content");
       const targetFile = path.join(testConfigDir, "test.txt");
       fs.mkdirSync(testConfigDir, { recursive: true });
       fs.writeFileSync(targetFile, "line 1\nline 2\nline 3\n");
 
-      let callCount = 0;
-      vi.spyOn(aiModule, "streamText").mockImplementation(() => {
-        callCount++;
-        const shouldCall = callCount === 1;
-        return {
-          fullStream: (async function* () {
-            if (shouldCall) {
-              yield {
-                type: "tool-call",
-                toolCallId: "call_1",
-                toolName: "multi_replace_file_content",
-                args: {
-                  filePath: targetFile,
-                  TargetFile: targetFile,
-                  Instruction: "Update line 2",
-                  Description: "Update line 2",
-                  ReplacementChunks: JSON.stringify([
-                    {
-                      StartLine: 2,
-                      EndLine: 2,
-                      TargetContent: "line 2",
-                      ReplacementContent: "line 2 modified",
-                      AllowMultiple: false,
-                    },
-                  ]),
-                },
-              };
-            } else {
-              yield { type: "text-delta", textDelta: "Done" };
-              yield { type: "finish", finishReason: "stop" };
-            }
-          })(),
-          usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
-        } as any;
-      });
+      const result = await tool.execute({
+        files: [{
+          filePath: targetFile,
+          chunks: JSON.stringify([
+            {
+              StartLine: 2,
+              EndLine: 2,
+              TargetContent: "line 2",
+              ReplacementContent: "line 2 modified",
+              AllowMultiple: false,
+            },
+          ]),
+        }],
+      }, process.cwd());
 
-      await agent.sendMessage("Replace content");
-
-      const fileContent = fs.readFileSync(targetFile, "utf-8");
-      expect(fileContent).toBe("line 1\nline 2 modified\nline 3\n");
+      expect(String(result)).toContain("File updated successfully");
+      expect(fs.readFileSync(targetFile, "utf-8")).toBe("line 1\nline 2 modified\nline 3\n");
     });
   });
 });

@@ -223,7 +223,46 @@ describe("Operational Mode Switching Feature", () => {
 
       const ctx = await ContextBuilder.buildContext(mockAgent);
       expect(ctx.finalSystemPrompt).toContain("# ACTIVE MODE: 'implement'");
-      expect(ctx.filteredToolDefs.some((t: any) => t.name === "write_to_file")).toBe(true);
+      // The default tool-discovery contract keeps only list/describe schemas visible until requested.
+      expect(ctx.filteredToolDefs.some((t: any) => t.name === "write_to_file")).toBe(false);
+      const discoveryTools = await mockAgent.getActiveTools();
+      const describeTool = discoveryTools.find((t: any) => t.name === "describe_tool");
+      expect(describeTool).toBeDefined();
+      await describeTool!.execute({ tool: "write_to_file" }, mockAgent.workingDirectory);
+      const afterDiscovery = await ContextBuilder.buildContext(mockAgent);
+      expect(afterDiscovery.filteredToolDefs.some((t: any) => t.name === "write_to_file")).toBe(true);
+    });
+
+    it("resets discovered schemas on mode changes and allows rediscovery without looping", async () => {
+      const { ContextBuilder } = await import("../src/core/agent/ContextBuilder.js");
+      mockAgent.currentClassification = {
+        category: "question",
+        confidence: "high",
+        reason: "Discovery regression",
+        heuristicOnly: true,
+        classificationTokens: 0,
+      };
+      mockAgent.setMode("implement", "test dynamic discovery");
+      let context = await ContextBuilder.buildContext(mockAgent);
+      expect(context.filteredToolDefs.some((tool: any) => tool.name === "write_to_file")).toBe(false);
+
+      const discover = async () => {
+        const active = await mockAgent.getActiveTools();
+        const describe = active.find((tool: any) => tool.name === "describe_tool");
+        expect(describe).toBeDefined();
+        const response = await describe!.execute({ tool: "write_to_file" }, mockAgent.workingDirectory);
+        expect(String(response)).toContain("write_to_file");
+      };
+      await discover();
+      context = await ContextBuilder.buildContext(mockAgent);
+      expect(context.filteredToolDefs.some((tool: any) => tool.name === "write_to_file")).toBe(true);
+
+      mockAgent.setMode("ask", "verify discovery reset");
+      context = await ContextBuilder.buildContext(mockAgent);
+      expect(context.filteredToolDefs.some((tool: any) => tool.name === "write_to_file")).toBe(false);
+      await discover();
+      context = await ContextBuilder.buildContext(mockAgent);
+      expect(context.filteredToolDefs.some((tool: any) => tool.name === "write_to_file")).toBe(true);
     });
   });
 });

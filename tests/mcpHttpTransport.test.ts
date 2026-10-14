@@ -107,6 +107,26 @@ describe("mcpHttpTransport", () => {
       expect(res.status).toBe(401);
     });
 
+    it("answers an unauthenticated HEAD probe with a bearer challenge and no body", async () => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}${MCP_HTTP_PATH}`, {
+        method: "HEAD",
+      });
+      expect(res.status).toBe(401);
+      expect(res.headers.get("www-authenticate")).toContain("Bearer");
+      expect(await res.text()).toBe("");
+      expect(res.headers.get("mcp-session-id")).toBeNull();
+    });
+
+    it("answers an authenticated HEAD probe without creating an MCP session", async () => {
+      const res = await fetch(`http://127.0.0.1:${handle.port}${MCP_HTTP_PATH}`, {
+        method: "HEAD",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(204);
+      expect(await res.text()).toBe("");
+      expect(res.headers.get("mcp-session-id")).toBeNull();
+    });
+
     it("rejects requests with a wrong bearer token (401)", async () => {
       const res = await post(rpc(1, "ping", {}), "wrong-token");
       expect(res.status).toBe(401);

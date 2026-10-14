@@ -17,6 +17,24 @@ export const manageMcpTool: Tool = {
         type: "string",
         description: "The unique name of the MCP server. Required for 'add' and 'remove'.",
       },
+      transport: {
+        type: "string",
+        enum: ["stdio", "http", "streamable-http"],
+        description: "Transport to use when adding a server. Defaults to stdio.",
+      },
+      url: {
+        type: "string",
+        description: "Remote Streamable HTTP MCP endpoint URL. Required when transport is http.",
+      },
+      headersFromEnv: {
+        type: "object",
+        additionalProperties: { type: "string" },
+        description: "HTTP header name -> environment variable name. Do not place raw tokens in model-config.json.",
+      },
+      oauth: {
+        type: "boolean",
+        description: "Enable OAuth 2.1 browser login for remote HTTP MCP servers.",
+      },
       command: {
         type: "string",
         description: "The command to run the MCP server (e.g., 'npx', 'node'). Required for 'add'.",
@@ -53,7 +71,13 @@ export const manageMcpTool: Tool = {
         const status = conn ? conn.status : "disconnected";
         const error = conn?.error ? ` (Error: ${conn.error})` : "";
         result += `- [${srvName}] | Status: ${status}${error}\n`;
-        result += `  Command: ${srvConfig.command} ${(srvConfig.args || []).join(" ")}\n`;
+        if (!("command" in srvConfig)) {
+          result += "  Transport: " + srvConfig.transport + "\n";
+          result += "  URL: " + srvConfig.url + "\n";
+          if (srvConfig.oauth) result += "  OAuth: enabled\n";
+        } else {
+          result += "  Command: " + srvConfig.command + " " + (srvConfig.args || []).join(" ") + "\n";
+        }
         if (conn && conn.tools && conn.tools.length > 0) {
           result += `  Tools: ${conn.tools.join(", ")}\n`;
         }
@@ -62,18 +86,36 @@ export const manageMcpTool: Tool = {
     }
 
     if (action === "add") {
-      if (!name || !args.command) {
-        return "Error: Both 'name' and 'command' are required to add an MCP server.";
-      }
+      if (!name) return "Error: 'name' is required to add an MCP server.";
       const config = loadModelConfig();
       if (!config.mcpServers) {
         config.mcpServers = {};
       }
-      config.mcpServers[name] = {
-        command: args.command as string,
-        args: (args.args as string[]) || [],
-        env: (args.env as Record<string, string>) || {},
-      };
+      const transport = (args.transport as string | undefined) || "stdio";
+      if (transport === "http" || transport === "streamable-http") {
+        const url = args.url as string | undefined;
+        if (!url) return "Error: 'url' is required for HTTP MCP servers.";
+        try {
+          const parsed = new URL(url);
+          if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "Error: MCP HTTP URL must use http or https.";
+        } catch {
+          return "Error: 'url' must be a valid absolute HTTP(S) URL.";
+        }
+        config.mcpServers[name] = {
+          transport,
+          url,
+          headersFromEnv: (args.headersFromEnv as Record<string, string>) || {},
+          oauth: Boolean(args.oauth),
+        };
+      } else {
+        if (!args.command) return "Error: 'command' is required for stdio MCP servers.";
+        config.mcpServers[name] = {
+          transport: "stdio",
+          command: args.command as string,
+          args: (args.args as string[]) || [],
+          env: (args.env as Record<string, string>) || {},
+        };
+      }
       saveModelConfig(config);
       await initMcpServers();
       const conn = connectedServers.get(name.toLowerCase());

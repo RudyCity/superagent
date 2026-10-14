@@ -34,7 +34,7 @@ describe("CandidateStore", () => {
     expect(await store.list()).toEqual([updated]);
     expect((await other.get("shared"))?.version).toBe(1);
     expect(await new CandidateStore({ storePath, workspace: "SCOPE-A", enabled: () => true }).list()).toEqual([]);
-    expect(Object.getOwnPropertyNames(CandidateStore.prototype).sort()).toEqual(["constructor", "create", "get", "list", "update"]);
+    expect(Object.getOwnPropertyNames(CandidateStore.prototype).sort()).toEqual(["constructor", "create", "get", "getReviewDecisions", "list", "removeWorkspaceRecords", "restoreWorkspaceRecords", "update"]);
   });
 
   it("preserves active and retired lessons when the candidate writer updates the shared store", async () => {

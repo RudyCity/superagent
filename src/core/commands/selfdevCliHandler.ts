@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getSelfDevConfig, updateSelfDevConfig } from "../selfdev/settings.js";
 import { getSelfDevLessonsPath } from "../config/paths.js";
 import { getHistoryDb } from "../storage/historyDb.js";
@@ -6,6 +7,13 @@ import { ReviewService } from "../selfdev/reviewService.js";
 import { CandidateStore } from "../selfdev/candidateStore.js";
 import { distillAndStore } from "../selfdev/distiller.js";
 
+function safeSelfDevEvidenceText(value: string): string {
+  return value
+    .replace(/https?:\/\/[^\s)\]}]+/gi, "[URL REDACTED]")
+    .replace(/\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+\/=:-]+/gi, "[REDACTED]")
+    .replace(/\b(?:sk-(?:proj-|ant-)?[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,}|AKIA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{8,})\b/g, "[REDACTED]")
+    .slice(0, 240);
+}
 export function printSelfDevHelp(): void {
   console.log(`
 Usage: superagent selfdev <command> [options]
@@ -24,6 +32,12 @@ Commands:
   feedback <lesson_id> <applied|helped|harmed>  Record explicit feedback for an active lesson
   reject <lesson_id> [reason]           Reject and discard a candidate lesson
   retire <lesson_id> [reason]           Retire an active lesson to stop injecting it
+  lesson-metrics <lesson_id>            Show per-lesson feedback counts
+  decisions [limit]                     Show recent review audit decisions
+  export <output.json> [--overwrite]    Export redacted workspace backup
+  backup <output.json> [--overwrite]    Alias for export
+  restore <backup.json> [--apply]       Validate restore; dry-run unless --apply
+  retention --days <N> [--apply]        Preview/delete old unreferenced events
 
 Examples:
   superagent selfdev status
@@ -63,6 +77,12 @@ export async function handleSelfDevCliCommand(args: string[]): Promise<void> {
     enabled: () => config.enabled,
     eventStore,
   });
+
+  if (["export", "backup", "restore", "retention", "lesson-metrics", "decisions"].includes(subcommand)) {
+    const { handleSelfDevMaintenanceCommand } = await import("../selfdev/maintenanceCli.js");
+    console.log(await handleSelfDevMaintenanceCommand(subcommand, args.slice(1), workspace));
+    process.exit(0);
+  }
 
   switch (subcommand) {
     case "status": {
@@ -143,7 +163,7 @@ export async function handleSelfDevCliCommand(args: string[]): Promise<void> {
       const id = args[1];
       const metric = args[2]?.toLowerCase();
       if (!id || !["applied", "helped", "harmed"].includes(metric || "")) {
-        console.log("Usage: superagent selfdev feedback <lesson_id> <applied|helped|harmed>");
+        console.log("Usage: superagent selfdev feedback <lesson_id> <applied|helped|harmed> [session_id]");
         process.exit(1);
       }
       try {
@@ -154,13 +174,17 @@ export async function handleSelfDevCliCommand(args: string[]): Promise<void> {
         }
         const { FeedbackTracker } = await import("../selfdev/feedback.js");
         const tracker = new FeedbackTracker({ getDb: () => getHistoryDb() as any, enabled: () => getSelfDevConfig().enabled });
-        const sessionId = `manual:${workspace}:${lesson.id}:v${lesson.version}`;
-        const recorded = tracker.record(workspace, sessionId, lesson.id, lesson.version, metric as "applied" | "helped" | "harmed");
-        if (!recorded) {
-          console.log("Feedback was not recorded. Check Selfdev state and database availability.");
+        const sessionId = args[3] || `manual:${randomUUID()}`;
+        const feedbackResult = tracker.recordDetailed(workspace, sessionId, lesson.id, lesson.version, metric as "applied" | "helped" | "harmed");
+        if (feedbackResult.status === "duplicate") {
+          console.log(`Feedback already recorded for session ${sessionId}, lesson ${lesson.id}, version ${lesson.version}, metric ${metric}.`);
+          process.exit(0);
+        }
+        if (feedbackResult.status !== "recorded") {
+          console.log(`Feedback was not recorded (status: ${feedbackResult.status}).`);
           process.exit(1);
         }
-        console.log(`Recorded ${metric} feedback for active lesson ${lesson.id} (v${lesson.version}).`);
+        console.log(`Recorded ${metric} feedback for active lesson ${lesson.id} (v${lesson.version}, session ${sessionId}).`);
         process.exit(0);
       } catch {
         console.log("Feedback failed: operation could not complete.");
@@ -211,9 +235,9 @@ export async function handleSelfDevCliCommand(args: string[]): Promise<void> {
         console.log(`- Source signals: ${sources.length ? [...new Set(sources)].join(", ") : "not explicitly categorized"}`);
         console.log(`- Evidence references: ${lesson.evidenceIds.length}; verified event records: ${evidenceEvents.length}; missing/unavailable: ${Math.max(0, lesson.evidenceIds.length - evidenceEvents.length)}`);
         if (lesson.approvedBy) console.log(`- Approved by: ${lesson.approvedBy}`);
-        if (lesson.approvedAt) console.log(`- Approved at (epoch ms): ${lesson.approvedAt}`);
-        if (lesson.retiredAt) console.log(`- Retired at (epoch ms): ${lesson.retiredAt}`);
-        if (lesson.retiredReason) console.log(`- Retirement reason: ${lesson.retiredReason}`);
+        if (lesson.approvedAt) console.log(`- Approved at: ${new Date(lesson.approvedAt).toISOString()}`);
+        if (lesson.retiredAt) console.log(`- Retired at: ${new Date(lesson.retiredAt).toISOString()}`);
+        if (lesson.retiredReason) console.log(`- Retirement reason: ${safeSelfDevEvidenceText(lesson.retiredReason)}`);
         console.log("Evidence (bounded summaries; exact workspace only):");
         if (lesson.evidenceIds.length === 0) console.log("  No evidence references are attached.");
         for (const evidenceId of lesson.evidenceIds) {
@@ -222,8 +246,8 @@ export async function handleSelfDevCliCommand(args: string[]): Promise<void> {
             console.log(`  - ${evidenceId}: MISSING or unavailable in this workspace`);
             continue;
           }
-          console.log(`  - ${event.id} | ${event.kind} | session ${event.sessionId} | ts ${event.ts}`);
-          console.log(`    ${event.summary.slice(0, 240)}`);
+          console.log(`  - ${event.id} | ${event.kind} | session ${event.sessionId} | ${new Date(event.ts).toISOString()}`);
+          console.log(`    ${safeSelfDevEvidenceText(event.summary)}`);
         }
         console.log("Note: evidence count and explicit feedback are review signals, not a calibrated probability score.");
         process.exit(0);

@@ -170,6 +170,45 @@ describe("Muse Multi-Project Watch Mode", () => {
       expect(resolved).toBe(projectB);
     });
 
+    it("routes a batch read to a watched workspace when the first entry is malformed", () => {
+      const fileInB = path.join(projectB, "src", "config.ts");
+      const resolved = resolveCallWorkspace(
+        { id: "c4", tool: "read", args: { filePaths: [null, { path: fileInB }] } } as any,
+        { workspace: projectA, workspaces: [projectA, projectB] },
+        projectA
+      );
+      expect(resolved).toBe(projectB);
+    });
+
+    it("routes structured batch file entries to their containing workspace", () => {
+      const fileInB1 = path.join(projectB, "one.ts");
+      const fileInB2 = path.join(projectB, "two.ts");
+      const resolved = resolveCallWorkspace(
+        { id: "c5", tool: "read", args: { filePaths: [{ path: fileInB1 }, { path: fileInB2 }] } } as any,
+        { workspace: projectA, workspaces: [projectA, projectB] },
+        projectA
+      );
+      expect(resolved).toBe(projectB);
+    });
+
+    it("keeps mixed-workspace reads permission-scoped to watched workspaces", () => {
+      const fileInA = path.join(projectA, "fileA.ts");
+      const fileInB = path.join(projectB, "fileB.ts");
+      const resolved = resolveCallWorkspace(
+        { id: "c6", tool: "read", args: { filePaths: [fileInA, fileInB] } } as any,
+        { workspace: projectA, workspaces: [projectA, projectB] },
+        projectA
+      );
+      expect(resolved).toBe(projectA);
+      expect(isMuseOutOfBounds({ name: "read", args: { filePaths: [fileInA, fileInB] } }, [projectA, projectB]).isOutOfBounds).toBe(false);
+    });
+
+    it("rejects batch file paths outside all watched workspaces", () => {
+      const outside = path.join(tmpConfigDir, "outside-secret.txt");
+      const result = isMuseOutOfBounds({ name: "read", args: { filePaths: [outside] } }, [projectA, projectB]);
+      expect(result.isOutOfBounds).toBe(true);
+    });
+
     it("should route tool call based on candidate filePath belonging to Project B", () => {
       const fileInB = path.join(projectB, "src", "config.ts");
       const call = {
@@ -229,12 +268,12 @@ describe("Muse Multi-Project Watch Mode", () => {
         {
           id: "call_a",
           tool: "read",
-          args: { filePath: path.join(projectA, "fileA.txt") },
+          args: { filePaths: [path.join(projectA, "fileA.txt")] },
         },
         {
           id: "call_b",
           tool: "read",
-          args: { filePath: path.join(projectB, "fileB.txt") },
+          args: { filePaths: [path.join(projectB, "fileB.txt")] },
         },
       ];
 

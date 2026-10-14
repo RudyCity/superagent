@@ -49,6 +49,11 @@ function contentTokens(statement: string): Set<string> {
   );
 }
 
+const NEGATION_PATTERN = /\b(?:never|not|avoid|do not|don\x27t|mustn\x27t|cannot|without|no|disable|delete|remove|reject|deny|retire|discard|drop|stop|disallow|forbid|prevent)\b/i;
+export function scoreNearDuplicateSimilarity(left: string, right: string): number {
+  if (NEGATION_PATTERN.test(left) !== NEGATION_PATTERN.test(right)) return 0;
+  return tokenJaccard(contentTokens(left), contentTokens(right));
+}
 function tokenJaccard(left: Set<string>, right: Set<string>): number {
   if (left.size < 4 || right.size < 4) return 0;
   let intersection = 0;
@@ -73,7 +78,7 @@ function markNearDuplicateForReview(
   existingLessons: SelfDevLesson[],
   earlierCandidates: SelfDevLessonInput[],
 ): void {
-  const candidateTokens = contentTokens(candidate.statement);
+
   const references: NearDuplicateReference[] = [
     ...existingLessons
       .filter(lesson => lesson.workspace === candidate.workspace && lesson.status !== "retired")
@@ -85,8 +90,8 @@ function markNearDuplicateForReview(
 
   let best: { reference: NearDuplicateReference; similarity: number } | undefined;
   for (const reference of references) {
-    const similarity = tokenJaccard(candidateTokens, contentTokens(reference.statement));
-    if (similarity >= 0.72 && (!best || similarity > best.similarity)) {
+    const similarity = scoreNearDuplicateSimilarity(candidate.statement, reference.statement);
+    if (similarity >= 0.35 && (!best || similarity > best.similarity)) {
       best = { reference, similarity };
     }
   }

@@ -117,6 +117,74 @@ describe("validateModelConfig (H7)", () => {
     expect(r.ok).toBe(true);
   });
 
+  it("accepts name-keyed stdio and remote Streamable HTTP MCP configurations", async () => {
+    const { validateModelConfig } = await import("../src/core/config/configSchema.js");
+    const r = validateModelConfig({
+      mcpServers: {
+        local: { command: "node", args: ["server.js"] },
+        google: {
+          transport: "http",
+          url: "https://mcp.example.com/mcp",
+          oauth: true,
+          headersFromEnv: { Authorization: "GOOGLE_MCP_AUTH" },
+        },
+      },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const servers = r.value.mcpServers as Record<string, any>;
+      expect(servers.google.transport).toBe("http");
+      expect(servers.google.url).toBe("https://mcp.example.com/mcp");
+      expect(servers.google.oauth).toBe(true);
+      expect(servers.local.command).toBe("node");
+    }
+  });
+
+  it("normalizes legacy stdio configuration to an explicit transport discriminator", async () => {
+    const { validateModelConfig } = await import("../src/core/config/configSchema.js");
+    const r = validateModelConfig({ mcpServers: { local: { command: "node", args: ["server.js"] } } });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const servers = r.value.mcpServers as Record<string, any>;
+      expect(servers.local.transport).toBe("stdio");
+    }
+  });
+
+  it("rejects mixed stdio and HTTP transport fields", async () => {
+    const { validateModelConfig } = await import("../src/core/config/configSchema.js");
+    const stdioWithUrl = validateModelConfig({
+      mcpServers: { bad: { transport: "stdio", command: "node", url: "https://mcp.example.com/mcp" } },
+    });
+    expect(stdioWithUrl.ok).toBe(false);
+    if (!stdioWithUrl.ok) expect(stdioWithUrl.errors.join(" ")).toContain("not valid for stdio transport");
+
+    const httpWithCommand = validateModelConfig({
+      mcpServers: { bad: { transport: "http", url: "https://mcp.example.com/mcp", command: "node" } },
+    });
+    expect(httpWithCommand.ok).toBe(false);
+    if (!httpWithCommand.ok) expect(httpWithCommand.errors.join(" ")).toContain("not valid for HTTP transport");
+  });
+
+  it("rejects HTTP config without a URL and stdio config without a command", async () => {
+    const { validateModelConfig } = await import("../src/core/config/configSchema.js");
+    const noHttpUrl = validateModelConfig({ mcpServers: { bad: { transport: "http" } } });
+    expect(noHttpUrl.ok).toBe(false);
+    if (!noHttpUrl.ok) expect(noHttpUrl.errors.join(" ")).toContain("URL required for HTTP transport");
+
+    const noStdioCommand = validateModelConfig({ mcpServers: { bad: { transport: "stdio" } } });
+    expect(noStdioCommand.ok).toBe(false);
+    if (!noStdioCommand.ok) expect(noStdioCommand.errors.join(" ")).toContain("command: non-empty string required");
+  });
+
+  it("rejects a remote MCP URL with a non-HTTP protocol", async () => {
+    const { validateModelConfig } = await import("../src/core/config/configSchema.js");
+    const r = validateModelConfig({
+      mcpServers: { unsafe: { transport: "http", url: "file:///tmp/mcp" } },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join(" ")).toContain("must use http or https");
+  });
+
   it("rejects an mcpServer entry missing id/name/command", async () => {
     const { validateModelConfig } = await import(
       "../src/core/config/configSchema.js"

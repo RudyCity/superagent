@@ -127,32 +127,27 @@ Verify the build.
 - Manual check
 `;
 
+    // The current tool schema is revealed through describe_tool first.
+    const activeTools = await agent.getActiveTools();
+    const describeTool = activeTools.find((tool: any) => tool.name === "describe_tool");
+    expect(describeTool).toBeDefined();
+    await describeTool!.execute({ tool: "write_to_file" }, agent.workingDirectory);
+
     let modelCallCount = 0;
     vi.mocked(streamText).mockImplementation(() => {
       modelCallCount++;
-      const currentCall = modelCallCount;
       return {
         fullStream: (async function* () {
-          if (currentCall === 1) {
-            // First iteration: model writes the implementation plan to the
-            // plan file path. The agent's MODIFYING_TOOLS guard should flip
-            // planState to PLANNING_PENDING.
-            yield {
-              type: "tool-call",
-              toolCallId: "call_1",
-              toolName: "write",
-              args: { filePath: planPath, content: validPlan },
-            };
-          } else {
-            // If the loop does NOT break (the bug), the model gets called
-            // again. A defensive second response that does nothing harmful.
-            yield { type: "text-delta", textDelta: "Standing by." };
-          }
+          yield {
+            type: "tool-call",
+            toolCallId: "call_1",
+            toolName: "write_to_file",
+            args: { files: [{ filePath: planPath, content: validPlan }] },
+          };
         })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;
     });
-
     await agent.sendMessage("please make a plan");
 
     // ── The core assertion of the fix ────────────────────────────────────

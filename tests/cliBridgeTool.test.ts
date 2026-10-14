@@ -680,6 +680,7 @@ describe("cli_bridge v1.5.16 — system prompt, skill registry, auto-detect, tem
         args: [],
         system: "You are a reviewer. Reply in JSON only.",
         skillAutoDetect: false,
+        injectArtifacts: false,
       },
       process.cwd()
     );
@@ -1201,6 +1202,7 @@ describe("cli_bridge v1.5.32 — delegate skills, flag ordering, stdin EOF, and 
         binary: REPL_BIN,
         skills: [process.cwd()],
         prompt: "hello skills",
+        injectArtifacts: false,
       },
       process.cwd()
     );
@@ -1217,6 +1219,7 @@ describe("cli_bridge v1.5.32 — delegate skills, flag ordering, stdin EOF, and 
         binary: REPL_BIN,
         cwd: process.cwd(),
         prompt: "cwd test",
+        injectArtifacts: false,
       },
       process.cwd()
     );
@@ -1238,6 +1241,7 @@ describe("cli_bridge v1.5.32 — delegate skills, flag ordering, stdin EOF, and 
         args: [],
         system: "System prompt test",
         skillAutoDetect: false,
+        injectArtifacts: false,
       },
       process.cwd()
     );

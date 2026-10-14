@@ -92,6 +92,12 @@ describe("Master Agent Workflow & Guardrails", () => {
     agent.tier = "master";
     agent.planState = "APPROVED";
 
+    // Reveal the batch writer through the public discovery path before testing
+    // the master-tier source-write restriction.
+    const initialTools = await agent.getActiveTools();
+    const describeTool = initialTools.find((tool: any) => tool.name === "describe_tool");
+    expect(describeTool).toBeDefined();
+    await describeTool!.execute({ tool: "write_to_file" }, agent.workingDirectory);
     let genCallCount = 0;
     let streamCallCount = 0;
 
@@ -104,7 +110,7 @@ describe("Master Agent Workflow & Guardrails", () => {
             {
               toolCallId: "call_src",
               toolName: "write_to_file",
-              args: { filePath: "src/cli.tsx", content: "modified code" },
+              args: { files: [{ filePath: "src/cli.tsx", content: "modified code" }] },
             },
           ],
           finishReason: "stop",
@@ -112,7 +118,7 @@ describe("Master Agent Workflow & Guardrails", () => {
         } as any;
       }
       return {
-        text: "Done",
+        text: "Payload limit handled?",
         toolCalls: [],
         finishReason: "stop",
         usage: { promptTokens: 10, completionTokens: 10 },
@@ -129,12 +135,12 @@ describe("Master Agent Workflow & Guardrails", () => {
               type: "tool-call",
               toolCallId: "call_src",
               toolName: "write_to_file",
-              args: { filePath: "src/cli.tsx", content: "modified code" },
+              args: { files: [{ filePath: "src/cli.tsx", content: "modified code" }] },
             };
           } else {
             yield {
               type: "text-delta",
-              textDelta: "Done",
+              textDelta: "Payload limit handled?",
             };
           }
         })(),
@@ -181,7 +187,7 @@ describe("Master Agent Workflow & Guardrails", () => {
             {
               toolCallId: "call_plan",
               toolName: "write_to_file",
-              args: { filePath: planPath, content: validPlanContent },
+              args: { files: [{ filePath: planPath, content: validPlanContent }] },
             },
           ],
           finishReason: "stop",
@@ -189,7 +195,7 @@ describe("Master Agent Workflow & Guardrails", () => {
         } as any;
       }
       return {
-        text: "Done",
+        text: "Payload limit handled?",
         toolCalls: [],
         finishReason: "stop",
         usage: { promptTokens: 10, completionTokens: 10 },
@@ -206,12 +212,12 @@ describe("Master Agent Workflow & Guardrails", () => {
               type: "tool-call",
               toolCallId: "call_plan",
               toolName: "write_to_file",
-              args: { filePath: planPath, content: validPlanContent },
+              args: { files: [{ filePath: planPath, content: validPlanContent }] },
             };
           } else {
             yield {
               type: "text-delta",
-              textDelta: "Done",
+              textDelta: "Payload limit handled?",
             };
           }
         })(),
@@ -219,6 +225,11 @@ describe("Master Agent Workflow & Guardrails", () => {
       } as any;
     });
 
+    // Follow the dynamic discovery contract before exercising write guardrails.
+    const initialTools = await agent.getActiveTools();
+    const describeTool = initialTools.find((tool: any) => tool.name === "describe_tool");
+    expect(describeTool).toBeDefined();
+    await describeTool!.execute({ tool: "write_to_file" }, agent.workingDirectory);
     await agent.sendMessage("write plan");
 
     const toolEndEvent = onEvent.mock.calls.find(call => call[0].type === "tool_end" && call[0].toolResult.name === "write_to_file");
@@ -254,7 +265,7 @@ describe("Master Agent Workflow & Guardrails", () => {
             {
               toolCallId: "call_plan_shallow",
               toolName: "write_to_file",
-              args: { filePath: planPath, content: shallowPlanContent },
+              args: { files: [{ filePath: planPath, content: shallowPlanContent }] },
             },
           ],
           finishReason: "stop",
@@ -262,7 +273,7 @@ describe("Master Agent Workflow & Guardrails", () => {
         } as any;
       }
       return {
-        text: "Done",
+        text: "Payload limit handled?",
         toolCalls: [],
         finishReason: "stop",
         usage: { promptTokens: 10, completionTokens: 10 },
@@ -279,12 +290,12 @@ describe("Master Agent Workflow & Guardrails", () => {
               type: "tool-call",
               toolCallId: "call_plan_shallow",
               toolName: "write_to_file",
-              args: { filePath: planPath, content: shallowPlanContent },
+              args: { files: [{ filePath: planPath, content: shallowPlanContent }] },
             };
           } else {
             yield {
               type: "text-delta",
-              textDelta: "Done",
+              textDelta: "Payload limit handled?",
             };
           }
         })(),
@@ -292,6 +303,11 @@ describe("Master Agent Workflow & Guardrails", () => {
       } as any;
     });
 
+    // Follow the dynamic discovery contract before exercising write guardrails.
+    const initialTools = await agent.getActiveTools();
+    const describeTool = initialTools.find((tool: any) => tool.name === "describe_tool");
+    expect(describeTool).toBeDefined();
+    await describeTool!.execute({ tool: "write_to_file" }, agent.workingDirectory);
     await agent.sendMessage("write shallow plan");
 
     const toolEndEvent = onEvent.mock.calls.find(call => call[0].type === "tool_end" && call[0].toolResult.name === "write_to_file");
@@ -336,7 +352,7 @@ describe("Master Agent Workflow & Guardrails", () => {
         } as any;
       }
       return {
-        text: "Done",
+        text: "Payload limit handled?",
         toolCalls: [],
         finishReason: "stop",
         usage: { promptTokens: 10, completionTokens: 10 },
@@ -362,7 +378,7 @@ describe("Master Agent Workflow & Guardrails", () => {
           } else {
             yield {
               type: "text-delta",
-              textDelta: "Done",
+              textDelta: "Payload limit handled?",
             };
           }
         })(),
@@ -415,7 +431,7 @@ describe("Master Agent Workflow & Guardrails", () => {
             {
               toolCallId: "call_plan_no_sa",
               toolName: "write_to_file",
-              args: { filePath: planPath, content: planWithoutSuperagent },
+              args: { files: [{ filePath: planPath, content: planWithoutSuperagent }] },
             },
           ],
           finishReason: "stop",
@@ -423,7 +439,7 @@ describe("Master Agent Workflow & Guardrails", () => {
         } as any;
       }
       return {
-        text: "Done",
+        text: "Payload limit handled?",
         toolCalls: [],
         finishReason: "stop",
         usage: { promptTokens: 10, completionTokens: 10 },
@@ -444,12 +460,12 @@ describe("Master Agent Workflow & Guardrails", () => {
               type: "tool-call",
               toolCallId: "call_plan_no_sa",
               toolName: "write_to_file",
-              args: { filePath: planPath, content: planWithoutSuperagent },
+              args: { files: [{ filePath: planPath, content: planWithoutSuperagent }] },
             };
           } else {
             yield {
               type: "text-delta",
-              textDelta: "Done",
+              textDelta: "Payload limit handled?",
             };
           }
         })(),
@@ -457,9 +473,14 @@ describe("Master Agent Workflow & Guardrails", () => {
       } as any;
     });
 
+    // Follow the dynamic discovery contract before exercising write guardrails.
+    const initialTools = await agent.getActiveTools();
+    const describeTool = initialTools.find((tool: any) => tool.name === "describe_tool");
+    expect(describeTool).toBeDefined();
+    await describeTool!.execute({ tool: "write_to_file" }, agent.workingDirectory);
     await agent.sendMessage("write plan");
 
-    console.log("DEBUG ONEVENT CALLS:", onEvent.mock.calls.map(c => JSON.stringify(c[0])));
+
     const toolEndEvent = onEvent.mock.calls.find(call => call[0].type === "tool_end" && call[0].toolResult.name === "write_to_file");
     expect(toolEndEvent).toBeDefined();
     // Should NOT be an error - delegation context is auto-injected now
@@ -500,7 +521,7 @@ describe("Master Agent Workflow & Guardrails", () => {
             {
               toolCallId: "call_task_no_sa",
               toolName: "write_to_file",
-              args: { filePath: taskPath, content: taskWithoutSuperagent },
+              args: { files: [{ filePath: taskPath, content: taskWithoutSuperagent }] },
             },
           ],
           finishReason: "stop",
@@ -508,7 +529,7 @@ describe("Master Agent Workflow & Guardrails", () => {
         } as any;
       }
       return {
-        text: "Done",
+        text: "Payload limit handled?",
         toolCalls: [],
         finishReason: "stop",
         usage: { promptTokens: 10, completionTokens: 10 },
@@ -525,12 +546,12 @@ describe("Master Agent Workflow & Guardrails", () => {
               type: "tool-call",
               toolCallId: "call_task_no_sa",
               toolName: "write_to_file",
-              args: { filePath: taskPath, content: taskWithoutSuperagent },
+              args: { files: [{ filePath: taskPath, content: taskWithoutSuperagent }] },
             };
           } else {
             yield {
               type: "text-delta",
-              textDelta: "Done",
+              textDelta: "Payload limit handled?",
             };
           }
         })(),
@@ -538,11 +559,17 @@ describe("Master Agent Workflow & Guardrails", () => {
       } as any;
     });
 
+    // Follow the dynamic discovery contract before exercising write guardrails.
+    const initialTools = await agent.getActiveTools();
+    const describeTool = initialTools.find((tool: any) => tool.name === "describe_tool");
+    expect(describeTool).toBeDefined();
+    await describeTool!.execute({ tool: "write_to_file" }, agent.workingDirectory);
     await agent.sendMessage("write tasks");
 
     const toolEndEvent = onEvent.mock.calls.find(call => call[0].type === "tool_end" && call[0].toolResult.name === "write_to_file");
     expect(toolEndEvent).toBeDefined();
     // Should NOT be an error - tasks are auto-injected now
+    expect(toolEndEvent[0].toolResult.result).toContain("File written successfully");
     expect(toolEndEvent[0].toolResult.isError).not.toBe(true);
     // Verify the content was modified with injected tasks (the tool should have succeeded)
     expect(fsPromises.writeFile).toHaveBeenCalled();
@@ -582,7 +609,7 @@ describe("Master Agent Workflow & Guardrails", () => {
             {
               toolCallId: "call_task_sa",
               toolName: "write_to_file",
-              args: { filePath: taskPath, content: taskWithSuperagent },
+              args: { files: [{ filePath: taskPath, content: taskWithSuperagent }] },
             },
           ],
           finishReason: "stop",
@@ -590,7 +617,7 @@ describe("Master Agent Workflow & Guardrails", () => {
         } as any;
       }
       return {
-        text: "Done",
+        text: "Payload limit handled?",
         toolCalls: [],
         finishReason: "stop",
         usage: { promptTokens: 10, completionTokens: 10 },
@@ -607,12 +634,12 @@ describe("Master Agent Workflow & Guardrails", () => {
               type: "tool-call",
               toolCallId: "call_task_sa",
               toolName: "write_to_file",
-              args: { filePath: taskPath, content: taskWithSuperagent },
+              args: { files: [{ filePath: taskPath, content: taskWithSuperagent }] },
             };
           } else {
             yield {
               type: "text-delta",
-              textDelta: "Done",
+              textDelta: "Payload limit handled?",
             };
           }
         })(),
@@ -620,6 +647,11 @@ describe("Master Agent Workflow & Guardrails", () => {
       } as any;
     });
 
+    // Follow the dynamic discovery contract before exercising write guardrails.
+    const initialTools = await agent.getActiveTools();
+    const describeTool = initialTools.find((tool: any) => tool.name === "describe_tool");
+    expect(describeTool).toBeDefined();
+    await describeTool!.execute({ tool: "write_to_file" }, agent.workingDirectory);
     await agent.sendMessage("write tasks with superagent");
 
     const toolEndEvent = onEvent.mock.calls.find(call => call[0].type === "tool_end" && call[0].toolResult.name === "write_to_file");

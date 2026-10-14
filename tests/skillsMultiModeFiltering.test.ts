@@ -92,14 +92,14 @@ describe("loadAgentSkills Mode Awareness", () => {
     expect(prompt).toContain("single-agent-cognitive-scaleup");
     expect(prompt).not.toContain("master-agent-orchestration");
     expect(prompt).not.toContain("subagent-driven-development");
-    expect(prompt).toContain("plan implementation for architecture refactoring");
+    expect(prompt).toContain("SKILL DISCOVERY");
   });
 
   it("should generate multi-agent prompt with multi-agent orchestration references in multi mode", () => {
     const prompt = loadAgentSkills("general", "master", undefined, true);
     expect(prompt).toContain("master-agent-orchestration");
     expect(prompt).toContain("subagent-driven-development");
-    expect(prompt).toContain("plan implementation for multi-agent orchestration feature");
+    expect(prompt).toContain("SKILL DISCOVERY");
   });
 });
 

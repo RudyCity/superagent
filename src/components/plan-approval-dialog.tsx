@@ -16,20 +16,10 @@ const planReadCache: { key: string | null; mtimeMs: number; lines: string[] } = 
 };
 
 export function resolveExistingPlanPath(initialPath: string): string | null {
-  if (initialPath && fs.existsSync(initialPath)) return initialPath;
-  const cwdPlan = path.join(process.cwd(), "implementation_plan.md");
-  if (fs.existsSync(cwdPlan)) return cwdPlan;
-  if (initialPath) {
-    try {
-      const dir = path.dirname(initialPath);
-      if (fs.existsSync(dir)) {
-        const files = fs.readdirSync(dir);
-        const match = files.find(f => f.endsWith("_implementation_plan.md") || f === "implementation_plan.md");
-        if (match) return path.join(dir, match);
-      }
-    } catch {}
-  }
-  return null;
+  // The approval dialog must display the exact session plan requested by the
+  // caller. Falling back to a workspace/root or neighboring session plan can
+  // show unrelated content and invite approval of the wrong plan.
+  return initialPath && fs.existsSync(initialPath) ? initialPath : null;
 }
 
 function readPlanLines(planFilePath: string): { lines: string[]; found: boolean; resolvedPath: string } {

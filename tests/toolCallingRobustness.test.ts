@@ -125,7 +125,7 @@ describe("Tool Calling Robustness - Tier validation on executeToolCall", () => {
         id: "call_test",
         name: "read",
         args: {
-          filePath: testFile
+          filePaths: [testFile]
         }
       };
 

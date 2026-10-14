@@ -1,6 +1,13 @@
 import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
 
+function sanitizeSelfDevEvidenceSummary(value: string): string {
+  return value
+    .replace(/https?:[/][/][^\s)\]}]+/gi, "[URL REDACTED]")
+    .replace(/\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+\/=:-]+/gi, "[REDACTED]")
+    .replace(/\b(?:sk-(?:proj-|ant-)?[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,}|AKIA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{8,})\b/g, "[REDACTED]")
+    .slice(0, 240);
+}
 // /selfdev command
 export const selfdevCommand: SlashCommand = {
   name: "selfdev",
@@ -39,6 +46,12 @@ export const selfdevCommand: SlashCommand = {
       enabled: () => config.enabled,
       eventStore,
     });
+
+    if (["export", "backup", "restore", "retention", "lesson-metrics", "decisions"].includes(subcommand)) {
+      const { handleSelfDevMaintenanceSlash } = await import("../selfdev/maintenanceCli.js");
+      await handleSelfDevMaintenanceSlash(subcommand, parts.slice(1), workspace, ctx.addLine);
+      return;
+    }
 
     switch (subcommand) {
       case "status": {
@@ -140,10 +153,14 @@ export const selfdevCommand: SlashCommand = {
           const { FeedbackTracker } = await import("../selfdev/feedback.js");
           const tracker = new FeedbackTracker({ getDb: () => getHistoryDb() as any, enabled: () => getSelfDevConfig().enabled });
           const sessionId = ctx.agent?.sessionId || `slash:${workspace}:${lesson.id}:v${lesson.version}`;
-          const recorded = tracker.record(workspace, sessionId, lesson.id, lesson.version, metric as "applied" | "helped" | "harmed");
+          const feedbackResult = tracker.recordDetailed(workspace, sessionId, lesson.id, lesson.version, metric as "applied" | "helped" | "harmed");
           ctx.addLine({
-            type: recorded ? "system" : "error",
-            content: recorded ? `Recorded ${metric} feedback for lesson ${lesson.id} (v${lesson.version}).` : "Feedback was not recorded; check Selfdev state and database availability.",
+            type: feedbackResult.status === "recorded" || feedbackResult.status === "duplicate" ? "system" : "error",
+            content: feedbackResult.status === "recorded"
+              ? `Recorded ${metric} feedback for lesson ${lesson.id} (v${lesson.version}).`
+              : feedbackResult.status === "duplicate"
+                ? `Feedback already recorded for this session and lesson version (${metric}).`
+                : `Feedback was not recorded (status: ${feedbackResult.status}).`,
             timestamp: now,
           });
         } catch {
@@ -201,7 +218,7 @@ export const selfdevCommand: SlashCommand = {
             `- Source signals: ${sources.length ? sources.join(", ") : "not explicitly categorized"}`,
             `- Evidence references: ${lesson.evidenceIds.length}; verified event records: ${evidenceEvents.length}; missing/unavailable: ${Math.max(0, lesson.evidenceIds.length - evidenceEvents.length)}`,
             ...(lesson.approvedBy ? [`- Approved by: ${lesson.approvedBy}`] : []),
-            ...(lesson.approvedAt ? [`- Approved at (epoch ms): ${lesson.approvedAt}`] : []),
+            ...(lesson.approvedAt ? [`- Approved at: ${new Date(lesson.approvedAt).toISOString()}`] : []),
             "Evidence (bounded summaries; exact workspace only):",
           ];
           if (lesson.evidenceIds.length === 0) lines.push("  No evidence references are attached.");
@@ -211,7 +228,7 @@ export const selfdevCommand: SlashCommand = {
               lines.push(`  - ${evidenceId}: MISSING or unavailable in this workspace`);
               continue;
             }
-            lines.push(`  - ${event.id} | ${event.kind} | session ${event.sessionId} | ts ${event.ts}`, `    ${event.summary.slice(0, 240)}`);
+            lines.push(`  - ${event.id} | ${event.kind} | session ${event.sessionId} | ${new Date(event.ts).toISOString()}`, `    ${sanitizeSelfDevEvidenceSummary(event.summary)}`);
           }
           lines.push("Note: evidence count and explicit feedback are review signals, not a calibrated probability score.");
           ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
@@ -455,6 +472,12 @@ export const selfdevCommand: SlashCommand = {
             "  feedback <id> <applied|helped|harmed> - Record explicit lesson feedback",
             "  reject <id> [reason]          - Reject and discard candidate lesson",
             "  retire <id> [reason]          - Retire active lesson so it stops injecting",
+            "  lesson-metrics <id>           - Show per-lesson feedback counts",
+            "  decisions [limit]             - Show review audit decisions",
+            "  export <path> [--overwrite]   - Export redacted workspace backup",
+            "  backup <path> [--overwrite]   - Alias for export",
+            "  restore <path> [--apply]      - Validate restore; dry-run unless --apply",
+            "  retention --days <N> [--apply] - Preview/delete old unreferenced events",
           ].join("\n"),
           timestamp: now,
         });

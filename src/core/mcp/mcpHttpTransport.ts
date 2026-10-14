@@ -45,6 +45,7 @@ import {
   type McpSessionEntry,
 } from "./mcpSessionRegistry.js";
 import { summarizeArgs, argShape } from "./mcpLogSanitizer.js";
+import { recordMcpOAuthAudit } from "./mcpOAuthAudit.js";
 import {
   MCP_TOOL_CLASSIFICATION as MCP_TOOL_CLASSIFICATION_SRC,
   DISABLED_MCP_TOOLS,
@@ -339,7 +340,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         return;
       }
       normalizeAcceptHeader(req);
-      if (req.method !== "POST" && req.method !== "GET" && req.method !== "DELETE") {
+      if (req.method !== "POST" && req.method !== "GET" && req.method !== "HEAD" && req.method !== "DELETE") {
         res.writeHead(405, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "method not allowed" }));
         return;
@@ -372,9 +373,35 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         const challenge = buildBearerChallenge(protectedResourceMetadataUrl(metadataBase));
         res.writeHead(challenge.statusCode, {
           "Content-Type": "application/json",
+          "Cache-Control": "no-store",
           ...challenge.headers,
         });
-        res.end(JSON.stringify(challenge.body));
+        if (req.method === "HEAD" || req.method === "POST") {
+          recordMcpOAuthAudit({
+            stage: "mcp.endpoint_probe",
+            method: req.method,
+            statusCode: 401,
+          });
+        }
+        // HEAD must never return a body, while keeping authentication discovery
+        // available through the WWW-Authenticate response header.
+        res.end(req.method === "HEAD" ? undefined : JSON.stringify(challenge.body));
+        return;
+      }
+
+      // A client may probe the protected endpoint before starting OAuth. Return
+      // headers only, with no MCP session allocation or tool dispatch.
+      if (req.method === "HEAD") {
+        res.writeHead(204, {
+          "Cache-Control": "no-store",
+          "Content-Length": "0",
+        });
+        recordMcpOAuthAudit({
+          stage: "mcp.endpoint_probe",
+          method: "HEAD",
+          statusCode: 204,
+        });
+        res.end();
         return;
       }
 
@@ -434,7 +461,20 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           body = r.body;
         }
         registry.touch(requestSessionId);
-        await session.transport.handleRequest(req, res, body);
+        const diagnosticStage = getMcpDiagnosticStage(body);
+        const diagnosticStart = performance.now();
+        try {
+          await session.transport.handleRequest(req, res, body);
+        } finally {
+          if (diagnosticStage) {
+            recordMcpOAuthAudit({
+              stage: diagnosticStage,
+              method: "POST",
+              statusCode: res.statusCode || 200,
+              durationMs: performance.now() - diagnosticStart,
+            });
+          }
+        }
         return;
       }
 
@@ -471,7 +511,20 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         } as McpServerOptions);
         await newServer.connect(newTransport);
         try {
-          await newTransport.handleRequest(req, res, rb.body);
+          const diagnosticStage = getMcpDiagnosticStage(rb.body);
+          const diagnosticStart = performance.now();
+          try {
+            await newTransport.handleRequest(req, res, rb.body);
+          } finally {
+            if (diagnosticStage) {
+              recordMcpOAuthAudit({
+                stage: diagnosticStage,
+                method: "POST",
+                statusCode: res.statusCode || 200,
+                durationMs: performance.now() - diagnosticStart,
+              });
+            }
+          }
         } finally {
           const assignedId = newTransport.sessionId;
           if (assignedId) {
@@ -514,7 +567,20 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
       } as McpServerOptions);
       await statelessServer.connect(statelessTransport);
       try {
-        await statelessTransport.handleRequest(req, res, rb.body);
+        const diagnosticStage = getMcpDiagnosticStage(rb.body);
+        const diagnosticStart = performance.now();
+        try {
+          await statelessTransport.handleRequest(req, res, rb.body);
+        } finally {
+          if (diagnosticStage) {
+            recordMcpOAuthAudit({
+              stage: diagnosticStage,
+              method: "POST",
+              statusCode: res.statusCode || 200,
+              durationMs: performance.now() - diagnosticStart,
+            });
+          }
+        }
       } finally {
         try { await statelessTransport.close(); } catch { /* ignore */ }
       }
@@ -547,4 +613,17 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         });
       }),
   };
+}
+
+function getMcpDiagnosticStage(body: unknown): "mcp.initialize" | "mcp.tools_list" | "mcp.tools_call" | null {
+  if (!body || typeof body !== "object") return null;
+  const messages = Array.isArray(body) ? body : [body];
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue;
+    const method = (message as { method?: unknown }).method;
+    if (method === "initialize") return "mcp.initialize";
+    if (method === "tools/list") return "mcp.tools_list";
+    if (method === "tools/call") return "mcp.tools_call";
+  }
+  return null;
 }

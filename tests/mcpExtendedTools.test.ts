@@ -59,11 +59,13 @@ describe("Superagent Extended MCP Tools Execution Suite", () => {
 
     // Replace file content
     const replaceRes = await callMcpTool("superagent_replace_file_content", {
-      filePath: targetFile,
-      targetContent: "hello world",
-      replacementContent: "superagent rocks",
-      startLine: 1,
-      endLine: 3,
+      edits: [{
+        filePath: targetFile,
+        targetContent: "hello world",
+        replacementContent: "superagent rocks",
+        startLine: 1,
+        endLine: 3,
+      }],
     });
     expect(replaceRes.content[0].text).toContain("File updated");
     expect(fs.readFileSync(targetFile, "utf-8")).toContain("superagent rocks");
@@ -71,8 +73,7 @@ describe("Superagent Extended MCP Tools Execution Suite", () => {
     // Apply patch
     const patchContent = "<<<<<<<\nline 1\n=======\nfirst line\n>>>>>>>\n";
     const patchRes = await callMcpTool("superagent_apply_patch", {
-      filePath: targetFile,
-      patchContent,
+      patches: [{ filePath: targetFile, patchContent }],
     });
     expect(patchRes.content[0].text).toContain("Patch applied successfully");
     expect(fs.readFileSync(targetFile, "utf-8")).toContain("first line");

@@ -839,7 +839,18 @@ export const writeToFileTool: Tool = {
 
         const fileResults = await mapConcurrentOrdered(sortedFiles, 6, async (file): Promise<string> => {
           try {
-            const overwrite = !!(file.overwrite ?? (file as any).Overwrite);
+            // Session orchestration artifacts (plans/tasks/walkthroughs) are routinely
+            // revised across Agent turns. Match the single-write path's default while
+            // honoring an explicit overwrite=false supplied by the caller.
+            const isOrchestrationArtifact = isLocalConfigOrSessionPath(file.filePath) ||
+              /^(_?task|_?plan|_?walkthrough)\.md$/i.test(path.basename(file.resolvedPath));
+            const overwrite = !!(
+              file.overwrite ??
+              (file as any).Overwrite ??
+              args.overwrite ??
+              (args as any).Overwrite ??
+              isOrchestrationArtifact
+            );
             const nextContent = (file.content ?? (file as any).CodeContent ?? (file as any).codeContent ?? (file as any).text ?? (file as any).fileContent);
             if (nextContent === undefined || nextContent === null) {
               return `Error: Missing 'content' for file ${file.filePath}`;

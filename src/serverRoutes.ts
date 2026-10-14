@@ -2037,9 +2037,11 @@ export async function handleServerRoute(
     } catch {}
     const servers = Object.entries(mcpServers).map(([name, cfg]) => ({
       name,
-      command: cfg.command,
-      args: cfg.args || [],
-      env: cfg.env || {},
+      transport: (cfg.transport === "http" || cfg.transport === "streamable-http") ? cfg.transport : (cfg.transport || "stdio"),
+      ...( "url" in cfg
+        ? { url: cfg.url, headersFromEnv: cfg.headersFromEnv || {}, oauth: cfg.oauth || false }
+        : { command: cfg.command, args: cfg.args || [], env: cfg.env || {} }),
+      disabled: cfg.disabled || false,
       ...(statusMap[name.trim().toLowerCase()] || { status: "not-connected", tools: [] })
     }));
     sendJSON(res, 200, { success: true, servers });
@@ -2050,15 +2052,39 @@ export async function handleServerRoute(
   if (pathname === "/api/config/mcp" && req.method === "POST") {
     try {
       const bodyStr = await readBody(req);
-      const { name, command, args, env } = JSON.parse(bodyStr || "{}");
-      if (!name || !command) {
-        sendJSON(res, 400, { error: "name and command are required" });
+      const { name, transport, url, headersFromEnv, oauth, command, args, env, disabled } = JSON.parse(bodyStr || "{}");
+      if (!name) {
+        sendJSON(res, 400, { error: "name is required" });
         return true;
       }
+      let entry: any;
+      if (transport === "http" || transport === "streamable-http") {
+        let parsedUrl: URL;
+        try { parsedUrl = new URL(url); } catch {
+          sendJSON(res, 400, { error: "a valid absolute HTTP(S) url is required for remote MCP servers" });
+          return true;
+        }
+        if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+          sendJSON(res, 400, { error: "remote MCP url must use http or https" });
+          return true;
+        }
+        if (headersFromEnv !== undefined && (!headersFromEnv || typeof headersFromEnv !== "object" || Array.isArray(headersFromEnv) ||
+          Object.values(headersFromEnv).some((value: unknown) => typeof value !== "string" || !value.trim()))) {
+          sendJSON(res, 400, { error: "headersFromEnv must map header names to environment variable names" });
+          return true;
+        }
+        entry = { transport, url: parsedUrl.toString(), headersFromEnv: headersFromEnv || {}, oauth: Boolean(oauth) };
+      } else {
+        if (!command || typeof command !== "string") {
+          sendJSON(res, 400, { error: "command is required for stdio MCP servers" });
+          return true;
+        }
+        entry = { transport: "stdio", command, args: Array.isArray(args) ? args : [] };
+        if (env && Object.keys(env).length > 0) entry.env = env;
+      }
+      if (disabled !== undefined) entry.disabled = Boolean(disabled);
       mutateModelConfig((config) => {
         if (!config.mcpServers) config.mcpServers = {};
-        const entry: any = { command, args: args || [] };
-        if (env && Object.keys(env).length > 0) entry.env = env;
         config.mcpServers[name] = entry;
       });
       const config = loadModelConfig();

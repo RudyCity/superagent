@@ -44,7 +44,7 @@ describe("Skills Injection into Agent System Prompts", () => {
       capturedSystemPrompt = options.system || "";
       return {
         fullStream: (async function* () {
-          yield { type: "text-delta", textDelta: "Done" };
+          yield { type: "text-delta", textDelta: "Payload limit handled?" };
         })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;
@@ -75,7 +75,7 @@ describe("Skills Injection into Agent System Prompts", () => {
       capturedSystemPrompt = options.system || "";
       return {
         fullStream: (async function* () {
-          yield { type: "text-delta", textDelta: "Done" };
+          yield { type: "text-delta", textDelta: "Payload limit handled?" };
         })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;
@@ -105,7 +105,7 @@ describe("Skills Injection into Agent System Prompts", () => {
       capturedSystemPrompt = options.system || "";
       return {
         fullStream: (async function* () {
-          yield { type: "text-delta", textDelta: "Done" };
+          yield { type: "text-delta", textDelta: "Payload limit handled?" };
         })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;
@@ -148,7 +148,7 @@ describe("Skills Injection into Agent System Prompts", () => {
       masterPrompt = options.system || "";
       return {
         fullStream: (async function* () {
-          yield { type: "text-delta", textDelta: "Done" };
+          yield { type: "text-delta", textDelta: "Payload limit handled?" };
         })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;
@@ -182,7 +182,7 @@ describe("Skills Injection into Agent System Prompts", () => {
       superagentPrompt = options.system || "";
       return {
         fullStream: (async function* () {
-          yield { type: "text-delta", textDelta: "Done" };
+          yield { type: "text-delta", textDelta: "Payload limit handled?" };
         })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;
@@ -240,7 +240,7 @@ describe("Skill Preloading Enhancements", () => {
     vi.mocked(streamText).mockImplementation((options) => {
       capturedSystemPrompt = options.system || "";
       return {
-        fullStream: (async function* () { yield { type: "text-delta", textDelta: "Done" }; })(),
+        fullStream: (async function* () { yield { type: "text-delta", textDelta: "Payload limit handled?" }; })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;
     });
@@ -278,7 +278,7 @@ describe("Skill Preloading Enhancements", () => {
 
     vi.mocked(streamText).mockImplementation(() => {
       return {
-        fullStream: (async function* () { yield { type: "text-delta", textDelta: "Done" }; })(),
+        fullStream: (async function* () { yield { type: "text-delta", textDelta: "Payload limit handled?" }; })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;
     });
@@ -315,7 +315,7 @@ describe("Skill Preloading Enhancements", () => {
       capturedSystemPrompt = options.system || "";
       return {
         fullStream: (async function* () {
-          yield { type: "text-delta", textDelta: "Done" };
+          yield { type: "text-delta", textDelta: "Payload limit handled?" };
         })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;

@@ -50,6 +50,19 @@ describe("Agent.hasRealPlanContent — nudge-loop guard", () => {
     expect(agent.hasRealPlanContent()).toBe(false);
   });
 
+  it("ignores a stale workspace implementation plan when the session plan path is missing", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion, undefined, undefined, tempHome);
+    agent.workingDirectory = tempHome;
+    fs.writeFileSync(
+      path.join(tempHome, "implementation_plan.md"),
+      "# Implementation Plan\\n\\n## Phase 1\\n- Stale workspace plan from another task\\n- This must not approve the current session\\n",
+      "utf-8"
+    );
+    vi.spyOn(agent, "getPlanFilePath").mockReturnValue(path.join(tempHome, "session-plan-missing.md"));
+    expect(agent.hasRealPlanContent()).toBe(false);
+  });
+
   it("returns true for a substantive plan file", () => {
     const { onEvent, onPermission, onQuestion } = makeHandlers();
     const agent = new Agent(onEvent, onPermission, onQuestion, undefined, undefined, tempHome);

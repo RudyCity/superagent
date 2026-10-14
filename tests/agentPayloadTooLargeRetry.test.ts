@@ -165,7 +165,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
       streamTextSpy.mockImplementation(() => {
         return {
           fullStream: (async function* () {
-            yield { type: "text-delta", textDelta: "Success" };
+            yield { type: "text-delta", textDelta: "Payload limit handled?" };
           })(),
           usage: Promise.resolve({ promptTokens: 10, completionTokens: 5 }),
         } as any;

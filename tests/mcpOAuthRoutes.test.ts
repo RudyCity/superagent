@@ -99,6 +99,15 @@ describe("discovery endpoints", () => {
     expect(body.authorization_servers).toContain(BASE);
   });
 
+  it("serves path-specific protected-resource metadata without a token", async () => {
+    const r = await handleOAuthRoute(getReq("/.well-known/oauth-protected-resource/mcp"), config);
+    expect(r.handled).toBe(true);
+    expect(r.statusCode).toBe(200);
+    const body = JSON.parse(r.body);
+    expect(body.resource).toBe(`${BASE}/mcp`);
+    expect(body.authorization_servers).toContain(BASE);
+  });
+
   it("serves authorization-server metadata without a token", async () => {
     const r = await handleOAuthRoute(getReq("/.well-known/oauth-authorization-server"), config);
     expect(r.handled).toBe(true);

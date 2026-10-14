@@ -3,39 +3,63 @@ import os from "os";
 import path from "path";
 import fs from "fs";
 import { Agent } from "../src/core/agent.js";
-import { streamText } from "ai";
 import * as configModule from "../src/core/config.js";
 import {
   masterToolset,
   superagentToolset,
   subagentToolsets,
 } from "../src/core/tools/toolsets.js";
+import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
 
 const tempHome = path.join(process.cwd(), "tests", "temp-home-tier-toolset");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
-// Mock ai SDK synchronously
-vi.mock("ai", () => ({
-  streamText: vi.fn(),
-  generateText: vi.fn(),
-  jsonSchema: (s: any) => s,
-}));
+const DISCOVERY_NAMES = ["list_tools", "describe_tool"];
 
-import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
+function toolNames(tools: Array<{ name: string }>): string[] {
+  return tools.map((tool) => tool.name);
+}
+
+function createAgent(tier: "master" | "single" | "superagent" | "subagent"): Agent {
+  const agent = new Agent(
+    vi.fn(),
+    vi.fn().mockResolvedValue(true),
+    vi.fn(),
+    undefined,
+    undefined,
+    process.cwd(),
+  );
+  agent.tier = tier;
+  return agent;
+}
+
+async function exposeAuthorizedToolset(agent: Agent): Promise<string[]> {
+  const authorized = await agent.getActiveTools();
+  const authorizedNames = toolNames(authorized);
+  if (agent.tier === "subagent") return authorizedNames;
+
+  const initialVisible = await agent.getModelVisibleTools(authorized);
+  expect(toolNames(initialVisible).sort()).toEqual([...DISCOVERY_NAMES].sort());
+
+  const describeTool = authorized.find((tool) => tool.name === "describe_tool");
+  expect(describeTool).toBeDefined();
+  const namesToDescribe = authorizedNames.filter((name) => !DISCOVERY_NAMES.includes(name));
+  const response = await describeTool!.execute({ names: namesToDescribe }, agent.workingDirectory);
+  const described = JSON.parse(String(response)) as Array<{ name?: string; error?: string }>;
+  expect(described).toHaveLength(namesToDescribe.length);
+  expect(described.every((result) => !result.error)).toBe(true);
+
+  return toolNames(await agent.getModelVisibleTools(authorized));
+}
 
 describe("Agent - Tier-Specific Default Toolset Resolution", () => {
   beforeEach(() => {
-    if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
-    }
+    if (fs.existsSync(tempHome)) fs.rmSync(tempHome, { recursive: true, force: true });
     vi.restoreAllMocks();
     vi.clearAllMocks();
     vi.spyOn(rmemoryUtilModule, "getRMemoryClient").mockReturnValue({} as any);
     vi.spyOn(rmemoryUtilModule, "getRMemorySessionKey").mockReturnValue("test-sess");
     vi.spyOn(rmemoryUtilModule, "isRmemoryActive").mockResolvedValue(true);
-    // Speed up tests by skipping actual countdown delay
-    vi.spyOn(Agent.prototype as any, "delayWithCountdown").mockResolvedValue(undefined);
-    // Re-apply config spy after restoreAllMocks
     vi.spyOn(configModule, "getConfig").mockReturnValue({
       provider: "openai",
       model: "gpt-4",
@@ -47,161 +71,64 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
   });
 
   afterEach(() => {
-    if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
-    }
+    if (fs.existsSync(tempHome)) fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
-  it("should resolve masterToolset for master tier agent", async () => {
-    const onEvent = vi.fn();
-    const onPermission = vi.fn().mockResolvedValue(true);
-    const onQuestion = vi.fn();
-
-    const agent = new Agent(onEvent, onPermission, onQuestion);
-    agent.tier = "master";
+  it("resolves the authorized master toolset through dynamic discovery", async () => {
+    const agent = createAgent("master");
     agent.planState = "APPROVED";
 
-    let toolsPassed: any[] = [];
-    vi.mocked(streamText).mockImplementation(({ tools }: any) => {
-      toolsPassed = Object.keys(tools || {});
-      return {
-        fullStream: (async function* () {
-          yield { type: "text-delta", textDelta: "Test finished" };
-        })(),
-        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
-      } as any;
-    });
-
-    await agent.sendMessage("hello");
-
-    const expectedToolNames = masterToolset
-      .map((t) => t.name)
+    const exposedNames = await exposeAuthorizedToolset(agent);
+    const expectedNames = masterToolset
+      .map((tool) => tool.name)
       .filter((name) => name !== "manage_workspace_chain" && name !== "cross_workspace_exec");
-    expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
-    expect(toolsPassed.length).toBe(expectedToolNames.length);
+    expect(exposedNames.sort()).toEqual(expectedNames.sort());
   });
 
-  it("should resolve superagentToolset for single tier agent", async () => {
-    const onEvent = vi.fn();
-    const onPermission = vi.fn().mockResolvedValue(true);
-    const onQuestion = vi.fn();
-
-    const agent = new Agent(onEvent, onPermission, onQuestion);
-    agent.tier = "single";
+  it("resolves the authorized single-agent toolset through dynamic discovery", async () => {
+    const agent = createAgent("single");
     agent.planState = "APPROVED";
 
-    let toolsPassed: any[] = [];
-    vi.mocked(streamText).mockImplementation(({ tools }: any) => {
-      toolsPassed = Object.keys(tools || {});
-      return {
-        fullStream: (async function* () {
-          yield { type: "text-delta", textDelta: "Test finished" };
-        })(),
-        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
-      } as any;
-    });
-
-    await agent.sendMessage("hello");
-
-    const expectedToolNames = superagentToolset
-      .map((t) => t.name)
+    const exposedNames = await exposeAuthorizedToolset(agent);
+    const expectedNames = superagentToolset
+      .map((tool) => tool.name)
       .filter((name) => name !== "manage_workspace_chain" && name !== "cross_workspace_exec");
-    expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
-    expect(toolsPassed.length).toBe(expectedToolNames.length);
+    expect(exposedNames.sort()).toEqual(expectedNames.sort());
   });
 
-  it("should resolve superagentToolset for superagent tier agent", async () => {
-    const onEvent = vi.fn();
-    const onPermission = vi.fn().mockResolvedValue(true);
-    const onQuestion = vi.fn();
-
-    const agent = new Agent(onEvent, onPermission, onQuestion);
-    agent.tier = "superagent";
+  it("resolves the authorized Superagent toolset through dynamic discovery", async () => {
+    const agent = createAgent("superagent");
     agent.planState = "APPROVED";
 
-    let toolsPassed: any[] = [];
-    vi.mocked(streamText).mockImplementation(({ tools }: any) => {
-      toolsPassed = Object.keys(tools || {});
-      return {
-        fullStream: (async function* () {
-          yield { type: "text-delta", textDelta: "Test finished" };
-        })(),
-        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
-      } as any;
-    });
-
-    await agent.sendMessage("hello");
-
-    const expectedToolNames = superagentToolset
-      .map((t) => t.name)
+    const exposedNames = await exposeAuthorizedToolset(agent);
+    const expectedNames = superagentToolset
+      .map((tool) => tool.name)
       .filter((name) => name !== "manage_workspace_chain" && name !== "cross_workspace_exec");
-    expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
-    expect(toolsPassed.length).toBe(expectedToolNames.length);
+    expect(exposedNames.sort()).toEqual(expectedNames.sort());
   });
 
-  it("should resolve specific subagent toolset for subagent tier agent", async () => {
-    const onEvent = vi.fn();
-    const onPermission = vi.fn().mockResolvedValue(true);
-    const onQuestion = vi.fn();
-
-    const agent = new Agent(onEvent, onPermission, onQuestion);
-    agent.tier = "subagent";
+  it("resolves the coder subagent toolset without changing its direct-schema contract", async () => {
+    const agent = createAgent("subagent");
     agent.subagentType = "coder";
     agent.planState = "APPROVED";
 
-    let toolsPassed: any[] = [];
-    vi.mocked(streamText).mockImplementation(({ tools }: any) => {
-      toolsPassed = Object.keys(tools || {});
-      return {
-        fullStream: (async function* () {
-          yield { type: "text-delta", textDelta: "Test finished" };
-        })(),
-        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
-      } as any;
-    });
-
-    await agent.sendMessage("hello");
-
-    const expectedToolNames = subagentToolsets.coder.map((t) => t.name);
-    expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
-    expect(toolsPassed.length).toBe(expectedToolNames.length);
+    const exposedNames = await exposeAuthorizedToolset(agent);
+    const expectedNames = subagentToolsets.coder.map((tool) => tool.name);
+    expect(exposedNames.sort()).toEqual(expectedNames.sort());
   });
 
-  it("should resolve chrome-agent subagent toolset containing all Chrome tools", async () => {
-    const onEvent = vi.fn();
-    const onPermission = vi.fn().mockResolvedValue(true);
-    const onQuestion = vi.fn();
-
-    const agent = new Agent(onEvent, onPermission, onQuestion);
-    agent.tier = "subagent";
+  it("resolves the Chrome subagent toolset including all authorized Chrome tools", async () => {
+    const agent = createAgent("subagent");
     agent.subagentType = "chrome-agent";
     agent.planState = "APPROVED";
 
-    let toolsPassed: any[] = [];
-    vi.mocked(streamText).mockImplementation(({ tools }: any) => {
-      toolsPassed = Object.keys(tools || {});
-      return {
-        fullStream: (async function* () {
-          yield { type: "text-delta", textDelta: "Test finished" };
-        })(),
-        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
-      } as any;
-    });
-
-    await agent.sendMessage("hello");
-
-    const expectedToolNames = subagentToolsets["chrome-agent"].map((t) => t.name);
-    expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
-    expect(toolsPassed.length).toBe(expectedToolNames.length);
+    const exposedNames = await exposeAuthorizedToolset(agent);
+    const expectedNames = subagentToolsets["chrome-agent"].map((tool) => tool.name);
+    expect(exposedNames.sort()).toEqual(expectedNames.sort());
   });
 
-  it("should NOT filter tools based on classification category when planState is active (not IDLE)", async () => {
-    const onEvent = vi.fn();
-    const onPermission = vi.fn().mockResolvedValue(true);
-    const onQuestion = vi.fn();
-
-    const agent = new Agent(onEvent, onPermission, onQuestion);
-    agent.tier = "single";
+  it("does not category-filter discovered tools while a plan is active", async () => {
+    const agent = createAgent("single");
     agent.planState = "APPROVED";
     agent.currentClassification = {
       category: "conversation",
@@ -211,24 +138,20 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
       classificationTokens: 0,
     };
 
-    let toolsPassed: any[] = [];
-    vi.mocked(streamText).mockImplementation(({ tools }: any) => {
-      toolsPassed = Object.keys(tools || {});
-      return {
-        fullStream: (async function* () {
-          yield { type: "text-delta", textDelta: "Test finished" };
-        })(),
-        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
-      } as any;
-    });
+    const authorized = await agent.getActiveTools();
+    const expectedNames = toolNames(authorized);
+    const firstContext = await (await import("../src/core/agent/ContextBuilder.js")).ContextBuilder.buildContext(agent);
+    expect(firstContext.filteredToolDefs.map((tool: any) => tool.name).sort()).toEqual([...DISCOVERY_NAMES].sort());
 
-    await agent.sendMessage("lanjut");
+    const describeTool = authorized.find((tool) => tool.name === "describe_tool");
+    expect(describeTool).toBeDefined();
+    const namesToDescribe = expectedNames.filter((name) => !DISCOVERY_NAMES.includes(name));
+    const response = await describeTool!.execute({ names: namesToDescribe }, agent.workingDirectory);
+    const described = JSON.parse(String(response)) as Array<{ name?: string; error?: string }>;
+    expect(described).toHaveLength(namesToDescribe.length);
+    expect(described.every((result) => !result.error)).toBe(true);
 
-    const expectedToolNames = superagentToolset
-      .map((t) => t.name)
-      .filter((name) => name !== "manage_workspace_chain" && name !== "cross_workspace_exec");
-    // Tools should NOT be filtered to empty array because planState is active
-    expect(toolsPassed).toEqual(expect.arrayContaining(expectedToolNames));
-    expect(toolsPassed.length).toBe(expectedToolNames.length);
+    const contextAfterDiscovery = await (await import("../src/core/agent/ContextBuilder.js")).ContextBuilder.buildContext(agent);
+    expect(contextAfterDiscovery.filteredToolDefs.map((tool: any) => tool.name).sort()).toEqual(expectedNames.sort());
   });
 });

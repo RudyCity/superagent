@@ -99,7 +99,8 @@ describe("CompactionStrategy", () => {
       pinnedMessageIds: pinnedIds,
     });
     expect(result.metadata.strategy).toBe("pinning");
-    expect(result.metadata.pinnedCount).toBe(1);
+    // The explicit pin remains plus the latest active user request, which is always anchored.
+    expect(result.metadata.pinnedCount).toBe(2);
   });
 
   it("pruning should always be able to handle", () => {

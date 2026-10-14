@@ -159,6 +159,17 @@ export interface SelfDevLesson {
   retiredReason?: string;
 }
 
+/** Bounded, redacted audit record for a human lesson lifecycle decision. */
+export interface SelfDevReviewDecision {
+  workspace: string;
+  lessonId: string;
+  lessonVersion: number;
+  action: "approved" | "rejected" | "retired" | "edited";
+  actor: string;
+  timestamp: number;
+  reason?: string;
+}
+
 /** Patch for updating a lesson while it is still a candidate. */
 export interface SelfDevLessonUpdate {
   statement?: string;
@@ -178,6 +189,8 @@ export interface SelfDevStoreData {
   schemaVersion: number;
   updatedAt: number;
   lessons: SelfDevLesson[];
+  /** Optional for backward compatibility with existing schemaVersion=1 stores. */
+  reviewDecisions?: SelfDevReviewDecision[];
 }
 
 /** Current schema version of the lesson store JSON file. */

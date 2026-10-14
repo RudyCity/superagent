@@ -1383,6 +1383,9 @@ function isErrorLikeToolResult(result: string): boolean {
   return (
     /^Error(?:\b|:)/i.test(trimmed) ||
     /^Error reading file:/i.test(trimmed) ||
+    // Batch read workers prepend a file header; detect structured OS errors without
+    // classifying ordinary source files that contain a line beginning with "Error:".
+    /(?:^|\n)--- File: [^\n]+ ---\nError: (?:ENOENT|EACCES|EPERM|EISDIR|Cannot read binary file|Cannot read directory in bulk mode)/i.test(trimmed) ||
     /^Git worktree error:/i.test(trimmed) ||
     /^Exit code:\s*[1-9]\d*/i.test(trimmed)
   );
