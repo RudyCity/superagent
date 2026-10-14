@@ -11,6 +11,7 @@ export const WRITE_TOOLS = new Set([
   "write",
   "write_file",
   "superagent_write_file",
+  "superagent_write_files",
 ]);
 
 export const READ_TOOLS = new Set([
@@ -20,6 +21,7 @@ export const READ_TOOLS = new Set([
   "cat",
   "read_file",
   "superagent_read_file",
+  "superagent_read_files",
 ]);
 
 export interface ReadTarget {

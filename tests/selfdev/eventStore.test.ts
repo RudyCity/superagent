@@ -16,7 +16,7 @@ afterEach(() => { for (const db of databases.splice(0)) db.close(); });
 describe("bounded SQLite evidence store", () => {
   it("does not acquire a DB when disabled, even for invalid input", () => {
     const getDb = vi.fn(() => { throw new Error("must not acquire"); });
-    const disabled = new SelfDevEventStore({ workspace: "workspace-a", getDb });
+    const disabled = new SelfDevEventStore({ workspace: "workspace-a", getDb, config: { enabled: false } });
     expect(disabled.record(null as unknown as SelfDevEventInput)).toBeUndefined();
     expect(disabled.recordBatch([])).toEqual([]);
     expect(disabled.list()).toEqual([]);

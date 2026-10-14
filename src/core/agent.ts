@@ -591,20 +591,23 @@ export class Agent {
     this.abortController = new AbortController();
 
     const taskSummary = typeof userInput === "string" ? userInput : "[multimodal message]";
+    const taskStartedAt = Date.now();
     const currentModelName = getTierModel(this.isMultiAgent ? "multi" : "single", this.tier);
     const taskFilePath = this.getTaskFilePath();
     const planFilePath = this.getPlanFilePath();
 
-    // Record task_started event for self-dev learning loop (fire-and-forget)
-    import("./selfdev/selfdevAgent.js").then(({ recordSelfDevEvent }) => {
+    // Capture the start event asynchronously, then await it before persisting the
+    // terminal outcome. Selfdev remains non-blocking for the main task.
+    const selfDevStartPromise = import("./selfdev/selfdevAgent.js").then(({ recordSelfDevEvent }) =>
       recordSelfDevEvent({
+        ts: taskStartedAt,
         sessionId: this.sessionId,
         workspace: this.workingDirectory || process.cwd(),
         kind: "task_started",
         summary: `Task started: ${taskSummary.slice(0, 200)}`,
         tags: [this.tier, this.isMultiAgent ? "multi" : "single"],
-      });
-    }).catch(() => {});
+      })
+    ).catch(() => false);
 
     // Ensure session task file exists immediately so MCP, dashboards, and background processes have live visibility
     try {
@@ -629,6 +632,7 @@ export class Agent {
     });
 
     const signal = this.abortController?.signal;
+    let taskOutcome: "task_completed" | "task_failed" | "task_aborted" = "task_completed";
     let onAbort: (() => void) | undefined;
     const abortPromise = new Promise<never>((_, reject) => {
       onAbort = () => {
@@ -650,9 +654,11 @@ export class Agent {
       ]);
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
+        taskOutcome = "task_aborted";
         this.onEvent({ type: "text", content: "\n\n[Interrupted]" });
         await this.saveHistory();
       } else {
+        taskOutcome = "task_failed";
         const message = `Fatal error: ${formatError(err)}`;
         this.writeToLogFile("AGENT_ERROR", message);
         this.onEvent({ type: "text", content: `\n\n❌ [ERROR] ${message}\n` });
@@ -663,16 +669,7 @@ export class Agent {
           timestamp: Date.now(),
         });
         await this.saveHistory();
-        // Record task_failed event for self-dev learning loop (fire-and-forget)
-        import("./selfdev/selfdevAgent.js").then(({ recordSelfDevEvent }) => {
-          recordSelfDevEvent({
-            sessionId: this.sessionId,
-            workspace: this.workingDirectory || process.cwd(),
-            kind: "task_failed",
-            summary: `Task failed: ${message.slice(0, 200)}`,
-            tags: [this.tier, "fatal"],
-          });
-        }).catch(() => {});
+
       }
     } finally {
       if (signal && onAbort) {
@@ -695,18 +692,32 @@ export class Agent {
         }
       } catch {}
 
-      // Record task_completed event for self-dev learning loop (fire-and-forget)
-      import("./selfdev/selfdevAgent.js").then(({ recordSelfDevEvent, maybeAutoDistill }) => {
+      // Selfdev is a detached sidecar: its storage latency must not delay the
+      // user's task. Within the sidecar, wait for task_started before terminal
+      // persistence, then distill only if the terminal event was recorded.
+      void import("./selfdev/selfdevAgent.js").then(async ({ recordSelfDevEvent, maybeAutoDistill }) => {
         const ws = this.workingDirectory || process.cwd();
-        recordSelfDevEvent({
+        await selfDevStartPromise;
+        const terminalRecorded = await recordSelfDevEvent({
+          // Keep task history deterministically ordered even when a task finishes
+          // within the same wall-clock millisecond as it started.
+          ts: Math.max(Date.now(), taskStartedAt + 1),
           sessionId: this.sessionId,
           workspace: ws,
-          kind: "task_completed",
-          summary: `Task completed: ${taskSummary.slice(0, 200)}`,
-          tags: [this.tier, this.isMultiAgent ? "multi" : "single"],
+          kind: taskOutcome,
+          summary: taskOutcome === "task_completed"
+            ? `Task completed: ${taskSummary.slice(0, 200)}`
+            : taskOutcome === "task_failed"
+              ? `Task failed: ${taskSummary.slice(0, 200)}`
+              : `Task interrupted: ${taskSummary.slice(0, 200)}`,
+          tags: [this.tier, this.isMultiAgent ? "multi" : "single", taskOutcome],
         });
-        maybeAutoDistill(ws).catch(() => {});
-      }).catch(() => {});
+        if (terminalRecorded && taskOutcome !== "task_aborted") {
+          void maybeAutoDistill(ws).catch(() => {});
+        }
+      }).catch(() => {
+        // Selfdev is an optional learning sidecar; it cannot fail the main task.
+      });
 
       this.updateRootProcessActivity({
         isAgentRunning: false,

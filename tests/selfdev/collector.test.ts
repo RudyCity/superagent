@@ -14,7 +14,7 @@ function setup() {
 describe("validated collector", () => {
   it("returns safe disabled results without acquiring DB", () => {
     const getDb = vi.fn(() => { throw new Error("unexpected"); });
-    const collector = new SelfDevCollector(new SelfDevEventStore({ workspace: "ws", getDb }));
+    const collector = new SelfDevCollector(new SelfDevEventStore({ workspace: "ws", getDb, config: { enabled: false } }));
     expect(collector.record(input)).toEqual({ recorded: false, reason: "disabled" });
     expect(collector.recordBatch([input])).toEqual({ recorded: [], skipped: [{ index: 0, reason: "disabled" }] });
     expect(getDb).not.toHaveBeenCalled();

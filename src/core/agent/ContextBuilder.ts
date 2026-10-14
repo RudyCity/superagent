@@ -371,11 +371,11 @@ export class ContextBuilder {
     const systemContextBudget = Math.round(promptContextBudget * 0.65);
     const dynamicContextBudget = promptContextBudget - systemContextBudget;
 
-    // Load selfdev operational lessons for prompt injection (silent fail)
+    // Load selfdev operational lessons for prompt injection (best-effort).
     let selfdevLessonsText = "";
     try {
       const { buildSelfDevInjectionBlock } = await import("../selfdev/selfdevAgent.js");
-      selfdevLessonsText = await buildSelfDevInjectionBlock(agent.workingDirectory || process.cwd());
+      selfdevLessonsText = await buildSelfDevInjectionBlock(agent.workingDirectory || process.cwd(), agent.sessionId);
     } catch {}
 
     // Check live status of remote services (/muse tunnel, MCP servers, Telegram)
@@ -570,7 +570,7 @@ export class ContextBuilder {
         estTotal = estMsgTokens + estSysTokens + estToolTokens;
       }
 
-      if (estTotal > safetyMax) {
+      if (estTotal > safetyMax && allMessages.length >= 8) {
         const overshootPct = Math.round((estTotal / modelLimit) * 100);
         agent.writeToLogFile(
           "WARN",
@@ -588,7 +588,7 @@ export class ContextBuilder {
         let afterEstMsgTokens = agent.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
         let afterEstTotal = afterEstMsgTokens + estSysTokens + estToolTokens;
 
-        if (afterEstTotal > safetyMax) {
+        if (afterEstTotal > safetyMax && allMessages.length >= 8) {
           agent.writeToLogFile(
             "WARN",
             `Post-compaction estimated total (~${afterEstTotal.toLocaleString()}) still exceeds safety threshold (${safetyMax.toLocaleString()}). Applying hard pruning.`
@@ -601,6 +601,11 @@ export class ContextBuilder {
         }
 
         agent.writeToLogFile("INFO", `Post-compaction estimated total: ~${afterEstTotal.toLocaleString()} tokens.`);
+      } else if (estTotal > safetyMax && allMessages.length < 8) {
+        agent.writeToLogFile(
+          "INFO",
+          `Pre-flight context check (${activeModelName}): estimated ~${estTotal.toLocaleString()} tokens exceeds threshold (${safetyMax.toLocaleString()}), but conversation is short (${allMessages.length} msgs). Preserving recent turns and skipping premature compaction.`
+        );
       }
     }
 

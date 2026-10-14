@@ -52,6 +52,14 @@ describe("Self-Dev, Gateway & Skills Enhancement Suite", () => {
       expect(lines.length).toBeGreaterThan(0);
     });
 
+    it("inspect command remains workspace-scoped when a lesson ID is unknown", async () => {
+      const cmd = registry.get("selfdev");
+      const ctx = createMockContext();
+      await cmd?.execute("inspect no-such-selfdev-lesson-id", ctx as any);
+      const content = ctx.getLines().map((line: any) => line.content).join("\\n");
+      expect(content).toContain("Lesson not found in the current workspace.");
+    });
+
     it("toggles enabled state via enable and disable", async () => {
       const cmd = registry.get("selfdev");
       const ctx1 = createMockContext();
@@ -67,6 +75,145 @@ describe("Self-Dev, Gateway & Skills Enhancement Suite", () => {
       const { maybeAutoDistill } = await import("../src/core/selfdev/selfdevAgent.js");
       const count = await maybeAutoDistill(process.cwd());
       expect(typeof count).toBe("number");
+    });
+
+    it("coalesces concurrent automatic distillation for the same workspace", async () => {
+      const { getSelfDevConfig, updateSelfDevConfig } = await import("../src/core/selfdev/settings.js");
+      const { maybeAutoDistill, getSelfDevRuntimeMetrics, resetSelfDevRuntimeMetrics, resetSelfDevCollector } = await import("../src/core/selfdev/selfdevAgent.js");
+      const original = getSelfDevConfig();
+      updateSelfDevConfig({ enabled: true, collectionEnabled: true });
+      resetSelfDevRuntimeMetrics();
+      const workspace = `selfdev-coalesce-${process.pid}-${Date.now()}`;
+      try {
+        await Promise.all([
+          maybeAutoDistill(workspace),
+          maybeAutoDistill(workspace),
+          maybeAutoDistill(workspace),
+        ]);
+        const metrics = getSelfDevRuntimeMetrics();
+        expect(metrics.distillationRuns).toBe(1);
+        expect(metrics.distillationCoalesced).toBe(2);
+      } finally {
+        resetSelfDevCollector();
+        updateSelfDevConfig({
+          enabled: original.enabled,
+          collectionEnabled: original.collectionEnabled,
+          injectionEnabled: original.injectionEnabled,
+        });
+        resetSelfDevRuntimeMetrics();
+      }
+    });
+
+    it("runs read-only Selfdev doctor diagnostics", async () => {
+      const cmd = registry.get("selfdev");
+      const ctx = createMockContext();
+      await cmd?.execute("doctor", ctx as any);
+      const content = ctx.getLines().map((line: any) => line.content).join("\n");
+      expect(content).toContain("Selfdev Doctor (read-only):");
+      expect(content).toContain("Effective configuration");
+      expect(content).toContain("History database");
+    });
+
+    it("records actual lesson injection idempotently in the feedback store", async () => {
+      const fs = await import("node:fs/promises");
+      const path = await import("node:path");
+      const root = path.resolve("tmp");
+      await fs.mkdir(root, { recursive: true });
+      const dir = await fs.mkdtemp(path.join(root, "selfdev-injection-feedback-"));
+      const storePath = path.join(dir, "lessons.json");
+      const { getSelfDevConfig } = await import("../src/core/selfdev/settings.js");
+      const { updateSettings } = await import("../src/core/config/jsonConfig.js");
+      const { buildSelfDevInjectionBlock, resetSelfDevCollector } = await import("../src/core/selfdev/selfdevAgent.js");
+      const { getHistoryDb } = await import("../src/core/storage/historyDb.js");
+      const original = getSelfDevConfig();
+      const workspace = `selfdev-feedback-workspace-${process.pid}-${Date.now()}`;
+      const sessionId = `selfdev-feedback-session-${Date.now()}`;
+      const lessonId = `selfdev-feedback-lesson-${Date.now()}`;
+      const now = Date.now();
+      try {
+        await fs.writeFile(storePath, JSON.stringify({
+          schemaVersion: 1,
+          updatedAt: now,
+          lessons: [{
+            id: lessonId,
+            workspace,
+            statement: "Run the focused test suite after changing a task lifecycle hook.",
+            rationale: "Approved fixture used by the feedback telemetry test.",
+            evidenceIds: ["verified-event-reference"],
+            tags: ["test"],
+            version: 1,
+            status: "active",
+            createdAt: now - 1_000,
+            updatedAt: now,
+            approvedBy: "test-reviewer",
+            approvedAt: now - 500,
+          }],
+        }));
+        const { updateSelfDevConfig } = await import("../src/core/selfdev/settings.js");
+        updateSelfDevConfig({ enabled: true, injectionEnabled: true, storePath });
+        resetSelfDevCollector();
+
+        const first = await buildSelfDevInjectionBlock(workspace, sessionId);
+        const second = await buildSelfDevInjectionBlock(workspace, sessionId);
+        expect(first).toContain("Run the focused test suite");
+        expect(second).toContain("Run the focused test suite");
+
+        const db = getHistoryDb() as any;
+        const rows = db.prepare(
+          "SELECT metric FROM selfdev_feedback WHERE workspace = ? AND session_id = ? AND lesson_id = ? AND version = 1"
+        ).all(workspace, sessionId, lessonId);
+        expect(rows).toEqual([{ metric: "injected" }]);
+      } finally {
+        resetSelfDevCollector();
+        updateSettings({ selfdev: original });
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("reports Selfdev learning metrics without exposing event text", async () => {
+      const cmd = registry.get("selfdev");
+      const ctx = createMockContext();
+      await cmd?.execute("metrics", ctx as any);
+      const content = ctx.getLines().map((line: any) => line.content).join("\n");
+      expect(content).toContain("Selfdev Metrics");
+      expect(content).toContain("Events by kind");
+      expect(content).toContain("Current-process");
+      expect(content).not.toContain("password=");
+    });
+    it("records events independently for two workspaces in the same process", async () => {
+      const { getSelfDevConfig, updateSelfDevConfig } = await import("../src/core/selfdev/settings.js");
+      const { getHistoryDb } = await import("../src/core/storage/historyDb.js");
+      const { SelfDevEventStore } = await import("../src/core/selfdev/eventStore.js");
+      const { recordSelfDevEvent, resetSelfDevCollector } = await import("../src/core/selfdev/selfdevAgent.js");
+      const original = getSelfDevConfig();
+      updateSelfDevConfig({ enabled: true, collectionEnabled: true });
+      resetSelfDevCollector();
+      const suffix = `${process.pid}-${Date.now()}`;
+      const workspaceA = `selfdev-workspace-a-${suffix}`;
+      const workspaceB = `selfdev-workspace-b-${suffix}`;
+      try {
+        expect(await recordSelfDevEvent({
+          id: `event-a-${suffix}`, sessionId: `session-a-${suffix}`, workspace: workspaceA,
+          kind: "custom", summary: "Workspace A evidence",
+        })).toBe(true);
+        expect(await recordSelfDevEvent({
+          id: `event-b-${suffix}`, sessionId: `session-b-${suffix}`, workspace: workspaceB,
+          kind: "custom", summary: "Workspace B evidence",
+        })).toBe(true);
+
+        const db = getHistoryDb() as any;
+        const storeA = new SelfDevEventStore({ workspace: workspaceA, getDb: () => db, config: { enabled: true } });
+        const storeB = new SelfDevEventStore({ workspace: workspaceB, getDb: () => db, config: { enabled: true } });
+        expect(storeA.list({ limit: 10 }).map(event => event.id)).toEqual([`event-a-${suffix}`]);
+        expect(storeB.list({ limit: 10 }).map(event => event.id)).toEqual([`event-b-${suffix}`]);
+      } finally {
+        resetSelfDevCollector();
+        updateSelfDevConfig({
+          enabled: original.enabled,
+          collectionEnabled: original.collectionEnabled,
+          injectionEnabled: original.injectionEnabled,
+        });
+      }
     });
   });
 

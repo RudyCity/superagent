@@ -34,11 +34,83 @@ function normalizeStatement(statement: string): string {
   return statement.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+function contentTokens(statement: string): Set<string> {
+  const stopWords = new Set([
+    "about", "after", "again", "also", "always", "before", "from", "into", "only",
+    "should", "that", "their", "then", "there", "these", "this", "with", "when",
+    "where", "which", "while", "will", "would", "your", "must", "need", "than",
+  ]);
+  return new Set(
+    statement.toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      .split(/\s+/)
+      .filter(token => token.length > 2 && !stopWords.has(token))
+  );
+}
+
+function tokenJaccard(left: Set<string>, right: Set<string>): number {
+  if (left.size < 4 || right.size < 4) return 0;
+  let intersection = 0;
+  for (const token of left) if (right.has(token)) intersection += 1;
+  const union = left.size + right.size - intersection;
+  return union ? intersection / union : 0;
+}
+
+type NearDuplicateReference = {
+  id?: string;
+  statement: string;
+  isPendingCandidate: boolean;
+};
+
+/**
+ * Keep possible overlaps reviewable rather than silently merging or suppressing
+ * them. Exact duplicate filtering remains authoritative; near-duplicate hints
+ * never grant approval or change the lifecycle state.
+ */
+function markNearDuplicateForReview(
+  candidate: SelfDevLessonInput,
+  existingLessons: SelfDevLesson[],
+  earlierCandidates: SelfDevLessonInput[],
+): void {
+  const candidateTokens = contentTokens(candidate.statement);
+  const references: NearDuplicateReference[] = [
+    ...existingLessons
+      .filter(lesson => lesson.workspace === candidate.workspace && lesson.status !== "retired")
+      .map(lesson => ({ id: lesson.id, statement: lesson.statement, isPendingCandidate: false })),
+    ...earlierCandidates
+      .filter(lesson => lesson.workspace === candidate.workspace)
+      .map(lesson => ({ statement: lesson.statement, isPendingCandidate: true })),
+  ];
+
+  let best: { reference: NearDuplicateReference; similarity: number } | undefined;
+  for (const reference of references) {
+    const similarity = tokenJaccard(candidateTokens, contentTokens(reference.statement));
+    if (similarity >= 0.72 && (!best || similarity > best.similarity)) {
+      best = { reference, similarity };
+    }
+  }
+  if (!best) return;
+
+  const tag = "near_duplicate_review";
+  candidate.tags = Array.from(new Set([...(candidate.tags ?? []).filter(value => value !== tag).slice(0, SELFDEV_LIMITS.MAX_TAGS - 1), tag]));
+  const referenceLabel = best.reference.isPendingCandidate
+    ? "another candidate proposed in this distillation pass"
+    : `existing lesson ${(best.reference.id ?? "unknown").slice(0, 100)}`;
+  const hint = `Review hint: possible near-duplicate of ${referenceLabel} (token overlap ${Math.round(best.similarity * 100)}%). Kept as a candidate; no automatic merge or approval.`;
+  const existingRationale = candidate.rationale ?? "";
+  candidate.rationale = existingRationale
+    ? `${existingRationale.slice(0, Math.max(0, SELFDEV_LIMITS.MAX_RATIONALE_LENGTH - hint.length - 1))}\n${hint}`
+    : hint.slice(0, SELFDEV_LIMITS.MAX_RATIONALE_LENGTH);
+}
+
 export interface DistillOptions {
   workspace: string;
   events: SelfDevEvent[];
   existingLessons?: SelfDevLesson[];
   maxCandidates?: number;
+  /** Optional trusted evidence validator used by production persistence paths. */
+  validateEvidence?: (eventId: string) => boolean;
 }
 
 export interface DistillResult {
@@ -126,6 +198,7 @@ export function distillEvents(options: DistillOptions): DistillResult {
           tags,
         };
 
+        markNearDuplicateForReview(candidate, options.existingLessons ?? [], candidates);
         candidates.push(candidate);
         existingNorms.add(norm);
       }
@@ -164,6 +237,7 @@ export function distillEvents(options: DistillOptions): DistillResult {
         tags,
       };
 
+      markNearDuplicateForReview(candidate, options.existingLessons ?? [], candidates);
       candidates.push(candidate);
       existingNorms.add(norm);
     }
@@ -203,6 +277,7 @@ export function distillEvents(options: DistillOptions): DistillResult {
         tags,
       };
 
+      markNearDuplicateForReview(candidate, options.existingLessons ?? [], candidates);
       candidates.push(candidate);
       existingNorms.add(norm);
     }
@@ -226,6 +301,12 @@ export async function distillAndStore(
 
   for (const input of result.candidates) {
     try {
+      if (
+        options.validateEvidence &&
+        (!input.evidenceIds.length || !input.evidenceIds.every(id => options.validateEvidence!(id)))
+      ) {
+        continue;
+      }
       const created = await options.candidateStore.create(input);
       if (created) {
         saved.push(created);

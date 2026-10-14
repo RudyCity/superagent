@@ -21,7 +21,7 @@ describe("System Tools Optimizations", () => {
 
     try {
       // Execute read tool with default limit (800)
-      const result = await readTool.execute({ filePath: tempFilePath }, process.cwd());
+      const result = await readTool.execute({ filePaths: [tempFilePath] }, process.cwd());
       
       // Should contain line 1 to 800
       expect(result).toContain("1: Line 1");
@@ -41,7 +41,7 @@ describe("System Tools Optimizations", () => {
     await fs.writeFile(tempFilePath, fileContent, "utf-8");
 
     try {
-      const result = await readTool.execute({ filePath: tempFilePath, offset: 10, limit: 5 }, process.cwd());
+      const result = await readTool.execute({ filePaths: [tempFilePath], offset: 10, limit: 5 }, process.cwd());
       
       expect(result).toContain("10: Line 10");
       expect(result).toContain("14: Line 14");
@@ -61,7 +61,7 @@ describe("System Tools Optimizations", () => {
     await fs.writeFile(tempFilePath, fileContent, "utf-8");
 
     try {
-      const result = await readTool.execute({ filePath: tempFilePath, offset: 45, limit: 10 }, process.cwd());
+      const result = await readTool.execute({ filePaths: [tempFilePath], offset: 45, limit: 10 }, process.cwd());
       
       expect(result).toContain("45: Line 45");
       expect(result).toContain("50: Line 50");
@@ -116,7 +116,7 @@ describe("System Tools Optimizations", () => {
         ]);
 
         const result = await multiReplaceFileContentTool.execute(
-          { filePath: tempFilePath, chunks: chunksJsonString },
+          { files: [{ filePath: tempFilePath, chunks: chunksJsonString }] },
           process.cwd()
         );
 
@@ -134,7 +134,7 @@ describe("System Tools Optimizations", () => {
 
       try {
         const result = await multiReplaceFileContentTool.execute(
-          {
+          { files: [{
             filePath: tempFilePath,
             chunks: {
               startLine: 2,
@@ -142,7 +142,7 @@ describe("System Tools Optimizations", () => {
               targetContent: "line 2",
               replacementContent: "line 2 updated"
             }
-          },
+          }] },
           process.cwd()
         );
 
@@ -161,7 +161,7 @@ describe("System Tools Optimizations", () => {
       try {
         // Passing chunk with missing/invalid targetContent (number)
         const result1 = await multiReplaceFileContentTool.execute(
-          {
+          { files: [{
             filePath: tempFilePath,
             chunks: [
               {
@@ -171,14 +171,14 @@ describe("System Tools Optimizations", () => {
                 replacementContent: "new content"
               }
             ]
-          },
+          }] },
           process.cwd()
         );
-        expect(result1).toContain("Error: Missing or invalid 'targetContent'");
+        expect(result1).toContain("Missing or invalid 'targetContent'");
 
         // Passing chunk with missing targetContent
         const result2 = await multiReplaceFileContentTool.execute(
-          {
+          { files: [{
             filePath: tempFilePath,
             chunks: [
               {
@@ -187,10 +187,10 @@ describe("System Tools Optimizations", () => {
                 replacementContent: "new content"
               }
             ]
-          },
+          }] },
           process.cwd()
         );
-        expect(result2).toContain("Error: Missing or invalid 'targetContent'");
+        expect(result2).toContain("Missing or invalid 'targetContent'");
       } finally {
         await fs.unlink(tempFilePath).catch(() => {});
       }
@@ -202,7 +202,7 @@ describe("System Tools Optimizations", () => {
 
       try {
         const result = await multiReplaceFileContentTool.execute(
-          {
+          { files: [{
             filePath: tempFilePath,
             chunks: [
               {
@@ -218,10 +218,10 @@ describe("System Tools Optimizations", () => {
                 replacementContent: "replaced second"
               }
             ]
-          },
+          }] },
           process.cwd()
         );
-        expect(result).toContain("Error: Overlapping line ranges detected");
+        expect(result).toContain("Overlapping line ranges detected");
       } finally {
         await fs.unlink(tempFilePath).catch(() => {});
       }
@@ -234,7 +234,7 @@ describe("System Tools Optimizations", () => {
 
       try {
         const result = await multiReplaceFileContentTool.execute(
-          {
+          { files: [{
             filePath: tempFilePath,
             chunks: [
               {
@@ -244,7 +244,7 @@ describe("System Tools Optimizations", () => {
                 replacementContent: "line 1 updated"
               }
             ]
-          },
+          }] },
           process.cwd()
         );
         expect(result).toContain("File updated successfully");
@@ -263,16 +263,16 @@ describe("System Tools Optimizations", () => {
 
       try {
         const result = await replaceFileContentTool.execute(
-          {
+          { edits: [{
             filePath: tempFilePath,
             startLine: 1,
             endLine: 3,
             targetContent: "foo",
             replacementContent: "new-foo"
-          },
+          }] },
           process.cwd()
         );
-        expect(result).toContain("Error: Multiple occurrences of targetContent found");
+        expect(result).toContain("Multiple occurrences of targetContent found");
         const content = await fs.readFile(tempFilePath, "utf-8");
         expect(content).toBe("foo\nbar\nfoo\n");
       } finally {
@@ -286,14 +286,14 @@ describe("System Tools Optimizations", () => {
 
       try {
         const result = await replaceFileContentTool.execute(
-          {
+          { edits: [{
             filePath: tempFilePath,
             startLine: 1,
             endLine: 3,
             targetContent: "foo",
             replacementContent: "new-foo",
             allowMultiple: true
-          },
+          }] },
           process.cwd()
         );
         expect(result).toContain("File updated successfully");
@@ -310,7 +310,7 @@ describe("System Tools Optimizations", () => {
 
       try {
         const result = await multiReplaceFileContentTool.execute(
-          {
+          { files: [{
             filePath: tempFilePath,
             chunks: [
               {
@@ -320,10 +320,10 @@ describe("System Tools Optimizations", () => {
                 replacementContent: "new-foo"
               }
             ]
-          },
+          }] },
           process.cwd()
         );
-        expect(result).toContain("Error: Multiple occurrences of targetContent found");
+        expect(result).toContain("Multiple occurrences of targetContent found");
         const content = await fs.readFile(tempFilePath, "utf-8");
         expect(content).toBe("foo\nbar\nfoo\n");
       } finally {
@@ -337,7 +337,7 @@ describe("System Tools Optimizations", () => {
 
       try {
         const result = await multiReplaceFileContentTool.execute(
-          {
+          { files: [{
             filePath: tempFilePath,
             chunks: [
               {
@@ -348,7 +348,7 @@ describe("System Tools Optimizations", () => {
                 allowMultiple: true
               }
             ]
-          },
+          }] },
           process.cwd()
         );
         expect(result).toContain("File updated successfully");
@@ -366,7 +366,7 @@ describe("System Tools Optimizations", () => {
       try {
         // startLine < 1
         const result1 = await multiReplaceFileContentTool.execute(
-          {
+          { files: [{
             filePath: tempFilePath,
             chunks: [
               {
@@ -376,14 +376,14 @@ describe("System Tools Optimizations", () => {
                 replacementContent: "new-bar"
               }
             ]
-          },
+          }] },
           process.cwd()
         );
-        expect(result1).toContain("Error: Invalid line range");
+        expect(result1).toContain("Invalid line range");
 
         // endLine > lines.length
         const result2 = await multiReplaceFileContentTool.execute(
-          {
+          { files: [{
             filePath: tempFilePath,
             chunks: [
               {
@@ -393,14 +393,14 @@ describe("System Tools Optimizations", () => {
                 replacementContent: "new-bar"
               }
             ]
-          },
+          }] },
           process.cwd()
         );
-        expect(result2).toContain("Error: Invalid line range");
+        expect(result2).toContain("Invalid line range");
 
         // endLine < startLine
         const result3 = await multiReplaceFileContentTool.execute(
-          {
+          { files: [{
             filePath: tempFilePath,
             chunks: [
               {
@@ -410,10 +410,10 @@ describe("System Tools Optimizations", () => {
                 replacementContent: "new-bar"
               }
             ]
-          },
+          }] },
           process.cwd()
         );
-        expect(result3).toContain("Error: Invalid line range");
+        expect(result3).toContain("Invalid line range");
       } finally {
         await fs.unlink(tempFilePath).catch(() => {});
       }

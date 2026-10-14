@@ -35,7 +35,7 @@ export interface JSONModelPreset<T> {
 }
 
 export interface SystemSettings {
-  /** Optional self-development controls; absent settings remain disabled. */
+  /** Self-development controls; absent settings inherit the default-ON configuration. */
   selfdev?: SelfDevConfig;
   concurrencyLimit: number;
   rateLimitRpm: number;

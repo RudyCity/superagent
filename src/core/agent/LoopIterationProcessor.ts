@@ -865,6 +865,39 @@ export class LoopIterationProcessor {
           return { shouldBreak: false };
         }
 
+        // Checklist task enforcement: Check if there are unfinished checklist tasks before exiting
+        try {
+          const taskPath = typeof (agent as any).getTaskFilePath === "function" ? (agent as any).getTaskFilePath() : "";
+          if (taskPath && fs.existsSync(taskPath)) {
+            const { parseChecklistTasks } = await import("../taskChecklist.js");
+            const taskContent = fs.readFileSync(taskPath, "utf-8");
+            const tasks = parseChecklistTasks(taskContent);
+            const pendingItems = tasks.filter((t) => t.status === " " || t.status === "/");
+            const category = agent.currentClassification?.category || "complex_task";
+            const isUserQuestion = category === "question" || /\?$/.test(textContent.trim());
+
+            if (pendingItems.length > 0 && !isUserQuestion && i < (agent.goalMaxIterations || getSettings().maxIterations || 100)) {
+              agent.writeToLogFile(
+                "INFO",
+                `Text-only response on iteration ${i} with ${pendingItems.length} unfinished task(s) on checklist. Auto-continuing with task checklist nudge.`
+              );
+              agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
+              agent.conversation.addMessage({
+                role: "system",
+                content: `[SYS] You have ${pendingItems.length} unfinished task(s) remaining on the checklist:
+${pendingItems.map((t, idx) => `${idx + 1}. [ ] ${t.text}`).join("\n")}
+
+Do NOT stop, give up, or return conversational greetings. Immediately execute the next pending task using the available tools.`,
+                timestamp: Date.now(),
+              });
+              await agent.saveHistory();
+              return { shouldBreak: false };
+            }
+          }
+        } catch (checklistErr: any) {
+          agent.writeToLogFile("WARN", `Checklist enforcement check failed: ${checklistErr.message}`);
+        }
+
         agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
         await agent.saveHistory();
       } else {

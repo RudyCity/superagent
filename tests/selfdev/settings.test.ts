@@ -46,9 +46,39 @@ describe("selfdev JSON settings", () => {
       expect(normalizeSelfDevConfig({ enabled: true, collectionEnabled: value }).enabled).toBe(false);
     });
   }
+  it("migrates the legacy default-off config to ON once and preserves explicit opt-out", () => {
+    isolatedRoot = fs.mkdtempSync(path.resolve("tests/selfdev/.migration-"));
+    process.env.SUPERAGENT_CONFIG_DIR = isolatedRoot;
+    const configPath = path.join(isolatedRoot, "model-config.json");
+    fs.writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      providers: [],
+      presets: { multi: [], single: [] },
+      activePresetId: { multi: "", single: "" },
+      settings: { selfdev: { enabled: false, collectionEnabled: true, injectionEnabled: true } },
+    }));
+    clearModelConfigCache();
+
+    const migrated = getSelfDevConfig();
+    expect(migrated).toMatchObject({ enabled: true, userOptOut: false, configVersion: 1 });
+    expect(JSON.parse(fs.readFileSync(configPath, "utf8")).settings.selfdev.enabled).toBe(true);
+
+    updateSelfDevConfig({ enabled: false });
+    clearModelConfigCache();
+    expect(getSelfDevConfig()).toMatchObject({ enabled: false, userOptOut: true });
+
+    updateSettings({ concurrencyLimit: 3 });
+    clearModelConfigCache();
+    expect(getSelfDevConfig()).toMatchObject({ enabled: false, userOptOut: true });
+
+    updateSelfDevConfig({ enabled: true });
+    clearModelConfigCache();
+    expect(getSelfDevConfig()).toMatchObject({ enabled: true, userOptOut: false });
+  });
+
   it("clamps numeric limits and cannot disable mandatory redaction", () => {
     expect(normalizeSelfDevConfig({ enabled: true, maxBatchSize: Infinity, maxEventsPerWorkspace: 99999, maxLessons: -4, redactSecrets: false }))
       .toMatchObject({ enabled: true, maxBatchSize: 100, maxEventsPerWorkspace: 5000, maxLessons: 1, redactSecrets: true });
-    expect(normalizeSelfDevConfig(undefined).enabled).toBe(false);
+    expect(normalizeSelfDevConfig(undefined).enabled).toBe(true);
   });
 });

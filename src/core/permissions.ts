@@ -24,6 +24,7 @@ async function getStateModule() {
 export const MODIFYING_TOOLS = [
   "write",
   "write_to_file",
+  "write_file",
   "edit",
   "replace_file_content",
   "multi_replace_file_content",

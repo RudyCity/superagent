@@ -12,12 +12,16 @@ Usage: superagent selfdev <command> [options]
 
 Commands:
   status                                Show Self-Dev engine configuration and lesson counts
+  doctor                                Run read-only configuration/storage/workspace diagnostics
+  metrics                               Show stored learning metrics and current-process counters
   enable                                Enable self-development globally
   disable                               Disable self-development globally
   list [candidate|active|retired]       List lessons for current workspace
+  inspect <lesson_id>                   Inspect lesson provenance and workspace-scoped evidence
   review                                Interactive review wizard for pending candidate lessons
   distill [max]                         Distill recent session events into candidate lessons
   approve <lesson_id> [version]         Approve a candidate lesson to make it active
+  feedback <lesson_id> <applied|helped|harmed>  Record explicit feedback for an active lesson
   reject <lesson_id> [reason]           Reject and discard a candidate lesson
   retire <lesson_id> [reason]           Retire an active lesson to stop injecting it
 
@@ -75,6 +79,8 @@ export async function handleSelfDevCliCommand(args: string[]): Promise<void> {
 
       console.log("Self-Development Engine Status:");
       console.log(`- Enabled           : ${config.enabled ? "Yes" : "No"}`);
+      console.log(`- Config Version    : ${config.configVersion}`);
+      console.log(`- Explicit Opt-out  : ${config.userOptOut ? "Yes" : "No"}`);
       console.log(`- Event Collection  : ${config.collectionEnabled ? "Yes" : "No"}`);
       console.log(`- Prompt Injection  : ${config.injectionEnabled ? "Yes" : "No"}`);
       console.log(`- Active Workspace  : ${workspace}`);
@@ -83,6 +89,83 @@ export async function handleSelfDevCliCommand(args: string[]): Promise<void> {
       console.log(`- Candidate Lessons : ${candidateCount}`);
       console.log(`- Retired Lessons   : ${retiredCount}`);
       process.exit(0);
+      break;
+    }
+
+    case "doctor": {
+      try {
+        const { getSelfDevDoctorReport } = await import("../selfdev/diagnostics.js");
+        const report = await getSelfDevDoctorReport(workspace);
+        console.log("Selfdev Doctor (read-only):");
+        console.log(`- Enabled: ${report.enabled ? "Yes" : "No"}`);
+        console.log(`- Explicit opt-out: ${report.userOptOut ? "Yes" : "No"}`);
+        console.log(`- Config version: ${report.configVersion}`);
+        console.log(`- Events in workspace: ${report.eventCount}`);
+        for (const check of report.checks) {
+          const marker = check.state === "ok" ? "OK" : check.state === "error" ? "ERROR" : check.state.toUpperCase();
+          console.log(`[${marker}] ${check.name}: ${check.detail}`);
+        }
+        process.exit(report.healthy ? 0 : 1);
+      } catch {
+        console.log("Selfdev Doctor failed: diagnostic operation could not complete.");
+        process.exit(1);
+      }
+      break;
+    }
+
+    case "metrics": {
+      try {
+        const { getSelfDevMetricsReport } = await import("../selfdev/diagnostics.js");
+        const report = await getSelfDevMetricsReport(workspace);
+        console.log("Selfdev Metrics (workspace-scoped stored data):");
+        console.log(`- Enabled: ${report.enabled ? "Yes" : "No"}`);
+        console.log(`- Config version: ${report.configVersion}`);
+        console.log(`- Storage query: ${report.storageAvailable ? "available" : "FAILED (counts may be incomplete)"}`);
+        console.log(`- Stored events: ${report.eventCount}`);
+        console.log(`- Lessons: ${report.lessonCounts.candidate} candidate, ${report.lessonCounts.active} active, ${report.lessonCounts.retired} retired`);
+        console.log("Events by kind:");
+        for (const [kind, count] of Object.entries(report.eventsByKind).sort(([a], [b]) => a.localeCompare(b))) {
+          console.log(`  ${kind}: ${count}`);
+        }
+        console.log("Explicit feedback:");
+        console.log(`  injected: ${report.feedback.injected}; applied: ${report.feedback.applied}; helped: ${report.feedback.helped}; harmed: ${report.feedback.harmed}`);
+        console.log("Current-process counters (reset on restart):");
+        console.log(JSON.stringify(report.runtime, null, 2));
+        process.exit(0);
+      } catch {
+        console.log("Selfdev metrics failed: diagnostic operation could not complete.");
+        process.exit(1);
+      }
+      break;
+    }
+
+    case "feedback": {
+      const id = args[1];
+      const metric = args[2]?.toLowerCase();
+      if (!id || !["applied", "helped", "harmed"].includes(metric || "")) {
+        console.log("Usage: superagent selfdev feedback <lesson_id> <applied|helped|harmed>");
+        process.exit(1);
+      }
+      try {
+        const lesson = await reviewService.get(workspace, id);
+        if (!lesson || lesson.status !== "active") {
+          console.log("Feedback can only be recorded for an active lesson in the current workspace.");
+          process.exit(1);
+        }
+        const { FeedbackTracker } = await import("../selfdev/feedback.js");
+        const tracker = new FeedbackTracker({ getDb: () => getHistoryDb() as any, enabled: () => getSelfDevConfig().enabled });
+        const sessionId = `manual:${workspace}:${lesson.id}:v${lesson.version}`;
+        const recorded = tracker.record(workspace, sessionId, lesson.id, lesson.version, metric as "applied" | "helped" | "harmed");
+        if (!recorded) {
+          console.log("Feedback was not recorded. Check Selfdev state and database availability.");
+          process.exit(1);
+        }
+        console.log(`Recorded ${metric} feedback for active lesson ${lesson.id} (v${lesson.version}).`);
+        process.exit(0);
+      } catch {
+        console.log("Feedback failed: operation could not complete.");
+        process.exit(1);
+      }
       break;
     }
 
@@ -97,6 +180,57 @@ export async function handleSelfDevCliCommand(args: string[]): Promise<void> {
       updateSelfDevConfig({ enabled: false });
       console.log("Self-Development engine disabled.");
       process.exit(0);
+      break;
+    }
+
+    case "inspect": {
+      const id = args[1];
+      if (!id) {
+        console.log("Usage: superagent selfdev inspect <lesson_id>");
+        process.exit(1);
+      }
+      try {
+        const result = await reviewService.inspect(workspace, id);
+        if (!result) {
+          console.log("Lesson not found in the current workspace.");
+          process.exit(1);
+        }
+        const lesson = result.lesson;
+        const evidenceEvents = result.evidenceEvents ?? [];
+        const evidenceById = new Map(evidenceEvents.map(event => [event.id, event]));
+        const sourceLabels: Record<string, string> = {
+          fix_cycle: "failure followed by verified success",
+          user_feedback: "explicit user feedback",
+          lesson_proposed: "explicit lesson proposal",
+        };
+        const sources = lesson.tags.filter(tag => sourceLabels[tag]).map(tag => sourceLabels[tag]);
+        console.log(`Selfdev Lesson Provenance — ${lesson.id}`);
+        console.log(`- Workspace-scoped result: yes`);
+        console.log(`- Status/version: ${lesson.status} / v${lesson.version}`);
+        console.log(`- Statement: ${lesson.statement}`);
+        console.log(`- Source signals: ${sources.length ? [...new Set(sources)].join(", ") : "not explicitly categorized"}`);
+        console.log(`- Evidence references: ${lesson.evidenceIds.length}; verified event records: ${evidenceEvents.length}; missing/unavailable: ${Math.max(0, lesson.evidenceIds.length - evidenceEvents.length)}`);
+        if (lesson.approvedBy) console.log(`- Approved by: ${lesson.approvedBy}`);
+        if (lesson.approvedAt) console.log(`- Approved at (epoch ms): ${lesson.approvedAt}`);
+        if (lesson.retiredAt) console.log(`- Retired at (epoch ms): ${lesson.retiredAt}`);
+        if (lesson.retiredReason) console.log(`- Retirement reason: ${lesson.retiredReason}`);
+        console.log("Evidence (bounded summaries; exact workspace only):");
+        if (lesson.evidenceIds.length === 0) console.log("  No evidence references are attached.");
+        for (const evidenceId of lesson.evidenceIds) {
+          const event = evidenceById.get(evidenceId);
+          if (!event) {
+            console.log(`  - ${evidenceId}: MISSING or unavailable in this workspace`);
+            continue;
+          }
+          console.log(`  - ${event.id} | ${event.kind} | session ${event.sessionId} | ts ${event.ts}`);
+          console.log(`    ${event.summary.slice(0, 240)}`);
+        }
+        console.log("Note: evidence count and explicit feedback are review signals, not a calibrated probability score.");
+        process.exit(0);
+      } catch {
+        console.log("Lesson inspection failed: the lesson store or workspace evidence could not be read.");
+        process.exit(1);
+      }
       break;
     }
 
@@ -197,6 +331,7 @@ export async function handleSelfDevCliCommand(args: string[]): Promise<void> {
           existingLessons,
           candidateStore,
           maxCandidates,
+          validateEvidence: id => eventStore.hasEvidence(id),
         });
 
         if (saved.length === 0) {

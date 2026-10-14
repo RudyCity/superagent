@@ -9,7 +9,7 @@
 import { Tool } from "./types.js";
 import {
   readTool,
-  editTool,
+
   globTool,
   grepTool,
   ripgrepSearchTool,
@@ -217,7 +217,6 @@ export const superagentToolset: Tool[] = [
   writeToFileTool,
   replaceFileContentTool,
   multiReplaceFileContentTool,
-  editTool,
   applyPatchTool,
   globTool,
   grepTool,
@@ -363,7 +362,6 @@ export const chromeExtensionToolset: Tool[] = [
   writeToFileTool,
   replaceFileContentTool,
   multiReplaceFileContentTool,
-  editTool,
   applyPatchTool,
   globTool,
   grepTool,
@@ -475,7 +473,6 @@ export const subagentToolsets: Record<string, Tool[]> = {
     writeToFileTool,
     replaceFileContentTool,
     multiReplaceFileContentTool,
-    editTool,
     applyPatchTool,
     globTool,
     grepTool,

@@ -1,8 +1,10 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ReviewService } from "../../src/core/selfdev/reviewService.js";
 import { CandidateStore } from "../../src/core/selfdev/candidateStore.js";
+import { SelfDevEventStore } from "../../src/core/selfdev/eventStore.js";
 
 describe("ReviewService", () => {
   let tmpDir: string;
@@ -52,6 +54,59 @@ describe("ReviewService", () => {
 
     // Candidate list should now be empty
     expect(await reviewService.list(workspace, "candidate")).toHaveLength(0);
+  });
+
+  it("inspects only verified evidence present in the lesson's exact workspace", async () => {
+    const db = new DatabaseSync(":memory:");
+    try {
+      const eventStore = new SelfDevEventStore({
+        workspace,
+        getDb: () => db as any,
+        config: { enabled: true },
+      });
+      eventStore.record({
+        id: "evidence-present",
+        workspace,
+        sessionId: "evidence-session",
+        kind: "user_feedback",
+        summary: "Run focused tests before merging the lifecycle change",
+      });
+      const candidateStore = new CandidateStore({ storePath, workspace, enabled: () => true });
+      const candidate = await candidateStore.create({
+        workspace,
+        statement: "Run focused tests before merging a lifecycle change",
+        evidenceIds: ["evidence-present", "evidence-missing"],
+        tags: ["workflow", "user_feedback"],
+      });
+      const reviewService = new ReviewService({
+        storePath,
+        enabled: () => true,
+        eventStore,
+      });
+      const inspected = await reviewService.inspect(workspace, candidate!.id);
+      expect(inspected?.evidenceEvents?.map(event => event.id)).toEqual(["evidence-present"]);
+      expect(inspected?.lesson.evidenceIds).toEqual(["evidence-present", "evidence-missing"]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("does not approve a candidate when trusted evidence validation fails", async () => {
+    const candidateStore = new CandidateStore({ storePath, workspace, enabled: () => true });
+    const candidate = await candidateStore.create({
+      workspace,
+      statement: "Keep a migration backward-compatible",
+      evidenceIds: ["missing-event"],
+    });
+    const reviewService = new ReviewService({
+      storePath,
+      enabled: () => true,
+      eventStore: { hasEvidence: () => false } as any,
+    });
+
+    await expect(reviewService.approve(workspace, candidate!.id, candidate!.version, "reviewer"))
+      .rejects.toThrow("supporting evidence is missing or invalid");
+    expect(await reviewService.get(workspace, candidate!.id)).toMatchObject({ status: "candidate" });
   });
 
   it("fails approval if version does not match or status is not candidate", async () => {

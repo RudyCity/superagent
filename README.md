@@ -36,6 +36,7 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 - **🧠 Smart Context Management**: Automatic token tracking, LLM summarization, strategy-based pruning, and message pinning.
 - **🛡️ Local Git Checkpoints**: Automatic branch checkpoints and safety rollbacks during active sessions.
 - **🛠️ Integrated Tooling**: Built-in file search, regex ripgrep, background command runners, terminal presets, system-level screenshots, and Playwright web page screenshots.
+- **⚙️ Batch-First Bounded Execution**: File-read batches use isolated Node OS worker processes (up to four), while local, SSH, and MCP batch I/O use bounded concurrency and ordered results. Check worker counters with MCP tool `superagent_process_pool_status`; see the [multi-process runtime plan](docs/plans/2026-10-14-multiprocess-batch-runtime-plan.md) for current scope and remaining Agent IPC work.
 - **🌐 Remote SSH Workspaces**: Secure connection to remote hosts with active boundary protection, interactive path expansion, local-to-remote file transfer, and workspace-based session continuation.
 - **🛰️ Remote AI Agent Coordination (Muse)**: Coordinate with a remote AI brain over Cloudflare Tunnel + WebSocket or Telegram bus, delegating high-level reasoning to Muse while Superagent executes batched tools locally with multi-project watch mode and multi-tunnel isolation.
 - **🔌 MCP via Tunnel**: Expose Superagent tools through Streamable HTTP with a safe-tool allowlist, explicit opt-in for dangerous operations, and audit logging. For direct Muse conversation, `superagent_muse_chat_status` checks readiness and `superagent_muse_chat` waits for a correlated reply over the separate authenticated Muse WebSocket tunnel.
@@ -399,6 +400,10 @@ Superagent exposes MCP over Streamable HTTP. The MCP HTTP endpoint and Muse's au
 Recommended direct-chat workflow: call `superagent_muse_chat_status`, start the Muse tunnel if necessary, connect the Muse client, then call `superagent_muse_chat`. The response is successful only after a correlated chat reply with `reply_to` matching the request ID is received. Timeouts and disconnects are reported as errors, not successful conversations.
 
 For request examples and transport details, see [Muse MCP workflows](docs/mcp/muse-chat-workflows.md).
+
+### Selfdev — Default-On Learning
+
+Selfdev is enabled by default for new configuration and collects bounded, redacted task evidence to propose operational lessons. Candidates require explicit review/approval before prompt injection. Use `superagent selfdev status`, `superagent selfdev doctor`, and `superagent selfdev metrics` to inspect it; use `superagent selfdev disable` to persistently opt out. See [Selfdev operations and safety](docs/selfdev.md) and the [Selfdev development plan](docs/plans/2026-10-14-selfdev-default-on-development-plan.md).
 
 ### Keyboard Shortcuts
 

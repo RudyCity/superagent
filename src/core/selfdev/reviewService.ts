@@ -11,6 +11,7 @@ import {
   type SelfDevStoreData,
 } from "./types.js";
 import type { SelfDevEventStore } from "./eventStore.js";
+import type { SelfDevEvent } from "./types.js";
 
 export interface ReviewServiceOptions {
   storePath: string;
@@ -21,7 +22,7 @@ export interface ReviewServiceOptions {
 
 export interface ReviewInspectResult {
   lesson: SelfDevLesson;
-  evidenceEvents?: unknown[];
+  evidenceEvents?: SelfDevEvent[];
 }
 
 function hasCode(error: unknown, code: string): boolean {
@@ -69,11 +70,11 @@ export class ReviewService {
     const lesson = await this.get(workspace, id);
     if (!lesson) return undefined;
 
-    let evidenceEvents: unknown[] | undefined;
+    let evidenceEvents: SelfDevEvent[] | undefined;
     if (this.#eventStore && lesson.evidenceIds.length > 0) {
       evidenceEvents = lesson.evidenceIds
         .map(eid => this.#eventStore!.get(eid))
-        .filter(Boolean);
+        .filter((event): event is SelfDevEvent => event !== undefined);
     }
 
     return {
@@ -106,6 +107,12 @@ export class ReviewService {
       const current = data.lessons[idx];
       if (current.version !== expectedVersion) throw new Error("Lesson version conflict");
       if (current.status !== "candidate") throw new Error(`Cannot approve lesson with status: ${current.status}`);
+      if (
+        this.#eventStore &&
+        (!current.evidenceIds.length || current.evidenceIds.some(id => !this.#eventStore!.hasEvidence(id)))
+      ) {
+        throw new Error("Cannot approve lesson: supporting evidence is missing or invalid");
+      }
 
       const now = Date.now();
       const updated: SelfDevLesson = {

@@ -35,7 +35,7 @@ function makeHandlers() {
 describe("Agent.hasRealPlanContent — nudge-loop guard", () => {
   it("returns false when plan file does not exist", () => {
     const { onEvent, onPermission, onQuestion } = makeHandlers();
-    const agent = new Agent(onEvent, onPermission, onQuestion);
+    const agent = new Agent(onEvent, onPermission, onQuestion, undefined, undefined, tempHome);
     const missing = path.join(tempHome, "does-not-exist.md");
     vi.spyOn(agent, "getPlanFilePath").mockReturnValue(missing);
     expect(agent.hasRealPlanContent()).toBe(false);
@@ -43,7 +43,7 @@ describe("Agent.hasRealPlanContent — nudge-loop guard", () => {
 
   it("returns false for an empty or stub-only plan file", () => {
     const { onEvent, onPermission, onQuestion } = makeHandlers();
-    const agent = new Agent(onEvent, onPermission, onQuestion);
+    const agent = new Agent(onEvent, onPermission, onQuestion, undefined, undefined, tempHome);
     const stub = path.join(tempHome, "plan-empty.md");
     fs.writeFileSync(stub, "# Implementation Plan", "utf-8");
     vi.spyOn(agent, "getPlanFilePath").mockReturnValue(stub);
@@ -52,7 +52,7 @@ describe("Agent.hasRealPlanContent — nudge-loop guard", () => {
 
   it("returns true for a substantive plan file", () => {
     const { onEvent, onPermission, onQuestion } = makeHandlers();
-    const agent = new Agent(onEvent, onPermission, onQuestion);
+    const agent = new Agent(onEvent, onPermission, onQuestion, undefined, undefined, tempHome);
     const real = path.join(tempHome, "plan-real.md");
     fs.writeFileSync(
       real,
@@ -65,7 +65,7 @@ describe("Agent.hasRealPlanContent — nudge-loop guard", () => {
 
   it("planState APPROVED alone does NOT imply real plan content (loop root cause)", () => {
     const { onEvent, onPermission, onQuestion } = makeHandlers();
-    const agent = new Agent(onEvent, onPermission, onQuestion);
+    const agent = new Agent(onEvent, onPermission, onQuestion, undefined, undefined, tempHome);
     agent.planState = "APPROVED";
     expect(agent.planState).toBe("APPROVED");
     const missing = path.join(tempHome, "no-plan.md");

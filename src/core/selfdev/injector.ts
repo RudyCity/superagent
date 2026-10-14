@@ -6,6 +6,7 @@ import {
   type SelfDevLesson,
   type SelfDevStoreData,
 } from "./types.js";
+import { isValidLesson } from "./lessonValidation.js";
 
 export const MAX_INJECTED_LESSONS = 5;
 export const MAX_LESSON_CHARS = 280;
@@ -14,6 +15,8 @@ export interface InjectorOptions {
   workspace: string;
   storePath: string;
   config?: Partial<SelfDevConfig>;
+  /** Called with validated lessons only after a non-empty injection is built. */
+  onLessonsInjected?: (lessons: SelfDevLesson[]) => void;
 }
 
 function hasCode(error: unknown, code: string): boolean {
@@ -56,7 +59,14 @@ export async function getActiveLessonsForWorkspace(options: InjectorOptions): Pr
 
     // Filter by exact workspace and active status only
     const active = data.lessons
-      .filter(l => l.workspace === options.workspace && l.status === "active")
+      // Cheap, necessary eligibility checks first. JSON.parse creates plain data
+      // objects, so no accessor can hide a workspace/status change between checks.
+      // Structurally validate only lessons that could actually enter this prompt.
+      .filter((lesson): lesson is SelfDevLesson =>
+        typeof lesson === "object" && lesson !== null && !Array.isArray(lesson) &&
+        lesson.workspace === options.workspace && lesson.status === "active" &&
+        isValidLesson(lesson)
+      )
       .sort((a, b) => (b.approvedAt ?? b.updatedAt) - (a.approvedAt ?? a.updatedAt))
       .slice(0, MAX_INJECTED_LESSONS);
 
@@ -76,6 +86,11 @@ export async function buildPromptInjectionBlock(options: InjectorOptions): Promi
   const lessons = await getActiveLessonsForWorkspace(options);
   if (lessons.length === 0) {
     return "";
+  }
+  try {
+    options.onLessonsInjected?.(lessons);
+  } catch {
+    // Telemetry callbacks must never break prompt construction.
   }
 
   const lines = lessons.map(l => {

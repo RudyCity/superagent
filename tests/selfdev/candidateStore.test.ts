@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
 import { resolve, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CandidateStore, MAX_CANDIDATE_STORE_BYTES } from "../../src/core/selfdev/candidateStore.js";
+import { ReviewService } from "../../src/core/selfdev/reviewService.js";
 import { SELFDEV_LIMITS, SELFDEV_STORE_SCHEMA_VERSION, type SelfDevLessonInput, type SelfDevLessonUpdate } from "../../src/core/selfdev/types.js";
 
 async function fixture() {
@@ -33,6 +35,42 @@ describe("CandidateStore", () => {
     expect((await other.get("shared"))?.version).toBe(1);
     expect(await new CandidateStore({ storePath, workspace: "SCOPE-A", enabled: () => true }).list()).toEqual([]);
     expect(Object.getOwnPropertyNames(CandidateStore.prototype).sort()).toEqual(["constructor", "create", "get", "list", "update"]);
+  });
+
+  it("preserves active and retired lessons when the candidate writer updates the shared store", async () => {
+    const { store, storePath } = await fixture();
+    const candidate = await store.create({ ...input, id: "approve-me" });
+    const review = new ReviewService({ storePath, enabled: () => true });
+
+    const active = await review.approve("scope-a", candidate!.id, candidate!.version, "test-reviewer");
+    expect(await store.get(active.id)).toMatchObject({
+      status: "active",
+      approvedBy: "test-reviewer",
+      approvedAt: active.approvedAt,
+    });
+
+    const next = await store.create({ ...input, id: "new-candidate" });
+    expect(next?.status).toBe("candidate");
+    expect(await store.get(active.id)).toMatchObject({
+      status: "active",
+      approvedBy: "test-reviewer",
+      approvedAt: active.approvedAt,
+    });
+
+    const retired = await review.retire("scope-a", active.id, active.version, "test retirement");
+    expect(await store.get(retired.id)).toMatchObject({
+      status: "retired",
+      approvedBy: "test-reviewer",
+      retiredReason: "test retirement",
+    });
+    await expect(store.update(retired.id, retired.version, { statement: "should not edit" }))
+      .rejects.toThrow("Only candidate lessons");
+    const persisted = JSON.parse(await readFile(storePath, "utf8"));
+    expect(persisted.lessons.find((lesson: any) => lesson.id === active.id)).toMatchObject({
+      status: "retired",
+      approvedBy: "test-reviewer",
+      retiredReason: "test retirement",
+    });
   });
 
   it("does no filesystem work when disabled and no mkdir on enabled reads", async () => {
@@ -130,14 +168,13 @@ describe("CandidateStore", () => {
     expect(await readdir(dir)).toEqual(["lessons.json"]);
   });
 
-  it("preserves corrupt, unsupported, unknown-field and noncandidate stores", async () => {
+  it("preserves corrupt, unsupported and unknown-field stores", async () => {
     const { storePath, store, dir } = await fixture();
     const lesson = await store.create(input);
     const envelope = { schemaVersion: SELFDEV_STORE_SCHEMA_VERSION, updatedAt: Date.now(), lessons: [lesson] };
     const invalid = ["", "{broken", "null", JSON.stringify({ ...envelope, schemaVersion: 999 }),
       JSON.stringify({ ...envelope, unknown: true }),
       JSON.stringify({ ...envelope, lessons: [{ ...lesson, unknown: true }] }),
-      JSON.stringify({ ...envelope, lessons: [{ ...lesson, status: "active", approvedBy: "forged", approvedAt: lesson?.createdAt }] }),
       JSON.stringify({ ...envelope, lessons: [lesson, lesson] }),
       JSON.stringify({ ...envelope, lessons: [{ ...lesson, version: 0 }] })];
     for (const text of invalid) {
@@ -166,6 +203,34 @@ describe("CandidateStore", () => {
     await writeFile(`${storePath}.lock`, "owned elsewhere");
     await expect(store.create(input)).rejects.toThrow("busy");
     expect(await readFile(`${storePath}.lock`, "utf8")).toBe("owned elsewhere");
+    expect(await readdir(dir)).toEqual(["lessons.json.lock"]);
+  });
+
+  it("reclaims a verified stale lock from a dead local process", async () => {
+    const { storePath, store, dir } = await fixture();
+    await writeFile(storePath + ".lock", JSON.stringify({
+      pid: 2_147_483_647,
+      hostname: hostname(),
+      startedAt: Date.now() - 60_000,
+      token: "stale-lock-owner-token",
+    }));
+    const lesson = await store.create(input);
+    expect(lesson?.status).toBe("candidate");
+    expect(await readFile(storePath, "utf8")).toContain("Run the focused tests");
+    expect(await readdir(dir)).toEqual(["lessons.json"]);
+  });
+
+  it("never reclaims a lock owned by a live local process, even when old", async () => {
+    const { storePath, store, dir } = await fixture();
+    const lockText = JSON.stringify({
+      pid: process.pid,
+      hostname: hostname(),
+      startedAt: Date.now() - 60_000,
+      token: "live-lock-owner-token",
+    });
+    await writeFile(storePath + ".lock", lockText);
+    await expect(store.create(input)).rejects.toThrow("busy");
+    expect(await readFile(storePath + ".lock", "utf8")).toBe(lockText);
     expect(await readdir(dir)).toEqual(["lessons.json.lock"]);
   });
 

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { hostname } from "node:os";
 import { dirname, isAbsolute } from "node:path";
 import { isValidLesson } from "./lessonValidation.js";
 import { SELFDEV_LIMITS, SELFDEV_STORE_SCHEMA_VERSION,
@@ -16,7 +17,7 @@ export interface CandidateStoreOptions {
 }
 const inputFields = ["id", "workspace", "statement", "rationale", "evidenceIds", "tags"];
 const patchFields = ["statement", "rationale", "evidenceIds", "tags"];
-const lessonFields = [...inputFields, "version", "status", "createdAt", "updatedAt"];
+const lessonFields = [...inputFields, "version", "status", "createdAt", "updatedAt", "approvedBy", "approvedAt", "retiredAt", "retiredReason"];
 function fields(value: unknown, allowed: string[]): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const prototype: unknown = Object.getPrototypeOf(value);
@@ -30,22 +31,42 @@ function candidate(value: unknown): asserts value is SelfDevLesson {
     throw new Error("Invalid candidate lesson");
   }
 }
+
+/** Validate every persisted lifecycle state written by the trusted review service. */
+function storedLesson(value: unknown): asserts value is SelfDevLesson {
+  if (!fields(value, lessonFields) || !isValidLesson(value)) {
+    throw new Error("Invalid stored lesson");
+  }
+}
+
 function copy(lesson: SelfDevLesson): SelfDevLesson {
-  return { id: lesson.id, workspace: lesson.workspace, version: lesson.version, status: "candidate",
+  return {
+    id: lesson.id,
+    workspace: lesson.workspace,
+    version: lesson.version,
+    status: lesson.status,
     statement: lesson.statement,
     ...(lesson.rationale === undefined ? {} : { rationale: lesson.rationale }),
-    evidenceIds: [...lesson.evidenceIds], tags: [...lesson.tags],
-    createdAt: lesson.createdAt, updatedAt: lesson.updatedAt };
+    evidenceIds: [...lesson.evidenceIds],
+    tags: [...lesson.tags],
+    createdAt: lesson.createdAt,
+    updatedAt: lesson.updatedAt,
+    ...(lesson.approvedBy === undefined ? {} : { approvedBy: lesson.approvedBy }),
+    ...(lesson.approvedAt === undefined ? {} : { approvedAt: lesson.approvedAt }),
+    ...(lesson.retiredAt === undefined ? {} : { retiredAt: lesson.retiredAt }),
+    ...(lesson.retiredReason === undefined ? {} : { retiredReason: lesson.retiredReason }),
+  };
 }
 function hasCode(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 /**
- * Candidate-only storage; structural validation is NOT evidence verification or redaction.
- * Workspace equality is exact; normalization is deferred to a future trusted runtime.
- * No approval, activation, injection, settings, or default global path.
+ * Candidate writer sharing the versioned lesson store with the trusted review lifecycle.
+ * It creates/edits candidates only, but must preserve active/retired lessons and approval metadata.
+ * Structural validation is NOT evidence verification or proof of human authorization.
+ * Workspace equality is exact; the caller supplies the trusted workspace boundary.
  * Cooperating processes must use the same path without symlink/path aliases.
- * Locks fail fast and are never automatically reclaimed after a crash.
+ * Locks currently fail fast and are not automatically reclaimed after a crash.
  * Disabled operations return empty/undefined without filesystem access.
  */
 export class CandidateStore {
@@ -110,6 +131,7 @@ export class CandidateStore {
       const index = data.lessons.findIndex(item => item.workspace === this.#workspace && item.id === id);
       if (index < 0) throw new Error("Candidate not found");
       const current = data.lessons[index];
+      if (current.status !== "candidate") throw new Error("Only candidate lessons can be edited here");
       if (current.version !== expectedVersion) throw new Error("Candidate version conflict");
       const updated = { ...copy(current), version: current.version + 1,
         updatedAt: Math.max(Date.now(), current.updatedAt),
@@ -152,22 +174,105 @@ export class CandidateStore {
     }
     const ids = new Set<string>();
     const lessons = data.lessons.map((value: unknown) => {
-      candidate(value);
+      storedLesson(value);
       const key = JSON.stringify([value.workspace, value.id]);
-      if (ids.has(key)) throw new Error("Duplicate candidate in store");
+      if (ids.has(key)) throw new Error("Duplicate lesson in store");
       ids.add(key);
       return copy(value);
     });
     return { schemaVersion: SELFDEV_STORE_SCHEMA_VERSION, updatedAt: data.updatedAt as number, lessons };
   }
+  async #recoverStaleLock(lockPath: string): Promise<boolean> {
+    const recoveryPath = `${lockPath}.recovery`;
+    let recovery;
+    try {
+      recovery = await open(recoveryPath, "wx", 0o600);
+    } catch {
+      return false;
+    }
+
+    try {
+      const before = await lstat(lockPath).catch(error => {
+        if (hasCode(error, "ENOENT")) return undefined;
+        throw error;
+      });
+      if (!before?.isFile()) return false;
+
+      const raw = await readFile(lockPath, "utf8").catch(() => "");
+      let owner: unknown;
+      try { owner = JSON.parse(raw); } catch { return false; }
+      if (!owner || typeof owner !== "object") return false;
+      const meta = owner as Record<string, unknown>;
+      if (
+        meta.hostname !== hostname() ||
+        typeof meta.pid !== "number" ||
+        !Number.isSafeInteger(meta.pid) ||
+        meta.pid < 1 ||
+        typeof meta.startedAt !== "number" ||
+        Date.now() - meta.startedAt < 5_000 ||
+        typeof meta.token !== "string" ||
+        meta.token.length < 8
+      ) return false;
+
+      // Unknown hosts and ambiguous PID errors are treated as live. Reclaim
+      // only when the operating system positively reports that this local PID is gone.
+      try {
+        process.kill(meta.pid, 0);
+        return false;
+      } catch (error) {
+        if (typeof error !== "object" || error === null || !("code" in error) || error.code !== "ESRCH") {
+          return false;
+        }
+      }
+
+      const current = await lstat(lockPath).catch(error => {
+        if (hasCode(error, "ENOENT")) return undefined;
+        throw error;
+      });
+      if (!current || current.dev !== before.dev || current.ino !== before.ino) return false;
+      await unlink(lockPath).catch(error => {
+        if (!hasCode(error, "ENOENT")) throw error;
+      });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      try {
+        const owned = await recovery.stat();
+        const current = await lstat(recoveryPath).catch(error => {
+          if (hasCode(error, "ENOENT")) return undefined;
+          throw error;
+        });
+        if (current?.dev === owned.dev && current.ino === owned.ino) await unlink(recoveryPath);
+      } finally {
+        await recovery.close();
+      }
+    }
+  }
+
   async #mutate(change: (data: SelfDevStoreData) => SelfDevLesson): Promise<SelfDevLesson> {
     await mkdir(dirname(this.#path), { recursive: true });
     const lockPath = `${this.#path}.lock`;
-    const lock = await open(lockPath, "wx", 0o600).catch(error => {
-      if (hasCode(error, "EEXIST")) throw new Error("Candidate store busy");
-      throw error;
-    });
+    let lock;
     try {
+      lock = await open(lockPath, "wx", 0o600);
+    } catch (error) {
+      if (!hasCode(error, "EEXIST") || !(await this.#recoverStaleLock(lockPath))) {
+        if (hasCode(error, "EEXIST")) throw new Error("Candidate store busy");
+        throw error;
+      }
+      lock = await open(lockPath, "wx", 0o600).catch(() => {
+        throw new Error("Candidate store busy");
+      });
+    }
+    try {
+      await lock.writeFile(JSON.stringify({
+        pid: process.pid,
+        hostname: hostname(),
+        startedAt: Date.now(),
+        token: randomUUID(),
+      }));
+      await lock.sync();
       const data = await this.#read();
       const result = change(data);
       data.updatedAt = Math.max(Date.now(), data.updatedAt, result.updatedAt);

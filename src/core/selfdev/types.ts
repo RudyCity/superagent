@@ -66,6 +66,7 @@ export const SELFDEV_EVENT_KINDS = [
   "task_started",
   "task_completed",
   "task_failed",
+  "task_aborted",
   "command_executed",
   "test_result",
   "build_result",
@@ -182,10 +183,17 @@ export interface SelfDevStoreData {
 /** Current schema version of the lesson store JSON file. */
 export const SELFDEV_STORE_SCHEMA_VERSION = 1;
 
-/** Self-dev configuration. Disabled by default; opt-in only. */
+/** Persisted config contract version, independent from the lesson-store schema. */
+export const SELFDEV_CONFIG_VERSION = 1;
+
+/** Self-dev configuration. Enabled by default, with a durable explicit opt-out. */
 export interface SelfDevConfig {
   /** Master switch. When false, no events or lesson mutations are recorded. */
   enabled: boolean;
+  /** True only when the user explicitly disabled Selfdev via a supported control. */
+  userOptOut: boolean;
+  /** Version of the persisted Selfdev config/migration contract. */
+  configVersion: number;
   /** Whether event collection is active when `enabled` is true. */
   collectionEnabled: boolean;
   /** Whether lesson injection into prompts is active (used by injector phase). */
@@ -204,16 +212,18 @@ export interface SelfDevConfig {
   storePath?: string;
 }
 
-/** Default configuration: the whole self-dev system is OFF. */
+/** Default configuration: Selfdev runs unless the user explicitly opts out. */
 export const DEFAULT_SELF_DEV_CONFIG: Readonly<SelfDevConfig> = Object.freeze({
-  enabled: false,
+  enabled: true,
+  userOptOut: false,
+  configVersion: SELFDEV_CONFIG_VERSION,
   collectionEnabled: true,
   injectionEnabled: true,
   redactSecrets: true,
   maxEventsPerWorkspace: SELFDEV_LIMITS.MAX_EVENTS_PER_WORKSPACE,
   maxBatchSize: SELFDEV_LIMITS.MAX_BATCH_SIZE,
   maxLessons: SELFDEV_LIMITS.MAX_LESSONS,
-  requireKnownEvidence: false,
+  requireKnownEvidence: true,
 });
 
 /**

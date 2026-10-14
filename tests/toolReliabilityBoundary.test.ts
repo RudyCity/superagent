@@ -12,7 +12,7 @@ const cwd = process.cwd();
 
 describe("workspace boundary guards", () => {
   it("prevents read access outside workspace root", async () => {
-    const result = await readTool.execute({ filePath: "../../etc/passwd" }, cwd);
+    const result = await readTool.execute({ filePaths: ["../../etc/passwd"] }, cwd);
     expect(result).toContain("violates workspace boundary");
   });
 

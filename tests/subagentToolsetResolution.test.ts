@@ -55,7 +55,10 @@ describe("Subagent Toolset Resolution & Write Tools Inheritance", () => {
 
       expect(toolNames).toContain("write_to_file");
       expect(toolNames).toContain("replace_file_content");
-      expect(toolNames).toContain("edit");
+      expect(toolNames).toContain("multi_replace_file_content");
+      expect(toolNames).toContain("apply_patch");
+      expect(toolNames).not.toContain("edit");
+      expect(toolNames).not.toContain("write");
       expect(toolNames).toContain("bash");
     });
 

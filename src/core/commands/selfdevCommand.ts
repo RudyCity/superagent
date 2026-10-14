@@ -58,6 +58,8 @@ export const selfdevCommand: SlashCommand = {
           content: [
             "Self-Development Engine Status:",
             `- Enabled           : ${config.enabled ? "Yes" : "No"}`,
+            `- Config Version    : ${config.configVersion}`,
+            `- Explicit Opt-out  : ${config.userOptOut ? "Yes" : "No"}`,
             `- Event Collection  : ${config.collectionEnabled ? "Yes" : "No"}`,
             `- Prompt Injection  : ${config.injectionEnabled ? "Yes" : "No"}`,
             `- Active Workspace  : ${workspace}`,
@@ -66,10 +68,87 @@ export const selfdevCommand: SlashCommand = {
             `- Candidate Lessons : ${candidateCount}`,
             `- Retired Lessons   : ${retiredCount}`,
             "",
-            "Commands: /selfdev list | /selfdev distill | /selfdev approve <id> | /selfdev enable | /selfdev disable",
+            "Commands: /selfdev list | /selfdev inspect <id> | /selfdev distill | /selfdev approve <id> | /selfdev enable | /selfdev disable",
           ].join("\n"),
           timestamp: now,
         });
+        break;
+      }
+
+      case "doctor": {
+        try {
+          const { getSelfDevDoctorReport } = await import("../selfdev/diagnostics.js");
+          const report = await getSelfDevDoctorReport(workspace);
+          ctx.addLine({
+            type: report.healthy ? "system" : "error",
+            content: [
+              "Selfdev Doctor (read-only):",
+              `- Enabled: ${report.enabled ? "Yes" : "No"}`,
+              `- Explicit opt-out: ${report.userOptOut ? "Yes" : "No"}`,
+              `- Config version: ${report.configVersion}`,
+              `- Events in workspace: ${report.eventCount}`,
+              ...report.checks.map(check => `[${check.state.toUpperCase()}] ${check.name}: ${check.detail}`),
+            ].join("\n"),
+            timestamp: now,
+          });
+        } catch {
+          ctx.addLine({ type: "error", content: "Selfdev Doctor failed: diagnostic operation could not complete.", timestamp: now });
+        }
+        break;
+      }
+
+      case "metrics": {
+        try {
+          const { getSelfDevMetricsReport } = await import("../selfdev/diagnostics.js");
+          const report = await getSelfDevMetricsReport(workspace);
+          ctx.addLine({
+            type: "system",
+            content: [
+              "Selfdev Metrics (workspace-scoped stored data):",
+              `- Enabled: ${report.enabled ? "Yes" : "No"}`,
+              `- Config version: ${report.configVersion}`,
+              `- Storage query: ${report.storageAvailable ? "available" : "FAILED (counts may be incomplete)"}`,
+              `- Stored events: ${report.eventCount}`,
+              `- Lessons: ${report.lessonCounts.candidate} candidate, ${report.lessonCounts.active} active, ${report.lessonCounts.retired} retired`,
+              "Events by kind:",
+              ...Object.entries(report.eventsByKind).sort(([a], [b]) => a.localeCompare(b)).map(([kind, count]) => `  ${kind}: ${count}`),
+              `Feedback: injected ${report.feedback.injected}; applied ${report.feedback.applied}; helped ${report.feedback.helped}; harmed ${report.feedback.harmed}`,
+              "Current-process counters reset on restart.",
+              JSON.stringify(report.runtime),
+            ].join("\n"),
+            timestamp: now,
+          });
+        } catch {
+          ctx.addLine({ type: "error", content: "Selfdev metrics failed: diagnostic operation could not complete.", timestamp: now });
+        }
+        break;
+      }
+
+      case "feedback": {
+        const id = parts[1];
+        const metric = parts[2]?.toLowerCase();
+        if (!id || !["applied", "helped", "harmed"].includes(metric || "")) {
+          ctx.addLine({ type: "error", content: "Usage: /selfdev feedback <lesson_id> <applied|helped|harmed>", timestamp: now });
+          break;
+        }
+        try {
+          const lesson = await reviewService.get(workspace, id);
+          if (!lesson || lesson.status !== "active") {
+            ctx.addLine({ type: "error", content: "Feedback can only be recorded for an active lesson in this workspace.", timestamp: now });
+            break;
+          }
+          const { FeedbackTracker } = await import("../selfdev/feedback.js");
+          const tracker = new FeedbackTracker({ getDb: () => getHistoryDb() as any, enabled: () => getSelfDevConfig().enabled });
+          const sessionId = ctx.agent?.sessionId || `slash:${workspace}:${lesson.id}:v${lesson.version}`;
+          const recorded = tracker.record(workspace, sessionId, lesson.id, lesson.version, metric as "applied" | "helped" | "harmed");
+          ctx.addLine({
+            type: recorded ? "system" : "error",
+            content: recorded ? `Recorded ${metric} feedback for lesson ${lesson.id} (v${lesson.version}).` : "Feedback was not recorded; check Selfdev state and database availability.",
+            timestamp: now,
+          });
+        } catch {
+          ctx.addLine({ type: "error", content: "Feedback failed: operation could not complete.", timestamp: now });
+        }
         break;
       }
 
@@ -90,6 +169,55 @@ export const selfdevCommand: SlashCommand = {
           content: "Self-Development engine disabled.",
           timestamp: now,
         });
+        break;
+      }
+
+      case "inspect": {
+        const id = parts[1];
+        if (!id) {
+          ctx.addLine({ type: "error", content: "Usage: /selfdev inspect <lesson_id>", timestamp: now });
+          break;
+        }
+        try {
+          const result = await reviewService.inspect(workspace, id);
+          if (!result) {
+            ctx.addLine({ type: "error", content: "Lesson not found in the current workspace.", timestamp: now });
+            break;
+          }
+          const lesson = result.lesson;
+          const evidenceEvents = result.evidenceEvents ?? [];
+          const evidenceById = new Map(evidenceEvents.map(event => [event.id, event]));
+          const sourceLabels: Record<string, string> = {
+            fix_cycle: "failure followed by verified success",
+            user_feedback: "explicit user feedback",
+            lesson_proposed: "explicit lesson proposal",
+          };
+          const sources = [...new Set(lesson.tags.filter(tag => sourceLabels[tag]).map(tag => sourceLabels[tag]))];
+          const lines = [
+            `Selfdev Lesson Provenance — ${lesson.id}`,
+            "- Workspace-scoped result: yes",
+            `- Status/version: ${lesson.status} / v${lesson.version}`,
+            `- Statement: ${lesson.statement}`,
+            `- Source signals: ${sources.length ? sources.join(", ") : "not explicitly categorized"}`,
+            `- Evidence references: ${lesson.evidenceIds.length}; verified event records: ${evidenceEvents.length}; missing/unavailable: ${Math.max(0, lesson.evidenceIds.length - evidenceEvents.length)}`,
+            ...(lesson.approvedBy ? [`- Approved by: ${lesson.approvedBy}`] : []),
+            ...(lesson.approvedAt ? [`- Approved at (epoch ms): ${lesson.approvedAt}`] : []),
+            "Evidence (bounded summaries; exact workspace only):",
+          ];
+          if (lesson.evidenceIds.length === 0) lines.push("  No evidence references are attached.");
+          for (const evidenceId of lesson.evidenceIds) {
+            const event = evidenceById.get(evidenceId);
+            if (!event) {
+              lines.push(`  - ${evidenceId}: MISSING or unavailable in this workspace`);
+              continue;
+            }
+            lines.push(`  - ${event.id} | ${event.kind} | session ${event.sessionId} | ts ${event.ts}`, `    ${event.summary.slice(0, 240)}`);
+          }
+          lines.push("Note: evidence count and explicit feedback are review signals, not a calibrated probability score.");
+          ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
+        } catch {
+          ctx.addLine({ type: "error", content: "Lesson inspection failed: the lesson store or workspace evidence could not be read.", timestamp: now });
+        }
         break;
       }
 
@@ -149,6 +277,7 @@ export const selfdevCommand: SlashCommand = {
             existingLessons,
             candidateStore,
             maxCandidates,
+            validateEvidence: id => eventStore.hasEvidence(id),
           });
 
           if (saved.length === 0) {
@@ -315,12 +444,15 @@ export const selfdevCommand: SlashCommand = {
             "",
             "Subcommands:",
             "  status                        - Show Self-Dev engine status and lesson counts",
+            "  doctor                        - Run read-only health diagnostics",
+            "  metrics                       - Show stored learning metrics",
             "  enable                        - Enable self-development globally",
             "  disable                       - Disable self-development globally",
             "  list [candidate|active|ret]   - List lessons for current workspace",
             "  review                        - Review pending candidate lessons",
             "  distill [max]                 - Distill recent events into candidate lessons",
             "  approve <id> [version]        - Approve candidate lesson to become active",
+            "  feedback <id> <applied|helped|harmed> - Record explicit lesson feedback",
             "  reject <id> [reason]          - Reject and discard candidate lesson",
             "  retire <id> [reason]          - Retire active lesson so it stops injecting",
           ].join("\n"),

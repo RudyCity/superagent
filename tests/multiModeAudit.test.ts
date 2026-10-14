@@ -231,10 +231,10 @@ describe("Multi-Mode (3-Tier Orchestration) Audit Regressions", () => {
 
     const res = await agentLocalStorage.run(masterAgent, () =>
       multiReplaceFileContentTool.execute(
-        {
+        { files: [{
           filePath: path.join(process.cwd(), "src", "cli.tsx"),
           chunks: [{ startLine: 1, endLine: 1, targetContent: "import", replacementContent: "// import" }],
-        },
+        }] },
         process.cwd()
       )
     );

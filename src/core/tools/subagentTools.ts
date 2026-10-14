@@ -458,8 +458,8 @@ export const invokeSubagentTool: Tool = {
     const hasWriteTools = toolset.some(t => t.name === "writeToFile" || t.name === "write_to_file" || t.name === "replaceFileContent" || t.name === "edit");
     const writeMandate = hasWriteTools
       ? `\n\n## FILE MODIFICATION MANDATE\n` +
-        `You have file writing and editing tools enabled. When implementing changes, porting, or writing files, ` +
-        `you MUST write and save all files directly to disk using the file tools (e.g. writeToFile, replaceFileContent, edit). ` +
+        `You have batch file writing and editing tools enabled. In both single and multi modes, always use batch arguments: write_to_file(files:[...]), replace_file_content(edits:[...]), multi_replace_file_content(files:[...]), and apply_patch(patches:[...]) even for one file. ` +
+        `Do not use legacy single-file write/edit calls; combine changes to each file and run independent file targets concurrently when safe. ` +
         `Do NOT merely print code blocks or scripts in your response text without creating or modifying the actual files on disk.\n`
       : "";
 

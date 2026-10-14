@@ -58,7 +58,7 @@ describe("writeToFileTool — Master tier blocks codebase paths", () => {
       const cwd = process.cwd();
       const target = path.join(cwd, "src", "_test_should_be_blocked.ts");
       const res = await writeToFileTool.execute(
-        { filePath: target, content: "test" },
+        { files: [{ filePath: target, content: "test" }] },
         cwd
       );
       expect(String(res)).toMatch(/Master Agent cannot directly edit codebase/);
@@ -75,7 +75,7 @@ describe("writeToFileTool — Master tier blocks codebase paths", () => {
     try {
       const target = path.join(getRootConfigDir(), "_master_allowlist_test.md");
       const res = await writeToFileTool.execute(
-        { filePath: target, content: "# master test\n", overwrite: true },
+        { files: [{ filePath: target, content: "# master test\n", overwrite: true }] },
         process.cwd()
       );
       expect(String(res)).not.toMatch(/cannot directly edit codebase/);
@@ -96,13 +96,13 @@ describe("replaceFileContentTool — Master tier blocks codebase paths", () => {
       const cwd = process.cwd();
       const target = path.join(cwd, "src", "_test_should_be_blocked.ts");
       const res = await replaceFileContentTool.execute(
-        {
+        { edits: [{
           filePath: target,
           targetContent: "x",
           replacementContent: "y",
           startLine: 1,
           endLine: 1,
-        },
+        }] },
         cwd
       );
       expect(String(res)).toMatch(/Master Agent cannot directly edit codebase/);
