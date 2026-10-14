@@ -51,7 +51,9 @@ import {
   handleGetWorkspace,
   handleExecCommand,
   handleReadFile,
+  handleReadFiles,
   handleWriteFile,
+  handleWriteFiles,
   handleListFiles,
   handleGrepSearch,
   handleFindFiles,
@@ -126,6 +128,7 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   superagent_get_status: "safe",
   superagent_get_logs: "safe",
   superagent_read_file: "safe",
+  superagent_read_files: "safe",
   superagent_list_files: "safe",
   superagent_grep_search: "safe",
   superagent_find_files: "safe",
@@ -143,6 +146,7 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   // ---- dangerous: mutation / execution / control ----
   superagent_exec_command: "dangerous",
   superagent_write_file: "dangerous",
+  superagent_write_files: "dangerous",
   superagent_unlock_file: "dangerous",
   superagent_interrupt: "dangerous",
   superagent_pause: "dangerous",
@@ -186,6 +190,9 @@ export const DISABLED_MCP_TOOLS: ReadonlySet<string> = new Set([
   // Prefer Chrome DevTools Protocol automation; do not expose the legacy
   // extension bridge directly through the remote MCP interface.
   "superagent_remote_chrome",
+  // Legacy single-file MCP endpoints are retained in code but disabled in discovery and dispatch.
+  "superagent_read_file",
+  "superagent_write_file",
 ]);
 
 export interface McpToolAnnotations {
@@ -384,13 +391,48 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         },
         {
           name: "superagent_read_file",
-          description: "Read the content of a file in the workspace or worktree with line range support.",
+          description: "Legacy single-file read endpoint. Disabled on MCP; use superagent_read_files with a files or filePaths array.",
           inputSchema: { type: "object", properties: { filePath: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" }, cwd: { type: "string" } }, required: ["filePath"] },
         },
         {
           name: "superagent_write_file",
-          description: "Write or create a file in the workspace or worktree with directory creation and overwrite guards.",
+          description: "Legacy single-file write endpoint. Disabled on MCP; use superagent_write_files with a files array.",
           inputSchema: { type: "object", properties: { filePath: { type: "string" }, content: { type: "string" }, overwrite: { type: "boolean" }, cwd: { type: "string" } }, required: ["filePath", "content"] },
+        },
+        {
+          name: "superagent_read_files",
+          description: "Read multiple files in one MCP call. Provide files as path strings or objects { filePath, startLine?, endLine? }; optional global startLine/endLine and cwd. Maximum 50 files.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              files: { type: "array", items: { anyOf: [
+                { type: "string" },
+                { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" } } },
+              ] } },
+              filePaths: { type: "array", items: { anyOf: [
+                { type: "string" },
+                { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" } } },
+              ] } },
+              startLine: { type: "number" },
+              endLine: { type: "number" },
+              cwd: { type: "string" },
+              workspace: { type: "string" },
+            },
+          },
+        },
+        {
+          name: "superagent_write_files",
+          description: "Write or create multiple files in one MCP call using { filePath, content, overwrite? } entries. Preserves per-file scope, protected-file, overwrite, and lock checks. Maximum 50 files. Requires dangerous-tool permission over tunnel.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              files: { type: "array", items: { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, content: { type: "string" }, overwrite: { type: "boolean" } }, required: ["filePath", "content"] } },
+              overwrite: { type: "boolean" },
+              cwd: { type: "string" },
+              workspace: { type: "string" },
+            },
+            required: ["files"],
+          },
         },
         UNLOCK_FILE_MCP_TOOL_DEF,
         {
@@ -609,8 +651,12 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           return await handleExecCommand(args);
         case "superagent_read_file":
           return await handleReadFile(args);
+        case "superagent_read_files":
+          return await handleReadFiles(args);
         case "superagent_write_file":
           return await handleWriteFile(args);
+        case "superagent_write_files":
+          return await handleWriteFiles(args);
         case "superagent_unlock_file":
           return await handleUnlockFile(args);
         case "superagent_list_files":

@@ -10,6 +10,7 @@ import {
   killProcessTool,
 } from "../../tools/processInspectionTools.js";
 import { getMcpWorkspacePath } from "./workspaceContext.js";
+import { getProcessPoolMetrics } from "../../agent/ProcessPool.js";
 
 function toResult(res: unknown): McpToolResult {
   const text = typeof res === "string" ? res : JSON.stringify(res, null, 2);
@@ -72,7 +73,21 @@ export async function handleKillProcess(args: any): Promise<McpToolResult> {
   }
 }
 
+export async function handleProcessPoolStatus(): Promise<McpToolResult> {
+  const metrics = getProcessPoolMetrics();
+  const result = {
+    workerType: "ephemeral-os-process",
+    supportedOperations: ["local-file-read-batches"],
+    maxConcurrentWorkers: 4,
+    defaultWorkerTimeoutMs: 30000,
+    metrics,
+    note: "This process pool isolates safe file-read batches. Full Agent/subagent execution still runs in the orchestrator until the event/approval IPC contract is implemented.",
+  };
+  return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+}
+
 export const DIAGNOSTICS_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
+  superagent_process_pool_status: "safe",
   superagent_inspect_port: "safe",
   superagent_free_port: "dangerous",
   superagent_find_process: "safe",
@@ -80,6 +95,11 @@ export const DIAGNOSTICS_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dang
 };
 
 export const DIAGNOSTICS_MCP_TOOL_DEFS = [
+  {
+    name: "superagent_process_pool_status",
+    description: "Show bounded OS process-pool worker counts, timeouts, failures, fallback reads, and duration counters. Reports the supported operation scope explicitly.",
+    inputSchema: { type: "object", properties: {} },
+  },
   {
     name: "superagent_inspect_port",
     description:
@@ -156,6 +176,8 @@ export const DIAGNOSTICS_MCP_TOOL_DEFS = [
 
 export async function dispatchDiagnosticsMcpTool(name: string, args: any): Promise<McpToolResult | null> {
   switch (name) {
+    case "superagent_process_pool_status":
+      return await handleProcessPoolStatus();
     case "superagent_inspect_port":
       return await handleInspectPort(args);
     case "superagent_free_port":

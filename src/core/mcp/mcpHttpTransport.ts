@@ -47,6 +47,7 @@ import {
 import { summarizeArgs, argShape } from "./mcpLogSanitizer.js";
 import {
   MCP_TOOL_CLASSIFICATION as MCP_TOOL_CLASSIFICATION_SRC,
+  DISABLED_MCP_TOOLS,
 } from "./superagentMcpServer.js";
 /** Re-exported for backward compatibility; canonical in superagentMcpServer.ts. */
 export const MCP_TOOL_CLASSIFICATION = MCP_TOOL_CLASSIFICATION_SRC;
@@ -55,7 +56,7 @@ export const MCP_TOOL_CLASSIFICATION = MCP_TOOL_CLASSIFICATION_SRC;
 
 export function getDefaultSafeTools(): string[] {
   return Object.entries(MCP_TOOL_CLASSIFICATION)
-    .filter(([, level]) => level === "safe")
+    .filter(([name, level]) => level === "safe" && !DISABLED_MCP_TOOLS.has(name))
     .map(([name]) => name);
 }
 

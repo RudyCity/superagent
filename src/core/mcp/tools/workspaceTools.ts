@@ -18,6 +18,7 @@ import {
   isToolCallWithinYoloScope,
   getYoloAllowedRoot,
 } from "../../permissions.js";
+import { mapConcurrentOrdered } from "../../concurrency.js";
 
 export async function handleSwitchWorkspace(
   args: any,
@@ -153,7 +154,7 @@ export async function handleReadFile(args: any): Promise<McpToolResult> {
   }
 
   try {
-    const content = fs.readFileSync(resolved, "utf-8");
+    const content = await fs.promises.readFile(resolved, "utf-8");
     const lines = content.split(/\r?\n/);
     const selected = endLine ? lines.slice(startLine - 1, endLine) : lines.slice(startLine - 1);
     const numbered = selected.map((line, idx) => `${startLine + idx}: ${line}`).join("\n");
@@ -168,6 +169,42 @@ export async function handleReadFile(args: any): Promise<McpToolResult> {
   } catch (err: any) {
     return { content: [{ type: "text", text: `Error reading file: ${err.message}` }], isError: true };
   }
+}
+
+/** Read multiple files in one MCP call. The single-file handler remains as a disabled legacy endpoint. */
+export async function handleReadFiles(args: any): Promise<McpToolResult> {
+  const entries = args.files ?? args.filePaths;
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return { content: [{ type: "text", text: "Error: 'files' must be a non-empty array of file paths or { filePath, startLine?, endLine? } objects." }], isError: true };
+  }
+  if (entries.length > 50) {
+    return { content: [{ type: "text", text: "Error: A single read_files call is limited to 50 files." }], isError: true };
+  }
+
+  const targetCwd = args.cwd || args.workspace || getMcpWorkspacePath();
+  const perFileResults = await mapConcurrentOrdered(entries, 6, async (entry) => {
+    const filePath = typeof entry === "string" ? entry : String(entry?.filePath || entry?.path || "");
+    if (!filePath) {
+      return { isError: true, output: "Error: Each files entry must be a path string or an object with 'filePath'." };
+    }
+
+    const result = await handleReadFile({
+      filePath,
+      startLine: typeof entry === "object" && entry?.startLine !== undefined ? entry.startLine : args.startLine,
+      endLine: typeof entry === "object" && entry?.endLine !== undefined ? entry.endLine : args.endLine,
+      cwd: targetCwd,
+    });
+    const output = (result.content || []).map((part) => part.type === "text" ? part.text : "").filter(Boolean).join("\n");
+    return { isError: !!result.isError, output: output || `No text returned for: ${filePath}` };
+  });
+  const successes = perFileResults.filter((result) => !result.isError).length;
+  const failures = perFileResults.length - successes;
+  const sections = perFileResults.map((result) => result.output);
+
+  return {
+    content: [{ type: "text", text: `Read files: ${successes} succeeded, ${failures} failed.\n\n${sections.join("\n\n---\n\n")}` }],
+    isError: successes === 0,
+  };
 }
 
 export async function handleWriteFile(args: any): Promise<McpToolResult> {
@@ -218,12 +255,68 @@ export async function handleWriteFile(args: any): Promise<McpToolResult> {
   }
 
   try {
-    fs.mkdirSync(path.dirname(resolved), { recursive: true });
-    fs.writeFileSync(resolved, content, "utf-8");
+    await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+    await fs.promises.writeFile(resolved, content, "utf-8");
     return { content: [{ type: "text", text: `Successfully wrote ${content.length} characters to: ${resolved}` }] };
   } catch (err: any) {
     return { content: [{ type: "text", text: `Error writing file: ${err.message}` }], isError: true };
   }
+}
+
+/** Write multiple files in one MCP call; each item reuses the single-file safety and lock checks. */
+export async function handleWriteFiles(args: any): Promise<McpToolResult> {
+  const entries = args.files;
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return { content: [{ type: "text", text: "Error: 'files' must be a non-empty array of { filePath, content, overwrite? } objects." }], isError: true };
+  }
+  if (entries.length > 50) {
+    return { content: [{ type: "text", text: "Error: A single write_files call is limited to 50 files." }], isError: true };
+  }
+
+  const targetCwd = args.cwd || args.workspace || getMcpWorkspacePath();
+  const prepared = entries.map((entry) => {
+    const filePath = String(entry?.filePath || entry?.path || "");
+    if (!filePath || typeof entry?.content !== "string") {
+      return {
+        entry,
+        filePath,
+        resolved: "",
+        identity: "",
+        error: `Error: Each files entry requires 'filePath' and string 'content'. Path: ${filePath || "(missing)"}`,
+      };
+    }
+    const resolved = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(targetCwd, filePath);
+    const identity = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+    return { entry, filePath, resolved, identity, error: "" };
+  });
+  const targetCounts = new Map<string, number>();
+  for (const item of prepared) {
+    if (!item.error) targetCounts.set(item.identity, (targetCounts.get(item.identity) || 0) + 1);
+  }
+
+  const perFileResults = await mapConcurrentOrdered(prepared, 6, async (item) => {
+    if (item.error) return { isError: true, output: item.error };
+    if ((targetCounts.get(item.identity) || 0) > 1) {
+      return { isError: true, output: `Error: Duplicate target path in batch: ${item.resolved}. Each file may appear only once per call; no duplicate target was written.` };
+    }
+
+    const result = await handleWriteFile({
+      filePath: item.filePath,
+      content: item.entry.content,
+      overwrite: item.entry.overwrite ?? args.overwrite,
+      cwd: targetCwd,
+    });
+    const output = (result.content || []).map((part) => part.type === "text" ? part.text : "").filter(Boolean).join("\n");
+    return { isError: !!result.isError, output: output || `No text returned for: ${item.filePath}` };
+  });
+  const successes = perFileResults.filter((result) => !result.isError).length;
+  const failures = perFileResults.length - successes;
+  const results = perFileResults.map((result) => result.output);
+
+  return {
+    content: [{ type: "text", text: `Wrote files: ${successes} succeeded, ${failures} failed.\n\n${results.join("\n\n---\n\n")}` }],
+    isError: successes === 0,
+  };
 }
 
 export async function handleListFiles(args: any): Promise<McpToolResult> {

@@ -17,7 +17,7 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 57;
+const EXPECTED_TOOL_COUNT = 58;
 
 describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Prompts)", () => {
   const testDir = path.join(process.cwd(), `.tmp_mcp_test_${Date.now()}`);
@@ -75,8 +75,10 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Pr
     expect(toolNames).toContain("superagent_switch_workspace");
     expect(toolNames).toContain("superagent_get_workspace");
     expect(toolNames).toContain("superagent_exec_command");
-    expect(toolNames).toContain("superagent_read_file");
-    expect(toolNames).toContain("superagent_write_file");
+    expect(toolNames).not.toContain("superagent_read_file");
+    expect(toolNames).not.toContain("superagent_write_file");
+    expect(toolNames).toContain("superagent_read_files");
+    expect(toolNames).toContain("superagent_write_files");
     expect(toolNames).toContain("superagent_unlock_file");
     expect(toolNames).toContain("superagent_list_files");
     expect(toolNames).toContain("superagent_grep_search");
@@ -114,6 +116,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Pr
     expect(toolNames).toContain("superagent_list_chrome_profiles");
 
     // Diagnostics & Process/Port
+    expect(toolNames).toContain("superagent_process_pool_status");
     expect(toolNames).toContain("superagent_inspect_port");
     expect(toolNames).toContain("superagent_free_port");
     expect(toolNames).toContain("superagent_find_process");
@@ -196,6 +199,8 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Pr
     });
     expect(instructionsRead.contents[0].text).toContain("SUPERAGENT MCP AGENTIC INSTRUCTION PROTOCOL");
     expect(instructionsRead.contents[0].text).toContain("TOOL_FIRST");
+    expect(instructionsRead.contents[0].text).toContain("superagent_read_files");
+    expect(instructionsRead.contents[0].text).toContain("superagent_write_files");
   });
 
   it("lists and renders all 4 MCP Prompts", async () => {
@@ -246,19 +251,33 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Pr
     const server = createSuperagentMcpServer({ workspace: testDir, allowDangerous: true });
     const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
-    // Write then read file
+    // Batch-write then batch-read multiple files
     const testFile = path.join(testDir, "test_calc.ts");
+    const testFileTwo = path.join(testDir, "test_math.ts");
     const writeRes = await callHandler({
       method: "tools/call",
-      params: { name: "superagent_write_file", arguments: { filePath: testFile, content: "export function add(a: number, b: number) { return a + b; }\n", cwd: testDir } },
+      params: {
+        name: "superagent_write_files",
+        arguments: {
+          cwd: testDir,
+          files: [
+            { filePath: testFile, content: "export function add(a: number, b: number) { return a + b; }\n", overwrite: true },
+            { filePath: testFileTwo, content: "export function multiply(a: number, b: number) { return a * b; }\n", overwrite: true },
+          ],
+        },
+      },
     });
+    expect(writeRes.content[0].text).toContain("2 succeeded");
     expect(writeRes.content[0].text).toContain("test_calc.ts");
+    expect(writeRes.content[0].text).toContain("test_math.ts");
 
     const readRes = await callHandler({
       method: "tools/call",
-      params: { name: "superagent_read_file", arguments: { filePath: testFile, cwd: testDir } },
+      params: { name: "superagent_read_files", arguments: { files: [testFile, { filePath: testFileTwo, startLine: 1, endLine: 1 }], cwd: testDir } },
     });
     expect(readRes.content[0].text).toContain("add");
+    expect(readRes.content[0].text).toContain("multiply");
+    expect(readRes.content[0].text).toContain("2 succeeded");
 
     // Grep search
     const grepRes = await callHandler({
@@ -435,6 +454,28 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Pr
     })).rejects.toThrow("disabled and not exposed by this MCP server");
   });
 
+  it("legacy single-file read/write MCP tools remain implemented but are hidden and blocked", async () => {
+    const server = createSuperagentMcpServer({ workspace: testDir, allowDangerous: true });
+    const listHandler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+
+    const listResult = await listHandler({ method: "tools/list", params: {} });
+    const names = listResult.tools.map((tool: any) => tool.name);
+    expect(names).not.toContain("superagent_read_file");
+    expect(names).not.toContain("superagent_write_file");
+    expect(names).toContain("superagent_read_files");
+    expect(names).toContain("superagent_write_files");
+
+    await expect(callHandler({
+      method: "tools/call",
+      params: { name: "superagent_read_file", arguments: { filePath: "not-used.txt" } },
+    })).rejects.toThrow("disabled and not exposed by this MCP server");
+    await expect(callHandler({
+      method: "tools/call",
+      params: { name: "superagent_write_file", arguments: { filePath: "not-used.txt", content: "should not write" } },
+    })).rejects.toThrow("disabled and not exposed by this MCP server");
+  });
+
   it("superagent_unlock_file inspects status, unlocks, and force-unlocks file locks", async () => {
     const server = createSuperagentMcpServer({ workspace: testDir, allowDangerous: true });
     const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
@@ -525,8 +566,8 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Pr
     const writeBlocked = await callHandler({
       method: "tools/call",
       params: {
-        name: "superagent_write_file",
-        arguments: { filePath: testFile, content: "Blocked content", overwrite: true },
+        name: "superagent_write_files",
+        arguments: { files: [{ filePath: testFile, content: "Blocked content", overwrite: true }] },
       },
     });
     expect(writeBlocked.isError).toBe(true);
@@ -540,11 +581,11 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Pr
     const writeSuccess = await callHandler({
       method: "tools/call",
       params: {
-        name: "superagent_write_file",
-        arguments: { filePath: testFile, content: "YOLO auto-preempted content", overwrite: true },
+        name: "superagent_write_files",
+        arguments: { files: [{ filePath: testFile, content: "YOLO auto-preempted content", overwrite: true }] },
       },
     });
-    expect(writeSuccess.isError).toBeUndefined();
+    expect(writeSuccess.isError).toBeFalsy();
     expect(writeSuccess.content[0].text).toContain("Successfully wrote");
     expect(fs.readFileSync(testFile, "utf-8")).toBe("YOLO auto-preempted content");
 

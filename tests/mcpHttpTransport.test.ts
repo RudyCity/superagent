@@ -28,11 +28,13 @@ describe("mcpHttpTransport", () => {
     expect(MCP_TOOL_CLASSIFICATION["superagent_list_active"]).toBe("safe");
   });
 
-  it("default safe tools exclude dangerous ones", () => {
+  it("default safe tools contain batch reads and exclude disabled single-file endpoints and dangerous tools", () => {
     const safe = getDefaultSafeTools();
-    expect(safe).toContain("superagent_read_file");
+    expect(safe).toContain("superagent_read_files");
+    expect(safe).not.toContain("superagent_read_file");
     expect(safe).not.toContain("superagent_exec_command");
     expect(safe).not.toContain("superagent_write_file");
+    expect(safe).not.toContain("superagent_write_files");
     expect(safe.length).toBeGreaterThan(10);
   });
 
@@ -120,9 +122,11 @@ describe("mcpHttpTransport", () => {
       expect(list.status).toBe(200);
       const listJson: any = await parseMcpBody(list);
       const names: string[] = (listJson.result?.tools || []).map((t: any) => t.name);
-      expect(names).toContain("superagent_read_file");
+      expect(names).toContain("superagent_read_files");
+      expect(names).not.toContain("superagent_read_file");
       expect(names).not.toContain("superagent_exec_command");
       expect(names).not.toContain("superagent_write_file");
+      expect(names).not.toContain("superagent_write_files");
     });
 
     it("blocks dangerous tool calls via allowlist", async () => {
@@ -186,6 +190,10 @@ describe("mcpHttpTransport", () => {
       }
       const names: string[] = (body?.result?.tools || []).map((t: any) => t.name);
       expect(names).toContain("superagent_exec_command");
+      expect(names).toContain("superagent_read_files");
+      expect(names).toContain("superagent_write_files");
+      expect(names).not.toContain("superagent_read_file");
+      expect(names).not.toContain("superagent_write_file");
     });
   });
 });

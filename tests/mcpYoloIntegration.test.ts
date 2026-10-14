@@ -49,9 +49,11 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
     const toolNames = response.tools.map((t: any) => t.name);
 
     expect(toolNames).toContain("superagent_list_active");
-    expect(toolNames).toContain("superagent_read_file");
+    expect(toolNames).toContain("superagent_read_files");
+    expect(toolNames).not.toContain("superagent_read_file");
     expect(toolNames).not.toContain("superagent_exec_command");
     expect(toolNames).not.toContain("superagent_write_file");
+    expect(toolNames).not.toContain("superagent_write_files");
     expect(toolNames).not.toContain("superagent_replace_file_content");
   });
 
@@ -70,8 +72,8 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
         {
           method: "tools/call",
           params: {
-            name: "superagent_write_file",
-            arguments: { filePath: path.join(testWorkspace, "test.txt"), content: "hello" },
+            name: "superagent_write_files",
+            arguments: { files: [{ filePath: path.join(testWorkspace, "test.txt"), content: "hello" }] },
           },
         },
         {}
@@ -96,7 +98,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
     // Initial check: off
     expect(getYoloModeState()).toBe("off");
     const initialResp = await listHandler({ method: "tools/list", params: {} }, {});
-    expect(initialResp.tools.map((t: any) => t.name)).not.toContain("superagent_write_file");
+    expect(initialResp.tools.map((t: any) => t.name)).not.toContain("superagent_write_files");
 
     // Activate Scoped YOLO
     setYoloMode(true);
@@ -104,7 +106,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
     const scopedResp = await listHandler({ method: "tools/list", params: {} }, {});
     const scopedNames = scopedResp.tools.map((t: any) => t.name);
-    expect(scopedNames).toContain("superagent_write_file");
+    expect(scopedNames).toContain("superagent_write_files");
     expect(scopedNames).toContain("superagent_exec_command");
     expect(scopedNames).toContain("superagent_replace_file_content");
   });
@@ -124,8 +126,8 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
       {
         method: "tools/call",
         params: {
-          name: "superagent_write_file",
-          arguments: { filePath: targetFile, content: "scoped YOLO content", overwrite: true, cwd: testWorkspace },
+          name: "superagent_write_files",
+          arguments: { files: [{ filePath: targetFile, content: "scoped YOLO content", overwrite: true }], cwd: testWorkspace },
         },
       },
       {}
@@ -153,8 +155,8 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
         {
           method: "tools/call",
           params: {
-            name: "superagent_write_file",
-            arguments: { filePath: modelConfigTarget, content: "hacked config" },
+            name: "superagent_write_files",
+            arguments: { files: [{ filePath: modelConfigTarget, content: "hacked config" }] },
           },
         },
         {}
@@ -185,8 +187,8 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
         {
           method: "tools/call",
           params: {
-            name: "superagent_write_file",
-            arguments: { filePath: outOfBoundsPath, content: "illegal content" },
+            name: "superagent_write_files",
+            arguments: { files: [{ filePath: outOfBoundsPath, content: "illegal content" }] },
           },
         },
         {}
@@ -246,8 +248,8 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
       {
         method: "tools/call",
         params: {
-          name: "superagent_write_file",
-          arguments: { filePath: targetFile, content: "full yolo success" },
+          name: "superagent_write_files",
+          arguments: { files: [{ filePath: targetFile, content: "full yolo success" }] },
         },
       },
       {}
@@ -269,14 +271,14 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
     const callHandler = (server as any)._requestHandlers?.get(CallToolRequestSchema.shape.method.value);
 
     const onResp = await listHandler({ method: "tools/list", params: {} }, {});
-    expect(onResp.tools.map((t: any) => t.name)).toContain("superagent_write_file");
+    expect(onResp.tools.map((t: any) => t.name)).toContain("superagent_write_files");
 
     // Turn off
     setYoloMode(false);
     expect(getYoloModeState()).toBe("off");
 
     const offResp = await listHandler({ method: "tools/list", params: {} }, {});
-    expect(offResp.tools.map((t: any) => t.name)).not.toContain("superagent_write_file");
+    expect(offResp.tools.map((t: any) => t.name)).not.toContain("superagent_write_files");
 
     let errorThrown: any = null;
     try {
@@ -284,8 +286,8 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
         {
           method: "tools/call",
           params: {
-            name: "superagent_write_file",
-            arguments: { filePath: path.join(testWorkspace, "foo.txt"), content: "foo" },
+            name: "superagent_write_files",
+            arguments: { files: [{ filePath: path.join(testWorkspace, "foo.txt"), content: "foo" }] },
           },
         },
         {}
@@ -332,8 +334,8 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
         {
           method: "tools/call",
           params: {
-            name: "superagent_write_file",
-            arguments: { filePath: targetFile, content: "test" },
+            name: "superagent_write_files",
+            arguments: { files: [{ filePath: targetFile, content: "test" }] },
           },
         },
         {}
@@ -349,8 +351,8 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
       {
         method: "tools/call",
         params: {
-          name: "superagent_write_file",
-          arguments: { filePath: targetFile, content: "oauth yolo success" },
+          name: "superagent_write_files",
+          arguments: { files: [{ filePath: targetFile, content: "oauth yolo success" }] },
         },
       },
       {}

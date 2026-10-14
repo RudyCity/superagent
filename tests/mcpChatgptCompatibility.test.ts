@@ -32,10 +32,11 @@ describe("tool annotations", () => {
   it("safe tools advertise read-only behavior", async () => {
     const server = createSuperagentMcpServer();
     const tools = await listTools(server);
-    const readFile = tools.find((t) => t.name === "superagent_read_file");
-    expect(readFile).toBeDefined();
-    expect(readFile.annotations?.readOnlyHint).toBe(true);
-    expect(readFile.annotations?.destructiveHint).toBe(false);
+    const readFiles = tools.find((t) => t.name === "superagent_read_files");
+    expect(readFiles).toBeDefined();
+    expect(readFiles.annotations?.readOnlyHint).toBe(true);
+    expect(readFiles.annotations?.destructiveHint).toBe(false);
+    expect(tools.map((t) => t.name)).not.toContain("superagent_read_file");
   });
 
   it("dangerous tools advertise destructive behavior", () => {
@@ -51,19 +52,20 @@ describe("tool annotations", () => {
     const names = tools.map((t) => t.name);
     expect(names).not.toContain("superagent_exec_command");
     expect(names).not.toContain("superagent_write_file");
-    expect(names).toContain("superagent_read_file");
+    expect(names).not.toContain("superagent_read_file");
+    expect(names).toContain("superagent_read_files");
   });
 });
 
 describe("per-tool security metadata", () => {
   it("static-bearer mode advertises bearer scheme", () => {
-    const schemes = getToolSecuritySchemes("superagent_read_file", "static-bearer");
+    const schemes = getToolSecuritySchemes("superagent_read_files", "static-bearer");
     expect(schemes[0].type).toBe("http");
     expect(schemes[0].scheme).toBe("bearer");
   });
 
   it("oauth mode advertises oauth2 scopes (read vs write)", () => {
-    const safe = getToolSecuritySchemes("superagent_read_file", "oauth");
+    const safe = getToolSecuritySchemes("superagent_read_files", "oauth");
     expect(safe[0].type).toBe("oauth2");
     expect(safe[0].scopes).toContain("mcp:tools");
     expect(safe[0].scopes).not.toContain("mcp:tools:write");
@@ -74,9 +76,10 @@ describe("per-tool security metadata", () => {
   it("tools/list includes annotations and securitySchemes via _meta", async () => {
     const server = createSuperagentMcpServer({ authMode: "oauth" });
     const tools = await listTools(server);
-    const readFile = tools.find((t) => t.name === "superagent_read_file");
-    expect(readFile.annotations?.readOnlyHint).toBe(true);
-    expect(readFile._meta?.securitySchemes?.[0]?.type).toBe("oauth2");
+    const readFiles = tools.find((t) => t.name === "superagent_read_files");
+    expect(readFiles).toBeDefined();
+    expect(readFiles.annotations?.readOnlyHint).toBe(true);
+    expect(readFiles._meta?.securitySchemes?.[0]?.type).toBe("oauth2");
   });
 });
 
