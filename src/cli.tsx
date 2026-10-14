@@ -125,8 +125,22 @@ if (
   process.argv.includes("--mcp-server") ||
   process.argv[2] === "mcp-server"
 ) {
+  const path = await import("path");
+  const fs = await import("fs");
+  const workspaceIndex = process.argv.findIndex((arg) => arg === "--workspace" || arg === "-w");
+  let workspaceVal: string | undefined = undefined;
+  if (workspaceIndex !== -1 && workspaceIndex + 1 < process.argv.length) {
+    const nextArg = process.argv[workspaceIndex + 1];
+    workspaceVal = nextArg;
+  }
+  const resolvedWs = workspaceVal ? path.resolve(workspaceVal) : process.cwd();
+  if (workspaceVal && fs.existsSync(resolvedWs)) {
+    try {
+      process.chdir(resolvedWs);
+    } catch {}
+  }
   const { startSuperagentMcpServer } = await import("./core/mcp/superagentMcpServer.js");
-  await startSuperagentMcpServer();
+  await startSuperagentMcpServer({ workspace: resolvedWs });
   // Keep process alive while Stdio transport runs
   await new Promise(() => {});
 }

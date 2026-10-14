@@ -34,10 +34,6 @@ describe("jsonConfigLock", () => {
     if (fs.existsSync(tempHome)) {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
-    const releaseScript = path.join("tests", "release-lock.js");
-    if (fs.existsSync(releaseScript)) {
-      try { fs.unlinkSync(releaseScript); } catch {}
-    }
     clearModelConfigCache();
   });
 
@@ -65,46 +61,59 @@ describe("jsonConfigLock", () => {
     const config = loadModelConfig();
     saveModelConfig(config);
 
-    // Create a temporary script to release the lock in the background after 200ms
-    const releaseScript = path.join("tests", "release-lock.js");
+    // Create a temporary script inside isolated config dir to release the lock
+    const releaseScript = path.join(path.dirname(configPath), "release-lock.mjs");
     fs.writeFileSync(
       releaseScript,
       `
       import fs from 'fs';
+      console.log("READY");
       setTimeout(() => {
         try {
-          fs.unlinkSync(${JSON.stringify(lockPath)});
+          if (fs.existsSync(${JSON.stringify(lockPath)})) {
+            fs.unlinkSync(${JSON.stringify(lockPath)});
+          }
           console.log("UNLINK_SUCCESS");
         } catch (e) {
           console.error("UNLINK_ERROR: " + e.message);
           process.exit(1);
         }
-      }, 200);
+      }, 220);
       `
     );
 
-    // Spawn the background process to delete the lock file
+    // Spawn the background process and wait until it is running
     const child = execa("node", [releaseScript]);
-    child.stdout?.on("data", (d) => console.log("CHILD:", d.toString().trim()));
-    child.stderr?.on("data", (d) => console.error("CHILD ERROR:", d.toString().trim()));
+    await new Promise<void>((resolve) => {
+      const onData = (d: Buffer) => {
+        if (d.toString().includes("READY")) {
+          child.stdout?.off("data", onData);
+          resolve();
+        }
+      };
+      child.stdout?.on("data", onData);
+      child.catch(() => resolve());
+    });
 
-    // Create a lock file held by the child process's real PID
-    fs.writeFileSync(lockPath, `${child.pid}:0:${Date.now()}`);
+    try {
+      // Create a lock file held by the child process's real PID
+      fs.writeFileSync(lockPath, `${child.pid}:0:${Date.now()}`);
 
-    // Clear config cache to force real disk read and lock acquisition
-    clearModelConfigCache();
+      // Clear config cache to force real disk read and lock acquisition
+      clearModelConfigCache();
 
-    const startTime = Date.now();
-    
-    // loadModelConfig should block until the lock file is deleted by the child process
-    const reloaded = loadModelConfig();
-    const duration = Date.now() - startTime;
+      const startTime = Date.now();
 
-    expect(reloaded).toBeDefined();
-    expect(duration).toBeGreaterThanOrEqual(150); // should have waited at least 150ms
-    expect(fs.existsSync(lockPath)).toBe(false); // lock file should be cleaned up after loading
+      // loadModelConfig should block until the lock file is deleted by the child process
+      const reloaded = loadModelConfig();
+      const duration = Date.now() - startTime;
 
-    await child; // clean up process
+      expect(reloaded).toBeDefined();
+      expect(duration).toBeGreaterThanOrEqual(150); // should have waited at least 150ms
+      expect(fs.existsSync(lockPath)).toBe(false); // lock file should be cleaned up after loading
+    } finally {
+      await child.catch(() => {});
+    }
   });
 
   it("should automatically clear and override stale locks", () => {

@@ -755,6 +755,12 @@ function extractMcpResultText(result: unknown): string {
     const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
     const level = MCP_TOOL_CLASSIFICATION[toolName];
     const isDangerous = level === "dangerous";
+    const effectiveWs =
+      (rawArgs.workspace as string) ||
+      (rawArgs.cwd as string) ||
+      (rawArgs.worktreePath as string) ||
+      activeWorkspace ||
+      process.cwd();
 
     // Block direct calls too, including clients that cached an old tools/list response.
     if (DISABLED_MCP_TOOLS.has(toolName)) {
@@ -768,6 +774,7 @@ function extractMcpResultText(result: unknown): string {
         error: "Tool is disabled and hidden from MCP tool discovery",
         durationMs: 0,
         timestamp: Date.now(),
+        workspace: effectiveWs,
       });
       throw new McpError(ErrorCode.MethodNotFound, `Tool '${toolName}' is disabled and not exposed by this MCP server.`);
     }
@@ -783,6 +790,7 @@ function extractMcpResultText(result: unknown): string {
         error: "Blocked by MCP tool allowlist",
         durationMs: 0,
         timestamp: Date.now(),
+        workspace: effectiveWs,
       });
       throw new McpError(
         ErrorCode.InvalidRequest,
@@ -809,6 +817,7 @@ function extractMcpResultText(result: unknown): string {
           error: "Missing required scope 'mcp:tools:write'",
           durationMs: 0,
           timestamp: Date.now(),
+          workspace: effectiveWs,
         });
         throw new McpError(
           ErrorCode.InvalidRequest,
@@ -821,12 +830,6 @@ function extractMcpResultText(result: unknown): string {
     // If Full YOLO is active, system-wide access is permitted.
     // If Scoped YOLO is active (or allowDangerous without full YOLO), enforce scope boundary!
     if (isDangerous && !isFullYoloMode()) {
-      const effectiveWs =
-        (rawArgs.cwd as string) ||
-        (rawArgs.workspace as string) ||
-        (rawArgs.worktreePath as string) ||
-        activeWorkspace ||
-        process.cwd();
       const inScope = isToolCallWithinYoloScope({ name: toolName, args: rawArgs }, effectiveWs);
       if (!inScope) {
         const allowedRoot = getYoloAllowedRoot(effectiveWs);
@@ -840,6 +843,7 @@ function extractMcpResultText(result: unknown): string {
           error: "Blocked by Scoped YOLO boundary",
           durationMs: 0,
           timestamp: Date.now(),
+          workspace: effectiveWs,
         });
         throw new McpError(ErrorCode.InvalidParams, errReason);
       }
@@ -860,6 +864,7 @@ function extractMcpResultText(result: unknown): string {
         output: failed ? undefined : outputText,
         durationMs,
         timestamp: Date.now(),
+        workspace: effectiveWs,
       });
       return result;
     } catch (err: any) {
@@ -880,6 +885,7 @@ function extractMcpResultText(result: unknown): string {
         error: errorMsg,
         durationMs,
         timestamp: Date.now(),
+        workspace: effectiveWs,
       });
       throw err;
     }
@@ -888,9 +894,9 @@ function extractMcpResultText(result: unknown): string {
   return server;
 }
 
-export async function startSuperagentMcpServer(): Promise<void> {
+export async function startSuperagentMcpServer(options: McpServerOptions = {}): Promise<void> {
   logMcp("Starting Superagent MCP Server via stdio transport...");
-  const server = createSuperagentMcpServer();
+  const server = createSuperagentMcpServer(options);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   logMcp("Superagent MCP Server connected and listening on stdio.");

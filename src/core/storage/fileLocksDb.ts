@@ -28,17 +28,21 @@ let _stmts: {
 } = {};
 
 async function getDb() {
-  if (_db) return _db;
   try {
     // Dynamic-import the parent db to avoid pulling in the entire
     // history subsystem on lock operations.
     const { getHistoryDb } = await import("./historyDb.js");
-    _db = getHistoryDb();
-    if (!_db) {
-      // eslint-disable-next-line no-console
-      console.error("[fileLocksDb] getHistoryDb() returned null");
+    const currentDb = getHistoryDb();
+    if (!currentDb) {
+      _db = null;
+      _stmts = {};
       return null;
     }
+    if (_db === currentDb && _stmts.upsert) {
+      return _db;
+    }
+    _db = currentDb;
+    _stmts = {};
     _stmts.upsert = _db.prepare(`
       INSERT INTO file_locks_current
         (file_path, session_id, owner_pid, owner_ppid, acquired_at,
@@ -77,6 +81,8 @@ async function getDb() {
     );
     return _db;
   } catch (err) {
+    _db = null;
+    _stmts = {};
     return null;
   }
 }
@@ -116,11 +122,16 @@ export async function replaceAllLocks(entries: FileLockEntry[]): Promise<boolean
     // statements synchronously, so the BEGIN / DELETE / 100x INSERT
     // / COMMIT sequence is atomic as long as no async awaits happen
     // between BEGIN and COMMIT.
+    if (typeof db.isOpen === "boolean" && !db.isOpen) {
+      _db = null;
+      _stmts = {};
+      return false;
+    }
     db.exec(`BEGIN`);
     try {
       db.exec(`DELETE FROM file_locks_current`);
       const ins = db.prepare(`
-        INSERT INTO file_locks_current
+        INSERT OR REPLACE INTO file_locks_current
           (file_path, session_id, owner_pid, owner_ppid, acquired_at,
            expires_at, project_path, line_range, is_intent_soft_lock,
            remote_node_id, terminal_type)
@@ -147,7 +158,12 @@ export async function replaceAllLocks(entries: FileLockEntry[]): Promise<boolean
       throw innerErr;
     }
     return true;
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === "ERR_INVALID_STATE") {
+      _db = null;
+      _stmts = {};
+      return false;
+    }
     // eslint-disable-next-line no-console
     console.error("[fileLocksDb] replaceAllLocks failed:", err);
     return false;

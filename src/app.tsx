@@ -550,14 +550,14 @@ export function App({
             content: lineContent,
             timestamp: Date.now(),
           });
-        });
+        }, { workspace: workspacePath });
       })
       .catch(() => {});
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [addLine]);
+  }, [addLine, workspacePath]);
 
   /** Append a tool-related line (tool_start/tool_end) as a child of the last assistant message */
   const addToolChild = useCallback((child: ChatLine) => {

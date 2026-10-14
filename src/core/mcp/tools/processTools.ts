@@ -19,6 +19,7 @@ import {
   masterCompletionTokens,
   lastMasterPromptTokens,
   getProcessActivity,
+  isTaskInWorkspace,
 } from "../../tools/state.js";
 import { killProcessTree } from "../../tools/shellTools.js";
 import { resolveMcpWorkspace, isServerRejection } from "./workspaceContext.js";
@@ -168,15 +169,17 @@ export async function handleListActive(args: any): Promise<McpToolResult> {
   // 1. Check live active processes across machine via process journal
   const processes = loadActiveProcesses();
   const nonMcpProcs = processes.filter((p) => p.mode !== "mcp");
+  const currentWs = resolveMcpWorkspace(args?.workspace).path;
   if (nonMcpProcs.length > 0) {
     lines.push(`\nRunning Superagent CLI / Server Processes (${nonMcpProcs.length}):`);
     for (const p of nonMcpProcs) {
+      const isCurrent = isTaskInWorkspace(p.workingDirectory, currentWs) || isTaskInWorkspace(currentWs, p.workingDirectory);
       const ageSec = Math.round((Date.now() - p.startedAt) / 1000);
       const m = Math.floor(ageSec / 60);
       const s = ageSec % 60;
       const uptimeStr = m > 0 ? `${m}m ${s}s` : `${s}s`;
 
-      lines.push(`  - PID: ${p.pid} | Mode: ${p.mode} | Workspace: ${p.workingDirectory} | Uptime: ${uptimeStr}`);
+      lines.push(`  - PID: ${p.pid} | Mode: ${p.mode} | Workspace: ${p.workingDirectory}${isCurrent ? " (Current Project)" : ""} | Uptime: ${uptimeStr}`);
       lines.push(`    Status: ${p.isAgentRunning ? "🟢 RUNNING" : "⚪ IDLE"} (${p.currentStatus || (p.isAgentRunning ? "Active" : "Idle")})`);
       if (p.currentTask) {
         const taskPreview = p.currentTask.length > 100 ? p.currentTask.slice(0, 100) + "..." : p.currentTask;
@@ -282,16 +285,18 @@ export async function handleGetProcessStatus(): Promise<McpToolResult> {
 
   const processes = loadActiveProcesses();
   const nonMcpProcs = processes.filter((p) => p.mode !== "mcp");
+  const currentWs = resolveMcpWorkspace().path;
 
   const lines: string[] = ["=== Real-time Superagent AI Process Status ==="];
   lines.push(`Active CLI Processes: ${nonMcpProcs.length > 0 ? `${nonMcpProcs.length} Process(es) Running` : "None"}`);
   for (const p of nonMcpProcs) {
+    const isCurrent = isTaskInWorkspace(p.workingDirectory, currentWs) || isTaskInWorkspace(currentWs, p.workingDirectory);
     const ageSec = Math.round((Date.now() - p.startedAt) / 1000);
     const m = Math.floor(ageSec / 60);
     const s = ageSec % 60;
     const uptimeStr = m > 0 ? `${m}m ${s}s` : `${s}s`;
 
-    lines.push(`\n[Process PID ${p.pid} — ${p.mode.toUpperCase()}]`);
+    lines.push(`\n[Process PID ${p.pid} — ${p.mode.toUpperCase()}${isCurrent ? " (Current Project)" : ""}]`);
     lines.push(`  - Workspace: ${p.workingDirectory}`);
     lines.push(`  - Uptime: ${uptimeStr}`);
     lines.push(`  - State: ${p.isAgentRunning ? "🟢 RUNNING" : "⚪ IDLE"} (${p.currentStatus || (p.isAgentRunning ? "Active" : "Idle")})`);
@@ -651,13 +656,15 @@ export async function handleGetLogs(args: any): Promise<McpToolResult> {
   const limit = typeof args.limit === "number" ? Math.min(args.limit, 200) : (typeof args.lines === "number" ? Math.min(args.lines, 200) : 50);
 
   // 1. If id is empty, "all", "current", "latest", or numeric PID:
+  const currentWs = resolveMcpWorkspace(args?.workspace).path;
   const processes = loadActiveProcesses();
   const nonMcpProcs = processes.filter((p) => p.mode !== "mcp");
+  const wsProcs = nonMcpProcs.filter((p) => isTaskInWorkspace(p.workingDirectory, currentWs) || isTaskInWorkspace(currentWs, p.workingDirectory));
 
   if (!id || id === "all" || id === "current" || id === "latest" || /^\d+$/.test(id)) {
     const targetProc = /^\d+$/.test(id)
       ? processes.find((p) => String(p.pid) === id)
-      : nonMcpProcs.find((p) => p.isAgentRunning) || nonMcpProcs[0];
+      : wsProcs.find((p) => p.isAgentRunning) || wsProcs[0] || (id === "all" ? (nonMcpProcs.find((p) => p.isAgentRunning) || nonMcpProcs[0]) : (nonMcpProcs.length === 1 ? nonMcpProcs[0] : undefined));
 
     // Priority 1: If target process has an active command log on disk, read live output from it
     if (targetProc?.currentCommandLogPath && fs.existsSync(targetProc.currentCommandLogPath)) {

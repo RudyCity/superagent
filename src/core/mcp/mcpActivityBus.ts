@@ -11,6 +11,7 @@ import path from "path";
 import os from "os";
 import { EventEmitter } from "events";
 import { summarizeArgs } from "./mcpLogSanitizer.js";
+import { getMcpWorkspacePath } from "./tools/workspaceContext.js";
 
 export type McpActivityType = "tool_call" | "client_connect" | "client_disconnect" | "tool_list" | "auth";
 
@@ -25,11 +26,13 @@ export interface McpActivityEvent {
   sessionId?: string;
   clientId?: string;
   timestamp: number;
+  workspace?: string;
 }
 
 interface McpJournalEntry {
   ts: number;
   pid: number;
+  workspace?: string;
   event: McpActivityEvent;
   chatLine: string;
 }
@@ -42,6 +45,41 @@ const emitter = new McpActivityEmitter();
 emitter.setMaxListeners(100);
 
 /**
+ * Check if an event's workspace matches the subscriber's workspace.
+ * Case-insensitive on Windows, supports exact match or subdirectories (e.g. worktrees).
+ */
+export function isWorkspaceMatch(eventWs: string | undefined, clientWs: string | undefined): boolean {
+  if (!eventWs || !clientWs) return true;
+  try {
+    let a = path.resolve(eventWs);
+    let b = path.resolve(clientWs);
+    if (process.platform === "win32") {
+      a = a.toLowerCase();
+      b = b.toLowerCase();
+    }
+    if (a === b) return true;
+    const relA = path.relative(b, a);
+    if (relA === "" || (!relA.startsWith("..") && !path.isAbsolute(relA))) return true;
+    const relB = path.relative(a, b);
+    if (relB === "" || (!relB.startsWith("..") && !path.isAbsolute(relB))) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function resolveWorkspaceByPid(pid: number): string | undefined {
+  try {
+    const { loadActiveProcesses } = require("./processJournal.js");
+    const processes = loadActiveProcesses();
+    const p = processes.find((proc: any) => proc.pid === pid);
+    return p?.workingDirectory;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Format an MCP activity event into a clear, structured chat sheet string.
  */
 export function formatMcpActivityForChat(event: McpActivityEvent): string {
@@ -52,8 +90,9 @@ export function formatMcpActivityForChat(event: McpActivityEvent): string {
       const statusText = event.ok ? "Success" : "Failed";
       const durationStr = event.durationMs !== undefined ? ` (${event.durationMs}ms)` : "";
       const argsStr = event.args ? summarizeArgs(event.args, 250) : "{}";
+      const projectStr = event.workspace ? ` [${path.basename(event.workspace)}]` : "";
       const lines = [
-        `[MCP] ${event.ok ? "⚡" : "❌"} Tool Call: ${tool} [${statusIcon} ${statusText}${durationStr}]`,
+        `[MCP] ${event.ok ? "⚡" : "❌"} Tool Call: ${tool}${projectStr} [${statusIcon} ${statusText}${durationStr}]`,
         `Arguments: ${argsStr}`,
       ];
       if (!event.ok && event.error) {
@@ -90,11 +129,16 @@ export function formatMcpActivityForChat(event: McpActivityEvent): string {
  * Dispatches to all in-memory subscribers and persists to the activity journal for cross-process visibility.
  */
 export function emitMcpActivity(event: McpActivityEvent): void {
-  const chatLine = formatMcpActivityForChat(event);
+  const ws = event.workspace || getMcpWorkspacePath() || process.cwd();
+  const eventWithWs: McpActivityEvent = {
+    ...event,
+    workspace: ws,
+  };
+  const chatLine = formatMcpActivityForChat(eventWithWs);
 
   // In-memory dispatch
-  emitter.emit("activity", event);
-  emitter.emit("chat_line", chatLine, event);
+  emitter.emit("activity", eventWithWs);
+  emitter.emit("chat_line", chatLine, eventWithWs);
 
   // Cross-process dispatch via append-only journal
   try {
@@ -105,7 +149,8 @@ export function emitMcpActivity(event: McpActivityEvent): void {
     const entry: McpJournalEntry = {
       ts: event.timestamp || Date.now(),
       pid: process.pid,
-      event,
+      workspace: ws,
+      event: eventWithWs,
       chatLine,
     };
     fs.appendFileSync(MCP_ACTIVITY_JOURNAL, JSON.stringify(entry) + "\n", "utf8");
@@ -114,14 +159,26 @@ export function emitMcpActivity(event: McpActivityEvent): void {
   }
 }
 
+export interface McpSubscriptionOptions {
+  workspace?: string;
+}
+
 /**
  * Subscribe to formatted chat lines from MCP activity.
  * Handles both in-process events immediately and cross-process events via journal tailing.
+ * Optionally filters events by target workspace so activity only appears in the relevant terminal.
  * Returns an unsubscribe cleanup function.
  */
-export function subscribeToMcpActivity(onLine: (line: string, event?: McpActivityEvent) => void): () => void {
+export function subscribeToMcpActivity(
+  onLine: (line: string, event?: McpActivityEvent) => void,
+  options?: McpSubscriptionOptions
+): () => void {
+  const targetWs = options?.workspace;
   const handler = (line: string, evt: McpActivityEvent) => {
     try {
+      if (targetWs && evt?.workspace && !isWorkspaceMatch(evt.workspace, targetWs)) {
+        return;
+      }
       onLine(line, evt);
     } catch {}
   };
@@ -155,6 +212,12 @@ export function subscribeToMcpActivity(onLine: (line: string, event?: McpActivit
           const entry: McpJournalEntry = JSON.parse(line);
           // Only process foreign process events to avoid duplicate local dispatches
           if (entry && entry.pid !== process.pid && entry.chatLine) {
+            if (targetWs) {
+              const entryWs = entry.workspace || entry.event?.workspace || resolveWorkspaceByPid(entry.pid);
+              if (entryWs && !isWorkspaceMatch(entryWs, targetWs)) {
+                continue;
+              }
+            }
             onLine(entry.chatLine, entry.event);
           }
         } catch {}

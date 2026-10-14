@@ -1,3 +1,13 @@
+## [1.13.81] - 2026-10-14
+### Fixed
+- Fixed MCP multi-terminal cross-project activity log leakage: scoped `mcpActivityBus` events by workspace so activity logs and tool notifications only appear in the terminal corresponding to the active project.
+- Added workspace-aware filtering in `subscribeToMcpActivity` with case-insensitive Windows path comparison and subpath/worktree matching via `isWorkspaceMatch`.
+- Scoped MCP cross-process task and process tools (`superagent_get_current_task`, `superagent_get_plan_and_tasks`, `superagent_get_logs`, `superagent_get_process_status`) to filter active processes by `getMcpWorkspacePath()`, preventing picking unrelated processes from other project workspaces across the system.
+- Added `--workspace` / `-w` command-line flag handling in `cli.tsx` for `superagent --mcp-server` so standalone MCP servers resolve and bind to the correct working directory.
+
+### Tests
+- Added test coverage in `tests/mcpActivityBus.test.ts` for workspace-scoped in-memory activity filtering and `isWorkspaceMatch` path resolution.
+
 ## [1.13.80] - 2026-10-14
 ### Fixed
 - Fixed progressive tool discovery dispatch: execute the Agent-authorized active tool definition so per-Agent discovery wrappers actually activate selected schemas for the next model iteration.

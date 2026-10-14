@@ -422,7 +422,8 @@ export async function handleManageWorktrees(args: any): Promise<McpToolResult> {
 
 export async function handleGetCurrentTask(args: any): Promise<McpToolResult> {
   const { resolveInstanceCurrentTask } = await import("./taskResolver.js");
-  const resolution = await resolveInstanceCurrentTask(args);
+  const targetWs = args.workspace || getMcpWorkspacePath();
+  const resolution = await resolveInstanceCurrentTask(args.workspace ? args : { ...args, workspace: targetWs });
 
   if (!resolution.found && resolution.errorMessage) {
     return {
@@ -544,7 +545,7 @@ export async function handleGetPlanAndTasks(args: any): Promise<McpToolResult> {
   let foundTasks: any[] = [];
   let planContent = "(No plan document found)";
 
-  const resolution = await resolveInstanceCurrentTask(args);
+  const resolution = await resolveInstanceCurrentTask(args.workspace ? args : { ...args, workspace: ws });
   if (resolution.found) {
     if (resolution.tasks && resolution.tasks.length > 0) {
       foundTasks = resolution.tasks;

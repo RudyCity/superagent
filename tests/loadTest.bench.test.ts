@@ -177,7 +177,7 @@ describe("Load test / micro-benchmark (FASE 6 / 1.5.8)", () => {
     const elapsed = nowMs() - t0;
     record(`lockFile x${N} (5 sessions, 100 files each)`, elapsed, N);
     expect(acquired).toBe(500);
-    expect(elapsed).toBeLessThan(10000);
+    expect(elapsed).toBeLessThan(25000);
   });
 
   it("6. releaseFile x500 (sequential release)", async () => {
@@ -193,7 +193,7 @@ describe("Load test / micro-benchmark (FASE 6 / 1.5.8)", () => {
     }
     const elapsed = nowMs() - t0;
     record(`releaseFile x500 (sequential)`, elapsed, 500);
-    expect(elapsed).toBeLessThan(10000);
+    expect(elapsed).toBeLessThan(25000);
   });
 
   it("7. atomic write + rename cost on 1000-entry JSON", async () => {

@@ -7,7 +7,12 @@ import {
   getCurrentTaskFromChecklist,
   readChecklistTasks,
 } from "../../taskChecklist.js";
-import { superagentInstances, subagentInstances, getProcessActivity } from "../../tools/state.js";
+import {
+  superagentInstances,
+  subagentInstances,
+  getProcessActivity,
+  isTaskInWorkspace,
+} from "../../tools/state.js";
 import { loadRegistry } from "../../tools/superagentRegistry.js";
 import { loadActiveProcesses } from "../processJournal.js";
 import { callServerApi } from "./processTools.js";
@@ -49,11 +54,30 @@ export interface InstanceTaskResolution {
 
 /**
  * Scan history directories (multi and single) for the most recently modified session task file.
+ * If targetWorkspace is provided, only matches sessions belonging to that workspace.
  */
-export function findLatestSessionTaskFile(): string | null {
+export function findLatestSessionTaskFile(targetWorkspace?: string): string | null {
   try {
     const historyDir = path.join(getRootConfigDir(), "history");
     if (!fs.existsSync(historyDir)) return null;
+
+    if (targetWorkspace) {
+      try {
+        const { listSessionsFromDb } = require("../../storage/historyDb.js");
+        const sessions = listSessionsFromDb(100);
+        for (const s of sessions) {
+          if (s.workingDirectory && (isTaskInWorkspace(s.workingDirectory, targetWorkspace) || isTaskInWorkspace(targetWorkspace, s.workingDirectory))) {
+            const root = getRootConfigDir();
+            for (const m of ["multi", "single"]) {
+              const taskFile = path.join(root, "history", m, s.id, `${s.id}_task.md`);
+              if (fs.existsSync(taskFile)) {
+                return taskFile;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
 
     const candidates: { filePath: string; mtime: number }[] = [];
     for (const mode of ["multi", "single"]) {
@@ -67,6 +91,9 @@ export function findLatestSessionTaskFile(): string | null {
           if (stat.isDirectory()) {
             const taskFile = path.join(sessDir, `${sess}_task.md`);
             if (fs.existsSync(taskFile)) {
+              if (targetWorkspace) {
+                continue;
+              }
               candidates.push({ filePath: taskFile, mtime: fs.statSync(taskFile).mtimeMs });
             }
           }
@@ -471,7 +498,7 @@ export async function resolveInstanceCurrentTask(
 
     // Check if an active process has this workspace and inspect its session task file
     const processes = loadActiveProcesses();
-    const wsProc = processes.find((p) => path.resolve(p.workingDirectory) === ws);
+    const wsProc = processes.find((p) => isTaskInWorkspace(p.workingDirectory, ws) || isTaskInWorkspace(ws, p.workingDirectory));
     if (wsProc?.taskFilePath) {
       candidatePaths.unshift(wsProc.taskFilePath);
     }
@@ -508,10 +535,17 @@ export async function resolveInstanceCurrentTask(
     };
   }
 
-  // 3. No ID or workspace provided: Auto-discover the most relevant active instance
-  // 3a. Running Superagents (in-memory)
+  // 3. No ID or workspace provided: Auto-discover the most relevant active instance within current MCP workspace
+  const effectiveWs = getMcpWorkspacePath();
+  const processes = loadActiveProcesses();
+  const wsProcesses = processes.filter(
+    (p) => isTaskInWorkspace(p.workingDirectory, effectiveWs) || isTaskInWorkspace(effectiveWs, p.workingDirectory)
+  );
+
+  // 3a. Running Superagents (in-memory) matching effectiveWs
   for (const [id, inst] of superagentInstances.entries()) {
     if (inst.status === "running" || inst.status === "waiting") {
+      if (inst.worktreePath && !isTaskInWorkspace(inst.worktreePath, effectiveWs)) continue;
       return await resolveInstanceCurrentTask({ superagentId: id });
     }
   }
@@ -523,11 +557,8 @@ export async function resolveInstanceCurrentTask(
     }
   }
 
-  // 3c. Active processes in process journal
-  const processes = loadActiveProcesses();
-
-  // 3c-1. Check running Superagents across active processes
-  for (const p of processes) {
+  // 3c-1. Check running Superagents across active processes in this workspace
+  for (const p of wsProcesses) {
     if (p.activeSuperagents) {
       const runningSa = p.activeSuperagents.find((sa) => sa.status === "running" || sa.status === "waiting");
       if (runningSa) {
@@ -536,8 +567,8 @@ export async function resolveInstanceCurrentTask(
     }
   }
 
-  // 3c-2. Check running Subagents across active processes
-  for (const p of processes) {
+  // 3c-2. Check running Subagents across active processes in this workspace
+  for (const p of wsProcesses) {
     if (p.activeSubagents) {
       const runningSub = p.activeSubagents.find((sub) => sub.status === "running" || sub.status === "waiting");
       if (runningSub) {
@@ -546,29 +577,36 @@ export async function resolveInstanceCurrentTask(
     }
   }
 
-  // 3c-3. Active running process in process journal (isAgentRunning)
-  const activeRunningProc = processes.find((p) => p.isAgentRunning && p.currentTask);
+  // 3c-3. Active running process in process journal (isAgentRunning) in this workspace
+  const activeRunningProc = wsProcesses.find((p) => p.isAgentRunning && p.currentTask);
   if (activeRunningProc) {
     return await resolveInstanceCurrentTask({ id: String(activeRunningProc.pid) });
   }
 
-  // 3c-4. Any process from process journal (even idle between turns)
-  if (processes.length > 0) {
-    const sortedProcs = [...processes].sort((a, b) => (b.lastHeartbeat || 0) - (a.lastHeartbeat || 0));
+  // 3c-4. Any process from process journal in this workspace (even idle between turns)
+  if (wsProcesses.length > 0) {
+    const sortedProcs = [...wsProcesses].sort((a, b) => (b.lastHeartbeat || 0) - (a.lastHeartbeat || 0));
     return await resolveInstanceCurrentTask({ id: String(sortedProcs[0].pid) });
   }
 
-  // 3d. Any registered Superagent
+  // 3d. If there are no processes in this workspace, but exactly 1 global process exists across the machine
+  // (e.g. CLI spawned with a temp/sandbox dir or unit test harness):
+  if (wsProcesses.length === 0 && processes.length === 1 && processes[0].isAgentRunning) {
+    return await resolveInstanceCurrentTask({ id: String(processes[0].pid) });
+  }
+
+  // 3e. Any registered Superagent in current workspace
   if (superagentInstances.size > 0) {
-    const firstId = superagentInstances.keys().next().value;
-    if (firstId) {
-      return await resolveInstanceCurrentTask({ superagentId: firstId });
+    for (const [id, inst] of superagentInstances.entries()) {
+      if (!inst.worktreePath || isTaskInWorkspace(inst.worktreePath, effectiveWs)) {
+        return await resolveInstanceCurrentTask({ superagentId: id });
+      }
     }
   }
 
-  // 3e. Live in-memory ProcessActivity
+  // 3f. Live in-memory ProcessActivity if in current workspace
   const activity = getProcessActivity();
-  if (activity && activity.currentTask) {
+  if (activity && activity.currentTask && (!activity.workingDirectory || isTaskInWorkspace(activity.workingDirectory, effectiveWs))) {
     const candidatePaths = [activity.taskFilePath, activity.workingDirectory].filter(Boolean) as string[];
     const { tasks, taskFilePath } = await findTaskFileAndRead(candidatePaths);
     const taskInfo = getCurrentTaskFromChecklist(tasks);
@@ -593,8 +631,8 @@ export async function resolveInstanceCurrentTask(
     };
   }
 
-  // 3f. Scan history directory for the latest session task file
-  const latestSessionTask = findLatestSessionTaskFile();
+  // 3g. Scan history directory for the latest session task file matching effectiveWs
+  const latestSessionTask = findLatestSessionTaskFile(effectiveWs);
   if (latestSessionTask) {
     const { tasks, taskFilePath } = await findTaskFileAndRead([latestSessionTask]);
     if (tasks.length > 0) {
@@ -618,8 +656,8 @@ export async function resolveInstanceCurrentTask(
     }
   }
 
-  // 3g. Default fallback to current working directory task files
-  const cwd = getMcpWorkspacePath();
+  // 3h. Default fallback to current working directory task files
+  const cwd = effectiveWs;
   const { tasks, taskFilePath } = await findTaskFileAndRead([cwd]);
   const { planContent, planFilePath } = findPlanFileAndRead([cwd]);
   const taskInfo = getCurrentTaskFromChecklist(tasks);

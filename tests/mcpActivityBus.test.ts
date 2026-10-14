@@ -94,4 +94,68 @@ describe("mcpActivityBus", () => {
     // Should not receive any more events after unsubscribe
     expect(received.length).toBe(1);
   });
+
+  it("filters in-memory activity by workspace so only matching terminal receives it", () => {
+    const wsA = path.resolve("D:/projects/alpha");
+    const wsB = path.resolve("D:/projects/beta");
+
+    const receivedA: string[] = [];
+    const receivedB: string[] = [];
+
+    const unsubA = subscribeToMcpActivity((line) => receivedA.push(line), { workspace: wsA });
+    const unsubB = subscribeToMcpActivity((line) => receivedB.push(line), { workspace: wsB });
+
+    try {
+      emitMcpActivity({
+        type: "tool_call",
+        tool: "superagent_read_files",
+        args: { paths: ["alpha.ts"] },
+        ok: true,
+        workspace: wsA,
+        timestamp: Date.now(),
+      });
+
+      emitMcpActivity({
+        type: "tool_call",
+        tool: "superagent_write_files",
+        args: { files: [{ path: "beta.ts" }] },
+        ok: true,
+        workspace: wsB,
+        timestamp: Date.now(),
+      });
+
+      expect(receivedA.length).toBe(1);
+      expect(receivedA[0]).toContain("superagent_read_files");
+      expect(receivedA[0]).not.toContain("superagent_write_files");
+
+      expect(receivedB.length).toBe(1);
+      expect(receivedB[0]).toContain("superagent_write_files");
+      expect(receivedB[0]).not.toContain("superagent_read_files");
+    } finally {
+      unsubA();
+      unsubB();
+    }
+  });
+
+  it("correctly identifies matching and non-matching workspaces with isWorkspaceMatch", async () => {
+    const { isWorkspaceMatch } = await import("../src/core/mcp/mcpActivityBus.js");
+
+    // Exact match
+    expect(isWorkspaceMatch("D:/proj/alpha", "D:/proj/alpha")).toBe(true);
+
+    // Case insensitivity
+    if (process.platform === "win32") {
+      expect(isWorkspaceMatch("d:/proj/alpha", "D:/PROJ/ALPHA")).toBe(true);
+    }
+
+    // Worktree / subfolder
+    expect(isWorkspaceMatch("D:/proj/alpha/packages/core", "D:/proj/alpha")).toBe(true);
+    expect(isWorkspaceMatch("D:/proj/alpha", "D:/proj/alpha/packages/core")).toBe(true);
+
+    // Different workspaces
+    expect(isWorkspaceMatch("D:/proj/alpha", "D:/proj/beta")).toBe(false);
+    expect(isWorkspaceMatch("D:/proj/superagent", "D:/proj/t-line")).toBe(false);
+  });
 });
+
+

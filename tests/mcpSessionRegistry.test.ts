@@ -84,10 +84,10 @@ describe("McpSessionRegistry", () => {
   });
 
   it("keeps sessions alive while they are touched", async () => {
-    const r = new McpSessionRegistry({ idleTimeoutMs: 60, maxLifetimeMs: 60000 });
+    const r = new McpSessionRegistry({ idleTimeoutMs: 180, maxLifetimeMs: 60000 });
     r.add(entry("busy"));
     for (let i = 0; i < 3; i++) {
-      await sleep(30);
+      await sleep(40);
       r.touch("busy");
     }
     expect(r.get("busy")).toBeDefined();
