@@ -19,13 +19,15 @@ export async function executeHookCommand(
   cwd: string,
   signal?: AbortSignal,
   stdinInput?: string,
-  timeoutMs?: number
+  timeoutMs?: number,
+  hookDir?: string,
+  event?: string
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   // Dynamic import avoids circular dep with sshCommands.ts (which itself imports tools/state)
   const { workspaceMode } = await import("../ssh/workspaceMode.js");
   if (workspaceMode.isSsh()) {
     const { sshProxy } = await import("../ssh/sshProxy.js");
-    const remoteCwd = workspaceMode.getConfig()?.remoteCwd || ".";
+    const remoteCwd = hookDir || workspaceMode.getConfig()?.remoteCwd || ".";
     const commandWithStdin = stdinInput
       ? `printf '%s' ${sshProxy.escapeShellArg(stdinInput)} | ${finalCommand}`
       : finalCommand;
@@ -36,7 +38,7 @@ export async function executeHookCommand(
       exitCode: res.exitCode,
     };
   }
-  // Local path: use execa as before
+  // Local path: use execa in hookDir if available, providing workspace env vars
   let shellPath: string | boolean = true;
   let cmd = finalCommand;
   if (process.platform === "win32") {
@@ -46,16 +48,18 @@ export async function executeHookCommand(
       cmd = formatCommandForPowerShell(cmd);
     }
   }
+  const execDir = hookDir && fs.existsSync(hookDir) ? hookDir : cwd;
   const result = await execa(cmd, {
     shell: shellPath,
-    cwd,
+    cwd: execDir,
     env: {
       ...process.env,
-      SUPERAGENT_HOOK_DIR: cwd,
+      SUPERAGENT_HOOK_DIR: hookDir || cwd,
       SUPERAGENT_CWD: cwd,
       SUPERAGENT_WORKSPACE: cwd,
+      ...(event ? { SUPERAGENT_EVENT: event } : {}),
     },
-    input: stdinInput,
+    input: stdinInput ?? "",
     reject: true,
     timeout: timeoutMs,
   });
@@ -227,7 +231,8 @@ export function loadDynamicHooks(): Tool[] {
                         process.cwd(),
                         undefined,
                         undefined,
-                        600000
+                        600000,
+                        hookDir
                       );
                       const duration = Date.now() - startTime;
                       const logFile = path.join(process.cwd(), "internal-hooks", "hooks.log");
@@ -301,7 +306,8 @@ Error: ${errorMsg}
                     cwd,
                     signal,
                     argsJson,
-                    600000
+                    600000,
+                    hookDir
                   );
                   const duration = Date.now() - startTime;
                   const logFile = path.join(process.cwd(), "internal-hooks", "hooks.log");
@@ -407,7 +413,9 @@ export async function runEventHooks(
                     process.cwd(),
                     undefined,
                     JSON.stringify(contextData),
-                    600000
+                    600000,
+                    hookDir,
+                    event
                   );
                   const duration = Date.now() - startTime;
                   

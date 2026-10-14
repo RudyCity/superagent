@@ -1,3 +1,16 @@
+## [1.13.83] - 2026-10-15
+### Fixed
+- Fixed tool alias and canonical name resolution in `executeToolCall` (`src/core/permissions.ts`): allowed compatibility aliases (`get_tools`, `describe_tools`, `read_file`, `write_file`, `cmd`, etc.) to match authorized agent-scoped definitions instead of incorrectly failing tier authorization.
+- Added alias resolution support to `runDescribeTool` (`src/core/tools/toolDiscoveryTools.ts`) using centralized `TOOL_ALIASES` (`src/core/tools/toolAliases.ts`), enabling describing tools by alias names without throwing unknown tool errors.
+- Fixed dynamic tool schema persistence across loop iterations: prevented request category filtering in `LoopIterationProcessor.ts` and `ContextBuilder.ts` from stripping out explicitly discovered tools when classified as questions or conversations.
+- Fixed dynamic internal hooks execution in `src/core/tools/dynamicHooks.ts`: set execution working directory to `hookDir` when available and properly configured `SUPERAGENT_HOOK_DIR`, `SUPERAGENT_CWD`, `SUPERAGENT_WORKSPACE`, and `SUPERAGENT_EVENT` environment variables.
+- Added empty stdin input fallback in `executeHookCommand` to prevent Node processes from hanging when reading file descriptor 0 in slash commands and event hooks.
+- Updated `loadSiteRegistry` and `resolveSite` in `internal-hooks/wp/index.js` to search multi-location candidates and parse nested `sites` registries.
+
+### Tests
+- Added integration test coverage in `tests/toolDiscoveryExecutionIntegration.test.ts` for alias dispatch (`get_tools`, `describe_tools`, `read_file`) and tool retention across category filtering.
+- Verified test suite passes for dynamic tool discovery, tier projections, fuzzy discovery, registry consistency, and internal hooks.
+
 ## [1.13.82] - 2026-10-15
 ### Changed
 - Configured dedicated `screenshots/` directory fallback for CDP screenshots in `captureCdpScreenshot` (`src/core/tools/chromeCdpScreenshot.ts`), preventing temporary browser navigation screenshots from polluting the project root directory.

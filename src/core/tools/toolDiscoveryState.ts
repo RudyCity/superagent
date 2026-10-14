@@ -49,6 +49,10 @@ export class ToolDiscoveryState {
     this.discoveredNames.clear();
   }
 
+  public hasDiscovered(name: string): boolean {
+    return this.discoveredNames.has(name);
+  }
+
   /**
    * Return the model-visible tool list: discovery tools plus successfully
    * described tools that remain part of the agent's authorized catalog.

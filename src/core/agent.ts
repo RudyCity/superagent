@@ -483,6 +483,10 @@ export class Agent {
     return tools;
   }
 
+  public isToolDiscovered(name: string): boolean {
+    return this.toolDiscoveryState.hasDiscovered(name);
+  }
+
   public setMode(
     mode: "implement" | "debug" | "plan" | "research" | "review" | "ask",
     reason?: string

@@ -1,4 +1,5 @@
 import type { Tool } from "./types.js";
+import { TOOL_ALIASES } from "./toolAliases.js";
 
 /**
  * Normalizes input arguments to extract a list of tool names.
@@ -224,7 +225,13 @@ export async function runDescribeTool(
       const caseMatch = tools.find((t) => t.name.toLowerCase() === lower);
       if (caseMatch) return caseMatch;
       const norm = lower.replace(/[-_]/g, "_");
-      return tools.find((t) => t.name.toLowerCase().replace(/[-_]/g, "_") === norm);
+      const normMatch = tools.find((t) => t.name.toLowerCase().replace(/[-_]/g, "_") === norm);
+      if (normMatch) return normMatch;
+      const aliasTarget = TOOL_ALIASES[norm] || TOOL_ALIASES[lower];
+      if (aliasTarget) {
+        return tools.find((t) => t.name === aliasTarget);
+      }
+      return undefined;
     });
 
   const out = names.map((name) => {

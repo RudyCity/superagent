@@ -122,7 +122,11 @@ export class ContextBuilder {
           const discoveryTools = toolsToUse.filter((tool) => discoveryNames.has(tool.name));
           const modelVisibleFilteredTools = [
             ...discoveryTools,
-            ...filteredTools.filter((tool) => !discoveryNames.has(tool.name)),
+            ...toolsToUse.filter((tool) =>
+              !discoveryNames.has(tool.name) &&
+              (filteredTools.some((ft: any) => ft.name === tool.name) ||
+               (typeof agent.isToolDiscovered === "function" && agent.isToolDiscovered(tool.name)))
+            ),
           ];
           if (modelVisibleFilteredTools.length !== toolsToUse.length || filteredTools.length !== toolsToUse.length) {
             filteredToolDefs = modelVisibleFilteredTools.map((t) => ({

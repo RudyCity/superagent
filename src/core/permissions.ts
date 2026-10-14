@@ -9,7 +9,7 @@ import { workspaceMode } from "./ssh/workspaceMode.js";
 import { workspaceChainManager } from "./workspace/WorkspaceChainManager.js";
 
 // ── Cached module loaders (avoid repeated dynamic import overhead) ────────
-let _toolsModule: { getToolByName: (name: string) => any } | null = null;
+let _toolsModule: { getToolByName: (name: string) => any; canonicalizeToolName?: (name: string) => string } | null = null;
 let _stateModule: { appendMasterLog: (msg: string) => void; appendToolsErrorLog: (...args: any[]) => void } | null = null;
 
 async function getToolsModule() {
@@ -1396,7 +1396,7 @@ export async function executeToolCall(
   signal?: AbortSignal,
   cachedActiveTools?: any[]
 ): Promise<ToolResult> {
-  const { getToolByName } = await getToolsModule();
+  const { getToolByName, canonicalizeToolName } = await getToolsModule();
   const registeredTool = getToolByName(toolCall.name);
   const currentAgent = agentLocalStorage.getStore();
   let activeTools: any[] | undefined = cachedActiveTools;
@@ -1407,10 +1407,29 @@ export async function executeToolCall(
       // Preserve the registry fallback if active-tool resolution fails.
     }
   }
+
+  const matchesCandidate = (candidate: any, callName: string, resolvedCanonical?: string): boolean => {
+    if (!candidate?.name || !callName) return false;
+    const cName = String(candidate.name);
+    const target = String(callName);
+    if (cName === target) return true;
+    const cLower = cName.toLowerCase();
+    const tLower = target.toLowerCase();
+    if (cLower === tLower) return true;
+    if (cLower.replace(/[-_]/g, "_") === tLower.replace(/[-_]/g, "_")) return true;
+    if (resolvedCanonical) {
+      const canon = String(resolvedCanonical);
+      if (cName === canon || cLower === canon.toLowerCase()) return true;
+      if (cLower.replace(/[-_]/g, "_") === canon.toLowerCase().replace(/[-_]/g, "_")) return true;
+    }
+    return false;
+  };
+
+  const canonicalName = registeredTool?.name ?? (typeof canonicalizeToolName === "function" ? canonicalizeToolName(toolCall.name) : undefined);
   // Execute the authorized Agent-scoped definition when available. Discovery
   // tools are wrapped per Agent, and dispatching their global registry copies
   // would bypass state updates such as activating a described schema.
-  const tool = activeTools?.find((candidate: any) => candidate.name === toolCall.name) ?? registeredTool;
+  const tool = activeTools?.find((candidate: any) => matchesCandidate(candidate, toolCall.name, canonicalName)) ?? registeredTool;
   const tier = currentAgent ? currentAgent.tier : "unknown";
   const depth = currentAgent ? currentAgent.delegationDepth : 0;
   if (!tool) {
@@ -1431,7 +1450,7 @@ export async function executeToolCall(
   if (currentAgent) {
     try {
       const authorizationTools = activeTools ?? await currentAgent.getActiveTools();
-      const isAllowed = authorizationTools.some((candidate: any) => candidate.name === toolCall.name);
+      const isAllowed = authorizationTools.some((candidate: any) => matchesCandidate(candidate, toolCall.name, canonicalName));
       if (!isAllowed) {
         try {
           const { appendMasterLog, appendToolsErrorLog } = await getStateModule();

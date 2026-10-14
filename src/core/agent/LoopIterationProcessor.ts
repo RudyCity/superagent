@@ -150,7 +150,8 @@ export class LoopIterationProcessor {
             // Discovery entry points must remain callable even when the request
             // classifier narrows the ordinary tool schemas for this category.
             if (!filtered.some((ft: any) => ft.name === t.name) &&
-                t.name !== "list_tools" && t.name !== "describe_tool") {
+                t.name !== "list_tools" && t.name !== "describe_tool" &&
+                !(typeof agent.isToolDiscovered === "function" && agent.isToolDiscovered(t.name))) {
               continue;
             }
           }
