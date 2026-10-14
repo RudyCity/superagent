@@ -1,5 +1,6 @@
 import { sshProxy } from "./sshProxy.js";
 import { sshLogger } from "./sshLogger.js";
+import { mapConcurrentOrdered } from "../concurrency.js";
 
 /**
  * Log SSH tool use entry — called when a tool detects SSH mode and routes
@@ -19,41 +20,41 @@ function logToolExit(op: string, meta: Record<string, unknown>): void {
 }
 
 export async function sshReadToolExecute(
-  filePath: string | Array<string | { path: string }>,
+  filePath: string | Array<string | { path: string; offset?: number; limit?: number }>,
   offset: number = 1,
   limit: number = 800
 ): Promise<string> {
   const start = Date.now();
   const fileCount = Array.isArray(filePath) ? filePath.length : 1;
-  logToolEntry("ssh.read", { files: fileCount, offset, limit });
+  logToolEntry("ssh.read", { files: fileCount, offset, limit, concurrency: 6 });
   try {
-    const sliceContent = (content: string): string => {
-      if (offset === 1 && limit >= 800 && content.split("\n").length <= limit) {
+    const sliceContent = (content: string, fileOffset: number, fileLimit: number): string => {
+      if (fileOffset === 1 && fileLimit >= 800 && content.split("\n").length <= fileLimit) {
         return content;
       }
       const lines = content.split("\n");
-      const startIdx = Math.max(0, offset - 1);
-      const endIdx = startIdx + limit;
-      const sliced = lines.slice(startIdx, endIdx);
-      return sliced.map((line, idx) => `${startIdx + idx + 1}: ${line}`).join("\n");
+      const startIdx = Math.max(0, fileOffset - 1);
+      const endIdx = startIdx + fileLimit;
+      return lines.slice(startIdx, endIdx).map((line, idx) => `${startIdx + idx + 1}: ${line}`).join("\n");
     };
 
     if (Array.isArray(filePath)) {
-      const results: string[] = [];
-      for (const item of filePath) {
+      const results = await mapConcurrentOrdered(filePath, 6, async (item): Promise<string> => {
         const pathStr = typeof item === "string" ? item : item.path;
+        const fileOffset = typeof item === "string" ? offset : Math.max(1, item.offset || offset);
+        const fileLimit = typeof item === "string" ? limit : Math.max(1, item.limit || limit);
         try {
           const content = await sshProxy.readFile(pathStr);
-          results.push(`=== File: ${pathStr} ===\n${sliceContent(content)}`);
+          return `=== File: ${pathStr} ===\n${sliceContent(content, fileOffset, fileLimit)}`;
         } catch (err: any) {
-          results.push(`=== File: ${pathStr} ===\nError reading file: ${err.message}`);
+          return `=== File: ${pathStr} ===\nError reading file: ${err.message}`;
         }
-      }
-      logToolExit("ssh.read", { files: fileCount, durationMs: Date.now() - start, status: "ok" });
+      });
+      logToolExit("ssh.read", { files: fileCount, durationMs: Date.now() - start, status: results.some((result) => result.includes("Error reading file:")) ? "partial_error" : "ok", concurrency: Math.min(6, fileCount) });
       return results.join("\n\n");
     }
     const content = await sshProxy.readFile(filePath);
-    const out = sliceContent(content);
+    const out = sliceContent(content, offset, limit);
     logToolExit("ssh.read", { files: fileCount, path: filePath, durationMs: Date.now() - start, status: "ok" });
     return out;
   } catch (err: any) {
@@ -71,22 +72,29 @@ export async function sshWriteToolExecute(
   logToolEntry("ssh.write", { files: fileCount });
   try {
     if (Array.isArray(filePath)) {
-      const results: string[] = [];
-      for (const file of filePath) {
+      const identities = filePath.map((file) => {
+        const target = file.filePath || file.TargetFile || file.targetFile || file.path || file.file;
+        return target ? (process.platform === "win32" ? target.toLowerCase() : target) : "";
+      });
+      const counts = new Map<string, number>();
+      for (const identity of identities) if (identity) counts.set(identity, (counts.get(identity) || 0) + 1);
+      const results = await mapConcurrentOrdered(filePath, 6, async (file, index): Promise<string> => {
         const targetPath = file.filePath || file.TargetFile || file.targetFile || file.path || file.file;
         const targetContent = file.content ?? file.CodeContent ?? file.codeContent;
         if (!targetPath || targetContent === undefined) {
-          results.push(`Error: Missing filePath or content for SSH write on ${targetPath || "unknown file"}`);
-          continue;
+          return `Error: Missing filePath or content for SSH write on ${targetPath || "unknown file"}`;
+        }
+        if ((counts.get(identities[index]) || 0) > 1) {
+          return `Error: Duplicate target in SSH write batch: ${targetPath}. Each file may appear only once per batch.`;
         }
         try {
           await sshProxy.writeFile(targetPath, targetContent);
-          results.push(`Successfully wrote remote SSH file: ${targetPath}`);
+          return `Successfully wrote remote SSH file: ${targetPath}`;
         } catch (err: any) {
-          results.push(`Error writing SSH remote file ${targetPath}: ${err.message}`);
+          return `Error writing SSH remote file ${targetPath}: ${err.message}`;
         }
-      }
-      logToolExit("ssh.write", { files: fileCount, durationMs: Date.now() - start, status: "ok" });
+      });
+      logToolExit("ssh.write", { files: fileCount, durationMs: Date.now() - start, status: results.some((result) => result.startsWith("Error:")) ? "error" : "ok" });
       return results.join("\n");
     }
     if (!content && content !== "") {

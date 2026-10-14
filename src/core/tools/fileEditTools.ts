@@ -9,6 +9,7 @@ import { checkFileLock, lockFile, releaseFile } from "../storage/sharedMemory.js
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { sshWriteToolExecute, sshEditToolExecute, sshMultiEditToolExecute } from "../ssh/sshCommands.js";
 import { sshLogger } from "../ssh/sshLogger.js";
+import { mapConcurrentOrdered } from "../concurrency.js";
 
 function fuzzyMatch(text: string, pattern: string): boolean {
   const cleanText = text.replace(/\s+/g, ' ');
@@ -710,25 +711,19 @@ export const editTool: Tool = {
 
 export const writeToFileTool: Tool = {
   name: "write_to_file",
-  description: "Create or overwrite file content entirely. PREFER 'files' array to batch create/overwrite multiple files in ONE call — never write files one-by-one.",
+  description: "Create or overwrite file contents concurrently. REQUIRED: use files array even for one file; single-file invocation is disabled in single and multi modes.",
   parameters: {
     type: "object",
     properties: {
-      filePath: {
-        type: "string",
-        description: "Path to the file to write to (optional if files is provided)",
-      },
-      content: {
-        type: "string",
-        description: "The complete content to write to the file (optional if files is provided)",
-      },
       overwrite: {
         type: "boolean",
         description: "If true, will overwrite an existing file. If false, will error if the file exists.",
       },
       files: {
         type: "array",
-        description: "Optional list of files to write in bulk.",
+        description: "REQUIRED: list of files to write in bulk, including for one file.",
+        minItems: 1,
+        maxItems: 50,
         items: {
           type: "object",
           properties: {
@@ -749,12 +744,36 @@ export const writeToFileTool: Tool = {
         },
       },
     },
+    required: ["files"],
   },
   async execute(args, cwd, signal) {
+    if (!Array.isArray(args.files) || args.files.length === 0) {
+      return "Error: Single-file write is disabled in both single and multi modes. Always pass files as an array, including for one file: { files: [{ filePath, content, overwrite? }] }.";
+    }
+    if (args.files.length > 50) return "Error: write_to_file accepts at most 50 files per batch.";
     const { agentLocalStorage } = await import("../agent.js");
     const currentAgent = agentLocalStorage.getStore();
     const sessionId = currentAgent?.sessionId;
     const terminalType = (currentAgent as any)?.terminalType || "cli";
+    const seenWriteTargets = new Set<string>();
+    for (const file of args.files as Array<Record<string, any>>) {
+      const rawPath = file?.filePath ?? file?.TargetFile ?? file?.targetFile ?? file?.target_file ?? file?.path ?? file?.file;
+      if (!file || typeof rawPath !== "string" || !rawPath.trim()) {
+        return "Error: Every item in files[] must include a non-empty filePath (or supported path alias).";
+      }
+      const content = file.content ?? file.CodeContent ?? file.codeContent ?? file.text ?? file.fileContent;
+      if (typeof content !== "string") {
+        return `Error: Every item in files[] must include string content (${rawPath}).`;
+      }
+      file.filePath = rawPath;
+      file.content = content;
+      const resolved = normalizePath(path.resolve(cwd, rawPath));
+      const duplicateKey = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+      if (seenWriteTargets.has(duplicateKey)) {
+        return `Error: Duplicate target in files[]: ${file.filePath}. Each file may appear only once per batch.`;
+      }
+      seenWriteTargets.add(duplicateKey);
+    }
     const writePathsToCheck: string[] = [];
     if (args.filePath) writePathsToCheck.push(args.filePath as string);
     if (args.files && Array.isArray(args.files)) {
@@ -776,23 +795,13 @@ export const writeToFileTool: Tool = {
         writeAutoLockPaths.push(checkPath);
       }
     }
-    const isTargetLocal = (): boolean => {
-      const single = (args.filePath || args.path || args.TargetFile || args.targetFile || args.target_file || args.file) as string | undefined;
-      const multiple = (args.files || (args as any).Files) as any[] | undefined;
-      if (single && isLocalConfigOrSessionPath(single)) return true;
-      if (multiple && multiple.length > 0) {
-        const first = typeof multiple[0] === "string" ? multiple[0] : (multiple[0]?.filePath || multiple[0]?.TargetFile || multiple[0]?.targetFile || multiple[0]?.target_file || multiple[0]?.path || multiple[0]?.file);
-        if (first && isLocalConfigOrSessionPath(first)) return true;
-      }
-      return false;
-    };
-
-    if (workspaceMode.isSsh() && !isTargetLocal()) {
-      sshLogger.toolUse("write_to_file", "routing write_to_file tool to SSH remote", { meta: { batch: !!args.files } });
-      const targets = args.files || (args as any).Files || args.filePath || args.path || args.TargetFile || args.targetFile || args.target_file || args.file;
-      const content = (args.content ?? (args as any).CodeContent ?? (args as any).codeContent) as string | undefined;
-      if (!targets) return "Error: Missing filePath or files for SSH write";
-      return await sshWriteToolExecute(targets as any, content);
+    const localTargets = (args.files as Array<Record<string, any>>).map((file) => isLocalConfigOrSessionPath(file.filePath));
+    if (workspaceMode.isSsh() && localTargets.some(Boolean) && localTargets.some((isLocal) => !isLocal)) {
+      return "Error: Mixed local and SSH-remote paths in one write batch are blocked. Split local config/session files from remote workspace files.";
+    }
+    if (workspaceMode.isSsh() && localTargets.every((isLocal) => !isLocal)) {
+      sshLogger.toolUse("write_to_file", "routing write batch to SSH remote", { meta: { files: args.files.length } });
+      return await sshWriteToolExecute(args.files as any);
     }
     // Tier-aware allowlist: Master Agent cannot write to codebase files.
     // The check is duplicated for both single-file and batch (files[]) modes.
@@ -828,49 +837,50 @@ export const writeToFileTool: Tool = {
         // Release cross-session locks on exit
         if (sessionId) releases.push(() => { for (const p of writeAutoLockPaths) releaseFile(p, sessionId!, cwd); });
 
-        for (const file of sortedFiles) {
-          const overwrite = !!(file.overwrite ?? (file as any).Overwrite);
-          const nextContent = (file.content ?? (file as any).CodeContent ?? (file as any).codeContent ?? (file as any).text ?? (file as any).fileContent);
-          if (nextContent === undefined || nextContent === null) {
-            results.push(`Error: Missing 'content' for file ${file.filePath}`);
-            continue;
-          }
-          if (!overwrite) {
-            try {
-              await fs.access(file.resolvedPath);
-              results.push(`Error: File already exists and overwrite was set to false for ${file.filePath}`);
-              continue;
-            } catch {
-              // File does not exist, safe to write
-            }
-          }
-          let previousContent = "";
-          let existedBefore = true;
+        const fileResults = await mapConcurrentOrdered(sortedFiles, 6, async (file): Promise<string> => {
           try {
-            previousContent = await fs.readFile(file.resolvedPath, "utf-8");
-          } catch {
-            existedBefore = false;
+            const overwrite = !!(file.overwrite ?? (file as any).Overwrite);
+            const nextContent = (file.content ?? (file as any).CodeContent ?? (file as any).codeContent ?? (file as any).text ?? (file as any).fileContent);
+            if (nextContent === undefined || nextContent === null) {
+              return `Error: Missing 'content' for file ${file.filePath}`;
+            }
+            if (!overwrite) {
+              try {
+                await fs.access(file.resolvedPath);
+                return `Error: File already exists and overwrite was set to false for ${file.filePath}`;
+              } catch {
+                // File does not exist, safe to write
+              }
+            }
+            let previousContent = "";
+            let existedBefore = true;
+            try {
+              previousContent = await fs.readFile(file.resolvedPath, "utf-8");
+            } catch {
+              existedBefore = false;
+            }
+            const expectedHash = existedBefore ? computeContentHash(previousContent) : "";
+            const summary = buildEditSummary(previousContent, nextContent, file.resolvedPath, existedBefore);
+            if (previousContent === nextContent && existedBefore) {
+              return summary;
+            }
+            if (!(await verifyContentFreshness(file.resolvedPath, expectedHash, existedBefore))) {
+              return `Error writing file ${file.filePath}: [LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File has been modified by another process since it was read.`;
+            }
+            await fs.mkdir(path.dirname(file.resolvedPath), { recursive: true });
+            await fs.writeFile(file.resolvedPath, nextContent, "utf-8");
+            const syntaxError = await verifySyntax(file.resolvedPath);
+            const action = existedBefore ? "File written successfully" : "Created file";
+            if (syntaxError) {
+              return `Warning: ${syntaxError}. ${action}: ${file.filePath}\n${summary}`;
+            }
+            return `${action}: ${file.filePath}\n${summary}`;
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            return `Error writing file ${file.filePath}: ${message}`;
           }
-          const expectedHash = existedBefore ? computeContentHash(previousContent) : "";
-          const summary = buildEditSummary(previousContent, nextContent, file.resolvedPath, existedBefore);
-          if (previousContent === nextContent && existedBefore) {
-            results.push(summary);
-            continue;
-          }
-          if (!(await verifyContentFreshness(file.resolvedPath, expectedHash, existedBefore))) {
-            results.push(`Error writing file ${file.filePath}: [LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File has been modified by another process since it was read.`);
-            continue;
-          }
-          await fs.mkdir(path.dirname(file.resolvedPath), { recursive: true });
-          await fs.writeFile(file.resolvedPath, nextContent, "utf-8");
-          const syntaxError = await verifySyntax(file.resolvedPath);
-          const action = existedBefore ? "File written successfully" : "Created file";
-          if (syntaxError) {
-            results.push(`Warning: ${syntaxError}. ${action}: ${file.filePath}\n${summary}`);
-          } else {
-            results.push(`${action}: ${file.filePath}\n${summary}`);
-          }
-        }
+        });
+        results.push(...fileResults);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         return `Error in bulk writing files: ${message}`;
@@ -938,38 +948,17 @@ export const writeToFileTool: Tool = {
 
 export const replaceFileContentTool: Tool = {
   name: "replace_file_content",
-  description: "Edit a single contiguous block in a file by line range + target content. PREFER 'edits' array to batch replacements across files in ONE call.",
+  description: "Batch-edit contiguous file blocks. REQUIRED: use 'edits' array even when modifying one file; single-edit arguments are disabled in both single and multi modes.",
   parameters: {
     type: "object",
     properties: {
-      filePath: {
-        type: "string",
-        description: "Path to the file to edit (optional if edits is provided)",
-      },
-      targetContent: {
-        type: "string",
-        description: "The exact target content to replace (including whitespace) (optional if edits is provided)",
-      },
-      replacementContent: {
-        type: "string",
-        description: "The replacement content (optional if edits is provided)",
-      },
-      startLine: {
-        type: "number",
-        description: "Start line number of the block to replace (1-indexed) (optional if edits is provided)",
-      },
-      endLine: {
-        type: "number",
-        description: "End line number of the block to replace (1-indexed) (optional if edits is provided)",
-      },
-      allowMultiple: {
-        type: "boolean",
-        description: "If true, allow multiple occurrences of targetContent within the line range to be replaced. Default is false.",
-      },
+
 
       edits: {
         type: "array",
-        description: "Optional list of replacements to perform across multiple files.",
+        description: "REQUIRED batch list of replacements, including when changing only one file.",
+        minItems: 1,
+        maxItems: 100,
         items: {
           type: "object",
           properties: {
@@ -1003,8 +992,12 @@ export const replaceFileContentTool: Tool = {
         },
       },
     },
+    required: ["edits"],
   },
   async execute(args, cwd, signal) {
+    if (!Array.isArray(args.edits) || args.edits.length === 0) {
+      return "Error: Single-edit replacement is disabled in both single and multi modes. Always pass edits as an array, including for one edit: { edits: [{ filePath, targetContent, replacementContent, startLine, endLine }] }.";
+    }
     const { agentLocalStorage } = await import("../agent.js");
     const currentAgent = agentLocalStorage.getStore();
     const sessionId = currentAgent?.sessionId;
@@ -1030,32 +1023,31 @@ export const replaceFileContentTool: Tool = {
         replaceAutoLockPaths.push(checkPath);
       }
     }
-    const targetPath = (args.filePath || args.path || args.TargetFile || args.targetFile || args.target_file || args.file as string) ||
-      ((args.edits as any[])?.[0]?.filePath || (args.edits as any[])?.[0]?.TargetFile || (args.edits as any[])?.[0]?.targetFile || (args.edits as any[])?.[0]?.target_file || (args.edits as any[])?.[0]?.path || (args.edits as any[])?.[0]?.file);
-    if (workspaceMode.isSsh() && !isLocalConfigOrSessionPath(targetPath)) {
-      sshLogger.toolUse("replace_file_content", "routing replace_file_content tool to SSH remote", { meta: { batch: !!args.edits } });
-      const rawEdits = (args.edits || (args as any).Edits) as any[] | undefined;
-      if (rawEdits && Array.isArray(rawEdits) && rawEdits.length > 0) {
-        const results: string[] = [];
-        for (const edit of rawEdits) {
-          const editPath = (edit.filePath || edit.TargetFile || edit.targetFile || edit.target_file || edit.path || edit.file || targetPath) as string;
-          const targetContent = (edit.targetContent ?? edit.TargetContent ?? edit.target_content ?? edit.oldString ?? edit.old_string ?? edit.oldText ?? edit.old_text ?? edit.search ?? edit.target) as string;
-          const replacementContent = (edit.replacementContent ?? edit.ReplacementContent ?? edit.replacement_content ?? edit.newString ?? edit.new_string ?? edit.newText ?? edit.new_text ?? edit.replacement ?? edit.Replacement ?? edit.replace ?? edit.replacement_text ?? edit.new_content) as string;
-          if (!editPath || targetContent === undefined || replacementContent === undefined) {
-            results.push(`Error: Missing filePath, targetContent, or replacementContent for SSH replace_file_content on ${editPath || "unknown file"}`);
-            continue;
-          }
-          const res = await sshEditToolExecute(editPath, targetContent, replacementContent);
-          results.push(res);
+    const rawEdits = (args.edits || (args as any).Edits) as any[] | undefined;
+    if (!rawEdits || !Array.isArray(rawEdits) || rawEdits.length === 0) {
+      return "Error: replace_file_content requires a non-empty edits[] batch.";
+    }
+    const editPaths = rawEdits.map((edit) => String(edit?.filePath || edit?.TargetFile || edit?.targetFile || edit?.target_file || edit?.path || edit?.file || ""));
+    if (editPaths.some((editPath) => !editPath.trim())) {
+      return "Error: Every edits[] entry must provide a non-empty filePath.";
+    }
+    const localTargets = editPaths.map((editPath) => isLocalConfigOrSessionPath(editPath));
+    if (workspaceMode.isSsh() && localTargets.some(Boolean) && localTargets.some((isLocal) => !isLocal)) {
+      return "Error: Mixed local and SSH-remote paths in one replace batch are blocked. Split local config/session edits from remote workspace edits.";
+    }
+    const targetPath = editPaths[0];
+    if (workspaceMode.isSsh() && localTargets.every((isLocal) => !isLocal)) {
+      sshLogger.toolUse("replace_file_content", "routing replace batch to SSH remote", { meta: { files: rawEdits.length } });
+      const results = await mapConcurrentOrdered(rawEdits, 6, async (edit) => {
+        const editPath = String(edit.filePath || edit.TargetFile || edit.targetFile || edit.target_file || edit.path || edit.file || "");
+        const targetContent = (edit.targetContent ?? edit.TargetContent ?? edit.target_content ?? edit.oldString ?? edit.old_string ?? edit.oldText ?? edit.old_text ?? edit.search ?? edit.target) as string;
+        const replacementContent = (edit.replacementContent ?? edit.ReplacementContent ?? edit.replacement_content ?? edit.newString ?? edit.new_string ?? edit.newText ?? edit.new_text ?? edit.replacement ?? edit.Replacement ?? edit.replace ?? edit.replacement_text ?? edit.new_content) as string;
+        if (targetContent === undefined || replacementContent === undefined) {
+          return `Error: Missing targetContent or replacementContent for SSH replace_file_content on ${editPath}`;
         }
-        return results.join("\n");
-      }
-      const targetContent = (args.targetContent ?? (args as any).TargetContent ?? (args as any).target_content ?? (args as any).oldString ?? (args as any).old_string ?? (args as any).oldText ?? (args as any).old_text ?? (args as any).search ?? (args as any).target) as string;
-      const replacementContent = (args.replacementContent ?? (args as any).ReplacementContent ?? (args as any).replacement_content ?? (args as any).newString ?? (args as any).new_string ?? (args as any).newText ?? (args as any).new_text ?? args.replacement ?? (args as any).Replacement ?? (args as any).replace ?? (args as any).replacement_text ?? (args as any).new_content) as string;
-      if (!targetPath || targetContent === undefined || replacementContent === undefined) {
-        return "Error: Missing filePath, targetContent, or replacementContent for SSH replace_file_content";
-      }
-      return await sshEditToolExecute(targetPath, targetContent, replacementContent);
+        return await sshEditToolExecute(editPath, targetContent, replacementContent);
+      });
+      return results.join("\n");
     }
     // Tier-aware allowlist: Master Agent cannot edit codebase files.
     const tier = (currentAgent as any)?.tier;
@@ -1100,7 +1092,7 @@ export const replaceFileContentTool: Tool = {
           editsByFile.set(edit.resolvedPath, list);
         }
 
-        for (const [filePath, fileEdits] of editsByFile.entries()) {
+        const fileResults = await mapConcurrentOrdered(Array.from(editsByFile.entries()), 6, async ([filePath, fileEdits]): Promise<string> => {
           try {
             let content = await fs.readFile(filePath, "utf-8");
             const expectedHash = computeContentHash(content);
@@ -1192,25 +1184,21 @@ export const replaceFileContentTool: Tool = {
 
             const nextContent = lines.join(originalEnding);
             const summary = buildEditSummary(content, nextContent, filePath);
-            if (content === nextContent) {
-              results.push(summary);
-              continue;
-            }
+            if (content === nextContent) return summary;
             if (!(await verifyContentFreshness(filePath, expectedHash, true))) {
               throw new Error(`[LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${filePath}" has been modified by another process since it was read.`);
             }
             await fs.writeFile(filePath, nextContent, "utf-8");
             const syntaxError = await verifySyntax(filePath);
-            if (syntaxError) {
-              results.push(`Warning: ${syntaxError}. File updated: ${fileEdits[0].filePath}\n${summary}`);
-            } else {
-              results.push(`File updated successfully: ${fileEdits[0].filePath}\n${summary}`);
-            }
+            return syntaxError
+              ? `Warning: ${syntaxError}. File updated: ${fileEdits[0].filePath}\n${summary}`
+              : `File updated successfully: ${fileEdits[0].filePath}\n${summary}`;
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);
-            results.push(`Error in replacing content for ${filePath}: ${message}`);
+            return `Error in replacing content for ${filePath}: ${message}`;
           }
-        }
+        });
+        results.push(...fileResults);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         return `Error in bulk replacing: ${message}`;
@@ -1351,44 +1339,12 @@ export const multiReplaceFileContentTool: Tool = {
   parameters: {
     type: "object",
     properties: {
-      filePath: {
-        type: "string",
-        description: "Path to the file to edit (optional if files is provided)",
-      },
-      chunks: {
-        type: "array",
-        description: "List of replacement chunks to apply (optional if files is provided)",
-        items: {
-          type: "object",
-          properties: {
-            targetContent: {
-              type: "string",
-              description: "The exact content to replace",
-            },
-            replacementContent: {
-              type: "string",
-              description: "The replacement content",
-            },
-            startLine: {
-              type: "number",
-              description: "Start line number of the block to replace (1-indexed)",
-            },
-            endLine: {
-              type: "number",
-              description: "End line number of the block to replace (1-indexed)",
-            },
-            allowMultiple: {
-              type: "boolean",
-              description: "If true, allow multiple occurrences of targetContent within the line range to be replaced. Default is false.",
-            },
 
-          },
-          required: ["targetContent", "replacementContent", "startLine", "endLine"],
-        },
-      },
       files: {
         type: "array",
-        description: "Optional list of files to edit, each with multiple chunks.",
+        description: "REQUIRED batch list of files to edit, including when editing only one file.",
+        minItems: 1,
+        maxItems: 50,
         items: {
           type: "object",
           properties: {
@@ -1432,44 +1388,68 @@ export const multiReplaceFileContentTool: Tool = {
         },
       },
     },
+    required: ["files"],
   },
   async execute(args, cwd, signal) {
+    if (!Array.isArray(args.files) || args.files.length === 0) {
+      return "Error: Single-file multi-replacement is disabled in both single and multi modes. Always pass files as an array, including for one file: { files: [{ filePath, chunks: [...] }] }.";
+    }
+    if (args.files.length > 50) return "Error: multi_replace_file_content accepts at most 50 files per batch.";
+    const seenMultiReplaceTargets = new Set<string>();
+    for (const file of args.files as Array<Record<string, any>>) {
+      const rawPath = file?.filePath ?? file?.TargetFile ?? file?.targetFile ?? file?.target_file ?? file?.path ?? file?.file;
+      if (!file || typeof rawPath !== "string" || !rawPath.trim()) {
+        return "Error: Every files[] item must include filePath (or a supported path alias).";
+      }
+      let rawChunks: any = file.chunks ?? file.Chunks ?? file.ReplacementChunks ?? file.replacementChunks ?? file.replacements;
+      if (typeof rawChunks === "string") {
+        try { rawChunks = JSON.parse(rawChunks); }
+        catch (err: any) { return `Error: Invalid chunks JSON for ${rawPath}: ${err.message}`; }
+      }
+      if (!Array.isArray(rawChunks)) rawChunks = rawChunks ? [rawChunks] : [];
+      if (rawChunks.length === 0) return `Error: Every files[] item must include a non-empty chunks array (${rawPath}).`;
+      file.filePath = rawPath;
+      file.chunks = rawChunks;
+      const resolved = normalizePath(path.resolve(cwd, rawPath));
+      const duplicateKey = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+      if (seenMultiReplaceTargets.has(duplicateKey)) return `Error: Duplicate file in one batch: ${file.filePath}. Combine its chunks in one files[] entry.`;
+      seenMultiReplaceTargets.add(duplicateKey);
+    }
     const { agentLocalStorage } = await import("../agent.js");
     const currentAgent = agentLocalStorage.getStore();
     const sessionId = currentAgent?.sessionId;
     const terminalType = (currentAgent as any)?.terminalType || "cli";
-    const targetPath = (args.filePath || args.path || args.TargetFile || args.targetFile || args.target_file || args.file as string) ||
-      ((args.files as any[])?.[0]?.filePath || (args.files as any[])?.[0]?.TargetFile || (args.files as any[])?.[0]?.targetFile || (args.files as any[])?.[0]?.target_file || (args.files as any[])?.[0]?.path || (args.files as any[])?.[0]?.file);
-    if (workspaceMode.isSsh() && !isLocalConfigOrSessionPath(targetPath)) {
-      sshLogger.toolUse("multi_replace_file_content", "routing multi_replace_file_content tool to SSH remote", { meta: { batch: !!args.files } });
-      const rawFiles = args.files || (args as any).Files;
-      if (rawFiles && Array.isArray(rawFiles) && rawFiles.length > 0) {
-        const sshResults: string[] = [];
-        for (const f of rawFiles) {
-          const filePath = (f.filePath || f.TargetFile || f.targetFile || f.target_file || f.path || f.file) as string;
-          const rawChunks = f.chunks || f.Chunks || f.ReplacementChunks || f.replacementChunks || f.replacements || [];
-          if (!filePath || !Array.isArray(rawChunks) || rawChunks.length === 0) {
-            sshResults.push(`Error: Missing filePath or chunks for SSH multi_replace_file_content for ${filePath || "unknown file"}`);
-            continue;
-          }
-          const normalizedChunks = rawChunks.map((c: any) => ({
-            targetContent: c.targetContent ?? c.TargetContent ?? c.target_content ?? c.oldString ?? c.old_string ?? c.oldText ?? c.old_text ?? "",
-            replacementContent: c.replacementContent ?? c.ReplacementContent ?? c.replacement_content ?? c.newString ?? c.new_string ?? c.newText ?? c.new_text ?? "",
-          }));
-          const res = await sshMultiEditToolExecute(filePath, normalizedChunks);
-          sshResults.push(res);
+    const rawFiles = args.files as any[];
+    const targetPaths = rawFiles.map((file: any) => String(file?.filePath || ""));
+    const localTargets = targetPaths.map((filePath) => isLocalConfigOrSessionPath(filePath));
+    if (workspaceMode.isSsh() && localTargets.some(Boolean) && localTargets.some((isLocal) => !isLocal)) {
+      return "Error: Mixed local and SSH-remote paths in one multi-replace batch are blocked. Split local config/session files from remote workspace files.";
+    }
+    const targetPath = targetPaths[0];
+    if (workspaceMode.isSsh() && localTargets.every((isLocal) => !isLocal)) {
+      sshLogger.toolUse("multi_replace_file_content", "routing multi-replace batch to SSH remote", { meta: { files: rawFiles.length } });
+      const identities = rawFiles.map((file: any) => {
+        const resolved = normalizePath(path.resolve(cwd, file.filePath));
+        return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+      });
+      const identityCounts = new Map<string, number>();
+      for (const identity of identities) if (identity) identityCounts.set(identity, (identityCounts.get(identity) || 0) + 1);
+      const sshResults = await mapConcurrentOrdered(rawFiles, 6, async (file: any, index: number): Promise<string> => {
+        const filePath = file.filePath as string;
+        const rawChunks = file.chunks || [];
+        if (!Array.isArray(rawChunks) || rawChunks.length === 0) {
+          return `Error: Missing chunks for SSH multi_replace_file_content for ${filePath}`;
         }
-        return sshResults.join("\n\n");
-      }
-      const rawChunks = (args.chunks || (args as any).Chunks || (args as any).ReplacementChunks || (args as any).replacementChunks || (args as any).replacements || ((args.files as any[])?.[0]?.chunks)) as any[];
-      if (!targetPath || !Array.isArray(rawChunks) || rawChunks.length === 0) {
-        return "Error: Missing filePath or chunks for SSH multi_replace_file_content";
-      }
-      const normalizedChunks = rawChunks.map((c: any) => ({
-        targetContent: c.targetContent ?? c.TargetContent ?? c.target_content ?? c.oldString ?? c.old_string ?? c.oldText ?? c.old_text ?? "",
-        replacementContent: c.replacementContent ?? c.ReplacementContent ?? c.replacement_content ?? c.newString ?? c.new_string ?? c.newText ?? c.new_text ?? "",
-      }));
-      return await sshMultiEditToolExecute(targetPath, normalizedChunks);
+        if ((identityCounts.get(identities[index]) || 0) > 1) {
+          return `Error: Duplicate file in SSH multi-replace batch: ${filePath}. Each file may appear only once per batch.`;
+        }
+        const normalizedChunks = rawChunks.map((c: any) => ({
+          targetContent: c.targetContent ?? c.TargetContent ?? c.target_content ?? c.oldString ?? c.old_string ?? c.oldText ?? c.old_text ?? "",
+          replacementContent: c.replacementContent ?? c.ReplacementContent ?? c.replacement_content ?? c.newString ?? c.new_string ?? c.newText ?? c.new_text ?? "",
+        }));
+        return await sshMultiEditToolExecute(filePath, normalizedChunks);
+      });
+      return sshResults.join("\n\n");
     }
     // Tier-aware allowlist: Master Agent cannot edit codebase files.
     const tier = (currentAgent as any)?.tier;
@@ -1486,19 +1466,25 @@ export const multiReplaceFileContentTool: Tool = {
         }
       }
     }
-    const targetMultiReplacePath = (args.filePath as string) || ((args.files as any[])?.[0]?.filePath);
-    if (targetMultiReplacePath) {
-      let lockStatus = checkFileLock(targetMultiReplacePath, sessionId, cwd);
+    const multiReplaceLockPaths = Array.from(new Set((args.files as any[]).map((file) => normalizePath(path.resolve(cwd, file.filePath))))).sort();
+    const acquiredCrossSessionLocks: string[] = [];
+    for (const lockedPath of multiReplaceLockPaths) {
+      let lockStatus = checkFileLock(lockedPath, sessionId, cwd);
       if (lockStatus.locked) {
-        lockStatus = await waitForFileLockRelease(targetMultiReplacePath, cwd, 2500, sessionId);
+        lockStatus = await waitForFileLockRelease(lockedPath, cwd, 2500, sessionId);
       }
       if (lockStatus.locked) {
-        return `Error: [LOCK_CONFLICT] File "${targetMultiReplacePath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+        if (sessionId) {
+          for (const acquiredPath of acquiredCrossSessionLocks) releaseFile(acquiredPath, sessionId, cwd);
+        }
+        return `Error: [LOCK_CONFLICT] File "${lockedPath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
       }
       if (sessionId) {
-        lockFile(targetMultiReplacePath, sessionId, terminalType, 30000, cwd);
+        lockFile(lockedPath, sessionId, terminalType, 30000, cwd);
+        acquiredCrossSessionLocks.push(lockedPath);
       }
     }
+    const targetMultiReplacePath = multiReplaceLockPaths[0];
     interface Chunk {
       targetContent: string;
       replacementContent: string;
@@ -1533,12 +1519,22 @@ export const multiReplaceFileContentTool: Tool = {
         for (const file of sortedFiles) {
           releases.push(await fileLockManager.acquire(file.resolvedPath));
         }
-        // Release cross-session lock acquired before this branch
-        if (sessionId && targetMultiReplacePath) releases.push(() => releaseFile(targetMultiReplacePath, sessionId!, cwd));
+        // Release every cross-session lock acquired for this batch.
+        if (sessionId && acquiredCrossSessionLocks.length > 0) {
+          releases.push(() => { for (const lockedPath of acquiredCrossSessionLocks) releaseFile(lockedPath, sessionId!, cwd); });
+        }
 
-        for (const file of sortedFiles) {
+        const fileResults = await mapConcurrentOrdered(sortedFiles, 6, async (file): Promise<string> => {
           try {
-            const rawChunks = file.chunks || (file as any).ReplacementChunks || (file as any).replacementChunks || (file as any).replacements || [];
+            let rawChunks: any = file.chunks || (file as any).ReplacementChunks || (file as any).replacementChunks || (file as any).replacements || [];
+            if (typeof rawChunks === "string") {
+              try {
+                rawChunks = JSON.parse(rawChunks);
+              } catch (err: any) {
+                throw new Error(`Invalid chunks JSON: ${err.message}`);
+              }
+            }
+            if (!Array.isArray(rawChunks)) rawChunks = rawChunks ? [rawChunks] : [];
             const chunks: Chunk[] = [];
             for (const c of rawChunks as any[]) {
               if (!c || typeof c !== "object") {
@@ -1738,25 +1734,21 @@ export const multiReplaceFileContentTool: Tool = {
 
             const nextContent = lines.join(originalEnding);
             const summary = buildEditSummary(content, nextContent, file.resolvedPath);
-            if (content === nextContent) {
-              results.push(summary);
-              continue;
-            }
+            if (content === nextContent) return summary;
             if (!(await verifyContentFreshness(file.resolvedPath, expectedHash, true))) {
               throw new Error(`[LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${file.filePath}" has been modified by another process since it was read.`);
             }
             await fs.writeFile(file.resolvedPath, nextContent, "utf-8");
             const syntaxError = await verifySyntax(file.resolvedPath);
-            if (syntaxError) {
-              results.push(`Warning: ${syntaxError}. File updated successfully with ${chunks.length} changes: ${file.filePath}\n${summary}`);
-            } else {
-              results.push(`File updated successfully with ${chunks.length} changes: ${file.filePath}\n${summary}`);
-            }
+            return syntaxError
+              ? `Warning: ${syntaxError}. File updated successfully with ${chunks.length} changes: ${file.filePath}\n${summary}`
+              : `File updated successfully with ${chunks.length} changes: ${file.filePath}\n${summary}`;
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);
-            results.push(`Error in multi-replace for ${file.filePath}: ${message}`);
+            return `Error in multi-replace for ${file.filePath}: ${message}`;
           }
-        }
+        });
+        results.push(...fileResults);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         return `Error in bulk multi-replace: ${message}`;
@@ -2165,21 +2157,16 @@ async function applyPatchToContent(content: string, patchContent: string, filePa
 
 export const applyPatchTool: Tool = {
   name: "apply_patch",
-  description: "Apply a unified diff or patch pattern to modify a file. PREFER 'patches' array to batch patches across multiple files in ONE call.",
+  description: "Apply patches to files concurrently. REQUIRED: use patches array even when patching only one file; single-file invocation is disabled in both single and multi modes.",
   parameters: {
     type: "object",
     properties: {
-      filePath: {
-        type: "string",
-        description: "Path to the file to patch (optional if patches is provided)",
-      },
-      patchContent: {
-        type: "string",
-        description: "Unified diff or search-replace format block (optional if patches is provided)",
-      },
+
       patches: {
         type: "array",
-        description: "List of patches to apply across multiple files in bulk.",
+        description: "REQUIRED batch list of patches, including when patching one file.",
+        minItems: 1,
+        maxItems: 50,
         items: {
           type: "object",
           properties: {
@@ -2196,23 +2183,47 @@ export const applyPatchTool: Tool = {
         },
       },
     },
+    required: ["patches"],
   },
   async execute(args, cwd, signal) {
+    if (!Array.isArray(args.patches) || args.patches.length === 0) {
+      return "Error: Single-file patch invocation is disabled in both single and multi modes. Always pass patches as an array, including for one file: { patches: [{ filePath, patchContent }] }.";
+    }
+    if (args.patches.length > 50) return "Error: apply_patch accepts at most 50 patches per batch.";
+    const seenPatchTargets = new Set<string>();
+    for (const patch of args.patches as Array<Record<string, any>>) {
+      if (!patch || typeof patch.filePath !== "string" || !patch.filePath.trim() || typeof patch.patchContent !== "string") {
+        return "Error: Every patches[] item must include filePath and string patchContent.";
+      }
+      const resolved = normalizePath(path.resolve(cwd, patch.filePath));
+      const duplicateKey = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+      if (seenPatchTargets.has(duplicateKey)) return `Error: Duplicate file in patches[]: ${patch.filePath}. Each file may appear once per batch.`;
+      seenPatchTargets.add(duplicateKey);
+    }
     const { agentLocalStorage } = await import("../agent.js");
     const currentAgent = agentLocalStorage.getStore();
     const sessionId = currentAgent?.sessionId;
     const terminalType = (currentAgent as any)?.terminalType || "cli";
+    const currentTier = (currentAgent as any)?.tier;
+    for (const patch of args.patches as Array<Record<string, any>>) {
+      const blocked = enforceMasterWriteAllowlist(patch.filePath, currentTier);
+      if (blocked) return blocked;
+    }
     if (workspaceMode.isSsh()) {
       return "Notice: apply_patch is not supported over SSH proxy mode. Please use write_to_file or edit tool instead.";
     }
-    const targetPatchPath = (args.filePath as string) || ((args.patches as any[])?.[0]?.filePath);
-    if (targetPatchPath) {
-      let lockStatus = checkFileLock(targetPatchPath, sessionId, cwd);
+    const patchLockPaths = Array.from(new Set((args.patches as any[]).map((patch) => normalizePath(path.resolve(cwd, patch.filePath))))).sort();
+    const acquiredPatchCrossSessionLocks: string[] = [];
+    for (const lockedPath of patchLockPaths) {
+      let lockStatus = checkFileLock(lockedPath, sessionId, cwd);
+      if (lockStatus.locked) lockStatus = await waitForFileLockRelease(lockedPath, cwd, 2500, sessionId);
       if (lockStatus.locked) {
-        lockStatus = await waitForFileLockRelease(targetPatchPath, cwd, 2500, sessionId);
+        if (sessionId) for (const acquiredPath of acquiredPatchCrossSessionLocks) releaseFile(acquiredPath, sessionId, cwd);
+        return `Error: [LOCK_CONFLICT] File "${lockedPath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
       }
-      if (lockStatus.locked) {
-        return `Error: [LOCK_CONFLICT] File "${targetPatchPath}" is locked by session ${lockStatus.owner?.sessionId} (${lockStatus.owner?.terminalType || "another terminal"}). Cannot modify.`;
+      if (sessionId) {
+        lockFile(lockedPath, sessionId, terminalType, 30000, cwd);
+        acquiredPatchCrossSessionLocks.push(lockedPath);
       }
     }
     const patches = args.patches as Array<{ filePath: string; patchContent: string }> | undefined;
@@ -2232,38 +2243,33 @@ export const applyPatchTool: Tool = {
         for (const p of uniquePaths) {
           releases.push(await fileLockManager.acquire(p));
         }
-        // Release cross-session locks on exit
-        if (sessionId) releases.push(() => { for (const p of uniquePaths) releaseFile(p, sessionId!, cwd); });
+        // Release all cross-session locks acquired for this patch batch.
+        if (sessionId && acquiredPatchCrossSessionLocks.length > 0) {
+          releases.push(() => { for (const lockedPath of acquiredPatchCrossSessionLocks) releaseFile(lockedPath, sessionId!, cwd); });
+        }
 
-        for (const patch of sortedPatches) {
+        const patchResults = await mapConcurrentOrdered(sortedPatches, 6, async (patch): Promise<string> => {
           try {
             const originalContent = await fs.readFile(patch.resolvedPath, "utf-8");
             const expectedHash = computeContentHash(originalContent);
             const { result: content, error } = await applyPatchToContent(originalContent, patch.patchContent, patch.resolvedPath);
-            if (error) {
-              results.push(`Error patching ${patch.filePath}: ${error}`);
-              continue;
-            }
+            if (error) return `Error patching ${patch.filePath}: ${error}`;
             const summary = buildEditSummary(originalContent, content, patch.resolvedPath);
-            if (originalContent === content) {
-              results.push(summary);
-              continue;
-            }
+            if (originalContent === content) return summary;
             if (!(await verifyContentFreshness(patch.resolvedPath, expectedHash, true))) {
               throw new Error(`[LOCK_CONFLICT] [CONCURRENCY_CONFLICT] File "${patch.filePath}" has been modified by another process since it was read.`);
             }
             await fs.writeFile(patch.resolvedPath, content, "utf-8");
             const syntaxError = await verifySyntax(patch.resolvedPath);
-            if (syntaxError) {
-              results.push(`Warning: ${syntaxError}. Applied patch to: ${patch.filePath}\n${summary}`);
-            } else {
-              results.push(`Patch applied: ${patch.filePath}\n${summary}`);
-            }
+            return syntaxError
+              ? `Warning: ${syntaxError}. Applied patch to: ${patch.filePath}\n${summary}`
+              : `Patch applied successfully to ${patch.filePath}\n${summary}`;
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);
-            results.push(`Error patching ${patch.filePath}: ${message}`);
+            return `Error patching ${patch.filePath}: ${message}`;
           }
-        }
+        });
+        results.push(...patchResults);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         return `Error in bulk patching: ${message}`;

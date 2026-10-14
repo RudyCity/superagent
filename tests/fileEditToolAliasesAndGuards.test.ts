@@ -90,13 +90,13 @@ describe("File Edit Tools Aliases, Undefined Guards, and Safety", () => {
   describe("replaceFileContentTool parameter aliases", () => {
     it("should accept 'replacement' and 'target' aliases", async () => {
       const result = await replaceFileContentTool.execute(
-        {
+        { edits: [{
           filePath: testFile,
           target: "line 2 target line",
           replacement: "line 2 replaced",
           startLine: 2,
           endLine: 2,
-        } as any,
+        }] } as any,
         tempDir
       );
 
@@ -107,16 +107,16 @@ describe("File Edit Tools Aliases, Undefined Guards, and Safety", () => {
 
     it("should reject empty or missing replacementContent cleanly", async () => {
       const result = await replaceFileContentTool.execute(
-        {
+        { edits: [{
           filePath: testFile,
           targetContent: "line 2 target line",
           startLine: 2,
           endLine: 2,
-        } as any,
+        }] } as any,
         tempDir
       );
 
-      expect(result).toContain("Error: Missing required parameter 'replacementContent'");
+      expect(result).toContain("Missing required parameter 'replacementContent'");
       const content = await fs.readFile(testFile, "utf-8");
       expect(content).toBe("line 1\nline 2 target line\nline 3");
     });
@@ -125,11 +125,11 @@ describe("File Edit Tools Aliases, Undefined Guards, and Safety", () => {
   describe("writeToFileTool aliases", () => {
     it("should accept 'CodeContent' and 'Overwrite' aliases", async () => {
       const result = await writeToFileTool.execute(
-        {
+        { files: [{
           filePath: testFile,
           CodeContent: "completely new file content",
           Overwrite: true,
-        } as any,
+        }] } as any,
         tempDir
       );
 

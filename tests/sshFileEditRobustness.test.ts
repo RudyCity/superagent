@@ -100,13 +100,13 @@ describe("SSH File Edit Robustness & Line Endings", () => {
   it("should handle multiReplaceFileContentTool with ReplacementChunks in SSH mode", async () => {
     remoteFiles["/workspace/project/src/module.ts"] = "import a from 'a';\nimport b from 'b';\n";
 
-    const res = await multiReplaceFileContentTool.execute({
+    const res = await multiReplaceFileContentTool.execute({ files: [{
       TargetFile: "src/module.ts",
       ReplacementChunks: [
         { TargetContent: "import a from 'a';", ReplacementContent: "import a from './a.js';" },
         { TargetContent: "import b from 'b';", ReplacementContent: "import b from './b.js';" },
       ],
-    }, "/mock/local");
+    }] }, "/mock/local");
 
     expect(res).toContain("Successfully applied 2 chunk edit(s)");
     expect(remoteFiles["/workspace/project/src/module.ts"]).toBe("import a from './a.js';\nimport b from './b.js';\n");

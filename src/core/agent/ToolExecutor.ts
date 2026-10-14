@@ -15,6 +15,69 @@ import {
 import type { ToolCall, ToolResult } from "../conversation.js";
 import type { QuestionItem } from "./AgentEvents.js";
 import type { Agent } from "../agent.js";
+import { mapConcurrentOrdered } from "../concurrency.js";
+
+/**
+ * These tools are read-only and independent by contract. Calls from the same
+ * model turn may run concurrently in both single-agent and multi-agent modes.
+ * Mutating, interactive, shell, and stateful tools intentionally fail closed
+ * to an ordered execution barrier.
+ */
+const PARALLEL_READ_ONLY_TOOL_NAMES = new Set([
+  "read", "read_file", "view_file", "view",
+  "glob", "grep", "ripgrep_search", "list_directory", "list_dir", "find_files",
+  "git_status", "git_diff", "get_git_diff",
+  "inspect_port", "find_process", "get_remote_service_status",
+  "list_tools", "describe_tool", "read_shared_memory", "rmemory_search",
+  "search_history", "inspect_session", "query_history",
+]);
+const MAX_PARALLEL_TOOL_CALLS = 6;
+
+function isIndependentReadOnlyCall(tc: ToolCall, workspacePath: string): boolean {
+  return PARALLEL_READ_ONLY_TOOL_NAMES.has(tc.name) &&
+    !MODIFYING_TOOLS.includes(tc.name) &&
+    !isModelConfigAccess(tc, workspacePath) &&
+    !isSensitiveEnvFileAccess(tc) &&
+    !isToolCallOutOfBounds(tc, workspacePath);
+}
+
+export interface ToolCallScheduleGroup {
+  calls: ToolCall[];
+  parallel: boolean;
+}
+
+/**
+ * Build a conservative dependency-aware schedule for one model turn:
+ * consecutive safe read-only calls can overlap; every mutation, shell call,
+ * approval, and unknown/stateful tool acts as a barrier. That preserves model
+ * order across side effects while still parallelizing independent read batches
+ * on either side of a barrier.
+ */
+export function buildToolCallSchedule(toolCalls: ToolCall[], workspacePath = process.cwd()): ToolCallScheduleGroup[] {
+  const groups: ToolCallScheduleGroup[] = [];
+  let readonlyBatch: ToolCall[] = [];
+  const flushReadonly = () => {
+    if (readonlyBatch.length > 0) {
+      groups.push({ calls: readonlyBatch, parallel: readonlyBatch.length > 1 });
+      readonlyBatch = [];
+    }
+  };
+
+  for (const toolCall of toolCalls) {
+    if (isIndependentReadOnlyCall(toolCall, workspacePath)) {
+      readonlyBatch.push(toolCall);
+    } else {
+      flushReadonly();
+      groups.push({ calls: [toolCall], parallel: false });
+    }
+  }
+  flushReadonly();
+  return groups;
+}
+
+export function shouldParallelizeToolCalls(toolCalls: ToolCall[], workspacePath = process.cwd()): boolean {
+  return toolCalls.length > 1 && toolCalls.every((tc) => isIndependentReadOnlyCall(tc, workspacePath));
+}
 
 export class ToolExecutor {
   public static async executeTools(
@@ -26,6 +89,50 @@ export class ToolExecutor {
     systemPrompt: string,
     signal?: AbortSignal
   ): Promise<ToolResult[]> {
+    // Schedule safe read groups concurrently but preserve barriers around mutations,
+    // shell commands, approval prompts, and unknown tools. Both modes use this scheduler.
+    if (toolCalls.length > 1) {
+      const schedule = buildToolCallSchedule(toolCalls, agent.worktreePath || agent.workingDirectory);
+      if (schedule.length > 1 || schedule.some((group) => group.parallel)) {
+        const orderedResults: ToolResult[] = [];
+        for (const group of schedule) {
+          if (signal?.aborted) {
+            const err = new Error("AbortError");
+            err.name = "AbortError";
+            throw err;
+          }
+          if (group.parallel) {
+            const groupResults = await mapConcurrentOrdered(
+              group.calls,
+              MAX_PARALLEL_TOOL_CALLS,
+              async (toolCall) => await ToolExecutor.executeTools(
+                agent,
+                [toolCall],
+                toolDefs,
+                filteredToolDefs,
+                supportsNativeTools,
+                systemPrompt,
+                signal,
+              ),
+              signal,
+            );
+            orderedResults.push(...groupResults.flat());
+          } else {
+            orderedResults.push(...await ToolExecutor.executeTools(
+              agent,
+              group.calls,
+              toolDefs,
+              filteredToolDefs,
+              supportsNativeTools,
+              systemPrompt,
+              signal,
+            ));
+          }
+        }
+        return orderedResults;
+      }
+    }
+
     const toolResults: ToolResult[] = [];
 
     // Pre-resolve active tools once for the batch (avoids per-tool dynamic imports)
@@ -48,6 +155,33 @@ export class ToolExecutor {
       }
       const description = getToolDescription(tc);
       agent.onEvent({ type: "tool_start", toolCall: tc, description });
+
+      // Legacy direct single-file mutation tools stay in source for compatibility,
+      // but are disabled in both modes. All file operations must use batch args.
+      const requiredBatchField: Record<string, string> = {
+        read: "filePaths",
+        read_file: "filePaths",
+        write_to_file: "files",
+        write_file: "files",
+        replace_file_content: "edits",
+        multi_replace_file_content: "files",
+        apply_patch: "patches",
+      };
+      const batchField = requiredBatchField[tc.name];
+      const disabledSingleOperation = tc.name === "write" || tc.name === "edit" ||
+        (batchField !== undefined && (!Array.isArray(tc.args?.[batchField]) || tc.args[batchField].length === 0));
+      if (disabledSingleOperation) {
+        const expected = batchField ? `${batchField}:[...]` : "write_to_file with files:[...] or replace_file_content with edits:[...]";
+        const blocked: ToolResult = {
+          toolCallId: tc.id,
+          name: tc.name,
+          result: `Error: Single-file invocation '${tc.name}' is disabled in both single and multi modes. Use ${expected}, even when processing just one file.`,
+          isError: true,
+        };
+        toolResults.push(blocked);
+        agent.onEvent({ type: "tool_end", toolResult: blocked, description });
+        continue;
+      }
 
       if (tc.name === "ask_question") {
         if (Array.isArray(tc.args.questions) && tc.args.questions.length > 0) {
@@ -216,15 +350,61 @@ export class ToolExecutor {
       }
 
       if (MODIFYING_TOOLS.includes(tc.name)) {
-        const filePath = tc.args.filePath as string || tc.args.file_path as string || tc.args.TargetFile as string || "";
+        const fileBatch = Array.isArray(tc.args.files) ? tc.args.files as Array<Record<string, any>> : [];
+        const writeBatch = (tc.name === "write_to_file" || tc.name === "write_file") ? fileBatch : [];
+        const editBatch = tc.name === "replace_file_content" && Array.isArray(tc.args.edits) ? tc.args.edits as Array<Record<string, any>> : [];
+
+        const patchBatch = tc.name === "apply_patch" && Array.isArray(tc.args.patches) ? tc.args.patches as Array<Record<string, any>> : [];
+        const rawPathOf = (entry: Record<string, any> | undefined): string => String(
+          entry?.filePath ?? entry?.TargetFile ?? entry?.targetFile ?? entry?.target_file ?? entry?.path ?? entry?.file ?? "",
+        );
+        const targetEntries = tc.name === "replace_file_content" ? editBatch
+          : tc.name === "apply_patch" ? patchBatch
+          : (tc.name === "write_to_file" || tc.name === "write_file" || tc.name === "multi_replace_file_content") ? (tc.args.files as Array<Record<string, any>> || [])
+          : [];
+        const rawTargets = targetEntries.map(rawPathOf);
+        if (rawTargets.some((target) => !target.trim())) {
+          const blocked: ToolResult = {
+            toolCallId: tc.id,
+            name: tc.name,
+            result: `Error: Every entry in ${tc.name} batch must include a non-empty file path.`,
+            isError: true,
+          };
+          toolResults.push(blocked);
+          agent.onEvent({ type: "tool_end", toolResult: blocked, description });
+          continue;
+        }
+        const effectiveWsForMod = agent.worktreePath || agent.workingDirectory;
+        const resolveTarget = (target: string): string => path.resolve(effectiveWsForMod, target);
+        const canonicalTarget = (target: string): string => {
+          const resolved = resolveTarget(target);
+          return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+        };
+        const uniqueTargets = Array.from(new Map(rawTargets.map((target) => [canonicalTarget(target), target])).values());
         const planFilePath = agent.getPlanFilePath();
         const taskFilePath = agent.getTaskFilePath();
         const walkthroughFilePath = agent.getWalkthroughFilePath();
-        const isPlanFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(planFilePath).toLowerCase();
-        const isTaskFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(taskFilePath).toLowerCase();
-        const isWalkthroughFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(walkthroughFilePath).toLowerCase();
-
-        const effectiveWsForMod = agent.worktreePath || agent.workingDirectory;
+        const isSpecialPath = (target: string): boolean => {
+          const resolved = canonicalTarget(target);
+          return [planFilePath, taskFilePath, walkthroughFilePath].some((special) => canonicalTarget(special) === resolved);
+        };
+        if (uniqueTargets.length > 1 && uniqueTargets.some(isSpecialPath)) {
+          const blocked: ToolResult = {
+            toolCallId: tc.id,
+            name: tc.name,
+            result: "Error: Plan/task/walkthrough files must be modified in a separate tool call. A mixed batch could bypass planning and source-code write restrictions.",
+            isError: true,
+          };
+          toolResults.push(blocked);
+          agent.onEvent({ type: "tool_end", toolResult: blocked, description });
+          continue;
+        }
+        const filePath = rawTargets[0] || String(tc.args.filePath ?? tc.args.file_path ?? tc.args.TargetFile ?? "");
+        const resolvedFilePath = filePath ? resolveTarget(filePath) : "";
+        const batchFile = writeBatch.find((entry) => rawPathOf(entry) && canonicalTarget(rawPathOf(entry)) === canonicalTarget(filePath));
+        const isPlanFile = !!resolvedFilePath && canonicalTarget(resolvedFilePath) === canonicalTarget(planFilePath);
+        const isTaskFile = !!resolvedFilePath && canonicalTarget(resolvedFilePath) === canonicalTarget(taskFilePath);
+        const isWalkthroughFile = !!resolvedFilePath && canonicalTarget(resolvedFilePath) === canonicalTarget(walkthroughFilePath);
         if (isYoloMode() && (isFullYoloMode() || isToolCallWithinYoloScope(tc, effectiveWsForMod))) {
           agent.simpleTaskApproved = true;
         }
@@ -279,15 +459,35 @@ export class ToolExecutor {
           continue;
         }
 
+        if (isPlanFile && tc.name === "apply_patch") {
+          const blocked: ToolResult = {
+            toolCallId: tc.id,
+            name: tc.name,
+            result: "Error: apply_patch is not permitted for implementation plans. Use write_to_file(files:[...]) or replace_file_content(edits:[...]) so plan validation can inspect the resulting content.",
+            isError: true,
+          };
+          toolResults.push(blocked);
+          agent.onEvent({ type: "tool_end", toolResult: blocked, description });
+          continue;
+        }
+
         if (isPlanFile) {
           let planContent = "";
-          if (tc.name === "write" || tc.name === "write_to_file") {
-            planContent = (tc.args.content as string || tc.args.codeContent as string || tc.args.CodeContent as string || "").trim();
+          if (tc.name === "write" || tc.name === "write_to_file" || tc.name === "write_file") {
+            planContent = String(
+              batchFile?.content ?? (batchFile as any)?.CodeContent ?? (batchFile as any)?.codeContent ??
+              (batchFile as any)?.text ?? tc.args.content ?? tc.args.codeContent ?? tc.args.CodeContent ?? "",
+            ).trim();
           } else if (tc.name === "replace_file_content") {
-            const target = tc.args.TargetContent as string || "";
-            const replacement = tc.args.ReplacementContent as string || "";
             const existing = fs.existsSync(planFilePath) ? fs.readFileSync(planFilePath, "utf8") : "";
-            planContent = existing.replace(target, replacement);
+            const edits = Array.isArray(tc.args.edits) ? tc.args.edits as Array<Record<string, any>> : [];
+            planContent = edits.reduce((current, edit) => {
+              const editPath = String(edit?.filePath ?? edit?.TargetFile ?? edit?.targetFile ?? edit?.target_file ?? edit?.path ?? edit?.file ?? "");
+              if (canonicalTarget(editPath) !== canonicalTarget(planFilePath)) return current;
+              const target = String(edit?.targetContent ?? edit?.TargetContent ?? edit?.oldString ?? edit?.old_string ?? edit?.search ?? edit?.target ?? "");
+              const replacement = String(edit?.replacementContent ?? edit?.ReplacementContent ?? edit?.newString ?? edit?.new_string ?? edit?.replacement ?? edit?.replace ?? "");
+              return target ? current.replace(target, replacement) : current;
+            }, existing);
           } else if (tc.name === "multi_replace_file_content") {
             let existing = fs.existsSync(planFilePath) ? fs.readFileSync(planFilePath, "utf8") : "";
             let chunks: any[] = [];
@@ -316,7 +516,9 @@ export class ToolExecutor {
             const hasSuperagentOrDelegate = /superagent|spawning|delegate|worktree/i.test(planContent);
             if (!hasSuperagentOrDelegate) {
               planContent = planContent + "\n\n> **Note**: This plan will be executed by spawning Superagents in isolated git worktrees for parallel feature development.";
-              if (tc.args.planContent !== undefined) {
+              if (batchFile) {
+                batchFile.content = planContent;
+              } else if (tc.args.planContent !== undefined) {
                 tc.args.planContent = planContent;
               } else if (tc.args.content !== undefined) {
                 tc.args.content = planContent;
@@ -336,7 +538,7 @@ export class ToolExecutor {
         if (isTaskFile) {
           let taskContent = "";
           if (tc.name === "write" || tc.name === "write_to_file") {
-            taskContent = (tc.args.content as string || tc.args.codeContent as string || tc.args.CodeContent as string || "").trim();
+            taskContent = (batchFile?.content as string || tc.args.content as string || tc.args.codeContent as string || tc.args.CodeContent as string || "").trim();
           } else if (tc.name === "replace_file_content") {
             const target = tc.args.TargetContent as string || "";
             const replacement = tc.args.ReplacementContent as string || "";
@@ -403,7 +605,9 @@ export class ToolExecutor {
               const lastTaskIndex = lines.length - 1 - [...lines].reverse().findIndex(l => /^\s*-\s*`?\[([xX/ ])\]`?\s*/.test(l));
               lines.splice(lastTaskIndex + 1, 0, ...injectedTasks);
               taskContent = lines.join("\n");
-              if (tc.args.content !== undefined) {
+              if (batchFile) {
+                batchFile.content = taskContent;
+              } else if (tc.args.content !== undefined) {
                 tc.args.content = taskContent;
               } else if (tc.args.codeContent !== undefined) {
                 tc.args.codeContent = taskContent;

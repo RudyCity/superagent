@@ -63,6 +63,27 @@ export class PinningStrategy implements CompactionStrategy {
       }
     }
 
+    // Always anchor the latest active user request so compaction never loses the user's task
+    let latestUserMsgIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role === "user") {
+        const text = contentToString(msg.content);
+        if (!text.includes("[System Conversation Summary]")) {
+          latestUserMsgIndex = i;
+          break;
+        }
+      }
+    }
+    if (latestUserMsgIndex >= 0 && !pinned.some(p => p.index === latestUserMsgIndex)) {
+      const unpinnedIdx = unpinned.findIndex(m => m === messages[latestUserMsgIndex]);
+      if (unpinnedIdx >= 0) {
+        unpinned.splice(unpinnedIdx, 1);
+      }
+      pinned.push({ index: latestUserMsgIndex, msg: messages[latestUserMsgIndex] });
+      pinned.sort((a, b) => a.index - b.index);
+    }
+
     let keepIndex = Math.max(0, unpinned.length - preserveRecent);
     while (keepIndex < unpinned.length && unpinned[keepIndex]?.role === "tool") {
       keepIndex++;
@@ -135,9 +156,17 @@ export class PinningStrategy implements CompactionStrategy {
       usedFallback = true;
     }
 
+    let activeTaskAnnotation = "";
+    if (latestUserMsgIndex >= 0) {
+      const activeText = contentToString(messages[latestUserMsgIndex].content).trim();
+      if (activeText && !summary.includes(activeText.slice(0, 40))) {
+        activeTaskAnnotation = `\n\n### ⚡ Current Active User Request:\n${activeText}`;
+      }
+    }
+
     const summaryMessage: Message = {
       role: "user",
-      content: `[System Conversation Summary]:\n${summary}`,
+      content: `[System Conversation Summary]:\n${summary}${activeTaskAnnotation}`,
       timestamp: Date.now(),
     };
 

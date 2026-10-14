@@ -20,14 +20,14 @@ describe("File Editing Concurrency and Accuracy Tests", () => {
   it("should successfully serialize parallel edit operations to prevent race conditions", async () => {
     const promises = Array.from({ length: 10 }).map((_, index) => {
       return replaceFileContentTool.execute(
-        {
+        { edits: [{
           filePath: testFile,
           startLine: 1,
           endLine: 3,
           targetContent: "Initial Line",
           replacementContent: `Initial Line ${index}`,
           allowMultiple: true,
-        },
+        }] },
         process.cwd()
       );
     });
@@ -84,8 +84,10 @@ describe("File Editing Concurrency and Accuracy Tests", () => {
     try {
       const result = await applyPatchTool.execute(
         {
-          filePath: wsFile,
-          patchContent: "<<<<<<< SEARCH\nsecond line\n=======\nsecond line patched\n>>>>>>> REPLACE",
+          patches: [{
+            filePath: wsFile,
+            patchContent: "<<<<<<< SEARCH\nsecond line\n=======\nsecond line patched\n>>>>>>> REPLACE",
+          }],
         },
         process.cwd()
       );

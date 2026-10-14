@@ -12,20 +12,20 @@ import { sshReadToolExecute, sshGlobToolExecute, sshGrepToolExecute } from "../s
 import { sshLogger } from "../ssh/sshLogger.js";
 import { workspaceChainManager } from "../workspace/WorkspaceChainManager.js";
 import { setIntentSoftLock } from "../storage/sharedMemory.js";
+import { readFilesInProcessPool } from "../agent/ProcessPool.js";
 
 export const readTool: Tool = {
   name: "read",
-  description: "Read file contents with line numbers. PREFER 'filePaths' array to batch multiple reads into ONE call — never read files one-by-one. Each entry can be a string (uses global offset/limit) or {path, offset?, limit?} for per-file ranges.",
+  description: "Read file contents concurrently. REQUIRED: use filePaths array even for one file; single-file invocation is disabled in single and multi modes. Each entry can be a string (uses global offset/limit) or {path, offset?, limit?} for per-file ranges.",
   parameters: {
     type: "object",
     properties: {
-      filePath: {
-        type: "string",
-        description: "Absolute or relative path to the file (optional if filePaths is provided)",
-      },
+
       filePaths: {
         type: "array",
-        description: "List of paths to read in bulk. Each entry: a string (uses global offset/limit) OR an object {path: string, offset?: number, limit?: number} for per-file line ranges.",
+        description: "REQUIRED batch input, even when reading one file. Each entry: a string (uses global offset/limit) OR an object {path: string, offset?: number, limit?: number} for per-file line ranges.",
+        minItems: 1,
+        maxItems: 50,
         items: {},
       },
       offset: {
@@ -37,27 +37,29 @@ export const readTool: Tool = {
         description: "Global max lines to read (default 800). Overridden by per-file limit.",
       },
     },
+    required: ["filePaths"],
   },
   async execute(args, cwd, signal) {
+    if (!Array.isArray(args.filePaths) || args.filePaths.length === 0) {
+      return "Error: Single-file read is disabled in both single and multi modes. Always pass filePaths as an array, including for one file: { filePaths: [\"path/to/file\"] }.";
+    }
+    if (args.filePaths.length > 50) return "Error: read accepts at most 50 files per batch.";
     const offset = Math.max(1, (args.offset as number) || 1);
     const limit = (args.limit as number) || 800;
 
-    const isTargetLocal = (): boolean => {
-      const single = args.filePath as string | undefined;
-      const multiple = args.filePaths as any[] | undefined;
-      if (single && isLocalConfigOrSessionPath(single)) return true;
-      if (multiple && multiple.length > 0) {
-        const first = typeof multiple[0] === "string" ? multiple[0] : multiple[0]?.path;
-        if (first && isLocalConfigOrSessionPath(first)) return true;
-      }
-      return false;
-    };
-
-    if (workspaceMode.isSsh() && !isTargetLocal()) {
-      sshLogger.toolUse("read", "routing read tool to SSH remote", { meta: { batch: !!args.filePaths } });
-      const targets = args.filePaths || args.filePath;
-      if (!targets) return "Error: Missing filePath or filePaths";
-      return await sshReadToolExecute(targets as any, offset, limit);
+    const batchPaths = Array.isArray(args.filePaths)
+      ? args.filePaths.map((entry: any) => typeof entry === "string" ? entry : entry?.path)
+      : [];
+    if (batchPaths.some((filePath: unknown) => typeof filePath !== "string" || !filePath.trim())) {
+      return "Error: Every filePaths[] entry must be a non-empty path string or an object with a non-empty path.";
+    }
+    const localTargets = batchPaths.map((target: string) => isLocalConfigOrSessionPath(target));
+    if (workspaceMode.isSsh() && localTargets.some(Boolean) && localTargets.some((isLocal: boolean) => !isLocal)) {
+      return "Error: Mixed local and SSH-remote file paths in one read batch are blocked to prevent reading/writing the wrong workspace. Split local config/session paths from remote workspace paths.";
+    }
+    if (workspaceMode.isSsh() && batchPaths.length > 0 && localTargets.every((isLocal: boolean) => !isLocal)) {
+      sshLogger.toolUse("read", "routing read batch to SSH remote", { meta: { files: batchPaths.length } });
+      return await sshReadToolExecute(args.filePaths as any, offset, limit);
     }
     const filePaths = args.filePaths as any[] | undefined;
     const singlePath = args.filePath as string | undefined;
@@ -85,70 +87,20 @@ export const readTool: Tool = {
           return `Error: ${boundaryErr.message}`;
         }
       }
-      const results: string[] = [];
-      for (const entry of filePaths) {
-        let rawPath: string;
-        let fileOffset: number;
-        let fileLimit: number;
-        if (typeof entry === "string") {
-          rawPath = entry;
-          fileOffset = offset;
-          fileLimit = limit;
-        } else if (entry && typeof entry === "object" && typeof (entry as any).path === "string") {
-          const obj = entry as { path: string; offset?: number; limit?: number };
-          rawPath = obj.path;
-          fileOffset = Math.max(1, obj.offset || offset);
-          fileLimit = obj.limit || limit;
-        } else {
-          results.push(`--- Entry: ${JSON.stringify(entry)} ---\nError: Invalid entry. Use a string path or {path, offset?, limit?}.`);
-          continue;
-        }
-        const filePath = normalizePath(path.resolve(cwd, rawPath));
-        try {
-          const stat = await fs.stat(filePath);
-          if (stat.isDirectory()) {
-            results.push(`--- File: ${rawPath} (Directory) ---\nError: Cannot read directory in bulk mode.`);
-            continue;
-          }
-          const buffer = await fs.readFile(filePath);
-
-          const ext = path.extname(filePath).toLowerCase();
-          const mimeType = getImageMimeType(ext);
-          if (mimeType) {
-            const base64Data = buffer.toString("base64");
-            results.push(`--- File: ${rawPath} ---\ndata:${mimeType};base64,${base64Data}`);
-            continue;
-          }
-
-          const checkLimit = Math.min(buffer.length, 1024);
-          let isBinary = false;
-          for (let i = 0; i < checkLimit; i++) {
-            if (buffer[i] === 0) {
-              isBinary = true;
-              break;
-            }
-          }
-          if (isBinary) {
-            results.push(`--- File: ${rawPath} ---\nError: Cannot read binary file`);
-            continue;
-          }
-          const content = buffer.toString("utf-8");
-          const lines = content.replace(/\r\n/g, "\n").split("\n");
-          const sliced = lines.slice(fileOffset - 1, fileOffset - 1 + fileLimit);
-          const output = sliced.map((line, i) => `${fileOffset + i}: ${line}`).join("\n");
-          const startLine = fileOffset;
-          const endLine = Math.min(fileOffset + fileLimit - 1, lines.length);
-          let fileOutput = `--- File: ${rawPath} (lines ${startLine}-${endLine} of ${lines.length}) ---\n${output}`;
-          if (lines.length > fileOffset - 1 + fileLimit) {
-            const remaining = lines.length - (fileOffset - 1 + fileLimit);
-            fileOutput += `\n... (output truncated, showing ${fileLimit} of ${lines.length} lines. There are ${remaining} more lines)`;
-          }
-          results.push(fileOutput);
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          results.push(`--- File: ${rawPath} ---\nError: ${message}`);
-        }
-      }
+      const jobs = filePaths.map((entry) => {
+        const rawPath = typeof entry === "string" ? entry : (entry as any).path as string;
+        const fileOffset = typeof entry === "string" ? offset : Math.max(1, (entry as any).offset || offset);
+        const fileLimit = typeof entry === "string" ? limit : Math.max(1, (entry as any).limit || limit);
+        const filePath = normalizePath(resolveFilePathFromArgs({ filePath: rawPath }, cwd) || path.resolve(cwd, rawPath));
+        return {
+          filePath,
+          displayPath: rawPath,
+          offset: fileOffset,
+          limit: fileLimit,
+          mimeType: getImageMimeType(path.extname(filePath).toLowerCase()),
+        };
+      });
+      const results = await readFilesInProcessPool(jobs, { signal });
       return results.join("\n\n");
     }
 
