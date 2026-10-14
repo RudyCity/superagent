@@ -1,3 +1,13 @@
+## [1.13.78] - 2026-10-14
+### Added
+- Added multi-process batch runtime with bounded ProcessPool workers for concurrent file operations and task isolation.
+- Added self-dev default-on autonomous learning loop with candidate store, distillation, review service, and system diagnostics.
+- Added MCP multi-project workspace routing, project diagnostics, and workspace isolation tools.
+
+### Changed
+- Enforced batch-first contracts for file reads, writes, replacements, and patches with concurrency safeguards.
+- Updated agent plan content verification to cleanly isolate workspace directories across test runs.
+
 ## [1.13.77] - 2026-10-14
 ### Added
 - Added progressive tool-schema discovery for Single Mode and Multi Mode Master/worker agents: only `list_tools` and `describe_tool` are exposed initially, and authorized schemas become model-visible after description.
