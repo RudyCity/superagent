@@ -787,11 +787,16 @@ patched line
     const result = await tool?.execute({}, process.cwd());
     expect(result).toContain("Screenshot successfully captured");
     // Cleanup any captured screenshots
-    const globFiles = await fs.readdir(process.cwd());
-    for (const file of globFiles) {
-      if (file.startsWith("screenshot_") && file.endsWith(".png")) {
-        await fs.unlink(path.resolve(process.cwd(), file));
-      }
+    const cleanupDirs = [process.cwd(), path.resolve(process.cwd(), "screenshots")];
+    for (const dir of cleanupDirs) {
+      try {
+        const globFiles = await fs.readdir(dir);
+        for (const file of globFiles) {
+          if (file.startsWith("screenshot_") && file.endsWith(".png")) {
+            await fs.unlink(path.resolve(dir, file));
+          }
+        }
+      } catch {}
     }
   });
 

@@ -27,6 +27,7 @@ scratch/
 # Screenshots
 *screenshot_*.png
 cdp_screenshot_*.png
+playwright_screenshot_*.png
 screenshots/
 
 # Python cache

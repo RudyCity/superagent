@@ -293,7 +293,9 @@ export const screenshotTool: Tool = {
     properties: {},
   },
   async execute(args, cwd, signal) {
-    const outputPath = path.resolve(cwd, `screenshot_${Date.now()}.png`);
+    const screenshotsDir = path.resolve(cwd, "screenshots");
+    await fs.mkdir(screenshotsDir, { recursive: true });
+    const outputPath = path.resolve(screenshotsDir, `screenshot_${Date.now()}.png`);
     try {
       if (process.platform === "win32") {
         const psCommand = `
@@ -345,7 +347,7 @@ export const playwrightScreenshotTool: Tool = {
       },
       outputPath: {
         type: "string",
-        description: "Optional output file path or filename for the screenshot PNG/JPEG. Defaults to 'playwright_screenshot_<timestamp>.png' in current workspace.",
+        description: "Optional output file path or filename for the screenshot PNG/JPEG. Defaults to 'screenshots/playwright_screenshot_<timestamp>.png' in current workspace.",
       },
       fullPage: {
         type: "boolean",
@@ -398,7 +400,7 @@ export const playwrightScreenshotTool: Tool = {
     const defaultFilename = `playwright_screenshot_${Date.now()}.png`;
     const targetOutputPath = args.outputPath
       ? path.resolve(cwd, args.outputPath as string)
-      : path.resolve(cwd, defaultFilename);
+      : path.resolve(cwd, "screenshots", defaultFilename);
 
     const cmdArgs = ["playwright", "screenshot"];
 
@@ -433,6 +435,7 @@ export const playwrightScreenshotTool: Tool = {
     cmdArgs.push(targetUrl, targetOutputPath);
 
     try {
+      await fs.mkdir(path.dirname(targetOutputPath), { recursive: true });
       await execa("npx", cmdArgs, { cwd, cancelSignal: signal });
       return `Playwright screenshot successfully captured and saved to: ${targetOutputPath}`;
     } catch (err: unknown) {

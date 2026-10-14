@@ -52,7 +52,7 @@ export async function captureCdpScreenshot(
       throw new Error("Screenshot outputPath must remain inside the current workspace. Set SUPERAGENT_CDP_ALLOW_EXTERNAL_OUTPUT=true only when external output paths are intentional.");
     }
   } else {
-    savedPath = path.resolve(process.cwd(), `cdp_screenshot_${Date.now()}.${ext}`);
+    savedPath = path.resolve(process.cwd(), "screenshots", `cdp_screenshot_${Date.now()}.${ext}`);
   }
 
   const buf = Buffer.from(rawData, "base64");

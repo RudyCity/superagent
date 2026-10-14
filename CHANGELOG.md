@@ -1,3 +1,13 @@
+## [1.13.82] - 2026-10-15
+### Changed
+- Configured dedicated `screenshots/` directory fallback for CDP screenshots in `captureCdpScreenshot` (`src/core/tools/chromeCdpScreenshot.ts`), preventing temporary browser navigation screenshots from polluting the project root directory.
+- Updated `screenshotTool` and `playwrightScreenshotTool` in `src/core/tools/otherTools.ts` to save screenshots inside `screenshots/` by default and ensure parent directories are created before saving.
+- Updated `.gitignore` to explicitly ignore `screenshots/`, `cdp_screenshot_*.png`, and `playwright_screenshot_*.png`.
+
+### Tests
+- Added unit test in `tests/chromeCdpTools.test.ts` verifying screenshots default to `screenshots/` directory when `outputPath` is omitted.
+- Updated test cleanup hooks in `tests/chromeCdpTools.test.ts` and `tests/tools.test.ts` to clean test screenshot artifacts from the `screenshots/` directory.
+
 ## [1.13.81] - 2026-10-14
 ### Fixed
 - Fixed MCP multi-terminal cross-project activity log leakage: scoped `mcpActivityBus` events by workspace so activity logs and tool notifications only appear in the terminal corresponding to the active project.

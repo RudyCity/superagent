@@ -3,7 +3,7 @@ import { createServer, Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { AddressInfo } from "net";
 import * as path from "path";
-import { existsSync, unlinkSync } from "fs";
+import { existsSync, unlinkSync, readdirSync } from "fs";
 import { controlChromeCdpTool, _cdpTestHooks } from "../src/core/tools/chromeCdpTools.js";
 import { controlChromeVisionTool } from "../src/core/tools/chromeVisionTools.js";
 
@@ -299,6 +299,17 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     wss.close();
     blackhole.close();
     await new Promise<void>((r) => httpServer.close(() => r()));
+    const screenshotsDir = path.resolve(process.cwd(), "screenshots");
+    if (existsSync(screenshotsDir)) {
+      try {
+        const files = readdirSync(screenshotsDir);
+        for (const file of files) {
+          if (file.startsWith("cdp_screenshot_") && file.endsWith(".png")) {
+            unlinkSync(path.resolve(screenshotsDir, file));
+          }
+        }
+      } catch {}
+    }
   });
 
   test("tool is registered with the right name and commands", () => {
@@ -366,6 +377,14 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     } finally {
       if (existsSync(tmpOut)) unlinkSync(tmpOut);
     }
+  });
+
+  test("screenshot without outputPath saves to screenshots/ directory by default", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "screenshot",
+    });
+    expect(res).toContain("screenshot captured");
+    expect(res).toContain(path.join("screenshots", "cdp_screenshot_"));
   });
 
   test("navigate automatically captures screenshot unless disabled", async () => {
