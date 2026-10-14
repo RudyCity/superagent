@@ -1,3 +1,11 @@
+## [1.13.80] - 2026-10-14
+### Fixed
+- Fixed progressive tool discovery dispatch: execute the Agent-authorized active tool definition so per-Agent discovery wrappers actually activate selected schemas for the next model iteration.
+- Preserved tier authorization while resolving agent-local tool definitions and custom tool catalogs.
+
+### Tests
+- Added Single Mode and Multi Mode worker integration coverage for describe -> next-iteration schema exposure -> successful tool execution, plus rejection of unauthorized tools.
+
 ## [1.13.79] - 2026-10-14
 ### Changed
 - Optimized base system prompts and tier prompts across `src/core/config/base.ts`, `src/core/prompts.ts`, and `src/core/config/skills.ts` adhering to Concepts A, B, and C (Telegraphic English, Markdown Structure, Pseudocode Logic Gates).

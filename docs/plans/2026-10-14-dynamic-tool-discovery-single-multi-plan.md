@@ -1,7 +1,7 @@
 # Dynamic Tool Discovery for Single and Multi Mode
 
 **Date:** 14 October 2026
-**Status:** Implemented initial progressive-discovery rollout; focused verification passed, full end-to-end/provider parity remains pending
+**Status:** Initial rollout and runtime-dispatch fix implemented; focused regressions pass, full provider-level parity remains pending
 **Repository inspected:** `D:\\backup from pc asus\\Documents Development\\superagent`
 **Branch / HEAD observed:** `main` / `3e97835a`
 
@@ -187,6 +187,7 @@ A successful discovery in one turn must cause the selected schemas to be present
 - [x] Unit tests cover discovery-only bootstrap projection for Master, Single, and Superagent worker tiers, while specialized Subagents retain their current configured toolsets.
 - [x] Tests verify listing does not activate schemas, describing activates only requested permitted names, reset clears discovery state, and catalog changes invalidate stale schemas.
 - [x] Tests verify an out-of-catalog name does not become model-visible and that the full authorized catalog remains available for runtime checks.
+- [x] Regression integration tests run the actual `executeToolCall()` dispatcher: describing a tool activates its Agent-local discovery state, the schema appears in the next projection, and the matching Agent-local implementation executes in Single and Multi worker tiers; unauthorized registered tools remain blocked.
 - [x] Existing tier, mode, extension-filter, alias, and registry-consistency regression suites pass.
 - [x] Native and prompt-based schema-building paths use the same projected schemas in implementation; `toolDefs` for prompt/XML parsing is restricted to model-visible schemas.
 - [ ] Full provider-level, multi-turn tool-calling integration tests covering authorization prompts, cancellation, and end-to-end task completion remain pending. The existing `tierToolsetResolution.test.ts` was preserved unchanged after a `sendMessage()` test timed out; separate direct tier/schema tests were added in `agentDiscoveryTierProjection.test.ts`.
@@ -223,5 +224,7 @@ A successful discovery in one turn must cause the selected schemas to be present
 - Findings and implementation were grounded in `src/core/tools/toolDiscoveryTools.ts`, new `src/core/tools/toolDiscoveryState.ts`, `src/core/tools/toolsets.ts`, `src/core/tools/index.ts`, `src/core/tools/types.ts`, `src/core/agent.ts`, `src/core/agent/ContextBuilder.ts`, `src/core/agent/LoopIterationProcessor.ts`, `src/core/agent/ToolExecutor.ts`, `src/core/permissions.ts`, `src/server.ts`, and the cited tests.
 - Verification: `bun run build` passed. Focused regression run passed 6 files / 53 tests: `dynamicToolDiscovery.test.ts`, `agentDiscoveryTierProjection.test.ts`, `toolDiscoveryFuzzy.test.ts`, `toolRegistryConsistency.test.ts`, `extensionChatToolFilter.test.ts`, and `multiModeAudit.test.ts`.
 - Static serialized-schema estimates: Master 48 declared tools, 33,853 bytes / 7,298 estimated tokens versus the two-schema bootstrap 1,156 bytes / 262 estimated tokens (96.4% token-estimate reduction); Superagent 67 declared tools, 66,502 bytes / 14,631 estimated tokens (98.2%). These estimates use the existing `TokenTracker`/`cl100k_base` over serialized schemas, not actual provider billing or end-to-end task measurements.
-- The full Vitest suite and provider-level end-to-end discovery/execution were not run. A `sendMessage()`-based test in the original `tierToolsetResolution.test.ts` timed out at 30 seconds during verification. That file was restored unchanged; equivalent direct catalog/schema projection tests are isolated in `agentDiscoveryTierProjection.test.ts`.
+- Runtime follow-up on 14 October 2026 found that `executeToolCall()` always invoked the global registry implementation instead of the Agent-scoped active definition. That bypassed the wrapped `describe_tool`, so its per-Agent discovery state was never updated despite successful tool output. Dispatch now uses the current Agent's authorized active tool when available; focused dispatcher regressions pass for Single and Multi worker tiers.
+- Re-verification after the dispatch fix: focused regression tests passed 7 files / 57 tests, including `toolDiscoveryExecutionIntegration.test.ts`. `bun run build` is currently blocked by unrelated pre-existing dirty MCP configuration/type changes that produce `McpServerConfig` union-property TypeScript errors in MCP command/manager/tool and server-route files; the compiler reported no error in `permissions.ts`.
+- The full Vitest suite and provider-level end-to-end discovery/execution were not run. A `sendMessage()`-based test in the original `tierToolsetResolution.test.ts` timed out at 30 seconds during earlier verification. That file remains unchanged; provider-level integration and dynamic-hook refresh checks are still pending.
 - The worktree had many pre-existing modified/untracked files at inspection time. Those changes were preserved. No broad commit was created to avoid including unrelated in-progress changes.

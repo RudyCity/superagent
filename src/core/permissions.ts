@@ -1394,8 +1394,20 @@ export async function executeToolCall(
   cachedActiveTools?: any[]
 ): Promise<ToolResult> {
   const { getToolByName } = await getToolsModule();
-  const tool = getToolByName(toolCall.name);
+  const registeredTool = getToolByName(toolCall.name);
   const currentAgent = agentLocalStorage.getStore();
+  let activeTools: any[] | undefined = cachedActiveTools;
+  if (currentAgent && !activeTools) {
+    try {
+      activeTools = await currentAgent.getActiveTools();
+    } catch {
+      // Preserve the registry fallback if active-tool resolution fails.
+    }
+  }
+  // Execute the authorized Agent-scoped definition when available. Discovery
+  // tools are wrapped per Agent, and dispatching their global registry copies
+  // would bypass state updates such as activating a described schema.
+  const tool = activeTools?.find((candidate: any) => candidate.name === toolCall.name) ?? registeredTool;
   const tier = currentAgent ? currentAgent.tier : "unknown";
   const depth = currentAgent ? currentAgent.delegationDepth : 0;
   if (!tool) {
@@ -1415,8 +1427,8 @@ export async function executeToolCall(
   // Tier-level tool access validation (Layer 2 business logic guard)
   if (currentAgent) {
     try {
-      const activeTools = cachedActiveTools || await currentAgent.getActiveTools();
-      const isAllowed = activeTools.some((t: any) => t.name === toolCall.name);
+      const authorizationTools = activeTools ?? await currentAgent.getActiveTools();
+      const isAllowed = authorizationTools.some((candidate: any) => candidate.name === toolCall.name);
       if (!isAllowed) {
         try {
           const { appendMasterLog, appendToolsErrorLog } = await getStateModule();
