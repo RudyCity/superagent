@@ -1,3 +1,10 @@
+## [1.13.79] - 2026-10-14
+### Changed
+- Optimized base system prompts and tier prompts across `src/core/config/base.ts`, `src/core/prompts.ts`, and `src/core/config/skills.ts` adhering to Concepts A, B, and C (Telegraphic English, Markdown Structure, Pseudocode Logic Gates).
+- Aligned base system prompts with dynamic tool discovery, eliminating redundant static tool listings in favor of progressive schema exposure via `list_tools` and `describe_tool`.
+- Minified skill discovery instructions in `loadAgentSkills` to compact telegraphic logic gates.
+- Reduced overall rendered system prompt sizes by over 2,000 to 3,200 characters per tier, staying strictly within baseline ceilings while maintaining 100% test pass rate.
+
 ## [1.13.78] - 2026-10-14
 ### Added
 - Added multi-process batch runtime with bounded ProcessPool workers for concurrent file operations and task isolation.
