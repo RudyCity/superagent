@@ -140,7 +140,8 @@ const impact = {
 const changedDetails = [];
 
 for (const file of changedFiles) {
-  const norm = file.replace(/\\/g, '/');
+  // Strip display-only workspace prefixes before applying relative-path impact rules.
+  const norm = file.replace(/\\/g, '/').replace(/^\[[^\]]+\]\s+/, '');
 
   // Ignore wiki self-changes
   if (norm.startsWith(wikiDir.replace(/\\/g, '/'))) continue;
@@ -168,6 +169,32 @@ for (const file of changedFiles) {
   if (norm.includes('services/') || norm.includes('features/') || norm.includes('assistant/') || norm.includes('agent/') || norm.includes('checkout')) {
     impact.features = true;
     changedDetails.push({ file: norm, target: '04-features-and-workflows.md', reason: 'Business Domain Feature Logic modified' });
+  }
+
+  // Documentation entry points must appear in the sync log instead of being
+  // incorrectly reported as a clean workspace when only docs/rules changed.
+  if (norm.toLowerCase() === 'readme.md') {
+    changedDetails.push({ file: norm, target: '00-index.md', reason: 'Project README overview or usage guidance modified' });
+  }
+
+  if (norm.toLowerCase() === 'agents.md' || norm.toLowerCase() === '.agents/agents.md' || norm.endsWith('/agents.md')) {
+    impact.onboarding = true;
+    changedDetails.push({ file: norm, target: '06-developer-onboarding.md', reason: 'AI-agent instructions or contributor workflow modified' });
+  }
+
+  if (norm.startsWith('docs/mcp/')) {
+    impact.features = true;
+    changedDetails.push({ file: norm, target: '04-features-and-workflows.md', reason: 'MCP/Muse workflow documentation modified' });
+  }
+
+  if (norm.startsWith('src/core/mcp/')) {
+    impact.apiContracts = true;
+    changedDetails.push({ file: norm, target: '03-api-and-contracts.md', reason: 'MCP tool schema, registry, or transport contract modified' });
+  }
+
+  if (norm.startsWith('src/core/remoteAgent/')) {
+    impact.features = true;
+    changedDetails.push({ file: norm, target: '04-features-and-workflows.md', reason: 'Muse remote-agent protocol or workflow modified' });
   }
 }
 

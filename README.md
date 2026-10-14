@@ -38,7 +38,7 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 - **🛠️ Integrated Tooling**: Built-in file search, regex ripgrep, background command runners, terminal presets, system-level screenshots, and Playwright web page screenshots.
 - **🌐 Remote SSH Workspaces**: Secure connection to remote hosts with active boundary protection, interactive path expansion, local-to-remote file transfer, and workspace-based session continuation.
 - **🛰️ Remote AI Agent Coordination (Muse)**: Coordinate with a remote AI brain over Cloudflare Tunnel + WebSocket or Telegram bus, delegating high-level reasoning to Muse while Superagent executes batched tools locally with multi-project watch mode and multi-tunnel isolation.
-- **🔌 MCP via Tunnel (v1.6.0)**: Expose Superagent's tools as an MCP server over Streamable HTTP through Cloudflare Tunnel (MCP only, no WSS tunnel) — separate Bearer token, safe-tools allowlist by default (dangerous tools opt-in), full audit logging (`/muse tunnel start --mcp`).
+- **🔌 MCP via Tunnel**: Expose Superagent tools through Streamable HTTP with a safe-tool allowlist, explicit opt-in for dangerous operations, and audit logging. For direct Muse conversation, `superagent_muse_chat_status` checks readiness and `superagent_muse_chat` waits for a correlated reply over the separate authenticated Muse WebSocket tunnel.
 - **🌐 Chrome Process Tools (v1.5.146)**: Built-in tools to list all running Chrome windows across profiles (with per-window tab lists) and close a targeted Chrome profile safely.
 - **🤖 3-Tier Multi-Agent Mode *(Experimental)***: Master Agent orchestrating isolated Superagents across parallel Git worktrees (`--multi`).
 - **🌐 Extension-Free Chrome Automation (v1.10.0)**: Drive the real Chrome browser directly over the Chrome DevTools Protocol — no extension required (`control_chrome_cdp`: navigate, snapshot/click/type by element index, `wait_for`, screenshot, PDF, cookies). Requires Chrome started with `--remote-debugging-port=9222` (see below).
@@ -383,6 +383,22 @@ superagent muse tunnel start --mcp --mcp-auth oauth --allow-dangerous
 6. When ChatGPT opens the authorization consent page in your browser, enter the one-time **bootstrap approval code** printed in your terminal and click **Approve**.
 
 For the complete end-to-end setup guide, Zero Trust configuration, multi-project workflows, and the Muse system prompt, see **[docs/remote-agent-setup.md](docs/remote-agent-setup.md)**.
+
+#### MCP tools for Muse
+
+Superagent exposes MCP over Streamable HTTP. The MCP HTTP endpoint and Muse's authenticated WebSocket tunnel are separate connections: the MCP client calls a Superagent tool, and Superagent uses its active Muse WebSocket watcher for direct chat.
+
+| Tool | Access | Purpose |
+|---|---|---|
+| `superagent_muse_chat_status` | Safe, read-only | Check watcher, WebSocket transport, connection, and direct-chat readiness. |
+| `superagent_muse_chat` | Dangerous, requires opt-in | Send one conversational message and wait for Muse's correlated reply. Default timeout is 30 seconds; allowed range is 1 to 120 seconds. |
+| `superagent_telegram_send_to_muse` | Dangerous, requires opt-in | Deliver a message through the configured Telegram group. Telegram acceptance does not prove Muse processed or answered it. |
+| `superagent_muse_tunnel_start` | Dangerous, requires opt-in | Start the verified Muse WebSocket watcher and tunnel. |
+| `superagent_muse_tunnel_restart` | Dangerous, requires opt-in | Restart only the verified Muse tunnel, not the MCP HTTP server. |
+
+Recommended direct-chat workflow: call `superagent_muse_chat_status`, start the Muse tunnel if necessary, connect the Muse client, then call `superagent_muse_chat`. The response is successful only after a correlated chat reply with `reply_to` matching the request ID is received. Timeouts and disconnects are reported as errors, not successful conversations.
+
+For request examples and transport details, see [Muse MCP workflows](docs/mcp/muse-chat-workflows.md).
 
 ### Keyboard Shortcuts
 

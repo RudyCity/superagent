@@ -1,3 +1,9 @@
+## [1.13.76] - 2026-10-14
+### Changed
+- Updated README and `.agents/AGENTS.md` for MCP Muse readiness, two-way chat, tool classifications, and maintainer workflow.
+- Expanded wiki API, workflow, and onboarding documentation for the remote-agent MCP tools.
+- Improved wiki sync impact mapping so workspace-prefixed paths are normalized and README/agent-instruction changes are recorded accurately.
+
 ## [1.13.75] - 2026-10-13
 ### Added
 - Split remote-agent MCP tools into smaller tunnel, Telegram, and chat modules, with a new safe chat-readiness tool and a two-way Muse conversation tool.

@@ -40,6 +40,7 @@ bun test
 | `bun run verify:all` | Run complete validation gate (`build` + extension check + `test`) |
 | `bun run wiki:serve` | Launch local Docsify wiki viewer at `http://localhost:3333` |
 | `bun run wiki:sync` | Incremental wiki documentation sync on changed codebase files |
+| `bun run wiki:validate` | Validate wiki markdown links, anchors, and Mermaid fence structure |
 
 ---
 
@@ -92,3 +93,28 @@ if branch_dirty:
     CALL commit_changes(message)
     CALL mergeSuperagentsTool(feature_name)
 ```
+
+---
+
+## 5. Documentation and Wiki Synchronization
+
+When changing MCP tool schemas, permission classifications, transport contracts, or Muse workflows:
+
+1. Update `README.md` for user-facing setup and examples.
+2. Update `.agents/AGENTS.md` when agent implementation rules or architecture conventions change.
+3. Update the relevant technical wiki pages: `03-api-and-contracts.md` for tool contracts, `04-features-and-workflows.md` for behavior, and `06-developer-onboarding.md` for contributor workflow.
+4. Run wiki sync and validation from the repository root:
+
+```bash
+bun run wiki:sync
+bun run wiki:validate
+```
+
+5. Review `docs/wiki/00-index.md` and `docs/wiki/auto-sync-manifest.json`. Treat a failed sync or validation as incomplete documentation work.
+
+MCP-specific maintenance rules:
+
+- Derive tool counts from the actual registered and filtered tool list. Do not add or maintain hardcoded totals.
+- Keep tool schemas and safe/dangerous classifications in sync. Dangerous remote mutations must remain opt-in.
+- Test direct-chat correlation using `reply_to`, and verify timeout and disconnected behavior.
+- Keep MCP HTTP and Muse WebSocket tunnel statuses distinct; one being active does not prove the other is connected.

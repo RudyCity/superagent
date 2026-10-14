@@ -2,7 +2,7 @@
 
 Welcome to the comprehensive technical architecture wiki and developer documentation for **Superagent**.
 
-Superagent is an interactive, terminal-based AI coding assistant featuring a cyberpunk style terminal UI, real-time context token tracking, and a 3-tier multi-agent orchestration system (Master Agent $\rightarrow$ Superagent $\rightarrow$ Subagent). It seamlessly bridges local development with desktop clients ([t-line](file:///d:/backup%20from%20pc%20asus/Documents%20Development/t-line)) and remote browser automation via lightweight Chrome extensions.
+Superagent is an interactive, terminal-based AI coding assistant featuring a terminal UI, real-time context token tracking, and a 3-tier multi-agent orchestration system (Master Agent $\rightarrow$ Superagent $\rightarrow$ Subagent). It bridges local development with desktop clients ([t-line](file:///d:/backup%20from%20pc%20asus/Documents%20Development/t-line)), remote browser automation, and an MCP server with separately authenticated remote Muse WebSocket coordination.
 
 ---
 
@@ -55,8 +55,8 @@ graph TD
 | **00** | [00-index.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/00-index.md) | Table of contents, tech stack badges, system map, and key principles |
 | **01** | [01-architecture-overview.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/01-architecture-overview.md) | 3-tier multi-agent hierarchy, C4 context & container diagrams, execution loops, client bridge modes |
 | **02** | [02-domain-models-and-data.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/02-domain-models-and-data.md) | SQLite schema (`history.db`), `model-config.json` schema, context & token tracking models, state machines |
-| **03** | [03-api-and-contracts.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/03-api-and-contracts.md) | CLI flags, slash commands, tool interface definitions, WebSocket bridge (port 9223), desktop bridge |
-| **04** | [04-features-and-workflows.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/04-features-and-workflows.md) | Orchestration lifecycles, worktree branching & merging, context compaction, browser automation |
+| **03** | [03-api-and-contracts.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/03-api-and-contracts.md) | CLI commands, MCP tool schemas and permissions, Muse chat envelope contract, Chrome WebSocket bridge, desktop bridge |
+| **04** | [04-features-and-workflows.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/04-features-and-workflows.md) | Multi-agent workflows, context compaction, browser automation, Muse MCP readiness and two-way chat |
 | **05** | [05-infrastructure-and-devops.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/05-infrastructure-and-devops.md) | Node/Bun runtime, TypeScript build pipeline, ~/.superagent-r/ storage layout, logging, error handling |
 | **06** | [06-developer-onboarding.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/06-developer-onboarding.md) | Setup instructions, development commands, testing guidelines, prompt authoring rules (Concepts A, B, C) |
 | **07** | [07-adrs-and-decisions.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/docs/wiki/07-adrs-and-decisions.md) | Architecture Decision Records (ADRs) on multi-tier isolation, SQLite transcripts, JSON config, and WebSockets |
@@ -91,8 +91,11 @@ graph TD
 ## 🔄 Real-time Codebase Sync Status
 
 <!-- RECENT_SYNC_LOG_START -->
-### 🕒 Last Sync Event: 2026-09-04 13:00:33 UTC (Multi-Workspace: superagent, t-line)
+### 🕒 Last Sync Event: 2026-10-14 01:12:02 UTC (Multi-Workspace: superagent, t-line)
 | Modified Source File | Impacted Wiki Section | Change Trigger |
 |:---|:---|:---|
-| *(All Workspaces Clean / No uncommitted changes)* | [All Wiki Docs](./00-index.md) | Routine Verification Sync |
+| `.agents/AGENTS.md` | [06-developer-onboarding.md](./06-developer-onboarding.md) | AI-agent instructions or contributor workflow modified |
+| `README.md` | [00-index.md](./00-index.md) | Project README overview or usage guidance modified |
+| `package.json` | [01-architecture-overview.md](./01-architecture-overview.md) | Dependencies or Workspace Structure modified |
+| `src/core/mcp/superagentMcpServer.ts` | [03-api-and-contracts.md](./03-api-and-contracts.md) | MCP tool schema, registry, or transport contract modified |
 <!-- RECENT_SYNC_LOG_END -->

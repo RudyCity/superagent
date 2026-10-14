@@ -149,3 +149,21 @@ Superagent supports multiple external integration modes:
 2. **Remote Chrome Extension Bridge (`chrome-extension-remote`)**:
    - Serverless WebSocket server auto-binds on `ws://127.0.0.1:9223`.
    - Lightweight Chrome extension connects from any browser profile, enabling automated tab management, DOM inspection, screenshot capture, and navigation without launching bulky Puppeteer/Playwright instances.
+
+---
+
+## 6. MCP Server & Remote Muse Tool Modules
+
+The MCP server is registered in `src/core/mcp/superagentMcpServer.ts` and exposed over Streamable HTTP by `src/core/mcp/mcpHttpTransport.ts`. Tool schemas and safe/dangerous classifications are registered together. Disabled tools are filtered from discovery. Exposed tool counts are derived from the catalog and filters rather than a fixed numeric constant.
+
+Remote-agent MCP logic is split by responsibility:
+
+| Module | Responsibility |
+|---|---|
+| `remoteAgentMcpShared.ts` | Shared limits, port validation, error redaction, and result helpers. |
+| `remoteAgentTunnelMcpTools.ts` | Start and restart the verified Muse WebSocket watcher/tunnel. |
+| `remoteAgentTelegramMcpTools.ts` | One-way Telegram group delivery, reporting Telegram acceptance only. |
+| `remoteAgentChatMcpTools.ts` | Readiness status and correlated two-way direct chat. |
+| `remoteAgentMcpTools.ts` | Compatibility exports and dispatcher aggregation. |
+
+The transports remain intentionally separate: the client calls Superagent's MCP HTTP endpoint, while direct Muse conversation uses the independently authenticated Muse WebSocket session. `superagent_muse_chat_status` is safe/read-only; message delivery and tunnel lifecycle tools are dangerous/opt-in. The direct-chat handler returns only after a chat reply's `reply_to` matches the originating request ID.

@@ -63,8 +63,13 @@ Master Agent  (orchestrator)
 - `src/components/startup-checker.tsx` — Parallelized dependency validator with decoupled background model warming.
 - `src/components/startup-prompt.tsx` — First-run interactive choice dialog when no AI provider is configured.
 
-## Recent Features (v1.5.146-v1.13.53)
+## Recent Features (v1.5.146-v1.13.75)
 
+- **MCP Muse Two-Way Chat & Readiness (`src/core/mcp/tools/remoteAgentChatMcpTools.ts`, v1.13.75)**:
+  - Added safe `superagent_muse_chat_status` to report whether the active watcher and authenticated WebSocket can support direct chat.
+  - Added dangerous/opt-in `superagent_muse_chat`, which waits for a Muse `chat` reply whose `reply_to` matches the outgoing request ID. Timeout or disconnect is an error, not success.
+  - Split remote-agent MCP code into shared, tunnel, Telegram, and chat modules, aggregated by `remoteAgentMcpTools.ts`.
+  - Added user guidance in `docs/mcp/muse-chat-workflows.md` and the README.
 - **Chrome Screen Sharing & Display Media Capture Automation** (`src/core/tools/chromeCdpMedia.ts`, `src/core/tools/chromeCdpTools.ts`, `scripts/chrome-debug.bat`, v1.13.53):
   - Added `mock_display_media` (aliases `mock_screen_share`, `bypass_screen_share`) to `control_chrome_cdp` to intercept `navigator.mediaDevices.getDisplayMedia` and return a synthetic stream without triggering native browser dialogs.
   - Added `handle_screen_share` (aliases `accept_screen_share`, `dismiss_screen_share`) to `control_chrome_cdp` to automate OS-level tab selection and confirmation on active Windows `DesktopMediaPicker` dialogs.
@@ -87,7 +92,7 @@ Master Agent  (orchestrator)
   - Added interactive canvas and category filtering in Chrome Extension sidepanel (`chrome-extension/sidepanel-vision.js`).
 - **Chrome process tools** (`src/core/tools/chromeProcessTools.ts`, v1.5.146): `list_running_chrome` (EnumWindows multi-window enumeration, profile display names from Local State, per-window tab lists via UI Automation) and `close_chrome_profile` (kills only the exact `--profile-directory` match). See README.
 - **Tunnel chat + ESC menu** (v1.5.147): `ESC` at the main input while a tunnel is active opens a menu (stop tunnel / message Muse / continue); `/muse tunnel msg <text>` sends a `chat` envelope via the active WS socket. Muse side: `listener.py` writes to `bridges/<name>/chat_inbox/` and the `ws-chat-inbox` hook wakes an agent to reply.
-- **MCP via tunnel** (`src/core/mcp/mcpHttpTransport.ts`, v1.6.0): `/muse tunnel start --mcp` serves MCP over Streamable HTTP on 127.0.0.1:9227 through the tunnel (MCP only, no WSS). Separate Bearer token (printed once, transient), 16-tool safe allowlist by default (`--allow-dangerous` opts into 21 destructive tools), JSONL audit log.
+- **MCP via tunnel** (`src/core/mcp/mcpHttpTransport.ts`, `src/core/mcp/superagentMcpServer.ts`, and `src/core/mcp/tools/remoteAgent*.ts`): `/muse tunnel start --mcp` serves MCP over Streamable HTTP on loopback through Cloudflare Tunnel. MCP HTTP and the Muse WebSocket tunnel are separate transports. Use the live `tools/list` result as the source of truth; do not hardcode exposed tool counts. Safe tools are exposed by default; dangerous operations require explicit opt-in. Calls are audit-logged. See `README.md`, `docs/mcp/muse-chat-workflows.md`, and `docs/wiki/03-api-and-contracts.md`.
 - **Bridge kit** (`bridge/`): sanitized publishable copy of the Muse-side WS bridge (`listener.py`, `bridge.sh`, `hooks/`, `bridges.json.example`, `SETUP.md`). Keep in sync with the live instance (`~/workspace/ws-bridge/` on the Muse machine) — never copy it raw, it contains real URLs/tokens.
 
 ## Coding Guidelines & Constraints
@@ -144,7 +149,9 @@ All system prompts in the codebase (e.g., in [prompts.ts](file:///d:/backup%20fr
 - **Restart `/muse watch` after code changes**: the watch-mode process keeps old modules loaded; code delivered via the bridge only takes effect after the user Ctrl+C's and re-runs `/muse watch`. Never claim a feature is live before this restart plus a live probe.
 - **`get_active_browser_tabs` can hang**: if the Chrome extension bridge is not connected, the tool has no effective timeout and blocks the entire sequential batch queue (observed 5+ min). Always check `chrome_extension_status` first; never send other batches until it returns.
 - **MUSEBUS chunking**: wire format of the Telegram bridge. The WS transport gained reassembly in v1.5.148, but for WS just send plain JSON (16 MB limit — chunking not needed).
-- **Network-exposed mode security checklist** (MCP via tunnel, and any future mode): (1) separate credential per mode (crypto-random, transient, never reused); (2) allowlist default-deny — destructive tools opt-in only; (3) audit-log every call; (4) bind 127.0.0.1, only the tunnel faces the network; (5) treat tunnel URLs as public — security from the token, not obscurity.
+- **Network-exposed mode security checklist** (MCP via tunnel, and any future mode): (1) separate credential per mode (crypto-random, transient, never reused); (2) allowlist default-deny, destructive tools opt-in only; (3) audit-log every call; (4) bind 127.0.0.1, only the tunnel faces the network; (5) treat tunnel URLs as public, security from the credential, not obscurity.
+- **MCP tool registry is the source of truth**: define tool schemas and permission classifications in the MCP registry/modules, keep disabled-tool filtering aligned with actual exposure, and derive counts from the exposed list rather than constants. Remote Muse tools live in `remoteAgentTunnelMcpTools.ts`, `remoteAgentTelegramMcpTools.ts`, and `remoteAgentChatMcpTools.ts`; keep `remoteAgentMcpTools.ts` as the aggregator/dispatcher.
+- **Wiki maintenance**: after architecture, MCP contract, or workflow changes, update the relevant `docs/wiki/*.md` pages, then run `bun run wiki:sync` and `bun run wiki:validate`. Review the sync manifest and index log; do not claim wiki freshness if the scripts fail.
 
 ## Verification Checklist
 - Run `bun test` to verify that all unit tests pass before committing.

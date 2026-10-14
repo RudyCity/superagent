@@ -125,6 +125,42 @@ When Superagent is launched with `--server 3000 --client-mode tline`, it exposes
 - **`POST /api/models`**: Updates provider configurations and active presets in `model-config.json`.
 
 
+## 6. MCP HTTP Tools & Muse Direct Chat Contract
+
+Superagent exposes MCP over Streamable HTTP. This endpoint is distinct from the Muse WebSocket tunnel: an MCP client calls a registered Superagent tool, while Superagent uses its active authenticated Muse WebSocket watcher to relay direct chat.
+
+### Remote-agent tool catalog
+
+| Tool | Classification | Contract |
+|---|---|---|
+| `superagent_muse_chat_status` | Safe, read-only | Optional `port`; returns watcher state, transport type, connection state, `canChat`, and a readiness reason when unavailable. It does not send a message. |
+| `superagent_muse_chat` | Dangerous, opt-in | Required `text` (max 12,000 characters), optional `port`, optional `timeoutMs` (1,000-120,000; default 30,000). Returns only after a correlated Muse reply. |
+| `superagent_telegram_send_to_muse` | Dangerous, opt-in | Required `text`. Reports Telegram acceptance only, not that Muse processed or answered the message. |
+| `superagent_muse_tunnel_start` | Dangerous, opt-in | Optional `port`; starts the verified Muse WebSocket watcher and tunnel without exposing the WebSocket token. |
+| `superagent_muse_tunnel_restart` | Dangerous, opt-in | Optional `port`; restarts only the verified Muse tunnel, never the MCP HTTP server. |
+
+The MCP tool registry and its permission classifications are the source of truth. Disabled tools are filtered from discovery independently of dangerous-tool opt-in. Tool counts must be derived from the list of tools actually exposed to the selected client, not maintained as numeric constants.
+
+### Correlated chat envelope
+
+Direct chat uses the existing chat envelope with two correlation fields:
+
+```typescript
+interface ChatEnvelope {
+  v: 1;
+  kind: "chat";
+  id?: string;        // Unique ID for this outgoing or response message
+  reply_to?: string;  // Request ID being answered
+  text: string;
+}
+```
+
+The request receives a unique ID. Muse must respond with a new unique `id` and `reply_to` equal to the request ID. The watcher resolves only the matching pending request. Timeout, send failure, or WebSocket disconnect returns an error; it must not be reported as a successful conversation. Chat requests are not task execution requests; use the existing task envelope workflow when asking Muse to perform project work.
+
+See [Muse MCP workflow examples](../mcp/muse-chat-workflows.md) for readiness checks, tunnel management, Telegram delivery, and direct chat examples.
+
+---
+
 ## Automated Route Inventory
 
 <!-- API_CATALOG_START -->

@@ -218,6 +218,50 @@ sequenceDiagram
 - **Unrestricted System-Wide Mode (Full YOLO)**: `/yolo full` or `--yolo-full` enables complete auto-approval across the entire file system and shell command executions without boundary or prompt gates.
 - **Visual Status Indicator**: Active YOLO mode is visibly badged in the interactive status bar as `🔥 YOLO` (scoped mode) or `⚡ YOLO FULL` (full mode).
 
+---
+
+## 7. MCP Remote Tools & Two-Way Muse Conversation
+
+MCP clients connect to Superagent over Streamable HTTP. Direct Muse conversation requires a second, independently authenticated WebSocket session between Muse and Superagent. A working MCP endpoint does not imply that Muse is connected.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as MCP Client / Developer
+    participant MCP as Superagent MCP Server
+    participant Readiness as Muse Chat Readiness
+    participant Watcher as Muse WebSocket Watcher
+    participant Muse as Remote Muse Agent
+
+    User->>MCP: tools/call superagent_muse_chat_status
+    MCP->>Readiness: Inspect watcher + transport state
+    Readiness-->>MCP: canChat / reason
+    MCP-->>User: Readiness response
+    User->>MCP: tools/call superagent_muse_chat(text)
+    MCP->>Watcher: requestChat(text, timeoutMs)
+    Watcher->>Muse: chat { id: requestId, text }
+    Muse-->>Watcher: chat { id: responseId, reply_to: requestId, text }
+    Watcher-->>MCP: Correlated reply
+    MCP-->>User: reply_received + reply text
+```
+
+### Tool selection
+
+- `superagent_muse_chat_status`: safe readiness check. Reports whether the watcher is active, the transport is WebSocket, and Muse is connected. Does not send a message.
+- `superagent_muse_chat`: dangerous/opt-in direct conversation. Sends one chat message and waits for a response with `reply_to` equal to the request ID. Default timeout is 30 seconds; timeout is configurable from 1 to 120 seconds.
+- `superagent_telegram_send_to_muse`: dangerous/opt-in Telegram delivery path. A successful result means Telegram accepted the message, not that Muse replied.
+- `superagent_muse_tunnel_start` and `superagent_muse_tunnel_restart`: dangerous/opt-in tunnel lifecycle actions. Restart manages only the verified Muse WebSocket tunnel and does not restart the MCP HTTP server.
+
+### Failure and security behavior
+
+1. Missing watcher, wrong transport, or disconnected WebSocket prevents a direct-chat send.
+2. A response resolves a pending request only when its `reply_to` exactly matches that request's unique ID.
+3. Timeout, failed send, watcher shutdown, and WebSocket disconnect reject the pending request and clear its timer.
+4. The MCP HTTP tunnel and Muse WebSocket tunnel are separate services and have distinct readiness states.
+5. The exposed MCP list and its classifications are the source of truth; tool counts must not be copied into hardcoded constants.
+
+See [MCP contract details](./03-api-and-contracts.md) and the user-facing [Muse MCP examples](../mcp/muse-chat-workflows.md).
+
 
 
 

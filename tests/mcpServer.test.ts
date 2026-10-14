@@ -17,9 +17,9 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 58;
+const EXPECTED_TOOL_COUNT = 57;
 
-describe("Superagent Complete 3-Pillar MCP Server Suite (58 Tools, Resources, Prompts)", () => {
+describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Prompts)", () => {
   const testDir = path.join(process.cwd(), `.tmp_mcp_test_${Date.now()}`);
 
   beforeEach(() => {
@@ -100,7 +100,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (58 Tools, Resources, Pr
     // Analytics & infra
     expect(toolNames).toContain("superagent_compact_context");
     expect(toolNames).toContain("superagent_get_token_usage");
-    expect(toolNames).toContain("superagent_remote_chrome");
+    expect(toolNames).not.toContain("superagent_remote_chrome");
     expect(toolNames).toContain("superagent_server_health");
     expect(toolNames).toContain("superagent_get_remote_status");
 
@@ -418,6 +418,20 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (58 Tools, Resources, Pr
     await expect(callHandler({
       method: "tools/call",
       params: { name: "superagent_run_task", arguments: { task: "should not execute" } },
+    })).rejects.toThrow("disabled and not exposed by this MCP server");
+  });
+
+  it("superagent_remote_chrome is hidden and rejected even when dangerous tools are enabled", async () => {
+    const server = createSuperagentMcpServer({ workspace: testDir, allowDangerous: true });
+    const listHandler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+
+    const listResult = await listHandler({ method: "tools/list", params: {} });
+    expect(listResult.tools.map((tool: any) => tool.name)).not.toContain("superagent_remote_chrome");
+
+    await expect(callHandler({
+      method: "tools/call",
+      params: { name: "superagent_remote_chrome", arguments: { action: "status" } },
     })).rejects.toThrow("disabled and not exposed by this MCP server");
   });
 

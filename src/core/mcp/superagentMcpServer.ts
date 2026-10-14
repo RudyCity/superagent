@@ -183,6 +183,9 @@ export const DISABLED_MCP_TOOLS: ReadonlySet<string> = new Set([
   "superagent_await",
   "superagent_merge",
   "superagent_manage",
+  // Prefer Chrome DevTools Protocol automation; do not expose the legacy
+  // extension bridge directly through the remote MCP interface.
+  "superagent_remote_chrome",
 ]);
 
 export interface McpToolAnnotations {
