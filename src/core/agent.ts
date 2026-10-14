@@ -10,6 +10,7 @@ import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfi
 import { GuidelineLoader } from "./agent/GuidelineLoader.js";
 import { Conversation } from "./conversation.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools/types.js";
+import { ToolDiscoveryState } from "./tools/toolDiscoveryState.js";
 import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
 import {
   executeToolCall,
@@ -131,6 +132,8 @@ export class Agent {
   private _activeToolsCache: { tools: Tool[]; cachedAt: number } | null = null;
   /** TTL for active tools cache */
   private static readonly ACTIVE_TOOLS_CACHE_TTL = 5_000;
+  /** Per-agent progressive schema exposure; execution authorization remains in getActiveTools(). */
+  private readonly toolDiscoveryState = new ToolDiscoveryState();
   private skillContentCache: Map<string, string> = new Map();
   /** Keys of skills that were successfully preloaded into guidelinesText */
   private preloadedSkillKeys: Set<string> = new Set();
@@ -156,6 +159,7 @@ export class Agent {
     }
     this.skillContentCache.clear();
     this.preloadedSkillKeys.clear();
+    this.toolDiscoveryState.reset();
   }
 
   private updateRootProcessActivity(updates: Partial<import("./tools/state.js").ProcessActivity>): void {
@@ -459,8 +463,32 @@ export class Agent {
     const { browserControlHandler } = await import("./tools/browserMacroTools.js");
     // Removed isServerMode check so normal CLI can use control_browser_ tools.
 
-    // Cache the resolved tools
+    // Discovery tools are bound to the authorized catalog for this Agent. The catalog
+    // remains complete for execution checks; only model-visible schemas are staged.
+    if (this.tier === "master" || this.tier === "single" || this.tier === "superagent") {
+      const { EXTENSION_CHAT_HIDDEN_TOOL_NAMES } = await import("./tools/toolsets.js");
+      const catalogNames = new Set(tools.map((tool) => tool.name));
+      tools = this.toolDiscoveryState.wrapTools(tools, (name) =>
+        !catalogNames.has(name) && EXTENSION_CHAT_HIDDEN_TOOL_NAMES.has(name)
+          ? `"${name}" is not available in this mode. It requires the Superagent Chrome Extension and is only active in chrome-extension chat mode. For extension-free Chrome automation, use control_chrome_cdp.`
+          : undefined,
+      );
+    }
+
+    // Cache the complete authorized tool catalog, including agent-scoped discovery wrappers.
     this._activeToolsCache = { tools: [...tools], cachedAt: now };
+    return tools;
+  }
+
+  /**
+   * Tools exposed to the model on this iteration. Execution authorization must
+   * continue to use getActiveTools(), which returns the full authorized catalog.
+   */
+  public async getModelVisibleTools(authorizedTools?: Tool[]): Promise<Tool[]> {
+    const tools = authorizedTools ?? await this.getActiveTools();
+    if (this.tier === "master" || this.tier === "single" || this.tier === "superagent") {
+      return this.toolDiscoveryState.getModelVisibleTools(tools);
+    }
     return tools;
   }
 
@@ -475,6 +503,7 @@ export class Agent {
     );
     this.activeModeOverride = mode;
     this._activeToolsCache = null;
+    this.toolDiscoveryState.reset();
 
     let category: import("./requestClassifier.js").RequestCategory = "complex_task";
     if (mode === "ask") {
@@ -551,6 +580,12 @@ export class Agent {
     }
     const proceed = await RequestProcessor.processRequest(this, userInput);
     if (!proceed) return;
+
+    // Keep described schemas for a continuation, but start independent tasks with
+    // discovery-only visibility. RequestProcessor is the source of truth for its
+    // existing continuation classification.
+    const isTaskContinuation = this.currentClassification?.reason.includes("User requested continuation of task") ?? false;
+    if (!isTaskContinuation) this.toolDiscoveryState.reset();
 
     this.isRunning = true;
     this.abortController = new AbortController();

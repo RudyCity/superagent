@@ -1,3 +1,12 @@
+## [1.13.77] - 2026-10-14
+### Added
+- Added progressive tool-schema discovery for Single Mode and Multi Mode Master/worker agents: only `list_tools` and `describe_tool` are exposed initially, and authorized schemas become model-visible after description.
+- Added per-Agent discovery state, catalog-fingerprint invalidation, independent-task reset, canonical tool-discovery guidance, and regression coverage while preserving full runtime authorization catalogs.
+
+### Changed
+- Updated runtime capability reporting to use the authorized catalog instead of the currently exposed schema subset.
+- Documented progressive discovery and recorded directional schema-token estimates in the technical wiki.
+
 ## [1.13.76] - 2026-10-14
 ### Changed
 - Updated README and `.agents/AGENTS.md` for MCP Muse readiness, two-way chat, tool classifications, and maintainer workflow.

@@ -76,6 +76,20 @@ Tools are defined in `src/core/tools/` and mapped to agent tiers in `src/core/to
 | `replaceFileContentTool` | `{ filePath: string, targetContent: string, replacement: string }` | Performs surgical single-block replacements. |
 | `applyPatchTool` | `{ patch: string }` | Applies unified git diff patches. |
 
+### Progressive Tool Schema Discovery
+
+Single Mode and Multi Mode Master/worker agents use progressive schema exposure. The authorized tool catalog remains complete inside the Agent, but the model initially receives only the canonical `list_tools` and `describe_tool` schemas.
+
+- `list_tools` searches the current Agent's authorized catalog and returns concise names/descriptions. Listing a tool does not expose its argument schema.
+- `describe_tool` returns full schemas only for names in that authorized catalog. Successfully described schemas are added to that Agent's model-visible set on the next model request.
+- Discovered schemas remain available through the recognized continuation of the current task. An independent top-level task, mode switch, changed catalog fingerprint, or Agent disposal clears discovery state.
+- The Master, Single, and Superagent tiers use this behavior. Specialized Subagents retain their existing full, role-specific toolsets.
+- Discovery is not authorization. The model-visible schema list is separate from the full execution catalog, and `ToolExecutor`/permission checks remain the authority for tool execution.
+- Native tool calling and prompt/XML-based tool calling use the same model-visible schema projection. Runtime capability notices are derived from the authorized catalog so undiscovered shell/write/network tools are not incorrectly reported as disabled.
+- `get_tools` and `describe_tools` are compatibility aliases resolved by the runtime. Model calls must use the canonical schema names actually advertised: `list_tools` and `describe_tool`.
+
+The first-request schema benchmark against the current declared toolsets was approximately 7,298 to 262 estimated cl100k tokens for the 48-entry Master toolset, and 14,631 to 262 for the 67-entry Superagent toolset. These are serialized-schema estimates, not provider-billed usage; runtime eligibility filters can lower the active tool counts. See `docs/plans/2026-10-14-dynamic-tool-discovery-single-multi-plan.md` for implementation scope and verification details.
+
 ---
 
 ## 4. Remote Chrome WebSocket Bridge API (`Port 9223`)

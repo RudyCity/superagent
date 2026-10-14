@@ -3,7 +3,7 @@ import path from "path";
 import { type CoreMessage } from "ai";
 import { getSettings, getContextWindowLimit, getModelConnectionDetailsForTier, loadAgentSkills, getConfig } from "../config.js";
 import { contentToString, type Message } from "../conversation.js";
-// NOTE: `getToolDefinitions`, `backgroundTasks`, `isTaskInWorkspace` are imported
+// NOTE: `backgroundTasks` and `isTaskInWorkspace` are imported
 // DYNAMICALLY inside `buildContext` to break the circular dependency cycle:
 //   tools/index.ts → subagentTools.ts → agent.ts → ContextBuilder.ts → tools.js
 // A static import here would cause `toolsets.ts` to receive a partial module
@@ -29,7 +29,7 @@ export class ContextBuilder {
   }> {
     // Dynamic import to break circular dep (see import note above). Loading
     // `../tools.js` synchronously here would deadlock during module init.
-    const { getToolDefinitions, backgroundTasks, isTaskInWorkspace } = await import("../tools.js");
+    const { backgroundTasks, isTaskInWorkspace } = await import("../tools.js");
 
     const isGoalMode = !!agent.goalMode;
     const category = agent.currentClassification?.category || "complex_task";
@@ -97,15 +97,18 @@ export class ContextBuilder {
     }
 
     let messages = (agent as any).buildMessages(supportsNativeTools);
-    let toolsToUse = await agent.getActiveTools();
-
-    const toolDefs = toolsToUse
-      ? toolsToUse.map((t) => ({
-          name: t.name,
-          description: t.description,
-          input_schema: t.parameters,
-        }))
-      : getToolDefinitions();
+    const authorizedTools = await agent.getActiveTools();
+    const toolsToUse = await agent.getModelVisibleTools(authorizedTools);
+    const authorizedToolDefs = authorizedTools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.parameters,
+    }));
+    const toolDefs = toolsToUse.map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.parameters,
+    }));
 
     let filteredToolDefs = toolDefs;
     if (agent.currentClassification) {
@@ -114,9 +117,15 @@ export class ContextBuilder {
         const shouldBypassFilter = isUnlockedMode || agent.planState !== "IDLE" || agent.tier === "subagent" || agent.tier === "superagent" || agent.tier === "master";
         if (!shouldBypassFilter) {
           const { getToolsetForCategory } = await import("../requestClassifier.js");
-          const filteredTools = getToolsetForCategory(agent.currentClassification.category, toolsToUse || []);
-          if (filteredTools.length !== (toolsToUse?.length ?? toolDefs.length)) {
-            filteredToolDefs = filteredTools.map((t) => ({
+          const filteredTools = getToolsetForCategory(agent.currentClassification.category, toolsToUse);
+          const discoveryNames = new Set(["list_tools", "describe_tool"]);
+          const discoveryTools = toolsToUse.filter((tool) => discoveryNames.has(tool.name));
+          const modelVisibleFilteredTools = [
+            ...discoveryTools,
+            ...filteredTools.filter((tool) => !discoveryNames.has(tool.name)),
+          ];
+          if (modelVisibleFilteredTools.length !== toolsToUse.length || filteredTools.length !== toolsToUse.length) {
+            filteredToolDefs = modelVisibleFilteredTools.map((t) => ({
               name: t.name,
               description: t.description,
               input_schema: t.parameters,
@@ -281,10 +290,12 @@ export class ContextBuilder {
       } catch {}
     }
 
-    const hasShell = filteredToolDefs.some((t: any) => t.name === "run_command" || t.name === "bash" || t.name === "run_background_process");
-    const hasWrite = filteredToolDefs.some((t: any) => t.name === "write_to_file" || t.name === "edit" || t.name === "replace_file_content" || t.name === "multi_replace_file_content" || t.name === "write" || t.name === "apply_patch");
-    const hasNetwork = filteredToolDefs.some((t: any) => t.name === "web_search" || t.name === "fetch_url");
-    const hasSubagents = filteredToolDefs.some((t: any) => t.name === "invoke_subagent" || t.name === "invoke_superagent");
+    // Runtime capabilities come from the full authorized catalog, not from which
+    // schemas have been discovered for the current model request.
+    const hasShell = authorizedToolDefs.some((t: any) => t.name === "run_command" || t.name === "bash" || t.name === "run_background_process");
+    const hasWrite = authorizedToolDefs.some((t: any) => t.name === "write_to_file" || t.name === "edit" || t.name === "replace_file_content" || t.name === "multi_replace_file_content" || t.name === "write" || t.name === "apply_patch");
+    const hasNetwork = authorizedToolDefs.some((t: any) => t.name === "web_search" || t.name === "fetch_url");
+    const hasSubagents = authorizedToolDefs.some((t: any) => t.name === "invoke_subagent" || t.name === "invoke_superagent");
 
     let verificationStatus = "blocked";
     if (hasShell) {
@@ -390,7 +401,10 @@ export class ContextBuilder {
       { id: "developer-hook", content: devHookNotice, maxTokens: 150 },
       { id: "selfdev-lessons", content: selfdevLessonsText, maxTokens: 400 },
     ], systemContextBudget);
-    const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}\n\nEXECUTION CONTEXT:\n- Step limit: ${maxIterationsStr} iterations. Be efficient.\n- Spawn subagents in parallel for independent tasks (>3 files, >2 domains, broad research).\n${singleModeSubagentDirective}${goalModeAddendum}${budgetedSystemContext.text ? `\n${budgetedSystemContext.text}` : ""}`;
+    const toolDiscoveryInstruction = agent.tier === "master" || agent.tier === "single" || agent.tier === "superagent"
+      ? `\n# TOOL DISCOVERY\n- Only \`list_tools\` and \`describe_tool\` schemas are exposed initially. Use \`list_tools\` with a focused query to discover capabilities, then \`describe_tool\` for the exact schema before calling a tool you have not already discovered.\n- A successful \`describe_tool\` exposes that authorized tool schema on the next model request. Previously discovered schemas remain available while the authorized catalog is unchanged; do not repeat descriptions unnecessarily.\n- Discovery does NOT grant permission. Use only tools in the returned catalog and rely on normal approval and execution rules. Always call the canonical model-visible names \`list_tools\` and \`describe_tool\`; \`get_tools\` and \`describe_tools\` are runtime compatibility aliases, not callable model-visible schemas.`
+      : "";
+    const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}${toolDiscoveryInstruction}\n\nEXECUTION CONTEXT:\n- Step limit: ${maxIterationsStr} iterations. Be efficient.\n- Spawn subagents in parallel for independent tasks (>3 files, >2 domains, broad research).\n${singleModeSubagentDirective}${goalModeAddendum}${budgetedSystemContext.text ? `\n${budgetedSystemContext.text}` : ""}`;
 
     const stepsRemaining = maxIterations === Infinity ? Infinity : (maxIterations - 1);
     const stepNotice = stepsRemaining <= 5
@@ -606,7 +620,8 @@ export class ContextBuilder {
     return {
       finalSystemPrompt,
       messages,
-      toolDefs,
+      // XML/prompt-based parsing must accept only schemas actually exposed to the model.
+      toolDefs: filteredToolDefs,
       filteredToolDefs,
       supportsNativeTools,
       dynamicContext,

@@ -37,7 +37,7 @@
       "updatedAt": "2026-08-15T02:09:42.094Z"
     }
   },
-  "lastSync": "2026-10-14T01:12:02.970Z",
+  "lastSync": "2026-10-14T03:52:04.157Z",
   "workspaces": [
     {
       "name": "superagent",
@@ -48,29 +48,14 @@
       "path": "d:\\backup from pc asus\\Documents Development\\t-line"
     }
   ],
-  "lastModifiedFiles": [
-    "[superagent] .agents/AGENTS.md",
-    "[superagent] .agents/skills/codebase-wiki-generator/scripts/sync-wiki-on-change.cjs",
-    "[superagent] CHANGELOG.md",
-    "[superagent] README.md",
-    "[superagent] docs/wiki/00-index.md",
-    "[superagent] docs/wiki/01-architecture-overview.md",
-    "[superagent] docs/wiki/03-api-and-contracts.md",
-    "[superagent] docs/wiki/04-features-and-workflows.md",
-    "[superagent] docs/wiki/06-developer-onboarding.md",
-    "[superagent] docs/wiki/auto-sync-manifest.json",
-    "[superagent] docs/wiki/wiki-rmemory-chunks.json",
-    "[superagent] package.json",
-    "[superagent] src/core/mcp/superagentMcpServer.ts",
-    "[superagent] tests/mcpServer.test.ts"
-  ],
+  "lastModifiedFiles": [],
   "impactSummary": {
-    "architecture": true,
+    "architecture": false,
     "domainData": false,
-    "apiContracts": true,
+    "apiContracts": false,
     "features": false,
     "devops": false,
-    "onboarding": true,
+    "onboarding": false,
     "index": true
   }
 }
