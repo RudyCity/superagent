@@ -432,6 +432,38 @@ describe("isToolCallOutOfBounds", () => {
       expect(isSuperagentOutOfBounds(toolCall as any, worktreePath)).toBe(false);
       expect(isToolCallOutOfBounds(toolCall as any, workspacePath)).toBe(false);
     });
+
+    it("should never return (missing) in getToolDescription when stringified array or Windows path is passed", () => {
+      const toolCall1 = {
+        name: "read",
+        args: { filePaths: '["src/app.ts"]' }
+      };
+      expect(getToolDescription(toolCall1 as any)).toBe("Reading file: src/app.ts");
+
+      const toolCall2 = {
+        name: "read",
+        args: { filePaths: '["C:\\Users\\USER\\Documents\\antigravity\\focused-mendel\\CHANGELOG.md"]' }
+      };
+      expect(getToolDescription(toolCall2 as any)).toBe("Reading file: C:/Users/USER/Documents/antigravity/focused-mendel/CHANGELOG.md");
+
+      const toolCall3 = {
+        name: "read",
+        args: { filePaths: "src/app.ts" }
+      };
+      expect(getToolDescription(toolCall3 as any)).toBe("Reading file: src/app.ts");
+
+      const toolCall4 = {
+        name: "read",
+        args: { filePaths: [{ path: "src/app.ts" }] }
+      };
+      expect(getToolDescription(toolCall4 as any)).toBe("Reading file: src/app.ts");
+
+      const toolCall5 = {
+        name: "read",
+        args: { filePaths: [{ filePath: "src/app.ts" }] }
+      };
+      expect(getToolDescription(toolCall5 as any)).toBe("Reading file: src/app.ts");
+    });
   });
 });
 

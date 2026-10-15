@@ -13,6 +13,7 @@ import { sshLogger } from "../ssh/sshLogger.js";
 import { workspaceChainManager } from "../workspace/WorkspaceChainManager.js";
 import { setIntentSoftLock } from "../storage/sharedMemory.js";
 import { readFilesInProcessPool } from "../agent/ProcessPool.js";
+import { normalizeBatchArg, extractFilePath } from "../permissions.js";
 
 export const readTool: Tool = {
   name: "read",
@@ -53,19 +54,10 @@ export const readTool: Tool = {
     required: ["filePaths"],
   },
   async execute(args, cwd, signal) {
-    if (typeof args?.filePaths === "string") {
-      const raw = args.filePaths.trim();
-      if ((raw.startsWith("[") && raw.endsWith("]")) || (raw.startsWith("{") && raw.endsWith("}"))) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            args.filePaths = parsed;
-          } else if (parsed && typeof parsed === "object") {
-            args.filePaths = [parsed];
-          }
-        } catch {}
-      } else if (raw.length > 0) {
-        args.filePaths = [raw];
+    if (args?.filePaths !== undefined) {
+      const normalized = normalizeBatchArg(args.filePaths);
+      if (normalized.length > 0) {
+        args.filePaths = normalized;
       }
     }
     if (!Array.isArray(args.filePaths) || args.filePaths.length === 0) {
@@ -76,7 +68,7 @@ export const readTool: Tool = {
     const limit = (args.limit as number) || 800;
 
     const batchPaths = Array.isArray(args.filePaths)
-      ? args.filePaths.map((entry: any) => typeof entry === "string" ? entry : entry?.path)
+      ? args.filePaths.map((entry: any) => typeof entry === "string" ? entry : (extractFilePath(entry) ?? entry?.path ?? entry?.filePath))
       : [];
     if (batchPaths.some((filePath: unknown) => typeof filePath !== "string" || !filePath.trim())) {
       return "Error: Every filePaths[] entry must be a non-empty path string or an object with a non-empty path.";
@@ -96,7 +88,7 @@ export const readTool: Tool = {
       if (singlePath) pathsToLock.push(singlePath);
       if (Array.isArray(filePaths)) {
         filePaths.forEach(fp => {
-          const p = typeof fp === "string" ? fp : fp?.path;
+          const p = typeof fp === "string" ? fp : (extractFilePath(fp) ?? fp?.path ?? fp?.filePath);
           if (p) pathsToLock.push(p);
         });
       }
@@ -108,7 +100,7 @@ export const readTool: Tool = {
         return "Error: 'filePaths' parameter is empty.";
       }
       for (const entry of filePaths) {
-        const raw = typeof entry === "string" ? entry : entry?.path;
+        const raw = typeof entry === "string" ? entry : (extractFilePath(entry) ?? entry?.path ?? entry?.filePath);
         try {
           resolveFilePathFromArgs({ filePath: raw }, cwd);
         } catch (boundaryErr: any) {
@@ -116,7 +108,7 @@ export const readTool: Tool = {
         }
       }
       const jobs = filePaths.map((entry) => {
-        const rawPath = typeof entry === "string" ? entry : (entry as any).path as string;
+        const rawPath = typeof entry === "string" ? entry : ((extractFilePath(entry) ?? (entry as any).path ?? (entry as any).filePath) as string);
         const fileOffset = typeof entry === "string" ? offset : Math.max(1, (entry as any).offset || offset);
         const fileLimit = typeof entry === "string" ? limit : Math.max(1, (entry as any).limit || limit);
         const filePath = normalizePath(resolveFilePathFromArgs({ filePath: rawPath }, cwd) || path.resolve(cwd, rawPath));

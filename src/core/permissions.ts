@@ -184,14 +184,135 @@ function resolveNormalizedPath(fp: string, baseDir?: string): string {
   return baseDir ? path.resolve(baseDir, normalized) : path.resolve(normalized);
 }
 
-function extractFilePath(entry: unknown): string | undefined {
+export function extractFilePath(entry: unknown): string | undefined {
   if (typeof entry === "string") {
-    return entry;
+    const trimmed = entry.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
   }
-  if (entry && typeof entry === "object" && typeof (entry as any).path === "string") {
-    return (entry as any).path;
+  if (entry && typeof entry === "object") {
+    const obj = entry as Record<string, unknown>;
+    const p =
+      obj.filePath ??
+      obj.path ??
+      obj.TargetFile ??
+      obj.targetFile ??
+      obj.target_file ??
+      obj.file ??
+      obj.AbsolutePath ??
+      obj.absolutePath;
+    if (typeof p === "string" && p.trim().length > 0) {
+      return p.trim();
+    }
   }
   return undefined;
+}
+
+/**
+ * Normalizes batch arguments (filePaths, files, edits, patches) from any shape:
+ * - Real array: [ ... ]
+ * - Stringified JSON array: '["foo", "bar"]' or '[{"filePath": "foo"}]'
+ * - Single path/object string: 'foo/bar.ts'
+ * - Single object: { filePath: 'foo/bar.ts' }
+ * Handles Windows path backslashes without choking on JSON escape sequences.
+ */
+export function normalizeBatchArg(value: unknown): any[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const raw = value.trim();
+    if ((raw.startsWith("[") && raw.endsWith("]")) || (raw.startsWith("{") && raw.endsWith("}"))) {
+      // 1. Try standard JSON.parse first
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === "object") return [parsed];
+      } catch {}
+
+      // 2. Windows file path backslashes fix:
+      // Replace single unescaped backslashes before non-quotes with /
+      try {
+        const slashed = raw.replace(/\\(?!")/g, "/");
+        const parsed = JSON.parse(slashed);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === "object") return [parsed];
+      } catch {}
+
+      // 3. Fallback for escaped quotes and backslashes
+      try {
+        const unescapedQuotes = raw.replace(/\\"/g, '"').replace(/\\/g, "/");
+        const parsed = JSON.parse(unescapedQuotes);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === "object") return [parsed];
+      } catch {}
+
+      // 4. Regex extraction of array elements if JSON still fails
+      const matches = Array.from(raw.matchAll(/"([^"]+)"|'([^']+)'/g));
+      if (matches.length > 0) {
+        const items = matches.map((m) => (m[1] ?? m[2]).trim()).filter(Boolean);
+        if (items.length > 0) return items;
+      }
+
+      // 5. Single unquoted item inside brackets [path/to/file]
+      const inner = raw.slice(1, -1).trim();
+      if (inner.length > 0 && !inner.includes(",")) {
+        return [inner.replace(/^["']|["']$/g, "")];
+      }
+    } else if (raw.length > 0) {
+      // Plain single path string without brackets
+      return [raw];
+    }
+  } else if (value && typeof value === "object") {
+    return [value];
+  }
+  return [];
+}
+
+/**
+ * Extracts all candidate file paths from a tool call's args across both
+ * single-file and batch parameters (files, edits, filePaths, patches).
+ */
+export function extractCandidateFilePaths(args: Record<string, unknown> = {}): string[] {
+  const candidatePaths: string[] = [];
+
+  const single = [
+    args.filePath,
+    args.file_path,
+    args.TargetFile,
+    args.targetFile,
+    args.target_file,
+    args.path,
+    args.file,
+    args.AbsolutePath,
+    args.absolutePath,
+  ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  candidatePaths.push(...single);
+
+  const filePaths = normalizeBatchArg(args.filePaths);
+  for (const fp of filePaths) {
+    const resolved = extractFilePath(fp);
+    if (resolved) candidatePaths.push(resolved);
+  }
+
+  const edits = normalizeBatchArg(args.edits);
+  for (const edit of edits) {
+    const resolved = extractFilePath(edit);
+    if (resolved) candidatePaths.push(resolved);
+  }
+
+  const files = normalizeBatchArg(args.files);
+  for (const file of files) {
+    const resolved = extractFilePath(file);
+    if (resolved) candidatePaths.push(resolved);
+  }
+
+  const patches = normalizeBatchArg(args.patches);
+  for (const patch of patches) {
+    const resolved = extractFilePath(patch);
+    if (resolved) candidatePaths.push(resolved);
+  }
+
+  return Array.from(new Set(candidatePaths));
 }
 
 export function normalizeAndCheckSubpath(childPath: string, parentPath: string): boolean {
@@ -256,45 +377,7 @@ export function isSuperagentOutOfBounds(
   if (!checkedTools.includes(toolCall.name)) return false;
 
   const args = toolCall.args || {};
-  const candidatePaths = [
-    args.filePath,
-    args.file_path,
-    args.TargetFile,
-    args.path,
-  ].filter((v): v is string => typeof v === "string");
-
-  if (args.filePaths && Array.isArray(args.filePaths)) {
-    for (const fp of args.filePaths) {
-      const resolvedFp = extractFilePath(fp);
-      if (resolvedFp) {
-        candidatePaths.push(resolvedFp);
-      }
-    }
-  }
-
-  if (args.edits && Array.isArray(args.edits)) {
-    for (const edit of args.edits) {
-      if (edit && typeof edit === "object" && typeof (edit as any).filePath === "string") {
-        candidatePaths.push((edit as any).filePath);
-      }
-    }
-  }
-
-  if (args.files && Array.isArray(args.files)) {
-    for (const file of args.files) {
-      if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
-        candidatePaths.push((file as any).filePath);
-      }
-    }
-  }
-
-  if (args.patches && Array.isArray(args.patches)) {
-    for (const patch of args.patches) {
-      if (patch && typeof patch === "object" && typeof (patch as any).filePath === "string") {
-        candidatePaths.push((patch as any).filePath);
-      }
-    }
-  }
+  const candidatePaths = extractCandidateFilePaths(args);
 
   // If no path is specified for search tools, they default to cwd (which is the worktree)
   if (candidatePaths.length === 0 && ["glob", "grep", "ripgrep_search"].includes(toolCall.name)) {
@@ -368,50 +451,16 @@ export function isToolCallOutOfBounds(
 
   const allowedWorkspaces = getAllowedWorkspacePaths(effectiveWorkspacePath);
   const args = toolCall.args || {};
-  const candidatePaths = [
-    args.filePath,
-    args.file_path,
-    args.TargetFile,
-    args.path,
+  const candidatePaths = extractCandidateFilePaths(args);
+  const extraSingle = [
     args.cwd,
     args.DirectoryPath,
     args.SearchPath,
-    args.AbsolutePath,
     args.targetPath,
     args.sourcePath,
-  ].filter((v): v is string => typeof v === "string");
-
-  if (args.filePaths && Array.isArray(args.filePaths)) {
-    for (const fp of args.filePaths) {
-      const resolvedFp = extractFilePath(fp);
-      if (resolvedFp) {
-        candidatePaths.push(resolvedFp);
-      }
-    }
-  }
-
-  if (args.edits && Array.isArray(args.edits)) {
-    for (const edit of args.edits) {
-      if (edit && typeof edit === "object" && typeof (edit as any).filePath === "string") {
-        candidatePaths.push((edit as any).filePath);
-      }
-    }
-  }
-
-  if (args.files && Array.isArray(args.files)) {
-    for (const file of args.files) {
-      if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
-        candidatePaths.push((file as any).filePath);
-      }
-    }
-  }
-
-  if (args.patches && Array.isArray(args.patches)) {
-    for (const patch of args.patches) {
-      if (patch && typeof patch === "object" && typeof (patch as any).filePath === "string") {
-        candidatePaths.push((patch as any).filePath);
-      }
-    }
+  ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  for (const p of extraSingle) {
+    if (!candidatePaths.includes(p)) candidatePaths.push(p);
   }
 
   const rootConfig = resolveNormalizedPath(getRootConfigDir());
@@ -573,38 +622,13 @@ export function isMuseOutOfBounds(
     effectiveWorkspaces.some((ws) => normalizeAndCheckSubpath(targetPath, ws));
 
   // 1. Check file tools and path arguments
-  const candidatePaths = [
-    args.filePath, args.file_path, args.TargetFile, args.path,
-    args.DirectoryPath, args.SearchPath, args.AbsolutePath,
+  const candidatePaths = extractCandidateFilePaths(args);
+  const extraSingle = [
+    args.DirectoryPath, args.SearchPath,
     args.targetPath, args.sourcePath, args.destination,
-  ].filter((v): v is string => typeof v === "string");
-
-  if (args.filePaths && Array.isArray(args.filePaths)) {
-    for (const fp of args.filePaths) {
-      const resolvedFp = extractFilePath(fp);
-      if (resolvedFp) candidatePaths.push(resolvedFp);
-    }
-  }
-  if (args.edits && Array.isArray(args.edits)) {
-    for (const edit of args.edits) {
-      if (edit && typeof edit === "object" && typeof (edit as any).filePath === "string") {
-        candidatePaths.push((edit as any).filePath);
-      }
-    }
-  }
-  if (args.files && Array.isArray(args.files)) {
-    for (const file of args.files) {
-      if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
-        candidatePaths.push((file as any).filePath);
-      }
-    }
-  }
-  if (args.patches && Array.isArray(args.patches)) {
-    for (const patch of args.patches) {
-      if (patch && typeof patch === "object" && typeof (patch as any).filePath === "string") {
-        candidatePaths.push((patch as any).filePath);
-      }
-    }
+  ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  for (const p of extraSingle) {
+    if (!candidatePaths.includes(p)) candidatePaths.push(p);
   }
 
   for (const fp of candidatePaths) {
@@ -707,42 +731,10 @@ export function isModelConfigAccess(
   const rootConfig = resolveNormalizedPath(getRootConfigDir());
   const modelConfigPath = path.join(rootConfig, "model-config.json");
 
-  const candidatePaths = [
-    args.filePath, args.file_path, args.TargetFile, args.path,
-    args.cwd, args.DirectoryPath, args.SearchPath, args.AbsolutePath,
-  ].filter((v): v is string => typeof v === "string");
-
-  if (args.filePaths && Array.isArray(args.filePaths)) {
-    for (const fp of args.filePaths) {
-      const resolvedFp = extractFilePath(fp);
-      if (resolvedFp) {
-        candidatePaths.push(resolvedFp);
-      }
-    }
-  }
-
-  if (args.edits && Array.isArray(args.edits)) {
-    for (const edit of args.edits) {
-      if (edit && typeof edit === "object" && typeof (edit as any).filePath === "string") {
-        candidatePaths.push((edit as any).filePath);
-      }
-    }
-  }
-
-  if (args.files && Array.isArray(args.files)) {
-    for (const file of args.files) {
-      if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
-        candidatePaths.push((file as any).filePath);
-      }
-    }
-  }
-
-  if (args.patches && Array.isArray(args.patches)) {
-    for (const patch of args.patches) {
-      if (patch && typeof patch === "object" && typeof (patch as any).filePath === "string") {
-        candidatePaths.push((patch as any).filePath);
-      }
-    }
+  const candidatePaths = extractCandidateFilePaths(args);
+  const extraSingle = [args.cwd, args.DirectoryPath, args.SearchPath].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  for (const p of extraSingle) {
+    if (!candidatePaths.includes(p)) candidatePaths.push(p);
   }
 
   for (const fp of candidatePaths) {
@@ -780,44 +772,7 @@ export function isSensitiveEnvFileAccess(
   toolCall: { name: string; args?: Record<string, unknown> }
 ): boolean {
   const args = toolCall.args || {};
-
-  const candidatePaths = [
-    args.filePath, args.file_path, args.TargetFile, args.path,
-    args.AbsolutePath,
-  ].filter((v): v is string => typeof v === "string");
-
-  if (args.filePaths && Array.isArray(args.filePaths)) {
-    for (const fp of args.filePaths) {
-      const resolvedFp = extractFilePath(fp);
-      if (resolvedFp) {
-        candidatePaths.push(resolvedFp);
-      }
-    }
-  }
-
-  if (args.edits && Array.isArray(args.edits)) {
-    for (const edit of args.edits) {
-      if (edit && typeof edit === "object" && typeof (edit as any).filePath === "string") {
-        candidatePaths.push((edit as any).filePath);
-      }
-    }
-  }
-
-  if (args.files && Array.isArray(args.files)) {
-    for (const file of args.files) {
-      if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
-        candidatePaths.push((file as any).filePath);
-      }
-    }
-  }
-
-  if (args.patches && Array.isArray(args.patches)) {
-    for (const patch of args.patches) {
-      if (patch && typeof patch === "object" && typeof (patch as any).filePath === "string") {
-        candidatePaths.push((patch as any).filePath);
-      }
-    }
-  }
+  const candidatePaths = extractCandidateFilePaths(args);
 
   for (const fp of candidatePaths) {
     const normalized = fp.replace(/\\/g, "/");
@@ -1002,39 +957,14 @@ export function isToolCallWithinYoloScope(
   const modelConfigPath = path.join(rootConfig, "model-config.json");
 
   const args = toolCall.args || {};
-  const candidatePaths = [
-    args.filePath, args.file_path, args.TargetFile, args.path,
-    args.cwd, args.DirectoryPath, args.SearchPath, args.AbsolutePath,
+  const candidatePaths = extractCandidateFilePaths(args);
+  const extraSingle = [
+    args.cwd, args.DirectoryPath, args.SearchPath,
     args.targetPath, args.sourcePath, args.destination,
     args.workspacePath, args.worktreePath, args.workspace, args.dir, args.dirPath,
-  ].filter((v): v is string => typeof v === "string");
-
-  if (args.filePaths && Array.isArray(args.filePaths)) {
-    for (const fp of args.filePaths) {
-      const resolvedFp = extractFilePath(fp);
-      if (resolvedFp) candidatePaths.push(resolvedFp);
-    }
-  }
-  if (args.edits && Array.isArray(args.edits)) {
-    for (const edit of args.edits) {
-      if (edit && typeof edit === "object" && typeof (edit as any).filePath === "string") {
-        candidatePaths.push((edit as any).filePath);
-      }
-    }
-  }
-  if (args.files && Array.isArray(args.files)) {
-    for (const file of args.files) {
-      if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
-        candidatePaths.push((file as any).filePath);
-      }
-    }
-  }
-  if (args.patches && Array.isArray(args.patches)) {
-    for (const patch of args.patches) {
-      if (patch && typeof patch === "object" && typeof (patch as any).filePath === "string") {
-        candidatePaths.push((patch as any).filePath);
-      }
-    }
+  ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  for (const p of extraSingle) {
+    if (!candidatePaths.includes(p)) candidatePaths.push(p);
   }
 
   for (const fp of candidatePaths) {
@@ -1188,40 +1118,53 @@ export function getToolDescription(
 ): string {
   const args = toolCall.args;
   let fp: string | undefined;
-  if (args.files && Array.isArray(args.files) && args.files.length > 0) {
-    const uniquePaths = Array.from(new Set(args.files.map((f: any) => f.filePath ?? f.path).filter(Boolean)));
+
+  const files = normalizeBatchArg(args.files);
+  if (files.length > 0) {
+    const uniquePaths = Array.from(new Set(files.map((f: any) => extractFilePath(f) ?? f?.filePath ?? f?.path).filter(Boolean)));
     if (uniquePaths.length === 1) {
       fp = uniquePaths[0] as string;
     } else if (uniquePaths.length > 1) {
       fp = `${uniquePaths[0]} and ${uniquePaths.length - 1} more files`;
     }
   }
-  if (!fp && args.edits && Array.isArray(args.edits) && args.edits.length > 0) {
-    const uniquePaths = Array.from(new Set(args.edits.map((e: any) => e.filePath ?? e.path).filter(Boolean)));
+  const edits = normalizeBatchArg(args.edits);
+  if (!fp && edits.length > 0) {
+    const uniquePaths = Array.from(new Set(edits.map((e: any) => extractFilePath(e) ?? e?.filePath ?? e?.path).filter(Boolean)));
     if (uniquePaths.length === 1) {
       fp = uniquePaths[0] as string;
     } else if (uniquePaths.length > 1) {
       fp = `${uniquePaths[0]} and ${uniquePaths.length - 1} more files`;
     }
   }
-  if (!fp && args.filePaths && Array.isArray(args.filePaths) && args.filePaths.length > 0) {
-    const firstPath = extractFilePath(args.filePaths[0]) ?? "(invalid)";
-    if (args.filePaths.length === 1) {
+  const filePaths = normalizeBatchArg(args.filePaths);
+  if (!fp && filePaths.length > 0) {
+    const firstPath = extractFilePath(filePaths[0]) ?? "(invalid)";
+    if (filePaths.length === 1) {
       fp = firstPath;
     } else {
-      fp = `${firstPath} and ${args.filePaths.length - 1} more files`;
+      fp = `${firstPath} and ${filePaths.length - 1} more files`;
     }
   }
-  if (!fp && args.patches && Array.isArray(args.patches) && args.patches.length > 0) {
-    const uniquePaths = Array.from(new Set(args.patches.map((p: any) => p.filePath ?? p.path).filter(Boolean)));
+  const patches = normalizeBatchArg(args.patches);
+  if (!fp && patches.length > 0) {
+    const uniquePaths = Array.from(new Set(patches.map((p: any) => extractFilePath(p) ?? p?.filePath ?? p?.path).filter(Boolean)));
     if (uniquePaths.length === 1) {
       fp = uniquePaths[0] as string;
     } else if (uniquePaths.length > 1) {
-      fp = `${uniquePaths[0]} and ${args.patches.length - 1} more files`;
+      fp = `${uniquePaths[0]} and ${patches.length - 1} more files`;
     }
   }
   if (!fp) {
-    fp = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile ?? args.file ?? args.AbsolutePath ?? args.absolutePath) as string | undefined;
+    fp = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile ?? args.targetFile ?? args.target_file ?? args.file ?? args.AbsolutePath ?? args.absolutePath) as string | undefined;
+  }
+  if (!fp) {
+    const candidates = extractCandidateFilePaths(args);
+    if (candidates.length === 1) {
+      fp = candidates[0];
+    } else if (candidates.length > 1) {
+      fp = `${candidates[0]} and ${candidates.length - 1} more files`;
+    }
   }
   if (!fp) {
     fp = "(missing)";
@@ -1254,7 +1197,7 @@ export function getToolDescription(
     case "replace_file_content":
       return `Replacing content in file: ${fp}`;
     case "multi_replace_file_content": {
-      const isMultiFile = (args.files && Array.isArray(args.files) && args.files.length > 1) || (fp && fp.includes("more files"));
+      const isMultiFile = (normalizeBatchArg(args.files).length > 1) || (fp && fp.includes("more files"));
       return isMultiFile ? `Replacing multiple blocks in files: ${fp}` : `Replacing multiple blocks in file: ${fp}`;
     }
     case "run_command":

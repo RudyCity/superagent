@@ -1,3 +1,21 @@
+## [1.13.87] - 2026-10-15
+### Fixed
+- Fixed Windows path backslash parsing, `(missing)` descriptions, and repetitive Advisor loops (`sess_1792027287134_epx58s`):
+  - In `permissions.ts`, enhanced `normalizeBatchArg` with resilient multi-stage fallback parsing: handles Windows file paths with single unescaped backslashes (e.g. `C:\Users\...`) without throwing invalid escape sequence errors in `JSON.parse`.
+  - Added `extractCandidateFilePaths` and `extractFilePath` across `permissions.ts` and updated `getToolDescription` and permission boundary checks so that `fp` never falls back to `(missing)` whenever path arguments are present.
+  - In `ToolExecutor.ts`, performed upfront batch argument normalization on all incoming tool calls before `getToolDescription`, `tool_start` event emission, permission boundary evaluation, and concurrency scheduling.
+  - In `advisorHelpers.ts`, expanded `WRITE_TOOLS` to include `multi_replace_file_content`, `superagent_replace_file_content`, and `superagent_apply_patch` so successful edits properly reset the unmutated read counter and avoid triggering repetitive Advisor Pattern Warning loops.
+  - In `fileReadTools.ts` and `fileEditTools.ts`, integrated `normalizeBatchArg` and `extractFilePath` to reliably handle object arrays (`[{ path: "..." }]` or `[{ filePath: "..." }]`) alongside string arrays.
+
+### Changed
+- Emphasized multi-file read priority and native array formats in prompt guidelines across `ContextBuilder.ts`, `base.ts`, and `prompts.ts`:
+  - Added `MULTI READ PRIORITY` directive instructing models to batch-read all relevant files in a single turn instead of issuing consecutive single-file read calls.
+  - Reinforced JSON array syntax for batch arguments and explicitly warned against stringified arrays.
+
+### Tests
+- Added test coverage in `tests/permissions.test.ts` verifying `getToolDescription` correctly extracts paths from stringified JSON arrays and Windows backslash paths without resolving to `(missing)`.
+- Added unit tests in `tests/toolExecutorParallel.test.ts` verifying `ToolExecutor.normalizeToolCallArgs` transforms stringified arrays with Windows backslashes and object arrays with `path` properties into valid file path arrays.
+
 ## [1.13.86] - 2026-10-15
 ### Fixed
 - Fixed batch argument rejection and repetitive Advisor Pattern Warning loops (`sess_1792027287134_epx58s`):

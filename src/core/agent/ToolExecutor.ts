@@ -11,6 +11,8 @@ import {
   isYoloMode,
   isFullYoloMode,
   isToolCallWithinYoloScope,
+  normalizeBatchArg,
+  extractFilePath,
 } from "../permissions.js";
 import type { ToolCall, ToolResult } from "../conversation.js";
 import type { QuestionItem } from "./AgentEvents.js";
@@ -80,6 +82,31 @@ export function shouldParallelizeToolCalls(toolCalls: ToolCall[], workspacePath 
 }
 
 export class ToolExecutor {
+  public static normalizeToolCallArgs(tc: ToolCall): void {
+    if (!tc || !tc.args) return;
+    const requiredBatchField: Record<string, string> = {
+      read: "filePaths",
+      read_file: "filePaths",
+      write_to_file: "files",
+      write_file: "files",
+      replace_file_content: "edits",
+      multi_replace_file_content: "files",
+      apply_patch: "patches",
+    };
+    const batchField = requiredBatchField[tc.name];
+    if (batchField && tc.args[batchField] !== undefined) {
+      let normalized = normalizeBatchArg(tc.args[batchField]);
+      if (batchField === "filePaths" && Array.isArray(normalized)) {
+        normalized = normalized
+          .map((entry) => extractFilePath(entry))
+          .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+      }
+      if (normalized.length > 0) {
+        tc.args[batchField] = normalized;
+      }
+    }
+  }
+
   public static async executeTools(
     agent: Agent,
     toolCalls: ToolCall[],
@@ -89,6 +116,11 @@ export class ToolExecutor {
     systemPrompt: string,
     signal?: AbortSignal
   ): Promise<ToolResult[]> {
+    // Upfront normalization of batch arguments across all toolCalls
+    for (const tc of toolCalls) {
+      ToolExecutor.normalizeToolCallArgs(tc);
+    }
+
     // Schedule safe read groups concurrently but preserve barriers around mutations,
     // shell commands, approval prompts, and unknown tools. Both modes use this scheduler.
     if (toolCalls.length > 1) {
@@ -153,6 +185,7 @@ export class ToolExecutor {
         err.name = "AbortError";
         throw err;
       }
+      ToolExecutor.normalizeToolCallArgs(tc);
       const description = getToolDescription(tc);
       agent.onEvent({ type: "tool_start", toolCall: tc, description });
 
@@ -168,31 +201,6 @@ export class ToolExecutor {
         apply_patch: "patches",
       };
       const batchField = requiredBatchField[tc.name];
-
-      // Auto-normalize stringified JSON arrays or single items for batch parameters
-      if (batchField && tc.args) {
-        if (typeof tc.args[batchField] === "string") {
-          const raw = tc.args[batchField].trim();
-          if ((raw.startsWith("[") && raw.endsWith("]")) || (raw.startsWith("{") && raw.endsWith("}"))) {
-            try {
-              const parsed = JSON.parse(raw);
-              if (Array.isArray(parsed)) {
-                tc.args[batchField] = parsed;
-              } else if (parsed && typeof parsed === "object") {
-                tc.args[batchField] = [parsed];
-              }
-            } catch {}
-          } else if (raw.length > 0 && (batchField === "filePaths" || batchField === "read")) {
-            tc.args[batchField] = [raw];
-          }
-        } else if (
-          typeof tc.args[batchField] === "object" &&
-          tc.args[batchField] !== null &&
-          !Array.isArray(tc.args[batchField])
-        ) {
-          tc.args[batchField] = [tc.args[batchField]];
-        }
-      }
 
       const disabledSingleOperation = tc.name === "write" || tc.name === "edit" ||
         (batchField !== undefined && (!Array.isArray(tc.args?.[batchField]) || tc.args[batchField].length === 0));

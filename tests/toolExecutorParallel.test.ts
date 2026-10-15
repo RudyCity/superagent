@@ -175,4 +175,30 @@ describe("ToolExecutor parallel dispatch", () => {
     expect(String(res)).not.toContain("disabled");
     expect(String(res)).toContain("superagent");
   });
+
+  it("auto-normalizes stringified JSON array with Windows backslash paths in readTool", async () => {
+    // Windows paths with unescaped backslashes like C:\Users\USER... typically fail JSON.parse
+    const rawWindowsJson = "[\"C:\\Users\\USER\\Documents\\antigravity\\focused-mendel\\package.json\"]";
+    const agent = makeAgent(false);
+    const call: ToolCall = {
+      id: "read-win",
+      name: "read",
+      args: { filePaths: rawWindowsJson },
+    };
+
+    ToolExecutor.normalizeToolCallArgs(call);
+    expect(Array.isArray(call.args.filePaths)).toBe(true);
+    expect((call.args.filePaths as string[])[0]).toContain("package.json");
+
+    // Also verify object array with path property
+    const objCall: ToolCall = {
+      id: "read-obj",
+      name: "read",
+      args: { filePaths: [{ path: "package.json" }] },
+    };
+    ToolExecutor.normalizeToolCallArgs(objCall);
+    expect(call.args.filePaths).toBeDefined();
+    expect(objCall.args.filePaths).toEqual(["package.json"]);
+  });
 });
+

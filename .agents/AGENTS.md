@@ -63,8 +63,13 @@ Master Agent  (orchestrator)
 - `src/components/startup-checker.tsx` — Parallelized dependency validator with decoupled background model warming.
 - `src/components/startup-prompt.tsx` — First-run interactive choice dialog when no AI provider is configured.
 
-## Recent Features (v1.5.146-v1.13.86)
+## Recent Features (v1.5.146-v1.13.87)
 
+- **Windows Path Resilience, Missing Description Elimination & Multi-Read Priority (`permissions.ts`, `ToolExecutor.ts`, `fileReadTools.ts`, `advisorHelpers.ts`, v1.13.87)**:
+  - Fixed Windows path backslash parsing inside stringified JSON arrays (e.g. `filePaths: "[\"C:\\Users\\...\"]"`), converting unescaped backslashes before quotes to avoid `JSON.parse` escape errors.
+  - Added upfront batch argument normalization in `ToolExecutor.ts` before tool description generation and boundary checks, completely eliminating `(missing)` path indicators.
+  - Added `multi_replace_file_content`, `superagent_replace_file_content`, and `superagent_apply_patch` to Advisor `WRITE_TOOLS` so successful edits reset the unmutated read counters and avoid repetitive Advisor loop penalties.
+  - Enforced `MULTI READ PRIORITY` across `ContextBuilder.ts`, `base.ts`, and `prompts.ts` to instruct models to read all relevant files concurrently in a single turn.
 - **Resilient Batch Parameter Normalization & Read Loop Prevention (`ToolExecutor.ts`, `fileReadTools.ts`, `fileEditTools.ts`, `ContextBuilder.ts`, v1.13.86)**:
   - Added auto-normalization for stringified JSON arrays (e.g. `filePaths: "[\"path\"]"`) and single entries across all batch operations (`filePaths`, `files`, `edits`, `patches`), preventing models from being blocked by false single-file invocation errors and Advisor loops.
   - Enhanced JSON schema for `filePaths` with explicit `items: { anyOf: [...] }` to prevent LLMs from generating ambiguous stringified representations.

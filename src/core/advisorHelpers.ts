@@ -1,9 +1,11 @@
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { snapshotStore } from "./tools/chromeCdpHelpers.js";
+import { normalizeBatchArg, extractFilePath } from "./permissions.js";
 
 export const WRITE_TOOLS = new Set([
   "write_to_file",
   "replace_file_content",
+  "multi_replace_file_content",
   "apply_patch",
   "patch",
   "edit_file",
@@ -12,6 +14,8 @@ export const WRITE_TOOLS = new Set([
   "write_file",
   "superagent_write_file",
   "superagent_write_files",
+  "superagent_replace_file_content",
+  "superagent_apply_patch",
 ]);
 
 export const READ_TOOLS = new Set([
@@ -199,33 +203,35 @@ export function extractReadTargets(tc: ToolCall): ReadTarget[] {
   if (typeof args.path === "string") addPath(args.path);
   if (typeof args.AbsolutePath === "string") addPath(args.AbsolutePath);
 
-  if (Array.isArray(args.filePaths)) {
-    for (const item of args.filePaths) {
-      if (typeof item === "string") {
-        addPath(item);
-      } else if (item && typeof item === "object") {
-        const itemObj = item as Record<string, unknown>;
-        const p =
-          typeof itemObj.path === "string" ? itemObj.path
-          : typeof itemObj.filePath === "string" ? itemObj.filePath
+  const rawFilePaths = normalizeBatchArg(args.filePaths);
+  for (const item of rawFilePaths) {
+    if (typeof item === "string") {
+      addPath(item);
+    } else if (item && typeof item === "object") {
+      const itemObj = item as Record<string, unknown>;
+      const p = extractFilePath(itemObj) ?? (typeof itemObj.path === "string" ? itemObj.path : typeof itemObj.filePath === "string" ? itemObj.filePath : undefined);
+      if (p) {
+        const itemOff = itemObj.offset !== undefined ? Number(itemObj.offset) : undefined;
+        const itemLim = itemObj.limit !== undefined ? Number(itemObj.limit) : undefined;
+        const itemStart =
+          itemObj.StartLine !== undefined ? Number(itemObj.StartLine)
+          : itemObj.start_line !== undefined ? Number(itemObj.start_line)
+          : itemObj.startLine !== undefined ? Number(itemObj.startLine)
           : undefined;
-        if (p) {
-          const itemOff = itemObj.offset !== undefined ? Number(itemObj.offset) : undefined;
-          const itemLim = itemObj.limit !== undefined ? Number(itemObj.limit) : undefined;
-          const itemStart =
-            itemObj.StartLine !== undefined ? Number(itemObj.StartLine)
-            : itemObj.start_line !== undefined ? Number(itemObj.start_line)
-            : itemObj.startLine !== undefined ? Number(itemObj.startLine)
-            : undefined;
-          const itemEnd =
-            itemObj.EndLine !== undefined ? Number(itemObj.EndLine)
-            : itemObj.end_line !== undefined ? Number(itemObj.end_line)
-            : itemObj.endLine !== undefined ? Number(itemObj.endLine)
-            : undefined;
-          addPath(p, itemOff, itemLim, itemStart, itemEnd);
-        }
+        const itemEnd =
+          itemObj.EndLine !== undefined ? Number(itemObj.EndLine)
+          : itemObj.end_line !== undefined ? Number(itemObj.end_line)
+          : itemObj.endLine !== undefined ? Number(itemObj.endLine)
+          : undefined;
+        addPath(p, itemOff, itemLim, itemStart, itemEnd);
       }
     }
+  }
+
+  const rawFiles = normalizeBatchArg(args.files);
+  for (const item of rawFiles) {
+    const p = extractFilePath(item);
+    if (p) addPath(p);
   }
 
   return targets;
@@ -325,8 +331,8 @@ export function extractCycleTargetDetails(callKeys: string[]): string | undefine
     if (urlMatch) {
       return `url '${urlMatch[1].trim()}'`;
     }
-    // Check for filePath or TargetFile
-    const fileMatch = ck.match(/\\*"?(?:filePath|TargetFile|path)\\*"?\s*:\s*\\*"?([^"\\{}]+)\\*"?/i);
+    // Check for filePath, TargetFile, path, or filePaths
+    const fileMatch = ck.match(/\\*"?(?:filePath|TargetFile|path|filePaths)\\*"?\s*:\s*\\*"?([^"\\{}]+)\\*"?/i);
     if (fileMatch) {
       const parts = fileMatch[1].trim().replace(/\\/g, "/").split("/");
       return `file '${parts[parts.length - 1]}'`;
