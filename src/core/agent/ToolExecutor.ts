@@ -168,6 +168,32 @@ export class ToolExecutor {
         apply_patch: "patches",
       };
       const batchField = requiredBatchField[tc.name];
+
+      // Auto-normalize stringified JSON arrays or single items for batch parameters
+      if (batchField && tc.args) {
+        if (typeof tc.args[batchField] === "string") {
+          const raw = tc.args[batchField].trim();
+          if ((raw.startsWith("[") && raw.endsWith("]")) || (raw.startsWith("{") && raw.endsWith("}"))) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                tc.args[batchField] = parsed;
+              } else if (parsed && typeof parsed === "object") {
+                tc.args[batchField] = [parsed];
+              }
+            } catch {}
+          } else if (raw.length > 0 && (batchField === "filePaths" || batchField === "read")) {
+            tc.args[batchField] = [raw];
+          }
+        } else if (
+          typeof tc.args[batchField] === "object" &&
+          tc.args[batchField] !== null &&
+          !Array.isArray(tc.args[batchField])
+        ) {
+          tc.args[batchField] = [tc.args[batchField]];
+        }
+      }
+
       const disabledSingleOperation = tc.name === "write" || tc.name === "edit" ||
         (batchField !== undefined && (!Array.isArray(tc.args?.[batchField]) || tc.args[batchField].length === 0));
       if (disabledSingleOperation) {

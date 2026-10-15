@@ -747,6 +747,21 @@ export const writeToFileTool: Tool = {
     required: ["files"],
   },
   async execute(args, cwd, signal) {
+    if (typeof args?.files === "string") {
+      const raw = args.files.trim();
+      if ((raw.startsWith("[") && raw.endsWith("]")) || (raw.startsWith("{") && raw.endsWith("}"))) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            args.files = parsed;
+          } else if (parsed && typeof parsed === "object") {
+            args.files = [parsed];
+          }
+        } catch {}
+      }
+    } else if (typeof args?.files === "object" && args.files !== null && !Array.isArray(args.files)) {
+      args.files = [args.files];
+    }
     if (!Array.isArray(args.files) || args.files.length === 0) {
       return "Error: Single-file write is disabled in both single and multi modes. Always pass files as an array, including for one file: { files: [{ filePath, content, overwrite? }] }.";
     }
@@ -1006,6 +1021,21 @@ export const replaceFileContentTool: Tool = {
     required: ["edits"],
   },
   async execute(args, cwd, signal) {
+    if (typeof args?.edits === "string") {
+      const raw = args.edits.trim();
+      if ((raw.startsWith("[") && raw.endsWith("]")) || (raw.startsWith("{") && raw.endsWith("}"))) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            args.edits = parsed;
+          } else if (parsed && typeof parsed === "object") {
+            args.edits = [parsed];
+          }
+        } catch {}
+      }
+    } else if (typeof args?.edits === "object" && args.edits !== null && !Array.isArray(args.edits)) {
+      args.edits = [args.edits];
+    }
     if (!Array.isArray(args.edits) || args.edits.length === 0) {
       return "Error: Single-edit replacement is disabled in both single and multi modes. Always pass edits as an array, including for one edit: { edits: [{ filePath, targetContent, replacementContent, startLine, endLine }] }.";
     }
@@ -1402,6 +1432,21 @@ export const multiReplaceFileContentTool: Tool = {
     required: ["files"],
   },
   async execute(args, cwd, signal) {
+    if (typeof args?.files === "string") {
+      const raw = args.files.trim();
+      if ((raw.startsWith("[") && raw.endsWith("]")) || (raw.startsWith("{") && raw.endsWith("}"))) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            args.files = parsed;
+          } else if (parsed && typeof parsed === "object") {
+            args.files = [parsed];
+          }
+        } catch {}
+      }
+    } else if (typeof args?.files === "object" && args.files !== null && !Array.isArray(args.files)) {
+      args.files = [args.files];
+    }
     if (!Array.isArray(args.files) || args.files.length === 0) {
       return "Error: Single-file multi-replacement is disabled in both single and multi modes. Always pass files as an array, including for one file: { files: [{ filePath, chunks: [...] }] }.";
     }
@@ -2197,6 +2242,21 @@ export const applyPatchTool: Tool = {
     required: ["patches"],
   },
   async execute(args, cwd, signal) {
+    if (typeof args?.patches === "string") {
+      const raw = args.patches.trim();
+      if ((raw.startsWith("[") && raw.endsWith("]")) || (raw.startsWith("{") && raw.endsWith("}"))) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            args.patches = parsed;
+          } else if (parsed && typeof parsed === "object") {
+            args.patches = [parsed];
+          }
+        } catch {}
+      }
+    } else if (typeof args?.patches === "object" && args.patches !== null && !Array.isArray(args.patches)) {
+      args.patches = [args.patches];
+    }
     if (!Array.isArray(args.patches) || args.patches.length === 0) {
       return "Error: Single-file patch invocation is disabled in both single and multi modes. Always pass patches as an array, including for one file: { patches: [{ filePath, patchContent }] }.";
     }

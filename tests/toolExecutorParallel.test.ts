@@ -140,4 +140,39 @@ describe("ToolExecutor parallel dispatch", () => {
     const result = await (tool as any).execute(args, process.cwd());
     expect(String(result)).toContain("disabled");
   });
+
+  it("auto-normalizes stringified JSON array in readTool", async () => {
+    // Testing normalization on readTool itself with package.json
+    const res = await readTool.execute({ filePaths: "[\"package.json\"]" }, process.cwd());
+    expect(String(res)).not.toContain("disabled");
+    expect(String(res)).toContain("superagent");
+  });
+
+  it("auto-normalizes stringified JSON array in ToolExecutor without triggering disabled single-file rejection", async () => {
+    const agent = makeAgent(false);
+    const call: ToolCall = {
+      id: "read-stringified",
+      name: "read",
+      args: { filePaths: "[\"package.json\"]" },
+    };
+
+    const results = await ToolExecutor.executeTools(
+      agent as any,
+      [call],
+      [],
+      [],
+      true,
+      "test prompt"
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].isError).toBeFalsy();
+    expect(results[0].toolCallId).toBe("read-stringified");
+  });
+
+  it("auto-normalizes single path string in filePaths without rejection", async () => {
+    const res = await readTool.execute({ filePaths: "package.json" }, process.cwd());
+    expect(String(res)).not.toContain("disabled");
+    expect(String(res)).toContain("superagent");
+  });
 });

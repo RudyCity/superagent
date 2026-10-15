@@ -63,8 +63,12 @@ Master Agent  (orchestrator)
 - `src/components/startup-checker.tsx` — Parallelized dependency validator with decoupled background model warming.
 - `src/components/startup-prompt.tsx` — First-run interactive choice dialog when no AI provider is configured.
 
-## Recent Features (v1.5.146-v1.13.85)
+## Recent Features (v1.5.146-v1.13.86)
 
+- **Resilient Batch Parameter Normalization & Read Loop Prevention (`ToolExecutor.ts`, `fileReadTools.ts`, `fileEditTools.ts`, `ContextBuilder.ts`, v1.13.86)**:
+  - Added auto-normalization for stringified JSON arrays (e.g. `filePaths: "[\"path\"]"`) and single entries across all batch operations (`filePaths`, `files`, `edits`, `patches`), preventing models from being blocked by false single-file invocation errors and Advisor loops.
+  - Enhanced JSON schema for `filePaths` with explicit `items: { anyOf: [...] }` to prevent LLMs from generating ambiguous stringified representations.
+  - Added BATCH ARGS FORMAT prompt directives in `ContextBuilder.ts` and `base.ts` to reinforce clean array syntax.
 - **Optimized Tool Discovery & Direct Describe Fast Path (`ContextBuilder.ts`, `toolDiscoveryTools.ts`, `prompts.ts`, v1.13.85)**:
   - Added DIRECT DESCRIBE fast path to base prompt, instructing models to call `describe_tool` directly with batch `names: [...]` when needed tools are known, bypassing redundant `list_tools` calls.
   - Enforced EXPOSURE GATE in system prompt: explicitly warned models that invoking undescribed tools fails immediately, preventing direct invocation attempts before schema inspection.

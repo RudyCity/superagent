@@ -23,10 +23,23 @@ export const readTool: Tool = {
 
       filePaths: {
         type: "array",
-        description: "REQUIRED batch input, even when reading one file. Each entry: a string (uses global offset/limit) OR an object {path: string, offset?: number, limit?: number} for per-file line ranges.",
+        description: "REQUIRED batch input, even when reading one file. Must be a JSON array: [\"path/to/file\"]. Each entry: a string (uses global offset/limit) OR an object {path: string, offset?: number, limit?: number} for per-file line ranges.",
         minItems: 1,
         maxItems: 50,
-        items: {},
+        items: {
+          anyOf: [
+            { type: "string" },
+            {
+              type: "object",
+              properties: {
+                path: { type: "string" },
+                offset: { type: "number" },
+                limit: { type: "number" },
+              },
+              required: ["path"],
+            },
+          ],
+        },
       },
       offset: {
         type: "number",
@@ -40,6 +53,21 @@ export const readTool: Tool = {
     required: ["filePaths"],
   },
   async execute(args, cwd, signal) {
+    if (typeof args?.filePaths === "string") {
+      const raw = args.filePaths.trim();
+      if ((raw.startsWith("[") && raw.endsWith("]")) || (raw.startsWith("{") && raw.endsWith("}"))) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            args.filePaths = parsed;
+          } else if (parsed && typeof parsed === "object") {
+            args.filePaths = [parsed];
+          }
+        } catch {}
+      } else if (raw.length > 0) {
+        args.filePaths = [raw];
+      }
+    }
     if (!Array.isArray(args.filePaths) || args.filePaths.length === 0) {
       return "Error: Single-file read is disabled in both single and multi modes. Always pass filePaths as an array, including for one file: { filePaths: [\"path/to/file\"] }.";
     }

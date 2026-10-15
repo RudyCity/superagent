@@ -1,3 +1,18 @@
+## [1.13.86] - 2026-10-15
+### Fixed
+- Fixed batch argument rejection and repetitive Advisor Pattern Warning loops (`sess_1792027287134_epx58s`):
+  - In `ToolExecutor.ts`, added auto-normalization for stringified JSON arrays (e.g. `filePaths: "[\"path/to/file\"]"`) and single string/object entries across all batch operations (`filePaths`, `files`, `edits`, `patches`), preventing models from hitting false single-file invocation errors when providers serialize arrays as strings.
+  - In `fileReadTools.ts` and `fileEditTools.ts`, added defensive stringified JSON parsing and single-entry normalization to `read`, `write_to_file`, `replace_file_content`, `multi_replace_file_content`, and `apply_patch`.
+  - In `fileReadTools.ts`, enhanced the JSON parameter schema for `filePaths` with explicit `items: { anyOf: [...] }` so inference engines generate concrete JSON arrays of strings rather than ambiguous stringified structures.
+
+### Changed
+- Strengthened batch format prompt instructions across `ContextBuilder.ts` and `base.ts`:
+  - Added BATCH ARGS FORMAT rules explicitly specifying that file operations strictly require JSON arrays in arguments (`read` with `filePaths: ["path"]`, `write_to_file` with `files: [...]`, etc.) and warning against stringified arrays.
+
+### Tests
+- Added unit tests in `tests/toolExecutorParallel.test.ts` verifying stringified JSON arrays and single path strings in `filePaths` are normalized and executed without triggering disabled single-file errors in both `readTool` and `ToolExecutor`.
+- Verified all 322 test suites and 3,174 tests passing (100% pass rate).
+
 ## [1.13.85] - 2026-10-15
 ### Changed
 - Optimized base system prompt and execution guidelines across `ContextBuilder.ts`, `base.ts`, and `prompts.ts` for `list_tools` and `describe_tool` usage:
