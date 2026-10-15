@@ -1,3 +1,13 @@
+## [1.13.89] - 2026-10-15
+### Fixed
+- Fixed context window limit resolution for Agnes AI model family (`model_limits.ts`, `models.ts`):
+  - Added static context window definitions for Agnes AI models in `MODEL_LIMITS`: 512K tokens (524,288) for `agnes-3.0-flash` and `agnes-2.5-flash`, 1M tokens (1,048,576) for `agnes-3.0-pro` and `agnes-2.5-pro`, and 256K tokens (262,144) for `agnes-2.0-flash` and `agnes-1.5-flash`.
+  - Added fallback keyword matching for `agnes` models in `getStaticModelLimit`, preventing unknown custom model fallbacks from defaulting to 128K in SQLite `model_caches`.
+  - Updated persistent SQLite model cache for `agnes-3.0-flash` and `agnes-3.0-pro`.
+
+### Tests
+- Added unit tests in `tests/agnesModelLimits.test.ts` verifying static dictionary lookups, substring fallbacks, and runtime `getContextWindowLimit` resolution for Agnes AI models.
+
 ## [1.13.88] - 2026-10-15
 ### Fixed
 - Fixed SQLite `Fatal error: cannot rollback - no transaction is active` crash in `historyDb.ts`:

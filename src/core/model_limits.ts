@@ -3,6 +3,20 @@
  * Generated dynamically from OpenRouter models list on 2026-06-25.
  */
 export const MODEL_LIMITS: Record<string, number> = {
+  // Agnes AI Models
+  "agnes/agnes-3.0-flash": 524288,
+  "agnes/agnes-3.0-pro": 1048576,
+  "agnes/agnes-2.5-flash": 524288,
+  "agnes/agnes-2.5-pro": 1048576,
+  "agnes-3.0-flash": 524288,
+  "agnes-3.0-pro": 1048576,
+  "agnes-2.5-flash": 524288,
+  "agnes-2.5-pro": 1048576,
+  "agnes-2.5-pro-alpha": 1048576,
+  "agnes-2.5-pro-beta": 1048576,
+  "agnes-2.0-flash": 262144,
+  "agnes-1.5-flash": 262144,
+
   // Ai21 Models
   "ai21/jamba-large-1.7": 256000,
 
@@ -598,6 +612,12 @@ export function getStaticModelLimit(model: string): number | null {
   if (m.includes("moonshot-v1-128k")) return 131072;
   if (m.includes("moonshot-v1-32k")) return 32768;
   if (m.includes("moonshot")) return 131072;
+
+  // Agnes AI — native and gateway models
+  if (m.includes("agnes-3.0-pro") || m.includes("agnes-2.5-pro") || m.includes("agnes-pro")) return 1048576;
+  if (m.includes("agnes-3.0-flash") || m.includes("agnes-2.5-flash")) return 524288;
+  if (m.includes("agnes-2.0-flash") || m.includes("agnes-1.5-flash")) return 262144;
+  if (m.includes("agnes")) return 524288;
 
   // Cerebras / Together / Fireworks serve Llama models; llama rules above cover them.
   // Ollama local models vary by user install; llama/qwen/gemma rules above cover common ones.
