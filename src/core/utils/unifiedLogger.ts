@@ -10,16 +10,35 @@ export type LogCategory = "SQL" | "SUPERAGENT-SERVER" | "TLINE-BACKEND" | "TLINE
 // Trade-off: the very last lines may be lost on an abrupt process exit,
 // which is acceptable for diagnostic logs.
 let dirEnsured = false;
-const writeQueues = new Map<string, Promise<void>>();
+const writeBuffers = new Map<string, string[]>();
+const isWriting = new Set<string>();
+
+function flushQueue(filePath: string): void {
+  if (isWriting.has(filePath)) return;
+  const buffer = writeBuffers.get(filePath);
+  if (!buffer || buffer.length === 0) return;
+
+  isWriting.add(filePath);
+  const chunk = buffer.join("");
+  buffer.length = 0;
+
+  fs.appendFile(filePath, chunk, "utf-8", () => {
+    isWriting.delete(filePath);
+    const remaining = writeBuffers.get(filePath);
+    if (remaining && remaining.length > 0) {
+      flushQueue(filePath);
+    }
+  });
+}
 
 function enqueueAppend(filePath: string, line: string): void {
-  const last = writeQueues.get(filePath) ?? Promise.resolve();
-  const next = last
-    .then(() => fs.promises.appendFile(filePath, line, "utf-8"))
-    .catch(() => {
-      // Never let a failed diagnostic write break the caller or the queue.
-    });
-  writeQueues.set(filePath, next);
+  let buf = writeBuffers.get(filePath);
+  if (!buf) {
+    buf = [];
+    writeBuffers.set(filePath, buf);
+  }
+  buf.push(line);
+  flushQueue(filePath);
 }
 
 export function logE2E(category: LogCategory, message: string, meta?: any): void {

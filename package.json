@@ -1,16 +1,16 @@
 {
   "name": "superagent",
-  "version": "1.13.87",
+  "version": "1.13.88",
   "description": "Interactive terminal-based AI coding assistant",
   "type": "module",
   "bin": {
     "superagent": "./dist/cli.js"
   },
   "scripts": {
-    "dev": "tsx src/cli.tsx",
+    "dev": "tsx --max-old-space-size=4096 src/cli.tsx",
     "prebuild": "node -e \"const p=require('./package.json');console.log('Building ' + p.name + '@' + p.version)\"",
     "build": "tsc",
-    "start": "node dist/cli.js",
+    "start": "node --max-old-space-size=4096 dist/cli.js",
     "test": "vitest run",
     "test:unit": "vitest run --exclude \"**/*integration*\" --exclude \"**/*e2e*\"",
     "test:integration": "vitest run tests/*integration*.test.ts",

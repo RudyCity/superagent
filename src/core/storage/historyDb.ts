@@ -554,16 +554,19 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
     }
 
     db.exec("COMMIT;");
-    try {
-      const { clearHistoryCache } = require("../config/history.js");
-      clearHistoryCache();
-    } catch {}
-    logE2E("SQL", `saveSessionToDb: ${session.id}`, { messageCount: messages?.length || 0, workingDirectory: session.workingDirectory });
   } catch (err) {
-    db.exec("ROLLBACK;");
+    try {
+      db.exec("ROLLBACK;");
+    } catch {}
     logE2E("SQL", `saveSessionToDb ERROR: ${session.id}`, { error: String(err) });
     throw err;
   }
+
+  try {
+    const { clearHistoryCache } = require("../config/history.js");
+    clearHistoryCache();
+  } catch {}
+  logE2E("SQL", `saveSessionToDb: ${session.id}`, { messageCount: messages?.length || 0, workingDirectory: session.workingDirectory });
 }
 
 export function loadSessionFromDb(sessionId: string): {
@@ -648,15 +651,18 @@ export function deleteSessionFromDb(sessionId: string): void {
     db.prepare("DELETE FROM checkpoints WHERE session_id = ?").run(sessionId);
     db.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
     db.exec("COMMIT;");
-    try {
-      const { clearHistoryCache } = require("../config/history.js");
-      clearHistoryCache();
-    } catch {}
-    vacuumDatabase();
   } catch (err) {
-    db.exec("ROLLBACK;");
+    try {
+      db.exec("ROLLBACK;");
+    } catch {}
     throw err;
   }
+
+  try {
+    const { clearHistoryCache } = require("../config/history.js");
+    clearHistoryCache();
+  } catch {}
+  vacuumDatabase();
 
   if (rec && rec.filePath) {
     try {
@@ -703,7 +709,9 @@ export function purgeEmptySessionsFromDb(maxAgeMs: number = 24 * 3600 * 1000): {
     }
     db.exec("COMMIT;");
   } catch (err) {
-    db.exec("ROLLBACK;");
+    try {
+      db.exec("ROLLBACK;");
+    } catch {}
     throw err;
   }
 
@@ -1430,7 +1438,9 @@ export function saveModelCachesToDb(models: Record<string, number>): void {
       }
       db.exec("COMMIT;");
     } catch (err) {
-      db.exec("ROLLBACK;");
+      try {
+        db.exec("ROLLBACK;");
+      } catch {}
       throw err;
     }
   } catch {}
@@ -1464,7 +1474,9 @@ export function deleteModelCachesFromDb(ids: string[]): void {
       }
       db.exec("COMMIT;");
     } catch (err) {
-      db.exec("ROLLBACK;");
+      try {
+        db.exec("ROLLBACK;");
+      } catch {}
       throw err;
     }
   } catch {}

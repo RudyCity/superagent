@@ -523,5 +523,58 @@ describe("SQLite History Database (historyDb)", () => {
     const updated = historyDbModule.getWorkspaceFromDb(wsId);
     expect(updated?.name).toBe("Amazing Project");
   });
+
+  it("should preserve original error without throwing 'cannot rollback - no transaction is active' on failure", () => {
+    const session = {
+      id: "session-rollback-test",
+      filePath: path.join(tempDir, "session-rollback.json"),
+      displayName: "Rollback Test",
+      messageCount: 1,
+      lastModified: Date.now(),
+      preview: "Preview",
+    };
+
+    // Passing invalid message where role is missing / invalid (violates NOT NULL or types)
+    const malformedMessages: any[] = [
+      {
+        sessionId: "session-rollback-test",
+        role: null, // violates NOT NULL constraint on messages.role
+        content: "test",
+        timestamp: Date.now(),
+        sequenceOrder: 0,
+      },
+    ];
+
+    expect(() => {
+      historyDbModule.saveSessionToDb(session, malformedMessages);
+    }).toThrowError(/NOT NULL constraint failed/i);
+    // Crucially, it must NOT throw "cannot rollback - no transaction is active"
+  });
+
+  it("should safely handle deleteSessionFromDb without throwing on already finished transaction", () => {
+    // Save a valid session
+    historyDbModule.saveSessionToDb(
+      {
+        id: "session-to-del",
+        filePath: path.join(tempDir, "session-to-del.json"),
+        displayName: "To Delete",
+        messageCount: 0,
+        lastModified: Date.now(),
+        preview: "",
+      },
+      []
+    );
+
+    // Deleting existing session succeeds cleanly
+    expect(() => {
+      historyDbModule.deleteSessionFromDb("session-to-del");
+    }).not.toThrow();
+
+    // Deleting non-existent session also succeeds cleanly
+    expect(() => {
+      historyDbModule.deleteSessionFromDb("non-existent-session");
+    }).not.toThrow();
+  });
 });
+
 

@@ -1,3 +1,17 @@
+## [1.13.88] - 2026-10-15
+### Fixed
+- Fixed SQLite `Fatal error: cannot rollback - no transaction is active` crash in `historyDb.ts`:
+  - Wrapped `db.exec("ROLLBACK;")` in defensive `try / catch` across `saveSessionToDb`, `deleteSessionFromDb`, `purgeEmptySessionsFromDb`, `saveModelCachesToDb`, and `deleteModelCachesFromDb`, preventing SQLite auto-rollback states from masking original errors and causing unhandled fatal crashes.
+  - Reordered transaction boundaries: moved post-commit operations (`clearHistoryCache()`, `logE2E()`, `vacuumDatabase()`) outside the transaction `try` block so post-commit failures never attempt to roll back already-committed transactions.
+- Fixed V8 heap memory leak in `unifiedLogger.ts`:
+  - Replaced unbounded Promise chaining (`writeQueues.set(filePath, last.then(...))`) with an array-buffered queue (`writeBuffers`) and non-blocking batched disk flush (`flushQueue`), eliminating retained Promise closures and preventing JavaScript heap exhaustion across long-running sessions.
+- Fixed execution summary resource leak on abort/failure in `agent.ts`:
+  - Guarded `HistoryCompactor.summarizeMessages` in `runAgentLoop()` to run only when the agent task completed cleanly (`taskOutcome === "task_completed"`), skipping background LLM summarization and token consumption when tasks are aborted or fail with an error.
+- Configured Node 4GB heap space (`--max-old-space-size=4096`) in `package.json` `start` and `dev` scripts to prevent V8 semi-space commit failures during intensive multi-turn sessions.
+
+### Tests
+- Added unit tests in `tests/historyDb.test.ts` verifying that `saveSessionToDb` preserves underlying SQLite errors without throwing `cannot rollback - no transaction is active`, and validating clean `deleteSessionFromDb` behavior.
+
 ## [1.13.87] - 2026-10-15
 ### Fixed
 - Fixed Windows path backslash parsing, `(missing)` descriptions, and repetitive Advisor loops (`sess_1792027287134_epx58s`):

@@ -813,7 +813,7 @@ export class Agent {
         this.goalMaxIterations = DEFAULT_GOAL_MAX_ITERATIONS;
       }
       let finalSummary = "Agent has finished executing. Check the output above for GOAL_COMPLETE or GOAL_PARTIAL status.";
-      if (!process.env.VITEST) {
+      if (!process.env.VITEST && !signal?.aborted && goalStatus !== "aborted" && goalStatus !== "error") {
         try {
           const messages = this.conversation.getMessages();
           if (messages.length > 0) {
