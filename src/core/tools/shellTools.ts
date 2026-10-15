@@ -13,7 +13,9 @@ import {
   normalizeWindowsPackageRunner,
   formatUnknownActionError,
   augmentWindowsEnvPath,
+  killProcessTree,
 } from "./helpers.js";
+
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { 
   sshRunCommandExecute, 
@@ -117,31 +119,8 @@ export function formatAndTruncateOutput(output: string, maxLines: number, logPat
   return trimmed;
 }
 
-export function killProcessTree(pid: number | undefined): void {
-  if (!pid || pid === process.pid) return;
-  if (process.platform === "win32") {
-    try {
-      execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore", timeout: 3000 });
-    } catch {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {
-        // Ignore
-      }
-    }
-  } else {
-    try {
-      execSync(`pkill -P ${pid}`, { stdio: "ignore", timeout: 3000 });
-      process.kill(pid, "SIGKILL");
-    } catch {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {
-        // Ignore
-      }
-    }
-  }
-}
+export { killProcessTree } from "./helpers.js";
+
 
 export const bashTool: Tool = {
   name: "bash",

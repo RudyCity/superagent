@@ -1,4 +1,16 @@
+## [1.13.84] - 2026-10-15
+### Fixed
+- Fixed terminal freeze and unhandled hang when accessing MCP servers: implemented `withTimeout` protection and default timeouts across MCP server connection (`MCP_CONNECT_TIMEOUT_MS = 15s`), tool discovery (`MCP_LIST_TOOLS_TIMEOUT_MS = 10s`), tool invocation (`MCP_TOOL_CALL_TIMEOUT_MS = 60s`), and server cleanup (`MCP_CLEANUP_TIMEOUT_MS = 3s`) in `McpManager.ts`.
+- Added process tree termination with `killProcessTree` in `McpManager.ts` to ensure stdio MCP server child processes are forcefully terminated on timeout, failure, or server reload/close, preventing orphaned background processes from holding standard I/O pipes.
+- Fixed startup UI blocking in `startup-checker.tsx`: added a 10s timeout guard to `checkMcp()` so unresponsive external MCP servers cannot stall the startup checks or freeze the terminal CLI at launch.
+- Fixed MCP stdio JSON-RPC stream desynchronization: in `superagentMcpServer.ts`, diverted `console.log` and `console.info` to `console.error` and file logs in stdio MCP server mode, preventing non-protocol standard output from corrupting the JSON-RPC wire protocol and causing client terminal deadlocks.
+- Enhanced `superagent_exec_command` in `workspaceTools.ts`: added `stdin: "ignore"`, Windows shell resolution (`resolveWindowsShell`), PowerShell command formatting (`formatCommandForPowerShell`), unbuffered environment (`augmentWindowsEnvPath`), and automatic process tree termination on timeout or failure to prevent hanging on interactive prompts or detached subprocesses.
+
+### Tests
+- Added unit tests in `tests/mcp.test.ts` verifying `withTimeout` enforces prompt promise completion, rejects hanging operations cleanly, and handles tool timeout errors gracefully.
+
 ## [1.13.83] - 2026-10-15
+
 ### Fixed
 - Fixed tool alias and canonical name resolution in `executeToolCall` (`src/core/permissions.ts`): allowed compatibility aliases (`get_tools`, `describe_tools`, `read_file`, `write_file`, `cmd`, etc.) to match authorized agent-scoped definitions instead of incorrectly failing tier authorization.
 - Added alias resolution support to `runDescribeTool` (`src/core/tools/toolDiscoveryTools.ts`) using centralized `TOOL_ALIASES` (`src/core/tools/toolAliases.ts`), enabling describing tools by alias names without throwing unknown tool errors.

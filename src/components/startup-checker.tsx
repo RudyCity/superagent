@@ -291,7 +291,10 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
       const checkMcp = async () => {
         updateTask("mcpServers", { status: "checking" });
         try {
-          await initMcpServers();
+          await Promise.race([
+            initMcpServers(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("MCP startup check timed out")), 10000)),
+          ]);
           updateTask("mcpServers", { status: "ready" });
         } catch {
           updateTask("mcpServers", { status: "failed" });

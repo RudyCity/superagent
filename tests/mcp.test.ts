@@ -30,7 +30,8 @@ vi.mock("@modelcontextprotocol/sdk/client/stdio.js", () => ({
 }));
 
 const { loadModelConfig, saveModelConfig, clearModelConfigCache } = await import("../src/core/config/jsonConfig.js");
-const { initMcpServers, closeMcpServers, connectedServers } = await import("../src/core/mcp/McpManager.js");
+const { initMcpServers, closeMcpServers, connectedServers, withTimeout } = await import("../src/core/mcp/McpManager.js");
+
 
 describe("MCP Client Integration", () => {
   const originalEnv = process.env;
@@ -122,4 +123,19 @@ describe("MCP Client Integration", () => {
     const listAfterRemove = await manageTool?.execute({ action: "list" }, process.cwd());
     expect(listAfterRemove).toBe("No MCP servers configured.");
   });
+
+  it("should enforce withTimeout correctly to prevent terminal hangs", async () => {
+    // 1. Fast promise resolves
+    const fast = withTimeout(Promise.resolve("ok"), 50, "timed out");
+    await expect(fast).resolves.toBe("ok");
+
+    // 2. Slow promise times out cleanly without hanging
+    const slow = withTimeout(
+      new Promise((resolve) => setTimeout(() => resolve("late"), 200)),
+      50,
+      "MCP operation timed out after 50ms"
+    );
+    await expect(slow).rejects.toThrow("MCP operation timed out after 50ms");
+  });
 });
+

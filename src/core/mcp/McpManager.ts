@@ -5,6 +5,7 @@ import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { loadModelConfig } from "../config/jsonConfig.js";
 import type { HttpMcpServerConfig, McpServerConfig, StdioMcpServerConfig } from "../config/configTypes.js";
 import type { Tool } from "../tools/types.js";
+import { killProcessTree } from "../tools/helpers.js";
 import {
   getRemoteMcpOAuthCallbackPort,
   getRemoteMcpOAuthServerKey,
@@ -14,9 +15,32 @@ import {
   type McpOAuthCallbackReceiver,
 } from "./remoteMcpOAuthProvider.js";
 
+export const MCP_CONNECT_TIMEOUT_MS = 15000;
+export const MCP_LIST_TOOLS_TIMEOUT_MS = 10000;
+export const MCP_TOOL_CALL_TIMEOUT_MS = 60000;
+export const MCP_CLEANUP_TIMEOUT_MS = 3000;
+
+export function withTimeout<T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(errorMessage));
+    }, ms);
+    promise
+      .then((res) => {
+        clearTimeout(timer);
+        resolve(res);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
 type McpClientTransport = StdioClientTransport | StreamableHTTPClientTransport;
 
 export interface ConnectedMcpServer {
+
   name: string;
   client: Client;
   transport?: McpClientTransport;
@@ -80,18 +104,26 @@ function mapRemoteTools(serverName: string, client: Client, tools: Array<{name: 
     description: tool.description || "MCP Tool from server " + serverName + ": " + tool.name,
     parameters: (tool.inputSchema || {}) as Record<string, unknown>,
     execute: async (args: Record<string, unknown>) => {
-      const response = await client.callTool({
-        name: tool.name,
-        arguments: args,
-      });
-      if (response && Array.isArray(response.content)) {
-        return response.content.map((item: any) => {
-          if (item.type === "text") return item.text;
-          if (item.type === "image") return "[Image Content (" + (item.mimeType || "image/png") + ")]";
-          return JSON.stringify(item);
-        }).join("\n");
+      try {
+        const response = await withTimeout(
+          client.callTool({
+            name: tool.name,
+            arguments: args,
+          }),
+          MCP_TOOL_CALL_TIMEOUT_MS,
+          `MCP tool "${tool.name}" on server "${serverName}" timed out after ${MCP_TOOL_CALL_TIMEOUT_MS / 1000}s`
+        );
+        if (response && Array.isArray(response.content)) {
+          return response.content.map((item: any) => {
+            if (item.type === "text") return item.text;
+            if (item.type === "image") return "[Image Content (" + (item.mimeType || "image/png") + ")]";
+            return JSON.stringify(item);
+          }).join("\n");
+        }
+        return JSON.stringify(response);
+      } catch (err: any) {
+        return `Error executing MCP tool "${tool.name}": ${err?.message || String(err)}`;
       }
-      return JSON.stringify(response);
     },
   }));
 }
@@ -224,8 +256,8 @@ async function connectStdioServer(
   });
 
   try {
-    await client.connect(transport);
-    const toolsResult = await client.listTools();
+    await withTimeout(client.connect(transport), MCP_CONNECT_TIMEOUT_MS, `MCP stdio connection timed out for server "${serverName}"`);
+    const toolsResult = await withTimeout(client.listTools(), MCP_LIST_TOOLS_TIMEOUT_MS, `MCP listTools timed out for server "${serverName}"`);
     rememberDiscoveredTools(connectionRecord, toolsResult.tools || []);
     connectionRecord.status = "connected";
     connectionRecord.error = undefined;
@@ -235,6 +267,12 @@ async function connectStdioServer(
     if (stderrBuffer.trim()) {
       connectionRecord.error += "\nServer stderr: " + safeMcpError(stderrBuffer.trim());
     }
+    try {
+      if ((transport as any).pid) {
+        killProcessTree((transport as any).pid);
+      }
+      await withTimeout(Promise.resolve(transport.close()), MCP_CLEANUP_TIMEOUT_MS, "close timeout").catch(() => {});
+    } catch {}
     process.stderr.write("[MCP] Failed to connect to server \"" + serverName + "\": " + connectionRecord.error + "\n");
   }
 }
@@ -348,8 +386,8 @@ async function connectHttpServer(
   };
 
   try {
-    await client.connect(transport);
-    const toolsResult = await client.listTools();
+    await withTimeout(client.connect(transport), MCP_CONNECT_TIMEOUT_MS, `MCP HTTP connection timed out for server "${serverName}"`);
+    const toolsResult = await withTimeout(client.listTools(), MCP_LIST_TOOLS_TIMEOUT_MS, `MCP listTools timed out for server "${serverName}"`);
     rememberDiscoveredTools(connectionRecord, toolsResult.tools || []);
     connectionRecord.status = "connected";
     connectionRecord.error = undefined;
@@ -397,7 +435,11 @@ async function finishRemoteOAuthAuthorization(
   try {
     const receiver = getReceiver();
     if (!receiver) throw new Error("OAuth callback listener was not started.");
-    const authorizationCode = await receiver.waitForAuthorizationCode();
+    const authorizationCode = await withTimeout(
+      receiver.waitForAuthorizationCode(),
+      300000,
+      "OAuth authorization timed out after 5 minutes"
+    );
     await transport.finishAuth(authorizationCode);
     // The MCP SDK transport's start() is single-use. The initial connect has
     // already started it before receiving 401, so create a fresh client/transport
@@ -413,8 +455,8 @@ async function finishRemoteOAuthAuthorization(
     });
     record.client = authorizedClient;
     record.transport = authorizedTransport;
-    await authorizedClient.connect(authorizedTransport);
-    const result = await authorizedClient.listTools();
+    await withTimeout(authorizedClient.connect(authorizedTransport), MCP_CONNECT_TIMEOUT_MS, "Connect timed out");
+    const result = await withTimeout(authorizedClient.listTools(), MCP_LIST_TOOLS_TIMEOUT_MS, "listTools timed out");
     rememberDiscoveredTools(record, result.tools || []);
     record.status = "connected";
     record.error = undefined;
@@ -442,15 +484,22 @@ async function finishRemoteOAuthAuthorization(
 export async function closeMcpServers(): Promise<void> {
   for (const srv of connectedServers.values()) {
     try {
-      await srv.cleanup?.();
+      if (srv.cleanup) {
+        await withTimeout(srv.cleanup(), MCP_CLEANUP_TIMEOUT_MS, "cleanup timeout");
+      }
     } catch {
       // Best-effort cleanup should not block other MCP disconnects.
     }
     try {
       if (srv.transport instanceof StreamableHTTPClientTransport) {
-        await srv.transport.terminateSession().catch(() => undefined);
+        await withTimeout(srv.transport.terminateSession(), MCP_CLEANUP_TIMEOUT_MS, "terminateSession timeout").catch(() => undefined);
       }
-      await srv.transport?.close();
+      if (srv.transport && "pid" in srv.transport && (srv.transport as any).pid) {
+        killProcessTree((srv.transport as any).pid);
+      }
+      if (srv.transport?.close) {
+        await withTimeout(srv.transport.close(), MCP_CLEANUP_TIMEOUT_MS, "close timeout").catch(() => undefined);
+      }
     } catch {
       // Ignore disconnect errors.
     }

@@ -19,6 +19,13 @@ import {
   getYoloAllowedRoot,
 } from "../../permissions.js";
 import { mapConcurrentOrdered } from "../../concurrency.js";
+import {
+  resolveWindowsShell,
+  formatCommandForPowerShell,
+  augmentWindowsEnvPath,
+  killProcessTree,
+} from "../../tools/helpers.js";
+
 
 export async function handleSwitchWorkspace(
   args: any,
@@ -107,16 +114,39 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
     }
   }
 
+  let childPid: number | undefined;
   try {
     const isWin = process.platform === "win32";
-    const shell = isWin ? (process.env.SHELL || "powershell.exe") : "/bin/bash";
-    const result = await execa(command, {
-      shell: true,
+    let shellPath: string | boolean = true;
+    let formattedCommand = command;
+    if (isWin) {
+      const resolved = resolveWindowsShell();
+      shellPath = resolved.shellPath;
+      if (!resolved.isBash) {
+        formattedCommand = formatCommandForPowerShell(command);
+      }
+    } else {
+      shellPath = process.env.SHELL || "/bin/bash";
+    }
+
+    const unbufferedEnv = augmentWindowsEnvPath({
+      ...process.env,
+      PYTHONUNBUFFERED: "1",
+      CI: "1",
+    });
+
+    const proc = execa(formattedCommand, {
+      shell: shellPath,
       cwd: targetCwd,
       timeout: timeoutMs,
       reject: false,
       stripFinalNewline: true,
+      stdin: "ignore",
+      env: unbufferedEnv,
     });
+    childPid = proc.pid;
+
+    const result = await proc;
 
     const output = [
       `Command: ${command}`,
@@ -131,6 +161,9 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       isError: result.exitCode !== 0,
     };
   } catch (err: any) {
+    if (childPid) {
+      killProcessTree(childPid);
+    }
     return {
       content: [{ type: "text", text: `Command execution error: ${err.message}` }],
       isError: true,

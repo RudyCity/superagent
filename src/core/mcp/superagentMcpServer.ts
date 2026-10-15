@@ -895,6 +895,19 @@ function extractMcpResultText(result: unknown): string {
 }
 
 export async function startSuperagentMcpServer(options: McpServerOptions = {}): Promise<void> {
+  // Stdout is strictly reserved for JSON-RPC protocol framing in stdio mode.
+  // Divert console.log and console.info to stderr & logMcp to prevent protocol desync and terminal hangs.
+  console.log = (...args: any[]) => {
+    const msg = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
+    logMcp(msg);
+    console.error(...args);
+  };
+  console.info = (...args: any[]) => {
+    const msg = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
+    logMcp(msg);
+    console.error(...args);
+  };
+
   logMcp("Starting Superagent MCP Server via stdio transport...");
   const server = createSuperagentMcpServer(options);
   const transport = new StdioServerTransport();

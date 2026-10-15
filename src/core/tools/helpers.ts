@@ -464,5 +464,32 @@ export function getNormalizedProjectPath(cwd?: string): string {
   return result;
 }
 
+export function killProcessTree(pid: number | undefined): void {
+  if (!pid || pid === process.pid) return;
+  if (process.platform === "win32") {
+    try {
+      execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore", timeout: 3000 });
+    } catch {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Ignore
+      }
+    }
+  } else {
+    try {
+      execSync(`pkill -P ${pid}`, { stdio: "ignore", timeout: 3000 });
+      process.kill(pid, "SIGKILL");
+    } catch {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Ignore
+      }
+    }
+  }
+}
+
+
 
 
