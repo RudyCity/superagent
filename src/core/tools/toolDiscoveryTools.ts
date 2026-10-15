@@ -128,13 +128,37 @@ export async function runListTools(defs: DiscoveryDef[], args: unknown): Promise
   const q = String(rawQuery).toLowerCase().trim();
   const filtered = q
     ? defs
-        .map((d) => ({
-          def: d,
-          score: Math.max(
-            fuzzyScore(q, d.name),
-            0.5 * fuzzyScore(q, d.description)
-          ),
-        }))
+        .map((d) => {
+          const nameScore = fuzzyScore(q, d.name);
+          const lowerDesc = d.description.toLowerCase();
+          let descScore = 0;
+          if (lowerDesc.includes(q)) {
+            const idx = lowerDesc.indexOf(q);
+            descScore = 30 + Math.max(0, 10 - idx * 0.1);
+          } else {
+            const words = lowerDesc.split(/[^a-z0-9_]+/);
+            for (const word of words) {
+              if (word.startsWith(q) && q.length >= 3) {
+                descScore = 20;
+                break;
+              }
+            }
+            const tokens = q.split(/[\s,;]+/).filter((t) => t.length > 1);
+            if (tokens.length > 1) {
+              const allInDesc = tokens.every((tok) => lowerDesc.includes(tok));
+              const allInNameOrDesc = tokens.every((tok) => d.name.toLowerCase().includes(tok) || lowerDesc.includes(tok));
+              if (allInDesc) {
+                descScore = Math.max(descScore, 25);
+              } else if (allInNameOrDesc) {
+                descScore = Math.max(descScore, 20);
+              }
+            }
+          }
+          return {
+            def: d,
+            score: Math.max(nameScore, descScore),
+          };
+        })
         .filter((x) => x.score > 0)
         .sort((a, b) => b.score - a.score)
         .map((x) => x.def)
@@ -159,13 +183,14 @@ export async function runListTools(defs: DiscoveryDef[], args: unknown): Promise
 export const listToolsTool: Tool = {
   name: "list_tools",
   description:
-    "List all available tool names with one-line descriptions. Provide an optional keyword query to filter (fuzzy search over name and description, best matches first). Use describe_tool to get exact argument schemas for specific tools.",
+    "List available tool names with one-line descriptions. Use this to discover capabilities. Provide an optional short keyword query to filter (e.g. 'git', 'chrome', 'port'). Omit query to list all tools. NEVER pass natural language questions or conversational task descriptions. To unlock and inspect tool schemas before execution, use describe_tool.",
   parameters: {
     type: "object",
     properties: {
       query: {
         type: "string",
-        description: "Fuzzy keyword filter, e.g. 'browser', 'clibrdg', 'bckgrnd'. Omit to list everything.",
+        description:
+          "Single short keyword or tool name to filter (e.g. 'git', 'chrome', 'port', 'clibrdg'). Omit to list all tools. Do NOT pass natural language questions, sentences, or user prompt text.",
       },
     },
     required: [],
@@ -287,18 +312,18 @@ export async function runDescribeTool(
 export const describeToolTool: Tool = {
   name: "describe_tool",
   description:
-    "Get the full description and JSON argument schema for one or more tools by name. Use this instead of guessing arguments. Supports singular { tool: \"...\" } or plural { names: [\"...\"] }.",
+    "Get full descriptions and JSON argument schemas for one or more tools by name, unlocking them for execution. ALWAYS call this BEFORE calling an unfamiliar tool. Calling an undescribed tool will fail. Supports batch lookup: { names: [\"tool1\", \"tool2\"] }.",
   parameters: {
     type: "object",
     properties: {
       tool: {
         type: "string",
-        description: "Single tool name to describe, e.g. 'run_background_process' or 'manage_plan'.",
+        description: "Single tool name to describe and unlock, e.g. 'run_command' or 'manage_plan'.",
       },
       names: {
         type: "array",
         items: { type: "string" },
-        description: "Tool names to describe, e.g. [\"run_background_process\", \"manage_plan\"].",
+        description: "Batch tool names to describe and unlock in ONE call, e.g. [\"read\", \"write_to_file\", \"run_command\"].",
       },
       name: {
         type: "string",

@@ -1,3 +1,18 @@
+## [1.13.85] - 2026-10-15
+### Changed
+- Optimized base system prompt and execution guidelines across `ContextBuilder.ts`, `base.ts`, and `prompts.ts` for `list_tools` and `describe_tool` usage:
+  - Added DIRECT DESCRIBE (FAST PATH) directive instructing models to immediately call `describe_tool` with batch `names: [...]` when needed tools are already known (e.g., `read`, `write_to_file`, `run_command`), bypassing redundant `list_tools` discovery.
+  - Enforced EXPOSURE GATE: explicitly warned models that invoking un-described tools fails immediately with "Attempted to call tool <name>", preventing direct execution attempts prior to schema description.
+  - Clarified that `list_tools` is a keyword catalog rather than a semantic/NLP search engine, forbidding passing conversational task sentences or natural language queries into `query`.
+  - Updated tool parameter descriptions in `toolDiscoveryTools.ts` to instruct models on keyword usage and batch tool unlocking.
+
+### Fixed
+- Fixed loose description subsequence false-positives in `runListTools` (`toolDiscoveryTools.ts`): replaced character subsequence matching across descriptions with exact substring and word-prefix boundary checks, ensuring keyword queries (such as "audit") return only genuinely matching tools instead of matching arbitrary tools across the catalog.
+
+### Tests
+- Added tests in `tests/toolDiscoveryFuzzy.test.ts` verifying accurate keyword filtering on descriptions without scattered false positives and validating batch tool schema resolution via `describe_tool({ names: [...] })`.
+- Verified 322 test suites with 3,171 tests passing (100% pass rate).
+
 ## [1.13.84] - 2026-10-15
 ### Fixed
 - Fixed terminal freeze and unhandled hang when accessing MCP servers: implemented `withTimeout` protection and default timeouts across MCP server connection (`MCP_CONNECT_TIMEOUT_MS = 15s`), tool discovery (`MCP_LIST_TOOLS_TIMEOUT_MS = 10s`), tool invocation (`MCP_TOOL_CALL_TIMEOUT_MS = 60s`), and server cleanup (`MCP_CLEANUP_TIMEOUT_MS = 3s`) in `McpManager.ts`.

@@ -63,8 +63,13 @@ Master Agent  (orchestrator)
 - `src/components/startup-checker.tsx` — Parallelized dependency validator with decoupled background model warming.
 - `src/components/startup-prompt.tsx` — First-run interactive choice dialog when no AI provider is configured.
 
-## Recent Features (v1.5.146-v1.13.75)
+## Recent Features (v1.5.146-v1.13.85)
 
+- **Optimized Tool Discovery & Direct Describe Fast Path (`ContextBuilder.ts`, `toolDiscoveryTools.ts`, `prompts.ts`, v1.13.85)**:
+  - Added DIRECT DESCRIBE fast path to base prompt, instructing models to call `describe_tool` directly with batch `names: [...]` when needed tools are known, bypassing redundant `list_tools` calls.
+  - Enforced EXPOSURE GATE in system prompt: explicitly warned models that invoking undescribed tools fails immediately, preventing direct invocation attempts before schema inspection.
+  - Refined `runListTools` description scoring to use exact substring and keyword token boundaries rather than loose subsequence matching, eliminating false positive matches across the catalog for queries like `audit`.
+  - Prohibited natural language questions and conversational task descriptions in `list_tools(query)`.
 - **MCP Muse Two-Way Chat & Readiness (`src/core/mcp/tools/remoteAgentChatMcpTools.ts`, v1.13.75)**:
   - Added safe `superagent_muse_chat_status` to report whether the active watcher and authenticated WebSocket can support direct chat.
   - Added dangerous/opt-in `superagent_muse_chat`, which waits for a Muse `chat` reply whose `reply_to` matches the outgoing request ID. Timeout or disconnect is an error, not success.

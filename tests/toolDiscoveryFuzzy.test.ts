@@ -40,13 +40,19 @@ describe("list_tools fuzzy filter", () => {
     expect(out).toContain("- cli_bridge:");
     expect(out).toContain("- list_tools:");
   });
+  it("filters accurately on description keyword without loose scattered false-positives", async () => {
+    const out = (await listToolsTool.execute({ query: "audit" })) as string;
+    expect(out).toContain("- generate_lock_report:");
+    expect(out).not.toContain("- multi_replace_file_content:");
+    expect(out).not.toContain("- read:");
+  });
   it("returns no-match message for garbage", async () => {
     const out = (await listToolsTool.execute({ query: "zzzqqq" })) as string;
     expect(out).toMatch(/No tools match/);
   });
 });
 
-describe("describe_tool fuzzy suggestions", () => {
+describe("describe_tool fuzzy suggestions and batching", () => {
   it("suggests cli_bridge for 'cli_brdge'", async () => {
     const out = (await describeToolTool.execute({ tool: "cli_brdge" })) as string;
     const parsed = JSON.parse(out);
@@ -63,5 +69,12 @@ describe("describe_tool fuzzy suggestions", () => {
     const parsed = JSON.parse(out);
     expect(parsed[0].name).toBe("cli_bridge");
     expect(parsed[0].description).toBeTruthy();
+  });
+  it("supports batch describing multiple tools in one turn", async () => {
+    const out = (await describeToolTool.execute({ names: ["read", "write_to_file"] })) as string;
+    const parsed = JSON.parse(out);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].name).toBe("read");
+    expect(parsed[1].name).toBe("write_to_file");
   });
 });

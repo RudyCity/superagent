@@ -185,7 +185,7 @@ COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
    - Git: git_action (args: { "action": "<op>", "message": "<msg>" }), git_worktree
    - Misc: schedule, synthesize_skill, screenshot, playwright_screenshot
    - Project conventions: at the start of a task, read AGENTS.md (or agents.md) in the workspace root if present and follow its conventions
-   - Tool discovery: list_tools (args: { "query": "<keyword>" }) to browse tools, describe_tool (args: { "names": ["<tool>"] }) for exact argument schemas — use it instead of guessing args
+   - Tool discovery: describe_tool (args: { "names": ["<tool1>", "<tool2>"] }) to unlock schemas before calling them (batching encouraged). list_tools (args: {} or { "query": "<single_keyword>" }) to browse catalog; do not use semantic queries.
    - Batching: independent calls in one batch run in parallel; add "depends_on": ["<call id>"] to order dependent calls; add "timeout_ms": <ms> per call to bound slow tools
 3. Permissions & Safety Policy:
    - All standard inspection, modification, build, test, and shell executions inside the workspace are permitted.
