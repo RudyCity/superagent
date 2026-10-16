@@ -603,6 +603,89 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(descriptions["/muse tunnel start --https"]).toBeDefined();
     });
 
+    it("should provide autocomplete suggestions and descriptions for --mcp and --mcp-auth subcommands and flags", () => {
+      const tunnelSuggestions = getDashboardSuggestions("/tunnel ");
+      expect(tunnelSuggestions).toContain("/tunnel start --mcp");
+      expect(tunnelSuggestions).toContain("/tunnel start --mcp --mcp-auth oauth");
+      expect(tunnelSuggestions).toContain("/tunnel --mcp");
+      expect(tunnelSuggestions).toContain("/tunnel stop --mcp");
+      expect(tunnelSuggestions).toContain("/tunnel status --mcp");
+      expect(tunnelSuggestions).toContain("/tunnel restart --mcp");
+      expect(tunnelSuggestions).toContain("/tunnel prompt --mcp");
+
+      const museTunnelSuggestions = getDashboardSuggestions("/muse tunnel ");
+      expect(museTunnelSuggestions).toContain("/muse tunnel start --mcp");
+      expect(museTunnelSuggestions).toContain("/muse tunnel start --mcp --mcp-auth oauth");
+      expect(museTunnelSuggestions).toContain("/muse tunnel --mcp");
+      expect(museTunnelSuggestions).toContain("/muse tunnel stop --mcp");
+      expect(museTunnelSuggestions).toContain("/muse tunnel status --mcp");
+      expect(museTunnelSuggestions).toContain("/muse tunnel restart --mcp");
+      expect(museTunnelSuggestions).toContain("/muse tunnel prompt --mcp");
+
+      const flagSuggestions = getDashboardSuggestions("/tunnel --");
+      expect(flagSuggestions).toContain("/tunnel --mcp");
+      expect(flagSuggestions).toContain("/tunnel start --mcp");
+      expect(flagSuggestions).toContain("/tunnel start --mcp --mcp-auth oauth");
+
+      const museFlagSuggestions = getDashboardSuggestions("/muse tunnel --");
+      expect(museFlagSuggestions).toContain("/muse tunnel --mcp");
+      expect(museFlagSuggestions).toContain("/muse tunnel start --mcp");
+      expect(museFlagSuggestions).toContain("/muse tunnel start --mcp --mcp-auth oauth");
+
+      const startSuggestions = getDashboardSuggestions("/muse tunnel start ");
+      expect(startSuggestions).toContain("/muse tunnel start --mcp");
+      expect(startSuggestions).toContain("/muse tunnel start --mcp --mcp-auth oauth");
+      expect(startSuggestions).toContain("/muse tunnel start --mcp --mcp-auth static-bearer");
+      expect(startSuggestions).toContain("/muse tunnel start --mcp --allow-dangerous");
+      expect(startSuggestions).toContain("/muse tunnel start --mcp --mcp-port 9227");
+
+      const mcpPrefixSuggestions = getDashboardSuggestions("/muse tunnel start --m");
+      expect(mcpPrefixSuggestions).toContain("/muse tunnel start --mcp");
+      expect(mcpPrefixSuggestions).toContain("/muse tunnel start --mcp --mcp-auth oauth");
+
+      const mcpAuthSuggestions = getDashboardSuggestions("/muse tunnel start --mcp --mcp-auth ");
+      expect(mcpAuthSuggestions).toContain("/muse tunnel start --mcp --mcp-auth oauth");
+      expect(mcpAuthSuggestions).toContain("/muse tunnel start --mcp --mcp-auth static-bearer");
+
+      const mcpOAuthFilter = getDashboardSuggestions("/muse tunnel start --mcp --mcp-auth oa");
+      expect(mcpOAuthFilter).toContain("/muse tunnel start --mcp --mcp-auth oauth");
+
+      const mcpOAuthFollowup = getDashboardSuggestions("/muse tunnel start --mcp --mcp-auth oauth ");
+      expect(mcpOAuthFollowup).toContain("/muse tunnel start --mcp --mcp-auth oauth --allow-dangerous");
+      expect(mcpOAuthFollowup).toContain("/muse tunnel start --mcp --mcp-auth oauth --mcp-port 9227");
+
+      const stopSuggestions = getDashboardSuggestions("/muse tunnel stop ");
+      expect(stopSuggestions).toContain("/muse tunnel stop --mcp");
+
+      const statusSuggestions = getDashboardSuggestions("/muse tunnel status ");
+      expect(statusSuggestions).toContain("/muse tunnel status --mcp");
+
+      const restartSuggestions = getDashboardSuggestions("/muse tunnel restart ");
+      expect(restartSuggestions).toContain("/muse tunnel restart --mcp");
+      expect(restartSuggestions).toContain("/muse tunnel restart --mcp --mcp-auth oauth");
+
+      const promptSuggestions = getDashboardSuggestions("/muse tunnel prompt ");
+      expect(promptSuggestions).toContain("/muse tunnel prompt --mcp");
+
+      const descriptions = getSuggestionDescriptions();
+      expect(descriptions["/tunnel"]).toContain("--mcp");
+      expect(descriptions["/tunnel --mcp"]).toBeDefined();
+      expect(descriptions["/tunnel start --mcp"]).toBeDefined();
+      expect(descriptions["/tunnel start --mcp --mcp-auth oauth"]).toBeDefined();
+      expect(descriptions["/tunnel stop --mcp"]).toBeDefined();
+      expect(descriptions["/tunnel status --mcp"]).toBeDefined();
+      expect(descriptions["/tunnel restart --mcp"]).toBeDefined();
+      expect(descriptions["/tunnel prompt --mcp"]).toBeDefined();
+      expect(descriptions["/muse tunnel"]).toContain("--mcp");
+      expect(descriptions["/muse tunnel --mcp"]).toBeDefined();
+      expect(descriptions["/muse tunnel start --mcp"]).toBeDefined();
+      expect(descriptions["/muse tunnel start --mcp --mcp-auth oauth"]).toBeDefined();
+      expect(descriptions["/muse tunnel stop --mcp"]).toBeDefined();
+      expect(descriptions["/muse tunnel status --mcp"]).toBeDefined();
+      expect(descriptions["/muse tunnel restart --mcp"]).toBeDefined();
+      expect(descriptions["/muse tunnel prompt --mcp"]).toBeDefined();
+    });
+
     it("should permit trycloudflare.com and localhost origins in resolveCorsOrigin for HTTPS tunnel", async () => {
       const { resolveCorsOrigin } = await import("../src/core/utils/serverSecurity.js");
       expect(resolveCorsOrigin("https://random-subdomain.trycloudflare.com")).toBe("https://random-subdomain.trycloudflare.com");

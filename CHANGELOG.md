@@ -1,3 +1,14 @@
+## [1.13.90] - 2026-10-16
+### Fixed
+- Fixed missing autocomplete suggestions and descriptions for MCP tunnel subcommands and flags (`dashboardSuggestions.ts`, `museTunnelSubcommand.ts`):
+  - Added comprehensive suggestions for `/muse tunnel` and `/tunnel` across `start`, `stop`, `status`, `restart`, `prompt`, and `url` actions when targeting MCP servers (`--mcp`, `--mcp-auth oauth`, `--mcp-auth static-bearer`, `--allow-dangerous`, `--mcp-port 9227`, and multi-flag combinations).
+  - Added progressive prefix matching for `--mcp-auth` modes (`oauth` for ChatGPT PKCE flow, `static-bearer`), enabling seamless tab-completion when typing `/muse tunnel start --mcp --mcp-auth `.
+  - Integrated active MCP server state detection (`~/.superagent-r/mcp-<port>.json`) in `stop`, `status`, `restart`, and `prompt` suggestion providers.
+  - Added full dictionary descriptions for all `/muse tunnel` and `/tunnel` MCP variants in `BUILTIN_DESCRIPTIONS` and updated the `/muse tunnel guide` subcommand summary.
+
+### Tests
+- Added unit tests in `tests/cloudflareTunnel.test.ts` verifying autocomplete suggestions and descriptions for `/muse tunnel` and `/tunnel` across `--mcp`, `--mcp-auth`, `--allow-dangerous`, `--mcp-port`, and subcommands.
+
 ## [1.13.89] - 2026-10-15
 ### Fixed
 - Fixed context window limit resolution for Agnes AI model family (`model_limits.ts`, `models.ts`):
