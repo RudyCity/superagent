@@ -258,14 +258,18 @@ Expected: chain operations are discoverable through MCP and concurrent requests 
 ### Verification results
 
 - `bun run build` — **passed** (TypeScript compile).
-- `bun run verify:extension-js` — **passed** before the final source-only policy extraction; rerun below during final verification.
-- Focused command covering 15 files (`mcpProjectRegistry`, `mcpProjectRouter`, `mcpProjectTools`, `mcpWorkspaceChainTools`, `mcpWorkspaceBoundary`, `mcpWorkspaceRouting`, `mcpHttpTransport`, `mcpServer`, `mcpYoloIntegration`, `mcpChatgptCompatibility`, `workspaceChain`, `workspaceChainPermissions`, `workspaceChainSsh`, `workspaceModeContext`, `workspaceChainRequestContext`) — **15 files, 127 tests passed**.
-- Separate MCP compatibility rerun after moving classification/security metadata into `mcpToolPolicy.ts` — **3 files, 42 tests passed**.
-- `tests/fileLockOptimisticAndUI.test.ts` failed once in a parallel batch due to a temporary test target not being available; rerunning it alone passed **2/2**.
-- Full suite was executed in batches across the repository's test files, but **the full-suite result is not clean in this environment**: three unrelated `tests/wizardDialog.test.ts` tests fail because Ink requests raw mode on a stdin that does not support it. The MCP YOLO failures observed in an earlier batch were fixed and the affected suite now passes. Do not represent this as a clean full-suite run.
+- `bun run build` — **passed** after updating the tests.
+- `bun run verify:extension-js` — **passed**, all 8 extension JavaScript files verified.
+- Focused MCP/project/Workspace Chain command — **15 files, 127 tests passed**; MCP compatibility rerun — **3 files, 42 tests passed**.
+- Refreshed outdated/flaky tests:
+  - `tests/wizardDialog.test.ts`: uses isolated PassThrough stdin/stdout/stderr, disables raw terminal mode, waits for Ink's first rendered frame, and cleans up each renderer.
+  - `tests/fileLockOptimisticAndUI.test.ts`: creates a unique temporary directory/file for each test and releases its locks during cleanup, avoiding collisions with concurrent suites.
+  - `tests/processInspectionTools.test.ts`: obtains a candidate free port from an OS-assigned ephemeral listener instead of selecting random numbers that may be reserved/used by Windows services.
+- Full test suite, run in four bounded batches due the total suite duration: **329 test files (328 passed, 1 skipped), 3,211 tests passed, 5 skipped, 0 failed**. Batch summaries: 80 files / 811 passed; 80 / 685 passed; 80 / 820 passed; 88 passed files + 1 skipped file / 895 passed + 5 skipped.
+- `git diff --check` — **passed**.
 
 ### Acceptance status
 
 - Project registration/discovery/routing and permission-aware Workspace Chain MCP interfaces are implemented and covered by focused tests.
 - Initialized-session isolation and local project-root boundaries are covered by integration/unit tests.
-- Full repository suite remains **partially verified**, pending resolution or environment-appropriate handling of the unrelated Ink raw-mode tests.
+- The previously failing/stale terminal-render, shared-file-lock, and random-port tests now pass; all test files completed in the bounded full-suite run with no failures.

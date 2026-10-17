@@ -15,7 +15,7 @@
 
 ### Tests
 - Added MCP project registry/router/tool tests, per-session HTTP transport regression coverage, Workspace Chain adapter tests, concurrent SSH/local context tests, and workspace-boundary tests.
-- Focused verification: 15 test files / 127 tests passed; TypeScript build passed. Batched full-suite execution exposed three unrelated `wizardDialog.test.ts` failures because Ink raw mode is unsupported by this host stdin; `fileLockOptimisticAndUI.test.ts` passed when rerun alone. Full-suite status remains not clean in this environment.
+- Verification after refreshing outdated tests: `bun run build` and `bun run verify:extension-js` passed. All 329 test files passed when run in four bounded batches: 3,211 tests passed, 5 skipped by existing test conditions, 0 failed.
 
 ## [1.13.90] - 2026-10-16
 ### Fixed

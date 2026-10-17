@@ -44,6 +44,25 @@ describe("Process Inspection & Targeted Port Management Suite", () => {
     activeServers = [];
   });
 
+  async function getUnusedEphemeralPort(): Promise<number> {
+    // Let the OS choose from its actual available port pool rather than
+    // randomly picking a number that may belong to a Windows service or be
+    // excluded/reserved by the host network stack.
+    const server = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      throw new Error("OS did not return a TCP port for the test server.");
+    }
+    const port = address.port;
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    return port;
+  }
+
   describe("Protected Process Guardrails", () => {
     it("should protect system kernel and idle PIDs", () => {
       expect(isProtectedProcess("System", 4)).toBe(true);
@@ -126,8 +145,7 @@ describe("Process Inspection & Targeted Port Management Suite", () => {
     });
 
     it("should report a free port as FREE", async () => {
-      // Find an ephemeral unused port
-      const freePortNum = 49152 + Math.floor(Math.random() * 1000);
+      const freePortNum = await getUnusedEphemeralPort();
       const res = await inspectPortTool.execute({ port: freePortNum }, process.cwd());
       expect(res).toContain(`Port ${freePortNum} is FREE`);
     });
@@ -154,7 +172,7 @@ describe("Process Inspection & Targeted Port Management Suite", () => {
 
   describe("free_port Tool", () => {
     it("should return already free if port has no process", async () => {
-      const unusedPort = 48200 + Math.floor(Math.random() * 500);
+      const unusedPort = await getUnusedEphemeralPort();
       const res = await freePortTool.execute({ port: unusedPort }, process.cwd());
       expect(res).toContain(`Port ${unusedPort} is already free`);
     });
