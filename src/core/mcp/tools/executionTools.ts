@@ -319,7 +319,7 @@ export async function handleManage(args: any): Promise<McpToolResult> {
   const superagentIds = Array.isArray(args.superagentIds) ? (args.superagentIds as string[]) : undefined;
 
   if (action === "current_task") {
-    const { handleGetCurrentTask } = await import("./workspaceTools.js");
+    const { handleGetCurrentTask } = await import("./workspaceStatusTools.js");
     return await handleGetCurrentTask({ ...args, id: superagentIds?.[0] || args.id });
   }
 

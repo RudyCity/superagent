@@ -8,7 +8,9 @@ import { execa } from "execa";
 import { McpToolResult } from "../types.js";
 
 import { getMcpWorkspacePath } from "./workspaceContext.js";
-import { loadRegistry, removeEntries } from "../../tools/superagentRegistry.js";
+import { resolveProjectTarget, assertPathWithinProject } from "../../project/projectRouter.js";
+import { loadRegistry } from "../../tools/superagentRegistry.js";
+import { handleGetCurrentTask } from "./workspaceStatusTools.js";
 import { addTrustedDirectory, ensureDirectoryTrusted } from "../../config.js";
 import {
   isYoloMode,
@@ -32,16 +34,35 @@ export async function handleSwitchWorkspace(
   onWorkspaceChange?: (workspacePath: string) => void,
 ): Promise<McpToolResult> {
   const ws = String(args.workspacePath || args.workspace || args.path || args.dir || "");
-  if (!ws) {
-    return { content: [{ type: "text", text: "Error: 'workspacePath' is required." }], isError: true };
+  if (!ws && !(typeof args.projectId === "string" && args.projectId.trim())) {
+    return { content: [{ type: "text", text: "Error: 'workspacePath' or 'projectId' is required." }], isError: true };
   }
-  const resolved = path.resolve(getMcpWorkspacePath(), ws);
+  const currentWorkspace = getMcpWorkspacePath();
+  let resolved: string;
+  try {
+    const target = args.projectId
+      ? resolveProjectTarget({ projectId: args.projectId, sessionWorkspace: currentWorkspace })
+      : resolveProjectTarget({ workspace: path.isAbsolute(ws) || /^(?:ssh:|chain:)/i.test(ws) ? ws : path.resolve(currentWorkspace, ws), sessionWorkspace: currentWorkspace });
+    resolved = target.workspace;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const target = path.isAbsolute(ws) ? path.resolve(ws) : path.resolve(currentWorkspace, ws);
+    if (!args.projectId && message.includes("Workspace target is not registered or authorized")
+      && (isFullYoloMode() || isPathWithinYoloScope(target, currentWorkspace))) {
+      resolved = target;
+    } else {
+      return { content: [{ type: "text", text: message }], isError: true };
+    }
+  }
+  if (/^(?:ssh:|chain:)/i.test(resolved)) {
+    onWorkspaceChange?.(resolved);
+    return { content: [{ type: "text", text: `Switched active Superagent workspace to registered remote target: ${resolved}. Use Workspace Chain tools for remote-node operations.` }] };
+  }
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
     return { content: [{ type: "text", text: `Directory not found: ${resolved}` }], isError: true };
   }
 
   // Scoped checks use the current MCP connection's workspace, not process-global cwd.
-  const currentWorkspace = getMcpWorkspacePath();
   if (!isFullYoloMode() && !isPathWithinYoloScope(resolved, currentWorkspace)) {
     const allowedRoot = getYoloAllowedRoot(currentWorkspace);
     return {
@@ -61,25 +82,6 @@ export async function handleSwitchWorkspace(
   return { content: [{ type: "text", text: `Switched active Superagent workspace to: ${resolved}` }] };
 }
 
-export async function handleGetWorkspace(): Promise<McpToolResult> {
-  const cwd = getMcpWorkspacePath();
-  let branch = "unknown";
-  try {
-    const { execSync } = await import("child_process");
-    branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd, encoding: "utf-8" }).trim();
-  } catch {}
-
-  const registry = loadRegistry();
-  const lines = [
-    `Current Workspace: ${cwd}`,
-    `Git Branch: ${branch}`,
-    `Registered Feature Worktrees (${registry.length}):`,
-  ];
-  for (const r of registry) {
-    lines.push(`  - [${r.id}] ${r.role} -> ${r.branch} (${r.status}) at ${r.worktreePath}`);
-  }
-  return { content: [{ type: "text", text: lines.join("\n") }] };
-}
 
 export async function handleExecCommand(args: any): Promise<McpToolResult> {
   const command = String(args.command || args.cmd || args.commandLine || "");
@@ -181,7 +183,13 @@ export async function handleReadFile(args: any): Promise<McpToolResult> {
     return { content: [{ type: "text", text: "Error: 'filePath' is required." }], isError: true };
   }
 
-  const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(targetCwd, filePath);
+  let resolved: string;
+  try {
+    if (/^(?:ssh:|chain:)/i.test(String(targetCwd))) throw new Error("This file tool only supports local workspaces; use Workspace Chain tools for remote targets.");
+    resolved = assertPathWithinProject(path.isAbsolute(filePath) ? filePath : path.resolve(targetCwd, filePath), String(targetCwd));
+  } catch (error) {
+    return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+  }
   if (!fs.existsSync(resolved)) {
     return { content: [{ type: "text", text: `File not found: ${resolved}` }], isError: true };
   }
@@ -250,7 +258,13 @@ export async function handleWriteFile(args: any): Promise<McpToolResult> {
     return { content: [{ type: "text", text: "Error: 'filePath' is required." }], isError: true };
   }
 
-  const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(targetCwd, filePath);
+  let resolved: string;
+  try {
+    if (/^(?:ssh:|chain:)/i.test(String(targetCwd))) throw new Error("This file tool only supports local workspaces; use Workspace Chain tools for remote targets.");
+    resolved = assertPathWithinProject(path.isAbsolute(filePath) ? filePath : path.resolve(targetCwd, filePath), String(targetCwd));
+  } catch (error) {
+    return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+  }
 
   // Layer 2: Defense-in-depth safety checks for file write
   if (!isFullYoloMode()) {
@@ -353,8 +367,15 @@ export async function handleWriteFiles(args: any): Promise<McpToolResult> {
 }
 
 export async function handleListFiles(args: any): Promise<McpToolResult> {
-  const dirPath = String(args.dirPath || args.path || args.directory || args.workspace || getMcpWorkspacePath());
-  const resolved = path.resolve(dirPath);
+  const targetCwd = String(args.workspace || args.cwd || getMcpWorkspacePath());
+  const dirPath = String(args.dirPath || args.path || args.directory || targetCwd);
+  let resolved: string;
+  try {
+    if (/^(?:ssh:|chain:)/i.test(targetCwd)) throw new Error("This file tool only supports local workspaces; use Workspace Chain tools for remote targets.");
+    resolved = assertPathWithinProject(path.isAbsolute(dirPath) ? dirPath : path.resolve(targetCwd, dirPath), targetCwd);
+  } catch (error) {
+    return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+  }
 
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
     return { content: [{ type: "text", text: `Directory not found: ${resolved}` }], isError: true };
@@ -378,7 +399,14 @@ export async function handleListFiles(args: any): Promise<McpToolResult> {
 
 export async function handleGrepSearch(args: any): Promise<McpToolResult> {
   const query = String(args.query || args.pattern || args.search || "");
-  const searchPath = args.path ? path.resolve(getMcpWorkspacePath(), String(args.path)) : getMcpWorkspacePath();
+  const targetCwd = String(args.workspace || args.cwd || getMcpWorkspacePath());
+  let searchPath: string;
+  try {
+    if (/^(?:ssh:|chain:)/i.test(targetCwd)) throw new Error("This search tool only supports local workspaces; use Workspace Chain tools for remote targets.");
+    searchPath = assertPathWithinProject(args.path ? path.resolve(targetCwd, String(args.path)) : targetCwd, targetCwd);
+  } catch (error) {
+    return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+  }
   if (!query) {
     return { content: [{ type: "text", text: "Error: 'query' is required for grep search." }], isError: true };
   }
@@ -400,7 +428,14 @@ export async function handleGrepSearch(args: any): Promise<McpToolResult> {
 
 export async function handleFindFiles(args: any): Promise<McpToolResult> {
   const pattern = String(args.pattern || args.query || args.name || "*");
-  const searchPath = args.path ? path.resolve(getMcpWorkspacePath(), String(args.path)) : getMcpWorkspacePath();
+  const targetCwd = String(args.workspace || args.cwd || getMcpWorkspacePath());
+  let searchPath: string;
+  try {
+    if (/^(?:ssh:|chain:)/i.test(targetCwd)) throw new Error("This search tool only supports local workspaces; use Workspace Chain tools for remote targets.");
+    searchPath = assertPathWithinProject(args.path ? path.resolve(targetCwd, String(args.path)) : targetCwd, targetCwd);
+  } catch (error) {
+    return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+  }
 
   const { globTool } = await import("../../tools/fileReadTools.js");
   const result = await globTool.execute(
@@ -413,259 +448,8 @@ export async function handleFindFiles(args: any): Promise<McpToolResult> {
   return { content: [{ type: "text", text: String(result) }] };
 }
 
-export async function handleManageWorktrees(args: any): Promise<McpToolResult> {
-  const action = String(args.action || "list");
-  const registry = loadRegistry();
 
-  if (action === "list") {
-    if (registry.length === 0) {
-      return { content: [{ type: "text", text: "No feature worktrees currently registered." }] };
-    }
-    const lines = ["=== Registered Git Feature Worktrees ==="];
-    for (const r of registry) {
-      const exists = fs.existsSync(r.worktreePath);
-      lines.push(`- ID: ${r.id} | Role: ${r.role} | Branch: ${r.branch} | Status: ${r.status}`);
-      lines.push(`  Path: ${r.worktreePath} [${exists ? "Active on Disk" : "Removed"}]`);
-    }
-    return { content: [{ type: "text", text: lines.join("\n") }] };
-  }
 
-  if (action === "remove" || action === "delete") {
-    const id = String(args.id || args.superagentId || "");
-    if (!id) {
-      return { content: [{ type: "text", text: "Error: 'id' is required to remove a worktree." }], isError: true };
-    }
-    const entry = registry.find((r) => r.id === id);
-    if (entry) {
-      try {
-        if (fs.existsSync(entry.worktreePath)) {
-          fs.rmSync(entry.worktreePath, { recursive: true, force: true });
-        }
-        removeEntries([id]);
-        return { content: [{ type: "text", text: `Successfully removed worktree for Superagent '${id}' (${entry.branch}).` }] };
-      } catch (err: any) {
-        return { content: [{ type: "text", text: `Error removing worktree: ${err.message}` }], isError: true };
-      }
-    }
-    return { content: [{ type: "text", text: `No worktree entry found with ID: ${id}` }], isError: true };
-  }
-
-  return { content: [{ type: "text", text: `Unknown worktree action: ${action}` }], isError: true };
-}
-
-export async function handleGetCurrentTask(args: any): Promise<McpToolResult> {
-  const { resolveInstanceCurrentTask } = await import("./taskResolver.js");
-  const targetWs = args.workspace || getMcpWorkspacePath();
-  const resolution = await resolveInstanceCurrentTask(args.workspace ? args : { ...args, workspace: targetWs });
-
-  if (!resolution.found && resolution.errorMessage) {
-    return {
-      content: [{ type: "text", text: `Error: ${resolution.errorMessage}` }],
-      isError: true,
-    };
-  }
-
-  const currentOnly = args.currentOnly ?? args.current_only ?? args.currentTaskOnly ?? false;
-  if (currentOnly) {
-    return {
-      content: [{ type: "text", text: resolution.currentTask || "(no active task)" }],
-    };
-  }
-
-  const lines: string[] = [
-    `=== Current Instance Task [${resolution.type.toUpperCase()}${resolution.id ? `: ${resolution.id}` : ""}] ===`,
-  ];
-  if (resolution.role) lines.push(`Role: ${resolution.role}`);
-  if (resolution.typeName && resolution.typeName !== resolution.role) lines.push(`Type: ${resolution.typeName}`);
-  if (resolution.branch) lines.push(`Branch: ${resolution.branch}`);
-  if (resolution.status) lines.push(`Status: ${resolution.status}`);
-  if (resolution.goal && resolution.goal !== resolution.currentTask) lines.push(`Objective: ${resolution.goal}`);
-  lines.push(`Active Task: ${resolution.currentTask}`);
-  lines.push(`Task State: ${resolution.currentTaskStatus.toUpperCase()}`);
-  if (resolution.totalTasks > 0) {
-    lines.push(`Checklist Step: ${resolution.currentTaskIndex} of ${resolution.totalTasks}`);
-    lines.push(`Progress: ${resolution.progress}`);
-  }
-  if (resolution.activeTool) lines.push(`Active Tool: ${resolution.activeTool}`);
-  if (resolution.worktreePath) lines.push(`Worktree / Workspace: ${resolution.worktreePath}`);
-  if (resolution.taskFilePath) lines.push(`Task File: ${resolution.taskFilePath}`);
-
-  return { content: [{ type: "text", text: lines.join("\n") }] };
-}
-
-export async function handleGetPlanAndTasks(args: any): Promise<McpToolResult> {
-  const currentOnly = args.currentOnly ?? args.current_only ?? args.currentTaskOnly ?? false;
-  if (currentOnly) {
-    return await handleGetCurrentTask(args);
-  }
-
-  const { readChecklistTasks, getCurrentTaskFromChecklist } = await import("../../taskChecklist.js");
-  const { resolveInstanceCurrentTask } = await import("./taskResolver.js");
-
-  let ws = args.workspace ? path.resolve(String(args.workspace)) : "";
-  let matchedInst: any = null;
-
-  if (!ws && (args.superagentId || args.id || args.instanceId)) {
-    const targetId = String(args.superagentId || args.id || args.instanceId);
-    const registry = loadRegistry();
-    const entry = registry.find((r) => r.id === targetId || r.name === targetId);
-    if (entry && entry.worktreePath && fs.existsSync(entry.worktreePath)) {
-      ws = entry.worktreePath;
-      matchedInst = entry;
-    } else {
-      const { superagentInstances, subagentInstances } = await import("../../tools/state.js");
-      const inst = superagentInstances.get(targetId);
-      if (inst && inst.worktreePath && fs.existsSync(inst.worktreePath)) {
-        ws = inst.worktreePath;
-        matchedInst = inst;
-      } else {
-        const sub = subagentInstances.get(targetId);
-        if (sub) {
-          return await handleGetCurrentTask({ id: targetId });
-        }
-      }
-    }
-    if (!ws) {
-      const { loadActiveProcesses } = await import("../processJournal.js");
-      const processes = loadActiveProcesses();
-      for (const p of processes) {
-        if (p.activeSuperagents) {
-          const matchedSa = p.activeSuperagents.find((sa) => sa.id === targetId);
-          if (matchedSa && matchedSa.worktreePath && fs.existsSync(matchedSa.worktreePath)) {
-            ws = matchedSa.worktreePath;
-            matchedInst = matchedSa;
-            break;
-          }
-        }
-      }
-    }
-    if (!ws) {
-      const { resolveInstanceCurrentTask } = await import("./taskResolver.js");
-      const resolution = await resolveInstanceCurrentTask(args);
-      if (resolution.found && resolution.worktreePath && fs.existsSync(resolution.worktreePath)) {
-        ws = resolution.worktreePath;
-        matchedInst = resolution;
-      } else if (resolution.found && resolution.tasks.length > 0) {
-        // Return resolved tasks even without a worktree directory
-        const taskInfo = getCurrentTaskFromChecklist(resolution.tasks);
-        const header = `=== Implementation Plan [Instance: ${targetId}] ===`;
-        const lines = [header];
-        if (taskInfo.task) {
-          lines.push(`\n=== Current Active Task ===`);
-          lines.push(`  Task: ${taskInfo.task}`);
-          lines.push(`  Status: ${taskInfo.status === "in_progress" ? "[/] (In Progress)" : "[ ] (Pending)"}`);
-          lines.push(`  Progress: ${taskInfo.completed}/${taskInfo.total} (${taskInfo.percentage}%)`);
-        }
-        lines.push(`\n${resolution.planContent || "(No plan document found)"}`);
-        lines.push("\n=== Task Checklist ===");
-        for (const t of resolution.tasks) {
-          lines.push(`  - [${t.status}] ${t.text}`);
-        }
-        return { content: [{ type: "text", text: lines.join("\n") }] };
-      } else {
-        return {
-          content: [{ type: "text", text: `Error: No active or registered worktree found for Superagent instance "${targetId}".` }],
-          isError: true,
-        };
-      }
-    }
-  }
-
-  if (!ws) {
-    ws = getMcpWorkspacePath();
-  }
-
-  let foundTasks: any[] = [];
-  let planContent = "(No plan document found)";
-
-  const resolution = await resolveInstanceCurrentTask(args.workspace ? args : { ...args, workspace: ws });
-  if (resolution.found) {
-    if (resolution.tasks && resolution.tasks.length > 0) {
-      foundTasks = resolution.tasks;
-    }
-    if (resolution.planContent) {
-      planContent = resolution.planContent;
-    }
-    if (resolution.worktreePath && !args.workspace) {
-      ws = resolution.worktreePath;
-    }
-  }
-
-  if (foundTasks.length === 0) {
-    const taskFiles = [
-      path.join(ws, "_task.md"),
-      path.join(ws, "task.md"),
-      path.join(ws, "tasks.md"),
-    ];
-    if (matchedInst?.historyFilePath) {
-      taskFiles.push(matchedInst.historyFilePath.replace(/\.json$/, "_task.md"));
-    }
-
-    for (const tf of taskFiles) {
-      if (fs.existsSync(tf)) {
-        const res = await readChecklistTasks(tf);
-        if (res.tasks && res.tasks.length > 0) {
-          foundTasks = res.tasks;
-          break;
-        }
-      }
-    }
-  }
-
-  if (planContent === "(No plan document found)") {
-    const planFiles = [
-      path.join(ws, "_plan.md"),
-      path.join(ws, "plan.md"),
-      path.join(ws, "implementation_plan.md"),
-    ];
-    if (matchedInst?.historyFilePath) {
-      planFiles.push(matchedInst.historyFilePath.replace(/\.json$/, "_implementation_plan.md"));
-    }
-
-    for (const pf of planFiles) {
-      if (fs.existsSync(pf)) {
-        planContent = fs.readFileSync(pf, "utf-8");
-        break;
-      }
-    }
-  }
-
-  const taskInfo = getCurrentTaskFromChecklist(foundTasks);
-  const header = args.superagentId || args.id || args.instanceId
-    ? `=== Implementation Plan [Instance: ${args.superagentId || args.id || args.instanceId}] ===`
-    : "=== Implementation Plan ===";
-  const lines = [header];
-
-  if (taskInfo.task) {
-    const statusLabel =
-      taskInfo.status === "in_progress"
-        ? "[/] (In Progress)"
-        : taskInfo.status === "pending"
-        ? "[ ] (Pending)"
-        : taskInfo.status === "completed"
-        ? "[x] (Completed)"
-        : "";
-    lines.push(`\n=== Current Active Task ===`);
-    lines.push(`  Task: ${taskInfo.task}`);
-    if (statusLabel) lines.push(`  Status: ${statusLabel}`);
-    if (taskInfo.total > 0) {
-      lines.push(`  Progress: ${taskInfo.completed}/${taskInfo.total} (${taskInfo.percentage}%)`);
-    }
-  }
-
-  lines.push(`\n${planContent.slice(0, 1500)}`);
-  lines.push("\n=== Task Checklist ===");
-  if (foundTasks.length === 0) {
-    lines.push("  No checklist tasks found.");
-  } else {
-    for (const t of foundTasks) {
-      const check = t.status === "x" ? "[x]" : t.status === "/" ? "[/]" : "[ ]";
-      lines.push(`  - ${check} ${t.text}`);
-    }
-  }
-
-  return { content: [{ type: "text", text: lines.join("\n") }] };
-}
 
 export async function handleUpdateTasks(args: any): Promise<McpToolResult> {
   let ws = args.workspace ? path.resolve(String(args.workspace)) : "";
@@ -722,7 +506,9 @@ export const UNLOCK_FILE_MCP_TOOL_DEF = {
   inputSchema: {
     type: "object",
     properties: {
-      filePath: { type: "string", description: "Path to the file to inspect or unlock." },
+      filePath: { type: "string", description: "Path to the file to inspect or unlock, restricted to the selected workspace root." },
+      workspace: { type: "string", description: "Optional workspace path for this operation." },
+      projectId: { type: "string", description: "Optional registered project ID for this operation." },
       action: {
         type: "string",
         enum: ["status", "unlock", "force_unlock"],
@@ -748,7 +534,13 @@ export async function handleUnlockFile(args: any): Promise<McpToolResult> {
   const filePath = String(args.filePath || args.path || args.file || "");
   const targetCwd = String(args.cwd || args.workspace || getMcpWorkspacePath());
   if (!filePath) return { content: [{ type: "text", text: "Error: 'filePath' is required." }], isError: true };
-  const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(targetCwd, filePath);
+  let resolved: string;
+  try {
+    if (/^(?:ssh:|chain:)/i.test(targetCwd)) throw new Error("File lock operations require a local workspace. Use Workspace Chain tools for remote nodes.");
+    resolved = assertPathWithinProject(path.isAbsolute(filePath) ? filePath : path.resolve(targetCwd, filePath), targetCwd);
+  } catch (error) {
+    return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
+  }
   const action = String(args.action || (args.force ? "force_unlock" : "unlock")).toLowerCase();
   if (!["status", "unlock", "force_unlock"].includes(action)) {
     return { content: [{ type: "text", text: 'Unknown action. Use "status", "unlock", or "force_unlock".' }], isError: true };

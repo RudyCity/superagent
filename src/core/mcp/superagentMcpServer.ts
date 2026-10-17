@@ -25,6 +25,7 @@ import {
   getYoloModeState,
   isFullYoloMode,
   isToolCallWithinYoloScope,
+  isPathWithinYoloScope,
   getYoloAllowedRoot,
 } from "../permissions.js";
 import { registerResourcesAndPrompts } from "./resourcesAndPrompts.js";
@@ -48,7 +49,6 @@ import {
 } from "./tools/executionTools.js";
 import {
   handleSwitchWorkspace,
-  handleGetWorkspace,
   handleExecCommand,
   handleReadFile,
   handleReadFiles,
@@ -57,13 +57,13 @@ import {
   handleListFiles,
   handleGrepSearch,
   handleFindFiles,
-  handleManageWorktrees,
-  handleGetPlanAndTasks,
   handleUpdateTasks,
-  handleGetCurrentTask,
   handleUnlockFile,
   UNLOCK_FILE_MCP_TOOL_DEF,
 } from "./tools/workspaceTools.js";
+import { handleManageWorktrees } from "./tools/worktreeTools.js";
+import { handleGetWorkspace, handleGetCurrentTask } from "./tools/workspaceStatusTools.js";
+import { handleGetPlanAndTasks } from "./tools/taskChecklistMcpTools.js";
 import {
   handleGetConfig,
   handleSwitchPreset,
@@ -80,29 +80,39 @@ import {
 } from "./tools/configTools.js";
 import {
   CHROME_MCP_TOOL_DEFS,
-  CHROME_MCP_TOOL_CLASSIFICATIONS,
   dispatchChromeMcpTool,
 } from "./tools/chromeMcpTools.js";
 import {
   DIAGNOSTICS_MCP_TOOL_DEFS,
-  DIAGNOSTICS_MCP_TOOL_CLASSIFICATIONS,
   dispatchDiagnosticsMcpTool,
 } from "./tools/diagnosticsMcpTools.js";
 import {
   PLAN_SKILLS_MCP_TOOL_DEFS,
-  PLAN_SKILLS_MCP_TOOL_CLASSIFICATIONS,
   dispatchPlanSkillsMcpTool,
 } from "./tools/planSkillsMcpTools.js";
 import {
   NETWORK_CONTENT_MCP_TOOL_DEFS,
-  NETWORK_CONTENT_MCP_TOOL_CLASSIFICATIONS,
   dispatchNetworkContentMcpTool,
 } from "./tools/networkContentMcpTools.js";
 import {
   REMOTE_AGENT_MCP_TOOL_DEFS,
-  REMOTE_AGENT_MCP_TOOL_CLASSIFICATIONS,
   dispatchRemoteAgentMcpTool,
 } from "./tools/remoteAgentMcpTools.js";
+import {
+  PROJECT_MCP_TOOL_DEFS,
+  dispatchProjectMcpTool,
+} from "./tools/projectTools.js";
+import { resolveProjectTarget } from "../project/projectRouter.js";
+import { PROJECT_REGISTRY_TOOL_NAMES, WORKSPACE_SCOPED_MCP_TOOLS } from "./mcpWorkspacePolicy.js";
+import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
+import type { McpServerOptions } from "./mcpToolPolicy.js";
+export type { McpServerOptions } from "./mcpToolPolicy.js";
+export { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
+export type { McpToolAnnotations, McpToolSecurityScheme } from "./mcpToolPolicy.js";
+import {
+  WORKSPACE_CHAIN_MCP_TOOL_DEFS,
+  dispatchWorkspaceChainMcpTool,
+} from "./tools/workspaceChainMcpTools.js";
 
 const MCP_LOG_FILE = path.join(os.homedir(), ".superagent-r", "superagent-mcp.log");
 
@@ -113,153 +123,6 @@ function logMcp(message: string): void {
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(MCP_LOG_FILE, `[${timestamp}] ${message}\n`, "utf-8");
   } catch {}
-}
-
-/**
- * Tool classification for behavior annotations and the tunnel allowlist.
- * "safe"      = read-only observability; exposed by default.
- * "dangerous" = can execute commands, mutate files/state, control agents;
- *               requires explicit opt-in.
- */
-export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
-  // ---- safe: read-only ----
-  superagent_list_active: "safe",
-  superagent_get_process_status: "safe",
-  superagent_get_status: "safe",
-  superagent_get_logs: "safe",
-  superagent_read_file: "safe",
-  superagent_read_files: "safe",
-  superagent_list_files: "safe",
-  superagent_grep_search: "safe",
-  superagent_find_files: "safe",
-  superagent_get_config: "safe",
-  superagent_get_workspace: "safe",
-  superagent_get_current_task: "safe",
-  superagent_get_instance_task: "safe",
-  superagent_get_plan_and_tasks: "safe",
-  superagent_memory_search: "safe",
-  superagent_query_history: "safe",
-  superagent_get_token_usage: "safe",
-  superagent_server_health: "safe",
-  superagent_get_remote_status: "safe",
-  superagent_export_session: "safe",
-  // ---- dangerous: mutation / execution / control ----
-  superagent_exec_command: "dangerous",
-  superagent_write_file: "dangerous",
-  superagent_write_files: "dangerous",
-  superagent_unlock_file: "dangerous",
-  superagent_interrupt: "dangerous",
-  superagent_pause: "dangerous",
-  superagent_resume: "dangerous",
-  superagent_send_message: "dangerous",
-  superagent_run_task: "dangerous",
-  superagent_invoke: "dangerous",
-  superagent_cli_bridge: "dangerous",
-  superagent_await: "dangerous",
-  superagent_merge: "dangerous",
-  superagent_manage: "dangerous",
-  superagent_manage_worktrees: "dangerous",
-  superagent_update_tasks: "dangerous",
-  superagent_memory_save: "dangerous",
-  superagent_switch_preset: "dangerous",
-  superagent_switch_provider: "dangerous",
-  superagent_switch_workspace: "dangerous",
-  superagent_compact_context: "dangerous",
-  superagent_remote_chrome: "dangerous",
-  ...CHROME_MCP_TOOL_CLASSIFICATIONS,
-  ...DIAGNOSTICS_MCP_TOOL_CLASSIFICATIONS,
-  ...PLAN_SKILLS_MCP_TOOL_CLASSIFICATIONS,
-  ...NETWORK_CONTENT_MCP_TOOL_CLASSIFICATIONS,
-  ...REMOTE_AGENT_MCP_TOOL_CLASSIFICATIONS,
-};
-
-/** Tools that must never be discoverable or callable over the MCP interface. */
-export const DISABLED_MCP_TOOLS: ReadonlySet<string> = new Set([
-  // Agent execution/control is disabled from MCP exposure.
-  // These actions must only be performed through local SuperAgent runtime.
-  "superagent_run_task",
-  "superagent_send_message",
-  "superagent_interrupt",
-  "superagent_pause",
-  "superagent_resume",
-  "superagent_cli_bridge",
-  "superagent_invoke",
-  "superagent_await",
-  "superagent_merge",
-  "superagent_manage",
-  // Prefer Chrome DevTools Protocol automation; do not expose the legacy
-  // extension bridge directly through the remote MCP interface.
-  "superagent_remote_chrome",
-  // Legacy single-file MCP endpoints are retained in code but disabled in discovery and dispatch.
-  "superagent_read_file",
-  "superagent_write_file",
-]);
-
-export interface McpToolAnnotations {
-  readOnlyHint?: boolean;
-  destructiveHint?: boolean;
-  idempotentHint?: boolean;
-  openWorldHint?: boolean;
-}
-
-/** Behavior annotations derived from the safe/dangerous classification. */
-export function getToolAnnotations(toolName: string): McpToolAnnotations | undefined {
-  const level = MCP_TOOL_CLASSIFICATION[toolName];
-  if (level === "safe") {
-    return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
-  }
-  if (level === "dangerous") {
-    return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
-  }
-  return undefined;
-}
-
-export interface McpToolSecurityScheme {
-  type: string;
-  scheme?: string;
-  scopes?: string[];
-  note?: string;
-}
-
-/**
- * Per-tool security metadata for MCP clients (e.g. ChatGPT approvals).
- * Safe tools need read scope; dangerous tools need write scope in OAuth mode.
- */
-export function getToolSecuritySchemes(
-  toolName: string,
-  authMode: "static-bearer" | "oauth" = "static-bearer"
-): McpToolSecurityScheme[] {
-  const level = MCP_TOOL_CLASSIFICATION[toolName];
-  if (authMode === "oauth") {
-    return level === "dangerous"
-      ? [{ type: "oauth2", scopes: ["mcp:tools", "mcp:tools:write"] }]
-      : [{ type: "oauth2", scopes: ["mcp:tools"] }];
-  }
-  return [
-    {
-      type: "http",
-      scheme: "bearer",
-      note:
-        level === "dangerous"
-          ? "dangerous tool: requires --allow-dangerous opt-in"
-          : undefined,
-    },
-  ];
-}
-
-export interface McpServerOptions {
-  /** If set, only these tool names are listed and callable (HTTP tunnel allowlist). When omitted, all tools are available (existing stdio behavior). */
-  allowedTools?: string[];
-  /** Audit hook invoked for every tool invocation attempt, including blocked-by-allowlist attempts. Must never throw. */
-  onToolCall?: (info: { tool: string; args: unknown; ok: boolean; error?: string; durationMs?: number }) => void;
-  /** Auth mode for per-tool security metadata. Default "static-bearer". */
-  authMode?: "static-bearer" | "oauth";
-  /** If true, explicitly allow dangerous tools regardless of YOLO mode (e.g. CLI flag --allow-dangerous). */
-  allowDangerous?: boolean;
-  /** Optional getter for active client identity (OAuth scopes / subject). */
-  getIdentity?: () => { mode: string; subject?: string; scopes?: string[] } | null;
-  /** Optional workspace root for YOLO scope validation. Defaults to process.cwd(). */
-  workspace?: string;
 }
 
 const activeMcpServerInstances = new Set<Server>();
@@ -274,6 +137,7 @@ export async function notifyMcpToolsListChanged(): Promise<void> {
   });
   await Promise.all(promises);
 }
+
 
 export function createSuperagentMcpServer(options: McpServerOptions = {}): Server {
   const { allowedTools, onToolCall, authMode = "static-bearer", allowDangerous, getIdentity, workspace } = options;
@@ -363,6 +227,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
               message: { type: "string", description: "Message body for session." },
               system: { type: "string", description: "Optional system instructions." },
               cwd: { type: "string", description: "Working directory for execution." },
+              projectId: { type: "string", description: "Registered project ID for execution context." },
+              workspace: { type: "string", description: "Optional workspace path within the registered project." },
               injectArtifacts: { type: "boolean", description: "If true (default), injects task checklist, plan, and walkthrough paths." },
               taskPath: { type: "string", description: "Optional explicit path to task checklist file." },
               planPath: { type: "string", description: "Optional explicit path to plan file." },
@@ -377,17 +243,17 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         {
           name: "superagent_switch_workspace",
           description: "Switch active working directory / workspace of Superagent.",
-          inputSchema: { type: "object", properties: { workspacePath: { type: "string" } }, required: ["workspacePath"] },
+          inputSchema: { type: "object", properties: { workspacePath: { type: "string" }, projectId: { type: "string", description: "Select an enabled, registered project by stable ID." } } },
         },
         {
           name: "superagent_get_workspace",
           description: "Get current workspace directory, active Git branch, and feature worktree information.",
-          inputSchema: { type: "object", properties: {} },
+          inputSchema: { type: "object", properties: { projectId: { type: "string" }, workspace: { type: "string" } } },
         },
         {
           name: "superagent_exec_command",
           description: "Execute a shell command inside the active workspace or specific Superagent worktree with stdout/stderr capture.",
-          inputSchema: { type: "object", properties: { command: { type: "string" }, cwd: { type: "string" }, timeoutMs: { type: "number" } }, required: ["command"] },
+          inputSchema: { type: "object", properties: { command: { type: "string" }, cwd: { type: "string" }, workspace: { type: "string" }, projectId: { type: "string" }, timeoutMs: { type: "number" } }, required: ["command"] },
         },
         {
           name: "superagent_read_file",
@@ -417,6 +283,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
               endLine: { type: "number" },
               cwd: { type: "string" },
               workspace: { type: "string" },
+              projectId: { type: "string", description: "Registered project ID. Takes precedence over implicit session workspace." },
             },
           },
         },
@@ -430,6 +297,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
               overwrite: { type: "boolean" },
               cwd: { type: "string" },
               workspace: { type: "string" },
+              projectId: { type: "string", description: "Registered project ID. Takes precedence over implicit session workspace." },
             },
             required: ["files"],
           },
@@ -438,22 +306,22 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         {
           name: "superagent_list_files",
           description: "List files and directories in the workspace or a specific subfolder.",
-          inputSchema: { type: "object", properties: { dirPath: { type: "string" } } },
+          inputSchema: { type: "object", properties: { dirPath: { type: "string" }, workspace: { type: "string" }, projectId: { type: "string" } } },
         },
         {
           name: "superagent_grep_search",
           description: "Fast ripgrep pattern searching across files in workspace or worktrees.",
-          inputSchema: { type: "object", properties: { query: { type: "string" }, path: { type: "string" }, include: { type: "string" }, exclude: { type: "string" }, isRegex: { type: "boolean" } }, required: ["query"] },
+          inputSchema: { type: "object", properties: { query: { type: "string" }, path: { type: "string" }, include: { type: "string" }, exclude: { type: "string" }, isRegex: { type: "boolean" }, workspace: { type: "string" }, cwd: { type: "string" }, projectId: { type: "string" } }, required: ["query"] },
         },
         {
           name: "superagent_find_files",
           description: "Search for files and directories by name glob or extension.",
-          inputSchema: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string" }, extension: { type: "string" }, maxDepth: { type: "number" } } },
+          inputSchema: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string" }, extension: { type: "string" }, maxDepth: { type: "number" }, workspace: { type: "string" }, cwd: { type: "string" }, projectId: { type: "string" } } },
         },
         {
           name: "superagent_manage_worktrees",
           description: "List, inspect, and remove Git feature worktrees.",
-          inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "remove"] }, id: { type: "string" } }, required: ["action"] },
+          inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "remove"] }, id: { type: "string" }, workspace: { type: "string" }, projectId: { type: "string" } }, required: ["action"] },
         },
         {
           name: "superagent_get_current_task",
@@ -464,6 +332,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
               instanceId: { type: "string", description: "Optional instance ID (Superagent ID, Subagent ID, or process PID). If omitted, resolves the current active instance." },
               superagentId: { type: "string", description: "Optional alias for instanceId." },
               workspace: { type: "string", description: "Optional workspace or worktree path." },
+              projectId: { type: "string", description: "Registered project ID for this lookup." },
               currentOnly: { type: "boolean", description: "If true, returns only the current task description string." },
             },
           },
@@ -475,6 +344,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
             type: "object",
             properties: {
               workspace: { type: "string", description: "Optional workspace or worktree path to inspect." },
+              projectId: { type: "string", description: "Registered project ID for this lookup." },
               superagentId: { type: "string", description: "Optional Superagent instance ID to automatically inspect its worktree." },
               currentOnly: { type: "boolean", description: "Optional: if true, returns only the current active task and progress." },
             },
@@ -489,6 +359,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
               action: { type: "string", enum: ["mark_completed", "mark_in_progress", "add_task", "get_status", "get_current_task"] },
               taskText: { type: "string", description: "Task description text to mark or add." },
               workspace: { type: "string", description: "Optional workspace or worktree path." },
+              projectId: { type: "string", description: "Registered project ID for this update." },
               superagentId: { type: "string", description: "Optional Superagent instance ID to update its isolated worktree checklist." },
             },
             required: ["action"],
@@ -585,6 +456,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         ...PLAN_SKILLS_MCP_TOOL_DEFS,
         ...NETWORK_CONTENT_MCP_TOOL_DEFS,
         ...REMOTE_AGENT_MCP_TOOL_DEFS,
+        ...PROJECT_MCP_TOOL_DEFS,
+        ...WORKSPACE_CHAIN_MCP_TOOL_DEFS,
     ];
     // Allowlist: hide non-allowed tools from MCP clients.
     // If allowDangerous is true OR CLI YOLO mode is active ("scoped" | "full"),
@@ -607,9 +480,51 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   let activeWorkspace = workspace || process.cwd();
   const dispatchMcpToolCall = async (request: any) => {
     const { name, arguments: args = {} } = request.params;
-    const targetWorkspace = name === "superagent_switch_workspace"
-      ? activeWorkspace
-      : String(args.workspace || args.cwd || args.worktreePath || activeWorkspace);
+    let targetWorkspace = activeWorkspace;
+    const hasExplicitWorkspaceTarget = typeof args.projectId === "string" || typeof args.workspace === "string"
+      || typeof args.cwd === "string" || typeof args.worktreePath === "string";
+    const shouldResolveWorkspace = WORKSPACE_SCOPED_MCP_TOOLS.has(name) || hasExplicitWorkspaceTarget;
+    if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name) && shouldResolveWorkspace) {
+      try {
+        targetWorkspace = resolveProjectTarget({
+          projectId: args.projectId,
+          workspace: args.workspace,
+          cwd: args.cwd,
+          worktreePath: args.worktreePath,
+          sessionWorkspace: activeWorkspace,
+        }).workspace;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const rawExplicitTarget = [args.workspace, args.cwd, args.worktreePath]
+          .find((value) => typeof value === "string" && value.trim()) as string | undefined;
+        // Preserve legacy absolute/relative workspace targets only as candidates;
+        // the Scoped YOLO boundary below remains the authoritative permission check.
+        if (!args.projectId && rawExplicitTarget && !/^(?:ssh:|chain:)/i.test(rawExplicitTarget)
+          && message.includes("Workspace target is not registered or authorized")) {
+          targetWorkspace = path.isAbsolute(rawExplicitTarget)
+            ? path.resolve(rawExplicitTarget)
+            : path.resolve(activeWorkspace, rawExplicitTarget);
+        } else {
+          return { content: [{ type: "text", text: message }], isError: true };
+        }
+      }
+    } else if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name)) {
+      targetWorkspace = activeWorkspace;
+    }
+    const chainUriTarget = /^(?:ssh:|chain:)/i.test(targetWorkspace);
+    if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name) && shouldResolveWorkspace
+      && !isFullYoloMode() && !chainUriTarget
+      && !isPathWithinYoloScope(targetWorkspace, activeWorkspace || process.cwd())) {
+      return { content: [{ type: "text", text: `Project target is outside the allowed workspace scope: ${targetWorkspace}. Registering a project does not expand YOLO permissions; select a project within the allowed parent folder or enable Full YOLO locally.` }], isError: true };
+    }
+    if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name) && hasExplicitWorkspaceTarget) {
+      // Canonicalize explicit handler context: avoid a relative cwd/workspace argument
+      // being resolved again against process.cwd(). Preserve ambient defaults so
+      // superagentId/worktree-based task lookups retain their existing semantics.
+      args.workspace = targetWorkspace;
+      if (typeof args.cwd === "string") args.cwd = targetWorkspace;
+      if (typeof args.worktreePath === "string") args.worktreePath = targetWorkspace;
+    }
     return runWithMcpWorkspace(targetWorkspace, async () => {
       logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(args)}`);
 
@@ -707,6 +622,10 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         case "superagent_get_remote_status":
           return await handleGetRemoteStatus(args);
         default: {
+          const projectRes = await dispatchProjectMcpTool(name, args);
+          if (projectRes) return projectRes;
+          const chainRes = await dispatchWorkspaceChainMcpTool(name, args, targetWorkspace);
+          if (chainRes) return chainRes;
           const remoteAgentRes = await dispatchRemoteAgentMcpTool(name, args);
           if (remoteAgentRes) return remoteAgentRes;
           const chromeRes = await dispatchChromeMcpTool(name, args);
@@ -755,12 +674,41 @@ function extractMcpResultText(result: unknown): string {
     const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
     const level = MCP_TOOL_CLASSIFICATION[toolName];
     const isDangerous = level === "dangerous";
-    const effectiveWs =
+    let effectiveWs =
       (rawArgs.workspace as string) ||
       (rawArgs.cwd as string) ||
       (rawArgs.worktreePath as string) ||
       activeWorkspace ||
       process.cwd();
+    const registryManagementTools = new Set([
+      "superagent_list_projects", "superagent_get_project", "superagent_register_project",
+      "superagent_update_project", "superagent_remove_project",
+    ]);
+    if (toolName !== "superagent_switch_workspace" && !registryManagementTools.has(toolName)
+      && (typeof rawArgs.projectId === "string" || typeof rawArgs.workspace === "string" || typeof rawArgs.cwd === "string" || typeof rawArgs.worktreePath === "string")) {
+      try {
+        effectiveWs = resolveProjectTarget({
+          projectId: rawArgs.projectId,
+          workspace: rawArgs.workspace,
+          cwd: rawArgs.cwd,
+          worktreePath: rawArgs.worktreePath,
+          sessionWorkspace: activeWorkspace || process.cwd(),
+        }).workspace;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const rawExplicitTarget = [rawArgs.workspace, rawArgs.cwd, rawArgs.worktreePath]
+          .find((value) => typeof value === "string" && value.trim()) as string | undefined;
+        if (!rawArgs.projectId && rawExplicitTarget && !/^(?:ssh:|chain:)/i.test(rawExplicitTarget)
+          && message.includes("Workspace target is not registered or authorized")) {
+          effectiveWs = path.isAbsolute(rawExplicitTarget)
+            ? path.resolve(rawExplicitTarget)
+            : path.resolve(activeWorkspace || process.cwd(), rawExplicitTarget);
+        } else {
+          onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: message, durationMs: 0 });
+          throw new McpError(ErrorCode.InvalidParams, message);
+        }
+      }
+    }
 
     // Block direct calls too, including clients that cached an old tools/list response.
     if (DISABLED_MCP_TOOLS.has(toolName)) {
@@ -829,7 +777,8 @@ function extractMcpResultText(result: unknown): string {
     // Scoped YOLO boundary guard (Layer 1)
     // If Full YOLO is active, system-wide access is permitted.
     // If Scoped YOLO is active (or allowDangerous without full YOLO), enforce scope boundary!
-    if (isDangerous && !isFullYoloMode()) {
+    const chainToolsRequireDedicatedBoundary = toolName === "superagent_manage_workspace_chain" || toolName === "superagent_cross_workspace_exec";
+    if (isDangerous && !isFullYoloMode() && !chainToolsRequireDedicatedBoundary) {
       const inScope = isToolCallWithinYoloScope({ name: toolName, args: rawArgs }, effectiveWs);
       if (!inScope) {
         const allowedRoot = getYoloAllowedRoot(effectiveWs);

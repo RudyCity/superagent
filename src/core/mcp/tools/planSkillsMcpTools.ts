@@ -22,6 +22,7 @@ import {
   getYoloAllowedRoot,
 } from "../../permissions.js";
 import { getMcpWorkspacePath } from "./workspaceContext.js";
+import { assertPathWithinProject } from "../../project/projectRouter.js";
 
 function toResult(res: unknown): McpToolResult {
   const text = typeof res === "string" ? res : JSON.stringify(res, null, 2);
@@ -112,8 +113,43 @@ async function autoPreemptFileLocksInYolo(paths: string[]): Promise<void> {
   } catch {}
 }
 
+
+function validateLocalMutationTargets(rawPaths: string[]): { error?: string } {
+  const workspace = getMcpWorkspacePath();
+  if (/^(?:ssh:|chain:)/i.test(workspace)) {
+    return { error: "Local file mutation tools cannot target SSH/Workspace Chain URIs. Use the Workspace Chain MCP tools for remote nodes." };
+  }
+  try {
+    for (const raw of rawPaths) {
+      if (!raw.trim()) continue;
+      const resolved = path.isAbsolute(raw) ? raw : path.resolve(workspace, raw);
+      assertPathWithinProject(resolved, workspace);
+    }
+    return {};
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function getMutationTargets(args: any): string[] {
+  const targets: string[] = [];
+  const first = args.filePath || args.TargetFile || args.targetFile || args.path || args.file;
+  if (typeof first === "string" && first.trim()) targets.push(first);
+  for (const listName of ["edits", "files", "patches"]) {
+    const items = args[listName];
+    if (!Array.isArray(items)) continue;
+    for (const item of items) {
+      const target = item?.filePath || item?.TargetFile || item?.targetFile || item?.path || item?.file;
+      if (typeof target === "string" && target.trim()) targets.push(target);
+    }
+  }
+  return targets;
+}
+
 export async function handleReplaceFileContent(args: any): Promise<McpToolResult> {
   const filePath = String(args.filePath || args.TargetFile || args.path || args.file || "");
+  const validation = validateLocalMutationTargets(getMutationTargets(args));
+  if (validation.error) return { content: [{ type: "text", text: validation.error }], isError: true };
   if (!isFullYoloMode() && filePath) {
     const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(getMcpWorkspacePath(), filePath);
     if (path.basename(resolved).toLowerCase() === "model-config.json") {
@@ -164,6 +200,8 @@ export async function handleReplaceFileContent(args: any): Promise<McpToolResult
 
 export async function handleApplyPatch(args: any): Promise<McpToolResult> {
   const filePath = String(args.filePath || args.path || args.file || "");
+  const validation = validateLocalMutationTargets(getMutationTargets(args));
+  if (validation.error) return { content: [{ type: "text", text: validation.error }], isError: true };
   if (!isFullYoloMode() && filePath) {
     const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(getMcpWorkspacePath(), filePath);
     if (path.basename(resolved).toLowerCase() === "model-config.json") {
@@ -233,6 +271,8 @@ export const PLAN_SKILLS_MCP_TOOL_DEFS = [
         targetContent: { type: "string", description: "Exact text in existing plan to replace (for 'edit')." },
         replacementContent: { type: "string", description: "Replacement text (for 'edit')." },
         sessionId: { type: "string", description: "Optional session ID for multi-agent mode." },
+        workspace: { type: "string", description: "Optional workspace path within an enabled registered project." },
+        projectId: { type: "string", description: "Stable ID of a registered project." },
       },
       required: ["action"],
     },
@@ -255,6 +295,8 @@ export const PLAN_SKILLS_MCP_TOOL_DEFS = [
         indices: { type: "array", items: { type: "number" }, description: "1-based task indices for bulk updates/removals." },
         status: { type: "string", enum: [" ", "/", "x"], description: "New task status: ' ' (pending), '/' (in progress), 'x' (completed)." },
         sessionId: { type: "string", description: "Optional session ID for multi-agent mode." },
+        workspace: { type: "string", description: "Optional workspace path within an enabled registered project." },
+        projectId: { type: "string", description: "Stable ID of a registered project." },
       },
       required: ["action"],
     },
@@ -312,6 +354,8 @@ export const PLAN_SKILLS_MCP_TOOL_DEFS = [
         startLine: { type: "number", description: "Start line number of the block (1-indexed)." },
         endLine: { type: "number", description: "End line number of the block (1-indexed)." },
         allowMultiple: { type: "boolean", description: "Allow multiple occurrences within the line range." },
+        workspace: { type: "string", description: "Optional workspace path within the selected project." },
+        projectId: { type: "string", description: "Stable ID of a registered project." },
       },
       required: ["filePath", "targetContent", "replacementContent", "startLine", "endLine"],
     },
@@ -325,6 +369,8 @@ export const PLAN_SKILLS_MCP_TOOL_DEFS = [
       properties: {
         filePath: { type: "string", description: "Path to the file to patch." },
         patchContent: { type: "string", description: "Unified diff or search-replace format block." },
+        workspace: { type: "string", description: "Optional workspace path within the selected project." },
+        projectId: { type: "string", description: "Stable ID of a registered project." },
         patches: {
           type: "array",
           items: {

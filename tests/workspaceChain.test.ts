@@ -318,3 +318,31 @@ describe("WorkspaceChainConfig", () => {
     expect(context.finalSystemPrompt).not.toContain("cross_workspace_exec");
   });
 });
+
+describe("Workspace Chain async mode isolation", () => {
+  it("workspaceChainManager.runWithRequestContext isolates concurrent SSH/local mode changes", async () => {
+    const { workspaceChainManager } = await import("../src/core/workspace/WorkspaceChainManager.js");
+    const { workspaceMode } = await import("../src/core/ssh/workspaceMode.js");
+    const originalMode = workspaceMode.getMode();
+    const originalConfig = workspaceMode.getConfig();
+    const sshConfig = { host: "isolated.example", port: 22, username: "tester", remoteCwd: "/srv/app" };
+
+    const [sshResult, localResult] = await Promise.all([
+      workspaceChainManager.runWithRequestContext(async () => {
+        workspaceMode.setSshMode(sshConfig);
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        return { mode: workspaceMode.getMode(), host: workspaceMode.getConfig()?.host };
+      }),
+      workspaceChainManager.runWithRequestContext(async () => {
+        workspaceMode.setLocalMode();
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        return { mode: workspaceMode.getMode(), host: workspaceMode.getConfig()?.host };
+      }),
+    ]);
+
+    expect(sshResult).toEqual({ mode: "ssh-proxy", host: "isolated.example" });
+    expect(localResult).toEqual({ mode: "local", host: undefined });
+    expect(workspaceMode.getMode()).toBe(originalMode);
+    expect(workspaceMode.getConfig()).toEqual(originalConfig);
+  });
+});

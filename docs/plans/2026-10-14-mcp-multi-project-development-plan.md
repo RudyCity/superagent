@@ -4,6 +4,8 @@ Date: 2026-10-14
 Status: Proposed — based on codebase audit  
 Scope: MCP workspace selection, multi-project routing, workspace boundary enforcement, and cross-session validation
 
+> Historical audit snapshot (2026-10-14). Follow the newer execution plan at [`2026-10-18-mcp-multi-project-management-implementation-plan.md`](2026-10-18-mcp-multi-project-management-implementation-plan.md) for implementation status and current verification results.
+
 ## 1. Objective
 
 Make SuperAgent's MCP interface reliably and safely operate on multiple registered projects without mixing workspace context, silently falling back to the wrong project, or exposing files outside an authorized workspace.

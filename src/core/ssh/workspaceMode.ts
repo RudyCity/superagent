@@ -46,13 +46,14 @@ class WorkspaceModeManager {
   }
 
   public setSshMode(config: SshWorkspaceConfig) {
+    const isolatedConfig = structuredClone(config);
     const state = this.requestContext.getStore();
     if (state) {
       state.mode = "ssh-proxy";
-      state.config = config;
+      state.config = isolatedConfig;
     } else {
       this.mode = "ssh-proxy";
-      this.config = config;
+      this.config = isolatedConfig;
     }
     sshLogger.info("workspace.mode", "switched to ssh-proxy", {
       host: config.host,
@@ -92,24 +93,26 @@ class WorkspaceModeManager {
    * Call via `/ssh expand <path>` command or programmatically.
    */
   public addAllowedPath(p: string): void {
-    if (!this.config) return;
+    const config = this.getState().config;
+    if (!config) return;
     const normalizedPath = p.replace(/\/+$/, "").replace(/\\/g, "/") || "/";
     if (!normalizedPath.startsWith("/")) {
       sshLogger.warn("workspace.mode", "addAllowedPath: path must be absolute", { path: p });
       return;
     }
-    if (!this.config.additionalAllowedPaths) {
-      this.config.additionalAllowedPaths = [];
+    if (!config.additionalAllowedPaths) {
+      config.additionalAllowedPaths = [];
     }
-    if (!this.config.additionalAllowedPaths.includes(normalizedPath)) {
-      this.config.additionalAllowedPaths.push(normalizedPath);
+    if (!config.additionalAllowedPaths.includes(normalizedPath)) {
+      config.additionalAllowedPaths.push(normalizedPath);
       sshLogger.info("workspace.mode", "added allowed path", { path: normalizedPath });
     }
   }
 
   /** Return the current list of extra allowed paths (read-only copy). */
   public getAllowedPaths(): string[] {
-    return this.config?.additionalAllowedPaths ? [...this.config.additionalAllowedPaths] : [];
+    const paths = this.getState().config?.additionalAllowedPaths;
+    return paths ? [...paths] : [];
   }
 
   public parseSshTarget(target: string): SshWorkspaceConfig | null {

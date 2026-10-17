@@ -26,19 +26,7 @@ import {
 import { sshLogger } from "../ssh/sshLogger.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
 import { resolveHostAlias, findDefaultPrivateKey } from "../ssh/sshConfig.js";
-
-/** SSH connection wrapper for a chain node */
-interface ChainSshConnection {
-  nodeId: string;
-  client: Client;
-  sftp: SFTPClient;
-  config: WorkspaceNode["sshConfig"];
-}
-
-interface WorkspaceChainRequestContext {
-  activeChain: WorkspaceChain | null;
-  activeNodeId: string | null;
-}
+import { ChainSshConnection, WorkspaceChainRequestContext } from "./WorkspaceChainManagerTypes.js";
 
 class WorkspaceChainManagerClass {
   private readonly requestContext = new AsyncLocalStorage<WorkspaceChainRequestContext>();
@@ -73,7 +61,12 @@ class WorkspaceChainManagerClass {
 
   /** Run an operation with an isolated chain/node selection for this async request. */
   public runWithRequestContext<T>(callback: () => T): T {
-    return this.requestContext.run({ activeChain: null, activeNodeId: null }, callback);
+    // Workspace Chain updates SSH/local mode as part of loading and switching
+    // nodes. Nest that state inside the same async scope as chain selection so
+    // concurrent MCP sessions cannot overwrite each other's transport mode.
+    return workspaceMode.runWithWorkspaceConfig(undefined, () =>
+      this.requestContext.run({ activeChain: null, activeNodeId: null }, callback),
+    );
   }
 
   /** Load the active chain from config or an explicit chain: target. */

@@ -12,6 +12,8 @@ import {
   type McpHttpServerHandle,
 } from "../src/core/mcp/mcpHttpTransport.js";
 
+import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
+
 describe("mcpHttpTransport", () => {
   it("generates 64-char hex bearer tokens", () => {
     const a = generateMcpBearerToken();
@@ -35,6 +37,12 @@ describe("mcpHttpTransport", () => {
     expect(safe).not.toContain("superagent_exec_command");
     expect(safe).not.toContain("superagent_write_file");
     expect(safe).not.toContain("superagent_write_files");
+    expect(safe).toContain("superagent_list_projects");
+    expect(safe).toContain("superagent_get_project");
+    expect(safe).toContain("superagent_list_workspace_chains");
+    expect(safe).not.toContain("superagent_register_project");
+    expect(safe).not.toContain("superagent_manage_workspace_chain");
+    expect(safe).not.toContain("superagent_cross_workspace_exec");
     expect(safe.length).toBeGreaterThan(10);
   });
 
@@ -222,6 +230,16 @@ describe("per-session transport isolation", () => {
   let handle: McpHttpServerHandle;
   let token: string;
   const url = () => `http://127.0.0.1:${handle.port}${MCP_HTTP_PATH}`;
+  const parseSessionResponse = async (res: Response): Promise<any> => {
+    const body = await res.text();
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) return JSON.parse(body);
+    for (const line of body.split(String.fromCharCode(10))) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("data:")) return JSON.parse(trimmed.slice(5).trim());
+    }
+    throw new Error("no JSON payload in MCP response: " + body.slice(0, 200));
+  };
 
   const baseHeaders = (auth: string): Record<string, string> => ({
     "Content-Type": "application/json",
@@ -277,6 +295,76 @@ describe("per-session transport isolation", () => {
     const res = await fetch(url(), { method: "GET", headers: baseHeaders(token) });
     expect(res.status).toBe(400);
     await res.text();
+  });
+
+  it("persists workspace switches for one initialized session without changing another session", async () => {
+    const testHandle = await startMcpHttpServer({ port: 0, bearerToken: token, allowDangerous: true });
+    const testUrl = `http://127.0.0.1:${testHandle.port}${MCP_HTTP_PATH}`;
+    const root = fs.mkdtempSync(path.join(process.cwd(), ".tmp-mcp-session-workspaces-"));
+    const projectA = path.join(root, "project-a");
+    const projectB = path.join(root, "project-b");
+    const projectIdA = `session-a-${process.pid}-${Date.now()}`;
+    const projectIdB = `session-b-${process.pid}-${Date.now()}`;
+    fs.mkdirSync(projectA, { recursive: true });
+    fs.mkdirSync(projectB, { recursive: true });
+    registerProject({ id: projectIdA, name: "Session Workspace A", type: "local", root: projectA });
+    registerProject({ id: projectIdB, name: "Session Workspace B", type: "local", root: projectB });
+
+    const initSession = async (): Promise<string> => {
+      const res = await fetch(testUrl, {
+        method: "POST",
+        headers: baseHeaders(token),
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "workspace-test", version: "1" } },
+        }),
+      });
+      await res.text();
+      expect(res.status).toBe(200);
+      const sessionId = res.headers.get("mcp-session-id");
+      expect(sessionId).toBeTruthy();
+      return sessionId!;
+    };
+
+    const call = async (sessionId: string, id: number, name: string, args: Record<string, unknown> = {}) => {
+      const res = await fetch(testUrl, {
+        method: "POST",
+        headers: { ...baseHeaders(token), "mcp-session-id": sessionId },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          method: "tools/call",
+          params: { name, arguments: args },
+        }),
+      });
+      expect(res.status).toBe(200);
+      return parseSessionResponse(res);
+    };
+
+    const readWorkspace = async (sessionId: string, id: number): Promise<string> => {
+      const result: any = await call(sessionId, id, "superagent_get_workspace");
+      return result.result.content[0].text;
+    };
+
+    try {
+      const sessionA = await initSession();
+      const sessionB = await initSession();
+      const switched: any = await call(sessionA, 2, "superagent_switch_workspace", { workspacePath: projectA });
+      expect(switched.result?.content?.[0]?.text).toContain(projectA);
+      expect(await readWorkspace(sessionA, 3)).toContain(projectA);
+      expect(await readWorkspace(sessionB, 4)).toContain(process.cwd());
+
+      const explicitOnly: any = await call(sessionA, 5, "superagent_get_workspace", { workspace: projectB });
+      expect(explicitOnly.result?.content?.[0]?.text).toContain(projectB);
+      expect(await readWorkspace(sessionA, 6)).toContain(projectA);
+    } finally {
+      removeProject(projectIdA);
+      removeProject(projectIdB);
+      fs.rmSync(root, { recursive: true, force: true });
+      await testHandle.close();
+    }
   });
 
   it("supports reconnect with the same session ID and DELETE cleanup", async () => {

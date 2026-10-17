@@ -4,6 +4,7 @@ import path from "path";
 import os from "os";
 import { createSuperagentMcpServer, MCP_TOOL_CLASSIFICATION } from "../src/core/mcp/superagentMcpServer.js";
 import { getDefaultSafeTools } from "../src/core/mcp/mcpHttpTransport.js";
+import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
 import {
   superagentInstances,
   subagentInstances,
@@ -17,20 +18,23 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 58;
+const EXPECTED_TOOL_COUNT = 66;
 
-describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Prompts)", () => {
+describe("Superagent Complete 3-Pillar MCP Server Suite (66 Tools, Resources, Prompts)", () => {
   const testDir = path.join(process.cwd(), `.tmp_mcp_test_${Date.now()}`);
+  const testProjectId = path.basename(testDir).replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
 
   beforeEach(() => {
     superagentInstances.clear();
     subagentInstances.clear();
     fs.mkdirSync(testDir, { recursive: true });
+    registerProject({ id: testProjectId, name: "MCP Test Suite", type: "local", root: testDir });
   });
 
   afterEach(() => {
     superagentInstances.clear();
     subagentInstances.clear();
+    removeProject(testProjectId);
     try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
   });
 
@@ -74,6 +78,14 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Pr
     // Workspace & files
     expect(toolNames).toContain("superagent_switch_workspace");
     expect(toolNames).toContain("superagent_get_workspace");
+    expect(toolNames).toContain("superagent_list_projects");
+    expect(toolNames).toContain("superagent_get_project");
+    expect(toolNames).toContain("superagent_register_project");
+    expect(toolNames).toContain("superagent_update_project");
+    expect(toolNames).toContain("superagent_remove_project");
+    expect(toolNames).toContain("superagent_list_workspace_chains");
+    expect(toolNames).toContain("superagent_manage_workspace_chain");
+    expect(toolNames).toContain("superagent_cross_workspace_exec");
     expect(toolNames).toContain("superagent_exec_command");
     expect(toolNames).not.toContain("superagent_read_file");
     expect(toolNames).not.toContain("superagent_write_file");
@@ -245,6 +257,26 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (57 Tools, Resources, Pr
     expect(agentic.messages[0].content.text).toContain("AUTONOMOUS MCP AGENTIC EXECUTION MANDATE");
     expect(agentic.messages[0].content.text).toContain("Fix authentication race condition");
     expect(agentic.messages[0].content.text).toContain("TOOL_FIRST");
+  });
+
+  it("discovers and inspects registered projects through the actual MCP tool dispatcher", async () => {
+    const server = createSuperagentMcpServer();
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+
+    const listed = await callHandler({
+      method: "tools/call",
+      params: { name: "superagent_list_projects", arguments: {} },
+    });
+    expect(listed.isError).toBeFalsy();
+    const parsedList = JSON.parse(listed.content[0].text);
+    expect(parsedList.projects.some((project: any) => project.id === testProjectId)).toBe(true);
+
+    const inspected = await callHandler({
+      method: "tools/call",
+      params: { name: "superagent_get_project", arguments: { projectId: testProjectId } },
+    });
+    expect(inspected.isError).toBeFalsy();
+    expect(JSON.parse(inspected.content[0].text).project.root).toBe(fs.realpathSync(testDir));
   });
 
   it("executes file, search, workspace, config, and health tools", async () => {

@@ -1,3 +1,22 @@
+## [1.14.0] - 2026-10-18
+### Added
+- Added a validated, versioned MCP Project Registry with stable project IDs and explicit list/inspect/register/update/remove tools. Local roots are canonicalized, duplicate IDs/roots are rejected, registry writes are atomic, and malformed records fail closed.
+- Added deterministic project routing for local, SSH, and Workspace Chain targets, including rejection of unknown, disabled, ambiguous, unregistered, or out-of-root workspace targets.
+- Exposed Workspace Chain listing and permission-gated management/cross-workspace operations to MCP. Mutating/remote execution requires locally enabled Full YOLO mode and rejects inline SSH secrets.
+
+### Changed
+- Persisted workspace selection per initialized MCP session while keeping explicit per-call targets separate from the session default. Added integration coverage proving that one session's switch does not affect another session.
+- Applied common project-root boundary validation to MCP file read/list/search/write, multi-file writes, file locks, document reads, Git add/restore, and patch/replace operations. Local file tools reject SSH/chain URIs instead of treating them as local paths.
+- Isolated Workspace Chain SSH/local mode changes in request-scoped async context; moved worktree and workspace-status handlers into focused MCP modules.
+
+### Security
+- Project registration does not automatically expand Scoped YOLO permissions or trust arbitrary directories. Registry records reject secret-like fields and credential-bearing SSH URIs.
+- Kept disabled remote orchestration tools disabled and retained separate dangerous-tool discovery/permission policies.
+
+### Tests
+- Added MCP project registry/router/tool tests, per-session HTTP transport regression coverage, Workspace Chain adapter tests, concurrent SSH/local context tests, and workspace-boundary tests.
+- Focused verification: 15 test files / 127 tests passed; TypeScript build passed. Batched full-suite execution exposed three unrelated `wizardDialog.test.ts` failures because Ink raw mode is unsupported by this host stdin; `fileLockOptimisticAndUI.test.ts` passed when rerun alone. Full-suite status remains not clean in this environment.
+
 ## [1.13.90] - 2026-10-16
 ### Fixed
 - Fixed missing autocomplete suggestions and descriptions for MCP tunnel subcommands and flags (`dashboardSuggestions.ts`, `museTunnelSubcommand.ts`):
