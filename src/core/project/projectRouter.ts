@@ -49,9 +49,38 @@ function canonicalDirectory(value: string): string {
   return fs.realpathSync(resolved);
 }
 
+function sshTargetWithinProject(target: string, projectTarget: string): boolean {
+  try {
+    const candidate = new URL(target);
+    const root = new URL(projectTarget);
+    if (candidate.protocol !== "ssh:" || root.protocol !== "ssh:" || candidate.password || candidate.search || candidate.hash
+      || candidate.hostname.toLowerCase() !== root.hostname.toLowerCase()
+      || candidate.username !== root.username || (candidate.port || "22") !== (root.port || "22")) return false;
+    const candidatePath = path.posix.normalize(decodeURIComponent(candidate.pathname || "/"));
+    const rootPath = path.posix.normalize(decodeURIComponent(root.pathname || "/"));
+    const relative = path.posix.relative(rootPath, candidatePath);
+    return relative === "" || (relative !== ".." && !relative.startsWith("../") && !path.posix.isAbsolute(relative));
+  } catch { return false; }
+}
+
 function findRemoteProject(target: string, projects: RegisteredProject[]): RegisteredProject | null {
+  if (/^ssh:/i.test(target)) {
+    const matches = projects.filter((project) => project.enabled && project.type === "ssh" && project.target
+      && sshTargetWithinProject(target, project.target));
+    if (matches.length > 1) {
+      const mostSpecificLength = Math.max(...matches.map((project) => {
+        try { return path.posix.normalize(decodeURIComponent(new URL(project.target!).pathname || "/")).length; } catch { return 0; }
+      }));
+      const mostSpecific = matches.filter((project) => {
+        try { return path.posix.normalize(decodeURIComponent(new URL(project.target!).pathname || "/")).length === mostSpecificLength; } catch { return false; }
+      });
+      if (mostSpecific.length !== 1) throw new Error(`Workspace target is ambiguous across registered SSH projects: ${target} (${mostSpecific.map((project) => project.id).join(", ")})`);
+      return mostSpecific[0];
+    }
+    return matches[0] ?? null;
+  }
   const key = normalizeRemoteTarget(target);
-  return projects.find((project) => project.enabled && project.target && normalizeRemoteTarget(project.target) === key) ?? null;
+  return projects.find((project) => project.enabled && project.type === "chain" && project.target && normalizeRemoteTarget(project.target) === key) ?? null;
 }
 
 function findLocalProject(target: string, projects: RegisteredProject[]): { project: RegisteredProject; canonicalTarget: string } {
@@ -98,6 +127,26 @@ export function resolveProjectTarget(input: ResolveProjectTargetInput): Resolved
     }
     const requestedRemoteTarget = [input.workspace, input.cwd, input.worktreePath]
       .find((value) => typeof value === "string" && value.trim()) as string | undefined;
+    if (project.type === "ssh" && requestedRemoteTarget) {
+      const rootUrl = new URL(project.target!);
+      let candidateUrl: URL;
+      if (/^ssh:/i.test(requestedRemoteTarget)) {
+        candidateUrl = new URL(requestedRemoteTarget);
+        if (candidateUrl.protocol !== "ssh:" || candidateUrl.password || candidateUrl.search || candidateUrl.hash
+          || candidateUrl.hostname.toLowerCase() !== rootUrl.hostname.toLowerCase()
+          || candidateUrl.username !== rootUrl.username || (candidateUrl.port || "22") !== (rootUrl.port || "22")) {
+          throw new Error(`Workspace target does not match registered SSH project ${project.id}.`);
+        }
+      } else {
+        const rawPath = requestedRemoteTarget.split(String.fromCharCode(92)).join("/");
+        candidateUrl = new URL(rootUrl.toString());
+        candidateUrl.pathname = path.posix.normalize(rawPath.startsWith("/") ? rawPath : path.posix.join(rootUrl.pathname || "/", rawPath));
+      }
+      if (!sshTargetWithinProject(candidateUrl.toString(), project.target!)) {
+        throw new Error(`Workspace target escapes registered SSH project ${project.id}.`);
+      }
+      return { projectId: project.id, project, workspace: candidateUrl.toString().replace(/\/$/, ""), source: "projectId", explicit: true };
+    }
     if (requestedRemoteTarget && normalizeRemoteTarget(requestedRemoteTarget) !== normalizeRemoteTarget(project.target!)) {
       throw new Error(`Workspace target does not match registered project ${project.id}.`);
     }
@@ -119,7 +168,7 @@ export function resolveProjectTarget(input: ResolveProjectTargetInput): Resolved
       const project = findRemoteProject(target, projects);
       if (!project) throw new Error(`Workspace target is not registered: ${target}`);
       if (!project.enabled) throw new Error(`Project is disabled: ${project.id}`);
-      return { projectId: project.id, project, workspace: project.target!, source, explicit: true };
+      return { projectId: project.id, project, workspace: /^ssh:/i.test(target) ? target.replace(/\/$/, "") : project.target!, source, explicit: true };
     }
     const { project, canonicalTarget } = findLocalProject(target, projects);
     return { projectId: project.id, project, workspace: canonicalTarget, source, explicit: true };

@@ -27,6 +27,8 @@ import {
   isToolCallWithinYoloScope,
   isPathWithinYoloScope,
   getYoloAllowedRoot,
+  isModelConfigAccess,
+  isSensitiveEnvFileAccess,
 } from "../permissions.js";
 import { registerResourcesAndPrompts } from "./resourcesAndPrompts.js";
 import { runWithMcpWorkspace } from "./tools/workspaceContext.js";
@@ -103,6 +105,8 @@ import {
   dispatchProjectMcpTool,
 } from "./tools/projectTools.js";
 import { resolveProjectTarget } from "../project/projectRouter.js";
+import { getProjectCapabilityForTool, hasProjectAccess } from "../project/projectAccessPolicy.js";
+import { standaloneSshProjectProvider } from "./tools/standaloneSshProjectTools.js";
 import { PROJECT_REGISTRY_TOOL_NAMES, WORKSPACE_SCOPED_MCP_TOOLS } from "./mcpWorkspacePolicy.js";
 import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
 import type { McpServerOptions } from "./mcpToolPolicy.js";
@@ -477,22 +481,36 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     return { tools: annotated };
   });
 
-  let activeWorkspace = workspace || process.cwd();
+  const scopedWorkspaceAnchor = workspace || process.cwd();
+  let activeWorkspace = scopedWorkspaceAnchor;
+  let activeProjectId: string | null = null;
+  let activeProjectGrantRequired = false;
   const dispatchMcpToolCall = async (request: any) => {
     const { name, arguments: args = {} } = request.params;
+    if (!isFullYoloMode() && isSensitiveEnvFileAccess({ name, args })) {
+      return { content: [{ type: "text", text: "MCP access to .env files is blocked unless Full YOLO is enabled locally. Project grants do not override this sensitive-file guard." }], isError: true };
+    }
+    if (typeof args.projectId === "string" && !WORKSPACE_SCOPED_MCP_TOOLS.has(name)
+      && name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name)) {
+      return { content: [{ type: "text", text: "This MCP tool does not support projectId routing. Use projectId only with workspace-scoped MCP tools or superagent_switch_workspace." }], isError: true };
+    }
     let targetWorkspace = activeWorkspace;
+    let targetProjectId: string | null = null;
+    const identityForProjectAccess = getIdentity?.();
     const hasExplicitWorkspaceTarget = typeof args.projectId === "string" || typeof args.workspace === "string"
       || typeof args.cwd === "string" || typeof args.worktreePath === "string";
     const shouldResolveWorkspace = WORKSPACE_SCOPED_MCP_TOOLS.has(name) || hasExplicitWorkspaceTarget;
     if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name) && shouldResolveWorkspace) {
       try {
-        targetWorkspace = resolveProjectTarget({
+        const resolvedTarget = resolveProjectTarget({
           projectId: args.projectId,
           workspace: args.workspace,
           cwd: args.cwd,
           worktreePath: args.worktreePath,
           sessionWorkspace: activeWorkspace,
-        }).workspace;
+        });
+        targetWorkspace = resolvedTarget.workspace;
+        targetProjectId = resolvedTarget.projectId ?? (!hasExplicitWorkspaceTarget ? activeProjectId : null);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const rawExplicitTarget = [args.workspace, args.cwd, args.worktreePath]
@@ -510,12 +528,24 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       }
     } else if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name)) {
       targetWorkspace = activeWorkspace;
+      targetProjectId = activeProjectId;
     }
-    const chainUriTarget = /^(?:ssh:|chain:)/i.test(targetWorkspace);
+    const chainUriTarget = /^chain:/i.test(targetWorkspace);
+    const sshUriTarget = /^ssh:/i.test(targetWorkspace);
     if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name) && shouldResolveWorkspace
-      && !isFullYoloMode() && !chainUriTarget
-      && !isPathWithinYoloScope(targetWorkspace, activeWorkspace || process.cwd())) {
-      return { content: [{ type: "text", text: `Project target is outside the allowed workspace scope: ${targetWorkspace}. Registering a project does not expand YOLO permissions; select a project within the allowed parent folder or enable Full YOLO locally.` }], isError: true };
+      && !isFullYoloMode() && !chainUriTarget) {
+      const selectedProjectRequiresGrant = Boolean(activeProjectGrantRequired && targetProjectId && targetProjectId === activeProjectId);
+      const scopedLocalAccess = !selectedProjectRequiresGrant && !sshUriTarget
+        && isPathWithinYoloScope(targetWorkspace, scopedWorkspaceAnchor);
+      const capability = getProjectCapabilityForTool(name, args);
+      const grantedProjectAccess = Boolean(WORKSPACE_SCOPED_MCP_TOOLS.has(name) && targetProjectId && identityForProjectAccess?.subject
+        && hasProjectAccess(identityForProjectAccess, targetProjectId, capability));
+      if (!scopedLocalAccess && !grantedProjectAccess) {
+        const reason = sshUriTarget
+          ? `Standalone SSH project access is not granted for project ${targetProjectId || targetWorkspace}. Use superagent_grant_project_access with the required capability after enabling dangerous-tool access.`
+          : `Project target is outside the allowed workspace scope: ${targetWorkspace}. Project registration alone does not grant access. Grant the authenticated MCP identity the '${capability}' capability or enable Full YOLO locally.`;
+        return { content: [{ type: "text", text: reason }], isError: true };
+      }
     }
     if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name) && hasExplicitWorkspaceTarget) {
       // Canonicalize explicit handler context: avoid a relative cwd/workspace argument
@@ -529,6 +559,10 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(args)}`);
 
       try {
+        if (/^ssh:/i.test(targetWorkspace) && WORKSPACE_SCOPED_MCP_TOOLS.has(name)) {
+          const sshResult = await standaloneSshProjectProvider.dispatch(name, args, targetWorkspace, targetProjectId);
+          if (sshResult) return sshResult;
+        }
         switch (name) {
         case "superagent_list_active":
           return await handleListActive(args);
@@ -559,7 +593,19 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         case "superagent_cli_bridge":
           return await handleCliBridge(args);
         case "superagent_switch_workspace":
-          return await handleSwitchWorkspace(args, (nextWorkspace) => { activeWorkspace = nextWorkspace; });
+          return await handleSwitchWorkspace(
+            args,
+            (nextWorkspace, projectId, requiresProjectGrant) => {
+              activeWorkspace = nextWorkspace;
+              activeProjectId = projectId ?? null;
+              activeProjectGrantRequired = Boolean(requiresProjectGrant && projectId);
+            },
+            (projectId) => Boolean(identityForProjectAccess?.subject && hasProjectAccess(
+              identityForProjectAccess, projectId, "read",
+            )),
+            (candidateWorkspace) => !/^(?:ssh:|chain:)/i.test(candidateWorkspace)
+              && isPathWithinYoloScope(candidateWorkspace, scopedWorkspaceAnchor),
+          );
         case "superagent_get_workspace":
           return await handleGetWorkspace();
         case "superagent_exec_command":
@@ -622,7 +668,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         case "superagent_get_remote_status":
           return await handleGetRemoteStatus(args);
         default: {
-          const projectRes = await dispatchProjectMcpTool(name, args);
+          const identity = getIdentity?.();
+          const projectRes = await dispatchProjectMcpTool(name, args, identity?.subject ? identity : null);
           if (projectRes) return projectRes;
           const chainRes = await dispatchWorkspaceChainMcpTool(name, args, targetWorkspace);
           if (chainRes) return chainRes;
@@ -674,6 +721,7 @@ function extractMcpResultText(result: unknown): string {
     const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
     const level = MCP_TOOL_CLASSIFICATION[toolName];
     const isDangerous = level === "dangerous";
+    let effectiveProjectId: string | null = activeProjectId;
     let effectiveWs =
       (rawArgs.workspace as string) ||
       (rawArgs.cwd as string) ||
@@ -682,18 +730,21 @@ function extractMcpResultText(result: unknown): string {
       process.cwd();
     const registryManagementTools = new Set([
       "superagent_list_projects", "superagent_get_project", "superagent_register_project",
-      "superagent_update_project", "superagent_remove_project",
+      "superagent_update_project", "superagent_remove_project", "superagent_list_project_access",
+      "superagent_grant_project_access", "superagent_revoke_project_access",
     ]);
     if (toolName !== "superagent_switch_workspace" && !registryManagementTools.has(toolName)
       && (typeof rawArgs.projectId === "string" || typeof rawArgs.workspace === "string" || typeof rawArgs.cwd === "string" || typeof rawArgs.worktreePath === "string")) {
       try {
-        effectiveWs = resolveProjectTarget({
+        const resolvedTarget = resolveProjectTarget({
           projectId: rawArgs.projectId,
           workspace: rawArgs.workspace,
           cwd: rawArgs.cwd,
           worktreePath: rawArgs.worktreePath,
           sessionWorkspace: activeWorkspace || process.cwd(),
-        }).workspace;
+        });
+        effectiveWs = resolvedTarget.workspace;
+        effectiveProjectId = resolvedTarget.projectId;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const rawExplicitTarget = [rawArgs.workspace, rawArgs.cwd, rawArgs.worktreePath]
@@ -779,7 +830,25 @@ function extractMcpResultText(result: unknown): string {
     // If Scoped YOLO is active (or allowDangerous without full YOLO), enforce scope boundary!
     const chainToolsRequireDedicatedBoundary = toolName === "superagent_manage_workspace_chain" || toolName === "superagent_cross_workspace_exec";
     if (isDangerous && !isFullYoloMode() && !chainToolsRequireDedicatedBoundary) {
-      const inScope = isToolCallWithinYoloScope({ name: toolName, args: rawArgs }, effectiveWs);
+      const remoteSshTarget = /^ssh:/i.test(effectiveWs);
+      const capability = getProjectCapabilityForTool(toolName, rawArgs);
+      const boundaryIdentity = getIdentity?.();
+      const projectGrant = Boolean(WORKSPACE_SCOPED_MCP_TOOLS.has(toolName) && effectiveProjectId && boundaryIdentity?.subject
+        && hasProjectAccess(boundaryIdentity, effectiveProjectId, capability));
+      const protectedModelConfig = isModelConfigAccess({ name: toolName, args: rawArgs }, effectiveWs);
+      // An explicit project grant may expand the workspace root, but can never
+      // override the protected model configuration check. SSH paths are validated
+      // by the standalone provider; shell execution still runs with the SSH user's OS privileges.
+      const projectAdministrationRequiresFullYolo = [
+        "superagent_register_project", "superagent_update_project", "superagent_remove_project",
+        "superagent_grant_project_access",
+      ].includes(toolName);
+      const selectedProjectRequiresGrant = Boolean(activeProjectGrantRequired && effectiveProjectId && effectiveProjectId === activeProjectId);
+      const scopedBoundaryAllows = !projectAdministrationRequiresFullYolo && !selectedProjectRequiresGrant && !remoteSshTarget
+        && isToolCallWithinYoloScope({ name: toolName, args: rawArgs }, scopedWorkspaceAnchor);
+      const grantedProjectBoundaryAllows = !projectAdministrationRequiresFullYolo && projectGrant && !protectedModelConfig
+        && (remoteSshTarget || isToolCallWithinYoloScope({ name: toolName, args: rawArgs }, effectiveWs));
+      const inScope = grantedProjectBoundaryAllows || scopedBoundaryAllows;
       if (!inScope) {
         const allowedRoot = getYoloAllowedRoot(effectiveWs);
         const errReason = `Tool '${toolName}' call was blocked by Scoped YOLO boundary: operation targets path or resource outside allowed scope (${allowedRoot}) or accesses protected config files. Use /yolo full in SuperAgent CLI for unrestricted system-wide access.`;

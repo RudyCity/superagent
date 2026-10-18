@@ -508,7 +508,7 @@ export function isToolCallOutOfBounds(
   }
 
   // Check shell commands for relative traversals or absolute paths targeting outside workspace/config
-  const shellTools = ["bash", "run_command", "run_background_process"];
+  const shellTools = ["bash", "run_command", "run_background_process", "superagent_exec_command", "superagent_office_cli"];
   if (shellTools.includes(toolCall.name)) {
     const command = (args.command ?? args.cmd) as string | undefined;
     if (command && typeof command === "string") {
@@ -745,8 +745,8 @@ export function isModelConfigAccess(
     if (normalizeAndCheckSubpath(resolved, modelConfigPath)) return true;
   }
 
-  // Also check shell command arguments
-  const shellTools = ["bash", "run_command", "run_background_process"];
+  // Also check shell command arguments, including direct MCP command tools.
+  const shellTools = ["bash", "run_command", "run_background_process", "superagent_exec_command", "superagent_office_cli"];
   if (shellTools.includes(toolCall.name)) {
     const command = (args.command ?? args.cmd) as string | undefined;
     if (command && typeof command === "string") {
@@ -780,7 +780,7 @@ export function isSensitiveEnvFileAccess(
   }
 
   // Check shell commands for references to .env files
-  const shellTools = ["bash", "run_command", "run_background_process"];
+  const shellTools = ["bash", "run_command", "run_background_process", "superagent_exec_command", "superagent_office_cli"];
   if (shellTools.includes(toolCall.name)) {
     const command = (args.command ?? args.cmd) as string | undefined;
     if (command && typeof command === "string") {

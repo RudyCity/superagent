@@ -1,6 +1,7 @@
 export const PROJECT_REGISTRY_TOOL_NAMES = new Set([
   "superagent_list_projects", "superagent_get_project", "superagent_register_project",
   "superagent_update_project", "superagent_remove_project",
+  "superagent_list_project_access", "superagent_grant_project_access", "superagent_revoke_project_access",
 ]);
 
 export const WORKSPACE_SCOPED_MCP_TOOLS = new Set([

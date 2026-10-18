@@ -97,6 +97,37 @@ describe("MCP project target resolver", () => {
     });
   });
 
+  it("routes standalone SSH projects directly, supports subdirectories, and rejects remote root escapes", () => {
+    const dir = tempDir();
+    const registryPath = path.join(dir, "projects.json");
+    registerProject({ id: "remote-api", name: "Remote API", type: "ssh", target: "ssh://deploy@example.test:22/srv/app" }, registryPath);
+
+    expect(resolveProjectTarget({ projectId: "remote-api", workspace: "packages/api", sessionWorkspace: dir, registryPath })).toMatchObject({
+      projectId: "remote-api",
+      workspace: "ssh://deploy@example.test:22/srv/app/packages/api",
+      source: "projectId",
+    });
+    expect(resolveProjectTarget({ workspace: "ssh://deploy@example.test/srv/app/src", sessionWorkspace: dir, registryPath })).toMatchObject({
+      projectId: "remote-api",
+      workspace: "ssh://deploy@example.test/srv/app/src",
+      source: "workspace",
+    });
+    expect(() => resolveProjectTarget({ projectId: "remote-api", workspace: "../../etc", sessionWorkspace: dir, registryPath })).toThrow(/escapes registered SSH project/i);
+    expect(() => resolveProjectTarget({ projectId: "remote-api", workspace: "ssh://other@example.test/srv/app", sessionWorkspace: dir, registryPath })).toThrow(/does not match registered SSH project/i);
+    expect(() => resolveProjectTarget({ projectId: "remote-api", workspace: "ssh://deploy:secret@example.test/srv/app", sessionWorkspace: dir, registryPath })).toThrow(/does not match registered SSH project/i);
+  });
+
+  it("prefers the most-specific registered SSH root for nested project targets", () => {
+    const dir = tempDir();
+    const registryPath = path.join(dir, "projects.json");
+    registerProject({ id: "remote-root", name: "Remote Root", type: "ssh", target: "ssh://deploy@example.test/srv" }, registryPath);
+    registerProject({ id: "remote-app", name: "Remote App", type: "ssh", target: "ssh://deploy@example.test/srv/app" }, registryPath);
+    expect(resolveProjectTarget({ workspace: "ssh://deploy@example.test/srv/app/src", sessionWorkspace: dir, registryPath })).toMatchObject({
+      projectId: "remote-app",
+      workspace: "ssh://deploy@example.test/srv/app/src",
+    });
+  });
+
   it("rejects path traversal through a symlink outside the registered project", () => {
     const dir = tempDir();
     const root = path.join(dir, "repo");

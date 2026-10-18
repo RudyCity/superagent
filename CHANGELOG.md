@@ -3,18 +3,22 @@
 - Added a validated, versioned MCP Project Registry with stable project IDs and explicit list/inspect/register/update/remove tools. Local roots are canonicalized, duplicate IDs/roots are rejected, registry writes are atomic, and malformed records fail closed.
 - Added deterministic project routing for local, SSH, and Workspace Chain targets, including rejection of unknown, disabled, ambiguous, unregistered, or out-of-root workspace targets.
 - Exposed Workspace Chain listing and permission-gated management/cross-workspace operations to MCP. Mutating/remote execution requires locally enabled Full YOLO mode and rejects inline SSH secrets.
+- Added identity-bound MCP project access grants with separate read, write, execute, Git, worktree, planning, and chain capabilities. Project registry mutations and grant creation require locally enabled Full YOLO; grants are revoked when a project is disabled, removed, or its target changes.
 
 ### Changed
 - Persisted workspace selection per initialized MCP session while keeping explicit per-call targets separate from the session default. Added integration coverage proving that one session's switch does not affect another session.
 - Applied common project-root boundary validation to MCP file read/list/search/write, multi-file writes, file locks, document reads, Git add/restore, and patch/replace operations. Local file tools reject SSH/chain URIs instead of treating them as local paths.
 - Isolated Workspace Chain SSH/local mode changes in request-scoped async context; moved worktree and workspace-status handlers into focused MCP modules.
+- Added standalone SSH project dispatch without a Workspace Chain for workspace inspection, command execution, multi-file read/write, list/search, and Git operations. Each registered project has a separate SSH/SFTP proxy; MCP disables interactive SSH password prompts and global tool-output buffering for those clients.
 
 ### Security
 - Project registration does not automatically expand Scoped YOLO permissions or trust arbitrary directories. Registry records reject secret-like fields and credential-bearing SSH URIs.
 - Kept disabled remote orchestration tools disabled and retained separate dangerous-tool discovery/permission policies.
+- Standalone SSH targets reject password/query/fragment credentials. Remote file operations validate the registered root and resolve paths with SFTP realpath where available. The SSH execute capability is high privilege: commands run as the remote OS user and are not sandboxed by the project root.
 
 ### Tests
 - Added MCP project registry/router/tool tests, per-session HTTP transport regression coverage, Workspace Chain adapter tests, concurrent SSH/local context tests, and workspace-boundary tests.
+- Added identity/capability policy tests, local multi-project dispatcher concurrency tests, standalone SSH routing/fail-closed tests, and nested SSH root/traversal tests. These validate routing and policy without claiming a live SSH host was exercised.
 - Verification after refreshing outdated tests: `bun run build` and `bun run verify:extension-js` passed. All 329 test files passed when run in four bounded batches: 3,211 tests passed, 5 skipped by existing test conditions, 0 failed.
 
 ## [1.13.90] - 2026-10-16

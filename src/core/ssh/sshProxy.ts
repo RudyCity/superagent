@@ -85,6 +85,13 @@ export class SshProxyService {
   private lastActivityTime = 0;
   private readonly healthCheckIntervalMs = 60000; // Check if idle > 60s
   private isCheckingHealth = false;
+  private readonly trackGlobalToolOutput: boolean;
+  private readonly allowInteractiveAuth: boolean;
+
+  constructor(options: { trackGlobalToolOutput?: boolean; allowInteractiveAuth?: boolean } = {}) {
+    this.trackGlobalToolOutput = options.trackGlobalToolOutput !== false;
+    this.allowInteractiveAuth = options.allowInteractiveAuth !== false;
+  }
 
   public setPasswordHandler(handler: () => Promise<string>) {
     this.passwordHandler = handler;
@@ -222,7 +229,10 @@ export class SshProxyService {
           user: config.username,
         });
       } catch (err: any) {
-        const canPrompt = !config.password && err.message.includes("authentication");
+        const canPrompt = this.allowInteractiveAuth && !config.password && err.message.includes("authentication");
+        if (!this.allowInteractiveAuth && !config.password && err.message.includes("authentication")) {
+          throw new Error(`SSH authentication failed for ${config.username}@${config.host}; interactive password prompts are disabled for this MCP connection. Configure a supported SSH key/profile first.`);
+        }
         if (canPrompt) {
           const promptPassword = await this.resolvePassword();
           if (promptPassword) {
@@ -427,7 +437,7 @@ export class SshProxyService {
     const workingDir = this.normalizePosixPath(cwd || ".");
     const fullCommand = `cd ${this.escapeShellArg(workingDir)} && ${command}`;
 
-    clearActiveToolOutput();
+    if (this.trackGlobalToolOutput) clearActiveToolOutput();
     let sshStream: any = null;
 
     const execPromise = new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
@@ -483,7 +493,7 @@ export class SshProxyService {
         stream.on("data", (data: Buffer) => {
           const str = data.toString();
           stdout += str;
-          appendActiveToolOutput(str);
+          if (this.trackGlobalToolOutput) appendActiveToolOutput(str);
         });
 
         stream.on("close", (code: number | null) => {
@@ -496,7 +506,7 @@ export class SshProxyService {
         stream.stderr.on("data", (data: Buffer) => {
           const str = data.toString();
           stderr += str;
-          appendActiveToolOutput(str);
+          if (this.trackGlobalToolOutput) appendActiveToolOutput(str);
         });
 
         stream.stderr.on("error", (streamErr: Error) => {
@@ -561,7 +571,7 @@ export class SshProxyService {
     const workingDir = this.normalizePosixPath(cwd || ".");
     const remoteCommand: string[] = ["cd", workingDir, "&&", ...argv];
 
-    clearActiveToolOutput();
+    if (this.trackGlobalToolOutput) clearActiveToolOutput();
     let sshStream: any = null;
     const execPromise = new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
       // ssh2 accepts string|string[] at runtime; the bundled @types
@@ -585,7 +595,7 @@ export class SshProxyService {
         stream.on("data", (data: Buffer) => {
           const str = data.toString();
           stdout += str;
-          appendActiveToolOutput(str);
+          if (this.trackGlobalToolOutput) appendActiveToolOutput(str);
         });
         stream.on("close", (code: number | null) => {
           const finalExit = (code !== null && code !== undefined && !isNaN(Number(code)))
@@ -599,7 +609,7 @@ export class SshProxyService {
         stream.stderr.on("data", (data: Buffer) => {
           const str = data.toString();
           stderr += str;
-          appendActiveToolOutput(str);
+          if (this.trackGlobalToolOutput) appendActiveToolOutput(str);
         });
       });
     });
@@ -656,6 +666,14 @@ export class SshProxyService {
       this.trackPid(pid);
     }
     return pid;
+  }
+
+  /** Resolve a remote path through SFTP, allowing callers to verify symlink-aware project boundaries. */
+  public async realPath(remotePath: string): Promise<string> {
+    await this.verifyAndExpandBoundary(remotePath);
+    await this.ensureConnected();
+    const target = this.normalizePosixPath(remotePath);
+    return this.sftpClient!.realPath(target);
   }
 
   public async stat(remotePath: string): Promise<{ size: number; mtime: number; isFile: boolean; isDirectory: boolean }> {

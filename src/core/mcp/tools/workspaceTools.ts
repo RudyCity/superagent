@@ -31,7 +31,9 @@ import {
 
 export async function handleSwitchWorkspace(
   args: any,
-  onWorkspaceChange?: (workspacePath: string) => void,
+  onWorkspaceChange?: (workspacePath: string, projectId?: string | null, requiresProjectGrant?: boolean) => void,
+  canSelectRegisteredProject?: (projectId: string) => boolean,
+  isWorkspaceWithinScopedRoot?: (workspacePath: string) => boolean,
 ): Promise<McpToolResult> {
   const ws = String(args.workspacePath || args.workspace || args.path || args.dir || "");
   if (!ws && !(typeof args.projectId === "string" && args.projectId.trim())) {
@@ -39,11 +41,18 @@ export async function handleSwitchWorkspace(
   }
   const currentWorkspace = getMcpWorkspacePath();
   let resolved: string;
+  let resolvedProjectId: string | null = null;
+  let projectAccessGranted = false;
   try {
     const target = args.projectId
       ? resolveProjectTarget({ projectId: args.projectId, sessionWorkspace: currentWorkspace })
       : resolveProjectTarget({ workspace: path.isAbsolute(ws) || /^(?:ssh:|chain:)/i.test(ws) ? ws : path.resolve(currentWorkspace, ws), sessionWorkspace: currentWorkspace });
     resolved = target.workspace;
+    resolvedProjectId = target.projectId;
+    projectAccessGranted = Boolean(resolvedProjectId && canSelectRegisteredProject?.(resolvedProjectId));
+    if (/^ssh:/i.test(resolved) && !isFullYoloMode() && !projectAccessGranted) {
+      throw new Error(`Standalone SSH project access is not granted for project ${resolvedProjectId || resolved}.`);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const target = path.isAbsolute(ws) ? path.resolve(ws) : path.resolve(currentWorkspace, ws);
@@ -54,8 +63,12 @@ export async function handleSwitchWorkspace(
       return { content: [{ type: "text", text: message }], isError: true };
     }
   }
+  const withinScopedRoot = isWorkspaceWithinScopedRoot
+    ? isWorkspaceWithinScopedRoot(resolved)
+    : isPathWithinYoloScope(resolved, currentWorkspace);
   if (/^(?:ssh:|chain:)/i.test(resolved)) {
-    onWorkspaceChange?.(resolved);
+    const requiresProjectGrant = Boolean(!isFullYoloMode() && /^ssh:/i.test(resolved) && projectAccessGranted && !withinScopedRoot);
+    onWorkspaceChange?.(resolved, resolvedProjectId, requiresProjectGrant);
     return { content: [{ type: "text", text: `Switched active Superagent workspace to registered remote target: ${resolved}. Use Workspace Chain tools for remote-node operations.` }] };
   }
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
@@ -63,7 +76,7 @@ export async function handleSwitchWorkspace(
   }
 
   // Scoped checks use the current MCP connection's workspace, not process-global cwd.
-  if (!isFullYoloMode() && !isPathWithinYoloScope(resolved, currentWorkspace)) {
+  if (!isFullYoloMode() && !projectAccessGranted && !withinScopedRoot) {
     const allowedRoot = getYoloAllowedRoot(currentWorkspace);
     return {
       content: [{
@@ -74,11 +87,15 @@ export async function handleSwitchWorkspace(
     };
   }
 
-  addTrustedDirectory(resolved);
-  await ensureDirectoryTrusted(resolved);
+  // A project-level access grant is not a blanket trusted-directory grant.
+  // Only use legacy trust registration when the active scoped policy already allows this path.
+  if (!projectAccessGranted) {
+    addTrustedDirectory(resolved);
+    await ensureDirectoryTrusted(resolved);
+  }
   // Keep selection per MCP server instance. process.chdir() and the shared HTTP
   // server's last-active workspace are process-global and unsafe for concurrency.
-  onWorkspaceChange?.(resolved);
+  onWorkspaceChange?.(resolved, resolvedProjectId, Boolean(!isFullYoloMode() && projectAccessGranted && !withinScopedRoot));
   return { content: [{ type: "text", text: `Switched active Superagent workspace to: ${resolved}` }] };
 }
 

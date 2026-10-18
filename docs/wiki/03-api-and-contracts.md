@@ -92,7 +92,21 @@ The first-request schema benchmark against the current declared toolsets was app
 
 ---
 
-## 4. Remote Chrome WebSocket Bridge API (`Port 9223`)
+## 4. MCP Independent Multi-Project Routing
+
+The MCP gateway can select registered local projects and standalone SSH projects by stable project ID. Workspace Chains are optional and remain reserved for workflows that coordinate multiple nodes.
+
+- Use project registry tools to list, inspect, register, update, and remove project metadata.
+- Pass projectId to supported workspace-scoped operations to route a single tool call; a per-call target does not change the session default.
+- Access grants are bound to the authenticated MCP identity and separated into read, write, execute, Git, worktree, planning, and chain capabilities. Project registry mutations and grant creation require locally enabled Full YOLO; registration does not imply access.
+- Standalone SSH uses a separate connection per registered project and supports workspace inspection, exec, batched file reads/writes, listing/search, and Git. Unsupported operations fail closed instead of falling back to local files.
+- The SSH project root guards supported file operations but does not sandbox shell commands. Execute capability runs with the SSH account's OS privileges. MCP SSH does not prompt interactively for passwords.
+
+See [Independent MCP Projects](../mcp/independent-projects.md) for tool examples, access setup, routing rules, and security limitations.
+
+---
+
+## 5. Remote Chrome WebSocket Bridge API (Port 9223)
 
 Superagent incorporates a serverless WebSocket server (`src/core/tools/remoteChromeBridge.ts`) listening on `ws://127.0.0.1:9223`. Lightweight Chrome extensions connect to this bridge to execute automated browser tasks.
 

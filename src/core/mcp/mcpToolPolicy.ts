@@ -20,6 +20,9 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   superagent_get_logs: "safe",
   superagent_read_file: "safe",
   superagent_read_files: "safe",
+  superagent_list_projects: "safe",
+  superagent_get_project: "safe",
+  superagent_list_project_access: "safe",
   superagent_list_files: "safe",
   superagent_grep_search: "safe",
   superagent_find_files: "safe",
@@ -150,7 +153,7 @@ export interface McpServerOptions {
   /** If true, explicitly allow dangerous tools regardless of YOLO mode (e.g. CLI flag --allow-dangerous). */
   allowDangerous?: boolean;
   /** Optional getter for active client identity (OAuth scopes / subject). */
-  getIdentity?: () => { mode: string; subject?: string; scopes?: string[] } | null;
+  getIdentity?: () => { mode: "static-bearer" | "oauth"; subject: string; scopes?: string[]; credentialHash?: string } | null;
   /** Optional workspace root for YOLO scope validation. Defaults to process.cwd(). */
   workspace?: string;
 }
