@@ -2,19 +2,23 @@
 import { McpToolResult } from "../types.js";
 import { getMcpWorkspacePath } from "./workspaceContext.js";
 import { loadRegistry } from "../../tools/superagentRegistry.js";
+import type { ProjectWorkspaceInfo } from "../../project/providers/types.js";
 
-export async function handleGetWorkspace(): Promise<McpToolResult> {
-  const cwd = getMcpWorkspacePath();
-  let branch = "unknown";
-  try {
-    const { execSync } = await import("child_process");
-    branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd, encoding: "utf-8" }).trim();
-  } catch {}
+export async function handleGetWorkspace(projectInfo?: ProjectWorkspaceInfo): Promise<McpToolResult> {
+  const cwd = projectInfo?.workspace ?? getMcpWorkspacePath();
+  let branch = projectInfo?.gitBranch ?? "unknown";
+  if (!projectInfo) {
+    try {
+      const { execSync } = await import("child_process");
+      branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd, encoding: "utf-8" }).trim();
+    } catch {}
+  }
 
   const registry = loadRegistry();
   const lines = [
     `Current Workspace: ${cwd}`,
     `Git Branch: ${branch}`,
+    ...(projectInfo ? [`Project Provider: ${projectInfo.providerKind}`, `Project Root: ${projectInfo.root}`] : []),
     `Registered Feature Worktrees (${registry.length}):`,
   ];
   for (const r of registry) {

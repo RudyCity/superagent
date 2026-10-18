@@ -147,7 +147,20 @@ export interface McpServerOptions {
   /** If set, only these tool names are listed and callable (HTTP tunnel allowlist). When omitted, all tools are available (existing stdio behavior). */
   allowedTools?: string[];
   /** Audit hook invoked for every tool invocation attempt, including blocked-by-allowlist attempts. Must never throw. */
-  onToolCall?: (info: { tool: string; args: unknown; ok: boolean; error?: string; durationMs?: number }) => void;
+  onToolCall?: (info: {
+    tool: string;
+    args: unknown;
+    ok: boolean;
+    error?: string;
+    durationMs?: number;
+    correlationId?: string;
+    principalHash?: string;
+    projectId?: string | null;
+    providerKind?: string | null;
+    requiredCapability?: string;
+    authorizationDecision?: "allowed" | "denied" | "not_applicable";
+    errorCode?: string;
+  }) => void;
   /** Auth mode for per-tool security metadata. Default "static-bearer". */
   authMode?: "static-bearer" | "oauth";
   /** If true, explicitly allow dangerous tools regardless of YOLO mode (e.g. CLI flag --allow-dangerous). */

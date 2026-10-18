@@ -111,6 +111,26 @@ describe("ToolDiscoveryState", () => {
     ]);
   });
 
+  it("preserves discovery when the wrapped discovery-tool schemas differ from registry metadata", async () => {
+    const state = new ToolDiscoveryState();
+    const authorized: Tool[] = [
+      { ...listToolsTool, description: "Registry's list-tools contract", parameters: { type: "object", properties: { search: { type: "string" } } } },
+      { ...describeToolTool, description: "Registry's describe-tools contract", parameters: { type: "object", properties: { selected: { type: "string" } } } },
+      fixture("read"),
+    ];
+    const wrapped = state.wrapTools(authorized);
+    await wrapped.find((tool) => tool.name === "describe_tool")!.execute(
+      { tool: "read" },
+      process.cwd(),
+    );
+
+    expect(state.getModelVisibleTools(wrapped).map((tool) => tool.name)).toEqual([
+      "list_tools",
+      "describe_tool",
+      "read",
+    ]);
+  });
+
   it("does not hide a custom toolset that has no discovery entry points", () => {
     const state = new ToolDiscoveryState();
     const customTools = [fixture("custom_action")];
@@ -151,4 +171,30 @@ describe("ToolDiscoveryState", () => {
       agent.dispose();
     }
   });
+
+  it("clears discovered schemas when the Agent changes operational mode", async () => {
+    const authorized = catalog(fixture("read"));
+    const agent = new Agent(vi.fn(), vi.fn(async () => true), vi.fn(async () => "continue"), undefined, authorized, process.cwd());
+    agent.tier = "single";
+
+    try {
+      const activeTools = await agent.getActiveTools();
+      await activeTools.find((tool) => tool.name === "describe_tool")!.execute(
+        { tool: "read" },
+        process.cwd(),
+      );
+      expect(agent.isToolDiscovered("read")).toBe(true);
+
+      agent.setMode("debug");
+
+      expect(agent.isToolDiscovered("read")).toBe(false);
+      expect((await agent.getModelVisibleTools(await agent.getActiveTools())).map((tool) => tool.name)).toEqual([
+        "list_tools",
+        "describe_tool",
+      ]);
+    } finally {
+      agent.dispose();
+    }
+  });
+
 });

@@ -9,14 +9,14 @@ import {
 
 const DISCOVERY_TOOL_NAMES = new Set(["list_tools", "describe_tool"]);
 
-function getCatalogFingerprint(tools: Tool[]): string {
-  try {
-    return JSON.stringify(
-      tools.map((tool) => [tool.name, tool.description, tool.parameters]),
-    );
-  } catch {
-    return tools.map((tool) => tool.name).sort().join("|");
-  }
+function getToolSignature(tool: Tool): string {
+  // Discovery wrappers intentionally replace these two schemas. For other tools,
+  // the current parameter schema is part of that tool's discovery identity.
+  return JSON.stringify(
+    DISCOVERY_TOOL_NAMES.has(tool.name)
+      ? [tool.name, "<agent-discovery-wrapper>"]
+      : [tool.name, tool.parameters],
+  );
 }
 
 function toDiscoveryDefs(tools: Tool[]): DiscoveryDef[] {
@@ -33,16 +33,21 @@ function toDiscoveryDefs(tools: Tool[]): DiscoveryDef[] {
  */
 export class ToolDiscoveryState {
   private discoveredNames = new Set<string>();
-  private catalogFingerprint = "";
+  private catalogSignatures = new Map<string, string>();
   private authorizedNames = new Set<string>();
 
   private synchronizeCatalog(authorizedTools: Tool[]): void {
-    const fingerprint = getCatalogFingerprint(authorizedTools);
-    if (fingerprint !== this.catalogFingerprint) {
-      this.discoveredNames.clear();
-      this.catalogFingerprint = fingerprint;
+    const nextSignatures = new Map(authorizedTools.map((tool) => [tool.name, getToolSignature(tool)]));
+    // A new unrelated tool must not hide tools the model already discovered.
+    // Only a removed or schema-changed tool loses its discovery flag; new names
+    // remain hidden until explicitly described from the current authorized catalog.
+    for (const discoveredName of this.discoveredNames) {
+      if (this.catalogSignatures.get(discoveredName) !== nextSignatures.get(discoveredName)) {
+        this.discoveredNames.delete(discoveredName);
+      }
     }
-    this.authorizedNames = new Set(authorizedTools.map((tool) => tool.name));
+    this.catalogSignatures = nextSignatures;
+    this.authorizedNames = new Set(nextSignatures.keys());
   }
 
   public reset(): void {

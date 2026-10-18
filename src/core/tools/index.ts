@@ -10,6 +10,7 @@ import {
   chromeExtensionToolset
 } from "./toolsets.js";
 import { loadDynamicHooks } from "./dynamicHooks.js";
+import { bumpToolRegistryVersion } from "./toolRegistryVersion.js";
 
 // ─── H2+H8 (audit fix) ─────────────────────────────────────────────────
 //
@@ -406,6 +407,7 @@ let loadedDynamicTools: Tool[] = [];
 let watcher: fs.FSWatcher | null = null;
 
 export function refreshDynamicHooks(): void {
+  bumpToolRegistryVersion();
   // 1. Remove previous dynamic tools from all sets
   if (loadedDynamicTools.length > 0) {
     const toRemoveNames = new Set(loadedDynamicTools.map(t => t.name));

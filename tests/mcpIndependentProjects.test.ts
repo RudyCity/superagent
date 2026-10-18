@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
-import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
+import { registerProject, removeProject, updateProject } from "../src/core/project/projectRegistry.js";
 import { hasProjectAccess } from "../src/core/project/projectAccessPolicy.js";
 import { setFullYoloMode } from "../src/core/permissions.js";
 
@@ -47,6 +47,47 @@ afterEach(() => {
 });
 
 describe("independent multi-project operations through the MCP dispatcher", () => {
+  it("enforces grant revocation and project disable on the next call in an existing MCP server", async () => {
+    const server = createSuperagentMcpServer({
+      workspace: projectA,
+      allowDangerous: true,
+      getIdentity: () => identity,
+    });
+    const rawCall = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const call = async (name: string, args: Record<string, unknown>) => {
+      try {
+        return await rawCall({ method: "tools/call", params: { name, arguments: args } });
+      } catch (error) {
+        return { isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }] };
+      }
+    };
+
+    setFullYoloMode(true);
+    const granted = await call("superagent_grant_project_access", { projectId: projectBId, capabilities: ["read"] });
+    expect(granted.isError).toBeFalsy();
+    setFullYoloMode(false);
+
+    const initiallyReadable = await call("superagent_list_files", { projectId: projectBId });
+    expect(initiallyReadable.isError).toBeFalsy();
+    expect(toolText(initiallyReadable)).toContain("from-b.txt");
+
+    const revoked = await call("superagent_revoke_project_access", { projectId: projectBId });
+    expect(revoked.isError).toBeFalsy();
+    const deniedAfterRevoke = await call("superagent_list_files", { projectId: projectBId });
+    expect(deniedAfterRevoke.isError).toBeTruthy();
+    expect(toolText(deniedAfterRevoke)).toMatch(/not granted|outside the allowed workspace scope/i);
+
+    setFullYoloMode(true);
+    const regranted = await call("superagent_grant_project_access", { projectId: projectBId, capabilities: ["read"] });
+    expect(regranted.isError).toBeFalsy();
+    setFullYoloMode(false);
+    updateProject(projectBId, { enabled: false });
+
+    const deniedAfterDisable = await call("superagent_list_files", { projectId: projectBId });
+    expect(deniedAfterDisable.isError).toBeTruthy();
+    expect(toolText(deniedAfterDisable)).toMatch(/disabled/i);
+  });
+
   it("uses two unrelated local project roots in one MCP server without switching the session default", async () => {
     const server = createSuperagentMcpServer({
       workspace: projectA,

@@ -1343,11 +1343,14 @@ export async function executeToolCall(
   const registeredTool = getToolByName(toolCall.name);
   const currentAgent = agentLocalStorage.getStore();
   let activeTools: any[] | undefined = cachedActiveTools;
-  if (currentAgent && !activeTools) {
+  if (currentAgent) {
     try {
+      // Revalidate the Agent catalog at execution time. The model-call loop may
+      // have cached schemas before a dynamic hook was removed or changed.
       activeTools = await currentAgent.getActiveTools();
     } catch {
-      // Preserve the registry fallback if active-tool resolution fails.
+      // Never trust a potentially stale caller-supplied catalog after resolution fails.
+      activeTools = undefined;
     }
   }
 

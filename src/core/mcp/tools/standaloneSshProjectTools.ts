@@ -2,13 +2,18 @@ import path from "node:path";
 import { SshProxyService } from "../../ssh/sshProxy.js";
 import { workspaceMode, type SshWorkspaceConfig } from "../../ssh/workspaceMode.js";
 import { getProject, type RegisteredProject } from "../../project/projectRegistry.js";
-import { isFullYoloMode, isSystemDestructiveCommand } from "../../permissions.js";
+import { isFullYoloMode, isSystemDestructiveCommand, isModelConfigAccess, isSensitiveEnvFileAccess } from "../../permissions.js";
 import type { McpToolResult } from "../types.js";
+import type { ProjectProvider, ProjectOperation, ProjectWorkspaceInfo, ProjectHealthReport, ProjectHealthOptions, ProjectOperationResult, ProjectToolArguments, ResolvedProjectContext } from "../../project/providers/types.js";
 
 interface SshProjectConnection {
   target: string;
   config: SshWorkspaceConfig;
   proxy: SshProxyService;
+  inFlight: number;
+  closeRequested: boolean;
+  closeWaiters: Array<() => void>;
+  cleanupPromise?: Promise<void>;
 }
 function result(text: string, isError = false): McpToolResult {
   return { content: [{ type: "text", text }], ...(isError ? { isError: true } : {}) };
@@ -37,19 +42,16 @@ function normalizeRemoteCandidate(input: string | undefined, currentPath: string
   }
   return resolved;
 }
-function getEntry(args: Record<string, any>, targetWorkspace: string, projectId?: string | null): { project: RegisteredProject; uri: string } {
-  const id = projectId || (typeof args.projectId === "string" ? args.projectId : "");
-  if (!id) throw new Error("Standalone SSH operations require a registered SSH projectId.");
-  const project = getProject(id);
-  if (!project || !project.enabled) throw new Error("SSH project is not registered or is disabled: " + id);
-  if (project.type !== "ssh" || !project.target) throw new Error("Project " + id + " is not a standalone SSH project.");
+function resolveEntry(project: RegisteredProject | null, targetWorkspace: string): { project: RegisteredProject; uri: string } {
+  if (!project || !project.enabled) throw new Error("SSH project is not registered or is disabled.");
+  if (project.type !== "ssh" || !project.target) throw new Error("Project " + project.id + " is not a standalone SSH project.");
   const uri = /^ssh:/i.test(targetWorkspace) ? targetWorkspace : project.target;
   const expected = new URL(project.target);
   const actual = new URL(uri);
   if (actual.protocol !== "ssh:" || actual.password || actual.search || actual.hash
     || actual.hostname.toLowerCase() !== expected.hostname.toLowerCase()
     || actual.username !== expected.username || (actual.port || "22") !== (expected.port || "22")) {
-    throw new Error("SSH target does not match registered project " + id + ".");
+    throw new Error("SSH target does not match registered project " + project.id + ".");
   }
   const root = path.posix.normalize(decodeURIComponent(expected.pathname || "/"));
   const requested = path.posix.normalize(decodeURIComponent(actual.pathname || root));
@@ -57,35 +59,278 @@ function getEntry(args: Record<string, any>, targetWorkspace: string, projectId?
   return { project, uri };
 }
 
+function getEntry(args: Record<string, any>, targetWorkspace: string, projectId?: string | null): { project: RegisteredProject; uri: string } {
+  const id = projectId || (typeof args.projectId === "string" ? args.projectId : "");
+  if (!id) throw new Error("Standalone SSH operations require a registered SSH projectId.");
+  return resolveEntry(getProject(id), targetWorkspace);
+}
+
 /** One SSH/SFTP client per registered project keeps connections and caches isolated. */
-export class StandaloneSshProjectProvider {
+export class StandaloneSshProjectProvider implements ProjectProvider {
+  readonly kind = "ssh" as const;
   private connections = new Map<string, SshProjectConnection>();
+  private readonly allConnections = new Set<SshProjectConnection>();
 
   private getConnection(project: RegisteredProject): SshProjectConnection {
     if (project.type !== "ssh" || !project.target) throw new Error("Project must be a registered standalone SSH project.");
     const existing = this.connections.get(project.id);
-    if (existing && existing.target === project.target) return existing;
+    if (existing && existing.target === project.target && !existing.closeRequested) return existing;
     if (existing) {
-      void existing.proxy.disconnect();
-      existing.proxy.clearCache();
       this.connections.delete(project.id);
+      void this.requestConnectionClose(existing);
     }
     const config = workspaceMode.parseSshTarget(project.target);
     if (!config) throw new Error("Could not parse SSH target for project " + project.id + ". Use ssh://user@host[:port]/absolute/remote/root.");
-    const connection: SshProjectConnection = { target: project.target, config, proxy: new SshProxyService({ trackGlobalToolOutput: false, allowInteractiveAuth: false }) };
+    const connection: SshProjectConnection = {
+      target: project.target,
+      config,
+      proxy: new SshProxyService({ trackGlobalToolOutput: false, allowInteractiveAuth: false }),
+      inFlight: 0,
+      closeRequested: false,
+      closeWaiters: [],
+    };
     this.connections.set(project.id, connection);
+    this.allConnections.add(connection);
     return connection;
+  }
+
+  private finalizeConnectionClose(connection: SshProjectConnection): Promise<void> {
+    if (!connection.cleanupPromise) {
+      connection.cleanupPromise = (async () => {
+        try { connection.proxy.clearCache(); } catch {}
+        try { await connection.proxy.disconnect(); } catch {}
+        this.allConnections.delete(connection);
+        for (const resolve of connection.closeWaiters.splice(0)) resolve();
+      })();
+    }
+    return connection.cleanupPromise;
+  }
+
+  private requestConnectionClose(connection: SshProjectConnection): Promise<void> {
+    connection.closeRequested = true;
+    if (connection.inFlight === 0) return this.finalizeConnectionClose(connection);
+    return new Promise<void>((resolve) => connection.closeWaiters.push(resolve));
+  }
+
+  private async releaseConnection(connection: SshProjectConnection): Promise<void> {
+    if (connection.inFlight > 0) connection.inFlight -= 1;
+    if (connection.closeRequested && connection.inFlight === 0) {
+      await this.finalizeConnectionClose(connection);
+    }
+  }
+
+  supports(operation: ProjectOperation): boolean {
+    return ["workspace_info", "health_check", "read_files", "list_files", "grep_search", "find_files", "write_files", "exec_command", "git_action"].includes(operation);
+  }
+
+  private async invokeProjectOperation(
+    context: ResolvedProjectContext,
+    name: "superagent_read_files" | "superagent_list_files" | "superagent_grep_search" | "superagent_find_files" | "superagent_write_files" | "superagent_exec_command" | "superagent_git_action",
+    args: ProjectToolArguments,
+  ): Promise<ProjectOperationResult> {
+    const currentProject = getProject(context.projectId);
+    if (!currentProject || context.providerKind !== this.kind || currentProject.type !== "ssh"
+      || currentProject.id !== context.projectId || !currentProject.enabled || !currentProject.target) {
+      return { text: "Resolved context is not an enabled registered SSH project.", isError: true };
+    }
+    if (currentProject.target !== context.project.target) {
+      await this.closeProject(context.projectId);
+      return { text: "Project configuration changed after target resolution; resolve the project again before retrying.", isError: true };
+    }
+    if (!isFullYoloMode() && isSensitiveEnvFileAccess({ name, args })) {
+      return { text: "MCP access to .env files is blocked unless Full YOLO is enabled locally. Project grants do not override this sensitive-file guard.", isError: true };
+    }
+    if (!isFullYoloMode() && isModelConfigAccess({ name, args }, context.workspace)) {
+      return { text: "Access to model-config.json is blocked unless Full YOLO is enabled locally. Project grants do not override this protected-config guard.", isError: true };
+    }
+    const result = await this.dispatch(name, { ...args, projectId: context.projectId, workspace: context.workspace }, context.workspace, context.projectId);
+    if (!result) return { text: `Operation ${name} is unsupported for standalone SSH projects.`, isError: true };
+    return {
+      text: (result.content || []).map((part) => part.type === "text" ? part.text || "" : "").filter(Boolean).join(String.fromCharCode(10)),
+      ...(result.isError ? { isError: true } : {}),
+    };
+  }
+
+  async readFiles(context: ResolvedProjectContext, args: ProjectToolArguments): Promise<ProjectOperationResult> {
+    return this.invokeProjectOperation(context, "superagent_read_files", args);
+  }
+
+  async listFiles(context: ResolvedProjectContext, args: ProjectToolArguments): Promise<ProjectOperationResult> {
+    return this.invokeProjectOperation(context, "superagent_list_files", args);
+  }
+
+  async grepSearch(context: ResolvedProjectContext, args: ProjectToolArguments): Promise<ProjectOperationResult> {
+    return this.invokeProjectOperation(context, "superagent_grep_search", args);
+  }
+
+  async findFiles(context: ResolvedProjectContext, args: ProjectToolArguments): Promise<ProjectOperationResult> {
+    return this.invokeProjectOperation(context, "superagent_find_files", args);
+  }
+
+  async writeFiles(context: ResolvedProjectContext, args: ProjectToolArguments): Promise<ProjectOperationResult> {
+    return this.invokeProjectOperation(context, "superagent_write_files", args);
+  }
+
+  async execCommand(context: ResolvedProjectContext, args: ProjectToolArguments): Promise<ProjectOperationResult> {
+    return this.invokeProjectOperation(context, "superagent_exec_command", args);
+  }
+
+  async gitAction(context: ResolvedProjectContext, args: ProjectToolArguments): Promise<ProjectOperationResult> {
+    return this.invokeProjectOperation(context, "superagent_git_action", args);
+  }
+
+  async getWorkspaceInfo(context: ResolvedProjectContext): Promise<ProjectWorkspaceInfo> {
+    const currentProject = getProject(context.projectId);
+    if (!currentProject || context.providerKind !== this.kind || currentProject.type !== "ssh"
+      || currentProject.id !== context.projectId || !currentProject.enabled || !currentProject.target) {
+      throw new Error("Resolved context is not an enabled registered SSH project.");
+    }
+    if (currentProject.target !== context.project.target) {
+      await this.closeProject(context.projectId);
+      throw new Error("Project configuration changed after target resolution; resolve the project again before retrying.");
+    }
+    const resolved = resolveEntry(currentProject, context.workspace);
+    const entry = this.getConnection(resolved.project);
+    entry.inFlight += 1;
+    const selectedPath = getRemotePath(resolved.uri);
+    const registeredRoot = getRemotePath(resolved.project.target!);
+    try {
+      return await workspaceMode.runWithWorkspaceConfig(entry.config, async () => {
+      const canonicalRoot = path.posix.normalize(await entry.proxy.realPath(registeredRoot));
+      const selectedCanonical = path.posix.normalize(await entry.proxy.realPath(selectedPath));
+      if (!isWithinRemoteRoot(selectedCanonical, canonicalRoot)) {
+        throw new Error("Selected SSH workspace resolves outside the registered project's remote root.");
+      }
+      const response = await entry.proxy.exec("pwd && (git branch --show-current 2>/dev/null || true)", selectedPath, 15000);
+      const outputLines = response.stdout.trim().split(String.fromCharCode(10));
+      return {
+        projectId: resolved.project.id,
+        providerKind: this.kind,
+        workspace: selectedCanonical,
+        root: canonicalRoot,
+        remote: true,
+        exists: true,
+        ...(response.exitCode === 0 && outputLines[1] ? { gitBranch: outputLines[1].trim() } : {}),
+      };
+      });
+    } finally {
+      await this.releaseConnection(entry);
+    }
+  }
+
+  async checkHealth(context: ResolvedProjectContext, options: ProjectHealthOptions = {}): Promise<ProjectHealthReport> {
+    const currentProject = getProject(context.projectId);
+    if (!currentProject || context.providerKind !== this.kind || currentProject.type !== "ssh"
+      || currentProject.id !== context.projectId || !currentProject.enabled || !currentProject.target) {
+      throw new Error("Resolved context is not an enabled registered SSH project.");
+    }
+    if (currentProject.target !== context.project.target) {
+      await this.closeProject(context.projectId);
+      throw new Error("Project configuration changed after target resolution; resolve the project again before retrying.");
+    }
+
+    const startedAt = Date.now();
+    const timeoutMs = Math.max(1000, Math.min(15000, options.timeoutMs ?? 8000));
+    const proxy = new SshProxyService({ trackGlobalToolOutput: false, allowInteractiveAuth: false });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    let disconnectPromise: Promise<void> | undefined;
+    const disconnectProbe = () => {
+      if (!disconnectPromise) {
+        disconnectPromise = Promise.resolve()
+          .then(() => proxy.disconnect())
+          .then(() => undefined)
+          .catch(() => undefined);
+      }
+      return disconnectPromise;
+    };
+
+    try {
+      const resolved = resolveEntry(currentProject, context.workspace);
+      const config = workspaceMode.parseSshTarget(currentProject.target);
+      if (!config) throw new Error("Invalid SSH target.");
+      const probePromise = workspaceMode.runWithWorkspaceConfig(config, async () => {
+        const registeredRoot = getRemotePath(currentProject.target!);
+        const selectedPath = getRemotePath(resolved.uri);
+        const canonicalRoot = path.posix.normalize(await proxy.realPath(registeredRoot));
+        const selectedCanonical = path.posix.normalize(await proxy.realPath(selectedPath));
+        if (!isWithinRemoteRoot(selectedCanonical, canonicalRoot)) {
+          throw new Error("Selected SSH workspace resolves outside the registered project's remote root.");
+        }
+        const response = await proxy.exec("pwd && (git branch --show-current 2>/dev/null || true)", selectedPath, timeoutMs);
+        const outputLines = response.stdout.trim().split(String.fromCharCode(10));
+        return {
+          projectId: currentProject.id,
+          workspace: selectedCanonical,
+          root: canonicalRoot,
+          gitBranch: response.exitCode === 0 && outputLines[1] ? outputLines[1].trim() : undefined,
+        };
+      });
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          void disconnectProbe();
+          reject(new Error("Project health check timed out."));
+        }, timeoutMs);
+      });
+      const info = await Promise.race([probePromise, timeoutPromise]);
+      const now = Date.now();
+      return {
+        projectId: info.projectId,
+        providerKind: this.kind,
+        status: "healthy",
+        checkedAt: new Date(now).toISOString(),
+        durationMs: Math.max(0, now - startedAt),
+        checks: [
+          { name: "remote_root", status: "passed", message: "SSH/SFTP reached and canonicalized the registered root.", durationMs: Math.max(0, now - startedAt) },
+          { name: "workspace_boundary", status: "passed", message: "Selected remote workspace is within the canonical registered root.", durationMs: Math.max(0, now - startedAt) },
+          { name: "git_repository", status: info.gitBranch ? "passed" : "skipped", message: info.gitBranch ? "Git branch metadata is available." : "No branch metadata was reported; this is informational.", durationMs: Math.max(0, now - startedAt) },
+        ],
+        remediationHints: [],
+      };
+    } catch {
+      const now = Date.now();
+      return {
+        projectId: context.projectId,
+        providerKind: this.kind,
+        status: "unavailable",
+        checkedAt: new Date(now).toISOString(),
+        durationMs: Math.max(0, now - startedAt),
+        checks: [{
+          name: "remote_root",
+          status: "failed",
+          message: timedOut
+            ? "SSH/SFTP health probe exceeded its deadline."
+            : "SSH/SFTP could not verify the registered root.",
+          durationMs: Math.max(0, now - startedAt),
+        }, {
+          name: "workspace_boundary",
+          status: "skipped",
+          message: "Skipped because remote root verification did not succeed.",
+          durationMs: 0,
+        }],
+        remediationHints: ["Verify the SSH target, network access, non-interactive SSH credentials, and remote root path."],
+      };
+    } finally {
+      if (timer) clearTimeout(timer);
+      await disconnectProbe();
+    }
   }
 
   async closeProject(projectId: string): Promise<void> {
     const entry = this.connections.get(projectId);
     if (!entry) return;
     this.connections.delete(projectId);
-    entry.proxy.clearCache();
-    await entry.proxy.disconnect();
+    await this.requestConnectionClose(entry);
   }
+
   async closeAll(): Promise<void> {
-    await Promise.all([...this.connections.keys()].map((id) => this.closeProject(id)));
+    const entries = [...this.allConnections];
+    for (const [projectId, entry] of this.connections) {
+      this.connections.delete(projectId);
+      void this.requestConnectionClose(entry);
+    }
+    await Promise.all(entries.map((entry) => this.requestConnectionClose(entry)));
   }
 
   async dispatch(name: string, args: Record<string, any>, targetWorkspace: string, projectId?: string | null): Promise<McpToolResult | null> {
@@ -103,9 +348,11 @@ export class StandaloneSshProjectProvider {
       const resolved = getEntry(args, targetWorkspace, projectId);
       const project = resolved.project;
       const entry = this.getConnection(project);
+      entry.inFlight += 1;
       const selectedPath = getRemotePath(resolved.uri);
       const registeredRoot = getRemotePath(project.target!);
-      return await workspaceMode.runWithWorkspaceConfig(entry.config, async () => {
+      try {
+        return await workspaceMode.runWithWorkspaceConfig(entry.config, async () => {
         const canonicalRoot = path.posix.normalize(await entry.proxy.realPath(registeredRoot));
         const selectedCanonical = path.posix.normalize(await entry.proxy.realPath(selectedPath));
         if (!isWithinRemoteRoot(selectedCanonical, canonicalRoot)) {
@@ -139,8 +386,20 @@ export class StandaloneSshProjectProvider {
         };
 
         if (name === "superagent_get_workspace") {
-          const response = await entry.proxy.exec("pwd && (git branch --show-current 2>/dev/null || true)", selectedPath, 15000);
-          return result(JSON.stringify({ projectId: project.id, type: "ssh", workspace: selectedPath, remote: true, details: response.stdout.trim(), exitCode: response.exitCode }, null, 2), response.exitCode !== 0);
+          const info = await this.getWorkspaceInfo({
+            projectId: project.id,
+            providerKind: "ssh",
+            project,
+            workspace: selectedPath,
+            selectionSource: "projectId",
+            explicit: true,
+          });
+          return result(JSON.stringify({
+            ...info,
+            type: "ssh",
+            details: [info.workspace, info.gitBranch].filter(Boolean).join(String.fromCharCode(10)),
+            exitCode: 0,
+          }, null, 2));
         }
 
         if (name === "superagent_exec_command") {
@@ -263,7 +522,10 @@ export class StandaloneSshProjectProvider {
             + response.stdout + (response.stderr ? "\nSTDERR:\n" + response.stderr : ""), response.exitCode !== 0);
         }
         return null;
-      });
+        });
+      } finally {
+        await this.releaseConnection(entry);
+      }
     } catch (error) {
       return result(error instanceof Error ? error.message : String(error), true);
     }

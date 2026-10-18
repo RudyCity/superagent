@@ -26,6 +26,7 @@ export const PROJECT_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerou
   superagent_update_project: "dangerous",
   superagent_remove_project: "dangerous",
   superagent_list_project_access: "safe",
+  superagent_check_project_health: "safe",
   superagent_grant_project_access: "dangerous",
   superagent_revoke_project_access: "dangerous",
 };
@@ -40,6 +41,18 @@ export const PROJECT_MCP_TOOL_DEFS = [
     name: "superagent_get_project",
     description: "Inspect a registered project by its stable projectId.",
     inputSchema: { type: "object", properties: { projectId: { type: "string", minLength: 1, maxLength: 63 } }, required: ["projectId"] },
+  },
+  {
+    name: "superagent_check_project_health",
+    description: "Run bounded, read-only health checks against an enabled registered local or SSH project. Requires the read capability; registration alone does not grant access. Does not install dependencies, write files, or execute project scripts. Manifest presence is informational only; this is not a security scan and does not prove the application runs. Workspace Chain health is reported as unsupported until chain-specific diagnostics are integrated.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", minLength: 1, maxLength: 63, description: "Stable ID of the registered local or SSH project." },
+        timeoutMs: { type: "number", minimum: 1000, maximum: 15000, description: "Optional check deadline in milliseconds (clamped to 1-15 seconds)." },
+      },
+      required: ["projectId"],
+    },
   },
   {
     name: "superagent_register_project",

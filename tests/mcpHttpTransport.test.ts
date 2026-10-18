@@ -46,17 +46,71 @@ describe("mcpHttpTransport", () => {
     expect(safe.length).toBeGreaterThan(10);
   });
 
-  it("audit logger appends JSONL entries and never throws", () => {
+  it("audit logger appends request/project context and normalized errors without leaking tokens", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-audit-"));
     const logPath = path.join(dir, "audit.log");
     const log = createMcpAuditLogger(logPath);
-    expect(() => log({ tool: "t", args: { a: 1 }, ok: true })).not.toThrow();
-    const lines = fs.readFileSync(logPath, "utf8").trim().split("\n");
+    expect(() => log({
+      tool: "superagent_read_files",
+      args: { projectId: "project-a", token: "secret-token" },
+      ok: false,
+      error: "Error includes sensitive token=secret-token",
+      errorCode: "capability_denied",
+      durationMs: 12,
+      sessionHash: "session-hash",
+      correlationId: "request-correlation",
+      principalHash: "principal-hash",
+      projectId: "project-a",
+      providerKind: "ssh",
+      requiredCapability: "read",
+      authorizationDecision: "denied",
+    })).not.toThrow();
+    const lines = fs.readFileSync(logPath, "utf8").trim().split(String.fromCharCode(10));
     expect(lines).toHaveLength(1);
     const entry = JSON.parse(lines[0]);
-    expect(entry.tool).toBe("t");
-    expect(entry.ok).toBe(true);
+    expect(entry).toMatchObject({
+      tool: "superagent_read_files",
+      ok: false,
+      error: "capability_denied",
+      errorCode: "capability_denied",
+      sessionHash: "session-hash",
+      correlationId: "request-correlation",
+      principalHash: "principal-hash",
+      projectId: "project-a",
+      providerKind: "ssh",
+      requiredCapability: "read",
+      authorizationDecision: "denied",
+      durationMs: 12,
+    });
     expect(entry.ts).toBeDefined();
+    expect(JSON.stringify(entry)).not.toContain("secret-token");
+  });
+
+  it("rotates the audit JSONL by size, retaining parseable numbered archives", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-audit-rotation-"));
+    const logPath = path.join(dir, "audit.log");
+    const log = createMcpAuditLogger(logPath, { maxBytes: 420, maxArchives: 20 });
+    for (let index = 0; index < 12; index += 1) {
+      log({
+        tool: "superagent_read_files",
+        args: { projectId: `project-${index}`, filePaths: ["src/index.ts"] },
+        ok: true,
+        correlationId: `correlation-${index}`,
+        projectId: `project-${index}`,
+        providerKind: "local",
+      });
+    }
+    const logFiles = fs.readdirSync(dir).filter((name) => /^audit\.log(?:\.\d+)?$/.test(name));
+    expect(logFiles.length).toBeGreaterThan(1);
+    const records = logFiles.flatMap((name) => fs.readFileSync(path.join(dir, name), "utf8").trim().split(String.fromCharCode(10)))
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    expect(records).toHaveLength(12);
+    expect(new Set(records.map((record) => record.correlationId)).size).toBe(12);
+    for (const name of logFiles) {
+      expect(fs.statSync(path.join(dir, name)).size).toBeLessThanOrEqual(420);
+    }
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   });
 
   describe("HTTP auth + allowlist (integration)", () => {
@@ -281,6 +335,28 @@ describe("per-session transport isolation", () => {
     expect(a.sessionId).not.toBe(b.sessionId);
   });
 
+  it("rejects a different credential trying to reuse an initialized session ID", async () => {
+    const initialized = await initialize(token);
+    expect(initialized.status).toBe(200);
+    expect(initialized.sessionId).toBeTruthy();
+
+    const mismatched = await fetch(url(), {
+      method: "POST",
+      headers: { ...baseHeaders(generateMcpBearerToken()), "mcp-session-id": initialized.sessionId as string },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 22, method: "tools/list", params: {} }),
+    });
+    expect(mismatched.status).toBe(401);
+    await mismatched.text();
+
+    const originalCredential = await fetch(url(), {
+      method: "POST",
+      headers: { ...baseHeaders(token), "mcp-session-id": initialized.sessionId as string },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 23, method: "tools/list", params: {} }),
+    });
+    expect(originalCredential.status).toBe(200);
+    await originalCredential.text();
+  });
+
   it("rejects requests with an unknown session ID", async () => {
     const res = await fetch(url(), {
       method: "POST",
@@ -359,6 +435,15 @@ describe("per-session transport isolation", () => {
       const explicitOnly: any = await call(sessionA, 5, "superagent_get_workspace", { workspace: projectB });
       expect(explicitOnly.result?.content?.[0]?.text).toContain(projectB);
       expect(await readWorkspace(sessionA, 6)).toContain(projectA);
+
+      const [concurrentA, concurrentB] = await Promise.all([
+        readWorkspace(sessionA, 7),
+        readWorkspace(sessionB, 8),
+      ]);
+      expect(concurrentA).toContain(projectA);
+      expect(concurrentA).not.toContain(projectB);
+      expect(concurrentB).toContain(process.cwd());
+      expect(concurrentB).not.toContain(projectA);
     } finally {
       removeProject(projectIdA);
       removeProject(projectIdB);

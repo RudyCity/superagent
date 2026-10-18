@@ -185,7 +185,7 @@ export function getProjectCapabilityForTool(toolName: string, args: Record<strin
     return toolName.includes("workspace_chain") || toolName === "superagent_cross_workspace_exec" ? "chain"
       : ["superagent_update_tasks", "superagent_manage_plan", "superagent_manage_tasks"].includes(toolName) ? "planning" : "write";
   }
-  if (toolName === "superagent_switch_workspace") return "read";
+  if (toolName === "superagent_switch_workspace" || toolName === "superagent_check_project_health") return "read";
   if (toolName === "superagent_get_current_task" || toolName === "superagent_get_instance_task"
     || toolName === "superagent_get_plan_and_tasks") return "planning";
   // Tools with no project argument are evaluated against their default workspace and retain their existing rules.

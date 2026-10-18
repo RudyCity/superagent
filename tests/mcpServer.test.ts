@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";
+import { execFileSync } from "node:child_process";
+import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 import os from "os";
 import { createSuperagentMcpServer, MCP_TOOL_CLASSIFICATION } from "../src/core/mcp/superagentMcpServer.js";
 import { getDefaultSafeTools } from "../src/core/mcp/mcpHttpTransport.js";
@@ -18,9 +20,9 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 69;
+const EXPECTED_TOOL_COUNT = 70;
 
-describe("Superagent Complete 3-Pillar MCP Server Suite (66 Tools, Resources, Prompts)", () => {
+describe("Superagent Complete 3-Pillar MCP Server Suite (70 Tools, Resources, Prompts)", () => {
   const testDir = path.join(process.cwd(), `.tmp_mcp_test_${Date.now()}`);
   const testProjectId = path.basename(testDir).replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
 
@@ -80,6 +82,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (66 Tools, Resources, Pr
     expect(toolNames).toContain("superagent_get_workspace");
     expect(toolNames).toContain("superagent_list_projects");
     expect(toolNames).toContain("superagent_get_project");
+    expect(toolNames).toContain("superagent_check_project_health");
     expect(toolNames).toContain("superagent_register_project");
     expect(toolNames).toContain("superagent_update_project");
     expect(toolNames).toContain("superagent_remove_project");
@@ -280,6 +283,195 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (66 Tools, Resources, Pr
     });
     expect(inspected.isError).toBeFalsy();
     expect(JSON.parse(inspected.content[0].text).project.root).toBe(fs.realpathSync(testDir));
+  });
+
+  it("routes local write, exec, and Git MCP calls through the provider contract", async () => {
+    setFullYoloMode(false);
+    setYoloMode(false);
+    execFileSync("git", ["init", "-q"], { cwd: testDir });
+    const server = createSuperagentMcpServer({ workspace: testDir });
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    try {
+      const write = await callHandler({
+        method: "tools/call",
+        params: { name: "superagent_write_files", arguments: {
+          projectId: testProjectId,
+          files: [{ filePath: "provider-dispatch-write.txt", content: "provider-dispatch-write-marker" }],
+        } },
+      });
+      expect(write.isError).toBeFalsy();
+      expect(fs.readFileSync(path.join(testDir, "provider-dispatch-write.txt"), "utf8")).toBe("provider-dispatch-write-marker");
+
+      const exec = await callHandler({
+        method: "tools/call",
+        params: { name: "superagent_exec_command", arguments: { projectId: testProjectId, command: "echo provider-dispatch-exec-ok" } },
+      });
+      expect(exec.isError).toBeFalsy();
+      expect(exec.content[0].text).toContain("provider-dispatch-exec-ok");
+
+      const git = await callHandler({
+        method: "tools/call",
+        params: { name: "superagent_git_action", arguments: { projectId: testProjectId, action: "status" } },
+      });
+      expect(git.isError).toBeFalsy();
+      expect(git.content[0].text).toMatch(/provider-dispatch-write\.txt|On branch|Changes not staged/i);
+
+      const protectedWrite = await callHandler({
+        method: "tools/call",
+        params: { name: "superagent_write_files", arguments: {
+          projectId: testProjectId,
+          files: [{ filePath: ".env", content: "PROVIDER_DISPATCH_SECRET=blocked" }],
+        } },
+      });
+      expect(protectedWrite.isError).toBe(true);
+      expect(fs.existsSync(path.join(testDir, ".env"))).toBe(false);
+    } finally {
+      setFullYoloMode(false);
+      setYoloMode(false);
+    }
+  });
+
+  it("returns read-only health diagnostics for an accessible registered local project", async () => {
+    const server = createSuperagentMcpServer({ workspace: testDir });
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const result = await callHandler({
+      method: "tools/call",
+      params: { name: "superagent_check_project_health", arguments: { projectId: testProjectId } },
+    });
+
+    expect(result.isError).toBeFalsy();
+    const report = JSON.parse(result.content[0].text);
+    expect(report).toMatchObject({ projectId: testProjectId, providerKind: "local", status: "healthy" });
+    expect(report.checks.some((check: any) => check.name === "root_exists" && check.status === "passed")).toBe(true);
+  });
+
+  it("reports a deleted registered local root as unavailable through MCP", async () => {
+    const root = path.join(testDir, "deleted-project-root");
+    const projectId = `${testProjectId}-missing`;
+    fs.mkdirSync(root);
+    registerProject({ id: projectId, name: "Deleted Project Root", type: "local", root });
+    fs.rmSync(root, { recursive: true, force: true });
+
+    try {
+      const server = createSuperagentMcpServer({ workspace: testDir });
+      const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+      const result = await callHandler({
+        method: "tools/call",
+        params: { name: "superagent_check_project_health", arguments: { projectId } },
+      });
+
+      expect(result.isError).toBe(true);
+      const report = JSON.parse(result.content[0].text);
+      expect(report).toMatchObject({ projectId, providerKind: "local", status: "unavailable" });
+      expect(report.checks.some((check: any) => check.name === "root_exists" && check.status === "failed")).toBe(true);
+    } finally {
+      removeProject(projectId);
+    }
+  });
+
+  it("denies project health checks outside the session workspace without a read grant", async () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-health-outside-"));
+    const outside = path.join(parent, "project");
+    const projectId = `${testProjectId}-outside`;
+    fs.mkdirSync(outside);
+    registerProject({ id: projectId, name: "Outside Project", type: "local", root: outside });
+
+    try {
+      const server = createSuperagentMcpServer({ workspace: testDir });
+      const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+      const result = await callHandler({
+        method: "tools/call",
+        params: { name: "superagent_check_project_health", arguments: { projectId } },
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/not authorized/i);
+      expect(result.content[0].text).not.toContain(outside);
+    } finally {
+      removeProject(projectId);
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("audits canonical project context and authorization decisions for allowed and denied calls", async () => {
+    const auditEvents: any[] = [];
+    const server = createSuperagentMcpServer({
+      workspace: testDir,
+      onToolCall: (info) => { auditEvents.push(info); },
+      getIdentity: () => ({ mode: "oauth", subject: "audit-test-user", scopes: ["mcp:tools:read"] }),
+    });
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+
+    await callHandler({
+      method: "tools/call",
+      params: { name: "superagent_get_workspace", arguments: {} },
+    });
+    const implicit = auditEvents.at(-1);
+    expect(implicit).toMatchObject({
+      tool: "superagent_get_workspace",
+      ok: true,
+      projectId: testProjectId,
+      providerKind: "local",
+      requiredCapability: "read",
+      authorizationDecision: "allowed",
+    });
+
+    await callHandler({
+      method: "tools/call",
+      params: { name: "superagent_check_project_health", arguments: { projectId: testProjectId } },
+    });
+
+    const allowed = auditEvents.at(-1);
+    expect(allowed).toMatchObject({
+      tool: "superagent_check_project_health",
+      ok: true,
+      projectId: testProjectId,
+      providerKind: "local",
+      requiredCapability: "read",
+      authorizationDecision: "allowed",
+    });
+    expect(allowed.correlationId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(allowed.principalHash).toMatch(/^[0-9a-f]{16}$/i);
+    expect(allowed.principalHash).not.toContain("audit-test-user");
+
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-audit-denied-"));
+    const outside = path.join(parent, "project");
+    const outsideId = `${testProjectId}-audit-outside`;
+    fs.mkdirSync(outside);
+    registerProject({ id: outsideId, name: "Audit Outside Project", type: "local", root: outside });
+    try {
+      const deniedResult = await callHandler({
+        method: "tools/call",
+        params: { name: "superagent_check_project_health", arguments: { projectId: outsideId } },
+      });
+      expect(deniedResult.isError).toBe(true);
+      const denied = auditEvents.at(-1);
+      expect(denied).toMatchObject({
+        tool: "superagent_check_project_health",
+        ok: false,
+        projectId: outsideId,
+        providerKind: "local",
+        requiredCapability: "read",
+        authorizationDecision: "denied",
+        errorCode: "capability_denied",
+      });
+      expect(denied.correlationId).not.toBe(allowed.correlationId);
+    } finally {
+      removeProject(outsideId);
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("routes registered local workspace metadata through the ProjectProvider contract", async () => {
+    const server = createSuperagentMcpServer({ workspace: testDir });
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const result = await callHandler({
+      method: "tools/call",
+      params: { name: "superagent_get_workspace", arguments: { projectId: testProjectId } },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain("Project Provider: local");
+    expect(result.content[0].text).toContain(`Project Root: ${fs.realpathSync(testDir)}`);
   });
 
   it("executes file, search, workspace, config, and health tools", async () => {

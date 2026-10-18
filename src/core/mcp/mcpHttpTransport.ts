@@ -79,15 +79,55 @@ export type McpAuditInfo = {
   durationMs?: number;
   /** SHA-256 prefix of the session credential (never the credential). */
   sessionHash?: string;
+  correlationId?: string;
+  principalHash?: string;
+  projectId?: string | null;
+  providerKind?: string | null;
+  requiredCapability?: string;
+  authorizationDecision?: "allowed" | "denied" | "not_applicable";
+  errorCode?: string;
 };
 
-/** Append-only JSONL audit logger. Never throws (must not break tool calls). */
-export function createMcpAuditLogger(logPath: string): (info: McpAuditInfo) => void {
+function sanitizeAuditError(error: string): string {
+  return String(error)
+    .replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]")
+    .replace(/(token|password|secret|api[-_ ]?key)\s*[:=]\s*\S+/gi, "$1=[REDACTED]")
+    .replace(/ssh:\/\/[^\s]+/gi, "ssh://[REDACTED]")
+    .slice(0, 240);
+}
+
+export interface McpAuditLoggerOptions {
+  /** Maximum current-file size before rotating, in bytes. Defaults to 10 MiB. */
+  maxBytes?: number;
+  /** Number of numbered archives to retain beside the current log. Defaults to 5. */
+  maxArchives?: number;
+}
+
+/** Append-only JSONL audit logger with bounded per-file growth and numbered archives. */
+export function createMcpAuditLogger(logPath: string, options: McpAuditLoggerOptions = {}): (info: McpAuditInfo) => void {
+  const maxBytes = Math.max(128, Math.floor(options.maxBytes ?? 10 * 1024 * 1024));
+  const maxArchives = Math.max(0, Math.min(20, Math.floor(options.maxArchives ?? 5)));
   try {
-    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.mkdirSync(path.dirname(logPath), { recursive: true, mode: 0o700 });
+    const fd = fs.openSync(logPath, "a", 0o600);
+    fs.closeSync(fd);
   } catch {
-    /* ignore */
+    /* ignore; logger remains non-throwing and retries during append */
   }
+
+  const rotateIfNeeded = (nextLineBytes: number) => {
+    if (maxArchives <= 0 || !fs.existsSync(logPath)) return;
+    const currentSize = fs.statSync(logPath).size;
+    if (currentSize === 0 || currentSize + nextLineBytes <= maxBytes) return;
+    for (let index = maxArchives; index >= 1; index -= 1) {
+      const source = index === 1 ? logPath : `${logPath}.${index - 1}`;
+      const destination = `${logPath}.${index}`;
+      if (!fs.existsSync(source)) continue;
+      if (fs.existsSync(destination)) fs.rmSync(destination, { force: true });
+      fs.renameSync(source, destination);
+    }
+  };
+
   return (info: McpAuditInfo) => {
     try {
       const line = JSON.stringify({
@@ -96,11 +136,20 @@ export function createMcpAuditLogger(logPath: string): (info: McpAuditInfo) => v
         args: summarizeArgs(info.args),
         argShape: argShape(info.args),
         ok: info.ok,
-        error: info.error,
+        error: info.errorCode || (info.error ? sanitizeAuditError(info.error) : undefined),
+        errorCode: info.errorCode,
         durationMs: info.durationMs,
         sessionHash: info.sessionHash,
+        correlationId: info.correlationId,
+        principalHash: info.principalHash,
+        projectId: info.projectId,
+        providerKind: info.providerKind,
+        requiredCapability: info.requiredCapability,
+        authorizationDecision: info.authorizationDecision,
       });
-      fs.appendFileSync(logPath, line + "\n", "utf8");
+      const record = line + "\n";
+      rotateIfNeeded(Buffer.byteLength(record, "utf8"));
+      fs.appendFileSync(logPath, record, { encoding: "utf8", mode: 0o600 });
     } catch {
       /* audit logging must never break tool execution */
     }
@@ -608,9 +657,14 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
     oauthStore,
     close: () =>
       new Promise<void>((resolve) => {
-        registry.closeAll().finally(() => {
+        void (async () => {
+          try { await registry.closeAll(); } catch {}
+          try {
+            const { standaloneSshProjectProvider } = await import("./tools/standaloneSshProjectTools.js");
+            await standaloneSshProjectProvider.closeAll();
+          } catch {}
           httpServer.close(() => resolve());
-        });
+        })();
       }),
   };
 }

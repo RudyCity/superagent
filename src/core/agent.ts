@@ -11,6 +11,7 @@ import { GuidelineLoader } from "./agent/GuidelineLoader.js";
 import { Conversation } from "./conversation.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools/types.js";
 import { ToolDiscoveryState } from "./tools/toolDiscoveryState.js";
+import { getToolRegistryVersion } from "./tools/toolRegistryVersion.js";
 import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
 import {
   executeToolCall,
@@ -129,7 +130,7 @@ export class Agent {
   /** Minimum interval between auto-checkpoints in ms */
   private static readonly AUTO_CHECKPOINT_COOLDOWN_MS = 10_000;
   /** Cached active tools to avoid repeated dynamic imports */
-  private _activeToolsCache: { tools: Tool[]; cachedAt: number } | null = null;
+  private _activeToolsCache: { tools: Tool[]; cachedAt: number; registryVersion: number } | null = null;
   /** TTL for active tools cache */
   private static readonly ACTIVE_TOOLS_CACHE_TTL = 5_000;
   /** Per-agent progressive schema exposure; execution authorization remains in getActiveTools(). */
@@ -409,9 +410,18 @@ export class Agent {
   }
 
   public async getActiveTools(): Promise<Tool[]> {
-    // Return cached tools if within TTL
+    // A dynamic-hook refresh invalidates active catalogs immediately, regardless of TTL.
     const now = Date.now();
-    if (this._activeToolsCache && (now - this._activeToolsCache.cachedAt) < Agent.ACTIVE_TOOLS_CACHE_TTL) {
+    const registryVersion = getToolRegistryVersion();
+    if (this._activeToolsCache && this._activeToolsCache.registryVersion !== registryVersion) {
+      // Dynamic hooks may replace a tool without changing its name. Discovery is
+      // reset on the registry generation, while schema exposure always uses the
+      // current authorized tool definition below.
+      this.toolDiscoveryState.reset();
+    }
+    if (this._activeToolsCache
+      && this._activeToolsCache.registryVersion === registryVersion
+      && (now - this._activeToolsCache.cachedAt) < Agent.ACTIVE_TOOLS_CACHE_TTL) {
       return [...this._activeToolsCache.tools];
     }
 
@@ -466,8 +476,14 @@ export class Agent {
       );
     }
 
+    // Rebuild if a hook refresh happened while async eligibility checks were running.
+    if (getToolRegistryVersion() !== registryVersion) {
+      this._activeToolsCache = null;
+      return this.getActiveTools();
+    }
+
     // Cache the complete authorized tool catalog, including agent-scoped discovery wrappers.
-    this._activeToolsCache = { tools: [...tools], cachedAt: now };
+    this._activeToolsCache = { tools: [...tools], cachedAt: Date.now(), registryVersion };
     return tools;
   }
 

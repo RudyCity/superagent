@@ -10,6 +10,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import crypto from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { summarizeArgs } from "./mcpLogSanitizer.js";
 import { emitMcpActivity } from "./mcpActivityBus.js";
@@ -105,8 +106,75 @@ import {
   dispatchProjectMcpTool,
 } from "./tools/projectTools.js";
 import { resolveProjectTarget } from "../project/projectRouter.js";
+import { getProject } from "../project/projectRegistry.js";
+import type { ResolvedProjectTarget } from "../project/projectRouter.js";
+import { LocalProjectProvider } from "../project/providers/localProjectProvider.js";
+import type { ProjectProvider, ProjectProviderKind, ResolvedProjectContext } from "../project/providers/types.js";
 import { getProjectCapabilityForTool, hasProjectAccess } from "../project/projectAccessPolicy.js";
 import { standaloneSshProjectProvider } from "./tools/standaloneSshProjectTools.js";
+
+const localProjectProvider = new LocalProjectProvider();
+const projectProviders: Record<ProjectProviderKind, ProjectProvider> = {
+  local: localProjectProvider,
+  ssh: standaloneSshProjectProvider,
+};
+
+function resolveMcpProjectTarget(
+  toolName: string,
+  input: Parameters<typeof resolveProjectTarget>[0],
+): ResolvedProjectTarget {
+  if (toolName !== "superagent_check_project_health") return resolveProjectTarget(input);
+  const id = typeof input.projectId === "string" ? input.projectId.trim() : "";
+  if (!id) throw new Error("projectId is required for project health checks.");
+  const project = getProject(id, input.registryPath);
+  if (!project || !project.enabled || project.type === "chain") {
+    throw new Error("Project health check is unavailable for this project or the current identity is not authorized.");
+  }
+  const target = project.type === "local" ? project.root : project.target;
+  if (!target) throw new Error("Project health check is unavailable for this project or the current identity is not authorized.");
+  // Health diagnostics must still work when a registered local root has been deleted.
+  return { projectId: project.id, project, workspace: target, source: "projectId", explicit: true };
+}
+
+type McpRequestAuditContext = {
+  correlationId: string;
+  principalHash?: string;
+  projectId?: string | null;
+  providerKind?: string | null;
+  requiredCapability?: string;
+  authorizationDecision?: "allowed" | "denied" | "not_applicable";
+  errorCode?: string;
+};
+
+function classifyMcpAuditError(error?: string): string | undefined {
+  if (!error) return undefined;
+  const message = error.toLowerCase();
+  if (message.includes("health probe exceeded its deadline") || message.includes("timed out")) return "provider_timeout";
+  if (message.includes('"status": "unavailable"') || message.includes("could not verify the registered root")) return "provider_unavailable";
+  if (message.includes(".env") || message.includes("protected config") || message.includes("protected path")) return "protected_path";
+  if (message.includes("not found") || message.includes("unknown project")) return "unknown_project";
+  if (message.includes("disabled")) return "project_disabled";
+  if (message.includes("grant_missing") || message.includes("grant")) return "grant_missing";
+  if (message.includes("not authorized") || message.includes("outside the allowed workspace scope") || message.includes("capability")) return "capability_denied";
+  if (message.includes("not implemented") || message.includes("unsupported operation") || message.includes("not supported by the ssh")) return "unsupported_operation";
+  if (message.includes("timeout") || message.includes("timed out")) return "provider_timeout";
+  if (message.includes("ssh") || message.includes("sftp") || message.includes("remote root") || message.includes("connection")) return "provider_unavailable";
+  if (message.includes("allowlist") || message.includes("scope")) return "tool_blocked";
+  return "internal_error";
+}
+
+function toResolvedProjectContext(target: ResolvedProjectTarget | null): ResolvedProjectContext | null {
+  if (!target?.projectId || !target.project || !target.project.enabled
+    || (target.project.type !== "local" && target.project.type !== "ssh")) return null;
+  return {
+    projectId: target.projectId,
+    providerKind: target.project.type,
+    project: target.project,
+    workspace: target.workspace,
+    selectionSource: target.source,
+    explicit: target.explicit,
+  };
+}
 import { PROJECT_REGISTRY_TOOL_NAMES, WORKSPACE_SCOPED_MCP_TOOLS } from "./mcpWorkspacePolicy.js";
 import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
 import type { McpServerOptions } from "./mcpToolPolicy.js";
@@ -485,30 +553,34 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   let activeWorkspace = scopedWorkspaceAnchor;
   let activeProjectId: string | null = null;
   let activeProjectGrantRequired = false;
-  const dispatchMcpToolCall = async (request: any) => {
+  const dispatchMcpToolCall = async (request: any, auditContext?: McpRequestAuditContext) => {
     const { name, arguments: args = {} } = request.params;
     if (!isFullYoloMode() && isSensitiveEnvFileAccess({ name, args })) {
+      if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "protected_path"; }
       return { content: [{ type: "text", text: "MCP access to .env files is blocked unless Full YOLO is enabled locally. Project grants do not override this sensitive-file guard." }], isError: true };
     }
     if (typeof args.projectId === "string" && !WORKSPACE_SCOPED_MCP_TOOLS.has(name)
       && name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name)) {
+      if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "unsupported_project_routing"; }
       return { content: [{ type: "text", text: "This MCP tool does not support projectId routing. Use projectId only with workspace-scoped MCP tools or superagent_switch_workspace." }], isError: true };
     }
     let targetWorkspace = activeWorkspace;
     let targetProjectId: string | null = null;
+    let resolvedProjectTarget: ResolvedProjectTarget | null = null;
     const identityForProjectAccess = getIdentity?.();
     const hasExplicitWorkspaceTarget = typeof args.projectId === "string" || typeof args.workspace === "string"
       || typeof args.cwd === "string" || typeof args.worktreePath === "string";
     const shouldResolveWorkspace = WORKSPACE_SCOPED_MCP_TOOLS.has(name) || hasExplicitWorkspaceTarget;
     if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name) && shouldResolveWorkspace) {
       try {
-        const resolvedTarget = resolveProjectTarget({
+        const resolvedTarget = resolveMcpProjectTarget(name, {
           projectId: args.projectId,
           workspace: args.workspace,
           cwd: args.cwd,
           worktreePath: args.worktreePath,
           sessionWorkspace: activeWorkspace,
         });
+        resolvedProjectTarget = resolvedTarget;
         targetWorkspace = resolvedTarget.workspace;
         targetProjectId = resolvedTarget.projectId ?? (!hasExplicitWorkspaceTarget ? activeProjectId : null);
       } catch (error) {
@@ -532,6 +604,11 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     }
     const chainUriTarget = /^chain:/i.test(targetWorkspace);
     const sshUriTarget = /^ssh:/i.test(targetWorkspace);
+    if (auditContext) {
+      auditContext.projectId = targetProjectId ?? resolvedProjectTarget?.projectId ?? activeProjectId ?? null;
+      auditContext.providerKind = resolvedProjectTarget?.project?.type ?? (sshUriTarget ? "ssh" : chainUriTarget ? "chain" : null);
+      auditContext.requiredCapability = WORKSPACE_SCOPED_MCP_TOOLS.has(name) ? getProjectCapabilityForTool(name, args) : undefined;
+    }
     if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name) && shouldResolveWorkspace
       && !isFullYoloMode() && !chainUriTarget) {
       const selectedProjectRequiresGrant = Boolean(activeProjectGrantRequired && targetProjectId && targetProjectId === activeProjectId);
@@ -541,11 +618,17 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       const grantedProjectAccess = Boolean(WORKSPACE_SCOPED_MCP_TOOLS.has(name) && targetProjectId && identityForProjectAccess?.subject
         && hasProjectAccess(identityForProjectAccess, targetProjectId, capability));
       if (!scopedLocalAccess && !grantedProjectAccess) {
-        const reason = sshUriTarget
-          ? `Standalone SSH project access is not granted for project ${targetProjectId || targetWorkspace}. Use superagent_grant_project_access with the required capability after enabling dangerous-tool access.`
-          : `Project target is outside the allowed workspace scope: ${targetWorkspace}. Project registration alone does not grant access. Grant the authenticated MCP identity the '${capability}' capability or enable Full YOLO locally.`;
+        if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "capability_denied"; }
+        const reason = name === "superagent_check_project_health"
+          ? "Project health check is not authorized for this project. The authenticated MCP identity needs the explicit 'read' capability or the project must be within the session's allowed workspace scope."
+          : sshUriTarget
+            ? `Standalone SSH project access is not granted for project ${targetProjectId || targetWorkspace}. Use superagent_grant_project_access with the required capability after enabling dangerous-tool access.`
+            : `Project target is outside the allowed workspace scope: ${targetWorkspace}. Project registration alone does not grant access. Grant the authenticated MCP identity the '${capability}' capability or enable Full YOLO locally.`;
         return { content: [{ type: "text", text: reason }], isError: true };
       }
+    }
+    if (auditContext && WORKSPACE_SCOPED_MCP_TOOLS.has(name) && auditContext.authorizationDecision !== "denied") {
+      auditContext.authorizationDecision = "allowed";
     }
     if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name) && hasExplicitWorkspaceTarget) {
       // Canonicalize explicit handler context: avoid a relative cwd/workspace argument
@@ -559,6 +642,61 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(args)}`);
 
       try {
+        const providerContext = toResolvedProjectContext(resolvedProjectTarget);
+        if (name === "superagent_check_project_health") {
+          if (!providerContext) throw new Error("Project health is currently supported for registered local and standalone SSH projects only.");
+          const provider = projectProviders[providerContext.providerKind];
+          if (!provider.supports("health_check")) throw new Error(`Health checks are not supported by the ${providerContext.providerKind} provider.`);
+          const timeoutMs = typeof args.timeoutMs === "number" ? Math.max(1000, Math.min(15000, args.timeoutMs)) : 8000;
+          const report = await provider.checkHealth(providerContext, { timeoutMs });
+          return {
+            content: [{ type: "text", text: JSON.stringify(report, null, 2) }],
+            ...(report.status === "unavailable" ? { isError: true } : {}),
+          };
+        }
+        if (providerContext && [
+          "superagent_read_files", "superagent_list_files", "superagent_grep_search", "superagent_find_files",
+          "superagent_write_files", "superagent_exec_command", "superagent_git_action",
+        ].includes(name)) {
+          const provider = projectProviders[providerContext.providerKind];
+          const operation = name === "superagent_read_files" ? "read_files"
+            : name === "superagent_list_files" ? "list_files"
+            : name === "superagent_grep_search" ? "grep_search"
+            : name === "superagent_find_files" ? "find_files"
+            : name === "superagent_write_files" ? "write_files"
+            : name === "superagent_exec_command" ? "exec_command" : "git_action";
+          if (provider.supports(operation)) {
+            const result = operation === "read_files" ? await provider.readFiles(providerContext, args)
+              : operation === "list_files" ? await provider.listFiles(providerContext, args)
+              : operation === "grep_search" ? await provider.grepSearch(providerContext, args)
+              : operation === "find_files" ? await provider.findFiles(providerContext, args)
+              : operation === "write_files" ? await provider.writeFiles(providerContext, args)
+              : operation === "exec_command" ? await provider.execCommand(providerContext, args)
+              : await provider.gitAction(providerContext, args);
+            return {
+              content: [{ type: "text", text: result.text }],
+              ...(result.isError ? { isError: true } : {}),
+            };
+          }
+        }
+        if (name === "superagent_get_workspace" && providerContext) {
+          const provider = projectProviders[providerContext.providerKind];
+          if (provider.supports("workspace_info")) {
+            const info = await provider.getWorkspaceInfo(providerContext);
+            if (providerContext.providerKind === "local") return await handleGetWorkspace(info);
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({
+                  ...info,
+                  type: "ssh",
+                  details: [info.workspace, info.gitBranch].filter(Boolean).join(String.fromCharCode(10)),
+                  exitCode: 0,
+                }, null, 2),
+              }],
+            };
+          }
+        }
         if (/^ssh:/i.test(targetWorkspace) && WORKSPACE_SCOPED_MCP_TOOLS.has(name)) {
           const sshResult = await standaloneSshProjectProvider.dispatch(name, args, targetWorkspace, targetProjectId);
           if (sshResult) return sshResult;
@@ -728,6 +866,44 @@ function extractMcpResultText(result: unknown): string {
       (rawArgs.worktreePath as string) ||
       activeWorkspace ||
       process.cwd();
+    const callerIdentity = getIdentity?.();
+    const principalSource = callerIdentity
+      ? `${callerIdentity.mode}:${callerIdentity.subject || callerIdentity.credentialHash || ""}`
+      : "";
+    const auditContext: McpRequestAuditContext = {
+      correlationId: crypto.randomUUID(),
+      ...(principalSource ? { principalHash: crypto.createHash("sha256").update(principalSource).digest("hex").slice(0, 16) } : {}),
+      projectId: effectiveProjectId,
+    };
+    const emitAudit = (info: { tool: string; args: unknown; ok: boolean; error?: string; durationMs?: number }) => {
+      const projectId = auditContext.projectId ?? effectiveProjectId
+        ?? (typeof rawArgs.projectId === "string" ? rawArgs.projectId : null);
+      const registeredProject = projectId ? getProject(projectId) : null;
+      const providerKind = auditContext.providerKind ?? registeredProject?.type
+        ?? (/^ssh:/i.test(effectiveWs) ? "ssh" : /^chain:/i.test(effectiveWs) ? "chain" : null);
+      const requiredCapability = auditContext.requiredCapability
+        ?? (WORKSPACE_SCOPED_MCP_TOOLS.has(toolName)
+          ? getProjectCapabilityForTool(toolName, rawArgs)
+          : level ? `${level}_tool` : undefined);
+      const authorizationDecision = auditContext.authorizationDecision
+        ?? (info.ok ? (WORKSPACE_SCOPED_MCP_TOOLS.has(toolName) ? "allowed" : "not_applicable") : "denied");
+      const errorCode = auditContext.errorCode ?? classifyMcpAuditError(info.error)
+        ?? (!info.ok ? "tool_execution_failed" : undefined);
+      try {
+        onToolCall?.({
+          ...info,
+          correlationId: auditContext.correlationId,
+          principalHash: auditContext.principalHash,
+          projectId,
+          providerKind,
+          requiredCapability,
+          authorizationDecision,
+          errorCode,
+        });
+      } catch {
+        // Audit observers must never break tool execution.
+      }
+    };
     const registryManagementTools = new Set([
       "superagent_list_projects", "superagent_get_project", "superagent_register_project",
       "superagent_update_project", "superagent_remove_project", "superagent_list_project_access",
@@ -736,7 +912,7 @@ function extractMcpResultText(result: unknown): string {
     if (toolName !== "superagent_switch_workspace" && !registryManagementTools.has(toolName)
       && (typeof rawArgs.projectId === "string" || typeof rawArgs.workspace === "string" || typeof rawArgs.cwd === "string" || typeof rawArgs.worktreePath === "string")) {
       try {
-        const resolvedTarget = resolveProjectTarget({
+        const resolvedTarget = resolveMcpProjectTarget(toolName, {
           projectId: rawArgs.projectId,
           workspace: rawArgs.workspace,
           cwd: rawArgs.cwd,
@@ -745,6 +921,8 @@ function extractMcpResultText(result: unknown): string {
         });
         effectiveWs = resolvedTarget.workspace;
         effectiveProjectId = resolvedTarget.projectId;
+        auditContext.projectId = resolvedTarget.projectId;
+        auditContext.providerKind = resolvedTarget.project?.type ?? null;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const rawExplicitTarget = [rawArgs.workspace, rawArgs.cwd, rawArgs.worktreePath]
@@ -755,7 +933,7 @@ function extractMcpResultText(result: unknown): string {
             ? path.resolve(rawExplicitTarget)
             : path.resolve(activeWorkspace || process.cwd(), rawExplicitTarget);
         } else {
-          onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: message, durationMs: 0 });
+          emitAudit({ tool: toolName, args: rawArgs, ok: false, error: message, durationMs: 0 });
           throw new McpError(ErrorCode.InvalidParams, message);
         }
       }
@@ -764,7 +942,7 @@ function extractMcpResultText(result: unknown): string {
     // Block direct calls too, including clients that cached an old tools/list response.
     if (DISABLED_MCP_TOOLS.has(toolName)) {
       const errReason = "disabled and hidden from MCP tool discovery";
-      onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: errReason });
+      emitAudit({ tool: toolName, args: rawArgs, ok: false, error: errReason });
       emitMcpActivity({
         type: "tool_call",
         tool: toolName,
@@ -780,7 +958,7 @@ function extractMcpResultText(result: unknown): string {
 
     if (effectiveAllowedTools && !effectiveAllowedTools.includes(toolName)) {
       const errReason = "blocked by MCP tool allowlist";
-      onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: errReason });
+      emitAudit({ tool: toolName, args: rawArgs, ok: false, error: errReason });
       emitMcpActivity({
         type: "tool_call",
         tool: toolName,
@@ -807,7 +985,7 @@ function extractMcpResultText(result: unknown): string {
       const identity = getIdentity?.();
       if (identity && identity.scopes && !identity.scopes.includes("mcp:tools:write")) {
         const errReason = "missing required scope 'mcp:tools:write'";
-        onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: errReason });
+        emitAudit({ tool: toolName, args: rawArgs, ok: false, error: errReason });
         emitMcpActivity({
           type: "tool_call",
           tool: toolName,
@@ -852,7 +1030,7 @@ function extractMcpResultText(result: unknown): string {
       if (!inScope) {
         const allowedRoot = getYoloAllowedRoot(effectiveWs);
         const errReason = `Tool '${toolName}' call was blocked by Scoped YOLO boundary: operation targets path or resource outside allowed scope (${allowedRoot}) or accesses protected config files. Use /yolo full in SuperAgent CLI for unrestricted system-wide access.`;
-        onToolCall?.({ tool: toolName, args: rawArgs, ok: false, error: errReason });
+        emitAudit({ tool: toolName, args: rawArgs, ok: false, error: errReason });
         emitMcpActivity({
           type: "tool_call",
           tool: toolName,
@@ -868,11 +1046,11 @@ function extractMcpResultText(result: unknown): string {
     }
     const startedAt = Date.now();
     try {
-      const result: any = await dispatchMcpToolCall(request);
+      const result: any = await dispatchMcpToolCall(request, auditContext);
       const failed = !!(result && typeof result === "object" && (result as any).isError);
       const durationMs = Date.now() - startedAt;
       const outputText = extractMcpResultText(result);
-      onToolCall?.({ tool: toolName, args: rawArgs, ok: !failed, durationMs });
+      emitAudit({ tool: toolName, args: rawArgs, ok: !failed, ...(failed ? { error: outputText } : {}), durationMs });
       emitMcpActivity({
         type: "tool_call",
         tool: toolName,
@@ -888,7 +1066,7 @@ function extractMcpResultText(result: unknown): string {
     } catch (err: any) {
       const durationMs = Date.now() - startedAt;
       const errorMsg = err?.message || String(err);
-      onToolCall?.({
+      emitAudit({
         tool: toolName,
         args: rawArgs,
         ok: false,
