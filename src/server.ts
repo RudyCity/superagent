@@ -180,16 +180,33 @@ export const killVisionServerProcess = () => {
   }
 };
 
-function resolveSession(req: http.IncomingMessage, requestedSessionId?: string): AgentSession | null {
+function resolveSession(
+  req: http.IncomingMessage,
+  requestedSessionId?: string,
+  explicitWorkspace?: string
+): AgentSession | null {
   const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
-  let wsPath = req.headers["x-workspace-path"] as string || parsedUrl.searchParams.get("workspace");
+  let wsPath = explicitWorkspace || (req.headers["x-workspace-path"] as string) || parsedUrl.searchParams.get("workspace") || "";
   const querySessionId = parsedUrl.searchParams.get("sessionId");
   const targetSessionId = requestedSessionId || querySessionId;
   const reqClientMode = resolveClientMode(req);
 
+  if (wsPath) {
+    wsPath = (wsPath.startsWith("ssh:") || wsPath.startsWith("ssh://") || wsPath.startsWith("chain:"))
+      ? wsPath
+      : path.resolve(wsPath);
+  }
+
+  // A session ID is not sufficient authorization on its own. Bind lookups to
+  // the requested client mode and workspace so cross-project IDs fail closed.
   if (targetSessionId) {
+    if (!wsPath) return null;
     for (const session of activeSessions.values()) {
-      if (session.sessionId === targetSessionId) {
+      if (
+        session.sessionId === targetSessionId &&
+        session.clientMode === reqClientMode &&
+        session.workspace.toLowerCase() === wsPath.toLowerCase()
+      ) {
         session.lastActiveTime = Date.now();
         return session;
       }
@@ -198,8 +215,7 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
   }
 
   if (wsPath) {
-    wsPath = (wsPath.startsWith("ssh:") || wsPath.startsWith("ssh://") || wsPath.startsWith("chain:")) ? wsPath : path.resolve(wsPath);
-    for (const [key, session] of activeSessions.entries()) {
+    for (const session of activeSessions.values()) {
       if (session.clientMode === reqClientMode && session.workspace.toLowerCase() === wsPath.toLowerCase()) {
         session.lastActiveTime = Date.now();
         return session;
@@ -215,10 +231,9 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
       }
     }
   }
-  
+
   return null;
 }
-
 function isRemoteWorkspaceTarget(p: string): boolean {
   return p.startsWith("ssh:") || p.startsWith("ssh://") || p.startsWith("chain:");
 }

@@ -66,7 +66,7 @@ export async function handleServerRoute(
     pendingPermissions: Map<string, { resolve: (approval: boolean | "session") => void; ownerAgent?: any; sessionId?: string; workspace: string }>;
     pendingQuestions: Map<string, { resolve: (answer: any) => void; ownerAgent?: any; sessionId?: string; workspace: string }>;
     pendingBrowserControls: Map<string, { resolve: (val: string) => void; reject: (err: any) => void }>;
-    resolveSession: (req: http.IncomingMessage, sessionId?: string) => any;
+    resolveSession: (req: http.IncomingMessage, sessionId?: string, explicitWorkspace?: string) => any;
     resolveWorkspacePath: (req: http.IncomingMessage) => string | null;
     resolveClientMode: (req: http.IncomingMessage, body?: any, defaultMode?: any) => any;
     createAgentForMode: (targetWorkspace: string, targetMode: "single" | "multi", targetClientMode: any) => Promise<Agent>;
@@ -106,7 +106,7 @@ export async function handleServerRoute(
       sendJSON,
       readBody,
       executeAgentPrompt: async (prompt: string, workspace: string, sessionId?: string) => {
-        let session = resolveSession(req, sessionId);
+        let session = resolveSession(req, sessionId, workspace);
         if (!session) {
           const agent = await createAgentForMode(workspace, "single", serverDefaultClientMode);
           session = {
@@ -582,11 +582,25 @@ export async function handleServerRoute(
     }
 
     if (existingSession) {
+      const sameWorkspace = existingSession.workspace.toLowerCase() === targetWorkspace.toLowerCase();
+      const sameMode = existingSession.mode === targetMode;
+      const sameClientMode = existingSession.clientMode === targetClientMode;
+      if (!sameWorkspace || !sameMode || !sameClientMode) {
+        sendJSON(res, 409, {
+          error: "Session ID is already bound to a different workspace or mode.",
+          sessionId,
+          workspace: existingSession.workspace,
+          mode: existingSession.mode,
+          clientMode: existingSession.clientMode
+        });
+        return true;
+      }
+
       existingSession.lastActiveTime = Date.now();
       sendJSON(res, 200, {
         success: true,
         sessionId: existingSession.sessionId,
-        workspace: existingSession.workspace || targetWorkspace,
+        workspace: existingSession.workspace,
         mode: existingSession.mode,
         clientMode: existingSession.clientMode
       });
