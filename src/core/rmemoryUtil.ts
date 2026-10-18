@@ -714,7 +714,7 @@ export class MemoryClient {
     } else {
       results = await rMemory.query({ query: options.query, limit, hybrid: true });
     }
-    const items = results.map((r: any) => ({
+    const items = results.filter((r: any) => r.memory?.metadata?.type !== "memory_revision").map((r: any) => ({
       id: r.memory.id,
       content: r.memory.content,
       type: r.memory.metadata?.memoryType || r.memory.metadata?.type || "memory",
@@ -1030,6 +1030,327 @@ export class MemoryClient {
   }
 
 
+
+  private legacySourceFingerprint(record: { id?: string; content?: string; metadata?: Record<string, any> }): string {
+    return createHash("sha256").update(`${String(record.content || "")}
+${JSON.stringify(record.metadata || {})}`).digest("hex");
+  }
+
+  async previewLegacyAtomicMapping(options: { sourceId: string; targetId: string; content?: string; scope: "project" | "global"; projectId: string }) {
+    const rMemory = await getRMemory();
+    const source = typeof rMemory.db?.getById === "function" ? rMemory.db.getById(options.sourceId) : null;
+    if (!source) return null;
+    const sourceMetadata = source.metadata && typeof source.metadata === "object" ? source.metadata : {};
+    if (sourceMetadata.type === "memory_revision" || sourceMetadata.type === "memory") {
+      if (sourceMetadata.scope === "global" || sourceMetadata.scope === "project") {
+        throw new Error("Source already has structured scope; use normal scoped memory review instead of legacy mapping.");
+      }
+    }
+    const prefix = String(source.content || "").match(/^\[(global|project(?::([^\]]+))?)\]\s*/i);
+    if (prefix?.[1]?.toLowerCase() === "global" && options.scope !== "global") throw new Error("Source has an explicit [global] prefix; refusing a conflicting project mapping.");
+    if (prefix?.[2] && (options.scope !== "project" || prefix[2] !== options.projectId)) throw new Error("Source has an explicit project prefix that conflicts with the requested mapping.");
+    if (!options.sourceId.trim() || !options.targetId.trim() || !options.projectId.trim()) throw new Error("Source ID, target ID and canonical project ID are required.");
+    const proposedText = typeof options.content === "string" ? options.content : String(source.content || "").replace(/^\[(?:global|project(?::[^\]]+)?|project)\]\s*/i, "");
+    const proposedContent = `${options.scope === "global" ? "[global]" : `[project:${options.projectId}]`} ${proposedText.replace(/^\[(?:global|project(?::[^\]]+)?|project)\]\s*/i, "").slice(0, 8000)}`;
+    const storageId = getRMemoryStorageId(options.targetId, options.scope === "project" ? { scope: "project", projectId: options.projectId } : { scope: "global" });
+    const target = typeof rMemory.db?.getById === "function" ? rMemory.db.getById(storageId) : null;
+    return { sourceId: options.sourceId, targetId: options.targetId, storageId, scope: options.scope, projectId: options.scope === "project" ? options.projectId : undefined,
+      sourceContent: String(source.content || ""), proposedContent, expectedSourceFingerprint: this.legacySourceFingerprint(source),
+      targetExists: !!target, targetContent: target ? String(target.content || "") : undefined,
+      targetMetadata: target?.metadata || undefined, originalPreserved: true };
+  }
+
+  async mapLegacyAtomicMemory(options: { sourceId: string; targetId: string; content?: string; scope: "project" | "global"; projectId: string; expectedSourceFingerprint: string; reason?: string; agentTier?: string }) {
+    const rMemory = await getRMemory();
+    const preview = await this.previewLegacyAtomicMapping(options);
+    if (!preview) return { status: "not_found" as const, sourceId: options.sourceId, targetId: options.targetId };
+    if (preview.expectedSourceFingerprint !== options.expectedSourceFingerprint) return { status: "source_changed" as const, sourceId: options.sourceId, targetId: options.targetId };
+    if (preview.targetExists) {
+      if (preview.targetContent === preview.proposedContent && preview.targetMetadata?.mappedFromLegacyId === options.sourceId) return { status: "already_mapped" as const, sourceId: options.sourceId, targetId: options.targetId, scope: options.scope };
+      return { status: "target_conflict" as const, sourceId: options.sourceId, targetId: options.targetId, reason: "target_exists_with_different_content" };
+    }
+    const now = new Date().toISOString();
+    const metadata = createMemoryRecordMetadata({ memoryId: options.targetId, memoryType: "fact", scope: options.scope, projectId: options.projectId,
+      source: "legacy_owner_mapping", agentTier: options.agentTier || "master", now,
+      existingMetadata: { mappedFromLegacyId: options.sourceId, mappedAt: now, mappingReason: String(options.reason || "owner_confirmed_legacy_mapping").slice(0, 200), reviewState: "unreviewed", validationStatus: "unverified" } });
+    const latestSource = typeof rMemory.db?.getById === "function" ? rMemory.db.getById(options.sourceId) : null;
+    if (!latestSource || this.legacySourceFingerprint(latestSource) !== options.expectedSourceFingerprint) return { status: "source_changed" as const, sourceId: options.sourceId, targetId: options.targetId };
+    const storageId = preview.storageId;
+    await rMemory.addMemory({ id: storageId, content: preview.proposedContent, metadata });
+    const written = rMemory.db?.getById?.(storageId);
+    const verified = !!written && written.content === preview.proposedContent && written.metadata?.scope === options.scope
+      && (options.scope === "global" ? !written.metadata?.projectId : written.metadata?.projectId === options.projectId)
+      && written.metadata?.memoryId === options.targetId && written.metadata?.mappedFromLegacyId === options.sourceId;
+    if (!verified) {
+      try { if (rMemory.db?.getById?.(storageId)?.metadata?.mappedFromLegacyId === options.sourceId) rMemory.delete?.(storageId); } catch {}
+      return { status: "verification_failed" as const, sourceId: options.sourceId, targetId: options.targetId, originalPreserved: true };
+    }
+    return { status: "mapped" as const, sourceId: options.sourceId, targetId: options.targetId, scope: options.scope, storageId, updatedAt: now, originalPreserved: true };
+  }
+
+  async previewAtomicRevision(options: { id: string; content: string; scope: "project" | "global"; projectId: string }) {
+    const rMemory = await getRMemory();
+    const current = this.findAtomicByScope(rMemory, options);
+    if (!current) return null;
+    const meta = current.metadata;
+    if (meta.scope !== options.scope || (options.scope === "project" && meta.projectId !== options.projectId)) {
+      throw new Error("Legacy or ambiguous memory scope must be reviewed/migrated before a revision.");
+    }
+    const version = typeof meta.updatedAt === "string" && Number.isFinite(Date.parse(meta.updatedAt)) ? new Date(meta.updatedAt).toISOString() : "";
+    if (!version) throw new Error("Memory has no valid updatedAt version token; review/migrate before revising.");
+    const content = (options.scope === "global" ? "[global] " : `[project:${options.projectId}] `)
+      + String(options.content || "").replace(/^\[(?:global|project(?::[^\]]+)?)\]\s*/i, "").slice(0, 8000);
+    return { id: options.id, scope: options.scope, currentContent: current.content, proposedContent: content,
+      expectedUpdatedAt: version, revisionNumber: Math.max(1, Math.floor(Number(meta.revisionNumber) || 1)), metadata: meta };
+  }
+
+  async reviseAtomic(options: { id: string; content: string; scope: "project" | "global"; projectId: string; expectedUpdatedAt: string; reason?: string }) {
+    const rMemory = await getRMemory();
+    const current = this.findAtomicByScope(rMemory, options);
+    if (!current) return { status: "not_found" as const, id: options.id };
+    const meta = current.metadata;
+    if (meta.scope !== options.scope || (options.scope === "project" && meta.projectId !== options.projectId)) return { status: "needs_migration" as const, id: options.id };
+    const version = typeof meta.updatedAt === "string" && Number.isFinite(Date.parse(meta.updatedAt)) ? new Date(meta.updatedAt).toISOString() : "";
+    if (!version) return { status: "needs_migration" as const, id: options.id };
+    const expected = Date.parse(options.expectedUpdatedAt || "");
+    if (!Number.isFinite(expected) || new Date(expected).toISOString() !== version) return { status: "conflict" as const, id: options.id, currentUpdatedAt: version };
+    const content = (options.scope === "global" ? "[global] " : `[project:${options.projectId}] `)
+      + String(options.content || "").replace(/^\[(?:global|project(?::[^\]]+)?)\]\s*/i, "").slice(0, 8000);
+    if (content === current.content) return { status: "unchanged" as const, id: options.id, currentUpdatedAt: version };
+    const now = new Date().toISOString();
+    const currentRevision = Math.max(1, Math.floor(Number(meta.revisionNumber) || 1));
+    const nextRevision = currentRevision + 1;
+    const logicalRevisionId = `${options.id}::revision:${currentRevision}:${createHash("sha256").update(`${version}:${now}`).digest("hex").slice(0, 10)}`;
+    const revisionId = getRMemoryStorageId(logicalRevisionId, options.scope === "project" ? { scope: "project", projectId: options.projectId } : { scope: "global" });
+    const revisionMetadata = { ...meta, type: "memory_revision", originalMemoryId: options.id, revisionId,
+      revisionNumber: currentRevision, revisionCreatedAt: now, sourceUpdatedAt: version,
+      archivedReason: String(options.reason || "owner_confirmed_revision").slice(0, 160), scope: options.scope,
+      ...(options.scope === "project" ? { projectId: options.projectId } : {}) };
+    await rMemory.addMemory({ id: revisionId, content: current.content, metadata: revisionMetadata });
+    const snapshot = rMemory.db?.getById?.(revisionId);
+    if (!snapshot || snapshot.content !== current.content || snapshot.metadata?.originalMemoryId !== options.id) throw new Error("Revision backup could not be verified; current memory was not changed.");
+    const latest = this.findAtomicByScope(rMemory, options);
+    const latestVersion = latest?.metadata?.updatedAt && Number.isFinite(Date.parse(String(latest.metadata.updatedAt))) ? new Date(String(latest.metadata.updatedAt)).toISOString() : "";
+    if (!latest || latest.storageId !== current.storageId || latestVersion !== version || latest.content !== current.content) return { status: "conflict" as const, id: options.id, ...(latestVersion ? { currentUpdatedAt: latestVersion } : {}) };
+    const activeMetadata = createMemoryRecordMetadata({ memoryId: options.id,
+      memoryType: typeof meta.memoryType === "string" ? meta.memoryType : "fact", scope: options.scope, projectId: options.projectId,
+      source: "rmemory_revise", agentTier: typeof (meta.provenance as any)?.agentTier === "string" ? (meta.provenance as any).agentTier : undefined,
+      createdAt: meta.createdAt, now, validationStatus: "unverified",
+      existingMetadata: { ...meta, type: "memory", reviewState: "unreviewed", lifecycleState: "active", validationStatus: "unverified",
+        revisionNumber: nextRevision, supersedesMemoryId: revisionId, supersededByMemoryId: undefined, supersededAt: undefined,
+        reviewedAt: undefined, reviewedBy: undefined, quarantineReason: undefined, conflictWithMemoryIds: undefined } });
+    try {
+      await rMemory.addMemory({ id: current.storageId, content, metadata: activeMetadata });
+      const written = rMemory.db?.getById?.(current.storageId);
+      if (!written || written.content !== content || written.metadata?.scope !== options.scope
+        || (options.scope === "global" ? !!written.metadata?.projectId : written.metadata?.projectId !== options.projectId)
+        || written.metadata?.memoryId !== options.id) throw new Error("Revised memory failed verification.");
+    } catch (error) {
+      try { await rMemory.addMemory({ id: current.storageId, content: current.content, metadata: current.metadata }); }
+      catch (rollbackError) { throw new AggregateError([error, rollbackError], "Revision failed and rollback was incomplete; archived snapshot remains available."); }
+      throw new Error("Revision failed; previous memory version was restored.", { cause: error });
+    }
+    // Mark the snapshot as superseded only after the replacement has been verified.
+    // A failed history metadata update must not turn a successful content write into a reported rollback.
+    try {
+      const snapshotNow = rMemory.db?.getById?.(revisionId);
+      if (!snapshotNow || snapshotNow.content !== current.content || snapshotNow.metadata?.originalMemoryId !== options.id) {
+        throw new Error("Verified revision snapshot disappeared after the active write.");
+      }
+      const historyMetadata = { ...snapshotNow.metadata, lifecycleState: "superseded", supersededAt: now, supersededByMemoryId: options.id };
+      await rMemory.addMemory({ id: revisionId, content: current.content, metadata: historyMetadata });
+      const historyWritten = rMemory.db?.getById?.(revisionId);
+      if (!historyWritten || historyWritten.metadata?.lifecycleState !== "superseded" || historyWritten.metadata?.supersededByMemoryId !== options.id) {
+        throw new Error("Supersession history verification failed.");
+      }
+    } catch {
+      return { status: "revised" as const, id: options.id, currentUpdatedAt: version, updatedAt: now, revisionId, revisionNumber: nextRevision,
+        historyWarning: "The new active version was verified, but its archived snapshot's supersession marker could not be verified. The preserved snapshot remains in revision history." };
+    }
+    return { status: "revised" as const, id: options.id, currentUpdatedAt: version, updatedAt: now, revisionId, revisionNumber: nextRevision };
+  }
+
+  async listAtomicRevisions(options: { id: string; scope: "project" | "global"; projectId: string; limit?: number }): Promise<Array<{ revisionId: string; id: string; content: string; revisionNumber: number; revisionCreatedAt?: string; sourceUpdatedAt?: string; metadata: Record<string, any> }>> {
+    const rMemory = await getRMemory();
+    if (typeof rMemory.db?.getAll !== "function") throw new Error("RMemory index does not support revision history.");
+    const limit = Math.max(1, Math.min(100, Math.floor(Number(options.limit) || 20)));
+    return rMemory.db.getAll().filter((record: any) => {
+      const meta = record?.metadata || {};
+      return meta.type === "memory_revision" && meta.originalMemoryId === options.id && meta.scope === options.scope
+        && (options.scope === "global" ? !meta.projectId : meta.projectId === options.projectId);
+    }).map((record: any) => ({ revisionId: String(record.metadata.revisionId || record.id), id: options.id,
+      content: String(record.content || ""), revisionNumber: Number(record.metadata.revisionNumber) || 0,
+      revisionCreatedAt: record.metadata.revisionCreatedAt, sourceUpdatedAt: record.metadata.sourceUpdatedAt,
+      metadata: record.metadata })).sort((a: any, b: any) => String(b.revisionCreatedAt || "").localeCompare(String(a.revisionCreatedAt || ""))).slice(0, limit);
+  }
+
+  async restoreAtomicRevision(options: { id: string; revisionId: string; scope: "project" | "global"; projectId: string; expectedUpdatedAt: string }) {
+    const rMemory = await getRMemory();
+    const revision = typeof rMemory.db?.getById === "function" ? rMemory.db.getById(options.revisionId) : null;
+    const meta = revision?.metadata || {};
+    if (!revision || meta.type !== "memory_revision" || meta.originalMemoryId !== options.id || meta.scope !== options.scope
+      || (options.scope === "global" ? !!meta.projectId : meta.projectId !== options.projectId)) return { status: "not_found" as const, id: options.id };
+    return this.reviseAtomic({ ...options, content: String(revision.content || ""), reason: `restore:${options.revisionId}` });
+  }
+
+  async markAtomicStale(options: { id: string; scope: "project" | "global"; projectId: string; expectedUpdatedAt: string; reason: string }) {
+    const rMemory = await getRMemory();
+    const current = this.findAtomicByScope(rMemory, options);
+    if (!current) return { status: "not_found" as const, id: options.id };
+    const meta = current.metadata;
+    if (meta.scope !== options.scope || (options.scope === "project" && meta.projectId !== options.projectId)) return { status: "needs_migration" as const, id: options.id };
+    const version = typeof meta.updatedAt === "string" && Number.isFinite(Date.parse(meta.updatedAt)) ? new Date(meta.updatedAt).toISOString() : "";
+    const expected = Date.parse(options.expectedUpdatedAt || "");
+    if (!version || !Number.isFinite(expected) || new Date(expected).toISOString() !== version) return { status: "conflict" as const, id: options.id, ...(version ? { currentUpdatedAt: version } : {}) };
+    const now = new Date().toISOString();
+    const next = { ...meta, validationStatus: "stale", staleReason: String(options.reason || "retention_review").slice(0, 200), updatedAt: now };
+    await rMemory.addMemory({ id: current.storageId, content: current.content, metadata: next });
+    const written = rMemory.db?.getById?.(current.storageId);
+    if (!written || written.content !== current.content || written.metadata?.validationStatus !== "stale" || written.metadata?.scope !== options.scope) throw new Error("Stale marking could not be verified.");
+    return { status: "marked_stale" as const, id: options.id, updatedAt: now };
+  }
+
+  async reviewAtomicConflictPair(options: {
+    first: { id: string; expectedUpdatedAt: string };
+    second: { id: string; expectedUpdatedAt: string };
+    scope: "project" | "global";
+    projectId: string;
+    reviewedBy?: string;
+    reason?: string;
+  }) {
+    const rMemory = await getRMemory();
+    if (options.first.id === options.second.id) throw new Error("Conflict pair requires two distinct memory IDs.");
+    const first = this.findAtomicByScope(rMemory, { id: options.first.id, scope: options.scope, projectId: options.projectId });
+    const second = this.findAtomicByScope(rMemory, { id: options.second.id, scope: options.scope, projectId: options.projectId });
+    if (!first || !second) return { status: "not_found" as const, firstFound: !!first, secondFound: !!second };
+    const validScope = (record: { metadata: Record<string, any> }) => record.metadata.scope === options.scope
+      && (options.scope === "global" ? !record.metadata.projectId : record.metadata.projectId === options.projectId);
+    if (!validScope(first) || !validScope(second)) return { status: "needs_migration" as const };
+    const version = (record: { metadata: Record<string, any> }) => typeof record.metadata.updatedAt === "string" && Number.isFinite(Date.parse(record.metadata.updatedAt)) ? new Date(record.metadata.updatedAt).toISOString() : "";
+    const firstVersion = version(first); const secondVersion = version(second);
+    const firstExpected = Date.parse(options.first.expectedUpdatedAt || ""); const secondExpected = Date.parse(options.second.expectedUpdatedAt || "");
+    if (!firstVersion || !secondVersion || !Number.isFinite(firstExpected) || !Number.isFinite(secondExpected)
+      || new Date(firstExpected).toISOString() !== firstVersion || new Date(secondExpected).toISOString() !== secondVersion) {
+      return { status: "conflict" as const, firstUpdatedAt: firstVersion || undefined, secondUpdatedAt: secondVersion || undefined };
+    }
+    const firstKey = typeof first.metadata.assertionKey === "string" ? first.metadata.assertionKey.trim() : "";
+    const secondKey = typeof second.metadata.assertionKey === "string" ? second.metadata.assertionKey.trim() : "";
+    const normalize = (value: string) => value.replace(/^\[(?:global|project(?::[^\]]+)?)\]\s*/i, "").trim().replace(/\s+/g, " ").toLowerCase();
+    if (!firstKey || firstKey !== secondKey || normalize(first.content) === normalize(second.content)) return { status: "not_conflicting" as const };
+    const now = new Date().toISOString();
+    const actor = String(options.reviewedBy || "owner").slice(0, 128);
+    const conflictAudit = { conflictDetectedAt: now, conflictDetectedBy: actor, conflictReason: String(options.reason || "Owner confirmed conflicting assertions").slice(0, 240) };
+    const firstMeta = { ...first.metadata, ...conflictAudit, updatedAt: now, lifecycleState: "conflicted", reviewState: "unreviewed", validationStatus: "candidate", conflictWithMemoryIds: [options.second.id] };
+    const secondMeta = { ...second.metadata, ...conflictAudit, updatedAt: now, lifecycleState: "conflicted", reviewState: "unreviewed", validationStatus: "candidate", conflictWithMemoryIds: [options.first.id] };
+    try {
+      await rMemory.addMemory({ id: first.storageId, content: first.content, metadata: firstMeta });
+      const firstWritten = rMemory.db?.getById?.(first.storageId);
+      if (!firstWritten || firstWritten.metadata?.lifecycleState !== "conflicted" || !firstWritten.metadata?.conflictWithMemoryIds?.includes(options.second.id)) throw new Error("First conflict marker failed verification.");
+      await rMemory.addMemory({ id: second.storageId, content: second.content, metadata: secondMeta });
+      const secondWritten = rMemory.db?.getById?.(second.storageId);
+      if (!secondWritten || secondWritten.metadata?.lifecycleState !== "conflicted" || !secondWritten.metadata?.conflictWithMemoryIds?.includes(options.first.id)) throw new Error("Second conflict marker failed verification.");
+    } catch (error) {
+      const rollbackErrors: unknown[] = [];
+      for (const previous of [first, second]) {
+        try { await rMemory.addMemory({ id: previous.storageId, content: previous.content, metadata: previous.metadata }); }
+        catch (rollbackError) { rollbackErrors.push(rollbackError); }
+      }
+      if (rollbackErrors.length) throw new AggregateError([error, ...rollbackErrors], "Conflict pair update failed and rollback was incomplete.");
+      throw new Error("Conflict pair update failed; both previous records were restored.", { cause: error });
+    }
+    return { status: "marked_conflicted" as const, firstId: options.first.id, secondId: options.second.id, assertionKey: firstKey, updatedAt: now };
+  }
+
+  async resolveAtomicConflictPair(options: {
+    first: { id: string; expectedUpdatedAt: string };
+    second: { id: string; expectedUpdatedAt: string };
+    scope: "project" | "global";
+    projectId: string;
+    reviewedBy?: string;
+  }) {
+    const rMemory = await getRMemory();
+    if (options.first.id === options.second.id) throw new Error("Conflict pair requires two distinct memory IDs.");
+    const first = this.findAtomicByScope(rMemory, { id: options.first.id, scope: options.scope, projectId: options.projectId });
+    const second = this.findAtomicByScope(rMemory, { id: options.second.id, scope: options.scope, projectId: options.projectId });
+    if (!first || !second) return { status: "not_found" as const, firstFound: !!first, secondFound: !!second };
+    const validScope = (record: { metadata: Record<string, any> }) => record.metadata.scope === options.scope
+      && (options.scope === "global" ? !record.metadata.projectId : record.metadata.projectId === options.projectId);
+    if (!validScope(first) || !validScope(second)) return { status: "needs_migration" as const };
+    const version = (record: { metadata: Record<string, any> }) => typeof record.metadata.updatedAt === "string" && Number.isFinite(Date.parse(record.metadata.updatedAt)) ? new Date(record.metadata.updatedAt).toISOString() : "";
+    const firstVersion = version(first); const secondVersion = version(second);
+    const firstExpected = Date.parse(options.first.expectedUpdatedAt || ""); const secondExpected = Date.parse(options.second.expectedUpdatedAt || "");
+    if (!firstVersion || !secondVersion || !Number.isFinite(firstExpected) || !Number.isFinite(secondExpected)
+      || new Date(firstExpected).toISOString() !== firstVersion || new Date(secondExpected).toISOString() !== secondVersion) {
+      return { status: "conflict" as const, firstUpdatedAt: firstVersion || undefined, secondUpdatedAt: secondVersion || undefined };
+    }
+    const firstKey = String(first.metadata.assertionKey || "").trim();
+    const secondKey = String(second.metadata.assertionKey || "").trim();
+    if (!firstKey || firstKey !== secondKey || first.metadata.lifecycleState !== "conflicted" || second.metadata.lifecycleState !== "conflicted"
+      || !(Array.isArray(first.metadata.conflictWithMemoryIds) && first.metadata.conflictWithMemoryIds.includes(options.second.id))
+      || !(Array.isArray(second.metadata.conflictWithMemoryIds) && second.metadata.conflictWithMemoryIds.includes(options.first.id))) return { status: "not_conflicted_pair" as const };
+    const now = new Date().toISOString(); const actor = String(options.reviewedBy || "owner").slice(0, 128);
+    const makeResolved = (metadata: Record<string, any>) => {
+      const next: Record<string, any> = { ...metadata, updatedAt: now, lifecycleState: "active", reviewState: "reviewed", validationStatus: "unverified", reviewedAt: now, reviewedBy: actor };
+      delete next.conflictWithMemoryIds;
+      return next;
+    };
+    try {
+      await rMemory.addMemory({ id: first.storageId, content: first.content, metadata: makeResolved(first.metadata) });
+      const firstWritten = rMemory.db?.getById?.(first.storageId);
+      if (!firstWritten || firstWritten.metadata?.lifecycleState !== "active" || firstWritten.metadata?.conflictWithMemoryIds) throw new Error("First conflict resolution failed verification.");
+      await rMemory.addMemory({ id: second.storageId, content: second.content, metadata: makeResolved(second.metadata) });
+      const secondWritten = rMemory.db?.getById?.(second.storageId);
+      if (!secondWritten || secondWritten.metadata?.lifecycleState !== "active" || secondWritten.metadata?.conflictWithMemoryIds) throw new Error("Second conflict resolution failed verification.");
+    } catch (error) {
+      const rollbackErrors: unknown[] = [];
+      for (const previous of [first, second]) {
+        try { await rMemory.addMemory({ id: previous.storageId, content: previous.content, metadata: previous.metadata }); }
+        catch (rollbackError) { rollbackErrors.push(rollbackError); }
+      }
+      if (rollbackErrors.length) throw new AggregateError([error, ...rollbackErrors], "Conflict resolution failed and rollback was incomplete.");
+      throw new Error("Conflict resolution failed; both previous records were restored.", { cause: error });
+    }
+    return { status: "resolved" as const, firstId: options.first.id, secondId: options.second.id, assertionKey: firstKey, updatedAt: now, validationStatus: "unverified" as const };
+  }
+
+  async reviewAtomic(options: {
+    id: string; scope: "project" | "global"; projectId: string; expectedUpdatedAt: string;
+    action: "verify" | "quarantine" | "unquarantine" | "mark_conflicted" | "resolve_conflict";
+    reason?: string; reviewedBy?: string; conflictWithMemoryIds?: string[];
+  }) {
+    const rMemory = await getRMemory();
+    const current = this.findAtomicByScope(rMemory, options);
+    if (!current) return { status: "not_found" as const, id: options.id };
+    const meta = current.metadata;
+    if (meta.scope !== options.scope || (options.scope === "project" && meta.projectId !== options.projectId)) return { status: "needs_migration" as const, id: options.id };
+    const updatedAt = typeof meta.updatedAt === "string" && Number.isFinite(Date.parse(meta.updatedAt)) ? new Date(meta.updatedAt).toISOString() : "";
+    const expected = Date.parse(options.expectedUpdatedAt || "");
+    if (!updatedAt || !Number.isFinite(expected) || new Date(expected).toISOString() !== updatedAt) return { status: "conflict" as const, id: options.id, ...(updatedAt ? { currentUpdatedAt: updatedAt } : {}) };
+    const now = new Date().toISOString();
+    const next: Record<string, any> = { ...meta, updatedAt: now, reviewedAt: now, reviewedBy: String(options.reviewedBy || "owner").slice(0, 128) };
+    if (options.action === "verify") {
+      if (meta.lifecycleState === "conflicted" || meta.lifecycleState === "superseded" || meta.lifecycleState === "expired" || meta.reviewState === "quarantined") return { status: "review_required" as const, id: options.id };
+      next.reviewState = "reviewed"; next.validationStatus = "verified"; next.lastVerifiedAt = now;
+      delete next.quarantineReason;
+    } else if (options.action === "quarantine") {
+      next.reviewState = "quarantined"; next.quarantineReason = String(options.reason || "Owner requested quarantine").slice(0, 240);
+    } else if (options.action === "unquarantine") {
+      if (meta.reviewState !== "quarantined") return { status: "not_quarantined" as const, id: options.id };
+      next.reviewState = "unreviewed"; next.validationStatus = "unverified"; delete next.quarantineReason;
+    } else if (options.action === "mark_conflicted") {
+      const ids = Array.from(new Set((options.conflictWithMemoryIds || []).filter(id => typeof id === "string" && id.trim() && id !== options.id).map(id => id.trim().slice(0, 160)))).slice(0, 20);
+      if (!ids.length) throw new Error("At least one other memory ID is required to mark a conflict.");
+      next.lifecycleState = "conflicted"; next.reviewState = "unreviewed"; next.validationStatus = "candidate"; next.conflictWithMemoryIds = ids;
+    } else {
+      if (meta.lifecycleState !== "conflicted") return { status: "not_conflicted" as const, id: options.id };
+      next.lifecycleState = "active"; next.reviewState = "reviewed"; next.validationStatus = "unverified";
+      delete next.conflictWithMemoryIds;
+    }
+    await rMemory.addMemory({ id: current.storageId, content: current.content, metadata: next });
+    const written = rMemory.db?.getById?.(current.storageId);
+    if (!written || written.content !== current.content || written.metadata?.updatedAt !== now || written.metadata?.scope !== options.scope) throw new Error("Memory review update could not be verified.");
+    return { status: "updated" as const, id: options.id, action: options.action, updatedAt: now };
+  }
 
   async deleteAtomicScoped(options: {
     id: string;

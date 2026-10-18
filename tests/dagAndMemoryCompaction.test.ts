@@ -286,7 +286,7 @@ describe("Shared Memory Compaction", () => {
     settings.enableRmemory = true;
 
     const memories = [
-      { key: "to-prune", value: "prune me", source: "system", timestamp: Date.now() - 10 * 24 * 60 * 60 * 1000 } // old TTL
+      { key: "to-prune", value: "prune me", source: "system", scope: "project", projectPath: process.cwd(), timestamp: Date.now() - 10 * 24 * 60 * 60 * 1000 } // old TTL, explicitly project-scoped
     ];
 
     vi.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(memories));
@@ -299,14 +299,19 @@ describe("Shared Memory Compaction", () => {
     }, process.cwd());
 
     // Should call client.updateAtomic for the new memory with scope tag
-    expect(mockUpdateAtomic).toHaveBeenCalledWith({
+    expect(mockUpdateAtomic).toHaveBeenCalledWith(expect.objectContaining({
       id: "shared-memory-new-key",
-      content: expect.stringContaining("new-key: new-val")
-    });
+      content: expect.stringContaining("new-key: new-val"),
+      metadata: expect.objectContaining({
+        type: "memory", scope: "project", projectId: expect.any(String),
+        validationStatus: "unverified", reviewState: "unreviewed",
+        provenance: expect.objectContaining({ source: "save_shared_memory" }),
+      }),
+    }));
 
-    // Should call client.deleteAtomic for the pruned memory
+    // Only an unambiguously scoped expired memory may be deleted from RMemory.
     expect(mockDeleteAtomic).toHaveBeenCalledWith({
-      ids: ["shared-memory-to-prune"]
+      ids: [`${rmemoryUtilModule.getRMemoryProjectId(process.cwd())}:shared-memory-to-prune`],
     });
   });
 });

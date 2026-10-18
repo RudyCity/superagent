@@ -1,9 +1,11 @@
 # SuperAgent Hermes-Like Personal Agent — Canonical Implementation Reference
 
 - **Created:** 2026-10-18
-- **Status:** Phase 0 safety gates and bounded Phase 1 memory lifecycle foundations implemented; build and focused tests pass; full-suite and end-to-end gates remain open
+- **Status:** Phase 0 safety gates and bounded Phase 1 memory quality/review implementation completed locally; full local test inventory passes in batches; live-provider evaluation remains follow-up
 - **Repository:** D:/backup from pc asus/Documents Development/superagent
-- **Observed branch / HEAD:** main / 2b624517 (feat: harden MCP project providers and discovery)
+- **Audit baseline branch / HEAD:** main / 2b624517 (feat: harden MCP project providers and discovery)
+- **Latest implementation baseline:** main / d12e3c12 (feat: harden memory lifecycle and MCP access)
+- **Next Phase 1 plan:** docs/plans/2026-10-18-superagent-hermes-like-phase-1-memory-quality-and-review-plan.md
 - **Companion evidence:** docs/plans/2026-10-18-superagent-hermes-like-personal-agent-audit-plan.md
 - **Detailed phase checklist:** docs/plans/2026-10-18-superagent-hermes-like-personal-agent-development-plan.md
 
@@ -81,9 +83,9 @@ The two existing Hermes documents record baseline `d4923e62`; that is historical
 
 ### 2.4 Current execution status — 2026-10-18
 
-The following is the implementation follow-up against baseline `2b624517`. Changes remain **local and uncommitted**. The repository had additional unrelated MCP policy/server changes in the working tree during execution; those changes were preserved and are not attributed to this Hermes-like implementation.
+The implementation follow-up against the historical audit baseline `2b624517` was committed and pushed to `main` as `d12e3c12` (feat: harden memory lifecycle and MCP access). The merged batch includes Hermes-like memory/task lifecycle work and MCP policy/server hardening. Build plus 23 focused test files / 282 tests passed; the complete Vitest suite and live-provider end-to-end gates remain unverified.
 
-**Implemented and verified in this working tree (Phase 0 gates plus bounded Phase 1 memory lifecycle foundations):**
+**Implemented and verified in commit `d12e3c12` (Phase 0 gates plus bounded Phase 1 memory lifecycle foundations; full-suite gates remain open):**
 
 - **F-01 — daemon least privilege:** removed unconditional headless auto-approval; the daemon denies approval-gated calls, disables inherited ambient YOLO, and sets a per-job tool allowlist. `ToolExecutor` rejects non-allowlisted tools before calling the underlying executor. Job workspace paths are resolved, checked as existing directories at execution, canonicalized, and explicit extra grants can be supplied via `--allow-tools`.
 - **F-02 — scenario path confinement:** scenario reads permit only top-level Markdown files directly inside `scene_blocks`; absolute paths, traversal, nested paths and symlink escapes fail closed. Reads use a file descriptor, reject non-regular files and use `O_NOFOLLOW` where supported.
@@ -113,9 +115,18 @@ bun x vitest run tests/memoryRecord.test.ts tests/memoryRoutes.test.ts tests/wor
 - `git diff --check`: passed after implementation and documentation reconciliation.
 - Full Vitest suite: **attempted, but the orchestration call timed out before a final result was captured**. Do not describe the full suite as passing or failing.
 
-## 3. Critical Findings — Treat as Open Until Fixed and Tested
+**Latest Phase 1 continuation (2026-10-18; working tree, not yet committed):**
 
-The observations below were rechecked against the source files in the current workspace. Each is a required implementation gate, not merely a feature suggestion.
+- Implemented type-aware RMemory freshness, conflict-aware recall, memory review/quarantine, previewable revision/history/restore, retention review, explicit owner-selected legacy mapping, and scope-aware HTTP and CLI paths. The schema remains v1 with optional validated metadata additions.
+- Added persisted task-summary preview/save that verifies the terminal event and same-task evidence, redacts credentials, and persists only as candidate/unverified after owner confirmation.
+- Added `memory-recall-v1` deterministic fixture and precision/recall regression tests, plus atomic same-key conflict pair marking/resolution with reviewer/time/reason metadata and rollback.
+- Final local verification of the current working tree: `bun run build` passed; all 342 local test/spec files passed when run in 14 batches (**3,344 passed, 5 skipped, 0 failed**); extension JavaScript verification passed (8 files); wiki validation passed (9 files / 24 links); `git diff --check` passed after the final documentation update.
+- `bun run verify:all` itself timed out before reporting an exit code, so its wrapper is not marked passed. Its component checks were completed separately. Live-provider end-to-end evaluation is still follow-up work.
+- Implementation and plan updates remain uncommitted in the working tree. The existing edits to this master reference were preserved and reconciled, not reset.
+
+## 3. Critical Findings at Historical Audit Baseline — Reconcile Against Current Execution Status
+
+The findings below were captured at the historical audit baseline `2b624517`; do not read this heading as asserting every item remains unresolved today. The implementation record in Section 2.4 documents completed changes and their verification on the later `d12e3c12` baseline and current local Phase 1 working tree. Items not explicitly closed by that evidence remain follow-up gates.
 
 ### F-01 — Headless daemon auto-approves permissions (P0)
 
@@ -471,7 +482,8 @@ This file is the **canonical initiative-level implementation reference**. It set
 | Document | Role / required handling |
 |---|---|
 | `2026-10-18-superagent-hermes-like-personal-agent-audit-plan.md` | Evidence and detailed findings. Keep as audit record; link new findings to current HEAD when revisited. |
-| `2026-10-18-superagent-hermes-like-personal-agent-development-plan.md` | Detailed checklist for the same initiative. Reconcile it to this document before implementation to avoid conflicting or duplicate task status. |
+| `2026-10-18-superagent-hermes-like-personal-agent-development-plan.md` | Detailed checklist for the overall initiative. Reconcile task status with this document before implementation. |
+| `2026-10-18-superagent-hermes-like-phase-1-memory-quality-and-review-plan.md` | Next bounded Phase 1 increment: reviewable updates, conflict/freshness policy, retention, task summaries, and recall evaluation. Use as the immediate implementation plan after confirming the current test baseline. |
 | `2026-10-18-superagent-mcp-provider-and-hardening-roadmap.md` | Owns MCP provider/discovery hardening gates, including live provider, cancellation and SSH evidence. Do not duplicate provider implementation here. Its baseline/status must be refreshed before claiming completion. |
 | `2026-10-14-dynamic-tool-discovery-single-multi-plan.md` | Owns dynamic tool-discovery provider/mode/performance verification. Keep the discovery implementation already present; close remaining evidence gaps. |
 | `2026-10-14-selfdev-default-on-development-plan.md`, `2026-10-14-selfdev-next-improvements-plan.md` | Existing Selfdev behavior and follow-up work. Reuse review/evidence concepts and reconcile overlap with the skill lifecycle. |
@@ -496,8 +508,8 @@ Execute these actions in this order before broad feature work:
 ## 9. Current Next Actions
 
 1. Keep the RMemory init-failure/reset and metadata-preservation regressions in the suite; rerun them whenever memory bootstrap or upsert behavior changes.
-2. Run the complete Vitest suite in a sufficiently long-lived process and reconcile any remaining failures; current completed verification is a successful build plus the focused 23-file/282-test run. The full suite remains unverified because its orchestration call timed out before a final result was captured.
-3. Decide and implement an explicit review/re-save or migration workflow for legacy project memories and conversation rows without `projectId`; never infer ownership from a folder basename or content mention.
-4. Complete Phase 1: evidence/task-linked record schema, inspect/update/delete/export/retention semantics, verified task outcome summaries, configurable recall budget, and reproducible retrieval quality/latency/token measurements.
+2. Maintain the complete test gate: the current local inventory of 342 test/spec files passed in 14 batches (3,344 passed, 5 skipped, 0 failed). The combined `bun run verify:all` wrapper timed out without an exit code; individual component gates were verified separately.
+3. Treat `docs/plans/2026-10-18-superagent-hermes-like-phase-1-memory-quality-and-review-plan.md` as the completed, bounded implementation record for memory quality/review. The next improvement slice should expand the deliberately small labeled retrieval fixture and perform live-provider/end-to-end evaluation.
+4. Keep task summaries candidate/unverified until a separate owner review. Keep ambiguous legacy rows unchanged until the owner explicitly chooses a scope and confirms a mapping; never infer ownership from basename or content mention.
 5. Continue Phases 2–6 only behind their evidence gates: candidate skill evaluation/review, durable daemon run ledger/recovery, multi-agent/provider conformance, channel parity and end-to-end evaluation.
 6. Preserve unrelated working-tree changes; perform a final `git diff --check`, status review, and explicit acceptance before considering commit/push.

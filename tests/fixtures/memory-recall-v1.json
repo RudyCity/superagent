@@ -1,0 +1,20 @@
+{
+  "fixtureVersion": "memory-recall-v1",
+  "evaluatedAt": "2026-10-18T00:00:00.000Z",
+  "records": [
+    { "id": "global-pref", "content": "[global] Prefers concise architecture notes", "scope": "global", "metadata": { "scope": "global", "retentionClass": "durable", "validationStatus": "verified", "updatedAt": "2025-01-01T00:00:00.000Z" } },
+    { "id": "alpha-runtime-fresh", "content": "[project:p-alpha] Deployment runtime is Node 22", "scope": "project", "metadata": { "scope": "project", "projectId": "p-alpha", "retentionClass": "environment", "validationStatus": "verified", "updatedAt": "2026-10-17T00:00:00.000Z" } },
+    { "id": "alpha-runtime-old", "content": "[project:p-alpha] Runtime is Node 20", "scope": "project", "metadata": { "scope": "project", "projectId": "p-alpha", "assertionKey": "runtime-version", "validationStatus": "verified", "updatedAt": "2026-10-17T00:00:00.000Z" } },
+    { "id": "alpha-runtime-new", "content": "[project:p-alpha] Runtime is Node 22", "scope": "project", "metadata": { "scope": "project", "projectId": "p-alpha", "assertionKey": "runtime-version", "validationStatus": "verified", "updatedAt": "2026-10-17T01:00:00.000Z" } },
+    { "id": "alpha-temp-old", "content": "[project:p-alpha] Temporary migration incident", "scope": "project", "metadata": { "scope": "project", "projectId": "p-alpha", "retentionClass": "temporary", "validationStatus": "verified", "updatedAt": "2026-01-01T00:00:00.000Z" } },
+    { "id": "alpha-quarantined", "content": "[project:p-alpha] Ambiguous import", "scope": "project", "metadata": { "scope": "project", "projectId": "p-alpha", "reviewState": "quarantined", "validationStatus": "verified", "updatedAt": "2026-10-17T00:00:00.000Z" } },
+    { "id": "beta-private", "content": "[project:p-beta] Private deploy key rotates quarterly", "scope": "project", "metadata": { "scope": "project", "projectId": "p-beta", "validationStatus": "verified", "updatedAt": "2026-10-17T00:00:00.000Z" } },
+    { "id": "legacy-ambiguous", "content": "[project] Old runtime note", "metadata": { "validationStatus": "verified", "updatedAt": "2026-10-17T00:00:00.000Z" } },
+    { "id": "beta-pref", "content": "[project:p-beta] Project B prefers verbose logs", "scope": "project", "metadata": { "scope": "project", "projectId": "p-beta", "retentionClass": "durable", "validationStatus": "verified", "updatedAt": "2025-01-01T00:00:00.000Z" } }
+  ],
+  "cases": [
+    { "id": "alpha-all-runtime", "projectId": "p-alpha", "scope": "all", "candidateIds": ["global-pref", "alpha-runtime-fresh", "alpha-runtime-old", "alpha-runtime-new", "alpha-temp-old", "alpha-quarantined", "beta-private", "legacy-ambiguous"], "relevantIds": ["global-pref", "alpha-runtime-fresh"], "expectedIds": ["global-pref", "alpha-runtime-fresh"], "expectedConflictPairs": 1 },
+    { "id": "beta-project-only", "projectId": "p-beta", "scope": "project", "candidateIds": ["global-pref", "beta-private", "beta-pref", "alpha-runtime-fresh", "legacy-ambiguous"], "relevantIds": ["beta-private", "beta-pref"], "expectedIds": ["beta-private", "beta-pref"], "expectedConflictPairs": 0 },
+    { "id": "alpha-project-only", "projectId": "p-alpha", "scope": "project", "candidateIds": ["global-pref", "alpha-runtime-fresh", "beta-private", "alpha-quarantined"], "relevantIds": ["alpha-runtime-fresh"], "expectedIds": ["alpha-runtime-fresh"], "expectedConflictPairs": 0 }
+  ]
+}

@@ -44,6 +44,7 @@ import { subagentInstances, superagentInstances, backgroundTasks } from "./core/
 import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/config/browserMacros.js";
 import { getRMemoryClient, getRMemoryProjectId, isRmemoryActive } from "./core/rmemoryUtil.js";
 import { createMemoryRecordMetadata } from "./core/memoryRecord.js";
+import { detectScopedMemoryConflicts, filterEligibleMemoryRecords, previewMemoryRetention } from "./core/memoryLifecycle.js";
 import { getRootConfigDir } from "./core/config/paths.js";
 import { buildCorsHeaders, isPathInsideOrEqual } from "./core/utils/serverSecurity.js";
 import { maskApiKey, isMaskedApiKey } from "./core/config.js";
@@ -1488,6 +1489,126 @@ export async function handleServerRoute(
     }
     return true;
   }
+  // Revision API: previews are read-only; writes require explicit confirmation and a version token.
+  if (pathname === "/api/memory/revise" && req.method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req) || "{}");
+      const action = String(body.action || "preview");
+      const id = typeof body.id === "string" ? body.id.trim() : "";
+      const scope: "project" | "global" = body.scope === "global" ? "global" : "project";
+      const workspace = resolveWorkspacePath(req) || lastActiveWorkspace || process.cwd();
+      const projectId = getRMemoryProjectId(workspace);
+      if (!id) { sendJSON(res, 400, { error: "id is required" }); return true; }
+      const client = getRMemoryClient();
+      if (action === "history") {
+        const revisions = await client.listAtomicRevisions({ id, scope, projectId, limit: Number(body.limit) || 20 });
+        sendJSON(res, 200, { id, scope, count: revisions.length, revisions: revisions.map((r: any) => ({ revisionId: r.revisionId, revisionNumber: r.revisionNumber, revisionCreatedAt: r.revisionCreatedAt, sourceUpdatedAt: r.sourceUpdatedAt, content: r.content })) });
+        return true;
+      }
+      if (action === "preview" || action === "apply") {
+        if (typeof body.content !== "string" || !body.content.trim()) { sendJSON(res, 400, { error: "content is required" }); return true; }
+        const preview = await client.previewAtomicRevision({ id, content: body.content, scope, projectId });
+        if (!preview) { sendJSON(res, 404, { error: "Memory not found in requested scope" }); return true; }
+        if (action === "preview") { sendJSON(res, 200, { mode: "preview_only", id, scope, expectedUpdatedAt: preview.expectedUpdatedAt, revisionNumber: preview.revisionNumber, before: preview.currentContent, after: preview.proposedContent }); return true; }
+        if (body.confirm !== true) { sendJSON(res, 400, { error: "apply requires confirm=true" }); return true; }
+        if (typeof body.expectedUpdatedAt !== "string" || !body.expectedUpdatedAt.trim()) { sendJSON(res, 400, { error: "expectedUpdatedAt from preview is required" }); return true; }
+        let matches = false; try { matches = new Date(body.expectedUpdatedAt).toISOString() === preview.expectedUpdatedAt; } catch {}
+        if (!matches) { sendJSON(res, 409, { status: "conflict", currentUpdatedAt: preview.expectedUpdatedAt }); return true; }
+        const result = await client.reviseAtomic({ id, content: body.content, scope, projectId, expectedUpdatedAt: body.expectedUpdatedAt, reason: String(body.reason || "api_owner_confirmed_revision") });
+        sendJSON(res, result.status === "conflict" ? 409 : result.status === "not_found" ? 404 : 200, result); return true;
+      }
+      if (action === "restore") {
+        if (body.confirm !== true) { sendJSON(res, 400, { error: "restore requires confirm=true" }); return true; }
+        if (typeof body.revisionId !== "string" || !body.revisionId.trim() || typeof body.expectedUpdatedAt !== "string" || !body.expectedUpdatedAt.trim()) { sendJSON(res, 400, { error: "revisionId and expectedUpdatedAt are required" }); return true; }
+        const result = await client.restoreAtomicRevision({ id, revisionId: body.revisionId, scope, projectId, expectedUpdatedAt: body.expectedUpdatedAt });
+        sendJSON(res, result.status === "conflict" ? 409 : result.status === "not_found" ? 404 : 200, result); return true;
+      }
+      sendJSON(res, 400, { error: "action must be preview, apply, history, or restore" });
+    } catch (err: any) { sendJSON(res, 500, { error: err.message || String(err) }); }
+    return true;
+  }
+
+  // Memory review API. A preview is read-only; state transitions require confirm + an updatedAt token.
+  if (pathname === "/api/memory/review" && req.method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req) || "{}");
+      const action = String(body.action || "conflicts");
+      const workspace = resolveWorkspacePath(req) || lastActiveWorkspace || process.cwd();
+      const projectId = getRMemoryProjectId(workspace);
+      const scope: "project" | "global" = body.scope === "global" ? "global" : "project";
+      const client = getRMemoryClient();
+      if (action === "conflicts") {
+        const exported = await client.exportAtomic({ projectId, includeGlobal: true, limit: 500 });
+        const conflicts = detectScopedMemoryConflicts((exported.items || []).map((item: any) => ({ id: item.id, content: item.content, scope: item.scope, metadata: item.metadata || {} }))).slice(0, Math.max(1, Math.min(200, Number(body.limit) || 50)));
+        sendJSON(res, 200, { mode: "review_preview_only", scanned: exported.items.length, truncated: exported.truncated, conflicts }); return true;
+      }
+      if (action === "preview_legacy_mapping" || action === "map_legacy") {
+        const sourceId = typeof body.sourceId === "string" ? body.sourceId.trim() : "";
+        const targetId = typeof body.id === "string" ? body.id.trim() : sourceId;
+        if (!sourceId || !targetId) { sendJSON(res, 400, { error: "sourceId and target id are required" }); return true; }
+        if (body.scope !== "project" && body.scope !== "global") { sendJSON(res, 400, { error: "Explicit scope=project or scope=global is required; legacy scope is never inferred" }); return true; }
+        const mapping = await client.previewLegacyAtomicMapping({ sourceId, targetId, content: typeof body.content === "string" ? body.content : undefined, scope: body.scope, projectId });
+        if (!mapping) { sendJSON(res, 404, { error: "Legacy source not found" }); return true; }
+        if (action === "preview_legacy_mapping") { sendJSON(res, 200, { mode: "preview_only", ...mapping }); return true; }
+        if (body.confirm !== true) { sendJSON(res, 400, { error: "map_legacy requires confirm=true after preview" }); return true; }
+        if (body.expectedSourceFingerprint !== mapping.expectedSourceFingerprint) { sendJSON(res, 409, { status: "source_changed" }); return true; }
+        if (mapping.targetExists) { sendJSON(res, 409, { status: "target_conflict", error: "Target exists; nothing was overwritten" }); return true; }
+        const result = await client.mapLegacyAtomicMemory({ sourceId, targetId, content: typeof body.content === "string" ? body.content : undefined, scope: body.scope, projectId, expectedSourceFingerprint: String(body.expectedSourceFingerprint), reason: String(body.reason || "api_owner_confirmed_legacy_mapping"), agentTier: "owner-api" });
+        sendJSON(res, result.status === "source_changed" || result.status === "target_conflict" ? 409 : result.status === "not_found" ? 404 : 200, result); return true;
+      }
+      const id = typeof body.id === "string" ? body.id.trim() : "";
+      if (!id) { sendJSON(res, 400, { error: "id is required" }); return true; }
+      const current = await client.inspectAtomic({ id, scope, projectId });
+      if (!current) { sendJSON(res, 404, { error: "Memory not found in requested scope" }); return true; }
+      if (body.confirm !== true) { sendJSON(res, 400, { error: "Review transitions require confirm=true" }); return true; }
+      if (typeof body.expectedUpdatedAt !== "string" || !body.expectedUpdatedAt.trim()) { sendJSON(res, 400, { error: "expectedUpdatedAt is required" }); return true; }
+      let matches = false; try { matches = new Date(body.expectedUpdatedAt).toISOString() === new Date(String(current.metadata.updatedAt || "")).toISOString(); } catch {}
+      if (!matches) { sendJSON(res, 409, { status: "conflict", currentUpdatedAt: current.metadata.updatedAt }); return true; }
+      if (action === "mark_conflicted" || action === "resolve_conflict") {
+        const withId = typeof body.withId === "string" ? body.withId.trim() : "";
+        if (!withId || withId === id) { sendJSON(res, 400, { error: "A different withId is required for pair review" }); return true; }
+        const peer = await client.inspectAtomic({ id: withId, scope, projectId });
+        if (!peer) { sendJSON(res, 404, { error: "Conflict peer not found in the same scope" }); return true; }
+        const result = action === "mark_conflicted"
+          ? await client.reviewAtomicConflictPair({ first: { id, expectedUpdatedAt: body.expectedUpdatedAt }, second: { id: withId, expectedUpdatedAt: String(peer.metadata.updatedAt || "") }, scope, projectId, reviewedBy: "owner-api", reason: String(body.reason || "Owner API confirmed conflicting assertions") })
+          : await client.resolveAtomicConflictPair({ first: { id, expectedUpdatedAt: body.expectedUpdatedAt }, second: { id: withId, expectedUpdatedAt: String(peer.metadata.updatedAt || "") }, scope, projectId, reviewedBy: "owner-api" });
+        sendJSON(res, result.status === "conflict" ? 409 : result.status === "not_found" ? 404 : 200, result); return true;
+      }
+      if (!["verify", "quarantine", "unquarantine"].includes(action)) { sendJSON(res, 400, { error: "Unsupported review action" }); return true; }
+      const result = await client.reviewAtomic({ id, scope, projectId, expectedUpdatedAt: body.expectedUpdatedAt, action: action as any, reason: String(body.reason || "Owner API review"), reviewedBy: "owner-api" });
+      sendJSON(res, result.status === "conflict" ? 409 : result.status === "not_found" ? 404 : 200, result);
+    } catch (err: any) { sendJSON(res, 500, { error: err.message || String(err) }); }
+    return true;
+  }
+
+  // Retention API is preview-first. Marking stale never deletes the underlying record.
+  if (pathname === "/api/memory/retention-review" && req.method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req) || "{}");
+      const action = String(body.action || "preview");
+      const workspace = resolveWorkspacePath(req) || lastActiveWorkspace || process.cwd();
+      const projectId = getRMemoryProjectId(workspace);
+      const client = getRMemoryClient();
+      if (action === "preview") {
+        const exported = await client.exportAtomic({ projectId, includeGlobal: true, limit: 500 });
+        const preview = previewMemoryRetention(exported.items as any[], { limit: Math.max(1, Math.min(500, Number(body.limit) || 100)) });
+        sendJSON(res, 200, { mode: "preview_only", ...preview, exportTruncated: exported.truncated, note: "No records were changed or deleted." }); return true;
+      }
+      if (action !== "mark_stale") { sendJSON(res, 400, { error: "action must be preview or mark_stale" }); return true; }
+      const id = typeof body.id === "string" ? body.id.trim() : "";
+      const scope: "project" | "global" = body.scope === "global" ? "global" : "project";
+      if (!id) { sendJSON(res, 400, { error: "id is required" }); return true; }
+      if (body.confirm !== true) { sendJSON(res, 400, { error: "mark_stale requires confirm=true after preview" }); return true; }
+      const current = await client.inspectAtomic({ id, scope, projectId });
+      if (!current) { sendJSON(res, 404, { error: "Memory not found in requested scope" }); return true; }
+      const eligible = previewMemoryRetention([{ id: current.id, content: current.content, scope: current.scope, metadata: current.metadata }], { limit: 1 });
+      if (!eligible.items.some(item => item.id === id && item.scope === scope)) { sendJSON(res, 422, { error: "Memory is not eligible for type-aware retention marking" }); return true; }
+      const result = await client.markAtomicStale({ id, scope, projectId, expectedUpdatedAt: String(body.expectedUpdatedAt || ""), reason: String(body.reason || "retention_review") });
+      sendJSON(res, result.status === "conflict" ? 409 : result.status === "not_found" ? 404 : result.status === "needs_migration" ? 422 : 200, result); return true;
+    } catch (err: any) { sendJSON(res, 500, { error: err.message || String(err) }); }
+    return true;
+  }
+
  // Memory: search atomic rmemory + shared memory
   if (pathname === "/api/memory/search" && req.method === "GET") {
     try {
@@ -1499,11 +1620,17 @@ export async function handleServerRoute(
       const projectId = getRMemoryProjectId(memoryWorkspace);
       const isActive = await isRmemoryActive();
       let memory: any[] = [];
+      let memoryRecall: Record<string, unknown> = { status: query ? "unavailable" : "not_queried", scopedCount: 0, injectedCount: 0, withheldCount: 0, crossScopeRejectedCount: 0, conflictPairCount: 0 };
       if (isActive && query) {
         const client = getRMemoryClient();
         try {
-          const result = await client.searchAtomic({ query, limit: 20, projectId });
-          memory = (result.items || []).filter((item: any) => isAtomicMemoryVisible(item, scope, projectId));
+          const result = await client.searchAtomic({ query, limit: 50, projectId });
+          const filtered = filterEligibleMemoryRecords((result.items || []) as any[], { projectId, scope });
+          memory = filtered.items;
+          memoryRecall = { status: filtered.withheldCount > 0 ? (filtered.conflictPairCount > 0 ? "conflict" : "partial") : (memory.length ? "ok" : "empty"),
+            scopedCount: filtered.scopedCount, injectedCount: memory.length, withheldCount: filtered.withheldCount,
+            crossScopeRejectedCount: filtered.crossScopeRejectedCount, conflictPairCount: filtered.conflictPairCount };
+          if (filtered.withheldCount === 0 && filtered.crossScopeRejectedCount === 0 && !memory.length) memoryRecall.status = "empty";
         } catch {}
       }
       let sharedMemory: any[] = [];
@@ -1524,7 +1651,7 @@ export async function handleServerRoute(
           }
         }
       } catch {}
-      sendJSON(res, 200, { memory, sharedMemory });
+      sendJSON(res, 200, { memory, sharedMemory, memoryRecall });
     } catch (err: any) {
       sendJSON(res, 500, { error: err.message || String(err) });
     }
@@ -1573,6 +1700,7 @@ export async function handleServerRoute(
       const projectId = getRMemoryProjectId(memoryWorkspace);
       const isActive = await isRmemoryActive();
       let memory: any[] = [];
+      let memoryRecall: Record<string, unknown> = { status: isActive ? "empty" : "unavailable", scopedCount: 0, injectedCount: 0, withheldCount: 0, crossScopeRejectedCount: 0, conflictPairCount: 0 };
       if (isActive) {
         const client = getRMemoryClient();
         try {
@@ -1580,7 +1708,11 @@ export async function handleServerRoute(
             ? await client.searchAtomic({ query, limit: 50, projectId })
             : await client.exportAtomic({ projectId, includeGlobal: scope !== "project", limit: 50 });
           const items = Array.isArray(snapshot.items) ? snapshot.items : [];
-          memory = items.filter((item: any) => isAtomicMemoryVisible(item, scope, projectId));
+          const filtered = filterEligibleMemoryRecords(items as any[], { projectId, scope });
+          memory = filtered.items;
+          memoryRecall = { status: filtered.withheldCount > 0 ? (filtered.conflictPairCount > 0 ? "conflict" : "partial") : (memory.length ? "ok" : "empty"),
+            scopedCount: filtered.scopedCount, injectedCount: memory.length, withheldCount: filtered.withheldCount,
+            crossScopeRejectedCount: filtered.crossScopeRejectedCount, conflictPairCount: filtered.conflictPairCount };
         } catch {}
       }
       let sharedMemory: any[] = [];
@@ -1601,7 +1733,7 @@ export async function handleServerRoute(
           }
         }
       } catch {}
-      sendJSON(res, 200, { memory, sharedMemory });
+      sendJSON(res, 200, { memory, sharedMemory, memoryRecall });
     } catch (err: any) {
       sendJSON(res, 500, { error: err.message || String(err) });
     }

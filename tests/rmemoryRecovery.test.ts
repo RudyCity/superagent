@@ -230,6 +230,130 @@ describe("RMemory initialization recovery", () => {
   });
 
 
+  it("revises scoped memory optimistically, preserves a history snapshot, and restores through another revision", async () => {
+    const { getRMemoryClient, resetRMemoryInstance } = await import("../src/core/rmemoryUtil.js");
+    const { createMemoryRecordMetadata } = await import("../src/core/memoryRecord.js");
+    resetRMemoryInstance();
+    mockState.constructorFailsOnce = false;
+    const client = getRMemoryClient();
+    await client.updateAtomic({ id: "runtime-version", content: "[global] Runtime uses node 20", metadata: createMemoryRecordMetadata({
+      memoryId: "runtime-version", memoryType: "decision", scope: "global", source: "test_fixture", now: "2026-01-01T00:00:00.000Z",
+    }) });
+    const initial = await client.inspectAtomic({ id: "runtime-version", scope: "global", projectId: "p-a" });
+    expect(initial?.content).toBe("[global] Runtime uses node 20");
+    const preview = await client.previewAtomicRevision({ id: "runtime-version", content: "Runtime uses node 22", scope: "global", projectId: "p-a" });
+    expect(preview).toMatchObject({ expectedUpdatedAt: expect.any(String), currentContent: "[global] Runtime uses node 20", proposedContent: "[global] Runtime uses node 22", revisionNumber: 1 });
+
+    await expect(client.reviseAtomic({ id: "runtime-version", content: "Runtime uses node 22", scope: "global", projectId: "p-a", expectedUpdatedAt: "2025-01-01T00:00:00.000Z" })).resolves.toMatchObject({ status: "conflict" });
+    const first = await client.reviseAtomic({ id: "runtime-version", content: "Runtime uses node 22", scope: "global", projectId: "p-a", expectedUpdatedAt: preview!.expectedUpdatedAt });
+    expect(first).toMatchObject({ status: "revised", revisionNumber: 2, revisionId: expect.any(String) });
+    const activeAfterFirstRevision = await client.inspectAtomic({ id: "runtime-version", scope: "global", projectId: "p-a" });
+    expect(activeAfterFirstRevision?.content).toBe("[global] Runtime uses node 22");
+    expect(activeAfterFirstRevision?.metadata).toMatchObject({ revisionNumber: 2, supersedesMemoryId: first.revisionId });
+    const revisions = await client.listAtomicRevisions({ id: "runtime-version", scope: "global", projectId: "p-a" });
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0]).toMatchObject({ revisionId: first.revisionId, content: "[global] Runtime uses node 20", revisionNumber: 1, metadata: { lifecycleState: "superseded", supersededByMemoryId: "runtime-version" } });
+
+    const restored = await client.restoreAtomicRevision({ id: "runtime-version", revisionId: revisions[0].revisionId, scope: "global", projectId: "p-a", expectedUpdatedAt: first.updatedAt! });
+    expect(restored).toMatchObject({ status: "revised", revisionNumber: 3 });
+    expect((await client.inspectAtomic({ id: "runtime-version", scope: "global", projectId: "p-a" }))?.content).toBe("[global] Runtime uses node 20");
+    expect(await client.listAtomicRevisions({ id: "runtime-version", scope: "global", projectId: "p-a" })).toHaveLength(2);
+  });
+
+  it("owner-maps ambiguous legacy memory only to the explicitly chosen scope and keeps original readable", async () => {
+    const { getRMemoryClient, resetRMemoryInstance } = await import("../src/core/rmemoryUtil.js");
+    resetRMemoryInstance();
+    mockState.constructorFailsOnce = false;
+    const client = getRMemoryClient();
+    mockState.records.set("legacy-unclear", { id: "legacy-unclear", content: "[project] old environment note", metadata: { type: "memory", createdAt: "2025-12-01T00:00:00.000Z" } });
+
+    const preview = await client.previewLegacyAtomicMapping({ sourceId: "legacy-unclear", targetId: "mapped-note", scope: "project", projectId: "p_project_a" });
+    expect(preview).toMatchObject({ targetExists: false, scope: "project", projectId: "p_project_a", proposedContent: "[project:p_project_a] old environment note", originalPreserved: true });
+    await expect(client.mapLegacyAtomicMemory({ sourceId: "legacy-unclear", targetId: "mapped-note", scope: "project", projectId: "p_project_a", expectedSourceFingerprint: "not-the-current-fingerprint" })).resolves.toMatchObject({ status: "source_changed" });
+    const result = await client.mapLegacyAtomicMemory({ sourceId: "legacy-unclear", targetId: "mapped-note", scope: "project", projectId: "p_project_a", expectedSourceFingerprint: preview!.expectedSourceFingerprint, reason: "Owner identified active project" });
+    expect(result).toMatchObject({ status: "mapped", sourceId: "legacy-unclear", targetId: "mapped-note", scope: "project", originalPreserved: true });
+    expect(mockState.records.get("legacy-unclear")?.content).toBe("[project] old environment note");
+    expect(mockState.records.get("p_project_a:mapped-note")?.content).toBe("[project:p_project_a] old environment note");
+    expect(mockState.records.get("p_project_a:mapped-note")?.metadata).toMatchObject({ mappedFromLegacyId: "legacy-unclear", provenance: { source: "legacy_owner_mapping" }, scope: "project", projectId: "p_project_a" });
+    await expect(client.mapLegacyAtomicMemory({ sourceId: "legacy-unclear", targetId: "mapped-note", scope: "project", projectId: "p_project_a", expectedSourceFingerprint: preview!.expectedSourceFingerprint })).resolves.toMatchObject({ status: "already_mapped" });
+    await expect(client.previewLegacyAtomicMapping({ sourceId: "legacy-unclear", targetId: "wrong-scope", scope: "project", projectId: "p_project_b" })).resolves.toMatchObject({ scope: "project", projectId: "p_project_b" });
+  });
+
+  it("uses compare-and-swap review transitions and keeps quarantine/stale as non-destructive states", async () => {
+    const { getRMemoryClient, resetRMemoryInstance } = await import("../src/core/rmemoryUtil.js");
+    const { createMemoryRecordMetadata } = await import("../src/core/memoryRecord.js");
+    resetRMemoryInstance(); mockState.constructorFailsOnce = false;
+    const client = getRMemoryClient();
+    await client.updateAtomic({ id: "review-note", content: "[global] Runtime uses Node 22", metadata: createMemoryRecordMetadata({ memoryId: "review-note", memoryType: "environment", scope: "global", source: "test", now: "2026-10-01T00:00:00.000Z", existingMetadata: { retentionClass: "environment" } }) });
+    let current = await client.inspectAtomic({ id: "review-note", scope: "global", projectId: "p_project_a" });
+    const verified = await client.reviewAtomic({ id: "review-note", scope: "global", projectId: "p_project_a", expectedUpdatedAt: current!.metadata.updatedAt, action: "verify", reviewedBy: "owner" });
+    expect(verified.status).toBe("updated");
+    current = await client.inspectAtomic({ id: "review-note", scope: "global", projectId: "p_project_a" });
+    expect(current?.metadata).toMatchObject({ validationStatus: "verified", reviewState: "reviewed", reviewedBy: "owner" });
+
+    const quarantined = await client.reviewAtomic({ id: "review-note", scope: "global", projectId: "p_project_a", expectedUpdatedAt: current!.metadata.updatedAt, action: "quarantine", reason: "Need source citation" });
+    expect(quarantined.status).toBe("updated");
+    current = await client.inspectAtomic({ id: "review-note", scope: "global", projectId: "p_project_a" });
+    expect(current?.metadata).toMatchObject({ reviewState: "quarantined", quarantineReason: "Need source citation" });
+
+    const conflict = await client.reviewAtomic({ id: "review-note", scope: "global", projectId: "p_project_a", expectedUpdatedAt: "2026-01-01T00:00:00.000Z", action: "unquarantine" });
+    expect(conflict.status).toBe("conflict");
+    const unquarantined = await client.reviewAtomic({ id: "review-note", scope: "global", projectId: "p_project_a", expectedUpdatedAt: current!.metadata.updatedAt, action: "unquarantine" });
+    expect(unquarantined.status).toBe("updated");
+    current = await client.inspectAtomic({ id: "review-note", scope: "global", projectId: "p_project_a" });
+    expect(current?.metadata).toMatchObject({ validationStatus: "unverified", reviewState: "unreviewed" });
+
+    const stale = await client.markAtomicStale({ id: "review-note", scope: "global", projectId: "p_project_a", expectedUpdatedAt: current!.metadata.updatedAt, reason: "Environment refresh interval exceeded" });
+    expect(stale.status).toBe("marked_stale");
+    current = await client.inspectAtomic({ id: "review-note", scope: "global", projectId: "p_project_a" });
+    expect(current?.metadata).toMatchObject({ validationStatus: "stale", staleReason: "Environment refresh interval exceeded" });
+    expect(current?.content).toBe("[global] Runtime uses Node 22");
+  });
+
+  it("marks and resolves explicit same-key conflict pairs atomically with compare-and-swap tokens", async () => {
+    const { getRMemoryClient, resetRMemoryInstance } = await import("../src/core/rmemoryUtil.js");
+    const { createMemoryRecordMetadata } = await import("../src/core/memoryRecord.js");
+    resetRMemoryInstance(); mockState.constructorFailsOnce = false;
+    const client = getRMemoryClient();
+    const firstId = "runtime-node-a"; const secondId = "runtime-node-b";
+    await client.updateAtomic({ id: firstId, content: "[global] Runtime uses Node 20", metadata: createMemoryRecordMetadata({
+      memoryId: firstId, memoryType: "environment", scope: "global", source: "test", now: "2026-10-17T00:00:00.000Z", existingMetadata: { assertionKey: "runtime-version" },
+    }) });
+    await client.updateAtomic({ id: secondId, content: "[global] Runtime uses Node 22", metadata: createMemoryRecordMetadata({
+      memoryId: secondId, memoryType: "environment", scope: "global", source: "test", now: "2026-10-17T01:00:00.000Z", existingMetadata: { assertionKey: "runtime-version" },
+    }) });
+    let first = await client.inspectAtomic({ id: firstId, scope: "global", projectId: "p-a" });
+    let second = await client.inspectAtomic({ id: secondId, scope: "global", projectId: "p-a" });
+    const staleToken = await client.reviewAtomicConflictPair({
+      first: { id: firstId, expectedUpdatedAt: "2026-10-16T00:00:00.000Z" },
+      second: { id: secondId, expectedUpdatedAt: second!.metadata.updatedAt }, scope: "global", projectId: "p-a",
+    });
+    expect(staleToken.status).toBe("conflict");
+    expect((await client.inspectAtomic({ id: firstId, scope: "global", projectId: "p-a" }))?.metadata.lifecycleState).toBe("active");
+
+    const marked = await client.reviewAtomicConflictPair({
+      first: { id: firstId, expectedUpdatedAt: first!.metadata.updatedAt },
+      second: { id: secondId, expectedUpdatedAt: second!.metadata.updatedAt }, scope: "global", projectId: "p-a", reviewedBy: "owner", reason: "Two incompatible runtime assertions",
+    });
+    expect(marked).toMatchObject({ status: "marked_conflicted", firstId, secondId, assertionKey: "runtime-version" });
+    first = await client.inspectAtomic({ id: firstId, scope: "global", projectId: "p-a" });
+    second = await client.inspectAtomic({ id: secondId, scope: "global", projectId: "p-a" });
+    expect(first?.metadata).toMatchObject({ lifecycleState: "conflicted", reviewState: "unreviewed", validationStatus: "candidate", conflictWithMemoryIds: [secondId], conflictDetectedBy: "owner", conflictReason: "Two incompatible runtime assertions" });
+    expect(second?.metadata).toMatchObject({ lifecycleState: "conflicted", reviewState: "unreviewed", validationStatus: "candidate", conflictWithMemoryIds: [firstId], conflictDetectedBy: "owner", conflictReason: "Two incompatible runtime assertions" });
+
+    const resolved = await client.resolveAtomicConflictPair({
+      first: { id: firstId, expectedUpdatedAt: first!.metadata.updatedAt },
+      second: { id: secondId, expectedUpdatedAt: second!.metadata.updatedAt }, scope: "global", projectId: "p-a", reviewedBy: "owner",
+    });
+    expect(resolved).toMatchObject({ status: "resolved", firstId, secondId, validationStatus: "unverified" });
+    first = await client.inspectAtomic({ id: firstId, scope: "global", projectId: "p-a" });
+    second = await client.inspectAtomic({ id: secondId, scope: "global", projectId: "p-a" });
+    expect(first?.metadata).toMatchObject({ lifecycleState: "active", reviewState: "reviewed", validationStatus: "unverified" });
+    expect(second?.metadata).toMatchObject({ lifecycleState: "active", reviewState: "reviewed", validationStatus: "unverified" });
+    expect(first?.metadata.conflictWithMemoryIds).toBeUndefined();
+    expect(second?.metadata.conflictWithMemoryIds).toBeUndefined();
+  });
+
   it("recovers from a failed index initialization after resetRMemoryInstance", async () => {
     const { getRMemoryClient, getRMemoryDiagnostics, resetRMemoryInstance } = await import("../src/core/rmemoryUtil.js");
     resetRMemoryInstance();

@@ -9,6 +9,7 @@ import { Message, contentToString } from "../../conversation.js";
 import { getSettings } from "../../config.js";
 import { SummarizationStrategy } from "./SummarizationStrategy.js";
 import { getRMemoryClient, getRMemoryProjectId, getRMemorySessionKey, isRmemoryActiveSync } from "../../rmemoryUtil.js";
+import { assessMemoryFreshness, detectScopedMemoryConflicts } from "../../memoryLifecycle.js";
 
 export interface RMemoryConfig {
   model?: any;
@@ -99,6 +100,7 @@ export class RMemoryStrategy implements CompactionStrategy {
       let searchResult: PromiseSettledResult<any>;
       let persona: PromiseSettledResult<any>;
       let scenarios: PromiseSettledResult<any>;
+      const recallStartedAt = Date.now();
       if (
         this.recallCache &&
         this.recallCache.key === recallKey &&
@@ -115,13 +117,31 @@ export class RMemoryStrategy implements CompactionStrategy {
       }
 
       const retrievedItems = searchResult.status === "fulfilled" ? (searchResult.value?.items ?? []) : [];
-      const l1Items = retrievedItems.filter((item: any) => {
+      const scopedItems = retrievedItems.filter((item: any) => {
         const metadata = item.metadata || {};
         const content = String(item.content || "");
         if (metadata.scope === "global" || (!metadata.scope && content.startsWith("[global]"))) return true;
         if (metadata.scope === "project" && metadata.projectId === projectId) return true;
         return !metadata.scope && content.startsWith(`[project:${projectId}]`);
       });
+      const candidateConflicts = detectScopedMemoryConflicts(scopedItems
+        .filter((item: any) => item.metadata?.type !== "message" && !item.metadata?.session)
+        .map((item: any) => ({ id: String(item.id || ""), content: String(item.content || ""), scope: item.metadata?.scope, metadata: item.metadata || {} })));
+      const conflictingMemoryIds = new Set(candidateConflicts.flatMap(conflict => conflict.memoryIds));
+      const l1Items = scopedItems.filter((item: any) => {
+        const metadata = item.metadata || {};
+        // Conversation episodes follow session recency, not atomic-memory TTLs.
+        if (metadata.type === "message" || metadata.session) return true;
+        if (conflictingMemoryIds.has(String(item.id || ""))) return false;
+        return assessMemoryFreshness({ id: String(item.id || ""), content: String(item.content || ""), metadata }).shouldInject;
+      });
+      const excludedMemoryCount = scopedItems.length - l1Items.length;
+      const recallDurationMs = Math.max(0, Date.now() - recallStartedAt);
+      const estimatedRecallCharacters = l1Items.reduce((total: number, item: any) => total + Math.min(800, String(item.content || "").length), 0);
+      const memoryRecallStatus = searchResult.status === "rejected" ? "unavailable"
+        : scopedItems.length === 0 ? "empty"
+        : candidateConflicts.length > 0 ? "conflict"
+        : excludedMemoryCount > 0 ? "partial" : "ok";
       const personaContent = persona.status === "fulfilled" && persona.value ? persona.value.content : null;
       const sceneEntries = scenarios.status === "fulfilled" && scenarios.value ? (scenarios.value.entries ?? []) : [];
 
@@ -168,6 +188,18 @@ export class RMemoryStrategy implements CompactionStrategy {
           formattedMemories.push(`- [${typeTag}] ${memoryContent.slice(0, maxChars)}${memoryContent.length > maxChars ? "… [truncated]" : ""}`);
         }
         formattedMemories.push("</relevant-memories>");
+      }
+
+      // Preserve the difference between successful empty recall and a provider/search failure.
+      if (searchResult.status === "rejected") {
+        formattedMemories.push("## Memory recall status");
+        formattedMemories.push("- Long-term memory search was unavailable for this compaction. Treat missing memories as unknown, not as proof that no prior memory exists.");
+      } else if (scopedItems.length === 0) {
+        formattedMemories.push("## Memory recall status");
+        formattedMemories.push("- Long-term memory search completed successfully and returned no records eligible for this project/global scope.");
+      } else if (excludedMemoryCount > 0) {
+        formattedMemories.push("## Memory recall status");
+        formattedMemories.push(`- ${excludedMemoryCount} scoped memory record(s) were withheld because they are stale, expired, rejected, superseded, quarantined, or conflicted. Inspect and review before reusing them.`);
       }
 
       const summaryText = formattedMemories.join("\n").trim();
@@ -218,6 +250,18 @@ Do NOT automatically resume or reference these past sessions, previous code modi
           lastCapturedTimestamp: this.lastCapturedTimestamp,
           usedFallback: false,
           usedLLM: false,
+          memoryRecallStatus,
+          memoryRecallRetrievedRecordCount: retrievedItems.length,
+          memoryRecallCrossScopeRejectedCount: retrievedItems.length - scopedItems.length,
+          memoryRecallScopedRecordCount: scopedItems.length,
+          memoryRecallInjectedCount: l1Items.length,
+          memoryRecallWithheldCount: excludedMemoryCount,
+          memoryRecallConflictPairCount: candidateConflicts.length,
+          memoryRecallConflictingRecordCount: conflictingMemoryIds.size,
+          memoryRecallEstimatedCharacters: estimatedRecallCharacters,
+          memoryRecallEstimatedTokens: Math.ceil(estimatedRecallCharacters / 4),
+          memoryRecallDurationMs: recallDurationMs,
+          memoryRecallCacheHit: this.recallCache?.key === recallKey && nowTs - this.recallCache.ts < RMemoryStrategy.RECALL_TTL,
         },
       };
     } catch (error) {

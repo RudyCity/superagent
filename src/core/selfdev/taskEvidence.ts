@@ -130,3 +130,57 @@ export async function finishAgentTaskEvidence(agent: object): Promise<string[]> 
   activeEvidence.delete(agent);
   return [...state.evidenceIds];
 }
+
+export interface PersistedCompletedTaskSummaryResult {
+  summary: ReturnType<typeof import("../memoryLifecycle.js").buildCompletedTaskSummary>;
+  missingEvidenceIds: string[];
+  rejectedEvidenceIds: string[];
+  evidence: Array<{ id: string; kind: string; verifiedSuccess: boolean }>;
+}
+
+/**
+ * Rebuild a task summary exclusively from persisted SelfDev rows. This never reads
+ * raw command output and never treats an event ID supplied by a caller as proof
+ * unless the event is found in the exact workspace event store.
+ */
+export async function buildPersistedCompletedTaskSummary(options: {
+  workspace: string;
+  projectId: string;
+  taskId: string;
+  terminalEventId: string;
+}): Promise<PersistedCompletedTaskSummaryResult | null> {
+  if (!options.workspace.trim() || !options.projectId.trim() || !options.taskId.trim() || !options.terminalEventId.trim()) return null;
+  try {
+    const [{ getSelfDevConfig }, { getHistoryDb }, { SelfDevEventStore }, { buildCompletedTaskSummary }] = await Promise.all([
+      import("./settings.js"), import("../storage/historyDb.js"), import("./eventStore.js"), import("../memoryLifecycle.js"),
+    ]);
+    const config = getSelfDevConfig();
+    const store = new SelfDevEventStore({ workspace: options.workspace, getDb: () => getHistoryDb() as any, config });
+    const terminal = store.get(options.terminalEventId);
+    if (!terminal || terminal.workspace !== options.workspace || terminal.kind !== "task_completed"
+      || terminal.payload?.taskId !== options.taskId || terminal.payload?.outcome !== "task_completed") return null;
+
+    const missingEvidenceIds: string[] = [];
+    const rejectedEvidenceIds: string[] = [];
+    const evidence = terminal.evidence.slice(0, MAX_TASK_EVIDENCE_REFERENCES).flatMap(id => {
+      const record = store.get(id);
+      if (!record) { missingEvidenceIds.push(id); return []; }
+      if (record.workspace !== options.workspace || record.payload?.taskId !== options.taskId
+        || !["test_result", "build_result", "command_executed"].includes(record.kind)) {
+        rejectedEvidenceIds.push(id); return [];
+      }
+      const exitCode = record.payload?.exitCode;
+      const verifiedSuccess = exitCode === 0 && ((record.kind === "test_result" && record.payload?.passed === true)
+        || (record.kind === "build_result" && record.payload?.success === true));
+      return [{ id: record.id, taskId: options.taskId, persisted: true, kind: record.kind, verifiedSuccess }];
+    });
+    const summary = buildCompletedTaskSummary({
+      taskId: options.taskId, projectId: options.projectId, terminalEventPersisted: true,
+      terminalEvent: { id: terminal.id, kind: terminal.kind, payload: terminal.payload, summary: terminal.summary },
+      evidence,
+    });
+    return summary ? { summary, missingEvidenceIds, rejectedEvidenceIds, evidence: evidence.map(item => ({ id: item.id, kind: item.kind, verifiedSuccess: item.verifiedSuccess === true })) } : null;
+  } catch {
+    return null;
+  }
+}

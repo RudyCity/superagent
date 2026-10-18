@@ -14,10 +14,10 @@ const records = [
 ];
 
 const client = {
-  searchAtomic: vi.fn(),
-  exportAtomic: vi.fn(),
-  updateAtomic: vi.fn(),
-  deleteAtomicScoped: vi.fn(),
+  searchAtomic: vi.fn(), exportAtomic: vi.fn(), updateAtomic: vi.fn(), deleteAtomicScoped: vi.fn(),
+  previewAtomicRevision: vi.fn(), reviseAtomic: vi.fn(), listAtomicRevisions: vi.fn(), restoreAtomicRevision: vi.fn(),
+  inspectAtomic: vi.fn(), reviewAtomic: vi.fn(), reviewAtomicConflictPair: vi.fn(), resolveAtomicConflictPair: vi.fn(),
+  previewLegacyAtomicMapping: vi.fn(), mapLegacyAtomicMemory: vi.fn(), markAtomicStale: vi.fn(),
 };
 
 function makeContext(workspace = "D:/repos/project-a") {
@@ -66,6 +66,20 @@ describe("HTTP RMemory project-scope boundary", () => {
     client.exportAtomic.mockReset().mockResolvedValue({ total: records.length, truncated: false, items: records });
     client.updateAtomic.mockReset().mockResolvedValue({ id: "saved", updated_at: "2026-10-18T00:00:00.000Z" });
     client.deleteAtomicScoped.mockReset().mockResolvedValue(true);
+    client.previewAtomicRevision.mockReset().mockResolvedValue({ id: "a", scope: "project", currentContent: "before", proposedContent: `[project:${projectAId}] after`, expectedUpdatedAt: "2026-10-18T00:00:00.000Z", revisionNumber: 1, metadata: { scope: "project", projectId: projectAId } });
+    client.reviseAtomic.mockReset().mockResolvedValue({ status: "revised", id: "a", updatedAt: "2026-10-18T01:00:00.000Z" });
+    client.listAtomicRevisions.mockReset().mockResolvedValue([]);
+    client.restoreAtomicRevision.mockReset().mockResolvedValue({ status: "revised", id: "a" });
+    client.inspectAtomic.mockReset().mockImplementation(async ({ id, scope }: any) => {
+      const record = records.find((item: any) => item.id === id && (scope === "global" ? item.metadata.scope === "global" : item.metadata.projectId === projectAId));
+      return record ? { id: record.id, content: record.content, scope, metadata: { ...record.metadata, updatedAt: "2026-10-18T00:00:00.000Z" } } : null;
+    });
+    client.reviewAtomic.mockReset().mockResolvedValue({ status: "updated" });
+    client.reviewAtomicConflictPair.mockReset().mockResolvedValue({ status: "marked_conflicted" });
+    client.resolveAtomicConflictPair.mockReset().mockResolvedValue({ status: "resolved" });
+    client.previewLegacyAtomicMapping.mockReset().mockResolvedValue({ sourceId: "legacy-row", targetId: "mapped-row", scope: "project", projectId: projectAId, expectedSourceFingerprint: "fingerprint-1", targetExists: false, sourceContent: "old", proposedContent: `[project:${projectAId}] old`, originalPreserved: true });
+    client.mapLegacyAtomicMemory.mockReset().mockResolvedValue({ status: "mapped", originalPreserved: true });
+    client.markAtomicStale.mockReset().mockResolvedValue({ status: "marked_stale" });
   });
 
   afterEach(() => {
@@ -124,6 +138,47 @@ describe("HTTP RMemory project-scope boundary", () => {
     expect(projectA.response.body.sharedMemory.map((item: any) => item.key)).toContain("global-key");
     expect(projectB.response.body.sharedMemory.map((item: any) => item.value)).toContain("Private fact from project B");
     expect(projectB.response.body.sharedMemory.map((item: any) => item.value)).not.toContain("Private fact from project A");
+  });
+
+  it("uses preview, confirmation and updatedAt for HTTP revision writes", async () => {
+    const preview = await invoke("POST", "/api/memory/revise", { action: "preview", id: "a", content: "after" });
+    expect(preview.response.status).toBe(200);
+    expect(preview.response.body).toMatchObject({ mode: "preview_only", before: "before", expectedUpdatedAt: "2026-10-18T00:00:00.000Z" });
+    expect(client.reviseAtomic).not.toHaveBeenCalled();
+    const unconfirmed = await invoke("POST", "/api/memory/revise", { action: "apply", id: "a", content: "after", expectedUpdatedAt: "2026-10-18T00:00:00.000Z" });
+    expect(unconfirmed.response.status).toBe(400);
+    expect(client.reviseAtomic).not.toHaveBeenCalled();
+    const stale = await invoke("POST", "/api/memory/revise", { action: "apply", id: "a", content: "after", expectedUpdatedAt: "2026-10-17T00:00:00.000Z", confirm: true });
+    expect(stale.response.status).toBe(409);
+    expect(client.reviseAtomic).not.toHaveBeenCalled();
+    const applied = await invoke("POST", "/api/memory/revise", { action: "apply", id: "a", content: "after", expectedUpdatedAt: "2026-10-18T00:00:00.000Z", confirm: true });
+    expect(applied.response.status).toBe(200);
+    expect(client.reviseAtomic).toHaveBeenCalledWith(expect.objectContaining({ id: "a", scope: "project", projectId: projectAId, expectedUpdatedAt: "2026-10-18T00:00:00.000Z" }));
+  });
+
+  it("requires explicit scope and confirmation for legacy mapping over HTTP", async () => {
+    const noScope = await invoke("POST", "/api/memory/review", { action: "preview_legacy_mapping", sourceId: "legacy-row", id: "mapped-row" });
+    expect(noScope.response.status).toBe(400);
+    expect(client.previewLegacyAtomicMapping).not.toHaveBeenCalled();
+    const preview = await invoke("POST", "/api/memory/review", { action: "preview_legacy_mapping", sourceId: "legacy-row", id: "mapped-row", scope: "project" });
+    expect(preview.response.status).toBe(200);
+    expect(preview.response.body).toMatchObject({ mode: "preview_only", expectedSourceFingerprint: "fingerprint-1", originalPreserved: true });
+    const unconfirmed = await invoke("POST", "/api/memory/review", { action: "map_legacy", sourceId: "legacy-row", id: "mapped-row", scope: "project", expectedSourceFingerprint: "fingerprint-1" });
+    expect(unconfirmed.response.status).toBe(400);
+    expect(client.mapLegacyAtomicMemory).not.toHaveBeenCalled();
+    const mapped = await invoke("POST", "/api/memory/review", { action: "map_legacy", sourceId: "legacy-row", id: "mapped-row", scope: "project", expectedSourceFingerprint: "fingerprint-1", confirm: true });
+    expect(mapped.response.status).toBe(200);
+    expect(client.mapLegacyAtomicMemory).toHaveBeenCalledWith(expect.objectContaining({ scope: "project", projectId: projectAId, expectedSourceFingerprint: "fingerprint-1" }));
+  });
+
+  it("keeps retention HTTP preview read-only and requires confirmation before marking stale", async () => {
+    const preview = await invoke("POST", "/api/memory/retention-review", { action: "preview" });
+    expect(preview.response.status).toBe(200);
+    expect(preview.response.body.mode).toBe("preview_only");
+    expect(client.markAtomicStale).not.toHaveBeenCalled();
+    const unconfirmed = await invoke("POST", "/api/memory/retention-review", { action: "mark_stale", id: "a", scope: "project", expectedUpdatedAt: "2026-10-18T00:00:00.000Z" });
+    expect(unconfirmed.response.status).toBe(400);
+    expect(client.markAtomicStale).not.toHaveBeenCalled();
   });
 
   it("does not overwrite global or another project's memory through project-scoped delete", async () => {

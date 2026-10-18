@@ -13,7 +13,8 @@ import { resetSelfDevCollector, resetSelfDevRuntimeMetrics, getSelfDevRuntimeMet
 import { SelfDevEventStore } from "../src/core/selfdev/eventStore.js";
 import { getHistoryDb } from "../src/core/storage/historyDb.js";
 import * as selfDevAgentModule from "../src/core/selfdev/selfdevAgent.js";
-import { queueTaskVerificationEvidence } from "../src/core/selfdev/taskEvidence.js";
+import { buildPersistedCompletedTaskSummary, queueTaskVerificationEvidence } from "../src/core/selfdev/taskEvidence.js";
+import { getRMemoryProjectId } from "../src/core/rmemoryUtil.js";
 
 function makeAgent(workspace: string, sessionId: string): Agent {
   fs.mkdirSync(workspace, { recursive: true });
@@ -128,6 +129,13 @@ describe("Agent Selfdev lifecycle integration", () => {
     expect(completed?.payload?.taskId).toBe(started?.payload?.taskId);
     expect(completed?.evidence).toContain(evidence?.id);
     expect(evidence?.payload).toMatchObject({ commandFamily: "vitest", exitCode: 0, passed: true });
+    const summary = await buildPersistedCompletedTaskSummary({
+      workspace, projectId: getRMemoryProjectId(workspace), taskId: String(started?.payload?.taskId), terminalEventId: String(completed?.id),
+    });
+    expect(summary?.summary).toMatchObject({ outcome: "completed", validationStatus: "verified", evidenceIds: [evidence?.id] });
+    expect(summary?.missingEvidenceIds).toEqual([]);
+    expect(summary?.rejectedEvidenceIds).toEqual([]);
+    await expect(buildPersistedCompletedTaskSummary({ workspace, projectId: getRMemoryProjectId(workspace), taskId: "another-task", terminalEventId: String(completed?.id) })).resolves.toBeNull();
     await waitForDistillationToObserveSmallEventWindow();
   });
 

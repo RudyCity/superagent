@@ -3,6 +3,9 @@ export const MEMORY_RECORD_SCHEMA_VERSION = 1 as const;
 export type MemoryRecordScope = "global" | "project";
 export type MemoryValidationStatus = "unverified" | "candidate" | "verified" | "stale" | "rejected";
 export type MemoryEvidenceKind = "task" | "test" | "build" | "user_feedback" | "source" | "other";
+export type MemoryReviewState = "unreviewed" | "reviewed" | "quarantined";
+export type MemoryLifecycleState = "active" | "conflicted" | "superseded" | "expired";
+export type MemoryRetentionClass = "durable" | "temporary" | "environment" | "decision" | "task-summary" | "superseded";
 
 export interface MemoryEvidenceReference {
   id: string;
@@ -32,6 +35,26 @@ export interface MemoryRecordMetadata extends Record<string, unknown> {
   createdAt: string;
   updatedAt: string;
   validationStatus: MemoryValidationStatus;
+  reviewState?: MemoryReviewState;
+  lifecycleState?: MemoryLifecycleState;
+  retentionClass?: MemoryRetentionClass;
+  assertionKey?: string;
+  lastVerifiedAt?: string;
+  expiresAt?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  quarantineReason?: string;
+  conflictWithMemoryIds?: string[];
+  conflictDetectedAt?: string;
+  conflictDetectedBy?: string;
+  conflictReason?: string;
+  supersedesMemoryId?: string;
+  supersededByMemoryId?: string;
+  supersededAt?: string;
+  revisionNumber?: number;
+  mappedFromLegacyId?: string;
+  mappedAt?: string;
+  mappingReason?: string;
   provenance: MemoryRecordProvenance;
   evidence?: MemoryEvidenceReference[];
 }
@@ -68,6 +91,9 @@ const EVIDENCE_KINDS = new Set<MemoryEvidenceKind>([
   "source",
   "other",
 ]);
+const REVIEW_STATES = new Set<MemoryReviewState>(["unreviewed", "reviewed", "quarantined"]);
+const LIFECYCLE_STATES = new Set<MemoryLifecycleState>(["active", "conflicted", "superseded", "expired"]);
+const RETENTION_CLASSES = new Set<MemoryRetentionClass>(["durable", "temporary", "environment", "decision", "task-summary", "superseded"]);
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -86,6 +112,19 @@ function requiredIdentifier(value: unknown, label: string, maxLength: number): s
   const clean = value.trim();
   if (clean.length > maxLength) throw new Error(`${label} must not exceed ${maxLength} characters`);
   return clean;
+}
+
+function optionalIdentifier(value: unknown, maxLength: number): string | undefined {
+  return cleanString(value, maxLength);
+}
+
+function cleanIdentifierList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ids = Array.from(new Set(value.flatMap((entry) => {
+    const id = cleanString(entry, 160);
+    return id ? [id] : [];
+  }))).slice(0, 20);
+  return ids.length ? ids : undefined;
 }
 
 function validTimestamp(value: unknown): string | undefined {
@@ -158,6 +197,34 @@ export function createMemoryRecordMetadata(
     ? input.validationStatus
     : "unverified";
   const evidence = sanitizeEvidence(input.evidence);
+  const reviewState = REVIEW_STATES.has(existing.reviewState as MemoryReviewState)
+    ? existing.reviewState as MemoryReviewState
+    : "unreviewed";
+  const lifecycleState = LIFECYCLE_STATES.has(existing.lifecycleState as MemoryLifecycleState)
+    ? existing.lifecycleState as MemoryLifecycleState
+    : "active";
+  const retentionClass = RETENTION_CLASSES.has(existing.retentionClass as MemoryRetentionClass)
+    ? existing.retentionClass as MemoryRetentionClass
+    : undefined;
+  const assertionKey = optionalIdentifier(existing.assertionKey, 160);
+  const lastVerifiedAt = validTimestamp(existing.lastVerifiedAt);
+  const expiresAt = validTimestamp(existing.expiresAt);
+  const reviewedAt = validTimestamp(existing.reviewedAt);
+  const reviewedBy = optionalIdentifier(existing.reviewedBy, 128);
+  const quarantineReason = cleanString(existing.quarantineReason, 240);
+  const conflictWithMemoryIds = cleanIdentifierList(existing.conflictWithMemoryIds);
+  const conflictDetectedAt = validTimestamp(existing.conflictDetectedAt);
+  const conflictDetectedBy = optionalIdentifier(existing.conflictDetectedBy, 128);
+  const conflictReason = cleanString(existing.conflictReason, 240);
+  const supersedesMemoryId = optionalIdentifier(existing.supersedesMemoryId, 160);
+  const supersededByMemoryId = optionalIdentifier(existing.supersededByMemoryId, 160);
+  const supersededAt = validTimestamp(existing.supersededAt);
+  const revisionNumber = Number.isSafeInteger(existing.revisionNumber) && Number(existing.revisionNumber) >= 1
+    ? Math.min(100000, Number(existing.revisionNumber))
+    : undefined;
+  const mappedFromLegacyId = optionalIdentifier(existing.mappedFromLegacyId, 160);
+  const mappedAt = validTimestamp(existing.mappedAt);
+  const mappingReason = cleanString(existing.mappingReason, 200);
 
   return {
     schemaVersion: MEMORY_RECORD_SCHEMA_VERSION,
@@ -171,6 +238,26 @@ export function createMemoryRecordMetadata(
     createdAt,
     updatedAt,
     validationStatus,
+    reviewState,
+    lifecycleState,
+    ...(retentionClass ? { retentionClass } : {}),
+    ...(assertionKey ? { assertionKey } : {}),
+    ...(lastVerifiedAt ? { lastVerifiedAt } : {}),
+    ...(expiresAt ? { expiresAt } : {}),
+    ...(reviewedAt ? { reviewedAt } : {}),
+    ...(reviewedBy ? { reviewedBy } : {}),
+    ...(quarantineReason ? { quarantineReason } : {}),
+    ...(conflictWithMemoryIds ? { conflictWithMemoryIds } : {}),
+    ...(conflictDetectedAt ? { conflictDetectedAt } : {}),
+    ...(conflictDetectedBy ? { conflictDetectedBy } : {}),
+    ...(conflictReason ? { conflictReason } : {}),
+    ...(supersedesMemoryId ? { supersedesMemoryId } : {}),
+    ...(supersededByMemoryId ? { supersededByMemoryId } : {}),
+    ...(supersededAt ? { supersededAt } : {}),
+    ...(revisionNumber ? { revisionNumber } : {}),
+    ...(mappedFromLegacyId ? { mappedFromLegacyId } : {}),
+    ...(mappedAt ? { mappedAt } : {}),
+    ...(mappingReason ? { mappingReason } : {}),
     provenance: {
       source,
       ...(agentTier ? { agentTier } : {}),
@@ -208,6 +295,25 @@ export function isMemoryRecordMetadata(value: unknown): value is MemoryRecordMet
   if (metadata.scope === "global" && metadata.projectId !== undefined) return false;
   if (!validTimestamp(metadata.createdAt) || !validTimestamp(metadata.updatedAt)) return false;
   if (!VALIDATION_STATUSES.has(metadata.validationStatus as MemoryValidationStatus)) return false;
+  if (metadata.reviewState !== undefined && !REVIEW_STATES.has(metadata.reviewState as MemoryReviewState)) return false;
+  if (metadata.lifecycleState !== undefined && !LIFECYCLE_STATES.has(metadata.lifecycleState as MemoryLifecycleState)) return false;
+  if (metadata.retentionClass !== undefined && !RETENTION_CLASSES.has(metadata.retentionClass as MemoryRetentionClass)) return false;
+  if (metadata.assertionKey !== undefined && !cleanString(metadata.assertionKey, 160)) return false;
+  for (const timestampKey of ["lastVerifiedAt", "expiresAt", "reviewedAt", "supersededAt"] as const) {
+    if (metadata[timestampKey] !== undefined && !validTimestamp(metadata[timestampKey])) return false;
+  }
+  for (const identifierKey of ["reviewedBy", "supersedesMemoryId", "supersededByMemoryId"] as const) {
+    if (metadata[identifierKey] !== undefined && !cleanString(metadata[identifierKey], 160)) return false;
+  }
+  if (metadata.quarantineReason !== undefined && !cleanString(metadata.quarantineReason, 240)) return false;
+  if (metadata.conflictWithMemoryIds !== undefined && (!Array.isArray(metadata.conflictWithMemoryIds) || metadata.conflictWithMemoryIds.length > 20 || !metadata.conflictWithMemoryIds.every((id) => cleanString(id, 160)))) return false;
+  if (metadata.conflictDetectedAt !== undefined && !validTimestamp(metadata.conflictDetectedAt)) return false;
+  if (metadata.conflictDetectedBy !== undefined && !cleanString(metadata.conflictDetectedBy, 128)) return false;
+  if (metadata.conflictReason !== undefined && !cleanString(metadata.conflictReason, 240)) return false;
+  if (metadata.revisionNumber !== undefined && (!Number.isSafeInteger(metadata.revisionNumber) || Number(metadata.revisionNumber) < 1 || Number(metadata.revisionNumber) > 100000)) return false;
+  if (metadata.mappedFromLegacyId !== undefined && !cleanString(metadata.mappedFromLegacyId, 160)) return false;
+  if (metadata.mappedAt !== undefined && !validTimestamp(metadata.mappedAt)) return false;
+  if (metadata.mappingReason !== undefined && !cleanString(metadata.mappingReason, 200)) return false;
   if (!cleanString(asRecord(metadata.provenance).source, 80)) return false;
   if (metadata.evidence !== undefined && !isValidEvidenceArray(metadata.evidence)) return false;
   return true;

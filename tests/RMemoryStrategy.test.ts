@@ -215,5 +215,58 @@ describe("RMemoryStrategy", () => {
     expect(result.messages[0].content).toContain("- [current session assistant | scope=project | project=p_test_project] Current session message");
   });
 
+  it("withholds stale/quarantined atomics and reports bounded recall quality metrics", async () => {
+    mockSearchAtomic.mockResolvedValue({ items: [
+      { id: "stale-temp", content: "OLD_DEPLOYMENT_SECRET_VERSION", type: "decision", metadata: { scope: "project", projectId: "p_test_project", retentionClass: "temporary", updatedAt: "2026-01-01T00:00:00.000Z", validationStatus: "verified" } },
+      { id: "quarantined", content: "QUARANTINED_LEGACY_RECORD", type: "fact", metadata: { scope: "project", projectId: "p_test_project", reviewState: "quarantined" } },
+      { id: "durable", content: "STABLE_PREFERENCE_FOR_CONCISE_REPORTS", type: "preference", metadata: { scope: "global", retentionClass: "durable", validationStatus: "verified", updatedAt: "2026-01-01T00:00:00.000Z" } },
+    ] });
+    const result = await new RMemoryStrategy().execute([{ role: "user", content: "deployment preference", timestamp: Date.now() }], { preserveRecent: 1 });
+    const context = result.messages[0].content;
+    expect(context).toContain("STABLE_PREFERENCE_FOR_CONCISE_REPORTS");
+    expect(context).not.toContain("OLD_DEPLOYMENT_SECRET_VERSION");
+    expect(context).not.toContain("QUARANTINED_LEGACY_RECORD");
+    expect(context).toContain("2 scoped memory record(s) were withheld");
+    expect(result.metadata.memoryRecallStatus).toBe("partial");
+    expect(result.metadata.memoryRecallScopedRecordCount).toBe(3);
+    expect(result.metadata.memoryRecallInjectedCount).toBe(1);
+    expect(result.metadata.memoryRecallWithheldCount).toBe(2);
+    expect(result.metadata.memoryRecallEstimatedTokens).toBeGreaterThan(0);
+  });
+
+  it("distinguishes a successful empty memory search from an unavailable search", async () => {
+    const strategy = new RMemoryStrategy();
+    const messages: Message[] = [{ role: "user", content: "query", timestamp: Date.now() }];
+    mockSearchAtomic.mockResolvedValue({ items: [] });
+    const empty = await strategy.execute(messages, { preserveRecent: 1 });
+    expect(empty.metadata.memoryRecallStatus).toBe("empty");
+    expect(empty.messages[0].content).toContain("search completed successfully and returned no records eligible for this project/global scope");
+
+    mockSearchAtomic.mockRejectedValue(new Error("memory provider offline"));
+    // Use another query so the previous deterministic result is not a cache hit.
+    const unavailable = await strategy.execute([{ role: "user", content: "different query", timestamp: Date.now() + 1 }], { preserveRecent: 1 });
+    expect(unavailable.metadata.memoryRecallStatus).toBe("unavailable");
+    expect(unavailable.messages[0].content).toContain("search was unavailable for this compaction");
+    expect(unavailable.messages[0].content).not.toContain("search completed successfully and returned no records eligible for this project/global scope");
+  });
+
+  it("withholds same-key conflicting assertions and rejects other-project results before injection", async () => {
+    mockSearchAtomic.mockResolvedValue({ items: [
+      { id: "node-a", content: "[project:p_test_project] Runtime uses Node 20", type: "decision", metadata: { scope: "project", projectId: "p_test_project", assertionKey: "runtime-node-version", validationStatus: "verified", updatedAt: "2026-10-17T00:00:00.000Z" } },
+      { id: "node-b", content: "[project:p_test_project] Runtime uses Node 22", type: "decision", metadata: { scope: "project", projectId: "p_test_project", assertionKey: "runtime-node-version", validationStatus: "verified", updatedAt: "2026-10-17T00:00:00.000Z" } },
+      { id: "foreign", content: "FOREIGN_PROJECT_RUNTIME_SECRET", type: "fact", metadata: { scope: "project", projectId: "p_other_project", validationStatus: "verified" } },
+    ] });
+    const result = await new RMemoryStrategy().execute([{ role: "user", content: "runtime version", timestamp: Date.now() }], { preserveRecent: 1 });
+    const context = result.messages[0].content;
+    expect(context).not.toContain("Runtime uses Node 20");
+    expect(context).not.toContain("Runtime uses Node 22");
+    expect(context).not.toContain("FOREIGN_PROJECT_RUNTIME_SECRET");
+    expect(context).toContain("2 scoped memory record(s) were withheld");
+    expect(result.metadata.memoryRecallStatus).toBe("conflict");
+    expect(result.metadata.memoryRecallConflictPairCount).toBe(1);
+    expect(result.metadata.memoryRecallConflictingRecordCount).toBe(2);
+    expect(result.metadata.memoryRecallCrossScopeRejectedCount).toBe(1);
+  });
+
   afterAll(() => {});
 });

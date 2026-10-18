@@ -95,6 +95,20 @@ describe("Master Agent toolset is orchestration-only", () => {
     ).toEqual([]);
   });
 
+  it("registers memory review tools only for Master and Superagent, never subagents", async () => {
+    const { superagentToolset, subagentToolsets } = await import("../src/core/tools/toolsets.js");
+    const protectedMemoryTools = ["rmemory_revise", "rmemory_review", "rmemory_retention_review", "rmemory_task_summary"];
+    const master = new Set(masterToolset.map(tool => tool.name));
+    const superagent = new Set(superagentToolset.map(tool => tool.name));
+    for (const name of protectedMemoryTools) {
+      expect(master.has(name), `Master toolset should include ${name}`).toBe(true);
+      expect(superagent.has(name), `Superagent toolset should include ${name}`).toBe(true);
+      for (const [tier, tools] of Object.entries(subagentToolsets)) {
+        expect(tools.some(tool => tool.name === name), `${tier} must not include ${name}`).toBe(false);
+      }
+    }
+  });
+
   it("ORCHESTRATION_TOOL_NAMES is in sync with masterToolset", () => {
     const fromArray = new Set(masterToolset.map((t) => t.name));
     expect(ORCHESTRATION_TOOL_NAMES.size).toBe(fromArray.size);

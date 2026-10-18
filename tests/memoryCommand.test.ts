@@ -14,6 +14,9 @@ const mockClient = {
   deleteAtomicScoped: vi.fn(),
   listScenarios: vi.fn(),
   readScenario: vi.fn(),
+  previewAtomicRevision: vi.fn(), reviseAtomic: vi.fn(), listAtomicRevisions: vi.fn(), restoreAtomicRevision: vi.fn(),
+  inspectAtomic: vi.fn(), exportAtomic: vi.fn(), reviewAtomic: vi.fn(), reviewAtomicConflictPair: vi.fn(),
+  resolveAtomicConflictPair: vi.fn(), previewLegacyAtomicMapping: vi.fn(), mapLegacyAtomicMemory: vi.fn(), markAtomicStale: vi.fn(),
 };
 
 import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
@@ -77,6 +80,7 @@ describe("/memory Command Suite", () => {
   });
 
   it("should search memories", async () => {
+    vi.spyOn(rmemoryUtilModule, "getRMemoryProjectId").mockReturnValue("p_test");
     mockClient.searchAtomic.mockResolvedValue({
       items: [
         {
@@ -88,7 +92,7 @@ describe("/memory Command Suite", () => {
 
     await handleSlashCommand("/memory search typescript", mockCtx as any);
 
-    expect(mockClient.searchAtomic).toHaveBeenCalledWith({ query: "typescript", limit: 10, projectId: expect.any(String) });
+    expect(mockClient.searchAtomic).toHaveBeenCalledWith({ query: "typescript", limit: 50, projectId: expect.any(String) });
     expect(addedLines.some((l) => l.content.includes("MEMORY SEARCH RESULTS FOR: \"typescript\""))).toBe(true);
     expect(addedLines.some((l) => l.content.includes("Score: 0.9500"))).toBe(true);
     expect(addedLines.some((l) => l.content.includes("Scope: project"))).toBe(true);
@@ -146,6 +150,30 @@ describe("/memory Command Suite", () => {
       projectId: expect.any(String),
     });
     expect(addedLines.some((l) => l.content.includes("nothing was deleted"))).toBe(true);
+  });
+
+  it("previews revision from the CLI without changing memory", async () => {
+    mockClient.previewAtomicRevision.mockResolvedValue({ id: "architecture", currentContent: "old", proposedContent: "new", expectedUpdatedAt: "2026-10-18T00:00:00.000Z", revisionNumber: 1 });
+    await handleSlashCommand("/memory revise preview architecture New content", mockCtx as any);
+    expect(mockClient.previewAtomicRevision).toHaveBeenCalledWith({ id: "architecture", content: "New content", scope: "project", projectId: expect.any(String) });
+    expect(mockClient.reviseAtomic).not.toHaveBeenCalled();
+    expect(addedLines.some(line => line.content.includes("preview_only"))).toBe(true);
+  });
+
+  it("requires matching version token and owner confirmation before CLI revision", async () => {
+    mockClient.previewAtomicRevision.mockResolvedValue({ id: "architecture", currentContent: "old", proposedContent: "new", expectedUpdatedAt: "2026-10-18T00:00:00.000Z", revisionNumber: 1 });
+    mockClient.reviseAtomic.mockResolvedValue({ status: "revised", id: "architecture" });
+    await handleSlashCommand("/memory revise apply architecture 2026-10-18T00:00:00.000Z New content", mockCtx as any);
+    expect(mockClient.reviseAtomic).toHaveBeenCalledWith(expect.objectContaining({ id: "architecture", content: "New content", expectedUpdatedAt: "2026-10-18T00:00:00.000Z" }));
+    expect((mockCtx.agent.onQuestion as any)).toHaveBeenCalled();
+  });
+
+  it("keeps CLI retention preview read-only", async () => {
+    mockClient.exportAtomic.mockResolvedValue({ total: 0, truncated: false, items: [] });
+    await handleSlashCommand("/memory retention-review preview", mockCtx as any);
+    expect(mockClient.exportAtomic).toHaveBeenCalledWith({ projectId: expect.any(String), includeGlobal: true, limit: 500 });
+    expect(mockClient.markAtomicStale).not.toHaveBeenCalled();
+    expect(addedLines.some(line => line.content.includes("preview_only"))).toBe(true);
   });
 
   it("should list scenarios", async () => {

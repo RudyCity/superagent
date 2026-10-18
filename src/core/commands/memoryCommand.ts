@@ -3,6 +3,8 @@ import { registry } from "./registry.js";
 import { getSettings } from "../config.js";
 import { getRMemoryClient, getRMemorySessionKey, getActiveRMemoryEmbeddingInfo, getRMemoryProjectId, isRmemoryActiveSync } from "../rmemoryUtil.js";
 import { createMemoryRecordMetadata } from "../memoryRecord.js";
+import { detectScopedMemoryConflicts, filterEligibleMemoryRecords, previewMemoryRetention } from "../memoryLifecycle.js";
+import { executeMemoryQualityCommand } from "./memoryQualityCommands.js";
 
 export const memoryCommand: SlashCommand = {
   name: "memory",
@@ -22,6 +24,7 @@ export const memoryCommand: SlashCommand = {
     }
 
     const client = getRMemoryClient(5000); // 5s timeout
+    if (await executeMemoryQualityCommand(subcommand, parts, ctx as any, client)) return;
 
     if (subcommand === "status") {
       ctx.addLine({
@@ -90,12 +93,15 @@ export const memoryCommand: SlashCommand = {
 
       try {
         const projectId = getRMemoryProjectId(ctx.agent?.workingDirectory || process.cwd());
-        const res = await client.searchAtomic({ query, limit: 10, projectId });
-        const items = res.items || [];
+        const res = await client.searchAtomic({ query, limit: 50, projectId });
+        const recall = filterEligibleMemoryRecords((res.items || []) as any[], { projectId, scope: "all" });
+        const items = recall.items.slice(0, 10);
         if (items.length === 0) {
           ctx.addLine({
             type: "system",
-            content: "No matching memories found.",
+            content: recall.withheldCount > 0
+              ? `No eligible current memories found. ${recall.withheldCount} scoped record(s) were withheld; ${recall.conflictPairCount} explicit conflict pair(s) need review.`
+              : "No matching memories found in the current project/global scope.",
             timestamp: Date.now(),
           });
           return;
@@ -104,6 +110,7 @@ export const memoryCommand: SlashCommand = {
         const lines = [
           "----------------------------------------------------------------------",
           `MEMORY SEARCH RESULTS FOR: "${query}"`,
+          `Recall: injected=${items.length}, withheld=${recall.withheldCount}, cross-scope rejected=${recall.crossScopeRejectedCount}, conflict pairs=${recall.conflictPairCount}`,
           "----------------------------------------------------------------------",
         ];
         for (const item of items) {
@@ -118,6 +125,10 @@ export const memoryCommand: SlashCommand = {
             metadata.projectId ? `Project ID: ${metadata.projectId}` : undefined,
             metadata.schemaVersion ? `Schema: ${metadata.schemaVersion}` : undefined,
             metadata.validationStatus ? `Validation: ${metadata.validationStatus}` : undefined,
+            metadata.reviewState ? `Review: ${metadata.reviewState}` : undefined,
+            metadata.lifecycleState ? `Lifecycle: ${metadata.lifecycleState}` : undefined,
+            metadata.retentionClass ? `Retention: ${metadata.retentionClass}` : undefined,
+            metadata.expiresAt ? `Expires: ${metadata.expiresAt}` : undefined,
             metadata.updatedAt ? `Updated: ${metadata.updatedAt}` : undefined,
             provenance.source ? `Source: ${provenance.source}` : undefined,
           ].filter(Boolean).join(" | ");
@@ -423,6 +434,9 @@ export const memoryCommand: SlashCommand = {
       "  search <query>       Perform a vector search through your long-term memories (L1)",
       "  add <id> <val>       Save or overwrite a long-term structured memory",
       "  delete <id>          Delete a specific long-term structured memory",
+      "  revise preview|apply|history|restore ...  Reviewable updates with version history",
+      "  review conflicts|verify|quarantine|legacy-preview ...  Owner review workflows",
+      "  retention-review preview|mark-stale ...  Preview-first, non-destructive retention",
       "  sync                 Manually trigger synchronization of history to RMemory database",
       "  list-scenes          List all scenario navigation blocks (L2)",
       "  read-scene <path>    Read the content of a specific scenario block",

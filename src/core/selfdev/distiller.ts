@@ -1,5 +1,6 @@
 import { SELFDEV_LIMITS, type SelfDevEvent, type SelfDevLesson, type SelfDevLessonInput } from "./types.js";
 import { type CandidateStore } from "./candidateStore.js";
+import { redactMemorySecrets } from "../memoryLifecycle.js";
 
 const ESCALATION_PATTERNS = [
   /ignore\s+(?:all\s+)?(?:previous\s+)?(?:instructions|rules|prompts)/i,
@@ -19,7 +20,7 @@ const SECRET_PATTERNS = [
 ];
 
 function sanitize(text: string): string {
-  let cleaned = text;
+  let cleaned = redactMemorySecrets(text);
   for (const pat of SECRET_PATTERNS) {
     cleaned = cleaned.replace(pat, "[REDACTED]");
   }

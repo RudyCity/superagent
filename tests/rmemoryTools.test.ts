@@ -12,6 +12,10 @@ import {
   rmemoryExportTool,
   rmemoryDeleteTool,
   rmemoryMigrateLegacyTool,
+  rmemoryReviseTool,
+  rmemoryMemoryReviewTool,
+  rmemoryRetentionReviewTool,
+  rmemoryTaskSummaryTool,
 } from "../src/core/tools/rmemoryTools.js";
 
 const mockAddConversation = vi.fn();
@@ -24,6 +28,16 @@ const mockInspectAtomic = vi.fn();
 const mockExportAtomic = vi.fn();
 const mockDeleteAtomicScoped = vi.fn();
 const mockMigrateLegacyAtomicMemories = vi.fn();
+const mockPreviewAtomicRevision = vi.fn();
+const mockReviseAtomic = vi.fn();
+const mockListAtomicRevisions = vi.fn();
+const mockRestoreAtomicRevision = vi.fn();
+const mockReviewAtomic = vi.fn();
+const mockMarkAtomicStale = vi.fn();
+const mockPreviewLegacyAtomicMapping = vi.fn();
+const mockMapLegacyAtomicMemory = vi.fn();
+const mockReviewAtomicConflictPair = vi.fn();
+const mockResolveAtomicConflictPair = vi.fn();
 
 import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
 
@@ -43,6 +57,16 @@ describe("RMemory Tools", () => {
       exportAtomic: (...args: any[]) => mockExportAtomic(...args),
       deleteAtomicScoped: (...args: any[]) => mockDeleteAtomicScoped(...args),
       migrateLegacyAtomicMemories: (...args: any[]) => mockMigrateLegacyAtomicMemories(...args),
+      previewAtomicRevision: (...args: any[]) => mockPreviewAtomicRevision(...args),
+      reviseAtomic: (...args: any[]) => mockReviseAtomic(...args),
+      listAtomicRevisions: (...args: any[]) => mockListAtomicRevisions(...args),
+      restoreAtomicRevision: (...args: any[]) => mockRestoreAtomicRevision(...args),
+      reviewAtomic: (...args: any[]) => mockReviewAtomic(...args),
+      reviewAtomicConflictPair: (...args: any[]) => mockReviewAtomicConflictPair(...args),
+      resolveAtomicConflictPair: (...args: any[]) => mockResolveAtomicConflictPair(...args),
+      markAtomicStale: (...args: any[]) => mockMarkAtomicStale(...args),
+      previewLegacyAtomicMapping: (...args: any[]) => mockPreviewLegacyAtomicMapping(...args),
+      mapLegacyAtomicMemory: (...args: any[]) => mockMapLegacyAtomicMemory(...args),
     } as any);
     vi.spyOn(rmemoryUtilModule, "getRMemorySessionKey").mockReturnValue("test-sess");
     vi.spyOn(rmemoryUtilModule, "isRmemoryActive").mockResolvedValue(true);
@@ -53,6 +77,10 @@ describe("RMemory Tools", () => {
     expect(rmemoryConversationSearchTool.name).toBe("rmemory_conversation_search");
     expect(rmemoryReadCosTool.name).toBe("rmemory_read_cos");
     expect(rmemoryMigrateLegacyTool.name).toBe("rmemory_migrate_legacy");
+    expect(rmemoryReviseTool.name).toBe("rmemory_revise");
+    expect(rmemoryMemoryReviewTool.name).toBe("rmemory_review");
+    expect(rmemoryRetentionReviewTool.name).toBe("rmemory_retention_review");
+    expect(rmemoryTaskSummaryTool.name).toBe("rmemory_task_summary");
   });
 
   it("returns only safe read-only RMemory diagnostics", async () => {
@@ -154,6 +182,78 @@ describe("RMemory Tools", () => {
     });
   });
 
+  describe("memory review and recoverable revision", () => {
+    it("previews revisions without writes and requires fresh owner confirmation before apply", async () => {
+      const { agentLocalStorage } = await import("../src/core/agent.js");
+      mockPreviewAtomicRevision.mockResolvedValue({ id: "deploy-target", scope: "project", currentContent: "old target", proposedContent: "new target", expectedUpdatedAt: "2026-10-18T08:00:00.000Z", revisionNumber: 1, metadata: { scope: "project", projectId: "p_test", validationStatus: "verified" } });
+      const previewAgent = { tier: "master" } as any;
+      const preview = await agentLocalStorage.run(previewAgent, () => rmemoryReviseTool.execute({ action: "preview", id: "deploy-target", content: "new target" }, "."));
+      expect(JSON.parse(preview as string)).toMatchObject({ mode: "preview_only", before: "old target", after: "new target" });
+      expect(mockReviseAtomic).not.toHaveBeenCalled();
+
+      const approvedAgent = { tier: "master", onQuestion: vi.fn().mockResolvedValue("Yes") } as any;
+      mockReviseAtomic.mockResolvedValue({ status: "revised", id: "deploy-target", revisionNumber: 2 });
+      const applied = await agentLocalStorage.run(approvedAgent, () => rmemoryReviseTool.execute({ action: "apply", id: "deploy-target", content: "new target", expectedUpdatedAt: "2026-10-18T08:00:00.000Z" }, "."));
+      expect(JSON.parse(applied as string).status).toBe("revised");
+      expect(approvedAgent.onQuestion).toHaveBeenCalledOnce();
+      expect(mockReviseAtomic).toHaveBeenCalledWith(expect.objectContaining({ id: "deploy-target", expectedUpdatedAt: "2026-10-18T08:00:00.000Z", content: "new target" }));
+    });
+
+    it("fails closed when there is no persisted matching completed task event", async () => {
+      const { agentLocalStorage } = await import("../src/core/agent.js");
+      const agent = { tier: "master" } as any;
+      const result = await agentLocalStorage.run(agent, () => rmemoryTaskSummaryTool.execute({ action: "save", taskId: "missing-task-for-memory-summary", terminalEventId: "missing-terminal-event" }, process.cwd()));
+      expect(result).toContain("No matching persisted task_completed event");
+      expect(mockUpdateAtomic).not.toHaveBeenCalled();
+    });
+
+    it("retention preview is read-only and does not propose durable memories for age-only expiry", async () => {
+      const { agentLocalStorage } = await import("../src/core/agent.js");
+      mockExportAtomic.mockResolvedValue({ total: 2, truncated: false, items: [
+        { id: "expired-incident", content: "incident", scope: "project", metadata: { scope: "project", projectId: "p_test", retentionClass: "temporary", updatedAt: "2026-01-01T00:00:00.000Z" } },
+        { id: "durable-pref", content: "pref", scope: "global", metadata: { scope: "global", retentionClass: "durable", validationStatus: "verified", updatedAt: "2026-01-01T00:00:00.000Z" } },
+      ] });
+      const agent = { tier: "master" } as any;
+      const result = JSON.parse(await agentLocalStorage.run(agent, () => rmemoryRetentionReviewTool.execute({ action: "preview" }, ".") as Promise<string>));
+      expect(result.mode).toBe("preview_only");
+      expect(result.items.map((item: any) => item.id)).toEqual(["expired-incident"]);
+      expect(mockMarkAtomicStale).not.toHaveBeenCalled();
+    });
+
+    it("requires explicit scope when previewing ambiguous legacy mapping and confirms before applying", async () => {
+      const { agentLocalStorage } = await import("../src/core/agent.js");
+      mockPreviewLegacyAtomicMapping.mockResolvedValue({ sourceId: "legacy-1", targetId: "mapped-1", scope: "project", projectId: rmemoryUtilModule.getRMemoryProjectId("."), sourceContent: "[project] old note", proposedContent: `[project:${rmemoryUtilModule.getRMemoryProjectId(".")}] old note`, expectedSourceFingerprint: "fingerprint-1", targetExists: false, originalPreserved: true });
+      const agent = { tier: "master" } as any;
+      const missingScope = await agentLocalStorage.run(agent, () => rmemoryMemoryReviewTool.execute({ action: "preview_legacy_mapping", sourceId: "legacy-1" }, "."));
+      expect(missingScope).toContain("explicitly choose project or global scope");
+      expect(mockPreviewLegacyAtomicMapping).not.toHaveBeenCalled();
+
+      const preview = await agentLocalStorage.run(agent, () => rmemoryMemoryReviewTool.execute({ action: "preview_legacy_mapping", sourceId: "legacy-1", id: "mapped-1", scope: "project" }, "."));
+      expect(JSON.parse(preview as string)).toMatchObject({ mode: "preview_only", expectedSourceFingerprint: "fingerprint-1", originalPreserved: true });
+      expect(mockMapLegacyAtomicMemory).not.toHaveBeenCalled();
+
+      const approved = { tier: "master", onQuestion: vi.fn().mockResolvedValue("Yes") } as any;
+      mockMapLegacyAtomicMemory.mockResolvedValue({ status: "mapped", sourceId: "legacy-1", targetId: "mapped-1", originalPreserved: true });
+      const mapped = await agentLocalStorage.run(approved, () => rmemoryMemoryReviewTool.execute({ action: "map_legacy", sourceId: "legacy-1", id: "mapped-1", scope: "project", expectedSourceFingerprint: "fingerprint-1" }, "."));
+      expect(JSON.parse(mapped as string)).toMatchObject({ status: "mapped", originalPreserved: true });
+      expect(approved.onQuestion).toHaveBeenCalledOnce();
+      expect(mockMapLegacyAtomicMemory).toHaveBeenCalledWith(expect.objectContaining({ sourceId: "legacy-1", targetId: "mapped-1", scope: "project", expectedSourceFingerprint: "fingerprint-1" }));
+    });
+
+    it("shows same-scope keyed conflicts as review candidates only", async () => {
+      const { agentLocalStorage } = await import("../src/core/agent.js");
+      mockExportAtomic.mockResolvedValue({ total: 2, truncated: false, items: [
+        { id: "runtime-a", content: "Node 20", scope: "project", metadata: { scope: "project", projectId: "p-a", assertionKey: "node-version" } },
+        { id: "runtime-b", content: "Node 22", scope: "project", metadata: { scope: "project", projectId: "p-a", assertionKey: "node-version" } },
+      ] });
+      const agent = { tier: "master" } as any;
+      const result = JSON.parse(await agentLocalStorage.run(agent, () => rmemoryMemoryReviewTool.execute({ action: "conflicts" }, ".") as Promise<string>));
+      expect(result.mode).toBe("review_preview_only");
+      expect(result.conflicts).toHaveLength(1);
+      expect(mockReviewAtomic).not.toHaveBeenCalled();
+    });
+  });
+
   describe("rmemory_search", () => {
     it("should successfully search structured memories", async () => {
       mockSearchAtomic.mockResolvedValue({
@@ -181,6 +281,21 @@ describe("RMemory Tools", () => {
         limit: 10,
         projectId: expect.any(String),
       }));
+    });
+
+    it("withholds explicit same-key conflicts and cross-project matches from memory search", async () => {
+      const projectId = rmemoryUtilModule.getRMemoryProjectId(".");
+      mockSearchAtomic.mockResolvedValue({ items: [
+        { id: "runtime-a", content: `[project:${projectId}] Runtime is Node 20`, type: "decision", metadata: { scope: "project", projectId, assertionKey: "runtime-node-version", validationStatus: "verified" } },
+        { id: "runtime-b", content: `[project:${projectId}] Runtime is Node 22`, type: "decision", metadata: { scope: "project", projectId, assertionKey: "runtime-node-version", validationStatus: "verified" } },
+        { id: "foreign", content: "Other project secret", type: "decision", metadata: { scope: "project", projectId: "p_other_project", validationStatus: "verified" } },
+      ] });
+      const result = await rmemorySearchTool.execute({ query: "runtime" }, ".");
+      expect(result).not.toContain("Runtime is Node 20");
+      expect(result).not.toContain("Runtime is Node 22");
+      expect(result).not.toContain("Other project secret");
+      expect(result).toContain("2 scoped record(s) were withheld");
+      expect(result).toContain("1 explicit same-key conflict pair");
     });
 
     it("should return fallback message if no memories found", async () => {
