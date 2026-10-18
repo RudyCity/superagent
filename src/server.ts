@@ -200,16 +200,17 @@ function resolveSession(
   // A session ID is not sufficient authorization on its own. Bind lookups to
   // the requested client mode and workspace so cross-project IDs fail closed.
   if (targetSessionId) {
-    if (!wsPath) return null;
     for (const session of activeSessions.values()) {
-      if (
-        session.sessionId === targetSessionId &&
-        session.clientMode === reqClientMode &&
-        session.workspace.toLowerCase() === wsPath.toLowerCase()
-      ) {
-        session.lastActiveTime = Date.now();
-        return session;
+      if (session.sessionId !== targetSessionId || session.clientMode !== reqClientMode) {
+        continue;
       }
+
+      if (wsPath && session.workspace.toLowerCase() !== wsPath.toLowerCase()) {
+        continue;
+      }
+
+      session.lastActiveTime = Date.now();
+      return session;
     }
     return null;
   }

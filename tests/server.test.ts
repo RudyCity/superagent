@@ -369,6 +369,43 @@ describe("POST /api/init", () => {
     expect(second.body.sessionId).toBe(sid);
   });
 
+  it("rejects re-using the same sessionId for a different workspace", async () => {
+    const first = await postJSON(port, "/api/init", { workspace: testWorkspace, mode: "single" });
+    const sid = first.body.sessionId;
+    const rogueWorkspace = path.join(os.tmpdir(), `sa-ws-rogue-${Date.now()}`);
+    fs.mkdirSync(rogueWorkspace, { recursive: true });
+
+    try {
+      const second = await postJSON(port, "/api/init", {
+        workspace: rogueWorkspace,
+        mode: "single",
+        sessionId: sid,
+      });
+
+      expect(second.status).toBe(409);
+      expect(second.body.error).toContain("different workspace or mode");
+      expect(second.body.sessionId).toBe(sid);
+      expect(second.body.workspace).toBe(path.resolve(testWorkspace));
+    } finally {
+      try { fs.rmSync(rogueWorkspace, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it("rejects re-using the same sessionId for a different mode", async () => {
+    const first = await postJSON(port, "/api/init", { workspace: testWorkspace, mode: "single" });
+    const sid = first.body.sessionId;
+    const second = await postJSON(port, "/api/init", {
+      workspace: testWorkspace,
+      mode: "multi",
+      sessionId: sid,
+    });
+
+    expect(second.status).toBe(409);
+    expect(second.body.error).toContain("different workspace or mode");
+    expect(second.body.sessionId).toBe(sid);
+    expect(second.body.mode).toBe("single");
+  });
+
   it("accepts multi mode", async () => {
     const ws = path.join(os.tmpdir(), `sa-ws-multi-${Date.now()}`);
     fs.mkdirSync(ws, { recursive: true });
@@ -504,6 +541,35 @@ describe("POST /api/chat", () => {
     const { status, body } = await postJSON(port, "/api/chat", { message: "ping", sessionId: sid });
     expect(status).toBe(200);
     expect(body.sessionId).toBe(sid);
+  });
+
+  it("rejects a sessionId when the caller supplies a different workspace", async () => {
+    const initRes = await postJSON(port, "/api/init", {
+      workspace: testWorkspace,
+      mode: "single",
+    });
+    const sid = initRes.body.sessionId;
+    const rogueWorkspace = path.join(os.tmpdir(), `sa-ws-chat-rogue-${Date.now()}`);
+    fs.mkdirSync(rogueWorkspace, { recursive: true });
+
+    try {
+      await postJSON(port, "/api/init", {
+        workspace: rogueWorkspace,
+        mode: "single",
+      });
+
+      const { status, body } = await postJSON(
+        port,
+        "/api/chat",
+        { message: "ping", sessionId: sid },
+        { "x-workspace-path": rogueWorkspace }
+      );
+
+      expect(status).toBe(400);
+      expect(body.error).toBe("Session not initialized");
+    } finally {
+      try { fs.rmSync(rogueWorkspace, { recursive: true, force: true }); } catch {}
+    }
   });
 });
 
