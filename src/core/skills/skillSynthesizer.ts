@@ -8,7 +8,7 @@ import {
   SkillValidationResult,
   SynthesizedSkillSummary
 } from "./synthesizerTypes.js";
-import { clearSkillsCache } from "../config/skills.js";
+import { createSkillCandidate } from "./skillLifecycle.js";
 
 function toKebabCase(str: string): string {
   return str
@@ -18,6 +18,9 @@ function toKebabCase(str: string): string {
 }
 
 export function extractPatterns(steps: SkillTrajectoryStep[] = []): ExtractedWorkflowPatterns {
+  // Trajectories can be supplied by external tools. Bound CPU and retained data
+  // before processing so a huge transcript cannot create an oversized candidate.
+  const boundedSteps = Array.isArray(steps) ? steps.slice(0, 300) : [];
   const toolsSet = new Set<string>();
   const commandPatterns: string[] = [];
   const recoveredErrors: string[] = [];
@@ -25,34 +28,40 @@ export function extractPatterns(steps: SkillTrajectoryStep[] = []): ExtractedWor
 
   let lastError: string | null = null;
 
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
+  for (let i = 0; i < boundedSteps.length; i++) {
+    const step = boundedSteps[i];
     if (step.toolName) {
-      toolsSet.add(step.toolName);
-      if (
-        (step.toolName === "run_command" || step.toolName === "bash" || step.toolName === "run_background_process") &&
-        step.toolArgs?.CommandLine
-      ) {
-        const cmd = String(step.toolArgs.CommandLine).trim();
-        const baseCmd = cmd.split(" ")[0];
-        if (!commandPatterns.includes(baseCmd)) {
-          commandPatterns.push(baseCmd);
+      const safeTool = sanitizeToolName(step.toolName);
+      if (safeTool) {
+        if (toolsSet.size < 50) toolsSet.add(safeTool);
+        if (
+          (safeTool === "run_command" || safeTool === "bash" || safeTool === "run_background_process") &&
+          step.toolArgs?.CommandLine
+        ) {
+          const cmd = String(step.toolArgs.CommandLine).slice(0, 500).trim();
+          const baseCmd = cmd.split(/\s+/)[0].replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 50);
+          if (baseCmd && commandPatterns.length < 50 && !commandPatterns.includes(baseCmd)) {
+            commandPatterns.push(baseCmd);
+          }
         }
       }
     }
 
     // Check for error in step
-    const errText = step.error || (typeof step.toolResult === "string" && step.toolResult.includes("Error:") ? step.toolResult : null);
-    if (errText) {
-      lastError = errText.slice(0, 150);
-    } else if (lastError && step.role === "tool" && !errText) {
-      recoveredErrors.push(`Encountered "${lastError}" then resolved using tool "${step.toolName || "action"}"`);
+    const rawErr = step.error || (typeof step.toolResult === "string" && step.toolResult.includes("Error:") ? step.toolResult : null);
+    if (rawErr) {
+      const errText = sanitizeOneLineText(rawErr, 150);
+      lastError = errText;
+    } else if (lastError && step.role === "tool" && !rawErr) {
+      const safeTool = sanitizeToolName(step.toolName) || "action";
+      if (recoveredErrors.length < 20) recoveredErrors.push(`Encountered "${lastError}" then resolved using tool "${safeTool}"`);
       lastError = null;
     }
 
     if (step.role === "assistant" && step.content) {
-      const firstLine = step.content.split("\n")[0].replace(/^[-*#\s]+/, "").trim();
-      if (firstLine.length > 5 && firstLine.length < 120 && !keySteps.includes(firstLine)) {
+      const normalizedContent = String(step.content).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      const firstLine = sanitizeBodyStep(normalizedContent.split("\n")[0]);
+      if (keySteps.length < 10 && firstLine.length > 5 && firstLine.length < 120 && !keySteps.includes(firstLine)) {
         keySteps.push(firstLine);
       }
     }
@@ -66,6 +75,53 @@ export function extractPatterns(steps: SkillTrajectoryStep[] = []): ExtractedWor
   };
 }
 
+function sanitizeName(value: unknown): string {
+  const normalized = toKebabCase(String(value ?? "").slice(0, 320)).slice(0, 80);
+  return normalized || "synthesized-skill";
+}
+
+function sanitizeCategory(value: unknown): string {
+  const normalized = toKebabCase(String(value ?? "").slice(0, 320)).slice(0, 60);
+  return normalized || "automation";
+}
+
+function sanitizeOneLineText(value: unknown, limit = 500): string {
+  let text = String(value ?? "")
+    .replace(/[\r\n\x00-\x1f\x7f\u0085\u2028\u2029]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  text = text.replace(/#{1,6}\s*/g, "");
+  text = text.replace(/-{3,}/g, "--");
+  return text.slice(0, limit);
+}
+
+function safeFrontmatterScalar(value: unknown, limit: number = 240): string {
+  const text = sanitizeOneLineText(value, limit)
+    .replace(/:/g, " - ")
+    .replace(/^[-*•\s]+/, "");
+  return text.slice(0, limit);
+}
+
+function sanitizeBodyStep(value: unknown, limit = 200): string {
+  let step = sanitizeOneLineText(value, limit);
+  step = step.replace(/^(\d+[\.\)]\s*|[-*#•]+\s*)+/, "");
+  step = step.replace(/#{1,6}\s*/g, "");
+  return step.trim();
+}
+
+function sanitizeToolName(value: unknown): string {
+  return String(value ?? "")
+    .replace(/[\r\n\x00-\x1f\x7f\u0085\u2028\u2029`]+/g, "")
+    .replace(/[^a-zA-Z0-9_.-]/g, "")
+    .slice(0, 60);
+}
+
+function sanitizeErrorItem(value: unknown, limit = 150): string {
+  let err = sanitizeOneLineText(value, limit);
+  err = err.replace(/^(\d+[\.\)]\s*|[-*#•]+\s*)+/, "");
+  return err.trim();
+}
+
 export function generateSkillMarkdown(
   name: string,
   description: string,
@@ -73,42 +129,65 @@ export function generateSkillMarkdown(
   taskDescription: string,
   category: string = "automation"
 ): string {
-  const title = name
+  const safeName = sanitizeName(name);
+  const title = safeName
     .split("-")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
 
+  const safeDescription = safeFrontmatterScalar(description) || "Automated workflow";
+  const safeCategory = sanitizeCategory(category);
+  const safeTaskDescription = sanitizeOneLineText(taskDescription, 500) || "Automated workflow";
+
+  const sanitizedSteps = (patterns.keySteps || [])
+    .slice(0, 20)
+    .map((step) => sanitizeBodyStep(step))
+    .filter((step) => step.length >= 3);
+
   const stepsList =
-    patterns.keySteps.length > 0
-      ? patterns.keySteps.map((step, idx) => `${idx + 1}. ${step}`).join("\n")
+    sanitizedSteps.length > 0
+      ? sanitizedSteps.map((step, idx) => `${idx + 1}. ${step}`).join("\n")
       : `1. Inspect workspace configuration and relevant code files.\n2. Execute necessary changes and validation checks.\n3. Verify results and ensure zero regressions.`;
 
+  const sanitizedTools = [
+    ...new Set(
+      (patterns.toolsUsed || [])
+        .map(sanitizeToolName)
+        .filter((t) => Boolean(t) && t.length > 0)
+    )
+  ].slice(0, 30);
+
   const toolsList =
-    patterns.toolsUsed.length > 0
-      ? patterns.toolsUsed.map((t) => `- \`${t}\``).join("\n")
+    sanitizedTools.length > 0
+      ? sanitizedTools.map((t) => `- \`${t}\``).join("\n")
       : "- `view_file`\n- `run_command`\n- `replace_file_content`";
 
+  const sanitizedErrors = (patterns.recoveredErrors || [])
+    .slice(0, 15)
+    .map((e) => sanitizeErrorItem(e))
+    .filter((e) => e.length >= 3);
+
   const lessonsSection =
-    patterns.recoveredErrors.length > 0
-      ? `## Lessons Learned & Error Recovery\n${patterns.recoveredErrors.map((e) => `- ${e}`).join("\n")}\n\n`
+    sanitizedErrors.length > 0
+      ? `## Lessons Learned & Error Recovery\n${sanitizedErrors.map((e) => `- ${e}`).join("\n")}\n\n`
       : "";
 
   return `---
-name: ${name}
-description: ${description}
-category: ${category}
+name: ${safeName}
+description: ${safeDescription}
+category: ${safeCategory}
 ---
 
 # ${title}
 
 ## Overview
 Automated skill synthesized from successful resolution of:
-"${taskDescription}"
+"${safeTaskDescription}"
 
 ## When to Use
 Use this skill when handling tasks that match:
-- ${taskDescription}
-- Automated workflows requiring ${patterns.toolsUsed.join(", ") || "targeted tooling"}
+- ${safeTaskDescription}
+- Automated workflows requiring ${sanitizedTools.join(", ") || "targeted tooling"}
 
 ## Step-by-Step Workflow
 ${stepsList}
@@ -143,13 +222,23 @@ export function validateSkillMarkdown(content: string): SkillValidationResult {
       errors.push("Frontmatter missing required 'name' field");
     } else {
       const nameVal = nameMatch[1].trim();
-      if (!/^[a-z0-9-]+$/.test(nameVal)) {
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(nameVal)) {
         errors.push(`Skill name "${nameVal}" must be kebab-case (lowercase letters, numbers, and hyphens only)`);
       }
     }
 
     if (!descMatch || !descMatch[1].trim()) {
       errors.push("Frontmatter missing required 'description' field");
+    }
+
+    // Disallow unexpected or injected frontmatter fields
+    const allowedKeys = new Set(["name", "description", "category", "version", "tools"]);
+    const yamlLines = yamlBody.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    for (const yLine of yamlLines) {
+      const keyMatch = yLine.match(/^([a-zA-Z0-9_-]+):/);
+      if (keyMatch && !allowedKeys.has(keyMatch[1])) {
+        errors.push(`Frontmatter contains unauthorized field "${keyMatch[1]}"`);
+      }
     }
   }
 
@@ -169,52 +258,48 @@ export function validateSkillMarkdown(content: string): SkillValidationResult {
   };
 }
 
-export async function saveSynthesizedSkill(
-  skill: SynthesizedSkill,
-  targetDirectory?: string
-): Promise<string> {
-  const dir = targetDirectory || path.join(process.cwd(), ".agents", "skills", skill.name);
-  fs.mkdirSync(dir, { recursive: true });
-
-  const filePath = path.join(dir, "SKILL.md");
-  fs.writeFileSync(filePath, skill.markdownContent, "utf-8");
-
-  // Invalidate in-memory skills cache so the new skill is immediately loaded
-  try {
-    clearSkillsCache();
-  } catch {}
-
-  return filePath;
+/** @deprecated Direct skill activation is disabled; synthesizeSkill creates an inactive candidate. */
+export async function saveSynthesizedSkill(_skill: SynthesizedSkill, _targetDirectory?: string): Promise<string> {
+  throw new Error("Direct skill activation is disabled. Use synthesizeSkill(), evaluate the candidate, and explicitly approve promotion from an interactive CLI.");
 }
 
 export async function synthesizeSkill(request: SkillSynthesisRequest): Promise<SynthesizedSkill> {
   const patterns = extractPatterns(request.conversationTrajectory || []);
 
-  const rawName = request.skillName || request.taskDescription.slice(0, 40);
-  const name = toKebabCase(rawName) || `synthesized-skill-${Date.now()}`;
-  const category = request.category || "automation";
-  const description = `Automated skill for: ${request.taskDescription.slice(0, 100)}`;
+  const taskDescription = sanitizeOneLineText(request.taskDescription, 1000);
+  if (!taskDescription) throw new Error("A non-empty task description is required to synthesize a skill candidate.");
+  const rawName = request.skillName || taskDescription.slice(0, 40);
+  const name = sanitizeName(rawName);
+  const category = sanitizeCategory(request.category || "automation");
+  const description = safeFrontmatterScalar(`Automated skill for: ${taskDescription.slice(0, 100)}`);
 
-  const markdownContent = generateSkillMarkdown(name, description, patterns, request.taskDescription, category);
+  const markdownContent = generateSkillMarkdown(name, description, patterns, taskDescription, category);
 
   const validation = validateSkillMarkdown(markdownContent);
   if (!validation.valid) {
     throw new Error(`Skill validation failed: ${validation.errors.join("; ")}`);
   }
 
-  const targetDir = request.targetDir || path.join(request.workspace || process.cwd(), ".agents", "skills", name);
-  const filePath = path.join(targetDir, "SKILL.md");
+  // Synthesis only creates an inactive, versioned candidate. Runtime skill discovery
+  // continues to read .agents/skills and only sees explicitly promoted versions.
+  const candidate = await createSkillCandidate(request.workspace || process.cwd(), {
+    name,
+    description,
+    category,
+    markdownContent,
+    extractedPatterns: patterns,
+    sourceEvidenceIds: request.evidenceIds,
+  });
 
   const skill: SynthesizedSkill = {
     name,
     description,
     category,
-    markdownContent,
-    filePath,
+    markdownContent: candidate.markdownContent,
+    filePath: candidate.filePath,
+    version: candidate.record.version,
     extractedPatterns: patterns
   };
-
-  await saveSynthesizedSkill(skill, targetDir);
 
   try {
     const { recordSkillSynthesized } = await import("./skillTracker.js");

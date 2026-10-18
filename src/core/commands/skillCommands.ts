@@ -176,7 +176,7 @@ export const skillsCommand: SlashCommand = {
 
       const fs = await import("fs");
       const { listSynthesizedSkills } = await import("../skills/skillSynthesizer.js");
-      const { recordSkillExecution } = await import("../skills/skillTracker.js");
+      const { recordSkillExecution, recordSkillOutcome } = await import("../skills/skillTracker.js");
       const workspace = ctx.agent?.workingDirectory || process.cwd();
       const installed = getInstalledSkills();
       const synthesized = listSynthesizedSkills(workspace);
@@ -198,6 +198,7 @@ export const skillsCommand: SlashCommand = {
       const skillContent = fs.readFileSync(targetPath, "utf-8");
 
       if (ctx.agent) {
+        const skillRunStartedAt = Date.now();
         ctx.addLine({
           type: "user",
           content: `❯ /skills run ${name}`,
@@ -213,7 +214,9 @@ export const skillsCommand: SlashCommand = {
           await ctx.agent.sendMessage(
             `Please execute the following skill guide:\n\n${skillContent}`
           );
+          recordSkillOutcome(name, "succeeded", Date.now() - skillRunStartedAt);
         } catch (err: any) {
+          recordSkillOutcome(name, "failed", Date.now() - skillRunStartedAt);
           ctx.addLine({
             type: "error",
             content: `Failed to execute skill: ${err.message}`,
@@ -283,7 +286,8 @@ export const skillsCommand: SlashCommand = {
             `- File Path   : ${skill.filePath}`,
             `- Description : ${skill.description}`,
             `- Category    : ${skill.category}`,
-            "The skill is saved in .agents/skills/ and immediately available to Superagent.",
+            "Status: candidate only; it is not active in .agents/skills yet.",
+            "Evaluation of persisted task/test evidence and explicit CLI approval are required before activation.",
           ].join("\n"),
           timestamp: Date.now(),
         });

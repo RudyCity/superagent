@@ -330,13 +330,14 @@ export const PLAN_SKILLS_MCP_TOOL_DEFS = [
   {
     name: "superagent_synthesize_skill",
     description:
-      "Synthesizes a new reusable skill (SKILL.md) from the current workflow, commands, and problem-solving patterns into .agents/skills/<name>/SKILL.md.",
+      "Creates an inactive, versioned skill candidate outside runtime discovery. Promotion requires verified persisted task/test evidence and explicit interactive CLI approval; MCP cannot approve or activate candidates.",
     inputSchema: {
       type: "object",
       properties: {
         taskDescription: { type: "string", description: "Clear summary of the task or workflow accomplished." },
         skillName: { type: "string", description: "Optional kebab-case identifier (e.g. 'sqlite-migration-helper')." },
         category: { type: "string", description: "Optional category (e.g. 'database', 'testing', 'refactor')." },
+        evidenceIds: { type: "array", items: { type: "string" }, description: "Optional persisted Selfdev task_completed event IDs to verify during evaluation." },
       },
       required: ["taskDescription"],
     },

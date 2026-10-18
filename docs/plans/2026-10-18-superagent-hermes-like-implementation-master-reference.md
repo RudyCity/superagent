@@ -362,6 +362,8 @@ Each phase must be delivered as code/tests/docs with a recorded result. Do not m
 
 ### Phase 2 — Evidence-based skill learning (P1)
 
+**Current implementation record:** docs/plans/2026-10-19-superagent-hermes-like-phase-2-skill-lifecycle-implementation.md captures the bounded candidate/evaluation/approval lifecycle increment. Candidate storage, persisted evidence checks, explicit CLI activation gates, version comparison/rollback/disable/retirement, and initial effectiveness counters are implemented and focused tests pass. **Phase 2 remains in progress** until sandboxed replay and broader per-version evaluation gates below are verified.
+
 **Work items**
 1. Map all discovery, injection, synthesis, activation and cache-refresh entry points.
 2. Extend task evidence with verified terminal state, build/test output, errors/recovery, project/mode/provider, user feedback and redacted skill/action metadata.
@@ -511,5 +513,6 @@ Execute these actions in this order before broad feature work:
 2. Maintain the complete test gate: the current local inventory of 342 test/spec files passed in 14 batches (3,344 passed, 5 skipped, 0 failed). The combined `bun run verify:all` wrapper timed out without an exit code; individual component gates were verified separately.
 3. Treat `docs/plans/2026-10-18-superagent-hermes-like-phase-1-memory-quality-and-review-plan.md` as the completed, bounded implementation record for memory quality/review. The next improvement slice should expand the deliberately small labeled retrieval fixture and perform live-provider/end-to-end evaluation.
 4. Keep task summaries candidate/unverified until a separate owner review. Keep ambiguous legacy rows unchanged until the owner explicitly chooses a scope and confirms a mapping; never infer ownership from basename or content mention.
-5. Continue Phases 2–6 only behind their evidence gates: candidate skill evaluation/review, durable daemon run ledger/recovery, multi-agent/provider conformance, channel parity and end-to-end evaluation.
-6. Preserve unrelated working-tree changes; perform a final `git diff --check`, status review, and explicit acceptance before considering commit/push.
+5. Phase 2's bounded lifecycle increment is recorded in docs/plans/2026-10-19-superagent-hermes-like-phase-2-skill-lifecycle-implementation.md. Next gates are sandboxed replay execution, richer task/provider/error/recovery/user-feedback evidence, per-version effectiveness/regression metrics, and adversarial safety testing; do not mark Phase 2 complete from static checks alone.
+6. Phase 1 automatic recall still needs its expanded labeled retrieval fixture and live-provider/end-to-end evaluation. Then continue the remaining durable daemon run ledger/recovery, multi-agent/provider conformance, channel parity, and release-evaluation gates.
+7. Preserve unrelated working-tree changes; perform a final diff-check, status review, and explicit acceptance before considering commit/push.

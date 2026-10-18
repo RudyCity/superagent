@@ -212,7 +212,7 @@ export async function handleServerRoute(
   }
 
   // ─── Autonomous Skill Synthesizer Routes ────────────────────────────────────
-  if (pathname.startsWith("/api/skills/synthesiz")) {
+  if (pathname.startsWith("/api/skills/synthesiz") || pathname === "/api/skills/candidates") {
     const { handleSkillRoutes } = await import("./core/skills/skillRoutes.js");
     const handled = await handleSkillRoutes(req, res, pathname, parsedUrl, {
       sendJSON,

@@ -3,7 +3,7 @@ import { synthesizeSkill } from "../skills/skillSynthesizer.js";
 
 export const synthesizeSkillTool: Tool = {
   name: "synthesize_skill",
-  description: "Synthesizes a new reusable skill (SKILL.md) from the current workflow, commands, and problem-solving patterns. Saves the skill to .agents/skills/<name>/SKILL.md so it can be reused in future tasks.",
+  description: "Synthesizes an inactive, versioned skill candidate from a workflow. Candidate is stored outside runtime discovery and requires verified Selfdev task evidence, evaluation, and explicit interactive CLI approval before activation.",
   parameters: {
     type: "object",
     properties: {
@@ -18,6 +18,11 @@ export const synthesizeSkillTool: Tool = {
       category: {
         type: "string",
         description: "Optional categorization for the skill (e.g. 'database', 'testing', 'refactor')."
+      },
+      evidenceIds: {
+        type: "array",
+        items: { type: "string" },
+        description: "Optional IDs of persisted Selfdev task_completed events. Evaluation verifies the exact workspace and linked successful test/build evidence."
       }
     },
     required: ["taskDescription"]
@@ -36,7 +41,8 @@ export const synthesizeSkillTool: Tool = {
         taskDescription,
         workspace: cwd,
         skillName,
-        category
+        category,
+        evidenceIds: Array.isArray(args.evidenceIds) ? args.evidenceIds.filter((id): id is string => typeof id === "string") : undefined
       });
 
       return [
@@ -45,7 +51,10 @@ export const synthesizeSkillTool: Tool = {
         `- Description: ${result.description}`,
         `- Category: ${result.category}`,
         `- Key Tools: ${result.extractedPatterns.toolsUsed.join(", ") || "standard tools"}`,
-        `The new skill is now active and immediately discoverable by Superagent.`
+        `Status: candidate (inactive; not loaded by runtime skill discovery).`,
+        `Candidate reference: ${result.name}@${result.version || "unknown-version"}`,
+        `Next: superagent skill evaluate ${result.name}@${result.version || "unknown-version"}`,
+        `Promotion requires verified evidence and explicit interactive CLI approval.`
       ].join("\n");
     } catch (err: any) {
       return `Failed to synthesize skill: ${err.message || String(err)}`;

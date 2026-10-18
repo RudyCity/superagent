@@ -102,27 +102,29 @@ This initiative must extend existing SuperAgent systems rather than replacing th
 
 ### Tasks
 
-- [ ] Map all current skill discovery, synthesis, activation, execution, and cache-refresh entry points before altering behavior.
+- [x] Map and update current skill discovery, synthesis, activation, execution, and cache-refresh entry points (CLI, slash command, tool/MCP synthesis, REST synthesis/list route, active-only discovery, direct save helper, and cache invalidation). See the Phase 2 implementation record.
 - [x] Carry task IDs and terminal status through Selfdev events, record recognized test/build results only from actual process exit codes, and link only persisted evidence IDs to the terminal event. Raw command text and stdout/stderr are not stored in these evidence events.
 - [ ] Extend task trajectory metadata with error/recovery summaries, model/provider/mode, skill version, project-specific applicability, and user feedback while redacting secrets and sensitive arguments.
-- [ ] Change synthesis to create a versioned candidate artifact rather than immediately treating every generated \`SKILL.md\` as active and proven.
+- [x] Change synthesis to create a content-addressed versioned candidate rather than immediately treating every generated skill Markdown as active and proven.
 - [ ] Attach evidence IDs, applicability conditions, preconditions, expected outputs, verification steps, risk classification, and known limitations.
-- [ ] Validate candidate content for secrets, unsafe commands, permission escalation, path assumptions, malformed metadata, unsupported generalization, and duplicate/conflicting workflows.
+- [ ] Complete candidate-content validation for secrets, unsafe commands, permission escalation, path assumptions, malformed metadata, unsupported generalization, and duplicate/conflicting workflows. Implemented static coverage now includes common secret patterns, permission/approval bypass language, risky command patterns, absolute-path warnings, frontmatter identity/schema checks, name collision checks, metadata redaction, and bounded serialization; unsupported generalization/conflicting-workflow analysis and adversarial replay remain open.
 - [ ] Create replayable evaluation fixtures in isolated temporary workspaces; do not blindly run generated instructions against a user's live repository.
-- [ ] Define lifecycle states such as candidate, evaluated, active/approved, failed, superseded, and retired.
-- [ ] Reuse Selfdev evidence/provenance and review/audit concepts where possible instead of creating a duplicate approval system.
-- [ ] Require approval for activation when a skill can modify files, execute commands, access sensitive data, or exceed an explicitly configured low-risk policy.
-- [ ] Track invocations separately from effectiveness: task success/failure, validation results, retries/iterations, regressions, latency/cost where available, and user feedback.
-- [ ] Add promote, revise, compare versions, rollback, disable, and retire operations.
+- [x] Define lifecycle states including candidate, evaluated, active, failed, superseded, disabled, and retired.
+- [x] Reuse persisted Selfdev event evidence and bounded lifecycle audit/history; deeper integration with the Selfdev review workflow remains open.
+- [x] Require explicit interactive CLI owner confirmation for candidate activation/rollback; non-interactive and MCP-originated activation is not exposed. A configurable risk-tier/policy model remains open.
+- [ ] Track invocations separately from effectiveness: initial success/failure and elapsed-time counters are now present; per-version validation, retries, regressions, cost, and user feedback remain open.
+- [x] Add promote, revise-through-new-immutable-version, compare versions, rollback, disable, and retire operations.
 - [ ] Keep user memories, advisory Selfdev lessons, and executable skills as different entities connected by evidence links.
 - [ ] Add a review/refinement workflow that proposes changes with evidence and evaluation results; it must not change permission policy or self-approve risky skills.
 
 ### Acceptance criteria
 
-- [ ] A synthesized skill is not marked proven merely because its Markdown validates.
+Implementation record: **docs/plans/2026-10-19-superagent-hermes-like-phase-2-skill-lifecycle-implementation.md**. The bounded candidate/evaluation/approval increment is implemented; replay execution, richer task/provider metadata, and regression/effectiveness evaluation remain open.
+
+- [x] A synthesized skill is not marked proven merely because its Markdown validates; evidence verification and an evaluation record are required.
 - [ ] Every active skill version is traceable to evidence, evaluation results, and its approval/policy decision.
 - [ ] A failed or regressed skill can be disabled or rolled back without deleting its audit history.
-- [ ] Metrics distinguish usage frequency from measured outcomes.
+- [x] Initial metrics distinguish usage frequency from measured success/failure and elapsed time; richer versioned effectiveness metrics remain open.
 - [ ] Learning cannot elevate permissions, bypass approvals, or promote untrusted content to privileged instructions.
 
 ## 7. Phase 3 — Durable Always-On Execution (P1)

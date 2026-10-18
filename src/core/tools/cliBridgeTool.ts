@@ -13,9 +13,12 @@
  * (OpenAI Codex, Claude Code, Antigravity/AGY, or any custom binary) in two
  * complementary modes:
  *
- *   • **1-shot** (action=delegate) — fire-and-forget: spawn the CLI with the
- *     prompt, wait for it to exit, return the captured output. Ideal for
- *     "ask Codex to write a Python script" style calls.
+ *   • **Synchronous** (action=delegate) — run a short task, wait for exit,
+ *     and return captured output in the same MCP call.
+ *
+ *   • **Background job** (action=delegate.start) — start long-running work,
+ *     return a jobId immediately, then poll output/status or cancel it.
+ *     Multiple jobs may run concurrently within a bounded process limit.
  *
  *   • **Session** (action=session.*) — spawn the CLI as a long-lived
  *     subprocess, send multiple messages, kill when done. Useful for
@@ -83,12 +86,24 @@ import {
 } from "./cliBridgeArtifacts.js";
 import fs from "fs";
 import path from "path";
+import {
+  startDelegateJob,
+  listDelegateJobs,
+  getDelegateJob,
+  tailDelegateJob,
+  cancelDelegateJob,
+} from "./cliBridgeDelegateJobs.js";
 
 // ─── Tool definition ─────────────────────────────────────────────────────
 
 const ACTIONS = [
   "list",
   "delegate",
+  "delegate.start",
+  "delegate.jobs",
+  "delegate.get",
+  "delegate.tail",
+  "delegate.cancel",
   "session.create",
   "session.send",
   "session.list",
@@ -109,8 +124,10 @@ export const cliBridgeTool: Tool = {
   name: "cli_bridge",
   description:
     "Delegate a task to an external AI CLI assistant (Codex, Claude Code, AGY, or any custom binary). " +
-    "Two modes: (1) `delegate` for autonomous task delegation (code writing, refactoring, analysis, building, testing — RECOMMENDED), (2) `session.*` for interactive multi-turn sessions. " +
+    "Three modes: (1) `delegate` for short synchronous tasks, (2) `delegate.start` plus `delegate.get`/`delegate.tail`/`delegate.cancel` for long-running background jobs and bounded parallel work, (3) `session.*` for interactive multi-turn sessions. " +
     "Use `list` to discover installed CLIs, `delegate` for all autonomous coding/analysis tasks, and `session.create`+`session.send`+`session.kill` only when interactive step-by-step TUI dialog is required. " +
+    "Long-running MCP support: delegate.start returns a background job id; delegate.jobs lists jobs; delegate.get and delegate.tail poll progress/output; delegate.cancel requests cancellation. Multiple jobs can run concurrently. " +
+    "Use delegate for short tasks and delegate.start for builds or lengthy edits so the MCP request does not have to remain open. " +
     "v1.5.17: `session.create` can auto-send an initial prompt the moment the session is ready, " +
     "sessions auto-kill after an idle TTL (idleTimeoutMs, default 30 min), " +
     "stdout/stderr buffers are capped per-session (maxBufferLines, default 2000), " +
@@ -125,7 +142,10 @@ export const cliBridgeTool: Tool = {
         enum: [...ACTIONS],
         description:
           "Operation: 'list'/'profile.list' to discover CLIs/profiles, " +
-          "'delegate' for autonomous task execution (PRIMARY: coding, refactoring, testing, analysis — auto-handles permissions, streams live output, and returns full result), " +
+          "'delegate' for short synchronous autonomous tasks, " +
+          "'delegate.start' for long-running background tasks that return a jobId immediately (default 30 minutes; up to 2 hours), " +
+          "'delegate.jobs' to list concurrent jobs, 'delegate.get' to inspect status/output, 'delegate.tail' to read recent logs, and 'delegate.cancel' to stop a job. " +
+          "The default concurrency limit is 4 jobs (configure with SUPERAGENT_CLI_BRIDGE_MAX_JOBS, max 12). Use separate worktrees/cwds for parallel code edits to avoid file conflicts. " +
           "'session.create' to start an interactive multi-turn session (optionally with initial `message` to auto-send once ready), " +
           "'session.send' to message it, " +
           "'session.respond' to answer a pending prompt, " +
@@ -169,6 +189,10 @@ export const cliBridgeTool: Tool = {
       sessionId: {
         type: "string",
         description: "Target session id (for session.send / session.kill / session.get).",
+      },
+      jobId: {
+        type: "string",
+        description: "Background delegation id returned by delegate.start (for delegate.get / delegate.tail / delegate.cancel).",
       },
       args: {
         type: "array",
@@ -259,7 +283,7 @@ export const cliBridgeTool: Tool = {
       tailLimit: {
         type: "number",
         description:
-          "v1.5.17: for action=session.tail, cap the number of events returned (default 200).",
+          "Maximum trailing lines/events returned by action=session.tail or action=delegate.tail (default 200, capped at 2000).",
       },
       // ─────────────────────────────────────────────────────────
       conversationId: {
@@ -290,12 +314,12 @@ export const cliBridgeTool: Tool = {
       },
       tailLines: {
         type: "number",
-        description: "Trailing stdout/stderr lines to include in session.export (default 200).",
+        description: "Maximum trailing lines included by action=session.export (default 200).",
       },
       timeoutMs: {
         type: "number",
         description:
-          "Timeout in milliseconds. Defaults: 300_000 for delegate, 120_000 for session.send.",
+          "Timeout in milliseconds. Defaults: 300_000 for blocking delegate, 1_800_000 (30 minutes) for delegate.start, and 120_000 for session.send. Delegation timeout range is 1000..7200000 (2 hours). Background jobs are polled by job id without keeping the MCP request open.",
       },
     },
     required: ["action"],
@@ -316,6 +340,21 @@ export const cliBridgeTool: Tool = {
 
         case "delegate":
           return await handleDelegate(args, cwd, signal);
+
+        case "delegate.start":
+          return await handleDelegate({ ...args, __background: true }, cwd, signal);
+
+        case "delegate.jobs":
+          return await handleDelegateJobs();
+
+        case "delegate.get":
+          return await handleDelegateGet(String(args.jobId ?? "").trim());
+
+        case "delegate.tail":
+          return await handleDelegateTail(String(args.jobId ?? "").trim(), args.tailLimit === undefined ? 200 : Number(args.tailLimit));
+
+        case "delegate.cancel":
+          return await handleDelegateCancel(String(args.jobId ?? "").trim());
 
         case "session.create":
           return await handleSessionCreate(args, cwd);
@@ -435,7 +474,16 @@ async function handleDelegate(
   }
 
   const extraArgs = (args.args as string[] | undefined) ?? [];
-  const timeoutMs = args.timeoutMs ? Number(args.timeoutMs) : undefined;
+  const isBackground = args.__background === true;
+  let timeoutMs: number | undefined;
+  if (args.timeoutMs !== undefined && args.timeoutMs !== null) {
+    const requestedTimeout = Number(args.timeoutMs);
+    if (!Number.isFinite(requestedTimeout) || requestedTimeout < 1000 || requestedTimeout > 7200000) {
+      return "Error: timeoutMs must be between 1000 and 7200000 (2 hours). Use action=delegate.start for long-running work that can be polled without keeping the MCP request open.";
+    }
+    timeoutMs = requestedTimeout;
+  }
+  if (isBackground && timeoutMs === undefined) timeoutMs = 30 * 60 * 1000;
   const delegateCwd = args.cwd ? String(args.cwd) : cwd;
 
   // Resolve skills directories/profiles for 1-shot execution:
@@ -521,6 +569,23 @@ async function handleDelegate(
   }
   const combinedArgs = [...baseFlags, ...skillsArgs, ...extraArgs, ...promptSub];
 
+  if (isBackground) {
+    if (signal?.aborted) {
+      const abortError = new Error("AbortError");
+      abortError.name = "AbortError";
+      throw abortError;
+    }
+    const job = await startDelegateJob({
+      cliAlias: desc.alias,
+      binary: desc.binary,
+      prompt: composedPrompt,
+      cwd: delegateCwd,
+      args: [...combinedArgs, composedPrompt],
+      timeoutMs: timeoutMs ?? 30 * 60 * 1000,
+    });
+    return formatStartedDelegateJob(job, composedPrompt);
+  }
+
   const result: DelegateResult = await runDelegate({
     cliAlias: desc.alias,
     binary: desc.binary,
@@ -568,6 +633,68 @@ function formatDelegateResult(
   lines.push("");
   lines.push(`Full log: ${result.logPath}`);
   return lines.join("\n");
+}
+
+function formatStartedDelegateJob(job: Awaited<ReturnType<typeof startDelegateJob>>, prompt: string): string {
+  return [
+    "Started background CLI delegation: " + job.jobId,
+    "Status: " + job.status,
+    "CLI: " + job.cliAlias + " | PID: " + (job.pid ?? "starting") + " | Timeout: " + job.timeoutMs + "ms",
+    "Working directory: " + job.cwd,
+    "Prompt: " + prompt.slice(0, 180) + (prompt.length > 180 ? "…" : ""),
+    "Log: " + job.logPath,
+    "",
+    "Poll with action=delegate.get, jobId=" + job.jobId + ".",
+    "Read the log tail with action=delegate.tail, jobId=" + job.jobId + ".",
+    "Cancel with action=delegate.cancel, jobId=" + job.jobId + ".",
+    "Multiple delegate.start jobs can run concurrently (default limit: 4).",
+  ].join("\n");
+}
+
+async function handleDelegateJobs(): Promise<string> {
+  const jobs = await listDelegateJobs();
+  if (jobs.length === 0) return "No CLI Bridge background delegation jobs yet.";
+  const lines = ["CLI Bridge background jobs (" + jobs.length + " retained):"];
+  for (const job of jobs) {
+    lines.push("- " + job.jobId + " | " + job.status + " | cli=" + job.cliAlias + " | pid=" + (job.pid ?? "-") + " | exit=" + (job.exitCode ?? "-") + " | duration=" + (job.durationMs ?? (Date.now() - job.startedAt)) + "ms");
+    lines.push("  cwd: " + job.cwd);
+    lines.push("  log: " + job.logPath);
+  }
+  return lines.join("\n");
+}
+
+async function handleDelegateGet(jobId: string): Promise<string> {
+  if (!jobId) return "Error: 'jobId' is required for action=delegate.get.";
+  const job = await getDelegateJob(jobId);
+  if (!job) return "Error: no CLI Bridge delegation job found with id '" + jobId + "'. Use action=delegate.jobs to list jobs.";
+  return [
+    "CLI Bridge job: " + job.jobId,
+    "Status: " + job.status,
+    "CLI: " + job.cliAlias + " | PID: " + (job.pid ?? "-") + " | Exit: " + (job.exitCode ?? "-"),
+    "Started: " + new Date(job.startedAt).toISOString(),
+    "Duration: " + (job.durationMs ?? (Date.now() - job.startedAt)) + "ms" + (job.timedOut ? " (timed out)" : ""),
+    "Timeout: " + job.timeoutMs + "ms",
+    "Output bytes: " + job.outputBytes,
+    "Working directory: " + job.cwd,
+    "Log: " + job.logPath,
+    job.error ? "Error: " + job.error : "",
+    "",
+    "Recent output:",
+    job.outputTail || "(no output captured yet; use action=delegate.tail to read the log file)",
+  ].filter(Boolean).join("\n");
+}
+
+async function handleDelegateTail(jobId: string, tailLimit: number): Promise<string> {
+  if (!jobId) return "Error: 'jobId' is required for action=delegate.tail.";
+  const result = await tailDelegateJob(jobId, Number.isFinite(tailLimit) ? tailLimit : 200);
+  if (!result) return "Error: no CLI Bridge delegation job found with id '" + jobId + "'. Use action=delegate.jobs to list jobs.";
+  return ["CLI Bridge job " + jobId + " | status=" + result.job.status + " | exit=" + (result.job.exitCode ?? "-"), "Log: " + result.job.logPath, "", result.output].join("\n");
+}
+
+async function handleDelegateCancel(jobId: string): Promise<string> {
+  if (!jobId) return "Error: 'jobId' is required for action=delegate.cancel.";
+  const result = await cancelDelegateJob(jobId);
+  return [result.message, result.job ? "Current status: " + result.job.status : ""].filter(Boolean).join("\n");
 }
 
 async function handleSessionCreate(

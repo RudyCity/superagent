@@ -11,6 +11,10 @@ export interface SkillStatItem {
   executionCount: number;
   lastUsed?: number;
   lastSynthesized?: number;
+  successfulRuns?: number;
+  failedRuns?: number;
+  totalDurationMs?: number;
+  lastOutcome?: "succeeded" | "failed";
   path?: string;
   description: string;
 }
@@ -22,6 +26,10 @@ interface PersistedSkillStats {
       executionCount: number;
       lastUsed?: number;
       lastSynthesized?: number;
+      successfulRuns?: number;
+      failedRuns?: number;
+      totalDurationMs?: number;
+      lastOutcome?: "succeeded" | "failed";
     }
   >;
 }
@@ -62,6 +70,19 @@ export function recordSkillExecution(skillName: string): void {
   const existing = data.skills[normalized] || { executionCount: 0 };
   existing.executionCount = (existing.executionCount || 0) + 1;
   existing.lastUsed = Date.now();
+  data.skills[normalized] = existing;
+  savePersistedStats(data);
+}
+
+export function recordSkillOutcome(skillName: string, outcome: "succeeded" | "failed", durationMs: number): void {
+  const normalized = skillName.trim().toLowerCase();
+  if (!normalized) return;
+  const data = readPersistedStats();
+  const existing = data.skills[normalized] || { executionCount: 0 };
+  if (outcome === "succeeded") existing.successfulRuns = (existing.successfulRuns || 0) + 1;
+  else existing.failedRuns = (existing.failedRuns || 0) + 1;
+  existing.totalDurationMs = (existing.totalDurationMs || 0) + Math.max(0, Math.min(24 * 60 * 60 * 1000, Math.floor(durationMs) || 0));
+  existing.lastOutcome = outcome;
   data.skills[normalized] = existing;
   savePersistedStats(data);
 }
@@ -139,6 +160,14 @@ export function getSkillStats(workspace: string = process.cwd()): SkillStatItem[
         description: "Recorded skill",
       });
     }
+  }
+
+  for (const item of results.values()) {
+    const persistedSkill = persisted.skills[item.name.toLowerCase()];
+    item.successfulRuns = persistedSkill?.successfulRuns || 0;
+    item.failedRuns = persistedSkill?.failedRuns || 0;
+    item.totalDurationMs = persistedSkill?.totalDurationMs || 0;
+    item.lastOutcome = persistedSkill?.lastOutcome;
   }
 
   return Array.from(results.values()).sort((a, b) => {

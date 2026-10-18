@@ -2,7 +2,7 @@
 name: CLI Bridge
 description: Delegate tasks and collaborate with external AI CLI assistants (Codex, Claude Code, AGY, or custom binaries) via one-shot execution or persistent multi-turn sessions.
 when_to_use: when delegating tasks to external AI CLI assistants, running Codex, Claude Code, or AGY from Superagent, orchestrating multi-CLI workflows, or managing interactive CLI subprocess sessions
-version: 1.1.0
+version: 1.2.0
 languages: all
 dependencies: cli_bridge tool
 ---
@@ -13,11 +13,17 @@ dependencies: cli_bridge tool
 
 The `cli_bridge` tool enables Superagent to offload tasks to external AI CLI assistants (such as Antigravity/AGY, Claude Code, OpenAI Codex, or any custom executable) in two execution modes:
 
-1. **One-Shot Task Delegation (`action: "delegate"`) [RECOMMENDED]**:
-   - Executes the external CLI in print mode (`-p` / `--print`), passes the prompt, sends EOF on stdin, auto-handles `--dangerously-skip-permissions`, streams output in real-time, waits for execution to complete, and returns the full output.
-   - **Best for**: Autonomous coding, file reading/editing, code analysis, bug fixing, test running, building, and script generation.
+1. **Synchronous Task Delegation (`action: "delegate"`)**:
+   - Runs one external CLI invocation, waits for completion, and returns the output in the same MCP call.
+   - **Best for**: Quick questions, small changes, and short checks. The default timeout is 5 minutes.
 
-2. **Interactive Subprocess Sessions (`action: "session.*"`)**:
+2. **Long-Running / Parallel Delegation Jobs (`action: "delegate.start"`)**:
+   - Starts an autonomous one-shot CLI job in the background and immediately returns a `jobId`. The job keeps running after the initial MCP call returns.
+   - Poll with `delegate.get`, read log output with `delegate.tail`, list all jobs with `delegate.jobs`, or stop one with `delegate.cancel`.
+   - Background timeout defaults to 30 minutes and accepts 1 second through 2 hours. Default concurrency is 4 jobs, configurable with `SUPERAGENT_CLI_BRIDGE_MAX_JOBS` (maximum 12).
+   - **Best for**: Builds, test suites, large refactors, multi-step implementation tasks, and parallel independent subtasks.
+
+3. **Interactive Subprocess Sessions (`action: "session.*"`)**:
    - Spawns the CLI as a long-lived subprocess with stdio streaming, event buffering, automatic prompt detection, and multi-turn message exchange.
    - **Best for**: Interactive human-in-the-loop dialogs, step-by-step interactive sessions, or when responding to TUI choice menus via `session.respond`.
 
@@ -29,7 +35,12 @@ The `cli_bridge` tool enables Superagent to offload tasks to external AI CLI ass
 |---|---|---|
 | `list` | Discover installed CLI binaries on system PATH | None |
 | `profile.list` | List built-in and user-configured CLI profiles | None |
-| `delegate` | Execute a one-shot prompt against a CLI tool (auto-skips permissions, streams real-time output) | `cli`, `prompt`, `cwd`, `skills`, `timeoutMs`, `system`, `args` |
+| `delegate` | Run a short synchronous task and return the final output | `cli`, `prompt`, `cwd`, `skills`, `timeoutMs`, `system`, `args` |
+| `delegate.start` | Start a long-running background job and return its `jobId` | `cli`, `prompt`, `cwd`, `skills`, `timeoutMs`, `system`, `args` |
+| `delegate.jobs` | List retained background jobs and their states | None |
+| `delegate.get` | Inspect a job's state, duration, and recent output | `jobId` |
+| `delegate.tail` | Read the recent lines from the job's full log | `jobId`, `tailLimit` |
+| `delegate.cancel` | Request cancellation and process-tree termination | `jobId` |
 | `session.create` | Start an interactive subprocess session | `cli`, `sessionId`, `message` / `initialMessage`, `skills`, `autoDetect`, `cwd`, `idleTimeoutMs`, `maxBufferLines` |
 | `session.send` | Send a new prompt to an existing session | `sessionId`, `prompt` / `message`, `timeoutMs` |
 | `session.respond` | Answer an interactive prompt (yes/no, choices) | `sessionId`, `answer` |
@@ -61,7 +72,22 @@ Returns detected binaries, version info, and path availability for `agy`, `claud
 
 ### 2. Autonomous Task Delegation (`delegate`) [PRIMARY PATTERN]
 
-Use `action: "delegate"` for all standalone coding, research, refactoring, and test execution tasks.
+Use `action: "delegate"` for short standalone tasks. For builds, test suites, long-running coding work, or jobs that need to run in parallel, use `action: "delegate.start"` so the MCP call returns promptly and the work remains pollable.
+
+Example starting a long task:
+```json
+{
+  "action": "delegate.start",
+  "cli": "agy",
+  "prompt": "Implement the requested change, run focused tests and a build, and report exact files changed and verification results.",
+  "cwd": "D:\\project",
+  "timeoutMs": 3600000
+}
+```
+
+The response contains a `jobId`. Poll it using `delegate.get` and fetch output with `delegate.tail`; continue polling until the job reaches a terminal status (`succeeded`, `failed`, `timed_out`, `cancelled`, or `interrupted`). Do not start another copy merely because the first call returned: that return means the job was accepted, not that the work finished.
+
+For parallel work, start one job per independent subtask and use separate Git worktrees / working directories for tasks that edit files. Multiple jobs in the same directory share the same files and can overwrite or conflict with one another. The default cap is 4 active jobs; set `SUPERAGENT_CLI_BRIDGE_MAX_JOBS` to a value from 1 to 12 to tune it.
 
 Example: Delegating code analysis & rewrite with multiple reference directories attached:
 
@@ -171,7 +197,7 @@ To disable automatic artifact context injection for simple queries:
 
 ## Critical Rules & Invariants
 
-1. **Always Prefer `delegate` for Autonomous Coding**: When delegating codebase modifications, builds, test execution, or file generation, ALWAYS use `action: "delegate"`.
+1. **Choose the right execution mode**: Use `delegate` for short tasks and `delegate.start` for long-running coding, builds, and test execution. Poll background jobs to a terminal state before reporting success.
 2. **Attach Reference Directories via `skills`**: Pass an array of directory paths in `skills: [...]` to attach context (automatically converted to `--add-dir` for AGY/Claude Code).
 3. **Always Clean Up Multi-Turn Sessions**: When using `session.create`, always call `session.kill` once work is complete to release subprocesses and memory.
 4. **Appropriate Timeouts**: Set `timeoutMs` (e.g. 300000 to 600000 ms) for long-running compilation or multi-file edits.

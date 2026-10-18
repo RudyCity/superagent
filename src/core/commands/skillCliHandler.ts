@@ -11,13 +11,23 @@ Commands:
   show <skill_name>                     Display instructions and markdown of a skill
   run <skill_name> [options]            Execute an automated skill workflow via agent
   stats, metrics                        Show skill usage counts and execution stats
-  synth <task_description> [options]    Synthesize a new reusable skill (SKILL.md)
+  synth <task_description> [options]    Create an inactive, versioned skill candidate
+  candidates                            List candidate/evaluation states
+  evaluate <name>@<version>              Evaluate structure, safety and persisted evidence
+  promote <name>@<version>               Interactively approve activation
+  rollback <name>@<version>              Reactivate a prior evaluated version
+  compare <name> <versionA> <versionB>   Compare immutable versions
+  disable <active-skill-name>            Disable active managed skill
+  retire <name>@<version> --reason <r>   Retire version while preserving history
   help                                  Show this help message
 
 Options for synth:
   --name <name>                         Custom kebab-case name for the skill
   --category <category>                 Skill category (e.g. testing, refactor, automation)
   --workspace <path>                    Workspace directory (defaults to current directory)
+  --evidence-id <task-event-id>          Persisted Selfdev task_completed event ID
+
+Synthesis creates inactive candidates; evaluation plus exact interactive terminal approval is required before activation.
 
 Options for run:
   --workspace <path>                    Workspace directory
@@ -41,6 +51,8 @@ export async function handleSkillCliCommand(args: string[]): Promise<void> {
     process.exit(0);
   }
 
+  if (await (await import("../skills/skillLifecycleCli.js")).handleSkillLifecycleCommand(args)) return;
+
   if (subcommand === "stats" || subcommand === "metrics") {
     const { getSkillStats } = await import("../skills/skillTracker.js");
     const workspace = process.cwd();
@@ -61,6 +73,7 @@ export async function handleSkillCliCommand(args: string[]): Promise<void> {
       const typeTag = s.type === "synthesized" ? "[SYNTH]" : "[BUILTIN]";
       const lastUsedStr = s.lastUsed ? new Date(s.lastUsed).toLocaleDateString() : "Never";
       console.log(`- ${typeTag} ${s.name.padEnd(30)} (used: ${s.executionCount}x | last: ${lastUsedStr})`);
+      console.log("  Outcomes: ok=" + (s.successfulRuns || 0) + " | failed=" + (s.failedRuns || 0) + " | duration-ms=" + (s.totalDurationMs || 0));
     }
 
     process.exit(0);
@@ -144,20 +157,23 @@ export async function handleSkillCliCommand(args: string[]): Promise<void> {
     console.log(`- Workspace: ${workspace}`);
     console.log(`- Mode: ${isMulti ? "multi" : "single"}\n`);
 
-    const { recordSkillExecution } = await import("../skills/skillTracker.js");
+    const { recordSkillExecution, recordSkillOutcome } = await import("../skills/skillTracker.js");
     recordSkillExecution(name);
 
     const { createAgentExecutor } = await import("../gateway/gatewayServer.js");
     const executeAgent = await createAgentExecutor(workspace);
 
     const prompt = `Please follow and execute the following skill guide carefully to complete the task:\n\n${skillContent}`;
+    const startedAt = Date.now();
     try {
       const output = await executeAgent(prompt, workspace);
+      recordSkillOutcome(name, "succeeded", Date.now() - startedAt);
       console.log("\n--- Execution Output ---");
       console.log(output);
       console.log("\nSkill execution completed.");
       process.exit(0);
     } catch (err: any) {
+      recordSkillOutcome(name, "failed", Date.now() - startedAt);
       console.log(`\nExecution failed: ${err.message}`);
       process.exit(1);
     }
@@ -167,6 +183,10 @@ export async function handleSkillCliCommand(args: string[]): Promise<void> {
     const nameIndex = args.indexOf("--name");
     const catIndex = args.indexOf("--category");
     const wsIndex = args.indexOf("--workspace");
+    const evidenceIds: string[] = [];
+    for (let index = 0; index < args.length; index++) {
+      if (args[index] === "--evidence-id" && args[index + 1] && !args[index + 1].startsWith("--")) evidenceIds.push(args[index + 1]);
+    }
 
     const skillName = nameIndex !== -1 && args[nameIndex + 1] ? args[nameIndex + 1] : undefined;
     const category = catIndex !== -1 && args[catIndex + 1] ? args[catIndex + 1] : undefined;
@@ -197,13 +217,17 @@ export async function handleSkillCliCommand(args: string[]): Promise<void> {
         workspace,
         skillName,
         category,
+        evidenceIds,
       });
 
       console.log(`\nSuccessfully synthesized skill: ${skill.name}`);
       console.log(`- File Path   : ${skill.filePath}`);
       console.log(`- Category    : ${skill.category}`);
       console.log(`- Description : ${skill.description}`);
-      console.log("\nThe skill is now active and immediately discoverable by Superagent.");
+      console.log("Status       : candidate (inactive; not loaded at runtime)");
+      console.log("Version      : " + (skill.version || "unknown"));
+      console.log("Next         : superagent skill evaluate " + skill.name + "@" + (skill.version || "unknown"));
+      console.log("Attach verified Selfdev evidence with --evidence-id; promotion requires interactive owner approval.");
       process.exit(0);
     } catch (err: any) {
       console.log(`Skill synthesis failed: ${err.message}`);

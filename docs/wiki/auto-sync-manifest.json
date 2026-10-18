@@ -37,7 +37,7 @@
       "updatedAt": "2026-08-15T02:09:42.094Z"
     }
   },
-  "lastSync": "2026-10-18T21:33:02.404Z",
+  "lastSync": "2026-10-18T22:07:33.589Z",
   "workspaces": [
     {
       "name": "superagent",
@@ -49,26 +49,28 @@
     }
   ],
   "lastModifiedFiles": [
-    "[superagent] CHANGELOG.md",
-    "[superagent] docs/mcp/muse-chat-workflows.md",
-    "[superagent] docs/wiki/00-index.md",
-    "[superagent] docs/wiki/03-api-and-contracts.md",
-    "[superagent] docs/wiki/04-features-and-workflows.md",
-    "[superagent] docs/wiki/auto-sync-manifest.json",
-    "[superagent] docs/wiki/wiki-rmemory-chunks.json",
-    "[superagent] src/core/mcp/mcpHttpTransport.ts",
-    "[superagent] src/core/mcp/mcpTunnel.ts",
-    "[superagent] src/core/mcp/superagentMcpServer.ts",
-    "[superagent] src/core/remoteAgent/protocol.ts",
-    "[superagent] tests/mcpServer.test.ts",
-    "[superagent] tests/museWatcherChat.test.ts",
-    "[superagent] tests/remoteAgent.test.ts"
+    "[superagent] docs/plans/2026-10-18-superagent-hermes-like-implementation-master-reference.md",
+    "[superagent] docs/plans/2026-10-18-superagent-hermes-like-personal-agent-development-plan.md",
+    "[superagent] src/core/commands/skillCliHandler.ts",
+    "[superagent] src/core/commands/skillCommands.ts",
+    "[superagent] src/core/mcp/tools/planSkillsMcpTools.ts",
+    "[superagent] src/core/skills/skillRoutes.ts",
+    "[superagent] src/core/skills/skillSynthesizer.ts",
+    "[superagent] src/core/skills/skillTracker.ts",
+    "[superagent] src/core/skills/synthesizerTypes.ts",
+    "[superagent] src/core/tools/synthesizeSkillTool.ts",
+    "[superagent] tests/skillSynthesizer.test.ts",
+    "[superagent] docs/plans/2026-10-19-superagent-hermes-like-phase-2-skill-lifecycle-implementation.md",
+    "[superagent] src/core/skills/skillLifecycle.ts",
+    "[superagent] src/core/skills/skillLifecycleCli.ts",
+    "[superagent] tests/skillLifecycle.test.ts",
+    "[superagent] tests/skillTracker.test.ts"
   ],
   "impactSummary": {
     "architecture": false,
     "domainData": false,
     "apiContracts": true,
-    "features": true,
+    "features": false,
     "devops": false,
     "onboarding": false,
     "index": true

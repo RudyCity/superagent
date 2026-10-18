@@ -13,7 +13,8 @@ export interface SkillSynthesisRequest {
   conversationTrajectory?: SkillTrajectoryStep[];
   skillName?: string;
   category?: string;
-  targetDir?: string;
+  /** Persisted Selfdev task_completed event IDs that can support candidate evaluation. */
+  evidenceIds?: string[];
 }
 
 export interface ExtractedWorkflowPatterns {
@@ -29,6 +30,8 @@ export interface SynthesizedSkill {
   category: string;
   markdownContent: string;
   filePath: string;
+  /** Content-addressed version identifier when the skill is stored as a candidate. */
+  version?: string;
   extractedPatterns: ExtractedWorkflowPatterns;
 }
 
