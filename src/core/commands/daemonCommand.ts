@@ -106,6 +106,7 @@ export const daemonCommand: SlashCommand = {
         const wsIdx = parts.indexOf("--workspace");
         const maxRunsIdx = parts.indexOf("--max-runs");
         const tagsIdx = parts.indexOf("--tags");
+        const allowedToolsIdx = parts.indexOf("--allow-tools");
         const isMulti = parts.includes("--multi");
         const notifyGateway = parts.includes("--notify-gateway");
 
@@ -124,6 +125,7 @@ export const daemonCommand: SlashCommand = {
         const workspace = wsIdx !== -1 && parts[wsIdx + 1] ? parts[wsIdx + 1] : process.cwd();
         const maxRuns = maxRunsIdx !== -1 && parts[maxRunsIdx + 1] ? parseInt(parts[maxRunsIdx + 1], 10) : undefined;
         const tags = tagsIdx !== -1 && parts[tagsIdx + 1] ? parts[tagsIdx + 1].split(",").map(t => t.trim()) : undefined;
+        const allowedTools = allowedToolsIdx !== -1 && parts[allowedToolsIdx + 1] ? parts[allowedToolsIdx + 1].split(",").map(t => t.trim()).filter(Boolean) : undefined;
 
         if (!name || !cron || !prompt) {
           ctx.addLine({
@@ -132,7 +134,7 @@ export const daemonCommand: SlashCommand = {
               "Missing required arguments for daemon add.",
               "Usage: /daemon add --name <name> --cron <cron> --prompt <task>",
               "         [--workspace <path>] [--multi] [--notify-gateway]",
-              "         [--max-runs <n>] [--tags <tag1,tag2>]",
+              "         [--max-runs <n>] [--tags <tag1,tag2>] [--allow-tools <tool1,tool2>]",
               'Example: /daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"',
             ].join("\n"),
             timestamp: now,
@@ -159,6 +161,7 @@ export const daemonCommand: SlashCommand = {
             notifyGateway,
             maxRuns: Number.isFinite(maxRuns) ? maxRuns : undefined,
             tags,
+            allowedTools,
           });
           ctx.addLine({
             type: "system",
@@ -168,6 +171,7 @@ export const daemonCommand: SlashCommand = {
               `- Name     : ${job.name}`,
               `- Schedule : ${job.cronExpression} — ${describeCron(job.cronExpression)}`,
               `- Mode     : ${job.mode}`,
+              `- Extra tool grants: ${job.allowedTools?.length ? job.allowedTools.join(", ") : "none (read-only defaults)"}`,
               `- Notify   : ${job.notifyGateway ? "Yes" : "No"}`,
               `- Next run : ${job.nextRun ? new Date(job.nextRun).toLocaleString() : "Unknown"}`,
             ].join("\n"),

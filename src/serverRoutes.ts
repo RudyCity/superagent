@@ -42,11 +42,74 @@ import {
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, backgroundTasks } from "./core/tools/state.js";
 import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/config/browserMacros.js";
-import { getRMemoryClient, isRmemoryActive } from "./core/rmemoryUtil.js";
+import { getRMemoryClient, getRMemoryProjectId, isRmemoryActive } from "./core/rmemoryUtil.js";
+import { createMemoryRecordMetadata } from "./core/memoryRecord.js";
 import { getRootConfigDir } from "./core/config/paths.js";
 import { buildCorsHeaders, isPathInsideOrEqual } from "./core/utils/serverSecurity.js";
 import { maskApiKey, isMaskedApiKey } from "./core/config.js";
 import { isPendingPromptOwner } from "./core/agent/pendingPromptOwnership.js";
+import { getNormalizedProjectPath } from "./core/tools/helpers.js";
+
+/** Persist an atomic memory under a canonical project/global scope. Never trust a client-supplied project ID. */
+async function saveScopedAtomicMemory(
+  client: any,
+  options: { id: string; content: string; type?: string; scope?: string; projectId: string; source: string },
+): Promise<void> {
+  const scope = options.scope === "global" ? "global" : "project";
+  const now = new Date().toISOString();
+  const prefix = scope === "global" ? "[global]" : `[project:${options.projectId}]`;
+  const contentWithoutCallerScope = String(options.content || "").replace(/^\[(?:global|project(?::[^\]]+)?)\]\s*/i, "");
+  await client.updateAtomic({
+    id: options.id,
+    content: `${prefix} ${contentWithoutCallerScope}`,
+    metadata: createMemoryRecordMetadata({
+      memoryId: options.id,
+      memoryType: options.type || "fact",
+      scope,
+      projectId: options.projectId,
+      source: options.source,
+      now,
+    }),
+  });
+}
+
+function isSharedMemoryVisible(entry: any, scope: "all" | "project" | "global", activeProjectPath: string): boolean {
+  if (entry?.scope === "global") return scope !== "project";
+  if (scope === "global" || entry?.scope !== "project" || typeof entry.projectPath !== "string" || !entry.projectPath) return false;
+  try { return getNormalizedProjectPath(entry.projectPath) === activeProjectPath; } catch { return false; }
+}
+
+function isAtomicMemoryVisible(item: any, scope: "all" | "project" | "global", projectId: string): boolean {
+  const metadata = item?.metadata || {};
+  const content = String(item?.content || "");
+  const isGlobal = metadata.scope === "global" || (!metadata.scope && content.startsWith("[global]"));
+  const isProject = (metadata.scope === "project" && metadata.projectId === projectId) || (!metadata.scope && content.startsWith(`[project:${projectId}]`));
+  return scope === "project" ? isProject : scope === "global" ? isGlobal : isGlobal || isProject;
+}
+
+function upsertSharedMemoryEntry(options: { key: string; value: string; source: string; scope?: string; workspace: string }): void {
+  const scope = options.scope === "global" ? "global" : "project";
+  const projectPath = getNormalizedProjectPath(options.workspace);
+  const sharedMemPath = path.join(getRootConfigDir(), "shared-memory.json");
+  fs.mkdirSync(path.dirname(sharedMemPath), { recursive: true });
+  let memories: any[] = [];
+  if (fs.existsSync(sharedMemPath)) {
+    try { memories = JSON.parse(fs.readFileSync(sharedMemPath, "utf-8")); } catch {}
+    if (!Array.isArray(memories)) memories = [];
+  }
+  const entry = { key: options.key, value: options.value, source: options.source, timestamp: Date.now(), scope, ...(scope === "project" ? { projectPath } : {}) };
+  const index = memories.findIndex((candidate: any) => {
+    if (String(candidate.key || "").toLowerCase() !== options.key.toLowerCase() || (candidate.scope || "project") !== scope) return false;
+    if (scope === "global") return true;
+    if (typeof candidate.projectPath !== "string" || !candidate.projectPath) return false;
+    try { return getNormalizedProjectPath(candidate.projectPath) === projectPath; } catch { return false; }
+  });
+  if (index >= 0) memories[index] = { ...memories[index], ...entry };
+  else memories.push(entry);
+  const tempPath = sharedMemPath + ".tmp";
+  fs.writeFileSync(tempPath, JSON.stringify(memories, null, 2), "utf-8");
+  fs.renameSync(tempPath, sharedMemPath);
+}
 
 export async function handleServerRoute(
   req: http.IncomingMessage,
@@ -1429,14 +1492,18 @@ export async function handleServerRoute(
   if (pathname === "/api/memory/search" && req.method === "GET") {
     try {
       const query = parsedUrl.searchParams.get("query") || "";
-      const scope = parsedUrl.searchParams.get("scope") || "all";
+      const requestedScope = parsedUrl.searchParams.get("scope") || "all";
+      const scope: "all" | "project" | "global" = requestedScope === "project" || requestedScope === "global" ? requestedScope : "all";
+      const memoryWorkspace = resolveWorkspacePath(req) || lastActiveWorkspace || process.cwd();
+      const activeProjectPath = getNormalizedProjectPath(memoryWorkspace);
+      const projectId = getRMemoryProjectId(memoryWorkspace);
       const isActive = await isRmemoryActive();
       let memory: any[] = [];
       if (isActive && query) {
         const client = getRMemoryClient();
         try {
-          const result = await client.searchAtomic({ query, limit: 20 });
-          memory = result.items || [];
+          const result = await client.searchAtomic({ query, limit: 20, projectId });
+          memory = (result.items || []).filter((item: any) => isAtomicMemoryVisible(item, scope, projectId));
         } catch {}
       }
       let sharedMemory: any[] = [];
@@ -1446,11 +1513,7 @@ export async function handleServerRoute(
           const raw = fs.readFileSync(sharedMemPath, "utf-8");
           const allShared = JSON.parse(raw);
           if (Array.isArray(allShared)) {
-            sharedMemory = allShared.filter((e: any) => {
-              if (scope === "project") return e.scope === "project";
-              if (scope === "global") return e.scope === "global";
-              return true;
-            });
+            sharedMemory = allShared.filter((e: any) => isSharedMemoryVisible(e, scope, activeProjectPath));
             if (query) {
               const q = query.toLowerCase();
               sharedMemory = sharedMemory.filter((e: any) =>
@@ -1481,18 +1544,15 @@ export async function handleServerRoute(
       }
       const { id, content, type, scope: memScope, key, value } = data;
       if (key && value) {
-        // Save as shared memory
-        const sharedMemPath = path.join(getRootConfigDir(), "shared-memory.json");
-        let memories: any[] = [];
-        if (fs.existsSync(sharedMemPath)) {
-          try { memories = JSON.parse(fs.readFileSync(sharedMemPath, "utf-8")); } catch {}
-          if (!Array.isArray(memories)) memories = [];
-        }
-        memories.push({ key, value, source: "api", timestamp: Date.now(), scope: memScope || "project" });
-        fs.writeFileSync(sharedMemPath, JSON.stringify(memories, null, 2));
+        const memoryWorkspace = resolveWorkspacePath(req) || lastActiveWorkspace || process.cwd();
+        upsertSharedMemoryEntry({ key: String(key), value: String(value), source: "api", scope: memScope, workspace: memoryWorkspace });
         sendJSON(res, 200, { success: true });
       } else if (id && content) {
-        await client.updateAtomic({ id, content });
+        const memoryWorkspace = resolveWorkspacePath(req) || lastActiveWorkspace || process.cwd();
+        await saveScopedAtomicMemory(client, {
+          id: String(id), content: String(content), type: typeof type === "string" ? type : undefined,
+          scope: memScope, projectId: getRMemoryProjectId(memoryWorkspace), source: "api_memory_save",
+        });
         sendJSON(res, 200, { success: true });
       } else {
         sendJSON(res, 400, { error: "Missing id+content or key+value" });
@@ -1506,15 +1566,21 @@ export async function handleServerRoute(
   // Memory: generic get (list/search all)
   if (pathname === "/api/memory" && req.method === "GET") {
     try {
-      const query = parsedUrl.searchParams.get("query") || "";
-      const scope = parsedUrl.searchParams.get("scope") || "all";
+      const query = (parsedUrl.searchParams.get("query") || "").trim();
+      const requestedScope = parsedUrl.searchParams.get("scope") || "all";
+      const scope = requestedScope === "project" || requestedScope === "global" ? requestedScope : "all";
+      const memoryWorkspace = resolveWorkspacePath(req) || lastActiveWorkspace || process.cwd();
+      const projectId = getRMemoryProjectId(memoryWorkspace);
       const isActive = await isRmemoryActive();
       let memory: any[] = [];
       if (isActive) {
         const client = getRMemoryClient();
         try {
-          const result = await client.searchAtomic({ query, limit: 50 });
-          memory = result.items || [];
+          const snapshot = query
+            ? await client.searchAtomic({ query, limit: 50, projectId })
+            : await client.exportAtomic({ projectId, includeGlobal: scope !== "project", limit: 50 });
+          const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+          memory = items.filter((item: any) => isAtomicMemoryVisible(item, scope, projectId));
         } catch {}
       }
       let sharedMemory: any[] = [];
@@ -1524,11 +1590,7 @@ export async function handleServerRoute(
           const raw = fs.readFileSync(sharedMemPath, "utf-8");
           const allShared = JSON.parse(raw);
           if (Array.isArray(allShared)) {
-            sharedMemory = allShared.filter((e: any) => {
-              if (scope === "project") return e.scope === "project";
-              if (scope === "global") return e.scope === "global";
-              return true;
-            });
+            sharedMemory = allShared.filter((e: any) => isSharedMemoryVisible(e, scope, getNormalizedProjectPath(memoryWorkspace)));
             if (query) {
               const q = query.toLowerCase();
               sharedMemory = sharedMemory.filter((e: any) =>
@@ -1554,18 +1616,16 @@ export async function handleServerRoute(
       const { id, content, scope: memScope, key, value } = data;
       const isActive = await isRmemoryActive();
       if (key && value) {
-        const sharedMemPath = path.join(getRootConfigDir(), "shared-memory.json");
-        let memories: any[] = [];
-        if (fs.existsSync(sharedMemPath)) {
-          try { memories = JSON.parse(fs.readFileSync(sharedMemPath, "utf-8")); } catch {}
-          if (!Array.isArray(memories)) memories = [];
-        }
-        memories.push({ key, value, source: "api", timestamp: Date.now(), scope: memScope || "project" });
-        fs.writeFileSync(sharedMemPath, JSON.stringify(memories, null, 2));
+        const memoryWorkspace = resolveWorkspacePath(req) || lastActiveWorkspace || process.cwd();
+        upsertSharedMemoryEntry({ key: String(key), value: String(value), source: "api", scope: memScope, workspace: memoryWorkspace });
         sendJSON(res, 200, { success: true });
       } else if (isActive && id && content) {
         const client = getRMemoryClient();
-        await client.updateAtomic({ id, content });
+        const memoryWorkspace = resolveWorkspacePath(req) || lastActiveWorkspace || process.cwd();
+        await saveScopedAtomicMemory(client, {
+          id: String(id), content: String(content), type: typeof data.type === "string" ? data.type : undefined,
+          scope: memScope, projectId: getRMemoryProjectId(memoryWorkspace), source: "api_memory_post",
+        });
         sendJSON(res, 200, { success: true });
       } else {
         sendJSON(res, 400, { error: "Missing id+content or key+value" });
@@ -1578,13 +1638,35 @@ export async function handleServerRoute(
   if (pathname === "/api/memory/delete" && req.method === "DELETE") {
     try {
       const body = await readBody(req);
-      const data = JSON.parse(body);
-      const client = getRMemoryClient();
-      const ids = data.ids || (data.id ? [data.id] : []);
-      if (ids.length > 0) {
-        await client.deleteAtomic({ ids });
+      const data = JSON.parse(body || "{}");
+      if (data.confirm !== true) {
+        sendJSON(res, 400, { success: false, error: "Deletion requires explicit confirmation: set confirm=true." });
+        return true;
       }
-      sendJSON(res, 200, { success: true });
+      const scope = data.scope === undefined ? "project" : data.scope;
+      if (scope !== "project" && scope !== "global") {
+        sendJSON(res, 400, { success: false, error: "scope must be project or global; global deletion requires explicit scope=global." });
+        return true;
+      }
+      const rawIds: unknown[] = Array.isArray(data.ids) ? data.ids : (data.id ? [data.id] : []);
+      const ids: string[] = Array.from(new Set<string>(rawIds.filter((id: unknown): id is string => typeof id === "string" && id.trim().length > 0))).slice(0, 100);
+      if (ids.length === 0) {
+        sendJSON(res, 400, { success: false, error: "Provide id or ids (maximum 100 logical memory IDs)." });
+        return true;
+      }
+      const memoryWorkspace = resolveWorkspacePath(req) || lastActiveWorkspace || process.cwd();
+      const projectId = getRMemoryProjectId(memoryWorkspace);
+      const client = getRMemoryClient();
+      const results = await Promise.all(ids.map(async (id: string) => ({
+        id,
+        deleted: await client.deleteAtomicScoped({ id, scope, projectId }),
+      })));
+      sendJSON(res, 200, {
+        success: true,
+        scope,
+        deletedIds: results.filter((result) => result.deleted).map((result) => result.id),
+        notFoundIds: results.filter((result) => !result.deleted).map((result) => result.id),
+      });
     } catch (err: any) {
       sendJSON(res, 500, { error: err.message || String(err) });
     }

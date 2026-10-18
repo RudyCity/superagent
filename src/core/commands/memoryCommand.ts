@@ -1,7 +1,8 @@
 import { SlashCommand } from "./types.js";
 import { registry } from "./registry.js";
 import { getSettings } from "../config.js";
-import { getRMemoryClient, getRMemorySessionKey, getActiveRMemoryEmbeddingInfo, isRmemoryActiveSync } from "../rmemoryUtil.js";
+import { getRMemoryClient, getRMemorySessionKey, getActiveRMemoryEmbeddingInfo, getRMemoryProjectId, isRmemoryActiveSync } from "../rmemoryUtil.js";
+import { createMemoryRecordMetadata } from "../memoryRecord.js";
 
 export const memoryCommand: SlashCommand = {
   name: "memory",
@@ -88,7 +89,8 @@ export const memoryCommand: SlashCommand = {
       });
 
       try {
-        const res = await client.searchAtomic({ query, limit: 5 });
+        const projectId = getRMemoryProjectId(ctx.agent?.workingDirectory || process.cwd());
+        const res = await client.searchAtomic({ query, limit: 10, projectId });
         const items = res.items || [];
         if (items.length === 0) {
           ctx.addLine({
@@ -109,6 +111,17 @@ export const memoryCommand: SlashCommand = {
           lines.push(`ID: ${item.id}${typeTag}`);
           lines.push(`Score: ${item.score?.toFixed(4) || "N/A"}`);
           lines.push(`Content: ${item.content}`);
+          const metadata = item.metadata || {};
+          const provenance = metadata.provenance && typeof metadata.provenance === "object" ? metadata.provenance : {};
+          const metadataLine = [
+            metadata.scope ? `Scope: ${metadata.scope}` : undefined,
+            metadata.projectId ? `Project ID: ${metadata.projectId}` : undefined,
+            metadata.schemaVersion ? `Schema: ${metadata.schemaVersion}` : undefined,
+            metadata.validationStatus ? `Validation: ${metadata.validationStatus}` : undefined,
+            metadata.updatedAt ? `Updated: ${metadata.updatedAt}` : undefined,
+            provenance.source ? `Source: ${provenance.source}` : undefined,
+          ].filter(Boolean).join(" | ");
+          if (metadataLine) lines.push(`Metadata: ${metadataLine}`);
           lines.push("----------------------------------------------------------------------");
         }
 
@@ -150,7 +163,21 @@ export const memoryCommand: SlashCommand = {
       });
 
       try {
-        const res = await client.updateAtomic({ id: key, content: value });
+        const projectId = getRMemoryProjectId(ctx.agent?.workingDirectory || process.cwd());
+        const now = new Date().toISOString();
+        const res = await client.updateAtomic({
+          id: key,
+          content: `[project:${projectId}] ${value.replace(/^\[(?:global|project(?::[^\]]+)?)\]\s*/i, "")}`,
+          metadata: createMemoryRecordMetadata({
+            memoryId: key,
+            memoryType: type,
+            scope: "project",
+            projectId,
+            source: "memory_command_add",
+            agentTier: ctx.agent?.tier || "unknown",
+            now,
+          }),
+        });
         ctx.addLine({
           type: "system",
           content: `✓ Memory saved successfully.\n  ID: ${res.id}\n  Updated: ${new Date(res.updated_at).toLocaleString()}`,
@@ -168,10 +195,36 @@ export const memoryCommand: SlashCommand = {
 
     if (subcommand === "delete") {
       const key = parts[1];
+      const scope = parts[2]?.toLowerCase() === "global" ? "global" : "project";
       if (!key) {
         ctx.addLine({
           type: "error",
-          content: "Usage: /memory delete <key>",
+          content: "Usage: /memory delete <key> [project|global] (default: project)",
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      const currentAgent = ctx.agent as any;
+      const askQuestion = currentAgent?.onQuestion;
+      if (typeof askQuestion !== "function") {
+        ctx.addLine({
+          type: "error",
+          content: "Memory deletion requires interactive owner confirmation; no record was changed.",
+          timestamp: Date.now(),
+        });
+        return;
+      }
+      let confirmation: unknown;
+      try {
+        confirmation = await askQuestion(`Permanently delete ${scope}-scope memory "${key}"?`, ["Yes", "No"]);
+      } catch {
+        confirmation = undefined;
+      }
+      if (confirmation !== "Yes") {
+        ctx.addLine({
+          type: "system",
+          content: `Memory deletion cancelled for ${scope}-scope memory "${key}"; no record was changed.`,
           timestamp: Date.now(),
         });
         return;
@@ -179,15 +232,21 @@ export const memoryCommand: SlashCommand = {
 
       ctx.addLine({
         type: "system",
-        content: `Deleting memory "${key}"...`,
+        content: `Deleting ${scope}-scope memory "${key}"...`,
         timestamp: Date.now(),
       });
 
       try {
-        await client.deleteAtomic({ ids: [key] });
+        const deleted = await client.deleteAtomicScoped({
+          id: key,
+          scope,
+          projectId: getRMemoryProjectId(ctx.agent?.workingDirectory || process.cwd()),
+        });
         ctx.addLine({
-          type: "system",
-          content: `✓ Memory "${key}" deleted successfully.`,
+          type: deleted ? "system" : "error",
+          content: deleted
+            ? `✓ ${scope}-scope memory "${key}" deleted successfully.`
+            : `No ${scope}-scope memory found for "${key}"; nothing was deleted.`,
           timestamp: Date.now(),
         });
       } catch (err: any) {

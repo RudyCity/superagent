@@ -32,7 +32,18 @@ import {
   appendCapped
 } from "./state.js";
 import { createCommandLog, formatOutputWithLogReference } from "./commandLogger.js";
+import { agentLocalStorage } from "../agentLocalStorage.js";
+import { classifyVerificationCommand, queueTaskVerificationEvidence } from "../selfdev/taskEvidence.js";
 import net from "net";
+
+function queueVerificationEvidence(command: string, toolName: "bash" | "run_command", exitCode: unknown): void {
+  if (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode)) return;
+  const classification = classifyVerificationCommand(command);
+  if (!classification) return;
+  const agent = agentLocalStorage.getStore();
+  if (!agent) return;
+  queueTaskVerificationEvidence(agent, { ...classification, toolName, exitCode });
+}
 
 async function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -241,6 +252,7 @@ export const bashTool: Tool = {
         const result = await Promise.race([proc, timeoutPromise, abortPromise]);
         clearActiveToolOutput();
         let output = (result.all || result.stdout || "").trim();
+        if (!interactiveWarning) queueVerificationEvidence(rawCommand, "bash", result.exitCode);
         const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
         cmdLogger.end(exitCodeNum, interactiveWarning || undefined);
         output = formatOutputWithLogReference(output, 100, cmdLogger.logPath);
@@ -421,6 +433,7 @@ export const runCommandTool: Tool = {
         const result = await Promise.race([proc, timeoutPromise, abortPromise]);
         clearActiveToolOutput();
         let output = (result.all || result.stdout || "").trim();
+        if (!interactiveWarning) queueVerificationEvidence(rawCommand, "run_command", result.exitCode);
         const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
         cmdLogger.end(exitCodeNum, interactiveWarning || undefined);
         output = formatOutputWithLogReference(output, 100, cmdLogger.logPath);

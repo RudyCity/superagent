@@ -4,6 +4,23 @@ import os from "os";
 import { DaemonJob, DaemonStatus, DaemonConfig } from "./daemonTypes.js";
 import { matchesCron, getNextCronTime, isValidCron } from "./cronParser.js";
 
+const DEFAULT_HEADLESS_ALLOWED_TOOLS = [
+  "read", "read_file", "view_file", "view", "glob", "grep", "ripgrep_search",
+  "list_directory", "list_dir", "find_files", "git_status", "git_diff", "get_git_diff",
+  "inspect_port", "find_process", "get_remote_service_status", "list_tools", "describe_tool",
+  "read_shared_memory", "rmemory_status", "rmemory_search", "search_history", "inspect_session", "query_history",
+  "rmemory_conversation_search", "rmemory_read_cos", "list_skills", "get_skill", "get_tools", "describe_tools",
+];
+
+function normalizeAllowedTools(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value
+    .filter((tool): tool is string => typeof tool === "string")
+    .map((tool) => tool.trim())
+    .filter((tool) => tool.length > 0 && tool.length <= 128)))
+    .slice(0, 128);
+}
+
 const DEFAULT_CONFIG: DaemonConfig = {
   tickIntervalMs: 30000,
   maxConcurrentJobs: 3
@@ -65,6 +82,7 @@ export class DaemonScheduler {
     notifyGateway?: boolean;
     maxRuns?: number;
     tags?: string[];
+    allowedTools?: string[];
   }): DaemonJob {
     if (!isValidCron(params.cronExpression)) {
       throw new Error(`Invalid cron expression: "${params.cronExpression}"`);
@@ -81,7 +99,7 @@ export class DaemonScheduler {
       name: params.name,
       cronExpression: params.cronExpression,
       prompt: params.prompt,
-      workspace: params.workspace || process.cwd(),
+      workspace: path.resolve(params.workspace || process.cwd()),
       mode: params.mode || "single",
       enabled: params.enabled !== undefined ? params.enabled : true,
       createdAt: Date.now(),
@@ -89,7 +107,8 @@ export class DaemonScheduler {
       runCount: 0,
       maxRuns: params.maxRuns,
       notifyGateway: params.notifyGateway,
-      tags: params.tags
+      tags: params.tags,
+      allowedTools: normalizeAllowedTools(params.allowedTools),
     };
 
     this.jobs.set(id, job);
@@ -115,7 +134,11 @@ export class DaemonScheduler {
       ...job,
       ...updates,
       id: job.id, // Immutable
-      createdAt: job.createdAt
+      createdAt: job.createdAt,
+      workspace: updates.workspace !== undefined ? path.resolve(updates.workspace || process.cwd()) : path.resolve(job.workspace || process.cwd()),
+      allowedTools: updates.allowedTools !== undefined
+        ? normalizeAllowedTools(updates.allowedTools)
+        : job.allowedTools,
     };
 
     this.jobs.set(id, updated);
@@ -237,6 +260,12 @@ export class DaemonScheduler {
     let error: string | undefined;
 
     try {
+      const configuredWorkspace = path.resolve(job.workspace || process.cwd());
+      const workspaceStats = fs.statSync(configuredWorkspace);
+      if (!workspaceStats.isDirectory()) throw new Error("Scheduled job workspace must be an existing directory.");
+      job.workspace = fs.realpathSync(configuredWorkspace);
+      job.allowedTools = normalizeAllowedTools(job.allowedTools);
+      this.saveJobs();
       if (this.agentRunner) {
         output = await this.agentRunner(job.prompt, job.workspace, job.mode);
       } else {
@@ -283,7 +312,10 @@ export class DaemonScheduler {
             accumulatedText += event.content;
           }
         },
-        async () => true, // Auto-approve permissions in headless daemon mode
+        async (toolCall) => {
+          this.log(`Headless job ${job.id} denied approval-required operation: ${toolCall.name}`);
+          return false;
+        },
         async () => "continue",
         undefined,
         undefined,
@@ -292,6 +324,9 @@ export class DaemonScheduler {
 
       agent.isMultiAgent = job.mode === "multi";
       agent.tier = job.mode === "multi" ? "master" : "single";
+      agent.disableAmbientYoloMode = true;
+      agent.restrictHeadlessTools = true;
+      agent.headlessAllowedTools = new Set([...DEFAULT_HEADLESS_ALLOWED_TOOLS, ...normalizeAllowedTools(job.allowedTools)]);
 
       agent.sendMessage(job.prompt)
         .then(() => resolve(accumulatedText || "[Headless execution completed with no textual output]"))
@@ -340,7 +375,12 @@ export class DaemonScheduler {
         const list: DaemonJob[] = JSON.parse(raw);
         if (Array.isArray(list)) {
           for (const item of list) {
-            this.jobs.set(item.id, item);
+            if (!item || typeof item.id !== "string" || typeof item.prompt !== "string") continue;
+            this.jobs.set(item.id, {
+              ...item,
+              workspace: path.resolve(typeof item.workspace === "string" && item.workspace ? item.workspace : process.cwd()),
+              allowedTools: normalizeAllowedTools(item.allowedTools),
+            });
           }
         }
       }

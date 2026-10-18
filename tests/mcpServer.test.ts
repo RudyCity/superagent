@@ -20,9 +20,9 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 70;
+const EXPECTED_TOOL_COUNT = 71;
 
-describe("Superagent Complete 3-Pillar MCP Server Suite (70 Tools, Resources, Prompts)", () => {
+describe("Superagent Complete 3-Pillar MCP Server Suite (71 Tools, Resources, Prompts)", () => {
   const testDir = path.join(process.cwd(), `.tmp_mcp_test_${Date.now()}`);
   const testProjectId = path.basename(testDir).replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
 
@@ -63,7 +63,8 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (70 Tools, Resources, Pr
     // Subagent & multi-agent
     expect(toolNames).not.toContain("superagent_run_task");
     expect(toolNames).not.toContain("superagent_spawn_subagent");
-    expect(toolNames).not.toContain("superagent_cli_bridge");
+    expect(toolNames).toContain("superagent_cli_bridge");
+    expect(MCP_TOOL_CLASSIFICATION.superagent_cli_bridge).toBe("dangerous");
     expect(toolNames).not.toContain("superagent_invoke");
     expect(toolNames).not.toContain("superagent_await");
     expect(toolNames).not.toContain("superagent_merge");
@@ -665,6 +666,37 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (70 Tools, Resources, Pr
       method: "tools/call",
       params: { name: "superagent_run_task", arguments: { task: "should not execute" } },
     })).rejects.toThrow("disabled and not exposed by this MCP server");
+  });
+
+  it("superagent_cli_bridge is discoverable and dispatches read-only profile discovery", async () => {
+    const server = createSuperagentMcpServer({ workspace: testDir });
+    const listHandler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
+    const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+
+    const listResult = await listHandler({ method: "tools/list", params: {} });
+    expect(listResult.tools.map((tool: any) => tool.name)).toContain("superagent_cli_bridge");
+
+    const result = await callHandler({
+      method: "tools/call",
+      params: { name: "superagent_cli_bridge", arguments: { action: "profile.list" } },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(result.content[0].text).toContain("agy");
+    expect(result.content[0].text).toContain("claude");
+  });
+
+  it("superagent_cli_bridge blocks an unregistered workspace outside the granted scope", async () => {
+    const outsideWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-cli-bridge-outside-"));
+    try {
+      const server = createSuperagentMcpServer({ workspace: testDir });
+      const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+      await expect(callHandler({
+        method: "tools/call",
+        params: { name: "superagent_cli_bridge", arguments: { action: "profile.list", cwd: outsideWorkspace } },
+      })).rejects.toThrow("blocked by Scoped YOLO boundary");
+    } finally {
+      fs.rmSync(outsideWorkspace, { recursive: true, force: true });
+    }
   });
 
   it("superagent_remote_chrome is hidden and rejected even when dangerous tools are enabled", async () => {

@@ -1,7 +1,30 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
+
+const headlessAgentHarness = vi.hoisted(() => ({ instances: [] as any[] }));
+
+vi.mock("../src/core/agent.js", () => ({
+  Agent: class {
+    public isMultiAgent = false;
+    public tier = "master";
+    public disableAmbientYoloMode = false;
+
+    constructor(
+      public onEvent: (event: any) => void,
+      public onPermission: (toolCall: any, description: string) => Promise<boolean>,
+      public onQuestion: (...args: any[]) => Promise<string>,
+    ) {
+      headlessAgentHarness.instances.push(this);
+    }
+
+    async sendMessage() {
+      this.onEvent({ type: "text", content: "mock headless output" });
+    }
+  },
+}));
+
 import { DaemonScheduler } from "../src/core/daemon/daemonScheduler.js";
 
 describe("DaemonScheduler", () => {
@@ -9,6 +32,7 @@ describe("DaemonScheduler", () => {
   let scheduler: DaemonScheduler;
 
   beforeEach(() => {
+    headlessAgentHarness.instances.length = 0;
     tmpDir = path.join(os.tmpdir(), `superagent_daemon_test_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
     fs.mkdirSync(tmpDir, { recursive: true });
     scheduler = new DaemonScheduler(tmpDir);
@@ -118,6 +142,47 @@ describe("DaemonScheduler", () => {
     expect(updatedJob?.runCount).toBe(1);
     expect(updatedJob?.lastStatus).toBe("error");
     expect(updatedJob?.lastError).toBe("Disk full simulation");
+  });
+
+  it("fails closed for headless permission requests and disables ambient YOLO inheritance", async () => {
+    const job = scheduler.addJob({
+      name: "Headless Safety Check",
+      cronExpression: "0 0 * * *",
+      prompt: "Perform a safe scheduled check",
+      workspace: tmpDir,
+    });
+
+    const result = await scheduler.triggerJobNow(job.id);
+    expect(result.success).toBe(true);
+
+    const headlessAgent = headlessAgentHarness.instances.at(-1);
+    expect(headlessAgent).toBeDefined();
+    expect(headlessAgent.disableAmbientYoloMode).toBe(true);
+    expect(headlessAgent.restrictHeadlessTools).toBe(true);
+    expect(headlessAgent.headlessAllowedTools.has("read")).toBe(true);
+    expect(headlessAgent.headlessAllowedTools.has("write_to_file")).toBe(false);
+    await expect(headlessAgent.onPermission({ name: "run_command" }, "dangerous command")).resolves.toBe(false);
+  });
+
+  it("normalizes explicit per-job tool grants and pins a resolved workspace", async () => {
+    const requestedWorkspace = path.join(tmpDir, "nested", "..", "workspace");
+    fs.mkdirSync(requestedWorkspace, { recursive: true });
+    const job = scheduler.addJob({
+      name: "Explicit Capabilities",
+      cronExpression: "0 0 * * *",
+      prompt: "Check authorized task",
+      workspace: requestedWorkspace,
+      allowedTools: ["write_to_file", " run_command ", "", 12 as any] as any,
+    });
+
+    expect(job.workspace).toBe(path.resolve(requestedWorkspace));
+    expect(job.allowedTools).toEqual(["write_to_file", "run_command"]);
+    await scheduler.triggerJobNow(job.id);
+
+    const headlessAgent = headlessAgentHarness.instances.at(-1);
+    expect(headlessAgent.headlessAllowedTools.has("write_to_file")).toBe(true);
+    expect(headlessAgent.headlessAllowedTools.has("run_command")).toBe(true);
+    expect(headlessAgent.headlessAllowedTools.has("")).toBe(false);
   });
 
   it("starts and stops daemon timer cleanly", () => {

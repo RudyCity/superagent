@@ -11,6 +11,7 @@ const mockClient = {
   searchAtomic: vi.fn(),
   updateAtomic: vi.fn(),
   deleteAtomic: vi.fn(),
+  deleteAtomicScoped: vi.fn(),
   listScenarios: vi.fn(),
   readScenario: vi.fn(),
 };
@@ -43,6 +44,9 @@ describe("/memory Command Suite", () => {
     agent: {
       getCurrentHistoryFilePath: () => "history.json",
       getHistory: () => ({ lastCapturedTimestamp: 1700000000000 }),
+      workingDirectory: process.cwd(),
+      tier: "single",
+      onQuestion: vi.fn().mockResolvedValue("Yes"),
     },
   };
 
@@ -75,15 +79,21 @@ describe("/memory Command Suite", () => {
   it("should search memories", async () => {
     mockClient.searchAtomic.mockResolvedValue({
       items: [
-        { id: "mem1", content: "likes typescript", type: "preference", score: 0.95 },
+        {
+          id: "mem1", content: "likes typescript", type: "preference", score: 0.95,
+          metadata: { scope: "project", projectId: "p_test", schemaVersion: 1, validationStatus: "unverified", provenance: { source: "memory_command_add" } },
+        },
       ],
     });
 
     await handleSlashCommand("/memory search typescript", mockCtx as any);
 
-    expect(mockClient.searchAtomic).toHaveBeenCalledWith({ query: "typescript", limit: 5 });
+    expect(mockClient.searchAtomic).toHaveBeenCalledWith({ query: "typescript", limit: 10, projectId: expect.any(String) });
     expect(addedLines.some((l) => l.content.includes("MEMORY SEARCH RESULTS FOR: \"typescript\""))).toBe(true);
     expect(addedLines.some((l) => l.content.includes("Score: 0.9500"))).toBe(true);
+    expect(addedLines.some((l) => l.content.includes("Scope: project"))).toBe(true);
+    expect(addedLines.some((l) => l.content.includes("Validation: unverified"))).toBe(true);
+    expect(addedLines.some((l) => l.content.includes("Source: memory_command_add"))).toBe(true);
   });
 
   it("should add a memory", async () => {
@@ -94,20 +104,48 @@ describe("/memory Command Suite", () => {
 
     await handleSlashCommand('/memory add user-name "John Doe" preference', mockCtx as any);
 
-    expect(mockClient.updateAtomic).toHaveBeenCalledWith({
-      id: "user-name",
-      content: "John Doe",
+    const saved = mockClient.updateAtomic.mock.calls[0][0];
+    expect(saved.id).toBe("user-name");
+    expect(saved.content).toMatch(/^\[project:p_[a-f0-9]{16}\] John Doe$/);
+    expect(saved.metadata).toMatchObject({
+      schemaVersion: 1,
+      type: "memory",
+      memoryType: "preference",
+      scope: "project",
+      projectId: expect.stringMatching(/^p_[a-f0-9]{16}$/),
+      validationStatus: "unverified",
+      provenance: { source: "memory_command_add", agentTier: "single" },
     });
     expect(addedLines.some((l) => l.content.includes("Memory saved successfully"))).toBe(true);
   });
 
   it("should delete a memory", async () => {
-    mockClient.deleteAtomic.mockResolvedValue({});
+    mockClient.deleteAtomicScoped.mockResolvedValue(true);
 
+    const noPromptCtx = { ...mockCtx, agent: { ...mockCtx.agent, onQuestion: undefined } };
+    await handleSlashCommand("/memory delete user-name", noPromptCtx as any);
+    expect(mockClient.deleteAtomicScoped).not.toHaveBeenCalled();
+    expect(addedLines.some((l) => l.content.includes("requires interactive owner confirmation"))).toBe(true);
+
+    addedLines = [];
     await handleSlashCommand("/memory delete user-name", mockCtx as any);
 
-    expect(mockClient.deleteAtomic).toHaveBeenCalledWith({ ids: ["user-name"] });
-    expect(addedLines.some((l) => l.content.includes('Memory "user-name" deleted successfully'))).toBe(true);
+    expect(mockClient.deleteAtomicScoped).toHaveBeenCalledWith({
+      id: "user-name",
+      scope: "project",
+      projectId: expect.any(String),
+    });
+    expect(addedLines.some((l) => l.content.includes('project-scope memory "user-name" deleted successfully'))).toBe(true);
+
+    mockClient.deleteAtomicScoped.mockResolvedValue(false);
+    addedLines = [];
+    await handleSlashCommand("/memory delete absent global", mockCtx as any);
+    expect(mockClient.deleteAtomicScoped).toHaveBeenLastCalledWith({
+      id: "absent",
+      scope: "global",
+      projectId: expect.any(String),
+    });
+    expect(addedLines.some((l) => l.content.includes("nothing was deleted"))).toBe(true);
   });
 
   it("should list scenarios", async () => {

@@ -79,11 +79,16 @@ import {
 } from "./superagentTools.js";
 
 import {
+  rmemoryStatusTool,
   rmemorySearchTool,
   rmemoryConversationSearchTool,
   rmemoryReadCosTool,
   rmemorySaveTool,
   rmemoryConversationAddTool,
+  rmemoryInspectTool,
+  rmemoryExportTool,
+  rmemoryDeleteTool,
+  rmemoryMigrateLegacyTool,
 } from "./rmemoryTools.js";
 
 import { manageMcpTool } from "./mcpTools.js";
@@ -275,11 +280,16 @@ export const allTools: Tool[] = [
   controlBrowserMacroSaveTool,
   controlBrowserMacroRunTool,
   manageMcpTool,
+  rmemoryStatusTool,
   rmemorySearchTool,
   rmemoryConversationSearchTool,
   rmemoryReadCosTool,
   rmemorySaveTool,
   rmemoryConversationAddTool,
+  rmemoryInspectTool,
+  rmemoryExportTool,
+  rmemoryDeleteTool,
+  rmemoryMigrateLegacyTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
   unlockFileTool,

@@ -28,6 +28,8 @@ export interface ContextManagerConfig {
   model: string;
   contextWindowLimit: number;
   historyFilePath?: string;
+  /** Canonical project identity used by all context-compaction memory reads/writes. */
+  projectId?: string;
   llmModel?: any;
   abortSignal?: AbortSignal;
 }
@@ -95,6 +97,8 @@ export class ContextManager {
       new RMemoryStrategy({
         model: config.llmModel,
         abortSignal: config.abortSignal,
+        projectId: config.projectId,
+        historyFilePath: config.historyFilePath,
       }),
       summarizationStrategy,
       new PruningStrategy(),

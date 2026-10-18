@@ -4,10 +4,14 @@ import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { getNormalizedProjectPath } from "./tools/helpers.js";
+import { createMemoryRecordMetadata, isMemoryRecordMetadata } from "./memoryRecord.js";
 
 const globalDataDir = path.join(os.homedir(), ".superagent-r", "rmemory");
 
 export const DEFAULT_LOCAL_EMBEDDING_MODEL = "Xenova/all-MiniLM-L6-v2";
+
+export type RMemoryMigrationStatus = "not_checked" | "current" | "migrated" | "failed";
 
 export function checkLocalModelDownloadStatus(modelRepoName: string, isMemoryLoaded: boolean = false): string {
   if (isMemoryLoaded) {
@@ -45,7 +49,24 @@ export function checkLocalModelDownloadStatus(modelRepoName: string, isMemoryLoa
 }
 
 export function resetRMemoryInstance() {
+  try {
+    if (rMemoryInstance && typeof rMemoryInstance.close === "function") rMemoryInstance.close();
+    else if (rMemoryInstance?.db && typeof rMemoryInstance.db.close === "function") rMemoryInstance.db.close();
+  } catch {}
+  try {
+    if (skillsIndexInstance && typeof skillsIndexInstance.close === "function") skillsIndexInstance.close();
+    else if (skillsIndexInstance?.db && typeof skillsIndexInstance.db.close === "function") skillsIndexInstance.db.close();
+  } catch {}
   rMemoryInstance = null;
+  cachedRMemoryModelName = "";
+  cachedRMemoryDimensions = 0;
+  rMemoryInitFailed = false;
+  rMemoryInitError = null;
+  hasLoggedInitError = false;
+  rMemoryMigrationStatus = "not_checked";
+  rMemoryLastSafeError = null;
+  skillsIndexInstance = null;
+  skillsIndexHash = "";
 }
 
 export function getActiveRMemoryEmbeddingInfo(): { provider: "local" | "openai"; modelName: string; dimensions: number } {
@@ -183,8 +204,9 @@ export class OptimizedLocalTextEmbeddingProvider {
             console.log(`\n[INFO] Embedding model loaded successfully.`);
           }
         }
-      } catch (err: any) {
-        this.extractor = async () => ({ data: new Float32Array(this.dimensions).fill(0.001) });
+      } catch (err: unknown) {
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new Error("Failed to initialize embedding model \"" + this.modelName + "\": " + detail, { cause: err });
       }
     }
     return this.extractor;
@@ -205,8 +227,9 @@ export class OptimizedLocalTextEmbeddingProvider {
         } catch {}
       }
       return result;
-    } catch {
-      return new Array(this.dimensions).fill(0.001);
+    } catch (err: unknown) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error("Failed to embed text with model \"" + this.modelName + "\": " + detail, { cause: err });
     }
   }
 
@@ -244,7 +267,63 @@ export class OptimizedLocalTextEmbeddingProvider {
   }
 }
 
-export function checkAndPerformDbMigration(targetDir: string, currentModelName: string, currentDimensions: number) {
+function isContainedPath(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative !== "" && relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative);
+}
+
+export function resolveScenarioPath(dataDir: string, requestedPath: string): string {
+  if (typeof requestedPath !== "string" || requestedPath.trim() === "") {
+    throw new Error("Scenario path must be a non-empty relative path.");
+  }
+  const normalized = requestedPath.replace(/\\/g, "/");
+  if (path.isAbsolute(requestedPath) || path.win32.isAbsolute(requestedPath)) {
+    throw new Error("Absolute scenario paths are not allowed.");
+  }
+  const parts = normalized.split("/");
+  if (parts.length !== 2 || parts[0] !== "scene_blocks" || !parts[1] || parts[1] === "." || parts[1] === ".." || !parts[1].toLowerCase().endsWith(".md")) {
+    throw new Error("Scenario path must point to a Markdown file directly inside scene_blocks.");
+  }
+  const dataRoot = fs.realpathSync(dataDir);
+  const lexicalSceneRoot = path.resolve(dataRoot, "scene_blocks");
+  let sceneRoot = lexicalSceneRoot;
+  try {
+    sceneRoot = fs.realpathSync(lexicalSceneRoot);
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") throw err;
+  }
+  if (sceneRoot !== dataRoot && !isContainedPath(dataRoot, sceneRoot)) {
+    throw new Error("Scenario directory resolves outside the memory data directory.");
+  }
+  const candidate = path.resolve(sceneRoot, parts[1]);
+  if (!isContainedPath(sceneRoot, candidate)) {
+    throw new Error("Scenario path resolves outside the scenario directory.");
+  }
+  try {
+    const resolvedCandidate = fs.realpathSync(candidate);
+    if (!isContainedPath(sceneRoot, resolvedCandidate)) {
+      throw new Error("Scenario file resolves outside the scenario directory.");
+    }
+    return resolvedCandidate;
+  } catch (err: any) {
+    if (err?.code === "ENOENT") {
+      try { fs.lstatSync(candidate); }
+      catch (lstatError: any) { if (lstatError?.code === "ENOENT") return candidate; }
+    }
+    throw err;
+  }
+}
+
+export interface RMemoryMigrationTransaction {
+  /** Finalize a staged migration after the replacement index has passed health checks. */
+  commit(): void;
+  /** Restore the previous index and metadata if replacement initialization fails. */
+  rollback(): void;
+}
+
+export function checkAndPerformDbMigration(
+  targetDir: string, currentModelName: string, currentDimensions: number, options: { deferCommit?: boolean } = {},
+): RMemoryMigrationTransaction | undefined {
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true });
   }
@@ -269,40 +348,99 @@ export function checkAndPerformDbMigration(targetDir: string, currentModelName: 
     }
   }
 
-  let cleanupSuccess = true;
+  const knownIndexArtifacts = new Set([
+    "vectors.db", "vectors.db-wal", "vectors.db-shm", "vectors.db-journal",
+    "skills.db", "skills.db-wal", "skills.db-shm", "skills.db-journal",
+  ]);
+  const backupDir = path.join(path.dirname(targetDir), "." + path.basename(targetDir) + "-index-backup-" + process.pid + "-" + Date.now());
+  const movedArtifacts: string[] = [];
+
   if (migrateNeeded) {
-    if (fs.existsSync(targetDir)) {
-      const entries = fs.readdirSync(targetDir);
-      for (const entry of entries) {
-        if (entry === "metadata.json") continue;
-        const fullPath = path.join(targetDir, entry);
-        try {
-          fs.rmSync(fullPath, { recursive: true, force: true });
-        } catch {
-          cleanupSuccess = false;
+    for (const entry of fs.readdirSync(targetDir)) {
+      if (!knownIndexArtifacts.has(entry)) continue;
+      try {
+        if (movedArtifacts.length === 0) fs.mkdirSync(backupDir, { recursive: true });
+        fs.renameSync(path.join(targetDir, entry), path.join(backupDir, entry));
+        movedArtifacts.push(entry);
+      } catch (err) {
+        for (const moved of [...movedArtifacts].reverse()) {
+          try { fs.renameSync(path.join(backupDir, moved), path.join(targetDir, moved)); } catch {}
         }
+        try { fs.rmSync(backupDir, { recursive: true, force: true }); } catch {}
+        throw new Error("Unable to stage stale RMemory index artifact \"" + entry + "\"; existing metadata was preserved.", { cause: err });
       }
     }
   }
 
-  if (cleanupSuccess) {
-    try {
-      fs.writeFileSync(metadataPath, JSON.stringify({
-        modelName: currentModelName,
-        dimensions: currentDimensions
-      }), "utf-8");
-    } catch {
-      // Ignore write errors
+  const metadata = JSON.stringify({ modelName: currentModelName, dimensions: currentDimensions });
+  const tempMetadataPath = metadataPath + "." + process.pid + "." + Date.now() + ".tmp";
+  const previousMetadataPath = metadataPath + "." + process.pid + ".previous";
+  let previousMetadataMoved = false;
+  try {
+    fs.writeFileSync(tempMetadataPath, metadata, "utf-8");
+    if (fs.existsSync(metadataPath)) {
+      fs.renameSync(metadataPath, previousMetadataPath);
+      previousMetadataMoved = true;
     }
-  } else {
-    try {
-      if (fs.existsSync(metadataPath)) {
-        fs.unlinkSync(metadataPath);
-      }
-    } catch {
-      // Ignore unlink errors
+    fs.renameSync(tempMetadataPath, metadataPath);
+    if (!options.deferCommit) {
+      // Treat backup cleanup as post-commit best-effort, never as a rollback trigger.
+      if (previousMetadataMoved) { try { fs.rmSync(previousMetadataPath, { force: true }); } catch {} }
+      if (movedArtifacts.length > 0) { try { fs.rmSync(backupDir, { recursive: true, force: true }); } catch {} }
     }
+  } catch (err) {
+    try { fs.rmSync(tempMetadataPath, { force: true }); } catch {}
+    if (previousMetadataMoved) {
+      try {
+        if (fs.existsSync(metadataPath)) fs.rmSync(metadataPath, { force: true });
+        fs.renameSync(previousMetadataPath, metadataPath);
+      } catch {}
+    }
+    for (const moved of [...movedArtifacts].reverse()) {
+      try { fs.renameSync(path.join(backupDir, moved), path.join(targetDir, moved)); } catch {}
+    }
+    try { fs.rmSync(backupDir, { recursive: true, force: true }); } catch {}
+    throw new Error("Unable to persist RMemory index metadata; previous metadata and index artifacts were restored where possible.", { cause: err });
   }
+  if (!options.deferCommit || !migrateNeeded) return undefined;
+
+  let settled = false;
+  return {
+    commit() {
+      if (settled) return;
+      settled = true;
+      if (previousMetadataMoved) {
+        try { fs.rmSync(previousMetadataPath, { force: true }); } catch {}
+      }
+      if (movedArtifacts.length > 0) {
+        try { fs.rmSync(backupDir, { recursive: true, force: true }); } catch {}
+      }
+    },
+    rollback() {
+      if (settled) return;
+      const errors: unknown[] = [];
+      const remember = (action: () => void) => {
+        try { action(); } catch (err) { errors.push(err); }
+      };
+      for (const entry of ["vectors.db", "vectors.db-wal", "vectors.db-shm", "vectors.db-journal", "skills.db", "skills.db-wal", "skills.db-shm", "skills.db-journal"]) {
+        remember(() => fs.rmSync(path.join(targetDir, entry), { force: true }));
+      }
+      if (previousMetadataMoved) {
+        remember(() => {
+          fs.rmSync(metadataPath, { force: true });
+          fs.renameSync(previousMetadataPath, metadataPath);
+        });
+      } else {
+        remember(() => fs.rmSync(metadataPath, { force: true }));
+      }
+      for (const moved of [...movedArtifacts].reverse()) {
+        remember(() => fs.renameSync(path.join(backupDir, moved), path.join(targetDir, moved)));
+      }
+      remember(() => fs.rmSync(backupDir, { recursive: true, force: true }));
+      settled = true;
+      if (errors.length > 0) throw new AggregateError(errors, "RMemory migration rollback was incomplete; inspect preserved backup artifacts before retrying.");
+    },
+  };
 }
 
 let rMemoryInstance: any = null;
@@ -311,8 +449,12 @@ let cachedRMemoryDimensions: number = 0;
 let rMemoryInitFailed = false;
 let rMemoryInitError: any = null;
 let hasLoggedInitError = false;
+let rMemoryMigrationStatus: RMemoryMigrationStatus = "not_checked";
+let rMemoryLastSafeError: string | null = null;
 
 async function getRMemory(): Promise<any> {
+  let pendingMigration: RMemoryMigrationTransaction | undefined;
+  let pendingCandidate: any = null;
   if (rMemoryInitFailed) {
     throw rMemoryInitError || new Error("RMemory initialization previously failed.");
   }
@@ -384,19 +526,43 @@ async function getRMemory(): Promise<any> {
       }
       const dbPath = path.join(globalDataDir, "vectors.db");
       
-      checkAndPerformDbMigration(globalDataDir, currentModelName, currentDimensions);
+      pendingMigration = checkAndPerformDbMigration(globalDataDir, currentModelName, currentDimensions, { deferCommit: true });
+      pendingCandidate = new RMemory({ dbPath, collectionName: "memories", embeddingProvider: provider });
 
-      rMemoryInstance = new RMemory({
-        dbPath,
-        collectionName: "memories",
-        embeddingProvider: provider,
-      });
+      const probeVector = await provider.embedText("SuperAgent RMemory initialization probe", "passage");
+      if (!Array.isArray(probeVector) || probeVector.length !== currentDimensions || !probeVector.every((value: unknown) => typeof value === "number" && Number.isFinite(value))) {
+        throw new Error(`Embedding health check returned an invalid vector (expected ${currentDimensions} finite dimensions).`);
+      }
+      const probeId = `__superagent_rmemory_probe_${process.pid}_${Date.now()}`;
+      await pendingCandidate.addMemory({ id: probeId, content: "SuperAgent RMemory initialization probe", embedding: probeVector, metadata: { type: "internal_probe", internalProbe: true } });
+      pendingCandidate.delete(probeId);
+
+      const migrationWasStaged = !!pendingMigration;
+      pendingMigration?.commit();
+      pendingMigration = undefined;
+      rMemoryMigrationStatus = migrationWasStaged ? "migrated" : "current";
+      rMemoryLastSafeError = null;
+      rMemoryInstance = pendingCandidate;
+      pendingCandidate = null;
       cachedRMemoryModelName = currentModelName;
       cachedRMemoryDimensions = currentDimensions;
     }
     return rMemoryInstance;
-  } catch (err: any) {
+  } catch (caught: any) {
+    let err: any = caught;
+    rMemoryMigrationStatus = "failed";
+    try {
+      if (pendingCandidate) {
+        if (typeof pendingCandidate.close === "function") pendingCandidate.close();
+        else if (pendingCandidate.db && typeof pendingCandidate.db.close === "function") pendingCandidate.db.close();
+      }
+    } catch {}
+    if (pendingMigration) {
+      try { pendingMigration.rollback(); }
+      catch (rollbackError) { err = new AggregateError([caught, rollbackError], "RMemory initialization failed and migration rollback needs manual inspection."); }
+    }
     rMemoryInitFailed = true;
+    rMemoryLastSafeError = getSafeRMemoryError(err);
     rMemoryInitError = err;
     if (!hasLoggedInitError) {
       hasLoggedInitError = true;
@@ -427,6 +593,7 @@ export class MemoryClient {
 
   async addConversation(options: {
     session_id: string;
+    projectId?: string;
     messages: { role: "user" | "assistant" | "system"; content: string; timestamp?: string }[];
   }): Promise<{ accepted_ids: string[]; total_count: number }> {
     const rMemory = await getRMemory();
@@ -473,6 +640,7 @@ export class MemoryClient {
         metadata: {
           type: "message",
           session: options.session_id,
+          ...(options.projectId ? { scope: "project", projectId: options.projectId } : {}),
           role: msg.role,
           timestamp: msg.timestamp || new Date().toISOString(),
         },
@@ -492,7 +660,8 @@ export class MemoryClient {
   async searchConversation(options: {
     query: string;
     limit?: number;
-  }): Promise<{ messages: { role: string; content: string; timestamp: string; session_id?: string }[] }> {
+    projectId?: string;
+  }): Promise<{ messages: { role: string; content: string; timestamp: string; session_id?: string; project_id?: string }[] }> {
     const rMemory = await getRMemory();
     const limit = options.limit ?? 5;
     
@@ -500,6 +669,7 @@ export class MemoryClient {
       query: options.query,
       limit,
       hybrid: true,
+      filter: options.projectId ? { type: "message", projectId: options.projectId } : { type: "message" },
     });
 
     const messages = results
@@ -509,6 +679,7 @@ export class MemoryClient {
         content: r.memory.content,
         timestamp: r.memory.metadata.timestamp || new Date(r.memory.createdAt).toISOString(),
         session_id: r.memory.metadata.session,
+        project_id: r.memory.metadata.projectId,
       }));
 
     return { messages };
@@ -517,50 +688,359 @@ export class MemoryClient {
   async searchAtomic(options: {
     query: string;
     limit?: number;
+    projectId?: string;
   }): Promise<{ items: { id: string; content: string; type: string; score: number; metadata?: Record<string, any> }[] }> {
     const rMemory = await getRMemory();
     const limit = options.limit ?? 5;
-
-    const results = await rMemory.query({
-      query: options.query,
-      limit,
-      hybrid: true,
-    });
-
+    let results: any[];
+    if (options.projectId) {
+      const [projectResults, globalResults, legacyResults] = await Promise.all([
+        rMemory.query({ query: options.query, limit, hybrid: true, filter: { scope: "project", projectId: options.projectId } }),
+        rMemory.query({ query: options.query, limit, hybrid: true, filter: { scope: "global" } }),
+        rMemory.query({ query: options.query, limit: Math.max(limit * 4, 20), hybrid: true, filter: { type: "memory" } }),
+      ]);
+      const safeLegacyResults = legacyResults.filter((r: any) => {
+        const metadata = r.memory?.metadata || {};
+        const content = String(r.memory?.content || "");
+        if (metadata.scope) return false;
+        return content.startsWith("[global]") || content.startsWith(`[project:${options.projectId}]`);
+      });
+      const byId = new Map<string, any>();
+      for (const result of [...projectResults, ...globalResults, ...safeLegacyResults]) {
+        const id = String(result.memory?.id || "");
+        if (id && !byId.has(id)) byId.set(id, result);
+      }
+      results = Array.from(byId.values()).sort((a, b) => (a.distance ?? 1) - (b.distance ?? 1)).slice(0, limit);
+    } else {
+      results = await rMemory.query({ query: options.query, limit, hybrid: true });
+    }
     const items = results.map((r: any) => ({
       id: r.memory.id,
       content: r.memory.content,
-      type: r.memory.metadata?.type || "memory",
+      type: r.memory.metadata?.memoryType || r.memory.metadata?.type || "memory",
       score: r.score ?? (1.0 - r.distance),
       metadata: r.memory.metadata,
     }));
-
     return { items };
   }
 
   async updateAtomic(options: {
     id: string;
     content: string;
+    metadata?: Record<string, any>;
   }): Promise<{ id: string; updated_at: string }> {
     const rMemory = await getRMemory();
-    
+    const storageId = getRMemoryStorageId(options.id, options.metadata);
+    let existingMetadata: Record<string, any> = {};
+    try {
+      const existing = typeof rMemory.db?.getById === "function" ? rMemory.db.getById(storageId) : null;
+      if (existing?.metadata && typeof existing.metadata === "object") existingMetadata = existing.metadata;
+    } catch {
+      // A metadata lookup is best-effort; writes still proceed with explicit caller metadata.
+    }
+
     const content = options.content || "";
     const truncatedContent = content.length > 8000
       ? content.substring(0, 8000) + "... [truncated]"
       : content;
+    const now = new Date().toISOString();
+    const suppliedMetadata = options.metadata || {};
+    const metadata: Record<string, any> = {
+      ...existingMetadata,
+      ...suppliedMetadata,
+      type: suppliedMetadata.type || existingMetadata.type || "memory",
+      createdAt: existingMetadata.createdAt || suppliedMetadata.createdAt || now,
+      updatedAt: now,
+      ...(suppliedMetadata.scope === "project"
+        ? { logicalId: options.id }
+        : existingMetadata.scope === "project" && existingMetadata.projectId
+          ? { logicalId: existingMetadata.logicalId || options.id }
+          : {}),
+    };
+    if (suppliedMetadata.scope === "global") delete metadata.projectId;
 
     await rMemory.addMemory({
-      id: options.id,
+      id: storageId,
       content: truncatedContent,
-      metadata: {
-        type: "memory",
-      },
+      metadata,
     });
 
     return {
       id: options.id,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     };
+  }
+
+  private findAtomicByScope(
+    rMemory: any,
+    options: { id: string; scope: "project" | "global"; projectId: string },
+  ): { storageId: string; content: string; metadata: Record<string, any>; createdAt?: number } | null {
+    const candidates = options.scope === "project"
+      ? [getRMemoryStorageId(options.id, { scope: "project", projectId: options.projectId }), options.id]
+      : [options.id];
+    const seen = new Set<string>();
+
+    for (const storageId of candidates) {
+      if (seen.has(storageId)) continue;
+      seen.add(storageId);
+      let record: any;
+      try {
+        record = typeof rMemory.db?.getById === "function" ? rMemory.db.getById(storageId) : null;
+      } catch {
+        record = null;
+      }
+      if (!record || typeof record.content !== "string") continue;
+
+      const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+      const matches = options.scope === "global"
+        ? metadata.scope === "global" || (!metadata.scope && record.content.startsWith("[global]"))
+        : (metadata.scope === "project" && metadata.projectId === options.projectId) ||
+          (!metadata.scope && record.content.startsWith(`[project:${options.projectId}]`));
+      if (matches) return { storageId, content: record.content, metadata, createdAt: record.createdAt };
+    }
+    return null;
+  }
+
+  async inspectAtomic(options: {
+    id: string;
+    scope: "project" | "global";
+    projectId: string;
+  }): Promise<{ id: string; content: string; scope: "project" | "global"; metadata: Record<string, any> } | null> {
+    const rMemory = await getRMemory();
+    const record = this.findAtomicByScope(rMemory, options);
+    if (!record) return null;
+    const logicalId = typeof record.metadata.logicalId === "string"
+      ? record.metadata.logicalId
+      : record.storageId.startsWith(`${options.projectId}:`)
+        ? record.storageId.slice(options.projectId.length + 1)
+        : options.id;
+    return {
+      id: logicalId,
+      content: record.content,
+      scope: options.scope,
+      metadata: record.metadata,
+    };
+  }
+
+  async exportAtomic(options: {
+    projectId: string;
+    includeGlobal?: boolean;
+    limit?: number;
+  }): Promise<{ total: number; truncated: boolean; items: Array<{ id: string; content: string; scope: "project" | "global"; metadata: Record<string, any> }> }> {
+    const rMemory = await getRMemory();
+    if (typeof rMemory.db?.getAll !== "function") {
+      throw new Error("RMemory index does not support safe memory export.");
+    }
+    const records = rMemory.db.getAll();
+    const items: Array<{ id: string; content: string; scope: "project" | "global"; metadata: Record<string, any> }> = [];
+
+    for (const record of records) {
+      if (!record || typeof record.content !== "string") continue;
+      const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+      // Do not export conversation, skills, probes, or arbitrary non-atomic index rows.
+      const isAtomicRecord = metadata.type === "memory" ||
+        (!metadata.type && (record.content.startsWith("[global]") || record.content.startsWith(`[project:${options.projectId}]`)));
+      if (!isAtomicRecord) continue;
+
+      const scope: "project" | "global" | null =
+        metadata.scope === "global" || (!metadata.scope && record.content.startsWith("[global]"))
+          ? "global"
+          : metadata.scope === "project" && metadata.projectId === options.projectId
+            ? "project"
+            : !metadata.scope && record.content.startsWith(`[project:${options.projectId}]`)
+              ? "project"
+              : null;
+      if (!scope || (scope === "global" && options.includeGlobal === false)) continue;
+
+      const id = typeof metadata.logicalId === "string"
+        ? metadata.logicalId
+        : String(record.id || "").startsWith(`${options.projectId}:`)
+          ? String(record.id).slice(options.projectId.length + 1)
+          : String(record.id || "");
+      items.push({ id, content: record.content, scope, metadata });
+    }
+    items.sort((a, b) => {
+      const updatedA = Date.parse(String(a.metadata.updatedAt || "")) || Number(a.metadata.createdAt) || 0;
+      const updatedB = Date.parse(String(b.metadata.updatedAt || "")) || Number(b.metadata.createdAt) || 0;
+      return updatedB - updatedA;
+    });
+    const requestedLimit = Number(options.limit) || 100;
+    const limit = Math.max(1, Math.min(500, Math.floor(requestedLimit)));
+    return { total: items.length, truncated: items.length > limit, items: items.slice(0, limit) };
+  }
+  async migrateLegacyAtomicMemories(options: {
+    projectId: string;
+    includeGlobal?: boolean;
+    dryRun?: boolean;
+    limit?: number;
+  }): Promise<{
+    dryRun: boolean;
+    scanned: number;
+    candidates: number;
+    migrated: number;
+    skipped: number;
+    failed: number;
+    items: Array<{ id: string; scope: "project" | "global"; status: "would_migrate" | "migrated" | "conflict" | "skipped" | "failed"; reason?: string }>;
+  }> {
+    const rMemory = await getRMemory();
+    if (typeof rMemory.db?.getAll !== "function") throw new Error("RMemory index does not support safe legacy migration.");
+    if (!options.projectId?.trim()) throw new Error("A canonical project ID is required for safe legacy migration.");
+
+    const dryRun = options.dryRun !== false;
+    const limit = Math.max(1, Math.min(500, Math.floor(Number(options.limit) || 100)));
+    const records = rMemory.db.getAll();
+    const candidates: Array<{
+      sourceId: string;
+      id: string;
+      content: string;
+      scope: "project" | "global";
+      metadata: Record<string, any>;
+      createdAt?: string;
+    }> = [];
+    const items: Array<{ id: string; scope: "project" | "global"; status: "would_migrate" | "migrated" | "conflict" | "skipped" | "failed"; reason?: string }> = [];
+
+    for (const record of records) {
+      if (!record || typeof record.content !== "string" || typeof record.id !== "string") continue;
+      const metadata = record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)
+        ? record.metadata as Record<string, any>
+        : {};
+      if (metadata.scope || (metadata.type && metadata.type !== "memory")) continue;
+
+      const globalMatch = record.content.match(/^\[global\]\s+([\s\S]+)$/);
+      const projectMatch = record.content.match(/^\[project:([^\]]+)\]\s+([\s\S]+)$/);
+      let scope: "project" | "global";
+      let content: string;
+      if (globalMatch) {
+        if (options.includeGlobal === false) continue;
+        scope = "global";
+        content = globalMatch[1].trim();
+      } else if (projectMatch) {
+        if (projectMatch[1] !== options.projectId) continue;
+        scope = "project";
+        content = projectMatch[2].trim();
+      } else {
+        // Untagged or ambiguous legacy records must never be assigned to a project.
+        continue;
+      }
+
+      const storagePrefix = options.projectId + ":";
+      const inferredId = scope === "project" && record.id.startsWith(storagePrefix)
+        ? record.id.slice(storagePrefix.length)
+        : record.id;
+      const id = typeof metadata.logicalId === "string" && metadata.logicalId.trim()
+        ? metadata.logicalId.trim()
+        : inferredId;
+      if (!id || id.length > 160 || !content) {
+        items.push({ id: id.slice(0, 160) || "[invalid-id]", scope, status: "skipped", reason: "invalid_id_or_empty_content" });
+        continue;
+      }
+
+      const createdAtRaw = metadata.createdAt ?? record.createdAt;
+      const createdAt = typeof createdAtRaw === "string" && Number.isFinite(Date.parse(createdAtRaw))
+        ? new Date(createdAtRaw).toISOString()
+        : typeof createdAtRaw === "number" && Number.isFinite(createdAtRaw)
+          ? new Date(createdAtRaw).toISOString()
+          : undefined;
+      candidates.push({ sourceId: record.id, id, content, scope, metadata, createdAt });
+      if (candidates.length >= limit) break;
+    }
+
+    for (const candidate of candidates) {
+      const scopedMetadata = {
+        ...candidate.metadata,
+        scope: candidate.scope,
+        ...(candidate.scope === "project" ? { projectId: options.projectId } : {}),
+      };
+      const targetId = getRMemoryStorageId(candidate.id, scopedMetadata);
+      let target: any = null;
+      try { target = rMemory.db.getById?.(targetId) || null; } catch {}
+      if (target && targetId !== candidate.sourceId) {
+        const targetMetadata = target.metadata && typeof target.metadata === "object" ? target.metadata : {};
+        const sameScope = candidate.scope === "global"
+          ? targetMetadata.scope === "global" && !targetMetadata.projectId
+          : targetMetadata.scope === "project" && targetMetadata.projectId === options.projectId;
+        const sameRecord = isMemoryRecordMetadata(targetMetadata) &&
+          targetMetadata.memoryId === candidate.id &&
+          sameScope &&
+          String(target.content || "") === candidate.content;
+        if (!sameRecord) {
+          items.push({ id: candidate.id, scope: candidate.scope, status: "conflict", reason: "canonical_record_already_exists_with_different_content" });
+          continue;
+        }
+        if (dryRun) {
+          items.push({ id: candidate.id, scope: candidate.scope, status: "would_migrate", reason: "identical_canonical_record_exists" });
+          continue;
+        }
+        try {
+          rMemory.delete(candidate.sourceId);
+          items.push({ id: candidate.id, scope: candidate.scope, status: "migrated", reason: "removed_duplicate_legacy_copy" });
+        } catch {
+          items.push({ id: candidate.id, scope: candidate.scope, status: "failed", reason: "could_not_remove_duplicate_legacy_copy" });
+        }
+        continue;
+      }
+
+      if (dryRun) {
+        items.push({ id: candidate.id, scope: candidate.scope, status: "would_migrate" });
+        continue;
+      }
+
+      try {
+        const metadata = createMemoryRecordMetadata({
+          memoryId: candidate.id,
+          memoryType: typeof candidate.metadata.memoryType === "string" ? candidate.metadata.memoryType : "fact",
+          scope: candidate.scope,
+          projectId: options.projectId,
+          source: "legacy_prefix_migration",
+          now: new Date().toISOString(),
+          createdAt: candidate.createdAt,
+          existingMetadata: candidate.metadata,
+        });
+        await this.updateAtomic({
+          id: candidate.id,
+          content: candidate.content,
+          metadata: { ...candidate.metadata, ...metadata, type: "memory", scope: candidate.scope },
+        });
+
+        const migratedRecord = rMemory.db.getById?.(targetId);
+        const migratedMetadata = migratedRecord?.metadata;
+        const valid = !!migratedRecord &&
+          isMemoryRecordMetadata(migratedMetadata) &&
+          migratedMetadata.memoryId === candidate.id &&
+          migratedMetadata.scope === candidate.scope &&
+          (candidate.scope === "global" ? !migratedMetadata.projectId : migratedMetadata.projectId === options.projectId) &&
+          migratedRecord.content === candidate.content;
+        if (!valid) {
+          items.push({ id: candidate.id, scope: candidate.scope, status: "failed", reason: "canonical_write_verification_failed; legacy_record_preserved" });
+          continue;
+        }
+
+        if (candidate.sourceId !== targetId) rMemory.delete(candidate.sourceId);
+        items.push({ id: candidate.id, scope: candidate.scope, status: "migrated" });
+      } catch {
+        // The old record is intentionally left untouched if the new write fails.
+        items.push({ id: candidate.id, scope: candidate.scope, status: "failed", reason: "migration_write_failed; legacy_record_preserved" });
+      }
+    }
+
+    const migrated = items.filter(item => item.status === "migrated").length;
+    const failed = items.filter(item => item.status === "failed").length;
+    const skipped = items.filter(item => item.status === "conflict" || item.status === "skipped").length;
+    return { dryRun, scanned: records.length, candidates: candidates.length, migrated, skipped, failed, items };
+  }
+
+
+
+  async deleteAtomicScoped(options: {
+    id: string;
+    scope: "project" | "global";
+    projectId: string;
+  }): Promise<boolean> {
+    const rMemory = await getRMemory();
+    const record = this.findAtomicByScope(rMemory, options);
+    if (!record) return false;
+    rMemory.delete(record.storageId);
+    return true;
   }
 
   async deleteAtomic(options: { ids: string[] }): Promise<void> {
@@ -627,20 +1107,32 @@ export class MemoryClient {
     created_at: string | null;
     updated_at: string | null;
   }> {
-    const resolvedPath = path.join(globalDataDir, options.path);
     try {
-      if (fs.existsSync(resolvedPath)) {
-        const content = fs.readFileSync(resolvedPath, "utf-8");
-        const stat = fs.statSync(resolvedPath);
+      const resolvedPath = resolveScenarioPath(globalDataDir, options.path);
+      // Read through a descriptor, rejecting final-component symlinks where supported
+      // to reduce the gap between canonical-path validation and the actual read.
+      const noFollow = (fs.constants as any).O_NOFOLLOW || 0;
+      const descriptor = fs.openSync(resolvedPath, fs.constants.O_RDONLY | noFollow);
+      try {
+        const stat = fs.fstatSync(descriptor);
+        if (!stat.isFile()) throw new Error("Scenario target is not a regular file.");
+        const content = fs.readFileSync(descriptor, "utf-8");
         return {
           path: options.path,
           content,
           created_at: stat.birthtime.toISOString(),
           updated_at: stat.mtime.toISOString(),
         };
+      } finally {
+        fs.closeSync(descriptor);
       }
-    } catch (e) {
-      console.error(`Error reading scenario file ${options.path}:`, e);
+    } catch {
+      return {
+        path: options.path,
+        content: null,
+        created_at: null,
+        updated_at: null,
+      };
     }
     return {
       path: options.path,
@@ -701,6 +1193,21 @@ export function getRMemoryClient(timeoutMs = 3000): MemoryClient {
   return client;
 }
 
+/** Canonical versioned identity shared by memory writes, search, and automatic recall. */
+export function getRMemoryProjectId(cwd?: string): string {
+  const normalizedPath = getNormalizedProjectPath(cwd || process.cwd()).replace(/\\/g, "/");
+  const stablePath = process.platform === "win32" ? normalizedPath.toLowerCase() : normalizedPath;
+  return "p_" + createHash("sha256").update(stablePath).digest("hex").slice(0, 16);
+}
+
+/** Avoid collisions when projects intentionally reuse the same human-readable memory ID. */
+export function getRMemoryStorageId(id: string, metadata?: Record<string, any>): string {
+  if (metadata?.scope === "project" && typeof metadata.projectId === "string" && metadata.projectId.length > 0) {
+    return `${metadata.projectId}:${id}`;
+  }
+  return id;
+}
+
 export function getRMemorySessionKey(historyPath: string | null): string {
   const keySource = historyPath || process.cwd();
   return createHash("sha1").update(keySource).digest("hex").slice(0, 8);
@@ -714,6 +1221,49 @@ export async function isRmemoryActive(forceRefresh = false): Promise<boolean> {
 export function isRmemoryActiveSync(): boolean {
   if (rMemoryInitFailed) return false;
   return !!getSettings().enableRmemory;
+}
+
+function getSafeRMemoryError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/api.?key|401|403|unauthori[sz]ed|forbidden/i.test(message)) return "Embedding provider authentication or authorization failed.";
+  if (/embedding|embed|model|dimension|vector|pipeline/i.test(message)) return "Embedding model health check failed.";
+  if (/database|sqlite|sql|migration|file|index/i.test(message)) return "Memory index initialization or migration failed.";
+  return "RMemory initialization failed.";
+}
+
+/** Non-mutating, secret-safe snapshot for diagnostics and the rmemory_status tool. */
+export function getRMemoryDiagnostics(): {
+  enabled: boolean;
+  provider: "local" | "openai";
+  modelName: string;
+  dimensions: number;
+  indexReady: boolean;
+  initializationState: "ready" | "not_initialized" | "degraded";
+  migrationStatus: RMemoryMigrationStatus;
+  degraded: boolean;
+  retryAvailable: boolean;
+  error: string | null;
+} {
+  const settings = getSettings();
+  let info: ReturnType<typeof getActiveRMemoryEmbeddingInfo> | null = null;
+  try { info = getActiveRMemoryEmbeddingInfo(); } catch {}
+  const provider = info?.provider || (settings.rmemoryEmbeddingProvider === "openai" ? "openai" : "local");
+  const modelName = info?.modelName || settings.rmemoryEmbeddingModel || (provider === "openai" ? "text-embedding-3-small" : DEFAULT_LOCAL_EMBEDDING_MODEL);
+  const dimensions = info?.dimensions || settings.rmemoryEmbeddingDimensions || (modelName.toLowerCase().includes("nomic") ? 768 : 384);
+  const degraded = rMemoryInitFailed;
+  const indexReady = !!rMemoryInstance && !degraded;
+  return {
+    enabled: !!settings.enableRmemory,
+    provider,
+    modelName,
+    dimensions,
+    indexReady,
+    initializationState: degraded ? "degraded" : indexReady ? "ready" : "not_initialized",
+    migrationStatus: rMemoryMigrationStatus,
+    degraded,
+    retryAvailable: degraded,
+    error: rMemoryLastSafeError,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -739,13 +1289,26 @@ async function getSkillsIndex(): Promise<any> {
       device: "cpu",
     });
 
-    checkAndPerformDbMigration(skillsDataDir, "Xenova/all-MiniLM-L6-v2", provider.dimensions);
-
-    skillsIndexInstance = new RMemory({
-      dbPath,
-      collectionName: "skills",
-      embeddingProvider: provider,
-    });
+    const migration = checkAndPerformDbMigration(skillsDataDir, "Xenova/all-MiniLM-L6-v2", provider.dimensions, { deferCommit: true });
+    let candidate: any;
+    try {
+      candidate = new RMemory({ dbPath, collectionName: "skills", embeddingProvider: provider });
+      const probeVector = await provider.embedText("SuperAgent skills index initialization probe", "passage");
+      if (!Array.isArray(probeVector) || probeVector.length !== provider.dimensions || !probeVector.every((value: unknown) => typeof value === "number" && Number.isFinite(value))) {
+        throw new Error(`Skills embedding health check returned an invalid vector (expected ${provider.dimensions} finite dimensions).`);
+      }
+      const probeId = `__superagent_skills_probe_${process.pid}_${Date.now()}`;
+      await candidate.addMemory({ id: probeId, content: "SuperAgent skills index initialization probe", embedding: probeVector, metadata: { type: "internal_probe", internalProbe: true } });
+      candidate.delete(probeId);
+      migration?.commit();
+      skillsIndexInstance = candidate;
+    } catch (error) {
+      try { candidate?.close?.(); } catch {}
+      try { migration?.rollback(); } catch (rollbackError) {
+        throw new AggregateError([error, rollbackError], "Skills index initialization failed and migration rollback needs manual inspection.");
+      }
+      throw error;
+    }
   }
   return skillsIndexInstance;
 }

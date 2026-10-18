@@ -13,6 +13,7 @@ import { resetSelfDevCollector, resetSelfDevRuntimeMetrics, getSelfDevRuntimeMet
 import { SelfDevEventStore } from "../src/core/selfdev/eventStore.js";
 import { getHistoryDb } from "../src/core/storage/historyDb.js";
 import * as selfDevAgentModule from "../src/core/selfdev/selfdevAgent.js";
+import { queueTaskVerificationEvidence } from "../src/core/selfdev/taskEvidence.js";
 
 function makeAgent(workspace: string, sessionId: string): Agent {
   fs.mkdirSync(workspace, { recursive: true });
@@ -74,7 +75,7 @@ describe("Agent Selfdev lifecycle integration", () => {
     const workspace = path.join(tempHome, `workspace-success-${randomUUID()}`);
     const sessionId = `session-success-${randomUUID()}`;
     const agent = makeAgent(workspace, sessionId);
-    vi.spyOn(agent as any, "runAgentLoop").mockResolvedValue(undefined);
+    vi.spyOn(agent as any, "runAgentLoop").mockResolvedValue("completed");
 
     await agent.sendMessage("complete this lifecycle test");
     const events = await waitForWorkspaceEvents(workspace, 2);
@@ -85,10 +86,55 @@ describe("Agent Selfdev lifecycle integration", () => {
     await waitForDistillationToObserveSmallEventWindow();
   });
 
+  it("records an incomplete task honestly, leaves its checklist unchecked, and skips distillation", async () => {
+    const workspace = path.join(tempHome, `workspace-incomplete-${randomUUID()}`);
+    const sessionId = `session-incomplete-${randomUUID()}`;
+    const agent = makeAgent(workspace, sessionId);
+    agent.tier = "single";
+    vi.spyOn(agent as any, "runAgentLoop").mockResolvedValue("incomplete");
+    const distillSpy = vi.spyOn(selfDevAgentModule, "maybeAutoDistill");
+
+    await agent.sendMessage("incomplete lifecycle test");
+    const events = await waitForWorkspaceEvents(workspace, 2);
+
+    expect(events.map(event => event.kind)).toEqual(["task_started", "task_incomplete"]);
+    expect(fs.readFileSync(agent.getTaskFilePath(), "utf-8")).toContain("- [ ] incomplete lifecycle test");
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(distillSpy).not.toHaveBeenCalled();
+  });
+
+  it("links persisted test evidence to the exact task terminal event", async () => {
+    const workspace = path.join(tempHome, "workspace-evidence-" + randomUUID());
+    const sessionId = "session-evidence-" + randomUUID();
+    const agent = makeAgent(workspace, sessionId);
+    vi.spyOn(agent as any, "runAgentLoop").mockImplementation(async () => {
+      queueTaskVerificationEvidence(agent, {
+        kind: "test_result",
+        toolName: "bash",
+        commandFamily: "vitest",
+        exitCode: 0,
+      });
+      return "completed";
+    });
+
+    await agent.sendMessage("complete task with test evidence");
+    const events = await waitForWorkspaceEvents(workspace, 3);
+    const started = events.find(event => event.kind === "task_started");
+    const evidence = events.find(event => event.kind === "test_result");
+    const completed = events.find(event => event.kind === "task_completed");
+
+    expect(started?.payload?.taskId).toBeTruthy();
+    expect(evidence?.payload?.taskId).toBe(started?.payload?.taskId);
+    expect(completed?.payload?.taskId).toBe(started?.payload?.taskId);
+    expect(completed?.evidence).toContain(evidence?.id);
+    expect(evidence?.payload).toMatchObject({ commandFamily: "vitest", exitCode: 0, passed: true });
+    await waitForDistillationToObserveSmallEventWindow();
+  });
+
   it("does not await a slow Selfdev store write before resolving the main task", async () => {
     const workspace = path.join(tempHome, `workspace-slow-storage-${randomUUID()}`);
     const agent = makeAgent(workspace, `session-slow-storage-${randomUUID()}`);
-    vi.spyOn(agent as any, "runAgentLoop").mockResolvedValue(undefined);
+    vi.spyOn(agent as any, "runAgentLoop").mockResolvedValue("completed");
     let resolveWrite!: (recorded: boolean) => void;
     let writeResolved = false;
     const slowWrite = new Promise<boolean>(resolve => {
@@ -120,7 +166,8 @@ describe("Agent Selfdev lifecycle integration", () => {
 
     expect(events.map(event => event.kind)).toEqual(["task_started", "task_failed"]);
     expect(events.every(event => event.sessionId === events[0].sessionId && event.sessionId.length > 0)).toBe(true);
-    await waitForDistillationToObserveSmallEventWindow();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(getSelfDevRuntimeMetrics().distillationRuns).toBe(0);
   });
 
   it("records task_aborted on interruption and skips automatic distillation", async () => {
@@ -144,7 +191,7 @@ describe("Agent Selfdev lifecycle integration", () => {
     const workspace = path.join(tempHome, `workspace-storage-failure-${randomUUID()}`);
     const sessionId = `session-storage-failure-${randomUUID()}`;
     const agent = makeAgent(workspace, sessionId);
-    const loop = vi.spyOn(agent as any, "runAgentLoop").mockResolvedValue(undefined);
+    const loop = vi.spyOn(agent as any, "runAgentLoop").mockResolvedValue("completed");
     const db = getHistoryDb() as any;
     const escapedWorkspace = workspace.replace(/'/g, "''");
     const triggerName = `selfdev_fail_lifecycle_${randomUUID().replace(/-/g, "")}`;
@@ -187,7 +234,7 @@ describe("Agent Selfdev lifecycle integration", () => {
     const agentB = makeAgent(workspaceB, sessionB);
     for (const agent of [agentA, agentB]) {
       agent.isMultiAgent = true;
-      vi.spyOn(agent as any, "runAgentLoop").mockResolvedValue(undefined);
+      vi.spyOn(agent as any, "runAgentLoop").mockResolvedValue("completed");
     }
 
     await Promise.all([

@@ -45,6 +45,24 @@ describe("SelfDev Distiller", () => {
     expect(candidate.tags).toContain("fix_cycle");
   });
 
+  it("does not join a failure and success from different task IDs in the same session", () => {
+    const events: SelfDevEvent[] = [
+      {
+        id: "ev-task-a-failed", ts: 1000, sessionId: "sess-same", workspace,
+        kind: "test_result", summary: "Test command failed (vitest)", evidence: [], tags: ["test_result"],
+        payload: { taskId: "task-a", commandFamily: "vitest", exitCode: 1, passed: false }, redactionCount: 0,
+      },
+      {
+        id: "ev-task-b-passed", ts: 2000, sessionId: "sess-same", workspace,
+        kind: "test_result", summary: "Test command passed (vitest)", evidence: [], tags: ["test_result"],
+        payload: { taskId: "task-b", commandFamily: "vitest", exitCode: 0, passed: true }, redactionCount: 0,
+      },
+    ];
+
+    const result = distillEvents({ workspace, events });
+    expect(result.candidates).toHaveLength(0);
+  });
+
   it("distills user feedback into a candidate lesson", () => {
     const events: SelfDevEvent[] = [
       {

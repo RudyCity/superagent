@@ -3,6 +3,8 @@ import path from "path";
 import { Tool } from "./types.js";
 import { getRootConfigDir } from "../config/paths.js";
 import { getNormalizedProjectPath } from "./helpers.js";
+import { getRMemoryProjectId } from "../rmemoryUtil.js";
+import { createMemoryRecordMetadata } from "../memoryRecord.js";
 
 export interface SharedMemoryEntry {
   key: string;
@@ -138,10 +140,16 @@ export const saveSharedMemoryTool: Tool = {
         projectPath: scope === "project" ? projectPath : undefined,
       };
 
-      // Update existing or add new
-      const index = memories.findIndex(m => m.key.toLowerCase() === key.toLowerCase());
+      // Update only the same logical key within the same scope and canonical project.
+      // Reusing a key in another project must not overwrite that project's memory.
+      const index = memories.findIndex((m) => {
+        if (m.key.toLowerCase() !== key.toLowerCase() || (m.scope || "project") !== scope) return false;
+        if (scope === "global") return true;
+        if (!m.projectPath) return false; // ambiguous legacy rows are quarantined, not claimed by this project
+        return getNormalizedProjectPath(m.projectPath) === projectPath;
+      });
       if (index !== -1) {
-        memories[index] = newEntry;
+        memories[index] = { ...memories[index], ...newEntry };
       } else {
         memories.push(newEntry);
       }
@@ -177,18 +185,35 @@ export const saveSharedMemoryTool: Tool = {
           const { getRMemoryClient } = await import("../rmemoryUtil.js");
           const client = getRMemoryClient(500);
           
-          const scopeTag = scope === "global" ? "[global]" : `[project:${path.basename(projectPath)}]`;
-          
-          // 1. Update/save the new/updated entry
+          const projectId = getRMemoryProjectId(projectPath);
+          const scopeTag = scope === "global" ? "[global]" : `[project:${projectId}]`;
+          const now = new Date().toISOString();
+
+          // 1. Update/save the new/updated entry with a structured scope.
           await client.updateAtomic({
             id: `shared-memory-${key}`,
-            content: `[${source}] ${scopeTag} ${key}: ${value}`
+            content: `[shared-memory] [${source}] ${scopeTag} ${key}: ${value}`,
+            metadata: createMemoryRecordMetadata({
+              memoryId: `shared-memory-${key}`,
+              memoryType: "shared_memory",
+              scope,
+              projectId,
+              source: "save_shared_memory",
+              agentTier: currentAgent?.tier || source,
+              sessionId: currentAgent?.sessionId,
+              now,
+            }),
           });
 
-          // 2. Delete any pruned entries from RMemory
+          // 2. Delete only known, unambiguously scoped pruned entries from RMemory.
           if (prunedMemories.length > 0) {
-            const prunedIds = prunedMemories.map(m => `shared-memory-${m.key}`);
-            await client.deleteAtomic({ ids: prunedIds });
+            const prunedIds = prunedMemories.flatMap((memory) => {
+              const id = `shared-memory-${memory.key}`;
+              if (memory.scope === "global") return [id];
+              if (memory.scope === "project" && memory.projectPath) return [`${getRMemoryProjectId(memory.projectPath)}:${id}`];
+              return []; // Do not delete ambiguous legacy entries by a possibly shared physical ID.
+            });
+            if (prunedIds.length > 0) await client.deleteAtomic({ ids: prunedIds });
           }
         }
       } catch (tdbErr: any) {
@@ -246,16 +271,13 @@ export const readSharedMemoryTool: Tool = {
       }
 
       const filtered = memories.filter(m => {
-        // Scope check
-        if (filterScope === "global" && m.scope !== "global") return false;
-        if (filterScope === "project") {
-          if (m.scope === "global") return false;
-          if (m.projectPath && getNormalizedProjectPath(m.projectPath) !== activeProjectPath) return false;
-        }
-
-        // Workspace isolation for "all": keep global OR matching workspace projectPath
-        if (filterScope === "all" && m.scope !== "global") {
-          if (m.projectPath && getNormalizedProjectPath(m.projectPath) !== activeProjectPath) return false;
+        // Global records are explicitly cross-project; project records must bind to a known canonical path.
+        if (m.scope === "global") {
+          if (filterScope === "project") return false;
+        } else {
+          if (filterScope === "global") return false;
+          if (m.scope !== "project" || !m.projectPath) return false; // quarantine ambiguous legacy project rows
+          if (getNormalizedProjectPath(m.projectPath) !== activeProjectPath) return false;
         }
 
         // Query check

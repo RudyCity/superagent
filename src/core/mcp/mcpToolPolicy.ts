@@ -71,14 +71,13 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
 
 /** Tools that must never be discoverable or callable over the MCP interface. */
 export const DISABLED_MCP_TOOLS: ReadonlySet<string> = new Set([
-  // Agent execution/control is disabled from MCP exposure.
-  // These actions must only be performed through local SuperAgent runtime.
+  // Agent lifecycle/control stays local-only. External CLI delegation is
+  // exposed separately as a dangerous, workspace-scoped tool.
   "superagent_run_task",
   "superagent_send_message",
   "superagent_interrupt",
   "superagent_pause",
   "superagent_resume",
-  "superagent_cli_bridge",
   "superagent_invoke",
   "superagent_await",
   "superagent_merge",

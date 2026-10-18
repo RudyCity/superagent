@@ -25,9 +25,11 @@ import {
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { contentToString, Message } from "./conversation.js";
-import { getRMemoryClient, getRMemorySessionKey, isRmemoryActive } from "./rmemoryUtil.js";
-import { AsyncLocalStorage } from "async_hooks";
+import { getRMemoryClient, getRMemoryProjectId, getRMemorySessionKey, isRmemoryActive } from "./rmemoryUtil.js";
+import { agentLocalStorage } from "./agentLocalStorage.js";
+export { agentLocalStorage } from "./agentLocalStorage.js";
 import { allTasksCompleted, archiveCompletedTasks, getTaskHistoryPath } from "./taskChecklist.js";
+import { beginAgentTaskEvidence, finishAgentTaskEvidence } from "./selfdev/taskEvidence.js";
 import { createCheckpoint } from "./checkpoints.js";
 import { RealtimeAdvisor } from "./advisor.js";
 import { updateProcessActivity, appendProcessLog } from "./tools/state.js";
@@ -59,7 +61,7 @@ export {
   formatError
 };
 
-export const agentLocalStorage = new AsyncLocalStorage<Agent>();
+
 
 function isRetryableError(err: unknown): boolean {
   return isRetryableErrorHelper(err);
@@ -104,6 +106,9 @@ export class Agent {
   public allowSessionFileWriteOutOfBounds = false;
   public allowSessionEnvAccess = false;
   public allowSessionDangerous = false;
+  public disableAmbientYoloMode = false;
+  public restrictHeadlessTools = false;
+  public headlessAllowedTools = new Set<string>();
   public workspaceCache: any = null;
   private workspaceCacheNeedsUpdate: boolean = true;
   public disableWorkspaceDiscovery: boolean = !!process.env.VITEST;
@@ -310,6 +315,8 @@ export class Agent {
     await this.conversation.initContextManager({
       model: activeModelName,
       contextWindowLimit: modelLimit,
+      historyFilePath: this.getCurrentHistoryFilePath() || undefined,
+      projectId: getRMemoryProjectId(this.worktreePath || this.workingDirectory || process.cwd()),
       llmModel: this.getModel(),
       abortSignal: this.abortController?.signal,
     });
@@ -452,7 +459,7 @@ export class Agent {
     }
 
     if (!(await isRmemoryActive())) {
-      tools = tools.filter((t) => !t.name.startsWith("rmemory_"));
+      tools = tools.filter((t) => !t.name.startsWith("rmemory_") || t.name === "rmemory_status");
     }
 
     const { workspaceChainManager } = await import("./workspace/WorkspaceChainManager.js");
@@ -603,6 +610,12 @@ export class Agent {
 
     const taskSummary = typeof userInput === "string" ? userInput : "[multimodal message]";
     const taskStartedAt = Date.now();
+    const taskEvidenceContext = {
+      taskId: crypto.randomUUID(),
+      sessionId: this.sessionId || `session-${taskStartedAt}`,
+      workspace: this.workingDirectory || process.cwd(),
+    };
+    beginAgentTaskEvidence(this, taskEvidenceContext);
     const currentModelName = getTierModel(this.isMultiAgent ? "multi" : "single", this.tier);
     const taskFilePath = this.getTaskFilePath();
     const planFilePath = this.getPlanFilePath();
@@ -612,11 +625,12 @@ export class Agent {
     const selfDevStartPromise = import("./selfdev/selfdevAgent.js").then(({ recordSelfDevEvent }) =>
       recordSelfDevEvent({
         ts: taskStartedAt,
-        sessionId: this.sessionId,
-        workspace: this.workingDirectory || process.cwd(),
+        sessionId: taskEvidenceContext.sessionId,
+        workspace: taskEvidenceContext.workspace,
         kind: "task_started",
         summary: `Task started: ${taskSummary.slice(0, 200)}`,
         tags: [this.tier, this.isMultiAgent ? "multi" : "single"],
+        payload: { taskId: taskEvidenceContext.taskId },
       })
     ).catch(() => false);
 
@@ -643,7 +657,7 @@ export class Agent {
     });
 
     const signal = this.abortController?.signal;
-    let taskOutcome: "task_completed" | "task_failed" | "task_aborted" = "task_completed";
+    let taskOutcome: "task_completed" | "task_incomplete" | "task_failed" | "task_aborted" = "task_incomplete";
     let onAbort: (() => void) | undefined;
     const abortPromise = new Promise<never>((_, reject) => {
       onAbort = () => {
@@ -659,10 +673,11 @@ export class Agent {
     });
 
     try {
-      await Promise.race([
+      const loopOutcome = await Promise.race([
         agentLocalStorage.run(this, () => this.runAgentLoop()),
         abortPromise
       ]);
+      taskOutcome = loopOutcome === "completed" ? "task_completed" : "task_incomplete";
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
         taskOutcome = "task_aborted";
@@ -697,7 +712,8 @@ export class Agent {
             const content = fs.readFileSync(tf, "utf-8");
             const seedLine = `- [/] ${taskSummary.trim()}`;
             if (content.includes(seedLine)) {
-              fs.writeFileSync(tf, content.replace(seedLine, `- [x] ${taskSummary.trim()}`), "utf-8");
+              const checklistStatus = taskOutcome === "task_completed" ? "[x]" : "[ ]";
+              fs.writeFileSync(tf, content.replace(seedLine, `- ${checklistStatus} ${taskSummary.trim()}`), "utf-8");
             }
           }
         }
@@ -707,23 +723,28 @@ export class Agent {
       // user's task. Within the sidecar, wait for task_started before terminal
       // persistence, then distill only if the terminal event was recorded.
       void import("./selfdev/selfdevAgent.js").then(async ({ recordSelfDevEvent, maybeAutoDistill }) => {
-        const ws = this.workingDirectory || process.cwd();
+        const ws = taskEvidenceContext.workspace;
         await selfDevStartPromise;
+        const evidenceIds = await finishAgentTaskEvidence(this);
         const terminalRecorded = await recordSelfDevEvent({
           // Keep task history deterministically ordered even when a task finishes
           // within the same wall-clock millisecond as it started.
           ts: Math.max(Date.now(), taskStartedAt + 1),
-          sessionId: this.sessionId,
+          sessionId: taskEvidenceContext.sessionId,
           workspace: ws,
           kind: taskOutcome,
           summary: taskOutcome === "task_completed"
             ? `Task completed: ${taskSummary.slice(0, 200)}`
-            : taskOutcome === "task_failed"
-              ? `Task failed: ${taskSummary.slice(0, 200)}`
-              : `Task interrupted: ${taskSummary.slice(0, 200)}`,
+            : taskOutcome === "task_incomplete"
+              ? `Task incomplete: ${taskSummary.slice(0, 200)}`
+              : taskOutcome === "task_failed"
+                ? `Task failed: ${taskSummary.slice(0, 200)}`
+                : `Task interrupted: ${taskSummary.slice(0, 200)}`,
           tags: [this.tier, this.isMultiAgent ? "multi" : "single", taskOutcome],
+          evidence: evidenceIds,
+          payload: { taskId: taskEvidenceContext.taskId, outcome: taskOutcome },
         });
-        if (terminalRecorded && taskOutcome !== "task_aborted") {
+        if (terminalRecorded && taskOutcome === "task_completed") {
           void maybeAutoDistill(ws).catch(() => {});
         }
       }).catch(() => {
@@ -749,7 +770,7 @@ export class Agent {
   }
 
 
-  private async runAgentLoop(): Promise<void> {
+  private async runAgentLoop(): Promise<"completed" | "incomplete"> {
     this.advisor.reset();
     // Sync advisor thresholds/flags from live config so runtime changes take effect
     this.advisor.syncSettings(getSettings());
@@ -757,6 +778,9 @@ export class Agent {
     const activeGoal = this.goalMode;
     const isGoalMode = !!activeGoal;
     let goalStatus: Extract<AgentEvent, { type: "goal_done" }>["status"] = "maxed";
+    // Fail closed: hitting a limit, waiting for plan approval, or stopping without
+    // an explicit terminal iteration is not a verified task completion.
+    let completion: "completed" | "incomplete" = "incomplete";
     const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 500);
     const maxIterations = isGoalMode ? this.goalMaxIterations : defaultMax;
     const maxIterationsStr = maxIterations === Infinity ? "unlimited" : maxIterations.toString();
@@ -782,6 +806,11 @@ export class Agent {
         const iteration = await LoopIterationProcessor.processIteration(this, i, maxIterations, signal);
         if (iteration.shouldBreak) {
           goalStatus = iteration.goalStatus ?? "incomplete";
+          const terminalError = goalStatus === "error" || goalStatus === "aborted";
+          completion = !terminalError && !signal?.aborted && this.planState !== "PLANNING_PENDING"
+            && (!isGoalMode || goalStatus === "complete")
+            ? "completed"
+            : "incomplete";
           break;
         }
         if (i === maxIterations - 1) {
@@ -823,8 +852,11 @@ export class Agent {
         ? "aborted" : "error";
       throw error;
     } finally {
+      if (signal?.aborted) {
+        goalStatus = "aborted";
+        completion = "incomplete";
+      }
       if (isGoalMode) {
-        if (signal?.aborted) goalStatus = "aborted";
         this.goalMode = null;
         this.goalMaxIterations = DEFAULT_GOAL_MAX_ITERATIONS;
       }
@@ -859,6 +891,7 @@ export class Agent {
         });
       }
     }
+    return completion;
   }
 
   /**

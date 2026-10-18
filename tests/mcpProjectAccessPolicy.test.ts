@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   getProjectAccessPolicyPath,
+  getProjectCapabilityForTool,
   getProjectPrincipalKey,
   grantProjectAccess,
   hasProjectAccess,
@@ -26,6 +27,9 @@ afterEach(() => {
 });
 
 describe("MCP project access policy", () => {
+  it("requires execute capability for external CLI bridge calls", () => {
+    expect(getProjectCapabilityForTool("superagent_cli_bridge")).toBe("execute");
+  });
   it("starts with no grants and uses a private default policy path", () => {
     const policyPath = fixture();
     expect(getProjectAccessPolicyPath(policyPath)).toBe(path.resolve(policyPath));

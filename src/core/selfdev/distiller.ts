@@ -162,13 +162,20 @@ export function distillEvents(options: DistillOptions): DistillResult {
 
     if (isFailure) {
       // Find subsequent success in the same session or related commands
+      const currentTaskId = typeof current.payload?.taskId === "string" ? current.payload.taskId : undefined;
       const subsequentSuccess = sorted.slice(i + 1).find(
-        ev =>
-          ev.sessionId === current.sessionId &&
+        ev => {
+          const candidateTaskId = typeof ev.payload?.taskId === "string" ? ev.payload.taskId : undefined;
+          // New records carry task IDs: never combine evidence from two different
+          // tasks in one long-lived session. Legacy records without IDs retain
+          // the historic same-session behavior for backward compatibility.
+          const sameTask = !currentTaskId || !candidateTaskId || currentTaskId === candidateTaskId;
+          return ev.sessionId === current.sessionId && sameTask &&
           (ev.kind === "task_completed" ||
             (ev.kind === "test_result" && (ev.payload?.failed === 0 || ev.payload?.passed === true)) ||
             (ev.kind === "build_result" && ev.payload?.success === true) ||
-            (ev.kind === "command_executed" && ev.payload?.exitCode === 0))
+            (ev.kind === "command_executed" && ev.payload?.exitCode === 0));
+        }
       );
 
       if (subsequentSuccess) {

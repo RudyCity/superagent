@@ -65,6 +65,7 @@ export const SELFDEV_LIMITS = Object.freeze({
 export const SELFDEV_EVENT_KINDS = [
   "task_started",
   "task_completed",
+  "task_incomplete",
   "task_failed",
   "task_aborted",
   "command_executed",

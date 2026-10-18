@@ -97,6 +97,28 @@ describe("ToolExecutor parallel dispatch", () => {
     expect(results.map((result) => result.toolCallId)).toEqual(["read-a", "read-b", "read-c"]);
   });
 
+  it("denies a headless tool that is not in the explicit per-job allowlist", async () => {
+    const agent = makeAgent(false) as any;
+    agent.restrictHeadlessTools = true;
+    agent.headlessAllowedTools = new Set(["read"]);
+    const permissions = await import("../src/core/permissions.js");
+    vi.mocked(permissions.executeToolCall).mockClear();
+
+    const results = await ToolExecutor.executeTools(
+      agent,
+      [{ id: "denied-command", name: "run_command", args: { command: "dangerous command" } } as ToolCall],
+      [],
+      [],
+      true,
+      "test prompt",
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].isError).toBe(true);
+    expect(String(results[0].result)).toContain("not explicitly allowlisted");
+    expect(permissions.executeToolCall).not.toHaveBeenCalled();
+  });
+
   it("keeps mutating and shell calls out of the concurrent dispatch path", () => {
     expect(shouldParallelizeToolCalls([makeToolCall("read-a"), makeToolCall("write-a", "write_to_file")])).toBe(false);
     expect(shouldParallelizeToolCalls([makeToolCall("shell-a", "run_command"), makeToolCall("shell-b", "run_command")])).toBe(false);

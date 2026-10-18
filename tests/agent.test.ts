@@ -557,6 +557,26 @@ describe("Goal completion response recognition", () => {
   });
 });
 
+describe("Agent loop task outcome classification", () => {
+  it.each([
+    { name: "ordinary final answer", planState: "IDLE" as const, iteration: { shouldBreak: true, goalStatus: "incomplete" as const }, expected: "completed" },
+    { name: "pending plan approval", planState: "PLANNING_PENDING" as const, iteration: { shouldBreak: true, goalStatus: "incomplete" as const }, expected: "incomplete" },
+    { name: "advisor terminal error", planState: "IDLE" as const, iteration: { shouldBreak: true, goalStatus: "error" as const }, expected: "incomplete" },
+  ])("classifies $name as $expected", async ({ planState, iteration, expected }) => {
+    const { LoopIterationProcessor } = await import("../src/core/agent/LoopIterationProcessor.js");
+    const processIteration = vi.spyOn(LoopIterationProcessor, "processIteration").mockResolvedValue(iteration);
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.planState = planState;
+    const loop = agent as unknown as { runAgentLoop(): Promise<"completed" | "incomplete"> };
+    try {
+      await expect(loop.runAgentLoop()).resolves.toBe(expected);
+    } finally {
+      processIteration.mockRestore();
+    }
+  });
+});
+
 describe("Agent – goal lifecycle", () => {
   it.each([
     ["complete", { shouldBreak: true, goalStatus: "complete" }],
@@ -578,7 +598,7 @@ describe("Agent – goal lifecycle", () => {
     }, onPermission, vi.fn().mockResolvedValue("No, stop"));
     agent.goalMode = "test objective";
     agent.goalMaxIterations = 1;
-    const loop = agent as unknown as { runAgentLoop(): Promise<void> };
+    const loop = agent as unknown as { runAgentLoop(): Promise<"completed" | "incomplete"> };
     try {
       await loop.runAgentLoop();
       expect(events).toEqual([expect.objectContaining({ goal: "test objective", status })]);
@@ -640,12 +660,12 @@ describe("Agent – goal lifecycle", () => {
   });
 
   it.each([
-    { status: "complete", result: { shouldBreak: true, goalStatus: "complete" as const }, calls: 1 },
-    { status: "incomplete", result: { shouldBreak: true }, calls: 1 },
-    { status: "aborted", result: { shouldBreak: true, goalStatus: "aborted" as const }, calls: 1 },
-    { status: "maxed", result: { shouldBreak: false }, calls: 11 },
-    { status: "error", result: { shouldBreak: false }, calls: 1 },
-  ])("reports $status with clean state before notifying consumers", async ({ status, result, calls }) => {
+    { status: "complete", result: { shouldBreak: true, goalStatus: "complete" as const }, calls: 1, outcome: "completed" },
+    { status: "incomplete", result: { shouldBreak: true }, calls: 1, outcome: "incomplete" },
+    { status: "aborted", result: { shouldBreak: true, goalStatus: "aborted" as const }, calls: 1, outcome: "incomplete" },
+    { status: "maxed", result: { shouldBreak: false }, calls: 11, outcome: "incomplete" },
+    { status: "error", result: { shouldBreak: false }, calls: 1, outcome: undefined },
+  ])("reports $status with clean state before notifying consumers", async ({ status, result, calls, outcome }) => {
     const { LoopIterationProcessor } = await import("../src/core/agent/LoopIterationProcessor.js");
     const iteration = vi.spyOn(LoopIterationProcessor, "processIteration");
     const failure = new Error("Iteration failed");
@@ -662,10 +682,13 @@ describe("Agent – goal lifecycle", () => {
     }, onPermission, onQuestion);
     agent.goalMode = "verify lifecycle";
     agent.goalMaxIterations = 1;
-    const loop = agent as unknown as { runAgentLoop(): Promise<void> };
+    const loop = agent as unknown as { runAgentLoop(): Promise<"completed" | "incomplete"> };
     try {
-      if (status === "error") await expect(loop.runAgentLoop()).rejects.toBe(failure);
-      else await loop.runAgentLoop();
+      if (status === "error") {
+        await expect(loop.runAgentLoop()).rejects.toBe(failure);
+      } else {
+        await expect(loop.runAgentLoop()).resolves.toBe(outcome);
+      }
       expect(iteration).toHaveBeenCalledTimes(calls);
       expect(events).toEqual([expect.objectContaining({ type: "goal_done", goal: "verify lifecycle", status })]);
     } finally {

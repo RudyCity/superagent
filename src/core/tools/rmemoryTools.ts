@@ -1,7 +1,6 @@
-import path from "path";
 import { Tool } from "./types.js";
-import { getRMemoryClient } from "../rmemoryUtil.js";
-import { getNormalizedProjectPath } from "./helpers.js";
+import { getRMemoryClient, getRMemoryDiagnostics, getRMemoryProjectId } from "../rmemoryUtil.js";
+import { createMemoryRecordMetadata } from "../memoryRecord.js";
 
 // Helper to get MemoryClient using the active global settings
 function getClient() {
@@ -11,6 +10,58 @@ function getClient() {
 function formatError(err: unknown): string {
   return (err as Error).message || String(err);
 }
+
+function safeMemoryMetadata(metadata: Record<string, any> = {}): Record<string, unknown> {
+  const provenance = metadata.provenance && typeof metadata.provenance === "object" ? metadata.provenance as Record<string, unknown> : {};
+  return {
+    ...(metadata.schemaVersion !== undefined ? { schemaVersion: metadata.schemaVersion } : {}),
+    ...(metadata.memoryId ? { memoryId: String(metadata.memoryId).slice(0, 160) } : {}),
+    ...(metadata.memoryType ? { memoryType: metadata.memoryType } : {}),
+    ...(metadata.scope ? { scope: metadata.scope } : {}),
+    ...(metadata.projectId ? { projectId: metadata.projectId } : {}),
+    ...(metadata.sessionId ? { sessionId: String(metadata.sessionId).slice(0, 128) } : {}),
+    ...(metadata.taskId ? { taskId: String(metadata.taskId).slice(0, 128) } : {}),
+    ...(metadata.createdAt ? { createdAt: metadata.createdAt } : {}),
+    ...(metadata.updatedAt ? { updatedAt: metadata.updatedAt } : {}),
+    ...(metadata.validationStatus ? { validationStatus: metadata.validationStatus } : {}),
+    ...(Array.isArray(metadata.evidence) ? { evidence: metadata.evidence.slice(0, 10).flatMap((entry: unknown) => {
+      if (!entry || typeof entry !== "object") return [];
+      const item = entry as Record<string, unknown>;
+      if (typeof item.id !== "string" || typeof item.kind !== "string") return [];
+      return [{
+        id: item.id.slice(0, 160),
+        kind: item.kind.slice(0, 24),
+        ...(typeof item.status === "string" ? { status: item.status.slice(0, 32) } : {}),
+      }];
+    }) } : {}),
+    ...(provenance.source || provenance.agentTier || provenance.sessionId || provenance.taskId ? { provenance: {
+      ...(provenance.source ? { source: provenance.source } : {}),
+      ...(provenance.agentTier ? { agentTier: provenance.agentTier } : {}),
+      ...(provenance.sessionId ? { sessionId: provenance.sessionId } : {}),
+      ...(provenance.taskId ? { taskId: provenance.taskId } : {}),
+    } } : {}),
+  };
+}
+
+const canManagePersistentMemory = (tier: unknown): boolean => tier === "master" || tier === "superagent" || tier === "single";
+
+export const rmemoryStatusTool: Tool = {
+  name: "rmemory_status",
+  description: "Read-only diagnostic for the configured RMemory provider, embedding model/dimensions, local index readiness, migration state, and safe degraded-mode status. Never returns API keys or filesystem paths.",
+  parameters: { type: "object", properties: {}, required: [] },
+  async execute() {
+    try {
+      return JSON.stringify(getRMemoryDiagnostics(), null, 2);
+    } catch {
+      return JSON.stringify({
+        initializationState: "degraded",
+        degraded: true,
+        retryAvailable: true,
+        error: "RMemory diagnostics could not be read safely.",
+      }, null, 2);
+    }
+  },
+};
 
 export const rmemorySearchTool: Tool = {
   name: "rmemory_search",
@@ -28,7 +79,7 @@ export const rmemorySearchTool: Tool = {
       },
       projectOnly: {
         type: "boolean",
-        description: "If true, restricts search results to the active workspace project.",
+        description: "Compatibility field. Search always returns only the active workspace project's memories plus explicitly global memories; it never expands to other projects.",
       },
     },
     required: ["query"],
@@ -36,41 +87,146 @@ export const rmemorySearchTool: Tool = {
   async execute(args, cwd) {
     const query = String(args.query || "");
     const limit = Number(args.limit) || 5;
-    const projectOnly = Boolean(args.projectOnly);
-    const activeProjectPath = getNormalizedProjectPath(cwd || process.cwd());
-    const projectName = path.basename(activeProjectPath);
+    const projectId = getRMemoryProjectId(cwd);
     const client = getClient();
 
     try {
-      const searchQuery = projectOnly ? `[project:${projectName}] ${query}` : query;
-      const res = await client.searchAtomic({ query: searchQuery, limit: limit * 2 });
+      const res = await client.searchAtomic({ query, limit: limit * 2, projectId });
       if (!res.items || res.items.length === 0) {
         return "No memories found matching the query.";
       }
 
-      let items = res.items;
-      if (projectOnly) {
-        items = items.filter((item) => item.content.includes(`[project:${projectName}]`) || item.content.includes("[global]"));
-      } else {
-        items.sort((a, b) => {
-          const aIsProject = a.content.includes(`[project:${projectName}]`) || a.content.includes("[global]");
-          const bIsProject = b.content.includes(`[project:${projectName}]`) || b.content.includes("[global]");
-          if (aIsProject && !bIsProject) return -1;
-          if (!aIsProject && bIsProject) return 1;
-          return 0;
-        });
-      }
-
-      items = items.slice(0, limit);
+      const items = res.items.filter((item) => {
+        const scope = item.metadata?.scope;
+        if (scope === "global" || (!scope && item.content.startsWith("[global]"))) return true;
+        if (scope === "project" && item.metadata?.projectId === projectId) return true;
+        return !scope && item.content.startsWith(`[project:${projectId}]`);
+      }).slice(0, limit);
       if (items.length === 0) {
         return "No workspace memories found matching the query.";
       }
 
       return items
-        .map((item) => `- [${item.type || "memory"}] ${item.content}`)
+        .map((item) => {
+          const metadata = item.metadata || {};
+          const provenance = metadata.provenance && typeof metadata.provenance === "object"
+            ? metadata.provenance as Record<string, unknown>
+            : {};
+          const details = [
+            metadata.scope ? `scope=${String(metadata.scope)}` : undefined,
+            metadata.projectId ? `projectId=${String(metadata.projectId)}` : undefined,
+            metadata.schemaVersion ? `schemaVersion=${String(metadata.schemaVersion)}` : undefined,
+            metadata.validationStatus ? `validation=${String(metadata.validationStatus)}` : undefined,
+            metadata.updatedAt ? `updatedAt=${String(metadata.updatedAt)}` : undefined,
+            provenance.source ? `source=${String(provenance.source)}` : undefined,
+          ].filter(Boolean).join(", ");
+          return `- [${item.type || "memory"}] ${item.content}${details ? ` (metadata: ${details})` : ""}`;
+        })
         .join("\n");
     } catch (err) {
       return `Memory search failed: ${formatError(err)}. Make sure the RMemory system is initialized.`;
+    }
+  },
+};
+
+export const rmemoryInspectTool: Tool = {
+  name: "rmemory_inspect",
+  description: "Inspect one atomic memory by logical ID in the active project or explicit global scope. Defaults to active project and never returns another project's records.",
+  parameters: { type: "object", properties: {
+    id: { type: "string", description: "Logical memory ID to inspect." },
+    scope: { type: "string", enum: ["project", "global"], description: "Memory scope; defaults to active project." },
+  }, required: ["id"] },
+  async execute(args, cwd) {
+    const id = String(args.id || "").trim();
+    if (!id) return "Error: memory id is required.";
+    const scope = args.scope === "global" ? "global" : "project";
+    try {
+      const item = await getClient().inspectAtomic({ id, scope, projectId: getRMemoryProjectId(cwd) });
+      if (!item) return `No ${scope}-scope memory found for ID: ${id}`;
+      return JSON.stringify({ id: item.id, content: item.content, scope: item.scope, metadata: safeMemoryMetadata(item.metadata) }, null, 2);
+    } catch (err) { return `Memory inspection failed: ${formatError(err)}.`; }
+  },
+};
+
+export const rmemoryExportTool: Tool = {
+  name: "rmemory_export",
+  description: "Export a bounded JSON snapshot of active-project atomic memories and explicitly global memories. Excludes other projects, raw conversations, skills and vector embeddings.",
+  parameters: { type: "object", properties: {
+    limit: { type: "number", description: "Maximum records (default 100, maximum 500)." },
+    includeGlobal: { type: "boolean", description: "Include global memories (default true)." },
+  }, required: [] },
+  async execute(args, cwd) {
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+    if (!canManagePersistentMemory(currentAgent?.tier)) return "Error: rmemory_export is restricted to Master, Superagent, and single-agent tiers.";
+    try {
+      const snapshot = await getClient().exportAtomic({ projectId: getRMemoryProjectId(cwd), includeGlobal: args.includeGlobal !== false, limit: Number(args.limit) || 100 });
+      return JSON.stringify({ ...snapshot, items: snapshot.items.map((item) => ({ id: item.id, content: item.content, scope: item.scope, metadata: safeMemoryMetadata(item.metadata) })) }, null, 2);
+    } catch (err) { return `Memory export failed: ${formatError(err)}.`; }
+  },
+};
+
+export const rmemoryDeleteTool: Tool = {
+  name: "rmemory_delete",
+  description: "Delete one atomic memory in project or explicit global scope. Requires interactive owner confirmation; headless/non-interactive calls fail closed.",
+  parameters: { type: "object", properties: {
+    id: { type: "string", description: "Logical memory ID to delete." },
+    scope: { type: "string", enum: ["project", "global"], description: "Memory scope; defaults to active project." },
+  }, required: ["id"] },
+  async execute(args, cwd) {
+    const id = String(args.id || "").trim();
+    if (!id) return "Error: memory id is required.";
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+    if (!canManagePersistentMemory(currentAgent?.tier)) return "Error: rmemory_delete is restricted to Master, Superagent, and single-agent tiers.";
+    const askQuestion = (currentAgent as any)?.onQuestion;
+    if (typeof askQuestion !== "function") return "Error: deletion requires an interactive owner confirmation; no record was changed.";
+    const scope = args.scope === "global" ? "global" : "project";
+    let answer: unknown;
+    try { answer = await askQuestion(`Permanently delete ${scope}-scope memory "${id}"?`, ["Yes", "No"]); }
+    catch { return "Error: deletion confirmation was unavailable; no record was changed."; }
+    if (answer !== "Yes") return "Memory deletion cancelled; no record was changed.";
+    try {
+      const deleted = await getClient().deleteAtomicScoped({ id, scope, projectId: getRMemoryProjectId(cwd) });
+      return deleted ? `Deleted ${scope}-scope memory "${id}".` : `No ${scope}-scope memory found for ID: ${id}; nothing was deleted.`;
+    } catch (err) { return `Memory deletion failed: ${formatError(err)}.`; }
+  },
+};
+export const rmemoryMigrateLegacyTool: Tool = {
+  name: "rmemory_migrate_legacy",
+  description: "Preview or migrate legacy atomic memories only when an exact [global] or [project:<canonical-project-id>] prefix proves scope. Read-only preview is the default; changes require interactive owner confirmation. Ambiguous records and conflicts are preserved.",
+  parameters: { type: "object", properties: {
+    dryRun: { type: "boolean", description: "Preview only (default true). Set false to request a confirmed migration." },
+    includeGlobal: { type: "boolean", description: "Include clearly marked global memories (default true)." },
+    limit: { type: "number", description: "Maximum candidate records to inspect (default 100, maximum 500)." },
+  }, required: [] },
+  async execute(args, cwd) {
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+    if (!canManagePersistentMemory(currentAgent?.tier)) return "Error: legacy memory migration is restricted to Master, Superagent, and single-agent tiers.";
+    const options = { projectId: getRMemoryProjectId(cwd), includeGlobal: args.includeGlobal !== false, limit: Number(args.limit) || 100 };
+    try {
+      if (args.dryRun !== false) {
+        const preview = await getClient().migrateLegacyAtomicMemories({ ...options, dryRun: true });
+        return JSON.stringify({ mode: "preview_only", ...preview }, null, 2);
+      }
+
+      const preview = await getClient().migrateLegacyAtomicMemories({ ...options, dryRun: true });
+      if (preview.candidates === 0) return JSON.stringify({ mode: "migration", ...preview, message: "No confidently scoped legacy records need migration." }, null, 2);
+      const askQuestion = (currentAgent as any)?.onQuestion;
+      if (typeof askQuestion !== "function") return "Error: migration requires interactive owner confirmation; no records were changed.";
+      let answer: unknown;
+      try {
+        answer = await askQuestion("Migrate up to " + preview.candidates + " legacy memory record(s) for the active project? Ambiguous records and conflicts will be preserved.", ["Yes", "No"]);
+      } catch {
+        return "Error: migration confirmation was unavailable; no records were changed.";
+      }
+      if (answer !== "Yes") return "Legacy memory migration cancelled; no records were changed.";
+
+      const result = await getClient().migrateLegacyAtomicMemories({ ...options, dryRun: false });
+      return JSON.stringify({ mode: "migration", ...result }, null, 2);
+    } catch (err) {
+      return "Legacy memory migration failed: " + formatError(err) + ".";
     }
   },
 };
@@ -91,7 +247,7 @@ export const rmemoryConversationSearchTool: Tool = {
       },
       projectOnly: {
         type: "boolean",
-        description: "If true, restricts conversation search results to the active workspace project.",
+        description: "Defaults to true and restricts search to the active workspace project. Set false only when you explicitly need conversation history across projects.",
       },
     },
     required: ["query"],
@@ -99,29 +255,19 @@ export const rmemoryConversationSearchTool: Tool = {
   async execute(args, cwd) {
     const query = String(args.query || "");
     const limit = Number(args.limit) || 5;
-    const projectOnly = Boolean(args.projectOnly);
-    const activeProjectPath = getNormalizedProjectPath(cwd || process.cwd());
-    const projectName = path.basename(activeProjectPath);
+    const projectOnly = args.projectOnly !== false;
+    const projectId = getRMemoryProjectId(cwd);
     const client = getClient();
 
     try {
-      const searchQuery = projectOnly ? `${projectName} ${query}` : query;
-      const res = await client.searchConversation({ query: searchQuery, limit: limit * 2 });
+      const res = await client.searchConversation({ query, limit: limit * 2, ...(projectOnly ? { projectId } : {}) });
       if (!res.messages || res.messages.length === 0) {
         return "No matching conversation history found.";
       }
 
       let messages = res.messages;
       if (projectOnly) {
-        messages = messages.filter((m) => m.content.toLowerCase().includes(projectName.toLowerCase()));
-      } else {
-        messages.sort((a, b) => {
-          const aMatch = a.content.toLowerCase().includes(projectName.toLowerCase());
-          const bMatch = b.content.toLowerCase().includes(projectName.toLowerCase());
-          if (aMatch && !bMatch) return -1;
-          if (!aMatch && bMatch) return 1;
-          return 0;
-        });
+        messages = messages.filter((message) => message.project_id === projectId);
       }
 
       messages = messages.slice(0, limit);
@@ -215,18 +361,29 @@ export const rmemorySaveTool: Tool = {
       currentAgent.tier !== "superagent" &&
       currentAgent.tier !== "single"
     ) {
-      return `Error: rmemory_save is restricted to Master Agent and Superagent tiers. Current tier: ${currentAgent.tier}. Return findings to your parent Superagent and let it decide what to persist.`;
+      return `Error: rmemory_save is restricted to Master, Superagent, and single-agent tiers. Current tier: ${currentAgent.tier}. Return findings to your parent Superagent and let it decide what to persist.`;
     }
 
     const client = getClient();
 
-    const scopePrefix = scope === "global" ? "[global]" : `[project]`;
-    const content = rawContent.startsWith("[global]") || rawContent.startsWith("[project")
-      ? rawContent
-      : `${scopePrefix} ${rawContent}`;
+    const projectId = getRMemoryProjectId(cwd);
+    const scopePrefix = scope === "global" ? "[global]" : `[project:${projectId}]`;
+    const contentWithoutCallerScope = rawContent.replace(/^\[(?:global|project(?::[^\]]+)?)\]\s*/i, "");
+    const content = `${scopePrefix} ${contentWithoutCallerScope}`;
 
     try {
-      const res = await client.updateAtomic({ id, content });
+      const now = new Date().toISOString();
+      const metadata = createMemoryRecordMetadata({
+        memoryId: id,
+        memoryType: type || "fact",
+        scope,
+        projectId,
+        source: "rmemory_save",
+        agentTier: currentAgent?.tier || "unknown",
+        sessionId: currentAgent?.sessionId,
+        now,
+      });
+      const res = await client.updateAtomic({ id, content, metadata });
       return `Memory saved successfully (${scope} scope). ID: ${res.id}, updated at: ${res.updated_at}`;
     } catch (err) {
       return `Failed to save memory: ${formatError(err)}. Make sure RMemory is initialized.`;
@@ -256,7 +413,7 @@ export const rmemoryConversationAddTool: Tool = {
     },
     required: ["session_id", "role", "content"],
   },
-  async execute(args) {
+  async execute(args, cwd) {
     const sessionId = String(args.session_id || "");
     const role = String(args.role || "") as "user" | "assistant" | "system";
     const rawContent = String(args.content || "").trim();
@@ -275,7 +432,7 @@ export const rmemoryConversationAddTool: Tool = {
       currentAgent.tier !== "superagent" &&
       currentAgent.tier !== "single"
     ) {
-      return `Error: rmemory_conversation_add is restricted to Master Agent and Superagent tiers. Current tier: ${currentAgent.tier}.`;
+      return `Error: rmemory_conversation_add is restricted to Master, Superagent, and single-agent tiers. Current tier: ${currentAgent.tier}.`;
     }
 
     const client = getClient();
@@ -283,6 +440,7 @@ export const rmemoryConversationAddTool: Tool = {
     try {
       const res = await client.addConversation({
         session_id: sessionId,
+        projectId: getRMemoryProjectId(cwd),
         messages: [{ role, content, timestamp: new Date().toISOString() }],
       });
       return `Conversation message added. Accepted IDs: ${res.accepted_ids.join(", ")}. Total messages in session: ${res.total_count}`;

@@ -19,6 +19,14 @@ import type { QuestionItem } from "./AgentEvents.js";
 import type { Agent } from "../agent.js";
 import { mapConcurrentOrdered } from "../concurrency.js";
 
+function isAgentYoloMode(agent: Agent): boolean {
+  return !agent.disableAmbientYoloMode && isYoloMode();
+}
+
+function isAgentFullYoloMode(agent: Agent): boolean {
+  return !agent.disableAmbientYoloMode && isFullYoloMode();
+}
+
 /**
  * These tools are read-only and independent by contract. Calls from the same
  * model turn may run concurrently in both single-agent and multi-agent modes.
@@ -174,7 +182,7 @@ export class ToolExecutor {
     } catch {}
 
     // Deduplicate autoCheckpoint: run once per batch if any tool is modifying
-    const hasModifyingTool = toolCalls.some(tc => MODIFYING_TOOLS.includes(tc.name));
+    const hasModifyingTool = toolCalls.some(tc => MODIFYING_TOOLS.includes(tc.name) && (!agent.restrictHeadlessTools || agent.headlessAllowedTools.has(tc.name)));
     if (hasModifyingTool) {
       (agent as any).autoCheckpoint("Pre-edit");
     }
@@ -188,6 +196,18 @@ export class ToolExecutor {
       ToolExecutor.normalizeToolCallArgs(tc);
       const description = getToolDescription(tc);
       agent.onEvent({ type: "tool_start", toolCall: tc, description });
+
+      if (agent.restrictHeadlessTools && !agent.headlessAllowedTools.has(tc.name)) {
+        const denied: ToolResult = {
+          toolCallId: tc.id,
+          name: tc.name,
+          result: `Headless job denied tool "${tc.name}" because it is not explicitly allowlisted for this job.`,
+          isError: true,
+        };
+        toolResults.push(denied);
+        agent.onEvent({ type: "tool_end", toolResult: denied, description, toolCall: tc });
+        continue;
+      }
 
       // Legacy direct single-file mutation tools stay in source for compatibility,
       // but are disabled in both modes. All file operations must use batch args.
@@ -439,7 +459,7 @@ export class ToolExecutor {
         const isPlanFile = !!resolvedFilePath && canonicalTarget(resolvedFilePath) === canonicalTarget(planFilePath);
         const isTaskFile = !!resolvedFilePath && canonicalTarget(resolvedFilePath) === canonicalTarget(taskFilePath);
         const isWalkthroughFile = !!resolvedFilePath && canonicalTarget(resolvedFilePath) === canonicalTarget(walkthroughFilePath);
-        if (isYoloMode() && (isFullYoloMode() || isToolCallWithinYoloScope(tc, effectiveWsForMod))) {
+        if (isAgentYoloMode(agent) && (isAgentFullYoloMode(agent) || isToolCallWithinYoloScope(tc, effectiveWsForMod))) {
           agent.simpleTaskApproved = true;
         }
 
@@ -697,7 +717,7 @@ export class ToolExecutor {
 
         const effectiveWorkspace = agent.worktreePath || agent.workingDirectory;
         const isModelCfgForCmd = isModelConfigAccess(tc, effectiveWorkspace);
-        const withinYoloForCommand = isFullYoloMode() || (isYoloMode() && isToolCallWithinYoloScope(tc, effectiveWorkspace) && !isModelCfgForCmd);
+        const withinYoloForCommand = isAgentFullYoloMode(agent) || (isAgentYoloMode(agent) && isToolCallWithinYoloScope(tc, effectiveWorkspace) && !isModelCfgForCmd);
 
         if (isDangerousCommand(tc.args.command as string) && !agent.allowSessionDangerous && !withinYoloForCommand) {
           const approved = await (agent as any).onPermission(tc, description);
@@ -726,8 +746,8 @@ export class ToolExecutor {
       const isModelCfg = isModelConfigAccess(tc, effectiveWorkspace);
       const isEnvFile = !isModelCfg && isSensitiveEnvFileAccess(tc);
       const isFileWriteTool = MODIFYING_TOOLS.includes(tc.name);
-      const withinYoloScope = isFullYoloMode() || (isYoloMode() && isToolCallWithinYoloScope(tc, effectiveWorkspace) && !isModelCfg);
-      const needsPermission = isFullYoloMode()
+      const withinYoloScope = isAgentFullYoloMode(agent) || (isAgentYoloMode(agent) && isToolCallWithinYoloScope(tc, effectiveWorkspace) && !isModelCfg);
+      const needsPermission = isAgentFullYoloMode(agent)
         ? false
         : isModelCfg
         ? true

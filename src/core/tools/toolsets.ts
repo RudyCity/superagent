@@ -100,11 +100,16 @@ import {
 } from "./superagentTools.js";
 
 import {
+  rmemoryStatusTool,
   rmemorySearchTool,
   rmemoryConversationSearchTool,
   rmemoryReadCosTool,
   rmemorySaveTool,
   rmemoryConversationAddTool,
+  rmemoryInspectTool,
+  rmemoryExportTool,
+  rmemoryDeleteTool,
+  rmemoryMigrateLegacyTool,
 } from "./rmemoryTools.js";
 
 import { manageMcpTool } from "./mcpTools.js";
@@ -178,11 +183,16 @@ export const masterToolset: Tool[] = [
   replaceFileContentTool,
   multiReplaceFileContentTool,
   // ── Long-term memory & shared state (read+write, scoped to memory store) ──
+  rmemoryStatusTool,
   rmemorySearchTool,
   rmemoryConversationSearchTool,
   rmemoryReadCosTool,
   rmemorySaveTool,
   rmemoryConversationAddTool,
+  rmemoryInspectTool,
+  rmemoryExportTool,
+  rmemoryDeleteTool,
+  rmemoryMigrateLegacyTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
   // ── Lock visibility (read-only stats; unlock/cross-workspace tools
@@ -256,11 +266,16 @@ export const superagentToolset: Tool[] = [
   androidCliTool,
   playwrightScreenshotTool,
   readPeerSuperagentFileTool, // read files from peer Superagent worktrees
+  rmemoryStatusTool,
   rmemorySearchTool,
   rmemoryConversationSearchTool,
   rmemoryReadCosTool,
   rmemorySaveTool,
   rmemoryConversationAddTool,
+  rmemoryInspectTool,
+  rmemoryExportTool,
+  rmemoryDeleteTool,
+  rmemoryMigrateLegacyTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
   getLockStatsTool,
@@ -397,6 +412,7 @@ export const chromeExtensionToolset: Tool[] = [
   listToolsTool,
   describeToolTool,
   androidCliTool,
+  rmemoryStatusTool,
   rmemorySearchTool,
   rmemoryConversationSearchTool,
   rmemoryReadCosTool,

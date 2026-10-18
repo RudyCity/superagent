@@ -8,11 +8,13 @@ import {
 import { Message, contentToString } from "../../conversation.js";
 import { getSettings } from "../../config.js";
 import { SummarizationStrategy } from "./SummarizationStrategy.js";
-import { getRMemoryClient, getRMemorySessionKey, isRmemoryActiveSync } from "../../rmemoryUtil.js";
+import { getRMemoryClient, getRMemoryProjectId, getRMemorySessionKey, isRmemoryActiveSync } from "../../rmemoryUtil.js";
 
 export interface RMemoryConfig {
   model?: any;
   abortSignal?: AbortSignal;
+  projectId?: string;
+  historyFilePath?: string;
 }
 
 export class RMemoryStrategy implements CompactionStrategy {
@@ -52,7 +54,8 @@ export class RMemoryStrategy implements CompactionStrategy {
     }
 
     const client = getRMemoryClient(3000); // 3s timeout to prevent CLI hang
-    const sessionKey = getRMemorySessionKey(null);
+    const projectId = this.config?.projectId || getRMemoryProjectId(process.cwd());
+    const sessionKey = getRMemorySessionKey(this.config?.historyFilePath || null);
 
     try {
       // 1. Capture user/assistant messages to L0 incrementally
@@ -75,6 +78,7 @@ export class RMemoryStrategy implements CompactionStrategy {
       if (newMessages.length > 0) {
         await client.addConversation({
           session_id: sessionKey,
+          projectId,
           messages: newMessages,
         });
         const maxTs = Math.max(...messages.map((m) => m.timestamp || 0));
@@ -90,7 +94,7 @@ export class RMemoryStrategy implements CompactionStrategy {
 
       // Parallel requests for L1 memories, L3 persona, and L2 scenarios
       // Memoize for 60s to avoid repeated gateway calls per compaction cycle.
-      const recallKey = `${sessionKey}::${query}`;
+      const recallKey = `${projectId}::${sessionKey}::${query}`;
       const nowTs = Date.now();
       let searchResult: PromiseSettledResult<any>;
       let persona: PromiseSettledResult<any>;
@@ -103,14 +107,21 @@ export class RMemoryStrategy implements CompactionStrategy {
         ({ searchResult, persona, scenarios } = this.recallCache.value);
       } else {
         [searchResult, persona, scenarios] = await Promise.allSettled([
-          client.searchAtomic({ query, limit: Math.min(10, Math.ceil((options.tokenBudget || 8000) / 2000)) }),
+          client.searchAtomic({ query, limit: Math.min(10, Math.ceil((options.tokenBudget || 8000) / 2000)), projectId }),
           client.readCore(),
           client.listScenarios({}),
         ]);
         this.recallCache = { key: recallKey, ts: nowTs, value: { searchResult, persona, scenarios } };
       }
 
-      const l1Items = searchResult.status === "fulfilled" ? (searchResult.value?.items ?? []) : [];
+      const retrievedItems = searchResult.status === "fulfilled" ? (searchResult.value?.items ?? []) : [];
+      const l1Items = retrievedItems.filter((item: any) => {
+        const metadata = item.metadata || {};
+        const content = String(item.content || "");
+        if (metadata.scope === "global" || (!metadata.scope && content.startsWith("[global]"))) return true;
+        if (metadata.scope === "project" && metadata.projectId === projectId) return true;
+        return !metadata.scope && content.startsWith(`[project:${projectId}]`);
+      });
       const personaContent = persona.status === "fulfilled" && persona.value ? persona.value.content : null;
       const sceneEntries = scenarios.status === "fulfilled" && scenarios.value ? (scenarios.value.entries ?? []) : [];
 
@@ -136,16 +147,25 @@ export class RMemoryStrategy implements CompactionStrategy {
       if (l1Items.length > 0) {
         formattedMemories.push("\n<relevant-memories>");
         for (const item of l1Items) {
-          let typeTag = item.type || "memory";
-          const meta = (item as any).metadata;
-          if (meta && meta.session) {
-            if (meta.session === sessionKey) {
-              typeTag = `current session ${meta.role || "message"}`;
-            } else {
-              typeTag = `past session ${meta.role || "message"}`;
-            }
+          const meta = item.metadata && typeof item.metadata === "object" ? item.metadata as Record<string, any> : {};
+          let memoryType = String(item.type || "memory");
+          if (meta.session) {
+            memoryType = meta.session === sessionKey
+              ? `current session ${meta.role || "message"}`
+              : `past session ${meta.role || "message"}`;
           }
-          formattedMemories.push(`- [${typeTag}] ${item.content}`);
+          const provenance = meta.provenance && typeof meta.provenance === "object" ? meta.provenance as Record<string, unknown> : {};
+          const typeTag = [
+            memoryType.slice(0, 48),
+            meta.scope ? `scope=${String(meta.scope).slice(0, 16)}` : undefined,
+            meta.projectId ? `project=${String(meta.projectId).slice(0, 24)}` : undefined,
+            meta.schemaVersion !== undefined ? `schema=${String(meta.schemaVersion).slice(0, 8)}` : undefined,
+            meta.validationStatus ? `validation=${String(meta.validationStatus).slice(0, 24)}` : undefined,
+            provenance.source ? `source=${String(provenance.source).slice(0, 32)}` : undefined,
+          ].filter(Boolean).join(" | ").slice(0, 180);
+          const memoryContent = String(item.content || "");
+          const maxChars = 800;
+          formattedMemories.push(`- [${typeTag}] ${memoryContent.slice(0, maxChars)}${memoryContent.length > maxChars ? "… [truncated]" : ""}`);
         }
         formattedMemories.push("</relevant-memories>");
       }

@@ -1,6 +1,6 @@
 import path from "path";
 import { clearHistoryCache, getSettings, getCurrentWorkspaceIdentifier } from "../config.js";
-import { getRMemoryClient, getRMemorySessionKey, isRmemoryActive } from "../rmemoryUtil.js";
+import { getRMemoryClient, getRMemoryProjectId, getRMemorySessionKey, isRmemoryActive } from "../rmemoryUtil.js";
 import { contentToString } from "../conversation.js";
 import type { Agent } from "../agent.js";
 
@@ -135,6 +135,7 @@ export class HistoryManager {
       agent.writeToLogFile("INFO", `Incrementally syncing ${newMessages.length} new messages to RMemory (session: ${sessionKey})...`);
       await client.addConversation({
         session_id: sessionKey,
+        projectId: getRMemoryProjectId(agent.worktreePath || agent.workingDirectory || process.cwd()),
         messages: newMessages,
       });
       const maxTs = Math.max(...messages.map((m) => m.timestamp || 0));

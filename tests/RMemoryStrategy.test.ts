@@ -52,6 +52,7 @@ describe("RMemoryStrategy", () => {
       listScenarios: mockListScenarios,
     } as any);
     vi.spyOn(rmemoryUtilModule, "getRMemorySessionKey").mockReturnValue("test-sess");
+    vi.spyOn(rmemoryUtilModule, "getRMemoryProjectId").mockReturnValue("p_test_project");
 
     vi.spyOn(configModule, "getSettings").mockReturnValue({
       rmemoryGatewayUrl: "http://127.0.0.1:8420",
@@ -69,7 +70,10 @@ describe("RMemoryStrategy", () => {
     mockAddConversation.mockResolvedValue({ total_count: 10 });
     mockSearchAtomic.mockResolvedValue({
       items: [
-        { id: "1", content: "User loves coding in TypeScript", type: "persona", score: 0.9 }
+        {
+          id: "1", content: "[project:p_test_project] User loves coding in TypeScript", type: "decision", score: 0.9,
+          metadata: { scope: "project", projectId: "p_test_project", schemaVersion: 1, validationStatus: "unverified", provenance: { source: "rmemory_save" } },
+        }
       ]
     });
     mockReadCore.mockResolvedValue({
@@ -103,7 +107,8 @@ describe("RMemoryStrategy", () => {
     expect(mockAddConversation).toHaveBeenCalled();
 
     // Check that we recalled memories
-    expect(mockSearchAtomic).toHaveBeenCalled();
+    expect(mockSearchAtomic).toHaveBeenCalledWith(expect.objectContaining({ projectId: "p_test_project" }));
+    expect(mockAddConversation).toHaveBeenCalledWith(expect.objectContaining({ projectId: "p_test_project", session_id: "test-sess" }));
     expect(mockReadCore).toHaveBeenCalled();
     expect(mockListScenarios).toHaveBeenCalled();
 
@@ -113,6 +118,9 @@ describe("RMemoryStrategy", () => {
     expect(result.messages[0].content).toContain("[RMemory Agent Memory Context]");
     expect(result.messages[0].content).toContain("User profile");
     expect(result.messages[0].content).toContain("TypeScript");
+    expect(result.messages[0].content).toContain("scope=project");
+    expect(result.messages[0].content).toContain("validation=unverified");
+    expect(result.messages[0].content).toContain("source=rmemory_save");
     expect(result.messages[0].content).toContain("scene_blocks/coding-style.md");
     expect(result.metadata.strategy).toBe("rmemory");
   });
@@ -179,14 +187,14 @@ describe("RMemoryStrategy", () => {
           content: "Previous session command",
           type: "message",
           score: 0.9,
-          metadata: { session: "other-sess", role: "user" }
+          metadata: { type: "message", scope: "project", projectId: "p_test_project", session: "other-sess", role: "user" }
         },
         {
           id: "msg-2",
           content: "Current session message",
           type: "message",
           score: 0.85,
-          metadata: { session: "test-sess", role: "assistant" }
+          metadata: { type: "message", scope: "project", projectId: "p_test_project", session: "test-sess", role: "assistant" }
         }
       ]
     });
@@ -203,8 +211,8 @@ describe("RMemoryStrategy", () => {
     // Expect warning header to be injected because messages.length <= 2
     expect(result.messages[0].content).toContain("IMPORTANT: This is a NEW, clean session.");
     // Expect type tags to be formatted correctly based on session matching
-    expect(result.messages[0].content).toContain("- [past session user] Previous session command");
-    expect(result.messages[0].content).toContain("- [current session assistant] Current session message");
+    expect(result.messages[0].content).toContain("- [past session user | scope=project | project=p_test_project] Previous session command");
+    expect(result.messages[0].content).toContain("- [current session assistant | scope=project | project=p_test_project] Current session message");
   });
 
   afterAll(() => {});

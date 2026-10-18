@@ -16,6 +16,8 @@ export interface DaemonJob {
   maxRuns?: number;
   notifyGateway?: boolean;
   tags?: string[];
+  /** Explicit additional capabilities for headless execution; defaults remain read-only. */
+  allowedTools?: string[];
 }
 
 export interface DaemonConfig {
