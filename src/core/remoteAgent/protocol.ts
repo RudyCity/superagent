@@ -615,8 +615,16 @@ export function validateEnvelope(
       if (envelope.id !== undefined && typeof envelope.id !== "string") {
         return { valid: false, error: "chat invalid 'id': must be a string" };
       }
-      if (envelope.reply_to !== undefined && typeof envelope.reply_to !== "string") {
-        return { valid: false, error: "chat invalid 'reply_to': must be a string" };
+      if (envelope.reply_to !== undefined) {
+        if (typeof envelope.reply_to !== "string" || !envelope.reply_to.trim()) {
+          return { valid: false, error: "chat invalid 'reply_to': must be a non-empty string" };
+        }
+        if (typeof envelope.id !== "string" || !envelope.id.trim()) {
+          return { valid: false, error: "correlated chat reply missing valid 'id'" };
+        }
+        if (envelope.id === envelope.reply_to) {
+          return { valid: false, error: "correlated chat reply 'id' must differ from 'reply_to'" };
+        }
       }
       break;
     }

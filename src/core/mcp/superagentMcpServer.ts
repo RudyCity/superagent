@@ -197,6 +197,297 @@ function logMcp(message: string): void {
   } catch {}
 }
 
+export const MCP_TOOL_DEFINITIONS = [
+    {
+      name: "superagent_list_active",
+      description: "List all currently active Superagents, subagents, and background processes in Superagent.",
+      inputSchema: { type: "object", properties: { includeCompleted: { type: "boolean" } } },
+    },
+    {
+      name: "superagent_get_process_status",
+      description: "Get real-time process details of Superagent AI: Master Agent status, iterations, thinking logs, tool streams, tokens, and child hierarchy.",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "superagent_get_status",
+      description: "Get detailed status, worktree paths, violation logs, acceptance criteria, and completion reports.",
+      inputSchema: { type: "object", properties: { superagentIds: { type: "array", items: { type: "string" } } } },
+    },
+    {
+      name: "superagent_get_logs",
+      description: "Get recent execution logs from an active or completed Superagent, Subagent, or background task.",
+      inputSchema: { type: "object", properties: { id: { type: "string" }, limit: { type: "number" } }, required: ["id"] },
+    },
+    {
+      name: "superagent_send_message",
+      description: "Send a follow-up instruction, message, feedback, or command to a running or paused Superagent (two-way communication).",
+      inputSchema: { type: "object", properties: { superagentId: { type: "string" }, message: { type: "string" }, wait: { type: "boolean" } }, required: ["superagentId", "message"] },
+    },
+    {
+      name: "superagent_interrupt",
+      description: "Interrupt / abort AI processing immediately. Stops running loops and cleans up tasks safely.",
+      inputSchema: { type: "object", properties: { target: { type: "string", enum: ["all", "master", "superagent", "subagent", "task"] }, id: { type: "string" } } },
+    },
+    {
+      name: "superagent_pause",
+      description: "Pause a running Superagent to halt execution until resumed.",
+      inputSchema: { type: "object", properties: { superagentId: { type: "string" } }, required: ["superagentId"] },
+    },
+    {
+      name: "superagent_resume",
+      description: "Resume a paused Superagent with an optional new instruction/prompt.",
+      inputSchema: { type: "object", properties: { superagentId: { type: "string" }, message: { type: "string" }, wait: { type: "boolean" } }, required: ["superagentId"] },
+    },
+    {
+      name: "superagent_run_task",
+      description: "Delegate a task to Superagent to execute as a powerful subagent for Antigravity, and return complete generated results and file modifications.",
+      inputSchema: { type: "object", properties: { task: { type: "string" }, role: { type: "string" }, mode: { type: "string", enum: ["single", "multi"] }, workspace: { type: "string" } }, required: ["task"] },
+    },
+    {
+      name: "superagent_cli_bridge",
+      description: "Delegate tasks to external AI CLIs (Codex, Claude Code, AGY, Gemini) via 1-shot execution or multi-turn sessions with automatic artifact and task synchronization.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: { type: "string", description: "Operation: 'list', 'delegate', 'session.create', 'session.send', etc." },
+          cli: { type: "string", description: "Target CLI alias ('agy', 'claude', 'codex', or 'custom')." },
+          prompt: { type: "string", description: "Prompt text for delegation." },
+          message: { type: "string", description: "Message body for session." },
+          system: { type: "string", description: "Optional system instructions." },
+          cwd: { type: "string", description: "Working directory for execution." },
+          projectId: { type: "string", description: "Registered project ID for execution context." },
+          workspace: { type: "string", description: "Optional workspace path within the registered project." },
+          injectArtifacts: { type: "boolean", description: "If true (default), injects task checklist, plan, and walkthrough paths." },
+          taskPath: { type: "string", description: "Optional explicit path to task checklist file." },
+          planPath: { type: "string", description: "Optional explicit path to plan file." },
+          walkthroughPath: { type: "string", description: "Optional explicit path to walkthrough file." },
+          skills: { type: "array", items: { type: "string" }, description: "Skills or directory paths to attach." },
+          timeoutMs: { type: "number", description: "Timeout in milliseconds." },
+          wait: { type: "boolean" },
+        },
+        required: ["action"],
+      },
+    },
+    {
+      name: "superagent_switch_workspace",
+      description: "Switch active working directory / workspace of Superagent.",
+      inputSchema: { type: "object", properties: { workspacePath: { type: "string" }, projectId: { type: "string", description: "Select an enabled, registered project by stable ID." } } },
+    },
+    {
+      name: "superagent_get_workspace",
+      description: "Get current workspace directory, active Git branch, and feature worktree information.",
+      inputSchema: { type: "object", properties: { projectId: { type: "string" }, workspace: { type: "string" } } },
+    },
+    {
+      name: "superagent_exec_command",
+      description: "Execute a shell command inside the active workspace or specific Superagent worktree with stdout/stderr capture.",
+      inputSchema: { type: "object", properties: { command: { type: "string" }, cwd: { type: "string" }, workspace: { type: "string" }, projectId: { type: "string" }, timeoutMs: { type: "number" } }, required: ["command"] },
+    },
+    {
+      name: "superagent_read_file",
+      description: "Legacy single-file read endpoint. Disabled on MCP; use superagent_read_files with a files or filePaths array.",
+      inputSchema: { type: "object", properties: { filePath: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" }, cwd: { type: "string" } }, required: ["filePath"] },
+    },
+    {
+      name: "superagent_write_file",
+      description: "Legacy single-file write endpoint. Disabled on MCP; use superagent_write_files with a files array.",
+      inputSchema: { type: "object", properties: { filePath: { type: "string" }, content: { type: "string" }, overwrite: { type: "boolean" }, cwd: { type: "string" } }, required: ["filePath", "content"] },
+    },
+    {
+      name: "superagent_read_files",
+      description: "Read multiple files in one MCP call. Provide files as path strings or objects { filePath, startLine?, endLine? }; optional global startLine/endLine and cwd. Maximum 50 files.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          files: { type: "array", items: { anyOf: [
+            { type: "string" },
+            { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" } } },
+          ] } },
+          filePaths: { type: "array", items: { anyOf: [
+            { type: "string" },
+            { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" } } },
+          ] } },
+          startLine: { type: "number" },
+          endLine: { type: "number" },
+          cwd: { type: "string" },
+          workspace: { type: "string" },
+          projectId: { type: "string", description: "Registered project ID. Takes precedence over implicit session workspace." },
+        },
+      },
+    },
+    {
+      name: "superagent_write_files",
+      description: "Write or create multiple files in one MCP call using { filePath, content, overwrite? } entries. Preserves per-file scope, protected-file, overwrite, and lock checks. Maximum 50 files. Requires dangerous-tool permission over tunnel.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          files: { type: "array", items: { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, content: { type: "string" }, overwrite: { type: "boolean" } }, required: ["filePath", "content"] } },
+          overwrite: { type: "boolean" },
+          cwd: { type: "string" },
+          workspace: { type: "string" },
+          projectId: { type: "string", description: "Registered project ID. Takes precedence over implicit session workspace." },
+        },
+        required: ["files"],
+      },
+    },
+    UNLOCK_FILE_MCP_TOOL_DEF,
+    {
+      name: "superagent_list_files",
+      description: "List files and directories in the workspace or a specific subfolder.",
+      inputSchema: { type: "object", properties: { dirPath: { type: "string" }, workspace: { type: "string" }, projectId: { type: "string" } } },
+    },
+    {
+      name: "superagent_grep_search",
+      description: "Fast ripgrep pattern searching across files in workspace or worktrees.",
+      inputSchema: { type: "object", properties: { query: { type: "string" }, path: { type: "string" }, include: { type: "string" }, exclude: { type: "string" }, isRegex: { type: "boolean" }, workspace: { type: "string" }, cwd: { type: "string" }, projectId: { type: "string" } }, required: ["query"] },
+    },
+    {
+      name: "superagent_find_files",
+      description: "Search for files and directories by name glob or extension.",
+      inputSchema: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string" }, extension: { type: "string" }, maxDepth: { type: "number" }, workspace: { type: "string" }, cwd: { type: "string" }, projectId: { type: "string" } } },
+    },
+    {
+      name: "superagent_manage_worktrees",
+      description: "List, inspect, and remove Git feature worktrees.",
+      inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "remove"] }, id: { type: "string" }, workspace: { type: "string" }, projectId: { type: "string" } }, required: ["action"] },
+    },
+    {
+      name: "superagent_get_current_task",
+      description: "Get the current active task, in-progress checklist step, and progress for a Superagent instance, Subagent, or running process.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          instanceId: { type: "string", description: "Optional instance ID (Superagent ID, Subagent ID, or process PID). If omitted, resolves the current active instance." },
+          superagentId: { type: "string", description: "Optional alias for instanceId." },
+          workspace: { type: "string", description: "Optional workspace or worktree path." },
+          projectId: { type: "string", description: "Registered project ID for this lookup." },
+          currentOnly: { type: "boolean", description: "If true, returns only the current task description string." },
+        },
+      },
+    },
+    {
+      name: "superagent_get_plan_and_tasks",
+      description: "Read the current implementation plan objective and task checklist for the workspace or a specific Superagent instance.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          workspace: { type: "string", description: "Optional workspace or worktree path to inspect." },
+          projectId: { type: "string", description: "Registered project ID for this lookup." },
+          superagentId: { type: "string", description: "Optional Superagent instance ID to automatically inspect its worktree." },
+          currentOnly: { type: "boolean", description: "Optional: if true, returns only the current active task and progress." },
+        },
+      },
+    },
+    {
+      name: "superagent_update_tasks",
+      description: "Update, check, or add items to the task checklist for the workspace or a specific Superagent instance.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["mark_completed", "mark_in_progress", "add_task", "get_status", "get_current_task"] },
+          taskText: { type: "string", description: "Task description text to mark or add." },
+          workspace: { type: "string", description: "Optional workspace or worktree path." },
+          projectId: { type: "string", description: "Registered project ID for this update." },
+          superagentId: { type: "string", description: "Optional Superagent instance ID to update its isolated worktree checklist." },
+        },
+        required: ["action"],
+      },
+    },
+    {
+      name: "superagent_get_config",
+      description: "Retrieve Superagent configuration: active provider, model presets, tier models, and system settings.",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "superagent_switch_preset",
+      description: "Switch the active model preset for Superagent.",
+      inputSchema: { type: "object", properties: { presetId: { type: "string" }, mode: { type: "string", enum: ["single", "multi", "auto"] } }, required: ["presetId"] },
+    },
+    {
+      name: "superagent_switch_provider",
+      description: "Switch the active AI provider profile.",
+      inputSchema: { type: "object", properties: { providerName: { type: "string" } }, required: ["providerName"] },
+    },
+    {
+      name: "superagent_memory_search",
+      description: "Search persistent knowledge, facts, and memories stored in Superagent.",
+      inputSchema: { type: "object", properties: { query: { type: "string" }, limit: { type: "number" } }, required: ["query"] },
+    },
+    {
+      name: "superagent_memory_save",
+      description: "Save a snippet or knowledge fact into Superagent's persistent memory.",
+      inputSchema: { type: "object", properties: { content: { type: "string" }, tag: { type: "string" } }, required: ["content"] },
+    },
+    {
+      name: "superagent_query_history",
+      description: "Search or retrieve conversation history, transcripts, and session records from SQLite.",
+      inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list_sessions", "get_messages", "search"] }, query: { type: "string" }, sessionId: { type: "string" }, limit: { type: "number" } }, required: ["action"] },
+    },
+    {
+      name: "superagent_export_session",
+      description: "Export full chat transcript to Markdown or JSON format.",
+      inputSchema: { type: "object", properties: { sessionId: { type: "string" }, format: { type: "string", enum: ["markdown", "json"] } }, required: ["sessionId"] },
+    },
+    {
+      name: "superagent_compact_context",
+      description: "Trigger or simulate context compaction and review context optimization status.",
+      inputSchema: { type: "object", properties: { strategy: { type: "string" }, maxTokens: { type: "number" } } },
+    },
+    {
+      name: "superagent_get_token_usage",
+      description: "Get comprehensive token consumption and context window analytics across tiers and sessions.",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "superagent_remote_chrome",
+      description: "Interact with remote Chrome browser extension bridge on port 9223 (check status, navigate, click, extract DOM).",
+      inputSchema: { type: "object", properties: { action: { type: "string" }, target: { type: "string" }, value: { type: "string" } } },
+    },
+    {
+      name: "superagent_invoke",
+      description: "Spawn a new feature-level Superagent in an isolated Git worktree branch.",
+      inputSchema: { type: "object", properties: { role: { type: "string" }, task: { type: "string" }, branch: { type: "string" }, wait: { type: "boolean" }, constraints: { type: "string" }, acceptanceCriteria: { type: "array", items: { type: "string" } } }, required: ["role", "task"] },
+    },
+    {
+      name: "superagent_await",
+      description: "Wait for all active Superagents (or specific IDs) to finish.",
+      inputSchema: { type: "object", properties: { timeoutSeconds: { type: "number" }, superagentIds: { type: "array", items: { type: "string" } } } },
+    },
+    {
+      name: "superagent_merge",
+      description: "Merge completed Superagent feature branches into main workspace with conflict resolution.",
+      inputSchema: { type: "object", properties: { cleanupWorktrees: { type: "boolean" } } },
+    },
+    {
+      name: "superagent_manage",
+      description: "Manage Superagent lifecycle: check status, reports, violations, kill, or retry failed ones.",
+      inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "status", "logs", "report", "violations", "kill", "kill_all", "retry_failed", "cleanup_orphans", "current_task"] }, superagentIds: { type: "array", items: { type: "string" } } }, required: ["action"] },
+    },
+    {
+      name: "superagent_server_health",
+      description: "Check health of the Superagent background HTTP server, all active CLI sessions, and Remote Chrome bridge. Use to diagnose connectivity issues.",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "superagent_get_remote_status",
+      description: "Inspect the real-time operational status of /muse tunnel (Cloudflare quick tunnels & WebSocket bridge), MCP (exposed MCP servers & connected client MCPs), and Telegram (Muse Watcher and Gateway).",
+      inputSchema: {
+        type: "object",
+        properties: {
+          service: { type: "string", enum: ["all", "tunnel", "mcp", "telegram"], description: "Filter by specific service or 'all'. Defaults to 'all'." },
+          detailed: { type: "boolean", description: "Whether to return detailed diagnostics and tool list." },
+        },
+      },
+    },
+    ...CHROME_MCP_TOOL_DEFS,
+    ...DIAGNOSTICS_MCP_TOOL_DEFS,
+    ...PLAN_SKILLS_MCP_TOOL_DEFS,
+    ...NETWORK_CONTENT_MCP_TOOL_DEFS,
+    ...REMOTE_AGENT_MCP_TOOL_DEFS,
+    ...PROJECT_MCP_TOOL_DEFS,
+    ...WORKSPACE_CHAIN_MCP_TOOL_DEFS,
+];
+
 const activeMcpServerInstances = new Set<Server>();
 
 export async function notifyMcpToolsListChanged(): Promise<void> {
@@ -241,296 +532,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   registerResourcesAndPrompts(server);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const allTools = [
-        {
-          name: "superagent_list_active",
-          description: "List all currently active Superagents, subagents, and background processes in Superagent.",
-          inputSchema: { type: "object", properties: { includeCompleted: { type: "boolean" } } },
-        },
-        {
-          name: "superagent_get_process_status",
-          description: "Get real-time process details of Superagent AI: Master Agent status, iterations, thinking logs, tool streams, tokens, and child hierarchy.",
-          inputSchema: { type: "object", properties: {} },
-        },
-        {
-          name: "superagent_get_status",
-          description: "Get detailed status, worktree paths, violation logs, acceptance criteria, and completion reports.",
-          inputSchema: { type: "object", properties: { superagentIds: { type: "array", items: { type: "string" } } } },
-        },
-        {
-          name: "superagent_get_logs",
-          description: "Get recent execution logs from an active or completed Superagent, Subagent, or background task.",
-          inputSchema: { type: "object", properties: { id: { type: "string" }, limit: { type: "number" } }, required: ["id"] },
-        },
-        {
-          name: "superagent_send_message",
-          description: "Send a follow-up instruction, message, feedback, or command to a running or paused Superagent (two-way communication).",
-          inputSchema: { type: "object", properties: { superagentId: { type: "string" }, message: { type: "string" }, wait: { type: "boolean" } }, required: ["superagentId", "message"] },
-        },
-        {
-          name: "superagent_interrupt",
-          description: "Interrupt / abort AI processing immediately. Stops running loops and cleans up tasks safely.",
-          inputSchema: { type: "object", properties: { target: { type: "string", enum: ["all", "master", "superagent", "subagent", "task"] }, id: { type: "string" } } },
-        },
-        {
-          name: "superagent_pause",
-          description: "Pause a running Superagent to halt execution until resumed.",
-          inputSchema: { type: "object", properties: { superagentId: { type: "string" } }, required: ["superagentId"] },
-        },
-        {
-          name: "superagent_resume",
-          description: "Resume a paused Superagent with an optional new instruction/prompt.",
-          inputSchema: { type: "object", properties: { superagentId: { type: "string" }, message: { type: "string" }, wait: { type: "boolean" } }, required: ["superagentId"] },
-        },
-        {
-          name: "superagent_run_task",
-          description: "Delegate a task to Superagent to execute as a powerful subagent for Antigravity, and return complete generated results and file modifications.",
-          inputSchema: { type: "object", properties: { task: { type: "string" }, role: { type: "string" }, mode: { type: "string", enum: ["single", "multi"] }, workspace: { type: "string" } }, required: ["task"] },
-        },
-        {
-          name: "superagent_cli_bridge",
-          description: "Delegate tasks to external AI CLIs (Codex, Claude Code, AGY, Gemini) via 1-shot execution or multi-turn sessions with automatic artifact and task synchronization.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              action: { type: "string", description: "Operation: 'list', 'delegate', 'session.create', 'session.send', etc." },
-              cli: { type: "string", description: "Target CLI alias ('agy', 'claude', 'codex', or 'custom')." },
-              prompt: { type: "string", description: "Prompt text for delegation." },
-              message: { type: "string", description: "Message body for session." },
-              system: { type: "string", description: "Optional system instructions." },
-              cwd: { type: "string", description: "Working directory for execution." },
-              projectId: { type: "string", description: "Registered project ID for execution context." },
-              workspace: { type: "string", description: "Optional workspace path within the registered project." },
-              injectArtifacts: { type: "boolean", description: "If true (default), injects task checklist, plan, and walkthrough paths." },
-              taskPath: { type: "string", description: "Optional explicit path to task checklist file." },
-              planPath: { type: "string", description: "Optional explicit path to plan file." },
-              walkthroughPath: { type: "string", description: "Optional explicit path to walkthrough file." },
-              skills: { type: "array", items: { type: "string" }, description: "Skills or directory paths to attach." },
-              timeoutMs: { type: "number", description: "Timeout in milliseconds." },
-              wait: { type: "boolean" },
-            },
-            required: ["action"],
-          },
-        },
-        {
-          name: "superagent_switch_workspace",
-          description: "Switch active working directory / workspace of Superagent.",
-          inputSchema: { type: "object", properties: { workspacePath: { type: "string" }, projectId: { type: "string", description: "Select an enabled, registered project by stable ID." } } },
-        },
-        {
-          name: "superagent_get_workspace",
-          description: "Get current workspace directory, active Git branch, and feature worktree information.",
-          inputSchema: { type: "object", properties: { projectId: { type: "string" }, workspace: { type: "string" } } },
-        },
-        {
-          name: "superagent_exec_command",
-          description: "Execute a shell command inside the active workspace or specific Superagent worktree with stdout/stderr capture.",
-          inputSchema: { type: "object", properties: { command: { type: "string" }, cwd: { type: "string" }, workspace: { type: "string" }, projectId: { type: "string" }, timeoutMs: { type: "number" } }, required: ["command"] },
-        },
-        {
-          name: "superagent_read_file",
-          description: "Legacy single-file read endpoint. Disabled on MCP; use superagent_read_files with a files or filePaths array.",
-          inputSchema: { type: "object", properties: { filePath: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" }, cwd: { type: "string" } }, required: ["filePath"] },
-        },
-        {
-          name: "superagent_write_file",
-          description: "Legacy single-file write endpoint. Disabled on MCP; use superagent_write_files with a files array.",
-          inputSchema: { type: "object", properties: { filePath: { type: "string" }, content: { type: "string" }, overwrite: { type: "boolean" }, cwd: { type: "string" } }, required: ["filePath", "content"] },
-        },
-        {
-          name: "superagent_read_files",
-          description: "Read multiple files in one MCP call. Provide files as path strings or objects { filePath, startLine?, endLine? }; optional global startLine/endLine and cwd. Maximum 50 files.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              files: { type: "array", items: { anyOf: [
-                { type: "string" },
-                { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" } } },
-              ] } },
-              filePaths: { type: "array", items: { anyOf: [
-                { type: "string" },
-                { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" } } },
-              ] } },
-              startLine: { type: "number" },
-              endLine: { type: "number" },
-              cwd: { type: "string" },
-              workspace: { type: "string" },
-              projectId: { type: "string", description: "Registered project ID. Takes precedence over implicit session workspace." },
-            },
-          },
-        },
-        {
-          name: "superagent_write_files",
-          description: "Write or create multiple files in one MCP call using { filePath, content, overwrite? } entries. Preserves per-file scope, protected-file, overwrite, and lock checks. Maximum 50 files. Requires dangerous-tool permission over tunnel.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              files: { type: "array", items: { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, content: { type: "string" }, overwrite: { type: "boolean" } }, required: ["filePath", "content"] } },
-              overwrite: { type: "boolean" },
-              cwd: { type: "string" },
-              workspace: { type: "string" },
-              projectId: { type: "string", description: "Registered project ID. Takes precedence over implicit session workspace." },
-            },
-            required: ["files"],
-          },
-        },
-        UNLOCK_FILE_MCP_TOOL_DEF,
-        {
-          name: "superagent_list_files",
-          description: "List files and directories in the workspace or a specific subfolder.",
-          inputSchema: { type: "object", properties: { dirPath: { type: "string" }, workspace: { type: "string" }, projectId: { type: "string" } } },
-        },
-        {
-          name: "superagent_grep_search",
-          description: "Fast ripgrep pattern searching across files in workspace or worktrees.",
-          inputSchema: { type: "object", properties: { query: { type: "string" }, path: { type: "string" }, include: { type: "string" }, exclude: { type: "string" }, isRegex: { type: "boolean" }, workspace: { type: "string" }, cwd: { type: "string" }, projectId: { type: "string" } }, required: ["query"] },
-        },
-        {
-          name: "superagent_find_files",
-          description: "Search for files and directories by name glob or extension.",
-          inputSchema: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string" }, extension: { type: "string" }, maxDepth: { type: "number" }, workspace: { type: "string" }, cwd: { type: "string" }, projectId: { type: "string" } } },
-        },
-        {
-          name: "superagent_manage_worktrees",
-          description: "List, inspect, and remove Git feature worktrees.",
-          inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "remove"] }, id: { type: "string" }, workspace: { type: "string" }, projectId: { type: "string" } }, required: ["action"] },
-        },
-        {
-          name: "superagent_get_current_task",
-          description: "Get the current active task, in-progress checklist step, and progress for a Superagent instance, Subagent, or running process.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              instanceId: { type: "string", description: "Optional instance ID (Superagent ID, Subagent ID, or process PID). If omitted, resolves the current active instance." },
-              superagentId: { type: "string", description: "Optional alias for instanceId." },
-              workspace: { type: "string", description: "Optional workspace or worktree path." },
-              projectId: { type: "string", description: "Registered project ID for this lookup." },
-              currentOnly: { type: "boolean", description: "If true, returns only the current task description string." },
-            },
-          },
-        },
-        {
-          name: "superagent_get_plan_and_tasks",
-          description: "Read the current implementation plan objective and task checklist for the workspace or a specific Superagent instance.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              workspace: { type: "string", description: "Optional workspace or worktree path to inspect." },
-              projectId: { type: "string", description: "Registered project ID for this lookup." },
-              superagentId: { type: "string", description: "Optional Superagent instance ID to automatically inspect its worktree." },
-              currentOnly: { type: "boolean", description: "Optional: if true, returns only the current active task and progress." },
-            },
-          },
-        },
-        {
-          name: "superagent_update_tasks",
-          description: "Update, check, or add items to the task checklist for the workspace or a specific Superagent instance.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              action: { type: "string", enum: ["mark_completed", "mark_in_progress", "add_task", "get_status", "get_current_task"] },
-              taskText: { type: "string", description: "Task description text to mark or add." },
-              workspace: { type: "string", description: "Optional workspace or worktree path." },
-              projectId: { type: "string", description: "Registered project ID for this update." },
-              superagentId: { type: "string", description: "Optional Superagent instance ID to update its isolated worktree checklist." },
-            },
-            required: ["action"],
-          },
-        },
-        {
-          name: "superagent_get_config",
-          description: "Retrieve Superagent configuration: active provider, model presets, tier models, and system settings.",
-          inputSchema: { type: "object", properties: {} },
-        },
-        {
-          name: "superagent_switch_preset",
-          description: "Switch the active model preset for Superagent.",
-          inputSchema: { type: "object", properties: { presetId: { type: "string" }, mode: { type: "string", enum: ["single", "multi", "auto"] } }, required: ["presetId"] },
-        },
-        {
-          name: "superagent_switch_provider",
-          description: "Switch the active AI provider profile.",
-          inputSchema: { type: "object", properties: { providerName: { type: "string" } }, required: ["providerName"] },
-        },
-        {
-          name: "superagent_memory_search",
-          description: "Search persistent knowledge, facts, and memories stored in Superagent.",
-          inputSchema: { type: "object", properties: { query: { type: "string" }, limit: { type: "number" } }, required: ["query"] },
-        },
-        {
-          name: "superagent_memory_save",
-          description: "Save a snippet or knowledge fact into Superagent's persistent memory.",
-          inputSchema: { type: "object", properties: { content: { type: "string" }, tag: { type: "string" } }, required: ["content"] },
-        },
-        {
-          name: "superagent_query_history",
-          description: "Search or retrieve conversation history, transcripts, and session records from SQLite.",
-          inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list_sessions", "get_messages", "search"] }, query: { type: "string" }, sessionId: { type: "string" }, limit: { type: "number" } }, required: ["action"] },
-        },
-        {
-          name: "superagent_export_session",
-          description: "Export full chat transcript to Markdown or JSON format.",
-          inputSchema: { type: "object", properties: { sessionId: { type: "string" }, format: { type: "string", enum: ["markdown", "json"] } }, required: ["sessionId"] },
-        },
-        {
-          name: "superagent_compact_context",
-          description: "Trigger or simulate context compaction and review context optimization status.",
-          inputSchema: { type: "object", properties: { strategy: { type: "string" }, maxTokens: { type: "number" } } },
-        },
-        {
-          name: "superagent_get_token_usage",
-          description: "Get comprehensive token consumption and context window analytics across tiers and sessions.",
-          inputSchema: { type: "object", properties: {} },
-        },
-        {
-          name: "superagent_remote_chrome",
-          description: "Interact with remote Chrome browser extension bridge on port 9223 (check status, navigate, click, extract DOM).",
-          inputSchema: { type: "object", properties: { action: { type: "string" }, target: { type: "string" }, value: { type: "string" } } },
-        },
-        {
-          name: "superagent_invoke",
-          description: "Spawn a new feature-level Superagent in an isolated Git worktree branch.",
-          inputSchema: { type: "object", properties: { role: { type: "string" }, task: { type: "string" }, branch: { type: "string" }, wait: { type: "boolean" }, constraints: { type: "string" }, acceptanceCriteria: { type: "array", items: { type: "string" } } }, required: ["role", "task"] },
-        },
-        {
-          name: "superagent_await",
-          description: "Wait for all active Superagents (or specific IDs) to finish.",
-          inputSchema: { type: "object", properties: { timeoutSeconds: { type: "number" }, superagentIds: { type: "array", items: { type: "string" } } } },
-        },
-        {
-          name: "superagent_merge",
-          description: "Merge completed Superagent feature branches into main workspace with conflict resolution.",
-          inputSchema: { type: "object", properties: { cleanupWorktrees: { type: "boolean" } } },
-        },
-        {
-          name: "superagent_manage",
-          description: "Manage Superagent lifecycle: check status, reports, violations, kill, or retry failed ones.",
-          inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "status", "logs", "report", "violations", "kill", "kill_all", "retry_failed", "cleanup_orphans", "current_task"] }, superagentIds: { type: "array", items: { type: "string" } } }, required: ["action"] },
-        },
-        {
-          name: "superagent_server_health",
-          description: "Check health of the Superagent background HTTP server, all active CLI sessions, and Remote Chrome bridge. Use to diagnose connectivity issues.",
-          inputSchema: { type: "object", properties: {} },
-        },
-        {
-          name: "superagent_get_remote_status",
-          description: "Inspect the real-time operational status of /muse tunnel (Cloudflare quick tunnels & WebSocket bridge), MCP (exposed MCP servers & connected client MCPs), and Telegram (Muse Watcher and Gateway).",
-          inputSchema: {
-            type: "object",
-            properties: {
-              service: { type: "string", enum: ["all", "tunnel", "mcp", "telegram"], description: "Filter by specific service or 'all'. Defaults to 'all'." },
-              detailed: { type: "boolean", description: "Whether to return detailed diagnostics and tool list." },
-            },
-          },
-        },
-        ...CHROME_MCP_TOOL_DEFS,
-        ...DIAGNOSTICS_MCP_TOOL_DEFS,
-        ...PLAN_SKILLS_MCP_TOOL_DEFS,
-        ...NETWORK_CONTENT_MCP_TOOL_DEFS,
-        ...REMOTE_AGENT_MCP_TOOL_DEFS,
-        ...PROJECT_MCP_TOOL_DEFS,
-        ...WORKSPACE_CHAIN_MCP_TOOL_DEFS,
-    ];
+    const allTools = MCP_TOOL_DEFINITIONS;
     // Allowlist: hide non-allowed tools from MCP clients.
     // If allowDangerous is true OR CLI YOLO mode is active ("scoped" | "full"),
     // dangerous tools are dynamically unlocked for discovery.

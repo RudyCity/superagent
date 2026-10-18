@@ -28,10 +28,9 @@ import {
   startMcpHttpServer,
   generateMcpBearerToken,
   getDefaultSafeTools,
-  MCP_TOOL_CLASSIFICATION,
   type McpHttpServerHandle,
 } from "./mcpHttpTransport.js";
-import { DISABLED_MCP_TOOLS } from "./superagentMcpServer.js";
+import { DISABLED_MCP_TOOLS, MCP_TOOL_DEFINITIONS } from "./superagentMcpServer.js";
 import { generateBootstrapCode } from "./mcpOAuthRoutes.js";
 import type { McpAuthMode } from "./mcpAuth.js";
 import { getYoloModeState } from "../permissions.js";
@@ -39,10 +38,8 @@ import { getYoloModeState } from "../permissions.js";
 export const DEFAULT_MCP_PORT = 9227;
 
 function getExposedMcpToolCount(allowDangerous: boolean): number {
-  if (!allowDangerous) {
-    return getDefaultSafeTools().length;
-  }
-  return Object.keys(MCP_TOOL_CLASSIFICATION).filter((name) => !DISABLED_MCP_TOOLS.has(name)).length;
+  if (!allowDangerous) return getDefaultSafeTools().length;
+  return MCP_TOOL_DEFINITIONS.filter((tool) => !DISABLED_MCP_TOOLS.has(tool.name)).length;
 }
 
 interface ActiveMcp {

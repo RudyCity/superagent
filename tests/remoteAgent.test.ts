@@ -247,6 +247,21 @@ describe("remoteAgent - Protocol and Chunking", () => {
     expect(res.error).toContain("is not the authorized Muse bot");
   });
 
+  it("requires correlated chat replies to have a distinct response id and non-empty reply_to", () => {
+    expect(validateEnvelope({ v: 1, kind: "chat", id: "reply-1", reply_to: "request-1", text: "ok" }).valid).toBe(true);
+    expect(validateEnvelope({ v: 1, kind: "chat", reply_to: "request-1", text: "missing response id" })).toMatchObject({
+      valid: false,
+      error: "correlated chat reply missing valid 'id'",
+    });
+    expect(validateEnvelope({ v: 1, kind: "chat", id: "same-id", reply_to: "same-id", text: "not distinct" })).toMatchObject({
+      valid: false,
+      error: "correlated chat reply 'id' must differ from 'reply_to'",
+    });
+    expect(validateEnvelope({ v: 1, kind: "chat", id: "reply-1", reply_to: "   ", text: "empty correlation" }).valid).toBe(false);
+    // Legacy chat notes without reply_to remain valid without an id.
+    expect(validateEnvelope({ v: 1, kind: "chat", text: "legacy note" }).valid).toBe(true);
+  });
+
   it("should reject malformed schema or unknown kind", () => {
     expect(validateEnvelope({ v: 2, kind: "task_batch" }).valid).toBe(false);
     expect(validateEnvelope({ v: 1, kind: "unknown_kind" }).valid).toBe(false);

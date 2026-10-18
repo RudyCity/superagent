@@ -51,6 +51,52 @@ describe("MuseWatcher two-way chat", () => {
     expect(watcher.pendingChatReplies.size).toBe(0);
   });
 
+  it("ignores a chat message with the wrong reply_to and accepts the matching reply", async () => {
+    let watcher: any;
+    const sendEnvelope = vi.fn(async (envelope: any) => {
+      queueMicrotask(() => {
+        void watcher.handleEnvelope({
+          v: 1,
+          kind: "chat",
+          id: "muse-unrelated-note",
+          reply_to: "some-other-request",
+          text: "This is not the requested answer.",
+        });
+        void watcher.handleEnvelope({
+          v: 1,
+          kind: "chat",
+          id: "muse-matching-response",
+          reply_to: envelope.id,
+          text: "This is the matching answer.",
+        });
+      });
+      return true;
+    });
+    watcher = makeWatcher(sendEnvelope);
+
+    const result = await watcher.requestChat("Give me a correlated answer", 1_000);
+    expect(result.responseId).toBe("muse-matching-response");
+    expect(result.reply).toBe("This is the matching answer.");
+    expect(watcher.pendingChatReplies.size).toBe(0);
+  });
+
+  it("rejects pending requests when the websocket disconnects after send", async () => {
+    const watcher = makeWatcher(vi.fn(async () => true));
+    const reply = watcher.requestChat("Will the connection stay up?", 5_000);
+
+    watcher.rejectPendingChatReplies(new Error("Muse WebSocket disconnected before replying."));
+
+    await expect(reply).rejects.toThrow(/disconnected before replying/i);
+    expect(watcher.pendingChatReplies.size).toBe(0);
+  });
+
+  it("cleans up pending state when the transport declines the send", async () => {
+    const watcher = makeWatcher(vi.fn(async () => false));
+
+    await expect(watcher.requestChat("Do not send", 1_000)).rejects.toThrow(/message was not sent/i);
+    expect(watcher.pendingChatReplies.size).toBe(0);
+  });
+
   it("times out when Muse does not send a correlated reply", async () => {
     const watcher = makeWatcher(vi.fn(async () => true));
 

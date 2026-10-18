@@ -255,8 +255,9 @@ sequenceDiagram
 ### Failure and security behavior
 
 1. Missing watcher, wrong transport, or disconnected WebSocket prevents a direct-chat send.
-2. A response resolves a pending request only when its `reply_to` exactly matches that request's unique ID.
-3. Timeout, failed send, watcher shutdown, and WebSocket disconnect reject the pending request and clear its timer.
+2. A response resolves a pending request only when its non-empty `reply_to` exactly matches that request's unique ID, and the response carries its own non-empty `id` distinct from the request ID.
+3. Informational/legacy chat notes without `reply_to` remain valid but cannot satisfy an outstanding direct-chat request.
+4. Timeout, failed send, watcher shutdown, and WebSocket disconnect reject the pending request and clear its timer.
 4. The MCP HTTP tunnel and Muse WebSocket tunnel are separate services and have distinct readiness states.
 5. The exposed MCP list and its classifications are the source of truth; tool counts must not be copied into hardcoded constants.
 

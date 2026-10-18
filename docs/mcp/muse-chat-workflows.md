@@ -58,7 +58,9 @@ Use this for actual two-way conversation when the Muse WebSocket transport is co
 }
 ```
 
-This sends a single chat envelope and waits for a correlated reply using `reply_to`. If Muse does not answer in time, the tool returns a timeout instead of pretending the conversation succeeded.
+This sends a single chat envelope and waits for a correlated reply using `reply_to`. The request includes a unique `id`; Muse must answer with a new, non-empty `id` and `reply_to` set exactly to the request ID. A normal chat note without `reply_to` is not treated as the requested answer.
+
+The request exits with a clear error when the WebSocket is disconnected, the transport refuses to send, the watcher stops, or the reply timeout expires. Pending correlation state is cleared on all these paths. Correlated replies without their own response ID (or reusing the request ID) are invalid; legacy informational chat notes without `reply_to` remain compatible.
 
 ## What to use when
 

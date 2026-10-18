@@ -37,7 +37,7 @@
       "updatedAt": "2026-08-15T02:09:42.094Z"
     }
   },
-  "lastSync": "2026-10-14T03:52:04.157Z",
+  "lastSync": "2026-10-18T21:33:02.404Z",
   "workspaces": [
     {
       "name": "superagent",
@@ -48,12 +48,27 @@
       "path": "d:\\backup from pc asus\\Documents Development\\t-line"
     }
   ],
-  "lastModifiedFiles": [],
+  "lastModifiedFiles": [
+    "[superagent] CHANGELOG.md",
+    "[superagent] docs/mcp/muse-chat-workflows.md",
+    "[superagent] docs/wiki/00-index.md",
+    "[superagent] docs/wiki/03-api-and-contracts.md",
+    "[superagent] docs/wiki/04-features-and-workflows.md",
+    "[superagent] docs/wiki/auto-sync-manifest.json",
+    "[superagent] docs/wiki/wiki-rmemory-chunks.json",
+    "[superagent] src/core/mcp/mcpHttpTransport.ts",
+    "[superagent] src/core/mcp/mcpTunnel.ts",
+    "[superagent] src/core/mcp/superagentMcpServer.ts",
+    "[superagent] src/core/remoteAgent/protocol.ts",
+    "[superagent] tests/mcpServer.test.ts",
+    "[superagent] tests/museWatcherChat.test.ts",
+    "[superagent] tests/remoteAgent.test.ts"
+  ],
   "impactSummary": {
     "architecture": false,
     "domainData": false,
-    "apiContracts": false,
-    "features": false,
+    "apiContracts": true,
+    "features": true,
     "devops": false,
     "onboarding": false,
     "index": true

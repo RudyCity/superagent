@@ -4,7 +4,7 @@ import path from "path";
 import { execFileSync } from "node:child_process";
 import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 import os from "os";
-import { createSuperagentMcpServer, MCP_TOOL_CLASSIFICATION } from "../src/core/mcp/superagentMcpServer.js";
+import { createSuperagentMcpServer, MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, MCP_TOOL_DEFINITIONS } from "../src/core/mcp/superagentMcpServer.js";
 import { getDefaultSafeTools } from "../src/core/mcp/mcpHttpTransport.js";
 import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
 import {
@@ -20,9 +20,7 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const EXPECTED_TOOL_COUNT = 71;
-
-describe("Superagent Complete 3-Pillar MCP Server Suite (71 Tools, Resources, Prompts)", () => {
+describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resources, prompts)", () => {
   const testDir = path.join(process.cwd(), `.tmp_mcp_test_${Date.now()}`);
   const testProjectId = path.basename(testDir).replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
 
@@ -40,13 +38,17 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (71 Tools, Resources, Pr
     try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
   });
 
-  it(`lists all ${EXPECTED_TOOL_COUNT} MCP tools`, async () => {
+  it("lists every enabled MCP tool from the registered catalog", async () => {
     const server = createSuperagentMcpServer();
     const handler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
     const result = await handler({ method: "tools/list", params: {} });
     const toolNames = result.tools.map((t: any) => t.name);
 
-    expect(result.tools.length).toBe(EXPECTED_TOOL_COUNT);
+    const expectedTools = MCP_TOOL_DEFINITIONS.filter((tool) => !DISABLED_MCP_TOOLS.has(tool.name));
+    expect(result.tools.length).toBe(expectedTools.length);
+    expect(new Set(toolNames).size).toBe(toolNames.length);
+    expect(toolNames.every((name: string) => MCP_TOOL_CLASSIFICATION[name] !== undefined)).toBe(true);
+    expect(getDefaultSafeTools().every((name) => expectedTools.some((tool) => tool.name === name))).toBe(true);
 
     // Process monitoring
     expect(toolNames).toContain("superagent_list_active");

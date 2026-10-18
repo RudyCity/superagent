@@ -49,6 +49,7 @@ import { recordMcpOAuthAudit } from "./mcpOAuthAudit.js";
 import {
   MCP_TOOL_CLASSIFICATION as MCP_TOOL_CLASSIFICATION_SRC,
   DISABLED_MCP_TOOLS,
+  MCP_TOOL_DEFINITIONS,
 } from "./superagentMcpServer.js";
 /** Re-exported for backward compatibility; canonical in superagentMcpServer.ts. */
 export const MCP_TOOL_CLASSIFICATION = MCP_TOOL_CLASSIFICATION_SRC;
@@ -56,9 +57,9 @@ export const MCP_TOOL_CLASSIFICATION = MCP_TOOL_CLASSIFICATION_SRC;
 
 
 export function getDefaultSafeTools(): string[] {
-  return Object.entries(MCP_TOOL_CLASSIFICATION)
-    .filter(([name, level]) => level === "safe" && !DISABLED_MCP_TOOLS.has(name))
-    .map(([name]) => name);
+  return MCP_TOOL_DEFINITIONS
+    .map((tool) => tool.name)
+    .filter((name) => MCP_TOOL_CLASSIFICATION[name] === "safe" && !DISABLED_MCP_TOOLS.has(name));
 }
 
 /** 256-bit bearer token (64 hex chars). Generate fresh per tunnel session. */

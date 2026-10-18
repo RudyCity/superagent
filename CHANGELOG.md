@@ -6,6 +6,8 @@
 - Added identity-bound MCP project access grants with separate read, write, execute, Git, worktree, planning, and chain capabilities. Project registry mutations and grant creation require locally enabled Full YOLO; grants are revoked when a project is disabled, removed, or its target changes.
 
 ### Changed
+- Centralized the MCP server's actual tool definitions in `MCP_TOOL_DEFINITIONS`; `tools/list`, the default-safe allowlist, and tunnel-reported tool counts now derive from that catalog rather than stale classification-only entries or hardcoded totals.
+- Tightened correlated Muse chat envelopes: replies must have a non-empty `reply_to` and a distinct, non-empty response `id`; legacy informational chat messages without `reply_to` remain compatible.
 - Persisted workspace selection per initialized MCP session while keeping explicit per-call targets separate from the session default. Added integration coverage proving that one session's switch does not affect another session.
 - Applied common project-root boundary validation to MCP file read/list/search/write, multi-file writes, file locks, document reads, Git add/restore, and patch/replace operations. Local file tools reject SSH/chain URIs instead of treating them as local paths.
 - Isolated Workspace Chain SSH/local mode changes in request-scoped async context; moved worktree and workspace-status handlers into focused MCP modules.
@@ -17,6 +19,8 @@
 - Standalone SSH targets reject password/query/fragment credentials. Remote file operations validate the registered root and resolve paths with SFTP realpath where available. The SSH execute capability is high privilege: commands run as the remote OS user and are not sandboxed by the project root.
 
 ### Tests
+- Added regression cases for wrong `reply_to`, reply timeout, WebSocket disconnect after send, transport send failure, and invalid correlated-response IDs; the MCP discovery test compares against the live tool-definition catalog rather than a numeric constant.
+- Focused verification for this continuation: `bun run build` passed, and the MCP/chat/remote-agent suite passed 90 tests across 4 files.
 - Added MCP project registry/router/tool tests, per-session HTTP transport regression coverage, Workspace Chain adapter tests, concurrent SSH/local context tests, and workspace-boundary tests.
 - Added identity/capability policy tests, local multi-project dispatcher concurrency tests, standalone SSH routing/fail-closed tests, and nested SSH root/traversal tests. These validate routing and policy without claiming a live SSH host was exercised.
 - Verification after refreshing outdated tests: `bun run build` and `bun run verify:extension-js` passed. All 329 test files passed when run in four bounded batches: 3,211 tests passed, 5 skipped by existing test conditions, 0 failed.
