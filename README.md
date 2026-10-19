@@ -417,14 +417,17 @@ Superagent includes native integration with OpenAI Secure MCP Tunnels via the of
      npm install -g @openai/tunnel-client
      # or download binary from https://developers.openai.com/api/docs/guides/secure-mcp-tunnels
      ```
-   - Provide your OpenAI Control Plane API key either via environment variable:
+   - **OpenAI Control Plane API Key**:
+     OpenAI Secure MCP Tunnels connect directly and privately to OpenAI's control plane (`api.openai.com`). An API key with *Tunnels Read + Use* permission (or your organization/project API key) is required to authenticate your machine and prove ownership of the `tunnel_id`, preventing unauthorized access.
+     Save it once so you don't need to pass `--api-key` on every command:
      ```bash
-     export CONTROL_PLANE_API_KEY="sec_..."
+     # Save once in Superagent (persisted in model-config.json):
+     /login add openai <YOUR_OPENAI_API_KEY>
+
+     # Or export in your environment:
+     export CONTROL_PLANE_API_KEY="sk-..."
      ```
-     Or by configuring an OpenAI provider profile:
-     ```bash
-     /login add openai
-     ```
+     Alternatively, pass `--api-key <key>` directly to the start command.
 
 2. **Run Diagnostics**:
    Verify prerequisites, binary installation, control plane credentials, and port availability:
