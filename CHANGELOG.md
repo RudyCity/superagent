@@ -9,6 +9,9 @@
   - Added first-class `/mcp tunnel` slash command and CLI (`superagent mcp tunnel [start|stop|list|doctor]`) for managing both Cloudflare and OpenAI Secure MCP Tunnels.
   - Added copy-paste configuration generators for ChatGPT Plugins/Connectors and OpenAI Responses API tool definitions with `tunnel_id`.
   - Added automatic rollback on startup failure and clean process tree termination on tunnel stop.
+  - Added interactive dashboard suggestions, command descriptions, and autocompletion in `src/utils/dashboardSuggestions.ts` for `/mcp`, `/mcp tunnel`, `/tunnel`, and `/muse tunnel` with OpenAI provider flags and doctor diagnostics.
+  - Updated `/help` in `src/core/commands/coreCommands.ts` and `/muse tunnel guide` in `src/core/commands/museTunnelSubcommand.ts` with OpenAI Secure MCP Tunnel command references and prerequisites.
+  - Updated `README.md` with comprehensive OpenAI Secure MCP Tunnel documentation, prerequisites, CLI and slash commands, ChatGPT integration, and Responses API configuration snippets.
 
 ### Tests
 - Added unit and lifecycle tests in `tests/openaiTunnelClient.test.ts` for binary discovery, install instructions, credential resolution, snippet formatting, doctor checks, and process supervision.
