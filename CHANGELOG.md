@@ -12,10 +12,12 @@
   - Added interactive dashboard suggestions, command descriptions, and autocompletion in `src/utils/dashboardSuggestions.ts` for `/mcp`, `/mcp tunnel`, `/tunnel`, and `/muse tunnel` with OpenAI provider flags and doctor diagnostics.
   - Updated `/help` in `src/core/commands/coreCommands.ts` and `/muse tunnel guide` in `src/core/commands/museTunnelSubcommand.ts` with OpenAI Secure MCP Tunnel command references and prerequisites.
   - Updated `README.md` with comprehensive OpenAI Secure MCP Tunnel documentation, prerequisites, CLI and slash commands, ChatGPT integration, and Responses API configuration snippets.
+  - Added automatic startup validation and installation for `@openai/tunnel-client` via `tunnelClientSetup.ts`, integrated into `StartupChecker` (`src/components/startup-checker.tsx`) and cached in `SystemCheckCache` (`src/core/config/systemCache.ts`).
 
 ### Tests
 - Added unit and lifecycle tests in `tests/openaiTunnelClient.test.ts` for binary discovery, install instructions, credential resolution, snippet formatting, doctor checks, and process supervision.
 - Added integration tests in `tests/mcpTunnelOpenAiIntegration.test.ts` verifying OpenAI tunnel lifecycle, state file persistence, rollback on failure, and server formatting.
+- Added unit tests in `tests/tunnelClientSetup.test.ts` verifying startup detection, auto-install execution, and 24-hour cache persistence.
 
 ## [1.14.0] - 2026-10-18
 ### Added

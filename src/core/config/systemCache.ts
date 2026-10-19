@@ -14,6 +14,7 @@ export interface SystemCheckCache {
   bun?: boolean;
   node?: boolean;
   git?: boolean;
+  openaiTunnelClient?: boolean;
   lastChecked?: number;
 }
 

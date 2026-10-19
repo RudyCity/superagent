@@ -427,6 +427,12 @@ export {
   runPaddleOcrOnPdf
 } from "./setup/ocrSetup.js";
 
+export {
+  clearTunnelClientCache,
+  isTunnelClientAvailable,
+  ensureTunnelClientInstalled,
+} from "./setup/tunnelClientSetup.js";
+
 let cachedRmemoryInstalled: boolean | null = null;
 export function clearRmemoryCache(): void {
   cachedRmemoryInstalled = null;

@@ -21,7 +21,9 @@ import {
   isPythonInstalled,
   isOfficeCliInstalledLocally,
   isOfficeCliInstalledGlobally,
-  isRmemoryInstalled
+  isRmemoryInstalled,
+  isTunnelClientAvailable,
+  ensureTunnelClientInstalled,
 } from "../core/androidSetup.js";
 import { initMcpServers } from "../core/mcp/McpManager.js";
 import { warmUpClassifier } from "../core/requestClassifier.js";
@@ -78,6 +80,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
     initialTasks.officeCli = { id: "officeCli", name: "Office CLI", status: "pending" };
     initialTasks.rmemory = { id: "rmemory", name: "RMemory Package", status: "pending" };
     initialTasks.mcpServers = { id: "mcpServers", name: "MCP Servers", status: "pending" };
+    initialTasks.tunnelClient = { id: "tunnelClient", name: "OpenAI Tunnel Client", status: "pending" };
 
     if (settings.classifierEnabled !== false) {
       initialTasks.classifierModel = { id: "classifierModel", name: "Classifier Model", status: "pending" };
@@ -301,7 +304,27 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
         }
       };
 
-      // 11. Request Classifier Model (Native Senopati System-1 ONNX)
+      // 11. OpenAI Tunnel Client
+      const checkTunnelClient = async () => {
+        updateTask("tunnelClient", { status: "checking" });
+        const hasClient = await isTunnelClientAvailable();
+        if (hasClient) {
+          updateTask("tunnelClient", { status: "ready" });
+        } else {
+          updateTask("tunnelClient", { status: "downloading", progress: 0 });
+          await ensureTunnelClientInstalled((downloaded, total, stage) => {
+            if (stage === "downloading") {
+              updateTask("tunnelClient", { status: "downloading" });
+            } else if (stage === "done") {
+              updateTask("tunnelClient", { status: "ready" });
+            }
+          }).catch(() => {});
+          const installed = await isTunnelClientAvailable();
+          updateTask("tunnelClient", { status: installed ? "ready" : "skipped" });
+        }
+      };
+
+      // 12. Request Classifier Model (Native Senopati System-1 ONNX)
       const checkClassifier = async () => {
         if (settings.classifierEnabled === false) return;
         updateTask("classifierModel", { status: "checking" });
@@ -313,7 +336,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
         }
       };
 
-      // 12. Embedding Model and RMemory Setup
+      // 13. Embedding Model and RMemory Setup
       const checkRmemoryServices = async () => {
         if (settings.enableRmemory !== true) return;
         updateTask("rmemoryGateway", { status: "checking" });
@@ -352,6 +375,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
         checkOfficeCli(),
         checkRmemory(),
         checkMcp(),
+        checkTunnelClient(),
         checkClassifier(),
         checkRmemoryServices(),
       ]);

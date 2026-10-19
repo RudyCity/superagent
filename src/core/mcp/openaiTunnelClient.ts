@@ -233,7 +233,14 @@ export async function runTunnelClientDoctor(opts: {
   tunnelId?: string;
   apiKey?: string;
 }): Promise<{ success: boolean; output: string }> {
-  const binary = findTunnelClientBinary(opts.binaryPath);
+  let binary = findTunnelClientBinary(opts.binaryPath);
+  if (!binary && !opts.binaryPath) {
+    try {
+      const { ensureTunnelClientInstalled } = await import("../setup/tunnelClientSetup.js");
+      await ensureTunnelClientInstalled();
+      binary = findTunnelClientBinary();
+    } catch {}
+  }
   if (!binary) {
     return {
       success: false,
@@ -379,7 +386,14 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
     try { fs.unlinkSync(stateFile); } catch {}
   }
 
-  const binary = findTunnelClientBinary(opts.binaryPath);
+  let binary = findTunnelClientBinary(opts.binaryPath);
+  if (!binary && !opts.binaryPath) {
+    try {
+      const { ensureTunnelClientInstalled } = await import("../setup/tunnelClientSetup.js");
+      await ensureTunnelClientInstalled();
+      binary = findTunnelClientBinary();
+    } catch {}
+  }
   if (!binary) {
     throw new Error(getTunnelClientInstallGuide());
   }
