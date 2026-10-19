@@ -217,7 +217,7 @@ The `control_chrome_vision` tool provides **human-like visual perception and spa
 | `/skills` | List installed skills or synthesize new ones (`/skills synthesize <title>`) |
 | `/install` | Install a skill from skills.sh (e.g. `/install vercel-labs/skills/find-skills`) |
 | `/memory` | Manage and inspect RMemory long-term memory: status, sync, search, add, delete, list-scenes, read-scene, read-persona |
-| `/mcp` | Manage MCP servers and MCP tunnel providers: `list`, `add`, `remove`, `reload`, plus `/mcp tunnel providers`, `start`, `stop`, `restart`, `list`, `status`, `doctor` |
+| `/mcp` | Manage MCP servers and tunnel providers: `list`, `add`, `remove`, `reload`; tunnel actions include `providers`, `config` (OpenAI Tunnel ID/key: `set-id`, `set-key-env`, `set-key`, `status`, `clear-id`, `clear-key`, `clear`), `start`, `stop`, `restart`, `list`, `status`, `doctor` |
 | `/macro` | Manage and run browser macro presets: list, run, delete |
 | `/muse` | Coordinate Muse tasks and watch sessions; `/muse tunnel` controls Muse WebSocket only |
 | `/telegram` | Manage direct Telegram bot/group operations: `status`, `doctor`, `send`, `config`, `fallback` |
@@ -452,6 +452,28 @@ Superagent includes native integration with OpenAI Secure MCP Tunnels via the of
      The tunnel integration accepts an explicit `--api-key <key>` (alias: `--control-plane-key <key>`) or reads `CONTROL_PLANE_API_KEY` from the environment. It deliberately does not fall back to the model provider's `OPENAI_API_KEY`.
 
      **Important:** `/login add openai <key>` configures the model provider; it is not a persistent setting for the Secure MCP Tunnel control-plane credential. Avoid passing a real secret directly in a command during routine use because command input may be retained in history or logs.
+
+     **Recommended: save tunnel configuration in Superagent**:
+     Configure the Tunnel ID once and save the runtime key encrypted at rest using the existing Superagent secret store. This configuration is separate from model-provider credentials.
+
+     First, make CONTROL_PLANE_API_KEY available to the Superagent process (PowerShell/Bash examples below), then run these commands in the interactive terminal:
+
+     ```text
+     /mcp tunnel config set-id <YOUR_TUNNEL_ID>
+     /mcp tunnel config set-key-env
+     /mcp tunnel config status
+     /mcp tunnel start --provider openai
+     ```
+
+     CLI equivalents:
+     ```bash
+     superagent mcp tunnel config set-id <YOUR_TUNNEL_ID>
+     superagent mcp tunnel config set-key-env
+     superagent mcp tunnel config status
+     superagent mcp tunnel start --provider openai
+     ```
+
+     `set-key-env` copies CONTROL_PLANE_API_KEY into encrypted local storage without echoing it. `set-key <key>` is also available, but can expose the secret in shell history; prefer `set-key-env`. Environment values take precedence over saved values. `clear-id`, `clear-key`, and `clear` remove saved config only; they do not unset environment variables.
 
      PowerShell (set it before starting Superagent from the same terminal):
      ```powershell
