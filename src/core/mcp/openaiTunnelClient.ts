@@ -285,8 +285,8 @@ export function getTunnelClientInstallGuide(): string {
 
 function isValidApiKeyCandidate(key?: string): key is string {
   if (!key || typeof key !== "string") return false;
-  const trimmed = key.trim();
-  return trimmed.length >= 15 && !trimmed.startsWith("-");
+  const cleaned = key.replace(/[\r\n\s]+/g, "");
+  return cleaned.length >= 15 && !cleaned.startsWith("-");
 }
 
 /**
@@ -298,10 +298,10 @@ function isValidApiKeyCandidate(key?: string): key is string {
  * credential: those keys may not have Tunnels Read + Use permission.
  */
 export function resolveOpenAiControlPlaneKey(explicitKey?: string): string | undefined {
-  if (isValidApiKeyCandidate(explicitKey)) return explicitKey.trim();
+  if (isValidApiKeyCandidate(explicitKey)) return explicitKey.replace(/[\r\n\s]+/g, "");
 
   const envKey = process.env.CONTROL_PLANE_API_KEY;
-  if (isValidApiKeyCandidate(envKey)) return envKey.trim();
+  if (isValidApiKeyCandidate(envKey)) return envKey.replace(/[\r\n\s]+/g, "");
 
   return undefined;
 }
@@ -518,6 +518,8 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
       "Provide via --api-key, CONTROL_PLANE_API_KEY environment variable, or configure an OpenAI provider in Superagent (/login add openai <key>)."
     );
   }
+
+  process.env.CONTROL_PLANE_API_KEY = apiKey;
 
   const profile = opts.profile || "superagent-mcp";
   const profileDir = opts.profileDir ? path.resolve(opts.profileDir) : getDefaultTunnelClientProfileDir();

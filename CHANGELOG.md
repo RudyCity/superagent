@@ -1,3 +1,9 @@
+## [1.14.5] - 2026-10-19
+### Fixed
+- Fixed OpenAI Secure MCP Tunnel API key whitespace handling and environment key retention (`openaiTunnelClient.ts`):
+  - Added multiline whitespace/newline stripping (`replace(/[\r\n\s]+/g, "")`) in `isValidApiKeyCandidate` and `resolveOpenAiControlPlaneKey` to prevent terminal paste line breaks from corrupting or truncating 160+ character runtime API keys.
+  - Automatically populated `process.env.CONTROL_PLANE_API_KEY` in the active Superagent runtime process when starting the tunnel, enabling subsequent `/mcp tunnel doctor` and `/mcp tunnel restart` invocations to resolve the control plane credential without re-specifying `--api-key`.
+
 ## [1.14.4] - 2026-10-19
 ### Fixed
 - Fixed `--mcp-auth` parameter parsing and OAuth discovery/bootstrap code output under `/mcp tunnel` (`mcpCommand.ts`, `mcpCliHandler.ts`):
