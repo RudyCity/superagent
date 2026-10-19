@@ -204,24 +204,46 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
   const yoloActive = getYoloModeState() !== "off";
   const dangerous = Boolean(opts.allowDangerous || yoloActive);
   const authMode: McpAuthMode = opts.authMode ?? "static-bearer";
-  const tunnelProvider: McpTunnelProvider = opts.tunnelProvider ?? "cloudflare";
+  const requestedProvider = opts.tunnelProvider as string | undefined;
+  if (requestedProvider !== undefined && requestedProvider !== "cloudflare" && requestedProvider !== "openai") {
+    throw new Error(
+      `Unsupported MCP tunnel provider "${requestedProvider}". Supported providers: cloudflare, openai.`
+    );
+  }
+
+  // Honor an explicitly selected provider. Otherwise, infer OpenAI from its
+  // configured tunnel ID; without that signal, retain the Cloudflare default.
+  const configuredOpenAiTunnelId = process.env.OPENAI_MCP_TUNNEL_ID?.trim();
+  const hasExplicitTunnelId = Boolean(opts.tunnelId?.trim());
+  const tunnelProvider: McpTunnelProvider = requestedProvider === "openai"
+    ? "openai"
+    : requestedProvider === "cloudflare"
+      ? "cloudflare"
+      : hasExplicitTunnelId || configuredOpenAiTunnelId
+        ? "openai"
+        : "cloudflare";
 
   // -------------------------------------------------------------
   // OPENAI SECURE MCP TUNNEL PATH
   // -------------------------------------------------------------
   if (tunnelProvider === "openai") {
-    const rawTunnelId = opts.tunnelId || process.env.CONTROL_PLANE_TUNNEL_ID;
+    // Dedicated SuperAgent env takes precedence; retain the tunnel-client
+    // env variable as a backwards-compatible fallback.
+    const rawTunnelId = opts.tunnelId?.trim()
+      || process.env.OPENAI_MCP_TUNNEL_ID?.trim()
+      || process.env.CONTROL_PLANE_TUNNEL_ID?.trim();
     if (!rawTunnelId) {
       throw new Error(
         "OpenAI Secure MCP Tunnel requires a tunnel ID.\n" +
         "Create one in OpenAI Platform tunnel settings (https://platform.openai.com/settings/organization/tunnels)\n" +
-        "and pass --tunnel-id <id> (e.g. tunnel_0123456789abcdef0123456789abcdef)."
+        "then pass --tunnel-id <id> or set OPENAI_MCP_TUNNEL_ID (e.g. tunnel_0123456789abcdef0123456789abcdef)."
       );
     }
     const tunnelId = rawTunnelId.trim();
     if (!isValidTunnelId(tunnelId)) {
       throw new Error(
-        `Invalid OpenAI tunnel ID "${tunnelId}". Expected format like "tunnel_0123456789abcdef...".`
+        `Invalid OpenAI Secure MCP Tunnel ID "${tunnelId}". ` +
+        "Check OPENAI_MCP_TUNNEL_ID or pass --tunnel-id <id>; valid IDs contain at least 8 letters, numbers, _, -, . or : characters."
       );
     }
 

@@ -216,12 +216,13 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         try {
           const mcpInfo = await startMcpTunnel({ port: mcpPort, allowDangerous, authMode: mcpAuthMode });
           const toolModeLine = `  Tool mode     : ${mcpInfo.dangerous ? `FULL (${mcpInfo.toolCount} tools)` : `SAFE (${mcpInfo.toolCount} read-only)`}`;
+          const tunnelName = mcpInfo.tunnelProvider === "openai" ? "OpenAI Secure MCP Tunnel" : "Cloudflare Quick Tunnel";
           const mcpLines = [
             "",
             "═════════════════════════════════════════════════════════════════════════════",
-            `  Superagent MCP Server & Cloudflare Quick Tunnel Online! (${mcpInfo.authMode} mode)`,
+            `  Superagent MCP Server & ${tunnelName} Online! (${mcpInfo.authMode} mode)`,
             "═════════════════════════════════════════════════════════════════════════════",
-            `  MCP Endpoint  : ${mcpInfo.publicUrl}`,
+            `  ${mcpInfo.tunnelProvider === "openai" ? "Tunnel ID" : "MCP Endpoint"}  : ${mcpInfo.tunnelProvider === "openai" ? mcpInfo.openAiTunnelId : mcpInfo.publicUrl}`,
             `  Local Target  : ${mcpInfo.localUrl}`,
             `  Auth Mode     : ${mcpInfo.authMode}`,
           ];
@@ -240,6 +241,17 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
               "  2. In Advanced OAuth settings, enter any OAuth client ID (e.g. chatgpt) and leave secret blank.",
               "  3. Complete the OAuth authorization in your browser using the bootstrap code.",
               "  4. Approve scopes; safe tools are callable after approval."
+            );
+          } else if (mcpInfo.tunnelProvider === "openai") {
+            mcpLines.push(
+              mcpInfo.adminUrl ? `  Admin UI      : ${mcpInfo.adminUrl}` : "",
+              toolModeLine,
+              `  Audit log     : ${mcpInfo.auditLogPath}`,
+              "",
+              "ChatGPT setup:",
+              "  1. Add a custom MCP server in ChatGPT and choose the Tunnel connection type.",
+              `  2. Enter tunnel ID: ${mcpInfo.openAiTunnelId}`,
+              "  3. Select the matching tunnel suggestion to bind it; tunnel-client handles transport authorization."
             );
           } else {
             mcpLines.push(`  Bearer token  : ${mcpInfo.bearerToken}`, toolModeLine, `  Audit log     : ${mcpInfo.auditLogPath}`, "", "MCP client config (copy-paste):", `{ "superagent": { "url": "${mcpInfo.publicUrl}", "headers": { "Authorization": "Bearer token ${mcpInfo.bearerToken}" } } }`);

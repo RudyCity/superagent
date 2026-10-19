@@ -45,9 +45,15 @@ describe("MCP Tunnel with OpenAI Secure MCP Tunnel Provider", () => {
   let tempHome: string;
   let homedirSpy: { mockRestore(): void };
   let closeServerMock: any;
+  let originalOpenAiTunnelId: string | undefined;
+  let originalControlPlaneTunnelId: string | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    originalOpenAiTunnelId = process.env.OPENAI_MCP_TUNNEL_ID;
+    originalControlPlaneTunnelId = process.env.CONTROL_PLANE_TUNNEL_ID;
+    delete process.env.OPENAI_MCP_TUNNEL_ID;
+    delete process.env.CONTROL_PLANE_TUNNEL_ID;
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-openai-tunnel-integration-"));
     homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
@@ -80,8 +86,13 @@ describe("MCP Tunnel with OpenAI Secure MCP Tunnel Provider", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.restoreAllMocks();
     homedirSpy?.mockRestore();
     fs.rmSync(tempHome, { recursive: true, force: true });
+    if (originalOpenAiTunnelId === undefined) delete process.env.OPENAI_MCP_TUNNEL_ID;
+    else process.env.OPENAI_MCP_TUNNEL_ID = originalOpenAiTunnelId;
+    if (originalControlPlaneTunnelId === undefined) delete process.env.CONTROL_PLANE_TUNNEL_ID;
+    else process.env.CONTROL_PLANE_TUNNEL_ID = originalControlPlaneTunnelId;
   });
 
   it("fails if tunnelProvider is openai but no tunnelId is provided", async () => {
@@ -91,6 +102,76 @@ describe("MCP Tunnel with OpenAI Secure MCP Tunnel Provider", () => {
         tunnelProvider: "openai",
       })
     ).rejects.toThrow("OpenAI Secure MCP Tunnel requires a tunnel ID");
+    expect(mocks.startOpenAiTunnel).not.toHaveBeenCalled();
+    expect(mocks.startMcpHttpServer).not.toHaveBeenCalled();
+  });
+
+  it("uses OPENAI_MCP_TUNNEL_ID when OpenAI is selected without an explicit tunnel ID", async () => {
+    const tunnelId = "tunnel_0123456789abcdef0123456789abcdef";
+    process.env.OPENAI_MCP_TUNNEL_ID = tunnelId;
+
+    const info = await startMcpTunnel({ port: 19431, tunnelProvider: "openai" });
+
+    expect(info.tunnelProvider).toBe("openai");
+    expect(info.openAiTunnelId).toBe(tunnelId);
+    expect(mocks.startOpenAiTunnel).toHaveBeenCalledWith(expect.objectContaining({ tunnelId }));
+    await stopMcpTunnel(19431);
+  });
+
+  it("selects OpenAI from OPENAI_MCP_TUNNEL_ID when no provider was explicitly selected", async () => {
+    const tunnelId = "tunnel_0123456789abcdef0123456789abcdef";
+    process.env.OPENAI_MCP_TUNNEL_ID = tunnelId;
+
+    const info = await startMcpTunnel({ port: 19432 });
+
+    expect(info.tunnelProvider).toBe("openai");
+    expect(info.openAiTunnelId).toBe(tunnelId);
+    expect(mocks.startOpenAiTunnel).toHaveBeenCalledOnce();
+    await stopMcpTunnel(19432);
+  });
+
+  it("fails clearly for an invalid OpenAI tunnel ID instead of switching providers", async () => {
+    await expect(startMcpTunnel({
+      port: 19433,
+      tunnelProvider: "openai",
+      tunnelId: "not a valid tunnel id",
+    })).rejects.toThrow("Invalid OpenAI Secure MCP Tunnel ID");
+
+    expect(mocks.startOpenAiTunnel).not.toHaveBeenCalled();
+    expect(mocks.startMcpHttpServer).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unsupported provider instead of defaulting to Cloudflare", async () => {
+    await expect(startMcpTunnel({
+      port: 19434,
+      tunnelProvider: "invalid-provider" as any,
+    })).rejects.toThrow('Unsupported MCP tunnel provider "invalid-provider"');
+
+    expect(mocks.startOpenAiTunnel).not.toHaveBeenCalled();
+    expect(mocks.startMcpHttpServer).not.toHaveBeenCalled();
+  });
+
+  it("honors explicit Cloudflare selection even when an OpenAI tunnel ID is configured", async () => {
+    process.env.OPENAI_MCP_TUNNEL_ID = "tunnel_0123456789abcdef0123456789abcdef";
+    const startQuickTunnel = vi.spyOn(await import("../src/core/remoteAgent/cloudflareTunnel.js"), "startQuickTunnel")
+      .mockResolvedValueOnce({ publicUrl: "https://test.trycloudflare.com" } as any);
+    const getTunnelStatus = vi.spyOn(await import("../src/core/remoteAgent/cloudflareTunnel.js"), "getTunnelStatus")
+      .mockReturnValue({ isRunning: false } as any);
+    const claimTunnelServiceKind = vi.spyOn(await import("../src/core/remoteAgent/cloudflareTunnel.js"), "claimTunnelServiceKind")
+      .mockReturnValue(true);
+    const startMcpHttp = mocks.startMcpHttpServer.mockResolvedValueOnce({
+      server: {}, url: "http://127.0.0.1:19435/mcp", port: 19435, close: closeServerMock,
+    });
+
+    const info = await startMcpTunnel({ port: 19435, tunnelProvider: "cloudflare" });
+    expect(info.tunnelProvider).toBe("cloudflare");
+    expect(startQuickTunnel).toHaveBeenCalledOnce();
+    expect(mocks.startOpenAiTunnel).not.toHaveBeenCalled();
+    await stopMcpTunnel(19435);
+    startQuickTunnel.mockRestore();
+    getTunnelStatus.mockRestore();
+    claimTunnelServiceKind.mockRestore();
+    expect(startMcpHttp).toHaveBeenCalled();
   });
 
   it("successfully starts local MCP server and OpenAI tunnel client", async () => {

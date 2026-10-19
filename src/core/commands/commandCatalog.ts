@@ -65,8 +65,8 @@ export const MCP_TUNNEL_PROVIDERS = [
   {
     id: "openai",
     label: "OpenAI Secure MCP Tunnel",
-    description: "Outbound-only secure tunnel identified by an OpenAI tunnel ID.",
-    requiredOptions: ["--tunnel-id"],
+    description: "Outbound-only secure tunnel identified by an OpenAI tunnel ID; use --tunnel-id or OPENAI_MCP_TUNNEL_ID.",
+    requiredOptions: [],
   },
 ] as const;
 
@@ -84,5 +84,6 @@ export function getMcpTunnelProvidersHelp(): string {
     "Examples:",
     "  /mcp tunnel start --provider cloudflare",
     "  /mcp tunnel start --provider openai --tunnel-id <id>",
+    "  (or set OPENAI_MCP_TUNNEL_ID and run /mcp tunnel start --provider openai)",
   ].join("\n");
 }

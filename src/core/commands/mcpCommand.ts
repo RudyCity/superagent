@@ -372,7 +372,9 @@ export const mcpCommand: SlashCommand = {
         }
         const providerIdx = rawArgs.findIndex((a) => a === "--provider");
         const wantOpenAi = rawArgs.some((a) => a === "--openai" || a === "--openai-tunnel");
-        let provider: "cloudflare" | "openai" = wantOpenAi ? "openai" : "cloudflare";
+        // Leave provider unset unless explicitly selected: startMcpTunnel can honor
+        // OPENAI_MCP_TUNNEL_ID instead of this command forcing Cloudflare by default.
+        let provider: "cloudflare" | "openai" | undefined = wantOpenAi ? "openai" : undefined;
         if (providerIdx !== -1) {
           const p = rawArgs[providerIdx + 1]?.toLowerCase();
           if (p !== "openai" && p !== "cloudflare") {
@@ -387,8 +389,9 @@ export const mcpCommand: SlashCommand = {
         }
         const tunnelIdIdx = rawArgs.findIndex((a) => a === "--tunnel-id");
         let tunnelId: string | undefined;
-        if (tunnelIdIdx !== -1 && rawArgs[tunnelIdIdx + 1]) {
-          tunnelId = rawArgs[tunnelIdIdx + 1].trim();
+        if (tunnelIdIdx !== -1) {
+          const candidate = rawArgs[tunnelIdIdx + 1];
+          if (candidate && !candidate.startsWith("--")) tunnelId = candidate.trim();
           provider = "openai";
         }
         const apiKeyIdx = rawArgs.findIndex((a) => a === "--api-key" || a === "--control-plane-key");
