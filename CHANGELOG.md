@@ -1,3 +1,9 @@
+## [1.14.7] - 2026-10-19
+### Fixed
+- Fixed OpenAI Secure MCP Tunnel Harpoon plaintext HTTP authorization and channel polling (`openaiTunnelClient.ts`):
+  - Added `--harpoon.allow-plaintext-http` and `HARPOON_ALLOW_PLAINTEXT_HTTP=true` to `tunnel-client run` so local loopback OAuth token endpoints (`http://127.0.0.1:9227`) can be registered and proxied via Harpoon without HTTPS rejection errors.
+  - Added explicit `--control-plane.poll-channel main` and `--control-plane.poll-channel harpoon` flags to enable draining OAuth authorization and proxy events from OpenAI control plane.
+
 ## [1.14.6] - 2026-10-19
 ### Fixed
 - Fixed OpenAI Secure MCP Tunnel doctor health listener port collision (`openaiTunnelClient.ts`):

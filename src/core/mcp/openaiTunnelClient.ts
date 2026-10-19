@@ -560,6 +560,9 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
     args.push("--mcp.extra-headers", `Authorization: Bearer ${opts.bearerToken}`);
     args.push("--mcp.discovery-extra-headers", `Authorization: Bearer ${opts.bearerToken}`);
   }
+  args.push("--harpoon.allow-plaintext-http");
+  args.push("--control-plane.poll-channel", "main");
+  args.push("--control-plane.poll-channel", "harpoon");
   args.push("--log.file", path.join(getOpenAiTunnelStateDir(), "tunnel-client.log"));
 
   const env: NodeJS.ProcessEnv = {
@@ -567,6 +570,7 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
     TUNNEL_CLIENT_PROFILE_DIR: profileInfo.profileDir,
     CONTROL_PLANE_API_KEY: apiKey,
     CONTROL_PLANE_TUNNEL_ID: tunnelId,
+    HARPOON_ALLOW_PLAINTEXT_HTTP: "true",
   };
 
   let startupError = "";
