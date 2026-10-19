@@ -10,6 +10,7 @@ import { contentToString, type Message } from "../conversation.js";
 // snapshot during evaluation, leaving `manageSubagentsTool` / `defineSubagentTool`
 // in TDZ and crashing the `masterToolset.map((t) => t.name)` runtime allowlist.
 import { isRmemoryActive } from "../rmemoryUtil.js";
+import { redactMemorySecrets } from "../memoryLifecycle.js";
 import { HistoryCompactor } from "./HistoryCompactor.js";
 import { buildBudgetedPromptContext } from "./PromptContextBudget.js";
 import { getAgentActiveModelName } from "./AgentUtils.js";
@@ -394,6 +395,35 @@ export class ContextBuilder {
         }
       }
     } catch {}
+
+    // Keep all recalled-memory tiers under one 2,500-character allowance,
+    // accounting for the RMemory block already added to the conversation. Redact
+    // each assembled tier at the final prompt boundary as well as at storage.
+    const totalMemoryCharBudget = 2500;
+    let remainingMemoryChars = Math.max(
+      0,
+      totalMemoryCharBudget - Math.min(
+        totalMemoryCharBudget,
+        Math.max(0, Math.trunc(Number((agent as any)._bootstrapRMemoryContextChars || 0))),
+      ),
+    );
+    const capMemoryTier = (value: string, tierCap: number): string => {
+      const redacted = redactMemorySecrets(String(value || ""));
+      const limit = Math.max(0, Math.min(remainingMemoryChars, tierCap));
+      if (!redacted || limit === 0) return "";
+      const marker = "… [truncated]";
+      let bounded = redacted;
+      if (redacted.length > limit) {
+        bounded = limit > marker.length
+          ? redacted.slice(0, limit - marker.length) + marker
+          : redacted.slice(0, limit);
+      }
+      remainingMemoryChars = Math.max(0, remainingMemoryChars - bounded.length);
+      return bounded;
+    };
+    pinnedKnowledgeNotice = capMemoryTier(pinnedKnowledgeNotice, 900);
+    sharedMemoryNotice = capMemoryTier(sharedMemoryNotice, 800);
+    selfdevLessonsText = capMemoryTier(selfdevLessonsText, remainingMemoryChars);
 
     const budgetedSystemContext = buildBudgetedPromptContext([
       { id: "guidelines", content: guidelinesText, maxTokens: 3_200 },

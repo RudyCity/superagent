@@ -10,6 +10,10 @@ import {
   killProcessTool,
 } from "../../tools/processInspectionTools.js";
 import { getMcpWorkspacePath } from "./workspaceContext.js";
+import { isRemoteWorkspaceTarget } from "./workspaceContext.js";
+import fs from "node:fs";
+import path from "node:path";
+import { redactMemorySecrets } from "../../memoryLifecycle.js";
 import { getProcessPoolMetrics } from "../../agent/ProcessPool.js";
 
 function toResult(res: unknown): McpToolResult {
@@ -86,7 +90,75 @@ export async function handleProcessPoolStatus(): Promise<McpToolResult> {
   return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
 }
 
+function getAuthorizedLocalDaemonWorkspace(): string {
+  const selected = getMcpWorkspacePath();
+  if (isRemoteWorkspaceTarget(selected)) {
+    throw new Error("Daemon diagnostics only support an authorized local workspace.");
+  }
+  return fs.realpathSync(path.resolve(selected));
+}
+
+function sameDaemonWorkspace(a: string, b: string): boolean {
+  const left = path.resolve(a);
+  const right = path.resolve(b);
+  return process.platform === "win32"
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right;
+}
+
+/** Read-only, project-scoped diagnostics with no execution/cancellation side effects. */
+export async function handleDaemonMcpStatus(args: { limit?: number } = {}): Promise<McpToolResult> {
+  try {
+    const workspace = getAuthorizedLocalDaemonWorkspace();
+    const limit = args.limit ?? 10;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
+      throw new Error("limit must be an integer between 1 and 50.");
+    }
+    const [{ daemonScheduler }, { listDaemonRuns }] = await Promise.all([
+      import("../../daemon/daemonScheduler.js"),
+      import("../../storage/daemonRunLedger.js"),
+    ]);
+    const jobs = daemonScheduler.listJobs()
+      .filter((job) => sameDaemonWorkspace(job.workspace, workspace))
+      .map(({ id, name, enabled, lastStatus, nextRun }) => ({ id, name, enabled, lastStatus, nextRun }));
+    const runs = listDaemonRuns({ workspacePath: workspace, limit })
+      .filter((run) => sameDaemonWorkspace(run.workspacePath, workspace));
+    const status = daemonScheduler.getStatus();
+    const visible = {
+      workspace,
+      daemonRunning: status.running,
+      pid: status.pid,
+      projectScheduledJobs: jobs.length,
+      jobs,
+      recentRuns: runs.map(({ runId, jobId, status, startedAt, durationMs, notificationStatus }) =>
+        ({ runId, jobId, status, startedAt, durationMs, notificationStatus })),
+    };
+    return { content: [{ type: "text", text: redactMemorySecrets(JSON.stringify(visible, null, 2)) }] };
+  } catch (error) {
+    return { content: [{ type: "text", text: redactMemorySecrets(String(error)) }], isError: true };
+  }
+}
+
+export async function handleDaemonMcpInspectRun(args: { runId?: string } = {}): Promise<McpToolResult> {
+  try {
+    const workspace = getAuthorizedLocalDaemonWorkspace();
+    if (typeof args.runId !== "string" || !args.runId.trim() || args.runId.length > 256) {
+      throw new Error("A valid runId (up to 256 characters) is required.");
+    }
+    const { getDaemonRun } = await import("../../storage/daemonRunLedger.js");
+    const run = getDaemonRun(args.runId);
+    if (!run || !sameDaemonWorkspace(run.workspacePath, workspace)) {
+      return { content: [{ type: "text", text: "Daemon run not found in authorized workspace." }], isError: true };
+    }
+    return { content: [{ type: "text", text: redactMemorySecrets(JSON.stringify(run, null, 2)) }] };
+  } catch (error) {
+    return { content: [{ type: "text", text: redactMemorySecrets(String(error)) }], isError: true };
+  }
+}
+
 export const DIAGNOSTICS_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
+  superagent_daemon_status: "safe",
+  superagent_daemon_inspect_run: "safe",
   superagent_process_pool_status: "safe",
   superagent_inspect_port: "safe",
   superagent_free_port: "dangerous",
@@ -95,6 +167,25 @@ export const DIAGNOSTICS_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dang
 };
 
 export const DIAGNOSTICS_MCP_TOOL_DEFS = [
+  {
+    name: "superagent_daemon_status",
+    description: "Read-only project-scoped daemon health, scheduled job statuses, and recent ledger run summaries. Requires workspace read access.",
+    inputSchema: { type: "object", properties: {
+      limit: { type: "number", description: "Number of recent runs to show (1-50). Defaults to 10." },
+      workspace: { type: "string", description: "Authorized local workspace." },
+      projectId: { type: "string", description: "Optional registered project with read access." },
+    } },
+  },
+  {
+    name: "superagent_daemon_inspect_run",
+    description: "Read-only inspection of a daemon run scoped to the authorized local workspace; never cancels or executes tasks.",
+    inputSchema: { type: "object", properties: {
+      runId: { type: "string", description: "Durable run ID." },
+      workspace: { type: "string", description: "Authorized local workspace." },
+      projectId: { type: "string", description: "Optional registered project with read access." },
+    }, required: ["runId"] },
+  },
+
   {
     name: "superagent_process_pool_status",
     description: "Show bounded OS process-pool worker counts, timeouts, failures, fallback reads, and duration counters. Reports the supported operation scope explicitly.",
@@ -176,6 +267,10 @@ export const DIAGNOSTICS_MCP_TOOL_DEFS = [
 
 export async function dispatchDiagnosticsMcpTool(name: string, args: any): Promise<McpToolResult | null> {
   switch (name) {
+    case "superagent_daemon_status":
+      return await handleDaemonMcpStatus(args);
+    case "superagent_daemon_inspect_run":
+      return await handleDaemonMcpInspectRun(args);
     case "superagent_process_pool_status":
       return await handleProcessPoolStatus();
     case "superagent_inspect_port":

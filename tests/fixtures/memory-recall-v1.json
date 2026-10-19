@@ -2,19 +2,398 @@
   "fixtureVersion": "memory-recall-v1",
   "evaluatedAt": "2026-10-18T00:00:00.000Z",
   "records": [
-    { "id": "global-pref", "content": "[global] Prefers concise architecture notes", "scope": "global", "metadata": { "scope": "global", "retentionClass": "durable", "validationStatus": "verified", "updatedAt": "2025-01-01T00:00:00.000Z" } },
-    { "id": "alpha-runtime-fresh", "content": "[project:p-alpha] Deployment runtime is Node 22", "scope": "project", "metadata": { "scope": "project", "projectId": "p-alpha", "retentionClass": "environment", "validationStatus": "verified", "updatedAt": "2026-10-17T00:00:00.000Z" } },
-    { "id": "alpha-runtime-old", "content": "[project:p-alpha] Runtime is Node 20", "scope": "project", "metadata": { "scope": "project", "projectId": "p-alpha", "assertionKey": "runtime-version", "validationStatus": "verified", "updatedAt": "2026-10-17T00:00:00.000Z" } },
-    { "id": "alpha-runtime-new", "content": "[project:p-alpha] Runtime is Node 22", "scope": "project", "metadata": { "scope": "project", "projectId": "p-alpha", "assertionKey": "runtime-version", "validationStatus": "verified", "updatedAt": "2026-10-17T01:00:00.000Z" } },
-    { "id": "alpha-temp-old", "content": "[project:p-alpha] Temporary migration incident", "scope": "project", "metadata": { "scope": "project", "projectId": "p-alpha", "retentionClass": "temporary", "validationStatus": "verified", "updatedAt": "2026-01-01T00:00:00.000Z" } },
-    { "id": "alpha-quarantined", "content": "[project:p-alpha] Ambiguous import", "scope": "project", "metadata": { "scope": "project", "projectId": "p-alpha", "reviewState": "quarantined", "validationStatus": "verified", "updatedAt": "2026-10-17T00:00:00.000Z" } },
-    { "id": "beta-private", "content": "[project:p-beta] Private deploy key rotates quarterly", "scope": "project", "metadata": { "scope": "project", "projectId": "p-beta", "validationStatus": "verified", "updatedAt": "2026-10-17T00:00:00.000Z" } },
-    { "id": "legacy-ambiguous", "content": "[project] Old runtime note", "metadata": { "validationStatus": "verified", "updatedAt": "2026-10-17T00:00:00.000Z" } },
-    { "id": "beta-pref", "content": "[project:p-beta] Project B prefers verbose logs", "scope": "project", "metadata": { "scope": "project", "projectId": "p-beta", "retentionClass": "durable", "validationStatus": "verified", "updatedAt": "2025-01-01T00:00:00.000Z" } }
+    {
+      "id": "global-pref",
+      "content": "[global] Prefers concise architecture notes",
+      "scope": "global",
+      "metadata": {
+        "scope": "global",
+        "retentionClass": "durable",
+        "validationStatus": "verified",
+        "updatedAt": "2025-01-01T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "alpha-runtime-fresh",
+      "content": "[project:p-alpha] Deployment runtime is Node 22",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-alpha",
+        "retentionClass": "environment",
+        "validationStatus": "verified",
+        "updatedAt": "2026-10-17T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "alpha-runtime-old",
+      "content": "[project:p-alpha] Runtime is Node 20",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-alpha",
+        "assertionKey": "runtime-version",
+        "validationStatus": "verified",
+        "updatedAt": "2026-10-17T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "alpha-runtime-new",
+      "content": "[project:p-alpha] Runtime is Node 22",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-alpha",
+        "assertionKey": "runtime-version",
+        "validationStatus": "verified",
+        "updatedAt": "2026-10-17T01:00:00.000Z"
+      }
+    },
+    {
+      "id": "alpha-temp-old",
+      "content": "[project:p-alpha] Temporary migration incident",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-alpha",
+        "retentionClass": "temporary",
+        "validationStatus": "verified",
+        "updatedAt": "2026-01-01T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "alpha-quarantined",
+      "content": "[project:p-alpha] Ambiguous import",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-alpha",
+        "reviewState": "quarantined",
+        "validationStatus": "verified",
+        "updatedAt": "2026-10-17T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "beta-private",
+      "content": "[project:p-beta] Private deploy key rotates quarterly",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-beta",
+        "validationStatus": "verified",
+        "updatedAt": "2026-10-17T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "legacy-ambiguous",
+      "content": "[project] Old runtime note",
+      "metadata": {
+        "validationStatus": "verified",
+        "updatedAt": "2026-10-17T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "beta-pref",
+      "content": "[project:p-beta] Project B prefers verbose logs",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-beta",
+        "retentionClass": "durable",
+        "validationStatus": "verified",
+        "updatedAt": "2025-01-01T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "global-expired",
+      "content": "[global] Expired temporary preference",
+      "scope": "global",
+      "metadata": {
+        "scope": "global",
+        "retentionClass": "temporary",
+        "validationStatus": "verified",
+        "expiresAt": "2020-01-01T00:00:00.000Z",
+        "updatedAt": "2019-12-31T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "alpha-stale-explicit",
+      "content": "[project:p-alpha] Stale runtime note",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-alpha",
+        "validationStatus": "stale",
+        "updatedAt": "2026-10-17T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "alpha-explicit-expired",
+      "content": "[project:p-alpha] Expired task workaround",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-alpha",
+        "lifecycleState": "expired",
+        "expiresAt": "2020-01-01T00:00:00.000Z",
+        "validationStatus": "verified",
+        "updatedAt": "2020-01-01T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "alpha-superseded",
+      "content": "[project:p-alpha] Old replaced approach",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-alpha",
+        "lifecycleState": "superseded",
+        "supersededByMemoryId": "alpha-runtime-fresh",
+        "validationStatus": "verified",
+        "updatedAt": "2026-10-17T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "alpha-rejected",
+      "content": "[project:p-alpha] Rejected deployment advice",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-alpha",
+        "validationStatus": "rejected",
+        "updatedAt": "2026-10-17T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "alpha-unverified-candidate",
+      "content": "[project:p-alpha] Candidate cache convention",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-alpha",
+        "validationStatus": "candidate",
+        "updatedAt": "2026-10-17T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "alpha-conflict-a",
+      "content": "[project:p-alpha] Use pnpm for package management",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-alpha",
+        "assertionKey": "package-manager",
+        "validationStatus": "verified",
+        "updatedAt": "2026-10-17T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "alpha-conflict-b",
+      "content": "[project:p-alpha] Use npm for package management",
+      "scope": "project",
+      "metadata": {
+        "scope": "project",
+        "projectId": "p-alpha",
+        "assertionKey": "package-manager",
+        "validationStatus": "verified",
+        "updatedAt": "2026-10-17T01:00:00.000Z"
+      }
+    }
   ],
   "cases": [
-    { "id": "alpha-all-runtime", "projectId": "p-alpha", "scope": "all", "candidateIds": ["global-pref", "alpha-runtime-fresh", "alpha-runtime-old", "alpha-runtime-new", "alpha-temp-old", "alpha-quarantined", "beta-private", "legacy-ambiguous"], "relevantIds": ["global-pref", "alpha-runtime-fresh"], "expectedIds": ["global-pref", "alpha-runtime-fresh"], "expectedConflictPairs": 1 },
-    { "id": "beta-project-only", "projectId": "p-beta", "scope": "project", "candidateIds": ["global-pref", "beta-private", "beta-pref", "alpha-runtime-fresh", "legacy-ambiguous"], "relevantIds": ["beta-private", "beta-pref"], "expectedIds": ["beta-private", "beta-pref"], "expectedConflictPairs": 0 },
-    { "id": "alpha-project-only", "projectId": "p-alpha", "scope": "project", "candidateIds": ["global-pref", "alpha-runtime-fresh", "beta-private", "alpha-quarantined"], "relevantIds": ["alpha-runtime-fresh"], "expectedIds": ["alpha-runtime-fresh"], "expectedConflictPairs": 0 }
+    {
+      "id": "alpha-all-runtime",
+      "projectId": "p-alpha",
+      "scope": "all",
+      "candidateIds": [
+        "global-pref",
+        "alpha-runtime-fresh",
+        "alpha-runtime-old",
+        "alpha-runtime-new",
+        "alpha-temp-old",
+        "alpha-quarantined",
+        "beta-private",
+        "legacy-ambiguous"
+      ],
+      "relevantIds": [
+        "global-pref",
+        "alpha-runtime-fresh"
+      ],
+      "expectedIds": [
+        "global-pref",
+        "alpha-runtime-fresh"
+      ],
+      "expectedConflictPairs": 1
+    },
+    {
+      "id": "beta-project-only",
+      "projectId": "p-beta",
+      "scope": "project",
+      "candidateIds": [
+        "global-pref",
+        "beta-private",
+        "beta-pref",
+        "alpha-runtime-fresh",
+        "legacy-ambiguous"
+      ],
+      "relevantIds": [
+        "beta-private",
+        "beta-pref"
+      ],
+      "expectedIds": [
+        "beta-private",
+        "beta-pref"
+      ],
+      "expectedConflictPairs": 0
+    },
+    {
+      "id": "alpha-project-only",
+      "projectId": "p-alpha",
+      "scope": "project",
+      "candidateIds": [
+        "global-pref",
+        "alpha-runtime-fresh",
+        "beta-private",
+        "alpha-quarantined"
+      ],
+      "relevantIds": [
+        "alpha-runtime-fresh"
+      ],
+      "expectedIds": [
+        "alpha-runtime-fresh"
+      ],
+      "expectedConflictPairs": 0
+    },
+    {
+      "id": "global-only-with-expired",
+      "projectId": "p-alpha",
+      "scope": "global",
+      "candidateIds": [
+        "global-pref",
+        "global-expired",
+        "alpha-runtime-fresh",
+        "beta-pref"
+      ],
+      "relevantIds": [
+        "global-pref"
+      ],
+      "expectedIds": [
+        "global-pref"
+      ],
+      "expectedConflictPairs": 0
+    },
+    {
+      "id": "alpha-lifecycle-withholding",
+      "projectId": "p-alpha",
+      "scope": "project",
+      "candidateIds": [
+        "alpha-runtime-fresh",
+        "alpha-temp-old",
+        "alpha-quarantined",
+        "alpha-stale-explicit",
+        "alpha-explicit-expired",
+        "alpha-superseded",
+        "alpha-rejected"
+      ],
+      "relevantIds": [
+        "alpha-runtime-fresh"
+      ],
+      "expectedIds": [
+        "alpha-runtime-fresh"
+      ],
+      "expectedConflictPairs": 0
+    },
+    {
+      "id": "alpha-conflict-pair-withheld",
+      "projectId": "p-alpha",
+      "scope": "project",
+      "candidateIds": [
+        "alpha-runtime-fresh",
+        "alpha-conflict-a",
+        "alpha-conflict-b"
+      ],
+      "relevantIds": [
+        "alpha-runtime-fresh"
+      ],
+      "expectedIds": [
+        "alpha-runtime-fresh"
+      ],
+      "expectedConflictPairs": 1
+    },
+    {
+      "id": "beta-isolated-with-global",
+      "projectId": "p-beta",
+      "scope": "all",
+      "candidateIds": [
+        "global-pref",
+        "beta-private",
+        "alpha-runtime-fresh",
+        "legacy-ambiguous"
+      ],
+      "relevantIds": [
+        "global-pref",
+        "beta-private"
+      ],
+      "expectedIds": [
+        "global-pref",
+        "beta-private"
+      ],
+      "expectedConflictPairs": 0
+    },
+    {
+      "id": "unverified-candidate-is-reference",
+      "projectId": "p-alpha",
+      "scope": "project",
+      "candidateIds": [
+        "alpha-runtime-fresh",
+        "alpha-unverified-candidate",
+        "alpha-quarantined"
+      ],
+      "relevantIds": [
+        "alpha-runtime-fresh",
+        "alpha-unverified-candidate"
+      ],
+      "expectedIds": [
+        "alpha-runtime-fresh",
+        "alpha-unverified-candidate"
+      ],
+      "expectedConflictPairs": 0
+    },
+    {
+      "id": "global-scope-excludes-project-only",
+      "projectId": "p-alpha",
+      "scope": "global",
+      "candidateIds": [
+        "alpha-runtime-fresh",
+        "beta-private",
+        "global-pref"
+      ],
+      "relevantIds": [
+        "global-pref"
+      ],
+      "expectedIds": [
+        "global-pref"
+      ],
+      "expectedConflictPairs": 0
+    },
+    {
+      "id": "ambiguous-legacy-fails-closed",
+      "projectId": "p-alpha",
+      "scope": "all",
+      "candidateIds": [
+        "legacy-ambiguous",
+        "global-pref",
+        "alpha-runtime-fresh"
+      ],
+      "relevantIds": [
+        "global-pref",
+        "alpha-runtime-fresh"
+      ],
+      "expectedIds": [
+        "global-pref",
+        "alpha-runtime-fresh"
+      ],
+      "expectedConflictPairs": 0
+    }
   ]
 }

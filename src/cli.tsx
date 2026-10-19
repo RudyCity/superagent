@@ -50,6 +50,12 @@ if (process.argv.includes("--sync-history-only")) {
   process.exit(0);
 }
 
+if (process.argv[2] === "memory") {
+  const { handleMemorySweepCliCommand } = await import("./core/commands/memorySweepCliHandler.js");
+  const exitCode = await handleMemorySweepCliCommand(process.argv.slice(3));
+  process.exit(exitCode);
+}
+
 if (process.argv[2] === "login") {
   const { handleLoginCliCommand } = await import("./core/commands/loginCliHandler.js");
   await handleLoginCliCommand(process.argv.slice(3));
@@ -160,6 +166,7 @@ Commands:
   login             Manage provider authentication (add, list, use, remove)
   preset            Manage model presets (list, use, show)
   session           Manage conversation sessions (list, export, clear --empty, import)
+  memory            Review RMemory retention (sweep [--apply])
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
   gateway           Manage the omnichannel messaging gateway (status, enable, disable, listen, poll)
   muse              Coordinate with remote AI agent (status, config, watch [projects...], run)
@@ -207,6 +214,8 @@ Examples:
   superagent --mcp
   superagent mcp register
   superagent session list -w ./my-project
+  superagent memory sweep                 # preview only
+  superagent memory sweep --apply         # mark eligible records expired, never delete
   superagent session export sess_123 -o output.md
   superagent session clear --empty
   superagent --resume

@@ -1,7 +1,7 @@
 # SuperAgent Hermes-Like Phase 3 — Durable Always-On Execution, Memory Governance, and Autonomous Learning
 
 - **Date:** 2026-10-20
-- **Status:** Planning / Implementation-Ready (Not implemented)
+- **Status:** Implementation in progress — TASK-301–313 and TASK-316–318 have local implementations and targeted tests. TASK-307 broader execution-entry-point audit, TASK-314/315 learning/revision gates, and full-suite/live-provider release gates remain open.
 - **Author:** Independent Systems Architect and Planner (Antigravity Agent)
 - **Repository Baseline:** `e30682f5f56a7771a4000b4186a3476850435446` (`feat: add model-backed skill replay lifecycle`)
 - **Master Roadmap Reference:** `docs/plans/2026-10-18-superagent-hermes-like-personal-agent-development-plan.md` (Section 7, Phase 3)
@@ -699,3 +699,44 @@ The authoritative, evidence-backed first task to begin Phase 3 implementation is
   ```powershell
   bun run build; bunx vitest run tests/daemonRunLedger.test.ts
   ```
+
+---
+
+## 14. Implementation Progress Record (2026-10-20; commit milestone)
+
+The repository baseline above remains historical audit evidence. This section records Phase 3 implementation and targeted verification. Consult Git history for the exact commit; the milestone does not indicate a production release.
+
+### Implemented and locally verified slices
+
+- TASK-301 — SQLite run ledger: added the additive daemon_runs schema and indexes; typed repository operations support insert, update, get, and bounded filtered history. Stored output/error strings are redacted at the storage boundary. The dedicated tests cover schema, filters, invalid input, and duplicate IDs.
+- TASK-302 — Atomic job persistence: daemon-jobs.json is written through a unique temporary file with file fsync and atomic rename. A .bak keeps the last valid primary; corrupted primary JSON attempts backup recovery and repair.
+- TASK-303 — Crash reconciliation: each run records canonical workspace/project identity and an execution-policy snapshot. Startup marks stale ledger runs and legacy jobs still marked running as interrupted, stores recovery metadata, and suppresses same-minute replay. Interrupted side effects are not retried automatically.
+- TASK-304 — Deadline and abort propagation: jobs have a validated timeout (1 ms–24 hours) and a safe 5-minute default. The same AbortSignal is propagated through the scheduler and built-in Agent.sendMessage; timeout outcomes are recorded as timed_out and release the scheduler slot.
+- TASK-305 — Queueing and idempotent retry: cron jobs are durably queued for up to 30 minutes when the concurrency cap is full. Retries use bounded exponential backoff and require explicit idempotent: true. Manual triggers also respect the global concurrency limit. CLI supports timeout/retry options.
+- TASK-307 — Execution-time workspace/policy enforcement: verifies every workspace path segment with lstat and rejects symlinks before the runner starts; the attempted run is already present in the ledger so denied path attempts remain auditable. Policy snapshots include workspace/project identity, runner mode, tool grants, timeout, and pinned-skill hash where applicable. The broader audit of every possible execution entry point remains an acceptance follow-up.
+- TASK-306 — Immutable skill pinning implementation: --skill skill-name@12-char-hash is validated and captured in the run ledger/policy snapshot. The scheduler resolves the exact candidate and fails closed unless integrity, lifecycle, matching owner approval, evaluation, sandbox replay, and active-file consistency checks pass. Malformed/missing-pin negative tests and an evidence→evaluation→sandbox replay→approved pin→scheduler execution→version/hash ledger positive test now pass.
+- TASK-308 — Bootstrap memory governance: HistoryCompactor.prepopulateRmemoryContext now applies filterEligibleMemoryRecords before injecting results. Cross-project, ambiguous legacy, quarantined, stale, expired, rejected, superseded, and conflicting atomic memories are withheld; aggregate counts are logged without logging memory contents.
+- TASK-309 — Memory redaction and budgeting: RMemory bootstrap context is redacted and capped at 1,700 characters including its safety header. ContextBuilder shares a 2,500-character allowance across that block, pinned knowledge, shared memory, and SelfDev lessons, redacting memory-derived tiers before prompt assembly. Restored sessions count an already-existing RMemory block toward the same allowance.
+- TASK-310 — Deterministic recall benchmark: extended memory-recall-v1 from 3 to 10 labeled cases covering project/global scope, ambiguous legacy rows, freshness/expiry, quarantine/rejection/superseding, unverified candidates, and conflict suppression. The deterministic benchmark asserts exact IDs and precision/recall of 1.0; no live model is used.
+- TASK-311 — Multi-project continuity and file-lock respect: each built-in headless run receives an isolated sess_daemon_<jobId>_<timestamp> session/history identity. Before opaque injected runners or runs with additional write-capable tool grants execute, the scheduler checks live file locks for the canonical target project and fails closed when contention exists. The denial stays in the run ledger; the test verifies that a read-only built-in run can proceed while a write-capable run is blocked.
+- TASK-313 — Non-destructive memory retention: added runMemoryRetentionSweep with oldest-first bounded preview, compare-and-set non-destructive expired status changes, durable/quarantined preservation, and error/conflict counts. Exposed superagent memory sweep (preview default), --apply (explicit), interactive /memory sweep with confirmation, and built-in daemon kind system-memory-retention-sweep without invoking LLM. CLI/daemon/retention tests cover these routes.
+- TASK-316 — Read-only run diagnostics CLI: added superagent daemon runs with bounded job/status/project/limit filters and superagent daemon inspect-run for policy snapshots, pinned skill, run timeline, interruption/errors and independent notification outcomes; rejects malformed filters and redacts displayed free-text fields.
+- TASK-317 — Authenticated REST run history and cancellation: GET /api/daemon/runs supports bounded job/status/project/limit filters; GET /api/daemon/runs/:id returns typed ledger details; POST /api/daemon/runs/:id/cancel acknowledges cancellation only for an active run. Scheduler stores per-run AbortControllers, marks operator cancellation as cancelled (not timed_out), records the interruption reason, and suppresses retry after cancellation. HTTP validation and in-flight cancellation regressions pass.
+- TASK-318 — Read-only MCP daemon diagnostics: exposed superagent_daemon_status and superagent_daemon_inspect_run, classified safe and routed through workspace/project read-access policy; status summaries are bounded (1–50), omit prompts, and scope jobs/runs to the selected canonical local workspace. Cross-project run inspection denies access without returning foreign details. Four MCP regression tests pass; live-client/OAuth end-to-end verification remains open.
+- TASK-312 — Gateway delivery accounting: enabled Telegram/Discord/Slack delivery attempts now have a pending state and persist delivered/failed/not_configured outcomes plus redacted per-channel failure reasons. Send operations have a 10-second deadline, errors are logged, and delivery failure does not turn a successful task run into a failed run. Scheduler regression tests cover both successful delivery and adapter-reported failure. CLI run-history inspection is still part of TASK-316.
+
+### Latest verification evidence
+
+- bun run build — passed (TypeScript exit code 0) after TASK-316 integration on 2026-10-20.
+- Focused regression/integration batch on 2026-10-19: tests/historyCompactorMemory.test.ts, tests/daemonScheduler.test.ts, tests/daemonRunLedger.test.ts, tests/historyDb.test.ts, tests/memoryLifecycle.test.ts, tests/memoryRecord.test.ts, tests/skillLifecycle.test.ts, tests/memoryRecallEvaluation.test.ts, and tests/selfdevAndGatewaySuite.test.ts — 106 tests passed across 9 files. This includes the TASK-307 workspace-symlink/policy snapshot tests, TASK-311 lock contention/session isolation, and TASK-312 notification outcomes.
+- git diff --check — passed after the source/test changes; rerun after documentation reconciliation.
+- Additional 2026-10-20 focused evidence: 55/55 tests across 5 files passed for positive pinned skill, skill lifecycle, scheduler, and memory retention; 41/41 tests across 5 files passed for TASK-316 CLI, ledger, scheduler, and retention. The two batches overlap and are not additive.
+- Consolidated 2026-10-20 verification: bun run build and 129/129 tests passed across 14 targeted files (daemon MCP/REST, scheduler cancellation, ledger, CLI, skill lifecycle, RMemory governance/retention/recall, and gateway/selfdev), followed by git diff --check passing.
+- A broad Vitest run was launched separately and initial failures appeared in openaiTunnelClient and toolRegistryConsistency; the run has not produced a reliable full-suite passing result. These failures require separate triage. Full wrapper and live-provider end-to-end checks remain open.
+
+### Open acceptance gates
+
+- TASK-307 — Broader execution-entry-point audit: scheduler-level workspace symlink rejection, canonical path/policy snapshots, and approval/allowlist-denial regressions are in place. Review every other daemon/job invoker against the same policy contract before closing this broader audit.
+- TASK-314 / TASK-315 — Learning bridge and guided skill revision: link exact run/feedback evidence to memory candidates and immutable skill revision lineage, retaining evaluation/replay/owner approval gates.
+- TASK-318 — Local MCP registration, workspace scope checks and four isolation regressions pass. A live MCP client/OAuth project-grant probe remains an end-to-end acceptance gate before release.
+- Continue multi-case security/evaluation coverage and run live-provider plus full regression gates before release. Phase 3, Phase 2 review gates, and the overall Hermes-style migration are not complete.

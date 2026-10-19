@@ -13,6 +13,7 @@ const fixture = JSON.parse(readFileSync(new URL("./fixtures/memory-recall-v1.jso
 describe("versioned memory recall evaluation", () => {
   it("runs the labeled v1 fixture deterministically and reports precision/recall without a live model", () => {
     expect(fixture.fixtureVersion).toBe("memory-recall-v1");
+    expect(fixture.cases.length).toBeGreaterThanOrEqual(10);
     const perCase = fixture.cases.map(testCase => {
       const candidates = testCase.candidateIds.map(id => fixture.records.find(record => record.id === id)).filter(Boolean) as Fixture["records"];
       const result = filterEligibleMemoryRecords(candidates, { projectId: testCase.projectId, scope: testCase.scope, now: fixture.evaluatedAt });

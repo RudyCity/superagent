@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { getGlobalConfigDir, getWorkspaceId, getModelConfigPath, getRootConfigDir } from "../config/paths.js";
 import { logE2E } from "../utils/unifiedLogger.js";
+export { getDaemonRun, insertDaemonRun, listDaemonRuns, updateDaemonRun } from "./daemonRunLedger.js";
 
 const require = createRequire(import.meta.url);
 
@@ -327,6 +328,32 @@ function initDatabaseSchema(db: any): void {
       PRIMARY KEY (workspace_id, task_id),
       FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS daemon_runs (
+      run_id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      attempt_number INTEGER NOT NULL DEFAULT 1 CHECK (attempt_number >= 1),
+      workspace_path TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      mode TEXT NOT NULL CHECK (mode IN ('single', 'multi')),
+      status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'success', 'error', 'interrupted', 'timed_out', 'cancelled')),
+      execution_policy_json TEXT NOT NULL,
+      pinned_skill_version TEXT,
+      started_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      duration_ms INTEGER,
+      output_summary TEXT,
+      error_message TEXT,
+      interruption_reason TEXT,
+      notification_status TEXT NOT NULL DEFAULT 'not_configured' CHECK (notification_status IN ('not_configured', 'pending', 'delivered', 'failed')),
+      notification_error TEXT,
+      recovery_action TEXT NOT NULL DEFAULT 'none',
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_daemon_runs_job ON daemon_runs(job_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_daemon_runs_status ON daemon_runs(status, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_daemon_runs_project ON daemon_runs(project_id, started_at DESC);
   `);
 
   // Schema migrations for missing columns in existing databases
@@ -2026,5 +2053,3 @@ export function getLockEventHistoryFromDb(limit: number = 100): Array<{
     return [];
   }
 }
-
-

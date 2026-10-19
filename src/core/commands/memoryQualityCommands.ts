@@ -1,5 +1,6 @@
 import { getRMemoryProjectId } from "../rmemoryUtil.js";
 import { detectScopedMemoryConflicts, previewMemoryRetention } from "../memoryLifecycle.js";
+import { runMemoryRetentionSweep } from "../memoryRetentionSweep.js";
 
 interface MemoryCommandContextLike {
   agent?: { workingDirectory?: string; tier?: string; onQuestion?: (message: string, choices: string[]) => Promise<unknown> };
@@ -135,6 +136,35 @@ export async function executeMemoryQualityCommand(
       const result = await client.reviewAtomic({ id, scope, projectId, expectedUpdatedAt, action, reason, reviewedBy: String(ctx.agent?.tier || "owner") });
       say(ctx, JSON.stringify(result, null, 2)); return true;
     } catch (err) { say(ctx, `Memory review failed: ${(err as Error).message || String(err)}`, "error"); return true; }
+  }
+
+  if (subcommand === "sweep") {
+    const apply = parts.some((part) => part.toLowerCase() === "--apply");
+    try {
+      const preview = await runMemoryRetentionSweep({
+        projectPath: ctx.agent?.workingDirectory || process.cwd(),
+        client,
+        apply: false,
+      });
+      if (!apply) {
+        say(ctx, JSON.stringify(preview, null, 2));
+        return true;
+      }
+      if (preview.eligibleToExpire === 0) {
+        say(ctx, JSON.stringify({ ...preview, mode: "applied", markedExpired: 0, note: "No eligible records; no changes made." }, null, 2));
+        return true;
+      }
+      if (!await confirm(ctx, "Mark " + preview.eligibleToExpire + " stale/expired memory record(s) as expired? Content will remain stored; nothing will be deleted.")) return true;
+      const result = await runMemoryRetentionSweep({
+        projectPath: ctx.agent?.workingDirectory || process.cwd(),
+        client,
+        apply: true,
+      });
+      say(ctx, JSON.stringify(result, null, 2), (result.failed ?? 0) > 0 ? "error" : "system");
+    } catch (err) {
+      say(ctx, "Memory retention sweep failed: " + ((err as Error).message || String(err)), "error");
+    }
+    return true;
   }
 
   if (subcommand === "retention-review") {

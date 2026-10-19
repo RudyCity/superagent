@@ -156,7 +156,7 @@ export interface MemoryRetentionPreview {
   eligibleToMarkStale: number;
   skippedQuarantined: number;
   byScope: Record<"global" | "project", number>;
-  items: Array<{ id: string; scope: "global" | "project"; projectId?: string; expectedUpdatedAt?: string; reason: string; ageDays?: number }>;
+  items: Array<{ id: string; scope: "global" | "project"; projectId?: string; expectedUpdatedAt?: string; state: "stale" | "expired"; reason: string; ageDays?: number }>;
 }
 /** Preview-only policy: never deletes and excludes quarantined, durable, conflicted and superseded records. */
 export function previewMemoryRetention(records: AtomicMemoryForReview[], options: { now?: number | Date | string; limit?: number } = {}): MemoryRetentionPreview {
@@ -166,9 +166,10 @@ export function previewMemoryRetention(records: AtomicMemoryForReview[], options
   for (const record of records) {
     const metadata = asMetadata(record);
     if (metadata.reviewState === "quarantined") { skippedQuarantined++; continue; }
-    if (metadata.validationStatus === "stale" || metadata.lifecycleState === "superseded" || metadata.lifecycleState === "conflicted") continue;
+    if (metadata.validationStatus === "stale" || metadata.lifecycleState === "expired" || metadata.lifecycleState === "superseded" || metadata.lifecycleState === "conflicted") continue;
     const assessment = assessMemoryFreshness(record, options.now);
     if (assessment.state !== "stale" && assessment.state !== "expired") continue;
+    if (assessment.retentionClass === "durable") continue;
     const scope = metadata.scope === "global" ? "global" : metadata.scope === "project" ? "project" : record.scope;
     if (scope !== "global" && scope !== "project") continue;
     if (scope === "project" && typeof metadata.projectId !== "string") continue;
@@ -177,6 +178,7 @@ export function previewMemoryRetention(records: AtomicMemoryForReview[], options
       id: record.id, scope,
       ...(scope === "project" && typeof metadata.projectId === "string" ? { projectId: metadata.projectId } : {}),
       ...(typeof metadata.updatedAt === "string" ? { expectedUpdatedAt: metadata.updatedAt } : {}),
+      state: assessment.state,
       reason: assessment.reason,
       ...(assessment.ageDays !== undefined ? { ageDays: assessment.ageDays } : {}),
     });

@@ -63,6 +63,12 @@ export {
 
 
 
+function createAbortError(message: string): Error {
+  const error = new Error(message);
+  error.name = "AbortError";
+  return error;
+}
+
 function isRetryableError(err: unknown): boolean {
   return isRetryableErrorHelper(err);
 }
@@ -589,14 +595,16 @@ export class Agent {
     return getModelInstanceForTier(this.tier, this.delegationDepth, this.subagentType, !this.isMultiAgent);
   }
 
-  async sendMessage(userInput: string | import("./conversation.js").MessageContent): Promise<void> {
+  async sendMessage(userInput: string | import("./conversation.js").MessageContent, externalSignal?: AbortSignal): Promise<void> {
     if (this.isRunning) {
       const msgText = typeof userInput === "string" ? userInput : "[multimodal message]";
       this.pendingMessagesQueue.push(userInput);
       this.writeToLogFile("INFO", `Message queued (agent is running): "${msgText.substring(0, 80)}..."`);
       return;
     }
+    if (externalSignal?.aborted) throw createAbortError("Agent operation aborted by caller.");
     const proceed = await RequestProcessor.processRequest(this, userInput);
+    if (externalSignal?.aborted) throw createAbortError("Agent operation aborted by caller.");
     if (!proceed) return;
 
     // Keep described schemas for a continuation, but start independent tasks with
@@ -606,7 +614,13 @@ export class Agent {
     if (!isTaskContinuation) this.toolDiscoveryState.reset();
 
     this.isRunning = true;
-    this.abortController = new AbortController();
+    const messageAbortController = new AbortController();
+    this.abortController = messageAbortController;
+    const forwardExternalAbort = () => messageAbortController.abort();
+    if (externalSignal) {
+      if (externalSignal.aborted) forwardExternalAbort();
+      else externalSignal.addEventListener("abort", forwardExternalAbort, { once: true });
+    }
 
     const taskSummary = typeof userInput === "string" ? userInput : "[multimodal message]";
     const taskStartedAt = Date.now();
@@ -701,6 +715,7 @@ export class Agent {
       if (signal && onAbort) {
         signal.removeEventListener("abort", onAbort);
       }
+      if (externalSignal) externalSignal.removeEventListener("abort", forwardExternalAbort);
       this.flushTextLogBuffer();
       this.isRunning = false;
       this.abortController = null;

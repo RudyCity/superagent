@@ -437,6 +437,7 @@ export const memoryCommand: SlashCommand = {
       "  revise preview|apply|history|restore ...  Reviewable updates with version history",
       "  review conflicts|verify|quarantine|legacy-preview ...  Owner review workflows",
       "  retention-review preview|mark-stale ...  Preview-first, non-destructive retention",
+      "  sweep [--apply]       Preview or mark eligible stale memories expired (never delete)",
       "  sync                 Manually trigger synchronization of history to RMemory database",
       "  list-scenes          List all scenario navigation blocks (L2)",
       "  read-scene <path>    Read the content of a specific scenario block",

@@ -826,6 +826,7 @@ export class MemoryClient {
     projectId: string;
     includeGlobal?: boolean;
     limit?: number;
+    sortBy?: "updatedAtDesc" | "updatedAtAsc";
   }): Promise<{ total: number; truncated: boolean; items: Array<{ id: string; content: string; scope: "project" | "global"; metadata: Record<string, any> }> }> {
     const rMemory = await getRMemory();
     if (typeof rMemory.db?.getAll !== "function") {
@@ -862,7 +863,7 @@ export class MemoryClient {
     items.sort((a, b) => {
       const updatedA = Date.parse(String(a.metadata.updatedAt || "")) || Number(a.metadata.createdAt) || 0;
       const updatedB = Date.parse(String(b.metadata.updatedAt || "")) || Number(b.metadata.createdAt) || 0;
-      return updatedB - updatedA;
+      return options.sortBy === "updatedAtAsc" ? updatedA - updatedB : updatedB - updatedA;
     });
     const requestedLimit = Number(options.limit) || 100;
     const limit = Math.max(1, Math.min(500, Math.floor(requestedLimit)));
@@ -1208,6 +1209,39 @@ ${JSON.stringify(record.metadata || {})}`).digest("hex");
     const written = rMemory.db?.getById?.(current.storageId);
     if (!written || written.content !== current.content || written.metadata?.validationStatus !== "stale" || written.metadata?.scope !== options.scope) throw new Error("Stale marking could not be verified.");
     return { status: "marked_stale" as const, id: options.id, updatedAt: now };
+  }
+
+  /** Mark an expired memory without deleting content; compare-and-set guards against concurrent edits. */
+  async markAtomicExpired(options: { id: string; scope: "project" | "global"; projectId: string; expectedUpdatedAt: string; reason: string }) {
+    const rMemory = await getRMemory();
+    const current = this.findAtomicByScope(rMemory, options);
+    if (!current) return { status: "not_found" as const, id: options.id };
+    const meta = current.metadata;
+    if (meta.scope !== options.scope || (options.scope === "project" && meta.projectId !== options.projectId)) {
+      return { status: "needs_migration" as const, id: options.id };
+    }
+    const version = typeof meta.updatedAt === "string" && Number.isFinite(Date.parse(meta.updatedAt)) ? new Date(meta.updatedAt).toISOString() : "";
+    const expected = Date.parse(options.expectedUpdatedAt || "");
+    if (!version || !Number.isFinite(expected) || new Date(expected).toISOString() !== version) {
+      return { status: "conflict" as const, id: options.id, ...(version ? { currentUpdatedAt: version } : {}) };
+    }
+    const now = new Date().toISOString();
+    const next = {
+      ...meta,
+      lifecycleState: "expired",
+      validationStatus: "stale",
+      expiredAt: now,
+      staleReason: String(options.reason || "retention_sweep_expired").slice(0, 200),
+      updatedAt: now,
+    };
+    await rMemory.addMemory({ id: current.storageId, content: current.content, metadata: next });
+    const written = rMemory.db?.getById?.(current.storageId);
+    if (!written || written.content !== current.content || written.metadata?.lifecycleState !== "expired" ||
+      written.metadata?.validationStatus !== "stale" || written.metadata?.scope !== options.scope ||
+      (options.scope === "project" && written.metadata?.projectId !== options.projectId)) {
+      throw new Error("Expired-memory marking could not be verified.");
+    }
+    return { status: "marked_expired" as const, id: options.id, updatedAt: now };
   }
 
   async reviewAtomicConflictPair(options: {

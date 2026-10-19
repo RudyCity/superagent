@@ -5,6 +5,13 @@ export async function handleDaemonCli(args: string[]): Promise<void> {
   const subcommand = args[0] ? args[0].toLowerCase() : "status";
 
   switch (subcommand) {
+    case "runs":
+    case "inspect-run": {
+      const { handleDaemonRunHistoryCommand } = await import("./daemonRunCli.js");
+      const exitCode = handleDaemonRunHistoryCommand(args);
+      process.exitCode = exitCode;
+      return;
+    }
     case "start": {
       daemonScheduler.startDaemon();
       console.log("Superagent daemon scheduler started in background.");
@@ -77,20 +84,36 @@ export async function handleDaemonCli(args: string[]): Promise<void> {
       const wsIndex = args.indexOf("--workspace");
       const maxRunsIndex = args.indexOf("--max-runs");
       const tagsIndex = args.indexOf("--tags");
+      const skillIndex = args.indexOf("--skill");
+      const systemTaskIndex = args.indexOf("--system-task");
+      const timeoutIndex = args.indexOf("--timeout-ms");
+      const retryLimitIndex = args.indexOf("--retry-limit");
+      const retryDelayIndex = args.indexOf("--retry-delay-ms");
+      const isIdempotent = args.includes("--idempotent");
       const isMulti = args.includes("--multi");
       const notifyGateway = args.includes("--notify-gateway");
 
-      const name = nameIndex !== -1 && args[nameIndex + 1] ? args[nameIndex + 1] : "";
+      const systemTask = systemTaskIndex !== -1 && args[systemTaskIndex + 1] ? args[systemTaskIndex + 1].toLowerCase() : undefined;
+      const isMemorySweepTask = systemTask === "system-memory-retention-sweep";
+      if (systemTask && !isMemorySweepTask) {
+        console.log("Error: Unsupported system task. Available: system-memory-retention-sweep");
+        process.exit(1);
+      }
+      const name = nameIndex !== -1 && args[nameIndex + 1] ? args[nameIndex + 1] : (isMemorySweepTask ? "System Memory Retention Sweep" : "");
       const cron = cronIndex !== -1 && args[cronIndex + 1] ? args[cronIndex + 1] : "";
-      const prompt = promptIndex !== -1 && args[promptIndex + 1] ? args[promptIndex + 1] : "";
+      const prompt = promptIndex !== -1 && args[promptIndex + 1] ? args[promptIndex + 1] : (isMemorySweepTask ? "Built-in non-destructive memory retention sweep; mark only eligible stale/expired records and never delete content." : "");
       const workspace = wsIndex !== -1 && args[wsIndex + 1] ? args[wsIndex + 1] : process.cwd();
       const maxRuns = maxRunsIndex !== -1 && args[maxRunsIndex + 1] ? parseInt(args[maxRunsIndex + 1], 10) : undefined;
       const tags = tagsIndex !== -1 && args[tagsIndex + 1] ? args[tagsIndex + 1].split(",").map(t => t.trim()) : undefined;
+      const pinnedSkillVersion = skillIndex !== -1 && args[skillIndex + 1] ? args[skillIndex + 1].trim() : undefined;
+      const timeoutMs = timeoutIndex !== -1 && args[timeoutIndex + 1] ? Number(args[timeoutIndex + 1]) : undefined;
+      const retryLimit = retryLimitIndex !== -1 && args[retryLimitIndex + 1] ? Number(args[retryLimitIndex + 1]) : undefined;
+      const retryDelayMs = retryDelayIndex !== -1 && args[retryDelayIndex + 1] ? Number(args[retryDelayIndex + 1]) : undefined;
 
       if (!name || !cron || !prompt) {
         console.log("Error: Missing required arguments for 'daemon add'.");
-        console.log("Usage: superagent daemon add --name <job_name> --cron <cron_expression> --prompt <task_prompt>");
-        console.log("         [--workspace <path>] [--multi] [--notify-gateway] [--max-runs <n>] [--tags <t1,t2>]");
+        console.log("Usage: superagent daemon add --name <job_name> --cron <cron_expression> --prompt <task_prompt> [--system-task system-memory-retention-sweep]");
+        console.log("         [--workspace <path>] [--multi] [--notify-gateway] [--max-runs <n>] [--tags <t1,t2>]\n         [--timeout-ms <ms>] [--skill <name@12-char-hash>] [--idempotent --retry-limit <n> --retry-delay-ms <ms>]");
         process.exit(1);
       }
 
@@ -109,12 +132,19 @@ export async function handleDaemonCli(args: string[]): Promise<void> {
           notifyGateway,
           maxRuns: Number.isFinite(maxRuns) ? maxRuns : undefined,
           tags,
+          timeoutMs,
+          retryLimit,
+          retryDelayMs,
+          idempotent: isIdempotent,
+          pinnedSkillVersion,
+          kind: isMemorySweepTask ? "system-memory-retention-sweep" : "agent",
         });
         console.log("Successfully added scheduled daemon job:");
         console.log(`- ID: ${job.id}`);
         console.log(`- Name: ${job.name}`);
         console.log(`- Schedule: ${job.cronExpression} (${describeCron(job.cronExpression)})`);
         console.log(`- Mode: ${job.mode}`);
+        console.log("- Pinned Skill: " + (job.pinnedSkillVersion ?? "None"));
         console.log(`- Notify Gateway: ${job.notifyGateway ? "Yes" : "No"}`);
         console.log(`- Max Runs: ${job.maxRuns ?? "Unlimited"}`);
         console.log(`- Next Run: ${job.nextRun ? new Date(job.nextRun).toLocaleString() : "Unknown"}`);
@@ -179,6 +209,8 @@ export async function handleDaemonCli(args: string[]): Promise<void> {
       console.log("- superagent daemon add --name <n> --cron <c> --prompt <p> [--workspace <w>] [--multi]");
       console.log("- superagent daemon remove <id>");
       console.log("- superagent daemon run <id>");
+      console.log("- superagent daemon runs [--job <id>] [--status <s>] [--project <id>] [--limit <1-500>]");
+      console.log("- superagent daemon inspect-run <run-id>");
       process.exit(1);
     }
   }
