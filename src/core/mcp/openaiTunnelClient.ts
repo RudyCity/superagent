@@ -369,6 +369,8 @@ export async function runTunnelClientDoctor(opts: {
         profileInfo.profileName,
         "--profile-dir",
         profileInfo.profileDir,
+        "--health.listen-addr",
+        opts.healthListenAddr || "127.0.0.1:0",
         "--explain",
       ];
       const child = spawn(binary, doctorArgs, {

@@ -1,3 +1,8 @@
+## [1.14.6] - 2026-10-19
+### Fixed
+- Fixed OpenAI Secure MCP Tunnel doctor health listener port collision (`openaiTunnelClient.ts`):
+  - Passed `--health.listen-addr 127.0.0.1:0` to `runTunnelClientDoctor` so doctor health checks use an ephemeral loopback port, preventing port collision errors (`bind: Only one usage of each socket address is normally permitted`) when running doctor checks while the tunnel daemon is actively listening on port 10227.
+
 ## [1.14.5] - 2026-10-19
 ### Fixed
 - Fixed OpenAI Secure MCP Tunnel API key whitespace handling and environment key retention (`openaiTunnelClient.ts`):
