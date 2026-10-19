@@ -282,6 +282,12 @@ export function getTunnelClientInstallGuide(): string {
   return lines.join("\n");
 }
 
+function isValidApiKeyCandidate(key?: string): key is string {
+  if (!key || typeof key !== "string") return false;
+  const trimmed = key.trim();
+  return trimmed.length >= 15 && !trimmed.startsWith("-");
+}
+
 /**
  * Resolves OpenAI Control Plane runtime API key from:
  * 1. Explicit argument
@@ -290,23 +296,23 @@ export function getTunnelClientInstallGuide(): string {
  * 4. OPENAI_API_KEY environment variable
  */
 export function resolveOpenAiControlPlaneKey(explicitKey?: string): string | undefined {
-  if (explicitKey && explicitKey.trim()) return explicitKey.trim();
+  if (isValidApiKeyCandidate(explicitKey)) return explicitKey.trim();
 
   const envKey = process.env.CONTROL_PLANE_API_KEY;
-  if (envKey && envKey.trim()) return envKey.trim();
+  if (isValidApiKeyCandidate(envKey)) return envKey.trim();
 
   try {
     const config = loadModelConfig();
     const openaiProvider = config.providers?.find(
-      (p) => (p.provider || "").toLowerCase() === "openai" && p.apiKey && p.apiKey.trim()
+      (p) => (p.provider || "").toLowerCase() === "openai" && isValidApiKeyCandidate(p.apiKey)
     );
-    if (openaiProvider?.apiKey) {
+    if (openaiProvider?.apiKey && isValidApiKeyCandidate(openaiProvider.apiKey)) {
       return openaiProvider.apiKey.trim();
     }
   } catch {}
 
   const standardOpenAiKey = process.env.OPENAI_API_KEY;
-  if (standardOpenAiKey && standardOpenAiKey.trim()) return standardOpenAiKey.trim();
+  if (isValidApiKeyCandidate(standardOpenAiKey)) return standardOpenAiKey.trim();
 
   return undefined;
 }

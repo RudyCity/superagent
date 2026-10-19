@@ -60,6 +60,12 @@ describe("OpenAI Secure MCP Tunnel Client", () => {
       }
     });
 
+    it("rejects invalid API key candidates like CLI flags or very short strings", () => {
+      expect(resolveOpenAiControlPlaneKey("--help")).toBeUndefined();
+      expect(resolveOpenAiControlPlaneKey("short")).toBeUndefined();
+      expect(resolveOpenAiControlPlaneKey("")).toBeUndefined();
+    });
+
     it("finds binary from custom path if file exists", () => {
       const fakeBin = path.join(tempHome, "fake-tunnel-client.exe");
       fs.writeFileSync(fakeBin, "echo fake binary", "utf-8");
