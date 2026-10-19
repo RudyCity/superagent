@@ -7,6 +7,25 @@ export interface SkillTrajectoryStep {
   error?: string;
 }
 
+export type SkillRiskClassification = "low" | "medium" | "high";
+
+export interface SkillEvidenceMetadata {
+  /** Stable task link; never a raw transcript or command string. */
+  taskId?: string;
+  provider?: string;
+  model?: string;
+  executionMode?: "single" | "multi" | "interactive" | "background" | "unknown";
+  errorSummary?: string;
+  recoverySummary?: string;
+  applicability?: string[];
+  preconditions?: string[];
+  expectedOutputs?: string[];
+  verificationSteps?: string[];
+  riskClassification?: SkillRiskClassification;
+  knownLimitations?: string[];
+  userFeedback?: { sentiment: "positive" | "negative" | "neutral"; summary: string };
+}
+
 export interface SkillSynthesisRequest {
   taskDescription: string;
   workspace: string;
@@ -15,6 +34,8 @@ export interface SkillSynthesisRequest {
   category?: string;
   /** Persisted Selfdev task_completed event IDs that can support candidate evaluation. */
   evidenceIds?: string[];
+  /** Optional bounded provenance/context; values are redacted before persistence. */
+  metadata?: SkillEvidenceMetadata;
 }
 
 export interface ExtractedWorkflowPatterns {

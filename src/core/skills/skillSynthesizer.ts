@@ -4,6 +4,7 @@ import {
   SkillSynthesisRequest,
   SkillTrajectoryStep,
   ExtractedWorkflowPatterns,
+  SkillEvidenceMetadata,
   SynthesizedSkill,
   SkillValidationResult,
   SynthesizedSkillSummary
@@ -122,12 +123,22 @@ function sanitizeErrorItem(value: unknown, limit = 150): string {
   return err.trim();
 }
 
+function sanitizeMetadataList(values: unknown, limit = 8): string[] {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.slice(0, limit).map(value => sanitizeBodyStep(value, 220)).filter(value => value.length >= 3))];
+}
+
+function renderMetadataSection(title: string, values: string[]): string {
+  return values.length ? `## ${title}\n${values.map(value => `- ${value}`).join("\n")}\n\n` : "";
+}
+
 export function generateSkillMarkdown(
   name: string,
   description: string,
   patterns: ExtractedWorkflowPatterns,
   taskDescription: string,
-  category: string = "automation"
+  category: string = "automation",
+  metadata?: SkillEvidenceMetadata
 ): string {
   const safeName = sanitizeName(name);
   const title = safeName
@@ -171,6 +182,17 @@ export function generateSkillMarkdown(
     sanitizedErrors.length > 0
       ? `## Lessons Learned & Error Recovery\n${sanitizedErrors.map((e) => `- ${e}`).join("\n")}\n\n`
       : "";
+  const applicabilitySection = renderMetadataSection("Applicability", sanitizeMetadataList(metadata?.applicability));
+  const preconditionsSection = renderMetadataSection("Preconditions", sanitizeMetadataList(metadata?.preconditions));
+  const expectedOutputsSection = renderMetadataSection("Expected Outputs", sanitizeMetadataList(metadata?.expectedOutputs));
+  const verificationSteps = sanitizeMetadataList(metadata?.verificationSteps);
+  const verificationSection = verificationSteps.length
+    ? renderMetadataSection("Verification Protocol", verificationSteps)
+    : "";
+  const limitationsSection = renderMetadataSection("Known Limitations", sanitizeMetadataList(metadata?.knownLimitations));
+  const riskText = metadata?.riskClassification && ["low", "medium", "high"].includes(metadata.riskClassification)
+    ? metadata.riskClassification : "unclassified";
+  const riskSection = `## Risk Classification\n${riskText}; owner review and existing permissions are still required.\n\n`;
 
   return `---
 name: ${safeName}
@@ -192,13 +214,10 @@ Use this skill when handling tasks that match:
 ## Step-by-Step Workflow
 ${stepsList}
 
-## Key Tools & Dependencies
+${applicabilitySection}${preconditionsSection}${expectedOutputsSection}${riskSection}## Key Tools & Dependencies
 ${toolsList}
 
-${lessonsSection}## Verification Protocol
-1. Run relevant automated test suites to confirm correctness.
-2. Build the project using the standard build command to check for compile errors.
-3. Validate that all generated or modified files are cleanly committed.
+${lessonsSection}${limitationsSection}${verificationSection || "## Verification Protocol\n1. Run relevant automated test suites to confirm correctness.\n2. Build the project using the standard build command to check for compile errors.\n3. Validate generated or modified files and report any uncommitted changes.\n\n"}
 `;
 }
 
@@ -273,7 +292,8 @@ export async function synthesizeSkill(request: SkillSynthesisRequest): Promise<S
   const category = sanitizeCategory(request.category || "automation");
   const description = safeFrontmatterScalar(`Automated skill for: ${taskDescription.slice(0, 100)}`);
 
-  const markdownContent = generateSkillMarkdown(name, description, patterns, taskDescription, category);
+  const metadata = request.metadata;
+  const markdownContent = generateSkillMarkdown(name, description, patterns, taskDescription, category, metadata);
 
   const validation = validateSkillMarkdown(markdownContent);
   if (!validation.valid) {
@@ -289,6 +309,7 @@ export async function synthesizeSkill(request: SkillSynthesisRequest): Promise<S
     markdownContent,
     extractedPatterns: patterns,
     sourceEvidenceIds: request.evidenceIds,
+    metadata,
   });
 
   const skill: SynthesizedSkill = {
@@ -303,7 +324,7 @@ export async function synthesizeSkill(request: SkillSynthesisRequest): Promise<S
 
   try {
     const { recordSkillSynthesized } = await import("./skillTracker.js");
-    recordSkillSynthesized(skill.name);
+    recordSkillSynthesized(skill.name, skill.version, request.workspace || process.cwd());
   } catch {}
 
   return skill;

@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { clearSkillsCache } from "../config/skills.js";
-import type { ExtractedWorkflowPatterns } from "./synthesizerTypes.js";
+import type { ExtractedWorkflowPatterns, SkillEvidenceMetadata, SkillRiskClassification } from "./synthesizerTypes.js";
+import { runSandboxSkillReplay, type SkillReplayExecutor } from "./skillReplay.js";
 
 export type SkillCandidateStatus = "candidate" | "evaluated" | "active" | "failed" | "superseded" | "disabled" | "retired";
 export interface SkillEvaluationCheck { id: string; status: "pass" | "warn" | "fail"; detail: string }
@@ -12,13 +13,17 @@ export interface SkillEvaluation {
   status: "passed" | "failed"; checks: SkillEvaluationCheck[]; verifiedEvidenceIds: string[]; sourceTaskIds: string[];
 }
 export interface SkillLifecycleEvent {
-  id: string; action: "created" | "evaluated" | "promoted" | "superseded" | "disabled" | "retired";
+  id: string; action: "created" | "evaluated" | "replayed" | "promoted" | "superseded" | "disabled" | "retired";
   at: number; actor: string; reason?: string; fromStatus?: SkillCandidateStatus; toStatus: SkillCandidateStatus;
 }
 export interface SkillCandidateRecord {
   schemaVersion: 1; workspace: string; name: string; version: string; description: string; category: string;
-  status: SkillCandidateStatus; contentSha256: string; createdAt: number; updatedAt: number;
+  status: SkillCandidateStatus; contentSha256: string; metadataSha256?: string; createdAt: number; updatedAt: number;
   sourceEvidenceIds: string[]; sourceTaskIds: string[]; extractedPatterns: ExtractedWorkflowPatterns;
+  /** Optional schema-v1 compatible redacted provenance/applicability metadata. */
+  metadata?: SkillEvidenceMetadata;
+  /** Replay history is version-bound and retained independently from static evaluations. */
+  replayRuns?: SkillReplayResult[];
   evaluations: SkillEvaluation[]; latestEvaluationId?: string;
   approval?: { approvedBy: string; approvedAt: number; method: "interactive-cli"; evaluationId: string };
   history: SkillLifecycleEvent[];
@@ -27,10 +32,12 @@ export interface SkillCandidateArtifact { record: SkillCandidateRecord; markdown
 export interface CreateSkillCandidateInput {
   name: string; description: string; category: string; markdownContent: string;
   extractedPatterns: ExtractedWorkflowPatterns; sourceEvidenceIds?: string[];
+  metadata?: SkillEvidenceMetadata;
 }
 
 export const SAFE_REPLAY_ALLOWLIST = [
   "assert_file_exists",
+  "assert_file_contains",
   "read_file",
   "verify_syntax"
 ] as const;
@@ -47,7 +54,9 @@ export interface SkillReplayFixture {
   fixtureId: string;
   name: string;
   description: string;
+  taskPrompt: string;
   initialFiles?: Record<string, string>;
+  /** Final-state assertions applied after the injected executor runs. */
   actions: SafeReplayAction[];
 }
 
@@ -64,11 +73,21 @@ export interface SkillReplayResult {
   checks: SkillReplayCheckResult[];
   durationMs: number;
   error?: string;
+  runId?: string;
+  skillVersion?: string;
+  fixtureSha256?: string;
+  provider?: string;
+  model?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  changedFiles?: string[];
+  finishedAt?: number;
 }
 
 const CANDIDATE_ROOT = ".superagent/skill-candidates";
 const ACTIVE_ROOT = ".agents/skills";
 const MAX_EVALUATIONS = 20;
+const MAX_REPLAY_RUNS = 20;
 const MAX_HISTORY = 100;
 const SECRET_PATTERNS = [
   /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[\s\S]*?(?:-----END (?:[A-Z]+ )?PRIVATE KEY-----|$)/i,
@@ -78,6 +97,17 @@ const SECRET_PATTERNS = [
   /\b[a-z][a-z0-9+.-]*:\/\/[^\s/@:]+:[^\s/@]+@/i,
 ];
 const PERMISSION_ESCALATION_PATTERN = /(?:ignore|bypass|disable|override|skip).{0,50}(?:approval|permission|safety|policy|guardrail|authorization)|(?:turn off|remove).{0,30}(?:permission checks|safety checks|approval gate)/i;
+const PROMPT_INJECTION_PATTERNS = [
+  /ignore\s+(?:all\s+)?(?:previous|prior|system|developer)\s+instructions?/i,
+  /(?:reveal|print|dump|expose)\s+(?:the\s+)?(?:system|developer)\s+prompt/i,
+  /(?:exfiltrat|upload|send)\w*\s+(?:the\s+)?(?:secrets?|credentials?|private keys?|tokens?)/i,
+  /(?:read|copy|collect)\s+(?:the\s+)?(?:\.env|credentials?\.json|private key|api keys?)/i,
+  /(?:bypass|disable|remove)\s+(?:the\s+)?(?:audit trail|security controls?|approval gate)/i,
+];
+const OVERGENERALIZATION_PATTERNS = [
+  /\b(?:works for any project|works for every codebase|for all tasks regardless of context|always execute without checking preconditions)\b/i,
+  /\b(?:always|never)\s+(?:delete|overwrite|force push|skip tests|disable checks)\b/i,
+];
 const UNSAFE_COMMAND_PATTERNS = [
   /\brm\s+-rf\s+\/(?:\s|$)/i,
   /\bcurl\b[^\n|]*\|\s*(?:sudo\s+)?(?:sh|bash)\b/i,
@@ -152,7 +182,12 @@ function atomicWrite(filePath: string, content: string, workspaceRoot: string): 
     fs.renameSync(temporary, filePath);
   } finally { try { fs.unlinkSync(temporary); } catch {} }
 }
+function metadataDigest(record: SkillCandidateRecord): string {
+  const { metadataSha256: _metadataSha256, ...payload } = record;
+  return sha256(JSON.stringify(payload));
+}
 function writeRecord(root: string, record: SkillCandidateRecord): void {
+  record.metadataSha256 = metadataDigest(record);
   atomicWrite(metadataPath(root, record.name, record.version), JSON.stringify(record, null, 2) + "\n", root);
 }
 function readRecord(root: string, name: string, version: string): SkillCandidateRecord {
@@ -168,7 +203,16 @@ function readRecord(root: string, name: string, version: string): SkillCandidate
   assertNoSymlinkSegments(root, filePath);
   const content = fs.readFileSync(filePath, "utf8");
   if (sha256(content) !== record.contentSha256 || record.contentSha256.slice(0, 12) !== version) {
-    throw new Error("Skill candidate integrity check failed; artifact or metadata changed.");
+    throw new Error("Skill candidate content integrity check failed.");
+  }
+  if (record.metadataSha256 !== undefined) {
+    if (!/^[a-f0-9]{64}$/.test(record.metadataSha256) || metadataDigest(record) !== record.metadataSha256) {
+      throw new Error("Skill candidate metadata integrity check failed; evaluation, replay history, or approval metadata changed.");
+    }
+  } else {
+    // Backwards-compatible one-time seal for records created before metadata integrity was added.
+    // This prevents subsequent tampering but cannot prove an old record was never edited previously.
+    writeRecord(root, record);
   }
   return record;
 }
@@ -182,6 +226,56 @@ function addHistory(record: SkillCandidateRecord, action: SkillLifecycleEvent["a
   record.updatedAt = event.at;
   record.history = [...record.history, event].slice(-MAX_HISTORY);
 }
+function boundedRedactedText(input: unknown, limit: number): string | undefined {
+  if (typeof input !== "string") return undefined;
+  const singleLine = input.replace(/[\r\n\x00-\x1f\x7f\u0085\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!singleLine) return undefined;
+  return redactText(singleLine).value.slice(0, limit);
+}
+
+function sanitizeMetadata(input?: SkillEvidenceMetadata): SkillEvidenceMetadata | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const modeValues = new Set(["single", "multi", "interactive", "background", "unknown"]);
+  const riskValues = new Set<SkillRiskClassification>(["low", "medium", "high"]);
+  const cleanList = (value: unknown): string[] | undefined => {
+    if (!Array.isArray(value)) return undefined;
+    const clean = [...new Set(value.slice(0, 10).map(item => boundedRedactedText(item, 240)).filter((item): item is string => Boolean(item)))];
+    return clean.length ? clean : undefined;
+  };
+  const metadata: SkillEvidenceMetadata = {};
+  const taskId = boundedRedactedText(input.taskId, 120);
+  const provider = boundedRedactedText(input.provider, 80);
+  const model = boundedRedactedText(input.model, 100);
+  const executionMode = typeof input.executionMode === "string" && modeValues.has(input.executionMode) ? input.executionMode : undefined;
+  const errorSummary = boundedRedactedText(input.errorSummary, 600);
+  const recoverySummary = boundedRedactedText(input.recoverySummary, 600);
+  const applicability = cleanList(input.applicability);
+  const preconditions = cleanList(input.preconditions);
+  const expectedOutputs = cleanList(input.expectedOutputs);
+  const verificationSteps = cleanList(input.verificationSteps);
+  const knownLimitations = cleanList(input.knownLimitations);
+  if (taskId) metadata.taskId = taskId;
+  if (provider) metadata.provider = provider;
+  if (model) metadata.model = model;
+  if (executionMode) metadata.executionMode = executionMode;
+  if (errorSummary) metadata.errorSummary = errorSummary;
+  if (recoverySummary) metadata.recoverySummary = recoverySummary;
+  if (applicability) metadata.applicability = applicability;
+  if (preconditions) metadata.preconditions = preconditions;
+  if (expectedOutputs) metadata.expectedOutputs = expectedOutputs;
+  if (verificationSteps) metadata.verificationSteps = verificationSteps;
+  if (knownLimitations) metadata.knownLimitations = knownLimitations;
+  if (typeof input.riskClassification === "string" && riskValues.has(input.riskClassification)) metadata.riskClassification = input.riskClassification;
+  if (input.userFeedback && typeof input.userFeedback === "object" && !Array.isArray(input.userFeedback)) {
+    const sentiment = input.userFeedback.sentiment;
+    const summary = boundedRedactedText(input.userFeedback.summary, 400);
+    if (["positive", "negative", "neutral"].includes(String(sentiment)) && summary) {
+      metadata.userFeedback = { sentiment: sentiment as "positive" | "negative" | "neutral", summary };
+    }
+  }
+  return Object.keys(metadata).length ? metadata : undefined;
+}
+
 function redactText(input: string): { value: string; count: number } {
   let value = input;
   let count = 0;
@@ -272,6 +366,7 @@ export async function createSkillCandidate(workspace: string, input: CreateSkill
       recoveredErrors: input.extractedPatterns.recoveredErrors.slice(0, 20).map(v => redactText(v).value.slice(0, 150)),
       keySteps: input.extractedPatterns.keySteps.slice(0, 20).map(v => redactText(v).value.slice(0, 200)),
     },
+    ...(sanitizeMetadata(input.metadata) ? { metadata: sanitizeMetadata(input.metadata) } : {}),
     evaluations: [], history: [],
   };
   addHistory(record, "created", "candidate", "synthesizer", redacted.count ? "Sensitive patterns were redacted before persistence." : "Saved as an inactive candidate.");
@@ -323,7 +418,13 @@ export async function evaluateSkillCandidate(workspace: string, name: string, ve
   checks.push({ id: "permission-boundaries", status: bypass ? "fail" : "pass", detail: bypass ? "Candidate appears to bypass permission or approval controls." : "No explicit permission/approval bypass instruction detected." });
   const dangerous = UNSAFE_COMMAND_PATTERNS.some(pattern => pattern.test(content));
   checks.push({ id: "command-safety", status: dangerous ? "fail" : "pass", detail: dangerous ? "Destructive or unsafe command pattern detected; replace with bounded steps." : "No known high-risk command pattern detected." });
-  const paths = ((content.includes("Users") || content.includes("Windows") || content.includes("Program Files")) && content.includes(":")) || content.includes("/home/") || content.includes("/Users/") || content.includes("/root/") || content.includes("/tmp/");
+  const injection = PROMPT_INJECTION_PATTERNS.some(pattern => pattern.test(content));
+  checks.push({ id: "prompt-injection", status: injection ? "fail" : "pass", detail: injection ? "Candidate contains instructions to disclose secrets, ignore higher-priority instructions, or bypass controls." : "No known direct prompt-injection/exfiltration pattern detected." });
+  const overgeneralized = OVERGENERALIZATION_PATTERNS.some(pattern => pattern.test(content));
+  checks.push({ id: "generalization-boundaries", status: overgeneralized ? "warn" : "pass", detail: overgeneralized ? "Potentially overgeneralized workflow instruction detected; tighten applicability and preconditions." : "No high-confidence overgeneralization phrase detected." });
+  const risk = candidate.record.metadata?.riskClassification;
+  checks.push({ id: "risk-classification", status: risk === "high" ? "fail" : risk === "medium" ? "warn" : "pass", detail: risk === "high" ? "High-risk candidate requires a separately reviewed policy path and is not eligible for normal promotion." : risk === "medium" ? "Medium-risk candidate needs careful owner review before activation." : "Low or unclassified risk; normal explicit approval gate still applies." });
+    const paths = ((content.includes("Users") || content.includes("Windows") || content.includes("Program Files")) && content.includes(":")) || content.includes("/home/") || content.includes("/Users/") || content.includes("/root/") || content.includes("/tmp/");
   checks.push({ id: "path-portability", status: paths ? "warn" : "pass", detail: paths ? "Machine-specific path detected; review portability." : "No common machine-specific absolute path detected." });
   const activePath = path.join(root, ACTIVE_ROOT, candidate.record.name, "SKILL.md");
   let conflict = false;
@@ -333,8 +434,22 @@ export async function evaluateSkillCandidate(workspace: string, name: string, ve
   } catch { conflict = true; }
   checks.push({ id: "active-name-conflict", status: conflict ? "warn" : "pass", detail: conflict ? "A different skill uses this name; promotion will refuse unmanaged overwrite." : "No different active skill content detected." });
 
+  const replay = (candidate.record.replayRuns || [])
+    .filter(run => run.skillVersion === candidate.record.version).slice(-1)[0];
+  checks.push({
+    id: "sandboxed-replay",
+    status: !replay ? "warn" : replay.status === "passed" ? "pass" : "fail",
+    detail: !replay
+      ? "No sandbox replay recorded; static checks do not execute generated instructions."
+      : replay.status === "passed"
+        ? "Latest sandbox replay passed for this exact candidate version."
+        : "Latest sandbox replay failed; inspect the recorded failure and refine the candidate before re-evaluation.",
+  });
   const evidence = await verifyTaskEvidence(root, candidate.record.sourceEvidenceIds);
   checks.push({ id: "verified-task-evidence", status: evidence.ok ? "pass" : "fail", detail: evidence.ok ? "Persisted completed-task and successful test/build evidence verified." : evidence.errors.join(" ").slice(0, 300) });
+  const declaredTaskId = candidate.record.metadata?.taskId;
+  const taskIdMatches = !declaredTaskId || evidence.taskIds.includes(declaredTaskId);
+  checks.push({ id: "task-provenance", status: taskIdMatches ? "pass" : "fail", detail: taskIdMatches ? "Declared task provenance is absent or matches verified source evidence." : "Declared taskId does not match the verified task evidence." });
   const evaluation: SkillEvaluation = {
     evaluationVersion: 1, evaluationId: randomUUID(), skillVersion: candidate.record.version,
     evaluatedAt: Date.now(), status: checks.some(c => c.status === "fail") ? "failed" : "passed",
@@ -353,6 +468,57 @@ export async function evaluateSkillCandidate(workspace: string, name: string, ve
   return { record, markdownContent: content, filePath: candidate.filePath };
 }
 
+/**
+ * Run a version-bound candidate through a caller-supplied trusted executor whose
+ * only workspace capability is the restricted tool API in a disposable sandbox.
+ * The caller must not expose shell/network/general filesystem tools to that executor.
+ */
+export async function replaySkillCandidate(
+  workspace: string,
+  name: string,
+  version: string,
+  fixture: SkillReplayFixture,
+  executor: SkillReplayExecutor,
+  options: { timeoutMs?: number; actor?: string } = {},
+): Promise<SkillReplayResult> {
+  const root = localWorkspace(workspace);
+  const preflight = await evaluateSkillCandidate(root, name, version);
+  const preflightEvaluation = preflight.record.evaluations.find(item => item.evaluationId === preflight.record.latestEvaluationId);
+  const blockingChecks = (preflightEvaluation?.checks || []).filter(check => check.id !== "sandboxed-replay" && check.status === "fail");
+  if (!preflightEvaluation || blockingChecks.length > 0) {
+    throw new Error("Replay is blocked until static checks and verified task evidence pass. Failed checks: " +
+      blockingChecks.map(check => check.id).slice(0, 8).join(", "));
+  }
+  const candidate = getSkillCandidate(root, name, version);
+  const result = await runSandboxSkillReplay({
+    name: candidate.record.name,
+    version: candidate.record.version,
+    markdownContent: candidate.markdownContent,
+  }, fixture, executor, { timeoutMs: options.timeoutMs });
+  const current = readRecord(root, name, version);
+  current.replayRuns = [...(current.replayRuns || []), result].slice(-MAX_REPLAY_RUNS);
+  addHistory(current, "replayed", current.status, options.actor || "sandbox-replay", result.status === "passed"
+    ? "Sandbox replay passed for fixture " + result.fixtureId + "."
+    : "Sandbox replay failed for fixture " + result.fixtureId + ".");
+  writeRecord(root, current);
+  // Re-evaluate after replay so the latest evaluation explicitly reflects the
+  // exact-version replay result; a failed replay then blocks normal promotion.
+  await evaluateSkillCandidate(root, name, version);
+  try {
+    const { recordSkillValidation } = await import("./skillTracker.js");
+    recordSkillValidation(name, version, result.status === "passed", {
+      taskId: candidate.record.metadata?.taskId,
+      provider: result.provider || candidate.record.metadata?.provider,
+      model: result.model || candidate.record.metadata?.model,
+      executionMode: candidate.record.metadata?.executionMode,
+      workspace: root,
+    });
+  } catch {
+    // Candidate replay/audit is authoritative; metrics must never undo replay persistence.
+  }
+  return result;
+}
+
 function latestEvaluation(record: SkillCandidateRecord): SkillEvaluation | undefined {
   return record.evaluations.find(e => e.evaluationId === record.latestEvaluationId && e.skillVersion === record.version);
 }
@@ -366,6 +532,13 @@ export async function promoteSkillCandidate(
   const evaluation = latestEvaluation(record);
   if (!evaluation || evaluation.status !== "passed" || record.status === "retired") {
     throw new Error("Only a non-retired candidate with a passing latest evaluation can be promoted.");
+  }
+  const latestReplay = (record.replayRuns || [])
+    .filter(run => run.skillVersion === record.version).slice(-1)[0];
+  if (!latestReplay || latestReplay.status !== "passed" ||
+      !/^[a-f0-9]{64}$/.test(latestReplay.fixtureSha256 || "") ||
+      !/^[0-9a-f-]{36}$/i.test(latestReplay.runId || "")) {
+    throw new Error("A passing sandbox replay for this exact immutable version is required before activation.");
   }
   if (approval.method !== "interactive-cli" || !approval.approvedBy.trim()) {
     throw new Error("Activation requires explicit interactive CLI approval.");

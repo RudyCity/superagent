@@ -23,6 +23,31 @@ export const synthesizeSkillTool: Tool = {
         type: "array",
         items: { type: "string" },
         description: "Optional IDs of persisted Selfdev task_completed events. Evaluation verifies the exact workspace and linked successful test/build evidence."
+      },
+      metadata: {
+        type: "object",
+        description: "Optional structured provenance and applicability metadata. Values are bounded and redacted before persistence; never send raw prompts, transcripts, command strings, or credentials.",
+        properties: {
+          taskId: { type: "string", description: "Stable task ID matching the supplied verified Selfdev evidence." },
+          provider: { type: "string", description: "Provider name only, not credentials." },
+          model: { type: "string", description: "Model identifier only." },
+          executionMode: { type: "string", enum: ["single", "multi", "interactive", "background", "unknown"] },
+          errorSummary: { type: "string", description: "Short redacted error summary; no raw logs." },
+          recoverySummary: { type: "string", description: "Short redacted description of the successful recovery." },
+          applicability: { type: "array", items: { type: "string" }, description: "Tasks/workspaces where this workflow is appropriate." },
+          preconditions: { type: "array", items: { type: "string" }, description: "Required checks before running the workflow." },
+          expectedOutputs: { type: "array", items: { type: "string" }, description: "Expected bounded results or artifacts." },
+          verificationSteps: { type: "array", items: { type: "string" }, description: "Independent checks to validate the result." },
+          riskClassification: { type: "string", enum: ["low", "medium", "high"] },
+          knownLimitations: { type: "array", items: { type: "string" }, description: "Known limitations or unverified assumptions." },
+          userFeedback: {
+            type: "object",
+            properties: {
+              sentiment: { type: "string", enum: ["positive", "negative", "neutral"] },
+              summary: { type: "string", description: "Bounded feedback summary; no raw conversation." }
+            }
+          }
+        }
       }
     },
     required: ["taskDescription"]
@@ -42,7 +67,10 @@ export const synthesizeSkillTool: Tool = {
         workspace: cwd,
         skillName,
         category,
-        evidenceIds: Array.isArray(args.evidenceIds) ? args.evidenceIds.filter((id): id is string => typeof id === "string") : undefined
+        evidenceIds: Array.isArray(args.evidenceIds) ? args.evidenceIds.filter((id): id is string => typeof id === "string") : undefined,
+        metadata: args.metadata && typeof args.metadata === "object" && !Array.isArray(args.metadata)
+          ? args.metadata as import("../skills/synthesizerTypes.js").SkillEvidenceMetadata
+          : undefined
       });
 
       return [

@@ -176,7 +176,7 @@ export const skillsCommand: SlashCommand = {
 
       const fs = await import("fs");
       const { listSynthesizedSkills } = await import("../skills/skillSynthesizer.js");
-      const { recordSkillExecution, recordSkillOutcome } = await import("../skills/skillTracker.js");
+      const { recordSkillExecution, recordSkillOutcome, getSkillVersionId } = await import("../skills/skillTracker.js");
       const workspace = ctx.agent?.workingDirectory || process.cwd();
       const installed = getInstalledSkills();
       const synthesized = listSynthesizedSkills(workspace);
@@ -194,8 +194,9 @@ export const skillsCommand: SlashCommand = {
         return;
       }
 
-      recordSkillExecution(name);
       const skillContent = fs.readFileSync(targetPath, "utf-8");
+      const trackingContext = { version: getSkillVersionId(skillContent), executionMode: "interactive" as const, workspace };
+      recordSkillExecution(name, trackingContext);
 
       if (ctx.agent) {
         const skillRunStartedAt = Date.now();
@@ -214,9 +215,9 @@ export const skillsCommand: SlashCommand = {
           await ctx.agent.sendMessage(
             `Please execute the following skill guide:\n\n${skillContent}`
           );
-          recordSkillOutcome(name, "succeeded", Date.now() - skillRunStartedAt);
+          recordSkillOutcome(name, "succeeded", Date.now() - skillRunStartedAt, trackingContext);
         } catch (err: any) {
-          recordSkillOutcome(name, "failed", Date.now() - skillRunStartedAt);
+          recordSkillOutcome(name, "failed", Date.now() - skillRunStartedAt, trackingContext);
           ctx.addLine({
             type: "error",
             content: `Failed to execute skill: ${err.message}`,

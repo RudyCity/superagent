@@ -19,6 +19,8 @@ Commands:
   compare <name> <versionA> <versionB>   Compare immutable versions
   disable <active-skill-name>            Disable active managed skill
   retire <name>@<version> --reason <r>   Retire version while preserving history
+  feedback <name>@<version> <sentiment> --summary <text>
+                                        Record version-scoped user feedback
   help                                  Show this help message
 
 Options for synth:
@@ -40,6 +42,8 @@ Examples:
   superagent skill stats
   superagent skill synth "Automate SQLite schema migrations and backups" --name sqlite-backup-helper
   superagent skill synth "Review pull requests and enforce conventional commits" --category review
+  superagent skill replay workflow-helper@<12-char-version> --fixture fixtures/workflow-helper.json
+  superagent skill feedback workflow-helper@<12-char-version> negative --summary "Needs more edge cases"
 `);
 }
 
@@ -74,6 +78,12 @@ export async function handleSkillCliCommand(args: string[]): Promise<void> {
       const lastUsedStr = s.lastUsed ? new Date(s.lastUsed).toLocaleDateString() : "Never";
       console.log(`- ${typeTag} ${s.name.padEnd(30)} (used: ${s.executionCount}x | last: ${lastUsedStr})`);
       console.log("  Outcomes: ok=" + (s.successfulRuns || 0) + " | failed=" + (s.failedRuns || 0) + " | duration-ms=" + (s.totalDurationMs || 0));
+      for (const version of (s.versionMetrics || []).slice(0, 10)) {
+        console.log("  Version " + version.version + ": runs=" + version.executionCount +
+          " | ok=" + version.successfulRuns + " | failed=" + version.failedRuns +
+          " | retries=" + version.retryCount + " | validation=" + version.validationPassed + "/" + version.validationRuns +
+          " | feedback +/−/~=" + version.positiveFeedback + "/" + version.negativeFeedback + "/" + version.neutralFeedback);
+      }
     }
 
     process.exit(0);
@@ -157,8 +167,9 @@ export async function handleSkillCliCommand(args: string[]): Promise<void> {
     console.log(`- Workspace: ${workspace}`);
     console.log(`- Mode: ${isMulti ? "multi" : "single"}\n`);
 
-    const { recordSkillExecution, recordSkillOutcome } = await import("../skills/skillTracker.js");
-    recordSkillExecution(name);
+    const { recordSkillExecution, recordSkillOutcome, getSkillVersionId } = await import("../skills/skillTracker.js");
+    const trackingContext = { version: getSkillVersionId(skillContent), executionMode: isMulti ? "multi" as const : "single" as const, workspace };
+    recordSkillExecution(name, trackingContext);
 
     const { createAgentExecutor } = await import("../gateway/gatewayServer.js");
     const executeAgent = await createAgentExecutor(workspace);
@@ -167,13 +178,13 @@ export async function handleSkillCliCommand(args: string[]): Promise<void> {
     const startedAt = Date.now();
     try {
       const output = await executeAgent(prompt, workspace);
-      recordSkillOutcome(name, "succeeded", Date.now() - startedAt);
+      recordSkillOutcome(name, "succeeded", Date.now() - startedAt, trackingContext);
       console.log("\n--- Execution Output ---");
       console.log(output);
       console.log("\nSkill execution completed.");
       process.exit(0);
     } catch (err: any) {
-      recordSkillOutcome(name, "failed", Date.now() - startedAt);
+      recordSkillOutcome(name, "failed", Date.now() - startedAt, trackingContext);
       console.log(`\nExecution failed: ${err.message}`);
       process.exit(1);
     }
