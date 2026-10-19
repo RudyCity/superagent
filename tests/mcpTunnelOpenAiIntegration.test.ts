@@ -40,6 +40,7 @@ import {
   getMcpStateFile,
   readMcpStateFile,
 } from "../src/core/mcp/mcpTunnel.js";
+import { setOpenAiMcpTunnelId } from "../src/core/mcp/openaiMcpTunnelConfig.js";
 
 describe("MCP Tunnel with OpenAI Secure MCP Tunnel Provider", () => {
   let tempHome: string;
@@ -116,6 +117,25 @@ describe("MCP Tunnel with OpenAI Secure MCP Tunnel Provider", () => {
     expect(info.openAiTunnelId).toBe(tunnelId);
     expect(mocks.startOpenAiTunnel).toHaveBeenCalledWith(expect.objectContaining({ tunnelId }));
     await stopMcpTunnel(19431);
+  });
+
+  it("selects OpenAI from saved Tunnel ID config when no provider was explicitly selected", async () => {
+    const previousConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
+    process.env.SUPERAGENT_CONFIG_DIR = tempHome;
+    try {
+      const tunnelId = "tunnel_saved_0123456789";
+      setOpenAiMcpTunnelId(tunnelId);
+
+      const info = await startMcpTunnel({ port: 19436 });
+
+      expect(info.tunnelProvider).toBe("openai");
+      expect(info.openAiTunnelId).toBe(tunnelId);
+      expect(mocks.startOpenAiTunnel).toHaveBeenCalledWith(expect.objectContaining({ tunnelId }));
+      await stopMcpTunnel(19436);
+    } finally {
+      if (previousConfigDir === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+      else process.env.SUPERAGENT_CONFIG_DIR = previousConfigDir;
+    }
   });
 
   it("selects OpenAI from OPENAI_MCP_TUNNEL_ID when no provider was explicitly selected", async () => {

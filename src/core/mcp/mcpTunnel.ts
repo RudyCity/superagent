@@ -44,6 +44,7 @@ import {
   isValidTunnelId,
   type OpenAiTunnelStatus,
 } from "./openaiTunnelClient.js";
+import { getOpenAiMcpTunnelConfig } from "./openaiMcpTunnelConfig.js";
 
 export const DEFAULT_MCP_PORT = 9227;
 export type McpTunnelProvider = "cloudflare" | "openai";
@@ -213,7 +214,8 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
 
   // Honor an explicitly selected provider. Otherwise, infer OpenAI from its
   // configured tunnel ID; without that signal, retain the Cloudflare default.
-  const configuredOpenAiTunnelId = process.env.OPENAI_MCP_TUNNEL_ID?.trim();
+  const savedOpenAiConfig = requestedProvider === "cloudflare" ? {} : getOpenAiMcpTunnelConfig();
+  const configuredOpenAiTunnelId = process.env.OPENAI_MCP_TUNNEL_ID?.trim() || savedOpenAiConfig.tunnelId;
   const hasExplicitTunnelId = Boolean(opts.tunnelId?.trim());
   const tunnelProvider: McpTunnelProvider = requestedProvider === "openai"
     ? "openai"
@@ -231,6 +233,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
     // env variable as a backwards-compatible fallback.
     const rawTunnelId = opts.tunnelId?.trim()
       || process.env.OPENAI_MCP_TUNNEL_ID?.trim()
+      || savedOpenAiConfig.tunnelId
       || process.env.CONTROL_PLANE_TUNNEL_ID?.trim();
     if (!rawTunnelId) {
       throw new Error(

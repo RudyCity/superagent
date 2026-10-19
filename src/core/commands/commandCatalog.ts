@@ -37,6 +37,10 @@ export const TELEGRAM_SUGGESTIONS = [
 
 export const MCP_TUNNEL_SUGGESTIONS = [
   "/mcp tunnel providers",
+  "/mcp tunnel config status",
+  "/mcp tunnel config set-id",
+  "/mcp tunnel config set-key-env",
+  "/mcp tunnel config set-key",
   "/mcp tunnel list",
   "/mcp tunnel start --provider cloudflare",
   "/mcp tunnel start --provider openai --tunnel-id",
@@ -84,6 +88,10 @@ export function getMcpTunnelProvidersHelp(): string {
     "Examples:",
     "  /mcp tunnel start --provider cloudflare",
     "  /mcp tunnel start --provider openai --tunnel-id <id>",
+    "  /mcp tunnel config set-id <id>",
+    "  /mcp tunnel config set-key <runtime-api-key>",
+    "  /mcp tunnel config set-key-env",
+    "  /mcp tunnel config status",
     "  (or set OPENAI_MCP_TUNNEL_ID and run /mcp tunnel start --provider openai)",
   ].join("\n");
 }

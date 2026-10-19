@@ -17,6 +17,7 @@ import os from "os";
 import http from "http";
 
 import { killProcessTree } from "../tools/helpers.js";
+import { getOpenAiMcpTunnelConfig } from "./openaiMcpTunnelConfig.js";
 
 export interface OpenAiTunnelOptions {
   /** OpenAI Tunnel ID (format: "tunnel_..." or alias created in Platform tunnel settings). */
@@ -303,6 +304,8 @@ export function resolveOpenAiControlPlaneKey(explicitKey?: string): string | und
   const envKey = process.env.CONTROL_PLANE_API_KEY;
   if (isValidApiKeyCandidate(envKey)) return envKey.replace(/[\r\n\s]+/g, "");
 
+  const savedKey = getOpenAiMcpTunnelConfig().apiKey;
+  if (isValidApiKeyCandidate(savedKey)) return savedKey.replace(/[\r\n\s]+/g, "");
   return undefined;
 }
 
@@ -517,7 +520,7 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
   if (!apiKey) {
     throw new Error(
       "Missing OpenAI runtime API key for tunnel control plane.\n" +
-      "Provide via --api-key, CONTROL_PLANE_API_KEY environment variable, or configure an OpenAI provider in Superagent (/login add openai <key>)."
+      "Provide via --api-key, CONTROL_PLANE_API_KEY, or save it with /mcp tunnel config set-key <key> (or set CONTROL_PLANE_API_KEY and run /mcp tunnel config set-key-env)."
     );
   }
 

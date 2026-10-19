@@ -11,7 +11,7 @@ Commands:
   add-http <name> <url> [--oauth]       Add a remote Streamable HTTP MCP server
   remove, rm <name>                     Remove an MCP server configuration
   register                              Register Superagent as an MCP server to Antigravity (AGY)
-  tunnel <start|stop|restart|list|status|doctor|providers>  Manage MCP tunnel providers (Cloudflare or OpenAI)
+  tunnel <start|stop|restart|list|status|doctor|providers|config>  Manage MCP tunnels and OpenAI credentials
 
 Examples:
    superagent mcp list
@@ -162,6 +162,13 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
     if (tunnelAction === "providers") {
       console.log(getMcpTunnelProvidersHelp());
       process.exit(0);
+    }
+
+    if (tunnelAction === "config") {
+      const { runOpenAiMcpTunnelConfigCommand } = await import("../mcp/openaiMcpTunnelConfigCommand.js");
+      const result = runOpenAiMcpTunnelConfigCommand(rawArgs);
+      console.log(result.message);
+      process.exit(result.success ? 0 : 1);
     }
 
     if (tunnelAction === "list" || tunnelAction === "status") {

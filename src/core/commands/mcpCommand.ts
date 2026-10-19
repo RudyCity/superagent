@@ -268,6 +268,17 @@ export const mcpCommand: SlashCommand = {
         return;
       }
 
+      if (tunnelAction === "config") {
+        const { runOpenAiMcpTunnelConfigCommand } = await import("../mcp/openaiMcpTunnelConfigCommand.js");
+        const result = runOpenAiMcpTunnelConfigCommand(rawArgs);
+        ctx.addLine({
+          type: result.success ? "system" : "error",
+          content: result.message,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
       if (tunnelAction === "list" || tunnelAction === "status") {
         const { listActiveMcpServers, formatActiveMcpServers } = await import("../mcp/mcpTunnel.js");
         ctx.addLine({
@@ -504,7 +515,7 @@ export const mcpCommand: SlashCommand = {
 
       ctx.addLine({
         type: "error",
-        content: `Unknown tunnel action "${tunnelAction}". Available: providers, start, stop, restart, list, status, doctor`,
+        content: `Unknown tunnel action "${tunnelAction}". Available: providers, config, start, stop, restart, list, status, doctor`,
         timestamp: now,
       });
       return;
