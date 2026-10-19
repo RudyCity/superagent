@@ -86,10 +86,17 @@ superagent -ws user@192.168.1.100:/var/www/app
 superagent daemon list
 superagent daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"
 
-# Manage Cloudflare Quick Tunnels
-superagent tunnel list                   # List active tunnels across all ports
-superagent tunnel start                  # Start Muse WebSocket tunnel (port 9225)
-superagent tunnel start --https          # Start HTTPS tunnel for Superagent REST/SSE server (port 7888)
+# Manage the Muse WebSocket tunnel (Cloudflare)
+superagent muse tunnel list              # List Muse WebSocket tunnels only
+superagent muse tunnel start             # Start Muse WebSocket tunnel (port 9225)
+superagent muse tunnel status             # Check Muse WebSocket tunnel status
+
+# In interactive mode: manage REST/SSE exposure separately
+/server tunnel start                     # REST/SSE tunnel (typically port 7888)
+
+# MCP providers are managed independently
+superagent mcp tunnel providers
+superagent mcp tunnel start --provider cloudflare
 
 # Run a task using the remote AI agent (Muse)
 superagent muse status
@@ -210,10 +217,12 @@ The `control_chrome_vision` tool provides **human-like visual perception and spa
 | `/skills` | List installed skills or synthesize new ones (`/skills synthesize <title>`) |
 | `/install` | Install a skill from skills.sh (e.g. `/install vercel-labs/skills/find-skills`) |
 | `/memory` | Manage and inspect RMemory long-term memory: status, sync, search, add, delete, list-scenes, read-scene, read-persona |
-| `/mcp` | Manage MCP (Model Context Protocol) servers & tunnels: `list`, `add`, `remove`, `reload`, `tunnel` (`start`, `stop`, `list`, `doctor`) |
+| `/mcp` | Manage MCP servers and MCP tunnel providers: `list`, `add`, `remove`, `reload`, plus `/mcp tunnel providers`, `start`, `stop`, `restart`, `list`, `status`, `doctor` |
 | `/macro` | Manage and run browser macro presets: list, run, delete |
-| `/muse` | Coordinate with remote AI agent (Muse) over WebSocket (Cloudflare Tunnel) or Telegram (`/muse <task>`, `/muse tunnel`, `/muse watch`, `/muse status`) |
-| `/tunnel` `/tunnels` | Manage quick tunnels (Cloudflare & OpenAI Secure MCP): `list`, `start` [`--https`|`--mcp`], `stop` [`all`|`--https`|`--mcp`], `status`, `doctor` |
+| `/muse` | Coordinate Muse tasks and watch sessions; `/muse tunnel` controls Muse WebSocket only |
+| `/telegram` | Manage direct Telegram bot/group operations: `status`, `doctor`, `send`, `config`, `fallback` |
+| `/server tunnel` | Manage Superagent REST/SSE server exposure independently |
+| `/tunnel` `/tunnels` | Deprecated Muse-only aliases; use `/mcp tunnel` for MCP or `/server tunnel` for REST/SSE |
 
 ### Workspace Management
 
@@ -285,68 +294,89 @@ Workspace Chaining allows you to link multiple workspaces—both local directori
 
 ### 🛰️ Remote AI Agent Coordination (Muse)
 
-Superagent can pair with an external AI agent (**"Muse"**) acting as a remote cognitive brain while Superagent provides local file access, command execution, and test running on your workstation. Superagent supports two bidirectional transports:
+Superagent can pair with an external AI agent (**Muse**) acting as a remote cognitive brain while Superagent provides local file access, command execution, and test running on your workstation. Muse owns task coordination, watch sessions, steering, and its own WebSocket transport. Telegram messaging, MCP tunnels, and REST/SSE server exposure are separate command domains.
 
-1. **Cloudflare Tunnel (Zero Trust)** *(Recommended)*:
-   - **Sub-millisecond Streaming**: Real-time WebSocket batch streaming for Muse cognitive brain coordination (port 9225).
-   - **Unified HTTPS REST & SSE Tunnel**: Expose the Superagent server (port 7888) over public HTTPS with Bearer token authentication (`--https`).
-   - **Quick Ephemeral Tunnel**: Instant zero-configuration tunnel via `cloudflared` without custom domain setup or open firewall ports.
-   - **Multi-Project Watch Daemon**: Watch multiple repositories concurrently (`/muse watch dir1 dir2 --tunnel`).
-   - **Multi-Terminal Isolation**: Run independent tunnels across multiple terminals using custom ports (`--port 9226`).
-   - **Tunnel Inspection & Batch Stop**: Inspect all active tunnels via `/tunnel list` (or `superagent tunnel list`) and stop all via `/tunnel stop all`.
-   - **Tunnel Chat & ESC Menu (v1.5.147)**: Press `ESC` while a tunnel is active for a quick menu (stop tunnel / send message to Muse / continue), or send directly via `/muse tunnel msg <text>`.
-   - **MCP via Tunnel (v1.6.0, OAuth in v1.7.0, Live Chat Stream in v1.13.55)**: `/muse tunnel start --mcp` exposes an MCP server (Streamable HTTP) through the tunnel (MCP only, no WSS) — two auth modes: `static-bearer` (default, separate bearer token printed once) and `oauth` (OAuth 2.1 + PKCE for ChatGPT, `--mcp-auth oauth`). Safe-tools allowlist by default, `--allow-dangerous` opts into destructive tools, real-time tool call & result streaming to the active conversation log sheet, audit log at `~/.superagent-r/mcp-audit.log`.
+**Muse WebSocket tunnel**
+- Uses Cloudflare Tunnel for the Muse WSS endpoint (default local WebSocket port 9225).
+- Supports multi-project watch sessions and per-session tunnel ports.
+- Muse-only lifecycle commands must not stop MCP or REST/SSE services.
 
-2. **Private Telegram Group Bus**:
-   - Outbound long-polling communication requiring zero firewall or DNS configuration.
-
-**Quick Tunnel Subcommands:**
-
-```bash
-# Manage quick ephemeral tunnels for Muse WebSocket (port 9225)
-superagent tunnel list                   # List all active tunnels across all ports
-superagent tunnel start                  # Start tunnel on default port (9225)
-superagent tunnel start --port 9226      # Start tunnel on isolated custom port
-superagent tunnel stop                   # Stop tunnel on default port
-superagent tunnel stop all               # Stop all active tunnels
-superagent tunnel status                 # Check status and uptime
-superagent tunnel doctor                 # Preflight diagnostic checks (cloudflared, tunnel-client, credentials)
-
-# Expose HTTP REST / SSE Server via HTTPS Tunnel (Zero Trust + Bearer Token)
-superagent tunnel start --https          # Starts tunnel to port 7888 (auto-spawns server if needed)
-superagent tunnel start --https --port 8080 # Custom port for HTTP server tunnel
-superagent tunnel status --https         # Check HTTPS tunnel status
-superagent tunnel stop --https           # Stop HTTPS tunnel
-
-# Expose MCP Server via Cloudflare or OpenAI Secure MCP Tunnel (Streamable HTTP, port 9227)
-superagent mcp tunnel start              # Start Cloudflare MCP quick tunnel (default)
-superagent mcp tunnel start --provider openai # Start OpenAI Secure MCP Tunnel (tunnel-client)
-superagent mcp tunnel start --provider openai --tunnel-id my-tunnel # Custom OpenAI tunnel ID
-superagent mcp tunnel start --mcp-auth oauth # Start MCP tunnel with OAuth 2.1 (for ChatGPT)
-superagent mcp tunnel list               # List active MCP server tunnels
-superagent mcp tunnel doctor             # Run diagnostic checks for MCP tunnels
-superagent mcp tunnel stop               # Stop active MCP tunnel
-
-# Launch server directly with public quick tunnel:
-superagent --server 7888 --tunnel
-
-# Interactive terminal equivalents:
-/tunnel list                             # Or /tunnels
-/tunnel start [--https] [--mcp] [--provider <cloudflare|openai>] [--port <n>]
-/tunnel stop [all|--https|--mcp|--port <n>]
-/tunnel status [--https|--mcp|--port <n>]
-/tunnel doctor
-/mcp tunnel start [--provider <cloudflare|openai>] [--tunnel-id <id>] [--mcp-auth oauth]
-/mcp tunnel stop
-/mcp tunnel list
-/mcp tunnel doctor
-/muse tunnel start [--https] [--mcp] [--provider <cloudflare|openai>] [--tunnel-id <id>]
+```text
+/muse <task>
+/muse status
+/muse watch <dir1> <dir2> --tunnel
+/muse tunnel list
+/muse tunnel start
+/muse tunnel start --port 9226
+/muse tunnel status
+/muse tunnel stop
+/muse tunnel stop all
+/muse tunnel doctor
+/muse tunnel prompt
 ```
 
-**HTTPS Tunnel Security Guarantees:**
-- **Bearer Token Enforcement**: Every request to the public `trycloudflare.com` URL requires `Authorization: Bearer <token>`. Unauthorized requests are blocked with HTTP 401.
-- **Dynamic CORS Protection**: CORS headers strictly restrict origins to verified `trycloudflare.com` hostnames, localhost, and registered clients.
-- **Auto-Provisioning**: Running `/tunnel start --https` automatically verifies if the background server is active, safely auto-spawns it on port 7888 if not, and displays test `curl` snippets with the active token pre-filled.
+**Direct Telegram integration**
+
+Use `/telegram` for bot/group configuration and direct messages. A direct Telegram send does not steer an active Muse task.
+
+```text
+/telegram status
+/telegram doctor
+/telegram config
+/telegram send <message>
+/telegram fallback status
+/telegram fallback start
+/telegram fallback stop
+```
+
+**MCP tunnel providers**
+
+MCP servers and provider-specific tunnels live under `/mcp tunnel` or `superagent mcp tunnel`. Supported providers are Cloudflare Quick Tunnel and OpenAI Secure MCP Tunnel. Use the provider listing before starting a tunnel; OpenAI requires a tunnel ID and valid Control Plane credentials.
+
+```text
+/mcp tunnel providers
+/mcp tunnel start --provider cloudflare
+/mcp tunnel start --provider openai --tunnel-id <id>
+/mcp tunnel list
+/mcp tunnel status
+/mcp tunnel doctor --provider openai
+/mcp tunnel restart
+/mcp tunnel stop
+```
+
+**Superagent REST/SSE exposure**
+
+REST/SSE exposure is separate from Muse WSS and MCP. It is managed through `/server tunnel`, typically on local port 7888.
+
+```text
+/server tunnel list
+/server tunnel start
+/server tunnel start --port 8080
+/server tunnel status
+/server tunnel doctor
+/server tunnel stop
+```
+
+**Aggregate service status and shutdown**
+
+Use one command to inspect all supported service domains, or shut down SuperAgent-managed connections and tunnel exposures:
+
+```text
+/status all
+/stop all
+```
+
+- `/status all` is read-only. It checks the Telegram Bot API and local fallback watcher, configured MCP client servers, MCP tunnel servers, REST/SSE tunnel, and Muse WebSocket tunnels.
+- `/stop all` disconnects configured MCP client servers, stops locally owned MCP tunnel servers, stops known Muse WebSocket and REST/SSE tunnel exposures, and stops local Muse/Telegram fallback watchers. Saved configuration and credentials are preserved.
+- The Telegram Bot API is remote and cannot be stopped by SuperAgent. MCP tunnels owned by another SuperAgent process are reported as skipped; tunnels with an unknown service kind are left untouched.
+- Run `/status all` again after shutdown to verify what remains active.
+
+**CLI note:** use `superagent mcp tunnel ...` for MCP provider operations and the dedicated `/server tunnel` command in the TUI for REST/SSE. Legacy `/tunnel` and `/tunnels` aliases are Muse-only compatibility shortcuts; do not use them to manage MCP or REST/SSE tunnels.
+
+**REST/SSE tunnel security notes:**
+- **Bearer token enforcement**: Requests to the public REST/SSE endpoint require `Authorization: Bearer <token>`.
+- **CORS protection**: CORS origins are validated by the server security layer.
+- **Separate lifecycle**: REST/SSE exposure is managed by `/server tunnel`, not `/muse tunnel` or `/mcp tunnel`.
 
 **Starting Watch Mode with Tunnel:**
 
@@ -360,17 +390,17 @@ superagent muse watch ./frontend ./backend --tunnel
 
 **Telegram Configuration:**
 
-```bash
-# Configure Superagent's bot token (Bot B)
-/muse config botToken 123456789:ABCdef...
+```text
+# Configure direct Telegram bot/group settings
+/telegram config botToken <bot-token>
+/telegram config groupId <group-id>
+/telegram config museBotId <bot-user-id>
 
-# Configure the Telegram group ID
-/muse config groupId -1001234567890
+# Inspect Telegram connectivity independently
+/telegram status
+/telegram doctor
 
-# Configure the Muse bot's user ID (Bot A)
-/muse config museBotId 987654321
-
-# Inspect status (credentials are securely masked)
+# Muse task and WebSocket status remains separate
 /muse status
 ```
 
@@ -386,11 +416,11 @@ superagent muse "find all unhandled promise rejections in src"
 
 #### 🤖 Connecting ChatGPT as Custom MCP Client (OAuth 2.1)
 
-1. Launch Superagent in OAuth MCP tunnel mode:
+1. Launch the MCP tunnel in OAuth mode using the dedicated MCP command:
 ```bash
-superagent muse tunnel start --mcp --mcp-auth oauth
+superagent mcp tunnel start --provider cloudflare --mcp-auth oauth
 # or with write/exec permissions:
-superagent muse tunnel start --mcp --mcp-auth oauth --allow-dangerous
+superagent mcp tunnel start --provider cloudflare --mcp-auth oauth --allow-dangerous
 ```
 2. In ChatGPT, open Settings > Connected Apps / Custom MCP, and choose **Add custom MCP server**.
 3. Fill in:
@@ -419,15 +449,31 @@ Superagent includes native integration with OpenAI Secure MCP Tunnels via the of
      ```
    - **OpenAI Control Plane API Key**:
      OpenAI Secure MCP Tunnels connect directly and privately to OpenAI's control plane (`api.openai.com`). An API key with *Tunnels Read + Use* permission (or your organization/project API key) is required to authenticate your machine and prove ownership of the `tunnel_id`, preventing unauthorized access.
-     Save it once so you don't need to pass `--api-key` on every command:
-     ```bash
-     # Save once in Superagent (persisted in model-config.json):
-     /login add openai <YOUR_OPENAI_API_KEY>
+     The tunnel integration accepts an explicit `--api-key <key>` (alias: `--control-plane-key <key>`) or reads `CONTROL_PLANE_API_KEY` from the environment. It deliberately does not fall back to the model provider's `OPENAI_API_KEY`.
 
-     # Or export in your environment:
-     export CONTROL_PLANE_API_KEY="sk-..."
+     **Important:** `/login add openai <key>` configures the model provider; it is not a persistent setting for the Secure MCP Tunnel control-plane credential. Avoid passing a real secret directly in a command during routine use because command input may be retained in history or logs.
+
+     PowerShell (set it before starting Superagent from the same terminal):
+     ```powershell
+     $env:CONTROL_PLANE_API_KEY = 'your-control-plane-api-key'
+     bun run dev
      ```
-     Alternatively, pass `--api-key <key>` directly to the start command.
+
+     Bash:
+     ```bash
+     export CONTROL_PLANE_API_KEY='your-control-plane-api-key'
+     bun run dev
+     ```
+     If Superagent is already running, restart it so it inherits the updated environment.
+
+     You can also supply the key directly at startup, if needed:
+     ```text
+     /mcp tunnel start --provider openai --tunnel-id <YOUR_TUNNEL_ID> --api-key <YOUR_CONTROL_PLANE_API_KEY>
+     ```
+     Or from the CLI:
+     ```bash
+     superagent mcp tunnel start --provider openai --tunnel-id <YOUR_TUNNEL_ID> --api-key <YOUR_CONTROL_PLANE_API_KEY>
+     ```
 
 2. **Run Diagnostics**:
    Verify prerequisites, binary installation, control plane credentials, and port availability:
@@ -448,9 +494,8 @@ Superagent includes native integration with OpenAI Secure MCP Tunnels via the of
    # Start with OAuth 2.1 user-consent flow if specifically required:
    superagent mcp tunnel start --provider openai --tunnel-id tunnel_0123456789abcdef0123456789abcdef --mcp-auth oauth
 
-   # Interactive slash command equivalents:
-   /mcp tunnel start --openai --tunnel-id tunnel_0123456789abcdef0123456789abcdef
-   /tunnel start --mcp --openai --tunnel-id tunnel_0123456789abcdef0123456789abcdef
+    # Interactive slash command equivalent:
+    /mcp tunnel start --provider openai --tunnel-id tunnel_0123456789abcdef0123456789abcdef
    ```
    *Note*: Superagent automatically creates the required profile directory (`%APPDATA%\tunnel-client` on Windows or `~/.config/tunnel-client` on Unix) and generates the valid `superagent-mcp.yaml` profile before launching `tunnel-client`.
 
@@ -591,7 +636,7 @@ Automated protocol tests cover: OAuth discovery, PKCE (S256) success/failure, ow
 
 Manual verification (requires user action — NOT yet run):
 
-- [ ] **MCP Inspector**: start `/muse tunnel start --mcp --mcp-auth oauth` in a disposable workspace, point MCP Inspector at the public `/mcp` URL, complete OAuth, verify tools/list + one safe tool call.
+- [ ] **MCP Inspector**: start `/mcp tunnel start --provider cloudflare --mcp-auth oauth` in a disposable workspace, point MCP Inspector at the public `/mcp` URL, complete OAuth, verify tools/list + one safe tool call.
 - [ ] **ChatGPT Developer Mode**: create a draft custom MCP app with the public `/mcp` URL, complete authorization, scan tools, call one safe read-only tool.
 - [ ] **Denied dangerous tool**: in OAuth mode with a safe-only scope, attempt a dangerous tool call; verify a clear approval/auth error and no execution.
 

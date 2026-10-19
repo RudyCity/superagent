@@ -4,7 +4,6 @@ import { SlashCommandContext } from "./types.js";
 import {
   loadRemoteAgentConfig,
   getWatchedWorkspaces,
-  maskToken,
   maskSecret,
 } from "../remoteAgent/config.js";
 
@@ -28,19 +27,23 @@ export async function handleMuseDoctorSubcommand(
   let hasWarnings = false;
   let hasErrors = false;
 
-  // 1. Cloudflare Tunnel Binary Check
-  try {
-    const { findCloudflaredBinary } = await import("../remoteAgent/cloudflareTunnel.js");
-    const bin = await findCloudflaredBinary();
-    if (bin) {
-      checks.push(`✔ Cloudflare Binary : FOUND (${bin})`);
-    } else {
-      checks.push("✖ Cloudflare Binary : NOT FOUND on PATH\n   Recommendation: Install via 'winget install Cloudflare.cloudflared' or 'brew install cloudflared'");
+  // Muse diagnostics check its WebSocket transport only. Telegram has its own doctor.
+  if (transport === "websocket") {
+    try {
+      const { findCloudflaredBinary } = await import("../remoteAgent/cloudflareTunnel.js");
+      const bin = await findCloudflaredBinary();
+      if (bin) {
+        checks.push(`✔ Cloudflare Binary : FOUND (${bin})`);
+      } else {
+        checks.push("✖ Cloudflare Binary : NOT FOUND on PATH\n   Recommendation: Install via 'winget install Cloudflare.cloudflared' or 'brew install cloudflared'");
+        hasWarnings = true;
+      }
+    } catch (err: any) {
+      checks.push(`✖ Cloudflare Binary : Error detecting (${err.message})`);
       hasWarnings = true;
     }
-  } catch (err: any) {
-    checks.push(`✖ Cloudflare Binary : Error detecting (${err.message})`);
-    hasWarnings = true;
+  } else {
+    checks.push("ℹ Telegram adapter selected : Run /telegram doctor for bot/API configuration and connectivity.");
   }
 
   // 2. Transport Configuration
@@ -75,61 +78,22 @@ export async function handleMuseDoctorSubcommand(
       }
     }
 
-    // Active Tunnel Check
+    // Active Muse WebSocket tunnel only; ignore MCP and REST/SSE tunnel records.
     try {
       const { getTunnelStatus, listActiveTunnels } = await import("../remoteAgent/cloudflareTunnel.js");
-      const status = getTunnelStatus(port);
-      const activeList = listActiveTunnels();
+      const rawStatus = getTunnelStatus(port);
+      const status = rawStatus.serviceKind === "muse-websocket" ? rawStatus : { ...rawStatus, isRunning: false };
+      const activeList = listActiveTunnels().filter((t) => t.serviceKind === "muse-websocket");
       if (status.isRunning) {
-        checks.push(`✔ Quick Tunnel      : ACTIVE (PID: ${status.pid}, Public: ${status.publicUrl}, WSS: ${status.wssUrl})`);
+        checks.push(`✔ Muse WebSocket Tunnel : ACTIVE (PID: ${status.pid}, WSS: ${status.wssUrl})`);
       } else if (activeList.length > 0) {
-        checks.push(`✔ Quick Tunnels     : ${activeList.length} active on ports: ${activeList.map((t) => t.port).join(", ")}`);
+        checks.push(`✔ Muse WebSocket Tunnels : ${activeList.length} active on ports: ${activeList.map((t) => t.port).join(", ")}`);
       } else {
-        checks.push("ℹ Quick Tunnel      : INACTIVE. Run '/muse tunnel start' to expose over Internet.");
+        checks.push("ℹ Muse WebSocket Tunnel : INACTIVE. Run '/muse tunnel start' to expose Muse.");
       }
     } catch {}
   } else {
-    // Telegram Checks
-    if (cfg.botToken) {
-      checks.push(`✔ Bot Token         : CONFIGURED (${maskToken(cfg.botToken)})`);
-      try {
-        const { MuseClient } = await import("../remoteAgent/museClient.js");
-        const client = new MuseClient(cfg);
-        const me = await client.getMeInfo();
-        if (me.ok) {
-          checks.push(`✔ Telegram Bot API  : ONLINE (@${me.username || me.firstName})`);
-          if (me.canReadGroupMessages === false) {
-            checks.push("⚠ Group Privacy     : ENABLED (Bot cannot read non-reply messages! In @BotFather: /setprivacy -> @bot -> Disable)");
-            hasWarnings = true;
-          } else {
-            checks.push("✔ Group Privacy     : DISABLED (Bot can read all group messages)");
-          }
-        } else {
-          checks.push(`✖ Telegram Bot API  : FAILED (${me.error || "Invalid bot token"})`);
-          hasErrors = true;
-        }
-      } catch (err: any) {
-        checks.push(`✖ Telegram Bot API  : ERROR (${err.message})`);
-        hasErrors = true;
-      }
-    } else {
-      checks.push("✖ Bot Token         : NOT SET. Run '/muse config botToken <token>'");
-      hasErrors = true;
-    }
-
-    if (cfg.groupId) {
-      checks.push(`✔ Telegram Group ID : ${cfg.groupId}`);
-    } else {
-      checks.push("✖ Telegram Group ID : NOT SET. Run '/muse config groupId <numeric_id>'");
-      hasErrors = true;
-    }
-
-    if (cfg.museBotId) {
-      checks.push(`✔ Muse Bot ID       : ${cfg.museBotId}`);
-    } else {
-      checks.push("✖ Muse Bot ID       : NOT SET. Run '/muse config museBotId <numeric_id>'");
-      hasErrors = true;
-    }
+    checks.push("ℹ Muse transport adapter : TELEGRAM selected. Telegram credentials/API health are checked separately by '/telegram doctor'.");
   }
 
   // 3. Watched Workspaces Check

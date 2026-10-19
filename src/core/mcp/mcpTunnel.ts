@@ -228,6 +228,13 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
     let active = activeServers.get(port);
     let createdServer = false;
 
+    if (active && active.tunnelProvider !== "openai") {
+      throw new Error(
+        `MCP server on port ${port} is already running with the ${active.tunnelProvider} tunnel provider; ` +
+        "stop it before switching to OpenAI Secure MCP Tunnel."
+      );
+    }
+
     if (active && active.authMode !== authMode) {
       throw new Error(
         `MCP server on port ${port} is already running in ${active.authMode} mode; ` +
@@ -335,6 +342,13 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
   // -------------------------------------------------------------
   // CLOUDFLARE QUICK TUNNEL PATH (Default)
   // -------------------------------------------------------------
+  const activeServerForPort = activeServers.get(port);
+  if (activeServerForPort && activeServerForPort.tunnelProvider !== "cloudflare") {
+    throw new Error(
+      `MCP server on port ${port} is already running with the ${activeServerForPort.tunnelProvider} tunnel provider; ` +
+      "stop it before switching to Cloudflare Quick Tunnel."
+    );
+  }
   const existing = getTunnelStatus(port);
   if (
     existing.isRunning &&

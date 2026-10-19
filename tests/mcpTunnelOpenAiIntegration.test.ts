@@ -161,4 +161,19 @@ describe("MCP Tunnel with OpenAI Secure MCP Tunnel Provider", () => {
     expect(mocks.stopOpenAiTunnel).toHaveBeenCalledWith(19429);
     expect(closeServerMock).toHaveBeenCalled();
   });
+
+  it("refuses to switch an active OpenAI MCP server to Cloudflare on the same port", async () => {
+    const port = 19430;
+    await startMcpTunnel({
+      port,
+      tunnelProvider: "openai",
+      tunnelId: "tunnel_0123456789abcdef0123456789abcdef",
+    });
+
+    await expect(startMcpTunnel({ port, tunnelProvider: "cloudflare" }))
+      .rejects.toThrow("already running with the openai tunnel provider");
+
+    expect(mocks.startOpenAiTunnel).toHaveBeenCalledOnce();
+    await stopMcpTunnel(port);
+  });
 });

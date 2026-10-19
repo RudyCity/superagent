@@ -15,7 +15,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import http from "http";
-import { loadModelConfig } from "../config/jsonConfig.js";
+
 import { killProcessTree } from "../tools/helpers.js";
 
 export interface OpenAiTunnelOptions {
@@ -290,30 +290,18 @@ function isValidApiKeyCandidate(key?: string): key is string {
 }
 
 /**
- * Resolves OpenAI Control Plane runtime API key from:
+ * Resolves the dedicated OpenAI Secure MCP Tunnel runtime API key from:
  * 1. Explicit argument
  * 2. CONTROL_PLANE_API_KEY environment variable
- * 3. OpenAI provider API key configured in model-config.json
- * 4. OPENAI_API_KEY environment variable
+ *
+ * Deliberately does not fall back to OPENAI_API_KEY or the model provider
+ * credential: those keys may not have Tunnels Read + Use permission.
  */
 export function resolveOpenAiControlPlaneKey(explicitKey?: string): string | undefined {
   if (isValidApiKeyCandidate(explicitKey)) return explicitKey.trim();
 
   const envKey = process.env.CONTROL_PLANE_API_KEY;
   if (isValidApiKeyCandidate(envKey)) return envKey.trim();
-
-  try {
-    const config = loadModelConfig();
-    const openaiProvider = config.providers?.find(
-      (p) => (p.provider || "").toLowerCase() === "openai" && isValidApiKeyCandidate(p.apiKey)
-    );
-    if (openaiProvider?.apiKey && isValidApiKeyCandidate(openaiProvider.apiKey)) {
-      return openaiProvider.apiKey.trim();
-    }
-  } catch {}
-
-  const standardOpenAiKey = process.env.OPENAI_API_KEY;
-  if (isValidApiKeyCandidate(standardOpenAiKey)) return standardOpenAiKey.trim();
 
   return undefined;
 }
@@ -578,6 +566,17 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
   };
 
   let startupError = "";
+  const maxStartupErrorChars = 8000;
+  const appendStartupError = (value: string) => {
+    startupError = (startupError + value).slice(-maxStartupErrorChars);
+  };
+  const safeStartupError = () => {
+    let value = startupError.trim().slice(-maxStartupErrorChars);
+    for (const secret of [apiKey, opts.bearerToken]) {
+      if (secret) value = value.split(secret).join("[REDACTED]");
+    }
+    return value;
+  };
   const child = spawn(binary, args, {
     env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -585,43 +584,63 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
   });
 
   child.stdout?.on("data", (chunk) => {
-    const text = chunk.toString();
-    if (text.includes("error") || text.includes("FATAL") || text.includes("failed")) {
-      startupError += text;
+    const output = chunk.toString();
+    if (output.toLowerCase().includes("error") || output.includes("FATAL") || output.toLowerCase().includes("failed")) {
+      appendStartupError(output);
     }
   });
 
   child.stderr?.on("data", (chunk) => {
-    startupError += chunk.toString();
+    appendStartupError(chunk.toString());
   });
 
   child.on("error", (err) => {
-    startupError += `Process spawn error: ${err.message}`;
+    appendStartupError(`Process spawn error: ${err.message}`);
   });
 
-  // Wait for tunnel-client to report readyz or establish connection
-  const timeoutMs = opts.readyTimeoutMs ?? 15000;
+  // A healthy process and a ready tunnel are separate states; require both.
+  const timeoutMs = Math.max(1000, opts.readyTimeoutMs ?? 15000);
   const startWait = Date.now();
+  let isHealthy = false;
   let isReady = false;
+  let lastHealthProbe: { ok: boolean; status?: number; data?: string } = { ok: false };
+  let lastReadyProbe: { ok: boolean; status?: number; data?: string } = { ok: false };
 
   while (Date.now() - startWait < timeoutMs) {
     if (!isProcessAlive(child.pid)) {
       throw new Error(
-        `tunnel-client exited unexpectedly with error:\n${startupError.trim() || "Process exited immediately"}`
+        `tunnel-client exited unexpectedly with error:\n${safeStartupError() || "Process exited immediately"}`
       );
     }
-    const check = await probeHttp(readyUrl, 1000);
-    if (check.ok) {
-      isReady = true;
-      break;
-    }
-    // Fallback: check healthz
-    const healthCheck = await probeHttp(healthUrl, 1000);
-    if (healthCheck.ok) {
-      isReady = true;
-      break;
-    }
+
+    lastReadyProbe = await probeHttp(readyUrl, 1000);
+    lastHealthProbe = await probeHttp(healthUrl, 1000);
+    isReady = lastReadyProbe.ok;
+    isHealthy = lastHealthProbe.ok;
+    if (isReady && isHealthy) break;
     await new Promise((r) => setTimeout(r, 600));
+  }
+
+  if (!isReady || !isHealthy) {
+    // Do not leave a live but unready tunnel-client behind when startup fails.
+    try {
+      if (child.pid) await killProcessTree(child.pid);
+      else child.kill("SIGTERM");
+    } catch {
+      try { child.kill("SIGTERM"); } catch {}
+    }
+
+    const describeProbe = (name: string, probe: { ok: boolean; status?: number }) =>
+      `${name}: ${probe.ok ? "OK" : "unavailable"}${probe.status ? ` (HTTP ${probe.status})` : ""}`;
+    const details = [
+      `Startup deadline: ${timeoutMs}ms`,
+      describeProbe("healthz", lastHealthProbe),
+      describeProbe("readyz", lastReadyProbe),
+      safeStartupError(),
+    ].filter(Boolean).join("\n");
+    throw new Error(
+      `OpenAI Secure MCP Tunnel did not become healthy and ready. The tunnel-client process was stopped.\n${details}`
+    );
   }
 
   const now = Date.now();

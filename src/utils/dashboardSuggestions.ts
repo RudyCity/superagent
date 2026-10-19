@@ -5,6 +5,12 @@ import { filterSuggestions, getActiveCommandContext } from "./text.js";
 import { getCachedModelIds, getInstalledSkills, getModelPresets, listHistorySessions, getTrustedDirectories } from "../core/config.js";
 import { registry } from "../core/commands/registry.js";
 import { backgroundTasks } from "../core/tools.js";
+import {
+  MUSE_TUNNEL_SUGGESTIONS,
+  TELEGRAM_SUGGESTIONS,
+  MCP_TUNNEL_SUGGESTIONS,
+  SERVER_TUNNEL_SUGGESTIONS,
+} from "../core/commands/commandCatalog.js";
 
 const DASHBOARD_DISABLED_COMMANDS = new Set(["/goal"]);
 
@@ -53,7 +59,10 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-classifier": "Enable or disable multi-category request classifier (on or off)",
   "/setting-classifier-threshold": "Set classifier heuristic confidence threshold (high, medium, low)",
   "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
+  "/status": "Show aggregated health for Telegram, MCP servers, and all SuperAgent tunnels",
+  "/status all": "Summarize Telegram, MCP, REST/SSE, and Muse tunnel state without changing anything",
   "/stop": "Stop/interrupt currently running tool, process, task, or agent",
+  "/stop all": "Disconnect managed MCP clients and stop owned Telegram fallback, MCP, REST/SSE, and Muse services/tunnels",
   "/cancel": "Stop/interrupt currently running tool, process, task, or agent",
   "/abort": "Stop/interrupt currently running tool, process, task, or agent",
   "/steer": "Interrupt and steer/redirect the agent with feedback or counter-instructions",
@@ -63,176 +72,123 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/yolo full": "Enable full YOLO mode (unrestricted auto-approval system-wide)",
   "/yolo off": "Disable YOLO mode and restore standard confirmation prompts",
   "/yolo status": "Check current YOLO mode status (scoped, full, or inactive)",
-  "/mcp": "Manage Model Context Protocol (MCP) servers and tunnels",
-  "/mcp list": "List all configured MCP servers and active tunnels",
-  "/mcp add": "Register a new external MCP server",
-  "/mcp remove": "Remove a configured MCP server",
-  "/mcp reload": "Reload all active MCP server configurations",
-  "/mcp tunnel": "Manage MCP server tunnels (OpenAI Secure MCP or Cloudflare)",
-  "/mcp tunnel list": "List active MCP server tunnels and endpoints",
-  "/mcp tunnel start": "Start MCP server via tunnel (Cloudflare or OpenAI)",
-  "/mcp tunnel start --provider openai": "Start MCP server via OpenAI Secure MCP Tunnel (tunnel-client)",
-  "/mcp tunnel start --provider cloudflare": "Start MCP server via Cloudflare quick tunnel (Streamable HTTP)",
-  "/mcp tunnel start --openai": "Start MCP server via OpenAI Secure MCP Tunnel (alias for --provider openai)",
-  "/mcp tunnel start --tunnel-id": "Start OpenAI Secure MCP Tunnel with a specific tunnel ID",
-  "/mcp tunnel start --mcp-auth oauth": "Start MCP server via tunnel with OAuth 2.1 + PKCE authentication",
-  "/mcp tunnel start --mcp-auth static-bearer": "Start MCP server via tunnel with static Bearer token authentication",
-  "/mcp tunnel start --allow-dangerous": "Start MCP server via tunnel with destructive tools enabled",
-  "/mcp tunnel stop": "Stop active MCP server tunnel",
-  "/mcp tunnel status": "Check active MCP server tunnel health and public URL",
-  "/mcp tunnel doctor": "Diagnose MCP tunnel prerequisites (cloudflared, tunnel-client, credentials)",
-  "/muse": "Coordinate with remote AI agent (Muse) over WebSocket (Cloudflare Tunnel) or Telegram bus",
-  "/muse status": "Show remote agent configuration, runner mode, and connection status",
-  "/muse steer": "Intervene and send counter-instructions to Muse brain (alias: /muse chat)",
-  "/muse chat": "Send a chat or steering message directly to Muse brain",
-  "/muse tunnel": "Tunnel subcommands (list, start [--https] [--mcp], stop, status, restart, doctor) & setup guide",
-  "/muse tunnel --https": "Start Cloudflare HTTPS tunnel for Superagent REST & SSE server (port 7888)",
-  "/muse tunnel --mcp": "Start MCP server via tunnel (Streamable HTTP, port 9227)",
-  "/muse tunnel list": "List all currently active tunnels across all ports",
-  "/muse tunnel start": "Start quick tunnel with copyable prompt (optional: --port <n>)",
-  "/muse tunnel start --https": "Start Cloudflare HTTPS tunnel for Superagent REST & SSE server (port 7888)",
-  "/muse tunnel start --port": "Start quick tunnel on a custom local port (e.g. --port 9226)",
-  "/muse tunnel start --mcp": "Start MCP server via tunnel (Streamable HTTP, port 9227)",
-  "/muse tunnel start --mcp --provider openai": "Start MCP server via OpenAI Secure MCP Tunnel (tunnel-client)",
-  "/muse tunnel start --mcp --provider cloudflare": "Start MCP server via Cloudflare quick tunnel (Streamable HTTP)",
-  "/muse tunnel start --mcp --openai": "Start MCP server via OpenAI Secure MCP Tunnel (alias for --provider openai)",
-  "/muse tunnel start --mcp --tunnel-id": "Start OpenAI Secure MCP Tunnel with a specific tunnel ID",
-  "/muse tunnel start --mcp --mcp-auth oauth": "Start MCP server via tunnel with OAuth 2.1 + PKCE authentication (for ChatGPT)",
-  "/muse tunnel start --mcp --mcp-auth static-bearer": "Start MCP server via tunnel with static Bearer token authentication",
-  "/muse tunnel start --mcp --allow-dangerous": "Start MCP server via tunnel with destructive tools enabled",
-  "/muse tunnel start --mcp --mcp-port": "Start MCP server via tunnel on a custom port (default: 9227)",
-  "/muse tunnel start --mcp --mcp-port 9227": "Start MCP server via tunnel on port 9227",
-  "/muse tunnel start --mcp --mcp-auth oauth --allow-dangerous": "Start MCP server via tunnel with OAuth 2.1 and destructive tools",
-  "/muse tunnel start --mcp --mcp-auth static-bearer --allow-dangerous": "Start MCP server via tunnel with static Bearer token and destructive tools",
-  "/muse tunnel start --mcp --mcp-auth oauth --mcp-port 9227": "Start MCP server via tunnel with OAuth 2.1 on port 9227",
-  "/muse tunnel stop": "Stop running quick ephemeral tunnel (optional: --port <n> or all)",
-  "/muse tunnel stop --https": "Stop active Cloudflare HTTPS tunnel for Superagent REST server (port 7888)",
-  "/muse tunnel stop all": "Stop all running quick tunnels across all ports",
-  "/muse tunnel stop --port": "Stop running quick tunnel on a specific port",
-  "/muse tunnel stop --mcp": "Stop active MCP server tunnel on port 9227",
-  "/muse tunnel stop --mcp-port": "Stop active MCP server tunnel on a specific port",
-  "/muse tunnel restart": "Restart active tunnel and watch daemon",
-  "/muse tunnel restart --https": "Restart active Cloudflare HTTPS tunnel (port 7888)",
-  "/muse tunnel restart --mcp": "Restart active MCP server tunnel (Streamable HTTP, port 9227)",
-  "/muse tunnel restart --mcp --mcp-auth oauth": "Restart active MCP server tunnel with OAuth 2.1 + PKCE",
-  "/muse tunnel restart --mcp --mcp-auth static-bearer": "Restart active MCP server tunnel with static Bearer token",
-  "/muse tunnel restart --mcp --allow-dangerous": "Restart active MCP server tunnel with destructive tools",
-  "/muse tunnel restart --mcp-port": "Restart active MCP server tunnel on a specific port",
-  "/muse tunnel prompt": "View and copy active connection prompt for Muse without restarting",
-  "/muse tunnel prompt --mcp": "View MCP server tunnel connection details and client config",
-  "/muse tunnel url": "Display public URL and WSS endpoint of active tunnel",
-  "/muse tunnel url --mcp": "Display public URL of active MCP server tunnel",
-  "/muse tunnel status": "Check active development tunnel status (optional: --port <n>)",
-  "/muse tunnel status --https": "Check active Cloudflare HTTPS tunnel status for Superagent REST server (port 7888)",
-  "/muse tunnel status --port": "Check development tunnel status on a specific port",
-  "/muse tunnel status --mcp": "Check active MCP server tunnel status on port 9227",
-  "/muse tunnel status --mcp-port": "Check active MCP server tunnel status on a specific port",
-  "/muse tunnel doctor": "Diagnose tunnel prerequisites (cloudflared, tunnel-client, credentials)",
-  "/muse tunnel guide": "View manual Cloudflare Tunnel setup guide",
-  "/muse cloudflare": "Cloudflare Tunnel setup guide, quick test commands, and Bearer token generator",
-  "/muse doctor": "Run full health and diagnostic checks (cloudflared binary, tunnel-client, ports, credentials)",
-  "/muse connect": "Test connectivity to remote Muse brain (WebSocket or Telegram)",
-  "/muse start": "Start background watch mode or tunnel daemon",
-  "/muse restart": "Restart background watch daemon or active tunnel",
-  "/tunnel": "Manage quick tunnels (list, start [--https] [--mcp], stop, status, restart, doctor)",
-  "/tunnel --https": "Start Cloudflare HTTPS tunnel for Superagent REST & SSE server (port 7888)",
-  "/tunnel --mcp": "Start MCP server via tunnel (Streamable HTTP, port 9227)",
-  "/tunnel list": "List all currently active tunnels across all ports",
-  "/tunnel start": "Start quick ephemeral tunnel (optional: --port <n>)",
-  "/tunnel start --https": "Start Cloudflare HTTPS tunnel for Superagent REST & SSE server (port 7888)",
-  "/tunnel start --port": "Start quick tunnel on a custom local port (e.g. --port 9226)",
-  "/tunnel start --mcp": "Start MCP server via tunnel (Streamable HTTP, port 9227)",
-  "/tunnel start --mcp --provider openai": "Start MCP server via OpenAI Secure MCP Tunnel (tunnel-client)",
-  "/tunnel start --mcp --provider cloudflare": "Start MCP server via Cloudflare quick tunnel (Streamable HTTP)",
-  "/tunnel start --mcp --openai": "Start MCP server via OpenAI Secure MCP Tunnel (alias for --provider openai)",
-  "/tunnel start --mcp --tunnel-id": "Start OpenAI Secure MCP Tunnel with a specific tunnel ID",
-  "/tunnel start --mcp --mcp-auth oauth": "Start MCP server via tunnel with OAuth 2.1 + PKCE authentication (for ChatGPT)",
-  "/tunnel start --mcp --mcp-auth static-bearer": "Start MCP server via tunnel with static Bearer token authentication",
-  "/tunnel start --mcp --allow-dangerous": "Start MCP server via tunnel with destructive tools enabled",
-  "/tunnel start --mcp --mcp-port": "Start MCP server via tunnel on a custom port (default: 9227)",
-  "/tunnel start --mcp --mcp-port 9227": "Start MCP server via tunnel on port 9227",
-  "/tunnel start --mcp --mcp-auth oauth --allow-dangerous": "Start MCP server via tunnel with OAuth 2.1 and destructive tools",
-  "/tunnel start --mcp --mcp-auth static-bearer --allow-dangerous": "Start MCP server via tunnel with static Bearer token and destructive tools",
-  "/tunnel start --mcp --mcp-auth oauth --mcp-port 9227": "Start MCP server via tunnel with OAuth 2.1 on port 9227",
-  "/tunnel stop": "Stop active quick tunnel (optional: --port <n> or all)",
-  "/tunnel stop --https": "Stop active Cloudflare HTTPS tunnel for Superagent REST server (port 7888)",
-  "/tunnel stop all": "Stop all running quick tunnels across all ports",
-  "/tunnel stop --port": "Stop running quick tunnel on a specific port",
-  "/tunnel stop --mcp": "Stop active MCP server tunnel on port 9227",
-  "/tunnel stop --mcp-port": "Stop active MCP server tunnel on a specific port",
-  "/tunnel restart": "Restart active tunnel and watch daemon",
-  "/tunnel restart --https": "Restart active Cloudflare HTTPS tunnel (port 7888)",
-  "/tunnel restart --mcp": "Restart active MCP server tunnel (Streamable HTTP, port 9227)",
-  "/tunnel restart --mcp --mcp-auth oauth": "Restart active MCP server tunnel with OAuth 2.1 + PKCE",
-  "/tunnel restart --mcp --mcp-auth static-bearer": "Restart active MCP server tunnel with static Bearer token",
-  "/tunnel restart --mcp --allow-dangerous": "Restart active MCP server tunnel with destructive tools",
-  "/tunnel restart --mcp-port": "Restart active MCP server tunnel on a specific port",
-  "/tunnel prompt": "View and copy active connection prompt for Muse without restarting",
-  "/tunnel prompt --mcp": "View MCP server tunnel connection details and client config",
-  "/tunnel url": "Display public URL and WSS endpoint of active tunnel",
-  "/tunnel url --mcp": "Display public URL of active MCP server tunnel",
-  "/tunnel status": "Check active quick tunnel status (optional: --port <n>)",
-  "/tunnel status --https": "Check active Cloudflare HTTPS tunnel status for Superagent REST server (port 7888)",
-  "/tunnel status --port": "Check quick tunnel status on a specific port",
-  "/tunnel status --mcp": "Check active MCP server tunnel status on port 9227",
-  "/tunnel status --mcp-port": "Check active MCP server tunnel status on a specific port",
-  "/tunnel doctor": "Diagnose tunnel prerequisites (cloudflared, tunnel-client, credentials)",
-  "/tunnel guide": "View manual Cloudflare Tunnel setup guide",
-  "/tunnels": "List all currently active quick tunnels",
-  "/muse watch": "Start persistent watch mode where Superagent is controlled by Muse",
-  "/muse watch start": "Start persistent watch mode where Superagent is controlled by Muse",
-  "/muse watch stop": "Stop persistent watch mode and return to manual execution",
-  "/muse watch status": "Show active watch mode statistics, watched projects, and connection state",
-  "/muse watch add": "Add a project directory to watched workspaces at runtime",
-  "/muse watch remove": "Remove a project directory from watched workspaces at runtime",
-  "/muse watch --ws": "Start persistent watch mode using WebSocket transport (Cloudflare Tunnel)",
-  "/muse watch --tunnel": "Start watch daemon over WebSocket with automatic Cloudflare quick tunnel",
-  "/muse watch --https": "Start persistent watch mode using Superagent HTTPS REST/SSE server & Cloudflare tunnel",
-  "/muse watch --tunnel --https": "Start watch mode over HTTPS with automatic Cloudflare quick tunnel",
-  "/muse watch --telegram": "Start persistent watch mode using Telegram group transport",
-  "/muse watch --ws --tg-fallback": "Watch via WebSocket and keep Telegram active as fallback transport",
-  "/muse watch --tunnel --tg-fallback": "Watch via Cloudflare tunnel and keep Telegram active as fallback transport",
-  "/muse unwatch": "Stop persistent watch mode and return to manual execution",
-  "/muse stop": "Cancel active remote task and send cancellation notice to Muse",
-  "/muse cancel": "Cancel active remote task and send cancellation notice to Muse",
-  "/muse new": "Start a fresh session with remote agent (Muse) and reset context",
-  "/muse reset": "Reset remote agent (Muse) session context and conversation memory",
-  "/muse config": "Configure transport, wsToken, wsPort, workspaces, botToken, or runner mode",
-  "/muse config transport": "Switch Muse transport between websocket and telegram",
-  "/muse config transport websocket": "Set Muse transport to WebSocket (for Cloudflare Tunnel)",
-  "/muse config transport telegram": "Set Muse transport to Telegram group bus",
-  "/muse config wsToken": "Set pre-shared Bearer authentication token for WebSocket",
-  "/muse config wsToken generate": "Generate a fresh 256-bit cryptographically secure Bearer token",
-  "/muse config wsToken refresh": "Trigger automatic zero-downtime token refresh handshake with Muse",
-  "/muse config wsToken rotate": "Rotate Bearer token with 5-minute dual-token handover grace period",
-  "/muse config tokenTtl": "Set token TTL in seconds for automatic expiration / renewal tracking",
-  "/muse config autoTokenRefresh": "Toggle automatic background token refresh handshake (on/off)",
-  "/muse config autoTokenRefresh on": "Enable automatic background token refresh handshake",
-  "/muse config autoTokenRefresh off": "Disable automatic background token refresh handshake",
-  "/muse config wsPort": "Set local WebSocket server listen port (default: 9225)",
-  "/muse config wsHost": "Set local WebSocket server host binding (default: 127.0.0.1)",
-  "/muse config wsPath": "Set WebSocket URL path endpoint (default: /muse)",
-  "/muse config wsMode": "Set WebSocket mode (server or client)",
-  "/muse config wsMode server": "Set WebSocket mode to server (local workstation listens)",
-  "/muse config wsMode client": "Set WebSocket mode to client (connect to remote endpoint)",
-  "/muse config wsRemoteUrl": "Set remote WebSocket URL when in client mode",
-  "/muse config cfAccessClientId": "Set Cloudflare Access Service Token Client ID",
-  "/muse config cfAccessClientSecret": "Set Cloudflare Access Service Token Client Secret",
-  "/muse config workspaces": "Manage multi-project watched workspaces",
-  "/muse config workspaces list": "List all currently configured watched project workspaces",
-  "/muse config workspaces add": "Add a project directory to configured watched workspaces",
-  "/muse config workspaces remove": "Remove a project directory from configured watched workspaces",
-  "/muse config as_runner_model": "Automatically route all terminal chat prompts to Muse (on/off)",
-  "/muse config as_runner_model on": "Enable automatic routing of terminal chat prompts to Muse",
-  "/muse config as_runner_model off": "Disable automatic routing of terminal chat prompts to Muse",
-  "/muse config as_runner": "Route terminal chat prompts to Muse without /muse (on/off)",
-  "/muse config as_runner on": "Enable automatic routing of terminal chat prompts to Muse",
-  "/muse config as_runner off": "Disable automatic routing of terminal chat prompts to Muse",
-  "/muse config botToken": "Configure Telegram runner bot token (Bot B)",
-  "/muse config groupId": "Configure Telegram private group chat ID (e.g. -100xxxxxxxxxx)",
-  "/muse config museBotId": "Configure Telegram user ID of Muse bot (Bot A)",
-  "/muse config defaultWorkspace": "Set default workspace directory for remote tasks",
-  "/muse config systemPrompt": "Set custom guidance system instructions for Muse remote brain",
+  "/mcp": "Manage MCP servers and MCP tunnel providers.",
+  "/mcp list": "List configured MCP servers.",
+  "/mcp add": "Register an external MCP server.",
+  "/mcp remove": "Remove a configured MCP server.",
+  "/mcp reload": "Reload MCP server configurations.",
+  "/mcp tunnel": "Manage provider-specific MCP tunnel lifecycle.",
+  "/mcp tunnel providers": "List supported MCP tunnel providers and their requirements.",
+  "/mcp tunnel list": "List active MCP server tunnels and endpoints.",
+  "/mcp tunnel start": "Start an MCP server using the selected provider.",
+  "/mcp tunnel start --provider openai": "Start OpenAI Secure MCP Tunnel using tunnel-client.",
+  "/mcp tunnel start --provider cloudflare": "Start MCP server through Cloudflare Quick Tunnel.",
+  "/mcp tunnel start --tunnel-id": "Set the OpenAI Secure MCP Tunnel ID.",
+  "/mcp tunnel start --mcp-auth oauth": "Enable OAuth 2.1 and PKCE authentication.",
+  "/mcp tunnel start --mcp-auth static-bearer": "Use static Bearer authentication.",
+  "/mcp tunnel start --allow-dangerous": "Opt in to potentially destructive MCP tools.",
+  "/mcp tunnel restart": "Restart an MCP tunnel while preserving its provider when possible.",
+  "/mcp tunnel stop": "Stop an MCP tunnel.",
+  "/mcp tunnel status": "Show MCP tunnel status.",
+  "/mcp tunnel doctor": "Diagnose one MCP tunnel provider; use --provider openai or --provider cloudflare.",
+  "/muse": "Coordinate Muse tasks, watch sessions, and Muse WebSocket connectivity.",
+  "/muse status": "Show Muse task, watcher, and Muse WebSocket status only.",
+  "/muse steer": "Steer an active Muse task.",
+  "/muse chat": "Deprecated alias. Use /telegram send for Telegram or /muse steer for Muse.",
+  "/muse tunnel": "Manage only Muse WebSocket tunnels.",
+  "/muse tunnel list": "List Muse WebSocket tunnels only.",
+  "/muse tunnel start": "Start the Muse WebSocket watcher and Cloudflare tunnel.",
+  "/muse tunnel start --port": "Start Muse WebSocket on a custom port.",
+  "/muse tunnel stop": "Stop Muse WebSocket tunnels only.",
+  "/muse tunnel stop all": "Stop all Muse WebSocket tunnels without stopping MCP or Telegram.",
+  "/muse tunnel restart": "Restart Muse WebSocket tunnel and watcher.",
+  "/muse tunnel prompt": "View or copy the Muse connection prompt.",
+  "/muse tunnel url": "Display the active Muse WebSocket URL.",
+  "/muse tunnel status": "Check Muse WebSocket tunnel status only.",
+  "/muse tunnel doctor": "Diagnose Muse WebSocket and Cloudflare prerequisites.",
+  "/muse tunnel guide": "Show Muse-only WebSocket setup guidance.",
+  "/muse tunnel --https": "Deprecated. Use /server tunnel.",
+  "/muse tunnel start --https": "Deprecated. Use /server tunnel start.",
+  "/muse tunnel stop --https": "Deprecated. Use /server tunnel stop.",
+  "/muse tunnel status --https": "Deprecated. Use /server tunnel status.",
+  "/muse tunnel --mcp": "Deprecated. Use /mcp tunnel.",
+  "/muse tunnel start --mcp": "Deprecated. Use /mcp tunnel start.",
+  "/muse tunnel start --mcp --provider openai": "Deprecated. Use /mcp tunnel start --provider openai --tunnel-id <id>.",
+  "/muse tunnel start --mcp --provider cloudflare": "Deprecated. Use /mcp tunnel start --provider cloudflare.",
+  "/muse tunnel stop --mcp": "Deprecated. Use /mcp tunnel stop.",
+  "/muse tunnel status --mcp": "Deprecated. Use /mcp tunnel status.",
+  "/muse tunnel prompt --mcp": "Deprecated. Use /mcp tunnel list.",
+  "/muse cloudflare": "Deprecated Muse-only setup alias. Use /muse tunnel.",
+  "/muse doctor": "Diagnose Muse transport and watch readiness. Use /telegram doctor for Telegram API health.",
+  "/muse connect": "Test the configured Muse transport.",
+  "/muse start": "Start the Muse watch daemon.",
+  "/muse restart": "Restart the Muse watcher.",
+  "/muse watch": "Start Muse watch mode for one or more workspaces.",
+  "/muse watch start": "Start the Muse watcher.",
+  "/muse watch stop": "Stop only the Muse watcher.",
+  "/muse watch status": "Show only Muse watcher status.",
+  "/muse watch add": "Add a workspace to Muse watch.",
+  "/muse watch remove": "Remove a workspace from Muse watch.",
+  "/muse watch --ws": "Use Muse WebSocket transport.",
+  "/muse watch --tunnel": "Start Muse watch with the Muse WebSocket tunnel.",
+  "/muse watch --telegram": "Use Telegram as the Muse transport adapter.",
+  "/muse watch --https": "Deprecated. Use /server tunnel.",
+  "/muse watch --tunnel --https": "Deprecated. Use /server tunnel.",
+  "/muse watch --ws --tg-fallback": "Deprecated. Use /telegram fallback start|stop.",
+  "/muse watch --tunnel --tg-fallback": "Deprecated. Use /telegram fallback start|stop.",
+  "/muse unwatch": "Stop only the Muse watcher.",
+  "/muse stop": "Cancel active Muse work.",
+  "/muse cancel": "Cancel active Muse work.",
+  "/muse new": "Start a fresh Muse session.",
+  "/muse reset": "Reset remote Muse session context.",
+  "/muse config": "Configure Muse transport, WebSocket, workspaces, and runner mode.",
+  "/muse config transport": "Select the Muse transport adapter.",
+  "/muse config transport websocket": "Select Muse WebSocket transport.",
+  "/muse config transport telegram": "Select the Telegram Muse transport adapter.",
+  "/muse config wsToken": "Configure Muse WebSocket authentication.",
+  "/muse config wsToken generate": "Generate a WebSocket bearer token.",
+  "/muse config wsPort": "Configure the Muse WebSocket port.",
+  "/muse config wsHost": "Configure the Muse WebSocket host.",
+  "/muse config wsPath": "Configure the Muse WebSocket path.",
+  "/muse config wsMode": "Select Muse WebSocket server or client mode.",
+  "/muse config cfAccessClientId": "Configure Cloudflare Access Client ID.",
+  "/muse config cfAccessClientSecret": "Configure Cloudflare Access Client Secret.",
+  "/muse config workspaces": "Configure watched workspaces.",
+  "/muse config defaultWorkspace": "Set the default Muse workspace.",
+  "/muse config systemPrompt": "Set custom Muse instructions.",
+  "/muse config botToken": "Deprecated alias. Use /telegram config botToken.",
+  "/muse config groupId": "Deprecated alias. Use /telegram config groupId.",
+  "/muse config museBotId": "Deprecated alias. Use /telegram config museBotId.",
+  "/telegram": "Manage direct Telegram bot and group operations separately from Muse steering.",
+  "/telegram help": "Show Telegram commands for status, doctor, send, config, and fallback.",
+  "/telegram status": "Show Telegram configuration and Bot API status.",
+  "/telegram doctor": "Diagnose Telegram configuration, API access, and fallback watcher.",
+  "/telegram send": "Send only to the configured Telegram group; does not steer Muse.",
+  "/telegram config": "View or update Telegram bot and group settings.",
+  "/telegram fallback": "Start, stop, or inspect the Telegram fallback watcher.",
+  "/server": "Manage Superagent REST/SSE server exposure.",
+  "/server tunnel": "Manage only the REST/SSE tunnel, separate from Muse and MCP.",
+  "/server tunnel doctor": "Check cloudflared availability and REST/SSE tunnel status.",
+  "/tunnel": "Deprecated Muse-only alias for compatibility. Use /mcp tunnel for MCP and /server tunnel for REST/SSE.",
+  "/tunnel list": "Deprecated Muse-only tunnel list alias.",
+  "/tunnel start": "Deprecated Muse-only alias. Use /muse tunnel start.",
+  "/tunnel start --port": "Deprecated Muse-only alias. Use /muse tunnel start --port.",
+  "/tunnel start --https": "Deprecated. Use /server tunnel start.",
+  "/tunnel start --mcp": "Deprecated. Use /mcp tunnel start.",
+  "/tunnel start --mcp --provider openai": "Deprecated. Use /mcp tunnel start --provider openai --tunnel-id <id>.",
+  "/tunnel start --mcp --provider cloudflare": "Deprecated. Use /mcp tunnel start --provider cloudflare.",
+  "/tunnel stop": "Deprecated Muse-only alias. Use /muse tunnel stop.",
+  "/tunnel stop all": "Deprecated Muse-only alias. Stops Muse WebSocket tunnels only, not MCP or REST/SSE.",
+  "/tunnel stop --port": "Deprecated Muse-only alias. Use /muse tunnel stop --port.",
+  "/tunnel stop --https": "Deprecated. Use /server tunnel stop.",
+  "/tunnel stop --mcp": "Deprecated. Use /mcp tunnel stop.",
+  "/tunnel status": "Deprecated Muse-only alias. Use /muse tunnel status.",
+  "/tunnel status --port": "Deprecated Muse-only alias. Use /muse tunnel status --port.",
+  "/tunnel status --https": "Deprecated. Use /server tunnel status.",
+  "/tunnel status --mcp": "Deprecated. Use /mcp tunnel status.",
+  "/tunnel doctor": "Deprecated Muse-only alias. Use /muse tunnel doctor.",
+  "/tunnel guide": "Deprecated Muse-only alias. Use /muse tunnel guide.",
+  "/tunnels": "Deprecated alias for /muse tunnel list.",
 };
 
 const RESUME_SCAN_LIMIT = 100;
@@ -280,225 +236,47 @@ function getResumePossibilities(): string[] {
 }
 
 function getTunnelSubSuggestions(prefix: string, query: string): string[] {
-  const baseSuggestions = [
-    `${prefix} list`,
-    `${prefix} start --https`,
-    `${prefix} start --mcp`,
-    `${prefix} start --mcp --provider openai`,
-    `${prefix} start --mcp --provider cloudflare`,
-    `${prefix} start --mcp --mcp-auth oauth`,
-    `${prefix} start`,
-    `${prefix} restart`,
-    `${prefix} restart --mcp`,
-    `${prefix} prompt`,
-    `${prefix} prompt --mcp`,
-    `${prefix} url`,
-    `${prefix} status --https`,
-    `${prefix} status --mcp`,
-    `${prefix} status`,
-    `${prefix} stop --https`,
-    `${prefix} stop --mcp`,
-    `${prefix} stop`,
-    `${prefix} stop all`,
-    `${prefix} doctor`,
-    `${prefix} start --port`,
-    `${prefix} --https`,
-    `${prefix} --mcp`,
-    `${prefix} guide`,
-  ];
+  const baseSuggestions = MUSE_TUNNEL_SUGGESTIONS.map((suggestion) =>
+    suggestion.replace(/^\/muse tunnel/, prefix)
+  );
 
   if (query.startsWith(`${prefix} doctor`)) {
     return filterSuggestions([`${prefix} doctor`], query);
   }
 
+  // Muse tunnels are not MCP or REST/SSE tunnels. Port selection is the only
+  // tunnel-specific option exposed in this command context.
   if (query.startsWith(`${prefix} --`)) {
-    const flagSuggestions = [
-      `${prefix} --https`,
-      `${prefix} --mcp`,
-      `${prefix} start --https`,
-      `${prefix} start --mcp`,
-      `${prefix} start --mcp --provider openai`,
-      `${prefix} start --mcp --provider cloudflare`,
-      `${prefix} start --mcp --mcp-auth oauth`,
-      `${prefix} start --mcp --mcp-auth static-bearer`,
-      `${prefix} status --https`,
-      `${prefix} status --mcp`,
-      `${prefix} stop --https`,
-      `${prefix} stop --mcp`,
-      `${prefix} restart --mcp`,
-      `${prefix} prompt --mcp`,
-    ];
-    return filterSuggestions(flagSuggestions, query);
+    return filterSuggestions([
+      `${prefix} start --port`,
+      `${prefix} status --port`,
+      `${prefix} stop --port`,
+      `${prefix} restart --port`,
+    ], query);
   }
 
   if (query.startsWith(`${prefix} stop`)) {
-    const stopSuggestions = [
-      `${prefix} stop --https`,
-      `${prefix} stop --mcp`,
-      `${prefix} stop --mcp-port 9227`,
-      `${prefix} stop`,
-      `${prefix} stop all`,
-      `${prefix} stop --port`,
-      `${prefix} stop --mcp-port`,
-    ];
-    try {
-      const dir = path.join(os.homedir(), ".superagent-r");
-      if (fs.existsSync(dir)) {
-        const files = fs.readdirSync(dir);
-        for (const f of files) {
-          const match = f.match(/^tunnel-(\d+)\.json$/);
-          if (match) {
-            stopSuggestions.push(`${prefix} stop --port ${match[1]}`);
-          }
-          const mcpMatch = f.match(/^mcp-(\d+)\.json$/);
-          if (mcpMatch) {
-            stopSuggestions.push(`${prefix} stop --mcp-port ${mcpMatch[1]}`);
-          }
-          const openaiMatch = f.match(/^openai-tunnel-(\d+)\.json$/);
-          if (openaiMatch) {
-            stopSuggestions.push(`${prefix} stop --mcp-port ${openaiMatch[1]}`);
-          }
-        }
-      }
-    } catch {}
-    return filterSuggestions(stopSuggestions, query);
+    return filterSuggestions([`${prefix} stop`, `${prefix} stop all`, `${prefix} stop --port`], query);
   }
 
   if (query.startsWith(`${prefix} start`)) {
-    const startSuggestions = [
-      `${prefix} start --https`,
-      `${prefix} start --mcp`,
-      `${prefix} start --mcp --provider openai`,
-      `${prefix} start --mcp --provider cloudflare`,
-      `${prefix} start --mcp --openai`,
-      `${prefix} start --mcp --tunnel-id`,
-      `${prefix} start --mcp --provider openai --tunnel-id`,
-      `${prefix} start --mcp --openai --tunnel-id`,
-      `${prefix} start --mcp --mcp-auth oauth`,
-      `${prefix} start --mcp --mcp-auth static-bearer`,
-      `${prefix} start --mcp --allow-dangerous`,
-      `${prefix} start --mcp --mcp-port 9227`,
-      `${prefix} start --mcp --mcp-auth oauth --allow-dangerous`,
-      `${prefix} start --mcp --mcp-auth static-bearer --allow-dangerous`,
-      `${prefix} start --mcp --mcp-auth oauth --mcp-port 9227`,
-      `${prefix} start --mcp --allow-dangerous --mcp-auth oauth`,
-      `${prefix} start --mcp --allow-dangerous --mcp-auth static-bearer`,
-      `${prefix} start --mcp-auth oauth`,
-      `${prefix} start --mcp-auth static-bearer`,
-      `${prefix} start --mcp-port 9227`,
-      `${prefix} start`,
-      `${prefix} start --port`,
-      `${prefix} start --port 9226`,
-      `${prefix} start --port 9227`,
-    ];
-    return filterSuggestions(startSuggestions, query);
+    return filterSuggestions([`${prefix} start`, `${prefix} start --port`, `${prefix} start --port 9226`], query);
   }
 
   if (query.startsWith(`${prefix} restart`)) {
-    const restartSuggestions = [
-      `${prefix} restart`,
-      `${prefix} restart --https`,
-      `${prefix} restart --mcp`,
-      `${prefix} restart --mcp --provider openai`,
-      `${prefix} restart --mcp --provider cloudflare`,
-      `${prefix} restart --mcp --mcp-auth oauth`,
-      `${prefix} restart --mcp --mcp-auth static-bearer`,
-      `${prefix} restart --mcp --allow-dangerous`,
-      `${prefix} restart --mcp --mcp-port 9227`,
-      `${prefix} restart --port`,
-    ];
-    try {
-      const dir = path.join(os.homedir(), ".superagent-r");
-      if (fs.existsSync(dir)) {
-        const files = fs.readdirSync(dir);
-        for (const f of files) {
-          const match = f.match(/^tunnel-(\d+)\.json$/);
-          if (match) {
-            restartSuggestions.push(`${prefix} restart --port ${match[1]}`);
-          }
-          const mcpMatch = f.match(/^mcp-(\d+)\.json$/);
-          if (mcpMatch) {
-            restartSuggestions.push(`${prefix} restart --mcp-port ${mcpMatch[1]}`);
-          }
-          const openaiMatch = f.match(/^openai-tunnel-(\d+)\.json$/);
-          if (openaiMatch) {
-            restartSuggestions.push(`${prefix} restart --mcp-port ${openaiMatch[1]}`);
-          }
-        }
-      }
-    } catch {}
-    return filterSuggestions(restartSuggestions, query);
+    return filterSuggestions([`${prefix} restart`, `${prefix} restart --port`], query);
   }
 
   if (query.startsWith(`${prefix} prompt`)) {
-    const promptSuggestions = [
-      `${prefix} prompt`,
-      `${prefix} prompt --https`,
-      `${prefix} prompt --mcp`,
-      `${prefix} prompt --mcp-port 9227`,
-      `${prefix} prompt --port`,
-    ];
-    try {
-      const dir = path.join(os.homedir(), ".superagent-r");
-      if (fs.existsSync(dir)) {
-        const files = fs.readdirSync(dir);
-        for (const f of files) {
-          const match = f.match(/^tunnel-(\d+)\.json$/);
-          if (match) {
-            promptSuggestions.push(`${prefix} prompt --port ${match[1]}`);
-          }
-          const mcpMatch = f.match(/^mcp-(\d+)\.json$/);
-          if (mcpMatch) {
-            promptSuggestions.push(`${prefix} prompt --mcp-port ${mcpMatch[1]}`);
-          }
-          const openaiMatch = f.match(/^openai-tunnel-(\d+)\.json$/);
-          if (openaiMatch) {
-            promptSuggestions.push(`${prefix} prompt --mcp-port ${openaiMatch[1]}`);
-          }
-        }
-      }
-    } catch {}
-    return filterSuggestions(promptSuggestions, query);
+    return filterSuggestions([`${prefix} prompt`, `${prefix} prompt --port`], query);
   }
 
   if (query.startsWith(`${prefix} url`)) {
-    const urlSuggestions = [
-      `${prefix} url`,
-      `${prefix} url --mcp`,
-      `${prefix} url --port`,
-    ];
-    return filterSuggestions(urlSuggestions, query);
+    return filterSuggestions([`${prefix} url`, `${prefix} url --port`], query);
   }
 
   if (query.startsWith(`${prefix} status`)) {
-    const statusSuggestions = [
-      `${prefix} status --https`,
-      `${prefix} status --mcp`,
-      `${prefix} status --mcp-port 9227`,
-      `${prefix} status`,
-      `${prefix} status --port`,
-    ];
-    try {
-      const dir = path.join(os.homedir(), ".superagent-r");
-      if (fs.existsSync(dir)) {
-        const files = fs.readdirSync(dir);
-        for (const f of files) {
-          const match = f.match(/^tunnel-(\d+)\.json$/);
-          if (match) {
-            statusSuggestions.push(`${prefix} status --port ${match[1]}`);
-          }
-          const mcpMatch = f.match(/^mcp-(\d+)\.json$/);
-          if (mcpMatch) {
-            statusSuggestions.push(`${prefix} status --mcp-port ${mcpMatch[1]}`);
-          }
-          const openaiMatch = f.match(/^openai-tunnel-(\d+)\.json$/);
-          if (openaiMatch) {
-            statusSuggestions.push(`${prefix} status --mcp-port ${openaiMatch[1]}`);
-          }
-        }
-      }
-    } catch {}
-    return filterSuggestions(statusSuggestions, query);
+    return filterSuggestions([`${prefix} status`, `${prefix} status --port`], query);
   }
 
   return filterSuggestions(baseSuggestions, query);
@@ -551,6 +329,14 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         ? presets.map(p => `/mp-${p.name}`)
         : ["/mp-fast", "/mp-default", "/mp-balanced"];
       return filterSuggestions(presetSuggestions, query);
+    }
+
+    if (mainCommand === "/status") {
+      return filterSuggestions(["/status all"], query);
+    }
+
+    if (mainCommand === "/stop") {
+      return filterSuggestions(["/stop", "/stop all"], query);
     }
 
     if (parts.length === 1) {
@@ -608,13 +394,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         const action = parts[2]?.toLowerCase();
         if (action === "start") {
           const startSuggestions = [
-            "/mcp tunnel start",
-            "/mcp tunnel start --provider openai",
-            "/mcp tunnel start --provider cloudflare",
-            "/mcp tunnel start --openai",
-            "/mcp tunnel start --tunnel-id",
-            "/mcp tunnel start --provider openai --tunnel-id",
-            "/mcp tunnel start --openai --tunnel-id",
+            ...MCP_TUNNEL_SUGGESTIONS.filter((suggestion) => suggestion.startsWith("/mcp tunnel start")),
             "/mcp tunnel start --mcp-auth oauth",
             "/mcp tunnel start --mcp-auth static-bearer",
             "/mcp tunnel start --allow-dangerous",
@@ -626,7 +406,6 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
           const stopSuggestions = [
             "/mcp tunnel stop",
             "/mcp tunnel stop --mcp-port 9227",
-            "/mcp tunnel stop all",
           ];
           try {
             const dir = path.join(os.homedir(), ".superagent-r");
@@ -641,8 +420,14 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
           } catch {}
           return filterSuggestions(stopSuggestions, query);
         }
+        if (action === "providers") {
+          return filterSuggestions(["/mcp tunnel providers"], query);
+        }
+        if (action === "restart") {
+          return filterSuggestions(["/mcp tunnel restart", "/mcp tunnel restart --provider openai", "/mcp tunnel restart --provider cloudflare"], query);
+        }
         if (action === "doctor") {
-          return filterSuggestions(["/mcp tunnel doctor"], query);
+          return filterSuggestions(["/mcp tunnel doctor --provider openai", "/mcp tunnel doctor --provider cloudflare"], query);
         }
         if (action === "list") {
           return filterSuggestions(["/mcp tunnel list"], query);
@@ -650,36 +435,16 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         if (action === "status") {
           return filterSuggestions(["/mcp tunnel status", "/mcp tunnel status --mcp-port 9227"], query);
         }
-        const tunnelPossibilities = [
-          "/mcp tunnel start",
-          "/mcp tunnel start --provider openai",
-          "/mcp tunnel start --provider cloudflare",
-          "/mcp tunnel start --openai",
-          "/mcp tunnel start --tunnel-id",
-          "/mcp tunnel start --mcp-auth oauth",
-          "/mcp tunnel start --allow-dangerous",
-          "/mcp tunnel stop",
-          "/mcp tunnel list",
-          "/mcp tunnel status",
-          "/mcp tunnel doctor",
-        ];
-        return filterSuggestions(tunnelPossibilities, query);
+        return filterSuggestions(MCP_TUNNEL_SUGGESTIONS, query);
       }
       const possibilities = [
         "/mcp list",
         "/mcp add",
+        "/mcp add-http",
         "/mcp remove",
         "/mcp reload",
         "/mcp tunnel",
-        "/mcp tunnel start",
-        "/mcp tunnel start --provider openai",
-        "/mcp tunnel start --provider cloudflare",
-        "/mcp tunnel start --openai",
-        "/mcp tunnel start --tunnel-id",
-        "/mcp tunnel stop",
-        "/mcp tunnel list",
-        "/mcp tunnel status",
-        "/mcp tunnel doctor",
+        ...MCP_TUNNEL_SUGGESTIONS,
       ];
       return filterSuggestions(possibilities, query);
     }
@@ -840,6 +605,18 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       return filterSuggestions(possibilities, query);
     }
 
+    if (mainCommand === "/telegram") {
+      return filterSuggestions(TELEGRAM_SUGGESTIONS, query);
+    }
+
+    if (mainCommand === "/server") {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === "tunnel") {
+        return filterSuggestions(SERVER_TUNNEL_SUGGESTIONS, query);
+      }
+      return filterSuggestions(["/server help", "/server tunnel", ...SERVER_TUNNEL_SUGGESTIONS], query);
+    }
+
     if (mainCommand === "/muse") {
       const sub = parts[1]?.toLowerCase();
       if (sub === "config") {
@@ -919,11 +696,9 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
           "/muse config as_runner",
           "/muse config as_runner on",
           "/muse config as_runner off",
-          "/muse config botToken",
-          "/muse config groupId",
-          "/muse config museBotId",
           "/muse config defaultWorkspace",
           "/muse config systemPrompt",
+          "/telegram config",
         ];
         return filterSuggestions(configPossibilities, query);
       }
@@ -938,12 +713,11 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
           "/muse watch stop",
           "/muse watch status",
           "/muse watch --tunnel",
-          "/muse watch --ws --tg-fallback",
-          "/muse watch --https",
           "/muse watch --ws",
           "/muse watch --telegram",
           "/muse watch add",
           "/muse watch remove",
+          "/telegram fallback status",
         ];
         return filterSuggestions(watchPossibilities, query);
       }
@@ -951,28 +725,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       const possibilities = [
         "/muse status",
         "/muse tunnel",
-        "/muse tunnel list",
-        "/muse tunnel start",
-        "/muse tunnel start --mcp",
-        "/muse tunnel start --mcp --provider openai",
-        "/muse tunnel start --mcp --provider cloudflare",
-        "/muse tunnel start --mcp --openai",
-        "/muse tunnel start --mcp --tunnel-id",
-        "/muse tunnel start --mcp --mcp-auth oauth",
-        "/muse tunnel start --https",
-        "/muse tunnel start --port",
-        "/muse tunnel restart",
-        "/muse tunnel restart --mcp",
-        "/muse tunnel stop",
-        "/muse tunnel stop --mcp",
-        "/muse tunnel stop all",
-        "/muse tunnel status",
-        "/muse tunnel status --mcp",
-        "/muse tunnel doctor",
-        "/muse tunnel prompt",
-        "/muse tunnel prompt --mcp",
-        "/muse tunnel url",
-        "/muse tunnel guide",
+        ...MUSE_TUNNEL_SUGGESTIONS,
         "/muse cloudflare",
         "/muse doctor",
         "/muse connect",
@@ -1016,17 +769,31 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         "/muse config as_runner",
         "/muse config as_runner on",
         "/muse config as_runner off",
-        "/muse config botToken",
-        "/muse config groupId",
-        "/muse config museBotId",
         "/muse config defaultWorkspace",
         "/muse config systemPrompt",
+        "/telegram help",
+        "/telegram status",
+        "/telegram send",
+        "/telegram config",
+        "/mcp tunnel providers",
+        "/server tunnel",
       ];
       return filterSuggestions(possibilities, query);
     }
 
     if (mainCommand === "/tunnel") {
-      return getTunnelSubSuggestions("/tunnel", query);
+      return filterSuggestions([
+        "/tunnel list",
+        "/tunnel start",
+        "/tunnel start --port",
+        "/tunnel stop",
+        "/tunnel stop all",
+        "/tunnel stop --port",
+        "/tunnel status",
+        "/tunnel status --port",
+        "/tunnel doctor",
+        "/tunnel guide",
+      ], query);
     }
 
     if (mainCommand === "/tunnels") {

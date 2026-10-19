@@ -1,4 +1,5 @@
 import { loadModelConfig, saveModelConfig } from "../config/jsonConfig.js";
+import { getMcpTunnelProvidersHelp } from "./commandCatalog.js";
 
 export function printMcpHelp(): void {
   console.log(`
@@ -10,17 +11,21 @@ Commands:
   add-http <name> <url> [--oauth]       Add a remote Streamable HTTP MCP server
   remove, rm <name>                     Remove an MCP server configuration
   register                              Register Superagent as an MCP server to Antigravity (AGY)
-  tunnel <start|stop|list|doctor>       Manage Secure MCP Tunnels (Cloudflare or OpenAI)
+  tunnel <start|stop|restart|list|status|doctor|providers>  Manage MCP tunnel providers (Cloudflare or OpenAI)
 
 Examples:
-  superagent mcp list
-  superagent mcp add everything npx -y @modelcontextprotocol/server-everything
-  superagent mcp add-http google https://mcp.example.com/mcp --oauth
-  superagent mcp remove everything
-  superagent mcp register
-  superagent mcp tunnel start --provider openai --tunnel-id tunnel_0123456789abcdef
-  superagent mcp tunnel list
-  superagent mcp tunnel stop
+   superagent mcp list
+   superagent mcp add everything npx -y @modelcontextprotocol/server-everything
+   superagent mcp add-http google https://mcp.example.com/mcp --oauth
+   superagent mcp remove everything
+   superagent mcp register
+   superagent mcp tunnel providers
+   superagent mcp tunnel start --provider cloudflare
+   superagent mcp tunnel start --provider openai --tunnel-id tunnel_0123456789abcdef
+   superagent mcp tunnel doctor --provider openai --profile superagent-mcp
+   superagent mcp tunnel restart
+   superagent mcp tunnel list
+   superagent mcp tunnel stop
 `);
 }
 
@@ -154,6 +159,11 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
     const tunnelAction = (args[1] || "list").toLowerCase();
     const rawArgs = args.slice(2);
 
+    if (tunnelAction === "providers") {
+      console.log(getMcpTunnelProvidersHelp());
+      process.exit(0);
+    }
+
     if (tunnelAction === "list" || tunnelAction === "status") {
       const { listActiveMcpServers, formatActiveMcpServers } = await import("../mcp/mcpTunnel.js");
       console.log(formatActiveMcpServers(listActiveMcpServers()));
@@ -161,6 +171,24 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
     }
 
     if (tunnelAction === "doctor") {
+      const providerIdx = rawArgs.findIndex((a) => a === "--provider");
+      const provider = providerIdx === -1 ? "openai" : rawArgs[providerIdx + 1]?.toLowerCase();
+      if (provider !== "openai" && provider !== "cloudflare") {
+        console.error("Unsupported MCP tunnel doctor provider. Use --provider openai or --provider cloudflare.");
+        process.exit(1);
+      }
+      if (provider === "cloudflare") {
+        const { findCloudflaredBinary } = await import("../remoteAgent/cloudflareTunnel.js");
+        const binary = await findCloudflaredBinary();
+        const { listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+        const active = listActiveMcpServers().filter((server) => server.tunnelProvider === "cloudflare");
+        console.log([
+          "Cloudflare MCP Tunnel Doctor",
+          "- cloudflared: " + (binary || "NOT FOUND"),
+          "- Active Cloudflare MCP tunnels: " + active.length,
+        ].join("\n"));
+        process.exit(binary ? 0 : 1);
+      }
       const { runTunnelClientDoctor } = await import("../mcp/openaiTunnelClient.js");
       const profileIdx = rawArgs.findIndex((a) => a === "--profile");
       const profile = profileIdx !== -1 ? rawArgs[profileIdx + 1] : undefined;
@@ -169,10 +197,40 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       const apiKeyIdx = rawArgs.findIndex((a) => a === "--api-key" || a === "--control-plane-key");
       const apiKey = apiKeyIdx !== -1 ? rawArgs[apiKeyIdx + 1] : undefined;
 
-      console.log("Running tunnel-client doctor check...");
+      console.log("Running OpenAI Secure MCP tunnel-client doctor check...");
       const docResult = await runTunnelClientDoctor({ profile, tunnelId, apiKey });
-      console.log(`[tunnel-client doctor]\n${docResult.output}`);
+      console.log("[OpenAI tunnel-client doctor]\n" + docResult.output);
       process.exit(docResult.success ? 0 : 1);
+    }
+
+    if (tunnelAction === "restart") {
+      const portIdx = rawArgs.findIndex((a) => a === "--port" || a === "--mcp-port" || a === "-p");
+      let port = 9227;
+      if (portIdx !== -1 && rawArgs[portIdx + 1]) {
+        const parsed = Number.parseInt(rawArgs[portIdx + 1], 10);
+        if (!Number.isInteger(parsed) || parsed <= 0 || parsed >= 65536) {
+          console.error("Invalid MCP tunnel port.");
+          process.exit(1);
+        }
+        port = parsed;
+      }
+      const { listActiveMcpServers, stopMcpTunnel } = await import("../mcp/mcpTunnel.js");
+      const active = listActiveMcpServers().find((server) => server.port === port);
+      if (active?.pid && active.pid !== process.pid) {
+        console.error("MCP tunnel on port " + port + " is owned by PID " + active.pid + ". Use its owning SuperAgent instance to restart it.");
+        process.exit(1);
+      }
+      const restartArgs = [...rawArgs];
+      const hasProvider = restartArgs.includes("--provider") || restartArgs.includes("--openai") || restartArgs.includes("--openai-tunnel") || restartArgs.includes("--tunnel-id");
+      if (active && !hasProvider) {
+        restartArgs.push("--provider", active.tunnelProvider || "cloudflare");
+        if (active.tunnelProvider === "openai" && active.openAiTunnelId) restartArgs.push("--tunnel-id", active.openAiTunnelId);
+      }
+      if (active?.authMode && !restartArgs.includes("--mcp-auth")) restartArgs.push("--mcp-auth", active.authMode);
+      if (active?.toolMode === "dangerous" && !restartArgs.includes("--allow-dangerous")) restartArgs.push("--allow-dangerous");
+      if (active) await stopMcpTunnel(port);
+      await handleMcpCliCommand(["tunnel", "start", ...restartArgs]);
+      return;
     }
 
     if (tunnelAction === "stop") {
@@ -198,9 +256,13 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       const providerIdx = rawArgs.findIndex((a) => a === "--provider");
       const wantOpenAi = rawArgs.some((a) => a === "--openai" || a === "--openai-tunnel");
       let provider: "cloudflare" | "openai" = wantOpenAi ? "openai" : "cloudflare";
-      if (providerIdx !== -1 && rawArgs[providerIdx + 1]) {
-        const p = rawArgs[providerIdx + 1].toLowerCase();
-        if (p === "openai" || p === "cloudflare") provider = p;
+      if (providerIdx !== -1) {
+        const p = rawArgs[providerIdx + 1]?.toLowerCase();
+        if (p !== "openai" && p !== "cloudflare") {
+          console.error(`Unsupported MCP tunnel provider "${rawArgs[providerIdx + 1] || "(missing)"}". Supported providers: cloudflare, openai. Run "superagent mcp tunnel providers".`);
+          process.exit(1);
+        }
+        provider = p;
       }
       const tunnelIdIdx = rawArgs.findIndex((a) => a === "--tunnel-id");
       let tunnelId: string | undefined;
@@ -274,7 +336,7 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       }
     }
 
-    console.log(`Unknown tunnel action: "${tunnelAction}". Available: start, stop, list, doctor`);
+    console.log(`Unknown tunnel action: "${tunnelAction}". Available: providers, start, stop, restart, list, status, doctor`);
     process.exit(1);
   }
 

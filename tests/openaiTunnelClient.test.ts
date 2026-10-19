@@ -66,6 +66,21 @@ describe("OpenAI Secure MCP Tunnel Client", () => {
       expect(resolveOpenAiControlPlaneKey("")).toBeUndefined();
     });
 
+    it("does not use OPENAI_API_KEY as a Secure MCP Tunnel runtime credential", () => {
+      const originalControlPlaneKey = process.env.CONTROL_PLANE_API_KEY;
+      const originalOpenAiKey = process.env.OPENAI_API_KEY;
+      try {
+        delete process.env.CONTROL_PLANE_API_KEY;
+        process.env.OPENAI_API_KEY = "sk-general-model-provider-key";
+        expect(resolveOpenAiControlPlaneKey()).toBeUndefined();
+      } finally {
+        if (originalControlPlaneKey !== undefined) process.env.CONTROL_PLANE_API_KEY = originalControlPlaneKey;
+        else delete process.env.CONTROL_PLANE_API_KEY;
+        if (originalOpenAiKey !== undefined) process.env.OPENAI_API_KEY = originalOpenAiKey;
+        else delete process.env.OPENAI_API_KEY;
+      }
+    });
+
     it("finds binary from custom path if file exists", () => {
       const fakeBin = path.join(tempHome, "fake-tunnel-client.exe");
       fs.writeFileSync(fakeBin, "echo fake binary", "utf-8");

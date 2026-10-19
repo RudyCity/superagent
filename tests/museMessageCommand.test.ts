@@ -68,9 +68,9 @@ describe("/muse msg and /muse send commands", () => {
     };
   });
 
-  it("should show usage error if /muse msg is called without text", async () => {
+  it("should show the Telegram-only migration usage if a legacy /muse msg is called without text", async () => {
     await museCommand.execute("msg", ctx);
-    expect(lines.some((l) => l.type === "error" && l.content.includes("Usage: /muse msg <message>"))).toBe(true);
+    expect(lines.some((l) => l.type === "error" && l.content.includes("Usage: /telegram send <message>"))).toBe(true);
     expect(mockState.sentTelegramMessages).toHaveLength(0);
   });
 
@@ -79,7 +79,7 @@ describe("/muse msg and /muse send commands", () => {
     expect(mockState.sentTelegramMessages).toHaveLength(1);
     expect(mockState.sentTelegramMessages[0].chatId).toBe("-100123456789");
     expect(mockState.sentTelegramMessages[0].text).toBe("Halo dari Superagent");
-    expect(lines.some((l) => l.type === "system" && l.content.includes("Sent message to Telegram group"))).toBe(true);
+    expect(lines.some((l) => l.type === "system" && l.content.includes("Sent message to configured group"))).toBe(true);
   });
 
   it("should support /muse send and /muse tg aliases", async () => {
@@ -92,20 +92,20 @@ describe("/muse msg and /muse send commands", () => {
     expect(mockState.sentTelegramMessages[1].text).toBe("Pesan kedua");
   });
 
-  it("should forward to Muse brain when watcher is active", async () => {
+  it("must not steer Muse when a legacy message alias is used while the watcher is active", async () => {
     mockState.isWatcherActive = true;
     await museCommand.execute("msg Halo Muse dan Telegram", ctx);
 
     expect(mockState.sentTelegramMessages).toHaveLength(1);
-    expect(mockState.steerMessages).toHaveLength(1);
-    expect(mockState.steerMessages[0]).toBe("Halo Muse dan Telegram");
-    expect(lines.some((l) => l.content.includes("Forwarded chat message to active Muse brain session"))).toBe(true);
+    expect(mockState.sentTelegramMessages[0].text).toBe("Halo Muse dan Telegram");
+    expect(mockState.steerMessages).toHaveLength(0);
+    expect(lines.some((l) => l.content.includes("deprecated; forwarding to /telegram send"))).toBe(true);
   });
 
   it("should notify user when Telegram is not configured", async () => {
     mockState.config = { transport: "websocket" };
     await museCommand.execute("msg Halo tanpa config", ctx);
 
-    expect(lines.some((l) => l.type === "error" && l.content.includes("not configured for Telegram"))).toBe(true);
+    expect(lines.some((l) => l.type === "error" && l.content.includes("Telegram is not configured"))).toBe(true);
   });
 });

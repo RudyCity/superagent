@@ -13,6 +13,9 @@ import "./sshCommand.js";
 import "./daemonCommand.js";
 import "./gatewayCommand.js";
 import "./museCommand.js";
+import "./telegramCommand.js";
+import "./serverCommand.js";
+import "./serviceStatusCommand.js";
 import "./selfdevCommand.js";
 import "./modeCommand.js";
 

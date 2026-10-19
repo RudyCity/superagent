@@ -14,17 +14,46 @@ import {
 export async function handleMuseTunnelSubcommand(
   parts: string[],
   ctx: SlashCommandContext,
-  now: number
+  now: number,
+  options: { internalServerHttp?: boolean } = {}
 ): Promise<void> {
   const isHttps = parts
     .slice(1)
     .some((p) => p.toLowerCase() === "--https" || p.toLowerCase() === "--http" || p.toLowerCase() === "--web");
-  const isTgFallback = parts
-    .slice(1)
-    .some((p) => {
-      const flag = p.toLowerCase();
-      return flag === "--tg-fallback" || flag === "--telegram-fallback";
+  const isInternalServerHttp = options.internalServerHttp === true;
+  const normalizedArgs = parts.slice(1).map((p) => p.toLowerCase());
+  const mcpOnlyFlags = new Set([
+    "--mcp", "--mcp-port", "--mcp-auth", "--provider", "--tunnel-id",
+    "--api-key", "--control-plane-key", "--profile", "--tunnel-profile",
+    "--openai", "--openai-tunnel", "--allow-dangerous",
+  ]);
+  const wrongDomainFlag = normalizedArgs.find((p) => mcpOnlyFlags.has(p));
+  if (wrongDomainFlag) {
+    ctx.addLine({
+      type: "error",
+      content: `MCP option "${wrongDomainFlag}" is not supported under /muse tunnel. Use /mcp tunnel (for example: /mcp tunnel start --provider openai --tunnel-id <id>).`,
+      timestamp: now,
     });
+    return;
+  }
+  if (normalizedArgs.includes("--internal-server-http")) {
+    ctx.addLine({ type: "error", content: "Internal routing flags cannot be used manually. Use /server tunnel for REST/SSE exposure.", timestamp: now });
+    return;
+  }
+  if (normalizedArgs.some((arg) => arg === "--tg-fallback" || arg === "--telegram-fallback")) {
+    ctx.addLine({ type: "error", content: "Telegram fallback is managed independently. Use /telegram fallback start|stop.", timestamp: now });
+    return;
+  }
+  if (isHttps && !isInternalServerHttp) {
+    const nonFlagParts = parts.slice(1).filter((p) => !p.startsWith("-"));
+    const action = (nonFlagParts[0] || "start").toLowerCase();
+    ctx.addLine({
+      type: "error",
+      content: `SuperAgent REST/SSE exposure is managed separately. Use /server tunnel ${action}${parts.some((p) => /^--port$/i.test(p)) ? " --port <n>" : ""}.`,
+      timestamp: now,
+    });
+    return;
+  }
   const nonFlagParts = parts.slice(1).filter((p) => !p.startsWith("-"));
   const rawAction = (nonFlagParts[0] || (isHttps ? "start" : "")).toLowerCase();
   const cfg = loadRemoteAgentConfig();
@@ -32,11 +61,10 @@ export async function handleMuseTunnelSubcommand(
   const port = cfg.wsPort || 9225;
   const pathEndpoint = cfg.wsPath || "/muse";
   let token = cfg.wsToken;
-  const mcpOnlyRequested = parts.some((p) => p.toLowerCase() === "--mcp");
   const needsMuseToken = ["start", "quick", "run", "prompt", "url", "link"].includes(rawAction);
 
-  // Read-only/status/stop commands and MCP-only mode must not mutate Muse configuration.
-  if (!token && !isHttps && !mcpOnlyRequested && needsMuseToken) {
+  // Read-only/status/stop commands must not mutate Muse configuration.
+  if (!token && !isHttps && needsMuseToken) {
     token = generateSecureWsToken();
     updateRemoteAgentConfig({ wsToken: token, transport: "websocket" });
     ctx.addLine({
@@ -49,7 +77,6 @@ export async function handleMuseTunnelSubcommand(
   const {
     startQuickTunnel,
     stopQuickTunnel,
-    stopAllQuickTunnels,
     getTunnelStatus,
     listActiveTunnels,
     clearWsRemoteUrl,
@@ -61,94 +88,19 @@ export async function handleMuseTunnelSubcommand(
     startMuseWatcher,
     stopMuseWatcher,
     isMuseWatcherActive,
-    TELEGRAM_FALLBACK_KEY,
   } = await import("../remoteAgent/museWatcher.js");
   const { stopOwnedMuseTunnel } = await import("../remoteAgent/museWatcherTunnel.js");
 
-  // Optional Telegram fallback watcher: when --tg-fallback is passed, keep a
-  // Telegram-transport watcher active alongside the tunnel so Muse stays
-  // reachable if the tunnel drops.
-  const startTelegramFallback = async (workspaces: string[]) => {
-    if (!isTgFallback) return;
-    if (isMuseWatcherActive(TELEGRAM_FALLBACK_KEY)) return;
-    try {
-      await startMuseWatcher({
-        workspace: workspaces[0] || ctx.agent?.workingDirectory || process.cwd(),
-        workspaces,
-        transportType: "telegram",
-        fallback: true,
-        tunnel: false,
-        isHttps: false,
-        wsPort: undefined,
-        agent: ctx.agent,
-        onProgress: (msg: string) => {
-          ctx.addLine({
-            type: "system",
-            content: `[Muse Progress] ${msg}`,
-            timestamp: Date.now(),
-          });
-        },
-        onLine: (line: { type: string; content: string; timestamp?: number }) => {
-          ctx.addLine({
-            type: (line.type as any) || "system",
-            content: line.content,
-            timestamp: line.timestamp || Date.now(),
-          });
-        },
-      });
-      ctx.addLine({
-        type: "system",
-        content:
-          "[Muse Watch] Telegram fallback transport is ACTIVE \u2014 Muse stays reachable via Telegram if the tunnel drops.",
-        timestamp: Date.now(),
-      });
-    } catch (fallbackErr: any) {
-      ctx.addLine({
-        type: "error",
-        content: `[Muse Watch] Telegram fallback failed to start: ${fallbackErr.message}`,
-        timestamp: Date.now(),
-      });
-    }
-  };
-
-  // /muse tunnel list: WSS tunnels + cross-workspace MCP servers
+  // /muse tunnel list: Muse WebSocket tunnels only
   if (rawAction === "list" || rawAction === "ls" || rawAction === "active") {
-    const tunnels = listActiveTunnels();
-    const { listActiveMcpServers, formatActiveMcpServers } = await import("../mcp/mcpTunnel.js");
-    ctx.addLine({
-      type: "system",
-      content: `${formatActiveTunnels(tunnels)}\n\n${formatActiveMcpServers(listActiveMcpServers())}`,
-      timestamp: now,
-    });
+    const tunnels = listActiveTunnels().filter((t) => t.serviceKind === "muse-websocket");
+    ctx.addLine({ type: "system", content: formatActiveTunnels(tunnels), timestamp: now });
     return;
   }
 
   // /muse tunnel restart
   if (rawAction === "restart") {
     const rawArgs = parts.slice(1).filter((p) => p.toLowerCase() !== rawAction && p.toLowerCase() !== "tunnel" && p.toLowerCase() !== "cloudflare");
-    const mcpPortArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--mcp-port");
-    const wantsMcpRestart = rawArgs.some((a) => a.toLowerCase() === "--mcp") || mcpPortArgIdx !== -1;
-    if (wantsMcpRestart) {
-      let mcpPort = 9227;
-      if (mcpPortArgIdx !== -1 && rawArgs[mcpPortArgIdx + 1]) {
-        const parsed = parseInt(rawArgs[mcpPortArgIdx + 1], 10);
-        if (!Number.isInteger(parsed) || parsed <= 0 || parsed >= 65536) {
-          ctx.addLine({ type: "error", content: "Invalid --mcp-port value.", timestamp: now });
-          return;
-        }
-        mcpPort = parsed;
-      }
-      const { stopMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
-      const target = listActiveMcpServers().find((m) => m.port === mcpPort);
-      if (target && target.pid !== process.pid) {
-        ctx.addLine({ type: "error", content: `MCP server on port ${mcpPort} is owned by PID ${target.pid}; stop it from its owning instance before restarting.`, timestamp: now });
-        return;
-      }
-      if (target) await stopMcpTunnel(mcpPort);
-      const restartParts = parts.filter((p) => p.toLowerCase() !== "restart");
-      restartParts.splice(1, 0, "start");
-      return handleMuseTunnelSubcommand(restartParts, ctx, Date.now());
-    }
     const portArgIdx = rawArgs.findIndex((a) => a === "--port" || a === "-p");
     let portOverride: number | undefined;
     if (portArgIdx !== -1 && rawArgs[portArgIdx + 1]) {
@@ -204,71 +156,6 @@ export async function handleMuseTunnelSubcommand(
       if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
     }
     const effectivePort = portOverride || (isHttps ? 7888 : port);
-    const wantMcpPrompt = rawArgs.some((a) => a.toLowerCase() === "--mcp");
-    const mcpPortArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--mcp-port");
-    const mcpPromptRequested = wantMcpPrompt || mcpPortArgIdx !== -1;
-    let mcpPromptPort = 9227;
-    if (mcpPortArgIdx !== -1 && rawArgs[mcpPortArgIdx + 1]) {
-      const parsed = parseInt(rawArgs[mcpPortArgIdx + 1], 10);
-      if (!Number.isInteger(parsed) || parsed <= 0 || parsed >= 65536) {
-        ctx.addLine({ type: "error", content: "Invalid --mcp-port value.", timestamp: now });
-        return;
-      }
-      mcpPromptPort = parsed;
-    }
-    const { listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
-    const mcpServers = listActiveMcpServers();
-    const activeMcp = mcpPromptRequested ? mcpServers.find((m) => m.port === mcpPromptPort) : undefined;
-
-    if (activeMcp) {
-      if (activeMcp.tunnelProvider === "openai") {
-        const { generateResponsesApiSnippet, generateChatGptInstructions } = await import("../mcp/openaiTunnelClient.js");
-        const tunnelId = activeMcp.openAiTunnelId || activeMcp.publicUrl.replace(/^openai-tunnel:\/\//, "");
-        const responsesSnippet = generateResponsesApiSnippet(tunnelId);
-        const chatGptSteps = generateChatGptInstructions(tunnelId, activeMcp.authMode);
-        const copied = await copyTextToClipboard(responsesSnippet);
-        ctx.addLine({
-          type: "system",
-          content: [
-            `OpenAI Secure MCP Tunnel (port ${activeMcp.port}):`,
-            `- Tunnel ID       : ${tunnelId}`,
-            `- Local Target    : ${activeMcp.localUrl}`,
-            `- Tool Mode       : ${activeMcp.toolMode === "dangerous" ? "FULL (all tools)" : "SAFE (read-only)"}`,
-            `- Auth Mode       : ${activeMcp.authMode || "static-bearer"}`,
-            activeMcp.adminUrl ? `- Admin UI        : ${activeMcp.adminUrl}` : "",
-            "",
-            ...chatGptSteps,
-            "",
-            copied ? "OpenAI Responses API snippet (copied to clipboard):" : "OpenAI Responses API snippet:",
-            responsesSnippet,
-          ].filter(Boolean).join("\n"),
-          timestamp: now,
-        });
-        return;
-      }
-
-      const configJson = JSON.stringify({
-        superagent: {
-          url: activeMcp.publicUrl,
-        },
-      }, null, 2);
-      const copied = await copyTextToClipboard(configJson);
-      ctx.addLine({
-        type: "system",
-        content: [
-          `MCP Server via Tunnel (port ${activeMcp.port}):`,
-          `- Public Endpoint : ${activeMcp.publicUrl}`,
-          `- Tool Mode      : ${activeMcp.toolMode === "dangerous" ? "FULL (37 tools)" : "SAFE (read-only)"}`,
-          `- Auth Mode      : ${activeMcp.authMode || "static-bearer"}`,
-          "",
-          copied ? "MCP client config (copied to clipboard):" : "MCP client config:",
-          configJson,
-        ].join("\n"),
-        timestamp: now,
-      });
-      return;
-    }
-
     let existing = getTunnelStatus(effectivePort);
     const expectedServiceKind = isHttps ? "superagent-http" : "muse-websocket";
     if (
@@ -359,225 +246,10 @@ export async function handleMuseTunnelSubcommand(
       if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
     }
 
-    // MCP via tunnel flags: /muse tunnel start --mcp [--mcp-port <n>] [--allow-dangerous]
-    const wantMcp = rawArgs.some((a) => a.toLowerCase() === "--mcp");
-    const mcpPortArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--mcp-port");
-    let mcpPort = 9227;
-    if (mcpPortArgIdx !== -1 && rawArgs[mcpPortArgIdx + 1]) {
-      const parsed = parseInt(rawArgs[mcpPortArgIdx + 1], 10);
-      if (!isNaN(parsed) && parsed > 0 && parsed < 65536) mcpPort = parsed;
-    }
-    const { getYoloModeState } = await import("../permissions.js");
-    const allowDangerous = rawArgs.some((a) => a.toLowerCase() === "--allow-dangerous") || (getYoloModeState() !== "off");
-    const mcpAuthArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--mcp-auth");
-    let mcpAuthMode: "static-bearer" | "oauth" = "static-bearer";
-    if (mcpAuthArgIdx !== -1 && rawArgs[mcpAuthArgIdx + 1]) {
-      const v = rawArgs[mcpAuthArgIdx + 1].toLowerCase();
-      if (v === "oauth" || v === "static-bearer") {
-        mcpAuthMode = v;
-      } else {
-        ctx.addLine({
-          type: "error",
-          content: `[MCP Tunnel] Invalid --mcp-auth value "${rawArgs[mcpAuthArgIdx + 1]}". Use static-bearer or oauth.`,
-          timestamp: Date.now(),
-        });
-        return;
-      }
-    }
-
-    const wantOpenAi = rawArgs.some((a) => a.toLowerCase() === "--openai" || a.toLowerCase() === "--openai-tunnel");
-    const providerArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--provider");
-    let mcpProvider: "cloudflare" | "openai" = wantOpenAi ? "openai" : "cloudflare";
-    if (providerArgIdx !== -1 && rawArgs[providerArgIdx + 1]) {
-      const p = rawArgs[providerArgIdx + 1].toLowerCase();
-      if (p === "openai" || p === "cloudflare") {
-        mcpProvider = p;
-      }
-    }
-
-    const tunnelIdArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--tunnel-id");
-    let openAiTunnelId: string | undefined;
-    if (tunnelIdArgIdx !== -1 && rawArgs[tunnelIdArgIdx + 1]) {
-      openAiTunnelId = rawArgs[tunnelIdArgIdx + 1].trim();
-      mcpProvider = "openai";
-    }
-
-    const apiKeyArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--api-key" || a.toLowerCase() === "--control-plane-key");
-    let openAiApiKey: string | undefined;
-    if (apiKeyArgIdx !== -1 && rawArgs[apiKeyArgIdx + 1]) {
-      openAiApiKey = rawArgs[apiKeyArgIdx + 1].trim();
-    }
-
-    const profileArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--profile" || a.toLowerCase() === "--tunnel-profile");
-    let openAiProfile: string | undefined;
-    if (profileArgIdx !== -1 && rawArgs[profileArgIdx + 1]) {
-      openAiProfile = rawArgs[profileArgIdx + 1].trim();
-    }
-
-    const wantDoctor = rawArgs.some((a) => a.toLowerCase() === "--doctor");
-    if (wantDoctor && mcpProvider === "openai") {
-      const { runTunnelClientDoctor } = await import("../mcp/openaiTunnelClient.js");
-      ctx.addLine({ type: "system", content: "Running tunnel-client doctor check...", timestamp: Date.now() });
-      const docResult = await runTunnelClientDoctor({
-        profile: openAiProfile,
-        tunnelId: openAiTunnelId,
-        apiKey: openAiApiKey,
-      });
-      ctx.addLine({
-        type: docResult.success ? "system" : "error",
-        content: `[tunnel-client doctor]\n${docResult.output}`,
-        timestamp: Date.now(),
-      });
-      if (!wantMcp) return;
-    }
-
-    // --- MCP-only mode: /muse tunnel start --mcp (WSS tunnel NOT started) ---
-    if (wantMcp) {
-      const { startMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
-      if (listActiveMcpServers().some((m) => m.port === mcpPort)) {
-        ctx.addLine({
-          type: "system",
-          content: `[MCP Tunnel] MCP server is ALREADY ACTIVE on port ${mcpPort}.`,
-          timestamp: Date.now(),
-        });
-        return;
-      }
-      if (allowDangerous && mcpAuthMode === "static-bearer") {
-        ctx.addLine({
-          type: "system",
-          content: [
-            "!! WARNING: --allow-dangerous in static-bearer mode exposes destructive tools",
-            "!! (command execution, file writes, agent control) to anyone holding the bearer token.",
-            "!! For ChatGPT write access, prefer --mcp-auth oauth instead.",
-          ].join("\n"),
-          timestamp: Date.now(),
-        });
-      }
-      try {
-        const mcpInfo = await startMcpTunnel({
-          port: mcpPort,
-          allowDangerous,
-          authMode: mcpAuthMode,
-          tunnelProvider: mcpProvider,
-          tunnelId: openAiTunnelId,
-          openAiApiKey,
-          openAiProfile,
-        });
-        ctx.addLine({
-          type: "system",
-          content: (() => {
-            const toolModeLine = `- Tool mode    : ${mcpInfo.dangerous ? `FULL (${mcpInfo.toolCount} tools)` : `SAFE (${mcpInfo.toolCount} read-only)`}`;
-            if (mcpInfo.tunnelProvider === "openai") {
-              const tunnelId = mcpInfo.openAiTunnelId || openAiTunnelId || "";
-              return [
-                "-------------------------------------------------------------",
-                "  OpenAI Secure MCP Tunnel Online!",
-                "-------------------------------------------------------------",
-                `- Tunnel ID       : ${tunnelId}`,
-                `- Local MCP URL   : ${mcpInfo.localUrl}`,
-                `- Connection      : Outbound-only to api.openai.com control plane`,
-                mcpInfo.adminUrl ? `- Admin UI        : ${mcpInfo.adminUrl}` : "",
-                toolModeLine,
-                `- Audit log       : ${mcpInfo.auditLogPath}`,
-                "",
-                "ChatGPT Setup:",
-                "1. In ChatGPT, open Settings -> Connectors or ChatGPT Plugins.",
-                "2. Select Add Custom MCP Server.",
-                "3. Set Connection to: Tunnel",
-                `4. Enter Tunnel ID: ${tunnelId}`,
-                "   IMPORTANT: Click the suggestion chip below the input (e.g. [ SuperAgent One ]) to select and bind it!",
-                mcpInfo.authMode === "oauth"
-                  ? "5. Set Authentication to: OAuth (provide bootstrap code if prompted)"
-                  : "5. Set Authentication to: No authentication",
-                "6. Check 'I understand and want to continue' and select Create as a plugin.",
-                "7. Keep this Superagent terminal open while using the connector.",
-                "",
-                "OpenAI Responses API Tool Definition:",
-                JSON.stringify({
-                  model: "gpt-4o",
-                  input: "Use the private MCP server to answer my request.",
-                  tools: [
-                    {
-                      type: "mcp",
-                      server_label: "superagent_mcp",
-                      tunnel_id: tunnelId,
-                    },
-                  ],
-                }, null, 2),
-                "",
-                "Flags: --provider openai --tunnel-id <id> [--api-key <key>] [--profile <name>] [--doctor]",
-                "Stop: /muse tunnel stop --mcp-port " + mcpPort,
-                "",
-                "Note: Local MCP server is kept private inside your network.",
-              ].filter(Boolean).join("\n");
-            }
-            if (mcpInfo.authMode === "oauth") {
-              return [
-                "-------------------------------------------------------------",
-                "  MCP via Tunnel Online! (OAuth mode)",
-                "-------------------------------------------------------------",
-                `- MCP Endpoint : ${mcpInfo.publicUrl}`,
-                `- Local        : ${mcpInfo.localUrl}`,
-                "- Auth mode    : oauth (OAuth 2.1 + PKCE)",
-                `- Discovery    : ${mcpInfo.oauthDiscoveryUrl}`,
-                `- Scopes       : mcp:tools${mcpInfo.dangerous ? " mcp:tools:write" : ""}`,
-                toolModeLine,
-                `- Audit log    : ${mcpInfo.auditLogPath}`,
-                "",
-                "One-time bootstrap approval code (shown ONCE, never stored):",
-                `- ${mcpInfo.bootstrapCode}`,
-                "",
-                "ChatGPT setup:",
-                "1. In ChatGPT, add an MCP server with the MCP Endpoint URL above.",
-                "2. In Advanced OAuth settings, enter any OAuth client ID (e.g. chatgpt) and leave secret blank.",
-                "3. Complete the OAuth authorization in your browser using the bootstrap code.",
-                "4. Approve scopes; safe tools are callable after approval.",
-                "",
-                "Flags: --mcp-auth oauth | --allow-dangerous (needs mcp:tools:write) | --mcp-port <n> | --provider openai --tunnel-id <id>",
-                "Stop: /muse tunnel stop",
-                "",
-                "!! URL is public - OAuth authorization is the ONLY access control.",
-                "!! Bootstrap code is shown once. Rotate: /muse tunnel restart --mcp",
-              ].join("\n");
-            }
-            return [
-              "-------------------------------------------------------------",
-              "  MCP via Tunnel Online!",
-              "-------------------------------------------------------------",
-              `- MCP Endpoint : ${mcpInfo.publicUrl}`,
-              `- Local        : ${mcpInfo.localUrl}`,
-              `- Bearer token : ${mcpInfo.bearerToken}`,
-              toolModeLine,
-              `- Audit log    : ${mcpInfo.auditLogPath}`,
-              "",
-              "MCP client config (copy-paste):",
-              `{ "superagent": { "url": "${mcpInfo.publicUrl}", "headers": { "Authorization": "Bearer token ${mcpInfo.bearerToken}" } } }`,
-              "",
-              "Flags: --mcp-auth oauth (ChatGPT) | --allow-dangerous (destructive tools) | --mcp-port <n> (multi-project) | --provider openai --tunnel-id <id>",
-              "Stop: /muse tunnel stop",
-              "",
-              "!! URL is public - Bearer token is the ONLY access control.",
-              "!! Bearer token shown once, never stored. Rotate: /muse tunnel restart --mcp",
-            ].join("\n");
-          })(),
-          timestamp: Date.now(),
-        });
-      } catch (mcpErr: any) {
-        ctx.addLine({
-          type: "error",
-          content: `[MCP Tunnel] Failed: ${mcpErr?.message || String(mcpErr)}`,
-          timestamp: Date.now(),
-        });
-      }
-      return;
-    }
-
     const initialTask = rawArgs
-      .filter((a, idx, arr) => {
-        if (a === "--port" || a === "-p" || a === "--https" || a === "--http" || a === "--web") return false;
-        if (a === "--mcp" || a === "--mcp-port" || a === "--allow-dangerous" || a === "--mcp-auth") return false;
-        if (a === "--openai" || a === "--openai-tunnel" || a === "--provider" || a === "--tunnel-id" || a === "--api-key" || a === "--control-plane-key" || a === "--profile" || a === "--tunnel-profile" || a === "--doctor") return false;
-        if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p" || arr[idx - 1] === "--mcp-port" || arr[idx - 1] === "--mcp-auth" || arr[idx - 1] === "--provider" || arr[idx - 1] === "--tunnel-id" || arr[idx - 1] === "--api-key" || arr[idx - 1] === "--control-plane-key" || arr[idx - 1] === "--profile" || arr[idx - 1] === "--tunnel-profile")) return false;
+      .filter((arg, idx, arr) => {
+        if (["--port", "-p", "--https", "--http", "--web"].includes(arg)) return false;
+        if (idx > 0 && ["--port", "-p"].includes(arr[idx - 1])) return false;
         return true;
       })
       .join(" ")
@@ -635,11 +307,10 @@ export async function handleMuseTunnelSubcommand(
             curlSnippet,
             "-----------------------------------------------------------------------------",
             "",
-            `To stop the tunnel, run: /muse tunnel stop --https${portOverride ? ` --port ${portOverride}` : ""}`,
+            `To stop it, run: /server tunnel stop${portOverride ? ` --port ${portOverride}` : ""}`,
           ].join("\n"),
           timestamp: now,
         });
-        await startTelegramFallback(watchedWorkspaces);
         return;
       }
 
@@ -791,7 +462,6 @@ export async function handleMuseTunnelSubcommand(
         },
       });
 
-      await startTelegramFallback(watchedWorkspaces);
 
       const meta = getTunnelStatus(effectivePort);
       const effectiveWss = meta.wssUrl || `wss://${meta.publicUrl?.replace(/^https?:\/\//, "")}${pathEndpoint}`;
@@ -850,49 +520,17 @@ export async function handleMuseTunnelSubcommand(
     const rawArgs = parts.slice(1).filter((p) => p.toLowerCase() !== rawAction && p.toLowerCase() !== "tunnel" && p.toLowerCase() !== "cloudflare");
     const isAll = rawArgs.includes("all") || rawArgs.includes("--all") || rawArgs.includes("-a");
     if (isAll) {
-      const { stopAllMuseWatchers } = await import("../remoteAgent/museWatcher.js");
-      const museTunnelUrls = listActiveTunnels()
-        .filter((t) => t.serviceKind === "muse-websocket" && t.wssUrl)
-        .map((t) => t.wssUrl!);
-      const watcherCount = await stopAllMuseWatchers();
-      const count = await stopAllQuickTunnels();
-      for (const wssUrl of museTunnelUrls) clearWsRemoteUrl(wssUrl);
-      const { stopAllMcpServers } = await import("../mcp/mcpTunnel.js");
-      await stopAllMcpServers();
-      ctx.addLine({
-        type: "system",
-        content: `[Cloudflare Tunnel] Stopped ${count} quick tunnel${count === 1 ? "" : "s"} and ${watcherCount} watch daemon${watcherCount === 1 ? "" : "s"} across all workspaces.`,
-        timestamp: Date.now(),
-      });
-      return;
-    }
-
-    const wantMcpStop = rawArgs.some((a) => a.toLowerCase() === "--mcp");
-    const mcpPortStopIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--mcp-port");
-    if (wantMcpStop || mcpPortStopIdx !== -1) {
-      let mcpPortStop = 9227;
-      if (mcpPortStopIdx !== -1 && rawArgs[mcpPortStopIdx + 1]) {
-        const parsed = parseInt(rawArgs[mcpPortStopIdx + 1], 10);
-        if (!Number.isInteger(parsed) || parsed <= 0 || parsed >= 65536) {
-          ctx.addLine({ type: "error", content: "Invalid --mcp-port value.", timestamp: now });
-          return;
+      const museTunnels = listActiveTunnels().filter((t) => t.serviceKind === "muse-websocket");
+      let watcherCount = 0;
+      for (const tunnel of museTunnels) {
+        if (isMuseWatcherActive(tunnel.port)) {
+          await stopMuseWatcher(tunnel.port);
+          watcherCount++;
         }
-        mcpPortStop = parsed;
+        if (tunnel.wssUrl) clearWsRemoteUrl(tunnel.wssUrl);
+        await stopOwnedMuseTunnel(tunnel.port);
       }
-      const { stopMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
-      const mcpTarget = listActiveMcpServers().find((m) => m.port === mcpPortStop);
-      if (!mcpTarget) {
-        ctx.addLine({ type: "system", content: `No MCP server is currently active on port ${mcpPortStop}.`, timestamp: now });
-      } else if (mcpTarget.pid !== process.pid) {
-        ctx.addLine({
-          type: "system",
-          content: `MCP server on port ${mcpPortStop} is owned by another instance (PID ${mcpTarget.pid}, workspace ${mcpTarget.workspace || "unknown"}) and cannot be stopped from here.`,
-          timestamp: now,
-        });
-      } else {
-        await stopMcpTunnel(mcpPortStop);
-        ctx.addLine({ type: "system", content: `MCP server (port ${mcpPortStop}) stopped successfully.`, timestamp: Date.now() });
-      }
+      ctx.addLine({ type: "system", content: "[Muse Tunnel] Stopped " + museTunnels.length + " Muse WebSocket tunnel(s) and " + watcherCount + " associated watcher(s). MCP and Telegram services were not changed.", timestamp: Date.now() });
       return;
     }
 
@@ -938,11 +576,6 @@ export async function handleMuseTunnelSubcommand(
       await stopMuseWatcher(effectivePort);
       stoppedAny = true;
       stoppedParts.push("WebSocket watch daemon");
-    }
-    if (isMuseWatcherActive(TELEGRAM_FALLBACK_KEY)) {
-      await stopMuseWatcher(TELEGRAM_FALLBACK_KEY);
-      stoppedAny = true;
-      stoppedParts.push("Telegram fallback watcher");
     }
     let targetPortToStop = effectivePort;
     let existing = getTunnelStatus(effectivePort);
@@ -994,11 +627,10 @@ export async function handleMuseTunnelSubcommand(
 
     const effectivePort = portOverride || (isHttps ? 7888 : port);
     let existing = getTunnelStatus(effectivePort);
+    if (!isHttps && existing.serviceKind !== "muse-websocket") existing = { ...existing, isRunning: false };
     if (!existing.isRunning && !portOverride && !isHttps) {
-      const active = listActiveTunnels();
-      if (active.length > 0) {
-        existing = { isRunning: true, ...active[0] };
-      }
+      const active = listActiveTunnels().filter((t) => t.serviceKind === "muse-websocket");
+      if (active.length > 0) existing = { isRunning: true, ...active[0] };
     }
 
     if (isHttps) {
@@ -1018,68 +650,24 @@ export async function handleMuseTunnelSubcommand(
             "",
             `Test: curl -H "Authorization: Bearer ${serverToken}" ${existing.publicUrl}/api/status`,
             "",
-            `To stop it, run: /muse tunnel stop --https${portOverride ? ` --port ${portOverride}` : ""}`,
+            `To stop it, run: /server tunnel stop${portOverride ? ` --port ${portOverride}` : ""}`,
           ].join("\n"),
           timestamp: now,
         });
       } else {
         ctx.addLine({
           type: "system",
-          content: `Cloudflare HTTPS Tunnel Status (port ${effectivePort}): INACTIVE\nRun '/muse tunnel start --https' to launch.`,
+          content: `SuperAgent REST/SSE tunnel (port ${effectivePort}): INACTIVE\nRun '/server tunnel start' to launch.`,
           timestamp: now,
         });
       }
       return;
     }
 
-    const wantMcpStatus = rawArgs.some((a) => a.toLowerCase() === "--mcp");
-    const mcpPortArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--mcp-port");
-    const mcpStatusRequested = wantMcpStatus || mcpPortArgIdx !== -1;
-    let mcpPortStatus = 9227;
-    if (mcpPortArgIdx !== -1 && rawArgs[mcpPortArgIdx + 1]) {
-      const parsed = parseInt(rawArgs[mcpPortArgIdx + 1], 10);
-      if (!Number.isInteger(parsed) || parsed <= 0 || parsed >= 65536) {
-        ctx.addLine({ type: "error", content: "Invalid --mcp-port value.", timestamp: now });
-        return;
-      }
-      mcpPortStatus = parsed;
-    }
-    const { listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
-    const mcpServers = listActiveMcpServers();
-    const activeMcp = mcpStatusRequested ? mcpServers.find((m) => m.port === mcpPortStatus) : undefined;
-
-    if (activeMcp) {
-      ctx.addLine({
-        type: "system",
-        content: [
-          `MCP Server via Tunnel Status (port ${activeMcp.port}): ACTIVE`,
-          `- Public Endpoint : ${activeMcp.publicUrl}`,
-          `- Local Target   : ${activeMcp.localUrl}`,
-          `- Tool Mode      : ${activeMcp.toolMode === "dangerous" ? "FULL (37 tools)" : "SAFE (read-only)"}`,
-          `- Auth Mode      : ${activeMcp.authMode || "static-bearer"}`,
-          `- Process PID    : ${activeMcp.pid}`,
-          `- Uptime         : ${activeMcp.uptimeSeconds}s`,
-          "",
-          `To stop it, run: /muse tunnel stop --mcp-port ${activeMcp.port}`,
-        ].join("\n"),
-        timestamp: now,
-      });
-      return;
-    }
-
-    if (mcpStatusRequested) {
-      ctx.addLine({
-        type: "system",
-        content: `MCP Server via Tunnel Status (port ${effectivePort}): INACTIVE\nRun '/muse tunnel start --mcp' to launch.`,
-        timestamp: now,
-      });
-      return;
-    }
-
     const reportPort = portOverride || existing.port;
     const titlePrefix = reportPort
-      ? `Cloudflare Quick Tunnel Status (port ${reportPort}):`
-      : "Cloudflare Quick Tunnel Status:";
+      ? `Muse WebSocket Tunnel Status (port ${reportPort}):`
+      : "Muse WebSocket Tunnel Status:";
 
     if (existing.isRunning) {
       ctx.addLine({
@@ -1129,75 +717,56 @@ export async function handleMuseTunnelSubcommand(
     return;
   }
 
-  // Fallback: Guide & Subcommands overview
-  const currentStatus = getTunnelStatus();
+  // Muse-only guide & subcommands overview.
+  const currentStatusRaw = getTunnelStatus();
+  const currentStatus = currentStatusRaw.serviceKind === "muse-websocket"
+    ? currentStatusRaw
+    : { ...currentStatusRaw, isRunning: false };
   const statusPrefix = currentStatus.isRunning
-    ? `[Cloudflare Tunnel] Quick tunnel is ACTIVE (PID: ${currentStatus.pid}, URL: ${currentStatus.publicUrl})\n\n`
+    ? `[Muse WebSocket Tunnel] ACTIVE (PID: ${currentStatus.pid}, URL: ${currentStatus.publicUrl})\n\n`
     : "";
 
   const guide = [
     "═════════════════════════════════════════════════════════════════════════════",
-    "  Tunnel Setup & Ephemeral Subcommands for Muse & MCP Clients",
+    "  Muse WebSocket Tunnel Setup & Subcommands",
     "═════════════════════════════════════════════════════════════════════════════",
     "",
     "Subcommands:",
-    "  /muse tunnel list            - List all currently active tunnels",
-    "  /muse tunnel start           - Start quick ephemeral tunnel in background (optional: --port <n>)",
-    "  /muse tunnel start --https   - Start Cloudflare HTTPS tunnel for Superagent REST/SSE server (port 7888)",
-    "  /muse tunnel start --mcp     - Start MCP server via tunnel (Streamable HTTP, port 9227)",
-    "  /muse tunnel start --mcp --provider openai - Start MCP server via OpenAI Secure MCP Tunnel (tunnel-client)",
-    "  /muse tunnel start --mcp --tunnel-id <id>  - Start OpenAI Secure MCP Tunnel with specified ID",
-    "  /muse tunnel start --mcp --mcp-auth oauth  - Start MCP server via tunnel with OAuth 2.1 + PKCE",
-    "  /muse tunnel stop            - Stop running quick tunnel (optional: --port <n> or all)",
-    "  /muse tunnel stop --https    - Stop Cloudflare HTTPS tunnel (port 7888)",
-    "  /muse tunnel stop --mcp      - Stop active MCP server tunnel (port 9227)",
-    "  /muse tunnel restart         - Restart active tunnel and watch daemon",
-    "  /muse tunnel restart --mcp   - Restart active MCP server tunnel (port 9227)",
-    "  /muse tunnel status          - Check current tunnel status (optional: --port <n>)",
-    "  /muse tunnel status --https  - Check Cloudflare HTTPS tunnel status (port 7888)",
-    "  /muse tunnel status --mcp    - Check MCP server tunnel status (port 9227)",
-    "  /muse tunnel doctor          - Diagnose tunnel prerequisites (cloudflared, tunnel-client, credentials)",
-    "  /muse tunnel msg <message>   - Send message to connected Muse via tunnel",
-    "  /muse tunnel prompt          - View and copy connection prompt for Muse without starting",
-    "  /muse tunnel prompt --mcp    - View MCP server tunnel connection details and client config",
-    "  /muse tunnel guide           - View full tunnel setup guide",
-    "  /tunnel start [--https] [--mcp] [--provider <cf|openai>] - Shortcut for quick tunnels",
+    "  /muse tunnel list            - List active Muse WebSocket tunnels only",
+    "  /muse tunnel start           - Start Muse WebSocket watcher and Cloudflare tunnel",
+    "  /muse tunnel start --port <n> - Use a custom WebSocket port",
+    "  /muse tunnel stop            - Stop Muse WebSocket tunnel(s) only",
+    "  /muse tunnel stop all        - Stop all Muse WebSocket tunnels only",
+    "  /muse tunnel restart         - Restart Muse WebSocket tunnel and watcher",
+    "  /muse tunnel status          - Check Muse WebSocket tunnel status",
+    "  /muse tunnel doctor          - Diagnose Muse WebSocket/Cloudflare prerequisites",
+    "  /muse tunnel msg <message>   - Send a chat message to connected Muse",
+    "  /muse tunnel prompt          - View/copy the Muse connection prompt",
+    "  /muse tunnel guide           - Show this Muse-only setup guide",
+    "  /tunnel                     - Deprecated Muse-only alias for /muse tunnel",
     "",
     "1. Prerequisites:",
-    "   - Cloudflare Tunnel: Install cloudflared: winget install Cloudflare.cloudflared (or brew install cloudflared)",
-    "   - OpenAI Secure MCP: Install tunnel-client: npm i -g @openai/tunnel-client (or official binary)",
-    "                        Set CONTROL_PLANE_API_KEY in environment or configure openai provider in /login",
+    "   - Install cloudflared: winget install Cloudflare.cloudflared (or brew install cloudflared)",
     "",
-    "2. Quick Ephemeral Cloudflare Tunnel (Development):",
+    "2. Quick ephemeral Cloudflare tunnel:",
     `   cloudflared tunnel --url http://${host}:${port}`,
     `   Connect Muse over WSS to: wss://<subdomain>.trycloudflare.com${pathEndpoint}`,
     "",
-    "3. OpenAI Secure MCP Tunnel (ChatGPT / Responses API):",
-    "   /muse tunnel start --mcp --provider openai",
-    "   Or specify a custom tunnel ID: /muse tunnel start --mcp --provider openai --tunnel-id my-agent-tunnel",
-    "",
-    "4. Production Ingress config (~/.cloudflared/config.yml):",
+    "3. Production ingress example (~/.cloudflared/config.yml):",
     "   ingress:",
     "     - hostname: muse.yourdomain.com",
     `       service: ws://${host}:${port}`,
     "     - service: http_status:404",
     "",
-    "5. Edge Security (Zero Trust Access):",
-    "   Set Service Token in Superagent:",
+    "4. Optional Cloudflare Access Service Token:",
     "   /muse config cfAccessClientId <CLIENT_ID>",
     "   /muse config cfAccessClientSecret <CLIENT_SECRET>",
     "",
-    "6. Multi-Project & Multi-Tunnel Isolation:",
-    "   - Run multiple tunnels on separate ports concurrently:",
-    "     Terminal 1 (Project A): /muse tunnel start",
-    "     Terminal 2 (Project B): /muse tunnel start --port 9226",
-    "   - Or watch multiple projects under a single tunnel:",
-    "     /muse watch <dir1> <dir2> --tunnel",
+    "5. Multiple Muse workspaces:",
+    "   - Start on separate ports: /muse tunnel start and /muse tunnel start --port 9226",
+    "   - Or watch several projects under one Muse session: /muse watch <dir1> <dir2> --tunnel",
     "",
-    "7. Authentication Token:",
-    `   Authorization: Bearer ${token}`,
-    "",
-    "8. Start Daemon with Tunnel:",
+    "6. Start the Muse watch daemon with a tunnel:",
     "   /muse watch --tunnel",
     "═════════════════════════════════════════════════════════════════════════════",
   ];

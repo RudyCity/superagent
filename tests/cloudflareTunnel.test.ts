@@ -176,7 +176,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
         try { fs.unlinkSync(mcpStateFile); } catch {}
       }
     });
-    it("MCP-only slash command does not generate a Muse token or change transport", async () => {
+    it("legacy MCP flags are rejected by Muse without changing Muse config", async () => {
       const { loadRemoteAgentConfig } = await import("../src/core/remoteAgent/config.js");
       const before = loadRemoteAgentConfig();
       const lines: any[] = [];
@@ -188,7 +188,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
 
       expect(after.wsToken).toBe(before.wsToken);
       expect(after.transport).toBe(before.transport);
-      expect(lines.some((line) => String(line.content).includes("Invalid --mcp-auth value"))).toBe(true);
+      expect(lines.some((line) => String(line.content).includes("Use /mcp tunnel"))).toBe(true);
     });
 
     it("MCP-only CLI command does not generate a Muse token or change transport", async () => {
@@ -207,7 +207,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(after.transport).toBe(before.transport);
     });
 
-    it("should return tunnel status via /muse tunnel status", async () => {
+    it("should return Muse WebSocket tunnel status via /muse tunnel status", async () => {
       const lines: any[] = [];
       await museCommand.execute("tunnel status", {
         addLine: (line) => lines.push(line),
@@ -215,7 +215,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       } as any);
 
       expect(lines.length).toBeGreaterThan(0);
-      expect(lines[0].content).toContain("Cloudflare Quick Tunnel Status: INACTIVE");
+      expect(lines[0].content).toContain("Muse WebSocket Tunnel Status: INACTIVE");
     });
 
     it("should report when stopping an inactive tunnel via /muse tunnel stop", async () => {
@@ -296,7 +296,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       spy.mockRestore();
     });
 
-    it("should list /muse and /tunnel with --https in main /help output", async () => {
+    it("should show separate Muse, MCP, Telegram, and REST/SSE domains in main /help", async () => {
       const { helpCommand } = await import("../src/core/commands/coreCommands.js");
       const lines: any[] = [];
       await helpCommand.execute("", {
@@ -306,10 +306,11 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
 
       expect(lines.length).toBeGreaterThan(0);
       const helpText = String(lines[0].content);
-      expect(helpText).toContain("/muse");
       expect(helpText).toContain("/muse tunnel");
-      expect(helpText).toContain("/tunnel");
-      expect(helpText).toContain("--https");
+      expect(helpText).toContain("/mcp");
+      expect(helpText).toContain("/telegram");
+      expect(helpText).toContain("/server tunnel");
+      expect(helpText).toContain("Deprecated Muse-only alias");
     });
   });
 
@@ -536,7 +537,8 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
         exit: () => {},
       } as any);
       expect(stopLines.some((l) => l.content.includes("Stopped"))).toBe(true);
-      expect(stopLines.some((l) => l.content.includes("across all workspaces"))).toBe(true);
+      expect(stopLines.some((l) => l.content.includes("Muse WebSocket tunnel(s)"))).toBe(true);
+      expect(stopLines.some((l) => l.content.includes("MCP and Telegram services were not changed"))).toBe(true);
       stopSpy.mockRestore();
 
       clearTunnelState();
@@ -571,119 +573,47 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(descriptions["/muse tunnel stop all"]).toBeDefined();
     });
 
-    it("should provide autocomplete suggestions and descriptions for --https subcommands", () => {
+    it("keeps REST/SSE tunnel suggestions under /server instead of Muse aliases", () => {
       const tunnelSuggestions = getDashboardSuggestions("/tunnel ");
-      expect(tunnelSuggestions).toContain("/tunnel start --https");
-      expect(tunnelSuggestions).toContain("/tunnel --https");
-
-      const flagSuggestions = getDashboardSuggestions("/tunnel --");
-      expect(flagSuggestions).toContain("/tunnel --https");
-      expect(flagSuggestions).toContain("/tunnel start --https");
-
-      const startSuggestions = getDashboardSuggestions("/tunnel start ");
-      expect(startSuggestions).toContain("/tunnel start --https");
-
-      const stopSuggestions = getDashboardSuggestions("/tunnel stop ");
-      expect(stopSuggestions).toContain("/tunnel stop --https");
-
-      const statusSuggestions = getDashboardSuggestions("/tunnel status ");
-      expect(statusSuggestions).toContain("/tunnel status --https");
+      expect(tunnelSuggestions.some((item) => /--https|--mcp|--provider|--tunnel-id/.test(item))).toBe(false);
 
       const museStartSuggestions = getDashboardSuggestions("/muse tunnel start ");
-      expect(museStartSuggestions).toContain("/muse tunnel start --https");
+      expect(museStartSuggestions).toContain("/muse tunnel start");
+      expect(museStartSuggestions.some((item) => /--https|--mcp|--provider|--tunnel-id/.test(item))).toBe(false);
+
+      const serverSuggestions = getDashboardSuggestions("/server tunnel");
+      expect(serverSuggestions).toContain("/server tunnel start");
 
       const descriptions = getSuggestionDescriptions();
-      expect(descriptions["/tunnel"]).toContain("--https");
-      expect(descriptions["/tunnel --https"]).toBeDefined();
-      expect(descriptions["/tunnel start --https"]).toBeDefined();
-      expect(descriptions["/tunnel stop --https"]).toBeDefined();
-      expect(descriptions["/tunnel status --https"]).toBeDefined();
-      expect(descriptions["/muse tunnel"]).toContain("--https");
-      expect(descriptions["/muse tunnel --https"]).toBeDefined();
-      expect(descriptions["/muse tunnel start --https"]).toBeDefined();
+      expect(descriptions["/tunnel"]).toContain("Deprecated Muse-only alias");
+      expect(descriptions["/tunnel start --https"]).toContain("/server tunnel");
+      expect(descriptions["/muse tunnel --https"]).toContain("/server tunnel");
     });
 
-    it("should provide autocomplete suggestions and descriptions for --mcp and --mcp-auth subcommands and flags", () => {
-      const tunnelSuggestions = getDashboardSuggestions("/tunnel ");
-      expect(tunnelSuggestions).toContain("/tunnel start --mcp");
-      expect(tunnelSuggestions).toContain("/tunnel start --mcp --mcp-auth oauth");
-      expect(tunnelSuggestions).toContain("/tunnel --mcp");
-      expect(tunnelSuggestions).toContain("/tunnel stop --mcp");
-      expect(tunnelSuggestions).toContain("/tunnel status --mcp");
-      expect(tunnelSuggestions).toContain("/tunnel restart --mcp");
-      expect(tunnelSuggestions).toContain("/tunnel prompt --mcp");
+    it("suggests MCP tunnel flags only under /mcp tunnel", () => {
+      const legacyTunnelSuggestions = getDashboardSuggestions("/tunnel ");
+      expect(legacyTunnelSuggestions.some((item) => /--mcp|--provider|--tunnel-id|--mcp-auth/.test(item))).toBe(false);
 
       const museTunnelSuggestions = getDashboardSuggestions("/muse tunnel ");
-      expect(museTunnelSuggestions).toContain("/muse tunnel start --mcp");
-      expect(museTunnelSuggestions).toContain("/muse tunnel start --mcp --mcp-auth oauth");
-      expect(museTunnelSuggestions).toContain("/muse tunnel --mcp");
-      expect(museTunnelSuggestions).toContain("/muse tunnel stop --mcp");
-      expect(museTunnelSuggestions).toContain("/muse tunnel status --mcp");
-      expect(museTunnelSuggestions).toContain("/muse tunnel restart --mcp");
-      expect(museTunnelSuggestions).toContain("/muse tunnel prompt --mcp");
+      expect(museTunnelSuggestions.some((item) => /--mcp|--provider|--tunnel-id|--mcp-auth|--https/.test(item))).toBe(false);
 
-      const flagSuggestions = getDashboardSuggestions("/tunnel --");
-      expect(flagSuggestions).toContain("/tunnel --mcp");
-      expect(flagSuggestions).toContain("/tunnel start --mcp");
-      expect(flagSuggestions).toContain("/tunnel start --mcp --mcp-auth oauth");
+      const museStartSuggestions = getDashboardSuggestions("/muse tunnel start ");
+      expect(museStartSuggestions.some((item) => /--mcp|--provider|--tunnel-id|--mcp-auth|--https/.test(item))).toBe(false);
 
-      const museFlagSuggestions = getDashboardSuggestions("/muse tunnel --");
-      expect(museFlagSuggestions).toContain("/muse tunnel --mcp");
-      expect(museFlagSuggestions).toContain("/muse tunnel start --mcp");
-      expect(museFlagSuggestions).toContain("/muse tunnel start --mcp --mcp-auth oauth");
+      const mcpTunnelSuggestions = getDashboardSuggestions("/mcp tunnel");
+      expect(mcpTunnelSuggestions).toContain("/mcp tunnel providers");
+      expect(mcpTunnelSuggestions).toContain("/mcp tunnel start --provider cloudflare");
+      expect(mcpTunnelSuggestions).toContain("/mcp tunnel start --provider openai --tunnel-id");
 
-      const startSuggestions = getDashboardSuggestions("/muse tunnel start ");
-      expect(startSuggestions).toContain("/muse tunnel start --mcp");
-      expect(startSuggestions).toContain("/muse tunnel start --mcp --mcp-auth oauth");
-      expect(startSuggestions).toContain("/muse tunnel start --mcp --mcp-auth static-bearer");
-      expect(startSuggestions).toContain("/muse tunnel start --mcp --allow-dangerous");
-      expect(startSuggestions).toContain("/muse tunnel start --mcp --mcp-port 9227");
-
-      const mcpPrefixSuggestions = getDashboardSuggestions("/muse tunnel start --m");
-      expect(mcpPrefixSuggestions).toContain("/muse tunnel start --mcp");
-      expect(mcpPrefixSuggestions).toContain("/muse tunnel start --mcp --mcp-auth oauth");
-
-      const mcpAuthSuggestions = getDashboardSuggestions("/muse tunnel start --mcp --mcp-auth ");
-      expect(mcpAuthSuggestions).toContain("/muse tunnel start --mcp --mcp-auth oauth");
-      expect(mcpAuthSuggestions).toContain("/muse tunnel start --mcp --mcp-auth static-bearer");
-
-      const mcpOAuthFilter = getDashboardSuggestions("/muse tunnel start --mcp --mcp-auth oa");
-      expect(mcpOAuthFilter).toContain("/muse tunnel start --mcp --mcp-auth oauth");
-
-      const mcpOAuthFollowup = getDashboardSuggestions("/muse tunnel start --mcp --mcp-auth oauth ");
-      expect(mcpOAuthFollowup).toContain("/muse tunnel start --mcp --mcp-auth oauth --allow-dangerous");
-      expect(mcpOAuthFollowup).toContain("/muse tunnel start --mcp --mcp-auth oauth --mcp-port 9227");
-
-      const stopSuggestions = getDashboardSuggestions("/muse tunnel stop ");
-      expect(stopSuggestions).toContain("/muse tunnel stop --mcp");
-
-      const statusSuggestions = getDashboardSuggestions("/muse tunnel status ");
-      expect(statusSuggestions).toContain("/muse tunnel status --mcp");
-
-      const restartSuggestions = getDashboardSuggestions("/muse tunnel restart ");
-      expect(restartSuggestions).toContain("/muse tunnel restart --mcp");
-      expect(restartSuggestions).toContain("/muse tunnel restart --mcp --mcp-auth oauth");
-
-      const promptSuggestions = getDashboardSuggestions("/muse tunnel prompt ");
-      expect(promptSuggestions).toContain("/muse tunnel prompt --mcp");
+      const mcpAuthSuggestions = getDashboardSuggestions("/mcp tunnel start --mcp-auth ");
+      expect(mcpAuthSuggestions).toContain("/mcp tunnel start --mcp-auth oauth");
+      expect(mcpAuthSuggestions).toContain("/mcp tunnel start --mcp-auth static-bearer");
 
       const descriptions = getSuggestionDescriptions();
-      expect(descriptions["/tunnel"]).toContain("--mcp");
-      expect(descriptions["/tunnel --mcp"]).toBeDefined();
-      expect(descriptions["/tunnel start --mcp"]).toBeDefined();
-      expect(descriptions["/tunnel start --mcp --mcp-auth oauth"]).toBeDefined();
-      expect(descriptions["/tunnel stop --mcp"]).toBeDefined();
-      expect(descriptions["/tunnel status --mcp"]).toBeDefined();
-      expect(descriptions["/tunnel restart --mcp"]).toBeDefined();
-      expect(descriptions["/tunnel prompt --mcp"]).toBeDefined();
-      expect(descriptions["/muse tunnel"]).toContain("--mcp");
-      expect(descriptions["/muse tunnel --mcp"]).toBeDefined();
-      expect(descriptions["/muse tunnel start --mcp"]).toBeDefined();
-      expect(descriptions["/muse tunnel start --mcp --mcp-auth oauth"]).toBeDefined();
-      expect(descriptions["/muse tunnel stop --mcp"]).toBeDefined();
-      expect(descriptions["/muse tunnel status --mcp"]).toBeDefined();
-      expect(descriptions["/muse tunnel restart --mcp"]).toBeDefined();
-      expect(descriptions["/muse tunnel prompt --mcp"]).toBeDefined();
+      expect(descriptions["/muse tunnel"]).not.toContain("--mcp");
+      expect(descriptions["/muse tunnel --mcp"]).toContain("/mcp tunnel");
+      expect(descriptions["/tunnel"]).toContain("Deprecated Muse-only alias");
+      expect(descriptions["/mcp tunnel providers"]).toBeDefined();
     });
 
     it("should permit trycloudflare.com and localhost origins in resolveCorsOrigin for HTTPS tunnel", async () => {
@@ -694,7 +624,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(resolveCorsOrigin("https://evil-hacker.com")).toBeUndefined();
     });
 
-    it("should report HTTPS tunnel status and existing session via /muse tunnel start --https", async () => {
+    it("redirects REST/SSE exposure from /muse tunnel to the server domain", async () => {
       const { saveTunnelState, clearTunnelState } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
       saveTunnelState({
         pid: await spawnTunnelFixture(7888),
@@ -711,18 +641,16 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
         exit: () => {},
       } as any);
 
-      expect(lines.length).toBeGreaterThan(0);
       const text = lines.map((l) => l.content).join("\n");
-      expect(text).toContain("https://my-https-agent.trycloudflare.com");
-      expect(text).toContain("7888");
-      expect(text).toContain("curl -H");
+      expect(text).toContain("/server tunnel start");
+      expect(text).not.toContain("curl -H");
 
       clearTunnelState(7888);
     });
 
-    it("should handle /tunnel status --https and /tunnel stop --https", async () => {
+    it("manages REST/SSE tunnel status and stop via /server tunnel", async () => {
       const { saveTunnelState, clearTunnelState, cloudflareTunnel } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
-      const { tunnelCommand } = await import("../src/core/commands/museCommand.js");
+      const { serverCommand } = await import("../src/core/commands/serverCommand.js");
 
       saveTunnelState({
         pid: await spawnTunnelFixture(7888),
@@ -734,7 +662,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       }, 7888);
 
       const statusLines: any[] = [];
-      await tunnelCommand.execute("status --https", {
+      await serverCommand.execute("tunnel status", {
         addLine: (line) => statusLines.push(line),
         exit: () => {},
       } as any);
@@ -745,7 +673,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
 
       const stopSpy = vi.spyOn(cloudflareTunnel, "stopQuickTunnel").mockResolvedValue(true);
       const stopLines: any[] = [];
-      await tunnelCommand.execute("stop --https", {
+      await serverCommand.execute("tunnel stop", {
         addLine: (line) => stopLines.push(line),
         exit: () => {},
       } as any);
@@ -755,7 +683,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       clearTunnelState(7888);
     });
 
-    it("should handle CLI command superagent muse tunnel status --https", async () => {
+    it("redirects legacy Muse CLI REST/SSE flags to the dedicated server tunnel command", async () => {
       const { saveTunnelState, clearTunnelState } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
       const { handleMuseCliCommand } = await import("../src/core/remoteAgent/museCli.js");
 
@@ -770,22 +698,24 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
 
       const logs: string[] = [];
       const origLog = console.log;
+      const origError = console.error;
       console.log = (...args: any[]) => logs.push(args.join(" "));
+      console.error = (...args: any[]) => logs.push(args.join(" "));
 
       try {
         await handleMuseCliCommand(["tunnel", "status", "--https"]);
       } finally {
         console.log = origLog;
+        console.error = origError;
         clearTunnelState(7888);
       }
 
       const logText = logs.join("\n");
-      expect(logText).toContain("ACTIVE");
-      expect(logText).toContain("https://cli-test-https.trycloudflare.com");
-      expect(logText).toContain("7888");
+      expect(logText).toContain("/server tunnel status");
+      expect(logText).not.toContain("https://cli-test-https.trycloudflare.com");
     });
 
-    it("should report ACTIVE HTTPS watch mode via /muse watch status when HTTPS tunnel is running", async () => {
+    it("does not report REST/SSE tunnel state as Muse watch state", async () => {
       const { saveTunnelState, clearTunnelState } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
       const { museCommand } = await import("../src/core/commands/museCommand.js");
 
@@ -804,26 +734,22 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
         exit: () => {},
       } as any);
 
-      expect(lines.length).toBeGreaterThan(0);
       const text = lines.map((l) => l.content).join("\n");
-      expect(text).toContain("Muse Watch Mode: ACTIVE");
-      expect(text).toContain("https://watch-https-test.trycloudflare.com");
-      expect(text).toContain("7888");
+      expect(text).toContain("INACTIVE");
+      expect(text).not.toContain("https://watch-https-test.trycloudflare.com");
+      expect(text).not.toContain("Muse Watch Mode: ACTIVE");
 
       clearTunnelState(7888);
     });
 
-    it("should provide autocomplete suggestions for /muse watch --https", () => {
-      const watchSuggestions = getDashboardSuggestions("/muse watch ");
-      expect(watchSuggestions).toContain("/muse watch --https");
-
-      const descriptions = getSuggestionDescriptions();
-      expect(descriptions["/muse watch --https"]).toBeDefined();
-    });
-
-    it("should stop active HTTPS tunnel via /muse watch stop", async () => {
-      const { saveTunnelState, clearTunnelState, cloudflareTunnel } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
+    it("does not suggest REST/SSE options in Muse watch and does not stop server tunnels", async () => {
+      const { saveTunnelState, clearTunnelState, cloudflareTunnel, getTunnelStatus } = await import("../src/core/remoteAgent/cloudflareTunnel.js");
       const { museCommand } = await import("../src/core/commands/museCommand.js");
+
+      const watchSuggestions = getDashboardSuggestions("/muse watch ");
+      expect(watchSuggestions).not.toContain("/muse watch --https");
+      expect(watchSuggestions).not.toContain("/muse watch --ws --tg-fallback");
+      expect(getSuggestionDescriptions()["/muse watch --https"]).toContain("/server tunnel");
 
       saveTunnelState({
         pid: await spawnTunnelFixture(7888),
@@ -841,8 +767,9 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
         exit: () => {},
       } as any);
 
-      expect(stopSpy).toHaveBeenCalledWith(7888, "superagent-http");
-      expect(lines.some((l) => l.content.includes("stopped successfully"))).toBe(true);
+      expect(stopSpy).not.toHaveBeenCalled();
+      expect(getTunnelStatus(7888).isRunning).toBe(true);
+      expect(lines.some((l) => l.content.includes("REST/SSE services were not changed"))).toBe(true);
 
       stopSpy.mockRestore();
       clearTunnelState(7888);
@@ -1050,7 +977,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
   });
 
   describe("Comprehensive Muse & Tunnel Subcommands & Help Output Suite", () => {
-    it("should display full subcommands including tunnel in /muse default help", async () => {
+    it("should display Muse-only commands and direct users to separate domains", async () => {
       const lines: any[] = [];
       await museCommand.execute("", {
         addLine: (line) => lines.push(line),
@@ -1061,10 +988,10 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       const text = lines[0].content;
       expect(text).toContain("Usage: /muse <task description>");
       expect(text).toContain("/muse status");
-      expect(text).toContain("/muse tunnel");
       expect(text).toContain("/muse tunnel list");
       expect(text).toContain("/muse tunnel start");
       expect(text).toContain("/muse tunnel stop");
+      expect(text).toContain("/muse tunnel stop all");
       expect(text).toContain("/muse tunnel restart");
       expect(text).toContain("/muse tunnel status");
       expect(text).toContain("/muse tunnel prompt");
@@ -1078,8 +1005,10 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(text).toContain("/muse new");
       expect(text).toContain("/muse reset");
       expect(text).toContain("/muse config");
-      expect(text).toContain("/tunnel [subcommand]");
-      expect(text).toContain("/tunnels");
+      expect(text).toContain("/telegram help");
+      expect(text).toContain("/mcp tunnel providers");
+      expect(text).toContain("/server tunnel");
+      expect(text).not.toContain("/muse tunnel start --mcp");
     });
 
     it("should display full subcommands on /muse help and /muse -h", async () => {
@@ -1102,7 +1031,7 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       expect(linesDashH[0].content).toContain("/muse tunnel");
     });
 
-    it("should display complete WebSocket and Cloudflare settings on /muse config", async () => {
+    it("should display Muse-specific WebSocket settings and exclude Telegram credentials", async () => {
       const lines: any[] = [];
       await museCommand.execute("config", {
         addLine: (line) => lines.push(line),
@@ -1111,7 +1040,11 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
 
       expect(lines.length).toBeGreaterThan(0);
       const text = lines[0].content;
-      ["Remote Agent Configuration:", "transport", "wsPort", "wsHost", "wsToken", "wsMode", "cfAccessClientId", "autoTokenRefresh", "botToken", "defaultWorkspace"].forEach((k) => expect(text).toContain(k));
+      ["Muse Configuration:", "transport", "wsPort", "wsHost", "wsToken", "wsMode", "cfAccessClientId", "autoTokenRefresh", "defaultWorkspace"].forEach((k) => expect(text).toContain(k));
+      expect(text).toContain("/telegram config");
+      expect(text).not.toContain("botToken");
+      expect(text).not.toContain("groupId");
+      expect(text).not.toContain("museBotId");
     });
 
     it("should run diagnostic checks on /muse doctor", async () => {

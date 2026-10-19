@@ -22,13 +22,14 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
   if (subcommand === "status") {
     const cfg = loadRemoteAgentConfig();
     const transport = cfg.transport || "telegram";
-    const isTelegramConfigured = Boolean(cfg.botToken && cfg.groupId && cfg.museBotId);
     const isWsConfigured = isMuseWsActive();
-    const isConfigured = transport === "websocket" ? isWsConfigured : isTelegramConfigured;
+    const configuredLabel = transport === "websocket"
+      ? (isWsConfigured ? "Yes" : "No (run: superagent muse tunnel start)")
+      : "Telegram adapter selected (run /telegram status to verify Telegram)";
     const watched = getWatchedWorkspaces(cfg);
 
     console.log("Remote Agent (Muse) Status:");
-    console.log(`  Configured      : ${isConfigured ? "Yes" : "No (run: superagent muse config)"}`);
+    console.log(`  Configured      : ${configuredLabel}`);
     console.log(`  Transport       : ${transport.toUpperCase()}`);
     console.log(`  Runner Mode     : ${cfg.asRunner ? "ENABLED (normal terminal prompts route to Muse)" : "DISABLED"}`);
 
@@ -60,9 +61,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         console.log(`  Remote URL      : ${cfg.wsRemoteUrl || "(not set)"}`);
       }
     } else {
-      console.log(`  Bot Token       : ${maskToken(cfg.botToken)}`);
-      console.log(`  Telegram Group  : ${cfg.groupId || "(not set)"}`);
-      console.log(`  Muse Bot ID     : ${cfg.museBotId || "(not set)"}`);
+      console.log("  Telegram Health : not checked here (run /telegram status).");
     }
 
     if (watched.length > 1) {
@@ -73,35 +72,55 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     }
     console.log("");
     console.log("Commands & Configuration:");
-    console.log("  superagent muse tunnel           - Cloudflare Tunnel setup guide & config");
-    console.log("  superagent muse tunnel list      - List all currently active Cloudflare quick tunnels");
-    console.log("  superagent muse tunnel start     - Start quick ephemeral Cloudflare Tunnel (optional: --port <n>)");
-    console.log("  superagent muse tunnel stop      - Stop running ephemeral tunnel (optional: --port <n> or all)");
-    console.log("  superagent muse tunnel status    - Check Cloudflare Tunnel process status (optional: --port <n>)");
+    console.log("  superagent muse tunnel           - Muse WebSocket tunnel help and connection prompt");
+    console.log("  superagent muse tunnel list      - List Muse WebSocket tunnels only");
+    console.log("  superagent muse tunnel start     - Start Muse WebSocket tunnel (optional: --port <n>)");
+    console.log("  superagent muse tunnel stop      - Stop Muse WebSocket tunnel(s) only");
+    console.log("  superagent muse tunnel status    - Check Muse WebSocket tunnel status");
     console.log("  superagent muse watch --ws       - Watch projects via WebSocket");
-    console.log("  superagent muse watch --tunnel   - Watch projects and expose via Cloudflare Tunnel");
-    console.log("  superagent muse watch --tg-fallback - Also activate Telegram as fallback transport");
+    console.log("  superagent muse watch --tunnel   - Watch projects and expose Muse via Cloudflare Tunnel");
+    console.log("  superagent telegram              - Direct Telegram status/send/config (use /telegram in the TUI)");
+    console.log("  superagent mcp tunnel            - Manage MCP tunnel providers and lifecycle");
+    console.log("  REST/SSE tunnel options           - Use /server tunnel; MCP options belong under superagent mcp tunnel");
     console.log("  superagent muse config transport websocket|telegram");
     console.log("  superagent muse config wsToken generate");
     console.log("  superagent muse config wsPort 9225");
     console.log("  superagent muse watch <dir1> <dir2> ...");
+    console.log("  Telegram operations: /telegram status|doctor|send|config|fallback in the TUI.");
+    console.log("  MCP tunnel providers: superagent mcp tunnel providers.");
+    console.log("  REST/SSE exposure: /server tunnel in the TUI.");
     return;
   }
 
   if (subcommand === "tunnel" || subcommand === "cloudflare") {
-    const isHttps = args.some((a) => a.toLowerCase() === "--https" || a.toLowerCase() === "--http" || a.toLowerCase() === "--web");
+    const normalizedArgs = args.map((a) => a.toLowerCase());
+    const mcpFlags = new Set(["--mcp", "--mcp-port", "--mcp-auth", "--provider", "--tunnel-id", "--api-key", "--control-plane-key", "--profile", "--openai", "--openai-tunnel", "--allow-dangerous"]);
+    const misplacedMcpFlag = normalizedArgs.find((a) => mcpFlags.has(a));
+    if (misplacedMcpFlag) {
+      console.error(`MCP option "${misplacedMcpFlag}" is not supported under "superagent muse tunnel". Use "superagent mcp tunnel" instead.`);
+      return;
+    }
+    const isHttps = args.some((a) => ["--https", "--http", "--web"].includes(a.toLowerCase()));
+    if (isHttps) {
+      const nonFlagArgs = args.slice(1).filter((a) => !a.startsWith("-"));
+      const action = (nonFlagArgs[0] || "start").toLowerCase();
+      console.error(`REST/SSE exposure is managed separately. Use /server tunnel ${action}.`);
+      return;
+    }
+    if (normalizedArgs.some((a) => ["--tg-fallback", "--telegram-fallback"].includes(a))) {
+      console.error("Telegram fallback is managed separately. Use /telegram fallback start|stop.");
+      return;
+    }
     const nonFlagArgs = args.slice(1).filter((a) => !a.startsWith("-"));
-    const action = (nonFlagArgs[0] || (isHttps ? "start" : "guide")).toLowerCase();
+    const action = (nonFlagArgs[0] || "guide").toLowerCase();
     const cfg = loadRemoteAgentConfig();
     const host = cfg.wsHost || "127.0.0.1";
     const port = cfg.wsPort || 9225;
     const pathEndpoint = cfg.wsPath || "/muse";
     let token = cfg.wsToken;
-    const mcpOnlyRequested = args.some((a) => a.toLowerCase() === "--mcp");
     const needsMuseToken = ["start", "quick", "run", "dev", "prompt", "url", "link"].includes(action);
 
-    // MCP-only and informational commands must not change Muse transport/configuration.
-    if (!token && !isHttps && !mcpOnlyRequested && needsMuseToken) {
+    if (!token && needsMuseToken) {
       token = generateSecureWsToken();
       updateRemoteAgentConfig({ wsToken: token, transport: "websocket" });
       console.log(`[Muse Security] Generated new Bearer token: ${token}\n`);
@@ -124,12 +143,9 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     } = await import("./museWatcher.js");
 
     if (action === "list" || action === "ls" || action === "active") {
-      const tunnels = listActiveTunnels();
-      const { listActiveMcpServers, formatActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+      const tunnels = listActiveTunnels().filter((t) => t.serviceKind === "muse-websocket");
       console.log("");
       console.log(formatActiveTunnels(tunnels));
-      console.log("");
-      console.log(formatActiveMcpServers(listActiveMcpServers()));
       console.log("");
       return;
     }
@@ -487,20 +503,27 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     }
 
     if (action === "stop") {
-      const { stopMuseWatcher, isMuseWatcherActive, stopAllMuseWatchers } = await import("./museWatcher.js");
-      const { stopQuickTunnel, stopAllQuickTunnels, getTunnelStatus, listActiveTunnels, clearWsRemoteUrl } = await import("./cloudflareTunnel.js");
+      const { stopMuseWatcher, isMuseWatcherActive } = await import("./museWatcher.js");
+      const { stopQuickTunnel, getTunnelStatus, listActiveTunnels, clearWsRemoteUrl } = await import("./cloudflareTunnel.js");
 
       const isAll = args.includes("all") || args.includes("--all") || args.includes("-a");
       if (isAll) {
-        const museTunnelUrls = listActiveTunnels()
-          .filter((t) => t.serviceKind === "muse-websocket" && t.wssUrl)
-          .map((t) => t.wssUrl!);
-        const watcherCount = await stopAllMuseWatchers();
-        const count = await stopAllQuickTunnels();
-        for (const wssUrl of museTunnelUrls) clearWsRemoteUrl(wssUrl);
-        const { stopAllMcpServers } = await import("../mcp/mcpTunnel.js");
-        await stopAllMcpServers();
-        console.log(`[Cloudflare Tunnel] Stopped ${count} quick tunnel${count === 1 ? "" : "s"} and ${watcherCount} watch daemon${watcherCount === 1 ? "" : "s"} across all workspaces.`);
+        const museTunnels = listActiveTunnels().filter((t) => t.serviceKind === "muse-websocket");
+        const { stopOwnedMuseTunnel } = await import("./museWatcherTunnel.js");
+        let watcherCount = 0;
+        for (const tunnel of museTunnels) {
+          if (isMuseWatcherActive(tunnel.port)) {
+            await stopMuseWatcher(tunnel.port);
+            watcherCount++;
+          }
+          if (tunnel.wssUrl) clearWsRemoteUrl(tunnel.wssUrl);
+          await stopOwnedMuseTunnel(tunnel.port);
+        }
+        if (museTunnels.length === 0 && isMuseWatcherActive()) {
+          await stopMuseWatcher();
+          watcherCount++;
+        }
+        console.log(`[Muse Tunnel] Stopped ${museTunnels.length} Muse WebSocket tunnel(s) and ${watcherCount} associated watcher(s). MCP and Telegram services were not changed.`);
         return;
       }
 
@@ -590,13 +613,12 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
       }
 
-      const effectivePort = portOverride || (isHttps ? 7888 : port);
+      const effectivePort = portOverride || port;
       let existing = getTunnelStatus(effectivePort);
-      if (!existing.isRunning && !portOverride && !isHttps) {
-        const active = listActiveTunnels();
-        if (active.length > 0) {
-          existing = { isRunning: true, ...active[0] };
-        }
+      if (existing.serviceKind !== "muse-websocket") existing = { ...existing, isRunning: false };
+      if (!existing.isRunning && !portOverride) {
+        const active = listActiveTunnels().filter((t) => t.serviceKind === "muse-websocket");
+        if (active.length > 0) existing = { isRunning: true, ...active[0] };
       }
 
       if (isHttps) {
@@ -620,34 +642,11 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         return;
       }
 
-      const wantMcpStatus = args.some((a) => a.toLowerCase() === "--mcp");
-      const { listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
-      const mcpServers = listActiveMcpServers();
-      const activeMcp = mcpServers.find((m) => m.port === (portOverride || existing.port || effectivePort)) || (wantMcpStatus ? mcpServers[0] : undefined);
 
-      if (activeMcp) {
-        console.log([
-          `MCP Server via Tunnel Status (port ${activeMcp.port}): ACTIVE`,
-          `  Public Endpoint   : ${activeMcp.publicUrl}`,
-          `  Local Target      : ${activeMcp.localUrl}`,
-          `  Tool Mode         : ${activeMcp.toolMode === "dangerous" ? "FULL (37 tools)" : "SAFE (read-only)"}`,
-          `  Auth Mode         : ${activeMcp.authMode || "static-bearer"}`,
-          `  Process PID       : ${activeMcp.pid}`,
-          `  Uptime            : ${activeMcp.uptimeSeconds}s`,
-          "",
-          `  To stop it, run: superagent muse tunnel stop --mcp-port ${activeMcp.port}`
-        ].join("\n"));
-        return;
-      }
-
-      if (wantMcpStatus) {
-        console.log(`MCP Server via Tunnel Status (port ${effectivePort}): INACTIVE\n  Run 'superagent muse tunnel start --mcp' to launch.`);
-        return;
-      }
 
       if (existing.isRunning) {
         console.log([
-          `Cloudflare Quick Tunnel Status${portOverride ? ` (port ${portOverride})` : ""}: ACTIVE`,
+          `Muse WebSocket Tunnel Status${portOverride ? ` (port ${portOverride})` : ""}: ACTIVE`,
           `  Public URL        : ${existing.publicUrl}`,
           `  WSS Endpoint      : ${existing.wssUrl}`,
           `  Local Target      : ${existing.localUrl}`,
@@ -656,7 +655,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
           `  Bearer Token      : ${token ? maskSecret(token) : "(none)"}`
         ].join("\n"));
       } else {
-        console.log(`Cloudflare Quick Tunnel Status${portOverride ? ` (port ${portOverride})` : ""}: INACTIVE\n  Run 'superagent muse tunnel start${portOverride ? ` --port ${portOverride}` : ""}' to launch a quick development tunnel.`);
+        console.log(`Muse WebSocket Tunnel Status${portOverride ? ` (port ${portOverride})` : ""}: INACTIVE\n  Run 'superagent muse tunnel start${portOverride ? ` --port ${portOverride}` : ""}' to launch.`);
       }
       return;
     }
@@ -668,23 +667,20 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
     console.log([
       "═════════════════════════════════════════════════════════════════════════════",
-      "  Cloudflare Tunnel Setup & Ephemeral Subcommands for Muse",
+      "  Muse WebSocket Tunnel Setup & Subcommands",
       "═════════════════════════════════════════════════════════════════════════════",
       "",
       "Subcommands:",
-      "  superagent muse tunnel list            - List all active quick tunnels across all ports",
-      "  superagent muse tunnel start           - Start quick ephemeral tunnel (foreground, optional: --port <n>)",
-      "  superagent muse tunnel start --mcp     - Start MCP server via tunnel (Streamable HTTP, port 9227)",
-      "  superagent muse tunnel start --https   - Start Cloudflare HTTPS tunnel for Superagent REST/SSE server (port 7888)",
-      "  superagent muse tunnel start --detach  - Start quick ephemeral tunnel in background (optional: --port <n>)",
-      "  superagent muse tunnel stop            - Stop running ephemeral tunnel (optional: --port <n> or all)",
-      "  superagent muse tunnel stop --mcp      - Stop active MCP server tunnel (port 9227)",
-      "  superagent muse tunnel stop --https    - Stop Cloudflare HTTPS tunnel (port 7888)",
-      "  superagent muse tunnel status          - Check current tunnel status (optional: --port <n>)",
-      "  superagent muse tunnel status --mcp    - Check MCP server tunnel status (port 9227)",
-      "  superagent muse tunnel status --https  - Check Cloudflare HTTPS tunnel status (port 7888)",
-      "  superagent muse tunnel prompt          - View and copy connection prompt for Muse without starting",
-      "  superagent muse tunnel guide           - View full manual Cloudflare setup guide",
+      "  superagent muse tunnel list            - List Muse WebSocket tunnels only",
+      "  superagent muse tunnel start           - Start Muse WebSocket tunnel (foreground, optional: --port <n>)",
+      "  superagent muse tunnel start --detach  - Start Muse WebSocket tunnel in background (optional: --port <n>)",
+      "  superagent muse tunnel stop            - Stop Muse WebSocket tunnel(s) only",
+      "  superagent muse tunnel stop all        - Stop Muse WebSocket tunnels only",
+      "  superagent muse tunnel status          - Check Muse WebSocket tunnel status (optional: --port <n>)",
+      "  superagent muse tunnel prompt          - View/copy connection prompt for Muse",
+      "  superagent muse tunnel guide           - View Muse-only Cloudflare setup guide",
+      "  REST/SSE tunnel: /server tunnel",
+      "  MCP tunnel providers: superagent mcp tunnel providers",
       "",
       "1. Prerequisites:",
       "   Install cloudflared: winget install Cloudflare.cloudflared (or brew install cloudflared)",
@@ -716,12 +712,9 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       const cfg = loadRemoteAgentConfig();
       const watched = getWatchedWorkspaces(cfg);
       console.log([
-        "Current Remote Agent Configuration:",
+        "Muse Configuration:",
         `  transport        : ${cfg.transport || "telegram"}`,
         `  as_runner_model  : ${cfg.asRunner ? "on (enabled)" : "off (disabled)"}`,
-        `  botToken         : ${maskToken(cfg.botToken)}`,
-        `  groupId          : ${cfg.groupId || "(not set)"}`,
-        `  museBotId        : ${cfg.museBotId || "(not set)"}`,
         `  wsPort           : ${cfg.wsPort || 9225}`,
         `  wsHost           : ${cfg.wsHost || "127.0.0.1"}`,
         `  wsToken          : ${maskSecret(cfg.wsToken)}`,
@@ -769,11 +762,14 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
       return;
     }
 
+    const telegramConfigKeys = new Set(["bottoken", "bot_token", "token", "groupid", "group_id", "chatid", "chat_id", "musebotid", "muse_bot_id"]);
+    if (telegramConfigKeys.has(key)) {
+      console.error(`Telegram credentials are managed separately. Use /telegram config ${key} <value> in the TUI.`);
+      return;
+    }
+
     const validKeys: Record<string, keyof RemoteAgentConfig> = {
       transport: "transport",
-      bottoken: "botToken", bot_token: "botToken",
-      groupid: "groupId", group_id: "groupId",
-      musebotid: "museBotId", muse_bot_id: "museBotId",
       defaultworkspace: "defaultWorkspace", default_workspace: "defaultWorkspace",
       asrunner: "asRunner", as_runner: "asRunner", asrunnermodel: "asRunner", as_runner_model: "asRunner", defaultrunner: "asRunner", default_runner: "asRunner",
       wsport: "wsPort", ws_port: "wsPort", port: "wsPort",
@@ -866,6 +862,15 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
   if (subcommand === "watch" || subcommand === "unwatch") {
     const action = subcommand === "unwatch" ? "stop" : (args[1]?.toLowerCase() || "start");
+    const lowerArgs = args.map((arg) => arg.toLowerCase());
+    if (lowerArgs.some((arg) => ["--https", "--http", "--web"].includes(arg))) {
+      console.error("Muse watch does not manage REST/SSE exposure. Use /server tunnel in the TUI.");
+      return;
+    }
+    if (lowerArgs.some((arg) => ["--tg-fallback", "--telegram-fallback"].includes(arg))) {
+      console.error("Telegram fallback is managed separately. Use /telegram fallback start|stop in the TUI.");
+      return;
+    }
     const { startMuseWatcher, stopMuseWatcher, isMuseWatcherActive, getMuseWatcher } = await import("./museWatcher.js");
 
     if (action === "stop") {

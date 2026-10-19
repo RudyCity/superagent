@@ -178,4 +178,22 @@ describe("MCP tunnel startup ownership and rollback", () => {
     expect(mocks.stopQuickTunnel).toHaveBeenCalledWith(19332, "mcp-http");
     expect(handle.close).toHaveBeenCalledOnce();
   });
+
+  it("refuses to switch an active Cloudflare MCP server to OpenAI on the same port", async () => {
+    const port = 19333;
+    const handle = { url: `http://127.0.0.1:${port}/mcp`, close: vi.fn().mockResolvedValue(undefined) };
+    mocks.getTunnelStatus.mockReturnValue({ isRunning: false });
+    mocks.startMcpHttpServer.mockResolvedValue(handle);
+
+    await startMcpTunnel({ port });
+
+    await expect(startMcpTunnel({
+      port,
+      tunnelProvider: "openai",
+      tunnelId: "tunnel_0123456789abcdef0123456789abcdef",
+    })).rejects.toThrow("already running with the cloudflare tunnel provider");
+
+    expect(mocks.startMcpHttpServer).toHaveBeenCalledOnce();
+    await stopMcpTunnel(port);
+  });
 });

@@ -19,40 +19,36 @@ export async function handleMuseWatchSubcommand(
 ): Promise<void> {
   const subcommand = (parts[0] || "").toLowerCase();
   const action = subcommand === "unwatch" ? "stop" : (parts[1]?.toLowerCase() || "start");
+  const hasServerExposureFlag = parts.some((p) => ["--https", "--http", "--web"].includes(p.toLowerCase()));
+  if (hasServerExposureFlag) {
+    ctx.addLine({ type: "error", content: "Muse watch no longer manages REST/SSE exposure. Use /server tunnel for the HTTP server.", timestamp: now });
+    return;
+  }
+  const hasTelegramFallbackFlag = parts.some((p) => ["--tg-fallback", "--telegram-fallback"].includes(p.toLowerCase()));
+  if (hasTelegramFallbackFlag) {
+    ctx.addLine({ type: "error", content: "Telegram fallback is managed independently. Use /telegram fallback start|stop.", timestamp: now });
+    return;
+  }
   const {
     startMuseWatcher,
     stopMuseWatcher,
     isMuseWatcherActive,
     getMuseWatcher,
-    TELEGRAM_FALLBACK_KEY,
   } = await import("../remoteAgent/museWatcher.js");
 
   if (action === "stop") {
-    let stoppedAny = false;
-    if (isMuseWatcherActive()) {
-      await stopMuseWatcher();
-      stoppedAny = true;
-    }
-    if (isMuseWatcherActive(TELEGRAM_FALLBACK_KEY)) {
-      await stopMuseWatcher(TELEGRAM_FALLBACK_KEY);
-      stoppedAny = true;
-    }
-    const { getTunnelStatus, stopQuickTunnel } = await import("../remoteAgent/cloudflareTunnel.js");
-    const httpsTunnel = getTunnelStatus(7888);
-    if (httpsTunnel.isRunning && httpsTunnel.serviceKind === "superagent-http") {
-      stoppedAny = await stopQuickTunnel(7888, "superagent-http");
-    }
-    if (!stoppedAny) {
+    if (!isMuseWatcherActive()) {
       ctx.addLine({
         type: "system",
-        content: "[Muse Watch] Watch mode is not currently running.",
+        content: "[Muse Watch] Muse watch mode is not currently running. Telegram fallback and REST/SSE services were not changed.",
         timestamp: now,
       });
       return;
     }
+    await stopMuseWatcher();
     ctx.addLine({
       type: "system",
-      content: "[Muse Watch] Watch mode stopped successfully.",
+      content: "[Muse Watch] Muse watch mode stopped. Telegram fallback and REST/SSE services were not changed.",
       timestamp: now,
     });
     return;
@@ -61,35 +57,11 @@ export async function handleMuseWatchSubcommand(
   if (action === "status") {
     const watcher = getMuseWatcher();
     const stats = watcher?.getStats();
-    const { getTunnelStatus } = await import("../remoteAgent/cloudflareTunnel.js");
-    const httpsTunnel = getTunnelStatus(7888);
 
     if (!stats || !stats.isRunning) {
-      if (httpsTunnel.isRunning) {
-        const { getServerAuthToken } = await import("../utils/serverSecurity.js");
-        const serverToken = getServerAuthToken();
-        ctx.addLine({
-          type: "system",
-          content: [
-            "Muse Watch Mode: ACTIVE (HTTPS REST/SSE Server)",
-            `- Transport         : HTTP REST/SSE Server (port ${httpsTunnel.port || 7888})`,
-            `- Public HTTPS URL  : ${httpsTunnel.publicUrl}`,
-            `- Local Target      : ${httpsTunnel.localUrl || `http://127.0.0.1:${httpsTunnel.port || 7888}`}`,
-            `- Server Port       : ${httpsTunnel.port || 7888}`,
-            `- Process PID       : ${httpsTunnel.pid}`,
-            `- Uptime            : ${httpsTunnel.uptimeSeconds}s`,
-            `- Bearer Token      : ${serverToken}`,
-            "",
-            "Run '/muse watch stop' or '/muse tunnel stop --https' to stop.",
-          ].join("\n"),
-          timestamp: now,
-        });
-        return;
-      }
-
       ctx.addLine({
         type: "system",
-        content: "[Muse Watch] Watch mode is INACTIVE. Run '/muse watch' or '/muse watch start' to activate.",
+        content: "[Muse Watch] Watch mode is INACTIVE. Run '/muse watch' or '/muse watch start' to activate. Use /telegram fallback status or /server tunnel status to inspect other services.",
         timestamp: now,
       });
       return;
@@ -161,27 +133,28 @@ export async function handleMuseWatchSubcommand(
     return;
   }
 
-  // Collect directories and flags: /muse watch [start] [--ws] [--tunnel] [--https] [--tg-fallback] [dir1] [dir2] ...
+  // Collect Muse-only watch options. Telegram fallback and REST/SSE exposure
+  // are managed by their own command domains.
   const isWs = parts.some((p) => p === "--ws" || p === "--websocket");
   const isTg = parts.some((p) => p === "--telegram" || p === "--tg");
   const isTunnel = parts.some((p) => p === "--tunnel" || p === "--quick-tunnel");
-  const isHttps = parts.some((p) => p === "--https" || p === "--http" || p === "--web");
-  const isTgFallback = parts.some((p) => p === "--tg-fallback" || p === "--telegram-fallback");
   const portArgIdx = parts.findIndex((p) => p === "--port" || p === "-p");
   let portOverride: number | undefined;
   if (portArgIdx !== -1 && parts[portArgIdx + 1]) {
     const parsed = parseInt(parts[portArgIdx + 1], 10);
-    if (!isNaN(parsed) && parsed > 0) portOverride = parsed;
+    if (!isNaN(parsed) && parsed > 0 && parsed < 65536) portOverride = parsed;
+    else {
+      ctx.addLine({ type: "error", content: "Invalid --port. Use an integer between 1 and 65535.", timestamp: now });
+      return;
+    }
   }
 
   const cfg = loadRemoteAgentConfig();
-  const transportType: RemoteAgentTransport = isHttps
-    ? "https"
-    : (isWs || isTunnel)
-      ? "websocket"
-      : isTg
-        ? "telegram"
-        : (cfg.transport || "telegram");
+  const transportType: RemoteAgentTransport = (isWs || isTunnel)
+    ? "websocket"
+    : isTg
+      ? "telegram"
+      : (cfg.transport || "telegram");
 
   const rawDirs = parts.slice(1).filter((p) => {
     if (p.toLowerCase() === "start") return false;
@@ -192,13 +165,8 @@ export async function handleMuseWatchSubcommand(
       p === "--tg" ||
       p === "--tunnel" ||
       p === "--quick-tunnel" ||
-      p === "--https" ||
-      p === "--http" ||
-      p === "--web" ||
       p === "--port" ||
-      p === "-p" ||
-      p === "--tg-fallback" ||
-      p === "--telegram-fallback"
+      p === "-p"
     )
       return false;
     if (portArgIdx !== -1 && (p === parts[portArgIdx + 1])) return false;
@@ -239,9 +207,9 @@ export async function handleMuseWatchSubcommand(
       workspace: allWatched[0] || ctx.agent?.workingDirectory || process.cwd(),
       workspaces: allWatched,
       transportType,
-      tunnel: isTunnel || isHttps,
-      isHttps: isHttps,
-      wsPort: portOverride || (isHttps ? 7888 : undefined),
+      tunnel: isTunnel,
+      isHttps: false,
+      wsPort: portOverride,
       agent: ctx.agent,
       onProgress: (msg) => {
         ctx.addLine({
@@ -293,34 +261,7 @@ export async function handleMuseWatchSubcommand(
   try {
     await startMuseWatcher(primaryWatcherOptions);
 
-    // Optional Telegram fallback: run a second watcher on the Telegram transport
-    // so Muse stays reachable when the primary transport drops.
-    if (isTgFallback && transportType !== "telegram") {
-      if (!isMuseWatcherActive(TELEGRAM_FALLBACK_KEY)) {
-        try {
-          await startMuseWatcher({
-            ...primaryWatcherOptions,
-            transportType: "telegram",
-            fallback: true,
-            tunnel: false,
-            isHttps: false,
-            wsPort: undefined,
-          });
-          ctx.addLine({
-            type: "system",
-            content:
-              "[Muse Watch] Telegram fallback transport is ACTIVE \u2014 Muse stays reachable via Telegram if the primary transport drops.",
-            timestamp: Date.now(),
-          });
-        } catch (fallbackErr: any) {
-          ctx.addLine({
-            type: "error",
-            content: `[Muse Watch] Telegram fallback failed to start: ${fallbackErr.message}`,
-            timestamp: Date.now(),
-          });
-        }
-      }
-    }
+
   } catch (err: any) {
     ctx.addLine({
       type: "error",

@@ -1,6 +1,7 @@
 import { SlashCommand } from "./types.js";
 import { loadModelConfig, saveModelConfig } from "../config/jsonConfig.js";
 import { initMcpServers, connectedServers } from "../mcp/McpManager.js";
+import { getMcpTunnelProvidersHelp } from "./commandCatalog.js";
 import { registry } from "./registry.js";
 
 export const mcpCommand: SlashCommand = {
@@ -262,6 +263,11 @@ export const mcpCommand: SlashCommand = {
       const tunnelAction = (parts[1] || "list").toLowerCase();
       const rawArgs = parts.slice(2);
 
+      if (tunnelAction === "providers") {
+        ctx.addLine({ type: "system", content: getMcpTunnelProvidersHelp(), timestamp: now });
+        return;
+      }
+
       if (tunnelAction === "list" || tunnelAction === "status") {
         const { listActiveMcpServers, formatActiveMcpServers } = await import("../mcp/mcpTunnel.js");
         ctx.addLine({
@@ -273,6 +279,25 @@ export const mcpCommand: SlashCommand = {
       }
 
       if (tunnelAction === "doctor") {
+        const providerIdx = rawArgs.findIndex((a) => a === "--provider");
+        const provider = providerIdx === -1 ? "openai" : rawArgs[providerIdx + 1]?.toLowerCase();
+        if (provider !== "openai" && provider !== "cloudflare") {
+          ctx.addLine({ type: "error", content: "Unsupported MCP tunnel doctor provider. Use --provider openai or --provider cloudflare.", timestamp: now });
+          return;
+        }
+        if (provider === "cloudflare") {
+          const { findCloudflaredBinary } = await import("../remoteAgent/cloudflareTunnel.js");
+          const binary = await findCloudflaredBinary();
+          const { listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+          const active = listActiveMcpServers().filter((server) => server.tunnelProvider === "cloudflare");
+          const lines = [
+            "Cloudflare MCP Tunnel Doctor",
+            "- cloudflared: " + (binary || "NOT FOUND"),
+            "- Active Cloudflare MCP tunnels: " + active.length,
+          ];
+          ctx.addLine({ type: binary ? "system" : "error", content: lines.join("\n"), timestamp: now });
+          return;
+        }
         const { runTunnelClientDoctor } = await import("../mcp/openaiTunnelClient.js");
         const profileIdx = rawArgs.findIndex((a) => a === "--profile");
         const profile = profileIdx !== -1 ? rawArgs[profileIdx + 1] : undefined;
@@ -281,13 +306,43 @@ export const mcpCommand: SlashCommand = {
         const apiKeyIdx = rawArgs.findIndex((a) => a === "--api-key" || a === "--control-plane-key");
         const apiKey = apiKeyIdx !== -1 ? rawArgs[apiKeyIdx + 1] : undefined;
 
-        ctx.addLine({ type: "system", content: "Running tunnel-client doctor check...", timestamp: now });
+        ctx.addLine({ type: "system", content: "Running OpenAI Secure MCP tunnel-client doctor check...", timestamp: now });
         const docResult = await runTunnelClientDoctor({ profile, tunnelId, apiKey });
         ctx.addLine({
           type: docResult.success ? "system" : "error",
-          content: `[tunnel-client doctor]\n${docResult.output}`,
+          content: "[OpenAI tunnel-client doctor]\n" + docResult.output,
           timestamp: Date.now(),
         });
+        return;
+      }
+
+      if (tunnelAction === "restart") {
+        const portIdx = rawArgs.findIndex((a) => a === "--port" || a === "--mcp-port" || a === "-p");
+        let port = 9227;
+        if (portIdx !== -1 && rawArgs[portIdx + 1]) {
+          const parsed = Number.parseInt(rawArgs[portIdx + 1], 10);
+          if (!Number.isInteger(parsed) || parsed <= 0 || parsed >= 65536) {
+            ctx.addLine({ type: "error", content: "Invalid MCP tunnel port.", timestamp: now });
+            return;
+          }
+          port = parsed;
+        }
+        const { listActiveMcpServers, stopMcpTunnel } = await import("../mcp/mcpTunnel.js");
+        const active = listActiveMcpServers().find((server) => server.port === port);
+        if (active?.pid && active.pid !== process.pid) {
+          ctx.addLine({ type: "error", content: "MCP tunnel on port " + port + " is owned by PID " + active.pid + ". Stop/restart it from its owning SuperAgent instance.", timestamp: now });
+          return;
+        }
+        const restartArgs = [...rawArgs];
+        const hasProvider = restartArgs.includes("--provider") || restartArgs.includes("--openai") || restartArgs.includes("--openai-tunnel") || restartArgs.includes("--tunnel-id");
+        if (active && !hasProvider) {
+          restartArgs.push("--provider", active.tunnelProvider || "cloudflare");
+          if (active.tunnelProvider === "openai" && active.openAiTunnelId) restartArgs.push("--tunnel-id", active.openAiTunnelId);
+        }
+        if (active?.authMode && !restartArgs.includes("--mcp-auth")) restartArgs.push("--mcp-auth", active.authMode);
+        if (active?.toolMode === "dangerous" && !restartArgs.includes("--allow-dangerous")) restartArgs.push("--allow-dangerous");
+        if (active) await stopMcpTunnel(port);
+        await mcpCommand.execute("tunnel start " + restartArgs.join(" "), ctx);
         return;
       }
 
@@ -318,9 +373,17 @@ export const mcpCommand: SlashCommand = {
         const providerIdx = rawArgs.findIndex((a) => a === "--provider");
         const wantOpenAi = rawArgs.some((a) => a === "--openai" || a === "--openai-tunnel");
         let provider: "cloudflare" | "openai" = wantOpenAi ? "openai" : "cloudflare";
-        if (providerIdx !== -1 && rawArgs[providerIdx + 1]) {
-          const p = rawArgs[providerIdx + 1].toLowerCase();
-          if (p === "openai" || p === "cloudflare") provider = p;
+        if (providerIdx !== -1) {
+          const p = rawArgs[providerIdx + 1]?.toLowerCase();
+          if (p !== "openai" && p !== "cloudflare") {
+            ctx.addLine({
+              type: "error",
+              content: `Unsupported MCP tunnel provider "${rawArgs[providerIdx + 1] || "(missing)"}". Supported providers: cloudflare, openai. See /mcp tunnel providers.`,
+              timestamp: now,
+            });
+            return;
+          }
+          provider = p;
         }
         const tunnelIdIdx = rawArgs.findIndex((a) => a === "--tunnel-id");
         let tunnelId: string | undefined;
@@ -389,7 +452,7 @@ export const mcpCommand: SlashCommand = {
 
       ctx.addLine({
         type: "error",
-        content: `Unknown tunnel action "${tunnelAction}". Available: start, stop, list, status, doctor`,
+        content: `Unknown tunnel action "${tunnelAction}". Available: providers, start, stop, restart, list, status, doctor`,
         timestamp: now,
       });
       return;

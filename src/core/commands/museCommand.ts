@@ -4,7 +4,6 @@ import type { SlashCommand, SlashCommandContext, ChatLine } from "./types.js";
 import {
   loadRemoteAgentConfig,
   updateRemoteAgentConfig,
-  maskToken,
   maskSecret,
   isMuseWsActive,
   RemoteAgentConfig,
@@ -29,27 +28,7 @@ export const museCommand: SlashCommand = {
     if (subcommand === "status") {
       const cfg = loadRemoteAgentConfig();
       const workspace = cfg.defaultWorkspace || ctx.agent?.workingDirectory || process.cwd();
-      const isConfigured = Boolean(cfg.botToken && cfg.groupId && cfg.museBotId);
-
-      let botInfoStr = "";
-      let privacyInfo = "";
-      if (cfg.botToken) {
-        try {
-          const { MuseClient } = await import("../remoteAgent/museClient.js");
-          const client = new MuseClient(cfg);
-          const me = await client.getMeInfo();
-          if (me.ok) {
-            botInfoStr = ` (@${me.username || me.firstName})`;
-            if (me.canReadGroupMessages === false) {
-              privacyInfo = "- Group Privacy   : ENABLED (WARNING: Telegram blocks non-reply messages! Run /setprivacy -> @bot -> Disable in @BotFather)\n";
-            } else {
-              privacyInfo = "- Group Privacy   : DISABLED (OK: Bot reads all group messages)\n";
-            }
-          } else {
-            botInfoStr = ` (Error: ${me.error})`;
-          }
-        } catch {}
-      }
+      // Telegram credentials and Bot API health are intentionally owned by /telegram.
 
       const watchedWorkspaces = getWatchedWorkspaces(cfg, ctx.agent?.workingDirectory);
       const wsStatusStr = watchedWorkspaces.length > 1
@@ -57,19 +36,22 @@ export const museCommand: SlashCommand = {
         : `- Workspace       : ${workspace}`;
 
       const transport = cfg.transport || "telegram";
-      const isConfiguredEffective = transport === "websocket" ? isMuseWsActive() : isConfigured;
+      const configuredLabel = transport === "websocket"
+        ? (isMuseWsActive() ? "Yes" : "No (run /muse watch or /muse tunnel start)")
+        : "Telegram adapter selected (run /telegram status to verify Telegram)";
 
       const { getTunnelStatus, listActiveTunnels } = await import("../remoteAgent/cloudflareTunnel.js");
-      const activeTunnels = listActiveTunnels();
+      // Muse status must not accidentally display the MCP or SuperAgent REST/SSE tunnel.
+      const activeTunnels = listActiveTunnels().filter((t) => t.serviceKind === "muse-websocket");
       const defaultPort = cfg.wsPort || 9225;
-      const wsTunnel = getTunnelStatus(defaultPort);
-      const httpsTunnel = getTunnelStatus(7888);
-      const firstActive = activeTunnels[0];
+      const wsTunnelRaw = getTunnelStatus(defaultPort);
+      const wsTunnel = wsTunnelRaw.serviceKind === "muse-websocket"
+        ? wsTunnelRaw
+        : { ...wsTunnelRaw, isRunning: false };
+      const firstMuseTunnel = activeTunnels[0];
       const tunnelStatus = wsTunnel.isRunning
         ? wsTunnel
-        : (httpsTunnel.isRunning
-          ? httpsTunnel
-          : (firstActive ? { isRunning: true, ...firstActive } : wsTunnel));
+        : (firstMuseTunnel ? { isRunning: true, ...firstMuseTunnel } : wsTunnel);
 
       const tunnelHeader = activeTunnels.length > 1
         ? `ACTIVE (${activeTunnels.length} running: ${activeTunnels.map((t) => `port ${t.port}`).join(", ")})`
@@ -92,54 +74,48 @@ export const museCommand: SlashCommand = {
             cfg.wsMode === "client" ? `- Remote URL      : ${cfg.wsRemoteUrl || "(not set)"}` : null,
           ].filter(Boolean) as string[]
         : [
-            `- Transport       : TELEGRAM`,
-            `- Bot Token       : ${maskToken(cfg.botToken)}${botInfoStr}`,
-            privacyInfo ? privacyInfo.trimEnd() : null,
-            `- Telegram Group  : ${cfg.groupId || "(not set)"}`,
-            `- Muse Bot ID     : ${cfg.museBotId || "(not set)"}`,
+            "- Transport       : TELEGRAM adapter selected",
+            "- Telegram health : not checked here (run /telegram status)",
           ];
 
       const lines = [
         "Remote Agent (Muse) Status:",
-        `- Configured      : ${isConfiguredEffective ? "Yes" : "No (run /muse config)"}`,
+        `- Configured      : ${configuredLabel}`,
         `- Runner Mode     : ${cfg.asRunner ? "ENABLED (All terminal prompts automatically route to Muse)" : "DISABLED (type /muse <task> to coordinate with Muse)"}`,
         ...transportLines,
         wsStatusStr,
         "",
         "Architecture:",
-        "- Muse acts as the remote cognitive brain over WebSocket (Cloudflare Tunnel) or Telegram bus.",
-        "- Superagent acts as the local hands, executing batches of file/read/edit tools in a secure sandbox.",
+        "- Muse manages remote task coordination, watch sessions, and its own WebSocket connection.",
+        "- Direct Telegram operations live under /telegram; MCP tunnel providers live under /mcp tunnel.",
         "",
         "Usage:",
-        "  /muse <task>                 - Run a task with remote Muse brain",
-        "  /muse status                 - View remote agent status",
-        "  /muse tunnel                 - Cloudflare Tunnel setup guide & config",
-        "  /muse tunnel list            - List all currently active Cloudflare tunnels",
-        "  /muse tunnel start           - Start quick ephemeral Cloudflare Tunnel (optional: --port <n>)",
-        "  /muse tunnel --tg-fallback   - Also activate Telegram as fallback transport",
-        "  /muse tunnel start --mcp      - MCP server ONLY via tunnel, no WSS (opts: --mcp-port <n>, --allow-dangerous, --mcp-auth static-bearer|oauth)",
-        "  /muse tunnel stop            - Stop active Cloudflare Tunnel (optional: --port <n> or all)",
-        "  /muse tunnel msg <text>       - Send a chat message to Muse via the tunnel",
-        "  ESC (tunnel active)          - Open tunnel menu: stop / message Muse / continue",
-        "  /muse tunnel restart         - Restart active Cloudflare Tunnel and watch daemon",
-        "  /muse tunnel status          - Check Cloudflare Tunnel process status (optional: --port <n>)",
-        "  /muse tunnel prompt          - View and copy connection prompt for Muse",
-        "  /muse watch [dir1] [dir2]    - Watch one or multiple project workspaces",
-        "  /muse watch --ws             - Watch projects using secure WebSocket transport",
-        "  /muse watch --tunnel         - Watch projects and expose via Cloudflare Tunnel",
-        "  /muse watch --tg-fallback    - Also activate Telegram as fallback transport",
-        "  /muse watch add <dir>        - Add project to active watch session",
-        "  /muse watch remove <dir>     - Remove project from active watch session",
-        "  /muse stop                   - Cancel active remote task and notify Muse",
-        "  /muse cancel                 - Cancel active remote task and notify Muse",
-        "  /muse msg <text>             - Send chat message directly to Telegram group (aliases: /muse send, /muse tg)",
-        "  /muse steer <msg>            - Intervene and steer Muse with counter-instructions (alias: /muse chat)",
-        "  /muse doctor                 - Run diagnostic checks (cloudflared, ports, credentials)",
-        "  /muse connect                - Test connection to remote Muse endpoint",
-        "  /muse new                    - Reset remote session memory",
-        "  /muse reset                  - Reset remote session memory",
-        "  /muse config                 - View current remote agent configuration",
-        "  /muse config <key> <val>     - Set config key (transport, wsToken, wsPort, botToken, etc.)",
+        "  /muse <task>                 - Run or coordinate a task with Muse",
+        "  /muse status                 - View Muse task, watch, and WebSocket status",
+        "  /muse watch [dirs]           - Start watch mode for one or more workspaces",
+        "  /muse watch start            - Start the Muse watcher",
+        "  /muse watch stop             - Stop only the Muse watcher",
+        "  /muse watch status           - Show Muse watcher state",
+        "  /muse watch add <dir>        - Add a workspace to watch",
+        "  /muse watch remove <dir>     - Remove a watched workspace",
+        "  /muse steer <message>       - Steer an active Muse task",
+        "  /muse stop                   - Cancel an active Muse task",
+        "  /muse cancel                 - Alias for /muse stop",
+        "  /muse tunnel list            - List Muse WebSocket tunnels only",
+        "  /muse tunnel start           - Start Muse WebSocket tunnel and watcher",
+        "  /muse tunnel stop            - Stop Muse WebSocket tunnel only",
+        "  /muse tunnel restart         - Restart Muse WebSocket tunnel",
+        "  /muse tunnel status          - Check Muse WebSocket tunnel status",
+        "  /muse tunnel prompt          - View/copy connection prompt for Muse",
+        "  /muse doctor                 - Check Muse environment and watch readiness",
+        "  /muse connect                - Test the configured Muse connection",
+        "  /muse new                    - Start a fresh Muse session",
+        "  /muse reset                  - Reset remote Muse session context",
+        "  /muse config                 - View/update Muse-specific configuration",
+        "  /telegram help               - Manage Telegram bot, group, and direct messages",
+        "  /mcp tunnel providers        - List MCP tunnel providers",
+        "  /mcp tunnel start            - Start an MCP tunnel via its selected provider",
+        "  /server tunnel               - Manage SuperAgent REST/SSE exposure",
       ].filter(Boolean) as string[];
 
       ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
@@ -195,8 +171,20 @@ export const museCommand: SlashCommand = {
       return museCommand.execute(watchArgs, ctx);
     }
 
-    // /muse config [key] [val]
+    // Telegram bot configuration is maintained under /telegram; keep legacy keys as explicit forwards.
     if (subcommand === "config") {
+      const telegramKeys = new Set(["bottoken", "bot_token", "token", "groupid", "group_id", "chatid", "chat_id", "musebotid", "muse_bot_id"]);
+      const configKey = parts[1]?.toLowerCase();
+      if (configKey && telegramKeys.has(configKey)) {
+        ctx.addLine({
+          type: "system",
+          content: `[Compatibility] /muse config ${parts[1]} is deprecated; use /telegram config ${parts[1]}.`,
+          timestamp: now,
+        });
+        const { handleTelegramCommand } = await import("./telegramCommand.js");
+        await handleTelegramCommand(`config ${parts.slice(1).join(" ")}`, ctx);
+        return;
+      }
       const { handleMuseConfigSubcommand } = await import("./museConfigSubcommand.js");
       await handleMuseConfigSubcommand(parts, ctx, now);
       return;
@@ -328,7 +316,7 @@ export const museCommand: SlashCommand = {
       return;
     }
 
-    // /muse msg, /muse send, /muse message, /muse tg, /muse chat, /muse say
+    // Compatibility aliases: explicit message sends are Telegram-only now.
     if (
       subcommand === "msg" ||
       subcommand === "send" ||
@@ -341,84 +329,18 @@ export const museCommand: SlashCommand = {
       if (!text) {
         ctx.addLine({
           type: "error",
-          content: `Usage: /muse ${subcommand} <message>`,
+          content: `Deprecated alias. Usage: /telegram send <message> (legacy: /muse ${subcommand} <message>)`,
           timestamp: now,
         });
         return;
       }
-
-      const cfg = loadRemoteAgentConfig();
-      const { isMuseWatcherActive, sendMuseSteerMessage } = await import("../remoteAgent/museWatcher.js");
-      const watcherActive = isMuseWatcherActive();
-
-      let tgSent = false;
-      let tgError: string | null = null;
-
-      // 1. Direct send to Telegram group if configured
-      if (cfg.botToken && cfg.groupId) {
-        try {
-          const { MuseClient } = await import("../remoteAgent/museClient.js");
-          const client = new MuseClient(cfg);
-          tgSent = await client.sendMessage(cfg.groupId, text);
-          if (tgSent) {
-            ctx.addLine({
-              type: "system",
-              content: `[Muse Telegram] Sent message to Telegram group (${cfg.groupId}): "${text}"`,
-              timestamp: now,
-            });
-          } else {
-            tgError = `Failed to deliver message to Telegram group (${cfg.groupId}). Check bot permissions.`;
-          }
-        } catch (err: any) {
-          tgError = err?.message || String(err);
-        }
-      }
-
-      // 2. If Watcher is active, also dispatch chat envelope to Muse brain
-      if (watcherActive) {
-        try {
-          const sentBrain = await sendMuseSteerMessage(text);
-          if (sentBrain) {
-            ctx.addLine({
-              type: "system",
-              content: `[Muse Brain] Forwarded chat message to active Muse brain session.`,
-              timestamp: now,
-            });
-          }
-        } catch {}
-      }
-
-      // 3. Fallback to WebSocket tunnel chat if Telegram is not configured
-      if (!tgSent && !cfg.botToken && !cfg.groupId) {
-        try {
-          const { sendChatToMuse } = await import("../remoteAgent/museChat.js");
-          const res = await sendChatToMuse(text);
-          if (res.ok) {
-            ctx.addLine({
-              type: "system",
-              content: `[Muse Chat] ${res.detail}`,
-              timestamp: now,
-            });
-            return;
-          }
-        } catch {}
-
-        ctx.addLine({
-          type: "error",
-          content: "Remote agent is not configured for Telegram. Run /muse config botToken <token> and /muse config groupId <id>.",
-          timestamp: now,
-        });
-        return;
-      }
-
-      if (!tgSent && tgError) {
-        ctx.addLine({
-          type: "error",
-          content: `[Muse Telegram] Error sending message to Telegram: ${tgError}`,
-          timestamp: now,
-        });
-      }
-
+      ctx.addLine({
+        type: "system",
+        content: `[Compatibility] /muse ${subcommand} is deprecated; forwarding to /telegram send. This sends only to Telegram and does not steer Muse.`,
+        timestamp: now,
+      });
+      const { handleTelegramCommand } = await import("./telegramCommand.js");
+      await handleTelegramCommand(`send ${text}`, ctx);
       return;
     }
 
@@ -437,35 +359,42 @@ export const museCommand: SlashCommand = {
           "Usage: /muse <task description>",
           "Example: /muse cari semua TODO di src",
           "",
-          "Subcommands:",
-          "  /muse status                 - View remote agent, tunnel, and transport status",
-          "  /muse tunnel                 - Cloudflare Tunnel setup guide & options",
-          "  /muse tunnel list            - List all active Cloudflare tunnels",
-          "  /muse tunnel start           - Start quick ephemeral Cloudflare Tunnel & watcher",
-          "  /muse tunnel stop            - Stop active Cloudflare Tunnel (or: /muse tunnel stop all)",
-          "  /muse tunnel restart         - Restart Cloudflare Tunnel & watcher",
-          "  /muse tunnel status          - Check Cloudflare Tunnel process & public URL status",
-          "  /muse tunnel prompt          - View and copy connection prompt for Muse",
-          "  /muse watch [dirs]           - Enter watch mode (superagent controlled by Muse)",
-          "  /muse watch start            - Start watch mode daemon",
-          "  /muse watch stop             - Stop watch mode daemon",
-          "  /muse watch status           - Show watch mode statistics",
-          "  /muse watch add <dir>        - Add workspace directory to watch list",
-          "  /muse watch remove <dir>     - Remove workspace directory from watch list",
-          "  /muse steer <instruction>    - Intervene and steer active Muse task",
-          "  /muse msg <text>             - Send chat message directly to Telegram (aliases: /muse send, /muse tg, /muse chat)",
-          "  /muse doctor                 - Run diagnostic checks (cloudflared, ports, credentials)",
-          "  /muse connect                - Test connection to remote Muse endpoint",
-          "  /muse stop                   - Cancel active remote task",
-          "  /muse cancel                 - Cancel active remote task",
-          "  /muse new                    - Reset remote session memory",
-          "  /muse reset                  - Reset remote session memory",
-          "  /muse config                 - View current remote agent configuration",
-          "  /muse config <key> <value>   - Update configuration setting",
+          "Muse commands:",
+          "  /muse status                 - View Muse task, watch, and WebSocket status",
+          "  /muse watch [dirs]            - Manage Muse watch sessions and workspaces",
+          "  /muse watch start             - Start the Muse watcher",
+          "  /muse watch stop              - Stop only the Muse watcher",
+          "  /muse watch status            - Show Muse watcher state",
+          "  /muse watch add <dir>         - Add a workspace to watch",
+          "  /muse watch remove <dir>      - Remove a watched workspace",
+          "  /muse steer <instruction>    - Steer an active Muse task",
+          "  /muse stop                    - Cancel active Muse work",
+          "  /muse cancel                 - Alias for /muse stop",
+          "  /muse new                    - Start a fresh Muse session",
+          "  /muse reset                  - Reset remote Muse session memory",
+          "  /muse connect                 - Test the configured Muse connection",
+          "  /muse doctor                  - Diagnose Muse transport and watcher readiness",
+          "  /muse config                  - View/update Muse-specific configuration",
           "",
-          "Direct Shortcuts:",
-          "  /tunnel [subcommand]         - Shortcut for /muse tunnel (e.g. /tunnel start, /tunnel list)",
-          "  /tunnels                     - Shortcut to list all active tunnels",
+          "Muse WebSocket tunnel:",
+          "  /muse tunnel list             - List Muse WebSocket tunnels",
+          "  /muse tunnel start            - Start Muse WebSocket tunnel and watcher",
+          "  /muse tunnel stop             - Stop Muse WebSocket tunnel(s) only",
+          "  /muse tunnel stop all         - Stop all Muse WebSocket tunnels, never MCP/Telegram",
+          "  /muse tunnel restart          - Restart Muse WebSocket tunnel and watcher",
+          "  /muse tunnel status           - Show Muse WebSocket tunnel status",
+          "  /muse tunnel doctor           - Diagnose Muse tunnel prerequisites",
+          "  /muse tunnel prompt           - Show/copy Muse connection prompt",
+          "  /muse tunnel start --port <n> - Use a custom local port",
+          "",
+          "Separate domains:",
+          "  /telegram help                - Telegram bot/group operations and direct messaging",
+          "  /mcp tunnel providers         - MCP tunnel provider management",
+          "  /server tunnel                - SuperAgent REST/SSE tunnel management",
+          "",
+          "Compatibility:",
+          "  /muse msg <text>              - Deprecated alias for /telegram send <text>",
+          "  /tunnel                       - Deprecated Muse-only alias for /muse tunnel",
         ].join("\n"),
         timestamp: now,
       });

@@ -199,8 +199,8 @@ export const helpCommand: SlashCommand = {
         "  /memory   - Manage and inspect RMemory long-term memory",
         "              Usage: /memory [status|sync|search <query>|add <key> <val> [type]|delete <key> [project|global]|list-scenes|read-scene <path>|read-persona]",
         "              Project scope is the default; memory search is limited to the active project plus global preferences.",
-        "  /mcp      - Manage Model Context Protocol (MCP) servers and tunnels",
-        "              Usage: /mcp [list|add <name> <command> [args...]|remove <name>|reload|tunnel <start|stop|list|status|doctor>]",
+        "  /mcp      - Manage Model Context Protocol servers and MCP tunnel providers",
+        "              Usage: /mcp [list|add|add-http|remove|reload|tunnel <providers|start|stop|restart|list|status|doctor>]",
         "  /tools    - List and describe AI tools (usage: /tools [list|describe <name>|search <q>])",
         "  /macro    - Manage and run browser macros (usage: /macro [list|run <name>|delete <name>])",
         "  /gateway  - Omnichannel messaging gateway for Telegram, Discord, Slack (usage: /gateway [status|start|stop])",
@@ -211,14 +211,16 @@ export const helpCommand: SlashCommand = {
         "              /ih dev <name>   - Set workspace focus to hook development and run dev loop",
         "              /ih list         - List all discovered internal hooks and their status",
         "              /ih active       - Select which hooks to activate via checkbox dialog",
-        "  /muse     - Coordinate with remote Muse brain via WebSocket / Telegram bus",
-        "              Usage: /muse [<task>|status|tunnel|watch|config|stop|steer|new]",
-        "              Tunnel: /muse tunnel [list|start|stop|status|guide|doctor|msg] [--https] [--port <n>] [--mcp] [--provider <cloudflare|openai>] [--tunnel-id <id>]",
-        "              Watch:  /muse watch [--ws|--tunnel|--https] [--port <n>] [dir1] [dir2] (Multi-project watch)",
-        "              Steer:  /muse steer <message> (intervene & send counter-instructions to Muse)",
-        "  /tunnel   - Manage tunnels (/tunnel [list|start|stop|status|doctor|msg] [--https] [--port <n>] [--mcp] [--provider <cloudflare|openai>] [--tunnel-id <id>])",
-        "  /stop     - Stop/abort currently running tool, task, or agent (aliases: /cancel, /abort)",
-        "              Usage: /stop [optional feedback / reason]",
+        "  /muse     - Coordinate remote Muse tasks and Muse WebSocket watch sessions",
+        "              Usage: /muse [<task>|status|watch|config|stop|steer|new]",
+        "              Tunnel: /muse tunnel [list|start|stop|status|doctor|prompt] [--port <n>] (Muse WebSocket only)",
+        "              Watch:  /muse watch [--ws|--tunnel|--telegram] [--port <n>] [dir1] [dir2]",
+        "  /telegram - Manage direct Telegram bot/group operations (/telegram status|doctor|send|config|fallback)",
+        "  /server   - Manage SuperAgent REST/SSE exposure (/server tunnel start|stop|restart|status|doctor)",
+        "  /tunnel   - Deprecated Muse-only alias. Use /muse tunnel, /mcp tunnel, or /server tunnel for the matching service.",
+        "  /status   - Aggregated service health (usage: /status all)",
+        "  /stop     - Stop/abort current work; /stop all shuts down managed service connections and tunnels",
+        "              Usage: /stop [optional feedback / reason] | /stop all",
         "  /steer    - Interrupt and steer/redirect the agent with feedback (aliases: /sanggah, /intervene)",
         "              Usage: /steer <instructions/feedback> (e.g. /steer Jangan grep semua file, cari di src saja)",
         "  /yolo     - Toggle YOLO mode (scoped: project & 1 parent level; full: unrestricted system-wide)",
@@ -561,9 +563,14 @@ export const setupCommand: SlashCommand = {
 export const stopCommand: SlashCommand = {
   name: "stop",
   aliases: ["cancel", "abort"],
-  description: "Stop/interrupt currently running tool, process, task, or agent",
+  description: "Stop/interrupt current work, or stop all managed service connections and tunnels with /stop all",
   async execute(args, ctx) {
     const feedback = args.trim();
+    if (feedback.toLowerCase() === "all" || feedback.toLowerCase() === "--all") {
+      const { stopAllManagedServices } = await import("./serviceStatusCommand.js");
+      await stopAllManagedServices(ctx);
+      return;
+    }
     let abortedCount = 0;
 
     // 1. Abort subagents
