@@ -113,7 +113,7 @@ if (process.argv[2] === "mcp") {
     const res = registerToAgyConfig();
     console.log(res.message);
     process.exit(res.success ? 0 : 1);
-  } else if (["list", "ls", "add", "remove", "rm", "delete", "help", "--help", "-h"].includes(sub) || !sub) {
+  } else if (["list", "ls", "add", "add-http", "remove", "rm", "delete", "tunnel", "help", "--help", "-h"].includes(sub) || !sub) {
     const { handleMcpCliCommand } = await import("./core/commands/mcpCliHandler.js");
     await handleMcpCliCommand(process.argv.slice(3));
     process.exit(0);

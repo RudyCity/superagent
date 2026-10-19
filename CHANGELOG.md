@@ -1,3 +1,19 @@
+## [1.14.1] - 2026-10-19
+### Added
+- Integrated OpenAI Secure MCP Tunnel (`tunnel-client`) into Superagent's MCP tunnel ecosystem (`openaiTunnelClient.ts`, `mcpTunnel.ts`, `museTunnelSubcommand.ts`, `mcpCommand.ts`, `mcpCliHandler.ts`):
+  - Added OpenAI Secure MCP Tunnel client orchestration module (`src/core/mcp/openaiTunnelClient.ts`) to securely connect Superagent's local MCP servers to ChatGPT, Codex, and OpenAI's Responses API without public inbound internet ports or reverse proxies.
+  - Added automatic `tunnel-client` binary resolution across custom paths, `TUNNEL_CLIENT_PATH`, system PATH, and `~/.superagent-r/bin/`, with diagnostic installation guidance when missing.
+  - Added OpenAI control plane runtime API key resolution from options, `CONTROL_PLANE_API_KEY`, and configured OpenAI provider profiles in `model-config.json`.
+  - Added preflight health verification (`runTunnelClientDoctor`) wrapping `tunnel-client doctor --explain`.
+  - Added tunnel provider selection (`"cloudflare"` vs `"openai"`) in `startMcpTunnel`, supporting `--provider openai`, `--openai`, `--tunnel-id <id>`, `--api-key <key>`, `--profile <name>`, and `--doctor`.
+  - Added first-class `/mcp tunnel` slash command and CLI (`superagent mcp tunnel [start|stop|list|doctor]`) for managing both Cloudflare and OpenAI Secure MCP Tunnels.
+  - Added copy-paste configuration generators for ChatGPT Plugins/Connectors and OpenAI Responses API tool definitions with `tunnel_id`.
+  - Added automatic rollback on startup failure and clean process tree termination on tunnel stop.
+
+### Tests
+- Added unit and lifecycle tests in `tests/openaiTunnelClient.test.ts` for binary discovery, install instructions, credential resolution, snippet formatting, doctor checks, and process supervision.
+- Added integration tests in `tests/mcpTunnelOpenAiIntegration.test.ts` verifying OpenAI tunnel lifecycle, state file persistence, rollback on failure, and server formatting.
+
 ## [1.14.0] - 2026-10-18
 ### Added
 - Added a validated, versioned MCP Project Registry with stable project IDs and explicit list/inspect/register/update/remove tools. Local roots are canonicalized, duplicate IDs/roots are rejected, registry writes are atomic, and malformed records fail closed.

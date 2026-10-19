@@ -1,12 +1,15 @@
 /**
- * mcpTunnel.ts - MCP via Cloudflare quick tunnel.
+ * mcpTunnel.ts - MCP via Cloudflare quick tunnel or OpenAI Secure MCP Tunnel.
  *
- * Starts the local MCP-over-HTTP server and a Cloudflare quick tunnel in
- * front of it, returning the public MCP endpoint + a fresh Bearer token.
+ * Supports two tunnel providers:
+ * 1. "cloudflare" (default): Exposes local MCP HTTP server via Cloudflare quick tunnel (trycloudflare.com).
+ * 2. "openai": Exposes local MCP HTTP server to ChatGPT, Codex, and OpenAI Responses API
+ *    via OpenAI's official `tunnel-client` daemon (Secure MCP Tunnel).
  *
- * SECURITY: the Bearer token is generated per invocation, printed ONCE to the
- * terminal, and never written to disk or logs. Treat the tunnel URL as
- * public - the Bearer token is the only access control.
+ * SECURITY: in static-bearer mode, the Bearer token is generated per invocation, printed ONCE to the
+ * terminal, and never written to disk or logs. Treat public tunnel URLs as public -
+ * the Bearer token or OAuth authorization is the only access control.
+ * In OpenAI tunnel mode, connection is outbound-only to api.openai.com control plane.
  *
  * Cross-workspace listing: every started server persists a small state file
  * (~/.superagent-r/mcp-<port>.json, no secrets) so listActiveMcpServers()
@@ -34,8 +37,16 @@ import { DISABLED_MCP_TOOLS, MCP_TOOL_DEFINITIONS } from "./superagentMcpServer.
 import { generateBootstrapCode } from "./mcpOAuthRoutes.js";
 import type { McpAuthMode } from "./mcpAuth.js";
 import { getYoloModeState } from "../permissions.js";
+import {
+  startOpenAiTunnel,
+  stopOpenAiTunnel,
+  getOpenAiTunnelStatus,
+  isValidTunnelId,
+  type OpenAiTunnelStatus,
+} from "./openaiTunnelClient.js";
 
 export const DEFAULT_MCP_PORT = 9227;
+export type McpTunnelProvider = "cloudflare" | "openai";
 
 function getExposedMcpToolCount(allowDangerous: boolean): number {
   if (!allowDangerous) return getDefaultSafeTools().length;
@@ -51,12 +62,15 @@ interface ActiveMcp {
   /** True only when this invocation created the shared Quick Tunnel process. */
   ownsTunnel: boolean;
   bootstrapCode?: string;
+  tunnelProvider: McpTunnelProvider;
+  openAiTunnelId?: string;
+  openAiStatus?: OpenAiTunnelStatus;
 }
 
 const activeServers = new Map<number, ActiveMcp>();
 
 export interface McpTunnelInfo {
-  /** Public MCP endpoint, e.g. https://xxx.trycloudflare.com/mcp */
+  /** Public MCP endpoint, e.g. https://xxx.trycloudflare.com/mcp or openai-tunnel://<tunnel_id> */
   publicUrl: string;
   /** Fresh Bearer token (transient - printed once, never stored). Empty in oauth mode. */
   bearerToken: string;
@@ -71,9 +85,17 @@ export interface McpTunnelInfo {
   bootstrapCode?: string;
   /** Public OAuth discovery base URL (oauth mode only). */
   oauthDiscoveryUrl?: string;
+  /** Tunnel provider ("cloudflare" or "openai"). */
+  tunnelProvider: McpTunnelProvider;
+  /** OpenAI tunnel ID when tunnelProvider is "openai". */
+  openAiTunnelId?: string;
+  /** Local admin UI URL for tunnel-client (when tunnelProvider is "openai"). */
+  adminUrl?: string;
+  /** Whether tunnel-client has reported ready. */
+  ready?: boolean;
 }
 
-/** Disk-persisted MCP server state. NEVER contains the bearer token. */
+/** Disk-persisted MCP server state. NEVER contains the bearer token or credentials. */
 export interface McpServerState {
   port: number;
   pid: number;
@@ -84,6 +106,9 @@ export interface McpServerState {
   workspace: string;
   /** Auth mode; defaults to "static-bearer" for states written before Task 8. */
   authMode?: McpAuthMode;
+  tunnelProvider?: McpTunnelProvider;
+  openAiTunnelId?: string;
+  adminUrl?: string;
 }
 
 /** Full info for one active MCP server, including cross-workspace ones. */
@@ -133,6 +158,9 @@ export function readMcpStateFile(filePath: string): McpServerState | null {
       startedAt: typeof s.startedAt === "number" ? s.startedAt : Date.now(),
       workspace: s.workspace || "",
       authMode: s.authMode === "oauth" ? "oauth" : "static-bearer",
+      tunnelProvider: s.tunnelProvider === "openai" ? "openai" : "cloudflare",
+      openAiTunnelId: s.openAiTunnelId,
+      adminUrl: s.adminUrl,
     };
   } catch {
     return null;
@@ -144,7 +172,7 @@ function toActiveMcpInfo(s: McpServerState): ActiveMcpInfo {
   return { ...s, uptimeSeconds: Math.max(0, uptime) };
 }
 
-export async function startMcpTunnel(opts: {
+export interface StartMcpTunnelOptions {
   port?: number;
   allowDangerous?: boolean;
   auditLogPath?: string;
@@ -153,14 +181,156 @@ export async function startMcpTunnel(opts: {
   allowedOrigins?: string[];
   /** Allow requests without Origin (server-to-server). Default true. */
   allowNoOrigin?: boolean;
-}): Promise<McpTunnelInfo> {
+  /** Tunnel provider: "cloudflare" (default) or "openai". */
+  tunnelProvider?: McpTunnelProvider;
+  /** Required when tunnelProvider is "openai". Format: "tunnel_..." */
+  tunnelId?: string;
+  /** Runtime API key with Tunnels Read + Use permission for OpenAI control plane. */
+  openAiApiKey?: string;
+  /** Profile name for tunnel-client (default: "superagent-mcp"). */
+  openAiProfile?: string;
+  /** Port for healthz/readyz and admin UI (default: port + 1000). */
+  openAiHealthPort?: number;
+  /** Custom path to the tunnel-client binary. */
+  openAiBinaryPath?: string;
+  /** Whether to run in stateless embedded stub mode for testing. */
+  embeddedStub?: boolean;
+}
+
+export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<McpTunnelInfo> {
   const port = opts.port ?? DEFAULT_MCP_PORT;
   const yoloActive = getYoloModeState() !== "off";
   const dangerous = Boolean(opts.allowDangerous || yoloActive);
   const authMode: McpAuthMode = opts.authMode ?? "static-bearer";
+  const tunnelProvider: McpTunnelProvider = opts.tunnelProvider ?? "cloudflare";
 
-  // The public tunnel URL is needed up-front: OAuth discovery metadata must
-  // carry the canonical public URL from the first request.
+  // -------------------------------------------------------------
+  // OPENAI SECURE MCP TUNNEL PATH
+  // -------------------------------------------------------------
+  if (tunnelProvider === "openai") {
+    const rawTunnelId = opts.tunnelId || process.env.CONTROL_PLANE_TUNNEL_ID;
+    if (!rawTunnelId) {
+      throw new Error(
+        "OpenAI Secure MCP Tunnel requires a tunnel ID.\n" +
+        "Create one in OpenAI Platform tunnel settings (https://platform.openai.com/settings/organization/tunnels)\n" +
+        "and pass --tunnel-id <id> (e.g. tunnel_0123456789abcdef0123456789abcdef)."
+      );
+    }
+    const tunnelId = rawTunnelId.trim();
+    if (!isValidTunnelId(tunnelId)) {
+      throw new Error(
+        `Invalid OpenAI tunnel ID "${tunnelId}". Expected format like "tunnel_0123456789abcdef...".`
+      );
+    }
+
+    let active = activeServers.get(port);
+    let createdServer = false;
+
+    if (active && active.authMode !== authMode) {
+      throw new Error(
+        `MCP server on port ${port} is already running in ${active.authMode} mode; ` +
+        `stop it first before starting in ${authMode} mode.`
+      );
+    }
+
+    if (!active) {
+      const bearerToken = generateMcpBearerToken();
+      let bootstrapCode: string | undefined;
+      const localBase = `http://127.0.0.1:${port}`;
+      const oauth =
+        authMode === "oauth"
+          ? (() => {
+              const bc = generateBootstrapCode();
+              bootstrapCode = bc.code;
+              return { publicBaseUrl: localBase, bootstrapCodeHash: bc.codeHash };
+            })()
+          : undefined;
+
+      const handle = await startMcpHttpServer({
+        port,
+        bearerToken,
+        allowDangerous: dangerous,
+        auditLogPath: opts.auditLogPath,
+        authMode,
+        oauth,
+        publicBaseUrl: localBase,
+        hostOriginPolicy: {
+          allowedOrigins: opts.allowedOrigins,
+          allowNoOrigin: opts.allowNoOrigin,
+        },
+      });
+
+      const prev = readMcpStateFile(getMcpStateFile(port));
+      active = {
+        handle,
+        bearerToken,
+        auditLogPath: opts.auditLogPath ?? "default",
+        startedAt: prev?.startedAt ?? Date.now(),
+        authMode,
+        ownsTunnel: false,
+        bootstrapCode,
+        tunnelProvider: "openai",
+        openAiTunnelId: tunnelId,
+      };
+      activeServers.set(port, active);
+      createdServer = true;
+    }
+
+    let openAiStatus: OpenAiTunnelStatus;
+    try {
+      openAiStatus = await startOpenAiTunnel({
+        tunnelId,
+        mcpPort: port,
+        apiKey: opts.openAiApiKey,
+        profile: opts.openAiProfile,
+        binaryPath: opts.openAiBinaryPath,
+        healthListenAddr: opts.openAiHealthPort ? `127.0.0.1:${opts.openAiHealthPort}` : undefined,
+        embeddedStub: opts.embeddedStub,
+      });
+      active.openAiStatus = openAiStatus;
+    } catch (tunnelErr) {
+      if (createdServer && activeServers.get(port) === active) {
+        activeServers.delete(port);
+        await active.handle.close().catch(() => {});
+      }
+      throw tunnelErr;
+    }
+
+    const publicUrl = `openai-tunnel://${tunnelId}`;
+    writeMcpState({
+      port,
+      pid: process.pid,
+      publicUrl,
+      localUrl: active.handle.url,
+      toolMode: dangerous ? "dangerous" : "safe",
+      startedAt: active.startedAt,
+      workspace: process.cwd(),
+      authMode,
+      tunnelProvider: "openai",
+      openAiTunnelId: tunnelId,
+      adminUrl: openAiStatus.adminUrl,
+    });
+
+    return {
+      publicUrl,
+      bearerToken: authMode === "oauth" ? "" : active.bearerToken,
+      localUrl: active.handle.url,
+      auditLogPath: active.auditLogPath,
+      dangerous,
+      toolCount: getExposedMcpToolCount(dangerous),
+      authMode,
+      bootstrapCode: active.bootstrapCode,
+      oauthDiscoveryUrl: authMode === "oauth" ? `${active.handle.url}/.well-known/oauth-authorization-server` : undefined,
+      tunnelProvider: "openai",
+      openAiTunnelId: tunnelId,
+      adminUrl: openAiStatus.adminUrl,
+      ready: openAiStatus.ready,
+    };
+  }
+
+  // -------------------------------------------------------------
+  // CLOUDFLARE QUICK TUNNEL PATH (Default)
+  // -------------------------------------------------------------
   const existing = getTunnelStatus(port);
   if (
     existing.isRunning &&
@@ -194,8 +364,6 @@ export async function startMcpTunnel(opts: {
   }
   const publicBaseClean = publicBase.replace(/\/$/, "");
 
-  // Reuse an already-running MCP server on this port (idempotent start),
-  // but never silently reuse a server started in a different auth mode.
   let active = activeServers.get(port);
   let createdServer = false;
   try {
@@ -238,12 +406,12 @@ export async function startMcpTunnel(opts: {
         authMode,
         ownsTunnel: createdTunnel,
         bootstrapCode,
+        tunnelProvider: "cloudflare",
       };
       activeServers.set(port, active);
       createdServer = true;
     }
   } catch (error) {
-    // Roll back only a tunnel created by this invocation; never stop a reused tunnel.
     if (createdTunnel) await stopQuickTunnel(port, "mcp-http").catch(() => {});
     throw error;
   }
@@ -264,7 +432,6 @@ export async function startMcpTunnel(opts: {
   const publicUrl = `${publicBaseClean}/mcp`;
   const localUrl = active.handle.url;
 
-  // Persist (no secrets) so other instances can list this server.
   writeMcpState({
     port,
     pid: process.pid,
@@ -274,6 +441,7 @@ export async function startMcpTunnel(opts: {
     startedAt: active.startedAt,
     workspace: process.cwd(),
     authMode,
+    tunnelProvider: "cloudflare",
   });
 
   return {
@@ -286,27 +454,28 @@ export async function startMcpTunnel(opts: {
     authMode,
     bootstrapCode: active.bootstrapCode,
     oauthDiscoveryUrl: authMode === "oauth" ? `${publicBaseClean}/.well-known/oauth-authorization-server` : undefined,
+    tunnelProvider: "cloudflare",
   };
 }
 
 export async function stopMcpTunnel(port = DEFAULT_MCP_PORT): Promise<void> {
   const active = activeServers.get(port);
+  const state = readMcpStateFile(getMcpStateFile(port));
+  const provider = active?.tunnelProvider || state?.tunnelProvider || "cloudflare";
+
   if (active) {
     activeServers.delete(port);
     await active.handle.close().catch(() => {});
-    // This instance may stop only the tunnel it created, not a shared/reused one.
-    if (active.ownsTunnel) {
+    if (provider === "openai") {
+      await stopOpenAiTunnel(port).catch(() => {});
+    } else if (active.ownsTunnel) {
       await stopQuickTunnel(port, "mcp-http").catch(() => {});
     }
+  } else if (provider === "openai") {
+    await stopOpenAiTunnel(port).catch(() => {});
   }
 
-  // If this process does not own an active HTTP server handle, it cannot stop
-  // a server in another process and must not kill that server's shared tunnel.
-  // Only this instance's persisted state can be removed here.
-  const state = readMcpStateFile(getMcpStateFile(port));
-  if (state?.pid === process.pid) {
-    deleteMcpState(port);
-  } else if (!state) {
+  if (state?.pid === process.pid || !state) {
     deleteMcpState(port);
   }
 }
@@ -325,7 +494,6 @@ export async function stopAllMcpServers(): Promise<void> {
 export function listActiveMcpServers(): ActiveMcpInfo[] {
   const byPort = new Map<number, ActiveMcpInfo>();
 
-  // 1. In-memory servers owned by this process.
   for (const [port, active] of activeServers.entries()) {
     const state = readMcpStateFile(getMcpStateFile(port));
     byPort.set(
@@ -339,11 +507,13 @@ export function listActiveMcpServers(): ActiveMcpInfo[] {
         startedAt: active.startedAt,
         workspace: state?.workspace ?? process.cwd(),
         authMode: active.authMode,
+        tunnelProvider: active.tunnelProvider,
+        openAiTunnelId: active.openAiTunnelId,
+        adminUrl: state?.adminUrl,
       }),
     );
   }
 
-  // 2. Disk scan: servers owned by other superagent instances.
   try {
     const dir = getMcpStateDir();
     for (const f of fs.readdirSync(dir)) {
@@ -354,10 +524,7 @@ export function listActiveMcpServers(): ActiveMcpInfo[] {
       if (!state) continue;
       const effectivePort = state.port || parseInt(m[1], 10);
       if (!isProcessRunning(state.pid)) {
-        // Stale: owner is gone.
-        try {
-          fs.unlinkSync(filePath);
-        } catch {}
+        try { fs.unlinkSync(filePath); } catch {}
         continue;
       }
       if (!byPort.has(effectivePort)) {
@@ -374,7 +541,7 @@ export function formatActiveMcpServers(servers: ActiveMcpInfo[]): string {
     return [
       "Active MCP Servers: NONE ACTIVE",
       "No active MCP servers found.",
-      "Run '/muse tunnel start --mcp' to expose an MCP server via Cloudflare tunnel.",
+      "Run '/muse tunnel start --mcp' for Cloudflare, or '/muse tunnel start --mcp --provider openai --tunnel-id <id>' for OpenAI Secure MCP Tunnel.",
     ].join("\n");
   }
 
@@ -382,12 +549,20 @@ export function formatActiveMcpServers(servers: ActiveMcpInfo[]): string {
   servers.forEach((s, i) => {
     const authMode = s.authMode ?? "static-bearer";
     const toolMode = s.toolMode === "dangerous" ? "FULL" : "SAFE";
+    const providerName = s.tunnelProvider === "openai" ? "OpenAI Secure MCP Tunnel" : "Cloudflare Quick Tunnel";
     lines.push(
       `${i + 1}. Port ${s.port} (PID: ${s.pid}, Uptime: ${s.uptimeSeconds}s)`,
+      `   - Provider   : ${providerName}`,
       `   - Public URL : ${s.publicUrl}`,
       `   - Local URL  : ${s.localUrl}`,
       `   - Auth mode  : ${authMode} | Tool mode: ${toolMode}`,
     );
+    if (s.openAiTunnelId) {
+      lines.push(`   - Tunnel ID  : ${s.openAiTunnelId}`);
+    }
+    if (s.adminUrl) {
+      lines.push(`   - Admin UI   : ${s.adminUrl}`);
+    }
     if (s.workspace) {
       lines.push(`   - Workspace  : ${s.workspace}`);
     }

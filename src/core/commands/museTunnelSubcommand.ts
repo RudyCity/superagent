@@ -221,6 +221,32 @@ export async function handleMuseTunnelSubcommand(
     const activeMcp = mcpPromptRequested ? mcpServers.find((m) => m.port === mcpPromptPort) : undefined;
 
     if (activeMcp) {
+      if (activeMcp.tunnelProvider === "openai") {
+        const { generateResponsesApiSnippet, generateChatGptInstructions } = await import("../mcp/openaiTunnelClient.js");
+        const tunnelId = activeMcp.openAiTunnelId || activeMcp.publicUrl.replace(/^openai-tunnel:\/\//, "");
+        const responsesSnippet = generateResponsesApiSnippet(tunnelId);
+        const chatGptSteps = generateChatGptInstructions(tunnelId);
+        const copied = await copyTextToClipboard(responsesSnippet);
+        ctx.addLine({
+          type: "system",
+          content: [
+            `OpenAI Secure MCP Tunnel (port ${activeMcp.port}):`,
+            `- Tunnel ID       : ${tunnelId}`,
+            `- Local Target    : ${activeMcp.localUrl}`,
+            `- Tool Mode       : ${activeMcp.toolMode === "dangerous" ? "FULL (all tools)" : "SAFE (read-only)"}`,
+            `- Auth Mode       : ${activeMcp.authMode || "static-bearer"}`,
+            activeMcp.adminUrl ? `- Admin UI        : ${activeMcp.adminUrl}` : "",
+            "",
+            ...chatGptSteps,
+            "",
+            copied ? "OpenAI Responses API snippet (copied to clipboard):" : "OpenAI Responses API snippet:",
+            responsesSnippet,
+          ].filter(Boolean).join("\n"),
+          timestamp: now,
+        });
+        return;
+      }
+
       const configJson = JSON.stringify({
         superagent: {
           url: activeMcp.publicUrl,
@@ -359,6 +385,52 @@ export async function handleMuseTunnelSubcommand(
       }
     }
 
+    const wantOpenAi = rawArgs.some((a) => a.toLowerCase() === "--openai" || a.toLowerCase() === "--openai-tunnel");
+    const providerArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--provider");
+    let mcpProvider: "cloudflare" | "openai" = wantOpenAi ? "openai" : "cloudflare";
+    if (providerArgIdx !== -1 && rawArgs[providerArgIdx + 1]) {
+      const p = rawArgs[providerArgIdx + 1].toLowerCase();
+      if (p === "openai" || p === "cloudflare") {
+        mcpProvider = p;
+      }
+    }
+
+    const tunnelIdArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--tunnel-id");
+    let openAiTunnelId: string | undefined;
+    if (tunnelIdArgIdx !== -1 && rawArgs[tunnelIdArgIdx + 1]) {
+      openAiTunnelId = rawArgs[tunnelIdArgIdx + 1].trim();
+      mcpProvider = "openai";
+    }
+
+    const apiKeyArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--api-key" || a.toLowerCase() === "--control-plane-key");
+    let openAiApiKey: string | undefined;
+    if (apiKeyArgIdx !== -1 && rawArgs[apiKeyArgIdx + 1]) {
+      openAiApiKey = rawArgs[apiKeyArgIdx + 1].trim();
+    }
+
+    const profileArgIdx = rawArgs.findIndex((a) => a.toLowerCase() === "--profile" || a.toLowerCase() === "--tunnel-profile");
+    let openAiProfile: string | undefined;
+    if (profileArgIdx !== -1 && rawArgs[profileArgIdx + 1]) {
+      openAiProfile = rawArgs[profileArgIdx + 1].trim();
+    }
+
+    const wantDoctor = rawArgs.some((a) => a.toLowerCase() === "--doctor");
+    if (wantDoctor && mcpProvider === "openai") {
+      const { runTunnelClientDoctor } = await import("../mcp/openaiTunnelClient.js");
+      ctx.addLine({ type: "system", content: "Running tunnel-client doctor check...", timestamp: Date.now() });
+      const docResult = await runTunnelClientDoctor({
+        profile: openAiProfile,
+        tunnelId: openAiTunnelId,
+        apiKey: openAiApiKey,
+      });
+      ctx.addLine({
+        type: docResult.success ? "system" : "error",
+        content: `[tunnel-client doctor]\n${docResult.output}`,
+        timestamp: Date.now(),
+      });
+      if (!wantMcp) return;
+    }
+
     // --- MCP-only mode: /muse tunnel start --mcp (WSS tunnel NOT started) ---
     if (wantMcp) {
       const { startMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
@@ -382,11 +454,58 @@ export async function handleMuseTunnelSubcommand(
         });
       }
       try {
-        const mcpInfo = await startMcpTunnel({ port: mcpPort, allowDangerous, authMode: mcpAuthMode });
+        const mcpInfo = await startMcpTunnel({
+          port: mcpPort,
+          allowDangerous,
+          authMode: mcpAuthMode,
+          tunnelProvider: mcpProvider,
+          tunnelId: openAiTunnelId,
+          openAiApiKey,
+          openAiProfile,
+        });
         ctx.addLine({
           type: "system",
           content: (() => {
             const toolModeLine = `- Tool mode    : ${mcpInfo.dangerous ? `FULL (${mcpInfo.toolCount} tools)` : `SAFE (${mcpInfo.toolCount} read-only)`}`;
+            if (mcpInfo.tunnelProvider === "openai") {
+              const tunnelId = mcpInfo.openAiTunnelId || openAiTunnelId || "";
+              return [
+                "-------------------------------------------------------------",
+                "  OpenAI Secure MCP Tunnel Online!",
+                "-------------------------------------------------------------",
+                `- Tunnel ID       : ${tunnelId}`,
+                `- Local MCP URL   : ${mcpInfo.localUrl}`,
+                `- Connection      : Outbound-only to api.openai.com control plane`,
+                mcpInfo.adminUrl ? `- Admin UI        : ${mcpInfo.adminUrl}` : "",
+                toolModeLine,
+                `- Audit log       : ${mcpInfo.auditLogPath}`,
+                "",
+                "ChatGPT Setup:",
+                "1. In ChatGPT, open Settings -> Connectors or ChatGPT Plugins.",
+                "2. Select Add Custom MCP Server.",
+                "3. Set Connection to: Tunnel",
+                `4. Enter Tunnel ID: ${tunnelId}`,
+                "5. Select Create as a plugin.",
+                "",
+                "OpenAI Responses API Tool Definition:",
+                JSON.stringify({
+                  model: "gpt-4o",
+                  input: "Use the private MCP server to answer my request.",
+                  tools: [
+                    {
+                      type: "mcp",
+                      server_label: "superagent_mcp",
+                      tunnel_id: tunnelId,
+                    },
+                  ],
+                }, null, 2),
+                "",
+                "Flags: --provider openai --tunnel-id <id> [--api-key <key>] [--profile <name>] [--doctor]",
+                "Stop: /muse tunnel stop --mcp-port " + mcpPort,
+                "",
+                "Note: Local MCP server is kept private inside your network.",
+              ].filter(Boolean).join("\n");
+            }
             if (mcpInfo.authMode === "oauth") {
               return [
                 "-------------------------------------------------------------",
@@ -409,7 +528,7 @@ export async function handleMuseTunnelSubcommand(
                 "3. Complete the OAuth authorization in your browser using the bootstrap code.",
                 "4. Approve scopes; safe tools are callable after approval.",
                 "",
-                "Flags: --mcp-auth oauth | --allow-dangerous (needs mcp:tools:write) | --mcp-port <n>",
+                "Flags: --mcp-auth oauth | --allow-dangerous (needs mcp:tools:write) | --mcp-port <n> | --provider openai --tunnel-id <id>",
                 "Stop: /muse tunnel stop",
                 "",
                 "!! URL is public - OAuth authorization is the ONLY access control.",
@@ -429,7 +548,7 @@ export async function handleMuseTunnelSubcommand(
               "MCP client config (copy-paste):",
               `{ "superagent": { "url": "${mcpInfo.publicUrl}", "headers": { "Authorization": "Bearer token ${mcpInfo.bearerToken}" } } }`,
               "",
-              "Flags: --mcp-auth oauth (ChatGPT) | --allow-dangerous (destructive tools) | --mcp-port <n> (multi-project)",
+              "Flags: --mcp-auth oauth (ChatGPT) | --allow-dangerous (destructive tools) | --mcp-port <n> (multi-project) | --provider openai --tunnel-id <id>",
               "Stop: /muse tunnel stop",
               "",
               "!! URL is public - Bearer token is the ONLY access control.",
@@ -452,7 +571,8 @@ export async function handleMuseTunnelSubcommand(
       .filter((a, idx, arr) => {
         if (a === "--port" || a === "-p" || a === "--https" || a === "--http" || a === "--web") return false;
         if (a === "--mcp" || a === "--mcp-port" || a === "--allow-dangerous" || a === "--mcp-auth") return false;
-        if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p" || arr[idx - 1] === "--mcp-port" || arr[idx - 1] === "--mcp-auth")) return false;
+        if (a === "--openai" || a === "--openai-tunnel" || a === "--provider" || a === "--tunnel-id" || a === "--api-key" || a === "--control-plane-key" || a === "--profile" || a === "--tunnel-profile" || a === "--doctor") return false;
+        if (idx > 0 && (arr[idx - 1] === "--port" || arr[idx - 1] === "-p" || arr[idx - 1] === "--mcp-port" || arr[idx - 1] === "--mcp-auth" || arr[idx - 1] === "--provider" || arr[idx - 1] === "--tunnel-id" || arr[idx - 1] === "--api-key" || arr[idx - 1] === "--control-plane-key" || arr[idx - 1] === "--profile" || arr[idx - 1] === "--tunnel-profile")) return false;
         return true;
       })
       .join(" ")

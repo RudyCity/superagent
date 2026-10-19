@@ -10,6 +10,7 @@ Commands:
   add-http <name> <url> [--oauth]       Add a remote Streamable HTTP MCP server
   remove, rm <name>                     Remove an MCP server configuration
   register                              Register Superagent as an MCP server to Antigravity (AGY)
+  tunnel <start|stop|list|doctor>       Manage Secure MCP Tunnels (Cloudflare or OpenAI)
 
 Examples:
   superagent mcp list
@@ -17,6 +18,9 @@ Examples:
   superagent mcp add-http google https://mcp.example.com/mcp --oauth
   superagent mcp remove everything
   superagent mcp register
+  superagent mcp tunnel start --provider openai --tunnel-id tunnel_0123456789abcdef
+  superagent mcp tunnel list
+  superagent mcp tunnel stop
 `);
 }
 
@@ -144,6 +148,116 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       console.log("Error: Failed to save configuration to model-config.json");
       process.exit(1);
     }
+  }
+
+  if (subcommand === "tunnel") {
+    const tunnelAction = (args[1] || "list").toLowerCase();
+    const rawArgs = args.slice(2);
+
+    if (tunnelAction === "list" || tunnelAction === "status") {
+      const { listActiveMcpServers, formatActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+      console.log(formatActiveMcpServers(listActiveMcpServers()));
+      process.exit(0);
+    }
+
+    if (tunnelAction === "doctor") {
+      const { runTunnelClientDoctor } = await import("../mcp/openaiTunnelClient.js");
+      const profileIdx = rawArgs.findIndex((a) => a === "--profile");
+      const profile = profileIdx !== -1 ? rawArgs[profileIdx + 1] : undefined;
+      const tunnelIdIdx = rawArgs.findIndex((a) => a === "--tunnel-id");
+      const tunnelId = tunnelIdIdx !== -1 ? rawArgs[tunnelIdIdx + 1] : undefined;
+      const apiKeyIdx = rawArgs.findIndex((a) => a === "--api-key" || a === "--control-plane-key");
+      const apiKey = apiKeyIdx !== -1 ? rawArgs[apiKeyIdx + 1] : undefined;
+
+      console.log("Running tunnel-client doctor check...");
+      const docResult = await runTunnelClientDoctor({ profile, tunnelId, apiKey });
+      console.log(`[tunnel-client doctor]\n${docResult.output}`);
+      process.exit(docResult.success ? 0 : 1);
+    }
+
+    if (tunnelAction === "stop") {
+      const portIdx = rawArgs.findIndex((a) => a === "--port" || a === "--mcp-port" || a === "-p");
+      let port = 9227;
+      if (portIdx !== -1 && rawArgs[portIdx + 1]) {
+        const parsed = parseInt(rawArgs[portIdx + 1], 10);
+        if (parsed > 0) port = parsed;
+      }
+      const { stopMcpTunnel } = await import("../mcp/mcpTunnel.js");
+      await stopMcpTunnel(port);
+      console.log(`MCP tunnel on port ${port} stopped.`);
+      process.exit(0);
+    }
+
+    if (tunnelAction === "start") {
+      const portIdx = rawArgs.findIndex((a) => a === "--port" || a === "--mcp-port" || a === "-p");
+      let port = 9227;
+      if (portIdx !== -1 && rawArgs[portIdx + 1]) {
+        const parsed = parseInt(rawArgs[portIdx + 1], 10);
+        if (parsed > 0) port = parsed;
+      }
+      const providerIdx = rawArgs.findIndex((a) => a === "--provider");
+      const wantOpenAi = rawArgs.some((a) => a === "--openai" || a === "--openai-tunnel");
+      let provider: "cloudflare" | "openai" = wantOpenAi ? "openai" : "cloudflare";
+      if (providerIdx !== -1 && rawArgs[providerIdx + 1]) {
+        const p = rawArgs[providerIdx + 1].toLowerCase();
+        if (p === "openai" || p === "cloudflare") provider = p;
+      }
+      const tunnelIdIdx = rawArgs.findIndex((a) => a === "--tunnel-id");
+      let tunnelId: string | undefined;
+      if (tunnelIdIdx !== -1 && rawArgs[tunnelIdIdx + 1]) {
+        tunnelId = rawArgs[tunnelIdIdx + 1].trim();
+        provider = "openai";
+      }
+      const apiKeyIdx = rawArgs.findIndex((a) => a === "--api-key" || a === "--control-plane-key");
+      const apiKey = apiKeyIdx !== -1 ? rawArgs[apiKeyIdx + 1]?.trim() : undefined;
+      const profileIdx = rawArgs.findIndex((a) => a === "--profile");
+      const profile = profileIdx !== -1 ? rawArgs[profileIdx + 1]?.trim() : undefined;
+      const allowDangerous = rawArgs.some((a) => a === "--allow-dangerous");
+
+      const { startMcpTunnel } = await import("../mcp/mcpTunnel.js");
+      try {
+        const info = await startMcpTunnel({
+          port,
+          allowDangerous,
+          tunnelProvider: provider,
+          tunnelId,
+          openAiApiKey: apiKey,
+          openAiProfile: profile,
+        });
+
+        if (info.tunnelProvider === "openai") {
+          console.log([
+            "OpenAI Secure MCP Tunnel Online!",
+            `- Tunnel ID    : ${info.openAiTunnelId}`,
+            `- Local MCP URL: ${info.localUrl}`,
+            info.adminUrl ? `- Admin UI     : ${info.adminUrl}` : "",
+            `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
+            "",
+            "Responses API tool definition:",
+            JSON.stringify({
+              model: "gpt-4o",
+              input: "Use the private MCP server to answer my request.",
+              tools: [{ type: "mcp", server_label: "superagent_mcp", tunnel_id: info.openAiTunnelId }],
+            }, null, 2),
+          ].filter(Boolean).join("\n"));
+        } else {
+          console.log([
+            "MCP via Cloudflare Tunnel Online!",
+            `- Endpoint     : ${info.publicUrl}`,
+            `- Local URL    : ${info.localUrl}`,
+            `- Bearer Token : ${info.bearerToken}`,
+            `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
+          ].join("\n"));
+        }
+        process.exit(0);
+      } catch (err: any) {
+        console.error(`Error starting MCP tunnel: ${err.message}`);
+        process.exit(1);
+      }
+    }
+
+    console.log(`Unknown tunnel action: "${tunnelAction}". Available: start, stop, list, doctor`);
+    process.exit(1);
   }
 
   console.log(`Unknown MCP subcommand: "${subcommand}"`);
