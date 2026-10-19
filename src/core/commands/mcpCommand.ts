@@ -396,12 +396,28 @@ export const mcpCommand: SlashCommand = {
         const profileIdx = rawArgs.findIndex((a) => a === "--profile");
         const profile = profileIdx !== -1 ? rawArgs[profileIdx + 1]?.trim() : undefined;
         const allowDangerous = rawArgs.some((a) => a === "--allow-dangerous");
+        const authModeIdx = rawArgs.findIndex((a) => a === "--mcp-auth" || a === "--auth");
+        let authMode: "static-bearer" | "oauth" | undefined;
+        if (authModeIdx !== -1 && rawArgs[authModeIdx + 1]) {
+          const mode = rawArgs[authModeIdx + 1].toLowerCase();
+          if (mode === "oauth" || mode === "static-bearer") {
+            authMode = mode;
+          } else {
+            ctx.addLine({
+              type: "error",
+              content: `Invalid --mcp-auth value "${rawArgs[authModeIdx + 1]}". Use static-bearer or oauth.`,
+              timestamp: now,
+            });
+            return;
+          }
+        }
 
         const { startMcpTunnel } = await import("../mcp/mcpTunnel.js");
         try {
           const info = await startMcpTunnel({
             port,
             allowDangerous,
+            authMode,
             tunnelProvider: provider,
             tunnelId,
             openAiApiKey: apiKey,
@@ -409,34 +425,67 @@ export const mcpCommand: SlashCommand = {
           });
 
           if (info.tunnelProvider === "openai") {
+            const lines = [
+              "OpenAI Secure MCP Tunnel Online!",
+              `- Tunnel ID    : ${info.openAiTunnelId}`,
+              `- Local MCP URL: ${info.localUrl}`,
+              info.adminUrl ? `- Admin UI     : ${info.adminUrl}` : "",
+              `- Auth Mode    : ${info.authMode}`,
+              `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
+            ];
+            if (info.authMode === "oauth") {
+              lines.push(
+                `- Discovery    : ${info.oauthDiscoveryUrl}`,
+                "",
+                "One-time bootstrap approval code (shown ONCE, never stored):",
+                `  - ${info.bootstrapCode}`,
+              );
+            }
+            lines.push(
+              "",
+              "Responses API tool definition:",
+              JSON.stringify({
+                model: "gpt-4o",
+                input: "Use the private MCP server to answer my request.",
+                tools: [{ type: "mcp", server_label: "superagent_mcp", tunnel_id: info.openAiTunnelId }],
+              }, null, 2),
+            );
             ctx.addLine({
               type: "system",
-              content: [
-                "OpenAI Secure MCP Tunnel Online!",
-                `- Tunnel ID    : ${info.openAiTunnelId}`,
-                `- Local MCP URL: ${info.localUrl}`,
-                info.adminUrl ? `- Admin UI     : ${info.adminUrl}` : "",
-                `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
-                "",
-                "Responses API tool definition:",
-                JSON.stringify({
-                  model: "gpt-4o",
-                  input: "Use the private MCP server to answer my request.",
-                  tools: [{ type: "mcp", server_label: "superagent_mcp", tunnel_id: info.openAiTunnelId }],
-                }, null, 2),
-              ].filter(Boolean).join("\n"),
+              content: lines.filter(Boolean).join("\n"),
               timestamp: Date.now(),
             });
           } else {
-            ctx.addLine({
-              type: "system",
-              content: [
-                "MCP via Cloudflare Tunnel Online!",
-                `- Endpoint     : ${info.publicUrl}`,
-                `- Local URL    : ${info.localUrl}`,
+            const lines = [
+              "MCP via Cloudflare Tunnel Online!",
+              `- Endpoint     : ${info.publicUrl}`,
+              `- Local URL    : ${info.localUrl}`,
+              `- Auth Mode    : ${info.authMode}`,
+            ];
+            if (info.authMode === "oauth") {
+              lines.push(
+                `- Discovery    : ${info.oauthDiscoveryUrl}`,
+                `- Scopes       : mcp:tools${info.dangerous ? " mcp:tools:write" : ""}`,
+                `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
+                `- Audit Log    : ${info.auditLogPath}`,
+                "",
+                "One-time bootstrap approval code (shown ONCE, never stored):",
+                `  - ${info.bootstrapCode}`,
+                "",
+                "Client setup (e.g. ChatGPT / Gemini):",
+                `  1. Set MCP server URL to: ${info.publicUrl}`,
+                "  2. Authentication: OAuth",
+                "  3. Open browser authorization page when prompted and paste the bootstrap code above to approve.",
+              );
+            } else {
+              lines.push(
                 `- Bearer Token : ${info.bearerToken}`,
                 `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
-              ].join("\n"),
+              );
+            }
+            ctx.addLine({
+              type: "system",
+              content: lines.join("\n"),
               timestamp: Date.now(),
             });
           }

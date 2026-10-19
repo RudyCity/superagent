@@ -275,12 +275,24 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       const profileIdx = rawArgs.findIndex((a) => a === "--profile");
       const profile = profileIdx !== -1 ? rawArgs[profileIdx + 1]?.trim() : undefined;
       const allowDangerous = rawArgs.some((a) => a === "--allow-dangerous");
+      const authModeIdx = rawArgs.findIndex((a) => a === "--mcp-auth" || a === "--auth");
+      let authMode: "static-bearer" | "oauth" | undefined;
+      if (authModeIdx !== -1 && rawArgs[authModeIdx + 1]) {
+        const mode = rawArgs[authModeIdx + 1].toLowerCase();
+        if (mode === "oauth" || mode === "static-bearer") {
+          authMode = mode;
+        } else {
+          console.error(`Invalid --mcp-auth value "${rawArgs[authModeIdx + 1]}". Use static-bearer or oauth.`);
+          process.exit(1);
+        }
+      }
 
       const { startMcpTunnel } = await import("../mcp/mcpTunnel.js");
       try {
         const info = await startMcpTunnel({
           port,
           allowDangerous,
+          authMode,
           tunnelProvider: provider,
           tunnelId,
           openAiApiKey: apiKey,
@@ -288,12 +300,23 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
         });
 
         if (info.tunnelProvider === "openai") {
-          console.log([
+          const lines = [
             "OpenAI Secure MCP Tunnel Online!",
             `- Tunnel ID    : ${info.openAiTunnelId}`,
             `- Local MCP URL: ${info.localUrl}`,
             info.adminUrl ? `- Admin UI     : ${info.adminUrl}` : "",
+            `- Auth Mode    : ${info.authMode}`,
             `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
+          ];
+          if (info.authMode === "oauth") {
+            lines.push(
+              `- Discovery    : ${info.oauthDiscoveryUrl}`,
+              "",
+              "One-time bootstrap approval code (shown ONCE, never stored):",
+              `  - ${info.bootstrapCode}`,
+            );
+          }
+          lines.push(
             "",
             "Responses API tool definition:",
             JSON.stringify({
@@ -303,17 +326,41 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
             }, null, 2),
             "",
             "Tunnel is active and serving traffic. Press Ctrl+C to stop.",
-          ].filter(Boolean).join("\n"));
+          );
+          console.log(lines.filter(Boolean).join("\n"));
         } else {
-          console.log([
+          const lines = [
             "MCP via Cloudflare Tunnel Online!",
             `- Endpoint     : ${info.publicUrl}`,
             `- Local URL    : ${info.localUrl}`,
-            `- Bearer Token : ${info.bearerToken}`,
-            `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
+            `- Auth Mode    : ${info.authMode}`,
+          ];
+          if (info.authMode === "oauth") {
+            lines.push(
+              `- Discovery    : ${info.oauthDiscoveryUrl}`,
+              `- Scopes       : mcp:tools${info.dangerous ? " mcp:tools:write" : ""}`,
+              `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
+              `- Audit Log    : ${info.auditLogPath}`,
+              "",
+              "One-time bootstrap approval code (shown ONCE, never stored):",
+              `  - ${info.bootstrapCode}`,
+              "",
+              "Client setup (e.g. ChatGPT / Gemini):",
+              `  1. Set MCP server URL to: ${info.publicUrl}`,
+              "  2. Authentication: OAuth",
+              "  3. Open browser authorization page when prompted and paste the bootstrap code above to approve.",
+            );
+          } else {
+            lines.push(
+              `- Bearer Token : ${info.bearerToken}`,
+              `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
+            );
+          }
+          lines.push(
             "",
             "Tunnel is active and serving traffic. Press Ctrl+C to stop.",
-          ].join("\n"));
+          );
+          console.log(lines.join("\n"));
         }
 
         // Keep process running so tunnel and local MCP server remain alive

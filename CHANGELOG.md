@@ -1,3 +1,13 @@
+## [1.14.4] - 2026-10-19
+### Fixed
+- Fixed `--mcp-auth` parameter parsing and OAuth discovery/bootstrap code output under `/mcp tunnel` (`mcpCommand.ts`, `mcpCliHandler.ts`):
+  - Added `--mcp-auth` extraction and validation (`oauth` | `static-bearer`) in both interactive `/mcp tunnel start` and non-interactive `superagent mcp tunnel start`.
+  - Forwarded `authMode` into `startMcpTunnel` so that `--mcp-auth oauth` properly initializes OAuth 2.1 RFC 7591 Dynamic Client Registration (DCR) and authorization server metadata routes instead of silently defaulting to `static-bearer`.
+  - Added terminal output rendering for OAuth discovery URL, scopes, audit log path, client setup instructions, and the one-time bootstrap approval challenge code when running in `oauth` mode.
+
+### Tests
+- Updated `tests/commandDomainSeparation.test.ts` to verify invalid `--mcp-auth` value rejection and confirm that `--mcp-auth oauth` properly forwards to `startMcpTunnel` and outputs the one-time bootstrap approval challenge code.
+
 ## [1.14.3] - 2026-10-19
 ### Fixed
 - Fixed ChatGPT Connectors setup rejection (`Some app settings were rejected`) with OpenAI Secure MCP Tunnels (`openaiTunnelClient.ts`, `museTunnelSubcommand.ts`, `mcpCliHandler.ts`):

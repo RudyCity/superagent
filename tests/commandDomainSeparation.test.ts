@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { getDashboardSuggestions } from "../src/utils/dashboardSuggestions.js";
 import { handleMuseTunnelSubcommand } from "../src/core/commands/museTunnelSubcommand.js";
 import { mcpCommand } from "../src/core/commands/mcpCommand.js";
@@ -81,5 +81,37 @@ describe("command domain separation", () => {
     expect(help).toContain("cloudflare: Cloudflare Quick Tunnel");
     expect(help).toContain("openai: OpenAI Secure MCP Tunnel");
     expect(help).toContain("/mcp tunnel start --provider openai --tunnel-id <id>");
+  });
+
+  it("rejects invalid --mcp-auth values under /mcp tunnel", async () => {
+    const { ctx, lines } = makeContext();
+    await mcpCommand.execute("tunnel start --mcp-auth invalid-mode", ctx);
+    expect(lines.at(-1)?.type).toBe("error");
+    expect(lines.at(-1)?.content).toContain("Invalid --mcp-auth value");
+  });
+
+  it("forwards --mcp-auth oauth to startMcpTunnel and displays the bootstrap approval code", async () => {
+    const { ctx, lines } = makeContext();
+    const spy = vi.spyOn(await import("../src/core/mcp/mcpTunnel.js"), "startMcpTunnel").mockResolvedValueOnce({
+      publicUrl: "https://example.trycloudflare.com/mcp",
+      bearerToken: "",
+      localUrl: "http://127.0.0.1:9227/mcp",
+      auditLogPath: "/tmp/audit.log",
+      dangerous: false,
+      toolCount: 15,
+      authMode: "oauth",
+      bootstrapCode: "mock-bootstrap-code-12345",
+      oauthDiscoveryUrl: "https://example.trycloudflare.com/.well-known/oauth-authorization-server",
+      tunnelProvider: "cloudflare",
+    });
+
+    await mcpCommand.execute("tunnel start --mcp-auth oauth", ctx);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({
+      authMode: "oauth",
+    }));
+    const output = lines.map((l) => l.content).join("\n");
+    expect(output).toContain("mock-bootstrap-code-12345");
+    expect(output).toContain("One-time bootstrap approval code");
+    expect(output).toContain("Auth Mode    : oauth");
   });
 });
