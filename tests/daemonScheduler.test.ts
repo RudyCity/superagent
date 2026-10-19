@@ -22,6 +22,17 @@ const retentionSweepHarness = vi.hoisted(() => ({
     results: [{ id: "old-memory", scope: "project", status: "marked_expired" }],
   })),
 }));
+const skillLearningHarness = vi.hoisted(() => ({
+  bridgeRepeatedSkillFailures: vi.fn(async () => ({
+    status: "insufficient_evidence",
+    evidenceRunIds: [] as string[],
+  })),
+}));
+
+vi.mock("../src/core/skills/skillLearningBridge.js", () => ({
+  bridgeRepeatedSkillFailures: skillLearningHarness.bridgeRepeatedSkillFailures,
+}));
+
 const gatewayHarness = vi.hoisted(() => ({
   config: null as any,
   adapters: {} as Record<string, { sendReply: (...args: any[]) => Promise<boolean> }>,
@@ -141,6 +152,7 @@ describe("DaemonScheduler", () => {
   beforeEach(() => {
     originalConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
     retentionSweepHarness.runMemoryRetentionSweep.mockClear();
+    skillLearningHarness.bridgeRepeatedSkillFailures.mockClear();
     headlessAgentHarness.instances.length = 0;
     gatewayHarness.config = {
       enabled: true,
@@ -573,6 +585,40 @@ describe("DaemonScheduler", () => {
     expect(result.error).toMatch(/symbolic-link|symlink traversal/i);
     expect(runner).not.toHaveBeenCalled();
     expect(listDaemonRuns({ jobId: job.id, limit: 1 })[0]).toMatchObject({ status: "error" });
+  });
+
+  it("bridges repeated failures of an actually executed pinned skill, preserving the run outcome", async () => {
+    // Skip expensive lifecycle setup here: the positive fully-approved pin test
+    // separately validates that resolvePinnedSkill cannot bypass approval.
+    (scheduler as any).resolvePinnedSkill = vi.fn(async () => ({
+      reference: "learning-probe@abcdef123456",
+      content: "# Safe approved workflow\nReview preconditions.",
+      contentSha256: "abcdef123456",
+    }));
+    const runner = vi.fn(async () => { throw new Error("provider rejected invocation"); });
+    scheduler.setAgentRunner(runner);
+    const job = scheduler.addJob({
+      name: "Pinned skill failure learning",
+      cronExpression: "0 4 * * *",
+      prompt: "Apply the pinned workflow",
+      workspace: tmpDir,
+      pinnedSkillVersion: "learning-probe@abcdef123456",
+    });
+
+    const first = await scheduler.triggerJobNow(job.id);
+    const second = await scheduler.triggerJobNow(job.id);
+    expect(first.success).toBe(false);
+    expect(second.success).toBe(false);
+    expect(runner).toHaveBeenCalledTimes(2);
+    const runs = listDaemonRuns({ jobId: job.id, limit: 5 });
+    expect(runs).toHaveLength(2);
+    expect(runs.map(run => run.status)).toEqual(["error", "error"]);
+    expect(skillLearningHarness.bridgeRepeatedSkillFailures).toHaveBeenCalledTimes(2);
+    expect(skillLearningHarness.bridgeRepeatedSkillFailures).toHaveBeenLastCalledWith({
+      jobId: job.id,
+      workspacePath: fs.realpathSync(tmpDir),
+      pinnedSkillVersion: "learning-probe@abcdef123456",
+    });
   });
 
   it("runs a scheduler job with a fully approved pinned skill and records the immutable version", async () => {

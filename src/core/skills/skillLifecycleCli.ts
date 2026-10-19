@@ -72,7 +72,7 @@ async function confirmInTerminal(prompt: string, expected: string): Promise<bool
 
 export async function handleSkillLifecycleCommand(args: string[]): Promise<boolean> {
   const action = args[0]?.toLowerCase();
-  if (!["candidates", "evaluate", "replay", "promote", "rollback", "compare", "disable", "retire", "feedback"].includes(action || "")) return false;
+  if (!["candidates", "evaluate", "replay", "promote", "rollback", "compare", "disable", "retire", "feedback", "revise"].includes(action || "")) return false;
   const workspace = flagValue(args, "--workspace") || process.cwd();
   try {
     if (action === "candidates") {
@@ -163,7 +163,7 @@ export async function handleSkillLifecycleCommand(args: string[]): Promise<boole
       const summary = summaryParts.join(" ").trim();
       if (!summary) throw new Error("Feedback requires a non-empty --summary value.");
       const existing = getSkillCandidate(workspace, ref.name, ref.version);
-      recordSkillFeedback(ref.name, sentiment as "positive" | "negative" | "neutral", summary, {
+      const feedbackId = recordSkillFeedback(ref.name, sentiment as "positive" | "negative" | "neutral", summary, {
         version: ref.version,
         taskId: existing.record.metadata?.taskId,
         executionMode: existing.record.metadata?.executionMode,
@@ -172,6 +172,36 @@ export async function handleSkillLifecycleCommand(args: string[]): Promise<boole
         workspace,
       });
       console.log("Recorded " + sentiment + " feedback for " + ref.name + "@" + ref.version + ". Feedback does not change evaluation or activation state.");
+      if (sentiment === "negative" && feedbackId) {
+        try {
+          const { bridgeNegativeSkillFeedback } = await import("./skillLearningBridge.js");
+          const advisory = await bridgeNegativeSkillFeedback({
+            skillName: ref.name, skillVersion: ref.version, workspacePath: workspace, feedbackId,
+          });
+          if (advisory.status === "created") {
+            console.log("Created a quarantined, owner-review-only RMemory advisory linked to feedback ID " + feedbackId + ".");
+          }
+        } catch {
+          console.log("RMemory learning advisory unavailable; feedback remains recorded in versioned metrics.");
+        }
+      }
+      return true;
+    }
+    if (action === "revise") {
+      const ref = parseReference(args[1]);
+      const feedbackId = flagValue(args, "--feedback-id");
+      if (!feedbackId) {
+        throw new Error("Usage: superagent skill revise <name>@<version> --feedback-id <persisted-negative-feedback-id> [--workspace <path>]");
+      }
+      const { createGuidedSkillRevision } = await import("./skillRevision.js");
+      const revision = await createGuidedSkillRevision({
+        workspace, name: ref.name, version: ref.version, feedbackId,
+      });
+      console.log("Created inactive revision candidate: " + revision.record.name + "@" + revision.record.version);
+      console.log("Parent: " + revision.record.name + "@" + revision.record.parentVersion);
+      console.log("Feedback evidence ID: " + revision.record.sourceFeedbackId);
+      console.log("Path: " + revision.filePath);
+      console.log("Review/edit the candidate, evaluate it, replay in sandbox, then seek explicit owner approval.");
       return true;
     }
     if (action === "compare") {

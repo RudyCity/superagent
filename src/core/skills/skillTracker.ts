@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { getInstalledSkills } from "../config/skills.js";
 import { getRootConfigDir, getWorkspaceId } from "../config/paths.js";
 import { listSynthesizedSkills } from "./skillSynthesizer.js";
@@ -33,7 +33,7 @@ export interface SkillVersionMetric {
   positiveFeedback: number;
   negativeFeedback: number;
   neutralFeedback: number;
-  feedbackSummaries: Array<{ sentiment: SkillFeedbackSentiment; summary: string; at: number }>;
+  feedbackSummaries: Array<{ id?: string; sentiment: SkillFeedbackSentiment; summary: string; at: number }>;
   lastOutcome?: "succeeded" | "failed";
   lastUsed?: number;
   lastProvider?: string;
@@ -231,7 +231,7 @@ export function recordSkillFeedback(
   sentiment: SkillFeedbackSentiment,
   summary: string,
   context: SkillTrackingContext = {}
-): void {
+): string | undefined {
   const normalized = normalizedName(skillName);
   if (!normalized || !["positive", "negative", "neutral"].includes(sentiment)) return;
   const cleanSummary = safeFeedbackSummary(summary);
@@ -243,10 +243,15 @@ export function recordSkillFeedback(
   if (sentiment === "positive") version.positiveFeedback++;
   else if (sentiment === "negative") version.negativeFeedback++;
   else version.neutralFeedback++;
-  version.feedbackSummaries = [...version.feedbackSummaries, { sentiment, summary: cleanSummary, at: Date.now() }].slice(-MAX_FEEDBACK_SUMMARIES);
+  const feedbackId = "skill-feedback-" + randomUUID();
+  version.feedbackSummaries = [...version.feedbackSummaries, { id: feedbackId, sentiment, summary: cleanSummary, at: Date.now() }].slice(-MAX_FEEDBACK_SUMMARIES);
   applyContext(version, context);
   data.skills[normalized] = existing;
   savePersistedStats(data, workspace);
+  // The legacy stats writer intentionally does not throw. Do not issue an
+  // evidence ID unless the exact feedback entry can be read back from disk.
+  const persisted = readPersistedStats(workspace).skills[normalized]?.versions?.[versionKey(context.version)];
+  return persisted?.feedbackSummaries.some(item => item.id === feedbackId) ? feedbackId : undefined;
 }
 
 export function recordSkillSynthesized(skillName: string, versionId?: string, workspace: string = process.cwd()): void {

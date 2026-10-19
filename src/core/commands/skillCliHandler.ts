@@ -19,6 +19,7 @@ Commands:
   compare <name> <versionA> <versionB>   Compare immutable versions
   disable <active-skill-name>            Disable active managed skill
   retire <name>@<version> --reason <r>   Retire version while preserving history
+  revise <name>@<version> --feedback-id <id>  Create inactive, lineage-tracked revision from persisted negative feedback
   feedback <name>@<version> <sentiment> --summary <text>
                                         Record version-scoped user feedback
   help                                  Show this help message
@@ -44,6 +45,7 @@ Examples:
   superagent skill synth "Review pull requests and enforce conventional commits" --category review
   superagent skill replay workflow-helper@<12-char-version> --fixture fixtures/workflow-helper.json
   superagent skill feedback workflow-helper@<12-char-version> negative --summary "Needs more edge cases"
+  superagent skill revise workflow-helper@<12-char-version> --feedback-id <persisted-feedback-id>
 `);
 }
 

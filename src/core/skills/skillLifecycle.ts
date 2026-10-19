@@ -24,6 +24,10 @@ export interface SkillCandidateRecord {
   metadata?: SkillEvidenceMetadata;
   /** Replay history is version-bound and retained independently from static evaluations. */
   replayRuns?: SkillReplayResult[];
+  /** Immutable candidate lineage and provenance of the owner feedback that triggered revision. */
+  parentVersion?: string;
+  parentContentSha256?: string;
+  sourceFeedbackId?: string;
   evaluations: SkillEvaluation[]; latestEvaluationId?: string;
   approval?: { approvedBy: string; approvedAt: number; method: "interactive-cli"; evaluationId: string };
   history: SkillLifecycleEvent[];
@@ -32,6 +36,8 @@ export interface SkillCandidateArtifact { record: SkillCandidateRecord; markdown
 export interface CreateSkillCandidateInput {
   name: string; description: string; category: string; markdownContent: string;
   extractedPatterns: ExtractedWorkflowPatterns; sourceEvidenceIds?: string[];
+  parentVersion?: string;
+  sourceFeedbackId?: string;
   metadata?: SkillEvidenceMetadata;
 }
 
@@ -354,12 +360,21 @@ export async function createSkillCandidate(workspace: string, input: CreateSkill
     .filter(id => typeof id === "string" && id.trim())
     .map(id => redactText(id.trim()).value.slice(0, 200)))].filter(Boolean).slice(0, 20);
   const now = Date.now();
+  const parent = input.parentVersion ? readRecord(root, name, input.parentVersion) : null;
+  if (parent && (parent.version === version || parent.status === "retired" || parent.status === "disabled")) {
+    throw new Error("Revision parent must be a distinct, eligible immutable skill version.");
+  }
+  if (input.sourceFeedbackId && !parent) {
+    throw new Error("Feedback-linked revisions require a verified parent version.");
+  }
   const record: SkillCandidateRecord = {
     schemaVersion: 1, workspace: root, name, version,
     description: redactText(input.description).value.slice(0, 240),
     category: input.category.replace(/[\r\n\x00-\x1f]/g, " ").slice(0, 80) || "automation",
     status: "candidate", contentSha256: hash, createdAt: now, updatedAt: now,
     sourceEvidenceIds, sourceTaskIds: [],
+    ...(parent ? { parentVersion: parent.version, parentContentSha256: parent.contentSha256 } : {}),
+    ...(input.sourceFeedbackId ? { sourceFeedbackId: input.sourceFeedbackId.slice(0, 160) } : {}),
     extractedPatterns: {
       toolsUsed: [...new Set(input.extractedPatterns.toolsUsed.map(value => redactText(value).value))].slice(0, 50),
       commandPatterns: [...new Set(input.extractedPatterns.commandPatterns.map(value => redactText(value).value))].slice(0, 50),

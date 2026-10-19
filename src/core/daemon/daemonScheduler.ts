@@ -409,6 +409,8 @@ export class DaemonScheduler {
     let output = "";
     let error: string | undefined;
     let ledgerInserted = false;
+    let ledgerFinalized = false;
+    let pinnedExecutionStarted = false;
     let executionPolicyJson: string | undefined;
     this.log("Executing job: " + job.name + " (" + job.id + ")");
 
@@ -528,6 +530,7 @@ export class DaemonScheduler {
         if (abortController.signal.aborted) onAbort();
         else abortController.signal.addEventListener("abort", onAbort, { once: true });
       });
+      pinnedExecutionStarted = pinnedSkill !== null && job.kind !== "system-memory-retention-sweep";
       const workPromise = job.kind === "system-memory-retention-sweep"
         ? import("../memoryRetentionSweep.js").then(({ runMemoryRetentionSweep }) =>
             runMemoryRetentionSweep({ projectPath: job.workspace, apply: true }).then((result) => JSON.stringify(result)))
@@ -615,6 +618,7 @@ export class DaemonScheduler {
           if (!finalized || finalized.status !== finalStatus) {
             throw new Error("Run ledger did not confirm terminal status " + finalStatus);
           }
+          ledgerFinalized = true;
         } catch (ledgerError) {
           const message = "Run " + runId + " could not be finalized in the durable ledger: " + String(ledgerError);
           this.log(message);
@@ -629,6 +633,39 @@ export class DaemonScheduler {
     }
 
     this.cancelledRunIds.delete(runId);
+
+    // Post-run learning is advisory only: it cannot change the task outcome,
+    // grant permissions, or make a candidate memory eligible for automatic recall.
+    if (ledgerFinalized && pinnedExecutionStarted && job.pinnedSkillVersion &&
+        ["success", "error", "timed_out"].includes(job.lastStatus || "")) {
+      const separator = job.pinnedSkillVersion.lastIndexOf("@");
+      const skillName = job.pinnedSkillVersion.slice(0, separator);
+      const version = job.pinnedSkillVersion.slice(separator + 1);
+      try {
+        const { recordSkillExecution, recordSkillOutcome } = await import("../skills/skillTracker.js");
+        const context = { workspace: job.workspace, version, taskId: runId, executionMode: "background" as const };
+        recordSkillExecution(skillName, context);
+        recordSkillOutcome(skillName, job.lastStatus === "success" ? "succeeded" : "failed",
+          job.lastRunDurationMs ?? 0, context);
+      } catch {
+        this.log("Could not persist version-bound skill execution metrics; task result is unchanged.");
+      }
+
+      if (job.lastStatus === "error" || job.lastStatus === "timed_out") {
+        try {
+          const { bridgeRepeatedSkillFailures } = await import("../skills/skillLearningBridge.js");
+          const bridge = await bridgeRepeatedSkillFailures({
+            jobId: job.id, workspacePath: job.workspace,
+            pinnedSkillVersion: job.pinnedSkillVersion,
+          });
+          if (bridge.status === "created") {
+            this.log("Created quarantined skill regression advisory for owner review; run IDs are kept in memory evidence.");
+          }
+        } catch {
+          this.log("Could not persist quarantined skill learning advisory; task outcome remains unchanged.");
+        }
+      }
+    }
     if (job.lastStatus === "success") return { success: true, output };
     return { success: false, error: error || job.lastError || "Daemon job failed." };
   }

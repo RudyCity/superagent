@@ -224,6 +224,20 @@ The `control_chrome_vision` tool provides **human-like visual perception and spa
 | `/server tunnel` | Manage Superagent REST/SSE server exposure independently |
 | `/tunnel` `/tunnels` | Deprecated Muse-only aliases; use `/mcp tunnel` for MCP or `/server tunnel` for REST/SSE |
 
+### Hermes-Style Skill Feedback and Guided Revision
+
+An approved/pinned skill run records version-bound outcome metrics. Two consecutive failed daemon runs for the same pinned version can create a **project-scoped, quarantined candidate advisory** in RMemory, linked to the exact run IDs. Negative feedback creates another quarantined advisory linked to a persisted feedback ID. Candidates are excluded from automatic recall until reviewed; failures to reach RMemory do not change the underlying run's outcome.
+
+```bash
+superagent skill feedback <name>@<12-char-version> negative --summary "Describe the failure"
+superagent skill revise <name>@<12-char-version> --feedback-id <persisted-feedback-id> --workspace ./project
+superagent skill evaluate <name>@<new-version> --workspace ./project
+superagent skill replay <name>@<new-version> --fixture fixtures/replay.json --workspace ./project
+superagent skill promote <name>@<new-version> --workspace ./project
+```
+
+The revision command produces an **inactive, immutable review candidate** with the exact parent version/hash and feedback provenance. It preserves the original version and never automatically promotes or edits the active skill. Owner approval remains interactive and mandatory. Live RMemory delivery and full-provider E2E tests are separate release gates.
+
 ### Workspace Management
 
 | Command | Description |
