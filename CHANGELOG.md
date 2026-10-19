@@ -7,6 +7,7 @@
   - Corrected CLI argument formatting to `--mcp.server-url` for `tunnel-client run`.
   - Added bearer token forwarding via `--mcp.extra-headers "Authorization: Bearer <token>"` when local MCP server requires static-bearer authentication.
   - Added `openAiProfileDir` parameter support in `StartMcpTunnelOptions` in `src/core/mcp/mcpTunnel.ts`.
+  - Updated `README.md` with detailed ChatGPT Connectors setup steps (Connection: Tunnel, Authentication: None vs OAuth) and troubleshooting guidance for OAuth discovery errors.
 
 ### Tests
 - Added unit tests in `tests/openaiTunnelClient.test.ts` verifying profile directory resolution, recursive directory materialization, YAML generation, and overwrite guards.

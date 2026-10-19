@@ -436,21 +436,32 @@ Superagent includes native integration with OpenAI Secure MCP Tunnels via the of
 
 3. **Start an OpenAI Secure MCP Tunnel**:
    ```bash
-   # Start with automatic ephemeral tunnel ID:
-   superagent mcp tunnel start --provider openai
+   # Start with your tunnel ID created in OpenAI Platform (format: tunnel_<32 hex chars>):
+   superagent mcp tunnel start --provider openai --tunnel-id tunnel_0123456789abcdef0123456789abcdef
 
-   # Start with a persistent tunnel ID and OAuth 2.1:
-   superagent mcp tunnel start --provider openai --tunnel-id my-agent-tunnel --mcp-auth oauth
+   # Allow destructive file/shell tools (e.g. for write access):
+   superagent mcp tunnel start --provider openai --tunnel-id tunnel_0123456789abcdef0123456789abcdef --allow-dangerous
 
-   # Allow destructive file/shell tools if needed:
-   superagent mcp tunnel start --provider openai --tunnel-id my-agent-tunnel --allow-dangerous
+   # Start with OAuth 2.1 user-consent flow if specifically required:
+   superagent mcp tunnel start --provider openai --tunnel-id tunnel_0123456789abcdef0123456789abcdef --mcp-auth oauth
 
    # Interactive slash command equivalents:
-   /mcp tunnel start --provider openai
-   /tunnel start --mcp --openai --tunnel-id my-agent-tunnel
+   /mcp tunnel start --openai --tunnel-id tunnel_0123456789abcdef0123456789abcdef
+   /tunnel start --mcp --openai --tunnel-id tunnel_0123456789abcdef0123456789abcdef
    ```
+   *Note*: Superagent automatically creates the required profile directory (`%APPDATA%\tunnel-client` on Windows or `~/.config/tunnel-client` on Unix) and generates the valid `superagent-mcp.yaml` profile before launching `tunnel-client`.
 
-4. **Connect OpenAI Responses API**:
+4. **Connecting in ChatGPT Connectors / Custom MCP**:
+   When connecting your OpenAI Secure MCP Tunnel in ChatGPT:
+   - In ChatGPT, navigate to **Settings > Connectors** (or **Custom MCP Servers / Plugins**) and click **Add**.
+   - **Connection**: Select **Tunnel** (toggle the pill from *Server URL* to *Tunnel*).
+   - **Tunnel ID**: Enter your tunnel ID (e.g. `tunnel_0123456789abcdef0123456789abcdef`).
+   - **Authentication**:
+     - **Select `None` (Recommended)**: The OpenAI Secure MCP Tunnel is already encrypted and authenticated end-to-end through OpenAI's control plane using your runtime API key. The local `tunnel-client` daemon automatically forwards calls to Superagent with the required local credentials. Selecting `None` connects seamlessly without extra overhead.
+     - **If set to `OAuth`**: ChatGPT will attempt RFC 8414/9728 discovery and show `"Couldn't discover OAuth settings. Check the server URL or enter settings manually"` unless Superagent was explicitly started with `--mcp-auth oauth`. For typical tunnel use, keep Authentication set to **None**.
+   - Click **Create as a plugin** to complete registration.
+
+5. **Connect OpenAI Responses API**:
    Use the public endpoint URL in your Responses API payload:
    ```json
    {
@@ -467,7 +478,7 @@ Superagent includes native integration with OpenAI Secure MCP Tunnels via the of
    }
    ```
 
-5. **Manage & Stop**:
+6. **Manage & Stop**:
    ```bash
    superagent mcp tunnel list             # Inspect active tunnels, URLs, and PID
    superagent mcp tunnel stop             # Stop active MCP tunnel
