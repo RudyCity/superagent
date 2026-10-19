@@ -1,7 +1,7 @@
 # SuperAgent Hermes-Like Phase 3 — Durable Always-On Execution, Memory Governance, and Autonomous Learning
 
 - **Date:** 2026-10-20
-- **Status:** Implementation in progress — TASK-301–318 now have bounded local implementation slices and targeted regression evidence. TASK-307 broader execution-entry-point audit, TASK-314/315 live RMemory/revision workflow probes, and full-suite/live-provider release gates remain open.
+- **Status:** TASK-301–318 bounded implementation complete with local regression acceptance. TASK-307 source entry-point audit and mutation-policy hardening passed; full Vitest/TypeScript/extension gates passed. Production readiness remains blocked by live RMemory gateway credentials, provider-backed replay, OAuth MCP project-grant probing, and staging validation.
 - **Author:** Independent Systems Architect and Planner (Antigravity Agent)
 - **Repository Baseline:** `e30682f5f56a7771a4000b4186a3476850435446` (`feat: add model-backed skill replay lifecycle`)
 - **Master Roadmap Reference:** `docs/plans/2026-10-18-superagent-hermes-like-personal-agent-development-plan.md` (Section 7, Phase 3)
@@ -734,11 +734,15 @@ The repository baseline above remains historical audit evidence. This section re
 - git diff --check — passed after the source/test changes; rerun after documentation reconciliation.
 - Additional 2026-10-20 focused evidence: 55/55 tests across 5 files passed for positive pinned skill, skill lifecycle, scheduler, and memory retention; 41/41 tests across 5 files passed for TASK-316 CLI, ledger, scheduler, and retention. The two batches overlap and are not additive.
 - Consolidated 2026-10-20 verification: bun run build and 145/145 tests passed across 17 targeted files (all prior daemon MCP/REST/ledger/CLI, scheduler, skill lifecycle, skill tracker, learning bridge, guided revisions, RMemory retention/recall, and gateway/selfdev); git diff --check passed before commit.
-- A broad Vitest run was launched separately and initial failures appeared in openaiTunnelClient and toolRegistryConsistency; the run has not produced a reliable full-suite passing result. These failures require separate triage. Full wrapper and live-provider end-to-end checks remain open.
+- Final broad Vitest run exited 0: 364 suites passed, 1 skipped; 3,506 tests passed, 5 skipped and 0 failed. Previous OpenAI Tunnel/tool registry regressions were corrected; remoteAgent tests were aligned with the /muse versus /telegram split. Additional TASK-307 source tripwire/runtime tests were added after that broad run; final post-hardening focused 101/101 tests across 11 suites passed, along with build and eight extension JS checks.
 
 ### Open acceptance gates
 
-- TASK-307 — Broader execution-entry-point audit: scheduler-level workspace symlink rejection, canonical path/policy snapshots, and approval/allowlist-denial regressions are in place. Review every other daemon/job invoker against the same policy contract before closing this broader audit.
+- TASK-307 — Local source-path audit completed across scheduler ticks, REST, CLI, and interactive /daemon: all use the shared guarded executeJob entry. Strict creation schema, PATCH field allowlist, immutable internal run state, active execution-policy freeze, active-delete refusal, and in-flight identity preservation have runtime and tripwire tests. See docs/plans/2026-10-20-superagent-hermes-phase-3-local-acceptance-audit.md.
 - TASK-314 / TASK-315 — Local evidence linking, quarantine and immutable revision regressions pass. Live RMemory gateway connectivity, negative-feedback UX, guided revision replay, and real-provider security evaluation still require end-to-end verification; these acceptance gates remain open.
 - TASK-318 — Local MCP registration, workspace scope checks and four isolation regressions pass. A live MCP client/OAuth project-grant probe remains an end-to-end acceptance gate before release.
 - Continue multi-case security/evaluation coverage and run live-provider plus full regression gates before release. Phase 3, Phase 2 review gates, and the overall Hermes-style migration are not complete.
+
+### Local acceptance decision (2026-10-20)
+
+Local Phase 3 implementation and regression acceptance are complete; this is **not** proof of production release. The RMemory gateway API key is not configured locally, and actual provider-backed skill replay, live MCP OAuth/grants, and deployment/staging checks remain external sign-off gates. Details: `docs/plans/2026-10-20-superagent-hermes-phase-3-local-acceptance-audit.md`.

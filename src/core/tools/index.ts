@@ -319,6 +319,7 @@ export const allTools: Tool[] = [
   killProcessTool,
   inspectBackgroundLogTool,
   getRemoteServiceStatusTool,
+  getMuseDirectChatReadinessTool,
 ];
 
 import { TOOL_ALIASES, canonicalizeToolName } from "./toolAliases.js";

@@ -146,6 +146,39 @@ export class DaemonScheduler {
     pinnedSkillVersion?: string;
     kind?: DaemonJobKind;
   }): DaemonJob {
+    // REST callers share this constructor with CLI/TUI. Validate the schema
+    // here so no entry point can persist a malformed privileged job.
+    if (typeof params.name !== "string" || !params.name.trim() || params.name.length > 240) {
+      throw new Error("Daemon job name must be a non-empty string of at most 240 characters.");
+    }
+    if (typeof params.prompt !== "string" || !params.prompt.trim() || params.prompt.length > 100_000) {
+      throw new Error("Daemon job prompt must be non-empty and at most 100000 characters.");
+    }
+    if (params.mode !== undefined && params.mode !== "single" && params.mode !== "multi") {
+      throw new Error("Daemon job mode must be single or multi.");
+    }
+    if (params.workspace !== undefined && (typeof params.workspace !== "string" || !params.workspace.trim())) {
+      throw new Error("Daemon job workspace must be a non-empty string.");
+    }
+    if (params.enabled !== undefined && typeof params.enabled !== "boolean") {
+      throw new Error("Daemon enabled must be a boolean.");
+    }
+    if (params.notifyGateway !== undefined && typeof params.notifyGateway !== "boolean") {
+      throw new Error("notifyGateway must be boolean.");
+    }
+    if (params.idempotent !== undefined && typeof params.idempotent !== "boolean") {
+      throw new Error("idempotent must be boolean.");
+    }
+    if (params.maxRuns !== undefined && (!Number.isSafeInteger(params.maxRuns) || params.maxRuns < 1)) {
+      throw new Error("maxRuns must be a positive integer.");
+    }
+    if (params.tags !== undefined && (!Array.isArray(params.tags) || params.tags.length > 30 ||
+        params.tags.some(tag => typeof tag !== "string" || tag.length > 120))) {
+      throw new Error("Daemon job tags must contain at most 30 short strings.");
+    }
+    if (params.allowedTools !== undefined && !Array.isArray(params.allowedTools)) {
+      throw new Error("Daemon allowedTools must be an array.");
+    }
     if (params.timeoutMs !== undefined && !isValidDaemonJobTimeout(params.timeoutMs)) {
       throw new Error("timeoutMs must be a positive integer no greater than 24 hours.");
     }
@@ -211,6 +244,68 @@ export class DaemonScheduler {
     const job = this.jobs.get(id);
     if (!job) return null;
 
+    const editable = new Set([
+      "id", "name", "cronExpression", "prompt", "workspace", "mode", "enabled",
+      "notifyGateway", "maxRuns", "tags", "allowedTools", "timeoutMs",
+      "retryLimit", "retryDelayMs", "idempotent", "pinnedSkillVersion",
+    ]);
+    const forbidden = Object.keys(updates).filter(key => !editable.has(key));
+    if (forbidden.length || (updates.id !== undefined && updates.id !== id)) {
+      throw new Error("Daemon job PATCH refused immutable/internal field(s): " +
+        [...forbidden, ...(updates.id !== undefined && updates.id !== id ? ["id"] : [])].join(", "));
+    }
+    // Never let concurrent PATCH alter the workspace, skill, tool grants, or
+    // execution policy of a job whose runner is already using that object.
+    if (this.runningJobIds.has(id) &&
+        Object.keys(updates).some(key => key !== "id" && key !== "enabled")) {
+      throw new Error("Cannot modify the execution configuration of a running daemon job.");
+    }
+    if (updates.name !== undefined && (typeof updates.name !== "string" ||
+        updates.name.trim().length === 0 || updates.name.length > 240)) {
+      throw new Error("Daemon job name must be a non-empty string of at most 240 characters.");
+    }
+    if (updates.prompt !== undefined && (typeof updates.prompt !== "string" ||
+        !updates.prompt.trim() || updates.prompt.length > 100_000)) {
+      throw new Error("Daemon job prompt must be non-empty and at most 100000 characters.");
+    }
+    if (updates.mode !== undefined && updates.mode !== "single" && updates.mode !== "multi") {
+      throw new Error("Daemon job mode must be single or multi.");
+    }
+    if (updates.enabled !== undefined && typeof updates.enabled !== "boolean") {
+      throw new Error("Daemon enabled must be a boolean.");
+    }
+    if (updates.workspace !== undefined && (typeof updates.workspace !== "string" || !updates.workspace.trim())) {
+      throw new Error("Daemon job workspace must be a non-empty string.");
+    }
+    if (updates.maxRuns !== undefined && (!Number.isSafeInteger(updates.maxRuns) || updates.maxRuns < 1)) {
+      throw new Error("maxRuns must be a positive integer.");
+    }
+    if (updates.notifyGateway !== undefined && typeof updates.notifyGateway !== "boolean") {
+      throw new Error("notifyGateway must be boolean.");
+    }
+    if (updates.idempotent !== undefined && typeof updates.idempotent !== "boolean") {
+      throw new Error("idempotent must be boolean.");
+    }
+    if (updates.tags !== undefined && (!Array.isArray(updates.tags) ||
+      updates.tags.length > 30 || updates.tags.some(tag => typeof tag !== "string" || tag.length > 120))) {
+      throw new Error("Daemon job tags must contain at most 30 short strings.");
+    }
+
+    // While running, preserve object identity: executeJob writes terminal
+    // counters/status to this same job instance. Replacing it would lose them.
+    if (this.runningJobIds.has(id)) {
+      if (updates.enabled !== undefined) {
+        job.enabled = updates.enabled;
+        if (!job.enabled) {
+          job.queuedAt = undefined;
+          job.retryAt = undefined;
+          job.retryCount = 0;
+        }
+        this.saveJobs();
+      }
+      return job;
+    }
+
     if (updates.pinnedSkillVersion !== undefined && updates.pinnedSkillVersion !== "" && !/^[a-z0-9]+(?:-[a-z0-9]+)*@[a-f0-9]{12}$/.test(updates.pinnedSkillVersion.trim())) {
       throw new Error("pinnedSkillVersion must use the format skill-name@12-char-hash.");
     }
@@ -260,6 +355,7 @@ export class DaemonScheduler {
   }
 
   public deleteJob(id: string): boolean {
+    if (this.runningJobIds.has(id)) return false;
     const existed = this.jobs.delete(id);
     if (existed) {
       this.saveJobs();

@@ -228,6 +228,31 @@ describe("DaemonScheduler", () => {
     expect(scheduler.getJob(job.id)).toBeNull();
   });
 
+  it("rejects invalid job payloads consistently across CLI/HTTP constructor paths", () => {
+    const base = {
+      name: "Validated job",
+      cronExpression: "0 5 * * *",
+      prompt: "Inspect safely",
+      workspace: tmpDir,
+    };
+    const invalid = [
+      { mode: "privileged" },
+      { enabled: "false" },
+      { notifyGateway: "yes" },
+      { workspace: 42 },
+      { idempotent: "true" },
+      { maxRuns: -1 },
+      { prompt: "" },
+      { name: "" },
+      { allowedTools: "bash" },
+      { tags: ["valid", 1] },
+    ];
+    for (const changes of invalid) {
+      expect(() => scheduler.addJob({ ...base, ...changes } as any)).toThrow();
+    }
+    expect(scheduler.listJobs()).toHaveLength(0);
+  });
+
   it("rejects invalid cron expressions when adding a job", () => {
     expect(() => {
       scheduler.addJob({
@@ -908,6 +933,59 @@ describe("DaemonScheduler", () => {
     });
   });
 
+  it("rejects internal state injection and freezes execution policy during an active run", async () => {
+    const runner = vi.fn(async () => {
+      await new Promise<void>((resolve) => {
+        releaseRunner = resolve;
+      });
+      return "run completed under original policy";
+    });
+    let releaseRunner: (() => void) | undefined;
+    scheduler.setAgentRunner(runner);
+    const job = scheduler.addJob({
+      name: "Immutable running policy",
+      cronExpression: "0 4 * * *",
+      prompt: "Inspect with original permissions",
+      workspace: tmpDir,
+      mode: "single",
+      allowedTools: ["read_file"],
+    });
+
+    expect(() => scheduler.updateJob(job.id, { kind: "system-memory-retention-sweep" })).toThrow(/immutable/);
+    expect(() => scheduler.updateJob(job.id, { lastStatus: "success" })).toThrow(/immutable/);
+    expect(() => scheduler.updateJob(job.id, { runCount: 999 })).toThrow(/immutable/);
+    expect(() => scheduler.updateJob(job.id, { id: "spoof" })).toThrow(/immutable/);
+    expect(() => scheduler.updateJob(job.id, { mode: "unknown" as any })).toThrow(/single or multi/);
+
+    const pending = scheduler.triggerJobNow(job.id);
+    await vi.waitFor(() => expect(runner).toHaveBeenCalledTimes(1));
+    try {
+      expect(() => scheduler.updateJob(job.id, { workspace: path.dirname(tmpDir) })).toThrow(/running daemon/);
+      expect(() => scheduler.updateJob(job.id, { allowedTools: ["bash"] })).toThrow(/running daemon/);
+      expect(() => scheduler.updateJob(job.id, { pinnedSkillVersion: "rogue@abcdef123456" })).toThrow(/running daemon/);
+      expect(() => scheduler.updateJob(job.id, { prompt: "new privileged task" })).toThrow(/running daemon/);
+      expect(scheduler.deleteJob(job.id)).toBe(false);
+      expect(scheduler.updateJob(job.id, { enabled: false })?.enabled).toBe(false);
+    } finally {
+      releaseRunner?.();
+    }
+    const result = await pending;
+    expect(result.success).toBe(true);
+    expect(scheduler.getJob(job.id)).toMatchObject({
+      workspace: fs.realpathSync(tmpDir),
+      prompt: "Inspect with original permissions",
+      mode: "single",
+      runCount: 1,
+    });
+    const run = listDaemonRuns({ jobId: job.id, limit: 1 })[0];
+    expect(run.status).toBe("success");
+    expect(JSON.parse(run.executionPolicyJson)).toMatchObject({
+      workspacePath: fs.realpathSync(tmpDir),
+      mode: "single",
+      explicitAllowedTools: ["read_file"],
+    });
+  });
+
   it("reconciles stale running records on restart without re-executing the job", () => {
     const job = scheduler.addJob({
       name: "Interrupted after restart",
@@ -922,8 +1000,11 @@ describe("DaemonScheduler", () => {
       workspace: tmpDir,
     });
     const startedAt = Date.now() - 30_000;
-    scheduler.updateJob(job.id, { lastStatus: "running", lastRun: startedAt });
-    scheduler.updateJob(legacyJob.id, { lastStatus: "running", lastRun: startedAt - 10_000 });
+    // Simulate historical on-disk records without granting public PATCH
+    // permission to alter internal execution/ledger state.
+    Object.assign(scheduler.getJob(job.id)!, { lastStatus: "running", lastRun: startedAt });
+    Object.assign(scheduler.getJob(legacyJob.id)!, { lastStatus: "running", lastRun: startedAt - 10_000 });
+    (scheduler as any).saveJobs();
     const runId = "stale-run-" + Date.now();
     insertDaemonRun({
       runId,

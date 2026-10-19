@@ -1084,7 +1084,7 @@ describe("remoteAgent - Slash Command (/muse)", () => {
     lines = [];
   });
 
-  it("should show status with masked bot token", async () => {
+  it("keeps Telegram credentials out of Muse status and directs users to /telegram", async () => {
     saveRemoteAgentConfig({
       botToken: "123456789:ABCsecretTokenXYZ",
       groupId: "-100987654",
@@ -1096,16 +1096,17 @@ describe("remoteAgent - Slash Command (/muse)", () => {
     expect(lines.length).toBeGreaterThan(0);
     const content = lines[0].content;
     expect(content).toContain("Remote Agent (Muse) Status:");
-    expect(content).toContain("1234...nXYZ");
     expect(content).not.toContain("ABCsecretTokenXYZ");
-    expect(content).toContain("-100987654");
+    expect(content).not.toContain("-100987654");
+    expect(content).toContain("/telegram status");
   });
 
   it("should update config via /muse config", async () => {
     await museCommand.execute("config groupId -100444555", mockContext);
 
     expect(lines.length).toBeGreaterThan(0);
-    expect(lines[0].content).toContain("Remote agent configuration updated: groupId = -100444555");
+    expect(lines[0].content).toContain("deprecated; use /telegram config groupId.");
+    expect(lines.some(line => line.content.includes("Telegram configuration updated: groupId"))).toBe(true);
 
     const cfg = loadRemoteAgentConfig();
     expect(cfg.groupId).toBe("-100444555");
@@ -1360,10 +1361,14 @@ describe("remoteAgent - CLI Handler", () => {
     const { handleMuseCliCommand } = await import("../src/core/remoteAgent/museCli.js");
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
 
+    const originalTelegramBotId = loadRemoteAgentConfig().museBotId;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     await handleMuseCliCommand(["config", "museBotId", "888777"]);
+    expect(errorSpy.mock.calls.flat().join(" ")).toContain("/telegram config");
+    errorSpy.mockRestore();
 
     let cfg = loadRemoteAgentConfig();
-    expect(cfg.museBotId).toBe("888777");
+    expect(cfg.museBotId).toBe(originalTelegramBotId);
 
     await handleMuseCliCommand(["config", "as_runner", "on"]);
     cfg = loadRemoteAgentConfig();
@@ -1389,7 +1394,8 @@ describe("remoteAgent - CLI Handler", () => {
     expect(subSuggestions).toContain("/muse config transport");
     expect(subSuggestions).toContain("/muse config wsToken");
     expect(subSuggestions).toContain("/muse config workspaces");
-    expect(subSuggestions).toContain("/muse config botToken");
+    expect(subSuggestions).not.toContain("/muse config botToken");
+    expect(getSuggestionDescriptions()["/muse config botToken"]).toContain("/telegram config botToken");
     expect(subSuggestions).toContain("/muse config as_runner_model");
     expect(subSuggestions).toContain("/muse config as_runner_model on");
     expect(subSuggestions).toContain("/muse config as_runner_model off");

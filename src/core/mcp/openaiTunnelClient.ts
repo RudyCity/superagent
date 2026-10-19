@@ -299,7 +299,11 @@ function isValidApiKeyCandidate(key?: string): key is string {
  * credential: those keys may not have Tunnels Read + Use permission.
  */
 export function resolveOpenAiControlPlaneKey(explicitKey?: string): string | undefined {
-  if (isValidApiKeyCandidate(explicitKey)) return explicitKey.replace(/[\r\n\s]+/g, "");
+  // Malformed explicit credentials fail closed rather than silently using
+  // an unrelated saved/environment credential.
+  if (explicitKey !== undefined) {
+    return isValidApiKeyCandidate(explicitKey) ? explicitKey.replace(/[\r\n\s]+/g, "") : undefined;
+  }
 
   const envKey = process.env.CONTROL_PLANE_API_KEY;
   if (isValidApiKeyCandidate(envKey)) return envKey.replace(/[\r\n\s]+/g, "");
