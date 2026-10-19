@@ -16,6 +16,8 @@ import {
   getOpenAiTunnelStatus,
   listActiveOpenAiTunnels,
   runTunnelClientDoctor,
+  getDefaultTunnelClientProfileDir,
+  ensureOpenAiTunnelProfile,
 } from "../src/core/mcp/openaiTunnelClient.js";
 
 describe("OpenAI Secure MCP Tunnel Client", () => {
@@ -79,6 +81,67 @@ describe("OpenAI Secure MCP Tunnel Client", () => {
       expect(guide).toContain("OpenAI Secure MCP Tunnel Client (tunnel-client) is required");
       expect(guide).toContain("https://github.com/openai/tunnel-client/releases/latest");
       expect(guide).toContain("https://platform.openai.com/settings/organization/tunnels");
+    });
+  });
+
+  describe("Profile Management & Materialization", () => {
+    it("resolves default profile directory using TUNNEL_CLIENT_PROFILE_DIR if set", () => {
+      const custom = path.join(tempHome, "custom-profile-dir");
+      const orig = process.env.TUNNEL_CLIENT_PROFILE_DIR;
+      try {
+        process.env.TUNNEL_CLIENT_PROFILE_DIR = custom;
+        expect(getDefaultTunnelClientProfileDir()).toBe(path.resolve(custom));
+      } finally {
+        if (orig !== undefined) process.env.TUNNEL_CLIENT_PROFILE_DIR = orig;
+        else delete process.env.TUNNEL_CLIENT_PROFILE_DIR;
+      }
+    });
+
+    it("materializes profile directory and writes valid YAML configuration", () => {
+      const targetDir = path.join(tempHome, "profiles");
+      const res = ensureOpenAiTunnelProfile({
+        profileDir: targetDir,
+        profile: "test-superagent",
+        tunnelId: "tunnel_test1234567890abcdef",
+        mcpServerUrl: "http://127.0.0.1:9500/mcp",
+        healthListenAddr: "127.0.0.1:10500",
+      });
+
+      expect(res.created).toBe(true);
+      expect(res.profileDir).toBe(targetDir);
+      expect(fs.existsSync(res.profileFile)).toBe(true);
+
+      const content = fs.readFileSync(res.profileFile, "utf-8");
+      expect(content).toContain("config_version: 1");
+      expect(content).toContain('tunnel_id: "tunnel_test1234567890abcdef"');
+      expect(content).toContain('url: "http://127.0.0.1:9500/mcp"');
+      expect(content).toContain('listen_addr: "127.0.0.1:10500"');
+      expect(content).toContain('api_key: "env:CONTROL_PLANE_API_KEY"');
+    });
+
+    it("does not overwrite existing profile file unless force is set", () => {
+      const targetDir = path.join(tempHome, "profiles-existing");
+      fs.mkdirSync(targetDir, { recursive: true });
+      const customFile = path.join(targetDir, "custom.yaml");
+      fs.writeFileSync(customFile, "# custom existing profile\n", "utf-8");
+
+      const res = ensureOpenAiTunnelProfile({
+        profileDir: targetDir,
+        profile: "custom",
+      });
+
+      expect(res.created).toBe(false);
+      expect(fs.readFileSync(customFile, "utf-8")).toBe("# custom existing profile\n");
+
+      // With force, it updates
+      const forced = ensureOpenAiTunnelProfile({
+        profileDir: targetDir,
+        profile: "custom",
+        tunnelId: "tunnel_forced_update_12345",
+        force: true,
+      });
+      expect(forced.created).toBe(true);
+      expect(fs.readFileSync(customFile, "utf-8")).toContain("tunnel_forced_update_12345");
     });
   });
 

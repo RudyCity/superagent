@@ -29,6 +29,8 @@ export interface OpenAiTunnelOptions {
   mcpServerUrl?: string;
   /** Profile name for tunnel-client (default: "superagent-mcp"). */
   profile?: string;
+  /** Directory containing profile YAML files (default: %APPDATA%/tunnel-client on Windows or ~/.config/tunnel-client on Unix). */
+  profileDir?: string;
   /** Health check and local admin UI listen address (e.g. "127.0.0.1:8080"). */
   healthListenAddr?: string;
   /** Custom path to the tunnel-client binary. */
@@ -84,6 +86,100 @@ export function getOpenAiTunnelStateDir(): string {
 
 export function getOpenAiTunnelStateFile(port: number): string {
   return path.join(getOpenAiTunnelStateDir(), `openai-tunnel-${port}.json`);
+}
+
+/**
+ * Returns default profile directory used by OpenAI tunnel-client:
+ * - TUNNEL_CLIENT_PROFILE_DIR environment variable if set
+ * - On Windows: %APPDATA%\tunnel-client (e.g. C:\Users\<user>\AppData\Roaming\tunnel-client)
+ * - On Unix/macOS: $XDG_CONFIG_HOME/tunnel-client or ~/.config/tunnel-client
+ */
+export function getDefaultTunnelClientProfileDir(): string {
+  if (process.env.TUNNEL_CLIENT_PROFILE_DIR && process.env.TUNNEL_CLIENT_PROFILE_DIR.trim()) {
+    return path.resolve(process.env.TUNNEL_CLIENT_PROFILE_DIR.trim());
+  }
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
+    return path.join(appData, "tunnel-client");
+  }
+  const xdgConfig = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  return path.join(xdgConfig, "tunnel-client");
+}
+
+export interface OpenAiTunnelProfileOptions {
+  profileDir?: string;
+  profile?: string;
+  tunnelId?: string;
+  mcpServerUrl?: string;
+  healthListenAddr?: string;
+  apiKeyRef?: string;
+  force?: boolean;
+}
+
+export interface OpenAiTunnelProfileResult {
+  profileDir: string;
+  profileFile: string;
+  profileName: string;
+  created: boolean;
+}
+
+/**
+ * Ensures that the OpenAI tunnel-client profile directory exists and that
+ * the requested profile YAML file is present. If it doesn't exist or if force is true,
+ * writes a standard profile YAML compatible with OpenAI tunnel-client.
+ */
+export function ensureOpenAiTunnelProfile(opts: OpenAiTunnelProfileOptions = {}): OpenAiTunnelProfileResult {
+  const profileDir = opts.profileDir ? path.resolve(opts.profileDir) : getDefaultTunnelClientProfileDir();
+  const profileName = (opts.profile || "superagent-mcp").trim();
+  const profileFile = path.join(profileDir, `${profileName}.yaml`);
+
+  if (!fs.existsSync(profileDir)) {
+    fs.mkdirSync(profileDir, { recursive: true });
+  }
+
+  const exists = fs.existsSync(profileFile);
+  if (exists && !opts.force && !opts.tunnelId && !opts.mcpServerUrl) {
+    return {
+      profileDir,
+      profileFile,
+      profileName,
+      created: false,
+    };
+  }
+
+  const tunnelId = opts.tunnelId || "tunnel_00000000000000000000000000000000";
+  const mcpServerUrl = opts.mcpServerUrl || "http://127.0.0.1:9227/mcp";
+  const healthListenAddr = opts.healthListenAddr || "127.0.0.1:10227";
+  const apiKeyRef = opts.apiKeyRef || "env:CONTROL_PLANE_API_KEY";
+
+  const lines = [
+    "config_version: 1",
+    "control_plane:",
+    '  base_url: "https://api.openai.com"',
+    `  tunnel_id: "${tunnelId}"`,
+    `  api_key: "${apiKeyRef}"`,
+    "health:",
+    `  listen_addr: "${healthListenAddr}"`,
+    "admin_ui:",
+    "  open_browser: false",
+    "log:",
+    "  level: info",
+    "  format: json",
+    "mcp:",
+    "  server_urls:",
+    "    - channel: main",
+    `      url: "${mcpServerUrl}"`,
+    "",
+  ];
+
+  fs.writeFileSync(profileFile, lines.join("\n"), "utf-8");
+
+  return {
+    profileDir,
+    profileFile,
+    profileName,
+    created: true,
+  };
 }
 
 /**
@@ -230,8 +326,11 @@ export function isValidTunnelId(tunnelId: string): boolean {
 export async function runTunnelClientDoctor(opts: {
   binaryPath?: string;
   profile?: string;
+  profileDir?: string;
   tunnelId?: string;
   apiKey?: string;
+  mcpServerUrl?: string;
+  healthListenAddr?: string;
 }): Promise<{ success: boolean; output: string }> {
   let binary = findTunnelClientBinary(opts.binaryPath);
   if (!binary && !opts.binaryPath) {
@@ -249,16 +348,35 @@ export async function runTunnelClientDoctor(opts: {
   }
 
   const profile = opts.profile || "superagent-mcp";
+  const profileDir = opts.profileDir ? path.resolve(opts.profileDir) : getDefaultTunnelClientProfileDir();
+  const profileInfo = ensureOpenAiTunnelProfile({
+    profileDir,
+    profile,
+    tunnelId: opts.tunnelId,
+    mcpServerUrl: opts.mcpServerUrl,
+    healthListenAddr: opts.healthListenAddr,
+    force: Boolean(opts.tunnelId || opts.mcpServerUrl),
+  });
+
   const apiKey = resolveOpenAiControlPlaneKey(opts.apiKey);
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    TUNNEL_CLIENT_PROFILE_DIR: profileInfo.profileDir,
     ...(apiKey ? { CONTROL_PLANE_API_KEY: apiKey } : {}),
     ...(opts.tunnelId ? { CONTROL_PLANE_TUNNEL_ID: opts.tunnelId } : {}),
   };
 
   return new Promise((resolve) => {
     try {
-      const child = spawn(binary, ["doctor", "--profile", profile, "--explain"], {
+      const doctorArgs = [
+        "doctor",
+        "--profile",
+        profileInfo.profileName,
+        "--profile-dir",
+        profileInfo.profileDir,
+        "--explain",
+      ];
+      const child = spawn(binary, doctorArgs, {
         env,
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -407,6 +525,7 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
   }
 
   const profile = opts.profile || "superagent-mcp";
+  const profileDir = opts.profileDir ? path.resolve(opts.profileDir) : getDefaultTunnelClientProfileDir();
   const mcpServerUrl = opts.mcpServerUrl || `http://127.0.0.1:${mcpPort}/mcp`;
   const healthPort = opts.healthListenAddr
     ? parseHealthPort(opts.healthListenAddr, mcpPort + 1000)
@@ -417,19 +536,34 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
   const healthUrl = `http://${healthListenAddr}/healthz`;
   const readyUrl = `http://${healthListenAddr}/readyz`;
 
+  // Materialize profile directory and config YAML prior to launching daemon
+  const profileInfo = ensureOpenAiTunnelProfile({
+    profileDir,
+    profile,
+    tunnelId,
+    mcpServerUrl,
+    healthListenAddr,
+    force: true,
+  });
+
   const args: string[] = ["run"];
   if (opts.embeddedStub) {
     args.push("--embedded-stateless-mcp-stub");
   } else {
-    args.push("--mcp-server-url", mcpServerUrl);
+    args.push("--mcp.server-url", mcpServerUrl);
   }
   args.push("--health.listen-addr", healthListenAddr);
-  if (profile) {
-    args.push("--profile", profile);
+  if (profileInfo.profileName) {
+    args.push("--profile", profileInfo.profileName);
+    args.push("--profile-dir", profileInfo.profileDir);
+  }
+  if (opts.bearerToken) {
+    args.push("--mcp.extra-headers", `Authorization: Bearer ${opts.bearerToken}`);
   }
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    TUNNEL_CLIENT_PROFILE_DIR: profileInfo.profileDir,
     CONTROL_PLANE_API_KEY: apiKey,
     CONTROL_PLANE_TUNNEL_ID: tunnelId,
   };

@@ -1,3 +1,16 @@
+## [1.14.2] - 2026-10-19
+### Fixed
+- Fixed OpenAI Secure MCP Tunnel startup crash caused by missing profile directory and unmaterialized YAML configuration (`openaiTunnelClient.ts`, `mcpTunnel.ts`):
+  - Added `ensureOpenAiTunnelProfile` and `getDefaultTunnelClientProfileDir` to automatically create the profile directory (e.g. `%APPDATA%\tunnel-client` on Windows or `$XDG_CONFIG_HOME/tunnel-client` on Unix) and write a valid `superagent-mcp.yaml` profile prior to spawning `tunnel-client run` and `tunnel-client doctor`.
+  - Configured generated YAML profile with `config_version: 1`, control plane parameters (`tunnel_id`, `api_key: "env:CONTROL_PLANE_API_KEY"`), `health.listen_addr`, and target `mcp.server_urls`.
+  - Added explicit `--profile-dir` flag and `TUNNEL_CLIENT_PROFILE_DIR` environment variable passing to both `tunnel-client run` and `tunnel-client doctor`.
+  - Corrected CLI argument formatting to `--mcp.server-url` for `tunnel-client run`.
+  - Added bearer token forwarding via `--mcp.extra-headers "Authorization: Bearer <token>"` when local MCP server requires static-bearer authentication.
+  - Added `openAiProfileDir` parameter support in `StartMcpTunnelOptions` in `src/core/mcp/mcpTunnel.ts`.
+
+### Tests
+- Added unit tests in `tests/openaiTunnelClient.test.ts` verifying profile directory resolution, recursive directory materialization, YAML generation, and overwrite guards.
+
 ## [1.14.1] - 2026-10-19
 ### Added
 - Integrated OpenAI Secure MCP Tunnel (`tunnel-client`) into Superagent's MCP tunnel ecosystem (`openaiTunnelClient.ts`, `mcpTunnel.ts`, `museTunnelSubcommand.ts`, `mcpCommand.ts`, `mcpCliHandler.ts`):

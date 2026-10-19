@@ -189,6 +189,8 @@ export interface StartMcpTunnelOptions {
   openAiApiKey?: string;
   /** Profile name for tunnel-client (default: "superagent-mcp"). */
   openAiProfile?: string;
+  /** Directory containing profile YAML files for tunnel-client. */
+  openAiProfileDir?: string;
   /** Port for healthz/readyz and admin UI (default: port + 1000). */
   openAiHealthPort?: number;
   /** Custom path to the tunnel-client binary. */
@@ -283,9 +285,11 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         mcpPort: port,
         apiKey: opts.openAiApiKey,
         profile: opts.openAiProfile,
+        profileDir: opts.openAiProfileDir,
         binaryPath: opts.openAiBinaryPath,
         healthListenAddr: opts.openAiHealthPort ? `127.0.0.1:${opts.openAiHealthPort}` : undefined,
         embeddedStub: opts.embeddedStub,
+        bearerToken: authMode === "oauth" ? undefined : active.bearerToken,
       });
       active.openAiStatus = openAiStatus;
     } catch (tunnelErr) {
