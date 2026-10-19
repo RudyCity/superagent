@@ -239,6 +239,8 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
               input: "Use the private MCP server to answer my request.",
               tools: [{ type: "mcp", server_label: "superagent_mcp", tunnel_id: info.openAiTunnelId }],
             }, null, 2),
+            "",
+            "Tunnel is active and serving traffic. Press Ctrl+C to stop.",
           ].filter(Boolean).join("\n"));
         } else {
           console.log([
@@ -247,8 +249,24 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
             `- Local URL    : ${info.localUrl}`,
             `- Bearer Token : ${info.bearerToken}`,
             `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
+            "",
+            "Tunnel is active and serving traffic. Press Ctrl+C to stop.",
           ].join("\n"));
         }
+
+        // Keep process running so tunnel and local MCP server remain alive
+        await new Promise<void>((resolve) => {
+          const cleanup = async () => {
+            console.log("\nStopping MCP tunnel...");
+            try {
+              const { stopMcpTunnel } = await import("../mcp/mcpTunnel.js");
+              await stopMcpTunnel(port);
+            } catch {}
+            resolve();
+          };
+          process.once("SIGINT", cleanup);
+          process.once("SIGTERM", cleanup);
+        });
         process.exit(0);
       } catch (err: any) {
         console.error(`Error starting MCP tunnel: ${err.message}`);

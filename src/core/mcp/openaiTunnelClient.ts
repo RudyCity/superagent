@@ -165,6 +165,7 @@ export function ensureOpenAiTunnelProfile(opts: OpenAiTunnelProfileOptions = {})
     "log:",
     "  level: info",
     "  format: json",
+    `  file: "${path.join(getOpenAiTunnelStateDir(), "tunnel-client.log").replace(/\\/g, "/")}"`,
     "mcp:",
     "  server_urls:",
     "    - channel: main",
@@ -567,6 +568,7 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
     args.push("--mcp.extra-headers", `Authorization: Bearer ${opts.bearerToken}`);
     args.push("--mcp.discovery-extra-headers", `Authorization: Bearer ${opts.bearerToken}`);
   }
+  args.push("--log.file", path.join(getOpenAiTunnelStateDir(), "tunnel-client.log"));
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
