@@ -225,7 +225,7 @@ export async function handleMuseTunnelSubcommand(
         const { generateResponsesApiSnippet, generateChatGptInstructions } = await import("../mcp/openaiTunnelClient.js");
         const tunnelId = activeMcp.openAiTunnelId || activeMcp.publicUrl.replace(/^openai-tunnel:\/\//, "");
         const responsesSnippet = generateResponsesApiSnippet(tunnelId);
-        const chatGptSteps = generateChatGptInstructions(tunnelId);
+        const chatGptSteps = generateChatGptInstructions(tunnelId, activeMcp.authMode);
         const copied = await copyTextToClipboard(responsesSnippet);
         ctx.addLine({
           type: "system",
@@ -485,7 +485,12 @@ export async function handleMuseTunnelSubcommand(
                 "2. Select Add Custom MCP Server.",
                 "3. Set Connection to: Tunnel",
                 `4. Enter Tunnel ID: ${tunnelId}`,
-                "5. Select Create as a plugin.",
+                "   IMPORTANT: Click the suggestion chip below the input (e.g. [ SuperAgent One ]) to select and bind it!",
+                mcpInfo.authMode === "oauth"
+                  ? "5. Set Authentication to: OAuth (provide bootstrap code if prompted)"
+                  : "5. Set Authentication to: No authentication",
+                "6. Check 'I understand and want to continue' and select Create as a plugin.",
+                "7. Keep this Superagent terminal open while using the connector.",
                 "",
                 "OpenAI Responses API Tool Definition:",
                 JSON.stringify({

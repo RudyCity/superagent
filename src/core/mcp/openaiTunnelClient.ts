@@ -565,6 +565,7 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
   }
   if (opts.bearerToken) {
     args.push("--mcp.extra-headers", `Authorization: Bearer ${opts.bearerToken}`);
+    args.push("--mcp.discovery-extra-headers", `Authorization: Bearer ${opts.bearerToken}`);
   }
 
   const env: NodeJS.ProcessEnv = {
@@ -821,15 +822,21 @@ export function generateResponsesApiSnippet(tunnelId: string, model = "gpt-4o"):
 /**
  * Generates instructions for connecting from ChatGPT Plugins / Custom MCP Server.
  */
-export function generateChatGptInstructions(tunnelId: string): string[] {
+export function generateChatGptInstructions(tunnelId: string, authMode: string = "static-bearer"): string[] {
+  const authStep = authMode === "oauth"
+    ? "5. Set Authentication to: OAuth (and provide bootstrap code if prompted)"
+    : "5. Set Authentication to: No authentication (the local tunnel-client handles authorization)";
+
   return [
     "ChatGPT Custom MCP Server Setup:",
     "1. In ChatGPT, open Settings -> Connectors or ChatGPT Plugins.",
     "2. Select Add Custom MCP Server.",
     "3. Set Connection to: Tunnel",
     `4. Enter Tunnel ID: ${tunnelId}`,
-    "5. Select Create as a plugin.",
-    "6. Verify your tools appear in chat conversations with ChatGPT.",
+    "   IMPORTANT: Click the suggestion chip below the input (e.g. [ SuperAgent One ]) to select and bind the tunnel!",
+    authStep,
+    "6. Check 'I understand and want to continue' and select Create as a plugin.",
+    "7. Keep this Superagent terminal window open while using the connector.",
   ];
 }
 

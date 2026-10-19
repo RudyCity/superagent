@@ -160,12 +160,17 @@ describe("OpenAI Secure MCP Tunnel Client", () => {
       expect(snippet).toContain("gpt-4o");
     });
 
-    it("generates clear step-by-step instructions for ChatGPT", () => {
-      const steps = generateChatGptInstructions("tunnel_abcdef123456");
+    it("generates clear step-by-step instructions for ChatGPT with chip selection and auth modes", () => {
+      const steps = generateChatGptInstructions("tunnel_abcdef123456", "static-bearer");
       const fullText = steps.join("\n");
       expect(fullText).toContain("ChatGPT Custom MCP Server Setup:");
       expect(fullText).toContain("Tunnel");
       expect(fullText).toContain("tunnel_abcdef123456");
+      expect(fullText).toContain("Click the suggestion chip");
+      expect(fullText).toContain("No authentication");
+
+      const oauthSteps = generateChatGptInstructions("tunnel_abcdef123456", "oauth");
+      expect(oauthSteps.join("\n")).toContain("OAuth");
     });
 
     it("generates Codex verification prompt", () => {

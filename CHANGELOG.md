@@ -1,3 +1,13 @@
+## [1.14.3] - 2026-10-19
+### Fixed
+- Fixed ChatGPT Connectors setup rejection (`Some app settings were rejected`) with OpenAI Secure MCP Tunnels (`openaiTunnelClient.ts`, `museTunnelSubcommand.ts`):
+  - Added `--mcp.discovery-extra-headers` alongside `--mcp.extra-headers` so MCP probe and discovery requests from `tunnel-client` to the local Superagent MCP server include the `Authorization: Bearer <token>` header, preventing HTTP 401 Unauthorized errors during connector initialization.
+  - Enhanced ChatGPT setup instructions across `generateChatGptInstructions` and the `/muse tunnel start` banner to explicitly highlight the ChatGPT UI combobox requirement: clicking the suggestion chip (e.g. `[ SuperAgent One ]`) below the tunnel ID input to bind and select the tunnel.
+  - Added explicit authentication selection guidance (matching `No authentication` for static-bearer tunnels vs `OAuth` for OAuth 2.1 tunnels) and keep-alive notification.
+
+### Tests
+- Updated `tests/openaiTunnelClient.test.ts` to verify instruction generation with chip binding guidance and both authentication modes.
+
 ## [1.14.2] - 2026-10-19
 ### Fixed
 - Fixed OpenAI Secure MCP Tunnel startup crash caused by missing profile directory and unmaterialized YAML configuration (`openaiTunnelClient.ts`, `mcpTunnel.ts`):
