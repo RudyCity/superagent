@@ -33,9 +33,9 @@ function fixture(ids: string[], options: { noInput?: boolean; focusFails?: boole
   return { doc, roots };
 }
 
-function executeFocus(ids: string[], options: { selector?: string; index?: number } = {}, flags: { noInput?: boolean; focusFails?: boolean } = {}) {
+function executeFocus(ids: string[], options: { selector?: string; index?: number; terminal_id?: string } = {}, flags: { noInput?: boolean; focusFails?: boolean } = {}) {
   const { doc } = fixture(ids, flags);
-  return runInNewContext(buildFocusTerminalJs(options), { document: doc }) as {
+  return runInNewContext(buildFocusTerminalJs(options), { document: doc, window: {} }) as {
     ok: boolean; reason?: string; terminalIndex?: number; count?: number; inputTag?: string;
   };
 }
@@ -48,6 +48,24 @@ describe("Chrome CDP terminal writer", () => {
       expect(cdps).toContain(name);
       expect(mcps).toContain(name);
     }
+  });
+
+  it("keeps opaque terminal ids stable after pane reorder within the same page", () => {
+    const { doc, roots } = fixture(["a", "b"]);
+    const window = {};
+    const context = { document: doc, window };
+    const before = runInNewContext(buildFocusTerminalJs({ index: 1 }), context) as { ok: boolean; terminalId: string; terminalIndex: number };
+    const original = doc.querySelectorAll;
+    doc.querySelectorAll = (selector) => {
+      const result = original(selector);
+      return result.length ? [roots[1], roots[0]] : result;
+    };
+    const after = runInNewContext(buildFocusTerminalJs({ terminal_id: before.terminalId }), context) as {
+      ok: boolean; terminalId: string; terminalIndex: number
+    };
+    expect(after.ok).toBe(true);
+    expect(after.terminalId).toBe(before.terminalId);
+    expect(after.terminalIndex).toBe(0);
   });
 
   it("focuses the exact terminal's existing textarea without creating or modifying DOM", () => {

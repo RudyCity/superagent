@@ -7,6 +7,7 @@
 export interface TerminalReadOptions {
   selector?: string;
   index?: number;
+  terminal_id?: string;
   max_lines?: number;
   max_chars?: number;
   viewport_only?: boolean;
@@ -15,6 +16,7 @@ export interface TerminalReadOptions {
 export interface TerminalResult {
   terminals: Array<{
     index: number;
+    terminalId?: string;
     kind: string;
     selector: string;
     source: string;
@@ -34,7 +36,7 @@ function bound(value: unknown, fallback: number, min: number, max: number): numb
 
 // Evaluated inside the *page* by CDP; cannot reference imported modules/closures.
 function browserReadTerminal(opts: {
-  selector: string; index: number | null; max_lines: number; max_chars: number; viewport_only: boolean;
+  selector: string; index: number | null; terminal_id: string; max_lines: number; max_chars: number; viewport_only: boolean;
 }): TerminalResult {
   const roots: Element[] = [];
   const rootSelector = ".xterm, .hterm, [data-terminal], .terminal, .terminal-output, [role='log']";
@@ -93,7 +95,7 @@ function browserReadTerminal(opts: {
         return { terminals: [], detected: entries.length, warning: "Invalid CSS selector." };
       }
     }
-    const idx = results.length;
+    const idx = entries.indexOf(entry); // Keep indices identical between read and input targeting.
     const instance = entry.instance || instances.find((t) => {
       try { return !!(root && t.element && (root === t.element || root.contains(t.element) || t.element.contains(root))); }
       catch { return false; }
@@ -161,9 +163,24 @@ function browserReadTerminal(opts: {
     const warning = source === "unavailable"
       ? "Terminal renderer has no readable DOM rows or exposed xterm buffer. Canvas/WebGL pixels cannot be decoded as text by CDP; use screenshot/vision or application-side terminal export."
       : undefined;
-    results.push({ index: idx, kind, selector, source, lines, totalLines, warning });
+    // Document-scoped, opaque ids survive element reordering; reload invalidates ids.
+    const idKey = "__superagentCdpTerminalRegistryV1";
+    const world = window as any;
+    if (!world[idKey] || !(world[idKey].ids instanceof WeakMap)) {
+      world[idKey] = { ids: new WeakMap(), prefix: "term-" + Math.random().toString(36).slice(2) + "-", seq: 0 };
+    }
+    const registry = world[idKey];
+    const reference = root || instance;
+    let terminalId: string | undefined;
+    if (reference) {
+      terminalId = registry.ids.get(reference);
+      if (!terminalId) { terminalId = registry.prefix + (++registry.seq); registry.ids.set(reference, terminalId); }
+    }
+    results.push({ index: idx, terminalId, kind, selector, source, lines, totalLines, warning });
   }
-  const selected = opts.index === null ? results : results.filter((r) => r.index === opts.index);
+  const selected = results.filter((r) =>
+    (opts.index === null || r.index === opts.index) &&
+    (!opts.terminal_id || r.terminalId === opts.terminal_id));
   let remaining = opts.max_chars;
   for (const item of selected) {
     const kept: string[] = [];
@@ -180,8 +197,8 @@ function browserReadTerminal(opts: {
   }
   return {
     terminals: selected,
-    detected: results.length,
-    warning: results.length ? undefined : "No supported terminal element or exposed buffer found in this tab."
+    detected: entries.length,
+    warning: entries.length ? undefined : "No supported terminal element or exposed buffer found in this tab."
   };
 }
 
@@ -189,6 +206,7 @@ export function buildReadTerminalJs(options: TerminalReadOptions = {}): string {
   const opts = {
     selector: String(options.selector || "").slice(0, 300),
     index: options.index === undefined ? null : bound(options.index, 0, 0, 1000),
+    terminal_id: String(options.terminal_id || "").slice(0, 120),
     max_lines: bound(options.max_lines, 80, 1, 200),
     max_chars: bound(options.max_chars, 12000, 200, 20000),
     viewport_only: options.viewport_only === true
@@ -204,7 +222,7 @@ export function formatTerminalReadResult(data: unknown): string {
   const parts = ["control_chrome_cdp: read_terminal detected " + result.detected + " terminal(s)."];
   if (result.warning) parts.push("Note: " + result.warning);
   for (const terminal of result.terminals) {
-    parts.push("Terminal [" + terminal.index + "] " + terminal.kind + " (" + terminal.selector +
+    parts.push("Terminal [" + terminal.index + "] " + terminal.kind + (terminal.terminalId ? " id=" + terminal.terminalId : "") + " (" + terminal.selector +
       "), source: " + terminal.source + ", total lines: " + (terminal.totalLines ?? "unknown"));
     parts.push(terminal.source === "unavailable" ? "Unavailable: " + terminal.warning :
       (terminal.lines.length ? "Output:\n" + terminal.lines.join("\n") : "Output: (empty)"));

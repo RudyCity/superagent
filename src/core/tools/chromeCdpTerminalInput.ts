@@ -6,6 +6,7 @@
 export interface TerminalInputTargetOptions {
   selector?: string;
   index?: number;
+  terminal_id?: string;
 }
 
 export interface TerminalFocusResult {
@@ -15,6 +16,7 @@ export interface TerminalFocusResult {
   count?: number;
   kind?: string;
   inputTag?: string;
+  terminalId?: string;
 }
 
 export function buildFocusTerminalJs(options: TerminalInputTargetOptions = {}): string {
@@ -22,12 +24,13 @@ export function buildFocusTerminalJs(options: TerminalInputTargetOptions = {}): 
   const opts = {
     selector: String(options.selector || "").slice(0, 300),
     index: safeIndex !== null && Number.isSafeInteger(safeIndex) && safeIndex >= 0 && safeIndex <= 1000 ? safeIndex : null,
+    terminal_id: String(options.terminal_id || "").slice(0, 120),
   };
   return "/*cdp-focus-terminal*/(" + browserFocusTerminal.toString() + ")(" + JSON.stringify(opts) + ")";
 }
 
 /** Source is stringified and evaluated in the page context, not Node.js. */
-function browserFocusTerminal(opts: { selector: string; index: number | null }): TerminalFocusResult {
+function browserFocusTerminal(opts: { selector: string; index: number | null; terminal_id: string }): TerminalFocusResult {
   const roots: Element[] = [];
   const rootSelector = ".xterm, .hterm, [data-terminal], .terminal, .terminal-output, [role='log']";
   const MAX_TERMINALS = 32;
@@ -50,10 +53,19 @@ function browserFocusTerminal(opts: { selector: string; index: number | null }):
   };
   visit(document, 0);
 
-  const matches: { root: Element; index: number }[] = [];
+  const idKey = "__superagentCdpTerminalRegistryV1";
+  const world = window as any;
+  if (!world[idKey] || !(world[idKey].ids instanceof WeakMap)) {
+    world[idKey] = { ids: new WeakMap(), prefix: "term-" + Math.random().toString(36).slice(2) + "-", seq: 0 };
+  }
+  const registry = world[idKey];
+  const matches: { root: Element; index: number; terminalId: string }[] = [];
   for (let i = 0; i < roots.length; i++) {
     const root = roots[i];
+    let terminalId = registry.ids.get(root);
+    if (!terminalId) { terminalId = registry.prefix + (++registry.seq); registry.ids.set(root, terminalId); }
     if (opts.index !== null && opts.index !== i) continue;
+    if (opts.terminal_id && terminalId !== opts.terminal_id) continue;
     if (opts.selector) {
       try {
         if (!(root.matches(opts.selector) || root.closest(opts.selector) || root.querySelector(opts.selector))) continue;
@@ -61,12 +73,12 @@ function browserFocusTerminal(opts: { selector: string; index: number | null }):
         return { ok: false, reason: "Invalid CSS selector.", count: roots.length };
       }
     }
-    matches.push({ root, index: i });
+    matches.push({ root, index: i, terminalId });
   }
   if (!matches.length) return { ok: false, reason: "No matching terminal found. Run read_terminal to discover indices or selectors.", count: roots.length };
   if (matches.length > 1) return { ok: false, reason: "Multiple terminals found: specify index or selector to avoid sending to the wrong shell.", count: matches.length };
 
-  const { root, index } = matches[0];
+  const { root, index, terminalId } = matches[0];
   const kind = root.classList.contains("xterm") ? "xterm.js" :
     root.classList.contains("hterm") ? "hterm" : "web-terminal";
 
@@ -95,7 +107,7 @@ function browserFocusTerminal(opts: { selector: string; index: number | null }):
   } catch {
     return { ok: false, reason: "Failed to focus terminal input.", terminalIndex: index, count: roots.length, kind };
   }
-  return { ok: true, terminalIndex: index, count: roots.length, kind, inputTag: input.tagName.toLowerCase() };
+  return { ok: true, terminalIndex: index, terminalId, count: roots.length, kind, inputTag: input.tagName.toLowerCase() };
 }
 
 type NativeKey = {

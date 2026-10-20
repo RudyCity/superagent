@@ -347,7 +347,9 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     const cmds = (controlChromeCdpTool.parameters as any).properties.command.enum as string[];
     expect(cmds).toEqual([
       "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate",
-      "snapshot", "read_page", "read_terminal", "write_terminal", "send_terminal_key", "extract_links", "click", "type", "wait_for",
+      "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key",
+      "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets",
+      "extract_links", "click", "type", "wait_for",
       "select_option",
       "check_form",
       "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
@@ -735,10 +737,25 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(res).toContain("PASS");
   });
 
+  test("Electron debug_port uses a per-call CDP scope without changing global configuration", async () => {
+    const scoped = await controlChromeCdpTool.execute({
+      command: "list_targets", payload: { debug_port: httpPort } as any,
+    });
+    expect(scoped).toContain("T1");
+    const typed = await controlChromeCdpTool.execute({
+      command: "write_terminal", targetId: "T1",
+      payload: { debug_port: httpPort, text: "echo electron", index: 0 } as any,
+    });
+    expect(typed).toContain("dispatched");
+    expect(await controlChromeCdpTool.execute({
+      command: "list_targets", payload: { debug_port: 80 } as any,
+    })).toContain("debug_port must be");
+  });
+
   test("write_terminal types without an implicit Enter", async () => {
     nativeTerminalEvents.length = 0;
     const res = await controlChromeCdpTool.execute({
-      command: "write_terminal", selector: "#terminal", text: "npm run build"
+      command: "write_terminal", targetId: "T1", selector: "#terminal", text: "npm run build"
     });
     expect(res).toContain("dispatched 13 character(s)");
     expect(res).toContain("Enter not sent");
@@ -750,7 +767,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   test("write_terminal enter:true sends CDP Enter keyDown and keyUp", async () => {
     nativeTerminalEvents.length = 0;
     const res = await controlChromeCdpTool.execute({
-      command: "write_terminal", payload: { text: "pwd", enter: true, index: 0 } as any
+      command: "write_terminal", targetId: "T1", payload: { text: "pwd", enter: true, index: 0 } as any
     });
     expect(res).toContain("and sent Enter");
     expect(nativeTerminalEvents.map((v) => v.method)).toEqual([
@@ -763,7 +780,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   test("send_terminal_key dispatches Ctrl+C without inserted text", async () => {
     nativeTerminalEvents.length = 0;
     const res = await controlChromeCdpTool.execute({
-      command: "send_terminal_key", payload: { key: "Ctrl+C", index: 0 } as any
+      command: "send_terminal_key", targetId: "T1", payload: { key: "Ctrl+C", index: 0 } as any
     });
     expect(res).toContain("dispatched key Ctrl+C");
     expect(nativeTerminalEvents.map((v) => v.method)).toEqual([
@@ -776,7 +793,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     focusTerminalShouldFail = true;
     nativeTerminalEvents.length = 0;
     try {
-      const res = await controlChromeCdpTool.execute({ command: "write_terminal", text: "dangerous" });
+      const res = await controlChromeCdpTool.execute({ command: "write_terminal", targetId: "T1", text: "dangerous" });
       expect(res).toContain("terminal input not sent");
       expect(nativeTerminalEvents).toHaveLength(0);
     } finally {
@@ -786,10 +803,10 @@ describe("control_chrome_cdp (mock CDP server)", () => {
 
   test("write_terminal rejects multiline, oversized, invalid index and unsupported keys", async () => {
     nativeTerminalEvents.length = 0;
-    expect(await controlChromeCdpTool.execute({ command: "write_terminal", text: "echo one\necho two" })).toContain("multiline terminal input is rejected");
-    expect(await controlChromeCdpTool.execute({ command: "write_terminal", text: "x".repeat(4001) })).toContain("exceeds 4000 characters");
-    expect(await controlChromeCdpTool.execute({ command: "write_terminal", text: "hello", index: -1 })).toContain("terminal index must be");
-    expect(await controlChromeCdpTool.execute({ command: "send_terminal_key", key: "Ctrl+Alt+Delete" })).toContain("unsupported terminal key");
+    expect(await controlChromeCdpTool.execute({ command: "write_terminal", targetId: "T1", text: "echo one\necho two" })).toContain("multiline terminal input is rejected");
+    expect(await controlChromeCdpTool.execute({ command: "write_terminal", targetId: "T1", text: "x".repeat(4001) })).toContain("exceeds 4000 characters");
+    expect(await controlChromeCdpTool.execute({ command: "write_terminal", targetId: "T1", text: "hello", index: -1 })).toContain("terminal index must be");
+    expect(await controlChromeCdpTool.execute({ command: "send_terminal_key", targetId: "T1", key: "Ctrl+Alt+Delete" })).toContain("unsupported terminal key");
     expect(nativeTerminalEvents).toHaveLength(0);
   });
 

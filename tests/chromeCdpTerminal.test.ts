@@ -89,6 +89,18 @@ describe("Chrome CDP web terminal reader", () => {
     expect(runTerminal({ selector: "#first" }, [first, second], { terminals }).terminals.map((t) => t.lines.join(""))).toEqual(["one"]);
   });
 
+  it("keeps global pane index after filtering rather than renumbering", () => {
+    const first = fakeRoot("first");
+    const second = fakeRoot("second");
+    const result = runTerminal({ selector: "#second" }, [first, second], {
+      terminals: [termBuffer(first, ["one"]), termBuffer(second, ["two"])],
+    });
+    expect(result.detected).toBe(2);
+    expect(result.terminals).toHaveLength(1);
+    expect(result.terminals[0].index).toBe(1);
+    expect(result.terminals[0].terminalId).toMatch(/^term-/);
+  });
+
   it("applies max_lines, max_chars and viewport_only bounds", () => {
     const root = fakeRoot("term");
     const term = termBuffer(root, ["zero", "one", "two", "three", "four"], 2, 2);

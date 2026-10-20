@@ -135,7 +135,7 @@ export const CHROME_MCP_TOOL_DEFS = [
     name: "superagent_chrome_cdp",
     description:
       "Automate real Google Chrome browser directly via Chrome DevTools Protocol (CDP port 9222). " +
-      "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, read_terminal, write_terminal, send_terminal_key, " +
+      "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, read_terminal, read_terminal_delta, write_terminal, send_terminal_key, execute_terminal, watch_terminal, list_terminal_sessions, monitor_terminal_agents, clear_terminal_sessions, discover_desktop_targets, " +
       "extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, " +
       "get_cookies, inspect_media_devices, move_cursor, drag_and_drop, emulate_device. " +
       "Supports device/viewport emulation (mobile, tablet, desktop, reset), human-like Bézier cursor movement, " +
@@ -147,7 +147,7 @@ export const CHROME_MCP_TOOL_DEFS = [
           type: "string",
           enum: [
             "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate",
-            "snapshot", "read_page", "read_terminal", "write_terminal", "send_terminal_key", "extract_links", "click", "type", "wait_for",
+            "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "execute_terminal", "watch_terminal", "list_terminal_sessions", "monitor_terminal_agents", "clear_terminal_sessions", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
             "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
             "get_cookies", "inspect_media_devices", "media_devices", "move_cursor",
             "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
@@ -161,7 +161,16 @@ export const CHROME_MCP_TOOL_DEFS = [
           description: "Optional JSON payload with command parameters.",
         },
         url: { type: "string", description: "Target URL for new_tab or navigate." },
-        index: { type: "number", description: "Interactive element index from snapshot, or zero-based terminal index for read_terminal." },
+        index: { type: "number", description: "Interactive element index from snapshot, or zero-based terminal index for read/write commands." },
+        terminal_id: { type: "string", description: "Opaque stable terminal ID provided by read_terminal; preferred over index for safe writes." },
+        allow_dangerous: { type: "boolean", description: "Explicit approval to dispatch a potentially destructive shell command." },
+        expected_output: { type: "string", description: "Literal output pattern for watch_terminal/execute_terminal." },
+        wait_ms: { type: "number", description: "Bounded watch duration (max 15000 ms per tool call)." },
+        verify_shell: { type: "string", enum: ["posix", "powershell"], description: "Optional shell-specific exit-code marker for execute_terminal." },
+        force_new_command: { type: "boolean", description: "Explicitly supersede a still-pending shell-marker execution." },
+        rebind_on_reload: { type: "boolean", description: "recover_terminal: opt in to safe unique-pane rebinding after renderer reload." },
+        debug_port: { type: "number", description: "Local Chrome/Electron CDP debugging port selected for this call." },
+        debug_ports: { type: "string", description: "discover_desktop_targets: 1-8 comma-separated loopback ports to probe." },
         text: { type: "string", description: "Text to type or search for; write_terminal sends to the focused web terminal via CDP." },
         enter: { type: "boolean", description: "write_terminal: explicitly press Enter after text (default false)." },
         key: { type: "string", description: "send_terminal_key: Enter, Tab, Escape, Backspace, Delete, Arrow keys, Home, End, Ctrl+C, Ctrl+D, Ctrl+L." },

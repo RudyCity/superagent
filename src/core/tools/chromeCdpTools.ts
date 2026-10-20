@@ -39,14 +39,19 @@ import { executeSelectOptionCommand, executeCheckFormCommand } from "./chromeCdp
 import { CDP_AUDIT_COMMANDS, executeCdpAuditCommand, type CdpAuditCommand } from "./chromeCdpAudits.js";
 import { CDP_DIAGNOSTIC_COMMANDS, executeCdpDiagnosticsCommand, recordCdpDebugEvent, type CdpDiagnosticCommand } from "./chromeCdpDiagnostics.js";
 import { saveCdpPdfArtifact } from "./chromeCdpArtifacts.js";
-import { buildReadTerminalJs, formatTerminalReadResult } from "./chromeCdpTerminal.js";
-import { buildFocusTerminalJs, terminalKeyEvent, type TerminalFocusResult } from "./chromeCdpTerminalInput.js";
+
+import { executeCdpTerminalCommand } from "./chromeCdpTerminalCommands.js";
+import { discoverDesktopTargets } from "./chromeCdpDesktop.js";
+
+import { AsyncLocalStorage } from "node:async_hooks";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
  * server by setting env vars before each call.
  */
 let resolvedHost: string | null = null;
+const terminalCdpConfig = new AsyncLocalStorage<{ port: number }>();
+
 
 function cdpHost(): string {
   if (process.env.SUPERAGENT_CDP_HOST) return process.env.SUPERAGENT_CDP_HOST;
@@ -61,7 +66,7 @@ function alternateHost(current: string): string | null {
 }
 
 function cdpPort(): number {
-  return Number(process.env.SUPERAGENT_CDP_PORT) || 9222;
+  return terminalCdpConfig.getStore()?.port || Number(process.env.SUPERAGENT_CDP_PORT) || 9222;
 }
 
 function cdpTimeoutMs(): number {
@@ -127,7 +132,7 @@ function httpGetJson(path: string, isRetry = false, overrideHost?: string): Prom
             // Alternate host also failed, proceed to auto-launch check
           }
         }
-        if (!isRetry) {
+        if (!isRetry && !terminalCdpConfig.getStore()) {
           const started = await ensureCdpRunning(cdpHost(), cdpPort());
           if (started) {
             try {
@@ -137,7 +142,9 @@ function httpGetJson(path: string, isRetry = false, overrideHost?: string): Prom
             } catch {}
           }
         }
-        reject(new Error(CDP_PORT_CLOSED_MSG));
+        reject(new Error(terminalCdpConfig.getStore()
+          ? "Configured local Electron/Chromium CDP port " + cdpPort() + " is not available; enable the app's remote debugging endpoint and retry. No process was started."
+          : CDP_PORT_CLOSED_MSG));
       } else {
         reject(err);
       }
@@ -182,7 +189,7 @@ function httpPutJson(path: string, isRetry = false, overrideHost?: string): Prom
             return;
           } catch {}
         }
-        if (!isRetry) {
+        if (!isRetry && !terminalCdpConfig.getStore()) {
           const started = await ensureCdpRunning(cdpHost(), cdpPort());
           if (started) {
             try {
@@ -192,7 +199,9 @@ function httpPutJson(path: string, isRetry = false, overrideHost?: string): Prom
             } catch {}
           }
         }
-        reject(new Error(CDP_PORT_CLOSED_MSG));
+        reject(new Error(terminalCdpConfig.getStore()
+          ? "Configured local Electron/Chromium CDP port " + cdpPort() + " is not available; enable the app's remote debugging endpoint and retry. No process was started."
+          : CDP_PORT_CLOSED_MSG));
       } else {
         reject(err);
       }
@@ -276,10 +285,10 @@ async function listPageTargets(): Promise<CdpTarget[]> {
   if (!Array.isArray(targets)) {
     throw new Error("Unexpected response from CDP /json/list (not an array).");
   }
-  return targets.filter((t: any) => t && t.type === "page" && t.webSocketDebuggerUrl);
+  return targets.filter((t: any) => t && (t.type === "page" || t.type === "webview") && t.webSocketDebuggerUrl);
 }
 
-async function pickTarget(targetId?: string, autoActivate = true): Promise<CdpTarget> {
+async function pickTarget(targetId?: string, autoActivate = true, requireExplicitWhenMultiple = false): Promise<CdpTarget> {
   let pages = await listPageTargets();
   if (pages.length === 0) {
     try {
@@ -293,6 +302,9 @@ async function pickTarget(targetId?: string, autoActivate = true): Promise<CdpTa
     throw new Error("No page targets found on the Chrome remote-debugging endpoint. Open a tab in Chrome and retry.");
   }
   pruneCdpConnections(pages.map((p) => p.webSocketDebuggerUrl));
+  if (requireExplicitWhenMultiple && !targetId && pages.length > 1) {
+    throw new Error("Multiple Chrome/Electron CDP targets found. Specify targetId from list_targets before sending terminal input.");
+  }
   const target = targetId ? pages.find((p) => p.id === targetId) : pages[0];
   if (!target) {
     throw new Error(`No page target with id '${targetId}'. Run command 'list_targets' to see available targets.`);
@@ -346,6 +358,8 @@ function closeCdpConnection(url: string, reason: string): void {
 function pruneCdpConnections(liveUrls: string[]): void {
   const live = new Set(liveUrls);
   for (const url of Array.from(cdpConnections.keys())) {
+    // Connections on a different Electron CDP port belong to another target scope.
+    try { if (Number(new URL(url).port) !== cdpPort()) continue; } catch { continue; }
     if (!live.has(url)) {
       closeCdpConnection(url, "CDP target is no longer open in Chrome; connection dropped.");
     }
@@ -488,7 +502,7 @@ export const controlChromeCdpTool: Tool = {
       command: {
         type: "string",
         enum: [
-          "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_terminal", "write_terminal", "send_terminal_key", "extract_links", "click", "type", "wait_for",
+          "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
           "select_option", "check_form", "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
           "get_cookies", "inspect_media_devices", "mock_display_media", "handle_screen_share", "move_cursor", "show_cursor", "hide_cursor", "get_cursor",
           "drag_and_drop", "drag", "emulate_device", ...CDP_AUDIT_COMMANDS, ...CDP_DIAGNOSTIC_COMMANDS,
@@ -506,6 +520,15 @@ export const controlChromeCdpTool: Tool = {
       selector: { type: "string", description: "Optional top-level CSS selector convenience shortcut for click, type, wait_for, select_option, check_form, or read_terminal." },
       max_lines: { type: "number", description: "read_terminal maximum recent lines (default 80, max 200)." },
       enter: { type: "boolean", description: "write_terminal: explicitly send Enter after typing (default false)." },
+      terminal_id: { type: "string", description: "Opaque terminal ID returned by read_terminal, remains stable across pane reordering until reload." },
+      allow_dangerous: { type: "boolean", description: "Explicit acknowledgment for high-risk terminal shell commands." },
+      expected_output: { type: "string", description: "execute_terminal/watch_terminal: literal text to look for in fresh terminal output." },
+      wait_ms: { type: "number", description: "watch_terminal/execute_terminal: bounded wait, max 15000ms." },
+      verify_shell: { type: "string", enum: ["posix", "powershell"], description: "execute_terminal: opt-in shell-specific exit-code marker. Without it exit status remains unknown." },
+      force_new_command: { type: "boolean", description: "Explicitly override a still-pending verified shell command on the same pane." },
+      rebind_on_reload: { type: "boolean", description: "recover_terminal: reconnect to one uniquely detected terminal if the old terminal_id is stale after reload." },
+      debug_port: { type: "number", description: "Local Chromium/Electron CDP port, e.g. 9222 or TLine's explicitly enabled port." },
+      debug_ports: { type: "string", description: "discover_desktop_targets: comma-separated local debugging ports." },
       key: { type: "string", description: "send_terminal_key: Enter, Tab, Escape, Backspace, Delete, ArrowUp/Down/Left/Right, Home, End, Ctrl+C, Ctrl+D, Ctrl+L." },
       viewport_only: { type: "boolean", description: "read_terminal: read only visible viewport from exposed xterm buffer." },
       option: { type: "string", description: "Optional option label, text, or value to select for select_option." },
@@ -536,7 +559,8 @@ export const controlChromeCdpTool: Tool = {
       steps: { type: "number", description: "Optional step count for cursor trajectory interpolation." },
       visualCursor: { type: "boolean", description: "Optional flag to display an animated virtual pointer overlay in the DOM." },
       targetId: { type: "string", description: "Optional CDP target id. Automatically defaults to the active tab." },
-      includeImageData: { type: "boolean", description: "Include screenshot data inline; disabled by default." }, includeValues: { type: "boolean", description: "Expose sensitive cookie values; disabled by default." }, includeBase64: { type: "boolean", description: "Include bounded PDF base64; disabled by default." }, max_chars: { type: "number", description: "Bounded page/audit report output." }, max_links: { type: "number", description: "Maximum links returned by read_page." }, limit: { type: "number", description: "Maximum debug events returned (1-300)." }
+      includeImageData: { type: "boolean", description: "Include screenshot data inline; disabled by default." }, includeValues: { type: "boolean", description: "Expose sensitive cookie values; disabled by default." }, includeBase64: { type: "boolean", description: "Include bounded PDF base64; disabled by default." },
+ max_chars: { type: "number", description: "Bounded page/audit report output." }, max_links: { type: "number", description: "Maximum links returned by read_page." }, limit: { type: "number", description: "Maximum debug events returned (1-300)." }
     },
     required: ["command"],
   },
@@ -561,7 +585,7 @@ export const controlChromeCdpTool: Tool = {
       }
     }
     const convenienceKeys = [
-      "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "viewport_only", "enter", "key",
+      "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
       "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
       "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];
@@ -570,7 +594,31 @@ export const controlChromeCdpTool: Tool = {
     }
     const targetId = args.targetId ? String(args.targetId) : payload.targetId ? String(payload.targetId) : undefined;
 
+    if (payload.debug_port !== undefined) {
+      const port = Number(payload.debug_port);
+      if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) {
+        return "control_chrome_cdp failed: debug_port must be an explicitly selected local port between 1024 and 65535.";
+      }
+      const withoutPort = { ...payload };
+      delete withoutPort.debug_port;
+      return terminalCdpConfig.run({ port }, () =>
+        controlChromeCdpTool.execute({ ...args, debug_port: undefined, payload: withoutPort }, {} as any));
+    }
     try {
+      if (command === "discover_desktop_targets") {
+        return JSON.stringify(await discoverDesktopTargets(
+          String(payload.debug_ports || process.env.SUPERAGENT_ELECTRON_CDP_PORTS || cdpPort())));
+      }
+      if ([
+        "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key",
+        "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents",
+        "watch_terminal", "execute_terminal", "recover_terminal",
+      ].includes(command)) {
+        return await executeCdpTerminalCommand(command, payload, targetId, {
+          pickTarget, send: cdpSend,
+          scopeTarget: (target) => "port" + cdpPort() + ":" + target.id,
+        });
+      }
       switch (command) {
         case "list_targets": {
           const pages = await listPageTargets();
@@ -730,74 +778,6 @@ export const controlChromeCdpTool: Tool = {
             (contextHeader ? `${contextHeader}\n` : "") +
             `Use click/type with {"index": N}.\n${entries.map((e) => formatSnapshotEntry(e, compact)).join("\n")}`;
           return await attachScreenshotIfRequested(cdpSend, target, payload, snapshotResult, false);
-        }
-        case "write_terminal":
-        case "send_terminal_key": {
-          const text = typeof payload.text === "string" ? payload.text : "";
-          const isWrite = command === "write_terminal";
-          if (isWrite && !text) {
-            return 'control_chrome_cdp failed: write_terminal requires non-empty payload {"text":"..."}; Enter is opt-in with {"enter":true}.';
-          }
-          if (isWrite && text.length > 4000) {
-            return "control_chrome_cdp failed: write_terminal text exceeds 4000 characters.";
-          }
-          if (isWrite && /[\r\n]/.test(text)) {
-            return "control_chrome_cdp failed: multiline terminal input is rejected; send one line then use enter:true.";
-          }
-          if (payload.index !== undefined &&
-              (!Number.isSafeInteger(Number(payload.index)) || Number(payload.index) < 0 || Number(payload.index) > 1000)) {
-            return "control_chrome_cdp failed: terminal index must be a non-negative integer up to 1000.";
-          }
-          const key = String(isWrite ? "Enter" : payload.key || "");
-          const keyEvent = terminalKeyEvent(key);
-          if ((!isWrite && !keyEvent) || (isWrite && payload.enter === true && !keyEvent)) {
-            return "control_chrome_cdp failed: unsupported terminal key. Supported: Enter, Tab, Escape, Backspace, Delete, ArrowUp/Down/Left/Right, Home, End, Ctrl+C, Ctrl+D, Ctrl+L.";
-          }
-          const target = await pickTarget(targetId);
-          const focused: any = await cdpSend(target, "Runtime.evaluate", {
-            expression: buildFocusTerminalJs({
-              selector: typeof payload.selector === "string" ? payload.selector : undefined,
-              index: payload.index === undefined ? undefined : Number(payload.index),
-            }),
-            returnByValue: true,
-          });
-          if (focused?.exceptionDetails) {
-            return "control_chrome_cdp failed: terminal focus evaluation raised an exception.";
-          }
-          const focus = focused?.result?.value as TerminalFocusResult | undefined;
-          if (!focus?.ok) {
-            return "control_chrome_cdp failed: terminal input not sent: " + (focus?.reason || "could not focus a terminal input.");
-          }
-          if (isWrite) await cdpSend(target, "Input.insertText", { text });
-          if ((!isWrite || payload.enter === true) && keyEvent) {
-            await cdpSend(target, "Input.dispatchKeyEvent", keyEvent.down);
-            await cdpSend(target, "Input.dispatchKeyEvent", keyEvent.up);
-          }
-          const terminal = "terminal [" + focus.terminalIndex + "] " + (focus.kind || "web-terminal");
-          return isWrite
-            ? "control_chrome_cdp: dispatched " + text.length + " character(s) to " + terminal +
-              (payload.enter === true ? " and sent Enter" : " (Enter not sent)") +
-              ". Input was dispatched; command execution is not verified."
-            : "control_chrome_cdp: dispatched key " + key + " to " + terminal +
-              ". Key was dispatched; terminal reaction is not verified.";
-        }
-        case "read_terminal": {
-          const target = await pickTarget(targetId);
-          const res: any = await cdpSend(target, "Runtime.evaluate", {
-            expression: buildReadTerminalJs({
-              selector: typeof payload.selector === "string" ? payload.selector : undefined,
-              index: payload.index === undefined ? undefined : Number(payload.index),
-              max_lines: payload.max_lines === undefined ? undefined : Number(payload.max_lines),
-              max_chars: payload.max_chars === undefined ? undefined : Number(payload.max_chars),
-              viewport_only: payload.viewport_only === true,
-            }),
-            returnByValue: true,
-          });
-          if (res?.exceptionDetails) {
-            return "control_chrome_cdp failed: read_terminal page evaluation failed: " +
-              truncate(String(res.exceptionDetails.text || "unknown exception"), 500);
-          }
-          return formatTerminalReadResult(res?.result?.value);
         }
         case "read_page": {
           const target = await pickTarget(targetId);
