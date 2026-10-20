@@ -8,6 +8,7 @@ import type { MotionEdit } from "../../motion/schema/types.js";
 import { importMotionAsset } from "../../motion/assets/motionAssets.js";
 import { importMotionAudio } from "../../motion/assets/motionAudio.js";
 import { decodeMotionMediaBase64 } from "../../motion/assets/motionInput.js";
+import { motionStorageMaintenance } from "../../motion/jobs/storageMaintenance.js";
 import type { McpToolResult } from "../types.js";
 
 export const MOTION_MCP_TOOL_DEFS = [
@@ -68,6 +69,14 @@ export const MOTION_MCP_TOOL_DEFS = [
     }, required: ["motionId"] },
   },
   {
+    name: "superagent_motion_storage",
+    description: "Read-only per-workspace Motion render storage, renderer slots, old failed-job maintenance preview and blocked claims. Never deletes records.",
+    inputSchema: { type: "object", properties: {
+      workspace: { type: "string" }, projectId: { type: "string" },
+      minAgeDays: { type: "integer", minimum: 1, maximum: 3650 },
+    } },
+  },
+  {
     name: "superagent_motion_jobs",
     description: "List read-only Motion render job summaries for the selected local workspace.",
     inputSchema: { type: "object", properties: {
@@ -104,6 +113,7 @@ export const MOTION_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous
   superagent_motion_list: "safe",
   superagent_motion_inspect: "safe",
   superagent_motion_jobs: "safe",
+  superagent_motion_storage: "safe",
   superagent_motion_status: "safe",
   superagent_motion_recovery: "safe",
   superagent_motion_create: "dangerous",
@@ -147,6 +157,8 @@ export async function dispatchMotionMcpTool(
         }); break;
       case "superagent_motion_jobs":
         result = await listMotionJobs(authorizedWorkspace); break;
+      case "superagent_motion_storage":
+        result = await motionStorageMaintenance(authorizedWorkspace, { minAgeDays: args.minAgeDays === undefined ? 7 : Number(args.minAgeDays) }); break;
       case "superagent_motion_status":
         result = await getMotionJob(authorizedWorkspace, jobId); break;
       case "superagent_motion_recovery":

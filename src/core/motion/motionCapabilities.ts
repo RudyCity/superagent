@@ -15,5 +15,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   renderHeightMax: 1920,
   renderFramesMax: 1800,
   detachedRenderJobs: true,
+  storageInspection: true,
+  confirmedFailedJobCleanup: true,
   automaticCrashRecovery: false,
 });

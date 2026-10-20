@@ -16,6 +16,7 @@ const help = [
   "  /motion status <job-id>",
   "  /motion recovery <job-id> (read-only)",
   "  /motion cancel <job-id>",
+  "  /motion storage [days] (read-only)",
   "  /motion doctor",
   "Interactive renders are foreground; scriptable CLI supports detached rendering.",
 ].join("\n");
@@ -42,6 +43,13 @@ export const motionCommand: SlashCommand = {
     try {
       if (action === "help") {
         emit(ctx, help);
+        return;
+      }
+      if (action === "storage") {
+        const days = third === undefined ? (id === undefined ? 7 : parseInteger(id, "days")) : parseInteger(third, "days");
+        const { motionStorageMaintenance } = await import("../motion/jobs/storageMaintenance.js");
+        const status = await motionStorageMaintenance(workspace, { minAgeDays: days });
+        emit(ctx, JSON.stringify(status, null, 2));
         return;
       }
       if (action === "doctor") {

@@ -1,3 +1,9 @@
+## [Unreleased] - Motion Studio render maintenance (2026-10-21)
+### Added
+- Safe read-only Motion storage reports and guarded manual pruning of old failed/cancelled/interrupted records; completed videos, active locks and suspicious artifacts are preserved.
+- Read-only storage diagnostics over HTTP and MCP. T-Line Desktop displays render disk usage and supports 640/1280/1920px output selection.
+- Motion maintenance regression tests and T-Line proxy/editor cross-repository tests; no active Hermes agents or MCP servers were restarted.
+
 ## [Unreleased] - Motion Studio audit remediation (2026-10-21)
 ### Added
 - Added workspace-contained Motion CLI and interactive `/motion` media imports (image/WAV) plus validated, revision-checked JSON edit transactions.

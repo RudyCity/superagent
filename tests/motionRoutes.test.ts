@@ -59,6 +59,9 @@ describe("Motion HTTP and artifact transport", () => {
     expect(info.apiVersion).toBe(1);
     expect(info.capabilities.renderWidthMax).toBe(1920);
     expect(info.capabilities.nativeTLineEditor).toBe("external-not-verified");
+    const storage = await request("/api/motion/storage");
+    expect(storage.status).toBe(200);
+    expect((await storage.json()).maintenance.minAgeDays).toBe(7);
     const scheduler = await request("/api/motion/scheduler");
     expect(scheduler.status).toBe(200);
     const capacity = await scheduler.json();

@@ -731,3 +731,12 @@ superagent motion jobs --workspace . --json
 `edits.json` contains a JSON array of existing declarative `MotionEdit` operations, e.g. `[{"type":"set-property","layerId":"title","property":"x","value":200}]`. Asset IDs returned by imports may be included in `add-layer` and `set-audio-tracks` operations. All local input files must resolve inside the workspace and may not be symlinks. Render profile currently caps at 1800 frames and 1920px output dimensions. Worker recovery is operator-mediated: use `motion recovery` for read-only diagnostics and `motion recover JOB_ID --ack-stale` only after verifying actual stale ownership.
 
 The interactive terminal supports `/motion import-image ./assets/product.png`, `/motion import-audio ./assets/voice.wav`, and `/motion edit-json MOTION_ID 1 [{"type":"set-property","layerId":"title","property":"x","value":200}]`. MCP clients expose 11 `superagent_motion_*` tools, including dangerous/write-scoped `superagent_motion_import_image` and `superagent_motion_import_audio` accepting bounded canonical base64. Live MCP servers require their usual controlled reload before newly added tools become visible; don't interrupt active Hermes sessions just for discovery.
+
+Motion render maintenance is operator-scoped and never deletes completed MP4 videos:
+
+```bash
+superagent motion storage --days 7 --workspace . --json
+superagent motion prune --days 7 --apply --workspace . --json
+```
+
+`storage` is a read-only preview; `prune --apply` removes only old, unclaimed failed/cancelled/interrupted job records after explicit confirmation. Active/suspicious claims, partial outputs, and finished videos are preserved. Safe `superagent_motion_storage` and authenticated `GET /api/motion/storage` provide read-only diagnostics for agents/T-Line. This is *not* unattended crash recovery.

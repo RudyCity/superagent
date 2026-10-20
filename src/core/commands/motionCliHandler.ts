@@ -6,6 +6,7 @@ import { importMotionAsset } from "../motion/assets/motionAssets.js";
 import { importMotionAudio } from "../motion/assets/motionAudio.js";
 import { readMotionWorkspaceInput } from "../motion/assets/motionInput.js";
 import { MOTION_CAPABILITIES } from "../motion/motionCapabilities.js";
+import { motionStorageMaintenance } from "../motion/jobs/storageMaintenance.js";
 import type { MotionEdit } from "../motion/schema/types.js";
 import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation } from "../motion/jobs/motionJobs.js";
 
@@ -22,6 +23,8 @@ const usage = `Motion Studio (developer preview)
   superagent motion render PROJECT_ID [--width EVEN_NUMBER] [--detach] [--workspace PATH] [--json]
   superagent motion jobs [--workspace PATH] [--json]
   superagent motion scheduler [--workspace PATH] [--json]
+  superagent motion storage [--days 7] [--workspace PATH] [--json]
+  superagent motion prune [--days 7] --apply [--workspace PATH] [--json]
   superagent motion status JOB_ID [--workspace PATH] [--json]
   superagent motion recovery JOB_ID [--workspace PATH] [--json]
   superagent motion recover JOB_ID --ack-stale [--workspace PATH] [--json]
@@ -34,8 +37,8 @@ recovery is diagnostic/read-only unless the operator explicitly runs recover --a
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--detach", "--ack-stale", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", ...boolean]);
+  const boolean = new Set(["--json", "--detach", "--ack-stale", "--apply", "--help", "-h"]);
+  const valid = new Set(["--workspace", "-w", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -85,6 +88,14 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       if (!filename) throw new Error(action + " requires --file inside the authorized workspace");
       const data = await readMotionWorkspaceInput(workspace, filename, action === "import-image" ? 1024 * 1024 : 2 * 1024 * 1024);
       emit(action === "import-image" ? await importMotionAsset(workspace, data) : await importMotionAudio(workspace, data), json);
+      return 0;
+    }
+    if (action === "storage" || action === "prune") {
+      if (positionals.length) throw new Error(action + " does not accept positional arguments");
+      if (action === "prune" && !opts.has("--apply")) throw new Error("Motion prune requires explicit --apply; run motion storage for a safe preview");
+      if (action === "storage" && opts.has("--apply")) throw new Error("Use motion prune --apply for destructive maintenance");
+      const days = opt(opts, "--days") === undefined ? 7 : nonnegativeInteger(opt(opts, "--days"), "--days");
+      emit(await motionStorageMaintenance(workspace, { minAgeDays: days, apply: action === "prune" }), json);
       return 0;
     }
     if (action === "new") {

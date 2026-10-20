@@ -27,11 +27,11 @@ const invoke = async (handler: any, name: string, args: Record<string, unknown> 
   handler({ method: "tools/call", params: { name, arguments: args } });
 
 describe("Motion MCP integration", () => {
-  it("exposes all eleven tools with classification and explicit project capabilities", async () => {
+  it("exposes all twelve tools with classification and explicit project capabilities", async () => {
     const server = createSuperagentMcpServer();
     const list = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
     const names = (await list({ method: "tools/list", params: {} })).tools.map((entry: any) => entry.name);
-    expect(names.filter((name: string) => name.startsWith("superagent_motion_"))).toHaveLength(11);
+    expect(names.filter((name: string) => name.startsWith("superagent_motion_"))).toHaveLength(12);
     expect(getProjectCapabilityForTool("superagent_motion_create")).toBe("write");
     expect(getProjectCapabilityForTool("superagent_motion_edit")).toBe("write");
     expect(getProjectCapabilityForTool("superagent_motion_import_image")).toBe("write");
@@ -39,6 +39,7 @@ describe("Motion MCP integration", () => {
     expect(getProjectCapabilityForTool("superagent_motion_render")).toBe("execute");
     expect(getProjectCapabilityForTool("superagent_motion_cancel")).toBe("execute");
     expect(getProjectCapabilityForTool("superagent_motion_status")).toBe("read");
+    expect(getProjectCapabilityForTool("superagent_motion_storage")).toBe("read");
   });
 
   it("creates and edits using the authorized workspace without losing revision guards", async () => {
@@ -99,6 +100,17 @@ describe("Motion MCP integration", () => {
     await expect(readMotionAsset(other, asset.id)).rejects.toThrow();
   });
 
+  it("exposes only read-only job storage stats to unprivileged MCP clients", async () => {
+    const root = await fixture();
+    const server = createSuperagentMcpServer({ workspace: root });
+    const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const result = await invoke(call, "superagent_motion_storage", { minAgeDays: 12 });
+    expect(result.isError, result.content?.[0]?.text).toBeFalsy();
+    const state = JSON.parse(result.content[0].text);
+    expect(state.maintenance.minAgeDays).toBe(12);
+    expect(state.jobs.total).toBe(0);
+    expect(state).not.toHaveProperty("deletedJobIds");
+  });
   it("rejects out-of-workspace routing through an explicit unauthorized path", async () => {
     const root = await fixture();
     const other = await fixture();

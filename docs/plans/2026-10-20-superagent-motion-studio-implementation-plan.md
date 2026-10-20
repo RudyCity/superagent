@@ -528,3 +528,17 @@ Reference: `docs/reviews/2026-10-20-motion-studio-codebase-audit.md`.
 5. Evaluate a separate browser Studio as a distinct build/deploy artifact; the existing native T-Line Motion tab does not imply an independently hosted browser Studio.
 
 Release status stays **Developer Preview**. The CI suite and 1080p one-frame smoke are evidence of basic functionality, not certification of all workloads.
+
+## 17. Storage diagnostics and protected maintenance — 2026-10-21
+
+### Implemented
+- Added `src/core/motion/jobs/storageMaintenance.ts`: workspace-scoped read-only report with counts per saved job status, completed-video metadata bytes, renderer slot claims, candidate job IDs/bytes and blocked cleanup IDs.
+- Explicit `superagent motion storage --days 7 --workspace PATH --json` previews diagnostics. Destructive `superagent motion prune --apply --days 7 --workspace PATH --json` requires the separate action and approval flag; it only removes metadata + immutable source snapshots belonging to **old terminal failed/cancelled/interrupted jobs** (default at least seven days old).
+- Cleanup always excludes completed videos, active/queued jobs, new records, jobs with runner/waiting/recovery/cancellation/project claims or any existing slot ownership, symlinked/invalid files and records with stray MP4/partial outputs. No automatic lock reclamation, no PID-based process kill, and no unapproved artifact deletion. A maintenance lock serializes destructive runs and stale maintenance locks fail closed.
+- Added read-only authenticated `GET /api/motion/storage`, plus workspace-policy-scoped safe MCP tool `superagent_motion_storage` (12th Motion tool, with explicit age parameter); no HTTP/MCP destructive prune endpoint. T-Line Desktop proxy can forward the GET status, and the editor displays job count/stored completed MP4 bytes with cleanup candidates.
+- T-Line exposes 640px preview, 1280px HD and 1920px Full HD width selection for existing revision-pinned renders; the server retains actual render profile checks and FFprobe validation. No automatic conversion of image, audio or video formats was introduced.
+
+### Verification and remaining gates
+- Motion tests include clean/dry-run/explicit-prune, claimed and symlinked snapshots, completed artifact preservation, CLI validation, read-only MCP, and authenticated HTTP storage status.
+- T-Line frontend editor and backend proxy tests cover the storage overview and selectable Full HD output, including refusal of unauthorized GET or POST on the read-only proxy path.
+- This increment is **safe bounded maintenance**, not a durable FIFO render supervisor, automatic restart after machine failure, or packaged Tauri live E2E. Those release gates remain open, as do full media editing/multi-scene workflows and cross-platform visual parity.
