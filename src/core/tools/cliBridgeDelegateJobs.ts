@@ -16,6 +16,7 @@ import {
   acquireCrossProcessArtifactClaims, releaseCrossProcessArtifactClaims,
   type CrossProcessArtifactClaims,
 } from "./cliBridgeCrossProcessClaims.js";
+import { persistJobShard, loadJobShards, loadLegacyJobs, writeCompatibilityJobsSnapshot, jobShardPath } from "./cliBridgeJobStore.js";
 
 export type DelegateJobStatus =
   | "starting" | "running" | "cancelling" | "succeeded" | "failed" | "timed_out" | "cancelled" | "interrupted" | "verification_failed";
@@ -64,6 +65,7 @@ const MAX_OUTPUT_TAIL_CHARS = 24_000;
 const MAX_RETAINED_JOBS = 100;
 const DEFAULT_MAX_CONCURRENT_JOBS = 4;
 const jobs = new Map<string, DelegateJob>();
+const ownedJobIds = new Set<string>();
 const processes = new Map<string, any>();
 const runners = new Map<string, Promise<void>>();
 const logQueues = new Map<string, Promise<void>>();
@@ -108,59 +110,42 @@ function pruneJobs(): void {
   for (const job of completed.slice(MAX_RETAINED_JOBS)) jobs.delete(job.jobId);
 }
 
+async function refreshJobShards(): Promise<void> {
+  for (const job of await loadJobShards(getStorageDir())) {
+    if (!ownedJobIds.has(job.jobId)) jobs.set(job.jobId, job);
+  }
+}
 async function initialize(): Promise<void> {
   if (!initializePromise) {
     initializePromise = (async () => {
       await fs.mkdir(getStorageDir(), { recursive: true });
-      try {
-        const parsed = JSON.parse(await fs.readFile(getStoragePath(), "utf8")) as unknown;
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          for (const value of Object.values(parsed as Record<string, unknown>)) {
-            if (!value || typeof value !== "object") continue;
-            const record = value as Partial<DelegateJob>;
-            if (typeof record.jobId !== "string" || typeof record.logPath !== "string" || typeof record.status !== "string") continue;
-            const job = record as DelegateJob;
-            // A process handle cannot be safely reattached after this process restarts.
-            if (activeStatus(job.status)) {
-              job.status = "interrupted";
-              job.completionState = "interrupted";
-              job.updatedAt = Date.now();
-              job.error = "SuperAgent restarted while this delegation was active; inspect the log to determine whether its child process continued.";
-            }
-            jobs.set(job.jobId, job);
-          }
+      for (const job of await loadLegacyJobs(getStoragePath())) {
+        // Old snapshots have no owner identity: never infer that their
+        // apparently running subprocesses can safely be cancelled.
+        if (activeStatus(job.status)) {
+          job.status = "interrupted";
+          job.completionState = "interrupted";
+          job.updatedAt = Date.now();
+          job.error = "Legacy job has no reattachable process handle; inspect child processes.";
         }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-          try { await fs.rename(getStoragePath(), `${getStoragePath()}.corrupt-${Date.now()}`); } catch {}
-        }
+        jobs.set(job.jobId, job);
       }
-      pruneJobs();
-      await persistJobs();
-    })();
+      await refreshJobShards();
+    })().catch(error => { initializePromise = undefined; throw error; });
   }
   await initializePromise;
 }
-
 function persistJobs(): Promise<void> {
   persistQueue = persistQueue.catch(() => {}).then(async () => {
-    const filePath = getStoragePath();
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    pruneJobs();
-    const snapshot: Record<string, DelegateJob> = {};
-    for (const [id, job] of jobs) snapshot[id] = { ...job };
-    const tempPath = `${filePath}.${process.pid}.tmp`;
-    await fs.writeFile(tempPath, JSON.stringify(snapshot, null, 2), "utf8");
-    await fs.rename(tempPath, filePath).catch(async (error: NodeJS.ErrnoException) => {
-      if (process.platform === "win32" && (error.code === "EEXIST" || error.code === "EPERM")) {
-        await fs.rm(filePath, { force: true });
-        await fs.rename(tempPath, filePath);
-      } else throw error;
-    });
+    const dir = getStorageDir();
+    for (const id of ownedJobIds) {
+      const job = jobs.get(id);
+      if (job && (activeStatus(job.status) || runners.has(id) || !job.endedAt)) await persistJobShard(dir, job);
+    }
+    await writeCompatibilityJobsSnapshot(dir).catch(() => {});
   });
   return persistQueue;
 }
-
 function queueLog(jobId: string, logPath: string, chunk: string): void {
   if (!chunk) return;
   const previous = logQueues.get(jobId) ?? Promise.resolve();
@@ -301,6 +286,7 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   // Without this reservation, simultaneous MCP calls can both pass the cap
   // check and start more children than SUPERAGENT_CLI_BRIDGE_MAX_JOBS allows.
   jobs.set(jobId, job);
+  ownedJobIds.add(jobId);
   jobClaims.set(jobId, claimKeys);
   for (const file of claimKeys) artifactClaims.set(file, jobId);
   try {
@@ -370,17 +356,20 @@ async function awaitTerminalPersistence(jobId: string): Promise<void> {
 }
 export async function listDelegateJobs(): Promise<DelegateJob[]> {
   await initialize();
+  await refreshJobShards();
   await Promise.all([...jobs.keys()].map(awaitTerminalPersistence));
   return [...jobs.values()].sort((a, b) => b.startedAt - a.startedAt).map((job) => ({ ...job, outputTail: "" }));
 }
 export async function getDelegateJob(jobId: string): Promise<DelegateJob | null> {
   await initialize();
+  await refreshJobShards();
   await awaitTerminalPersistence(jobId);
   const job = jobs.get(jobId);
   return job ? { ...job } : null;
 }
 export async function tailDelegateJob(jobId: string, limit = 200): Promise<{ job: DelegateJob; output: string } | null> {
   await initialize();
+  await refreshJobShards();
   await awaitTerminalPersistence(jobId);
   const job = jobs.get(jobId);
   if (!job) return null;
@@ -394,6 +383,7 @@ export async function tailDelegateJob(jobId: string, limit = 200): Promise<{ job
 }
 export async function cancelDelegateJob(jobId: string): Promise<{ ok: boolean; message: string; job?: DelegateJob }> {
   await initialize();
+  await refreshJobShards();
   const job = jobs.get(jobId);
   if (!job) return { ok: false, message: `No CLI Bridge delegation job found with id ${jobId}.` };
   if (!activeStatus(job.status)) return { ok: false, message: `Job ${jobId} is already ${job.status}.`, job: { ...job } };
@@ -415,10 +405,13 @@ export async function __resetDelegateJobsForTests(): Promise<void> {
   }
   await Promise.allSettled([...runners.values()]);
   for (const timer of killTimers.values()) clearTimeout(timer);
+  const ownedForCleanup = [...ownedJobIds];
   jobs.clear(); processes.clear(); runners.clear(); logQueues.clear(); cancellationRequested.clear(); killTimers.clear();
+  ownedJobIds.clear();
   await Promise.allSettled([...jobCrossProcessClaims.keys()].map(releaseArtifactClaims));
   artifactClaims.clear(); artifactBaselines.clear(); jobClaims.clear(); jobCrossProcessClaims.clear();
   initializePromise = undefined;
   persistQueue = Promise.resolve();
+  for (const id of ownedForCleanup) await fs.rm(jobShardPath(getStorageDir(), id), { recursive: true, force: true }).catch(() => {});
   try { await fs.rm(getStoragePath(), { force: true }); } catch {}
 }

@@ -13,7 +13,7 @@ import { startDelegateJob, getDelegateJob, __resetDelegateJobsForTests } from ".
 const worker = fileURLToPath(new URL("./fixtures/cliBridgeCrossProcessWorker.mjs", import.meta.url));
 const spawned: ChildProcessWithoutNullStreams[] = [];
 
-function startWorker(mode: "claim" | "delegation", identity: string, jobId: string, configDir?: string) {
+function startWorker(mode: "claim" | "delegation" | "shared-metadata", identity: string, jobId: string, configDir?: string) {
   const proc = spawn(process.execPath, ["--import", "tsx", worker, mode, identity, jobId, configDir ?? ""], {
     cwd: process.cwd(), stdio: ["pipe", "pipe", "pipe"], windowsHide: true,
     env: { ...process.env, SUPERAGENT_CONFIG_DIR: configDir ?? process.env.SUPERAGENT_CONFIG_DIR },
@@ -64,6 +64,35 @@ afterEach(async () => {
 });
 
 describe("Hermes Phase 4: same-host cross-process artifact claims", () => {
+  it("preserves independent jobs with two processes using the same config directory", async () => {
+    const config = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-shared-metadata-"));
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-shared-workspace-"));
+    try {
+      const first = startWorker("shared-metadata", workspace, "first", config);
+      const second = startWorker("shared-metadata", workspace, "second", config);
+      const [one, two] = await Promise.all([
+        lineStarting(first, "JOB "),
+        lineStarting(second, "JOB "),
+      ]);
+      const firstId = JSON.parse(one).jobId;
+      const secondId = JSON.parse(two).jobId;
+      expect(firstId).not.toBe(secondId);
+      await Promise.all([
+        lineStarting(first, "TERMINAL ", 18_000),
+        lineStarting(second, "TERMINAL ", 18_000),
+      ]);
+      const { loadJobShards } = await import("../src/core/tools/cliBridgeJobStore.js");
+      const dir = path.join(config, "cli-bridge", "delegations");
+      const all = await loadJobShards(dir);
+      const matches = all.filter(job => [firstId, secondId].includes(job.jobId));
+      expect(matches).toHaveLength(2);
+      expect(matches.every(job => job.status === "succeeded" && job.completionState === "unverified")).toBe(true);
+    } finally {
+      await fs.rm(config, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+      await fs.rm(workspace, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 30_000);
+
   it("blocks another process even with separate config dirs, then releases on normal exit", async () => {
     const file = identity("normal.txt");
     const holder = startWorker("claim", file, "worker-owner", path.join(os.tmpdir(), "unique-config-A"));

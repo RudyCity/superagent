@@ -23,6 +23,27 @@ async function run() {
     return;
   }
 
+  if (mode === "shared-metadata") {
+    if (configDir) process.env.SUPERAGENT_CONFIG_DIR = configDir;
+    const workspace = identity;
+    const script = 'setTimeout(() => console.log("distinct-writer-finished"), 1100)';
+    const job = await startDelegateJob({
+      cliAlias: "shared-metadata-test", binary: process.execPath,
+      prompt: "Persist independent metadata", cwd: workspace, workspaceRoot: workspace,
+      args: ["-e", script], timeoutMs: 6000,
+    });
+    process.stdout.write("JOB " + JSON.stringify({ jobId: job.jobId }) + "\n");
+    while (true) {
+      const current = await getDelegateJob(job.jobId);
+      if (current && !["starting", "running", "cancelling"].includes(current.status)) {
+        process.stdout.write("TERMINAL " + JSON.stringify({
+          jobId: current.jobId, status: current.status, proof: current.completionState,
+        }) + "\n");
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+  }
   if (mode === "delegation") {
     if (configDir) process.env.SUPERAGENT_CONFIG_DIR = configDir;
     const workspace = identity;

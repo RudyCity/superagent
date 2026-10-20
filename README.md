@@ -238,6 +238,8 @@ superagent skill promote <name>@<new-version> --workspace ./project
 
 The revision command produces an **inactive, immutable review candidate** with the exact parent version/hash and feedback provenance. It preserves the original version and never automatically promotes or edits the active skill. Owner approval remains interactive and mandatory. Live RMemory delivery and full-provider E2E tests are separate release gates.
 
+**Multi-process CLI job history:** Authoritative delegation metadata is stored as immutable per-job snapshots under `cli-bridge/delegations/jobs.d/`; the legacy `jobs.json` is a compatibility cache only. Independent SuperAgent instances sharing a config root no longer overwrite one another's job records. See `docs/plans/2026-10-20-superagent-hermes-phase-4-cli-job-shards.md`.
+
 **Read-only output claim diagnostics:** Use cli_bridge action=delegate.claims with expectedArtifacts to inspect a lock inside the authorized workspace. It never reveals a lock token or removes it; manual recovery requires verifying child processes are stopped.
 
 **CLI output locks across processes:** `delegate.start` with declared `expectedArtifacts` now takes per-output exclusive lockfiles before launching the child. Separate SuperAgent instances on the same host cannot cooperatively claim the same output, even if they use different config directories. Crashed-owner locks are **never reclaimed automatically**: descendant CLI processes may still be running. Operators must first verify all writers have stopped. This does not provide multi-host locks, an OS sandbox or transactional multi-writer job metadata. See `docs/plans/2026-10-20-superagent-hermes-phase-4-cross-process-artifact-claims.md`.
