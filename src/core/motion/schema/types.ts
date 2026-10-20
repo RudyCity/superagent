@@ -58,7 +58,11 @@ export interface MotionProject {
 export type MotionEdit =
   | { type: "set-text"; layerId: string; text: string }
   | { type: "set-property"; layerId: string; property: MotionProperty; value: number }
-  | { type: "set-track"; layerId: string; track: MotionTrack };
+  | { type: "set-track"; layerId: string; track: MotionTrack }
+  | { type: "add-layer"; layer: MotionLayer; index?: number }
+  | { type: "remove-layer"; layerId: string }
+  | { type: "move-layer"; layerId: string; toIndex: number }
+  | { type: "replace-composition"; composition: MotionProject["composition"] };
 
 export interface EvaluatedLayer {
   layer: MotionLayer;

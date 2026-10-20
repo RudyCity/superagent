@@ -16,6 +16,7 @@ import { execSync } from "child_process";
 import { handleServerRoute } from "./serverRoutes.js";
 import { lockEventEmitter } from "./core/storage/sharedMemory.js";
 import { buildCorsHeaders, ensureServerAuthToken, isRequestAuthorized, isPathInsideOrEqual } from "./core/utils/serverSecurity.js";
+import { isCanonicalMotionWorkspaceAllowed } from "./core/motion/workspaceAccess.js";
 import { shouldDeliverEventToClient } from "./core/utils/sessionEventScope.js";
 
 // Forward lock events to connected t-line desktop clients
@@ -241,7 +242,9 @@ function isRemoteWorkspaceTarget(p: string): boolean {
 
 function getValidWorkspaceRoots(): string[] {
   const roots = new Set<string>([path.resolve(process.cwd())]);
-  const candidates: string[] = [lastActiveWorkspace];
+  // A trusted directory explicitly approved in SuperAgent is a valid API workspace.
+  // It is still scoped to this exact trusted root (or its children).
+  const candidates: string[] = [lastActiveWorkspace, ...getTrustedDirectories()];
   for (const session of activeSessions.values()) {
     candidates.push(session.workspace);
     const agentWs = (session.agent as any)?.workingDirectory;
@@ -264,8 +267,9 @@ export function resolveWorkspacePath(req: http.IncomingMessage): string | null {
     if (isRemoteWorkspaceTarget(supplied)) return supplied;
     const resolved = path.resolve(supplied);
     const validRoots = getValidWorkspaceRoots();
-    if (!validRoots.some((root) => isPathInsideOrEqual(root, resolved))) {
-      logToSuperAgentServerFile(`[Security] Rejected workspace path outside registered roots: ${resolved}`);
+    if (!validRoots.some((root) => isPathInsideOrEqual(root, resolved))
+      || (parsedUrl.pathname.startsWith("/api/motion") && !isCanonicalMotionWorkspaceAllowed(resolved, validRoots))) {
+      logToSuperAgentServerFile(`[Security] Rejected workspace path outside trusted real roots: ${resolved}`);
       return null;
     }
     return resolved;

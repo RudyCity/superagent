@@ -2,7 +2,7 @@ import { createMotionProject, getMotionProject, listMotionProjects, updateMotion
 import { MotionRevisionConflict } from "../motion/project/revisions.js";
 import { MotionValidationError } from "../motion/schema/validation.js";
 import { probeFfmpeg } from "../motion/render/ffmpegEncoder.js";
-import { getMotionJob, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, requestMotionCancellation } from "../motion/jobs/motionJobs.js";
+import { getMotionJob, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation } from "../motion/jobs/motionJobs.js";
 
 const usage = `Motion Studio (foundation preview)
   superagent motion new --name "Title" [--workspace PATH] [--json]
@@ -14,16 +14,17 @@ const usage = `Motion Studio (foundation preview)
   superagent motion jobs [--workspace PATH] [--json]
   superagent motion status JOB_ID [--workspace PATH] [--json]
   superagent motion recovery JOB_ID [--workspace PATH] [--json]
+  superagent motion recover JOB_ID --ack-stale [--workspace PATH] [--json]
   superagent motion cancel JOB_ID [--workspace PATH] [--json]
   superagent motion doctor [--json]
 
 MP4 preview uses installed FFmpeg. --detach launches a separate Node worker;
-recovery is diagnostic/read-only. T-Line integration remains pending.`;
+recovery is diagnostic/read-only unless the operator explicitly runs recover --ack-stale.`;
 
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--detach", "--help", "-h"]);
+  const boolean = new Set(["--json", "--detach", "--ack-stale", "--help", "-h"]);
   const valid = new Set(["--workspace", "-w", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
@@ -88,6 +89,11 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
     const projectId = positionals[0];
     if (action === "recovery") {
       emit(await inspectMotionJob(workspace, projectId), json);
+      return 0;
+    }
+    if (action === "recover") {
+      if (!opts.has("--ack-stale")) throw new Error("recover requires --ack-stale after verifying the worker has stopped");
+      emit(await reconcileStaleMotionJob(workspace, projectId), json);
       return 0;
     }
     if (action === "status") {

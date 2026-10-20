@@ -124,8 +124,24 @@ export function validateMotionEdits(raw: unknown, durationFrames: number): asser
   raw.forEach((edit: unknown, i) => {
     const at = "edits[" + i + "]";
     if (!record(edit)) { errors.push(at + ": expected object"); return; }
+    if (edit.type === "add-layer") {
+      allowedKeys(edit, ["type", "layer", "index"], at, errors);
+      if (!record(edit.layer)) errors.push(at + ": layer must be an object");
+      if (edit.index !== undefined && !integer(edit.index, 0, 200)) errors.push(at + ": invalid insertion index");
+      return;
+    }
+    if (edit.type === "replace-composition") {
+      allowedKeys(edit, ["type", "composition"], at, errors);
+      if (!record(edit.composition)) errors.push(at + ": composition must be an object");
+      return;
+    }
     if (!string(edit.layerId, 64) || !id.test(edit.layerId)) errors.push(at + ": invalid layerId");
-    if (edit.type === "set-text") {
+    if (edit.type === "remove-layer") {
+      allowedKeys(edit, ["type", "layerId"], at, errors);
+    } else if (edit.type === "move-layer") {
+      allowedKeys(edit, ["type", "layerId", "toIndex"], at, errors);
+      if (!integer(edit.toIndex, 0, 199)) errors.push(at + ": invalid target index");
+    } else if (edit.type === "set-text") {
       allowedKeys(edit, ["type", "layerId", "text"], at, errors);
       if (typeof edit.text !== "string" || edit.text.length > 8192) errors.push(at + ": invalid text");
     } else if (edit.type === "set-property") {

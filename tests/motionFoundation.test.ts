@@ -57,6 +57,41 @@ describe("Motion Studio foundation", () => {
     expect((await getMotionProject(root, first.id)).revision).toBe(2);
   });
 
+  it("creates, reorders, removes, and restores layers with revision guards", async () => {
+    const root = await workspace();
+    const first = await createMotionProject(root, "Layer CRUD");
+    const rectangle = {
+      id: "panel", kind: "rect" as const, x: 10, y: 12,
+      width: 80, height: 60, rotation: 0, opacity: 1,
+      fill: "#4C80EE", tracks: [],
+    };
+    const added = await updateMotionProject(root, first.id, 1, [{ type: "add-layer", layer: rectangle, index: 0 }]);
+    expect(added.composition.layers.map(item => item.id)).toEqual(["panel", "title"]);
+    const moved = await updateMotionProject(root, first.id, 2, [{ type: "move-layer", layerId: "panel", toIndex: 1 }]);
+    expect(moved.composition.layers.map(item => item.id)).toEqual(["title", "panel"]);
+    const removed = await updateMotionProject(root, first.id, 3, [{ type: "remove-layer", layerId: "title" }]);
+    expect(removed.composition.layers.map(item => item.id)).toEqual(["panel"]);
+    const restored = await updateMotionProject(root, first.id, 4, [{ type: "replace-composition", composition: first.composition }]);
+    expect(restored.revision).toBe(5);
+    expect(restored.composition.layers).toEqual(first.composition.layers);
+    await expect(updateMotionProject(root, first.id, 4, [{ type: "add-layer", layer: rectangle }]))
+      .rejects.toBeInstanceOf(MotionRevisionConflict);
+  });
+
+  it("rejects invalid layer insertion, duplicate layer ids and malformed scene replacement", async () => {
+    const root = await workspace();
+    const first = await createMotionProject(root, "Guarded");
+    await expect(updateMotionProject(root, first.id, 1, [{ type: "add-layer", layer: first.composition.layers[0] }]))
+      .rejects.toThrow("already exists");
+    await expect(updateMotionProject(root, first.id, 1, [{ type: "move-layer", layerId: "title", toIndex: 5 }]))
+      .rejects.toThrow();
+    const invalid = structuredClone(first.composition);
+    invalid.layers[0].fill = "url(https://bad.example)";
+    await expect(updateMotionProject(root, first.id, 1, [{ type: "replace-composition", composition: invalid }]))
+      .rejects.toBeInstanceOf(MotionValidationError);
+    expect((await getMotionProject(root, first.id)).revision).toBe(1);
+  });
+
   it("rejects invalid tracks, properties, duplicate layers and non-declarative fields", async () => {
     const root = await workspace();
     const project = await createMotionProject(root, "Valid");

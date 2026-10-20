@@ -5,6 +5,7 @@
     "": {
       "name": "superagent",
       "dependencies": {
+        "@napi-rs/canvas": "^1.0.2",
         "@ai-sdk/anthropic": "^1.2.12",
         "@ai-sdk/azure": "^1.3.25",
         "@ai-sdk/deepseek": "^0.2.16",
@@ -31,7 +32,6 @@
         "tiktoken": "^1.0.22",
       },
       "devDependencies": {
-        "@napi-rs/canvas": "^1.0.2",
         "@tailwindcss/cli": "^4.3.2",
         "@types/node": "^22.15.2",
         "@types/pdf-parse": "^1.1.5",

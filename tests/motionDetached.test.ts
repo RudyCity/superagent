@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { createMotionProject } from "../src/core/motion/project/projectStore.js";
 import {
   getMotionJob, inspectMotionJob, prepareMotionJob, renderMotionJob,
-  runPreparedMotionJob, startDetachedMotionJob,
+  runPreparedMotionJob, startDetachedMotionJob, reconcileStaleMotionJob,
 } from "../src/core/motion/jobs/motionJobs.js";
 import { probeFfmpeg } from "../src/core/motion/render/ffmpegEncoder.js";
 
@@ -74,6 +74,27 @@ describe("Motion Studio detached worker boundaries", () => {
     expect(result.claims.execution).toBe("absent");
     expect(result.advice).toContain("Do not kill processes");
     expect((await getMotionJob(root, job.id)).status).toBe("queued");
+  });
+
+  it("requires a stale job, missing runner, and matching claim before manual recovery", async () => {
+    const { root, project } = await fixture();
+    const job = await prepareMotionJob(root, project.id, { width: 160 });
+    await expect(reconcileStaleMotionJob(root, job.id)).rejects.toThrow("too recent");
+    const dir = path.join(root, ".superagent", "motion", "jobs");
+    const file = path.join(dir, job.id + ".json");
+    const old = { ...job, updatedAt: new Date(Date.now() - 180_000).toISOString() };
+    await fs.writeFile(file, JSON.stringify(old));
+    const runner = path.join(dir, job.id + ".runner.lock");
+    await fs.writeFile(runner, 'unverified');
+    await expect(reconcileStaleMotionJob(root, job.id)).rejects.toThrow("runner claim remains");
+    await fs.rm(runner);
+    const interrupted = await reconcileStaleMotionJob(root, job.id);
+    expect(interrupted.status).toBe("interrupted");
+    expect(interrupted.error).toContain("Manually reconciled");
+    expect((await inspectMotionJob(root, job.id)).claims.project).toBe("absent");
+    expect((await fs.readdir(dir)).some(file => file.endsWith('.recovery.lock'))).toBe(false);
+    const resumed = await prepareMotionJob(root, project.id, { width: 160 });
+    expect(resumed.status).toBe('queued');
   });
 
   it("can detach from the CLI process and finish under an independent owner PID", async () => {

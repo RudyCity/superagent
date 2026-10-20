@@ -101,6 +101,52 @@ export async function listMotionJobs(workspace: string): Promise<MotionJob[]> {
   }
   return jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
+/**
+ * Operator-initiated stale-job reconciliation. Never reuses or kills process IDs.
+ * A recent job or a live/unverifiable owner is intentionally left untouched.
+ */
+export async function reconcileStaleMotionJob(workspace: string, id: string): Promise<MotionJob> {
+  const dir = await motionJobDir(workspace, "jobs");
+  const recoveryFile = path.join(dir, id + ".recovery.lock");
+  assertJobId(id);
+  const guard = await fs.open(recoveryFile, "wx", 0o600).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "EEXIST") throw new Error("Motion recovery is already in progress");
+    throw error;
+  });
+  try {
+    const job = await getMotionJob(workspace, id);
+    if (terminalStatuses.has(job.status)) return job;
+    const age = Date.now() - Date.parse(job.updatedAt);
+    if (!Number.isFinite(age) || age < 120_000) throw new Error("Motion job is too recent for safe stale-job reconciliation");
+    try {
+      await fs.lstat(path.join(dir, id + ".runner.lock"));
+      throw new Error("Motion runner claim remains; inspect process identity manually");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (job.ownerPid) {
+      try {
+        process.kill(job.ownerPid, 0);
+        throw new Error("Motion worker PID still exists; cannot verify owner identity");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+    }
+    const claim = (await ownedRegularFile(projectClaim(dir, job.projectId), 1000)).toString("utf8").trim();
+    if (claim !== job.id) throw new Error("Motion project claim does not belong to this job");
+    // No automatic restart or requeue: preserve source and record for inspection.
+    job.status = "interrupted";
+    job.error = "Manually reconciled stale job after verifying missing owner/runner";
+    job.updatedAt = new Date().toISOString();
+    await persist(job, dir);
+    await releaseClaim(dir, job);
+    return job;
+  } finally {
+    await guard.close();
+    await fs.rm(recoveryFile, { force: true });
+  }
+}
+
 /** Read-only status interpretation: PID existence never proves process identity. */
 export async function inspectMotionJob(workspace: string, id: string) {
   const job = await getMotionJob(workspace, id);
@@ -226,6 +272,10 @@ export async function runPreparedMotionJob(
   try {
     await runner.writeFile(JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }) + String.fromCharCode(10));
     await runner.sync();
+    // Prevent a worker from beginning while an operator owns reconciliation.
+    if (await fs.access(path.join(dir, id + ".recovery.lock")).then(() => true, () => false)) {
+      throw new Error("Motion job is under operator recovery inspection");
+    }
     const job = await getMotionJob(workspace, id);
     if (job.status !== "queued") throw new Error("Motion job is not queued for execution");
     const claim = (await ownedRegularFile(projectClaim(dir, job.projectId), 1000)).toString("utf8").trim();
