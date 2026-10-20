@@ -19,6 +19,7 @@ The independent `httpActions` allowlist currently contains:
 | `selfdev.status` | `/api/tline/inspect/selfdev.status` | GET |
 | `muse.status` | `/api/tline/inspect/muse.status` | GET |
 | `tasks.snapshot` | `/api/tline/inspect/tasks.snapshot` | GET |
+| `tasks.events` | `/api/tline/tasks/events` | GET (SSE) |
 
 T-Line negotiates the manifest before using a typed, authenticated backend
 adapter. Inspection actions require a valid registered workspace with an active
@@ -37,7 +38,18 @@ The cursor includes a per-process generation so reconnecting to a new server
 produces a full resync, but this is **not SSE event replay**. Intermediate
 status transitions can be missed, and no task controls are exposed.
 
-Verification: `bun x vitest run tests/tlineCapabilities.test.ts tests/tlineInspection.test.ts tests/tlineTaskSnapshot.test.ts`,
+`tasks.events` requires a server-authorized, exact TLine session ID and
+workspace. It emits `snapshot` frames with opaque process-scoped event IDs,
+`heartbeat`, `warning` and `reset`. Up to 64 **observed** snapshot changes
+are held in a process-local journal per scope (10-minute inactivity expiry;
+maximum 64 scopes). The client may resume from `Last-Event-ID` while a
+matching journal still exists. An absent/foreign/expired ID produces
+`reset` plus a full current snapshot. Streaming ends when the session
+is no longer authorized. This is not an append-only durable source ledger:
+intermediate source transitions during downtime cannot be replayed.
+No task mutation or process cancellation is offered by these endpoints.
+
+Verification: `bun x vitest run tests/tlineCapabilities.test.ts tests/tlineInspection.test.ts tests/tlineTaskSnapshot.test.ts tests/tlineTaskFeed.test.ts`,
 `bun run build`. This is a source/build test; an actual existing server process
 must be upgraded/restarted to expose the new endpoint. Do not kill or restart
 an unrelated process on port 7888 for validation.

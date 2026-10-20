@@ -303,6 +303,93 @@ export async function handleServerRoute(
 
   // Workspace-scoped, credential-free desktop inspection. The CLI registry
   // itself does not grant execution privileges to a desktop caller.
+  if (pathname === "/api/tline/tasks/events") {
+    if (req.method !== "GET") {
+      sendJSON(res, 405, { success: false, error: "Read-only stream." });
+      return true;
+    }
+    const workspace = resolveWorkspacePath(req);
+    const requestedSessionId = parsedUrl.searchParams.get("sessionId") || "";
+    const session = requestedSessionId ? resolveSession(req, requestedSessionId) : null;
+    if (!workspace || !session || session.clientMode !== "tline" ||
+      session.workspace.toLowerCase() !== workspace.toLowerCase()) {
+      sendJSON(res, 403, { success: false, error: "Exact active T-Line workspace and session required." });
+      return true;
+    }
+    const rawLast = req.headers["last-event-id"];
+    const lastId = typeof rawLast === "string" ? rawLast : parsedUrl.searchParams.get("lastEventId") || undefined;
+    if (lastId && !/^[0-9a-f]{16}\.\d{1,12}$/.test(lastId)) {
+      sendJSON(res, 400, { success: false, error: "Invalid event replay ID." });
+      return true;
+    }
+    const { collectTlineTaskSnapshot } = await import("./core/channels/tlineTaskCollector.js");
+    const { recordTaskFeed, replayTaskFeed, latestTaskFeed, encodeTlineSse, acquireTaskSseSlot } =
+      await import("./core/channels/tlineTaskFeed.js");
+    const releaseStreamSlot = acquireTaskSseSlot();
+    if (!releaseStreamSlot) {
+      sendJSON(res, 429, { success: false, error: "Task stream listener limit reached." });
+      return true;
+    }
+    let first;
+    try {
+      first = await collectTlineTaskSnapshot(workspace, session.sessionId);
+      recordTaskFeed(workspace, session.sessionId, first);
+    } catch {
+      releaseStreamSlot();
+      sendJSON(res, 503, { success: false, error: "Task stream source unavailable." });
+      return true;
+    }
+    const replay = replayTaskFeed(workspace, session.sessionId, lastId);
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    let closed = false;
+    let busy = false;
+    const send = (kind: string, data: unknown, id?: string) => {
+      if (!closed && !res.destroyed) res.write(encodeTlineSse(kind, data, id));
+    };
+    if (replay.reset) {
+      send("reset", { reason: lastId ? "replay-gap-or-expired" : "initial-connection",
+        durableReplay: false });
+      const current = latestTaskFeed(workspace, session.sessionId);
+      if (current) send(current.event, current.data, current.id);
+    } else {
+      for (const event of replay.events) send(event.event, event.data, event.id);
+    }
+    const timer = setInterval(async () => {
+      if (closed || busy) return;
+      // Stop streaming as soon as the exact T-Line session is removed.
+      const valid = resolveSession(req, requestedSessionId);
+      if (!valid || valid.clientMode !== "tline" || valid.workspace.toLowerCase() !== workspace.toLowerCase()) {
+        send("reset", { reason: "session-revoked", durableReplay: false });
+        res.end();
+        return;
+      }
+      busy = true;
+      try {
+        const sampled = await collectTlineTaskSnapshot(workspace, session.sessionId);
+        const event = recordTaskFeed(workspace, session.sessionId, sampled);
+        if (event) send(event.event, event.data, event.id);
+        else send("heartbeat", { at: Date.now() });
+      } catch {
+        send("warning", { source: "tasks", reason: "temporarily-unavailable" });
+      } finally { busy = false; }
+    }, 3000);
+    timer.unref?.();
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(timer);
+      releaseStreamSlot();
+    };
+    res.on("close", cleanup);
+    req.on("aborted", cleanup);
+    return true;
+  }
+
   if (pathname.startsWith("/api/tline/inspect/")) {
     if (req.method !== "GET") {
       sendJSON(res, 405, { success: false, error: "Read-only endpoint." });
@@ -331,23 +418,11 @@ export async function handleServerRoute(
           sendJSON(res, 400, { success: false, error: "Invalid task cursor." });
           return true;
         }
-        const { listDelegateJobs } = await import("./core/tools/cliBridgeDelegateJobs.js");
-        const { listDaemonRuns } = await import("./core/storage/daemonRunLedger.js");
-        const { getActiveRemoteTaskSnapshot } = await import("./core/remoteAgent/taskRunner.js");
-        const { selectTlineWorkspaceTasks, buildTlineTaskSnapshot } =
-          await import("./core/channels/tlineTaskSnapshot.js");
-        const errors: string[] = [];
-        const delegates = await listDelegateJobs().catch(() => {
-          errors.push("cli");
-          return [] as Awaited<ReturnType<typeof listDelegateJobs>>;
-        });
-        const daemon = (() => {
-          try { return listDaemonRuns({ workspacePath: workspace, limit: 100 }); }
-          catch { errors.push("daemon"); return [] as ReturnType<typeof listDaemonRuns>; }
-        })();
-        const tasks = selectTlineWorkspaceTasks(workspace, delegates, daemon,
-          getActiveRemoteTaskSnapshot(), session.sessionId);
-        sendJSON(res, 200, buildTlineTaskSnapshot(workspace, tasks, errors, cursor));
+        const { collectTlineTaskSnapshot } = await import("./core/channels/tlineTaskCollector.js");
+        const snapshot = await collectTlineTaskSnapshot(workspace, session.sessionId);
+        sendJSON(res, 200, cursor === snapshot.cursor
+          ? { ...snapshot, changed: false, tasks: undefined }
+          : snapshot);
       } else if (action === "mcp.status") {
         const { loadModelConfig } = await import("./core/config/jsonConfig.js");
         const { connectedServers } = await import("./core/mcp/McpManager.js");
