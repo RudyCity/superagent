@@ -15,7 +15,7 @@ const MAX_CURSOR = 64;
 
 export type TlineTaskSummary = Pick<UnifiedChannelTask,
   "schemaVersion" | "channel" | "taskId" | "sessionId" | "status" | "evidence" | "authorization" | "notification" | "updatedAt"> &
-  { cancelEligible?: boolean };
+  { cancelEligible?: boolean; retryEligible?: boolean };
 export interface TlineTaskSnapshot {
   success: true;
   schemaVersion: 1;
@@ -43,12 +43,22 @@ export function selectTlineWorkspaceTasks(
   muse: MuseRemoteTaskSnapshot | null,
   callerSessionId?: string,
 ): TlineTaskSummary[] {
-  const candidates: (UnifiedChannelTask & { cancelEligible?: boolean })[] = [];
+  const candidates: (UnifiedChannelTask & { cancelEligible?: boolean; retryEligible?: boolean })[] = [];
   for (const job of delegateJobs) {
     if (delegateJobVisibleToWorkspace(job, workspace)) candidates.push({
       ...projectCliDelegate(job),
       // Display-only eligibility hint; the mutation endpoint independently
       // verifies ownership, process handle, exact session and one-use challenge.
+      retryEligible: process.env.SUPERAGENT_TLINE_TASK_RETRY === "1" &&
+        Boolean(callerSessionId) && job.creator?.clientMode === "tline" &&
+        job.creator.sessionId === callerSessionId &&
+        sameLocalWorkspace(job.creator.workspace, workspace) &&
+        job.status === "verification_failed" && job.completionState === "artifact_verification_failed" &&
+        ["codex", "claude"].includes(job.cliAlias) &&
+        Array.isArray(job.expectedArtifacts) && job.expectedArtifacts.length > 0 &&
+        Array.isArray(job.artifactEvidence) &&
+        job.artifactEvidence.length === job.expectedArtifacts.length &&
+        job.artifactEvidence.every(e => e.state === "missing" || e.state === "unchanged"),
       cancelEligible: process.env.SUPERAGENT_TLINE_WORKSPACE_CANCEL === "1" &&
         Boolean(callerSessionId) && job.creator?.clientMode === "tline" &&
         job.creator.sessionId === callerSessionId &&
@@ -70,10 +80,10 @@ export function selectTlineWorkspaceTasks(
   return candidates
     .sort((a, b) => b.updatedAt - a.updatedAt || a.taskId.localeCompare(b.taskId))
     .slice(0, MAX_TASKS)
-    .map(({ schemaVersion, channel, taskId, sessionId, status, evidence, authorization, notification, updatedAt, cancelEligible }) =>
+    .map(({ schemaVersion, channel, taskId, sessionId, status, evidence, authorization, notification, updatedAt, cancelEligible, retryEligible }) =>
       ({ schemaVersion, channel, taskId: taskId.slice(0, 160), sessionId,
         status, evidence, authorization, notification, updatedAt,
-        ...(channel === "cli" ? { cancelEligible: cancelEligible === true } : {}) }));
+        ...(channel === "cli" ? { cancelEligible: cancelEligible === true, retryEligible: retryEligible === true } : {}) }));
 }
 
 export function buildTlineTaskSnapshot(

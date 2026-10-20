@@ -84,9 +84,34 @@ even with operator opt-in. No user input or tool argument can assign the
 creator. Workspace task snapshots expose only a boolean cancellation
 eligibility hint, never another session's creator identity.
 
-Retry remains disabled: old job storage has no full original prompt/arguments
-to replay safely. A future retry needs an explicit fresh user request,
-idempotency protection and artifact claim verification.
+Increment 6D: New-instruction retry is a **separate opt-in capability** enabled
+only by `SUPERAGENT_TLINE_TASK_RETRY=1` in the running server environment.
+It is OFF unless explicitly enabled, independent of the cancel setting.
+There is no replay of stored prompts: the desktop requires a NEW instruction
+(20–4000 characters), calls `tasks.retry.prepare`, then requires a second
+human confirmation before `tasks.retry.confirm` can launch a new job.
+
+Only the original creator's authenticated TLine session may request retry of
+a `verification_failed` Codex/Claude CLI delegation with declared
+`expectedArtifacts`, complete prior artifact evidence, and **no created or
+updated artifact**. Before preparing and again before confirming, the server
+verifies every expected artifact's current SHA-256 or missing state against
+the previous proof, along with canonical workspace, creator and source job
+revision. Other failures with missing evidence, partially written artifacts,
+unknown CLI aliases, and legacy jobs fail closed. The desktop also filters
+retry UI via `retryEligible`, which is a hint, never authorization.
+
+A successful confirm creates a new CLI job with a new user instruction; it
+does not reconstruct or reuse any unknown original command-line flags or
+prompt. A one-use 45-second challenge binds the request to the creator session,
+and an atomic `tline-retry-once.claim` file under the source job's existing
+immutable-shard directory grants at most one attempt across restarts and
+simultaneous processes. The claim contains only the source revision and a
+prompt hash; **never the prompt text or credentials**. Claims remain after
+ambiguous launch failures, requiring manual inspection rather than duplicate
+execution. CLI Bridge's existing cross-process artifact locks apply again to
+the new job. This is not a sandbox and cannot prove absence of changes
+outside the declared artifact set. Keep disabled on multi-user/untrusted hosts.
 
 **Remaining limitation:** The creator chat is now verified for newly launched
 TLine jobs, but the app does not establish independent human-account identity
@@ -94,7 +119,7 @@ or out-of-band user approval. Leave cancellation OFF for shared or untrusted
 workspaces. Legacy jobs are denied, and there is still no daemon/Muse kill,
 arbitrary PID control or automatic retry.
 
-Verification: `bun x vitest run tests/tlineCapabilities.test.ts tests/tlineInspection.test.ts tests/tlineTaskSnapshot.test.ts tests/tlineTaskFeed.test.ts tests/tlineTaskLedger.test.ts tests/tlineTaskCancel.test.ts tests/tlineJobCreator.test.ts`,
+Verification: `bun x vitest run tests/tlineCapabilities.test.ts tests/tlineInspection.test.ts tests/tlineTaskSnapshot.test.ts tests/tlineTaskFeed.test.ts tests/tlineTaskLedger.test.ts tests/tlineTaskCancel.test.ts tests/tlineJobCreator.test.ts tests/tlineTaskRetry.test.ts`,
 `bun run build`. This is a source/build test; an actual existing server process
 must be upgraded/restarted to expose the new endpoint. Do not kill or restart
 an unrelated process on port 7888 for validation.

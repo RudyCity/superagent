@@ -301,6 +301,51 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Explicit fresh-instruction retry: server-validated session and per-source
+  // durable claim. No implicit re-execution of old prompts or arbitrary CLI.
+  if (pathname === "/api/tline/tasks/retry/prepare" || pathname === "/api/tline/tasks/retry/confirm") {
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required." });
+      return true;
+    }
+    if (process.env.SUPERAGENT_TLINE_TASK_RETRY !== "1") {
+      sendJSON(res, 403, { success: false, error: "TLine retry is disabled." });
+      return true;
+    }
+    let body: Record<string, unknown>;
+    try {
+      const raw = await readBody(req);
+      if (raw.length > 6500) throw new Error("Oversized request.");
+      body = JSON.parse(raw || "{}");
+      if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid request.");
+    } catch {
+      sendJSON(res, 400, { success: false, error: "Invalid retry request." });
+      return true;
+    }
+    const workspace = resolveWorkspacePath(req);
+    const requested = body.sessionId;
+    const session = typeof requested === "string" ? resolveSession(req, requested) : null;
+    if (!workspace || !session || session.clientMode !== "tline" ||
+      session.workspace.toLowerCase() !== workspace.toLowerCase() ||
+      typeof body.workspace !== "string" ||
+      path.resolve(body.workspace).toLowerCase() !== workspace.toLowerCase()) {
+      sendJSON(res, 403, { success: false, error: "Exact active TLine workspace/session required." });
+      return true;
+    }
+    const { prepareTlineRetry, confirmTlineRetry } =
+      await import("./core/channels/tlineTaskRetry.js");
+    const input = { workspace, sessionId: session.sessionId, jobId: body.jobId };
+    try {
+      const result = pathname.endsWith("/prepare")
+        ? await prepareTlineRetry({ ...input, prompt: body.prompt } as Parameters<typeof prepareTlineRetry>[0])
+        : await confirmTlineRetry({ ...input, challenge: body.challenge } as Parameters<typeof confirmTlineRetry>[0]);
+      sendJSON(res, result.status, result.body);
+    } catch {
+      sendJSON(res, 503, { success: false, error: "Retry service unavailable." });
+    }
+    return true;
+  }
+
   // Opt-in, two-phase local workspace-operator cancellation. The session and
   // runtime process handle are rechecked; never accept a PID or raw command.
   if (pathname === "/api/tline/tasks/cancel/prepare" || pathname === "/api/tline/tasks/cancel/confirm") {
