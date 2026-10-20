@@ -374,12 +374,14 @@ Record machine/browser/font versions and tolerances. Do not claim external produ
 - [x] Create foundation schema, validation, revision guards, local project service and initial executable adapter.
 - [x] Implement deterministic pure frame evaluation and safe declarative SVG preview; validated with foundation tests and a CLI smoke test.
 - [ ] Implement font/asset readiness, browser compiler and frame capture.
-- [ ] Add dedicated durable MotionJob service and one worker.
+- [x] Implement isolated persisted foreground MotionJob records, per-project render claims, cooperative cancellation, partial-file cleanup, hash validation and FFprobe verification.
+- [ ] Add dedicated detached worker/queue, process identity/restart recovery, concurrency limits and long-render benchmarks.
 - [ ] Add minimal agent/MCP adapters with explicit permission mappings.
-- [ ] Add both interactive /motion and scriptable superagent motion, JSON/exit-code contract and tests.
+- [x] Add interactive /motion registry command and scriptable superagent motion with render/jobs/status/cancel and test coverage.
 - [ ] Add scoped Motion HTTP JSON/job/event/media endpoints and t-line streaming proxy.
 - [ ] Add MotionStudioTab with stable project/revision IDs and cross-surface parity tests.
-- [ ] Export one deterministic scene; verify seek, cancellation, and output metadata.
+- [x] Export a 30-frame declarative scene to FFmpeg H.264 MP4; validate dimensions, frame count, duration and SHA-256; test cancellation and failed encoder.
+- [ ] Establish preview/export visual equivalence and 10-second default fixture plus performance benchmarks.
 - [ ] Build browser preview from the same runtime.
 - [ ] Record benchmark results before expanding to the full editor/director.
 
@@ -393,4 +395,13 @@ Before implementing a phase, check repository status and instructions again. Use
 
 Rollout: developer fixtures -> internal use -> opt-in beta -> broader enablement after gates. Feature disablement must preserve saved projects. Schema migrations retain recovery copies.
 
-Current implementation snapshot (2026-10-20): the local Motion foundation now contains a declarative scene schema, validation, pure keyframe evaluator, safe SVG frame preview, local project files, revision-checked edits, and a noninteractive superagent motion subcommand (new/list/inspect/edit/frame/doctor). Focused Vitest tests (4/4), TypeScript noEmit, and an end-to-end temporary-workspace CLI smoke test passed. This is an incremental Phase 1 foundation only: no MP4/video encoding, audio, durable render worker, agent/MCP tool exposure, /motion slash command, HTTP routes, binary media proxy, T-Line editor, browser build, dependency/isolation certification or performance benchmark has been implemented. Phase 0B and 0C feasibility work remains outstanding.
+Current implementation snapshot (2026-10-20): scene schema, validation, revision-checked local project store, deterministic SVG evaluation, foreground FFmpeg/libx264 MP4 export, isolated persistent MotionJob metadata/cancellation/status, a /motion interactive slash command and a scriptable superagent motion executable are implemented. The local Windows environment has FFmpeg 8.1 and @napi-rs/canvas installed; a 30-frame 160x90 MP4 was encoded, verified with FFprobe and persisted with SHA-256. Three Motion test files now cover schema/revisions, video jobs and slash command behavior (11 tests passed); TypeScript validation and a temporary-workspace CLI render/status/jobs round trip passed. This is only the initial video preview pipeline: job execution is foreground and cannot reattach/recover detached workers; the render lacks audio, image assets, masks, scene graphs, browser visual parity, agent/MCP tools, HTTP routes, binary transport and T-Line editing. Phase 0B dependency packaging and Phase 0C desktop transport/security certification remain outstanding. Do not claim production readiness.
+
+
+### 15A. Render feasibility and packaging notes (2026-10-20)
+
+- Verified locally: FFmpeg 8.1 with libx264, ffprobe and installed @napi-rs/canvas. A short preview uses raw RGBA frame streaming (not SVG-to-video shell injection) and validates its output through FFprobe before publication.
+- The renderer currently uses @napi-rs/canvas present as a development dependency in package.json; production packaging must make the native canvas dependency available and pin its license/platform support. The package manifest is concurrently modified by Hermes work, so this batch intentionally did not modify package.json or claim packaged functionality.
+- Rendering is foreground with on-disk job progress; status/cancel can be accessed from another process while it runs, but this is not a detached worker, durable scheduler or safe automatic crash recovery. Absent/unknown owners must not be assumed to have exited or be auto-killed.
+- Only built-in rect/text layers and a limited resolution/frame budget are supported. The browser preview/editor, audio, custom components, asset intake, MCP exposure and T-Line Desktop remain pending.
+- Limit release to developer-preview use until an isolated render worker, font readiness, process lifecycle, permission scope tests and cross-platform packaging pass.

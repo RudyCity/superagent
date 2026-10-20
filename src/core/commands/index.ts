@@ -5,6 +5,7 @@ import "./agentCommands.js";
 import "./skillCommands.js";
 import "./internalHooksCommand.js";
 import "./memoryCommand.js";
+import "./motionCommand.js";
 import "./mcpCommand.js";
 import "./workspaceCommand.js";
 import "./macroCommand.js";

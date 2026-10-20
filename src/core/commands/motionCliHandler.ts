@@ -1,6 +1,8 @@
 import { createMotionProject, getMotionProject, listMotionProjects, updateMotionProject, writeMotionPreview } from "../motion/motionService.js";
 import { MotionRevisionConflict } from "../motion/project/revisions.js";
 import { MotionValidationError } from "../motion/schema/validation.js";
+import { probeFfmpeg } from "../motion/render/ffmpegEncoder.js";
+import { getMotionJob, listMotionJobs, renderMotionJob, requestMotionCancellation } from "../motion/jobs/motionJobs.js";
 
 const usage = `Motion Studio (foundation preview)
   superagent motion new --name "Title" [--workspace PATH] [--json]
@@ -8,15 +10,20 @@ const usage = `Motion Studio (foundation preview)
   superagent motion inspect PROJECT_ID [--workspace PATH] [--json]
   superagent motion edit PROJECT_ID --base-revision N --layer LAYER_ID --text "Title"
   superagent motion frame PROJECT_ID --frame N [--workspace PATH] [--json]
+  superagent motion render PROJECT_ID [--width EVEN_NUMBER] [--workspace PATH] [--json]
+  superagent motion jobs [--workspace PATH] [--json]
+  superagent motion status JOB_ID [--workspace PATH] [--json]
+  superagent motion cancel JOB_ID [--workspace PATH] [--json]
   superagent motion doctor [--json]
 
-Exports isolated declarative SVG frames. Video/MP4 export and T-Line editor are not implemented yet.`;
+MP4 preview uses installed FFmpeg and runs in the foreground; render jobs persist
+independently from Hermes. Detached job scheduling and T-Line are not yet available.`;
 
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
   const boolean = new Set(["--json", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--name", "--base-revision", "--layer", "--text", "--frame", ...boolean]);
+  const valid = new Set(["--workspace", "-w", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -56,7 +63,7 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       return 0;
     }
     if (action === "doctor") {
-      emit({ stage: "foundation", localSchema: true, deterministicSvg: true, mp4: false, desktopEditor: false, renderJobs: false }, json);
+      emit({ stage: "motion-video-preview", localSchema: true, deterministicSvg: true, mp4: await probeFfmpeg(), desktopEditor: false, renderJobs: "foreground-persisted" }, json);
       return 0;
     }
     if (action === "new") {
@@ -71,8 +78,37 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       emit(await listMotionProjects(workspace), json);
       return 0;
     }
-    if (positionals.length !== 1) throw new Error(action + " requires exactly one PROJECT_ID");
+    if (action === "jobs") {
+      if (positionals.length) throw new Error("jobs does not accept positional arguments");
+      emit(await listMotionJobs(workspace), json);
+      return 0;
+    }
+    if (positionals.length !== 1) throw new Error(action + " requires exactly one project or job ID");
     const projectId = positionals[0];
+    if (action === "status") {
+      emit(await getMotionJob(workspace, projectId), json);
+      return 0;
+    }
+    if (action === "cancel") {
+      emit(await requestMotionCancellation(workspace, projectId), json);
+      return 0;
+    }
+    if (action === "render") {
+      const widthText = opt(opts, "--width");
+      const width = widthText === undefined ? undefined : nonnegativeInteger(widthText, "--width");
+      const controller = new AbortController();
+      const onSignal = () => controller.abort();
+      process.once("SIGINT", onSignal);
+      process.once("SIGTERM", onSignal);
+      try {
+        const job = await renderMotionJob(workspace, projectId, { width, signal: controller.signal });
+        emit(job, json);
+        return job.status === "completed" ? 0 : job.status === "cancelled" ? 130 : 1;
+      } finally {
+        process.off("SIGINT", onSignal);
+        process.off("SIGTERM", onSignal);
+      }
+    }
     if (action === "inspect") {
       emit(await getMotionProject(workspace, projectId), json);
       return 0;
