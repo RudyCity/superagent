@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { importMotionAudio, inspectMotionWav, readMotionAudio } from "../src/core/motion/assets/motionAudio.js";
+import { summarizeMotionWav } from "../src/core/motion/assets/motionWaveform.js";
 import { createMotionProject, updateMotionProject } from "../src/core/motion/project/projectStore.js";
 import { renderMotionJob } from "../src/core/motion/jobs/motionJobs.js";
 import { probeFfmpeg } from "../src/core/motion/render/ffmpegEncoder.js";
@@ -37,6 +38,18 @@ describe("Motion WAV workspace asset and output", () => {
     expect(() => inspectMotionWav(wav(31))).toThrow("duration");
     expect(() => inspectMotionWav(Buffer.alloc(2_097_153))).toThrow("canonical");
     expect(() => inspectMotionWav(Buffer.from("<svg>unsafe</svg>"))).toThrow("canonical");
+  });
+  it("produces bounded PCM envelopes without exposing raw audio", () => {
+    const source = wav(0.5);
+    const summary = summarizeMotionWav(source, 32);
+    expect(summary).toMatchObject({ seconds: 0.5, sampleRate: 16000, channels: 1 });
+    expect(summary.peaks).toHaveLength(32);
+    expect(Math.max(...summary.peaks)).toBeGreaterThan(0.2);
+    expect(summary.peaks.every(v => Number.isFinite(v) && v >= 0 && v <= 1)).toBe(true);
+    expect(() => summarizeMotionWav(source, 1000)).toThrow("resolution");
+    const silent = Buffer.from(source);
+    silent.fill(0, 44);
+    expect(summarizeMotionWav(silent, 16).peaks).toEqual(Array(16).fill(0));
   });
   it("stores audio by hash inside its workspace and rejects cross-workspace reads", async () => {
     const root = await workspace();

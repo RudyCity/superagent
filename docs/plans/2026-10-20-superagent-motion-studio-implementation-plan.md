@@ -490,3 +490,11 @@ Current implementation snapshot (2026-10-20): scene schema, revision-checked pro
 - FFmpeg now constructs per-clip gain, fades and frame-aligned delay, followed by an `amix` pass and trim to scene duration, producing one AAC stream alongside H.264 video. The legacy single-track route and no-audio route remain supported.
 - Integration tests cover migrating a legacy track, four-clip cap, invalid volume/fade, independent clips, and a real two-WAV -> H264/AAC MP4 render. Ten Motion suites/42 tests passed, TypeScript passed.
 - Remaining: soundtrack waveform, arbitrary audio positions beyond scene duration, MP3/FLAC transcoding, mastering/limiter, native Tauri A/V playback certification, and longer exports. No daemon restarted.
+
+### Authorized WAV Waveform Envelope for T-Line (2026-10-20)
+
+- Added a 96-bucket (configurable 8-256 internal) numeric peak envelope calculator over canonical PCM16 WAV audio, checking integrity and workspace ownership via the existing immutable asset reader. Only bounded amplitude values, clip seconds and WAV rate/channel metadata are returned, never local filesystem paths or raw PCM in the waveform API.
+- New authenticated GET /api/motion/audio/:audioId/waveform is routed through the existing global server auth and authorized workspace resolver. T-Line proxy explicitly allowlists it, then uses a normal T-Line bearer token and server-side SuperAgent token exchange.
+- Native T-Line mixer gains clickable waveform scrubbing and frame-relative playhead; a separate synchronized audio preview per clip uses source offset, gain and fade controls. Preview uses a monotonic visual frame clock to reduce drift and respects pause/inactive state.
+- The rendered AAC file remains authoritative because browser volume boosting beyond 1 and autoplay restrictions prevent guaranteed matching real-time playback. Packaged Tauri A/V E2E and sample-accurate multi-clip Web Audio rendering remain certification gates.
+- Regression: SuperAgent 43/43 Motion tests passed, including waveform numeric tests and GET route authorization/workspace isolation; TypeScript passed. No Hermes runtime or daemon restarted.

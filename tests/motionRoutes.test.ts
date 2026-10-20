@@ -104,6 +104,13 @@ describe("Motion HTTP and artifact transport", () => {
     expect(metadata).toMatchObject({ channels: 1, sampleRate: 16000, seconds: 0.1 });
     expect(metadata.id).toMatch(/^audio-[a-f0-9]{64}$/);
     const urlPath = endpoint + "/" + metadata.id;
+    const waveform = await request(urlPath + "/waveform");
+    expect(waveform.status).toBe(200);
+    const summary = await waveform.json();
+    expect(summary.peaks).toHaveLength(96);
+    expect(summary).toMatchObject({ seconds: 0.1, sampleRate: 16000, channels: 1 });
+    expect((await fetch(url + urlPath + "/waveform")).status).toBe(401);
+    expect((await request(urlPath + "/waveform", { headers: { "x-workspace-path": "/foreign" } })).status).toBe(403);
     const read = await request(urlPath);
     expect(read.status).toBe(200);
     expect(read.headers.get("content-type")).toBe("audio/wav");
