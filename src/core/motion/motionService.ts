@@ -1,0 +1,39 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import crypto from "node:crypto";
+import type { MotionEdit, MotionProject } from "./schema/types.js";
+import { createMotionProject, getMotionProject, listMotionProjects, motionStorageDir, updateMotionProject } from "./project/projectStore.js";
+import { renderMotionSvg } from "./runtime/frameSvg.js";
+
+export { createMotionProject, getMotionProject, listMotionProjects, updateMotionProject };
+export type { MotionProject, MotionEdit };
+
+/**
+ * Phase 1 preview export: writes a deterministic safe SVG under the selected
+ * workspace. This is NOT MP4/video rendering or a full studio backend.
+ */
+export async function writeMotionPreview(
+  workspace: string, projectId: string, frame: number,
+): Promise<{ projectId: string; revision: number; frame: number; path: string; sha256: string }> {
+  const project = await getMotionProject(workspace, projectId);
+  const data = renderMotionSvg(project, frame);
+  const storage = await motionStorageDir(workspace);
+  const previewDir = path.join(path.dirname(storage), "previews");
+  await fs.mkdir(previewDir, { recursive: true, mode: 0o700 });
+  const stat = await fs.lstat(previewDir);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Invalid preview directory");
+  const previewPath = path.join(previewDir, project.id + "-r" + project.revision + "-f" + frame + ".svg");
+  const sha256 = crypto.createHash("sha256").update(data).digest("hex");
+  try {
+    await fs.writeFile(previewPath, data, { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const existing = await fs.lstat(previewPath);
+    if (!existing.isFile() || existing.isSymbolicLink()) throw new Error("Invalid cached preview");
+    const bytes = await fs.readFile(previewPath);
+    if (crypto.createHash("sha256").update(bytes).digest("hex") !== sha256) {
+      throw new Error("Existing preview hash mismatches the pinned revision");
+    }
+  }
+  return { projectId: project.id, revision: project.revision, frame, path: previewPath, sha256 };
+}

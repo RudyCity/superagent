@@ -1,0 +1,73 @@
+/**
+ * Declarative Motion Studio schema v1. Browser-safe: no filesystem or process dependencies.
+ * No arbitrary JavaScript, external URLs, fonts or plugins are permitted in a scene.
+ */
+export const MOTION_SCHEMA_VERSION = 1 as const;
+
+export type MotionProperty = "x" | "y" | "opacity" | "rotation";
+export type MotionEasing = "linear" | "step" | "easeInOut";
+
+export interface MotionKeyframe {
+  frame: number;
+  value: number;
+  easing?: MotionEasing;
+}
+export interface MotionTrack {
+  property: MotionProperty;
+  keyframes: MotionKeyframe[];
+}
+interface BaseLayer {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  opacity: number;
+  fill: string;
+  tracks: MotionTrack[];
+}
+export interface TextLayer extends BaseLayer {
+  kind: "text";
+  text: string;
+  fontSize: number;
+  fontFamily: string;
+}
+export interface RectLayer extends BaseLayer {
+  kind: "rect";
+}
+export type MotionLayer = TextLayer | RectLayer;
+
+export interface MotionProject {
+  schemaVersion: typeof MOTION_SCHEMA_VERSION;
+  id: string;
+  workspaceRoot: string;
+  name: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  composition: {
+    width: number;
+    height: number;
+    fps: { numerator: number; denominator: number };
+    durationFrames: number;
+    background: string;
+    layers: MotionLayer[];
+  };
+}
+export type MotionEdit =
+  | { type: "set-text"; layerId: string; text: string }
+  | { type: "set-property"; layerId: string; property: MotionProperty; value: number }
+  | { type: "set-track"; layerId: string; track: MotionTrack };
+
+export interface EvaluatedLayer {
+  layer: MotionLayer;
+  values: Record<MotionProperty, number>;
+}
+export interface EvaluatedFrame {
+  frame: number;
+  width: number;
+  height: number;
+  background: string;
+  layers: EvaluatedLayer[];
+}

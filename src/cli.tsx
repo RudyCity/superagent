@@ -50,6 +50,11 @@ if (process.argv.includes("--sync-history-only")) {
   process.exit(0);
 }
 
+if (process.argv[2] === "motion") {
+  const { handleMotionCliCommand } = await import("./core/commands/motionCliHandler.js");
+  process.exit(await handleMotionCliCommand(process.argv.slice(3)));
+}
+
 if (process.argv[2] === "memory") {
   const { handleMemorySweepCliCommand } = await import("./core/commands/memorySweepCliHandler.js");
   const exitCode = await handleMemorySweepCliCommand(process.argv.slice(3));
