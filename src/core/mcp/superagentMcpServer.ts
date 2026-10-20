@@ -546,9 +546,13 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     const oauthScopes = authMode === "oauth" ? getIdentity?.()?.scopes : undefined;
     const canDiscoverDangerous = authMode !== "oauth"
       || (Array.isArray(oauthScopes) && oauthScopes.includes("mcp:tools:write"));
+    const canDiscoverRead = authMode !== "oauth"
+      || (Array.isArray(oauthScopes) && oauthScopes.some(
+        scope => scope === "mcp:tools" || scope === "mcp:tools:read" || scope === "mcp:tools:write"));
     // Disabled tools stay hidden regardless of dangerous/YOLO mode or allowlists.
     const tools = allTools.filter(
       (t) => !DISABLED_MCP_TOOLS.has(t.name)
+        && canDiscoverRead
         && (!effectiveAllowedTools || effectiveAllowedTools.includes(t.name))
         && (MCP_TOOL_CLASSIFICATION[t.name] !== "dangerous" || canDiscoverDangerous)
     );
@@ -927,11 +931,14 @@ function extractMcpResultText(result: unknown): string {
     // Opening dangerous tools locally does not elevate OAuth client scopes.
     // Fail before project routing to avoid leaking routing details to callers
     // without an explicit write grant.
-    if (authMode === "oauth" && isDangerous && !DISABLED_MCP_TOOLS.has(toolName)) {
+    if (authMode === "oauth" && !DISABLED_MCP_TOOLS.has(toolName)) {
       const scopes = callerIdentity?.mode === "oauth" && Array.isArray(callerIdentity.scopes)
         ? callerIdentity.scopes : [];
-      if (!scopes.includes("mcp:tools:write")) {
-        const reason = "missing required OAuth scope mcp:tools:write";
+      const allowed = isDangerous
+        ? scopes.includes("mcp:tools:write")
+        : scopes.some(scope => scope === "mcp:tools" || scope === "mcp:tools:read" || scope === "mcp:tools:write");
+      if (!allowed) {
+        const reason = "missing required OAuth scope " + (isDangerous ? "mcp:tools:write" : "mcp:tools");
         auditContext.authorizationDecision = "denied";
         auditContext.errorCode = "insufficient_oauth_scope";
         // Denied OAuth scopes must not leak file contents, shell commands or

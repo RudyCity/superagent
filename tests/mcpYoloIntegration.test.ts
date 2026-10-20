@@ -354,6 +354,20 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
     expect(fs.existsSync(target)).toBe(false);
   });
 
+  it("OAuth tokens without tool scopes do not discover or invoke read-only tools", async () => {
+    const server = createSuperagentMcpServer({
+      allowedTools: safeTools, workspace: testWorkspace, authMode: "oauth",
+      getIdentity: () => ({ mode: "oauth", subject: "no-grants", scopes: [] }),
+    });
+    const listing = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
+    const invoke = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    expect((await listing({ method: "tools/list", params: {} }, {})).tools).toHaveLength(0);
+    await expect(invoke({
+      method: "tools/call",
+      params: { name: "superagent_read_files", arguments: { files: ["README.md"] } },
+    }, {})).rejects.toThrow(/mcp:tools/i);
+  });
+
   it("OAuth discovery updates when the same client loses write scope", async () => {
     let scopes = ["mcp:tools", "mcp:tools:write"];
     const server = createSuperagentMcpServer({

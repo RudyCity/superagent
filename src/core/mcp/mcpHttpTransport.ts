@@ -458,15 +458,15 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
       const sessionIdHeader = req.headers["mcp-session-id"];
       const requestSessionId = typeof sessionIdHeader === "string" ? sessionIdHeader : undefined;
 
-      // Session binding: a session is only usable with the identity it was
-      // created under (static-bearer: same token; oauth: same client).
+      // Session servers capture the initialization identity in getIdentity().
+      // Bind them to the *exact* current credential, not just OAuth client_id:
+      // a refreshed token must initialize a fresh session, and a read-scoped
+      // token from the same client must never inherit an old write-scoped one.
       const isSessionBound = (session: McpSessionEntry): boolean => {
         const id = identity as McpIdentity;
-        if (session.identity.mode !== id.mode) return false;
-        if (id.mode === "static-bearer") {
-          return session.identity.credentialHash === id.credentialHash;
-        }
-        return session.identity.subject === id.subject;
+        return session.identity.mode === id.mode
+          && session.identity.subject === id.subject
+          && session.identity.credentialHash === id.credentialHash;
       };
 
       const readBody = async (): Promise<{ ok: true; body: unknown } | { ok: false }> => {
@@ -484,6 +484,12 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         if (!requestSessionId) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "mcp-session-id header required" }));
+          return;
+        }
+        const toRemove = registry.get(requestSessionId);
+        if (toRemove && !isSessionBound(toRemove)) {
+          res.writeHead(403, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "session credential mismatch" }));
           return;
         }
         const removed = await registry.remove(requestSessionId);

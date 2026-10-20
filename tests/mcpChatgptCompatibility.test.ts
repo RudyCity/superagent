@@ -74,7 +74,10 @@ describe("per-tool security metadata", () => {
   });
 
   it("tools/list includes annotations and securitySchemes via _meta", async () => {
-    const server = createSuperagentMcpServer({ authMode: "oauth" });
+    const server = createSuperagentMcpServer({
+      authMode: "oauth",
+      getIdentity: () => ({ mode: "oauth", subject: "metadata-reader", scopes: ["mcp:tools"] }),
+    });
     const tools = await listTools(server);
     const readFiles = tools.find((t) => t.name === "superagent_read_files");
     expect(readFiles).toBeDefined();
