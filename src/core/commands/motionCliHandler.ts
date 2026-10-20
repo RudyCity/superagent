@@ -2,7 +2,7 @@ import { createMotionProject, getMotionProject, listMotionProjects, updateMotion
 import { MotionRevisionConflict } from "../motion/project/revisions.js";
 import { MotionValidationError } from "../motion/schema/validation.js";
 import { probeFfmpeg } from "../motion/render/ffmpegEncoder.js";
-import { getMotionJob, listMotionJobs, renderMotionJob, requestMotionCancellation } from "../motion/jobs/motionJobs.js";
+import { getMotionJob, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, requestMotionCancellation } from "../motion/jobs/motionJobs.js";
 
 const usage = `Motion Studio (foundation preview)
   superagent motion new --name "Title" [--workspace PATH] [--json]
@@ -10,19 +10,20 @@ const usage = `Motion Studio (foundation preview)
   superagent motion inspect PROJECT_ID [--workspace PATH] [--json]
   superagent motion edit PROJECT_ID --base-revision N --layer LAYER_ID --text "Title"
   superagent motion frame PROJECT_ID --frame N [--workspace PATH] [--json]
-  superagent motion render PROJECT_ID [--width EVEN_NUMBER] [--workspace PATH] [--json]
+  superagent motion render PROJECT_ID [--width EVEN_NUMBER] [--detach] [--workspace PATH] [--json]
   superagent motion jobs [--workspace PATH] [--json]
   superagent motion status JOB_ID [--workspace PATH] [--json]
+  superagent motion recovery JOB_ID [--workspace PATH] [--json]
   superagent motion cancel JOB_ID [--workspace PATH] [--json]
   superagent motion doctor [--json]
 
-MP4 preview uses installed FFmpeg and runs in the foreground; render jobs persist
-independently from Hermes. Detached job scheduling and T-Line are not yet available.`;
+MP4 preview uses installed FFmpeg. --detach launches a separate Node worker;
+recovery is diagnostic/read-only. T-Line integration remains pending.`;
 
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--help", "-h"]);
+  const boolean = new Set(["--json", "--detach", "--help", "-h"]);
   const valid = new Set(["--workspace", "-w", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
@@ -63,7 +64,7 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       return 0;
     }
     if (action === "doctor") {
-      emit({ stage: "motion-video-preview", localSchema: true, deterministicSvg: true, mp4: await probeFfmpeg(), desktopEditor: false, renderJobs: "foreground-persisted" }, json);
+      emit({ stage: "motion-video-preview", localSchema: true, deterministicSvg: true, mp4: await probeFfmpeg(), desktopEditor: false, renderJobs: "foreground-and-detached-local" }, json);
       return 0;
     }
     if (action === "new") {
@@ -85,6 +86,10 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
     }
     if (positionals.length !== 1) throw new Error(action + " requires exactly one project or job ID");
     const projectId = positionals[0];
+    if (action === "recovery") {
+      emit(await inspectMotionJob(workspace, projectId), json);
+      return 0;
+    }
     if (action === "status") {
       emit(await getMotionJob(workspace, projectId), json);
       return 0;
@@ -101,9 +106,11 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       process.once("SIGINT", onSignal);
       process.once("SIGTERM", onSignal);
       try {
-        const job = await renderMotionJob(workspace, projectId, { width, signal: controller.signal });
+        const job = opts.has("--detach")
+          ? await startDetachedMotionJob(workspace, projectId, { width })
+          : await renderMotionJob(workspace, projectId, { width, signal: controller.signal });
         emit(job, json);
-        return job.status === "completed" ? 0 : job.status === "cancelled" ? 130 : 1;
+        return job.status === "queued" || job.status === "completed" ? 0 : job.status === "cancelled" ? 130 : 1;
       } finally {
         process.off("SIGINT", onSignal);
         process.off("SIGTERM", onSignal);

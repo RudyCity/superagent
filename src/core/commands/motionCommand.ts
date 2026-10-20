@@ -11,6 +11,7 @@ const help = [
   "  /motion render <project-id> [even-output-width]",
   "  /motion jobs",
   "  /motion status <job-id>",
+  "  /motion recovery <job-id> (read-only)",
   "  /motion cancel <job-id>",
   "  /motion doctor",
   "Renders currently run in this terminal process; job records persist for inspection.",
@@ -79,6 +80,9 @@ export const motionCommand: SlashCommand = {
       if (action === "jobs") {
         const result = await jobs.listMotionJobs(workspace);
         emit(ctx, result.length ? result.map(job => job.id + " " + job.status + " " + job.framesCompleted + "/" + job.profile.frameCount).join("\n") : "No motion render jobs.");
+      } else if (action === "recovery") {
+        if (!id) throw new Error("Usage: /motion recovery <job-id>");
+        emit(ctx, JSON.stringify(await jobs.inspectMotionJob(workspace, id), null, 2));
       } else if (action === "status") {
         if (!id) throw new Error("Usage: /motion status <job-id>");
         const result = await jobs.getMotionJob(workspace, id);
