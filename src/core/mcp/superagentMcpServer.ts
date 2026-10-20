@@ -541,9 +541,16 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     const yoloState = getYoloModeState();
     const isDangerousUnlocked = Boolean(allowDangerous || yoloState !== "off");
     const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
+    // OAuth tool discovery must reflect the CURRENT token, not local YOLO
+    // configuration. A revoked/read-only token must not see write tools.
+    const oauthScopes = authMode === "oauth" ? getIdentity?.()?.scopes : undefined;
+    const canDiscoverDangerous = authMode !== "oauth"
+      || (Array.isArray(oauthScopes) && oauthScopes.includes("mcp:tools:write"));
     // Disabled tools stay hidden regardless of dangerous/YOLO mode or allowlists.
     const tools = allTools.filter(
-      (t) => !DISABLED_MCP_TOOLS.has(t.name) && (!effectiveAllowedTools || effectiveAllowedTools.includes(t.name))
+      (t) => !DISABLED_MCP_TOOLS.has(t.name)
+        && (!effectiveAllowedTools || effectiveAllowedTools.includes(t.name))
+        && (MCP_TOOL_CLASSIFICATION[t.name] !== "dangerous" || canDiscoverDangerous)
     );
     const annotated = tools.map((t) => ({
       ...t,
@@ -917,6 +924,33 @@ function extractMcpResultText(result: unknown): string {
         // Audit observers must never break tool execution.
       }
     };
+    // Opening dangerous tools locally does not elevate OAuth client scopes.
+    // Fail before project routing to avoid leaking routing details to callers
+    // without an explicit write grant.
+    if (authMode === "oauth" && isDangerous && !DISABLED_MCP_TOOLS.has(toolName)) {
+      const scopes = callerIdentity?.mode === "oauth" && Array.isArray(callerIdentity.scopes)
+        ? callerIdentity.scopes : [];
+      if (!scopes.includes("mcp:tools:write")) {
+        const reason = "missing required OAuth scope mcp:tools:write";
+        auditContext.authorizationDecision = "denied";
+        auditContext.errorCode = "insufficient_oauth_scope";
+        // Denied OAuth scopes must not leak file contents, shell commands or
+        // other caller-supplied arguments into audit/activity subscribers.
+        emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
+        emitMcpActivity({
+          type: "tool_call",
+          tool: toolName,
+          args: {},
+          ok: false,
+          error: reason,
+          durationMs: 0,
+          timestamp: Date.now(),
+          workspace: activeWorkspace,
+        });
+        throw new McpError(ErrorCode.InvalidRequest,
+          "Tool requires OAuth mcp:tools:write scope; local dangerous/YOLO mode cannot elevate token permissions.");
+      }
+    }
     const registryManagementTools = new Set([
       "superagent_list_projects", "superagent_get_project", "superagent_register_project",
       "superagent_update_project", "superagent_remove_project", "superagent_list_project_access",
@@ -989,31 +1023,6 @@ function extractMcpResultText(result: unknown): string {
             `Enable it dynamically via SuperAgent CLI (/yolo or /yolo full) or restart the tunnel with --allow-dangerous.`
           : `Tool '${toolName}' is not enabled on this MCP server (blocked by MCP tool allowlist).`
       );
-    }
-
-    // OAuth scope validation for dangerous tools
-    // If dangerous tools are unlocked (via --allow-dangerous or active YOLO mode),
-    // full autonomous execution is authorized by the SuperAgent owner.
-    if (authMode === "oauth" && isDangerous && !isDangerousUnlocked) {
-      const identity = getIdentity?.();
-      if (identity && identity.scopes && !identity.scopes.includes("mcp:tools:write")) {
-        const errReason = "missing required scope 'mcp:tools:write'";
-        emitAudit({ tool: toolName, args: rawArgs, ok: false, error: errReason });
-        emitMcpActivity({
-          type: "tool_call",
-          tool: toolName,
-          args: rawArgs,
-          ok: false,
-          error: "Missing required scope 'mcp:tools:write'",
-          durationMs: 0,
-          timestamp: Date.now(),
-          workspace: effectiveWs,
-        });
-        throw new McpError(
-          ErrorCode.InvalidRequest,
-          `Tool '${toolName}' requires 'mcp:tools:write' OAuth scope. Current token only has: ${identity?.scopes?.join(" ") || "none"}`
-        );
-      }
     }
 
     // Scoped YOLO boundary guard (Layer 1)

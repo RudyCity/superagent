@@ -238,6 +238,8 @@ superagent skill promote <name>@<new-version> --workspace ./project
 
 The revision command produces an **inactive, immutable review candidate** with the exact parent version/hash and feedback provenance. It preserves the original version and never automatically promotes or edits the active skill. Owner approval remains interactive and mandatory. Live RMemory delivery and full-provider E2E tests are separate release gates.
 
+**MCP OAuth write scope:** Dangerous MCP tool discovery and invocation require a current OAuth mcp:tools:write grant even if local YOLO or --allow-dangerous is enabled. A read-only token cannot be elevated by local tool availability; denial audit omits write payloads. See docs/plans/2026-10-20-superagent-hermes-phase-5-oauth-tool-scope-hardening.md.
+
 **Scoped Muse Watcher task status:** Local /muse watch status displays an in-flight task ID only when the T-Line workspace exactly matches the task workspace. Global remote status (MCP/tunnel) reports task presence without task IDs. No prompt, transcript or permission grant is copied. See docs/plans/2026-10-20-superagent-hermes-phase-5-watcher-task-scope.md.
 
 **Hermes Phase 5 local Muse status:** Local /muse status (T-Line) and superagent muse status (CLI) show a normalized view of an active remote task only for the current workspace. No prompts, secrets or conversation histories are copied; running does not count as verified completion. See docs/plans/2026-10-20-superagent-hermes-phase-5-muse-tline-live-task-status.md.

@@ -308,57 +308,96 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
     expect((server as any)._capabilities?.tools?.listChanged).toBe(true);
   });
 
-  it("OAuth client with read-only scope can execute dangerous tools when YOLO is active", async () => {
-    // Client has only read-only scope 'mcp:tools'
-    const readOnlyIdentity = {
-      mode: "oauth",
-      subject: "chatgpt",
-      scopes: ["mcp:tools"],
-    };
-
+  it("OAuth read-only scope cannot write even after Full YOLO is enabled", async () => {
+    const auditEvents: any[] = [];
     const server = createSuperagentMcpServer({
       allowedTools: safeTools,
       workspace: testWorkspace,
       authMode: "oauth",
-      getIdentity: () => readOnlyIdentity,
+      getIdentity: () => ({ mode: "oauth", subject: "reader", scopes: ["mcp:tools"] }),
+      onToolCall: (event) => auditEvents.push(event),
     });
-
-    const callHandler = (server as any)._requestHandlers?.get(CallToolRequestSchema.shape.method.value);
-    const targetFile = path.join(testWorkspace, "oauth_yolo.txt");
-
-    // 1. In safe mode (YOLO off), calling dangerous tool should fail
-    setYoloMode(false);
-    let errSafe: any = null;
-    try {
-      await callHandler(
-        {
-          method: "tools/call",
-          params: {
-            name: "superagent_write_files",
-            arguments: { files: [{ filePath: targetFile, content: "test" }] },
-          },
-        },
-        {}
-      );
-    } catch (e: any) {
-      errSafe = e;
-    }
-    expect(errSafe).not.toBeNull();
-
-    // 2. Turn on YOLO mode: dangerous tool is now executable even with mcp:tools scope
+    const handler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const targetFile = path.join(testWorkspace, "denied-oauth-yolo.txt");
     setFullYoloMode(true);
-    const result = await callHandler(
-      {
+    await expect(handler({
+      method: "tools/call",
+      params: { name: "superagent_write_files",
+        arguments: { files: [{ filePath: targetFile, content: "MUST NOT WRITE" }] } },
+    }, {})).rejects.toThrow(/mcp:tools:write/i);
+    expect(fs.existsSync(targetFile)).toBe(false);
+    expect(auditEvents.at(-1)).toMatchObject({
+      tool: "superagent_write_files", ok: false, authorizationDecision: "denied",
+      errorCode: "insufficient_oauth_scope",
+    });
+    expect(JSON.stringify(auditEvents)).not.toContain("MUST NOT WRITE");
+  });
+
+  it("OAuth read-only or missing identity cannot write with allowDangerous", async () => {
+    const target = path.join(testWorkspace, "allow-dangerous-denied.txt");
+    for (const identity of [
+      { mode: "oauth" as const, subject: "reader", scopes: ["mcp:tools"] },
+      { mode: "oauth" as const, subject: "empty", scopes: [] },
+      null,
+    ]) {
+      const server = createSuperagentMcpServer({
+        workspace: testWorkspace, authMode: "oauth", allowDangerous: true,
+        getIdentity: () => identity,
+      });
+      const handler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+      await expect(handler({
         method: "tools/call",
-        params: {
-          name: "superagent_write_files",
-          arguments: { files: [{ filePath: targetFile, content: "oauth yolo success" }] },
-        },
-      },
-      {}
-    );
+        params: { name: "superagent_write_files",
+          arguments: { files: [{ filePath: target, content: "DENIED" }] } },
+      }, {})).rejects.toThrow(/mcp:tools:write/i);
+    }
+    expect(fs.existsSync(target)).toBe(false);
+  });
+
+  it("OAuth discovery updates when the same client loses write scope", async () => {
+    let scopes = ["mcp:tools", "mcp:tools:write"];
+    const server = createSuperagentMcpServer({
+      allowedTools: safeTools, authMode: "oauth", allowDangerous: true,
+      workspace: testWorkspace,
+      getIdentity: () => ({ mode: "oauth", subject: "mutable-client", scopes }),
+    });
+    const listing = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
+    const invoke = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const names = async () => (await listing({ method: "tools/list", params: {} }, {}))
+      .tools.map((item: any) => item.name);
+    expect(await names()).toContain("superagent_write_files");
+    scopes = ["mcp:tools"];
+    expect(await names()).not.toContain("superagent_write_files");
+    expect(await names()).toContain("superagent_read_files");
+    const target = path.join(testWorkspace, "revoked-write.txt");
+    await expect(invoke({
+      method: "tools/call",
+      params: { name: "superagent_write_files",
+        arguments: { files: [{ filePath: target, content: "REVOKED" }] } },
+    }, {})).rejects.toThrow(/mcp:tools:write/i);
+    expect(fs.existsSync(target)).toBe(false);
+  });
+
+  it("OAuth write scope grants mutation only when dangerous tools are unlocked", async () => {
+    const server = createSuperagentMcpServer({
+      allowedTools: safeTools,
+      workspace: testWorkspace,
+      authMode: "oauth",
+      getIdentity: () => ({ mode: "oauth", subject: "writer",
+        scopes: ["mcp:tools", "mcp:tools:write"] }),
+    });
+    const handler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const targetFile = path.join(testWorkspace, "oauth-writer.txt");
+    const request = {
+      method: "tools/call",
+      params: { name: "superagent_write_files",
+        arguments: { files: [{ filePath: targetFile, content: "authorized" }] } },
+    };
+    await expect(handler(request, {})).rejects.toThrow(/blocked by MCP tool allowlist/i);
+    setFullYoloMode(true);
+    const result = await handler(request, {});
     expect(result.isError).toBeFalsy();
-    expect(fs.readFileSync(targetFile, "utf-8")).toBe("oauth yolo success");
+    expect(fs.readFileSync(targetFile, "utf-8")).toBe("authorized");
   });
 });
 
