@@ -457,3 +457,10 @@ Current implementation snapshot (2026-10-20): scene schema, revision-checked pro
 - Animated x/y position tracks are updated at the current frame in the same revision-checked `replace-composition` transaction as width/height updates; no additional SuperAgent engine changes are required.
 - Regression covers seven rotation angles, corner anchoring, pointer-based resize and animated keyframe retention. T-Line frontend 68/68 tests, frontend/backend TypeScript and Vite production build passed; existing CSS and bundle-size warnings remain.
 - Hermes runtime remains untouched. Tauri live E2E, audio/image/video asset editing, and font/render parity remain future certification gates.
+
+### T-Line Interactive Keyframe Timeline (2026-10-20)
+
+- T-Line native Motion Studio `main` commit `18940ae` (v1.3.693) replaces the read-only animation timeline with an interactive, per-property keyframe editor. Keyframe markers support pointer-captured drag-to-retime; precise frame fields, outgoing easing selection and keyframe deletion are included.
+- Existing revision-guarded SuperAgent `set-track` contract is reused for retiming, easing edits and removing non-final keyframes. The final keyframe removes its track through revision-checked `replace-composition` to keep the v1 schema valid and preserve Undo/Redo semantics. No Motion engine changes required.
+- Pure editing helpers reject keyframe collisions, out-of-range/fractional frames and missing tracks while retaining keyframe values, easing and sorted timestamps. Pointer cancellation and mid-drag revision changes refuse to write scene data.
+- T-Line frontend regression passed 80/80 tests across 15 suites; TypeScript frontend/backend and production Vite build passed with existing CSS/bundle warnings. Real packaged Tauri-to-SuperAgent E2E remains unverified; asset/audio ingestion, text parity and crash-resilient media streaming remain open.
