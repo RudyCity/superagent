@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { authorizeChannelOperation, projectCliDelegate, projectDaemonRun, projectMuseRemoteTask } from "../src/core/channels/unifiedChannelTask.js";
+import { authorizeChannelOperation, projectCliDelegate, projectDaemonRun, projectMuseRemoteTask, projectMuseWatcherTask } from "../src/core/channels/unifiedChannelTask.js";
 import type { DaemonRunRecord } from "../src/core/daemon/daemonTypes.js";
 import type { DelegateJob } from "../src/core/tools/cliBridgeDelegateJobs.js";
 
@@ -52,6 +52,14 @@ describe("Hermes Phase 5 channel contract",()=>{
    expect(projectMuseRemoteTask(raw,"tline").summary).toBeNull();
  });
 
+ it("does not invent a session or verified proof for Muse watcher tasks",()=>{
+   const task=projectMuseWatcherTask({taskId:"task-watch",workspace:"/w",startedAt:1234});
+   expect(task).toMatchObject({
+     channel:"tline",taskId:"task-watch",sessionId:null,workspace:"/w",
+     status:"running",evidence:"unverified",authorization:"transport_not_authorization",
+   });
+   expect(task.summary).toBeNull();
+ });
  it("does not embed conversation history in normalized tasks",()=>{
    expect(Object.keys(projectDaemonRun(daemon))).not.toContain("messages");
    expect(projectDaemonRun({...daemon,outputSummary:"x".repeat(4000)}).summary?.length).toBeLessThanOrEqual(600);

@@ -55,6 +55,8 @@ export class MuseWatcher {
   private batchesExecuted = 0;
   private lastActiveAt?: number;
   private activeTaskId?: string;
+  private activeTaskWorkspace?: string;
+  private activeTaskStartedAt?: number;
   private options: MuseWatcherOptions;
   private activeBatchAborts = new Set<AbortController>();
   private seenChatIds = new Set<string>();
@@ -122,6 +124,30 @@ export class MuseWatcher {
       this.client = new MuseClient(this.config);
       this.transport = new TelegramTransport(this.config, this.client);
     }
+  }
+
+  /** A local observation, not authorization or a remote capability. */
+  public getScopedActiveTask(workspace: string): {
+    taskId: string; workspace: string; startedAt: number;
+  } | null {
+    if (!this.isRunning || !this.activeTaskId || !this.activeTaskWorkspace || !this.activeTaskStartedAt) return null;
+    const canonical = (value: string) => {
+      const result = path.resolve(value);
+      return process.platform === "win32" ? result.toLowerCase() : result;
+    };
+    if (canonical(workspace) !== canonical(this.activeTaskWorkspace)) return null;
+    if (!this.workspaces.some(w => canonical(w) === canonical(this.activeTaskWorkspace!))) return null;
+    return {
+      taskId: this.activeTaskId,
+      workspace: this.activeTaskWorkspace,
+      startedAt: this.activeTaskStartedAt,
+    };
+  }
+
+  private clearActiveTaskIdentity(): void {
+    this.activeTaskId = undefined;
+    this.activeTaskWorkspace = undefined;
+    this.activeTaskStartedAt = undefined;
   }
 
   public getTransport(): RemoteTransport {
@@ -370,6 +396,7 @@ export class MuseWatcher {
     if (!wasRunning && !this.abortController && !this.quickTunnelStarted && !this.tunnelMetadata) return;
 
     this.isRunning = false;
+    this.clearActiveTaskIdentity();
     this.rejectPendingChatReplies(new Error("Muse watcher stopped before the chat reply arrived."));
     this.batchQueue = [];
     this.activeBatchIds.clear();
@@ -596,7 +623,6 @@ export class MuseWatcher {
     envelope: TaskBatchEnvelope,
     meta?: RemoteEnvelopeMeta
   ): Promise<void> {
-    this.activeTaskId = envelope.task_id;
     const callsCount = envelope.calls?.length || 0;
 
     let targetWs = this.workspaces[0] || process.cwd();
@@ -619,6 +645,10 @@ export class MuseWatcher {
       "REMOTE-AGENT",
       `MuseWatcher executing task_batch: id=${envelope.id}, task_id=${envelope.task_id}, calls=${callsCount}, workspace=${targetWs}`
     );
+
+    if (this.activeTaskId !== envelope.task_id) this.activeTaskStartedAt = Date.now();
+    this.activeTaskId = envelope.task_id;
+    this.activeTaskWorkspace = targetWs;
 
     const wsLabel = path.basename(targetWs);
     this.emitLine(
@@ -770,7 +800,7 @@ export class MuseWatcher {
   private async handleTaskDone(envelope: TaskDoneEnvelope): Promise<void> {
     this.tasksCompleted++;
     const finishedTaskId = envelope.task_id;
-    this.activeTaskId = undefined;
+    if (this.activeTaskId === finishedTaskId) this.clearActiveTaskIdentity();
 
     logE2E("REMOTE-AGENT", `MuseWatcher received task_done for task ${finishedTaskId}`);
 
@@ -832,7 +862,7 @@ export class MuseWatcher {
 
     this.abortAllBatches();
     const prevTaskId = this.activeTaskId;
-    this.activeTaskId = undefined;
+    this.clearActiveTaskIdentity();
 
     // Drain queued batches for this task
     this.batchQueue = [];
@@ -950,8 +980,6 @@ export class MuseWatcher {
     if (!this.transport || !this.isRunning) return false;
     const ws = targetWs || this.workspaces[0] || process.cwd();
     const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    this.activeTaskId = taskId;
-
     const requestEnvelope: TaskRequestEnvelope = {
       v: 1,
       kind: "task_request",
@@ -974,7 +1002,11 @@ export class MuseWatcher {
       system_prompt: this.config.systemPrompt,
     };
 
-    await this.transport.sendEnvelope(requestEnvelope);
+    const sent = await this.transport.sendEnvelope(requestEnvelope);
+    if (!sent) return false;
+    this.activeTaskId = taskId;
+    this.activeTaskWorkspace = path.resolve(ws);
+    this.activeTaskStartedAt = Date.now();
     this.emitLine(
       "system",
       `⚡ [Muse Task Request] Dispatched task to Muse: "${taskText}" (Workspace: ${path.basename(ws)})`
@@ -991,7 +1023,7 @@ export class MuseWatcher {
 
     if (isGlobalOrCurrent || !this.activeTaskId || targetTaskId === this.activeTaskId.trim()) {
       this.abortAllBatches();
-      this.activeTaskId = undefined;
+      this.clearActiveTaskIdentity();
     }
 
     // Filter out queued items for this task_id (or all if task_id not specified / global)
@@ -1037,7 +1069,7 @@ export class MuseWatcher {
     this.completedBatchResults.clear();
     this.pendingReplyMessageIds.clear();
 
-    this.activeTaskId = undefined;
+    this.clearActiveTaskIdentity();
     if (this.options.agent) {
       try {
         this.options.agent.getHistory().clear();
@@ -1086,6 +1118,10 @@ export class MuseWatcher {
     _meta?: RemoteEnvelopeMeta
   ): Promise<void> {
     this.activeTaskId = envelope.id;
+    this.activeTaskWorkspace = typeof envelope.workspace === "string" && envelope.workspace.trim()
+      ? path.resolve(envelope.workspace.trim())
+      : this.workspaces[0];
+    this.activeTaskStartedAt = Date.now();
     logE2E("REMOTE-AGENT", `MuseWatcher received task_request: id=${envelope.id}, task=${envelope.task}`);
 
     this.emitLine(

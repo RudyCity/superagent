@@ -57,6 +57,11 @@ export async function handleMuseWatchSubcommand(
   if (action === "status") {
     const watcher = getMuseWatcher();
     const stats = watcher?.getStats();
+    // Local terminal workspace only; never use the remote task's claimed workspace.
+    const callerWorkspace = ctx.agent?.workingDirectory || process.cwd();
+    const scopedTask = watcher?.getScopedActiveTask(callerWorkspace);
+    const { projectMuseWatcherTask } = await import("../channels/unifiedChannelTask.js");
+    const normalized = scopedTask ? projectMuseWatcherTask(scopedTask) : null;
 
     if (!stats || !stats.isRunning) {
       ctx.addLine({
@@ -79,7 +84,8 @@ export async function handleMuseWatchSubcommand(
       `- Uptime            : ${stats.uptimeSeconds}s`,
       `- Batches Executed  : ${stats.batchesExecuted}`,
       `- Tasks Completed   : ${stats.tasksCompleted}`,
-      `- Active Task       : ${stats.activeTaskId || "none (idle, waiting for remote requests)"}`,
+      `- Active Task       : ${normalized?.taskId ?? "none in this workspace"}`,
+      `- Unified Status    : ${normalized?.status ?? "idle"} (evidence: ${normalized?.evidence ?? "not_applicable"})`,
     ].filter(Boolean);
     ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
     return;

@@ -109,6 +109,23 @@ export function projectMuseRemoteTask(
   };
 }
 
+export interface MuseWatcherTaskSnapshot {
+  readonly taskId: string;
+  readonly workspace: string;
+  readonly startedAt: number;
+}
+
+/** Watcher envelopes need not carry a session identity. Never invent one. */
+export function projectMuseWatcherTask(task: MuseWatcherTaskSnapshot): UnifiedChannelTask {
+  return {
+    schemaVersion: 1, channel: "tline", taskId: task.taskId,
+    sessionId: null, projectId: null, workspace: task.workspace,
+    status: "running", evidence: "unverified",
+    authorization: "transport_not_authorization",
+    notification: "not_configured", summary: null, updatedAt: task.startedAt,
+  };
+}
+
 /** An inbound message never grants privileges. Trusted server policy must be
  * evaluated separately at the actual mutation entry-point. */
 export type ChannelOperation = "read" | "write" | "privileged";

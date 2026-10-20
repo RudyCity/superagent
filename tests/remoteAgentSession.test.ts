@@ -513,6 +513,85 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
       sendSpy.mockRestore();
     });
 
+    it("scopes watcher task ID to the T-Line workspace and hides it from MCP service status", async () => {
+      const pollSpy = vi.spyOn(MuseClient.prototype, "pollEnvelopes")
+        .mockImplementation(() => new Promise(() => {}));
+      const sendSpy = vi.spyOn(MuseClient.prototype, "sendEnvelope")
+        .mockResolvedValue(true);
+      const root = process.cwd();
+      const watcher = await startMuseWatcher({ workspace: root, announce: false });
+      const foreignWorkspace = root + "-foreign";
+      const localLines: string[] = [];
+      const foreignLines: string[] = [];
+      try {
+        await watcher.handleEnvelope({
+          v: 1, kind: "task_request", id: "watcher-scoped-id",
+          task: "Examine workspace", workspace: root,
+        });
+        const active = watcher.getScopedActiveTask(root);
+        expect(active).toMatchObject({taskId:"watcher-scoped-id",workspace:root});
+        expect(watcher.getScopedActiveTask(foreignWorkspace)).toBeNull();
+        const ownCtx: SlashCommandContext = {
+          addLine: (line) => localLines.push(line.content),
+          exit: () => {},
+          agent: {workingDirectory: root} as any,
+        };
+        const foreignCtx: SlashCommandContext = {
+          addLine: (line) => foreignLines.push(line.content),
+          exit: () => {},
+          agent: {workingDirectory: foreignWorkspace} as any,
+        };
+        await museCommand.execute("watch status", ownCtx);
+        await museCommand.execute("watch status", foreignCtx);
+        expect(localLines.join(" ")).toContain("watcher-scoped-id");
+        expect(localLines.join(" ")).toContain("Unified Status    : running");
+        expect(foreignLines.join(" ")).toContain("none in this workspace");
+        expect(foreignLines.join(" ")).not.toContain("watcher-scoped-id");
+        const {getRemoteServiceStatus, formatRemoteServiceStatus} = await import("../src/core/remoteAgent/remoteStatusService.js");
+        const global = await getRemoteServiceStatus("tunnel");
+        expect(global.tunnel.activeTaskPresent).toBe(true);
+        expect(global.tunnel).not.toHaveProperty("activeTaskId");
+        expect(JSON.stringify(global)).not.toContain("watcher-scoped-id");
+        expect(formatRemoteServiceStatus(global, "tunnel")).not.toContain("watcher-scoped-id");
+
+        await watcher.handleEnvelope({
+          v: 1, kind: "task_done", task_id: "unrelated-id", summary: "Other task done",
+        });
+        await watcher.waitForIdle();
+        expect(watcher.getScopedActiveTask(root)?.taskId).toBe("watcher-scoped-id");
+        await watcher.handleEnvelope({
+          v: 1, kind: "task_done", task_id: "watcher-scoped-id", summary: "Finished",
+        });
+        await watcher.waitForIdle();
+        expect(watcher.getScopedActiveTask(root)).toBeNull();
+
+        await watcher.handleEnvelope({
+          v: 1, kind: "task_request", id: "watcher-reset-id",
+          task: "Do not persist status", workspace: root,
+        });
+        watcher.resetLocalSession("test");
+        expect(watcher.getScopedActiveTask(root)).toBeNull();
+
+        await watcher.handleEnvelope({
+          v: 1, kind: "task_request", id: "watcher-cancel-id",
+          task: "Interrupt this task", workspace: root,
+        });
+        expect(watcher.getScopedActiveTask(root)?.taskId).toBe("watcher-cancel-id");
+        await watcher.handleEnvelope({
+          v: 1, kind: "task_cancel", task_id: "watcher-cancel-id", reason: "Operator cancelled",
+        });
+        expect(watcher.getScopedActiveTask(root)).toBeNull();
+
+        sendSpy.mockResolvedValueOnce(false);
+        expect(await watcher.sendTaskRequest("An unaccepted task", root)).toBe(false);
+        expect(watcher.getScopedActiveTask(root)).toBeNull();
+      } finally {
+        await stopMuseWatcher();
+        pollSpy.mockRestore();
+        sendSpy.mockRestore();
+      }
+    }, 20_000);
+
     it("should process task_batch and send back task_result", async () => {
       let registeredHandler: ((envelope: any) => Promise<void>) | null = null;
       const sentEnvelopes: any[] = [];

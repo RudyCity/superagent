@@ -36,7 +36,8 @@ export interface TunnelServiceStatus {
   uptimeSeconds?: number;
   tasksCompleted?: number;
   batchesExecuted?: number;
-  activeTaskId?: string;
+  /** Task existence only; identity is workspace-scoped and withheld. */
+  activeTaskPresent?: boolean;
 }
 
 export interface McpServiceStatus {
@@ -121,7 +122,7 @@ export async function getRemoteServiceStatus(
       let uptimeSeconds: number | undefined;
       let tasksCompleted: number | undefined;
       let batchesExecuted: number | undefined;
-      let activeTaskId: string | undefined;
+      let activeTaskPresent = false;
 
       if (watcher && watcherActive) {
         const stats = watcher.getStats();
@@ -130,7 +131,7 @@ export async function getRemoteServiceStatus(
         uptimeSeconds = stats.uptimeSeconds;
         tasksCompleted = stats.tasksCompleted;
         batchesExecuted = stats.batchesExecuted;
-        activeTaskId = stats.activeTaskId;
+        activeTaskPresent = Boolean(stats.activeTaskId);
 
         try {
           const transport = watcher.getTransport();
@@ -159,7 +160,7 @@ export async function getRemoteServiceStatus(
         uptimeSeconds,
         tasksCompleted,
         batchesExecuted,
-        activeTaskId,
+        activeTaskPresent,
       };
     } catch {}
   }
@@ -362,7 +363,7 @@ export function formatRemoteServiceStatus(
       if (status.tunnel.uptimeSeconds !== undefined) lines.push(`  Uptime         : ${status.tunnel.uptimeSeconds}s`);
       if (status.tunnel.batchesExecuted !== undefined) lines.push(`  Batches run    : ${status.tunnel.batchesExecuted}`);
       if (status.tunnel.tasksCompleted !== undefined) lines.push(`  Tasks done     : ${status.tunnel.tasksCompleted}`);
-      if (status.tunnel.activeTaskId) lines.push(`  Active task    : ${status.tunnel.activeTaskId}`);
+      if (status.tunnel.activeTaskPresent) lines.push("  Active task    : present (task ID withheld in global service status)");
     } else {
       lines.push("- Muse Watcher: INACTIVE");
     }

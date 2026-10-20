@@ -554,3 +554,5 @@ Execute these actions in this order before broad feature work:
 19. Phase 5 initial channel/status projection, conservative authorization contract and bounded daemon delivery retry: docs/plans/2026-10-20-superagent-hermes-phase-5-channel-contract-first-increment.md. This is not channel-wide authorization enforcement or the Phase 5 exit gate; full integration/live acceptance still open.
 
 20. Phase 5 local Muse/T-Line task status projection: docs/plans/2026-10-20-superagent-hermes-phase-5-muse-tline-live-task-status.md. Bounded in-memory task/session identity and workspace-scoped local CLI/T-Line inspection, no transcript replication, no exposed remote task metadata or new write grants. Muse watcher, MCP OAuth, live channels, and Phase 5 exit gate remain open.
+
+21. Phase 5 watcher scope: docs/plans/2026-10-20-superagent-hermes-phase-5-watcher-task-scope.md. MuseWatcher active task IDs are now available only to matching local T-Line workspaces; global MCP/tunnel status exposes presence, not task identity. Watcher task status remains read-only and unverified. OAuth, cross-host E2E and Phase 5 exit remain open.
