@@ -1,3 +1,7 @@
+## [1.14.8] - 2026-10-20
+### Documentation
+- Added the codebase-aligned Motion Studio implementation plan, including runtime integration points, explicit tool permissions, isolated rendering, browser studio packaging, and phased acceptance gates. No Motion runtime functionality is shipped in this update.
+
 ## [1.14.7] - 2026-10-19
 ### Fixed
 - Fixed OpenAI Secure MCP Tunnel Harpoon plaintext HTTP authorization and channel polling (`openaiTunnelClient.ts`):
