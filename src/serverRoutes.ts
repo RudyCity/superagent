@@ -301,6 +301,55 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Opt-in, two-phase local workspace-operator cancellation. The session and
+  // runtime process handle are rechecked; never accept a PID or raw command.
+  if (pathname === "/api/tline/tasks/cancel/prepare" || pathname === "/api/tline/tasks/cancel/confirm") {
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required." });
+      return true;
+    }
+    if (process.env.SUPERAGENT_TLINE_WORKSPACE_CANCEL !== "1") {
+      sendJSON(res, 403, { success: false, error: "Workspace operator cancellation is disabled." });
+      return true;
+    }
+    let body: Record<string, unknown>;
+    try {
+      const raw = await readBody(req);
+      if (raw.length > 2048) throw new Error("Payload too large.");
+      body = JSON.parse(raw || "{}");
+      if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid payload.");
+    } catch {
+      sendJSON(res, 400, { success: false, error: "Invalid cancellation request." });
+      return true;
+    }
+    const workspace = resolveWorkspacePath(req);
+    const requestedSessionId = body.sessionId;
+    const session = typeof requestedSessionId === "string"
+      ? resolveSession(req, requestedSessionId) : null;
+    if (!workspace || !session || session.clientMode !== "tline" ||
+      session.workspace.toLowerCase() !== workspace.toLowerCase() ||
+      typeof body.workspace !== "string" ||
+      (body.workspace.startsWith("ssh:") || body.workspace.startsWith("chain:")
+        ? body.workspace !== workspace
+        : path.resolve(body.workspace).toLowerCase() !== workspace.toLowerCase())) {
+      sendJSON(res, 403, { success: false, error: "Exact active T-Line workspace/session required." });
+      return true;
+    }
+    const { prepareTlineCancel, confirmTlineCancel } =
+      await import("./core/channels/tlineTaskCancel.js");
+    const request = { workspace, sessionId: session.sessionId, jobId: body.jobId };
+    try {
+      const result = pathname.endsWith("/prepare")
+        ? await prepareTlineCancel(request as {workspace:string;sessionId:string;jobId:string})
+        : await confirmTlineCancel({ ...request, challenge: body.challenge } as {
+            workspace:string;sessionId:string;jobId:string;challenge:string });
+      sendJSON(res, result.status, result.body);
+    } catch {
+      sendJSON(res, 503, { success: false, error: "Task control temporarily unavailable." });
+    }
+    return true;
+  }
+
   // Workspace-scoped, credential-free desktop inspection. The CLI registry
   // itself does not grant execution privileges to a desktop caller.
   if (pathname === "/api/tline/tasks/events") {

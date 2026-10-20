@@ -17,6 +17,11 @@ export const TLINE_STREAM_ACTIONS = [
   { id: "tasks.events", method: "GET", path: "/api/tline/tasks/events", access: "read", transport: "sse" },
 ] as const;
 
+export const TLINE_OPERATOR_ACTIONS = [
+  { id: "tasks.cancel.prepare", method: "POST", path: "/api/tline/tasks/cancel/prepare", access: "workspace-operator" },
+  { id: "tasks.cancel.confirm", method: "POST", path: "/api/tline/tasks/cancel/confirm", access: "workspace-operator" },
+] as const;
+
 export function buildTlineCapabilityManifest(version: string) {
   const commands = registry.getAll()
     .map((c) => ({
@@ -32,7 +37,8 @@ export function buildTlineCapabilityManifest(version: string) {
     server: "superagent",
     version,
     commands,
-    httpActions: [...TLINE_HTTP_ACTIONS, ...TLINE_INSPECTION_ACTIONS, ...TLINE_STREAM_ACTIONS],
+    httpActions: [...TLINE_HTTP_ACTIONS, ...TLINE_INSPECTION_ACTIONS, ...TLINE_STREAM_ACTIONS,
+      ...(process.env.SUPERAGENT_TLINE_WORKSPACE_CANCEL === "1" ? TLINE_OPERATOR_ACTIONS : [])],
     note: "Command names describe the CLI registry; HTTP actions are independently allowlisted. No general shell or arbitrary slash executor is exposed.",
   };
 }

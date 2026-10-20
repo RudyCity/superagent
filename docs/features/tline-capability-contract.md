@@ -61,7 +61,28 @@ cannot be reconstructed. It warns `ledger-unavailable` if durable storage
 fails while memory-based streaming continues. This is **not** complete durable
 source-event capture and offers no cancel/retry action.
 
-Verification: `bun x vitest run tests/tlineCapabilities.test.ts tests/tlineInspection.test.ts tests/tlineTaskSnapshot.test.ts tests/tlineTaskFeed.test.ts tests/tlineTaskLedger.test.ts`,
+Increment 6B: An optional local operator capability can be enabled explicitly
+with `SUPERAGENT_TLINE_WORKSPACE_CANCEL=1` in the **SuperAgent HTTP server**
+environment (requires service restart). Without that flag the capability
+manifest does not advertise cancellation and the endpoints respond 403.
+
+When enabled, `tasks.cancel.prepare` and `tasks.cancel.confirm` are
+two **fixed** POST endpoints. They require a valid registered workspace, an
+exact active TLine chat session, and a CLI Bridge job owned by the current
+runtime process with an active process handle. The server issues a cryptographic
+one-use 30-second challenge, then checks the same job's PID, startedAt,
+updatedAt, canonical workspace and runtime ownership again before calling the
+existing CLI Bridge cancellation handler. It signals a *cancellation request*,
+not a verified completed shutdown.
+
+**Important limitation:** Legacy CLI Bridge jobs do not record a trusted
+per-chat creator. The operator flag permits a locally trusted workspace
+operator to cancel runtime-owned CLI Bridge jobs in that workspace. It does
+not provide creator-session attestation or out-of-band human approval, so
+leave it OFF for shared/multi-user/untrusted workspaces. No daemon, Muse or
+arbitrary PID control, no retry/duplicate job start, and no implicit enablement.
+
+Verification: `bun x vitest run tests/tlineCapabilities.test.ts tests/tlineInspection.test.ts tests/tlineTaskSnapshot.test.ts tests/tlineTaskFeed.test.ts tests/tlineTaskLedger.test.ts tests/tlineTaskCancel.test.ts`,
 `bun run build`. This is a source/build test; an actual existing server process
 must be upgraded/restarted to expose the new endpoint. Do not kill or restart
 an unrelated process on port 7888 for validation.
