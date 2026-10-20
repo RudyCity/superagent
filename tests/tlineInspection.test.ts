@@ -6,7 +6,7 @@ import { buildTlineCapabilityManifest } from "../src/core/channels/tlineCapabili
 describe("T-Line workspace-scoped inspection projections", () => {
   it("advertises read-only inspection actions separately from CLI commands", () => {
     const ids = TLINE_INSPECTION_ACTIONS.map(a => a.id);
-    expect(ids).toEqual(["mcp.status", "tools.catalog", "selfdev.status", "muse.status"]);
+    expect(ids).toEqual(["mcp.status", "tools.catalog", "selfdev.status", "muse.status", "tasks.snapshot"]);
     expect(TLINE_INSPECTION_ACTIONS.every(a => a.method === "GET" && a.access === "read")).toBe(true);
     expect(buildTlineCapabilityManifest("test").httpActions.map(a => a.id)).toEqual(
       expect.arrayContaining(ids));

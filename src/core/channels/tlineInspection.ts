@@ -10,6 +10,7 @@ export const TLINE_INSPECTION_ACTIONS = [
   { id: "tools.catalog", method: "GET", path: "/api/tline/inspect/tools.catalog", access: "read" },
   { id: "selfdev.status", method: "GET", path: "/api/tline/inspect/selfdev.status", access: "read" },
   { id: "muse.status", method: "GET", path: "/api/tline/inspect/muse.status", access: "read" },
+  { id: "tasks.snapshot", method: "GET", path: "/api/tline/inspect/tasks.snapshot", access: "read" },
 ] as const;
 
 export function summarizeMcpServers(

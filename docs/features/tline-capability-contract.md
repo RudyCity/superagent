@@ -1,4 +1,4 @@
-# T-Line Runtime Capability Contract (Increment 2)
+# T-Line Runtime Capability Contract (Increment 4)
 
 Date: 2026-10-20. Implemented at `GET /api/tline/capabilities` in
 `src/serverRoutes.ts` after the existing authorization and workspace gate.
@@ -18,6 +18,7 @@ The independent `httpActions` allowlist currently contains:
 | `tools.catalog` | `/api/tline/inspect/tools.catalog` | GET |
 | `selfdev.status` | `/api/tline/inspect/selfdev.status` | GET |
 | `muse.status` | `/api/tline/inspect/muse.status` | GET |
+| `tasks.snapshot` | `/api/tline/inspect/tasks.snapshot` | GET |
 
 T-Line negotiates the manifest before using a typed, authenticated backend
 adapter. Inspection actions require a valid registered workspace with an active
@@ -28,7 +29,15 @@ payloads, or tool input schemas are exposed. All other CLI slash commands are
 **not** implied to have T-Line execution support. Workspace-global job listings and mutation operations are
 not exposed by this contract without per-workspace authorization.
 
-Verification: `bun x vitest run tests/tlineCapabilities.test.ts`,
+`tasks.snapshot` is built from existing CLI delegate, daemon ledger and Muse
+sources and strictly limited to a registered workspace's authenticated TLine
+session. The server only returns a bounded, redacted metadata projection.
+Clients may send `cursor=<64-character-hex>` to omit an unchanged task array.
+The cursor includes a per-process generation so reconnecting to a new server
+produces a full resync, but this is **not SSE event replay**. Intermediate
+status transitions can be missed, and no task controls are exposed.
+
+Verification: `bun x vitest run tests/tlineCapabilities.test.ts tests/tlineInspection.test.ts tests/tlineTaskSnapshot.test.ts`,
 `bun run build`. This is a source/build test; an actual existing server process
 must be upgraded/restarted to expose the new endpoint. Do not kill or restart
 an unrelated process on port 7888 for validation.

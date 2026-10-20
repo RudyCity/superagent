@@ -309,7 +309,7 @@ export async function handleServerRoute(
       return true;
     }
     const action = pathname.slice("/api/tline/inspect/".length);
-    const allowed = new Set(["mcp.status", "tools.catalog", "selfdev.status", "muse.status"]);
+    const allowed = new Set(["mcp.status", "tools.catalog", "selfdev.status", "muse.status", "tasks.snapshot"]);
     if (!allowed.has(action)) {
       sendJSON(res, 404, { success: false, error: "Unknown T-Line inspection action." });
       return true;
@@ -324,7 +324,31 @@ export async function handleServerRoute(
     const { summarizeMcpServers, summarizeTools, summarizeMuse, summarizeSelfdev } =
       await import("./core/channels/tlineInspection.js");
     try {
-      if (action === "mcp.status") {
+      if (action === "tasks.snapshot") {
+        // Snapshot+cursor polling, not SSE replay. A cursor never grants access.
+        const cursor = parsedUrl.searchParams.get("cursor") || undefined;
+        if (cursor && !/^[0-9a-f]{64}$/.test(cursor)) {
+          sendJSON(res, 400, { success: false, error: "Invalid task cursor." });
+          return true;
+        }
+        const { listDelegateJobs } = await import("./core/tools/cliBridgeDelegateJobs.js");
+        const { listDaemonRuns } = await import("./core/storage/daemonRunLedger.js");
+        const { getActiveRemoteTaskSnapshot } = await import("./core/remoteAgent/taskRunner.js");
+        const { selectTlineWorkspaceTasks, buildTlineTaskSnapshot } =
+          await import("./core/channels/tlineTaskSnapshot.js");
+        const errors: string[] = [];
+        const delegates = await listDelegateJobs().catch(() => {
+          errors.push("cli");
+          return [] as Awaited<ReturnType<typeof listDelegateJobs>>;
+        });
+        const daemon = (() => {
+          try { return listDaemonRuns({ workspacePath: workspace, limit: 100 }); }
+          catch { errors.push("daemon"); return [] as ReturnType<typeof listDaemonRuns>; }
+        })();
+        const tasks = selectTlineWorkspaceTasks(workspace, delegates, daemon,
+          getActiveRemoteTaskSnapshot(), session.sessionId);
+        sendJSON(res, 200, buildTlineTaskSnapshot(workspace, tasks, errors, cursor));
+      } else if (action === "mcp.status") {
         const { loadModelConfig } = await import("./core/config/jsonConfig.js");
         const { connectedServers } = await import("./core/mcp/McpManager.js");
         sendJSON(res, 200, summarizeMcpServers(loadModelConfig().mcpServers || {}, connectedServers));
