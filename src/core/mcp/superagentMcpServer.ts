@@ -531,7 +531,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   };
 
   // Register Standard MCP Resources & Prompts
-  registerResourcesAndPrompts(server);
+  registerResourcesAndPrompts(server, { authMode, getIdentity });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const allTools = MCP_TOOL_DEFINITIONS;

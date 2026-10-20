@@ -9,6 +9,8 @@ import {
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import type { McpServerOptions } from "./mcpToolPolicy.js";
 import { getMcpWorkspacePath } from "./tools/workspaceContext.js";
 import {
   superagentInstances,
@@ -29,9 +31,42 @@ import {
 import { loadRegistry } from "../tools/superagentRegistry.js";
 import { listSessionsFromDb, getAllPinnedKnowledgeFromDb } from "../storage/historyDb.js";
 
-export function registerResourcesAndPrompts(server: Server): void {
+/** The OAuth read grant covers generic MCP inspection, but not personal
+ * history, memory, live task prompts or runtime configuration.
+ * These resources require the separately owner-consented admin grant.
+ * Static-bearer/local stdio retain their pre-existing behavior.
+ */
+export const SENSITIVE_MCP_RESOURCE_URIS: ReadonlySet<string> = new Set([
+  "superagent://status/live",
+  "superagent://config/current",
+  "superagent://history/sessions",
+  "superagent://memory/pinned",
+]);
+
+export function registerResourcesAndPrompts(
+  server: Server,
+  authOptions: Pick<McpServerOptions, "authMode" | "getIdentity"> = {},
+): void {
+  const authorized = (privileged = false): boolean => {
+    if (authOptions.authMode !== "oauth") return true;
+    const identity = authOptions.getIdentity?.();
+    if (!identity || identity.mode !== "oauth" || !Array.isArray(identity.scopes)) return false;
+    const read = identity.scopes.some(s => s === "mcp:tools" || s === "mcp:tools:read" || s === "mcp:tools:write");
+    return read && (!privileged ||
+      (identity.scopes.includes("mcp:tools:write") && identity.scopes.includes("mcp:tools:admin")));
+  };
+  const requireScope = (privileged = false) => {
+    if (authorized(privileged)) return;
+    throw new McpError(
+      ErrorCode.InvalidRequest,
+      privileged
+        ? "MCP resource requires separately consented mcp:tools:write and mcp:tools:admin OAuth scopes."
+        : "MCP resources and prompts require mcp:tools OAuth read scope."
+    );
+  };
   // 1. List Resources
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    requireScope();
     return {
       resources: [
         {
@@ -70,13 +105,15 @@ export function registerResourcesAndPrompts(server: Server): void {
           description: "Authoritative instructions and system prompt for ChatGPT, Claude, and external LLMs to enforce tool-first agentic execution over MCP.",
           mimeType: "text/markdown",
         },
-      ],
+      ].filter(item => !SENSITIVE_MCP_RESOURCE_URIS.has(item.uri) || authorized(true)),
     };
   });
 
   // 2. Read Resource
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    requireScope();
     const { uri } = request.params;
+    if (SENSITIVE_MCP_RESOURCE_URIS.has(uri)) requireScope(true);
 
     switch (uri) {
       case "superagent://status/live": {
@@ -243,6 +280,7 @@ export function registerResourcesAndPrompts(server: Server): void {
 
   // 3. List Prompts
   server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    requireScope();
     return {
       prompts: [
         {
@@ -315,6 +353,7 @@ export function registerResourcesAndPrompts(server: Server): void {
 
   // 4. Get Prompt
   server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    requireScope();
     const { name, arguments: args = {} } = request.params;
 
     switch (name) {

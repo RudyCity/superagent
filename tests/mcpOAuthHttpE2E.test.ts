@@ -172,6 +172,69 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
     expect(notElevated.body).not.toContain("requires OAuth mcp:tools:admin");
   }, 30000);
 
+  it("enforces OAuth read and admin scope for MCP resources and prompts over HTTP", async () => {
+    const reader = await issue("client-a", ["mcp:tools"]);
+    const admin = await issue("client-b", ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"]);
+    const readerSession = await initialize(reader);
+    const adminSession = await initialize(admin);
+    const listReader = await post(reader, rpc(31, "resources/list"), readerSession);
+    expect(listReader.status).toBe(200);
+    expect(listReader.body).toContain("superagent://instructions/agentic-mcp");
+    expect(listReader.body).not.toContain("superagent://memory/pinned");
+    expect(listReader.body).not.toContain("superagent://history/sessions");
+    const direct = await post(reader, rpc(32, "resources/read", {
+      uri: "superagent://memory/pinned",
+    }), readerSession);
+    expect(direct.body).toContain("mcp:tools:admin");
+    expect(direct.body).not.toContain("pinnedKnowledge");
+    // Stateless MCP requests are subject to the same server-side guard.
+    const stateless = await post(reader, rpc(33, "resources/read", {
+      uri: "superagent://config/current",
+    }));
+    expect(stateless.body).toContain("mcp:tools:admin");
+
+    const adminList = await post(admin, rpc(34, "resources/list"), adminSession);
+    expect(adminList.status).toBe(200);
+    expect(adminList.body).toContain("superagent://memory/pinned");
+    const prompts = await post(reader, rpc(35, "prompts/list"), readerSession);
+    expect(prompts.status).toBe(200);
+    expect(prompts.body).toContain("superagent_debug");
+    expect((await post(reader, rpc(36, "prompts/get", {
+      name: "superagent_debug", arguments: { error: "sample error" },
+    }), readerSession)).status).toBe(200);
+  }, 30000);
+
+  it("rejects old tokens after a fresh OAuth HTTP server starts (no implicit session recovery)", async () => {
+    const oldAccess = await issue("client-a", ["mcp:tools", "mcp:tools:write"]);
+    const oldSession = await initialize(oldAccess);
+    const freshBootstrap = generateBootstrapCode();
+    const replacement = await startMcpHttpServer({
+      port: 0, allowDangerous: true, authMode: "oauth",
+      oauth: { publicBaseUrl: BASE, bootstrapCodeHash: freshBootstrap.codeHash },
+      auditLogPath: path.join(root, "new-runtime-audit.jsonl"),
+    });
+    try {
+      const freshUrl = "http://127.0.0.1:" + replacement.port + "/mcp";
+      const forbidden = await fetch(freshUrl, {
+        method: "POST",
+        headers: headers(oldAccess, oldSession),
+        body: JSON.stringify(rpc(41, "tools/list")),
+      });
+      expect(forbidden.status).toBe(401);
+      expect(forbidden.headers.get("mcp-session-id")).toBeNull();
+      await forbidden.text();
+      const probe = await fetch(freshUrl, { method: "HEAD" });
+      expect(probe.status).toBe(401);
+      expect(probe.headers.get("www-authenticate")).toContain("oauth-protected-resource");
+      expect(probe.headers.get("mcp-session-id")).toBeNull();
+      // Starting a second isolated runtime must not revoke or mutate the
+      // existing one; a real restart shuts down the old listener.
+      expect((await post(oldAccess, rpc(42, "tools/list"), oldSession)).status).toBe(200);
+    } finally {
+      await replacement.close();
+    }
+  }, 30000);
+
   it("refresh rotation requires a new MCP session and rejects replayed refresh grants", async () => {
     const issued = await issuePair("client-b", ["mcp:tools"]);
     const oldSession = await initialize(issued.access_token);
