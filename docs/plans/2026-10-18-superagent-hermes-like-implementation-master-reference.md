@@ -550,3 +550,5 @@ Execute these actions in this order before broad feature work:
 17. Local CLI recovery diagnostics acceptance on 2026-10-20: full Vitest exit 0, 373 suites passed, 1 skipped; 3,565 tests passed, 5 skipped. Separate focused 83/83 tests passed. PID observation and workspace isolation are verified locally, not safe subprocess reattachment or release approval.
 
 18. Phase 4 owner/child start identity: docs/plans/2026-10-20-superagent-hermes-phase-4-process-start-identity.md. Windows CIM UTC creation ticks and Linux kernel boot ID + proc start ticks detect possible PID reuse in workspace-scoped delegate.recovery. Child sampling occurs after process listeners register and cannot delay output capture. Matches are diagnostic hints, not safety permission; SSH/OAuth and live crash acceptance remain open.
+
+19. Phase 5 initial channel/status projection, conservative authorization contract and bounded daemon delivery retry: docs/plans/2026-10-20-superagent-hermes-phase-5-channel-contract-first-increment.md. This is not channel-wide authorization enforcement or the Phase 5 exit gate; full integration/live acceptance still open.

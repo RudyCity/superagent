@@ -43,6 +43,26 @@ describe("daemon run REST endpoints", () => {
     expect(response).toHaveBeenCalledWith(200, { success: true, runs: [activeRun], count: 1 });
   });
 
+  it("provides opt-in normalized channel state without changing legacy responses", async () => {
+    const run = {
+      ...activeRun, projectId: "project-a", workspacePath: "/workspace/a",
+      startedAt: 100, completedAt: null, executionPolicyJson: "{}",
+      attemptNumber: 1, mode: "single",
+    };
+    mocked.listDaemonRuns.mockReturnValue([run]);
+    await call("GET", "/api/daemon/runs?normalized=1");
+    const payload = response.mock.calls.at(-1)?.[1];
+    expect(payload.channelTasks).toMatchObject([{
+      schemaVersion: 1, channel: "daemon", taskId: "run-a",
+      projectId: "project-a", status: "running", notification: "pending",
+    }]);
+    await call("GET", "/api/daemon/runs");
+    expect(response.mock.calls.at(-1)?.[1]).not.toHaveProperty("channelTasks");
+    mocked.getDaemonRun.mockReturnValue(run);
+    await call("GET", "/api/daemon/runs/run-a?normalized=1");
+    expect(response.mock.calls.at(-1)?.[1].channelTask.taskId).toBe("run-a");
+  });
+
   it("rejects malformed filters without querying the ledger", async () => {
     await call("GET", "/api/daemon/runs?limit=501");
     await call("GET", "/api/daemon/runs?status=maybe");

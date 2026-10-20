@@ -549,6 +549,28 @@ describe("DaemonScheduler", () => {
     expect(telegram.sendReply).toHaveBeenCalledWith("telegram-target", expect.stringContaining("Finished safely"));
   });
 
+  it("retries one explicit notification rejection without rerunning the successful task", async () => {
+    gatewayHarness.config.channels.slack = {
+      enabled: true, botToken: "test-token", allowedUserIds: ["slack-target"],
+    };
+    const send = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    gatewayHarness.adapters.slack.sendReply = send;
+    const runner = vi.fn(async () => "Finished once");
+    scheduler.setAgentRunner(runner);
+    const job = scheduler.addJob({
+      name: "Bounded notification retry", cronExpression: "* * * * *",
+      prompt: "Run once", workspace: tmpDir, notifyGateway: true,
+    });
+    const result = await scheduler.triggerJobNow(job.id);
+    expect(result.success).toBe(true);
+    await vi.waitFor(() => {
+      expect(listDaemonRuns({jobId: job.id, limit: 1})[0]?.notificationStatus).toBe("delivered");
+    });
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(runner).toHaveBeenCalledTimes(1);
+    expect(listDaemonRuns({jobId: job.id, limit: 1})[0]?.status).toBe("success");
+  });
+
   it("records gateway failure and keeps the task result successful", async () => {
     gatewayHarness.config.channels.slack = {
       enabled: true,

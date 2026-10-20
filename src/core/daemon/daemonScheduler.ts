@@ -891,15 +891,23 @@ export class DaemonScheduler {
       }
     };
     const attempt = async (channel: string, send: () => Promise<boolean>) => {
-      try {
-        const ok = await sendWithDeadline(send);
-        deliveries.push(ok
-          ? { channel, ok: true }
-          : { channel, ok: false, reason: "adapter returned an unsuccessful delivery result" });
-      } catch (error) {
-        // Redact before the error enters either the ledger or daemon.log.
-        deliveries.push({ channel, ok: false, reason: redactMemorySecrets(String(error)).slice(0, 300) });
+      let lastReason = "adapter returned an unsuccessful delivery result";
+      // Two bounded attempts, but never retry an ambiguous timeout: the
+      // provider may have accepted delivery before the timeout elapsed.
+      for (let n = 0; n < 2; n++) {
+        try {
+          const ok = await sendWithDeadline(send);
+          if (ok) {
+            deliveries.push({ channel, ok: true });
+            return;
+          }
+          lastReason = "adapter returned an unsuccessful delivery result";
+        } catch (error) {
+          lastReason = redactMemorySecrets(String(error)).slice(0, 300);
+          if (/timed out/i.test(lastReason)) break;
+        }
       }
+      deliveries.push({ channel, ok: false, reason: lastReason });
     };
 
     try {

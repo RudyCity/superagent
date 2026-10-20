@@ -1,5 +1,6 @@
 import { getDaemonRun, listDaemonRuns } from "../storage/daemonRunLedger.js";
 import { redactMemorySecrets } from "../memoryLifecycle.js";
+import { projectDaemonRun } from "../channels/unifiedChannelTask.js";
 import type { DaemonRunFilter, DaemonRunRecord, DaemonRunStatus } from "./daemonTypes.js";
 
 const VALID_STATUSES = new Set<DaemonRunStatus>([
@@ -62,6 +63,7 @@ function printRunSummary(run: DaemonRunRecord): void {
       "job=" + safeDisplay(run.jobId),
       "attempt=" + run.attemptNumber,
       "status=" + run.status,
+      "unified=" + projectDaemonRun(run).status,
       "started=" + dateText(run.startedAt),
       "duration=" + (run.durationMs ?? "—") + "ms",
       "notification=" + run.notificationStatus,
@@ -104,6 +106,7 @@ export function handleDaemonRunHistoryCommand(args: string[]): number {
       console.log("Project: " + safeDisplay(run.projectId));
       console.log("Workspace: " + safeDisplay(run.workspacePath));
       console.log("Mode: " + run.mode + " | Status: " + run.status);
+      console.log("Unified channel status: " + projectDaemonRun(run).status + " | Evidence: " + projectDaemonRun(run).evidence);
       console.log("Pinned skill: " + safeDisplay(run.pinnedSkillVersion ?? "—"));
       console.log("Started: " + dateText(run.startedAt));
       console.log("Completed: " + dateText(run.completedAt));

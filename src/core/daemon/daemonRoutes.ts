@@ -3,6 +3,7 @@ import { URL } from "url";
 import { daemonScheduler } from "./daemonScheduler.js";
 import { getDaemonRun, listDaemonRuns } from "../storage/daemonRunLedger.js";
 import type { DaemonRunStatus } from "./daemonTypes.js";
+import { projectDaemonRun } from "../channels/unifiedChannelTask.js";
 
 export async function handleDaemonRoutes(
   req: http.IncomingMessage,
@@ -41,7 +42,11 @@ export async function handleDaemonRoutes(
       ...(jobId ? { jobId } : {}),
       ...(projectId ? { projectId } : {}),
     });
-    sendJSON(res, 200, { success: true, runs, count: runs.length });
+    // Opt-in normalized read-only view; no new routes or broadened grants.
+    const normalized = parsedUrl.searchParams.get("normalized") === "1";
+    sendJSON(res, 200, normalized
+      ? { success: true, runs, count: runs.length, channelTasks: runs.map(projectDaemonRun) }
+      : { success: true, runs, count: runs.length });
     return true;
   }
 
@@ -59,7 +64,12 @@ export async function handleDaemonRoutes(
     }
     const run = getDaemonRun(runId);
     if (req.method === "GET" && !cancellation) {
-      sendJSON(res, run ? 200 : 404, run ? { success: true, run } : { success: false, error: "Run not found." });
+      const normalized = parsedUrl.searchParams.get("normalized") === "1";
+      sendJSON(res, run ? 200 : 404,
+        run ? (normalized
+          ? { success: true, run, channelTask: projectDaemonRun(run) }
+          : { success: true, run })
+        : { success: false, error: "Run not found." });
       return true;
     }
     if (req.method === "POST" && cancellation) {

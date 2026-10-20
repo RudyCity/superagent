@@ -97,6 +97,7 @@ import {
 } from "./cliBridgeDelegateJobs.js";
 import { resolveExpectedArtifacts, artifactClaimIdentity } from "./cliBridgeArtifactEvidence.js";
 import { inspectCrossProcessArtifactClaim } from "./cliBridgeCrossProcessClaims.js";
+import { projectCliDelegate } from "../channels/unifiedChannelTask.js";
 
 // ─── Tool definition ─────────────────────────────────────────────────────
 
@@ -772,6 +773,7 @@ async function handleDelegateGet(jobId: string, callerWorkspace: string): Promis
   return [
     "CLI Bridge job: " + job.jobId,
     "Status: " + job.status,
+    "Unified channel status: " + projectCliDelegate(job).status,
     "Completion proof: " + (job.completionState ?? "unverified"),
     "Artifact evidence: " + (job.artifactEvidence?.map(item =>
       [item.path, item.state, item.sha256 ? "sha256=" + item.sha256 : "", item.bytes === undefined ? "" : "bytes=" + item.bytes].filter(Boolean).join(" ")
