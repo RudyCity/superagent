@@ -74,9 +74,19 @@ export async function readMotionAudio(workspace: string, id: string): Promise<Bu
   inspectMotionWav(bytes);
   return bytes;
 }
+export function motionAudioTracks(project: MotionProject) {
+  return project.composition.audioTracks ?? (project.composition.audio ? [project.composition.audio] : []);
+}
+
+export async function resolveMotionAudioTracks(workspace: string, project: MotionProject): Promise<string[]> {
+  const tracks = motionAudioTracks(project);
+  // Never derive filesystem paths from request fields; each hash is checked at read.
+  return Promise.all(tracks.map(async track => {
+    await readMotionAudio(workspace, track.assetId);
+    return path.join(await audioDirectory(workspace, false), track.assetId + ".wav");
+  }));
+}
+/** Retained API for single-track callers. */
 export async function resolveMotionAudio(workspace: string, project: MotionProject): Promise<string | null> {
-  const track = project.composition.audio;
-  if (!track) return null;
-  await readMotionAudio(workspace, track.assetId);
-  return path.join(await audioDirectory(workspace, false), track.assetId + ".wav");
+  return (await resolveMotionAudioTracks(workspace, project))[0] ?? null;
 }

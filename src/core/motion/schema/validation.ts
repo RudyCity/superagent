@@ -59,10 +59,12 @@ export function validateMotionTrack(raw: unknown, durationFrames: number, at = "
 export function validateMotionAudio(raw: unknown, durationFrames: number): string[] {
   if (!record(raw)) return ["audio: expected object"];
   const errors: string[] = [];
-  allowedKeys(raw, ["assetId", "startFrame", "volume"], "audio", errors);
+  allowedKeys(raw, ["assetId", "startFrame", "volume", "fadeInFrames", "fadeOutFrames"], "audio", errors);
   if (typeof raw.assetId !== "string" || !/^audio-[a-f0-9]{64}$/.test(raw.assetId)) errors.push("audio: invalid assetId");
   if (!integer(raw.startFrame, 0, durationFrames - 1)) errors.push("audio: invalid startFrame");
   if (!finite(raw.volume, 0, 2)) errors.push("audio: invalid volume");
+  if (raw.fadeInFrames !== undefined && !integer(raw.fadeInFrames, 0, durationFrames)) errors.push("audio: invalid fadeInFrames");
+  if (raw.fadeOutFrames !== undefined && !integer(raw.fadeOutFrames, 0, durationFrames)) errors.push("audio: invalid fadeOutFrames");
   return errors;
 }
 
@@ -82,11 +84,17 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
   if (!record(c)) {
     errors.push("composition is required");
   } else {
-    allowedKeys(c, ["width", "height", "fps", "durationFrames", "background", "layers", "audio"], "composition", errors);
+    allowedKeys(c, ["width", "height", "fps", "durationFrames", "background", "layers", "audio", "audioTracks"], "composition", errors);
     if (!integer(c.width, 16, 8192) || !integer(c.height, 16, 8192)) errors.push("invalid dimensions");
     if (!integer(c.durationFrames, 1, 216000)) errors.push("durationFrames must be 1-216000");
     if (typeof c.background !== "string" || !color.test(c.background)) errors.push("invalid background color");
     if (c.audio !== undefined) errors.push(...validateMotionAudio(c.audio, c.durationFrames as number));
+    if (c.audio !== undefined && c.audioTracks !== undefined) errors.push("audio and audioTracks cannot both be present");
+    if (c.audioTracks !== undefined) {
+      if (!Array.isArray(c.audioTracks) || c.audioTracks.length > 4) errors.push("audioTracks must have at most 4 clips");
+      else c.audioTracks.forEach((track: unknown, index: number) =>
+        errors.push(...validateMotionAudio(track, c.durationFrames as number).map(issue => "audioTracks[" + index + "]: " + issue)));
+    }
     if (!record(c.fps) || !integer(c.fps.numerator, 1, 240000) || !integer(c.fps.denominator, 1, 1001) ||
       Number(c.fps.numerator) / Number(c.fps.denominator) > 240 || Number(c.fps.numerator) / Number(c.fps.denominator) < 1) {
       errors.push("invalid rational fps");
@@ -143,6 +151,13 @@ export function validateMotionEdits(raw: unknown, durationFrames: number): asser
       allowedKeys(edit, ["type", "layer", "index"], at, errors);
       if (!record(edit.layer)) errors.push(at + ": layer must be an object");
       if (edit.index !== undefined && !integer(edit.index, 0, 200)) errors.push(at + ": invalid insertion index");
+      return;
+    }
+    if (edit.type === "set-audio-tracks") {
+      allowedKeys(edit, ["type", "audioTracks"], at, errors);
+      if (!Array.isArray(edit.audioTracks) || edit.audioTracks.length > 4) errors.push(at + ": audioTracks must have at most 4 clips");
+      else edit.audioTracks.forEach((track: unknown, index: number) =>
+        errors.push(...validateMotionAudio(track, durationFrames).map(issue => at + ".audioTracks[" + index + "]: " + issue)));
       return;
     }
     if (edit.type === "set-audio") {

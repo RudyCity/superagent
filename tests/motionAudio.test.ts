@@ -65,6 +65,61 @@ describe("Motion WAV workspace asset and output", () => {
     const cleared = await updateMotionProject(root, project.id, 2, [{ type: "set-audio", audio: null }]);
     expect(cleared.composition.audio).toBeUndefined();
   });
+  it("migrates legacy audio to a revisioned multitrack scene with strict upper bounds", async () => {
+    const root = await workspace();
+    const sound = await importMotionAudio(root, wav(0.7));
+    const project = await createMotionProject(root, "Legacy");
+    const legacy = await updateMotionProject(root, project.id, 1, [{
+      type: "set-audio", audio: { assetId: sound.id, startFrame: 0, volume: 1 },
+    }]);
+    expect(legacy.composition.audio).toBeDefined();
+    const updated = await updateMotionProject(root, project.id, 2, [{
+      type: "set-audio-tracks", audioTracks: [
+        { assetId: sound.id, startFrame: 2, volume: 0.4, fadeInFrames: 3 },
+        { assetId: sound.id, startFrame: 10, volume: 0.6, fadeOutFrames: 4 },
+      ],
+    }]);
+    expect(updated.composition.audio).toBeUndefined();
+    expect(updated.composition.audioTracks).toHaveLength(2);
+    await expect(updateMotionProject(root, project.id, 3, [{
+      type: "set-audio-tracks", audioTracks: Array.from({ length: 5 }, () =>
+        ({ assetId: sound.id, startFrame: 0, volume: 1 })),
+    }])).rejects.toThrow("at most 4");
+    await expect(updateMotionProject(root, project.id, 3, [{
+      type: "set-audio-tracks", audioTracks: [{ assetId: sound.id, startFrame: 0, volume: 3 }],
+    }])).rejects.toThrow("volume");
+    await expect(updateMotionProject(root, project.id, 3, [{
+      type: "set-audio-tracks", audioTracks: [{ assetId: sound.id, startFrame: 0, volume: 1, fadeInFrames: -1 }],
+    }])).rejects.toThrow("fadeInFrames");
+    const removed = await updateMotionProject(root, project.id, 3, [{ type: "set-audio-tracks", audioTracks: [] }]);
+    expect(removed.composition.audioTracks).toEqual([]);
+  });
+  it("renders two PCM clips with independent gain, offsets and fades to one AAC stream", async () => {
+    if (!(await probeFfmpeg())) return;
+    const root = await workspace();
+    const first = await importMotionAudio(root, wav(0.8));
+    const secondBuffer = wav(0.4);
+    // Make the second asset unique; audio source bytes are immutable SHA256-addressed.
+    secondBuffer.writeInt16LE(1234, 44);
+    const second = await importMotionAudio(root, secondBuffer);
+    const project = await createMotionProject(root, "Mixed");
+    const composition = structuredClone(project.composition);
+    composition.durationFrames = 30;
+    composition.layers = [];
+    composition.audioTracks = [
+      { assetId: first.id, startFrame: 0, volume: 0.45, fadeInFrames: 4, fadeOutFrames: 5 },
+      { assetId: second.id, startFrame: 8, volume: 0.4, fadeInFrames: 3, fadeOutFrames: 4 },
+    ];
+    const edited = await updateMotionProject(root, project.id, 1, [
+      { type: "replace-composition", composition },
+    ]);
+    const output = await renderMotionJob(root, edited.id, { width: 160 });
+    expect(output.status).toBe("completed");
+    const report = JSON.parse(execFileSync("ffprobe", [
+      "-v", "error", "-show_entries", "stream=codec_name", "-of", "json", output.artifact!.path,
+    ], { encoding: "utf8" })) as { streams: Array<{ codec_name: string }> };
+    expect(report.streams.map(stream => stream.codec_name).filter(name => name === "aac")).toHaveLength(1);
+  }, 30000);
   it("encodes actual AAC audio inside a deterministic H.264 video", async () => {
     if (!(await probeFfmpeg())) return;
     const root = await workspace();

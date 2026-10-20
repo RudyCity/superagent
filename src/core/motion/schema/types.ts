@@ -46,6 +46,8 @@ export interface MotionAudioTrack {
   assetId: string;
   startFrame: number;
   volume: number;
+  fadeInFrames?: number;
+  fadeOutFrames?: number;
 }
 
 export interface MotionProject {
@@ -62,7 +64,8 @@ export interface MotionProject {
     fps: { numerator: number; denominator: number };
     durationFrames: number;
     background: string;
-    audio?: MotionAudioTrack;
+    audio?: MotionAudioTrack; // read-compatible legacy single-track scenes
+    audioTracks?: MotionAudioTrack[];
     layers: MotionLayer[];
   };
 }
@@ -74,7 +77,8 @@ export type MotionEdit =
   | { type: "remove-layer"; layerId: string }
   | { type: "move-layer"; layerId: string; toIndex: number }
   | { type: "replace-composition"; composition: MotionProject["composition"] }
-  | { type: "set-audio"; audio: MotionAudioTrack | null };
+  | { type: "set-audio"; audio: MotionAudioTrack | null }
+  | { type: "set-audio-tracks"; audioTracks: MotionAudioTrack[] };
 
 export interface EvaluatedLayer {
   layer: MotionLayer;

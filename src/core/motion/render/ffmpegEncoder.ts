@@ -34,21 +34,49 @@ export async function probeFfmpeg(ffmpeg = "ffmpeg"): Promise<boolean> {
   } catch { return false; }
 }
 
-function encodingArgs(profile: RenderProfile, file: string, audioPath?: string, startFrame = 0, volume = 1): string[] {
-  const duration = profile.frameCount / Number(profile.fps.split("/")[0]) * Number(profile.fps.split("/")[1]);
-  const delay = Math.round(startFrame / Number(profile.fps.split("/")[0]) * Number(profile.fps.split("/")[1]) * 1000);
-  return [
+interface MotionAudioInput {
+  path: string;
+  startFrame: number;
+  volume: number;
+  seconds: number;
+  fadeInFrames: number;
+  fadeOutFrames: number;
+}
+/** Safe numeric graph assembled only from schema-validated audio metadata. */
+function encodingArgs(profile: RenderProfile, file: string, tracks: MotionAudioInput[] = []): string[] {
+  const [num, den] = profile.fps.split("/").map(Number);
+  const duration = profile.frameCount * den / num;
+  const args = [
     "-hide_banner", "-loglevel", "error", "-nostdin", "-n",
     "-f", "rawvideo", "-pixel_format", "rgba",
     "-video_size", `${profile.width}x${profile.height}`,
     "-framerate", profile.fps, "-i", "pipe:0",
-    ...(audioPath ? ["-i", audioPath, "-map", "0:v:0", "-map", "1:a:0",
-      "-af", `volume=${volume},adelay=${delay}:all=1,apad,atrim=duration=${duration}`,
-      "-c:a", "aac", "-b:a", "128k"] : ["-an"]),
+    ...tracks.flatMap(track => ["-i", track.path]),
+  ];
+  if (tracks.length) {
+    const filters = tracks.map((track, index) => {
+      const offsetMs = Math.round(track.startFrame * den / num * 1000);
+      const fadeIn = Math.min(track.seconds, track.fadeInFrames * den / num);
+      const fadeOut = Math.min(track.seconds, track.fadeOutFrames * den / num);
+      const out = track.seconds - fadeOut;
+      return `[${index + 1}:a:0]volume=${track.volume}` +
+        (fadeIn ? `,afade=t=in:st=0:d=${fadeIn}` : "") +
+        (fadeOut ? `,afade=t=out:st=${out}:d=${fadeOut}` : "") +
+        `,adelay=${offsetMs}:all=1,apad,atrim=duration=${duration},asetpts=PTS-STARTPTS[a${index}]`;
+    });
+    const mixed = tracks.length === 1
+      ? "[a0]"
+      : tracks.map((_, index) => `[a${index}]`).join("") +
+        `amix=inputs=${tracks.length}:duration=longest:normalize=0,atrim=duration=${duration}[mixed]`;
+    args.push("-filter_complex", filters.join(";") + (tracks.length > 1 ? ";" + mixed : ""),
+      "-map", "0:v:0", "-map", tracks.length === 1 ? "[a0]" : "[mixed]",
+      "-c:a", "aac", "-b:a", "128k");
+  } else args.push("-an");
+  return args.concat([
     "-c:v", "libx264", "-pix_fmt", "yuv420p",
     "-preset", "veryfast", "-crf", "23", "-threads", "2",
     "-movflags", "+faststart", "-f", "mp4", file,
-  ];
+  ]);
 }
 
 /**
@@ -63,15 +91,22 @@ export async function encodeMotionMp4(
 ): Promise<void> {
   if (options.signal?.aborted) throw new Error("Motion render cancelled");
   // Resolve an immutable, hash-verified asset before starting FFmpeg.
-  const audio = project.composition.audio;
-  if (audio && !options.workspace) throw new Error("Motion audio requires a workspace asset store");
-  const audioPath = audio
-    ? await (await import("../assets/motionAudio.js")).resolveMotionAudio(options.workspace!, project)
-    : null;
+  const { motionAudioTracks, resolveMotionAudioTracks, readMotionAudio, inspectMotionWav } = await import("../assets/motionAudio.js");
+  const audioTracks = motionAudioTracks(project);
+  if (audioTracks.length && !options.workspace) throw new Error("Motion audio requires a workspace asset store");
+  const audioPaths = audioTracks.length ? await resolveMotionAudioTracks(options.workspace!, project) : [];
+  const audioInputs: MotionAudioInput[] = await Promise.all(audioTracks.map(async (track, index) => ({
+    path: audioPaths[index],
+    startFrame: track.startFrame,
+    volume: track.volume,
+    seconds: inspectMotionWav(await readMotionAudio(options.workspace!, track.assetId)).seconds,
+    fadeInFrames: track.fadeInFrames ?? 0,
+    fadeOutFrames: track.fadeOutFrames ?? 0,
+  })));
   // Canvas is optional for non-render commands and should not slow terminal startup.
   const { createMotionFrameRenderer } = await import("./canvasFrames.js");
   const child = spawn(
-    options.ffmpeg ?? "ffmpeg", encodingArgs(profile, temporaryFile, audioPath ?? undefined, audio?.startFrame, audio?.volume),
+    options.ffmpeg ?? "ffmpeg", encodingArgs(profile, temporaryFile, audioInputs),
     { windowsHide: true, stdio: ["pipe", "ignore", "pipe"] },
   );
   let stderr = "";

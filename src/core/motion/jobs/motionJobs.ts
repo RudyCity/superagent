@@ -8,6 +8,7 @@ import { getMotionProject, motionStorageDir, motionWorkspaceRoot } from "../proj
 import { encodeMotionMp4, deriveRenderProfile, type RenderProfile } from "../render/ffmpegEncoder.js";
 import { validateMotionProject } from "../schema/validation.js";
 import { resolveMotionAssets } from "../assets/motionAssets.js";
+import { resolveMotionAudioTracks, motionAudioTracks } from "../assets/motionAudio.js";
 import type { MotionProject } from "../schema/types.js";
 import { MOTION_QUEUE_LIMIT, acquireMotionRenderSlot, assertMotionQueueCapacity, inspectMotionSlots, motionConcurrentSlots, withMotionQueueAdmission } from "./renderScheduler.js";
 const execFileAsync = promisify(execFile);
@@ -230,6 +231,7 @@ export async function prepareMotionJob(
   const profile = deriveRenderProfile(project, options.width, options.maxFrames);
   // Fail before claiming a render slot if referenced immutable image assets are absent or corrupted.
   await resolveMotionAssets(workspace, project);
+  await resolveMotionAudioTracks(workspace, project);
   const dir = await motionJobDir(workspace, "jobs");
   return withMotionQueueAdmission(dir, async () => {
     await assertMotionQueueCapacity(dir);
@@ -345,7 +347,7 @@ async function runAdmittedMotionJob(
       job.status = "validating";
       job.updatedAt = new Date().toISOString();
       await persist(job, dir);
-      await validateMp4(temporary, job.profile, !!project.composition.audio);
+      await validateMp4(temporary, job.profile, motionAudioTracks(project).length > 0);
       const bytes = (await fs.stat(temporary)).size;
       const sha256 = await sha256File(temporary);
       await fs.rename(temporary, output);

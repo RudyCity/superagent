@@ -482,3 +482,11 @@ Current implementation snapshot (2026-10-20): scene schema, revision-checked pro
 - Added authenticated `POST /api/motion/audio` and `GET/HEAD /api/motion/audio/:audioId` endpoints behind the global API/workspace gate and bounded upload bodies. Detached render resolves the immutable WAV and FFmpeg includes an AAC stream in H.264 MP4 with frame-aligned start delay, volume and pad/trim to composition duration. Output validation requires AAC when audio is configured.
 - Validated input-format errors, oversized/foreign/tampered assets, revision collisions, HTTP authorization and a real H.264 + AAC file with ffprobe. The Motion regression suite passed 40/40 tests across ten suites and SuperAgent TypeScript passed on this revision.
 - Current scope is one static audio clip per composition. Multiple audio clips, music/voice mixing, fades, transcoding user MP3 files, waveform seeking, desktop A/V sync certification and live packaged Tauri E2E remain future work. No Hermes process was restarted.
+
+### Four-track WAV mixing, volume and fades (2026-10-20)
+
+- Added backwards-compatible `composition.audioTracks` supporting up to four workspace-owned WAV PCM16 clips with individual startFrame, volume, fadeInFrames and fadeOutFrames; legacy `composition.audio` remains readable and usable until a `set-audio-tracks` edit replaces it. The schema rejects defining both representations together.
+- Each clip's content hash and workspace ownership are checked before revisioned scene edits and render admission; missing/corrupt clip references fail closed. Only numeric validated filter parameters enter the FFmpeg filter graph, never user-supplied commands/URLs/paths.
+- FFmpeg now constructs per-clip gain, fades and frame-aligned delay, followed by an `amix` pass and trim to scene duration, producing one AAC stream alongside H.264 video. The legacy single-track route and no-audio route remain supported.
+- Integration tests cover migrating a legacy track, four-clip cap, invalid volume/fade, independent clips, and a real two-WAV -> H264/AAC MP4 render. Ten Motion suites/42 tests passed, TypeScript passed.
+- Remaining: soundtrack waveform, arbitrary audio positions beyond scene duration, MP3/FLAC transcoding, mastering/limiter, native Tauri A/V playback certification, and longer exports. No daemon restarted.
