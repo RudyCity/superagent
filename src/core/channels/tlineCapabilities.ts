@@ -4,6 +4,7 @@
  * command NEVER implies it can execute through the desktop bridge.
  */
 import { registry } from "../commands/index.js";
+import { TLINE_INSPECTION_ACTIONS } from "./tlineInspection.js";
 
 export const TLINE_CAPABILITY_CONTRACT_VERSION = 1 as const;
 export const TLINE_HTTP_ACTIONS = [
@@ -27,7 +28,7 @@ export function buildTlineCapabilityManifest(version: string) {
     server: "superagent",
     version,
     commands,
-    httpActions: TLINE_HTTP_ACTIONS,
+    httpActions: [...TLINE_HTTP_ACTIONS, ...TLINE_INSPECTION_ACTIONS],
     note: "Command names describe the CLI registry; HTTP actions are independently allowlisted. No general shell or arbitrary slash executor is exposed.",
   };
 }

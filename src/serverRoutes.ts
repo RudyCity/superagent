@@ -301,6 +301,52 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Workspace-scoped, credential-free desktop inspection. The CLI registry
+  // itself does not grant execution privileges to a desktop caller.
+  if (pathname.startsWith("/api/tline/inspect/")) {
+    if (req.method !== "GET") {
+      sendJSON(res, 405, { success: false, error: "Read-only endpoint." });
+      return true;
+    }
+    const action = pathname.slice("/api/tline/inspect/".length);
+    const allowed = new Set(["mcp.status", "tools.catalog", "selfdev.status", "muse.status"]);
+    if (!allowed.has(action)) {
+      sendJSON(res, 404, { success: false, error: "Unknown T-Line inspection action." });
+      return true;
+    }
+    const workspace = resolveWorkspacePath(req);
+    const session = resolveSession(req);
+    if (!workspace || !session || session.clientMode !== "tline" ||
+      session.workspace.toLowerCase() !== workspace.toLowerCase()) {
+      sendJSON(res, 403, { success: false, error: "Active T-Line session is required for this workspace." });
+      return true;
+    }
+    const { summarizeMcpServers, summarizeTools, summarizeMuse, summarizeSelfdev } =
+      await import("./core/channels/tlineInspection.js");
+    try {
+      if (action === "mcp.status") {
+        const { loadModelConfig } = await import("./core/config/jsonConfig.js");
+        const { connectedServers } = await import("./core/mcp/McpManager.js");
+        sendJSON(res, 200, summarizeMcpServers(loadModelConfig().mcpServers || {}, connectedServers));
+      } else if (action === "tools.catalog") {
+        const { getToolDefinitions } = await import("./core/tools/index.js");
+        sendJSON(res, 200, summarizeTools(getToolDefinitions()));
+      } else if (action === "selfdev.status") {
+        const { getSelfDevMetricsReport } = await import("./core/selfdev/diagnostics.js");
+        sendJSON(res, 200, summarizeSelfdev(await getSelfDevMetricsReport(workspace)));
+      } else {
+        const { loadRemoteAgentConfig } = await import("./core/remoteAgent/config.js");
+        const { getActiveRemoteTaskSnapshot } = await import("./core/remoteAgent/taskRunner.js");
+        const { isMuseWatcherActive } = await import("./core/remoteAgent/museWatcherRegistry.js");
+        sendJSON(res, 200, summarizeMuse(workspace, loadRemoteAgentConfig(),
+          getActiveRemoteTaskSnapshot(), isMuseWatcherActive()));
+      }
+    } catch {
+      sendJSON(res, 503, { success: false, error: "T-Line inspection data temporarily unavailable." });
+    }
+    return true;
+  }
+
   // Status
   if (pathname === "/api/status" && req.method === "GET") {
     const session = resolveSession(req);

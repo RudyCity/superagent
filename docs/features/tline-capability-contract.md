@@ -14,10 +14,18 @@ The independent `httpActions` allowlist currently contains:
 |---|---|---|
 | `daemon.status` | `/api/daemon/status` | GET |
 | `gateway.status` | `/api/gateway/status` | GET |
+| `mcp.status` | `/api/tline/inspect/mcp.status` | GET |
+| `tools.catalog` | `/api/tline/inspect/tools.catalog` | GET |
+| `selfdev.status` | `/api/tline/inspect/selfdev.status` | GET |
+| `muse.status` | `/api/tline/inspect/muse.status` | GET |
 
 T-Line negotiates the manifest before using a typed, authenticated backend
-adapter. All other CLI slash commands are **not** implied to have T-Line
-execution support. Workspace-global job listings and mutation operations are
+adapter. Inspection actions require a valid registered workspace with an active
+TLine session. They only return sanitized MCP/server names and counts, tool
+names, workspace-specific selfdev counters, or the current workspace's Muse
+task metadata. No credentials, process environment, transcripts, remote task
+payloads, or tool input schemas are exposed. All other CLI slash commands are
+**not** implied to have T-Line execution support. Workspace-global job listings and mutation operations are
 not exposed by this contract without per-workspace authorization.
 
 Verification: `bun x vitest run tests/tlineCapabilities.test.ts`,
