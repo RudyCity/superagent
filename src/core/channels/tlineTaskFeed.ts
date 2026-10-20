@@ -1,6 +1,7 @@
 /** Bounded per-workspace, per-chat SSE journal; not a durable task event ledger. */
 import { randomBytes } from "node:crypto";
 import type { TlineTaskSnapshot } from "./tlineTaskSnapshot.js";
+import { loadTlineTaskLedger, saveTlineTaskLedger, deleteTlineTaskLedger } from "./tlineTaskLedger.js";
 
 const generation = randomBytes(8).toString("hex");
 const MAX_EVENTS = 64;
@@ -23,7 +24,8 @@ export interface TaskFeedEvent {
   event: "snapshot";
   data: TlineTaskSnapshot;
 }
-type Journal = { events: TaskFeedEvent[]; cursor: string | null; at: number; seq: number };
+type Journal = { events: TaskFeedEvent[]; cursor: string | null; at: number; seq: number;
+  generation: string; recovered: boolean; persisted: boolean };
 const journals = new Map<string, Journal>();
 function key(workspace: string, sessionId: string): string {
   return JSON.stringify([workspace, sessionId]);
@@ -45,7 +47,11 @@ export function recordTaskFeed(
       const oldest = [...journals.entries()].sort((a, b) => a[1].at - b[1].at)[0];
       if (oldest) journals.delete(oldest[0]);
     }
-    journal = { events: [], cursor: null, at: now, seq: 0 };
+    const disk = loadTlineTaskLedger(workspace, sessionId);
+    journal = disk
+      ? { events: disk.events, cursor: disk.events.at(-1)?.data.cursor || null,
+          at: now, seq: disk.seq, generation: disk.generation, recovered: true, persisted: true }
+      : { events: [], cursor: null, at: now, seq: 0, generation, recovered: false, persisted: false };
     journals.set(k, journal);
   }
   journal.at = now;
@@ -55,18 +61,29 @@ export function recordTaskFeed(
   }
   journal.cursor = snapshot.cursor;
   const entry: TaskFeedEvent = {
-    id: `${generation}.${++journal.seq}`,
+    id: `${journal.generation}.${++journal.seq}`,
     event: "snapshot", data: snapshot,
   };
   journal.events.push(entry);
   if (journal.events.length > MAX_EVENTS) journal.events.splice(0, journal.events.length - MAX_EVENTS);
+  journal.persisted = saveTlineTaskLedger(workspace, sessionId, journal.generation, journal.seq, journal.events);
   return entry;
 }
 export function replayTaskFeed(workspace: string, sessionId: string, lastId?: string): {
   events: TaskFeedEvent[];
   reset: boolean;
+  /** Recovered journal data is only observed samples; source transitions during downtime can be missed. */
+  recovered?: boolean;
 } {
-  const journal = journals.get(key(workspace, sessionId));
+  const scopeKey = key(workspace, sessionId);
+  if (!journals.has(scopeKey)) {
+    const disk = loadTlineTaskLedger(workspace, sessionId);
+    if (disk) journals.set(scopeKey, {
+      events: disk.events, cursor: disk.events.at(-1)?.data.cursor || null, at: Date.now(),
+      seq: disk.seq, generation: disk.generation, recovered: true, persisted: true,
+    });
+  }
+  const journal = journals.get(scopeKey);
   if (!lastId || !/^[0-9a-f]{16}\.\d{1,12}$/.test(lastId)) {
     return { events: [], reset: true };
   }
@@ -74,12 +91,20 @@ export function replayTaskFeed(workspace: string, sessionId: string, lastId?: st
   const index = journal.events.findIndex(e => e.id === lastId);
   if (index < 0) return { events: [], reset: true };
   journal.at = Date.now();
-  return { events: journal.events.slice(index + 1), reset: false };
+  return { events: journal.events.slice(index + 1), reset: false,
+    ...(journal.recovered ? { recovered: true } : {}) };
+}
+export function taskFeedPersistenceAvailable(workspace: string, sessionId: string): boolean {
+  return journals.get(key(workspace, sessionId))?.persisted === true;
 }
 export function latestTaskFeed(workspace: string, sessionId: string): TaskFeedEvent | null {
   return journals.get(key(workspace, sessionId))?.events.at(-1) ?? null;
 }
+/** Removes in-memory journal only, for simulated process restart tests. */
+export function __clearTaskFeedMemoryForTests(): void { journals.clear(); }
 export function forgetTaskFeed(workspace?: string, sessionId?: string): void {
-  if (workspace && sessionId) journals.delete(key(workspace, sessionId));
-  else if (!workspace && !sessionId) journals.clear();
+  if (workspace && sessionId) {
+    journals.delete(key(workspace, sessionId));
+    deleteTlineTaskLedger(workspace, sessionId);
+  } else if (!workspace && !sessionId) journals.clear();
 }

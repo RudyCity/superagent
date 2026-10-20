@@ -49,7 +49,19 @@ is no longer authorized. This is not an append-only durable source ledger:
 intermediate source transitions during downtime cannot be replayed.
 No task mutation or process cancellation is offered by these endpoints.
 
-Verification: `bun x vitest run tests/tlineCapabilities.test.ts tests/tlineInspection.test.ts tests/tlineTaskSnapshot.test.ts tests/tlineTaskFeed.test.ts`,
+Increment 6A: The same observed SSE journal now also has a **bounded local
+persistence layer** at `~/.superagent-r/tline-task-ledger/`. Records are keyed
+by a workspace/session hash and atomically rewritten with explicit metadata
+allowlisting; persisted copies strip chat session IDs and unexpected fields.
+A maximum of 64 events/2 MiB per scope, 64 scopes and 24-hour retention
+applies. After restart, retained event IDs can be replayed only to the
+authenticated exact workspace and TLine session. The SSE stream warns of a
+`restart-observation-gap` because source updates not sampled while offline
+cannot be reconstructed. It warns `ledger-unavailable` if durable storage
+fails while memory-based streaming continues. This is **not** complete durable
+source-event capture and offers no cancel/retry action.
+
+Verification: `bun x vitest run tests/tlineCapabilities.test.ts tests/tlineInspection.test.ts tests/tlineTaskSnapshot.test.ts tests/tlineTaskFeed.test.ts tests/tlineTaskLedger.test.ts`,
 `bun run build`. This is a source/build test; an actual existing server process
 must be upgraded/restarted to expose the new endpoint. Do not kill or restart
 an unrelated process on port 7888 for validation.

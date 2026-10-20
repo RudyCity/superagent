@@ -323,7 +323,8 @@ export async function handleServerRoute(
       return true;
     }
     const { collectTlineTaskSnapshot } = await import("./core/channels/tlineTaskCollector.js");
-    const { recordTaskFeed, replayTaskFeed, latestTaskFeed, encodeTlineSse, acquireTaskSseSlot } =
+    const { recordTaskFeed, replayTaskFeed, latestTaskFeed, encodeTlineSse,
+      acquireTaskSseSlot, taskFeedPersistenceAvailable } =
       await import("./core/channels/tlineTaskFeed.js");
     const releaseStreamSlot = acquireTaskSseSlot();
     if (!releaseStreamSlot) {
@@ -357,7 +358,16 @@ export async function handleServerRoute(
       const current = latestTaskFeed(workspace, session.sessionId);
       if (current) send(current.event, current.data, current.id);
     } else {
+      if (replay.recovered) send("warning", {
+        source: "tasks", reason: "restart-observation-gap",
+        message: "Only previously observed snapshots were recovered; transitions while offline are unavailable.",
+      });
       for (const event of replay.events) send(event.event, event.data, event.id);
+    }
+    let ledgerWarningSent = false;
+    if (!taskFeedPersistenceAvailable(workspace, session.sessionId)) {
+      send("warning", { source: "tasks", reason: "ledger-unavailable" });
+      ledgerWarningSent = true;
     }
     const timer = setInterval(async () => {
       if (closed || busy) return;
@@ -372,8 +382,13 @@ export async function handleServerRoute(
       try {
         const sampled = await collectTlineTaskSnapshot(workspace, session.sessionId);
         const event = recordTaskFeed(workspace, session.sessionId, sampled);
-        if (event) send(event.event, event.data, event.id);
-        else send("heartbeat", { at: Date.now() });
+        if (event) {
+          send(event.event, event.data, event.id);
+          if (!taskFeedPersistenceAvailable(workspace, session.sessionId) && !ledgerWarningSent) {
+            send("warning", { source: "tasks", reason: "ledger-unavailable" });
+            ledgerWarningSent = true;
+          }
+        } else send("heartbeat", { at: Date.now() });
       } catch {
         send("warning", { source: "tasks", reason: "temporarily-unavailable" });
       } finally { busy = false; }

@@ -1,4 +1,8 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, afterAll } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { setTlineLedgerRootForTests } from "../src/core/channels/tlineTaskLedger.js";
 import { buildTlineTaskSnapshot, type TlineTaskSummary } from "../src/core/channels/tlineTaskSnapshot.js";
 import { recordTaskFeed, replayTaskFeed, latestTaskFeed, encodeTlineSse, forgetTaskFeed } from "../src/core/channels/tlineTaskFeed.js";
 import { buildTlineCapabilityManifest } from "../src/core/channels/tlineCapabilities.js";
@@ -9,7 +13,17 @@ const task: TlineTaskSummary = {
   authorization: "workspace_scoped", notification: "not_configured",
 };
 describe("T-Line task SSE journal / replay", () => {
-  beforeEach(() => forgetTaskFeed());
+  const root = path.join(os.tmpdir(), "tline-task-feed-vitest-" + process.pid);
+  beforeEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+    setTlineLedgerRootForTests(root);
+    forgetTaskFeed();
+  });
+  afterAll(() => {
+    forgetTaskFeed();
+    setTlineLedgerRootForTests(undefined);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
   it("advertises authenticated SSE capability independently from snapshot", () => {
     const action = buildTlineCapabilityManifest("test").httpActions.find(a => a.id === "tasks.events");
     expect(action).toEqual({ id: "tasks.events", method: "GET",
