@@ -66,6 +66,10 @@ describe("Motion HTTP and artifact transport", () => {
     const storage = await request("/api/motion/storage");
     expect(storage.status).toBe(200);
     expect((await storage.json()).maintenance.minAgeDays).toBe(7);
+    const supervisor = await request("/api/motion/supervisor");
+    expect(supervisor.status).toBe(200);
+    expect((await supervisor.json())).toMatchObject({ mode: "opt-in-fifo", queuedSupervised: 0 });
+    expect((await request("/api/motion/supervisor", { method: "POST" })).status).toBe(404);
     const scheduler = await request("/api/motion/scheduler");
     expect(scheduler.status).toBe(200);
     const capacity = await scheduler.json();
@@ -93,6 +97,16 @@ describe("Motion HTTP and artifact transport", () => {
     expect((await edit(1)).status).toBe(409);
     const listed = await request("/api/motion/projects");
     expect((await listed.json()).some((project: any) => project.id === created.id)).toBe(true);
+    const queued = await request("/api/motion/projects/" + created.id + "/render", {
+      method: "POST", body: JSON.stringify({ width: 160, supervised: true }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(queued.status).toBe(202);
+    const queuedRecord = await queued.json();
+    expect(queuedRecord).toMatchObject({ status: "queued", dispatchMode: "supervised" });
+    const persisted = await request("/api/motion/jobs/" + queuedRecord.id);
+    expect((await persisted.json()).status).toBe("queued");
+
   });
 
   it("imports and serves authenticated workspace PCM16 audio", async () => {

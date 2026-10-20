@@ -4,13 +4,14 @@ import { createReadStream } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { createMotionProject, getMotionProject, listMotionProjects, updateMotionProject } from "./motionService.js";
-import { getMotionJob, getMotionSchedulerStatus, inspectMotionJob, listMotionJobs, motionJobDir, requestMotionCancellation, startDetachedMotionJob } from "./jobs/motionJobs.js";
+import { getMotionJob, getMotionSchedulerStatus, inspectMotionJob, listMotionJobs, motionJobDir, requestMotionCancellation, startDetachedMotionJob, enqueueSupervisedMotionJob } from "./jobs/motionJobs.js";
 import { MotionRevisionConflict } from "./project/revisions.js";
 import { MotionValidationError } from "./schema/validation.js";
 import type { MotionEdit } from "./schema/types.js";
 import { MOTION_CAPABILITIES } from "./motionCapabilities.js";
 import { motionStorageMaintenance } from "./jobs/storageMaintenance.js";
 import { inspectMotionQueueRecovery } from "./jobs/queueRecovery.js";
+import { inspectMotionSupervisor } from "./jobs/motionSupervisor.js";
 import { importMotionAsset, readMotionAsset } from "./assets/motionAssets.js";
 import { importMotionAudio, readMotionAudio } from "./assets/motionAudio.js";
 import { decodeMotionMediaBase64 } from "./assets/motionInput.js";
@@ -118,8 +119,13 @@ export async function handleMotionHttpRoute(
     } else if (render && method === "POST") {
       const body = await readMotionJson(req);
       if (body.width !== undefined && !Number.isSafeInteger(body.width)) throw new Error("width must be an integer");
-      const started = await startDetachedMotionJob(workspace, render[1], { width: body.width as number | undefined });
+      if (body.supervised !== undefined && typeof body.supervised !== "boolean") throw new Error("supervised must be boolean");
+      const started = body.supervised === true
+        ? await enqueueSupervisedMotionJob(workspace, render[1], { width: body.width as number | undefined })
+        : await startDetachedMotionJob(workspace, render[1], { width: body.width as number | undefined });
       json(res, ctx, started.status === "failed" ? 503 : 202, started);
+    } else if (pathname === "/api/motion/supervisor" && method === "GET") {
+      json(res, ctx, 200, await inspectMotionSupervisor(workspace));
     } else if (pathname === "/api/motion/scheduler" && method === "GET") {
       json(res, ctx, 200, await getMotionSchedulerStatus(workspace));
     } else if (pathname === "/api/motion/queue-recovery" && method === "GET") {

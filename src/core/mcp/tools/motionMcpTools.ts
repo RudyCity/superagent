@@ -2,7 +2,7 @@ import {
   createMotionProject, getMotionProject, listMotionProjects, updateMotionProject,
 } from "../../motion/motionService.js";
 import {
-  getMotionJob, inspectMotionJob, listMotionJobs, requestMotionCancellation, startDetachedMotionJob,
+  getMotionJob, inspectMotionJob, listMotionJobs, requestMotionCancellation, startDetachedMotionJob, enqueueSupervisedMotionJob,
 } from "../../motion/jobs/motionJobs.js";
 import type { MotionEdit } from "../../motion/schema/types.js";
 import { importMotionAsset } from "../../motion/assets/motionAssets.js";
@@ -10,6 +10,7 @@ import { importMotionAudio } from "../../motion/assets/motionAudio.js";
 import { decodeMotionMediaBase64 } from "../../motion/assets/motionInput.js";
 import { motionStorageMaintenance } from "../../motion/jobs/storageMaintenance.js";
 import { inspectMotionQueueRecovery } from "../../motion/jobs/queueRecovery.js";
+import { inspectMotionSupervisor } from "../../motion/jobs/motionSupervisor.js";
 import type { McpToolResult } from "../types.js";
 
 export const MOTION_MCP_TOOL_DEFS = [
@@ -67,7 +68,13 @@ export const MOTION_MCP_TOOL_DEFS = [
     inputSchema: { type: "object", properties: {
       workspace: { type: "string" }, projectId: { type: "string" },
       motionId: { type: "string" }, width: { type: "integer", minimum: 160, maximum: 1920 },
+      supervised: { type: "boolean", description: "Queue for the separately running FIFO supervisor instead of spawning a worker immediately." },
     }, required: ["motionId"] },
+  },
+  {
+    name: "superagent_motion_supervisor",
+    description: "Read-only workspace FIFO supervisor status and queue occupancy. Never spawns or recovers workers.",
+    inputSchema: { type: "object", properties: { workspace: { type: "string" }, projectId: { type: "string" } } },
   },
   {
     name: "superagent_motion_queue_recovery",
@@ -124,6 +131,7 @@ export const MOTION_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous
   superagent_motion_jobs: "safe",
   superagent_motion_storage: "safe",
   superagent_motion_queue_recovery: "safe",
+  superagent_motion_supervisor: "safe",
   superagent_motion_status: "safe",
   superagent_motion_recovery: "safe",
   superagent_motion_create: "dangerous",
@@ -162,11 +170,14 @@ export async function dispatchMotionMcpTool(
       case "superagent_motion_import_audio":
         result = await importMotionAudio(authorizedWorkspace, decodeMotionMediaBase64(args.base64, 2 * 1024 * 1024)); break;
       case "superagent_motion_render":
-        result = await startDetachedMotionJob(authorizedWorkspace, motionId, {
-          width: args.width === undefined ? undefined : Number(args.width),
-        }); break;
+        if (args.supervised !== undefined && typeof args.supervised !== "boolean") throw new Error("supervised must be boolean");
+        result = await (args.supervised === true ? enqueueSupervisedMotionJob : startDetachedMotionJob)(
+          authorizedWorkspace, motionId, { width: args.width === undefined ? undefined : Number(args.width) },
+        ); break;
       case "superagent_motion_jobs":
         result = await listMotionJobs(authorizedWorkspace); break;
+      case "superagent_motion_supervisor":
+        result = await inspectMotionSupervisor(authorizedWorkspace); break;
       case "superagent_motion_queue_recovery":
         result = await inspectMotionQueueRecovery(authorizedWorkspace, { minAgeSeconds: args.minAgeSeconds === undefined ? 30 : Number(args.minAgeSeconds) }); break;
       case "superagent_motion_storage":

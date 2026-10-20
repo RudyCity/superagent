@@ -752,3 +752,20 @@ When you have verified those queued jobs are not already owned by a running work
     superagent motion dispatch-queue --apply --limit 4 --min-age-seconds 30 --workspace . --json
 
 Existing runner/waiting/slot/dispatch/cancellation claims and invalid snapshots block redispatch; unconfirmed launches preserve a dispatch lock for operator inspection. This never restarts rendering jobs automatically or kills workers. The authenticated GET /api/motion/queue-recovery endpoint and safe superagent_motion_queue_recovery MCP tool expose diagnostics only. T-Line presents eligible/blocked counts but cannot initiate destructive redispatch.
+
+### Optional Motion FIFO supervisor (SuperAgent)
+
+Existing immediate renders keep working unchanged. In a separate SuperAgent terminal, start the foreground FIFO supervisor:
+
+    superagent motion supervisor --watch --workspace . --interval-ms 2000
+
+Submit a revision-pinned job through CLI, or choose FIFO in T-Line Motion Studio, or set supervised=true in an MCP/HTTP Motion render request:
+
+    superagent motion render MOTION_ID --width 640 --supervised --workspace . --json
+    superagent motion supervisor-status --workspace . --json
+
+Alternatively dispatch a single batch and exit:
+
+    superagent motion supervisor --once --workspace . --json
+
+This explicit opt-in supervisor respects the shared 1–4 renderer capacity and immutable source/asset verification; it does not kill active workers or automatically reclaim leader/worker locks after crashes. It is NOT unattended restart of crashed video encoders. Operators must inspect stale ownership before manual recovery. Queued supervised jobs without worker claims can be cancelled immediately.

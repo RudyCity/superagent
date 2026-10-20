@@ -18,6 +18,8 @@ const help = [
   "  /motion cancel <job-id>",
   "  /motion storage [days] (read-only)",
   "  /motion queue-recovery (read-only)",
+  "  /motion supervisor-status (read-only)",
+  "  /motion queue <project-id> [even-output-width] (requires separate supervisor process)",
   "  /motion doctor",
   "Interactive renders are foreground; scriptable CLI supports detached rendering.",
 ].join("\n");
@@ -57,6 +59,17 @@ export const motionCommand: SlashCommand = {
         const { inspectMotionQueueRecovery } = await import("../motion/jobs/queueRecovery.js");
         emit(ctx, JSON.stringify(await inspectMotionQueueRecovery(workspace), null, 2));
         return;
+      }
+      if (action === "supervisor-status") {
+        const { inspectMotionSupervisor } = await import("../motion/jobs/motionSupervisor.js");
+        emit(ctx, JSON.stringify(await inspectMotionSupervisor(workspace), null, 2)); return;
+      }
+      if (action === "queue") {
+        if (!id) throw new Error("Usage: /motion queue <project-id> [even-output-width]");
+        const width = third === undefined ? undefined : parseInteger(third, "width");
+        const { enqueueSupervisedMotionJob } = await import("../motion/jobs/motionJobs.js");
+        const job = await enqueueSupervisedMotionJob(workspace, id, { width });
+        emit(ctx, "Motion job queued for FIFO supervisor: " + job.id + ". Start the CLI supervisor in a separate terminal."); return;
       }
       if (action === "doctor") {
         const { probeFfmpeg } = await import("../motion/render/ffmpegEncoder.js");

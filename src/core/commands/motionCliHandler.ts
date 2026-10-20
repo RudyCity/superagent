@@ -7,9 +7,10 @@ import { importMotionAudio } from "../motion/assets/motionAudio.js";
 import { readMotionWorkspaceInput } from "../motion/assets/motionInput.js";
 import { MOTION_CAPABILITIES } from "../motion/motionCapabilities.js";
 import { motionStorageMaintenance } from "../motion/jobs/storageMaintenance.js";
+import { inspectMotionSupervisor, runMotionSupervisorOnce, runMotionSupervisorWatch } from "../motion/jobs/motionSupervisor.js";
 import { inspectMotionQueueRecovery, dispatchOrphanedMotionQueue } from "../motion/jobs/queueRecovery.js";
 import type { MotionEdit } from "../motion/schema/types.js";
-import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation } from "../motion/jobs/motionJobs.js";
+import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation, enqueueSupervisedMotionJob } from "../motion/jobs/motionJobs.js";
 
 const usage = `Motion Studio (developer preview)
   superagent motion new --name "Title" [--workspace PATH] [--json]
@@ -24,6 +25,10 @@ const usage = `Motion Studio (developer preview)
   superagent motion render PROJECT_ID [--width EVEN_NUMBER] [--detach] [--workspace PATH] [--json]
   superagent motion jobs [--workspace PATH] [--json]
   superagent motion scheduler [--workspace PATH] [--json]
+  superagent motion render PROJECT_ID --width 640 --supervised [--workspace PATH] [--json]
+  superagent motion supervisor-status [--workspace PATH] [--json]
+  superagent motion supervisor --once [--workspace PATH] [--json]
+  superagent motion supervisor --watch [--interval-ms 2000] [--workspace PATH] [--json]
   superagent motion queue-recovery [--min-age-seconds 30] [--workspace PATH] [--json]
   superagent motion dispatch-queue --apply [--min-age-seconds 30] [--limit 4] [--workspace PATH] [--json]
   superagent motion storage [--days 7] [--workspace PATH] [--json]
@@ -40,8 +45,8 @@ recovery is diagnostic/read-only unless the operator explicitly runs recover --a
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--detach", "--ack-stale", "--apply", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", ...boolean]);
+  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--help", "-h"]);
+  const valid = new Set(["--workspace", "-w", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -84,6 +89,28 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const available = await probeFfmpeg();
       emit({ ...MOTION_CAPABILITIES, mp4: available, ffmpegAvailable: available, renderJobs: "foreground-and-detached-local" }, json);
       return 0;
+    }
+    if (action === "supervisor-status") {
+      if (positionals.length || opts.has("--once") || opts.has("--watch")) throw new Error("supervisor-status is read-only and accepts no positional arguments");
+      emit(await inspectMotionSupervisor(workspace), json); return 0;
+    }
+    if (action === "supervisor") {
+      if (positionals.length || Number(opts.has("--once")) + Number(opts.has("--watch")) !== 1) {
+        throw new Error("supervisor requires exactly one of --once or --watch");
+      }
+      if (opts.has("--once")) {
+        if (opts.has("--interval-ms")) throw new Error("--interval-ms is only valid with --watch");
+        emit(await runMotionSupervisorOnce(workspace), json); return 0;
+      }
+      const intervalMs = opt(opts, "--interval-ms") === undefined ? 2000 : nonnegativeInteger(opt(opts, "--interval-ms"), "--interval-ms");
+      const controller = new AbortController();
+      const stop = () => controller.abort();
+      process.once("SIGINT", stop); process.once("SIGTERM", stop);
+      try {
+        emit({ status: "watching", workspace, intervalMs, note: "Ctrl+C stops the supervisor; no stale locks are stolen" }, json);
+        emit(await runMotionSupervisorWatch(workspace, { intervalMs, signal: controller.signal }), json);
+        return 0;
+      } finally { process.off("SIGINT", stop); process.off("SIGTERM", stop); }
     }
     if (action === "import-image" || action === "import-audio") {
       if (positionals.length) throw new Error(action + " requires --file and no positional arguments");
@@ -158,6 +185,11 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
     if (action === "render") {
       const widthText = opt(opts, "--width");
       const width = widthText === undefined ? undefined : nonnegativeInteger(widthText, "--width");
+      if (opts.has("--supervised")) {
+        if (opts.has("--detach")) throw new Error("--supervised queues a job without starting a worker; do not combine with --detach");
+        emit(await enqueueSupervisedMotionJob(workspace, projectId, { width }), json);
+        return 0;
+      }
       const controller = new AbortController();
       const onSignal = () => controller.abort();
       process.once("SIGINT", onSignal);

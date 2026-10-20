@@ -27,11 +27,11 @@ const invoke = async (handler: any, name: string, args: Record<string, unknown> 
   handler({ method: "tools/call", params: { name, arguments: args } });
 
 describe("Motion MCP integration", () => {
-  it("exposes all thirteen tools with classification and explicit project capabilities", async () => {
+  it("exposes all fourteen tools with classification and explicit project capabilities", async () => {
     const server = createSuperagentMcpServer();
     const list = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
     const names = (await list({ method: "tools/list", params: {} })).tools.map((entry: any) => entry.name);
-    expect(names.filter((name: string) => name.startsWith("superagent_motion_"))).toHaveLength(13);
+    expect(names.filter((name: string) => name.startsWith("superagent_motion_"))).toHaveLength(14);
     expect(getProjectCapabilityForTool("superagent_motion_create")).toBe("write");
     expect(getProjectCapabilityForTool("superagent_motion_edit")).toBe("write");
     expect(getProjectCapabilityForTool("superagent_motion_import_image")).toBe("write");
@@ -41,6 +41,7 @@ describe("Motion MCP integration", () => {
     expect(getProjectCapabilityForTool("superagent_motion_status")).toBe("read");
     expect(getProjectCapabilityForTool("superagent_motion_storage")).toBe("read");
     expect(getProjectCapabilityForTool("superagent_motion_queue_recovery")).toBe("read");
+    expect(getProjectCapabilityForTool("superagent_motion_supervisor")).toBe("read");
   });
 
   it("creates and edits using the authorized workspace without losing revision guards", async () => {
@@ -65,6 +66,9 @@ describe("Motion MCP integration", () => {
       edits: [{ type: "set-text", layerId: "title", text: "Stale" }],
     });
     expect(stale.isError).toBe(true);
+    const queued = await invoke(call, "superagent_motion_render", { motionId: project.id, width: 160, supervised: true });
+    expect(queued.isError, queued.content?.[0]?.text).toBeFalsy();
+    expect(JSON.parse(queued.content[0].text)).toMatchObject({ status: "queued", dispatchMode: "supervised" });
   });
 
   it("imports canonical image assets through a write-scoped tool, rejecting malformed data and foreign workspace paths", async () => {
@@ -119,6 +123,11 @@ describe("Motion MCP integration", () => {
     const status = await invoke(call, "superagent_motion_queue_recovery");
     expect(status.isError, status.content?.[0]?.text).toBeFalsy();
     expect(JSON.parse(status.content[0].text)).toMatchObject({ queued: 0, eligible: 0 });
+    const supervisor = await invoke(call, "superagent_motion_supervisor");
+    expect(supervisor.isError).toBeFalsy();
+    expect(JSON.parse(supervisor.content[0].text)).toMatchObject({
+      mode: "opt-in-fifo", queuedSupervised: 0, leader: "free",
+    });
     const invalid = await invoke(call, "superagent_motion_queue_recovery", { minAgeSeconds: 0 });
     expect(invalid.isError).toBe(true);
   });

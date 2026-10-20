@@ -23,6 +23,7 @@ export interface MotionJob {
   ownerPid?: number;
   ownerStartedAt?: string;
   status: MotionJobStatus;
+  dispatchMode?: "supervised";
   profile: RenderProfile;
   framesCompleted: number;
   createdAt: string;
@@ -199,6 +200,46 @@ export async function requestMotionCancellation(workspace: string, id: string): 
   const job = await getMotionJob(workspace, id);
   if (!activeStatuses.has(job.status)) return { jobId: id, cancellationRequested: false };
   const dir = await motionJobDir(workspace, "jobs");
+  if (job.dispatchMode === "supervised" && job.status === "queued") {
+    // Serialize cancellation against FIFO admission: a job that has not been
+    // dispatched can be cancelled without waiting for a nonexistent worker.
+    return withMotionQueueAdmission(dir, async () => {
+      const current = await getMotionJob(workspace, id);
+      if (!activeStatuses.has(current.status)) return { jobId: id, cancellationRequested: false };
+      if (current.dispatchMode === "supervised" && current.status === "queued") {
+        const claimExists = (name: string) => fs.lstat(path.join(dir, name))
+          .then(() => true, error => (error as NodeJS.ErrnoException).code !== "ENOENT");
+        let claimed = false;
+        for (const suffix of [".waiting.lock", ".runner.lock", ".dispatch.lock", ".recovery.lock"]) {
+          if (await claimExists(id + suffix)) { claimed = true; break; }
+        }
+        for (let slot = 0; slot < 4 && !claimed; slot++) {
+          const file = path.join(dir, ".render-slot-" + slot + ".lock");
+          try {
+            const stat = await fs.lstat(file);
+            if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1000) { claimed = true; break; }
+            const owner: unknown = JSON.parse(await fs.readFile(file, "utf8"));
+            if (!owner || typeof owner !== "object" ||
+              (owner as { jobId?: unknown }).jobId === id) claimed = true;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") claimed = true;
+          }
+        }
+        if (!claimed) {
+          current.status = "cancelled";
+          current.error = "Cancelled before FIFO supervisor dispatch";
+          current.updatedAt = new Date().toISOString();
+          await persist(current, dir);
+          await fs.rm(cancelFile(dir, id), { force: true });
+          await releaseClaim(dir, current);
+          return { jobId: id, cancellationRequested: true };
+        }
+      }
+      try { await fs.writeFile(cancelFile(dir, id), "cancel\n", { flag: "wx", mode: 0o600 }); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+      return { jobId: id, cancellationRequested: true };
+    });
+  }
   try { await fs.writeFile(cancelFile(dir, id), "cancel\n", { flag: "wx", mode: 0o600 }); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
   return { jobId: id, cancellationRequested: true };
@@ -234,7 +275,7 @@ async function releaseClaim(dir: string, job: MotionJob): Promise<void> {
 /** Persist a complete and immutable source snapshot *before* starting any worker. */
 export async function prepareMotionJob(
   workspace: string, projectId: string,
-  options: { width?: number; maxFrames?: number } = {},
+  options: { width?: number; maxFrames?: number; dispatchMode?: "supervised" } = {},
 ): Promise<MotionJob> {
   const project = await getMotionProject(workspace, projectId);
   const profile = deriveRenderProfile(project, options.width, options.maxFrames);
@@ -256,7 +297,9 @@ export async function prepareMotionJob(
     schemaVersion: 1, id, workspaceRoot: project.workspaceRoot,
     projectId, revision: project.revision,
     sourceSha256: crypto.createHash("sha256").update(bytes).digest("hex"),
-    profile, framesCompleted: 0, status: "queued", createdAt: now, updatedAt: now,
+    profile, framesCompleted: 0, status: "queued",
+    ...(options.dispatchMode === "supervised" ? { dispatchMode: "supervised" as const } : {}),
+    createdAt: now, updatedAt: now,
   };
   let success = false;
   try {
@@ -431,6 +474,12 @@ export async function renderMotionJob(
 ): Promise<MotionJob> {
   const job = await prepareMotionJob(workspace, projectId, options);
   return runPreparedMotionJob(workspace, job.id, options);
+}
+/** Persist a pinned job for the opt-in FIFO supervisor, without spawning workers. */
+export async function enqueueSupervisedMotionJob(
+  workspace: string, projectId: string, options: { width?: number; maxFrames?: number } = {},
+): Promise<MotionJob> {
+  return prepareMotionJob(workspace, projectId, { ...options, dispatchMode: "supervised" });
 }
 /** Spawn a previously prepared immutable job. No queue admission or lock reclaim. */
 export async function spawnPreparedMotionWorker(workspace: string, id: string): Promise<void> {

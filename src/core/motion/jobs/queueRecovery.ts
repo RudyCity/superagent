@@ -49,7 +49,9 @@ async function queueEligibility(workspace: string, dir: string, jobId: string, m
   const job = await getMotionJob(workspace, jobId);
   if (job.status !== "queued") return "not queued";
   const age = Date.now() - Date.parse(job.updatedAt);
-  if (!Number.isFinite(age) || age < minAge * 1000) return "job is recent (a worker might still start)";
+  // Supervised jobs are intentionally persisted without a spawned worker.
+  const ageThreshold = job.dispatchMode === "supervised" ? 0 : minAge * 1000;
+  if (!Number.isFinite(age) || age < ageThreshold) return "job is recent (a worker might still start)";
   if (job.ownerPid) return "owner identity is unverified";
   if (!await claimOwner(dir, job.projectId, jobId)) return "project claim is missing, unsafe or foreign";
   for (const suffix of [".runner.lock", ".waiting.lock", ".dispatch.lock", ".recovery.lock", ".cancel"]) {
@@ -107,7 +109,7 @@ export type MotionDispatchOutcome = {
  */
 export async function dispatchOrphanedMotionQueue(
   workspace: string,
-  options: { minAgeSeconds?: number; limit?: number; apply: boolean },
+  options: { minAgeSeconds?: number; limit?: number; apply: boolean; supervisedOnly?: boolean; jobIds?: string[] },
 ): Promise<{ results: MotionDispatchOutcome[]; preview: QueuedRecoveryReport }> {
   if (options.apply !== true) throw new Error("Motion queue dispatch requires explicit --apply confirmation");
   const minAgeSeconds = ageSeconds(options.minAgeSeconds);
@@ -115,7 +117,9 @@ export async function dispatchOrphanedMotionQueue(
   const preview = await inspectMotionQueueRecovery(workspace, { minAgeSeconds });
   const dir = await motionJobDir(workspace, "jobs");
   const results: MotionDispatchOutcome[] = [];
-  for (const item of preview.items.filter(item => item.state === "eligible").slice(0, limit)) {
+  for (const item of preview.items.filter(item => item.state === "eligible" &&
+    (!options.jobIds || options.jobIds.includes(item.jobId))).slice(0, limit)) {
+    if (options.supervisedOnly && (await getMotionJob(workspace, item.jobId)).dispatchMode !== "supervised") continue;
     const file = path.join(dir, item.jobId + ".dispatch.lock");
     const token = crypto.randomBytes(16).toString("hex");
     const claimed = await withMotionQueueAdmission(dir, async () => {

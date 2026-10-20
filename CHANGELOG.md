@@ -1,3 +1,11 @@
+## [Unreleased] - Motion Studio opt-in FIFO supervisor (2026-10-21)
+### Added
+- Persisted supervised render jobs and a foreground FIFO worker supervisor with exclusive workspace ownership, bounded renderer slots and read-only status.
+- CLI supervisor once/watch, opt-in supervised render, supervised HTTP/MCP render and safe supervisor diagnostics; T-Line opt-in FIFO checkbox and status.
+- Atomic pre-dispatch cancellation of supervised queued jobs without leaving stale project claims.
+### Safety
+- Existing immediate render behavior is unchanged. Supervisor locks fail closed after crash, and running render processes are never automatically restarted or killed.
+
 ## [Unreleased] - Motion Studio orphan-queue recovery (2026-10-21)
 ### Added
 - Read-only queued-job recovery diagnostics with age/claim/snapshot verification and explicit operator-approved re-dispatch of orphaned queued jobs. Concurrent dispatchers use an exclusive handoff lock; uncertain launches stay fail-closed.

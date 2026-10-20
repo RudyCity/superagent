@@ -18,5 +18,6 @@ export const MOTION_CAPABILITIES = Object.freeze({
   storageInspection: true,
   confirmedFailedJobCleanup: true,
   operatorQueuedJobRedispatch: true,
+  optInFifoSupervisor: true,
   automaticCrashRecovery: false,
 });
