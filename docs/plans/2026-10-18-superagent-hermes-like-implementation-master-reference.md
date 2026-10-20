@@ -542,3 +542,5 @@ Execute these actions in this order before broad feature work:
 13. Cross-process claim diagnostics and deterministic tunnel installation unit tests passed final local full regression (371 passed suites, 1 skipped; 3,554 passed tests, 5 skipped, exit 0) on 2026-10-20. Locked output status is inspectable only from its authorized workspace, but orphaned locks still require manual child-process verification before recovery. This is local acceptance, not production certification.
 
 14. Phase 4 per-job multi-writer metadata: see `docs/plans/2026-10-20-superagent-hermes-phase-4-cli-job-shards.md`. Immutable per-job snapshots prevent shared-config `jobs.json` lost updates and avoid rewriting foreign live jobs; compacting history and post-crash orphan reconciliation remain open.
+
+15. Phase 4 bounded per-job snapshot retention: see docs/plans/2026-10-20-superagent-hermes-phase-4-job-shard-retention.md. Owner-scoped compaction retains 8 committed recovery revisions, never deletes peer job directories or unknown files, and fails closed on invalid newest state. Global job/log retention, OS-level sandboxing and SSH/OAuth staging gates remain open.
