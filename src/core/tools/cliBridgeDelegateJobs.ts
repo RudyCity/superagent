@@ -12,6 +12,10 @@ import {
   resolveExpectedArtifacts, snapshotExpectedArtifacts, inspectExpectedArtifacts, artifactClaimIdentity,
   type ArtifactBaseline, type ArtifactEvidence,
 } from "./cliBridgeArtifactEvidence.js";
+import {
+  acquireCrossProcessArtifactClaims, releaseCrossProcessArtifactClaims,
+  type CrossProcessArtifactClaims,
+} from "./cliBridgeCrossProcessClaims.js";
 
 export type DelegateJobStatus =
   | "starting" | "running" | "cancelling" | "succeeded" | "failed" | "timed_out" | "cancelled" | "interrupted" | "verification_failed";
@@ -69,12 +73,19 @@ const killTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const artifactClaims = new Map<string, string>();
 const artifactBaselines = new Map<string, ArtifactBaseline[]>();
 const jobClaims = new Map<string, string[]>();
-function releaseArtifactClaims(jobId: string): void {
-  for (const file of jobClaims.get(jobId) ?? []) {
-    if (artifactClaims.get(file) === jobId) artifactClaims.delete(file);
+const jobCrossProcessClaims = new Map<string, CrossProcessArtifactClaims>();
+async function releaseArtifactClaims(jobId: string): Promise<void> {
+  const owned = jobCrossProcessClaims.get(jobId);
+  try {
+    if (owned) await releaseCrossProcessArtifactClaims(owned);
+  } finally {
+    jobCrossProcessClaims.delete(jobId);
+    for (const file of jobClaims.get(jobId) ?? []) {
+      if (artifactClaims.get(file) === jobId) artifactClaims.delete(file);
+    }
+    jobClaims.delete(jobId);
+    artifactBaselines.delete(jobId);
   }
-  jobClaims.delete(jobId);
-  artifactBaselines.delete(jobId);
 }
 let initializePromise: Promise<void> | undefined;
 let persistQueue: Promise<void> = Promise.resolve();
@@ -230,7 +241,11 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
       job.completionState = job.status === "cancelled" ? "cancelled"
         : job.status === "timed_out" ? "timed_out" : "failed";
     }
-    releaseArtifactClaims(job.jobId);
+    try {
+      await releaseArtifactClaims(job.jobId);
+    } catch (error) {
+      job.error = [job.error, "Artifact lock cleanup needs operator review: " + (error instanceof Error ? error.message : String(error))].filter(Boolean).join("; ");
+    }
     const timer = killTimers.get(job.jobId);
     if (timer) clearTimeout(timer);
     killTimers.delete(job.jobId);
@@ -290,6 +305,10 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   for (const file of claimKeys) artifactClaims.set(file, jobId);
   try {
     if (artifactFiles.length) {
+      // The per-process reservation happens before this await. Other SuperAgent
+      // instances must acquire the same host-local exclusive claims before
+      // reading pre-run baselines or spawning a child.
+      jobCrossProcessClaims.set(jobId, await acquireCrossProcessArtifactClaims(claimKeys, jobId));
       artifactBaselines.set(jobId, await snapshotExpectedArtifacts(artifactFiles, job.workspaceRoot ?? job.cwd));
     }
     await fs.mkdir(logDir, { recursive: true });
@@ -298,7 +317,7 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   } catch (error) {
     job.status = "failed";
     job.completionState = "failed";
-    releaseArtifactClaims(jobId);
+    await releaseArtifactClaims(jobId).catch(() => {});
     job.error = error instanceof Error ? error.message : String(error);
     job.endedAt = Date.now();
     job.durationMs = job.endedAt - job.startedAt;
@@ -317,7 +336,7 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   } catch (error) {
     job.status = "failed";
     job.completionState = "failed";
-    releaseArtifactClaims(jobId);
+    await releaseArtifactClaims(jobId).catch(() => {});
     job.error = error instanceof Error ? error.message : String(error);
     job.endedAt = Date.now();
     job.durationMs = job.endedAt - job.startedAt;
@@ -397,7 +416,8 @@ export async function __resetDelegateJobsForTests(): Promise<void> {
   await Promise.allSettled([...runners.values()]);
   for (const timer of killTimers.values()) clearTimeout(timer);
   jobs.clear(); processes.clear(); runners.clear(); logQueues.clear(); cancellationRequested.clear(); killTimers.clear();
-  artifactClaims.clear(); artifactBaselines.clear(); jobClaims.clear();
+  await Promise.allSettled([...jobCrossProcessClaims.keys()].map(releaseArtifactClaims));
+  artifactClaims.clear(); artifactBaselines.clear(); jobClaims.clear(); jobCrossProcessClaims.clear();
   initializePromise = undefined;
   persistQueue = Promise.resolve();
   try { await fs.rm(getStoragePath(), { force: true }); } catch {}
