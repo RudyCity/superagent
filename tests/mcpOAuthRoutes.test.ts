@@ -144,6 +144,30 @@ describe("authorization flow", () => {
     config = makeConfig(store, bootstrap);
   });
 
+  it("rejects unsupported OAuth scopes and admin grants without write consent", async () => {
+    const { challenge } = pkcePair();
+    const auth = (scope: string) => getReq(
+      "/oauth/authorize?client_id=" + CLIENT_ID
+      + "&redirect_uri=" + encodeURIComponent(REDIRECT_URI)
+      + "&code_challenge=" + challenge + "&code_challenge_method=S256"
+      + "&scope=" + encodeURIComponent(scope)
+    );
+    const unsupported = await handleOAuthRoute(auth("mcp:tools:root"), config);
+    expect(unsupported.statusCode).toBe(400);
+    expect(JSON.parse(unsupported.body).error).toBe("invalid_scope");
+    const adminOnly = await handleOAuthRoute(auth("mcp:tools:admin"), config);
+    expect(adminOnly.statusCode).toBe(400);
+    expect(JSON.parse(adminOnly.body).error).toBe("invalid_scope");
+    const adminConsent = await handleOAuthRoute(
+      auth("mcp:tools mcp:tools:write mcp:tools:admin"), config,
+    );
+    expect(adminConsent.statusCode).toBe(200);
+    expect(adminConsent.body).toContain("Privileged request");
+    expect(adminConsent.body).toContain("project registration and access grants");
+    const requestId = /name="request_id" value="([^"]+)"/.exec(adminConsent.body)?.[1];
+    expect(store.getAuthorizationRequest(requestId!)?.scope).toContain("mcp:tools:admin");
+  });
+
   it("completes PKCE end-to-end", async () => {
     const { tokens } = await fullFlow(store, config, bootstrap);
     expect(store.verifyAccessToken(tokens.access_token)).not.toBeNull();

@@ -146,6 +146,32 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
     expect(fs.readFileSync(path.join(root,"audit.jsonl"),"utf8")).not.toContain("DENIED_SENTINEL");
   }, 35000);
 
+  it("requires separately consented admin scope for project access management over HTTP", async () => {
+    const writer = await issue("client-a", ["mcp:tools", "mcp:tools:write"]);
+    const admin = await issue("client-b", ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"]);
+    const writerSession = await initialize(writer);
+    const adminSession = await initialize(admin);
+    const listWriter = await post(writer, rpc(21, "tools/list"), writerSession);
+    expect(listWriter.status).toBe(200);
+    expect(listWriter.body).not.toContain('"name":"superagent_grant_project_access"');
+    expect(listWriter.body).toContain('"name":"superagent_write_files"');
+    const listAdmin = await post(admin, rpc(22, "tools/list"), adminSession);
+    expect(listAdmin.status).toBe(200);
+    expect(listAdmin.body).toContain('"name":"superagent_grant_project_access"');
+    const denied = await post(writer, rpc(23, "tools/call", {
+      name: "superagent_grant_project_access",
+      arguments: { projectId: "nonexistent", capabilities: ["read"] },
+    }), writerSession);
+    expect(denied.body).toContain("mcp:tools:admin");
+    // Admin scope is necessary, but local Full YOLO and project checks remain
+    // independently enforced; this test never changes a real access grant.
+    const notElevated = await post(admin, rpc(24, "tools/call", {
+      name: "superagent_grant_project_access",
+      arguments: { projectId: "nonexistent", capabilities: ["read"] },
+    }), adminSession);
+    expect(notElevated.body).not.toContain("requires OAuth mcp:tools:admin");
+  }, 30000);
+
   it("refresh rotation requires a new MCP session and rejects replayed refresh grants", async () => {
     const issued = await issuePair("client-b", ["mcp:tools"]);
     const oldSession = await initialize(issued.access_token);

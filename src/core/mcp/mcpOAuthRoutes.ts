@@ -21,7 +21,7 @@ import { McpOAuthStore, randomToken } from "./mcpOAuthStore.js";
 import { sha256Hex, constantTimeEqual } from "./mcpAuth.js";
 import { recordMcpOAuthAudit, type McpOAuthAuditStage } from "./mcpOAuthAudit.js";
 
-export const OAUTH_SCOPES = ["mcp:tools", "mcp:tools:write"];
+export const OAUTH_SCOPES = ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"];
 
 export interface McpOAuthRoutesConfig {
   store: McpOAuthStore;
@@ -100,6 +100,7 @@ function consentPage(req: PendingSummary): string {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Approve MCP access</title></head><body>
 <h1>Approve MCP tunnel access</h1>
 <p>Client <b>${escapeHtml(req.clientId)}</b> requests MCP access with scopes: <b>${escapeHtml(req.scope.join(" "))}</b>.</p>
+${req.scope.includes("mcp:tools:admin") ? "<p><strong>Privileged request:</strong> administrative scope allows changes to project registration and access grants. Approve only a trusted client.</p>" : ""}
 <p>Redirect: <code>${escapeHtml(req.redirectUri)}</code></p>
 <form method="post" action="/oauth/authorize">
 <input type="hidden" name="request_id" value="${escapeHtml(req.requestId)}">
@@ -221,6 +222,12 @@ async function handleOAuthRouteInternal(
     const codeChallengeMethod = url.searchParams.get("code_challenge_method") || "";
     const state = url.searchParams.get("state") || "";
     const scope = (url.searchParams.get("scope") || "mcp:tools").split(/\s+/).filter(Boolean);
+    if (scope.some(item => !OAUTH_SCOPES.includes(item))) {
+      return json(400, { error: "invalid_scope", error_description: "requested scope is not supported" });
+    }
+    if (scope.includes("mcp:tools:admin") && !scope.includes("mcp:tools:write")) {
+      return json(400, { error: "invalid_scope", error_description: "mcp:tools:admin requires mcp:tools:write" });
+    }
     const requestedResource = url.searchParams.get("resource") || undefined;
     if (!clientId || !redirectUri || !codeChallenge) {
       return json(400, { error: "invalid_request", error_description: "client_id, redirect_uri, and code_challenge are required" });

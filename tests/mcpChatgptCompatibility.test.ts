@@ -71,6 +71,9 @@ describe("per-tool security metadata", () => {
     expect(safe[0].scopes).not.toContain("mcp:tools:write");
     const dangerous = getToolSecuritySchemes("superagent_exec_command", "oauth");
     expect(dangerous[0].scopes).toContain("mcp:tools:write");
+    const privileged = getToolSecuritySchemes("superagent_grant_project_access", "oauth");
+    expect(privileged[0].scopes).toContain("mcp:tools:write");
+    expect(privileged[0].scopes).toContain("mcp:tools:admin");
   });
 
   it("tools/list includes annotations and securitySchemes via _meta", async () => {

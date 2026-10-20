@@ -177,7 +177,7 @@ function toResolvedProjectContext(target: ResolvedProjectTarget | null): Resolve
 }
 import { PROJECT_REGISTRY_TOOL_NAMES, WORKSPACE_SCOPED_MCP_TOOLS } from "./mcpWorkspacePolicy.js";
 import { MOTION_MCP_TOOL_DEFS, dispatchMotionMcpTool } from "./tools/motionMcpTools.js";
-import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
+import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, PRIVILEGED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
 import type { McpServerOptions } from "./mcpToolPolicy.js";
 export type { McpServerOptions } from "./mcpToolPolicy.js";
 export { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
@@ -549,12 +549,15 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     const canDiscoverRead = authMode !== "oauth"
       || (Array.isArray(oauthScopes) && oauthScopes.some(
         scope => scope === "mcp:tools" || scope === "mcp:tools:read" || scope === "mcp:tools:write"));
+    const canDiscoverAdmin = authMode !== "oauth"
+      || (Array.isArray(oauthScopes) && oauthScopes.includes("mcp:tools:admin") && canDiscoverDangerous);
     // Disabled tools stay hidden regardless of dangerous/YOLO mode or allowlists.
     const tools = allTools.filter(
       (t) => !DISABLED_MCP_TOOLS.has(t.name)
         && canDiscoverRead
         && (!effectiveAllowedTools || effectiveAllowedTools.includes(t.name))
         && (MCP_TOOL_CLASSIFICATION[t.name] !== "dangerous" || canDiscoverDangerous)
+        && (!PRIVILEGED_MCP_TOOLS.has(t.name) || canDiscoverAdmin)
     );
     const annotated = tools.map((t) => ({
       ...t,
@@ -937,10 +940,15 @@ function extractMcpResultText(result: unknown): string {
       const allowed = isDangerous
         ? scopes.includes("mcp:tools:write")
         : scopes.some(scope => scope === "mcp:tools" || scope === "mcp:tools:read" || scope === "mcp:tools:write");
-      if (!allowed) {
-        const reason = "missing required OAuth scope " + (isDangerous ? "mcp:tools:write" : "mcp:tools");
+      const requiredScope = !allowed
+        ? (isDangerous ? "mcp:tools:write" : "mcp:tools")
+        : PRIVILEGED_MCP_TOOLS.has(toolName) && !scopes.includes("mcp:tools:admin")
+          ? "mcp:tools:admin" : null;
+      if (requiredScope) {
+        const reason = "missing required OAuth scope " + requiredScope;
         auditContext.authorizationDecision = "denied";
-        auditContext.errorCode = "insufficient_oauth_scope";
+        auditContext.errorCode = requiredScope === "mcp:tools:admin"
+          ? "insufficient_oauth_admin_scope" : "insufficient_oauth_scope";
         // Denied OAuth scopes must not leak file contents, shell commands or
         // other caller-supplied arguments into audit/activity subscribers.
         emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
@@ -955,7 +963,7 @@ function extractMcpResultText(result: unknown): string {
           workspace: activeWorkspace,
         });
         throw new McpError(ErrorCode.InvalidRequest,
-          "Tool requires OAuth mcp:tools:write scope; local dangerous/YOLO mode cannot elevate token permissions.");
+          "Tool requires OAuth " + requiredScope + " scope; local dangerous/YOLO mode cannot elevate token permissions.");
       }
     }
     const registryManagementTools = new Set([

@@ -368,6 +368,38 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
     }, {})).rejects.toThrow(/mcp:tools/i);
   });
 
+  it("revoking only admin scope immediately hides and blocks project administration", async () => {
+    let scopes = ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"];
+    const events: any[] = [];
+    const server = createSuperagentMcpServer({
+      workspace: testWorkspace, authMode: "oauth", allowDangerous: true,
+      getIdentity: () => ({ mode: "oauth", subject: "admin-client", scopes }),
+      onToolCall: event => events.push(event),
+    });
+    const listing = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
+    const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const names = async (): Promise<string[]> => (await listing({ method: "tools/list", params: {} }, {}))
+      .tools.map((tool: any) => tool.name);
+    expect(await names()).toContain("superagent_grant_project_access");
+    expect(await names()).toContain("superagent_write_files");
+    scopes = ["mcp:tools", "mcp:tools:write"];
+    expect(await names()).not.toContain("superagent_grant_project_access");
+    expect(await names()).toContain("superagent_write_files");
+    await expect(call({
+      method: "tools/call",
+      params: {
+        name: "superagent_grant_project_access",
+        arguments: { projectId: "should-not-exist", capabilities: ["read"], secret: "SENTINEL_NOT_FOR_AUDIT" },
+      },
+    }, {})).rejects.toThrow(/mcp:tools:admin/);
+    expect(events.at(-1)).toMatchObject({
+      tool: "superagent_grant_project_access", ok: false,
+      authorizationDecision: "denied", errorCode: "insufficient_oauth_admin_scope",
+      args: {},
+    });
+    expect(JSON.stringify(events)).not.toContain("SENTINEL_NOT_FOR_AUDIT");
+  });
+
   it("OAuth discovery updates when the same client loses write scope", async () => {
     let scopes = ["mcp:tools", "mcp:tools:write"];
     const server = createSuperagentMcpServer({

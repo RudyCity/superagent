@@ -71,6 +71,19 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   ...WORKSPACE_CHAIN_MCP_TOOL_CLASSIFICATIONS,
 };
 
+/**
+ * Registry and access-grant mutation requires a separately consented OAuth
+ * admin scope. Ordinary write grants cannot elevate project permissions.
+ * Static-bearer / stdio retain their local policy enforcement.
+ */
+export const PRIVILEGED_MCP_TOOLS: ReadonlySet<string> = new Set([
+  "superagent_register_project",
+  "superagent_update_project",
+  "superagent_remove_project",
+  "superagent_grant_project_access",
+  "superagent_revoke_project_access",
+]);
+
 /** Tools that must never be discoverable or callable over the MCP interface. */
 export const DISABLED_MCP_TOOLS: ReadonlySet<string> = new Set([
   // Agent lifecycle/control stays local-only. External CLI delegation is
@@ -128,9 +141,11 @@ export function getToolSecuritySchemes(
 ): McpToolSecurityScheme[] {
   const level = MCP_TOOL_CLASSIFICATION[toolName];
   if (authMode === "oauth") {
-    return level === "dangerous"
-      ? [{ type: "oauth2", scopes: ["mcp:tools", "mcp:tools:write"] }]
-      : [{ type: "oauth2", scopes: ["mcp:tools"] }];
+    return PRIVILEGED_MCP_TOOLS.has(toolName)
+      ? [{ type: "oauth2", scopes: ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"] }]
+      : level === "dangerous"
+        ? [{ type: "oauth2", scopes: ["mcp:tools", "mcp:tools:write"] }]
+        : [{ type: "oauth2", scopes: ["mcp:tools"] }];
   }
   return [
     {
