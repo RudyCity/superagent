@@ -10,6 +10,7 @@ import { MotionValidationError } from "./schema/validation.js";
 import type { MotionEdit } from "./schema/types.js";
 import { MOTION_CAPABILITIES } from "./motionCapabilities.js";
 import { motionStorageMaintenance } from "./jobs/storageMaintenance.js";
+import { inspectMotionQueueRecovery } from "./jobs/queueRecovery.js";
 import { importMotionAsset, readMotionAsset } from "./assets/motionAssets.js";
 import { importMotionAudio, readMotionAudio } from "./assets/motionAudio.js";
 import { decodeMotionMediaBase64 } from "./assets/motionInput.js";
@@ -121,6 +122,8 @@ export async function handleMotionHttpRoute(
       json(res, ctx, started.status === "failed" ? 503 : 202, started);
     } else if (pathname === "/api/motion/scheduler" && method === "GET") {
       json(res, ctx, 200, await getMotionSchedulerStatus(workspace));
+    } else if (pathname === "/api/motion/queue-recovery" && method === "GET") {
+      json(res, ctx, 200, await inspectMotionQueueRecovery(workspace));
     } else if (pathname === "/api/motion/storage" && method === "GET") {
       json(res, ctx, 200, await motionStorageMaintenance(workspace));
     } else if (pathname === "/api/motion/jobs" && method === "GET") {

@@ -17,5 +17,6 @@ export const MOTION_CAPABILITIES = Object.freeze({
   detachedRenderJobs: true,
   storageInspection: true,
   confirmedFailedJobCleanup: true,
+  operatorQueuedJobRedispatch: true,
   automaticCrashRecovery: false,
 });

@@ -27,11 +27,11 @@ const invoke = async (handler: any, name: string, args: Record<string, unknown> 
   handler({ method: "tools/call", params: { name, arguments: args } });
 
 describe("Motion MCP integration", () => {
-  it("exposes all twelve tools with classification and explicit project capabilities", async () => {
+  it("exposes all thirteen tools with classification and explicit project capabilities", async () => {
     const server = createSuperagentMcpServer();
     const list = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
     const names = (await list({ method: "tools/list", params: {} })).tools.map((entry: any) => entry.name);
-    expect(names.filter((name: string) => name.startsWith("superagent_motion_"))).toHaveLength(12);
+    expect(names.filter((name: string) => name.startsWith("superagent_motion_"))).toHaveLength(13);
     expect(getProjectCapabilityForTool("superagent_motion_create")).toBe("write");
     expect(getProjectCapabilityForTool("superagent_motion_edit")).toBe("write");
     expect(getProjectCapabilityForTool("superagent_motion_import_image")).toBe("write");
@@ -40,6 +40,7 @@ describe("Motion MCP integration", () => {
     expect(getProjectCapabilityForTool("superagent_motion_cancel")).toBe("execute");
     expect(getProjectCapabilityForTool("superagent_motion_status")).toBe("read");
     expect(getProjectCapabilityForTool("superagent_motion_storage")).toBe("read");
+    expect(getProjectCapabilityForTool("superagent_motion_queue_recovery")).toBe("read");
   });
 
   it("creates and edits using the authorized workspace without losing revision guards", async () => {
@@ -110,6 +111,16 @@ describe("Motion MCP integration", () => {
     expect(state.maintenance.minAgeDays).toBe(12);
     expect(state.jobs.total).toBe(0);
     expect(state).not.toHaveProperty("deletedJobIds");
+  });
+  it("reports queued recovery readiness without allowing an unprivileged spawn", async () => {
+    const root = await fixture();
+    const server = createSuperagentMcpServer({ workspace: root });
+    const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const status = await invoke(call, "superagent_motion_queue_recovery");
+    expect(status.isError, status.content?.[0]?.text).toBeFalsy();
+    expect(JSON.parse(status.content[0].text)).toMatchObject({ queued: 0, eligible: 0 });
+    const invalid = await invoke(call, "superagent_motion_queue_recovery", { minAgeSeconds: 0 });
+    expect(invalid.isError).toBe(true);
   });
   it("rejects out-of-workspace routing through an explicit unauthorized path", async () => {
     const root = await fixture();

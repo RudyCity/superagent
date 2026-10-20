@@ -59,6 +59,10 @@ describe("Motion HTTP and artifact transport", () => {
     expect(info.apiVersion).toBe(1);
     expect(info.capabilities.renderWidthMax).toBe(1920);
     expect(info.capabilities.nativeTLineEditor).toBe("external-not-verified");
+    const recovery = await request("/api/motion/queue-recovery");
+    expect(recovery.status).toBe(200);
+    expect((await recovery.json()).queued).toBe(0);
+    expect((await request("/api/motion/queue-recovery", { method: "POST" })).status).toBe(404);
     const storage = await request("/api/motion/storage");
     expect(storage.status).toBe(200);
     expect((await storage.json()).maintenance.minAgeDays).toBe(7);

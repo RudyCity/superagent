@@ -213,6 +213,15 @@ async function verifySnapshot(workspace: string, job: MotionJob, dir: string): P
     project.workspaceRoot !== await motionWorkspaceRoot(workspace)) throw new Error("Foreign or mismatched Motion job source");
   return project;
 }
+/** Verify immutable source and media before dispatching a persisted queued job. */
+export async function verifyPreparedMotionSnapshot(workspace: string, id: string): Promise<MotionProject> {
+  const job = await getMotionJob(workspace, id);
+  if (job.status !== "queued") throw new Error("Motion job is not queued for safe dispatch");
+  const project = await verifySnapshot(workspace, job, await motionJobDir(workspace, "jobs"));
+  await resolveMotionAssets(workspace, project);
+  await resolveMotionAudioTracks(workspace, project);
+  return project;
+}
 async function releaseClaim(dir: string, job: MotionJob): Promise<void> {
   const claim = projectClaim(dir, job.projectId);
   try {
@@ -423,6 +432,25 @@ export async function renderMotionJob(
   const job = await prepareMotionJob(workspace, projectId, options);
   return runPreparedMotionJob(workspace, job.id, options);
 }
+/** Spawn a previously prepared immutable job. No queue admission or lock reclaim. */
+export async function spawnPreparedMotionWorker(workspace: string, id: string): Promise<void> {
+  const job = await getMotionJob(workspace, id);
+  if (job.status !== "queued") throw new Error("Motion worker can only start for queued records");
+  const moduleUrl = fileURLToPath(import.meta.url);
+  const isSourceRuntime = moduleUrl.endsWith(".ts");
+  const suffix = isSourceRuntime ? ".ts" : ".js";
+  const worker = fileURLToPath(new URL("./motionWorkerEntry" + suffix, import.meta.url));
+  const runtimeArgs = isSourceRuntime ? ["--import", "tsx"] : [];
+  const child = spawn(process.execPath, [...runtimeArgs, worker, job.workspaceRoot, job.id], {
+    detached: true, stdio: "ignore", windowsHide: true,
+    env: { ...process.env, SUPERAGENT_MOTION_WORKER: "1" },
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.once("spawn", () => resolve());
+    child.once("error", reject);
+  });
+  child.unref();
+}
 /**
  * Launch a detached Node worker against an already-persisted immutable job.
  * A successful spawn is not a completion guarantee; inspect status for outcome.
@@ -431,22 +459,8 @@ export async function startDetachedMotionJob(
   workspace: string, projectId: string, options: { width?: number; maxFrames?: number } = {},
 ): Promise<MotionJob> {
   const job = await prepareMotionJob(workspace, projectId, options);
-  const moduleUrl = fileURLToPath(import.meta.url);
-  const isSourceRuntime = moduleUrl.endsWith(".ts");
-  const suffix = isSourceRuntime ? ".ts" : ".js";
-  const worker = fileURLToPath(new URL("./motionWorkerEntry" + suffix, import.meta.url));
   try {
-    // Do not inherit debugger flags or caller-specific execution hooks in a detached process.
-    const runtimeArgs = isSourceRuntime ? ["--import", "tsx"] : [];
-    const child = spawn(process.execPath, [...runtimeArgs, worker, job.workspaceRoot, job.id], {
-      detached: true, stdio: "ignore", windowsHide: true,
-      env: { ...process.env, SUPERAGENT_MOTION_WORKER: "1" },
-    });
-    await new Promise<void>((resolve, reject) => {
-      child.once("spawn", () => resolve());
-      child.once("error", reject);
-    });
-    child.unref();
+    await spawnPreparedMotionWorker(workspace, job.id);
     return job;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

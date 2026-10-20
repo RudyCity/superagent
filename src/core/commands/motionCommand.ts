@@ -17,6 +17,7 @@ const help = [
   "  /motion recovery <job-id> (read-only)",
   "  /motion cancel <job-id>",
   "  /motion storage [days] (read-only)",
+  "  /motion queue-recovery (read-only)",
   "  /motion doctor",
   "Interactive renders are foreground; scriptable CLI supports detached rendering.",
 ].join("\n");
@@ -50,6 +51,11 @@ export const motionCommand: SlashCommand = {
         const { motionStorageMaintenance } = await import("../motion/jobs/storageMaintenance.js");
         const status = await motionStorageMaintenance(workspace, { minAgeDays: days });
         emit(ctx, JSON.stringify(status, null, 2));
+        return;
+      }
+      if (action === "queue-recovery") {
+        const { inspectMotionQueueRecovery } = await import("../motion/jobs/queueRecovery.js");
+        emit(ctx, JSON.stringify(await inspectMotionQueueRecovery(workspace), null, 2));
         return;
       }
       if (action === "doctor") {

@@ -740,3 +740,15 @@ superagent motion prune --days 7 --apply --workspace . --json
 ```
 
 `storage` is a read-only preview; `prune --apply` removes only old, unclaimed failed/cancelled/interrupted job records after explicit confirmation. Active/suspicious claims, partial outputs, and finished videos are preserved. Safe `superagent_motion_storage` and authenticated `GET /api/motion/storage` provide read-only diagnostics for agents/T-Line. This is *not* unattended crash recovery.
+
+### Recovering orphaned queued Motion renders
+
+Motion render job records and immutable source snapshots persist across CLI sessions. To inspect jobs that have been queued for at least 30 seconds but lack a confirmed worker claim:
+
+    superagent motion queue-recovery --workspace . --json
+
+When you have verified those queued jobs are not already owned by a running worker, explicitly dispatch up to four eligible jobs:
+
+    superagent motion dispatch-queue --apply --limit 4 --min-age-seconds 30 --workspace . --json
+
+Existing runner/waiting/slot/dispatch/cancellation claims and invalid snapshots block redispatch; unconfirmed launches preserve a dispatch lock for operator inspection. This never restarts rendering jobs automatically or kills workers. The authenticated GET /api/motion/queue-recovery endpoint and safe superagent_motion_queue_recovery MCP tool expose diagnostics only. T-Line presents eligible/blocked counts but cannot initiate destructive redispatch.

@@ -1,3 +1,9 @@
+## [Unreleased] - Motion Studio orphan-queue recovery (2026-10-21)
+### Added
+- Read-only queued-job recovery diagnostics with age/claim/snapshot verification and explicit operator-approved re-dispatch of orphaned queued jobs. Concurrent dispatchers use an exclusive handoff lock; uncertain launches stay fail-closed.
+- CLI, slash, HTTP and safe MCP diagnostics; T-Line displays eligible/blocked candidates through authenticated read-only proxy.
+- No automatic takeover of live workers, no PID-based slot reclamation, and no changes to Hermes runtime sessions.
+
 ## [Unreleased] - Motion Studio render maintenance (2026-10-21)
 ### Added
 - Safe read-only Motion storage reports and guarded manual pruning of old failed/cancelled/interrupted records; completed videos, active locks and suspicious artifacts are preserved.
