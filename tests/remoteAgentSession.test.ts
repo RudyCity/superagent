@@ -17,6 +17,7 @@ import {
   notifyMuseSessionReset,
   abortActiveRemoteTask,
   getActiveRemoteTaskId,
+  getActiveRemoteTaskSnapshot,
   runRemoteTask,
 } from "../src/core/remoteAgent/taskRunner.js";
 import {
@@ -298,6 +299,35 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect(getActiveRemoteTaskId()).not.toBeNull();
+    const current = getActiveRemoteTaskSnapshot();
+    expect(current).toMatchObject({
+      taskId: getActiveRemoteTaskId(),
+      workspace: expect.any(String),
+      sessionId: expect.stringMatching(/^sess_/),
+      startedAt: expect.any(Number),
+    });
+    expect(current).not.toHaveProperty("task");
+    expect(current).not.toHaveProperty("botToken");
+
+    // A different T-Line workspace is not authorized to see this active
+    // task's session or job ID, even when both use the same local process.
+    const sameWorkspaceLines: string[] = [];
+    await museCommand.execute("status", {
+      addLine: (line: { content: string }) => sameWorkspaceLines.push(line.content),
+      exit: () => {},
+      agent: { workingDirectory: current!.workspace } as any,
+    } as SlashCommandContext);
+    expect(sameWorkspaceLines.join("\n")).toContain(current!.taskId);
+    expect(sameWorkspaceLines.join("\n")).toContain("Unified status  : running");
+    const foreignLines: string[] = [];
+    await museCommand.execute("status", {
+      addLine: (line: { content: string }) => foreignLines.push(line.content),
+      exit: () => {},
+      agent: { workingDirectory: current!.workspace + "-other" } as any,
+    } as SlashCommandContext);
+    expect(foreignLines.join("\n")).not.toContain(current!.taskId);
+    expect(foreignLines.join("\n")).not.toContain(current!.sessionId);
+    expect(foreignLines.join("\n")).toContain("none in this workspace");
 
     // Start Task 2: should cancel Task 1
     const task2Result = await runRemoteTask({ task: "Task 2" });
@@ -307,6 +337,7 @@ describe("remoteAgent - Session, Context & Cancellation", () => {
     expect(task1Result.success).toBe(false);
     expect(task1Result.error).toContain("cancelled");
     expect(sentKinds).toContain("task_cancel");
+    expect(getActiveRemoteTaskSnapshot()).toBeNull();
 
     sendSpy.mockRestore();
     pollSpy.mockRestore();

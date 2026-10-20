@@ -27,7 +27,21 @@ export const museCommand: SlashCommand = {
     // /muse status
     if (subcommand === "status") {
       const cfg = loadRemoteAgentConfig();
-      const workspace = cfg.defaultWorkspace || ctx.agent?.workingDirectory || process.cwd();
+      const workspace = ctx.agent?.workingDirectory || cfg.defaultWorkspace || process.cwd();
+      // Session task information is local-only and scoped to this T-Line workspace.
+      const { getActiveRemoteTaskSnapshot } = await import("../remoteAgent/taskRunner.js");
+      const { projectMuseRemoteTask } = await import("../channels/unifiedChannelTask.js");
+      const active = getActiveRemoteTaskSnapshot();
+      const sameWorkspace = (candidate: string) => {
+        const normalize = (input: string) => {
+          const normalized = path.resolve(input);
+          return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+        };
+        return normalize(candidate) === normalize(workspace);
+      };
+      const normalizedMuseTask = active && sameWorkspace(active.workspace)
+        ? projectMuseRemoteTask(active, "tline")
+        : null;
       // Telegram credentials and Bot API health are intentionally owned by /telegram.
 
       const watchedWorkspaces = getWatchedWorkspaces(cfg, ctx.agent?.workingDirectory);
@@ -80,6 +94,9 @@ export const museCommand: SlashCommand = {
 
       const lines = [
         "Remote Agent (Muse) Status:",
+        `- Active task     : ${normalizedMuseTask ? normalizedMuseTask.taskId : "none in this workspace"}`,
+        `- Unified status  : ${normalizedMuseTask?.status ?? "idle"} (evidence: ${normalizedMuseTask?.evidence ?? "not_applicable"})`,
+        `- Task session    : ${normalizedMuseTask?.sessionId ?? "not available"}`,
         `- Configured      : ${configuredLabel}`,
         `- Runner Mode     : ${cfg.asRunner ? "ENABLED (All terminal prompts automatically route to Muse)" : "DISABLED (type /muse <task> to coordinate with Muse)"}`,
         ...transportLines,

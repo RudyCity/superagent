@@ -58,6 +58,8 @@ function formatDurationLimit(ms: number): string {
 
 interface ActiveRemoteTaskHandle {
   taskId: string;
+  sessionId: string;
+  workspace: string;
   abortController: AbortController;
   client: MuseClient;
   startTime: number;
@@ -67,6 +69,21 @@ let activeRemoteTask: ActiveRemoteTaskHandle | null = null;
 
 export function getActiveRemoteTaskId(): string | null {
   return activeRemoteTask?.taskId || null;
+}
+
+/** Local, read-only observation of this runtime's active Muse task.
+ * No transcript, credentials, prompt, transport session or mutation grants.
+ * Consumers must scope the view to an authorized workspace.
+ */
+export function getActiveRemoteTaskSnapshot(): {
+  taskId: string; sessionId: string; workspace: string; startedAt: number;
+} | null {
+  const current = activeRemoteTask;
+  if (!current) return null;
+  return {
+    taskId: current.taskId, sessionId: current.sessionId,
+    workspace: current.workspace, startedAt: current.startTime,
+  };
 }
 
 /**
@@ -197,7 +214,7 @@ export async function runRemoteTask(options: TaskRunnerOptions): Promise<TaskRun
 
   // Register active remote task handle
   activeRemoteTask = {
-    taskId,
+    taskId, sessionId, workspace,
     abortController: pollAbortController,
     client,
     startTime,

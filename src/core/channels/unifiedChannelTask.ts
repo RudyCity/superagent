@@ -87,6 +87,28 @@ export function projectCliDelegate(job: DelegateJob): UnifiedChannelTask {
   };
 }
 
+export interface MuseRemoteTaskSnapshot {
+  readonly taskId: string;
+  readonly sessionId: string;
+  readonly workspace: string;
+  readonly startedAt: number;
+}
+
+/** Project only an already workspace-authorized, in-memory Muse task.
+ * The source state is volatile and does not attest output correctness.
+ */
+export function projectMuseRemoteTask(
+  task: MuseRemoteTaskSnapshot,
+  channel: "cli" | "tline",
+): UnifiedChannelTask {
+  return {
+    schemaVersion: 1, channel, taskId: task.taskId, sessionId: task.sessionId,
+    projectId: null, workspace: task.workspace, status: "running",
+    evidence: "unverified", authorization: "transport_not_authorization",
+    notification: "not_configured", summary: null, updatedAt: task.startedAt,
+  };
+}
+
 /** An inbound message never grants privileges. Trusted server policy must be
  * evaluated separately at the actual mutation entry-point. */
 export type ChannelOperation = "read" | "write" | "privileged";

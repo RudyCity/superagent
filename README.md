@@ -238,6 +238,8 @@ superagent skill promote <name>@<new-version> --workspace ./project
 
 The revision command produces an **inactive, immutable review candidate** with the exact parent version/hash and feedback provenance. It preserves the original version and never automatically promotes or edits the active skill. Owner approval remains interactive and mandatory. Live RMemory delivery and full-provider E2E tests are separate release gates.
 
+**Hermes Phase 5 local Muse status:** Local /muse status (T-Line) and superagent muse status (CLI) show a normalized view of an active remote task only for the current workspace. No prompts, secrets or conversation histories are copied; running does not count as verified completion. See docs/plans/2026-10-20-superagent-hermes-phase-5-muse-tline-live-task-status.md.
+
 **Process start identity for CLI recovery:** New CLI Bridge jobs store best-effort owner/child process birth fingerprints. delegate.recovery compares these with current Windows CIM or Linux proc observations to flag potential PID reuse; even a matching start identity does not certify descendants or permit reattach, kill, or lock cleanup. See docs/plans/2026-10-20-superagent-hermes-phase-4-process-start-identity.md.
 
 **Read-only CLI crash diagnostics:** Use cli_bridge action=delegate.recovery with an authorized jobId to inspect last recorded owner/child PID hints and the stored job status. A present PID is not verified owner identity, and missing owners require manual investigation of descendants and output locks; no automatic kill, reattach, or lock cleanup occurs. See docs/plans/2026-10-20-superagent-hermes-phase-4-cli-recovery-diagnostics.md.

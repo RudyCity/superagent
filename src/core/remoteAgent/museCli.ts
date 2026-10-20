@@ -13,7 +13,8 @@ import {
   removeWatchedWorkspace,
   setWatchedWorkspaces,
 } from "./config.js";
-import { runRemoteTask } from "./taskRunner.js";
+import { runRemoteTask, getActiveRemoteTaskSnapshot } from "./taskRunner.js";
+import { projectMuseRemoteTask } from "../channels/unifiedChannelTask.js";
 import { formatReadableSummary } from "./formatSummary.js";
 
 export async function handleMuseCliCommand(args: string[]): Promise<void> {
@@ -29,6 +30,15 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     const watched = getWatchedWorkspaces(cfg);
 
     console.log("Remote Agent (Muse) Status:");
+    const active = getActiveRemoteTaskSnapshot();
+    const local = active && (
+      process.platform === "win32"
+        ? path.resolve(active.workspace).toLowerCase() === path.resolve(process.cwd()).toLowerCase()
+        : path.resolve(active.workspace) === path.resolve(process.cwd())
+    ) ? projectMuseRemoteTask(active, "cli") : null;
+    console.log(`  Active Task     : ${local?.taskId ?? "none in this workspace"}`);
+    console.log(`  Unified Status  : ${local?.status ?? "idle"} (evidence: ${local?.evidence ?? "not_applicable"})`);
+    console.log(`  Task Session    : ${local?.sessionId ?? "not available"}`);
     console.log(`  Configured      : ${configuredLabel}`);
     console.log(`  Transport       : ${transport.toUpperCase()}`);
     console.log(`  Runner Mode     : ${cfg.asRunner ? "ENABLED (normal terminal prompts route to Muse)" : "DISABLED"}`);
