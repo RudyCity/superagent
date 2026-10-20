@@ -84,7 +84,7 @@ const POST_CHANGE_INTEGRITY_RULE = `- POST_CHANGE_INTEGRITY: After EVERY change,
 
 const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Chrome automation suite.
   - Vision SoM (:8095): control_chrome_vision (perceive_page, click_id, type_id, verify_visual_state, audit_layout). Visual [1, 2, 3...] tags + element table for canvas, dynamic UI, modal blockers.
-  - Native CDP (:9222): control_chrome_cdp (snapshot, navigate, click/type by index, emulate_device, drag_and_drop, mock_display_media, handle_screen_share). Auto-launches isolated debug profile.
+  - Native CDP (:9222): control_chrome_cdp (snapshot, read_terminal, write_terminal with explicit enter:true, send_terminal_key for xterm.js/hterm, navigate, click/type by index, emulate_device, drag_and_drop, mock_display_media, handle_screen_share). Auto-launches isolated debug profile.
     * Emulation: emulate_device presets ('mobile', 'tablet', 'desktop', 'reset').
     * Drag/Drop: drag_and_drop with Bézier kinematics (mouse/html5).
     * Screen Share: mock_display_media bypasses prompts; handle_screen_share accepts native dialogs.

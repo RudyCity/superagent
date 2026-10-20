@@ -23,6 +23,8 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   let simulateNativeDialogOnNextClick = false;
   let lastHandledDialogParams: Record<string, unknown> | null = null;
   let nativeInsertCalls = 0;
+  const nativeTerminalEvents: Array<{ method: string; params: Record<string, unknown> }> = [];
+  let focusTerminalShouldFail = false;
   const mockElementsChanged = [{ index: 0, tag: "button", text: "Sign In", selector: "button" }, { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' }, { index: 2, tag: "a", text: "Help", selector: "a.help" }];
   let lastTypeExpression = "";
   const mockElements = [{ index: 0, tag: "button", text: "Login", selector: "button" }, { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' }];
@@ -43,6 +45,16 @@ describe("control_chrome_cdp (mock CDP server)", () => {
         // marker-aware Runtime.evaluate for the snapshot/click/type page snippets
         if (msg.method === "Runtime.evaluate") {
           const expr = String((msg.params && msg.params.expression) || "");
+          if (expr.includes("cdp-focus-terminal")) {
+            ws.send(JSON.stringify({
+              id: msg.id,
+              result: { result: { value: focusTerminalShouldFail
+                ? { ok: false, reason: "Multiple terminals found: specify index or selector." }
+                : { ok: true, terminalIndex: 0, kind: "xterm.js", inputTag: "textarea" }
+              } }
+            }));
+            return;
+          }
           if (expr.includes("cdp-snapshot-walk")) {
             const els = snapshotReturnsEmpty ? [] : snapshotChanged ? mockElementsChanged : mockElements;
             ws.send(JSON.stringify({ id: msg.id, result: { result: { value: els } } }));
@@ -134,6 +146,20 @@ describe("control_chrome_cdp (mock CDP server)", () => {
             );
             return;
           }
+          if (expr.includes("cdp-read-terminal")) {
+            ws.send(JSON.stringify({
+              id: msg.id,
+              result: { result: { value: {
+                detected: 1,
+                terminals: [{
+                  index: 0, kind: "xterm.js", selector: "#mock",
+                  source: "xterm-buffer", totalLines: 2,
+                  lines: ["npm test", "PASS"]
+                }]
+              } } }
+            }));
+            return;
+          }
           if (expr.includes("cdp-read-page")) {
             ws.send(
               JSON.stringify({
@@ -217,6 +243,9 @@ describe("control_chrome_cdp (mock CDP server)", () => {
           return;
         }
         if (msg.method === "Input.insertText") nativeInsertCalls++;
+        if (msg.method === "Input.insertText" || msg.method === "Input.dispatchKeyEvent") {
+          nativeTerminalEvents.push({ method: msg.method, params: msg.params || {} });
+        }
         const canned: Record<string, any> = {
           "Page.enable": {},
           "Page.navigate": {},
@@ -226,6 +255,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
           "Page.printToPDF": { data: "JVBERi0xLjQ=" },
           "Storage.getCookies": { cookies: [{ name: "sid", value: "abc123", domain: "example.com" }] },
           "Input.insertText": {},
+          "Input.dispatchKeyEvent": {},
           "Input.dispatchMouseEvent": {},
           "Browser.grantPermissions": {},
           "Browser.resetPermissions": {},
@@ -317,7 +347,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     const cmds = (controlChromeCdpTool.parameters as any).properties.command.enum as string[];
     expect(cmds).toEqual([
       "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate",
-      "snapshot", "read_page", "extract_links", "click", "type", "wait_for",
+      "snapshot", "read_page", "read_terminal", "write_terminal", "send_terminal_key", "extract_links", "click", "type", "wait_for",
       "select_option",
       "check_form",
       "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
@@ -693,6 +723,74 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     });
     expect(res2).toContain("navigated tab 'Mock Tab' to https://example.com/obj");
     expect(res2).not.toContain("Interactive elements");
+  });
+
+  test("read_terminal returns terminal output via CDP Runtime.evaluate", async () => {
+    const res = await controlChromeCdpTool.execute({
+      command: "read_terminal",
+      payload: JSON.stringify({ max_lines: 4, selector: "#mock" })
+    });
+    expect(res).toContain("source: xterm-buffer");
+    expect(res).toContain("npm test");
+    expect(res).toContain("PASS");
+  });
+
+  test("write_terminal types without an implicit Enter", async () => {
+    nativeTerminalEvents.length = 0;
+    const res = await controlChromeCdpTool.execute({
+      command: "write_terminal", selector: "#terminal", text: "npm run build"
+    });
+    expect(res).toContain("dispatched 13 character(s)");
+    expect(res).toContain("Enter not sent");
+    expect(nativeTerminalEvents).toEqual([
+      { method: "Input.insertText", params: { text: "npm run build" } }
+    ]);
+  });
+
+  test("write_terminal enter:true sends CDP Enter keyDown and keyUp", async () => {
+    nativeTerminalEvents.length = 0;
+    const res = await controlChromeCdpTool.execute({
+      command: "write_terminal", payload: { text: "pwd", enter: true, index: 0 } as any
+    });
+    expect(res).toContain("and sent Enter");
+    expect(nativeTerminalEvents.map((v) => v.method)).toEqual([
+      "Input.insertText", "Input.dispatchKeyEvent", "Input.dispatchKeyEvent"
+    ]);
+    expect(nativeTerminalEvents[1].params).toMatchObject({ type: "keyDown", key: "Enter", text: "\r" });
+    expect(nativeTerminalEvents[2].params).toMatchObject({ type: "keyUp", key: "Enter" });
+  });
+
+  test("send_terminal_key dispatches Ctrl+C without inserted text", async () => {
+    nativeTerminalEvents.length = 0;
+    const res = await controlChromeCdpTool.execute({
+      command: "send_terminal_key", payload: { key: "Ctrl+C", index: 0 } as any
+    });
+    expect(res).toContain("dispatched key Ctrl+C");
+    expect(nativeTerminalEvents.map((v) => v.method)).toEqual([
+      "Input.dispatchKeyEvent", "Input.dispatchKeyEvent"
+    ]);
+    expect(nativeTerminalEvents[0].params).toMatchObject({ modifiers: 2, code: "KeyC" });
+  });
+
+  test("write_terminal never sends input when no terminal is selectable", async () => {
+    focusTerminalShouldFail = true;
+    nativeTerminalEvents.length = 0;
+    try {
+      const res = await controlChromeCdpTool.execute({ command: "write_terminal", text: "dangerous" });
+      expect(res).toContain("terminal input not sent");
+      expect(nativeTerminalEvents).toHaveLength(0);
+    } finally {
+      focusTerminalShouldFail = false;
+    }
+  });
+
+  test("write_terminal rejects multiline, oversized, invalid index and unsupported keys", async () => {
+    nativeTerminalEvents.length = 0;
+    expect(await controlChromeCdpTool.execute({ command: "write_terminal", text: "echo one\necho two" })).toContain("multiline terminal input is rejected");
+    expect(await controlChromeCdpTool.execute({ command: "write_terminal", text: "x".repeat(4001) })).toContain("exceeds 4000 characters");
+    expect(await controlChromeCdpTool.execute({ command: "write_terminal", text: "hello", index: -1 })).toContain("terminal index must be");
+    expect(await controlChromeCdpTool.execute({ command: "send_terminal_key", key: "Ctrl+Alt+Delete" })).toContain("unsupported terminal key");
+    expect(nativeTerminalEvents).toHaveLength(0);
   });
 
   test("read_page extracts headings, alerts, body text, and key links", async () => {

@@ -39,6 +39,8 @@ import { executeSelectOptionCommand, executeCheckFormCommand } from "./chromeCdp
 import { CDP_AUDIT_COMMANDS, executeCdpAuditCommand, type CdpAuditCommand } from "./chromeCdpAudits.js";
 import { CDP_DIAGNOSTIC_COMMANDS, executeCdpDiagnosticsCommand, recordCdpDebugEvent, type CdpDiagnosticCommand } from "./chromeCdpDiagnostics.js";
 import { saveCdpPdfArtifact } from "./chromeCdpArtifacts.js";
+import { buildReadTerminalJs, formatTerminalReadResult } from "./chromeCdpTerminal.js";
+import { buildFocusTerminalJs, terminalKeyEvent, type TerminalFocusResult } from "./chromeCdpTerminalInput.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -477,7 +479,7 @@ export const _cdpTestHooks = {
 export const controlChromeCdpTool: Tool = {
   name: "control_chrome_cdp",
   description:
-    "Control the user's real Chrome via CDP port 9222 (--remote-debugging-port=9222); no extension required. Supports tabs/navigation, DOM snapshot/extraction, click/type/forms, dialogs, screenshots/PDF, cookies, media, cursor/drag-and-drop, device emulation, and UI transition verification. " +
+    "Control the user's real Chrome via CDP port 9222 (--remote-debugging-port=9222); no extension required. Supports tabs/navigation, DOM snapshot/extraction, read_terminal for xterm.js/hterm, click/type/forms, dialogs, screenshots/PDF, cookies, media, cursor/drag-and-drop, device emulation, and UI transition verification. " +
     "Audits: page_audit, accessibility_audit, seo_audit, responsive_audit, performance_metrics. Diagnostics: start_debug_capture/read_debug_capture/stop_debug_capture/clear_debug_capture for bounded console, exception, and network metadata. " +
     "Use evaluate only for trusted, intentional page JavaScript. Cookie values and large artifacts are summarized by default. Arguments can be passed at top level or inside payload.",
   parameters: {
@@ -486,7 +488,7 @@ export const controlChromeCdpTool: Tool = {
       command: {
         type: "string",
         enum: [
-          "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "extract_links", "click", "type", "wait_for",
+          "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_terminal", "write_terminal", "send_terminal_key", "extract_links", "click", "type", "wait_for",
           "select_option", "check_form", "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
           "get_cookies", "inspect_media_devices", "mock_display_media", "handle_screen_share", "move_cursor", "show_cursor", "hide_cursor", "get_cursor",
           "drag_and_drop", "drag", "emulate_device", ...CDP_AUDIT_COMMANDS, ...CDP_DIAGNOSTIC_COMMANDS,
@@ -499,9 +501,13 @@ export const controlChromeCdpTool: Tool = {
           'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. select_option: {"index": 5, "option": "Paket Basic"} or {"selector": "[role=combobox]", "option": "Yes"}. check_form: {"selector": "form"} (pre-flight check for missing required fields & submit readiness). drag_and_drop: {"source": "#card", "target": "#column", "mode": "mouse"|"html5", "screenshot": true}. emulate_device: {"preset": "mobile"|"tablet"|"desktop"|"reset", "orientation": "portrait"|"landscape", "screenshot": true}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
       },
       url: { type: "string", description: "Optional top-level URL convenience shortcut for new_tab or navigate." },
-      index: { type: "number", description: "Optional top-level element index convenience shortcut for click, type, or select_option." },
+      index: { type: "number", description: "Optional top-level element index for click/type or terminal index for read/write_terminal." },
       text: { type: "string", description: "Optional top-level text convenience shortcut for type or wait_for." },
-      selector: { type: "string", description: "Optional top-level CSS selector convenience shortcut for click, type, wait_for, select_option, or check_form." },
+      selector: { type: "string", description: "Optional top-level CSS selector convenience shortcut for click, type, wait_for, select_option, check_form, or read_terminal." },
+      max_lines: { type: "number", description: "read_terminal maximum recent lines (default 80, max 200)." },
+      enter: { type: "boolean", description: "write_terminal: explicitly send Enter after typing (default false)." },
+      key: { type: "string", description: "send_terminal_key: Enter, Tab, Escape, Backspace, Delete, ArrowUp/Down/Left/Right, Home, End, Ctrl+C, Ctrl+D, Ctrl+L." },
+      viewport_only: { type: "boolean", description: "read_terminal: read only visible viewport from exposed xterm buffer." },
       option: { type: "string", description: "Optional option label, text, or value to select for select_option." },
       exact: { type: "boolean", description: "Optional exact match flag for select_option." },
       pattern: { type: "string", description: "Optional top-level keyword filter pattern for extract_links." },
@@ -555,7 +561,7 @@ export const controlChromeCdpTool: Tool = {
       }
     }
     const convenienceKeys = [
-      "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text",
+      "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "viewport_only", "enter", "key",
       "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
       "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];
@@ -724,6 +730,74 @@ export const controlChromeCdpTool: Tool = {
             (contextHeader ? `${contextHeader}\n` : "") +
             `Use click/type with {"index": N}.\n${entries.map((e) => formatSnapshotEntry(e, compact)).join("\n")}`;
           return await attachScreenshotIfRequested(cdpSend, target, payload, snapshotResult, false);
+        }
+        case "write_terminal":
+        case "send_terminal_key": {
+          const text = typeof payload.text === "string" ? payload.text : "";
+          const isWrite = command === "write_terminal";
+          if (isWrite && !text) {
+            return 'control_chrome_cdp failed: write_terminal requires non-empty payload {"text":"..."}; Enter is opt-in with {"enter":true}.';
+          }
+          if (isWrite && text.length > 4000) {
+            return "control_chrome_cdp failed: write_terminal text exceeds 4000 characters.";
+          }
+          if (isWrite && /[\r\n]/.test(text)) {
+            return "control_chrome_cdp failed: multiline terminal input is rejected; send one line then use enter:true.";
+          }
+          if (payload.index !== undefined &&
+              (!Number.isSafeInteger(Number(payload.index)) || Number(payload.index) < 0 || Number(payload.index) > 1000)) {
+            return "control_chrome_cdp failed: terminal index must be a non-negative integer up to 1000.";
+          }
+          const key = String(isWrite ? "Enter" : payload.key || "");
+          const keyEvent = terminalKeyEvent(key);
+          if ((!isWrite && !keyEvent) || (isWrite && payload.enter === true && !keyEvent)) {
+            return "control_chrome_cdp failed: unsupported terminal key. Supported: Enter, Tab, Escape, Backspace, Delete, ArrowUp/Down/Left/Right, Home, End, Ctrl+C, Ctrl+D, Ctrl+L.";
+          }
+          const target = await pickTarget(targetId);
+          const focused: any = await cdpSend(target, "Runtime.evaluate", {
+            expression: buildFocusTerminalJs({
+              selector: typeof payload.selector === "string" ? payload.selector : undefined,
+              index: payload.index === undefined ? undefined : Number(payload.index),
+            }),
+            returnByValue: true,
+          });
+          if (focused?.exceptionDetails) {
+            return "control_chrome_cdp failed: terminal focus evaluation raised an exception.";
+          }
+          const focus = focused?.result?.value as TerminalFocusResult | undefined;
+          if (!focus?.ok) {
+            return "control_chrome_cdp failed: terminal input not sent: " + (focus?.reason || "could not focus a terminal input.");
+          }
+          if (isWrite) await cdpSend(target, "Input.insertText", { text });
+          if ((!isWrite || payload.enter === true) && keyEvent) {
+            await cdpSend(target, "Input.dispatchKeyEvent", keyEvent.down);
+            await cdpSend(target, "Input.dispatchKeyEvent", keyEvent.up);
+          }
+          const terminal = "terminal [" + focus.terminalIndex + "] " + (focus.kind || "web-terminal");
+          return isWrite
+            ? "control_chrome_cdp: dispatched " + text.length + " character(s) to " + terminal +
+              (payload.enter === true ? " and sent Enter" : " (Enter not sent)") +
+              ". Input was dispatched; command execution is not verified."
+            : "control_chrome_cdp: dispatched key " + key + " to " + terminal +
+              ". Key was dispatched; terminal reaction is not verified.";
+        }
+        case "read_terminal": {
+          const target = await pickTarget(targetId);
+          const res: any = await cdpSend(target, "Runtime.evaluate", {
+            expression: buildReadTerminalJs({
+              selector: typeof payload.selector === "string" ? payload.selector : undefined,
+              index: payload.index === undefined ? undefined : Number(payload.index),
+              max_lines: payload.max_lines === undefined ? undefined : Number(payload.max_lines),
+              max_chars: payload.max_chars === undefined ? undefined : Number(payload.max_chars),
+              viewport_only: payload.viewport_only === true,
+            }),
+            returnByValue: true,
+          });
+          if (res?.exceptionDetails) {
+            return "control_chrome_cdp failed: read_terminal page evaluation failed: " +
+              truncate(String(res.exceptionDetails.text || "unknown exception"), 500);
+          }
+          return formatTerminalReadResult(res?.result?.value);
         }
         case "read_page": {
           const target = await pickTarget(targetId);

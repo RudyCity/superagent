@@ -135,7 +135,7 @@ export const CHROME_MCP_TOOL_DEFS = [
     name: "superagent_chrome_cdp",
     description:
       "Automate real Google Chrome browser directly via Chrome DevTools Protocol (CDP port 9222). " +
-      "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, " +
+      "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, read_terminal, write_terminal, send_terminal_key, " +
       "extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, " +
       "get_cookies, inspect_media_devices, move_cursor, drag_and_drop, emulate_device. " +
       "Supports device/viewport emulation (mobile, tablet, desktop, reset), human-like Bézier cursor movement, " +
@@ -147,7 +147,7 @@ export const CHROME_MCP_TOOL_DEFS = [
           type: "string",
           enum: [
             "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate",
-            "snapshot", "read_page", "extract_links", "click", "type", "wait_for",
+            "snapshot", "read_page", "read_terminal", "write_terminal", "send_terminal_key", "extract_links", "click", "type", "wait_for",
             "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
             "get_cookies", "inspect_media_devices", "media_devices", "move_cursor",
             "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
@@ -161,9 +161,14 @@ export const CHROME_MCP_TOOL_DEFS = [
           description: "Optional JSON payload with command parameters.",
         },
         url: { type: "string", description: "Target URL for new_tab or navigate." },
-        index: { type: "number", description: "Interactive element index from snapshot." },
-        text: { type: "string", description: "Text to type or search for in wait_for." },
-        selector: { type: "string", description: "CSS selector for click, type, or wait_for." },
+        index: { type: "number", description: "Interactive element index from snapshot, or zero-based terminal index for read_terminal." },
+        text: { type: "string", description: "Text to type or search for; write_terminal sends to the focused web terminal via CDP." },
+        enter: { type: "boolean", description: "write_terminal: explicitly press Enter after text (default false)." },
+        key: { type: "string", description: "send_terminal_key: Enter, Tab, Escape, Backspace, Delete, Arrow keys, Home, End, Ctrl+C, Ctrl+D, Ctrl+L." },
+        selector: { type: "string", description: "CSS selector for click, type, wait_for, or terminal selection." },
+        max_lines: { type: "number", description: "read_terminal recent lines (default 80, max 200)." },
+        max_chars: { type: "number", description: "read_terminal text characters (default 12000, max 20000)." },
+        viewport_only: { type: "boolean", description: "read_terminal: use xterm's visible viewport instead of full scrollback." },
         preset: { type: "string", description: "Device preset for emulate_device ('mobile', 'tablet', 'desktop', 'reset')." },
         orientation: { type: "string", enum: ["portrait", "landscape"] },
         width: { type: "number", description: "Custom viewport width in pixels." },
