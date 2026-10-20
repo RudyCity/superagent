@@ -130,10 +130,12 @@ const HAZARD_RULES = [
   /(?:^|\s)(?:git\s+(?:reset\s+--hard|clean\s+-f|push\s+--force)|docker\s+(?:system\s+prune|volume\s+prune))\b/i,
   /(?:^|\s)(?:shutdown|reboot|poweroff)\b/i,
 ];
-export function terminalCommandRisk(text: string): { blocked: boolean; reason: string } {
+export function terminalCommandRisk(text: string, allowMultiline = false): { blocked: boolean; reason: string } {
   const value = text.trim();
   if (!value) return { blocked: true, reason: "Empty command." };
-  if (/[\r\n\x00-\x08\x0b-\x1f\x7f]/.test(text)) return { blocked: true, reason: "Multiline/control characters are not allowed." };
+  if (/[\x00-\x08\x0b-\x1f\x7f]/.test(text) || (!allowMultiline && /[\r\n]/.test(text))) {
+    return { blocked: true, reason: "Multiline/control characters are not allowed." };
+  }
   if (HAZARD_RULES.some((pattern) => pattern.test(value))) {
     return { blocked: true, reason: "Potentially destructive shell command. Explicit allow_dangerous:true is required." };
   }

@@ -130,9 +130,18 @@ const NATIVE_TERMINAL_KEYS: Record<string, NativeKey> = {
   arrowright: { key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 },
   home: { key: "Home", code: "Home", windowsVirtualKeyCode: 36 },
   end: { key: "End", code: "End", windowsVirtualKeyCode: 35 },
+  pageup: { key: "PageUp", code: "PageUp", windowsVirtualKeyCode: 33 },
+  pagedown: { key: "PageDown", code: "PageDown", windowsVirtualKeyCode: 34 },
+  insert: { key: "Insert", code: "Insert", windowsVirtualKeyCode: 45 },
   "ctrl+c": { key: "c", code: "KeyC", windowsVirtualKeyCode: 67, modifiers: 2 },
   "ctrl+d": { key: "d", code: "KeyD", windowsVirtualKeyCode: 68, modifiers: 2 },
   "ctrl+l": { key: "l", code: "KeyL", windowsVirtualKeyCode: 76, modifiers: 2 },
+  ...Object.fromEntries(["a", "e", "u", "k", "w", "r", "z"].map((letter) => [
+    "ctrl+" + letter, { key: letter, code: "Key" + letter.toUpperCase(), windowsVirtualKeyCode: letter.toUpperCase().charCodeAt(0), modifiers: 2 },
+  ])),
+  ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [
+    "f" + (i + 1), { key: "F" + (i + 1), code: "F" + (i + 1), windowsVirtualKeyCode: 112 + i },
+  ])),
 };
 export function terminalKeyEvent(key: string): {
   down: Record<string, unknown>;

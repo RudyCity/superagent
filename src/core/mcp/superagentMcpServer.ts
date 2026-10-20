@@ -1146,4 +1146,30 @@ export async function startSuperagentMcpServer(options: McpServerOptions = {}): 
   const transport = new StdioServerTransport();
   await server.connect(transport);
   logMcp("Superagent MCP Server connected and listening on stdio.");
+
+  // Close the JSON-RPC transport before leaving on client EOF or a termination
+  // signal. Do not force-kill a still-active client or write anything to stdout.
+  let closing = false;
+  const shutdown = async (): Promise<void> => {
+    if (closing) return;
+    closing = true;
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    process.stdin.off("end", onEnd);
+    process.stdin.off("close", onEnd);
+    try {
+      await server.close();
+    } catch (error) {
+      console.error("[mcp] clean close failed:", error);
+    } finally {
+      process.stdin.pause();
+      process.exitCode = 0;
+    }
+  };
+  const onSignal = () => { void shutdown(); };
+  const onEnd = () => { void shutdown(); };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+  process.stdin.once("end", onEnd);
+  process.stdin.once("close", onEnd);
 }

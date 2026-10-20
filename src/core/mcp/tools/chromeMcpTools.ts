@@ -135,7 +135,7 @@ export const CHROME_MCP_TOOL_DEFS = [
     name: "superagent_chrome_cdp",
     description:
       "Automate real Google Chrome browser directly via Chrome DevTools Protocol (CDP port 9222). " +
-      "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, read_terminal, read_terminal_delta, write_terminal, send_terminal_key, execute_terminal, watch_terminal, list_terminal_sessions, monitor_terminal_agents, clear_terminal_sessions, discover_desktop_targets, " +
+      "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, read_terminal, read_terminal_delta, write_terminal, send_terminal_key, execute_terminal, watch_terminal, list_terminal_sessions, monitor_terminal_agents, clear_terminal_sessions, recover_terminal, discover_desktop_targets, " +
       "extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, " +
       "get_cookies, inspect_media_devices, move_cursor, drag_and_drop, emulate_device. " +
       "Supports device/viewport emulation (mobile, tablet, desktop, reset), human-like Bézier cursor movement, " +
@@ -164,6 +164,9 @@ export const CHROME_MCP_TOOL_DEFS = [
         index: { type: "number", description: "Interactive element index from snapshot, or zero-based terminal index for read/write commands." },
         terminal_id: { type: "string", description: "Opaque stable terminal ID provided by read_terminal; preferred over index for safe writes." },
         allow_dangerous: { type: "boolean", description: "Explicit approval to dispatch a potentially destructive shell command." },
+        multiline_mode: { type: "string", enum: ["reject", "bracketed", "base64", "raw"], description: "Terminal multi-line input strategy; base64 requires verify_shell:posix, raw requires allow_dangerous:true." },
+        allow_visual_fallback: { type: "boolean", description: "Explicitly return a cropped terminal canvas screenshot when no terminal text is readable; completion remains unverified." },
+        auto_crop_screenshot: { type: "boolean", description: "Alias for allow_visual_fallback." },
         expected_output: { type: "string", description: "Literal output pattern for watch_terminal/execute_terminal." },
         wait_ms: { type: "number", description: "Bounded watch duration (max 15000 ms per tool call)." },
         verify_shell: { type: "string", enum: ["posix", "powershell"], description: "Optional shell-specific exit-code marker for execute_terminal." },
@@ -173,7 +176,7 @@ export const CHROME_MCP_TOOL_DEFS = [
         debug_ports: { type: "string", description: "discover_desktop_targets: 1-8 comma-separated loopback ports to probe." },
         text: { type: "string", description: "Text to type or search for; write_terminal sends to the focused web terminal via CDP." },
         enter: { type: "boolean", description: "write_terminal: explicitly press Enter after text (default false)." },
-        key: { type: "string", description: "send_terminal_key: Enter, Tab, Escape, Backspace, Delete, Arrow keys, Home, End, Ctrl+C, Ctrl+D, Ctrl+L." },
+        key: { type: "string", description: "send_terminal_key: Enter, Tab, Escape, Backspace, Delete, Arrow keys, Home/End, PageUp/PageDown, Insert, Ctrl+A/C/D/E/K/L/R/U/W/Z, F1-F12." },
         selector: { type: "string", description: "CSS selector for click, type, wait_for, or terminal selection." },
         max_lines: { type: "number", description: "read_terminal recent lines (default 80, max 200)." },
         max_chars: { type: "number", description: "read_terminal text characters (default 12000, max 20000)." },

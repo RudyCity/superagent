@@ -23,6 +23,7 @@ export interface TerminalResult {
     lines: string[];
     totalLines: number | null;
     warning?: string;
+    rect?: { x: number; y: number; width: number; height: number };
   }>;
   detected: number;
   warning?: string;
@@ -68,6 +69,56 @@ function browserReadTerminal(opts: {
     try { return v && v.buffer && v.buffer.active && typeof v.buffer.active.getLine === "function"; }
     catch { return false; }
   };
+  // Inspect known terminal owners only, with a strictly bounded React Fiber walk.
+  // Never recursively enumerate arbitrary application state.
+  const attachedTerm = (root: Element): Term | undefined => {
+    const keys = ["_xterm", "terminal", "__xterm", "__terminal", "_terminalInstance"];
+    const descendants: Element[] = [];
+    try {
+      for (const query of [".xterm", ".xterm-screen", "textarea.xterm-helper-textarea"]) {
+        const node = root.querySelector(query);
+        if (node) descendants.push(node);
+      }
+    } catch { /* detached */ }
+    for (const node of [root, ...descendants]) {
+      if (!node) continue;
+      for (const key of keys) {
+        try {
+          const desc = Object.getOwnPropertyDescriptor(node, key);
+          const value = desc && "value" in desc ? desc.value : undefined;
+          if (isTerm(value)) return value;
+        } catch { /* detached element */ }
+      }
+    }
+    const fiberKeys = Object.keys(root).filter((key) =>
+      key.startsWith("__reactFiber$") || key.startsWith("__reactContainer$"));
+    for (const key of fiberKeys.slice(0, 2)) {
+      try {
+        const start = (root as any)[key];
+        const stack: Array<{ fiber: any; depth: number }> = [{ fiber: start, depth: 0 }];
+        const visited = new Set<any>();
+        while (stack.length && visited.size < 160) {
+          const { fiber, depth } = stack.pop()!;
+          if (!fiber || typeof fiber !== "object" || visited.has(fiber) || depth > 12) continue;
+          visited.add(fiber);
+          const values = [fiber.stateNode, fiber.memoizedProps, fiber.pendingProps];
+          let hook = fiber.memoizedState;
+          for (let i = 0; hook && i < 10; i++, hook = hook.next) values.push(hook.memoizedState);
+          for (const value of values) {
+            if (isTerm(value)) return value;
+            if (!value || typeof value !== "object") continue;
+            for (const name of ["current", "terminal", "xterm", "_xterm", "term", "instance"]) {
+              const candidate = Object.getOwnPropertyDescriptor(value, name)?.value;
+              if (isTerm(candidate)) return candidate;
+            }
+          }
+          if (fiber.child) stack.push({ fiber: fiber.child, depth: depth + 1 });
+          if (fiber.sibling) stack.push({ fiber: fiber.sibling, depth: depth + 1 });
+        }
+      } catch { /* React version not supported */ }
+    }
+    return undefined;
+  };
   // Explicitly exposed terminal instances only: do not walk arbitrary page app state.
   for (const key of ["term", "terminal", "xterm", "__xterm", "__terminal", "terminals"]) {
     try {
@@ -96,7 +147,7 @@ function browserReadTerminal(opts: {
       }
     }
     const idx = entries.indexOf(entry); // Keep indices identical between read and input targeting.
-    const instance = entry.instance || instances.find((t) => {
+    const instance = entry.instance || (root ? attachedTerm(root) : undefined) || instances.find((t) => {
       try { return !!(root && t.element && (root === t.element || root.contains(t.element) || t.element.contains(root))); }
       catch { return false; }
     }) || (entries.length === 1 && instances.length === 1 ? instances[0] : undefined);
@@ -176,7 +227,16 @@ function browserReadTerminal(opts: {
       terminalId = registry.ids.get(reference);
       if (!terminalId) { terminalId = registry.prefix + (++registry.seq); registry.ids.set(reference, terminalId); }
     }
-    results.push({ index: idx, terminalId, kind, selector, source, lines, totalLines, warning });
+    let rect: TerminalResult["terminals"][number]["rect"];
+    if (source === "unavailable" && root) {
+      try {
+        const box = root.getBoundingClientRect();
+        if (box.width > 0 && box.height > 0 && [box.left, box.top, box.width, box.height].every(Number.isFinite)) {
+          rect = { x: box.left, y: box.top, width: box.width, height: box.height };
+        }
+      } catch { /* no visible box */ }
+    }
+    results.push({ index: idx, terminalId, kind, selector, source, lines, totalLines, warning, ...(rect ? { rect } : {}) });
   }
   const selected = results.filter((r) =>
     (opts.index === null || r.index === opts.index) &&

@@ -102,6 +102,17 @@ describe("CDP terminal command workflows", () => {
     expect(mock.typed).toContain("printf");
   });
 
+  it("packages a multiline POSIX heredoc before dispatch and retains shell verification", async () => {
+    const mock = mockedTerminal();
+    const script = "cat <<'EOF'\nhello\nEOF";
+    const response = JSON.parse(await execute("execute_terminal",
+      { text: script, verify_shell: "posix", multiline_mode: "base64", wait_ms: 0 }, mock.deps));
+    expect(response.completionVerified).toBe(true);
+    expect(response.exitCode).toBe(0);
+    expect(mock.typed).toContain("base64 -d | bash");
+    expect(mock.typed).toContain("printf '\\n__SA_EXIT_");
+  });
+
   it("preserves pending exit verification across calls and prevents duplicate execution", async () => {
     const mock = mockedTerminal();
     mock.setDelayed(true);

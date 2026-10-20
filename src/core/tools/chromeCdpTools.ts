@@ -522,6 +522,9 @@ export const controlChromeCdpTool: Tool = {
       enter: { type: "boolean", description: "write_terminal: explicitly send Enter after typing (default false)." },
       terminal_id: { type: "string", description: "Opaque terminal ID returned by read_terminal, remains stable across pane reordering until reload." },
       allow_dangerous: { type: "boolean", description: "Explicit acknowledgment for high-risk terminal shell commands." },
+      multiline_mode: { type: "string", enum: ["reject", "bracketed", "base64", "raw"], description: "Terminal multiline input mode; base64 requires verify_shell:posix." },
+      allow_visual_fallback: { type: "boolean", description: "Explicitly allow cropped screenshot for canvas-only terminal; no output verification." },
+      auto_crop_screenshot: { type: "boolean", description: "Alias for allow_visual_fallback." },
       expected_output: { type: "string", description: "execute_terminal/watch_terminal: literal text to look for in fresh terminal output." },
       wait_ms: { type: "number", description: "watch_terminal/execute_terminal: bounded wait, max 15000ms." },
       verify_shell: { type: "string", enum: ["posix", "powershell"], description: "execute_terminal: opt-in shell-specific exit-code marker. Without it exit status remains unknown." },
@@ -529,7 +532,7 @@ export const controlChromeCdpTool: Tool = {
       rebind_on_reload: { type: "boolean", description: "recover_terminal: reconnect to one uniquely detected terminal if the old terminal_id is stale after reload." },
       debug_port: { type: "number", description: "Local Chromium/Electron CDP port, e.g. 9222 or TLine's explicitly enabled port." },
       debug_ports: { type: "string", description: "discover_desktop_targets: comma-separated local debugging ports." },
-      key: { type: "string", description: "send_terminal_key: Enter, Tab, Escape, Backspace, Delete, ArrowUp/Down/Left/Right, Home, End, Ctrl+C, Ctrl+D, Ctrl+L." },
+      key: { type: "string", description: "send_terminal_key: Enter, Tab, Escape, Backspace, Delete, arrows, Home/End, PageUp/PageDown, Insert, Ctrl+A/C/D/E/K/L/R/U/W/Z, F1-F12." },
       viewport_only: { type: "boolean", description: "read_terminal: read only visible viewport from exposed xterm buffer." },
       option: { type: "string", description: "Optional option label, text, or value to select for select_option." },
       exact: { type: "boolean", description: "Optional exact match flag for select_option." },
@@ -585,7 +588,7 @@ export const controlChromeCdpTool: Tool = {
       }
     }
     const convenienceKeys = [
-      "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
+      "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
       "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
       "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];

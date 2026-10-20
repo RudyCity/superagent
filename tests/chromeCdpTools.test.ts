@@ -764,17 +764,18 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     ]);
   });
 
-  test("write_terminal enter:true sends CDP Enter keyDown and keyUp", async () => {
+  test("write_terminal enter:true sends CDP rawKeyDown, char and keyUp", async () => {
     nativeTerminalEvents.length = 0;
     const res = await controlChromeCdpTool.execute({
       command: "write_terminal", targetId: "T1", payload: { text: "pwd", enter: true, index: 0 } as any
     });
     expect(res).toContain("and sent Enter");
     expect(nativeTerminalEvents.map((v) => v.method)).toEqual([
-      "Input.insertText", "Input.dispatchKeyEvent", "Input.dispatchKeyEvent"
+      "Input.insertText", "Input.dispatchKeyEvent", "Input.dispatchKeyEvent", "Input.dispatchKeyEvent"
     ]);
-    expect(nativeTerminalEvents[1].params).toMatchObject({ type: "keyDown", key: "Enter", text: "\r" });
-    expect(nativeTerminalEvents[2].params).toMatchObject({ type: "keyUp", key: "Enter" });
+    expect(nativeTerminalEvents[1].params).toMatchObject({ type: "rawKeyDown", key: "Enter" });
+    expect(nativeTerminalEvents[2].params).toMatchObject({ type: "char", key: "Enter", text: "\r" });
+    expect(nativeTerminalEvents[3].params).toMatchObject({ type: "keyUp", key: "Enter" });
   });
 
   test("send_terminal_key dispatches Ctrl+C without inserted text", async () => {
@@ -801,9 +802,9 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     }
   });
 
-  test("write_terminal rejects multiline, oversized, invalid index and unsupported keys", async () => {
+  test("write_terminal supports explicit multiline rejection, oversized and invalid inputs", async () => {
     nativeTerminalEvents.length = 0;
-    expect(await controlChromeCdpTool.execute({ command: "write_terminal", targetId: "T1", text: "echo one\necho two" })).toContain("multiline terminal input is rejected");
+    expect(await controlChromeCdpTool.execute({ command: "write_terminal", targetId: "T1", text: "echo one\necho two", multiline_mode: "reject" })).toContain("multiline terminal input rejected");
     expect(await controlChromeCdpTool.execute({ command: "write_terminal", targetId: "T1", text: "x".repeat(4001) })).toContain("exceeds 4000 characters");
     expect(await controlChromeCdpTool.execute({ command: "write_terminal", targetId: "T1", text: "hello", index: -1 })).toContain("terminal index must be");
     expect(await controlChromeCdpTool.execute({ command: "send_terminal_key", targetId: "T1", key: "Ctrl+Alt+Delete" })).toContain("unsupported terminal key");

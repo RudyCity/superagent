@@ -18,6 +18,38 @@ export interface TerminalCdpDeps {
   scopeTarget?(target: CdpTarget): string;
 }
 const writers = new Set<string>();
+type MultilineMode = "reject" | "bracketed" | "base64" | "raw";
+export function prepareTerminalInput(text: string, payload: Record<string, unknown>): {
+  ok: boolean; text: string; mode: string; reason?: string
+} {
+  const multiline = /[\r\n]/.test(text);
+  const requested = payload.multiline_mode;
+  if (requested !== undefined && !["reject", "bracketed", "base64", "raw"].includes(String(requested))) {
+    return { ok: false, text: "", mode: "", reason: "multiline_mode must be reject, bracketed, base64 or raw." };
+  }
+  if (!multiline) return { ok: true, text, mode: "single" };
+  const mode = (requested || (/<<[^\n]*\n/.test(text) ? "base64" : "bracketed")) as MultilineMode;
+  if (mode === "reject") {
+    return { ok: false, text: "", mode, reason: "multiline terminal input rejected by multiline_mode." };
+  }
+  if (mode === "raw") {
+    if (payload.allow_dangerous !== true) {
+      return { ok: false, text: "", mode, reason: "raw multi-line input can execute partial commands; explicit allow_dangerous:true required." };
+    }
+    return { ok: true, text, mode };
+  }
+  if (mode === "base64") {
+    if (payload.verify_shell !== "posix") {
+      return { ok: false, text: "", mode, reason: "base64 multiline mode requires verify_shell:'posix' (known bash environment)." };
+    }
+    const encoded = Buffer.from(text, "utf8").toString("base64");
+    // Encode the original command, not a user-supplied shell fragment.
+    return { ok: true, text: "printf '%s' '" + encoded + "' | base64 -d | bash", mode };
+  }
+  // Bracketed-paste support varies by terminal and shell. It is never used to
+  // claim atomic execution or a verified exit status.
+  return { ok: true, text: "\x1b[200~" + text.replace(/\r\n/g, "\n") + "\x1b[201~", mode };
+}
 const num = (v: unknown, fallback: number, max: number): number => {
   const n = Number(v);
   return v === undefined || !Number.isFinite(n) ? fallback : Math.max(0, Math.min(max, Math.floor(n)));
@@ -53,6 +85,39 @@ async function capture(target: CdpTarget, payload: Record<string, unknown>, deps
   if (!value || !Array.isArray(value.terminals)) throw new Error("Terminal read returned no structured data.");
   return value;
 }
+async function visualFallback(
+  target: CdpTarget, pane: TerminalResult["terminals"][number], deps: TerminalCdpDeps,
+): Promise<Record<string, unknown>> {
+  const rect = pane.rect;
+  if (!rect || rect.width <= 0 || rect.height <= 0) {
+    return { status: "unavailable", source: "unavailable", reason: "Terminal has no visible bounding box for screenshot.", terminalId: pane.terminalId };
+  }
+  try {
+    const x = Math.max(0, Math.floor(rect.x));
+    const y = Math.max(0, Math.floor(rect.y));
+    const width = Math.min(1400, Math.ceil(rect.width - Math.max(0, -rect.x)));
+    const height = Math.min(900, Math.ceil(rect.height - Math.max(0, -rect.y)));
+    if (width < 1 || height < 1) throw new Error("terminal is off-screen");
+    const shot = await deps.send(target, "Page.captureScreenshot", {
+      format: "png", fromSurface: true, captureBeyondViewport: false,
+      clip: { x, y, width, height, scale: 1 },
+    });
+    const data = typeof shot?.data === "string" ? shot.data : "";
+    return {
+      status: "visual_only_unverified", source: "canvas-visual", terminalId: pane.terminalId,
+      completionVerified: false, exitCode: null, output: null,
+      rect: { x, y, width, height }, screenshot: data && data.length <= 1_500_000 ? "data:image/png;base64," + data : null,
+      warning: "Screenshot pixels only; no text, output change, shell exit code or command completion can be verified."
+        + (data.length > 1_500_000 ? " Image was omitted due to size." : ""),
+    };
+  } catch (err) {
+    return { status: "unavailable", source: "unavailable", terminalId: pane.terminalId,
+      reason: "Terminal screenshot failed: " + (err instanceof Error ? err.message : String(err)) };
+  }
+}
+const wantsVisual = (payload: Record<string, unknown>) =>
+  payload.allow_visual_fallback === true || payload.auto_crop_screenshot === true;
+
 async function focusAndDispatch(
   target: CdpTarget, payload: Record<string, unknown>, command: string, deps: TerminalCdpDeps
 ): Promise<{ ok: boolean; message: string; focus?: TerminalFocusResult }> {
@@ -60,8 +125,12 @@ async function focusAndDispatch(
   const isWrite = command === "write_terminal";
   if (isWrite && !text) return { ok: false, message: 'write_terminal requires nonempty payload {"text":"..."}.' };
   if (isWrite && text.length > 4000) return { ok: false, message: "write_terminal text exceeds 4000 characters." };
-  if (isWrite && /[\r\n]/.test(text)) return { ok: false, message: "multiline terminal input is rejected." };
-  const risk = isWrite && payload.enter === true ? terminalCommandRisk(text) : { blocked: false, reason: "" };
+  const prepared = isWrite ? prepareTerminalInput(text, payload) : { ok: true, text: "", mode: "single" };
+  if (!prepared.ok) return { ok: false, message: prepared.reason || "terminal input rejected." };
+  if (isWrite && prepared.text.length > 8000) return { ok: false, message: "encoded terminal input exceeds 8000 characters." };
+  // A multiline paste can execute even without a final Enter on some shells.
+  const risk = isWrite && (payload.enter === true || /[\r\n]/.test(text))
+    ? terminalCommandRisk(text, true) : { blocked: false, reason: "" };
   if (risk.blocked && payload.allow_dangerous !== true) return { ok: false, message: risk.reason };
   const key = isWrite ? "Enter" : String(payload.key || "");
   const keyEvent = terminalKeyEvent(key);
@@ -73,9 +142,19 @@ async function focusAndDispatch(
   if (response?.exceptionDetails) return { ok: false, message: "terminal focus evaluation raised an exception." };
   const focus = response?.result?.value as TerminalFocusResult | undefined;
   if (!focus?.ok) return { ok: false, message: "terminal input not sent: " + (focus?.reason || "could not focus input.") };
-  if (isWrite) await deps.send(target, "Input.insertText", { text });
+  if (isWrite) await deps.send(target, "Input.insertText", { text: prepared.text });
   if ((!isWrite || payload.enter === true) && keyEvent) {
-    await deps.send(target, "Input.dispatchKeyEvent", keyEvent.down);
+    if (key.toLowerCase() === "enter") {
+      // Chrome's native Enter path: one raw keydown, one char, one keyup.
+      const { text: _text, unmodifiedText: _unmodified, ...rawDown } = keyEvent.down;
+      await deps.send(target, "Input.dispatchKeyEvent", { ...rawDown, type: "rawKeyDown" });
+      await deps.send(target, "Input.dispatchKeyEvent", {
+        type: "char", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13,
+        text: "\r", unmodifiedText: "\r",
+      });
+    } else {
+      await deps.send(target, "Input.dispatchKeyEvent", keyEvent.down);
+    }
     await deps.send(target, "Input.dispatchKeyEvent", keyEvent.up);
   }
   const destination = "terminal [" + focus.terminalIndex + "] " + (focus.kind || "web-terminal");
@@ -84,7 +163,7 @@ async function focusAndDispatch(
   return {
     ok: true, focus,
     message: isWrite
-      ? "dispatched " + text.length + " character(s) to " + destination +
+      ? "dispatched " + text.length + " character(s) to " + destination + " using " + prepared.mode + " mode" +
         (payload.enter === true ? " and sent Enter" : " (Enter not sent)") +
         ". Input was dispatched; command execution is not verified."
       : "dispatched key " + key + " to " + destination + ". Key was dispatched; terminal reaction is not verified.",
@@ -106,7 +185,10 @@ async function pollTerminal(
       return { status: "unavailable", reason: "Watch requires one matching terminal; specify index or terminal_id.", detected: result.detected };
     }
     const term = result.terminals[0];
-    if (term.source === "unavailable") return { status: "unavailable", reason: term.warning };
+    if (term.source === "unavailable") {
+      return wantsVisual(payload) ? await visualFallback(target, term, deps)
+        : { status: "unavailable", reason: term.warning };
+    }
     const scope = deps.scopeTarget?.(target) || target.id;
     last = observeTerminal(scope, term);
     const verificationMarker = options.marker || pendingTerminalVerification(scope, last.session.terminalId) || undefined;
@@ -186,6 +268,9 @@ export async function executeCdpTerminalCommand(
         return { index: pane.index, terminalId: pane.terminalId, changed: o.changed, delta: o.delta,
           cursor: o.cursor, reset: o.reset, agent: o.session.agent, source: pane.source };
       });
+      if (wantsVisual(payload) && result.terminals.length === 1 && result.terminals[0].source === "unavailable") {
+        return JSON.stringify(await visualFallback(target, result.terminals[0], deps));
+      }
       return command === "read_terminal"
         ? formatTerminalReadResult(result)
         : JSON.stringify({ detected: result.detected, observations, warning: result.warning });
@@ -233,7 +318,7 @@ export async function executeCdpTerminalCommand(
     if (command === "execute_terminal") {
       const original = typeof payload.text === "string" ? payload.text : "";
       if (!original || original.length > 3400) return "control_chrome_cdp failed: execute_terminal requires 1-3400 characters of text.";
-      const risk = terminalCommandRisk(original);
+      const risk = terminalCommandRisk(original, true);
       if (risk.blocked && payload.allow_dangerous !== true) return "control_chrome_cdp failed: " + risk.reason;
       const shell = payload.verify_shell;
       if (shell !== undefined && shell !== "posix" && shell !== "powershell") {
@@ -241,22 +326,31 @@ export async function executeCdpTerminalCommand(
       }
       // Establish baseline before writing; never count stale scrollback as new output.
       const baseline = await capture(target, { ...payload, max_lines: payload.max_lines ?? 200 }, deps);
-      if (baseline.terminals.length !== 1 || baseline.terminals[0].source === "unavailable") {
-        return "control_chrome_cdp failed: execute_terminal needs exactly one readable terminal; use read_terminal and select terminal_id.";
+      if (baseline.terminals.length !== 1 || (baseline.terminals[0].source === "unavailable" && !wantsVisual(payload))) {
+        return "control_chrome_cdp failed: execute_terminal needs exactly one readable terminal (or explicitly opt into allow_visual_fallback); use read_terminal and select terminal_id.";
       }
       const base = baseline.terminals[0];
-      const session = observeTerminal(scope, base).session;
-      if (pendingTerminalVerification(scope, session.terminalId) && payload.force_new_command !== true) {
+      const session = base.source === "unavailable" ? null : observeTerminal(scope, base).session;
+      if (session && pendingTerminalVerification(scope, session.terminalId) && payload.force_new_command !== true) {
         return "control_chrome_cdp failed: a previous shell-marker command is still awaiting completion. Use watch_terminal or explicit force_new_command:true.";
       }
+      const prepared = prepareTerminalInput(original, payload);
+      if (!prepared.ok) return "control_chrome_cdp failed: " + prepared.reason;
+      // For multiline scripts, base64 packages the original script into one
+      // shell line. Never run bracketed-paste escape bytes through an exit marker.
+      if (/[\r\n]/.test(original) && prepared.mode === "bracketed" && shell) {
+        return "control_chrome_cdp failed: verified multiline scripts require multiline_mode:'base64' and verify_shell:'posix'.";
+      }
       const marker = shell ? "__SA_EXIT_" + randomBytes(10).toString("hex") : undefined;
-      const line = marker ? verifiedShellLine(original, shell as "posix" | "powershell", marker) : original;
-      if (line.length > 4000) return "control_chrome_cdp failed: wrapped command exceeds 4000 characters.";
+      const line = prepared.mode === "bracketed" ? original
+        : marker ? verifiedShellLine(prepared.text, shell as "posix" | "powershell", marker) : prepared.text;
+      if (line.length > 8000) return "control_chrome_cdp failed: wrapped command exceeds 8000 characters.";
       const sent = await focusAndDispatch(target, {
         ...payload, index: base.index, terminal_id: base.terminalId, text: line, enter: true,
+        multiline_mode: prepared.mode === "bracketed" ? "bracketed" : prepared.mode === "raw" ? "raw" : undefined,
       }, "write_terminal", deps);
       if (!sent.ok) return "control_chrome_cdp failed: " + sent.message;
-      if (marker) setPendingTerminalVerification(scope, session.terminalId, marker);
+      if (marker && session) setPendingTerminalVerification(scope, session.terminalId, marker);
       const result = await pollTerminal(target, {
         ...payload, index: base.index, terminal_id: base.terminalId,
       }, deps, {

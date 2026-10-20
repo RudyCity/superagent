@@ -10,6 +10,8 @@
     "dev": "tsx --max-old-space-size=4096 src/cli.tsx",
     "prebuild": "node -e \"const p=require('./package.json');console.log('Building ' + p.name + '@' + p.version)\"",
     "build": "tsc",
+    "sync-mcp": "tsx scripts/syncMcpSchemas.ts",
+    "postbuild": "tsx scripts/syncMcpSchemas.ts",
     "start": "node --max-old-space-size=4096 dist/cli.js",
     "test": "vitest run",
     "test:unit": "vitest run --exclude \"**/*integration*\" --exclude \"**/*e2e*\"",
