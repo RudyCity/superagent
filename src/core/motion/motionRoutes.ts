@@ -4,7 +4,7 @@ import { createReadStream } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { createMotionProject, getMotionProject, listMotionProjects, updateMotionProject } from "./motionService.js";
-import { getMotionJob, inspectMotionJob, listMotionJobs, motionJobDir, requestMotionCancellation, startDetachedMotionJob } from "./jobs/motionJobs.js";
+import { getMotionJob, getMotionSchedulerStatus, inspectMotionJob, listMotionJobs, motionJobDir, requestMotionCancellation, startDetachedMotionJob } from "./jobs/motionJobs.js";
 import { MotionRevisionConflict } from "./project/revisions.js";
 import { MotionValidationError } from "./schema/validation.js";
 import type { MotionEdit } from "./schema/types.js";
@@ -82,6 +82,8 @@ export async function handleMotionHttpRoute(
       if (body.width !== undefined && !Number.isSafeInteger(body.width)) throw new Error("width must be an integer");
       const started = await startDetachedMotionJob(workspace, render[1], { width: body.width as number | undefined });
       json(res, ctx, started.status === "failed" ? 503 : 202, started);
+    } else if (pathname === "/api/motion/scheduler" && method === "GET") {
+      json(res, ctx, 200, await getMotionSchedulerStatus(workspace));
     } else if (pathname === "/api/motion/jobs" && method === "GET") {
       json(res, ctx, 200, await listMotionJobs(workspace));
     } else if (job && method === "GET") {

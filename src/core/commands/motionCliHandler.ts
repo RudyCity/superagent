@@ -2,7 +2,7 @@ import { createMotionProject, getMotionProject, listMotionProjects, updateMotion
 import { MotionRevisionConflict } from "../motion/project/revisions.js";
 import { MotionValidationError } from "../motion/schema/validation.js";
 import { probeFfmpeg } from "../motion/render/ffmpegEncoder.js";
-import { getMotionJob, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation } from "../motion/jobs/motionJobs.js";
+import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation } from "../motion/jobs/motionJobs.js";
 
 const usage = `Motion Studio (foundation preview)
   superagent motion new --name "Title" [--workspace PATH] [--json]
@@ -12,6 +12,7 @@ const usage = `Motion Studio (foundation preview)
   superagent motion frame PROJECT_ID --frame N [--workspace PATH] [--json]
   superagent motion render PROJECT_ID [--width EVEN_NUMBER] [--detach] [--workspace PATH] [--json]
   superagent motion jobs [--workspace PATH] [--json]
+  superagent motion scheduler [--workspace PATH] [--json]
   superagent motion status JOB_ID [--workspace PATH] [--json]
   superagent motion recovery JOB_ID [--workspace PATH] [--json]
   superagent motion recover JOB_ID --ack-stale [--workspace PATH] [--json]
@@ -83,6 +84,11 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
     if (action === "jobs") {
       if (positionals.length) throw new Error("jobs does not accept positional arguments");
       emit(await listMotionJobs(workspace), json);
+      return 0;
+    }
+    if (action === "scheduler") {
+      if (positionals.length) throw new Error("scheduler does not accept positional arguments");
+      emit(await getMotionSchedulerStatus(workspace), json);
       return 0;
     }
     if (positionals.length !== 1) throw new Error(action + " requires exactly one project or job ID");

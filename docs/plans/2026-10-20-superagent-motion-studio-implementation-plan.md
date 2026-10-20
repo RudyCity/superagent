@@ -433,3 +433,12 @@ Current implementation snapshot (2026-10-20): scene schema, revision-checked pro
 - Validation: eight SuperAgent Motion test suites / 27 tests pass; TypeScript passes. T-Line editor suite, full frontend regressions (37 tests), Motion proxy/trust tests (6), and frontend/backend TypeScript pass. Live running T-Line to rebuilt SuperAgent `/api/motion` is not yet proven, and no Hermes process was restarted.
 
 **Still open:** crash-safe autonomous render scheduling, shared text/font renderer parity, performance and long-duration video budgets, media/audio ingestion, multi-scene editing, mouse drag handles, media sandbox certification, video streaming above the editor's blob cap, native Tauri E2E, and agent-facing motion tool wrappers. Keep release status at developer preview until those gates pass.
+
+### Motion render scheduler increment (2026-10-20)
+
+- Added workspace-scoped filesystem admission guarded by an atomic cross-process lock. The pending queue now rejects new submissions after twelve queued job records. Existing immutable snapshots and per-project render locks remain intact.
+- Added independent per-workspace renderer slot claims (default 2; configurable via `SUPERAGENT_MOTION_MAX_RENDERERS` between 1 and 4). Workers wait for a free slot before launching FFmpeg. Foreground and detached paths both use the same slot contract.
+- Cancellation works while waiting for capacity; waiting records and project claims are cleaned upon controlled cancellation. Worker and queue status expose read-only slot ownership as **unverified** process claims, not trusted PID identity.
+- Added `superagent motion scheduler --json` and authenticated `GET /api/motion/scheduler`; T-Line's server-only Motion proxy forwards the scheduler read API and the native editor shows queued jobs / renderer slot utilization.
+- Added queue saturation, contention, timeout, wait cancellation, slot ownership and HTTP scheduler regressions. This is **bounded worker concurrency, not** a durable FIFO job broker: detached workers still wait in their own processes, and abnormal termination leaves fail-closed locks requiring operator investigation. No automatic stale-slot deletion or worker killing is permitted.
+- Remaining gates: process restart/fault-injection durability, coordination with active Hermes daemon, real Tauri-to-current-SuperAgent smoke, memory/video export budgets and UI drag editing/audio/media.

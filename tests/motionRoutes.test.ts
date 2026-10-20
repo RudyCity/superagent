@@ -55,6 +55,12 @@ describe("Motion HTTP and artifact transport", () => {
     const result = await request("/api/motion");
     expect(result.status).toBe(200);
     expect((await result.json()).apiVersion).toBe(1);
+    const scheduler = await request("/api/motion/scheduler");
+    expect(scheduler.status).toBe(200);
+    const capacity = await scheduler.json();
+    expect(capacity.queueLimit).toBe(12);
+    expect(capacity.maxConcurrentRenders).toBeGreaterThanOrEqual(1);
+    expect(capacity.slots).toHaveLength(capacity.maxConcurrentRenders);
     expect((await request("/api/motion", { headers: { "x-workspace-path": "/not-authorized" } })).status).toBe(403);
   });
 

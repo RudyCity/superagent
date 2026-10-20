@@ -8,6 +8,7 @@ import { getMotionProject, motionStorageDir, motionWorkspaceRoot } from "../proj
 import { encodeMotionMp4, deriveRenderProfile, type RenderProfile } from "../render/ffmpegEncoder.js";
 import { validateMotionProject } from "../schema/validation.js";
 import type { MotionProject } from "../schema/types.js";
+import { MOTION_QUEUE_LIMIT, acquireMotionRenderSlot, assertMotionQueueCapacity, inspectMotionSlots, motionConcurrentSlots, withMotionQueueAdmission } from "./renderScheduler.js";
 const execFileAsync = promisify(execFile);
 export type MotionJobStatus = "queued" | "preparing" | "rendering" | "validating" | "completed" | "failed" | "cancelled" | "interrupted";
 export interface MotionJob {
@@ -90,6 +91,17 @@ export async function getMotionJob(workspace: string, id: string): Promise<Motio
   validateJobShape(job, id, root);
   return job;
 }
+export async function getMotionSchedulerStatus(workspace: string) {
+  const dir = await motionJobDir(workspace, "jobs");
+  const [jobs, slots] = await Promise.all([listMotionJobs(workspace), inspectMotionSlots(dir)]);
+  return {
+    maxConcurrentRenders: motionConcurrentSlots(),
+    queueLimit: MOTION_QUEUE_LIMIT,
+    queued: jobs.filter(job => job.status === "queued").length,
+    active: jobs.filter(job => job.status === "preparing" || job.status === "rendering" || job.status === "validating").length,
+    slots,
+  };
+}
 export async function listMotionJobs(workspace: string): Promise<MotionJob[]> {
   const dir = await motionJobDir(workspace, "jobs");
   const files = await fs.readdir(dir);
@@ -121,6 +133,12 @@ export async function reconcileStaleMotionJob(workspace: string, id: string): Pr
     try {
       await fs.lstat(path.join(dir, id + ".runner.lock"));
       throw new Error("Motion runner claim remains; inspect process identity manually");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    try {
+      await fs.lstat(path.join(dir, id + ".waiting.lock"));
+      throw new Error("Motion worker may still be waiting for a render slot; inspect process identity manually");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
@@ -165,6 +183,8 @@ export async function inspectMotionJob(workspace: string, id: string) {
     claims: {
       project: await check(projectClaim(dir, job.projectId), job.id),
       execution: await check(path.join(dir, job.id + ".runner.lock")),
+      waiting: await check(path.join(dir, job.id + ".waiting.lock")),
+      slots: await inspectMotionSlots(dir),
       cancellation: await check(cancelFile(dir, id)),
     },
     recovery: terminalStatuses.has(job.status) ? "terminal" :
@@ -208,7 +228,9 @@ export async function prepareMotionJob(
   const project = await getMotionProject(workspace, projectId);
   const profile = deriveRenderProfile(project, options.width, options.maxFrames);
   const dir = await motionJobDir(workspace, "jobs");
-  const id = "motionjob-" + crypto.randomBytes(12).toString("hex");
+  return withMotionQueueAdmission(dir, async () => {
+    await assertMotionQueueCapacity(dir);
+    const id = "motionjob-" + crypto.randomBytes(12).toString("hex");
   const claim = projectClaim(dir, project.id);
   const lock = await fs.open(claim, "wx", 0o600).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "EEXIST") throw new Error("Motion project already has an active or unreconciled render");
@@ -237,6 +259,7 @@ export async function prepareMotionJob(
       await releaseClaim(dir, job);
     }
   }
+  });
 }
 async function sha256File(file: string): Promise<string> {
   return crypto.createHash("sha256").update(await fs.readFile(file)).digest("hex");
@@ -258,7 +281,7 @@ async function validateMp4(file: string, profile: RenderProfile): Promise<void> 
   const target = profile.frameCount * den / num;
   if (Math.abs(Number(info.format?.duration) - target) > den / num + 0.002) throw new Error("MP4 duration validation failed");
 }
-export async function runPreparedMotionJob(
+async function runAdmittedMotionJob(
   workspace: string, id: string, options: { ffmpeg?: string; signal?: AbortSignal } = {},
 ): Promise<MotionJob> {
   const dir = await motionJobDir(workspace, "jobs");
@@ -335,6 +358,48 @@ export async function runPreparedMotionJob(
   } finally {
     await runner.close();
     await fs.rm(runnerPath, { force: true });
+  }
+}
+/** Workspace render slots are shared across independent CLI/HTTP/MCP processes. */
+export async function runPreparedMotionJob(
+  workspace: string, id: string, options: { ffmpeg?: string; signal?: AbortSignal } = {},
+): Promise<MotionJob> {
+  const dir = await motionJobDir(workspace, "jobs");
+  assertJobId(id);
+  const waitPath = path.join(dir, id + ".waiting.lock");
+  const waiting = await fs.open(waitPath, "wx", 0o600).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "EEXIST") throw new Error("Motion job is already waiting for a render slot");
+    throw error;
+  });
+  let slot: Awaited<ReturnType<typeof acquireMotionRenderSlot>> | undefined;
+  try {
+    await waiting.writeFile(JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }) + String.fromCharCode(10));
+    await waiting.sync();
+    slot = await acquireMotionRenderSlot(dir, id, {
+      signal: options.signal,
+      cancelled: async () => fs.access(cancelFile(dir, id)).then(() => true, () => false),
+    });
+    // Keep the waiting claim throughout worker startup, so manual recovery
+    // cannot observe an ownerless gap before the runner claim is persisted.
+    return await runAdmittedMotionJob(workspace, id, options);
+  } catch (error) {
+    // No process identity is inferred and no unrelated slot is reclaimed.
+    const job = await getMotionJob(workspace, id);
+    if (job.status === "queued" && !slot) {
+      const message = error instanceof Error ? error.message : String(error);
+      job.status = message.includes("cancelled") ? "cancelled" : "failed";
+      job.error = message.slice(0, 1024);
+      job.updatedAt = new Date().toISOString();
+      await persist(job, dir);
+      await fs.rm(cancelFile(dir, id), { force: true });
+      await releaseClaim(dir, job);
+      return job;
+    }
+    throw error;
+  } finally {
+    await waiting.close().catch(() => {});
+    await fs.rm(waitPath, { force: true });
+    await slot?.release();
   }
 }
 /** Existing foreground behavior remains available and shares the exact worker pipeline. */
