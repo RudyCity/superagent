@@ -21,6 +21,12 @@ This increment extends output claims to **independent SuperAgent processes on th
 - In-process claims remain as a fast guard; host-local claims are the independent-instance guard.
 - Lock-acquisition failure never launches the CLI child.
 
+## Read-only operator diagnostics
+
+The cli_bridge action=delegate.claims supports expectedArtifacts with 1-12 relative file paths and optionally a child cwd. It reports a selected file's canonical lock status and owner job/PID when available without revealing owner tokens or deleting locks. The same workspace and symlink boundaries as delegate.start are enforced; another project cannot inspect foreign output claims.
+
+The action intentionally never performs stale-lock cleanup. PID disappearance alone is not proof that child CLI writers stopped. An operator must investigate all descendants before any manual recovery.
+
 ## Crash and recovery policy
 
 Locks are **not expired or stolen automatically**, even if the recorded owner PID is missing. The owner process can crash while an independently spawned CLI subprocess continues writing its expected artifact. PID disappearance or elapsed time alone cannot establish that it is safe to grant a competing writer.
@@ -53,3 +59,20 @@ bun run wiki:validate
 ```
 
 Still unverified: distributed lock broker for multi-host deployments, concurrent `jobs.json` writers with shared config, live SSH/OAuth project grants, child-process-tree crash recovery, untrusted-agent OS sandboxing, provider cancellation/outage E2E, and production staging. **Do not mark all Hermes Phase 4 or production readiness complete.**
+
+
+## Tunnel setup test hardening
+
+The tunnelClientSetup unit test now mocks the external global npm installation subprocess. Its graceful failure case and npm argument checks run offline; tests no longer perform actual system-wide npm installations. Production installation code is unchanged.
+
+
+## Final diagnostics / tunnel test acceptance (2026-10-20)
+
+- TypeScript build: passed.
+- Extension JavaScript verification: passed (8 files).
+- Wiki link validation: passed (9 wiki documents, 24 checked links).
+- Focused diagnostic/delegation/tunnel tests: 94 tests passed across 5 suites.
+- Full Vitest regression after offline tunnel test fix: **exit 0**, **371 suites passed, 1 skipped**, **3,554 tests passed, 5 skipped, 0 failed**.
+- Workspace-scoped lock diagnostics and owner-token secrecy are exercised by the added independent-process test; a foreign caller is denied and no automatic recovery API was introduced.
+
+Full and focused counts overlap. Production provider, cross-host locking, shared multi-writer metadata and operator-verified crash recovery remain release blockers.

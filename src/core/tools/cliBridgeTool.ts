@@ -94,6 +94,8 @@ import {
   tailDelegateJob,
   cancelDelegateJob,
 } from "./cliBridgeDelegateJobs.js";
+import { resolveExpectedArtifacts, artifactClaimIdentity } from "./cliBridgeArtifactEvidence.js";
+import { inspectCrossProcessArtifactClaim } from "./cliBridgeCrossProcessClaims.js";
 
 // ─── Tool definition ─────────────────────────────────────────────────────
 
@@ -105,6 +107,7 @@ const ACTIONS = [
   "delegate.get",
   "delegate.tail",
   "delegate.cancel",
+  "delegate.claims",
   "session.create",
   "session.send",
   "session.list",
@@ -127,7 +130,7 @@ export const cliBridgeTool: Tool = {
     "Delegate a task to an external AI CLI assistant (Codex, Claude Code, AGY, or any custom binary). " +
     "Three modes: (1) `delegate` for short synchronous tasks, (2) `delegate.start` plus `delegate.get`/`delegate.tail`/`delegate.cancel` for long-running background jobs and bounded parallel work, (3) `session.*` for interactive multi-turn sessions. " +
     "Use `list` to discover installed CLIs, `delegate` for all autonomous coding/analysis tasks, and `session.create`+`session.send`+`session.kill` only when interactive step-by-step TUI dialog is required. " +
-    "Long-running MCP support: delegate.start returns a background job id; delegate.jobs lists jobs; delegate.get and delegate.tail poll progress/output; delegate.cancel requests cancellation. Multiple jobs can run concurrently. " +
+    "Long-running MCP support: delegate.start returns a background job id; delegate.jobs lists jobs; delegate.get and delegate.tail poll progress/output; delegate.cancel requests cancellation; delegate.claims inspects bounded output locks read-only. Multiple jobs can run concurrently. " +
     "Use delegate for short tasks and delegate.start for builds or lengthy edits so the MCP request does not have to remain open. " +
     "v1.5.17: `session.create` can auto-send an initial prompt the moment the session is ready, " +
     "sessions auto-kill after an idle TTL (idleTimeoutMs, default 30 min), " +
@@ -145,7 +148,7 @@ export const cliBridgeTool: Tool = {
           "Operation: 'list'/'profile.list' to discover CLIs/profiles, " +
           "'delegate' for short synchronous autonomous tasks, " +
           "'delegate.start' for long-running background tasks that return a jobId immediately (default 30 minutes; up to 2 hours), " +
-          "'delegate.jobs' to list concurrent jobs, 'delegate.get' to inspect status/output, 'delegate.tail' to read recent logs, and 'delegate.cancel' to stop a job. " +
+          "'delegate.jobs' to list concurrent jobs, 'delegate.get' to inspect status/output, 'delegate.tail' to read recent logs, 'delegate.cancel' to stop a job, and 'delegate.claims' to read workspace-bound output-lock status without removing locks. " +
           "The default concurrency limit is 4 jobs (configure with SUPERAGENT_CLI_BRIDGE_MAX_JOBS, max 12). Use separate worktrees/cwds for parallel code edits to avoid file conflicts. " +
           "'session.create' to start an interactive multi-turn session (optionally with initial `message` to auto-send once ready), " +
           "'session.send' to message it, " +
@@ -321,7 +324,7 @@ export const cliBridgeTool: Tool = {
         type: "array",
         items: { type: "string" },
         description:
-          "Optional action=delegate.start only: 1-12 relative file paths inside the delegated working directory. " +
+          "For delegate.start, or read-only delegate.claims: 1-12 relative file paths inside the delegated working directory. " +
           "After exit 0, every file must be newly created or content-changed (SHA-256 compared against a pre-run baseline). " +
           "Missing, unchanged, escaped, oversized or symlinked files do not count as verified completion. " +
           "Without expectedArtifacts, exit 0 is an unverified process success, not proof of task completion.",
@@ -376,6 +379,9 @@ export const cliBridgeTool: Tool = {
 
         case "delegate.cancel":
           return await handleDelegateCancel(String(args.jobId ?? "").trim(), cwd);
+
+        case "delegate.claims":
+          return await handleDelegateClaims(args, cwd);
 
         case "session.create":
           return await handleSessionCreate(args, cwd);
@@ -698,6 +704,22 @@ function formatStartedDelegateJob(job: Awaited<ReturnType<typeof startDelegateJo
     "Cancel with action=delegate.cancel, jobId=" + job.jobId + ".",
     "Multiple delegate.start jobs can run concurrently (default limit: 4).",
   ].join("\n");
+}
+
+/** Read-only claim diagnostics; never automatically steals stale locks. */
+async function handleDelegateClaims(args: Record<string, unknown>, callerWorkspace: string): Promise<string> {
+  const selectedCwd = resolveAuthorizedDelegateCwd(callerWorkspace, typeof args.cwd === "string" ? args.cwd : undefined);
+  const files = resolveExpectedArtifacts(selectedCwd, callerWorkspace, args.expectedArtifacts as string[] | undefined);
+  if (!files.length) return "Error: expectedArtifacts (1-12 relative paths) is required for delegate.claims.";
+  const lines = ["CLI Bridge output claims (read-only; never auto-recovered):"];
+  for (const file of files) {
+    const claim = await inspectCrossProcessArtifactClaim(artifactClaimIdentity(file));
+    const relative = path.relative(selectedCwd, file).split(path.sep).join("/");
+    lines.push("- " + relative + " | " + (claim.locked ? "LOCKED" : "available")
+      + (claim.locked ? " | job=" + (claim.jobId ?? "unknown") + " | ownerPid=" + (claim.ownerPid ?? "unknown")
+        + " | manual recovery requires confirming all child writers stopped" : ""));
+  }
+  return lines.join("\n");
 }
 
 async function handleDelegateJobs(callerWorkspace: string): Promise<string> {

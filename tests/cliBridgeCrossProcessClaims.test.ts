@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { acquireCrossProcessArtifactClaims, releaseCrossProcessArtifactClaims, inspectCrossProcessArtifactClaim } from "../src/core/tools/cliBridgeCrossProcessClaims.js";
 import { artifactClaimIdentity } from "../src/core/tools/cliBridgeArtifactEvidence.js";
+import { cliBridgeTool } from "../src/core/tools/cliBridgeTool.js";
 import { startDelegateJob, getDelegateJob, __resetDelegateJobsForTests } from "../src/core/tools/cliBridgeDelegateJobs.js";
 
 const worker = fileURLToPath(new URL("./fixtures/cliBridgeCrossProcessWorker.mjs", import.meta.url));
@@ -119,6 +120,43 @@ describe("Hermes Phase 4: same-host cross-process artifact claims", () => {
     holder.proc.stdin.write("release\n");
     await lineStarting(holder, "RELEASED");
     await waitExit(holder.proc);
+  }, 20_000);
+
+  it("exposes only read-only lock diagnostics for authorized workspace paths", async () => {
+    const rootA = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-lock-diagnostics-A-"));
+    const rootB = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-lock-diagnostics-B-"));
+    try {
+      const file = path.join(rootA, "output.txt");
+      const identity = artifactClaimIdentity(file);
+      const owner = startWorker("claim", identity, "diagnostic-owner");
+      const held = JSON.parse(await lineStarting(owner, "CLAIM "));
+      const status = String(await cliBridgeTool.execute({
+        action: "delegate.claims", expectedArtifacts: ["output.txt"],
+      }, rootA));
+      expect(status).toContain("output.txt | LOCKED");
+      expect(status).toContain("job=diagnostic-owner");
+      expect(status).toContain("manual recovery");
+      expect(status).not.toContain(held.locks[0].token);
+      const denied = String(await cliBridgeTool.execute({
+        action: "delegate.claims", cwd: rootA, expectedArtifacts: ["output.txt"],
+      }, rootB));
+      expect(denied).toMatch(/outside the authorized workspace/i);
+      expect(denied).not.toContain("diagnostic-owner");
+      const deniedPath = String(await cliBridgeTool.execute({
+        action: "delegate.claims", expectedArtifacts: ["../private.txt"],
+      }, rootA));
+      expect(deniedPath).toMatch(/outside|relative/i);
+      owner.proc.stdin.write("release\n");
+      await lineStarting(owner, "RELEASED");
+      await waitExit(owner.proc);
+      const free = String(await cliBridgeTool.execute({
+        action: "delegate.claims", expectedArtifacts: ["output.txt"],
+      }, rootA));
+      expect(free).toContain("output.txt | available");
+    } finally {
+      await fs.rm(rootA, { recursive: true, force: true });
+      await fs.rm(rootB, { recursive: true, force: true });
+    }
   }, 20_000);
 
   it("applies host-local claims to real CLI background delegations across two instances", async () => {

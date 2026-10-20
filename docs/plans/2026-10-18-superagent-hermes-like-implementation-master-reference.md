@@ -534,3 +534,9 @@ Execute these actions in this order before broad feature work:
 
 
 11. Phase 4 has a bounded same-host independent-process output-claim increment: `docs/plans/2026-10-20-superagent-hermes-phase-4-cross-process-artifact-claims.md`. A per-canonical-artifact exclusive lockfile (atomic `wx`, owner token, rollback on contention) prevents cooperating SuperAgent processes from claiming the same expected output, even when their config dirs differ. Stale claims remain fail-closed on crash because child CLIs may survive their parent. This is not a multi-host broker, mandatory OS sandbox, or transactional shared job registry; operator-gated orphan recovery and distributed SSH/provider validation remain open.
+
+
+12. Phase 4 lock diagnostics and the tunnel setup unit-test timeout fix: the workspace-scoped, read-only CLI Bridge action delegate.claims exposes claim health without unlocking orphaned writes or exposing owner tokens. See docs/plans/2026-10-20-superagent-hermes-phase-4-cross-process-artifact-claims.md. The tunnel installation unit suite now uses a synthetic offline subprocess instead of npm global installation. This does not satisfy live SSH/OAuth, shared multi-writer metadata or production staging acceptance.
+
+
+13. Cross-process claim diagnostics and deterministic tunnel installation unit tests passed final local full regression (371 passed suites, 1 skipped; 3,554 passed tests, 5 skipped, exit 0) on 2026-10-20. Locked output status is inspectable only from its authorized workspace, but orphaned locks still require manual child-process verification before recovery. This is local acceptance, not production certification.

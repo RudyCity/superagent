@@ -9,6 +9,13 @@ import {
 } from "../src/core/setup/tunnelClientSetup.js";
 import { clearSystemCheckCache } from "../src/core/config/systemCache.js";
 import * as openaiTunnelModule from "../src/core/mcp/openaiTunnelClient.js";
+import { execa } from "execa";
+
+// Never execute a real global npm install from a unit test. Installation
+// can hang on network/registry contention and has system-wide side effects.
+vi.mock("execa", () => ({
+  execa: vi.fn(async () => { throw new Error("synthetic offline npm failure"); }),
+}));
 
 describe("tunnelClientSetup", () => {
   let tempHome: string;
@@ -19,6 +26,7 @@ describe("tunnelClientSetup", () => {
     homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(tempHome);
     clearTunnelClientCache();
     clearSystemCheckCache();
+    vi.mocked(execa).mockClear();
   });
 
   afterEach(() => {
@@ -65,5 +73,9 @@ describe("tunnelClientSetup", () => {
     });
 
     expect(stageReported).toBe("done");
+    expect(execa).toHaveBeenCalledOnce();
+    expect(execa).toHaveBeenCalledWith("npm", ["install", "-g", "@openai/tunnel-client"], {
+      stdio: "ignore", timeout: 45000,
+    });
   });
 });
