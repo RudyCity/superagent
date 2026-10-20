@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { getMotionProject, motionStorageDir, motionWorkspaceRoot } from "../project/projectStore.js";
 import { encodeMotionMp4, deriveRenderProfile, type RenderProfile } from "../render/ffmpegEncoder.js";
 import { validateMotionProject } from "../schema/validation.js";
+import { resolveMotionAssets } from "../assets/motionAssets.js";
 import type { MotionProject } from "../schema/types.js";
 import { MOTION_QUEUE_LIMIT, acquireMotionRenderSlot, assertMotionQueueCapacity, inspectMotionSlots, motionConcurrentSlots, withMotionQueueAdmission } from "./renderScheduler.js";
 const execFileAsync = promisify(execFile);
@@ -227,6 +228,8 @@ export async function prepareMotionJob(
 ): Promise<MotionJob> {
   const project = await getMotionProject(workspace, projectId);
   const profile = deriveRenderProfile(project, options.width, options.maxFrames);
+  // Fail before claiming a render slot if referenced immutable image assets are absent or corrupted.
+  await resolveMotionAssets(workspace, project);
   const dir = await motionJobDir(workspace, "jobs");
   return withMotionQueueAdmission(dir, async () => {
     await assertMotionQueueCapacity(dir);
@@ -328,7 +331,7 @@ async function runAdmittedMotionJob(
       };
       await progress(0);
       await encodeMotionMp4(project, job.profile, temporary, {
-        ffmpeg: options.ffmpeg, signal: options.signal, onProgress: progress,
+        ffmpeg: options.ffmpeg, signal: options.signal, onProgress: progress, workspace,
       });
       job.framesCompleted = job.profile.frameCount;
       job.status = "validating";

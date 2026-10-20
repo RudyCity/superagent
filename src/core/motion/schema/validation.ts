@@ -89,8 +89,12 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
         if (!record(layer)) { errors.push(at + ": expected object"); return; }
         const kind = layer.kind;
         const common = ["id", "kind", "x", "y", "width", "height", "rotation", "opacity", "fill", "tracks"];
-        allowedKeys(layer, kind === "text" ? [...common, "text", "fontSize", "fontFamily"] : common, at, errors);
-        if (kind !== "text" && kind !== "rect") errors.push(at + ": unsupported layer kind");
+        allowedKeys(layer, kind === "text" ? [...common, "text", "fontSize", "fontFamily"] :
+          kind === "image" ? [...common, "assetId"] : common, at, errors);
+        if (kind !== "text" && kind !== "rect" && kind !== "image") errors.push(at + ": unsupported layer kind");
+        if (kind === "image" && (typeof layer.assetId !== "string" || !/^asset-[a-f0-9]{64}$/.test(layer.assetId))) {
+          errors.push(at + ": invalid image assetId");
+        }
         if (!string(layer.id, 64) || !id.test(layer.id) || layerIds.has(layer.id)) errors.push(at + ": invalid or duplicate layer id");
         else layerIds.add(layer.id);
         if (!finite(layer.x, -100000, 100000) || !finite(layer.y, -100000, 100000) ||

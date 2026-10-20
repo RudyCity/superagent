@@ -36,7 +36,11 @@ export interface TextLayer extends BaseLayer {
 export interface RectLayer extends BaseLayer {
   kind: "rect";
 }
-export type MotionLayer = TextLayer | RectLayer;
+export interface ImageLayer extends BaseLayer {
+  kind: "image";
+  assetId: string;
+}
+export type MotionLayer = TextLayer | RectLayer | ImageLayer;
 
 export interface MotionProject {
   schemaVersion: typeof MOTION_SCHEMA_VERSION;

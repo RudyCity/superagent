@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import type { MotionEdit, MotionProject } from "./schema/types.js";
 import { createMotionProject, getMotionProject, listMotionProjects, motionStorageDir, updateMotionProject } from "./project/projectStore.js";
 import { renderMotionSvg } from "./runtime/frameSvg.js";
+import { resolveMotionAssets } from "./assets/motionAssets.js";
 
 export { createMotionProject, getMotionProject, listMotionProjects, updateMotionProject };
 export type { MotionProject, MotionEdit };
@@ -16,7 +17,9 @@ export async function writeMotionPreview(
   workspace: string, projectId: string, frame: number,
 ): Promise<{ projectId: string; revision: number; frame: number; path: string; sha256: string }> {
   const project = await getMotionProject(workspace, projectId);
-  const data = renderMotionSvg(project, frame);
+  const assets = await resolveMotionAssets(workspace, project);
+  const imageData = new Map([...assets].map(([id, bytes]) => [id, "data:image/png;base64," + bytes.toString("base64")]));
+  const data = renderMotionSvg(project, frame, imageData);
   const storage = await motionStorageDir(workspace);
   const previewDir = path.join(path.dirname(storage), "previews");
   await fs.mkdir(previewDir, { recursive: true, mode: 0o700 });

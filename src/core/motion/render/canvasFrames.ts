@@ -1,4 +1,4 @@
-import { createCanvas } from "@napi-rs/canvas";
+import { createCanvas, type Image } from "@napi-rs/canvas";
 import type { MotionProject } from "../schema/types.js";
 import { evaluateFrame } from "../timeline/evaluateFrame.js";
 
@@ -6,7 +6,7 @@ import { evaluateFrame } from "../timeline/evaluateFrame.js";
  * Restricted built-in declarative canvas renderer. Does not load URLs, plugins,
  * custom scripts, host files or user-selected fonts.
  */
-export function createMotionFrameRenderer(project: MotionProject, width: number, height: number) {
+export function createMotionFrameRenderer(project: MotionProject, width: number, height: number, images = new Map<string, Image>()) {
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
   const sx = width / project.composition.width;
@@ -29,6 +29,10 @@ export function createMotionFrameRenderer(project: MotionProject, width: number,
       ctx.fillStyle = layer.fill;
       if (layer.kind === "rect") {
         ctx.fillRect(values.x, values.y, layer.width, layer.height);
+      } else if (layer.kind === "image") {
+        const image = images.get(layer.assetId);
+        if (!image) throw new Error("Motion image asset missing from pinned renderer");
+        ctx.drawImage(image, values.x, values.y, layer.width, layer.height);
       } else {
         ctx.textBaseline = "alphabetic";
         ctx.font = `${layer.fontSize}px "${layer.fontFamily}"`;

@@ -8,6 +8,7 @@ import { getMotionJob, getMotionSchedulerStatus, inspectMotionJob, listMotionJob
 import { MotionRevisionConflict } from "./project/revisions.js";
 import { MotionValidationError } from "./schema/validation.js";
 import type { MotionEdit } from "./schema/types.js";
+import { importMotionAsset, readMotionAsset } from "./assets/motionAssets.js";
 
 export interface MotionHttpContext {
   resolveWorkspacePath: (req: IncomingMessage) => string | null;
@@ -17,13 +18,13 @@ export interface MotionHttpContext {
 function json(res: ServerResponse, context: MotionHttpContext, code: number, value: unknown): void {
   context.sendJSON(res, code, value);
 }
-async function readMotionJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readMotionJson(req: IncomingMessage, maxSize = 1_000_000): Promise<Record<string, unknown>> {
   const parts: Buffer[] = [];
   let size = 0;
   for await (const part of req) {
     const buffer = Buffer.isBuffer(part) ? part : Buffer.from(part);
     size += buffer.length;
-    if (size > 1_000_000) throw Object.assign(new Error("Motion request body too large"), { statusCode: 413 });
+    if (size > maxSize) throw Object.assign(new Error("Motion request body too large"), { statusCode: 413 });
     parts.push(buffer);
   }
   const input: unknown = JSON.parse(Buffer.concat(parts).toString("utf8"));
@@ -62,9 +63,27 @@ export async function handleMotionHttpRoute(
   const cancel = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/cancel$/);
   const recovery = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/recovery$/);
   const artifact = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/artifact$/);
+  const asset = pathname.match(/^\/api\/motion\/assets\/(asset-[a-f0-9]{64})$/);
   try {
     if (pathname === "/api/motion" && method === "GET") {
       json(res, ctx, 200, { apiVersion: 1, video: "h264-mp4", detachedJobs: true, studio: false });
+    } else if (pathname === "/api/motion/assets" && method === "POST") {
+      const body = await readMotionJson(req, 1_600_000);
+      if (typeof body.base64 !== "string" || body.base64.length > 1_400_000 ||
+          !/^[a-zA-Z0-9+/]+={0,2}$/.test(body.base64) || body.base64.length % 4 !== 0) {
+        throw new Error("Invalid Motion image base64 encoding");
+      }
+      json(res, ctx, 201, await importMotionAsset(workspace, Buffer.from(body.base64, "base64")));
+    } else if (asset && (method === "GET" || method === "HEAD")) {
+      const bytes = await readMotionAsset(workspace, asset[1]);
+      res.writeHead(200, {
+        "Content-Type": "image/png",
+        "Content-Length": String(bytes.length),
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+        "ETag": '"' + asset[1].slice(6) + '"',
+      });
+      res.end(method === "HEAD" ? undefined : bytes);
     } else if (pathname === "/api/motion/projects" && method === "GET") {
       json(res, ctx, 200, await listMotionProjects(workspace));
     } else if (pathname === "/api/motion/projects" && method === "POST") {

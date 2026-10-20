@@ -54,7 +54,7 @@ export async function encodeMotionMp4(
   project: MotionProject,
   profile: RenderProfile,
   temporaryFile: string,
-  options: { ffmpeg?: string; signal?: AbortSignal; onProgress?: (frame: number) => Promise<void> } = {},
+  options: { ffmpeg?: string; signal?: AbortSignal; onProgress?: (frame: number) => Promise<void>; workspace?: string } = {},
 ): Promise<void> {
   if (options.signal?.aborted) throw new Error("Motion render cancelled");
   // Canvas is optional for non-render commands and should not slow terminal startup.
@@ -79,7 +79,17 @@ export async function encodeMotionMp4(
   options.signal?.addEventListener("abort", abort, { once: true });
   let failure: Error | undefined;
   try {
-    const drawFrame = createMotionFrameRenderer(project, profile.width, profile.height);
+    const imageLayers = project.composition.layers.filter(layer => layer.kind === "image");
+    const images = new Map<string, import("@napi-rs/canvas").Image>();
+    if (imageLayers.length) {
+      if (!options.workspace) throw new Error("Motion image layers require a workspace asset store");
+      const [{ resolveMotionAssets }, { loadImage }] = await Promise.all([
+        import("../assets/motionAssets.js"), import("@napi-rs/canvas"),
+      ]);
+      const assets = await resolveMotionAssets(options.workspace, project);
+      for (const [assetId, bytes] of assets) images.set(assetId, await loadImage(bytes));
+    }
+    const drawFrame = createMotionFrameRenderer(project, profile.width, profile.height, images);
     for (let frame = 0; frame < profile.frameCount; frame++) {
       if (options.signal?.aborted) throw new Error("Motion render cancelled");
       if (options.onProgress) await options.onProgress(frame);

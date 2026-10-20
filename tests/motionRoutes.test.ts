@@ -8,6 +8,7 @@ import { ensureServerAuthToken, isRequestAuthorized } from "../src/core/utils/se
 import { createMotionProject } from "../src/core/motion/project/projectStore.js";
 import { renderMotionJob } from "../src/core/motion/jobs/motionJobs.js";
 import { probeFfmpeg } from "../src/core/motion/render/ffmpegEncoder.js";
+import { createCanvas } from "@napi-rs/canvas";
 
 const cleanups: Array<() => Promise<void>> = [];
 async function fixture() {
@@ -82,6 +83,34 @@ describe("Motion HTTP and artifact transport", () => {
     expect((await edit(1)).status).toBe(409);
     const listed = await request("/api/motion/projects");
     expect((await listed.json()).some((project: any) => project.id === created.id)).toBe(true);
+  });
+
+  it("imports a bounded workspace image over authenticated JSON and serves only owned PNG bytes", async () => {
+    const { request, url } = await fixture();
+    const canvas = createCanvas(10, 10);
+    canvas.getContext("2d").fillRect(0, 0, 10, 10);
+    const bytes = canvas.toBuffer("image/png");
+    const upload = await request("/api/motion/assets", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base64: bytes.toString("base64") }),
+    });
+    expect(upload.status).toBe(201);
+    const saved = await upload.json();
+    expect(saved.id).toMatch(/^asset-[a-f0-9]{64}$/);
+    const get = await request("/api/motion/assets/" + saved.id);
+    expect(get.status).toBe(200);
+    expect(get.headers.get("content-type")).toBe("image/png");
+    expect(Buffer.from(await get.arrayBuffer())).toEqual(bytes);
+    const head = await request("/api/motion/assets/" + saved.id, { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(Number(head.headers.get("content-length"))).toBe(bytes.length);
+    expect((await fetch(url + "/api/motion/assets/" + saved.id)).status).toBe(401);
+    const evil = await request("/api/motion/assets", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base64: Buffer.from("<svg>bad</svg>").toString("base64") }),
+    });
+    expect(evil.status).toBe(400);
+    expect((await request("/api/motion/assets/" + "asset-" + "a".repeat(64))).status).toBe(404);
   });
 
   it("streams authenticated MP4 HEAD, full GET and byte ranges with ownership checks", async () => {
