@@ -13,4 +13,6 @@ export const WORKSPACE_SCOPED_MCP_TOOLS = new Set([
   "superagent_update_tasks", "superagent_manage_plan", "superagent_manage_tasks", "superagent_replace_file_content",
   "superagent_apply_patch", "superagent_git_action", "superagent_read_document", "superagent_office_cli", "superagent_list_workspace_chains",
   "superagent_manage_workspace_chain", "superagent_cross_workspace_exec",
+  "superagent_motion_list", "superagent_motion_inspect", "superagent_motion_create", "superagent_motion_edit",
+  "superagent_motion_render", "superagent_motion_jobs", "superagent_motion_status", "superagent_motion_recovery", "superagent_motion_cancel",
 ]);

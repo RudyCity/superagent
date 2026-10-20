@@ -378,9 +378,11 @@ Record machine/browser/font versions and tolerances. Do not claim external produ
 - [x] Add detached local Node rendering worker, persisted immutable source snapshot, exclusive per-project/per-job claims, status and cancellation across CLI process lifetimes.
 - [x] Add read-only owner/claim recovery diagnostics that do not kill processes or seize ownership.
 - [ ] Add crash-safe ownership reconciliation, bounded scheduler/queue, auto-restart policy and long-render/cross-platform benchmarks.
-- [ ] Add minimal agent/MCP adapters with explicit permission mappings.
+- [x] Add nine MCP Motion tools with project/workspace routing, read/write/execute mapping, dangerous-tool opt-in and direct-dispatch tests.
+- [ ] Add optional agent-facing motion_* wrappers with per-tier discovery and toolset permissions.
 - [x] Add interactive /motion registry command and scriptable superagent motion with render/jobs/status/cancel and test coverage.
-- [ ] Add scoped Motion HTTP JSON/job/event/media endpoints and t-line streaming proxy.
+- [x] Add authenticated SuperAgent HTTP /api/motion metadata, project edit, render/status/cancel, read-only recovery and MP4 GET/HEAD/Range artifact delivery with hash verification.
+- [ ] Add scoped Motion SSE events and T-Line backend authenticated/binary streaming proxy.
 - [ ] Add MotionStudioTab with stable project/revision IDs and cross-surface parity tests.
 - [x] Export a 30-frame declarative scene to FFmpeg H.264 MP4; validate dimensions, frame count, duration and SHA-256; test cancellation and failed encoder.
 - [ ] Establish preview/export visual equivalence and 10-second default fixture plus performance benchmarks.
@@ -397,7 +399,7 @@ Before implementing a phase, check repository status and instructions again. Use
 
 Rollout: developer fixtures -> internal use -> opt-in beta -> broader enablement after gates. Feature disablement must preserve saved projects. Schema migrations retain recovery copies.
 
-Current implementation snapshot (2026-10-20): scene schema, validation, revision-checked local project store, deterministic SVG evaluator, FFmpeg/libx264 MP4, isolated persisted MotionJob metadata/cancellation/status, both interactive /motion and scriptable superagent motion command. Detached render is now available via superagent motion render PROJECT_ID --detach; it queues a snapshot-pinned job before spawning an independent Node worker, returns a job ID, and supports cross-process status/cancel and read-only recovery diagnostics. Local Windows live detached render completed after launcher exit with a distinct worker PID, and unit/integration coverage reached 15 passing tests across four Motion suites; TypeScript noEmit passed. The worker does not automatically reattach or reclaim interrupted jobs: interrupted/unknown owner processes and claims require careful manual reconciliation. The render still lacks audio, arbitrary assets, masks, browser parity, agent/MCP exposure, HTTP routes, binary transport, and T-Line editing. Phase 0B dependency packaging and Phase 0C desktop transport/security certification remain outstanding; production readiness is not claimed.
+Current implementation snapshot (2026-10-20): scene schema, revision-checked local project store, deterministic SVG evaluator, FFmpeg/libx264 MP4, detached per-project workers and persisted jobs, interactive /motion and scriptable superagent motion. Nine MCP tools are now registered with classified safe/dangerous exposure and explicit read/write/execute mapping. The global SuperAgent /api authorization gate now delegates /api/motion metadata, revision edits, render/status/cancel/recovery, and MP4 artifact HEAD/GET/Range to a workspace-scoped Motion route. New HTTP and MCP integration tests plus existing regressions passed (54/54 across nine suites), along with a full TypeScript build. This is still a developer preview; automatic crash recovery, job scheduler, audio/assets, browser visual parity, SSE, agent-tier wrappers, T-Line authenticated proxy and native desktop editor remain pending. Phase 0C desktop transport/isolation has not been verified against a live desktop client. Do not claim production readiness.
 
 
 ### 15A. Render feasibility and packaging notes (2026-10-20)
@@ -409,3 +411,5 @@ Current implementation snapshot (2026-10-20): scene schema, validation, revision
 - Limit release to developer-preview use until an isolated render worker, font readiness, process lifecycle, permission scope tests and cross-platform packaging pass.
 
 - Verification (detached increment, 2026-10-20): four Motion test suites / 15 tests passed; CLI detached worker spawned after persisted job snapshot, completed H.264 MP4 using a different PID, and reported final artifact metadata. Added fail-closed snapshot hash checks, exclusive execution claims, read-only lock inspection and bounded Windows atomic rename retries when readers briefly hold JSON status files. No root package manifest, Hermes job store, CDP implementation or T-Line files were changed by this increment.
+
+- MCP/HTTP verification (2026-10-20): nine Motion MCP tools wired to existing discovery, dangerous-tool policy, workspace selection, OAuth scope and project access capability guards; HTTP routed under the existing authenticated /api server gate, not an independent unauthenticated listener. HTTP smoke tests verified missing-token 401, forbidden workspace 403, revision conflict 409, completed MP4 200/HEAD, byte-range 206, invalid range 416, and unknown artifact 404. Output hashes are checked with bounded-memory streaming before media responses. Follow-up live T-Line auth and packaged worker execution are unverified.

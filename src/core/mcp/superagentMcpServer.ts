@@ -176,6 +176,7 @@ function toResolvedProjectContext(target: ResolvedProjectTarget | null): Resolve
   };
 }
 import { PROJECT_REGISTRY_TOOL_NAMES, WORKSPACE_SCOPED_MCP_TOOLS } from "./mcpWorkspacePolicy.js";
+import { MOTION_MCP_TOOL_DEFS, dispatchMotionMcpTool } from "./tools/motionMcpTools.js";
 import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
 import type { McpServerOptions } from "./mcpToolPolicy.js";
 export type { McpServerOptions } from "./mcpToolPolicy.js";
@@ -486,6 +487,7 @@ export const MCP_TOOL_DEFINITIONS = [
     ...REMOTE_AGENT_MCP_TOOL_DEFS,
     ...PROJECT_MCP_TOOL_DEFS,
     ...WORKSPACE_CHAIN_MCP_TOOL_DEFS,
+    ...MOTION_MCP_TOOL_DEFS,
 ];
 
 const activeMcpServerInstances = new Set<Server>();
@@ -809,6 +811,15 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           return await handleGetRemoteStatus(args);
         default: {
           const identity = getIdentity?.();
+          // Rendering writes an artifact and executes a worker: explicitly require
+          // both capabilities when an MCP project grant (not local scope) is used.
+          if (name === "superagent_motion_render" && targetProjectId && identityForProjectAccess?.subject
+            && !isPathWithinYoloScope(targetWorkspace, scopedWorkspaceAnchor)
+            && !hasProjectAccess(identityForProjectAccess, targetProjectId, "write")) {
+            return { content: [{ type: "text", text: "Motion rendering also requires project write capability." }], isError: true };
+          }
+          const motionRes = await dispatchMotionMcpTool(name, args, targetWorkspace);
+          if (motionRes) return motionRes;
           const projectRes = await dispatchProjectMcpTool(name, args, identity?.subject ? identity : null);
           if (projectRes) return projectRes;
           const chainRes = await dispatchWorkspaceChainMcpTool(name, args, targetWorkspace);

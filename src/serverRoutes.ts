@@ -163,6 +163,12 @@ export async function handleServerRoute(
     killVisionServerProcess
   } = ctx;
 
+  // Motion API reuses the existing /api authorization and validated workspace gate.
+  if (pathname === "/api/motion" || pathname.startsWith("/api/motion/")) {
+    const { handleMotionHttpRoute } = await import("./core/motion/motionRoutes.js");
+    return handleMotionHttpRoute(req, res, pathname, parsedUrl, { resolveWorkspacePath, sendJSON });
+  }
+
   // ─── Omnichannel Gateway Routes ─────────────────────────────────────────────
   if (pathname.startsWith("/api/gateway")) {
     const { handleGatewayRoutes } = await import("./core/gateway/gatewayRoutes.js");

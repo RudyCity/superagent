@@ -172,6 +172,8 @@ export function revokeProjectAccess(
 
 export function getProjectCapabilityForTool(toolName: string, args: Record<string, unknown> = {}): ProjectAccessCapability {
   if (toolName === "superagent_exec_command" || toolName === "superagent_office_cli" || toolName === "superagent_cli_bridge") return "execute";
+  if (toolName === "superagent_motion_render" || toolName === "superagent_motion_cancel") return "execute";
+  if (toolName === "superagent_motion_create" || toolName === "superagent_motion_edit") return "write";
   if (toolName === "superagent_git_action") {
     const action = typeof args.action === "string" ? args.action : "";
     return ["status", "diff", "log"].includes(action) ? "read" : "git";

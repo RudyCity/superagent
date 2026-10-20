@@ -1,4 +1,5 @@
 import { CHROME_MCP_TOOL_CLASSIFICATIONS } from "./tools/chromeMcpTools.js";
+import { MOTION_MCP_TOOL_CLASSIFICATIONS } from "./tools/motionMcpTools.js";
 import { DIAGNOSTICS_MCP_TOOL_CLASSIFICATIONS } from "./tools/diagnosticsMcpTools.js";
 import { PLAN_SKILLS_MCP_TOOL_CLASSIFICATIONS } from "./tools/planSkillsMcpTools.js";
 import { NETWORK_CONTENT_MCP_TOOL_CLASSIFICATIONS } from "./tools/networkContentMcpTools.js";
@@ -61,6 +62,7 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   superagent_compact_context: "dangerous",
   superagent_remote_chrome: "dangerous",
   ...CHROME_MCP_TOOL_CLASSIFICATIONS,
+  ...MOTION_MCP_TOOL_CLASSIFICATIONS,
   ...DIAGNOSTICS_MCP_TOOL_CLASSIFICATIONS,
   ...PLAN_SKILLS_MCP_TOOL_CLASSIFICATIONS,
   ...NETWORK_CONTENT_MCP_TOOL_CLASSIFICATIONS,
