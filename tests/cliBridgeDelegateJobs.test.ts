@@ -174,6 +174,218 @@ describe("CLI Bridge background delegation jobs", () => {
     }
   }, 15_000);
 
+  it("marks exit 0 without declared output evidence as unverified", async () => {
+    const started = await delegateJobs.startDelegateJob(options('console.log("exit-only")'));
+    const finished = await waitForTerminal(started.jobId);
+    expect(finished.status).toBe("succeeded"); // legacy process state
+    expect(finished.completionState).toBe("unverified");
+    expect(finished.artifactEvidence).toBeUndefined();
+  }, 15_000);
+
+  it("verifies creation and content updates with bounded persisted SHA-256 evidence", async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-artifact-proof-"));
+    try {
+      await fs.writeFile(path.join(workspace, "updated.txt"), "before");
+      const request = {
+        ...options('const f = require("fs"); f.writeFileSync("created.txt", "new"); f.writeFileSync("updated.txt", "after");'),
+        cwd: workspace, workspaceRoot: workspace,
+        expectedArtifacts: ["created.txt", "updated.txt"],
+      };
+      const started = await delegateJobs.startDelegateJob(request);
+      expect(started.completionState).toBe("pending");
+      const final = await waitForTerminal(started.jobId);
+      expect(final.status).toBe("succeeded");
+      expect(final.completionState).toBe("artifacts_verified");
+      expect(final.artifactEvidence?.map(item => item.state)).toEqual(["created", "updated"]);
+      expect(final.artifactEvidence?.every(item => /^[a-f0-9]{64}$/.test(item.sha256 ?? ""))).toBe(true);
+      expect(final.artifactEvidence?.map(item => item.bytes)).toEqual([3, 5]);
+      const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
+      const displayed = await cliBridgeTool.execute({ action: "delegate.get", jobId: started.jobId }, workspace);
+      expect(String(displayed)).toContain("Completion proof: artifacts_verified");
+      expect(String(displayed)).toContain("created.txt created sha256=");
+      const files = await fs.readFile(path.join(configDir, "cli-bridge", "delegations", "jobs.json"), "utf8");
+      expect(files).toContain('"completionState": "artifacts_verified"');
+      expect(files).not.toContain('"new"');
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 15_000);
+
+  it("refuses missing or unchanged artifacts despite successful CLI exit", async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-artifact-fail-"));
+    try {
+      await fs.writeFile(path.join(workspace, "old.txt"), "unchanged");
+      const started = await delegateJobs.startDelegateJob({
+        ...options('console.log("no file edits");'),
+        cwd: workspace, workspaceRoot: workspace,
+        expectedArtifacts: ["old.txt", "missing.txt"],
+      });
+      const final = await waitForTerminal(started.jobId);
+      expect(final.exitCode).toBe(0);
+      expect(final.status).toBe("verification_failed");
+      expect(final.completionState).toBe("artifact_verification_failed");
+      expect(final.artifactEvidence?.map(item => item.state)).toEqual(["unchanged", "missing"]);
+      expect(final.error).toMatch(/not newly created or changed/i);
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 15_000);
+
+  it("reserves overlapping output claims atomically but allows independent parallel output jobs", async () => {
+    process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS = "3";
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-artifact-lock-"));
+    try {
+      const script = 'const fs = require("fs"); setTimeout(() => fs.writeFileSync(process.argv[1], "done"), 500);';
+      const first = await delegateJobs.startDelegateJob({
+        ...options(script, 5000), cwd: workspace, workspaceRoot: workspace,
+        args: ["-e", script, "one.txt"], expectedArtifacts: ["one.txt"],
+      });
+      await expect(delegateJobs.startDelegateJob({
+        ...options(script, 5000), cwd: workspace, workspaceRoot: workspace,
+        args: ["-e", script, "one.txt"], expectedArtifacts: ["one.txt"],
+      })).rejects.toThrow(/claim already held/i);
+      const other = await delegateJobs.startDelegateJob({
+        ...options(script, 5000), cwd: workspace, workspaceRoot: workspace,
+        args: ["-e", script, "two.txt"], expectedArtifacts: ["two.txt"],
+      });
+      const [firstFinal, otherFinal] = await Promise.all([waitForTerminal(first.jobId), waitForTerminal(other.jobId)]);
+      expect(firstFinal.completionState).toBe("artifacts_verified");
+      expect(otherFinal.completionState).toBe("artifacts_verified");
+      const reuse = await delegateJobs.startDelegateJob({
+        ...options('require("fs").writeFileSync("one.txt", "changed again")'),
+        cwd: workspace, workspaceRoot: workspace, expectedArtifacts: ["one.txt"],
+      });
+      expect((await waitForTerminal(reuse.jobId)).completionState).toBe("artifacts_verified");
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 15_000);
+
+  it("rejects invalid, foreign and symlinked artifact expectations before running children", async () => {
+    const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-artifact-validation-"));
+    const a = path.join(fixture, "A");
+    const b = path.join(fixture, "B");
+    await fs.mkdir(a);
+    await fs.mkdir(b);
+    try {
+      for (const filename of ["../B/file.txt", path.join(b, "file.txt"), "./", "same/../../B/file.txt"]) {
+        await expect(delegateJobs.startDelegateJob({
+          ...options('console.log("must not execute")'), cwd: a, workspaceRoot: a,
+          expectedArtifacts: [filename],
+        })).rejects.toThrow(/outside|relative|regular file/i);
+      }
+      await expect(delegateJobs.startDelegateJob({
+        ...options('console.log("invalid")'), cwd: a, workspaceRoot: a, expectedArtifacts: ["duplicate.txt", "duplicate.txt"],
+      })).rejects.toThrow(/duplicate/i);
+      const link = path.join(a, "foreign");
+      try {
+        await fs.symlink(b, link, process.platform === "win32" ? "junction" : "dir");
+        await expect(delegateJobs.startDelegateJob({
+          ...options('console.log("invalid")'), cwd: a, workspaceRoot: a, expectedArtifacts: ["foreign/file.txt"],
+        })).rejects.toThrow(/outside/i);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EPERM") throw err;
+      }
+    } finally {
+      await fs.rm(fixture, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 15_000);
+
+  it("exposes artifact verification through delegate.start, get and tail without trusting stdout", async () => {
+    const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-cli-proof-tool-"));
+    try {
+      const result = await cliBridgeTool.execute({
+        action: "delegate.start", cli: "custom", binary: process.execPath,
+        prompt: "Produce the evidence file",
+        args: ["-e", 'require("fs").writeFileSync("proof.txt", "proof content")'],
+        cwd: workspace, expectedArtifacts: ["proof.txt"],
+        skillAutoDetect: false, injectArtifacts: false,
+      }, workspace);
+      const id = String(result).match(/clj_\d+_[a-f0-9]+/)?.[0];
+      expect(id).toBeTruthy();
+      expect(result).toContain("Completion proof: pending");
+      const final = await waitForTerminal(id!);
+      expect(final.completionState).toBe("artifacts_verified");
+      const status = await cliBridgeTool.execute({ action: "delegate.get", jobId: id }, workspace);
+      const tail = await cliBridgeTool.execute({ action: "delegate.tail", jobId: id }, workspace);
+      expect(String(status)).toContain("Completion proof: artifacts_verified");
+      expect(String(status)).toContain("proof.txt created sha256=");
+      expect(String(tail)).toContain("proof=artifacts_verified");
+      expect(String(await cliBridgeTool.execute({
+        action: "delegate", cli: "custom", binary: process.execPath,
+        prompt: "No silent proof ignore", expectedArtifacts: ["another.txt"],
+      }, workspace))).toMatch(/requires action=delegate.start/i);
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 15_000);
+
+  it("does not report verified for failed, timed-out or cancelled processes", async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-artifact-terminal-"));
+    try {
+      const failed = await delegateJobs.startDelegateJob({
+        ...options('require("fs").writeFileSync("bad.txt", "partial"); process.exit(4);'),
+        cwd: workspace, workspaceRoot: workspace, expectedArtifacts: ["bad.txt"],
+      });
+      const failure = await waitForTerminal(failed.jobId);
+      expect(failure.status).toBe("failed");
+      expect(failure.completionState).toBe("failed");
+
+      const timeout = await delegateJobs.startDelegateJob({
+        ...options('setTimeout(() => require("fs").writeFileSync("too-late.txt", "late"), 8000);', 1000),
+        cwd: workspace, workspaceRoot: workspace, expectedArtifacts: ["too-late.txt"],
+      });
+      const timed = await waitForTerminal(timeout.jobId);
+      expect(timed.status).toBe("timed_out");
+      expect(timed.completionState).toBe("timed_out");
+
+      const cancelled = await delegateJobs.startDelegateJob({
+        ...options('setTimeout(() => require("fs").writeFileSync("cancel.txt", "late"), 8000);', 10000),
+        cwd: workspace, workspaceRoot: workspace, expectedArtifacts: ["cancel.txt"],
+      });
+      expect((await delegateJobs.cancelDelegateJob(cancelled.jobId)).ok).toBe(true);
+      const terminal = await waitForTerminal(cancelled.jobId);
+      expect(terminal.status).toBe("cancelled");
+      expect(terminal.completionState).toBe("cancelled");
+      expect([failure, timed, terminal].every(job => job.completionState !== "artifacts_verified")).toBe(true);
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 25_000);
+
+  it("rejects oversized evidence and canonicalizes an in-workspace symlink alias for conflict detection", async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-artifact-limit-"));
+    const actualDir = path.join(workspace, "actual");
+    const aliasDir = path.join(workspace, "alias");
+    await fs.mkdir(actualDir);
+    try {
+      const oversized = await delegateJobs.startDelegateJob({
+        ...options('require("fs").writeFileSync("huge.bin", Buffer.alloc(10*1024*1024+1));'),
+        cwd: workspace, workspaceRoot: workspace, expectedArtifacts: ["huge.bin"],
+      });
+      const final = await waitForTerminal(oversized.jobId);
+      expect(final.status).toBe("verification_failed");
+      expect(final.artifactEvidence?.[0].state).toBe("too_large");
+      try {
+        await fs.symlink(actualDir, aliasDir, process.platform === "win32" ? "junction" : "dir");
+        const first = await delegateJobs.startDelegateJob({
+          ...options('setTimeout(() => require("fs").writeFileSync("actual/shared.txt", "ok"), 1500);'),
+          cwd: workspace, workspaceRoot: workspace, expectedArtifacts: ["actual/shared.txt"],
+        });
+        await expect(delegateJobs.startDelegateJob({
+          ...options('console.log("must not start")'), cwd: workspace, workspaceRoot: workspace,
+          expectedArtifacts: ["alias/shared.txt"],
+        })).rejects.toThrow(/claim already held/i);
+        expect((await waitForTerminal(first.jobId)).completionState).toBe("artifacts_verified");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error;
+      }
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 20_000);
+
   it("exposes background start, status polling, and log tail through the MCP tool", async () => {
     const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
     const response = await cliBridgeTool.execute({

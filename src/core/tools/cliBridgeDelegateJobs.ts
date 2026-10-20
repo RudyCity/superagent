@@ -8,9 +8,13 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getRootConfigDir } from "../config/paths.js";
+import {
+  resolveExpectedArtifacts, snapshotExpectedArtifacts, inspectExpectedArtifacts, artifactClaimIdentity,
+  type ArtifactBaseline, type ArtifactEvidence,
+} from "./cliBridgeArtifactEvidence.js";
 
 export type DelegateJobStatus =
-  | "starting" | "running" | "cancelling" | "succeeded" | "failed" | "timed_out" | "cancelled" | "interrupted";
+  | "starting" | "running" | "cancelling" | "succeeded" | "failed" | "timed_out" | "cancelled" | "interrupted" | "verification_failed";
 
 export interface DelegateJob {
   jobId: string;
@@ -19,6 +23,11 @@ export interface DelegateJob {
   cwd: string;
   /** Immutable canonical caller workspace; used to authorize job inspection and cancellation. */
   workspaceRoot?: string;
+  /** Caller-declared artifact paths; never inferred from model output. */
+  expectedArtifacts?: string[];
+  /** Exit zero alone means unverified process completion. */
+  completionState?: "pending" | "artifacts_verified" | "unverified" | "artifact_verification_failed" | "failed" | "timed_out" | "cancelled" | "interrupted";
+  artifactEvidence?: ArtifactEvidence[];
   pid: number | null;
   status: DelegateJobStatus;
   startedAt: number;
@@ -39,6 +48,7 @@ export interface StartDelegateJobOptions {
   prompt: string;
   cwd: string;
   workspaceRoot?: string;
+  expectedArtifacts?: string[];
   args: string[];
   timeoutMs: number;
   env?: NodeJS.ProcessEnv;
@@ -55,6 +65,17 @@ const runners = new Map<string, Promise<void>>();
 const logQueues = new Map<string, Promise<void>>();
 const cancellationRequested = new Set<string>();
 const killTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** In-process claims prevent simultaneous jobs from claiming the same output. */
+const artifactClaims = new Map<string, string>();
+const artifactBaselines = new Map<string, ArtifactBaseline[]>();
+const jobClaims = new Map<string, string[]>();
+function releaseArtifactClaims(jobId: string): void {
+  for (const file of jobClaims.get(jobId) ?? []) {
+    if (artifactClaims.get(file) === jobId) artifactClaims.delete(file);
+  }
+  jobClaims.delete(jobId);
+  artifactBaselines.delete(jobId);
+}
 let initializePromise: Promise<void> | undefined;
 let persistQueue: Promise<void> = Promise.resolve();
 
@@ -91,6 +112,7 @@ async function initialize(): Promise<void> {
             // A process handle cannot be safely reattached after this process restarts.
             if (activeStatus(job.status)) {
               job.status = "interrupted";
+              job.completionState = "interrupted";
               job.updatedAt = Date.now();
               job.error = "SuperAgent restarted while this delegation was active; inspect the log to determine whether its child process continued.";
             }
@@ -174,8 +196,24 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
     if (job.timedOut) killProcessTree(job.jobId, proc);
     if (cancellationRequested.has(job.jobId)) job.status = "cancelled";
     else if (job.timedOut) job.status = "timed_out";
-    else if (job.exitCode === 0) job.status = "succeeded";
-    else job.status = "failed";
+    else if (job.exitCode === 0) {
+      const baseline = artifactBaselines.get(job.jobId);
+      if (!baseline?.length) {
+        job.status = "succeeded";
+        job.completionState = "unverified";
+      } else {
+        const evidence = await inspectExpectedArtifacts(baseline, job.cwd, job.workspaceRoot ?? job.cwd);
+        job.artifactEvidence = evidence;
+        if (evidence.every(item => item.state === "created" || item.state === "updated")) {
+          job.status = "succeeded";
+          job.completionState = "artifacts_verified";
+        } else {
+          job.status = "verification_failed";
+          job.completionState = "artifact_verification_failed";
+          job.error = "CLI exited 0, but one or more expected artifact files were not newly created or changed.";
+        }
+      }
+    } else job.status = "failed";
     if (result?.failed && job.exitCode === null && !job.timedOut && !cancellationRequested.has(job.jobId)) {
       job.error = "The CLI process failed before returning an exit code.";
     }
@@ -183,6 +221,16 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
     job.status = cancellationRequested.has(job.jobId) ? "cancelled" : "failed";
     job.error = error instanceof Error ? error.message : String(error);
   } finally {
+    // Cancellation can race with asynchronous artifact hashing after process exit.
+    if (cancellationRequested.has(job.jobId)) {
+      job.status = "cancelled";
+      job.completionState = "cancelled";
+    }
+    if (!job.completionState || job.completionState === "pending") {
+      job.completionState = job.status === "cancelled" ? "cancelled"
+        : job.status === "timed_out" ? "timed_out" : "failed";
+    }
+    releaseArtifactClaims(job.jobId);
     const timer = killTimers.get(job.jobId);
     if (timer) clearTimeout(timer);
     killTimers.delete(job.jobId);
@@ -194,10 +242,12 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
     cancellationRequested.delete(job.jobId);
     await (logQueues.get(job.jobId) ?? Promise.resolve()).catch(() => {});
     logQueues.delete(job.jobId);
-    queueLog(job.jobId, job.logPath, `\n\n[CLI Bridge job finished: status=${job.status} exit=${job.exitCode ?? "?"} timedOut=${job.timedOut} duration=${job.durationMs}ms timeout=${timeoutMs}ms]\n`);
+    queueLog(job.jobId, job.logPath, `\n\n[CLI Bridge job finished: status=${job.status} proof=${job.completionState} exit=${job.exitCode ?? "?"} timedOut=${job.timedOut} duration=${job.durationMs}ms timeout=${timeoutMs}ms]\n`);
     await (logQueues.get(job.jobId) ?? Promise.resolve()).catch(() => {});
-    runners.delete(job.jobId);
+    // Publish a terminal read only after persisted metadata catches up.
+    // The runner remains tracked until this write finishes.
     await persistJobs();
+    runners.delete(job.jobId);
     try {
       const { notifyTasksChanged } = await import("./state.js");
       notifyTasksChanged();
@@ -213,6 +263,10 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   const cap = maxConcurrentJobs();
   const count = activeJobCount();
   if (count >= cap) throw new Error(`CLI Bridge concurrency limit reached (${count}/${cap}). Wait for a job to finish or cancel one, then retry.`);
+  const artifactFiles = resolveExpectedArtifacts(opts.cwd, opts.workspaceRoot ?? opts.cwd, opts.expectedArtifacts);
+  const claimKeys = artifactFiles.map(artifactClaimIdentity);
+  const locked = claimKeys.find(file => artifactClaims.has(file));
+  if (locked) throw new Error("CLI Bridge artifact claim already held by an active delegation in this process.");
 
   const startedAt = Date.now();
   const jobId = `clj_${startedAt}_${crypto.randomBytes(4).toString("hex")}`;
@@ -220,7 +274,10 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   const logPath = path.join(logDir, `job-${jobId}.log`);
   const job: DelegateJob = {
     jobId, cliAlias: opts.cliAlias, binary: opts.binary, cwd: opts.cwd,
-    workspaceRoot: opts.workspaceRoot ?? opts.cwd, pid: null,
+    workspaceRoot: opts.workspaceRoot ?? opts.cwd,
+    expectedArtifacts: opts.expectedArtifacts?.slice(),
+    completionState: "pending",
+    pid: null,
     status: "starting", startedAt, updatedAt: startedAt, exitCode: null, timedOut: false, timeoutMs: opts.timeoutMs,
     outputTail: "", outputBytes: 0, logPath,
   };
@@ -229,12 +286,19 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   // Without this reservation, simultaneous MCP calls can both pass the cap
   // check and start more children than SUPERAGENT_CLI_BRIDGE_MAX_JOBS allows.
   jobs.set(jobId, job);
+  jobClaims.set(jobId, claimKeys);
+  for (const file of claimKeys) artifactClaims.set(file, jobId);
   try {
+    if (artifactFiles.length) {
+      artifactBaselines.set(jobId, await snapshotExpectedArtifacts(artifactFiles, job.workspaceRoot ?? job.cwd));
+    }
     await fs.mkdir(logDir, { recursive: true });
     await fs.writeFile(logPath, `[CLI Bridge job ${jobId}]\nCLI: ${opts.cliAlias}\nWorking directory: ${opts.cwd}\nTimeout: ${opts.timeoutMs}ms\n--- output ---\n`, "utf8");
     await persistJobs();
   } catch (error) {
     job.status = "failed";
+    job.completionState = "failed";
+    releaseArtifactClaims(jobId);
     job.error = error instanceof Error ? error.message : String(error);
     job.endedAt = Date.now();
     job.durationMs = job.endedAt - job.startedAt;
@@ -252,6 +316,8 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
     });
   } catch (error) {
     job.status = "failed";
+    job.completionState = "failed";
+    releaseArtifactClaims(jobId);
     job.error = error instanceof Error ? error.message : String(error);
     job.endedAt = Date.now();
     job.durationMs = job.endedAt - job.startedAt;
@@ -276,17 +342,27 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   });
   return { ...job };
 }
+async function awaitTerminalPersistence(jobId: string): Promise<void> {
+  const job = jobs.get(jobId);
+  const runningFinalizer = runners.get(jobId);
+  if (job && !activeStatus(job.status) && runningFinalizer) {
+    await runningFinalizer.catch(() => {});
+  }
+}
 export async function listDelegateJobs(): Promise<DelegateJob[]> {
   await initialize();
+  await Promise.all([...jobs.keys()].map(awaitTerminalPersistence));
   return [...jobs.values()].sort((a, b) => b.startedAt - a.startedAt).map((job) => ({ ...job, outputTail: "" }));
 }
 export async function getDelegateJob(jobId: string): Promise<DelegateJob | null> {
   await initialize();
+  await awaitTerminalPersistence(jobId);
   const job = jobs.get(jobId);
   return job ? { ...job } : null;
 }
 export async function tailDelegateJob(jobId: string, limit = 200): Promise<{ job: DelegateJob; output: string } | null> {
   await initialize();
+  await awaitTerminalPersistence(jobId);
   const job = jobs.get(jobId);
   if (!job) return null;
   const safeLimit = Math.max(1, Math.min(2_000, Math.floor(limit) || 200));
@@ -321,6 +397,7 @@ export async function __resetDelegateJobsForTests(): Promise<void> {
   await Promise.allSettled([...runners.values()]);
   for (const timer of killTimers.values()) clearTimeout(timer);
   jobs.clear(); processes.clear(); runners.clear(); logQueues.clear(); cancellationRequested.clear(); killTimers.clear();
+  artifactClaims.clear(); artifactBaselines.clear(); jobClaims.clear();
   initializePromise = undefined;
   persistQueue = Promise.resolve();
   try { await fs.rm(getStoragePath(), { force: true }); } catch {}

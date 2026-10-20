@@ -317,6 +317,15 @@ export const cliBridgeTool: Tool = {
         type: "number",
         description: "Maximum trailing lines included by action=session.export (default 200).",
       },
+      expectedArtifacts: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Optional action=delegate.start only: 1-12 relative file paths inside the delegated working directory. " +
+          "After exit 0, every file must be newly created or content-changed (SHA-256 compared against a pre-run baseline). " +
+          "Missing, unchanged, escaped, oversized or symlinked files do not count as verified completion. " +
+          "Without expectedArtifacts, exit 0 is an unverified process success, not proof of task completion.",
+      },
       timeoutMs: {
         type: "number",
         description:
@@ -513,6 +522,9 @@ async function handleDelegate(
 
   const extraArgs = (args.args as string[] | undefined) ?? [];
   const isBackground = args.__background === true;
+  if (args.expectedArtifacts !== undefined && !isBackground) {
+    return "Error: expectedArtifacts currently requires action=delegate.start; blocking delegate has no artifact proof gate.";
+  }
   let timeoutMs: number | undefined;
   if (args.timeoutMs !== undefined && args.timeoutMs !== null) {
     const requestedTimeout = Number(args.timeoutMs);
@@ -614,6 +626,7 @@ async function handleDelegate(
       prompt: composedPrompt,
       cwd: delegateCwd,
       workspaceRoot: canonicalCliWorkspace(cwd),
+      expectedArtifacts: args.expectedArtifacts as string[] | undefined,
       args: [...combinedArgs, composedPrompt],
       timeoutMs: timeoutMs ?? 30 * 60 * 1000,
     });
@@ -673,6 +686,8 @@ function formatStartedDelegateJob(job: Awaited<ReturnType<typeof startDelegateJo
   return [
     "Started background CLI delegation: " + job.jobId,
     "Status: " + job.status,
+    "Completion proof: " + (job.completionState ?? "unverified"),
+    "Expected artifacts: " + (job.expectedArtifacts?.join(", ") || "(none; exit 0 is not proof)"),
     "CLI: " + job.cliAlias + " | PID: " + (job.pid ?? "starting") + " | Timeout: " + job.timeoutMs + "ms",
     "Working directory: " + job.cwd,
     "Prompt: " + prompt.slice(0, 180) + (prompt.length > 180 ? "…" : ""),
@@ -690,7 +705,7 @@ async function handleDelegateJobs(callerWorkspace: string): Promise<string> {
   if (jobs.length === 0) return "No CLI Bridge background delegation jobs yet.";
   const lines = ["CLI Bridge background jobs (" + jobs.length + " retained):"];
   for (const job of jobs) {
-    lines.push("- " + job.jobId + " | " + job.status + " | cli=" + job.cliAlias + " | pid=" + (job.pid ?? "-") + " | exit=" + (job.exitCode ?? "-") + " | duration=" + (job.durationMs ?? (Date.now() - job.startedAt)) + "ms");
+    lines.push("- " + job.jobId + " | " + job.status + " | proof=" + (job.completionState ?? "unverified") + " | cli=" + job.cliAlias + " | pid=" + (job.pid ?? "-") + " | exit=" + (job.exitCode ?? "-") + " | duration=" + (job.durationMs ?? (Date.now() - job.startedAt)) + "ms");
     lines.push("  cwd: " + job.cwd);
     lines.push("  log: " + job.logPath);
   }
@@ -704,6 +719,10 @@ async function handleDelegateGet(jobId: string, callerWorkspace: string): Promis
   return [
     "CLI Bridge job: " + job.jobId,
     "Status: " + job.status,
+    "Completion proof: " + (job.completionState ?? "unverified"),
+    "Artifact evidence: " + (job.artifactEvidence?.map(item =>
+      [item.path, item.state, item.sha256 ? "sha256=" + item.sha256 : "", item.bytes === undefined ? "" : "bytes=" + item.bytes].filter(Boolean).join(" ")
+    ).join("; ") || "(none)"),
     "CLI: " + job.cliAlias + " | PID: " + (job.pid ?? "-") + " | Exit: " + (job.exitCode ?? "-"),
     "Started: " + new Date(job.startedAt).toISOString(),
     "Duration: " + (job.durationMs ?? (Date.now() - job.startedAt)) + "ms" + (job.timedOut ? " (timed out)" : ""),
@@ -724,7 +743,7 @@ async function handleDelegateTail(jobId: string, tailLimit: number, callerWorksp
   if (!job || !delegateJobVisibleToWorkspace(job, callerWorkspace)) return "Error: delegation job not found in the authorized workspace.";
   const result = await tailDelegateJob(jobId, Number.isFinite(tailLimit) ? tailLimit : 200);
   if (!result || !delegateJobVisibleToWorkspace(result.job, callerWorkspace)) return "Error: delegation job not found in the authorized workspace.";
-  return ["CLI Bridge job " + jobId + " | status=" + result.job.status + " | exit=" + (result.job.exitCode ?? "-"), "Log: " + result.job.logPath, "", result.output].join("\n");
+  return ["CLI Bridge job " + jobId + " | status=" + result.job.status + " | proof=" + (result.job.completionState ?? "unverified") + " | exit=" + (result.job.exitCode ?? "-"), "Log: " + result.job.logPath, "", result.output].join("\n");
 }
 
 async function handleDelegateCancel(jobId: string, callerWorkspace: string): Promise<string> {
