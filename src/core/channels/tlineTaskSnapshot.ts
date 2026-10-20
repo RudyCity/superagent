@@ -14,7 +14,8 @@ const MAX_TASKS = 60;
 const MAX_CURSOR = 64;
 
 export type TlineTaskSummary = Pick<UnifiedChannelTask,
-  "schemaVersion" | "channel" | "taskId" | "sessionId" | "status" | "evidence" | "authorization" | "notification" | "updatedAt">;
+  "schemaVersion" | "channel" | "taskId" | "sessionId" | "status" | "evidence" | "authorization" | "notification" | "updatedAt"> &
+  { cancelEligible?: boolean };
 export interface TlineTaskSnapshot {
   success: true;
   schemaVersion: 1;
@@ -42,9 +43,18 @@ export function selectTlineWorkspaceTasks(
   muse: MuseRemoteTaskSnapshot | null,
   callerSessionId?: string,
 ): TlineTaskSummary[] {
-  const candidates: UnifiedChannelTask[] = [];
+  const candidates: (UnifiedChannelTask & { cancelEligible?: boolean })[] = [];
   for (const job of delegateJobs) {
-    if (delegateJobVisibleToWorkspace(job, workspace)) candidates.push(projectCliDelegate(job));
+    if (delegateJobVisibleToWorkspace(job, workspace)) candidates.push({
+      ...projectCliDelegate(job),
+      // Display-only eligibility hint; the mutation endpoint independently
+      // verifies ownership, process handle, exact session and one-use challenge.
+      cancelEligible: process.env.SUPERAGENT_TLINE_WORKSPACE_CANCEL === "1" &&
+        Boolean(callerSessionId) && job.creator?.clientMode === "tline" &&
+        job.creator.sessionId === callerSessionId &&
+        sameLocalWorkspace(job.creator.workspace, workspace) &&
+        job.ownerPid === process.pid && job.status === "running",
+    });
   }
   for (const run of daemonRuns) {
     if (sameLocalWorkspace(run.workspacePath, workspace)) candidates.push(projectDaemonRun(run));
@@ -60,9 +70,10 @@ export function selectTlineWorkspaceTasks(
   return candidates
     .sort((a, b) => b.updatedAt - a.updatedAt || a.taskId.localeCompare(b.taskId))
     .slice(0, MAX_TASKS)
-    .map(({ schemaVersion, channel, taskId, sessionId, status, evidence, authorization, notification, updatedAt }) =>
+    .map(({ schemaVersion, channel, taskId, sessionId, status, evidence, authorization, notification, updatedAt, cancelEligible }) =>
       ({ schemaVersion, channel, taskId: taskId.slice(0, 160), sessionId,
-        status, evidence, authorization, notification, updatedAt }));
+        status, evidence, authorization, notification, updatedAt,
+        ...(channel === "cli" ? { cancelEligible: cancelEligible === true } : {}) }));
 }
 
 export function buildTlineTaskSnapshot(

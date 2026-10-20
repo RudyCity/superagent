@@ -75,14 +75,26 @@ updatedAt, canonical workspace and runtime ownership again before calling the
 existing CLI Bridge cancellation handler. It signals a *cancellation request*,
 not a verified completed shutdown.
 
-**Important limitation:** Legacy CLI Bridge jobs do not record a trusted
-per-chat creator. The operator flag permits a locally trusted workspace
-operator to cancel runtime-owned CLI Bridge jobs in that workspace. It does
-not provide creator-session attestation or out-of-band human approval, so
-leave it OFF for shared/multi-user/untrusted workspaces. No daemon, Muse or
-arbitrary PID control, no retry/duplicate job start, and no implicit enablement.
+**Important limitation (Increment 6C):** New CLI Bridge delegations launched
+while a server-authorized TLine chat is executing now store **server-internal
+creator-session provenance** in the immutable job snapshot. TLine cancellation
+requires the same creator chat ID, canonical workspace and active runtime
+handle. Old CLI/MCP jobs without trusted creator provenance are always denied,
+even with operator opt-in. No user input or tool argument can assign the
+creator. Workspace task snapshots expose only a boolean cancellation
+eligibility hint, never another session's creator identity.
 
-Verification: `bun x vitest run tests/tlineCapabilities.test.ts tests/tlineInspection.test.ts tests/tlineTaskSnapshot.test.ts tests/tlineTaskFeed.test.ts tests/tlineTaskLedger.test.ts tests/tlineTaskCancel.test.ts`,
+Retry remains disabled: old job storage has no full original prompt/arguments
+to replay safely. A future retry needs an explicit fresh user request,
+idempotency protection and artifact claim verification.
+
+**Remaining limitation:** The creator chat is now verified for newly launched
+TLine jobs, but the app does not establish independent human-account identity
+or out-of-band user approval. Leave cancellation OFF for shared or untrusted
+workspaces. Legacy jobs are denied, and there is still no daemon/Muse kill,
+arbitrary PID control or automatic retry.
+
+Verification: `bun x vitest run tests/tlineCapabilities.test.ts tests/tlineInspection.test.ts tests/tlineTaskSnapshot.test.ts tests/tlineTaskFeed.test.ts tests/tlineTaskLedger.test.ts tests/tlineTaskCancel.test.ts tests/tlineJobCreator.test.ts`,
 `bun run build`. This is a source/build test; an actual existing server process
 must be upgraded/restarted to expose the new endpoint. Do not kill or restart
 an unrelated process on port 7888 for validation.

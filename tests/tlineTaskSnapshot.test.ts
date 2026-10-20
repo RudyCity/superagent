@@ -39,6 +39,36 @@ describe("T-Line workspace task snapshots", () => {
     expect(selectTlineWorkspaceTasks(mine, [], [], muse, muse.sessionId)[0].sessionId).toBe(muse.sessionId);
   });
 
+  it("grants a cancel UI hint only to active tasks created by this exact chat session", () => {
+    const previous = process.env.SUPERAGENT_TLINE_WORKSPACE_CANCEL;
+    try {
+      process.env.SUPERAGENT_TLINE_WORKSPACE_CANCEL = "1";
+      const common = { cwd: mine, workspaceRoot: mine, status: "running", updatedAt: 3,
+        ownerPid: process.pid };
+      const tasks = selectTlineWorkspaceTasks(mine, [
+        { ...common, jobId: "own", creator: { clientMode: "tline",
+          workspace: mine, sessionId: "sess_owner" } },
+        { ...common, jobId: "foreign", creator: { clientMode: "tline",
+          workspace: mine, sessionId: "sess_foreign" } },
+        { ...common, jobId: "legacy" },
+        { ...common, jobId: "another-runtime", ownerPid: process.pid + 1,
+          creator: { clientMode: "tline", workspace: mine, sessionId: "sess_owner" } },
+      ] as any, [], null, "sess_owner");
+      expect(tasks.find(t => t.taskId === "own")?.cancelEligible).toBe(true);
+      expect(tasks.filter(t => t.cancelEligible)).toHaveLength(1);
+      expect(JSON.stringify(tasks)).not.toContain("sess_foreign");
+      expect(JSON.stringify(tasks)).not.toContain("sess_owner");
+      delete process.env.SUPERAGENT_TLINE_WORKSPACE_CANCEL;
+      expect(selectTlineWorkspaceTasks(mine, [
+        { ...common, jobId: "own", creator: { clientMode: "tline",
+          workspace: mine, sessionId: "sess_owner" } },
+      ] as any, [], null, "sess_owner")[0].cancelEligible).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.SUPERAGENT_TLINE_WORKSPACE_CANCEL;
+      else process.env.SUPERAGENT_TLINE_WORKSPACE_CANCEL = previous;
+    }
+  });
+
   it("uses a stable cursor and omits unchanged payloads while resyncing all tasks after a change", () => {
     const tasks = selectTlineWorkspaceTasks(mine, [
       { jobId: "job-1", cwd: mine, status: "running", updatedAt: 500 },

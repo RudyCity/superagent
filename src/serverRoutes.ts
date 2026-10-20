@@ -937,7 +937,11 @@ export async function handleServerRoute(
       );
       if (hasValidActivePreset) {
         setTimeout(() => {
-          agent.sendMessage(initialPrompt).catch((err: any) => {
+          (targetClientMode === "tline"
+            ? import("./core/channels/tlineJobCreator.js").then(({ runWithTrustedTlineCreator }) =>
+                runWithTrustedTlineCreator({ clientMode: "tline", sessionId, workspace: targetWorkspace },
+                  () => agent.sendMessage(initialPrompt)))
+            : agent.sendMessage(initialPrompt)).catch((err: any) => {
             broadcastEvent({ type: "error", message: err.message || String(err) });
           });
         }, 100);
@@ -1013,7 +1017,12 @@ export async function handleServerRoute(
       return true;
     }
 
-    session.agent.sendMessage(parsedMessage).catch((err: any) => {
+    (session.clientMode === "tline"
+      ? import("./core/channels/tlineJobCreator.js").then(({ runWithTrustedTlineCreator }) =>
+          runWithTrustedTlineCreator({
+            clientMode: "tline", sessionId: session.sessionId, workspace: session.workspace,
+          }, () => session.agent.sendMessage(parsedMessage)))
+      : session.agent.sendMessage(parsedMessage)).catch((err: any) => {
       broadcastEvent({ type: "error", message: err.message || String(err) });
     });
 

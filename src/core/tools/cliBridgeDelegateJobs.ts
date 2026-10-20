@@ -19,6 +19,7 @@ import {
 import { persistJobShard, loadJobShards, loadLegacyJobs, writeCompatibilityJobsSnapshot, jobShardPath } from "./cliBridgeJobStore.js";
 import { classifyDelegateRecovery, type DelegateRecoveryDiagnostic } from "./cliBridgeRecovery.js";
 import { readProcessStartIdentity } from "./cliBridgeProcessIdentity.js";
+import { getTlineCreatorForJob } from "../channels/tlineJobCreator.js";
 
 export type DelegateJobStatus =
   | "starting" | "running" | "cancelling" | "succeeded" | "failed" | "timed_out" | "cancelled" | "interrupted" | "verification_failed";
@@ -36,6 +37,8 @@ export interface DelegateJob {
   completionState?: "pending" | "artifacts_verified" | "unverified" | "artifact_verification_failed" | "failed" | "timed_out" | "cancelled" | "interrupted";
   artifactEvidence?: ArtifactEvidence[];
   pid: number | null;
+  /** Server-internal provenance; never populated from tool args or user prompt. */
+  creator?: { clientMode: "tline"; sessionId: string; workspace: string };
   /** PID of the SuperAgent process that launched the CLI; diagnostic only, never authorization. */
   ownerPid?: number;
   /** Best-effort host-local process creation fingerprints, not permissions. */
@@ -284,11 +287,13 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
 
   const startedAt = Date.now();
   const jobId = `clj_${startedAt}_${crypto.randomBytes(4).toString("hex")}`;
+  const creator = getTlineCreatorForJob(opts.workspaceRoot ?? opts.cwd);
   const logDir = path.join(getRootConfigDir(), "logs", "cli-bridge");
   const logPath = path.join(logDir, `job-${jobId}.log`);
   const job: DelegateJob = {
     jobId, cliAlias: opts.cliAlias, binary: opts.binary, cwd: opts.cwd,
     workspaceRoot: opts.workspaceRoot ?? opts.cwd,
+    ...(creator ? { creator } : {}),
     expectedArtifacts: opts.expectedArtifacts?.slice(),
     completionState: "pending",
     pid: null,

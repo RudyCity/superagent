@@ -42,9 +42,14 @@ function error(status: number, reason: string): Result {
 function validScope(workspace: string, sessionId: string, jobId: string): boolean {
   return Boolean(workspace) && SESSION_ID.test(sessionId) && JOB_ID.test(jobId);
 }
-async function eligibleJob(workspace: string, jobId: string, deps: CancelJobDeps) {
+async function eligibleJob(workspace: string, sessionId: string, jobId: string, deps: CancelJobDeps) {
   const job = await deps.getJob(jobId);
   if (!job || !delegateJobVisibleToWorkspace(job, workspace)) return null;
+  // Creator provenance must originate from the server dispatch context at
+  // delegate.start time. Legacy/CLI/MCP jobs without provenance fail closed.
+  if (job.creator?.clientMode !== "tline" || job.creator.sessionId !== sessionId ||
+    !delegateJobVisibleToWorkspace({ cwd: job.creator.workspace, workspaceRoot: job.creator.workspace }, workspace))
+    return null;
   if (job.status !== "running" || !Number.isSafeInteger(job.pid) || (job.pid ?? 0) <= 0 ||
     job.ownerPid !== process.pid) return null;
   const recovery = await deps.getRecovery(jobId);
@@ -57,7 +62,7 @@ export async function prepareTlineCancel(
 ): Promise<Result> {
   if (!deps.enabled()) return error(403, "TLine workspace cancellation is disabled by the local operator.");
   if (!validScope(args.workspace, args.sessionId, args.jobId)) return error(400, "Invalid task cancellation scope.");
-  const job = await eligibleJob(args.workspace, args.jobId, deps);
+  const job = await eligibleJob(args.workspace, args.sessionId, args.jobId, deps);
   if (!job) return error(403, "Job is not an active CLI process owned by this runtime and workspace.");
   const now = deps.now();
   for (const [key, value] of pending) if (value.expiresAt <= now) pending.delete(key);
@@ -84,7 +89,7 @@ export async function confirmTlineCancel(
   if (!permit || permit.expiresAt <= deps.now() ||
     permit.workspace !== args.workspace || permit.sessionId !== args.sessionId ||
     permit.jobId !== args.jobId) return error(403, "Cancellation confirmation expired or belongs to another session.");
-  const job = await eligibleJob(args.workspace, args.jobId, deps);
+  const job = await eligibleJob(args.workspace, args.sessionId, args.jobId, deps);
   if (!job || job.pid !== permit.pid || job.startedAt !== permit.startedAt ||
     job.updatedAt !== permit.updatedAt) return error(409, "Task ownership/state changed; cancellation aborted.");
   const outcome = await deps.cancel(job.jobId);

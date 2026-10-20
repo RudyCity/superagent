@@ -14,6 +14,7 @@ fs.mkdirSync(mine); fs.mkdirSync(other);
 const jobId = "clj_1792480000000_deadbeef";
 const job: DelegateJob = {
   jobId, cliAlias: "agy", binary: "agy", cwd: mine, workspaceRoot: mine,
+  creator: { clientMode: "tline", sessionId: "sess_mine", workspace: mine },
   pid: 99999, ownerPid: process.pid, status: "running",
   startedAt: 10, updatedAt: 11, exitCode: null, timedOut: false, timeoutMs: 10000,
   outputTail: "", outputBytes: 0, logPath: "private", completionState: "pending",
@@ -55,6 +56,10 @@ describe("T-Line opt-in 2-phase CLI cancel guard", () => {
     expect((await prepareTlineCancel(scope, m.deps)).status).toBe(403);
     m.setEnabled(true);
     expect((await prepareTlineCancel({ ...scope, workspace: other }, m.deps)).status).toBe(403);
+    expect((await prepareTlineCancel({ ...scope, sessionId: "sess_other" }, m.deps)).status).toBe(403);
+    m.setJob({ ...job, creator: undefined });
+    expect((await prepareTlineCancel(scope, m.deps)).status).toBe(403);
+    m.setJob({ ...job });
     m.setOwned(false);
     expect((await prepareTlineCancel(scope, m.deps)).status).toBe(403);
     m.setOwned(true);
