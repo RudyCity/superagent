@@ -56,6 +56,16 @@ export function validateMotionTrack(raw: unknown, durationFrames: number, at = "
   return errors;
 }
 
+export function validateMotionAudio(raw: unknown, durationFrames: number): string[] {
+  if (!record(raw)) return ["audio: expected object"];
+  const errors: string[] = [];
+  allowedKeys(raw, ["assetId", "startFrame", "volume"], "audio", errors);
+  if (typeof raw.assetId !== "string" || !/^audio-[a-f0-9]{64}$/.test(raw.assetId)) errors.push("audio: invalid assetId");
+  if (!integer(raw.startFrame, 0, durationFrames - 1)) errors.push("audio: invalid startFrame");
+  if (!finite(raw.volume, 0, 2)) errors.push("audio: invalid volume");
+  return errors;
+}
+
 export function validateMotionProject(raw: unknown): asserts raw is MotionProject {
   const errors: string[] = [];
   if (!record(raw)) throw new MotionValidationError(["project must be an object"]);
@@ -72,10 +82,11 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
   if (!record(c)) {
     errors.push("composition is required");
   } else {
-    allowedKeys(c, ["width", "height", "fps", "durationFrames", "background", "layers"], "composition", errors);
+    allowedKeys(c, ["width", "height", "fps", "durationFrames", "background", "layers", "audio"], "composition", errors);
     if (!integer(c.width, 16, 8192) || !integer(c.height, 16, 8192)) errors.push("invalid dimensions");
     if (!integer(c.durationFrames, 1, 216000)) errors.push("durationFrames must be 1-216000");
     if (typeof c.background !== "string" || !color.test(c.background)) errors.push("invalid background color");
+    if (c.audio !== undefined) errors.push(...validateMotionAudio(c.audio, c.durationFrames as number));
     if (!record(c.fps) || !integer(c.fps.numerator, 1, 240000) || !integer(c.fps.denominator, 1, 1001) ||
       Number(c.fps.numerator) / Number(c.fps.denominator) > 240 || Number(c.fps.numerator) / Number(c.fps.denominator) < 1) {
       errors.push("invalid rational fps");
@@ -132,6 +143,11 @@ export function validateMotionEdits(raw: unknown, durationFrames: number): asser
       allowedKeys(edit, ["type", "layer", "index"], at, errors);
       if (!record(edit.layer)) errors.push(at + ": layer must be an object");
       if (edit.index !== undefined && !integer(edit.index, 0, 200)) errors.push(at + ": invalid insertion index");
+      return;
+    }
+    if (edit.type === "set-audio") {
+      allowedKeys(edit, ["type", "audio"], at, errors);
+      if (edit.audio !== null) errors.push(...validateMotionAudio(edit.audio, durationFrames));
       return;
     }
     if (edit.type === "replace-composition") {

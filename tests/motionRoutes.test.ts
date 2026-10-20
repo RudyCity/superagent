@@ -85,6 +85,38 @@ describe("Motion HTTP and artifact transport", () => {
     expect((await listed.json()).some((project: any) => project.id === created.id)).toBe(true);
   });
 
+  it("imports and serves authenticated workspace PCM16 audio", async () => {
+    const { request, url } = await fixture();
+    const samples = 1600;
+    const bytes = Buffer.alloc(44 + samples * 2);
+    bytes.write("RIFF", 0); bytes.writeUInt32LE(bytes.length - 8, 4);
+    bytes.write("WAVEfmt ", 8); bytes.writeUInt32LE(16, 16);
+    bytes.writeUInt16LE(1, 20); bytes.writeUInt16LE(1, 22); bytes.writeUInt32LE(16000, 24);
+    bytes.writeUInt32LE(32000, 28); bytes.writeUInt16LE(2, 32); bytes.writeUInt16LE(16, 34);
+    bytes.write("data", 36); bytes.writeUInt32LE(samples * 2, 40);
+    const endpoint = "/api/motion/audio";
+    const imported = await request(endpoint, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base64: bytes.toString("base64") }),
+    });
+    expect(imported.status).toBe(201);
+    const metadata = await imported.json();
+    expect(metadata).toMatchObject({ channels: 1, sampleRate: 16000, seconds: 0.1 });
+    expect(metadata.id).toMatch(/^audio-[a-f0-9]{64}$/);
+    const urlPath = endpoint + "/" + metadata.id;
+    const read = await request(urlPath);
+    expect(read.status).toBe(200);
+    expect(read.headers.get("content-type")).toBe("audio/wav");
+    expect(Buffer.from(await read.arrayBuffer())).toEqual(bytes);
+    expect((await request(urlPath, { method: "HEAD" })).status).toBe(200);
+    expect((await fetch(url + urlPath)).status).toBe(401);
+    expect((await request(endpoint, {
+      method: "POST", body: JSON.stringify({ base64: Buffer.from("<svg/>").toString("base64") }),
+      headers: { "Content-Type": "application/json" },
+    })).status).toBe(400);
+    expect((await request(endpoint + "/audio-" + "b".repeat(64))).status).toBe(404);
+  });
+
   it("imports a bounded workspace image over authenticated JSON and serves only owned PNG bytes", async () => {
     const { request, url } = await fixture();
     const canvas = createCanvas(10, 10);

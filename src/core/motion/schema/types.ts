@@ -42,6 +42,12 @@ export interface ImageLayer extends BaseLayer {
 }
 export type MotionLayer = TextLayer | RectLayer | ImageLayer;
 
+export interface MotionAudioTrack {
+  assetId: string;
+  startFrame: number;
+  volume: number;
+}
+
 export interface MotionProject {
   schemaVersion: typeof MOTION_SCHEMA_VERSION;
   id: string;
@@ -56,6 +62,7 @@ export interface MotionProject {
     fps: { numerator: number; denominator: number };
     durationFrames: number;
     background: string;
+    audio?: MotionAudioTrack;
     layers: MotionLayer[];
   };
 }
@@ -66,7 +73,8 @@ export type MotionEdit =
   | { type: "add-layer"; layer: MotionLayer; index?: number }
   | { type: "remove-layer"; layerId: string }
   | { type: "move-layer"; layerId: string; toIndex: number }
-  | { type: "replace-composition"; composition: MotionProject["composition"] };
+  | { type: "replace-composition"; composition: MotionProject["composition"] }
+  | { type: "set-audio"; audio: MotionAudioTrack | null };
 
 export interface EvaluatedLayer {
   layer: MotionLayer;

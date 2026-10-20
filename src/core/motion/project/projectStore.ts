@@ -5,6 +5,7 @@ import type { MotionProject } from "../schema/types.js";
 import { validateMotionProject } from "../schema/validation.js";
 import { applyMotionEdits } from "./revisions.js";
 import { resolveMotionAssets } from "../assets/motionAssets.js";
+import { resolveMotionAudio } from "../assets/motionAudio.js";
 import type { MotionEdit } from "../schema/types.js";
 
 const idPattern = /^[a-z][a-z0-9-]{1,63}$/;
@@ -126,6 +127,7 @@ export async function updateMotionProject(
     const next = applyMotionEdits(before, baseRevision, operations);
     // A committed scene must not reference missing or corrupted local assets.
     await resolveMotionAssets(workspace, next);
+    await resolveMotionAudio(workspace, next);
     const tmp = file + "." + crypto.randomBytes(8).toString("hex") + ".tmp";
     try {
       const handle = await fs.open(tmp, "wx", 0o600);

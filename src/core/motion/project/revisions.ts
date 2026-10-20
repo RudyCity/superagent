@@ -15,6 +15,11 @@ export function applyMotionEdits(project: MotionProject, baseRevision: number, o
   validateMotionEdits(operations, project.composition.durationFrames);
   const next: MotionProject = structuredClone(project);
   for (const operation of operations) {
+    if (operation.type === "set-audio") {
+      if (operation.audio === null) delete next.composition.audio;
+      else next.composition.audio = structuredClone(operation.audio);
+      continue;
+    }
     if (operation.type === "replace-composition") {
       next.composition = structuredClone(operation.composition);
       continue;

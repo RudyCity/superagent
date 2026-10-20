@@ -267,7 +267,7 @@ export async function prepareMotionJob(
 async function sha256File(file: string): Promise<string> {
   return crypto.createHash("sha256").update(await fs.readFile(file)).digest("hex");
 }
-async function validateMp4(file: string, profile: RenderProfile): Promise<void> {
+async function validateMp4(file: string, profile: RenderProfile, requireAudio = false): Promise<void> {
   const { stdout } = await execFileAsync("ffprobe", [
     "-v", "error", "-select_streams", "v:0",
     "-show_entries", "stream=codec_name,width,height,nb_frames",
@@ -283,6 +283,14 @@ async function validateMp4(file: string, profile: RenderProfile): Promise<void> 
   const [num, den] = profile.fps.split("/").map(Number);
   const target = profile.frameCount * den / num;
   if (Math.abs(Number(info.format?.duration) - target) > den / num + 0.002) throw new Error("MP4 duration validation failed");
+  if (requireAudio) {
+    const { stdout: audioProbe } = await execFileAsync("ffprobe", [
+      "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name",
+      "-of", "json", file,
+    ], { timeout: 15000, maxBuffer: 65536, windowsHide: true });
+    const audio = JSON.parse(audioProbe) as { streams?: Array<{ codec_name?: string }> };
+    if (audio.streams?.[0]?.codec_name !== "aac") throw new Error("MP4 audio stream validation failed");
+  }
 }
 async function runAdmittedMotionJob(
   workspace: string, id: string, options: { ffmpeg?: string; signal?: AbortSignal } = {},
@@ -337,7 +345,7 @@ async function runAdmittedMotionJob(
       job.status = "validating";
       job.updatedAt = new Date().toISOString();
       await persist(job, dir);
-      await validateMp4(temporary, job.profile);
+      await validateMp4(temporary, job.profile, !!project.composition.audio);
       const bytes = (await fs.stat(temporary)).size;
       const sha256 = await sha256File(temporary);
       await fs.rename(temporary, output);

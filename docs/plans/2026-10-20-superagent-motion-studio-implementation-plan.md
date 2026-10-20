@@ -473,3 +473,12 @@ Current implementation snapshot (2026-10-20): scene schema, revision-checked pro
 - Added authenticated, workspace-allowed `POST /api/motion/assets` (bounded base64 JSON), `GET /api/motion/assets/:assetId` and `HEAD` with PNG-only, no-store responses. SVG preview embeds verified PNG data URI; the FFmpeg Canvas renderer draws decoded workspace assets with existing geometry, rotation and opacity.
 - Added integration tests for deduplication, invalid formats, oversized uploads, symlinked storage, foreign workspace scope, hash tampering, scene edits, HTTP authentication and real H.264 export with images.
 - This increment is a bounded *image layer* preview, not a general-purpose asset browser: there is no image deletion/garbage collector, bulk library view, audio, video clips, animation masks, live Tauri device E2E, or generalized file access. No running Hermes agent or tunnel was restarted.
+
+
+### One-Track PCM16 Audio to AAC MP4 (2026-10-20)
+
+- Added an optional `composition.audio` object (assetId, startFrame and volume) to the existing declarative v1 schema and a revision-guarded `set-audio` transaction. Removed audio uses `audio: null`; no general file path, external URL, or arbitrary FFmpeg expression is ever accepted in the scene.
+- Canonical RIFF PCM16 WAV audio (mono/stereo, 8–48 kHz, 30-second maximum, 2 MB maximum) is stored in a real non-symlink workspace `.superagent/motion/audio/` directory under SHA-256-derived audio IDs, with strict metadata and checksum verification before project edits and render admission.
+- Added authenticated `POST /api/motion/audio` and `GET/HEAD /api/motion/audio/:audioId` endpoints behind the global API/workspace gate and bounded upload bodies. Detached render resolves the immutable WAV and FFmpeg includes an AAC stream in H.264 MP4 with frame-aligned start delay, volume and pad/trim to composition duration. Output validation requires AAC when audio is configured.
+- Validated input-format errors, oversized/foreign/tampered assets, revision collisions, HTTP authorization and a real H.264 + AAC file with ffprobe. The Motion regression suite passed 40/40 tests across ten suites and SuperAgent TypeScript passed on this revision.
+- Current scope is one static audio clip per composition. Multiple audio clips, music/voice mixing, fades, transcoding user MP3 files, waveform seeking, desktop A/V sync certification and live packaged Tauri E2E remain future work. No Hermes process was restarted.

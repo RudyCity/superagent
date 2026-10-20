@@ -34,13 +34,18 @@ export async function probeFfmpeg(ffmpeg = "ffmpeg"): Promise<boolean> {
   } catch { return false; }
 }
 
-function encodingArgs(profile: RenderProfile, file: string): string[] {
+function encodingArgs(profile: RenderProfile, file: string, audioPath?: string, startFrame = 0, volume = 1): string[] {
+  const duration = profile.frameCount / Number(profile.fps.split("/")[0]) * Number(profile.fps.split("/")[1]);
+  const delay = Math.round(startFrame / Number(profile.fps.split("/")[0]) * Number(profile.fps.split("/")[1]) * 1000);
   return [
     "-hide_banner", "-loglevel", "error", "-nostdin", "-n",
     "-f", "rawvideo", "-pixel_format", "rgba",
     "-video_size", `${profile.width}x${profile.height}`,
     "-framerate", profile.fps, "-i", "pipe:0",
-    "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+    ...(audioPath ? ["-i", audioPath, "-map", "0:v:0", "-map", "1:a:0",
+      "-af", `volume=${volume},adelay=${delay}:all=1,apad,atrim=duration=${duration}`,
+      "-c:a", "aac", "-b:a", "128k"] : ["-an"]),
+    "-c:v", "libx264", "-pix_fmt", "yuv420p",
     "-preset", "veryfast", "-crf", "23", "-threads", "2",
     "-movflags", "+faststart", "-f", "mp4", file,
   ];
@@ -57,10 +62,16 @@ export async function encodeMotionMp4(
   options: { ffmpeg?: string; signal?: AbortSignal; onProgress?: (frame: number) => Promise<void>; workspace?: string } = {},
 ): Promise<void> {
   if (options.signal?.aborted) throw new Error("Motion render cancelled");
+  // Resolve an immutable, hash-verified asset before starting FFmpeg.
+  const audio = project.composition.audio;
+  if (audio && !options.workspace) throw new Error("Motion audio requires a workspace asset store");
+  const audioPath = audio
+    ? await (await import("../assets/motionAudio.js")).resolveMotionAudio(options.workspace!, project)
+    : null;
   // Canvas is optional for non-render commands and should not slow terminal startup.
   const { createMotionFrameRenderer } = await import("./canvasFrames.js");
   const child = spawn(
-    options.ffmpeg ?? "ffmpeg", encodingArgs(profile, temporaryFile),
+    options.ffmpeg ?? "ffmpeg", encodingArgs(profile, temporaryFile, audioPath ?? undefined, audio?.startFrame, audio?.volume),
     { windowsHide: true, stdio: ["pipe", "ignore", "pipe"] },
   );
   let stderr = "";

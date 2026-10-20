@@ -9,6 +9,7 @@ import { MotionRevisionConflict } from "./project/revisions.js";
 import { MotionValidationError } from "./schema/validation.js";
 import type { MotionEdit } from "./schema/types.js";
 import { importMotionAsset, readMotionAsset } from "./assets/motionAssets.js";
+import { importMotionAudio, readMotionAudio } from "./assets/motionAudio.js";
 
 export interface MotionHttpContext {
   resolveWorkspacePath: (req: IncomingMessage) => string | null;
@@ -64,6 +65,7 @@ export async function handleMotionHttpRoute(
   const recovery = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/recovery$/);
   const artifact = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/artifact$/);
   const asset = pathname.match(/^\/api\/motion\/assets\/(asset-[a-f0-9]{64})$/);
+  const audio = pathname.match(/^\/api\/motion\/audio\/(audio-[a-f0-9]{64})$/);
   try {
     if (pathname === "/api/motion" && method === "GET") {
       json(res, ctx, 200, { apiVersion: 1, video: "h264-mp4", detachedJobs: true, studio: false });
@@ -82,6 +84,23 @@ export async function handleMotionHttpRoute(
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
         "ETag": '"' + asset[1].slice(6) + '"',
+      });
+      res.end(method === "HEAD" ? undefined : bytes);
+    } else if (pathname === "/api/motion/audio" && method === "POST") {
+      const body = await readMotionJson(req, 3_000_000);
+      if (typeof body.base64 !== "string" || body.base64.length > 2_850_000 ||
+          !/^[a-zA-Z0-9+/]+={0,2}$/.test(body.base64) || body.base64.length % 4 !== 0) {
+        throw new Error("Invalid Motion audio base64 encoding");
+      }
+      json(res, ctx, 201, await importMotionAudio(workspace, Buffer.from(body.base64, "base64")));
+    } else if (audio && (method === "GET" || method === "HEAD")) {
+      const bytes = await readMotionAudio(workspace, audio[1]);
+      res.writeHead(200, {
+        "Content-Type": "audio/wav",
+        "Content-Length": String(bytes.length),
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+        "ETag": '"' + audio[1].slice(6) + '"',
       });
       res.end(method === "HEAD" ? undefined : bytes);
     } else if (pathname === "/api/motion/projects" && method === "GET") {
