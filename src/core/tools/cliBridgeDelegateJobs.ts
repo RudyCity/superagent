@@ -17,6 +17,8 @@ export interface DelegateJob {
   cliAlias: string;
   binary: string;
   cwd: string;
+  /** Immutable canonical caller workspace; used to authorize job inspection and cancellation. */
+  workspaceRoot?: string;
   pid: number | null;
   status: DelegateJobStatus;
   startedAt: number;
@@ -36,6 +38,7 @@ export interface StartDelegateJobOptions {
   binary: string;
   prompt: string;
   cwd: string;
+  workspaceRoot?: string;
   args: string[];
   timeoutMs: number;
   env?: NodeJS.ProcessEnv;
@@ -216,7 +219,8 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   const logDir = path.join(getRootConfigDir(), "logs", "cli-bridge");
   const logPath = path.join(logDir, `job-${jobId}.log`);
   const job: DelegateJob = {
-    jobId, cliAlias: opts.cliAlias, binary: opts.binary, cwd: opts.cwd, pid: null,
+    jobId, cliAlias: opts.cliAlias, binary: opts.binary, cwd: opts.cwd,
+    workspaceRoot: opts.workspaceRoot ?? opts.cwd, pid: null,
     status: "starting", startedAt, updatedAt: startedAt, exitCode: null, timedOut: false, timeoutMs: opts.timeoutMs,
     outputTail: "", outputBytes: 0, logPath,
   };

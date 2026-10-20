@@ -238,6 +238,8 @@ superagent skill promote <name>@<new-version> --workspace ./project
 
 The revision command produces an **inactive, immutable review candidate** with the exact parent version/hash and feedback provenance. It preserves the original version and never automatically promotes or edits the active skill. Owner approval remains interactive and mandatory. Live RMemory delivery and full-provider E2E tests are separate release gates.
 
+**CLI Bridge project isolation:** Background delegation jobs and interactive sessions are scoped to the calling workspace. A job/session ID from another project cannot read logs, send messages or cancel processes. Explicit `cwd` may select only an existing child of the current workspace; artifact paths cannot escape it (including symlinks). Select the intended registered workspace explicitly before delegating to another project. This is verified with local test CLIs, not live SSH/provider acceptance. See `docs/plans/2026-10-20-superagent-hermes-phase-4-cli-bridge-workspace-isolation.md`.
+
 ### Hermes-Style Multi-Agent Outcome Reporting
 
 Delegated subagent and superagent reports now distinguish declared `completed`, `blocked`, `partial`, `failed`, `cancelled`, and `unverified` outcomes. An agent execution returning does **not** by itself prove that the task passed verification. Background parent notifications label blocked/unverified results separately, and early termination requires a completed declaration **plus** passing tests. Explicit incomplete results cannot silently promote a Superagent to successful completion.

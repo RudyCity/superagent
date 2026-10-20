@@ -86,6 +86,7 @@ import {
 } from "./cliBridgeArtifacts.js";
 import fs from "fs";
 import path from "path";
+import { canonicalCliWorkspace, resolveAuthorizedDelegateCwd, delegateJobVisibleToWorkspace, cliSessionVisibleToWorkspace, cliArtifactPathVisibleToWorkspace } from "./cliBridgeWorkspaceScope.js";
 import {
   startDelegateJob,
   listDelegateJobs,
@@ -334,6 +335,17 @@ export const cliBridgeTool: Tool = {
     }
 
     try {
+      // All session mutations and reads use the same identity boundary.
+      // A leaked/guessed sessionId must never authorize access to another project.
+      if (action.startsWith("session.") && action !== "session.create" && action !== "session.list") {
+        const id = typeof args.sessionId === "string" ? args.sessionId.trim() : "";
+        if (id) {
+          const candidate = getSessionAny(id);
+          if (candidate && !cliSessionVisibleToWorkspace(candidate, cwd)) {
+            return "Error: CLI Bridge session not found in the authorized workspace.";
+          }
+        }
+      }
       switch (action) {
         case "list":
           return await handleList();
@@ -345,16 +357,16 @@ export const cliBridgeTool: Tool = {
           return await handleDelegate({ ...args, __background: true }, cwd, signal);
 
         case "delegate.jobs":
-          return await handleDelegateJobs();
+          return await handleDelegateJobs(cwd);
 
         case "delegate.get":
-          return await handleDelegateGet(String(args.jobId ?? "").trim());
+          return await handleDelegateGet(String(args.jobId ?? "").trim(), cwd);
 
         case "delegate.tail":
-          return await handleDelegateTail(String(args.jobId ?? "").trim(), args.tailLimit === undefined ? 200 : Number(args.tailLimit));
+          return await handleDelegateTail(String(args.jobId ?? "").trim(), args.tailLimit === undefined ? 200 : Number(args.tailLimit), cwd);
 
         case "delegate.cancel":
-          return await handleDelegateCancel(String(args.jobId ?? "").trim());
+          return await handleDelegateCancel(String(args.jobId ?? "").trim(), cwd);
 
         case "session.create":
           return await handleSessionCreate(args, cwd);
@@ -363,7 +375,7 @@ export const cliBridgeTool: Tool = {
           return await handleSessionSend(args);
 
         case "session.list":
-          return handleSessionList();
+          return handleSessionList(cwd);
 
         case "session.get":
           return handleSessionGet(String(args.sessionId ?? ""));
@@ -372,7 +384,7 @@ export const cliBridgeTool: Tool = {
           return handleSessionKill(String(args.sessionId ?? ""));
 
         case "session.resume":
-          return await handleSessionResume(args);
+          return await handleSessionResume(args, cwd);
 
         case "session.respond":
           return await handleSessionRespond(args);
@@ -454,6 +466,32 @@ function serializeDescriptor(d: CliDescriptor): Record<string, unknown> {
   };
 }
 
+function resolveScopedCliArtifacts(
+  callerWorkspace: string,
+  selectedCwd: string,
+  args: Record<string, unknown>,
+): ArtifactPaths {
+  const paths = resolveArtifactPaths(selectedCwd, {
+    taskPath: args.taskPath ? String(args.taskPath) : undefined,
+    planPath: args.planPath ? String(args.planPath) : undefined,
+    walkthroughPath: args.walkthroughPath ? String(args.walkthroughPath) : undefined,
+    provideDefaultTargets: Boolean(args.provideDefaultTargets ?? (args.taskPath || args.planPath || args.walkthroughPath)),
+  });
+  for (const [pathKey, existsKey] of [
+    ["taskPath", "taskExists"], ["planPath", "planExists"], ["walkthroughPath", "walkthroughExists"],
+  ] as const) {
+    const candidate = paths[pathKey];
+    if (!candidate || cliArtifactPathVisibleToWorkspace(candidate, callerWorkspace)) continue;
+    if (args[pathKey] !== undefined) {
+      throw new Error("CLI Bridge artifact path is outside the authorized workspace.");
+    }
+    // Session-file fallbacks from another project are never injected into prompts.
+    delete paths[pathKey];
+    delete paths[existsKey];
+  }
+  return paths;
+}
+
 async function handleDelegate(
   args: Record<string, unknown>,
   cwd: string,
@@ -484,7 +522,7 @@ async function handleDelegate(
     timeoutMs = requestedTimeout;
   }
   if (isBackground && timeoutMs === undefined) timeoutMs = 30 * 60 * 1000;
-  const delegateCwd = args.cwd ? String(args.cwd) : cwd;
+  const delegateCwd = resolveAuthorizedDelegateCwd(cwd, args.cwd ? String(args.cwd) : undefined);
 
   // Resolve skills directories/profiles for 1-shot execution:
   const profile = getProfile(desc.alias);
@@ -530,12 +568,7 @@ async function handleDelegate(
   let artifactContext = "";
   let activeArtifacts: ArtifactPaths | undefined;
   if (injectArtifacts) {
-    activeArtifacts = resolveArtifactPaths(delegateCwd, {
-      taskPath: args.taskPath ? String(args.taskPath) : undefined,
-      planPath: args.planPath ? String(args.planPath) : undefined,
-      walkthroughPath: args.walkthroughPath ? String(args.walkthroughPath) : undefined,
-      provideDefaultTargets: Boolean(args.provideDefaultTargets ?? (args.taskPath || args.planPath || args.walkthroughPath)),
-    });
+    activeArtifacts = resolveScopedCliArtifacts(cwd, delegateCwd, args);
     const block = buildArtifactContextBlock(activeArtifacts);
     if (block) {
       artifactContext = block;
@@ -580,6 +613,7 @@ async function handleDelegate(
       binary: desc.binary,
       prompt: composedPrompt,
       cwd: delegateCwd,
+      workspaceRoot: canonicalCliWorkspace(cwd),
       args: [...combinedArgs, composedPrompt],
       timeoutMs: timeoutMs ?? 30 * 60 * 1000,
     });
@@ -651,8 +685,8 @@ function formatStartedDelegateJob(job: Awaited<ReturnType<typeof startDelegateJo
   ].join("\n");
 }
 
-async function handleDelegateJobs(): Promise<string> {
-  const jobs = await listDelegateJobs();
+async function handleDelegateJobs(callerWorkspace: string): Promise<string> {
+  const jobs = (await listDelegateJobs()).filter(job => delegateJobVisibleToWorkspace(job, callerWorkspace));
   if (jobs.length === 0) return "No CLI Bridge background delegation jobs yet.";
   const lines = ["CLI Bridge background jobs (" + jobs.length + " retained):"];
   for (const job of jobs) {
@@ -663,10 +697,10 @@ async function handleDelegateJobs(): Promise<string> {
   return lines.join("\n");
 }
 
-async function handleDelegateGet(jobId: string): Promise<string> {
+async function handleDelegateGet(jobId: string, callerWorkspace: string): Promise<string> {
   if (!jobId) return "Error: 'jobId' is required for action=delegate.get.";
   const job = await getDelegateJob(jobId);
-  if (!job) return "Error: no CLI Bridge delegation job found with id '" + jobId + "'. Use action=delegate.jobs to list jobs.";
+  if (!job || !delegateJobVisibleToWorkspace(job, callerWorkspace)) return "Error: delegation job not found in the authorized workspace.";
   return [
     "CLI Bridge job: " + job.jobId,
     "Status: " + job.status,
@@ -684,15 +718,19 @@ async function handleDelegateGet(jobId: string): Promise<string> {
   ].filter(Boolean).join("\n");
 }
 
-async function handleDelegateTail(jobId: string, tailLimit: number): Promise<string> {
+async function handleDelegateTail(jobId: string, tailLimit: number, callerWorkspace: string): Promise<string> {
   if (!jobId) return "Error: 'jobId' is required for action=delegate.tail.";
+  const job = await getDelegateJob(jobId);
+  if (!job || !delegateJobVisibleToWorkspace(job, callerWorkspace)) return "Error: delegation job not found in the authorized workspace.";
   const result = await tailDelegateJob(jobId, Number.isFinite(tailLimit) ? tailLimit : 200);
-  if (!result) return "Error: no CLI Bridge delegation job found with id '" + jobId + "'. Use action=delegate.jobs to list jobs.";
+  if (!result || !delegateJobVisibleToWorkspace(result.job, callerWorkspace)) return "Error: delegation job not found in the authorized workspace.";
   return ["CLI Bridge job " + jobId + " | status=" + result.job.status + " | exit=" + (result.job.exitCode ?? "-"), "Log: " + result.job.logPath, "", result.output].join("\n");
 }
 
-async function handleDelegateCancel(jobId: string): Promise<string> {
+async function handleDelegateCancel(jobId: string, callerWorkspace: string): Promise<string> {
   if (!jobId) return "Error: 'jobId' is required for action=delegate.cancel.";
+  const job = await getDelegateJob(jobId);
+  if (!job || !delegateJobVisibleToWorkspace(job, callerWorkspace)) return "Error: delegation job not found in the authorized workspace.";
   const result = await cancelDelegateJob(jobId);
   return [result.message, result.job ? "Current status: " + result.job.status : ""].filter(Boolean).join("\n");
 }
@@ -714,7 +752,7 @@ async function handleSessionCreate(
   const profile = getProfile(desc.alias);
   const skillsRequested = (args.skills as string[] | undefined) ?? undefined;
   const autoDetect = args.skillAutoDetect !== false; // default true
-  const sessionCwd = args.cwd ? String(args.cwd) : cwd;
+  const sessionCwd = resolveAuthorizedDelegateCwd(cwd, args.cwd ? String(args.cwd) : undefined);
 
   const skillResolution = profile
     ? resolveSkills({
@@ -733,12 +771,7 @@ async function handleSessionCreate(
   const injectArtifacts = args.injectArtifacts !== false;
   let artifactContext = "";
   if (injectArtifacts) {
-    const artifacts = resolveArtifactPaths(sessionCwd, {
-      taskPath: args.taskPath ? String(args.taskPath) : undefined,
-      planPath: args.planPath ? String(args.planPath) : undefined,
-      walkthroughPath: args.walkthroughPath ? String(args.walkthroughPath) : undefined,
-      provideDefaultTargets: Boolean(args.provideDefaultTargets ?? (args.taskPath || args.planPath || args.walkthroughPath)),
-    });
+    const artifacts = resolveScopedCliArtifacts(cwd, sessionCwd, args);
     const block = buildArtifactContextBlock(artifacts);
     if (block) {
       artifactContext = block;
@@ -904,7 +937,7 @@ async function handleSessionRespond(args: Record<string, unknown>): Promise<stri
  * v1.5.15: Resume a session by re-spawning the same CLI with its resume
  * flag and the previous conversationId (if any).
  */
-async function handleSessionResume(args: Record<string, unknown>): Promise<string> {
+async function handleSessionResume(args: Record<string, unknown>, callerWorkspace: string): Promise<string> {
   const sessionId = String(args.sessionId ?? "").trim();
   const pastSession = sessionId ? getSessionAny(sessionId) : null;
   let cliAlias = String(args.cli ?? "").trim();
@@ -928,7 +961,7 @@ async function handleSessionResume(args: Record<string, unknown>): Promise<strin
   const conversationId = args.conversationId
     ? String(args.conversationId)
     : pastSession?.conversationId;
-  const sessionCwd = args.cwd ? String(args.cwd) : (pastSession?.cwd ?? process.cwd());
+  const sessionCwd = resolveAuthorizedDelegateCwd(callerWorkspace, args.cwd ? String(args.cwd) : (pastSession?.cwd ?? callerWorkspace));
   const skills = (args.skills as string[] | undefined) ?? pastSession?.skills;
   const systemPrompt = args.system ? String(args.system) : pastSession?.systemPrompt;
   const envOverrides = (args.env as Record<string, string> | undefined) ?? undefined;
@@ -1169,9 +1202,12 @@ function formatSendResult(sessionId: string, result: SendResult): string {
   return lines.join("\n");
 }
 
-function handleSessionList(): string {
-  const list = listSessions();
-  const detached = listDetachedSessions();
+function handleSessionList(callerWorkspace: string): string {
+  const list = listSessions().filter(session => cliSessionVisibleToWorkspace(session, callerWorkspace));
+  const detached = listDetachedSessions().filter(id => {
+    const session = getSessionAny(id);
+    return Boolean(session && cliSessionVisibleToWorkspace(session, callerWorkspace));
+  });
   if (list.length === 0 && detached.length === 0) {
     return "No active sessions. Use action=session.create to start one.";
   }

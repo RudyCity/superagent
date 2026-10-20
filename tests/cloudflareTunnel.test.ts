@@ -1048,6 +1048,10 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
     });
 
     it("should run diagnostic checks on /muse doctor", async () => {
+      // This assertion specifically covers the WebSocket adapter; the full
+      // suite may otherwise inherit Telegram transport from another fixture.
+      const { updateRemoteAgentConfig } = await import("../src/core/remoteAgent/config.js");
+      updateRemoteAgentConfig({ transport: "websocket" });
       const lines: any[] = [];
       await museCommand.execute("doctor", {
         addLine: (line) => lines.push(line),
@@ -1072,6 +1076,9 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
     });
 
     it("should output connection prompt info on /muse tunnel prompt", async () => {
+      // Avoid the first-run token generation log preceding the actual prompt.
+      const { updateRemoteAgentConfig } = await import("../src/core/remoteAgent/config.js");
+      updateRemoteAgentConfig({ transport: "websocket", wsToken: "synthetic-test-websocket-token" });
       const lines: any[] = [];
       await museCommand.execute("tunnel prompt", {
         addLine: (line) => lines.push(line),

@@ -102,6 +102,78 @@ describe("CLI Bridge background delegation jobs", () => {
     expect(finished.every((job) => job.status === "succeeded")).toBe(true);
   }, 15_000);
 
+  it("isolates project A background jobs from project B list/get/tail/cancel", async () => {
+    const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
+    const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-cli-project-"));
+    const rootA = path.join(fixture, "A");
+    const rootB = path.join(fixture, "B");
+    await fs.mkdir(rootA);
+    await fs.mkdir(rootB);
+    try {
+      const started = await cliBridgeTool.execute({
+        action: "delegate.start", cli: "custom", binary: process.execPath,
+        args: ["-e", 'console.log("private-A-only"); setTimeout(() => {}, 1500);'],
+        prompt: "Scope isolation", injectArtifacts: false, skillAutoDetect: false,
+        timeoutMs: 5000,
+      }, rootA);
+      const id = String(started).match(/clj_\d+_[a-f0-9]+/)?.[0];
+      expect(id).toBeTruthy();
+      const fromB = await Promise.all([
+        cliBridgeTool.execute({ action: "delegate.jobs" }, rootB),
+        cliBridgeTool.execute({ action: "delegate.get", jobId: id }, rootB),
+        cliBridgeTool.execute({ action: "delegate.tail", jobId: id }, rootB),
+        cliBridgeTool.execute({ action: "delegate.cancel", jobId: id }, rootB),
+      ]);
+      for (const denied of fromB) {
+        expect(String(denied)).not.toContain(id!);
+        expect(String(denied)).not.toContain("private-A-only");
+      }
+      expect(fromB.slice(1).every(text => /not found|not available/i.test(String(text)))).toBe(true);
+      const stillOwned = await delegateJobs.getDelegateJob(id!);
+      expect(["running", "starting", "succeeded"]).toContain(stillOwned?.status);
+      expect(String(await cliBridgeTool.execute({ action: "delegate.get", jobId: id }, rootA))).toContain(id!);
+      expect(String(await cliBridgeTool.execute({ action: "delegate.cancel", jobId: id }, rootA))).toMatch(/Cancellation requested/);
+      expect((await waitForTerminal(id!)).status).toBe("cancelled");
+    } finally {
+      // On Windows a running child's working directory cannot be removed.
+      await delegateJobs.__resetDelegateJobsForTests();
+      await fs.rm(fixture, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 15_000);
+
+  it("rejects explicit outside cwd for delegates, allowing only descendants in the caller workspace", async () => {
+    const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
+    const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-cli-path-"));
+    const rootA = path.join(fixture, "A");
+    const rootB = path.join(fixture, "B");
+    const child = path.join(rootA, "child");
+    await fs.mkdir(child, { recursive: true });
+    await fs.mkdir(rootB);
+    try {
+      const denied = await cliBridgeTool.execute({
+        action: "delegate.start", cli: "custom", binary: process.execPath,
+        args: ["-e", 'console.log("unreachable")'], prompt: "Do not run",
+        cwd: rootB, injectArtifacts: false, skillAutoDetect: false,
+      }, rootA);
+      expect(String(denied)).toMatch(/outside|not authorized|workspace/i);
+      expect(String(denied)).not.toContain("Started background CLI delegation");
+      const allowed = await cliBridgeTool.execute({
+        action: "delegate.start", cli: "custom", binary: process.execPath,
+        args: ["-e", 'console.log("safe-child")'], prompt: "Allowed child directory",
+        cwd: child, injectArtifacts: false, skillAutoDetect: false, timeoutMs: 5000,
+      }, rootA);
+      const id = String(allowed).match(/clj_\d+_[a-f0-9]+/)?.[0];
+      expect(id).toBeTruthy();
+      expect((await waitForTerminal(id!)).status).toBe("succeeded");
+      expect(String(await cliBridgeTool.execute({ action: "delegate.get", jobId: id }, rootA))).toContain(id!);
+      expect(String(await cliBridgeTool.execute({ action: "delegate.get", jobId: id }, rootB))).toMatch(/not found|not available/i);
+    } finally {
+      // On Windows a running child's working directory cannot be removed.
+      await delegateJobs.__resetDelegateJobsForTests();
+      await fs.rm(fixture, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 15_000);
+
   it("exposes background start, status polling, and log tail through the MCP tool", async () => {
     const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
     const response = await cliBridgeTool.execute({
