@@ -450,3 +450,10 @@ Current implementation snapshot (2026-10-20): scene schema, revision-checked pro
 - Added keyboard-accessible canvas nudge/rotate/resize. Stale selection, revision or timeline changes, pointer cancellation/lost capture, inactive tabs and busy editor states are guarded against unsafe saves.
 - Verified T-Line frontend regression 54/54 tests across 12 suites, backend and frontend TypeScript checks, and production Vite bundle build (existing CSS/chunk warnings remain). No new SuperAgent runtime changes were required for this phase. Tauri native pointer/device E2E is not yet complete.
 - Remaining editing gates: drag/resize of rotated objects, intrinsic text bounds and native font parity, zoom/pan, asset and audio layers, multi-scene compositions, longer media streaming and real desktop-to-current-SuperAgent end-to-end validation.
+
+### T-Line Rotated Rectangle Resize (2026-10-20)
+
+- T-Line native Motion Studio commit `f75a067` (v1.3.692) extends direct-manipulation resize handles to rotated rectangles. Pointer deltas are projected into local layer axes and geometry is recomputed to anchor the opposite world-space corner.
+- Animated x/y position tracks are updated at the current frame in the same revision-checked `replace-composition` transaction as width/height updates; no additional SuperAgent engine changes are required.
+- Regression covers seven rotation angles, corner anchoring, pointer-based resize and animated keyframe retention. T-Line frontend 68/68 tests, frontend/backend TypeScript and Vite production build passed; existing CSS and bundle-size warnings remain.
+- Hermes runtime remains untouched. Tauri live E2E, audio/image/video asset editing, and font/render parity remain future certification gates.
