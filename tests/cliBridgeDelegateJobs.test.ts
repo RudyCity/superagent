@@ -395,7 +395,11 @@ describe("CLI Bridge background delegation jobs", () => {
         ...options('setTimeout(() => console.log("finished"), 1700)', 5000),
         cwd: a, workspaceRoot: a,
       });
-      expect((await delegateJobs.getDelegateJob(started.jobId))?.ownerPid).toBe(process.pid);
+      const owned = await delegateJobs.getDelegateJob(started.jobId);
+      expect(owned?.ownerPid).toBe(process.pid);
+      if (process.platform === "win32" || process.platform === "linux") {
+        expect(owned?.ownerProcessIdentity).toMatch(process.platform === "win32" ? /^win:\d{15,20}$/ : /^linux:[a-f0-9-]{36}:\d+$/);
+      }
       const fromA = String(await cliBridgeTool.execute({ action: "delegate.recovery", jobId: started.jobId }, a));
       expect(fromA).toContain("Assessment: owned_by_this_runtime");
       expect(fromA).toContain("SuperAgent owner PID: " + process.pid);
@@ -445,6 +449,41 @@ describe("CLI Bridge background delegation jobs", () => {
       await fs.rm(b, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
     }
   }, 16_000);
+
+  it("flags a foreign record whose PID was reused without mutating its persisted state", async () => {
+    const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
+    const { persistJobShard, loadJobShards, jobShardPath } = await import("../src/core/tools/cliBridgeJobStore.js");
+    const a = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-reused-pid-A-"));
+    const b = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-reused-pid-B-"));
+    const id = "clj_" + Date.now() + "_eeffbbcc";
+    const dir = path.join(configDir, "cli-bridge", "delegations");
+    try {
+      await persistJobShard(dir, {
+        jobId: id, cliAlias: "reused-pid-foreign", binary: process.execPath,
+        cwd: a, workspaceRoot: a, ownerPid: process.pid,
+        ownerProcessIdentity: "win:111111111111111111", pid: null,
+        status: "running", completionState: "pending",
+        startedAt: Date.now(), updatedAt: Date.now(), exitCode: null,
+        timedOut: false, timeoutMs: 5000, outputTail: "", outputBytes: 0, logPath: path.join(a, "reused.log"),
+      });
+      const allowed = String(await cliBridgeTool.execute({ action: "delegate.recovery", jobId: id }, a));
+      if (process.platform === "win32" || process.platform === "linux") {
+        expect(allowed).toContain("Assessment: owner_identity_mismatch_manual_review");
+        expect(allowed).toContain("Owner process start identity: mismatch");
+      } else {
+        expect(allowed).toContain("Owner process start identity: unknown");
+      }
+      expect(allowed).toContain("Manual review: required");
+      const denied = String(await cliBridgeTool.execute({ action: "delegate.recovery", jobId: id }, b));
+      expect(denied).toMatch(/not found in the authorized workspace/i);
+      expect(denied).not.toContain(id);
+      expect((await loadJobShards(dir)).find(job => job.jobId === id)?.status).toBe("running");
+    } finally {
+      await fs.rm(jobShardPath(dir, id), { recursive: true, force: true });
+      await fs.rm(a, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+      await fs.rm(b, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 20_000);
 
   it("exposes background start, status polling, and log tail through the MCP tool", async () => {
     const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");

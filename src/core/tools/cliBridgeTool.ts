@@ -745,6 +745,8 @@ async function handleDelegateRecovery(jobId: string, callerWorkspace: string): P
     "Assessment: " + assessment.assessment,
     "SuperAgent owner PID: " + (assessment.ownerPid ?? "unknown") + " (" + assessment.ownerPidObservation + ")",
     "CLI child PID: " + (assessment.childPid ?? "unknown") + " (" + assessment.childPidObservation + ")",
+    "Owner process start identity: " + assessment.ownerIdentityComparison,
+    "CLI child start identity: " + assessment.childIdentityComparison,
     "Manual review: " + (assessment.requiresManualReview ? "required" : "not indicated by this assessment"),
     assessment.reason,
     "PID presence does not establish original process identity. Do not auto-kill, reattach, or unlock based on this report.",

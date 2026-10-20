@@ -6,6 +6,7 @@
  * make auto-recovery or stale lock cleanup unsafe.
  */
 import type { DelegateJob } from "./cliBridgeDelegateJobs.js";
+import { compareProcessStartIdentity, type ProcessIdentityComparison } from "./cliBridgeProcessIdentity.js";
 
 export type PidObservation = "pid_present_unverified" | "pid_absent" | "unknown";
 export type RecoveryAssessment =
@@ -13,6 +14,8 @@ export type RecoveryAssessment =
   | "owned_by_this_runtime"
   | "legacy_owner_unknown"
   | "owner_pid_present_unverified"
+  | "owner_identity_matched_unverified"
+  | "owner_identity_mismatch_manual_review"
   | "owner_pid_absent_manual_review"
   | "owner_pid_unknown_manual_review";
 
@@ -24,6 +27,9 @@ export interface DelegateRecoveryDiagnostic {
   readonly ownerPidObservation: PidObservation;
   readonly childPid: number | null;
   readonly childPidObservation: PidObservation;
+  /** Comparing birth metadata does not establish descendant-process safety. */
+  readonly ownerIdentityComparison: ProcessIdentityComparison;
+  readonly childIdentityComparison: ProcessIdentityComparison;
   readonly requiresManualReview: boolean;
   readonly reason: string;
 }
@@ -52,12 +58,16 @@ export function classifyDelegateRecovery(
     readonly ownedByCurrentRuntime?: boolean;
     readonly ownerPidObservation?: PidObservation;
     readonly childPidObservation?: PidObservation;
+    readonly ownerIdentityObservation?: string | null;
+    readonly childIdentityObservation?: string | null;
   } = {},
 ): DelegateRecoveryDiagnostic {
   const ownerPid = typeof job.ownerPid === "number" ? job.ownerPid : null;
   const childPid = typeof job.pid === "number" ? job.pid : null;
   const ownerPidObservation = options.ownerPidObservation ?? observeProcessId(ownerPid);
   const childPidObservation = options.childPidObservation ?? observeProcessId(childPid);
+  const ownerIdentityComparison = compareProcessStartIdentity(job.ownerProcessIdentity, options.ownerIdentityObservation);
+  const childIdentityComparison = compareProcessStartIdentity(job.childProcessIdentity, options.childIdentityObservation);
   let assessment: RecoveryAssessment;
   let reason: string;
   if (!active(job.status)) {
@@ -69,6 +79,12 @@ export function classifyDelegateRecovery(
   } else if (ownerPid === null) {
     assessment = "legacy_owner_unknown";
     reason = "No original owner PID was recorded. A running-looking legacy snapshot is not evidence of a live process.";
+  } else if (ownerPidObservation === "pid_present_unverified" && ownerIdentityComparison === "mismatch") {
+    assessment = "owner_identity_mismatch_manual_review";
+    reason = "The PID is present but process start identity differs from the saved owner. PID reuse is suspected; do not signal or unlock.";
+  } else if (ownerPidObservation === "pid_present_unverified" && ownerIdentityComparison === "matched_unverified") {
+    assessment = "owner_identity_matched_unverified";
+    reason = "Owner PID and start identity match the saved observation, but descendants and continued ownership remain unverified.";
   } else if (ownerPidObservation === "pid_present_unverified") {
     assessment = "owner_pid_present_unverified";
     reason = "The owner PID exists but may be reused; it does not verify the original owner process or its descendants.";
@@ -84,6 +100,7 @@ export function classifyDelegateRecovery(
     persistedStatus: job.status,
     assessment, ownerPid, ownerPidObservation,
     childPid, childPidObservation,
+    ownerIdentityComparison, childIdentityComparison,
     requiresManualReview: active(job.status) && !options.ownedByCurrentRuntime,
     reason,
   };

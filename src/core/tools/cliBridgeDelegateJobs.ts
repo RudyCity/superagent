@@ -18,6 +18,7 @@ import {
 } from "./cliBridgeCrossProcessClaims.js";
 import { persistJobShard, loadJobShards, loadLegacyJobs, writeCompatibilityJobsSnapshot, jobShardPath } from "./cliBridgeJobStore.js";
 import { classifyDelegateRecovery, type DelegateRecoveryDiagnostic } from "./cliBridgeRecovery.js";
+import { readProcessStartIdentity } from "./cliBridgeProcessIdentity.js";
 
 export type DelegateJobStatus =
   | "starting" | "running" | "cancelling" | "succeeded" | "failed" | "timed_out" | "cancelled" | "interrupted" | "verification_failed";
@@ -37,6 +38,9 @@ export interface DelegateJob {
   pid: number | null;
   /** PID of the SuperAgent process that launched the CLI; diagnostic only, never authorization. */
   ownerPid?: number;
+  /** Best-effort host-local process creation fingerprints, not permissions. */
+  ownerProcessIdentity?: string;
+  childProcessIdentity?: string;
   status: DelegateJobStatus;
   startedAt: number;
   updatedAt: number;
@@ -94,6 +98,13 @@ async function releaseArtifactClaims(jobId: string): Promise<void> {
 }
 let initializePromise: Promise<void> | undefined;
 let persistQueue: Promise<void> = Promise.resolve();
+// Computed once per SuperAgent process so parallel delegations do not issue
+// duplicate OS/CIM probes for the same long-lived parent.
+let currentOwnerIdentity: Promise<string | null> | undefined;
+function getCurrentOwnerIdentity(): Promise<string | null> {
+  currentOwnerIdentity ??= readProcessStartIdentity(process.pid);
+  return currentOwnerIdentity;
+}
 
 function getStorageDir(): string { return path.join(getRootConfigDir(), STORAGE_DIR); }
 function getStoragePath(): string { return path.join(getStorageDir(), STORAGE_FILE); }
@@ -294,6 +305,7 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   jobClaims.set(jobId, claimKeys);
   for (const file of claimKeys) artifactClaims.set(file, jobId);
   try {
+    job.ownerProcessIdentity = (await getCurrentOwnerIdentity()) ?? undefined;
     if (artifactFiles.length) {
       // The per-process reservation happens before this await. Other SuperAgent
       // instances must acquire the same host-local exclusive claims before
@@ -344,6 +356,15 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   proc.stdout?.on("data", (chunk: Buffer | string) => { if (!proc.all) updateOutput(job, chunk); });
   const runner = finishJob(job, proc, opts.timeoutMs);
   runners.set(jobId, runner);
+
+  // Start birth identity probing only after output listeners and the exit
+  // finalizer are registered. The OS probe may take seconds on Windows; never
+  // delay CLI output collection or delegate.start while it runs.
+  void readProcessStartIdentity(job.pid).then(async identity => {
+    if (!identity || !activeStatus(job.status)) return;
+    job.childProcessIdentity = identity;
+    await persistJobs().catch(() => {});
+  }).catch(() => {});
 
   // Do not encourage a duplicate retry if the child has already started.
   await persistJobs().catch((error) => {
@@ -409,8 +430,11 @@ export async function cancelDelegateJob(jobId: string): Promise<{ ok: boolean; m
 export async function getDelegateJobRecovery(jobId: string): Promise<DelegateRecoveryDiagnostic | null> {
   const job = await getDelegateJob(jobId);
   if (!job) return null;
+  const ownerIdentityObservation = await readProcessStartIdentity(job.ownerPid);
+  const childIdentityObservation = await readProcessStartIdentity(job.pid);
   return classifyDelegateRecovery(job, {
     ownedByCurrentRuntime: ownedJobIds.has(jobId) && processes.has(jobId),
+    ownerIdentityObservation, childIdentityObservation,
   });
 }
 
