@@ -93,6 +93,7 @@ import {
   getDelegateJob,
   tailDelegateJob,
   cancelDelegateJob,
+  getDelegateJobRecovery,
 } from "./cliBridgeDelegateJobs.js";
 import { resolveExpectedArtifacts, artifactClaimIdentity } from "./cliBridgeArtifactEvidence.js";
 import { inspectCrossProcessArtifactClaim } from "./cliBridgeCrossProcessClaims.js";
@@ -108,6 +109,7 @@ const ACTIONS = [
   "delegate.tail",
   "delegate.cancel",
   "delegate.claims",
+  "delegate.recovery",
   "session.create",
   "session.send",
   "session.list",
@@ -130,7 +132,7 @@ export const cliBridgeTool: Tool = {
     "Delegate a task to an external AI CLI assistant (Codex, Claude Code, AGY, or any custom binary). " +
     "Three modes: (1) `delegate` for short synchronous tasks, (2) `delegate.start` plus `delegate.get`/`delegate.tail`/`delegate.cancel` for long-running background jobs and bounded parallel work, (3) `session.*` for interactive multi-turn sessions. " +
     "Use `list` to discover installed CLIs, `delegate` for all autonomous coding/analysis tasks, and `session.create`+`session.send`+`session.kill` only when interactive step-by-step TUI dialog is required. " +
-    "Long-running MCP support: delegate.start returns a background job id; delegate.jobs lists jobs; delegate.get and delegate.tail poll progress/output; delegate.cancel requests cancellation; delegate.claims inspects bounded output locks read-only. Multiple jobs can run concurrently. " +
+    "Long-running MCP support: delegate.start returns a background job id; delegate.jobs lists jobs; delegate.get and delegate.tail poll progress/output; delegate.cancel requests cancellation; delegate.claims inspects bounded output locks read-only; delegate.recovery inspects last recorded owner/child PID signals without reattaching or stopping processes. Multiple jobs can run concurrently. " +
     "Use delegate for short tasks and delegate.start for builds or lengthy edits so the MCP request does not have to remain open. " +
     "v1.5.17: `session.create` can auto-send an initial prompt the moment the session is ready, " +
     "sessions auto-kill after an idle TTL (idleTimeoutMs, default 30 min), " +
@@ -148,7 +150,7 @@ export const cliBridgeTool: Tool = {
           "Operation: 'list'/'profile.list' to discover CLIs/profiles, " +
           "'delegate' for short synchronous autonomous tasks, " +
           "'delegate.start' for long-running background tasks that return a jobId immediately (default 30 minutes; up to 2 hours), " +
-          "'delegate.jobs' to list concurrent jobs, 'delegate.get' to inspect status/output, 'delegate.tail' to read recent logs, 'delegate.cancel' to stop a job, and 'delegate.claims' to read workspace-bound output-lock status without removing locks. " +
+          "'delegate.jobs' to list concurrent jobs, 'delegate.get' to inspect status/output, 'delegate.tail' to read recent logs, 'delegate.cancel' to stop a job, and 'delegate.claims' to read workspace-bound output-lock status without removing locks, plus 'delegate.recovery' to inspect read-only owner/child process hints (requires jobId). " +
           "The default concurrency limit is 4 jobs (configure with SUPERAGENT_CLI_BRIDGE_MAX_JOBS, max 12). Use separate worktrees/cwds for parallel code edits to avoid file conflicts. " +
           "'session.create' to start an interactive multi-turn session (optionally with initial `message` to auto-send once ready), " +
           "'session.send' to message it, " +
@@ -382,6 +384,9 @@ export const cliBridgeTool: Tool = {
 
         case "delegate.claims":
           return await handleDelegateClaims(args, cwd);
+
+        case "delegate.recovery":
+          return await handleDelegateRecovery(String(args.jobId ?? "").trim(), cwd);
 
         case "session.create":
           return await handleSessionCreate(args, cwd);
@@ -720,6 +725,30 @@ async function handleDelegateClaims(args: Record<string, unknown>, callerWorkspa
         + " | manual recovery requires confirming all child writers stopped" : ""));
   }
   return lines.join("\n");
+}
+
+/**
+ * Recovery hints never change stored status or release locks.
+ * Validate workspace visibility before probing either PID.
+ */
+async function handleDelegateRecovery(jobId: string, callerWorkspace: string): Promise<string> {
+  if (!jobId) return "Error: 'jobId' is required for action=delegate.recovery.";
+  const job = await getDelegateJob(jobId);
+  if (!job || !delegateJobVisibleToWorkspace(job, callerWorkspace)) {
+    return "Error: delegation job not found in the authorized workspace.";
+  }
+  const assessment = await getDelegateJobRecovery(jobId);
+  if (!assessment) return "Error: delegation job not found in the authorized workspace.";
+  return [
+    "CLI Bridge recovery inspection (read-only): " + jobId,
+    "Stored status: " + assessment.persistedStatus,
+    "Assessment: " + assessment.assessment,
+    "SuperAgent owner PID: " + (assessment.ownerPid ?? "unknown") + " (" + assessment.ownerPidObservation + ")",
+    "CLI child PID: " + (assessment.childPid ?? "unknown") + " (" + assessment.childPidObservation + ")",
+    "Manual review: " + (assessment.requiresManualReview ? "required" : "not indicated by this assessment"),
+    assessment.reason,
+    "PID presence does not establish original process identity. Do not auto-kill, reattach, or unlock based on this report.",
+  ].join("\n");
 }
 
 async function handleDelegateJobs(callerWorkspace: string): Promise<string> {

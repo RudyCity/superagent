@@ -386,6 +386,66 @@ describe("CLI Bridge background delegation jobs", () => {
     }
   }, 20_000);
 
+  it("reports current runtime ownership without granting other workspaces access", async () => {
+    const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
+    const a = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-recovery-A-"));
+    const b = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-recovery-B-"));
+    try {
+      const started = await delegateJobs.startDelegateJob({
+        ...options('setTimeout(() => console.log("finished"), 1700)', 5000),
+        cwd: a, workspaceRoot: a,
+      });
+      expect((await delegateJobs.getDelegateJob(started.jobId))?.ownerPid).toBe(process.pid);
+      const fromA = String(await cliBridgeTool.execute({ action: "delegate.recovery", jobId: started.jobId }, a));
+      expect(fromA).toContain("Assessment: owned_by_this_runtime");
+      expect(fromA).toContain("SuperAgent owner PID: " + process.pid);
+      expect(fromA).toContain("Do not auto-kill, reattach, or unlock");
+      const fromB = String(await cliBridgeTool.execute({ action: "delegate.recovery", jobId: started.jobId }, b));
+      expect(fromB).toMatch(/not found in the authorized workspace/i);
+      expect(fromB).not.toContain(started.jobId);
+      await delegateJobs.cancelDelegateJob(started.jobId);
+      expect((await waitForTerminal(started.jobId)).status).toBe("cancelled");
+    } finally {
+      await fs.rm(a, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+      await fs.rm(b, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 16_000);
+
+  it("treats a foreign stale-looking job as read-only evidence, not auto-cancellation", async () => {
+    const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
+    const { persistJobShard, loadJobShards, jobShardPath } = await import("../src/core/tools/cliBridgeJobStore.js");
+    const a = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-orphan-A-"));
+    const b = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-orphan-B-"));
+    const jobId = "clj_" + Date.now() + "_a1b2c3d4";
+    const dir = path.join(configDir, "cli-bridge", "delegations");
+    try {
+      const snapshot = {
+        jobId, cliAlias: "foreign-cli", binary: process.execPath,
+        cwd: a, workspaceRoot: a, ownerPid: 2147483000,
+        pid: 2147483001, status: "running" as const, completionState: "pending" as const,
+        startedAt: Date.now(), updatedAt: Date.now(), exitCode: null,
+        timedOut: false, timeoutMs: 5000,
+        outputTail: "", outputBytes: 0, logPath: path.join(a, "orphan.log"),
+      };
+      await persistJobShard(dir, snapshot);
+      const denied = String(await cliBridgeTool.execute({ action: "delegate.recovery", jobId }, b));
+      expect(denied).toMatch(/not found in the authorized workspace/i);
+      expect(denied).not.toContain(jobId);
+      const fromA = String(await cliBridgeTool.execute({ action: "delegate.recovery", jobId }, a));
+      expect(fromA).toContain("Manual review: required");
+      expect(fromA).toContain("Stored status: running");
+      expect(fromA).toContain("no automatic cancellation or lock removal");
+      expect((await loadJobShards(dir)).find(job => job.jobId === jobId)?.status).toBe("running");
+      const cancelled = String(await cliBridgeTool.execute({ action: "delegate.cancel", jobId }, a));
+      expect(cancelled).toMatch(/no process handle/i);
+      expect((await loadJobShards(dir)).find(job => job.jobId === jobId)?.status).toBe("running");
+    } finally {
+      await fs.rm(jobShardPath(dir, jobId), { recursive: true, force: true }).catch(() => {});
+      await fs.rm(a, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+      await fs.rm(b, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 16_000);
+
   it("exposes background start, status polling, and log tail through the MCP tool", async () => {
     const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
     const response = await cliBridgeTool.execute({

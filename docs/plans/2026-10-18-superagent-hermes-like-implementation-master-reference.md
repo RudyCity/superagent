@@ -544,3 +544,7 @@ Execute these actions in this order before broad feature work:
 14. Phase 4 per-job multi-writer metadata: see `docs/plans/2026-10-20-superagent-hermes-phase-4-cli-job-shards.md`. Immutable per-job snapshots prevent shared-config `jobs.json` lost updates and avoid rewriting foreign live jobs; compacting history and post-crash orphan reconciliation remain open.
 
 15. Phase 4 bounded per-job snapshot retention: see docs/plans/2026-10-20-superagent-hermes-phase-4-job-shard-retention.md. Owner-scoped compaction retains 8 committed recovery revisions, never deletes peer job directories or unknown files, and fails closed on invalid newest state. Global job/log retention, OS-level sandboxing and SSH/OAuth staging gates remain open.
+
+16. Phase 4 adds workspace-scoped read-only CLI recovery diagnostics via delegate.recovery (docs/plans/2026-10-20-superagent-hermes-phase-4-cli-recovery-diagnostics.md). New jobs record ownerPid for manual owner/child PID observation, but PID existence is not owner identity. Unknown, absent and legacy owners never trigger job mutation, automatic reattach, child kill or orphan lock release. Live provider/process-tree acceptance remains open.
+
+17. Local CLI recovery diagnostics acceptance on 2026-10-20: full Vitest exit 0, 373 suites passed, 1 skipped; 3,565 tests passed, 5 skipped. Separate focused 83/83 tests passed. PID observation and workspace isolation are verified locally, not safe subprocess reattachment or release approval.

@@ -17,6 +17,7 @@ import {
   type CrossProcessArtifactClaims,
 } from "./cliBridgeCrossProcessClaims.js";
 import { persistJobShard, loadJobShards, loadLegacyJobs, writeCompatibilityJobsSnapshot, jobShardPath } from "./cliBridgeJobStore.js";
+import { classifyDelegateRecovery, type DelegateRecoveryDiagnostic } from "./cliBridgeRecovery.js";
 
 export type DelegateJobStatus =
   | "starting" | "running" | "cancelling" | "succeeded" | "failed" | "timed_out" | "cancelled" | "interrupted" | "verification_failed";
@@ -34,6 +35,8 @@ export interface DelegateJob {
   completionState?: "pending" | "artifacts_verified" | "unverified" | "artifact_verification_failed" | "failed" | "timed_out" | "cancelled" | "interrupted";
   artifactEvidence?: ArtifactEvidence[];
   pid: number | null;
+  /** PID of the SuperAgent process that launched the CLI; diagnostic only, never authorization. */
+  ownerPid?: number;
   status: DelegateJobStatus;
   startedAt: number;
   updatedAt: number;
@@ -278,6 +281,7 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
     expectedArtifacts: opts.expectedArtifacts?.slice(),
     completionState: "pending",
     pid: null,
+    ownerPid: process.pid,
     status: "starting", startedAt, updatedAt: startedAt, exitCode: null, timedOut: false, timeoutMs: opts.timeoutMs,
     outputTail: "", outputBytes: 0, logPath,
   };
@@ -395,6 +399,19 @@ export async function cancelDelegateJob(jobId: string): Promise<{ ok: boolean; m
   killProcessTree(jobId, proc);
   await persistJobs();
   return { ok: true, message: `Cancellation requested for ${jobId}; poll delegate.get to confirm it has exited.`, job: { ...job } };
+}
+
+/**
+ * Diagnostic only: reads last recorded state, never reattaches subprocesses,
+ * rewrites peer snapshots, sends a signal or releases cross-process claims.
+ * The caller MUST authorize workspace access before exposing the result.
+ */
+export async function getDelegateJobRecovery(jobId: string): Promise<DelegateRecoveryDiagnostic | null> {
+  const job = await getDelegateJob(jobId);
+  if (!job) return null;
+  return classifyDelegateRecovery(job, {
+    ownedByCurrentRuntime: ownedJobIds.has(jobId) && processes.has(jobId),
+  });
 }
 
 /** Test helper; terminates active children and clears its configured store. */

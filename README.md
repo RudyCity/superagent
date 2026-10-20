@@ -238,6 +238,8 @@ superagent skill promote <name>@<new-version> --workspace ./project
 
 The revision command produces an **inactive, immutable review candidate** with the exact parent version/hash and feedback provenance. It preserves the original version and never automatically promotes or edits the active skill. Owner approval remains interactive and mandatory. Live RMemory delivery and full-provider E2E tests are separate release gates.
 
+**Read-only CLI crash diagnostics:** Use cli_bridge action=delegate.recovery with an authorized jobId to inspect last recorded owner/child PID hints and the stored job status. A present PID is not verified owner identity, and missing owners require manual investigation of descendants and output locks; no automatic kill, reattach, or lock cleanup occurs. See docs/plans/2026-10-20-superagent-hermes-phase-4-cli-recovery-diagnostics.md.
+
 **Bounded CLI job checkpoints:** After writing a per-job metadata snapshot, SuperAgent retains 8 committed checkpoints per owned job. Cleanup never touches peer job directories or unknown files and skips pruning if the newest checkpoint cannot be validated. See docs/plans/2026-10-20-superagent-hermes-phase-4-job-shard-retention.md. Global job/log retention and crash recovery remain separate gates.
 
 **Multi-process CLI job history:** Authoritative delegation metadata is stored as immutable per-job snapshots under `cli-bridge/delegations/jobs.d/`; the legacy `jobs.json` is a compatibility cache only. Independent SuperAgent instances sharing a config root no longer overwrite one another's job records. See `docs/plans/2026-10-20-superagent-hermes-phase-4-cli-job-shards.md`.
