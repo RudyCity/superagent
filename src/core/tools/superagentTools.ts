@@ -14,6 +14,7 @@ import { execa } from "execa";
 import { killProcessTree } from "./shellTools.js";
 import { detectInteractivePrompt, formatUnknownActionError } from "./helpers.js";
 import { Tool, SuperagentInstance } from "./types.js";
+import { classifyDelegationReport, delegationReportFailed } from "./delegationOutcome.js";
 import { resolveCarriageReturns } from "../../utils/text.js";
 import {
   superagentInstances,
@@ -767,6 +768,7 @@ export const invokeSuperagentTool: Tool = {
         }
 
         await agentInstance.sendMessage(effectiveTask);
+        if (signal?.aborted) throw new Error("Superagent execution was aborted.");
         closeThinkingNode();
 
         // Capture final report from last assistant message
@@ -836,12 +838,23 @@ export const invokeSuperagentTool: Tool = {
           }
         }
 
+        const declaredOutcome = classifyDelegationReport(result);
+        if (delegationReportFailed(declaredOutcome)) {
+          const rejected = superagentInstances.get(superagentId);
+          if (rejected) {
+            rejected.result = result;
+            rejected.reportOutcome = declaredOutcome;
+          }
+          throw new Error("Delegated Superagent reported " + declaredOutcome +
+            "; verification success does not override its explicit incomplete task result.");
+        }
         const existing = superagentInstances.get(superagentId);
         if (existing) {
           const completedInstance: SuperagentInstance = {
             ...existing,
             status: "completed",
             result,
+            reportOutcome: declaredOutcome,
             completedAt: Date.now(),
             agent: undefined,
           };
@@ -849,9 +862,9 @@ export const invokeSuperagentTool: Tool = {
           persistRegistryEntry(completedInstance);
         }
         notifySuperagentsChanged();
-        appendMasterLog(`[INFO] Superagent "${role}" (branch: ${branch}) completed successfully.`);
+        appendMasterLog(`[INFO] Superagent "${role}" (branch: ${branch}) process completed; declared outcome: ${declaredOutcome}.`);
 
-        return `Superagent "${role}" (branch: ${branch}) completed.\n\nReport:\n${result}`;
+        return `Superagent "${role}" (branch: ${branch}) reported outcome: ${declaredOutcome}.\n\nReport:\n${result}`;
       } catch (err: any) {
         closeThinkingNode();
         const inst = superagentInstances.get(superagentId);
@@ -944,7 +957,7 @@ export const awaitSuperagentsTool: Tool = {
         (i) =>
           i.status === "completed" &&
           i.result &&
-          (i.result.includes("Tests: passed") || i.result.includes("Status: Completed"))
+          (classifyDelegationReport(i.result) === "completed" && i.result.includes("Tests: passed"))
       );
       if (finishers.length === 0) return;
       for (const inst of all) {
@@ -993,7 +1006,7 @@ export const awaitSuperagentsTool: Tool = {
           const succeeded = tracked.filter(
             (i) => i.status === "completed" &&
               i.result &&
-              (i.result.includes("Tests: passed") || i.result.includes("Status: Completed"))
+              (classifyDelegationReport(i.result) === "completed" && i.result.includes("Tests: passed"))
           );
           if (tracked.length > 0 && succeeded.length * 2 > tracked.length) {
             appendMasterLog(
@@ -1018,8 +1031,9 @@ export const awaitSuperagentsTool: Tool = {
     // Build summary
     const lines: string[] = ["All Superagents finished:\n"];
     for (const inst of superagentInstances.values()) {
-      const icon = inst.status === "completed" ? "✅" : "❌";
-      lines.push(`${icon} ${inst.role} (${inst.branch}) — ${inst.status}`);
+      const declared = inst.reportOutcome ?? classifyDelegationReport(inst.result || "");
+      const icon = inst.status === "completed" ? (declared === "completed" ? "✅" : "⚠️") : "❌";
+      lines.push(`${icon} ${inst.role} (${inst.branch}) — ${inst.status} (reported: ${declared})`);
       if (inst.tokenUsage) {
         const total = inst.tokenUsage.prompt + inst.tokenUsage.completion;
         lines.push(`   Tokens used: ${total.toLocaleString()}`);

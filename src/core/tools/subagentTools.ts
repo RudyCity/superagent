@@ -1,4 +1,5 @@
 import { Tool, SubagentInstance } from "./types.js";
+import { classifyDelegationReport, delegationReportFailed } from "./delegationOutcome.js";
 import { formatUnknownActionError } from "./helpers.js";
 import {
   subagentTypes,
@@ -69,7 +70,7 @@ function extractSubagentReport(agentInstance: any, subagentId?: string): string 
         const report = JSON.parse(raw);
         // Basic schema validation check
         if (
-          typeof report.subagentId === "string" &&
+          report.subagentId === subagentId &&
           typeof report.goal === "string" &&
           typeof report.status === "string"
         ) {
@@ -647,14 +648,16 @@ export const invokeSubagentTool: Tool = {
         }
         closeThinkingNode();
         logs.push(`└──────────────────────────────────────────────\n`);
-        instance.status = "completed";
-        instance.completedAt = Date.now();
         instance.result = extractSubagentReport(agentInstance, subagentId);
+        const outcome = classifyDelegationReport(instance.result || "");
+        instance.status = delegationReportFailed(outcome) ? "error" : "completed";
+        instance.reportOutcome = outcome;
+        instance.completedAt = Date.now();
         runSubagentPromptOptimization(typeName, baseSystemPrompt, prompt, agentInstance).catch(() => {});
         instance.agent = undefined;
         notifySubagentsChanged();
-        appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
-        return `Subagent "${typeName}" (Role: ${role}) finished. Report:\n\n${instance.result || "(no report)"}`;
+        appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] reported outcome: ${outcome}.`);
+        return `Subagent "${typeName}" (Role: ${role}) reported outcome: ${outcome}. Report:\n\n${instance.result || "(no report)"}`;
       } catch (err: any) {
         closeThinkingNode();
         logs.push(`[ERROR] Subagent failed: ${err.message}\n`);
@@ -688,20 +691,22 @@ export const invokeSubagentTool: Tool = {
         clearTimer();
         closeThinkingNode();
         logs.push(`└──────────────────────────────────────────────\n`);
-        instance.status = "completed";
-        instance.completedAt = Date.now();
         instance.result = extractSubagentReport(agentInstance, subagentId);
+        const outcome = classifyDelegationReport(instance.result || "");
+        instance.status = delegationReportFailed(outcome) ? "error" : "completed";
+        instance.reportOutcome = outcome;
+        instance.completedAt = Date.now();
         runSubagentPromptOptimization(typeName, baseSystemPrompt, prompt, agentInstance).catch(() => {});
         instance.agent = undefined;
         notifySubagentsChanged();
-        appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
+        appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] reported outcome: ${outcome}.`);
 
         // Reactive background wakeup: automatically inform parent agent of completion
         if (parentAgent && typeof parentAgent.getHistory === "function") {
           try {
             parentAgent.getHistory().addMessage({
               role: "system",
-              content: `[SUBAGENT_COMPLETED]\nSubagent "${typeName}" (Role: ${role}, ID: ${subagentId}) finished successfully.\nReport:\n${instance.result || "(no report)"}`,
+              content: `[${delegationReportFailed(outcome) ? "SUBAGENT_BLOCKED" : outcome === "unverified" ? "SUBAGENT_UNVERIFIED" : "SUBAGENT_COMPLETED"}]\nSubagent "${typeName}" (Role: ${role}, ID: ${subagentId}) reported outcome: ${outcome}.\nReport:\n${instance.result || "(no report)"}`,
               timestamp: Date.now(),
             });
           } catch {}
@@ -1014,7 +1019,6 @@ export const sendMessageTool: Tool = {
     if (wait) {
       try {
         await agentInstance.sendMessage(message);
-        instance.status = "completed";
         let result = instance.result;
         if (agentInstance && typeof agentInstance.getHistory === "function") {
           const msgs = agentInstance.getHistory().getMessages();
@@ -1024,9 +1028,12 @@ export const sendMessageTool: Tool = {
           }
         }
         instance.result = result;
+        const outcome = classifyDelegationReport(result || "");
+        instance.status = delegationReportFailed(outcome) ? "error" : "completed";
+        instance.reportOutcome = outcome;
         instance.agent = undefined;
         notifySubagentsChanged();
-        return `Subagent "${recipientId}" finished. Report:\n\n${result || "(no report)"}`;
+        return `Subagent "${recipientId}" finished execution; reported outcome: ${outcome}. Report:\n\n${result || "(no report)"}`;
       } catch (err: any) {
         instance.status = "error";
         instance.result = extractSubagentReport(agentInstance, recipientId) || instance.result;
@@ -1039,7 +1046,6 @@ export const sendMessageTool: Tool = {
       }
     } else {
       agentInstance.sendMessage(message).then(() => {
-        instance.status = "completed";
         let result = instance.result;
         if (agentInstance && typeof agentInstance.getHistory === "function") {
           const msgs = agentInstance.getHistory().getMessages();
@@ -1049,6 +1055,9 @@ export const sendMessageTool: Tool = {
           }
         }
         instance.result = result;
+        const outcome = classifyDelegationReport(result || "");
+        instance.status = delegationReportFailed(outcome) ? "error" : "completed";
+        instance.reportOutcome = outcome;
         instance.agent = undefined;
         notifySubagentsChanged();
 
@@ -1056,7 +1065,7 @@ export const sendMessageTool: Tool = {
           try {
             sendParentAgent.getHistory().addMessage({
               role: "system",
-              content: `[SUBAGENT_MESSAGE_COMPLETED]\nSubagent "${recipientId}" processed follow-up message successfully.\nOutput:\n${result || "(no output)"}`,
+              content: `[${delegationReportFailed(outcome) ? "SUBAGENT_MESSAGE_BLOCKED" : outcome === "unverified" ? "SUBAGENT_MESSAGE_UNVERIFIED" : "SUBAGENT_MESSAGE_COMPLETED"}]\nSubagent "${recipientId}" reported outcome: ${outcome}.\nOutput:\n${result || "(no output)"}`,
               timestamp: Date.now(),
             });
           } catch {}

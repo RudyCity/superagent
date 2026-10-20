@@ -238,6 +238,12 @@ superagent skill promote <name>@<new-version> --workspace ./project
 
 The revision command produces an **inactive, immutable review candidate** with the exact parent version/hash and feedback provenance. It preserves the original version and never automatically promotes or edits the active skill. Owner approval remains interactive and mandatory. Live RMemory delivery and full-provider E2E tests are separate release gates.
 
+### Hermes-Style Multi-Agent Outcome Reporting
+
+Delegated subagent and superagent reports now distinguish declared `completed`, `blocked`, `partial`, `failed`, `cancelled`, and `unverified` outcomes. An agent execution returning does **not** by itself prove that the task passed verification. Background parent notifications label blocked/unverified results separately, and early termination requires a completed declaration **plus** passing tests. Explicit incomplete results cannot silently promote a Superagent to successful completion.
+
+The current Phase 4 work is a bounded reliability increment, not full multi-project release certification. See `docs/plans/2026-10-20-superagent-hermes-phase-4-delegation-outcome-implementation.md`. Cross-project/SSH delegation, provider-backed cancellation and staging remain open acceptance gates.
+
 ### Workspace Management
 
 | Command | Description |

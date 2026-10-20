@@ -63,6 +63,8 @@ export interface SubagentInstance {
   status: "idle" | "running" | "completed" | "paused" | "error" | "waiting" | "quarantined" | "terminated";
   logs: string[];
   result?: string;
+  /** Explicit outcome declared in agent report; unverified is not proof of success. */
+  reportOutcome?: "completed" | "blocked" | "partial" | "failed" | "cancelled" | "unverified";
   completedAt?: number;
   tokenUsage?: { prompt: number; completion: number };
   parentId?: string;
@@ -82,6 +84,8 @@ export interface SuperagentInstance {
   status: "running" | "completed" | "error" | "paused" | "waiting" | "terminated";
   logs: string[];
   result?: string;
+  /** Explicit outcome declared in agent report; unverified is not proof of success. */
+  reportOutcome?: "completed" | "blocked" | "partial" | "failed" | "cancelled" | "unverified";
   completedAt?: number;
   tokenUsage?: { prompt: number; completion: number };
   historyFilePath?: string;
