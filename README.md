@@ -238,6 +238,8 @@ superagent skill promote <name>@<new-version> --workspace ./project
 
 The revision command produces an **inactive, immutable review candidate** with the exact parent version/hash and feedback provenance. It preserves the original version and never automatically promotes or edits the active skill. Owner approval remains interactive and mandatory. Live RMemory delivery and full-provider E2E tests are separate release gates.
 
+**OpenAI Secure MCP Tunnel OAuth issuer:** For /mcp tunnel start --provider openai --mcp-auth oauth supply --oauth-public-url https://your-public-host (or OPENAI_MCP_OAUTH_PUBLIC_URL). The HTTPS issuer must genuinely expose OAuth discovery, authorize and token routes externally; the opaque OpenAI tunnel ID is not an OAuth issuer. Startup rejects localhost/HTTP issuers. Cloudflare OAuth uses its own public hostname. See docs/plans/2026-10-20-superagent-hermes-phase-5-public-oauth-issuer-hardening.md.
+
 **OAuth session ownership:** HTTP MCP sessions are bound to the exact OAuth access token credential; a refreshed or separately issued token must initialize a new session. Foreign-session DELETE is denied, revoked tokens fail at the HTTP boundary, and tokens lacking tool scope cannot read or discover tools. Local HTTP PKCE and multi-client verification: docs/plans/2026-10-20-superagent-hermes-phase-5-oauth-http-session-isolation.md.
 
 **MCP OAuth write scope:** Dangerous MCP tool discovery and invocation require a current OAuth mcp:tools:write grant even if local YOLO or --allow-dangerous is enabled. A read-only token cannot be elevated by local tool availability; denial audit omits write payloads. See docs/plans/2026-10-20-superagent-hermes-phase-5-oauth-tool-scope-hardening.md.

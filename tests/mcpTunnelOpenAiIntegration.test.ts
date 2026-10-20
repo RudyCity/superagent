@@ -194,6 +194,57 @@ describe("MCP Tunnel with OpenAI Secure MCP Tunnel Provider", () => {
     expect(startMcpHttp).toHaveBeenCalled();
   });
 
+  it("fails closed if OpenAI OAuth has no public HTTPS issuer", async () => {
+    const oldEnv = process.env.OPENAI_MCP_OAUTH_PUBLIC_URL;
+    delete process.env.OPENAI_MCP_OAUTH_PUBLIC_URL;
+    try {
+      await expect(startMcpTunnel({
+        port: 19500, tunnelProvider: "openai", authMode: "oauth",
+        tunnelId: "tunnel_0123456789abcdef0123456789abcdef",
+      })).rejects.toThrow(/HTTPS public issuer/i);
+      for (const bad of [
+        "http://127.0.0.1:19500", "http://remote.example.com",
+        "https://localhost", "https://public.example.com/path",
+        "https://user:secret@public.example.com",
+        "https://public.example.com?token=secret",
+      ]) {
+        await expect(startMcpTunnel({
+          port: 19500, tunnelProvider: "openai", authMode: "oauth",
+          tunnelId: "tunnel_0123456789abcdef0123456789abcdef",
+          oauthPublicBaseUrl: bad,
+        })).rejects.toThrow(/public HTTPS|HTTPS origin/i);
+      }
+      expect(mocks.startMcpHttpServer).not.toHaveBeenCalled();
+      expect(mocks.startOpenAiTunnel).not.toHaveBeenCalled();
+    } finally {
+      if (oldEnv === undefined) delete process.env.OPENAI_MCP_OAUTH_PUBLIC_URL;
+      else process.env.OPENAI_MCP_OAUTH_PUBLIC_URL = oldEnv;
+    }
+  });
+
+  it("advertises the public HTTPS issuer and discovery for OpenAI OAuth", async () => {
+    const publicIssuer = "https://oauth-demo.example.com";
+    const info = await startMcpTunnel({
+      port: 19501, tunnelProvider: "openai", authMode: "oauth",
+      tunnelId: "tunnel_0123456789abcdef0123456789abcdef",
+      oauthPublicBaseUrl: publicIssuer,
+    });
+    expect(mocks.startMcpHttpServer).toHaveBeenCalledWith(expect.objectContaining({
+      authMode: "oauth",
+      oauth: expect.objectContaining({ publicBaseUrl: publicIssuer }),
+      publicBaseUrl: publicIssuer,
+    }));
+    expect(info.oauthDiscoveryUrl).toBe(publicIssuer + "/.well-known/oauth-authorization-server");
+    expect(info.oauthDiscoveryUrl).not.toContain("127.0.0.1");
+    expect(readMcpStateFile(getMcpStateFile(19501))?.oauthPublicBaseUrl).toBe(publicIssuer);
+    await expect(startMcpTunnel({
+      port: 19501, tunnelProvider: "openai", authMode: "oauth",
+      tunnelId: "tunnel_0123456789abcdef0123456789abcdef",
+      oauthPublicBaseUrl: "https://different.example.com",
+    })).rejects.toThrow(/issuer differs/i);
+    await stopMcpTunnel(19501);
+  });
+
   it("successfully starts local MCP server and OpenAI tunnel client", async () => {
     const info = await startMcpTunnel({
       port: 19427,

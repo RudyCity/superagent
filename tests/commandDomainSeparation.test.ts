@@ -90,6 +90,28 @@ describe("command domain separation", () => {
     expect(lines.at(-1)?.content).toContain("Invalid --mcp-auth value");
   });
 
+  it("passes an explicit OpenAI OAuth public issuer from the MCP command only", async () => {
+    const { ctx } = makeContext();
+    const spy = vi.spyOn(await import("../src/core/mcp/mcpTunnel.js"), "startMcpTunnel")
+      .mockResolvedValueOnce({
+        publicUrl: "openai-tunnel://tunnel_123456789abcdef0",
+        bearerToken: "", localUrl: "http://127.0.0.1:9227/mcp",
+        auditLogPath: "/tmp/audit.log", dangerous: false, toolCount: 4,
+        authMode: "oauth", tunnelProvider: "openai",
+        openAiTunnelId: "tunnel_123456789abcdef0", bootstrapCode: "mock-code",
+        oauthDiscoveryUrl: "https://issuer.example.test/.well-known/oauth-authorization-server",
+      });
+    await mcpCommand.execute(
+      "tunnel start --provider openai --tunnel-id tunnel_123456789abcdef0 --mcp-auth oauth --oauth-public-url https://issuer.example.test",
+      ctx,
+    );
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({
+      tunnelProvider: "openai", authMode: "oauth",
+      oauthPublicBaseUrl: "https://issuer.example.test",
+    }));
+    spy.mockRestore();
+  });
+
   it("forwards --mcp-auth oauth to startMcpTunnel and displays the bootstrap approval code", async () => {
     const { ctx, lines } = makeContext();
     const spy = vi.spyOn(await import("../src/core/mcp/mcpTunnel.js"), "startMcpTunnel").mockResolvedValueOnce({

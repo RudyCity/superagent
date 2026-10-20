@@ -66,6 +66,7 @@ interface ActiveMcp {
   tunnelProvider: McpTunnelProvider;
   openAiTunnelId?: string;
   openAiStatus?: OpenAiTunnelStatus;
+  oauthPublicBaseUrl?: string;
 }
 
 const activeServers = new Map<number, ActiveMcp>();
@@ -110,6 +111,8 @@ export interface McpServerState {
   tunnelProvider?: McpTunnelProvider;
   openAiTunnelId?: string;
   adminUrl?: string;
+  /** Public OAuth issuer URL; never includes credentials. */
+  oauthPublicBaseUrl?: string;
 }
 
 /** Full info for one active MCP server, including cross-workspace ones. */
@@ -162,6 +165,7 @@ export function readMcpStateFile(filePath: string): McpServerState | null {
       tunnelProvider: s.tunnelProvider === "openai" ? "openai" : "cloudflare",
       openAiTunnelId: s.openAiTunnelId,
       adminUrl: s.adminUrl,
+      oauthPublicBaseUrl: s.oauthPublicBaseUrl,
     };
   } catch {
     return null;
@@ -196,8 +200,31 @@ export interface StartMcpTunnelOptions {
   openAiHealthPort?: number;
   /** Custom path to the tunnel-client binary. */
   openAiBinaryPath?: string;
+  /** Explicit public HTTPS OAuth issuer for OpenAI tunnel (also via OPENAI_MCP_OAUTH_PUBLIC_URL). */
+  oauthPublicBaseUrl?: string;
   /** Whether to run in stateless embedded stub mode for testing. */
   embeddedStub?: boolean;
+}
+
+/** A tunnel ID is not an OAuth issuer. Never infer the issuer from a forwarded Host header. */
+export function resolveOpenAiOAuthPublicBaseUrl(configured?: string): string {
+  const value = configured?.trim() || process.env.OPENAI_MCP_OAUTH_PUBLIC_URL?.trim();
+  if (!value) {
+    throw new Error("OpenAI OAuth tunnel requires an HTTPS public issuer. Supply --oauth-public-url https://your-public-host or OPENAI_MCP_OAUTH_PUBLIC_URL; do not use localhost.");
+  }
+  let parsed: URL;
+  try { parsed = new URL(value); }
+  catch { throw new Error("Invalid OpenAI OAuth public URL; use an absolute HTTPS origin."); }
+  const host = parsed.hostname.toLowerCase();
+  if (parsed.protocol !== "https:" || !host ||
+      host === "localhost" || host.endsWith(".localhost") ||
+      host === "127.0.0.1" || host === "::1" || host === "[::1]" ||
+      host.endsWith(".local") || host.endsWith(".internal") ||
+      parsed.username || parsed.password || parsed.search || parsed.hash ||
+      parsed.pathname !== "/") {
+    throw new Error("OpenAI OAuth public URL must be a public HTTPS origin without credentials, path, query or fragment.");
+  }
+  return parsed.origin;
 }
 
 export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<McpTunnelInfo> {
@@ -250,9 +277,16 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
       );
     }
 
+    // Fail before starting a server or external connection if issuer is unusable.
+    const oauthPublicBaseUrl = authMode === "oauth"
+      ? resolveOpenAiOAuthPublicBaseUrl(opts.oauthPublicBaseUrl)
+      : undefined;
     let active = activeServers.get(port);
     let createdServer = false;
 
+    if (active && active.oauthPublicBaseUrl !== oauthPublicBaseUrl) {
+      throw new Error("OpenAI OAuth public issuer differs from the active MCP server; stop it before reconfiguration.");
+    }
     if (active && active.tunnelProvider !== "openai") {
       throw new Error(
         `MCP server on port ${port} is already running with the ${active.tunnelProvider} tunnel provider; ` +
@@ -270,13 +304,12 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
     if (!active) {
       const bearerToken = generateMcpBearerToken();
       let bootstrapCode: string | undefined;
-      const localBase = `http://127.0.0.1:${port}`;
       const oauth =
         authMode === "oauth"
           ? (() => {
               const bc = generateBootstrapCode();
               bootstrapCode = bc.code;
-              return { publicBaseUrl: localBase, bootstrapCodeHash: bc.codeHash };
+              return { publicBaseUrl: oauthPublicBaseUrl!, bootstrapCodeHash: bc.codeHash };
             })()
           : undefined;
 
@@ -287,7 +320,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         auditLogPath: opts.auditLogPath,
         authMode,
         oauth,
-        publicBaseUrl: localBase,
+        publicBaseUrl: oauthPublicBaseUrl || `http://127.0.0.1:${port}`,
         hostOriginPolicy: {
           allowedOrigins: opts.allowedOrigins,
           allowNoOrigin: opts.allowNoOrigin,
@@ -305,6 +338,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         bootstrapCode,
         tunnelProvider: "openai",
         openAiTunnelId: tunnelId,
+        oauthPublicBaseUrl,
       };
       activeServers.set(port, active);
       createdServer = true;
@@ -344,6 +378,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
       authMode,
       tunnelProvider: "openai",
       openAiTunnelId: tunnelId,
+      oauthPublicBaseUrl,
       adminUrl: openAiStatus.adminUrl,
     });
 
@@ -356,7 +391,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
       toolCount: getExposedMcpToolCount(dangerous),
       authMode,
       bootstrapCode: active.bootstrapCode,
-      oauthDiscoveryUrl: authMode === "oauth" ? `${active.handle.url}/.well-known/oauth-authorization-server` : undefined,
+      oauthDiscoveryUrl: authMode === "oauth" ? `${oauthPublicBaseUrl}/.well-known/oauth-authorization-server` : undefined,
       tunnelProvider: "openai",
       openAiTunnelId: tunnelId,
       adminUrl: openAiStatus.adminUrl,
@@ -552,6 +587,7 @@ export function listActiveMcpServers(): ActiveMcpInfo[] {
         authMode: active.authMode,
         tunnelProvider: active.tunnelProvider,
         openAiTunnelId: active.openAiTunnelId,
+        oauthPublicBaseUrl: active.oauthPublicBaseUrl,
         adminUrl: state?.adminUrl,
       }),
     );

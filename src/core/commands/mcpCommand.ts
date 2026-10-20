@@ -351,6 +351,9 @@ export const mcpCommand: SlashCommand = {
           if (active.tunnelProvider === "openai" && active.openAiTunnelId) restartArgs.push("--tunnel-id", active.openAiTunnelId);
         }
         if (active?.authMode && !restartArgs.includes("--mcp-auth")) restartArgs.push("--mcp-auth", active.authMode);
+        if (active?.oauthPublicBaseUrl && !restartArgs.includes("--oauth-public-url")) {
+          restartArgs.push("--oauth-public-url", active.oauthPublicBaseUrl);
+        }
         if (active?.toolMode === "dangerous" && !restartArgs.includes("--allow-dangerous")) restartArgs.push("--allow-dangerous");
         if (active) await stopMcpTunnel(port);
         await mcpCommand.execute("tunnel start " + restartArgs.join(" "), ctx);
@@ -409,6 +412,8 @@ export const mcpCommand: SlashCommand = {
         const apiKey = apiKeyIdx !== -1 ? rawArgs[apiKeyIdx + 1]?.trim() : undefined;
         const profileIdx = rawArgs.findIndex((a) => a === "--profile");
         const profile = profileIdx !== -1 ? rawArgs[profileIdx + 1]?.trim() : undefined;
+        const oauthPublicUrlIdx = rawArgs.findIndex((a) => a === "--oauth-public-url");
+        const oauthPublicBaseUrl = oauthPublicUrlIdx !== -1 ? rawArgs[oauthPublicUrlIdx + 1]?.trim() : undefined;
         const allowDangerous = rawArgs.some((a) => a === "--allow-dangerous");
         const authModeIdx = rawArgs.findIndex((a) => a === "--mcp-auth" || a === "--auth");
         let authMode: "static-bearer" | "oauth" | undefined;
@@ -436,6 +441,7 @@ export const mcpCommand: SlashCommand = {
             tunnelId,
             openAiApiKey: apiKey,
             openAiProfile: profile,
+            oauthPublicBaseUrl,
           });
 
           if (info.tunnelProvider === "openai") {
