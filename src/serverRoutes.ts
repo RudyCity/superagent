@@ -293,6 +293,14 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Authenticated server-owned capability manifest for desktop parity.
+  // A command in the registry is not automatically an HTTP-executable action.
+  if (pathname === "/api/tline/capabilities" && req.method === "GET") {
+    const { buildTlineCapabilityManifest } = await import("./core/channels/tlineCapabilities.js");
+    sendJSON(res, 200, buildTlineCapabilityManifest(getSuperAgentVersion()));
+    return true;
+  }
+
   // Status
   if (pathname === "/api/status" && req.method === "GET") {
     const session = resolveSession(req);
