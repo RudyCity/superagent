@@ -1,3 +1,12 @@
+## [Unreleased] - Motion Studio audit remediation (2026-10-21)
+### Added
+- Added workspace-contained Motion CLI and interactive `/motion` media imports (image/WAV) plus validated, revision-checked JSON edit transactions.
+- Added two dangerous/write-scoped MCP Motion media-import tools; standardized HTTP/MCP base64 handling and raised Motion exports to capped 1920px output.
+- Added explicit Motion capability metadata without claiming an independently deployed browser editor or certified T-Line installation.
+### Tests
+- SuperAgent 12 Motion suites / 51 tests passed, including real 1920x1080 H.264 artifact validation.
+- T-Line native editor 28 targeted frontend tests and 6 backend proxy tests passed in their intended configurations. Packaged Tauri live E2E remains outstanding.
+
 ## [1.14.8] - 2026-10-20
 ### Documentation
 - Added the codebase-aligned Motion Studio implementation plan, including runtime integration points, explicit tool permissions, isolated rendering, browser studio packaging, and phased acceptance gates. No Motion runtime functionality is shipped in this update.
@@ -11080,7 +11089,7 @@ fully exercise.
 - The same path round-trips through the SQLite mirror
   (`upsertLock` + `readAllLocks`).
 - Rationale: Windows MAX_PATH is 260 chars but the OS allows
-  longer paths with the `\?\` prefix. We don't need to
+  longer paths with the `\?` prefix. We don't need to
   prefix; we just need to not corrupt or truncate the path
   the user supplied.
 

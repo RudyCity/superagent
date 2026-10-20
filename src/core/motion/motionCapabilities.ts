@@ -1,0 +1,19 @@
+/** Backend capabilities only. An installed/running T-Line frontend is a separate deployment. */
+export const MOTION_CAPABILITIES = Object.freeze({
+  schemaVersion: 1,
+  releaseChannel: "developer-preview",
+  sceneAuthoring: true,
+  standaloneBrowserEditor: false,
+  nativeTLineEditor: "external-not-verified",
+  localWorkspaceOnly: true,
+  layerKinds: ["text", "rect", "image"],
+  imageImport: ["png", "jpeg", "webp"],
+  audioImport: ["pcm16-wav"],
+  audioTracksMax: 4,
+  renderFormats: ["h264-mp4"],
+  renderWidthMax: 1920,
+  renderHeightMax: 1920,
+  renderFramesMax: 1800,
+  detachedRenderJobs: true,
+  automaticCrashRecovery: false,
+});

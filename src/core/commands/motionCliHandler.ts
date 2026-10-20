@@ -2,13 +2,22 @@ import { createMotionProject, getMotionProject, listMotionProjects, updateMotion
 import { MotionRevisionConflict } from "../motion/project/revisions.js";
 import { MotionValidationError } from "../motion/schema/validation.js";
 import { probeFfmpeg } from "../motion/render/ffmpegEncoder.js";
+import { importMotionAsset } from "../motion/assets/motionAssets.js";
+import { importMotionAudio } from "../motion/assets/motionAudio.js";
+import { readMotionWorkspaceInput } from "../motion/assets/motionInput.js";
+import { MOTION_CAPABILITIES } from "../motion/motionCapabilities.js";
+import type { MotionEdit } from "../motion/schema/types.js";
 import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation } from "../motion/jobs/motionJobs.js";
 
-const usage = `Motion Studio (foundation preview)
+const usage = `Motion Studio (developer preview)
   superagent motion new --name "Title" [--workspace PATH] [--json]
   superagent motion list [--workspace PATH] [--json]
   superagent motion inspect PROJECT_ID [--workspace PATH] [--json]
   superagent motion edit PROJECT_ID --base-revision N --layer LAYER_ID --text "Title"
+  superagent motion edit PROJECT_ID --base-revision N --edits-json '[{"type":"set-property",...}]'
+  superagent motion edit PROJECT_ID --base-revision N --edits-file workspace/path/edits.json
+  superagent motion import-image --file workspace/path/image.png [--workspace PATH] [--json]
+  superagent motion import-audio --file workspace/path/clip.wav [--workspace PATH] [--json]
   superagent motion frame PROJECT_ID --frame N [--workspace PATH] [--json]
   superagent motion render PROJECT_ID [--width EVEN_NUMBER] [--detach] [--workspace PATH] [--json]
   superagent motion jobs [--workspace PATH] [--json]
@@ -26,7 +35,7 @@ function argumentsOf(args: string[]): { action: string; positionals: string[]; o
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
   const boolean = new Set(["--json", "--detach", "--ack-stale", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", ...boolean]);
+  const valid = new Set(["--workspace", "-w", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -66,7 +75,16 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       return 0;
     }
     if (action === "doctor") {
-      emit({ stage: "motion-video-preview", localSchema: true, deterministicSvg: true, mp4: await probeFfmpeg(), desktopEditor: false, renderJobs: "foreground-and-detached-local" }, json);
+      const available = await probeFfmpeg();
+      emit({ ...MOTION_CAPABILITIES, mp4: available, ffmpegAvailable: available, renderJobs: "foreground-and-detached-local" }, json);
+      return 0;
+    }
+    if (action === "import-image" || action === "import-audio") {
+      if (positionals.length) throw new Error(action + " requires --file and no positional arguments");
+      const filename = opt(opts, "--file");
+      if (!filename) throw new Error(action + " requires --file inside the authorized workspace");
+      const data = await readMotionWorkspaceInput(workspace, filename, action === "import-image" ? 1024 * 1024 : 2 * 1024 * 1024);
+      emit(action === "import-image" ? await importMotionAsset(workspace, data) : await importMotionAudio(workspace, data), json);
       return 0;
     }
     if (action === "new") {
@@ -141,8 +159,27 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const baseRevision = nonnegativeInteger(opt(opts, "--base-revision"), "--base-revision");
       const layerId = opt(opts, "--layer");
       const newText = opt(opts, "--text");
-      if (!layerId || newText === undefined) throw new Error("edit requires --layer and --text");
-      const result = await updateMotionProject(workspace, projectId, baseRevision, [{ type: "set-text", layerId, text: newText }]);
+      const editsJson = opt(opts, "--edits-json");
+      const editsFile = opt(opts, "--edits-file");
+      const textMode = layerId !== undefined || newText !== undefined;
+      const modes = Number(textMode) + Number(editsJson !== undefined) + Number(editsFile !== undefined);
+      if (modes !== 1) throw new Error("edit requires exactly one of --layer/--text, --edits-json or --edits-file");
+      let edits: MotionEdit[];
+      if (textMode) {
+        if (!layerId || newText === undefined) throw new Error("edit text requires --layer and --text");
+        edits = [{ type: "set-text", layerId, text: newText }];
+      } else {
+        const input = editsFile === undefined
+          ? editsJson!
+          : (await readMotionWorkspaceInput(workspace, editsFile, 256 * 1024)).toString("utf8");
+        if (input.length > 256 * 1024) throw new Error("Motion edits JSON exceeds 256 KB");
+        const value: unknown = JSON.parse(input);
+        if (!Array.isArray(value) || value.length < 1 || value.length > 50) {
+          throw new Error("Motion edits must be a JSON array with 1-50 transactions");
+        }
+        edits = value as MotionEdit[];
+      }
+      const result = await updateMotionProject(workspace, projectId, baseRevision, edits);
       emit({ id: result.id, revision: result.revision }, json);
       return 0;
     }

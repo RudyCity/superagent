@@ -49,6 +49,18 @@ describe("Motion MP4 rendering and durable job records", () => {
     await expect(getMotionJob(other, job.id)).rejects.toThrow();
   }, 30000);
 
+  it("exports a real 1920×1080 one-frame H.264 video with validated metadata", async () => {
+    if (!(await probeFfmpeg())) return;
+    const { root, project } = await fixture(30);
+    project.composition.durationFrames = 1;
+    project.composition.layers[0].tracks = [];
+    await fs.writeFile(path.join(root, ".superagent", "motion", "projects", project.id + ".json"), JSON.stringify(project));
+    const job = await renderMotionJob(root, project.id, { width: 1920 });
+    expect(job.status, job.error).toBe("completed");
+    expect(job.profile).toMatchObject({ width: 1920, height: 1080, frameCount: 1 });
+    expect((await fs.stat(job.artifact!.path)).size).toBeGreaterThan(100);
+  }, 30000);
+
   it("records a failed render without publishing an artifact when FFmpeg is unavailable", async () => {
     const { root, project } = await fixture();
     const job = await renderMotionJob(root, project.id, { width: 160, ffmpeg: "__missing_motion_encoder__" });

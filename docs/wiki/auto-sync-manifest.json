@@ -37,7 +37,7 @@
       "updatedAt": "2026-08-15T02:09:42.094Z"
     }
   },
-  "lastSync": "2026-10-18T22:07:33.589Z",
+  "lastSync": "2026-10-20T21:22:25.163Z",
   "workspaces": [
     {
       "name": "superagent",
@@ -49,28 +49,32 @@
     }
   ],
   "lastModifiedFiles": [
-    "[superagent] docs/plans/2026-10-18-superagent-hermes-like-implementation-master-reference.md",
-    "[superagent] docs/plans/2026-10-18-superagent-hermes-like-personal-agent-development-plan.md",
-    "[superagent] src/core/commands/skillCliHandler.ts",
-    "[superagent] src/core/commands/skillCommands.ts",
-    "[superagent] src/core/mcp/tools/planSkillsMcpTools.ts",
-    "[superagent] src/core/skills/skillRoutes.ts",
-    "[superagent] src/core/skills/skillSynthesizer.ts",
-    "[superagent] src/core/skills/skillTracker.ts",
-    "[superagent] src/core/skills/synthesizerTypes.ts",
-    "[superagent] src/core/tools/synthesizeSkillTool.ts",
-    "[superagent] tests/skillSynthesizer.test.ts",
-    "[superagent] docs/plans/2026-10-19-superagent-hermes-like-phase-2-skill-lifecycle-implementation.md",
-    "[superagent] src/core/skills/skillLifecycle.ts",
-    "[superagent] src/core/skills/skillLifecycleCli.ts",
-    "[superagent] tests/skillLifecycle.test.ts",
-    "[superagent] tests/skillTracker.test.ts"
+    "[superagent] CHANGELOG.md",
+    "[superagent] README.md",
+    "[superagent] docs/plans/2026-10-20-superagent-motion-studio-implementation-plan.md",
+    "[superagent] src/core/commands/motionCliHandler.ts",
+    "[superagent] src/core/commands/motionCommand.ts",
+    "[superagent] src/core/mcp/mcpWorkspacePolicy.ts",
+    "[superagent] src/core/mcp/tools/motionMcpTools.ts",
+    "[superagent] src/core/motion/motionRoutes.ts",
+    "[superagent] src/core/motion/render/ffmpegEncoder.ts",
+    "[superagent] src/core/project/projectAccessPolicy.ts",
+    "[superagent] tests/motionMcpIntegration.test.ts",
+    "[superagent] tests/motionRoutes.test.ts",
+    "[superagent] tests/motionSlashCommand.test.ts",
+    "[superagent] tests/motionVideo.test.ts",
+    "[superagent] .superagent/",
+    "[superagent] docs/plans/2026-10-21-superagent-chrome-cdp-terminal-optimization-plan.md",
+    "[superagent] docs/reviews/2026-10-20-motion-studio-codebase-audit.md",
+    "[superagent] src/core/motion/assets/motionInput.ts",
+    "[superagent] src/core/motion/motionCapabilities.ts",
+    "[superagent] tests/motionAuthoringParity.test.ts"
   ],
   "impactSummary": {
     "architecture": false,
     "domainData": false,
     "apiContracts": true,
-    "features": false,
+    "features": true,
     "devops": false,
     "onboarding": false,
     "index": true

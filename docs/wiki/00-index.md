@@ -91,8 +91,11 @@ graph TD
 ## 🔄 Real-time Codebase Sync Status
 
 <!-- RECENT_SYNC_LOG_START -->
-### 🕒 Last Sync Event: 2026-10-18 22:07:33 UTC (Multi-Workspace: superagent, t-line)
+### 🕒 Last Sync Event: 2026-10-20 21:22:25 UTC (Multi-Workspace: superagent, t-line)
 | Modified Source File | Impacted Wiki Section | Change Trigger |
 |:---|:---|:---|
-| `src/core/mcp/tools/planSkillsMcpTools.ts` | [03-api-and-contracts.md](./03-api-and-contracts.md) | MCP tool schema, registry, or transport contract modified |
+| `README.md` | [00-index.md](./00-index.md) | Project README overview or usage guidance modified |
+| `src/core/mcp/mcpWorkspacePolicy.ts` | [03-api-and-contracts.md](./03-api-and-contracts.md) | MCP tool schema, registry, or transport contract modified |
+| `src/core/mcp/tools/motionMcpTools.ts` | [03-api-and-contracts.md](./03-api-and-contracts.md) | MCP tool schema, registry, or transport contract modified |
+| `.superagent/` | [04-features-and-workflows.md](./04-features-and-workflows.md) | Business Domain Feature Logic modified |
 <!-- RECENT_SYNC_LOG_END -->

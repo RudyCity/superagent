@@ -2,11 +2,14 @@ import type { SlashCommand, SlashCommandContext } from "./types.js";
 import { registry } from "./registry.js";
 
 const help = [
-  "Motion Studio (MP4 preview foundation)",
+  "Motion Studio (developer preview)",
   "  /motion new <title>",
   "  /motion list",
   "  /motion inspect <project-id>",
   "  /motion edit <project-id> <base-revision> <layer-id> <text>",
+  '  /motion edit-json <project-id> <base-revision> [{"type":"set-property",...}]',
+  "  /motion import-image <relative-file-path>",
+  "  /motion import-audio <relative-file-path>",
   "  /motion frame <project-id> <frame>",
   "  /motion render <project-id> [even-output-width]",
   "  /motion jobs",
@@ -14,7 +17,7 @@ const help = [
   "  /motion recovery <job-id> (read-only)",
   "  /motion cancel <job-id>",
   "  /motion doctor",
-  "Renders currently run in this terminal process; job records persist for inspection.",
+  "Interactive renders are foreground; scriptable CLI supports detached rendering.",
 ].join("\n");
 
 function emit(ctx: SlashCommandContext, content: string, error = false): void {
@@ -45,6 +48,29 @@ export const motionCommand: SlashCommand = {
         const { probeFfmpeg } = await import("../motion/render/ffmpegEncoder.js");
         const available = await probeFfmpeg();
         emit(ctx, "Motion Studio: " + (available ? "FFmpeg available; MP4 previews enabled" : "FFmpeg unavailable; SVG previews only"));
+        return;
+      }
+      if (action === "import-image" || action === "import-audio") {
+        const filename = tokens.slice(1).join(" ").trim();
+        if (!filename) throw new Error("Usage: /motion " + action + " <relative-file-path>");
+        const { readMotionWorkspaceInput } = await import("../motion/assets/motionInput.js");
+        const data = await readMotionWorkspaceInput(workspace, filename, action === "import-image" ? 1024 * 1024 : 2 * 1024 * 1024);
+        const result = action === "import-image"
+          ? await (await import("../motion/assets/motionAssets.js")).importMotionAsset(workspace, data)
+          : await (await import("../motion/assets/motionAudio.js")).importMotionAudio(workspace, data);
+        emit(ctx, "Imported " + action + ": " + result.id + " (" + result.bytes + " bytes)");
+        return;
+      }
+      if (action === "edit-json") {
+        if (!id || !third || !fourth) throw new Error("Usage: /motion edit-json <project-id> <base-revision> <json-array>");
+        const baseRevision = parseInteger(third, "base-revision");
+        const raw = [fourth, ...rest].join(" ");
+        if (raw.length > 256 * 1024) throw new Error("Motion JSON transaction exceeds 256 KB");
+        const edits: unknown = JSON.parse(raw);
+        if (!Array.isArray(edits) || edits.length < 1 || edits.length > 50) throw new Error("Motion edits must contain 1-50 items");
+        const { updateMotionProject } = await import("../motion/motionService.js");
+        const result = await updateMotionProject(workspace, id, baseRevision, edits);
+        emit(ctx, "Updated motion project " + result.id + " to revision " + result.revision);
         return;
       }
       if (action === "list" || action === "new" || action === "inspect" || action === "edit" || action === "frame") {

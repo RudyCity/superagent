@@ -713,3 +713,21 @@ Manual verification (requires user action — NOT yet run):
 - [ ] **Denied dangerous tool**: in OAuth mode with a safe-only scope, attempt a dangerous tool call; verify a clear approval/auth error and no execution.
 
 Endpoint mode for manual tests: `--mcp-auth oauth` (OAuth 2.1 + PKCE). Static-bearer mode remains the default for backward compatibility.
+
+### Motion Studio (developer preview)
+
+Motion Studio stores revision-checked scenes and media inside the selected **local workspace**. The native editor is delivered by the separate T-Line Desktop project; no independent browser Studio or live packaged-Tauri integration is implied by the backend API.
+
+```bash
+superagent motion doctor --json
+superagent motion new --name "Launch video" --workspace . --json
+superagent motion import-image --file ./assets/product.png --workspace . --json
+superagent motion import-audio --file ./assets/voice.wav --workspace . --json
+superagent motion edit MOTION_ID --base-revision 1 --edits-file ./edits.json --workspace . --json
+superagent motion render MOTION_ID --width 1920 --detach --workspace . --json
+superagent motion jobs --workspace . --json
+```
+
+`edits.json` contains a JSON array of existing declarative `MotionEdit` operations, e.g. `[{"type":"set-property","layerId":"title","property":"x","value":200}]`. Asset IDs returned by imports may be included in `add-layer` and `set-audio-tracks` operations. All local input files must resolve inside the workspace and may not be symlinks. Render profile currently caps at 1800 frames and 1920px output dimensions. Worker recovery is operator-mediated: use `motion recovery` for read-only diagnostics and `motion recover JOB_ID --ack-stale` only after verifying actual stale ownership.
+
+The interactive terminal supports `/motion import-image ./assets/product.png`, `/motion import-audio ./assets/voice.wav`, and `/motion edit-json MOTION_ID 1 [{"type":"set-property","layerId":"title","property":"x","value":200}]`. MCP clients expose 11 `superagent_motion_*` tools, including dangerous/write-scoped `superagent_motion_import_image` and `superagent_motion_import_audio` accepting bounded canonical base64. Live MCP servers require their usual controlled reload before newly added tools become visible; don't interrupt active Hermes sessions just for discovery.

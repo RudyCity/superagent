@@ -1,7 +1,7 @@
 # SuperAgent Motion Studio — Codebase-Aligned Implementation Plan
 
 Date: 2026-10-20
-Status: SuperAgent and t-line structural audits complete; CLI, MCP, HTTP and desktop interface planning updated; implementation not started.
+Status: Developer preview; SuperAgent engine and T-Line editor implemented with certified unit/integration suites. Production rollout gates remain open.
 Repository: D:/backup from pc asus/Documents Development/superagent
 Original baseline: SuperAgent main 8b8ef43a; package version 1.14.7.
 Follow-up audit (2026-10-20): SuperAgent main 768469e9, t-line main 18c64ca. Recheck HEAD before executing.
@@ -498,3 +498,33 @@ Current implementation snapshot (2026-10-20): scene schema, revision-checked pro
 - Native T-Line mixer gains clickable waveform scrubbing and frame-relative playhead; a separate synchronized audio preview per clip uses source offset, gain and fade controls. Preview uses a monotonic visual frame clock to reduce drift and respects pause/inactive state.
 - The rendered AAC file remains authoritative because browser volume boosting beyond 1 and autoplay restrictions prevent guaranteed matching real-time playback. Packaged Tauri A/V E2E and sample-accurate multi-clip Web Audio rendering remain certification gates.
 - Regression: SuperAgent 43/43 Motion tests passed, including waveform numeric tests and GET route authorization/workspace isolation; TypeScript passed. No Hermes runtime or daemon restarted.
+
+## 16. Motion audit remediation implementation — 2026-10-21
+
+Reference: `docs/reviews/2026-10-20-motion-studio-codebase-audit.md`.
+
+### Implemented in this increment
+- Scriptable `superagent motion import-image --file...` and `import-audio --file...` read only canonical, non-symlink workspace-contained local files and enforce 1 MiB PNG/JPEG/WebP or 2 MiB canonical WAV budgets. Asset stores still validate/decode/checksum inputs.
+- Scriptable `superagent motion edit PROJECT_ID --base-revision N --edits-json ...` or `--edits-file ...` provides arbitrary existing declarative `MotionEdit[]` operations (1-50, 256 KiB), preserving server-side revision compare-and-swap, scene validation and asset ownership checks.
+- Interactive slash commands `/motion import-image`, `/motion import-audio`, `/motion edit-json` reuse the same local input safety and project service.
+- MCP import tools `superagent_motion_import_image` and `superagent_motion_import_audio` (11 Motion tools total) use strictly canonical, bounded base64; both are dangerous and require workspace and project **write** capability, with no user-selected filesystem path. HTTP imports reuse identical canonical decoding.
+- The render policy accepts even width 160–1920 and computed height up to 1920 while retaining the 1800-frame limit. This enables **1920×1080** (and equivalent portrait) previews without claiming full-production performance certification.
+- Added explicit capabilities in authenticated `GET /api/motion` and CLI doctor: backend schema, support scope and `nativeTLineEditor: external-not-verified`. Retains preexisting CLI doctor `mp4` key and HTTP root `studio: false` for compatibility.
+- Kept detached rendering and fail-closed worker claims. No auto-kill, daemon restart, workspace switch, or T-Line source modifications were performed.
+
+### Verification
+- SuperAgent Motion: **12 suites / 51 tests pass**, including real 1920×1080 FFmpeg/FFprobe output, CLI media import/edit, MCP media validation, unauthorized workspace refusal, and cap checks.
+- SuperAgent `bun run build`: **passed**. T-Line frontend/back TypeScript checks: **passed**.
+- T-Line native Motion React component tests: **4 suites / 28 tests passed** with its frontend Vite/JSDOM config.
+- T-Line backend Motion proxy/trust tests: **2 suites / 6 tests passed**.
+- Desktop CDP discovery found no connected T-Line Electron debugging target at the probed ports. This is **not** a packaged Tauri live E2E; installed/current daemon build may still lag source, and T-Line integration needs a controlled coordinated reload.
+- The first T-Line frontend test attempt at repository root used Node environment and failed with `document is not defined`. The correct `frontend/vite.config.ts` environment passed all targeted tests. No source fix was necessary.
+
+### Remaining release gates — do not close by inference
+1. Run authenticated matching-version T-Line Desktop↔SuperAgent live smoke (project revision, imports, animation, job progress/cancel, waveform, MP4 HTTP Range/206), preserving Hermes sessions.
+2. Introduce a durable FIFO renderer supervisor and fault-injection/restart acceptance, bounded job/artifact retention, and safe orphan diagnostics; never infer dead ownership from PID alone.
+3. Certify fonts/raster parity across OS and browser; measure 1080p performance budgets, long-video limits and multi-track A/V sync including actual packaged Tauri devices.
+4. Ship multi-scene and video timeline clips only after schema migration, clip ingestion policy, media sandbox, editor affordances and shared render contracts.
+5. Evaluate a separate browser Studio as a distinct build/deploy artifact; the existing native T-Line Motion tab does not imply an independently hosted browser Studio.
+
+Release status stays **Developer Preview**. The CI suite and 1080p one-frame smoke are evidence of basic functionality, not certification of all workloads.

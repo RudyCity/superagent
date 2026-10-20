@@ -5,6 +5,9 @@ import {
   getMotionJob, inspectMotionJob, listMotionJobs, requestMotionCancellation, startDetachedMotionJob,
 } from "../../motion/jobs/motionJobs.js";
 import type { MotionEdit } from "../../motion/schema/types.js";
+import { importMotionAsset } from "../../motion/assets/motionAssets.js";
+import { importMotionAudio } from "../../motion/assets/motionAudio.js";
+import { decodeMotionMediaBase64 } from "../../motion/assets/motionInput.js";
 import type { McpToolResult } from "../types.js";
 
 export const MOTION_MCP_TOOL_DEFS = [
@@ -41,11 +44,27 @@ export const MOTION_MCP_TOOL_DEFS = [
     }, required: ["motionId", "baseRevision", "edits"] },
   },
   {
+    name: "superagent_motion_import_image",
+    description: "Import a bounded PNG, JPEG or WebP image to the authorized workspace; returns an immutable asset ID. Requires write permission and dangerous-tool opt-in. No file paths or remote URLs.",
+    inputSchema: { type: "object", properties: {
+      workspace: { type: "string" }, projectId: { type: "string" },
+      base64: { type: "string", description: "Canonical base64-encoded image, max 1 MiB decoded." },
+    }, required: ["base64"] },
+  },
+  {
+    name: "superagent_motion_import_audio",
+    description: "Import a bounded canonical PCM16 WAV clip to the authorized workspace; returns an immutable audio ID. Requires write permission and dangerous-tool opt-in.",
+    inputSchema: { type: "object", properties: {
+      workspace: { type: "string" }, projectId: { type: "string" },
+      base64: { type: "string", description: "Canonical base64-encoded PCM16 WAV, max 2 MiB decoded." },
+    }, required: ["base64"] },
+  },
+  {
     name: "superagent_motion_render",
     description: "Start a detached H.264 Motion render job. Requires execute permission, output-write authorization, and dangerous-tool opt-in.",
     inputSchema: { type: "object", properties: {
       workspace: { type: "string" }, projectId: { type: "string" },
-      motionId: { type: "string" }, width: { type: "integer", minimum: 160, maximum: 1280 },
+      motionId: { type: "string" }, width: { type: "integer", minimum: 160, maximum: 1920 },
     }, required: ["motionId"] },
   },
   {
@@ -89,6 +108,8 @@ export const MOTION_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous
   superagent_motion_recovery: "safe",
   superagent_motion_create: "dangerous",
   superagent_motion_edit: "dangerous",
+  superagent_motion_import_image: "dangerous",
+  superagent_motion_import_audio: "dangerous",
   superagent_motion_render: "dangerous",
   superagent_motion_cancel: "dangerous",
 };
@@ -116,6 +137,10 @@ export async function dispatchMotionMcpTool(
         result = await createMotionProject(authorizedWorkspace, String(args.name ?? "")); break;
       case "superagent_motion_edit":
         result = await updateMotionProject(authorizedWorkspace, motionId, Number(args.baseRevision), args.edits as MotionEdit[]); break;
+      case "superagent_motion_import_image":
+        result = await importMotionAsset(authorizedWorkspace, decodeMotionMediaBase64(args.base64, 1024 * 1024)); break;
+      case "superagent_motion_import_audio":
+        result = await importMotionAudio(authorizedWorkspace, decodeMotionMediaBase64(args.base64, 2 * 1024 * 1024)); break;
       case "superagent_motion_render":
         result = await startDetachedMotionJob(authorizedWorkspace, motionId, {
           width: args.width === undefined ? undefined : Number(args.width),

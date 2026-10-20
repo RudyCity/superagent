@@ -55,7 +55,10 @@ describe("Motion HTTP and artifact transport", () => {
     expect((await fetch(url + "/api/motion")).status).toBe(401);
     const result = await request("/api/motion");
     expect(result.status).toBe(200);
-    expect((await result.json()).apiVersion).toBe(1);
+    const info = await result.json();
+    expect(info.apiVersion).toBe(1);
+    expect(info.capabilities.renderWidthMax).toBe(1920);
+    expect(info.capabilities.nativeTLineEditor).toBe("external-not-verified");
     const scheduler = await request("/api/motion/scheduler");
     expect(scheduler.status).toBe(200);
     const capacity = await scheduler.json();

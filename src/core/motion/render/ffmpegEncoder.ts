@@ -10,11 +10,11 @@ export interface RenderProfile {
   frameCount: number;
 }
 export function deriveRenderProfile(project: MotionProject, requestedWidth = 640, maxFrames = 1800): RenderProfile {
-  if (!Number.isSafeInteger(requestedWidth) || requestedWidth < 160 || requestedWidth > 1280 || requestedWidth % 2 !== 0) {
-    throw new RangeError("Render width must be an even integer from 160 to 1280");
+  if (!Number.isSafeInteger(requestedWidth) || requestedWidth < 160 || requestedWidth > 1920 || requestedWidth % 2 !== 0) {
+    throw new RangeError("Render width must be an even integer from 160 to 1920");
   }
   const height = Math.round((requestedWidth * project.composition.height / project.composition.width) / 2) * 2;
-  if (height < 2 || height > 1280) throw new RangeError("Output dimensions exceed render limits");
+  if (height < 2 || height > 1920) throw new RangeError("Output dimensions exceed render limits");
   if (project.composition.durationFrames > maxFrames) {
     throw new RangeError(`Render limited to ${maxFrames} frames for this preview pipeline`);
   }

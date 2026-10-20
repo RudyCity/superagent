@@ -8,8 +8,10 @@ import { getMotionJob, getMotionSchedulerStatus, inspectMotionJob, listMotionJob
 import { MotionRevisionConflict } from "./project/revisions.js";
 import { MotionValidationError } from "./schema/validation.js";
 import type { MotionEdit } from "./schema/types.js";
+import { MOTION_CAPABILITIES } from "./motionCapabilities.js";
 import { importMotionAsset, readMotionAsset } from "./assets/motionAssets.js";
 import { importMotionAudio, readMotionAudio } from "./assets/motionAudio.js";
+import { decodeMotionMediaBase64 } from "./assets/motionInput.js";
 import { summarizeMotionWav } from "./assets/motionWaveform.js";
 
 export interface MotionHttpContext {
@@ -70,14 +72,10 @@ export async function handleMotionHttpRoute(
   const waveform = pathname.match(/^\/api\/motion\/audio\/(audio-[a-f0-9]{64})\/waveform$/);
   try {
     if (pathname === "/api/motion" && method === "GET") {
-      json(res, ctx, 200, { apiVersion: 1, video: "h264-mp4", detachedJobs: true, studio: false });
+      json(res, ctx, 200, { apiVersion: 1, video: "h264-mp4", detachedJobs: true, studio: false, capabilities: MOTION_CAPABILITIES });
     } else if (pathname === "/api/motion/assets" && method === "POST") {
       const body = await readMotionJson(req, 1_600_000);
-      if (typeof body.base64 !== "string" || body.base64.length > 1_400_000 ||
-          !/^[a-zA-Z0-9+/]+={0,2}$/.test(body.base64) || body.base64.length % 4 !== 0) {
-        throw new Error("Invalid Motion image base64 encoding");
-      }
-      json(res, ctx, 201, await importMotionAsset(workspace, Buffer.from(body.base64, "base64")));
+      json(res, ctx, 201, await importMotionAsset(workspace, decodeMotionMediaBase64(body.base64, 1024 * 1024)));
     } else if (asset && (method === "GET" || method === "HEAD")) {
       const bytes = await readMotionAsset(workspace, asset[1]);
       res.writeHead(200, {
@@ -90,11 +88,7 @@ export async function handleMotionHttpRoute(
       res.end(method === "HEAD" ? undefined : bytes);
     } else if (pathname === "/api/motion/audio" && method === "POST") {
       const body = await readMotionJson(req, 3_000_000);
-      if (typeof body.base64 !== "string" || body.base64.length > 2_850_000 ||
-          !/^[a-zA-Z0-9+/]+={0,2}$/.test(body.base64) || body.base64.length % 4 !== 0) {
-        throw new Error("Invalid Motion audio base64 encoding");
-      }
-      json(res, ctx, 201, await importMotionAudio(workspace, Buffer.from(body.base64, "base64")));
+      json(res, ctx, 201, await importMotionAudio(workspace, decodeMotionMediaBase64(body.base64, 2 * 1024 * 1024)));
     } else if (waveform && method === "GET") {
       json(res, ctx, 200, summarizeMotionWav(await readMotionAudio(workspace, waveform[1])));
     } else if (audio && (method === "GET" || method === "HEAD")) {
