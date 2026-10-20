@@ -368,7 +368,8 @@ Record machine/browser/font versions and tolerances. Do not claim external produ
 - [x] Identify concurrent delegation-job edits and preserve them.
 - [x] Audit t-line desktop sources and identify native tab, API, security and streaming gaps.
 - [x] Define terminal executable vs interactive slash, MCP, HTTP and Tauri integration contracts.
-- [ ] P0: verify and fix t-line authenticated SuperAgent API communication with real smoke tests.
+- [x] P0: implement T-Line backend-only SuperAgent bearer forwarding and test existing server /api/instances 200. The running server /api/motion still returns 404 until reloaded onto the new build.
+- [ ] P0: run live T-Line -> new SuperAgent Motion API smoke after coordinated server reload.
 - [ ] P0: prove binary streaming/Range, safe media isolation, and Tauri preview viability.
 - [ ] Recheck HEAD and finish dependency/isolation feasibility ADRs.
 - [x] Create foundation schema, validation, revision guards, local project service and initial executable adapter.
@@ -382,7 +383,8 @@ Record machine/browser/font versions and tolerances. Do not claim external produ
 - [ ] Add optional agent-facing motion_* wrappers with per-tier discovery and toolset permissions.
 - [x] Add interactive /motion registry command and scriptable superagent motion with render/jobs/status/cancel and test coverage.
 - [x] Add authenticated SuperAgent HTTP /api/motion metadata, project edit, render/status/cancel, read-only recovery and MP4 GET/HEAD/Range artifact delivery with hash verification.
-- [ ] Add scoped Motion SSE events and T-Line backend authenticated/binary streaming proxy.
+- [x] Add T-Line 1.3.682 backend service-token forwarding, authenticated Motion JSON/media proxy with HEAD/Range and 5 backend/auth regression tests (t-line commit 46f70ab).
+- [ ] Add scoped Motion SSE events and run a live authenticated T-Line -> SuperAgent 200/206 integration smoke after coordinated server reload.
 - [ ] Add MotionStudioTab with stable project/revision IDs and cross-surface parity tests.
 - [x] Export a 30-frame declarative scene to FFmpeg H.264 MP4; validate dimensions, frame count, duration and SHA-256; test cancellation and failed encoder.
 - [ ] Establish preview/export visual equivalence and 10-second default fixture plus performance benchmarks.
@@ -413,3 +415,5 @@ Current implementation snapshot (2026-10-20): scene schema, revision-checked loc
 - Verification (detached increment, 2026-10-20): four Motion test suites / 15 tests passed; CLI detached worker spawned after persisted job snapshot, completed H.264 MP4 using a different PID, and reported final artifact metadata. Added fail-closed snapshot hash checks, exclusive execution claims, read-only lock inspection and bounded Windows atomic rename retries when readers briefly hold JSON status files. No root package manifest, Hermes job store, CDP implementation or T-Line files were changed by this increment.
 
 - MCP/HTTP verification (2026-10-20): nine Motion MCP tools wired to existing discovery, dangerous-tool policy, workspace selection, OAuth scope and project access capability guards; HTTP routed under the existing authenticated /api server gate, not an independent unauthenticated listener. HTTP smoke tests verified missing-token 401, forbidden workspace 403, revision conflict 409, completed MP4 200/HEAD, byte-range 206, invalid range 416, and unknown artifact 404. Output hashes are checked with bounded-memory streaming before media responses. Follow-up live T-Line auth and packaged worker execution are unverified.
+
+- Cross-repository T-Line integration (2026-10-20): t-line `main` commit `46f70ab` (v1.3.682) adds server-only bearer forwarding to bridge/init/SSE/REST/preset calls and a narrowly scoped `/api/superagent/motion/*` JSON/MP4 proxy under existing T-Line `authMiddleware`. Its backend TypeScript build and five motion/auth tests passed. A token-authenticated GET /api/instances against port 7888 returned HTTP 200, but GET /api/motion returned 404 because the live SuperAgent process was still running an earlier build. Do not restart running Hermes sessions without coordination; repeat the live end-to-end test after a controlled update. Frontend MotionStudioTab, time-based previews, revision editing UX, Tauri packaging and media isolation validation remain open.
