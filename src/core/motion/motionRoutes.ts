@@ -91,6 +91,7 @@ export async function handleMotionHttpRoute(
   const compoundPresetsList = pathname === "/api/motion/presets";
   const compoundPresetItem = pathname.match(/^\/api\/motion\/presets\/([a-z][a-z0-9-]{1,63})$/);
   const projectCompoundPresets = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/presets$/);
+  const previewCompoundPreset = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/presets\/preview$/);
   const effectsList = pathname === "/api/motion/effects";
   const effectItem = pathname.match(/^\/api\/motion\/effects\/([a-z][a-z0-9-]{1,63})$/);
   const projectEffects = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects$/);
@@ -216,6 +217,30 @@ export async function handleMotionHttpRoute(
       json(res, ctx, 201, await createMotionProject(workspace, body.name));
     } else if (project && method === "GET") {
       json(res, ctx, 200, await getMotionProject(workspace, project[1]));
+    } else if (previewCompoundPreset && method === "POST") {
+      const body = await readMotionJson(req, 5_000);
+      if (typeof body.presetId !== "string" || typeof body.targetLayerId !== "string")
+        throw new Error("presetId and targetLayerId must be strings");
+      if (!Number.isSafeInteger(body.baseRevision)) throw new Error("baseRevision must be a safe integer");
+      if (body.startFrame !== undefined && !Number.isSafeInteger(body.startFrame))
+        throw new Error("startFrame must be a safe integer");
+      if (body.durationFrames !== undefined && !Number.isSafeInteger(body.durationFrames))
+        throw new Error("durationFrames must be a safe integer");
+      if (body.intensity !== undefined && (typeof body.intensity !== "number" ||
+          !Number.isFinite(body.intensity))) throw new Error("Invalid preset intensity");
+      const current = await getMotionProject(workspace, previewCompoundPreset[1]);
+      if (current.revision !== body.baseRevision) {
+        json(res, ctx, 409, { error: "Motion revision conflict; reload project before preview" });
+      } else {
+        const { applyCompoundPreset } = await import("./effects/compoundPresets.js");
+        const preview = applyCompoundPreset(current, {
+          presetId: body.presetId, targetLayerId: body.targetLayerId,
+          startFrame: body.startFrame as number | undefined,
+          durationFrames: body.durationFrames as number | undefined,
+          intensity: body.intensity as number | undefined,
+        });
+        json(res, ctx, 200, preview);
+      }
     } else if (projectCompoundPresets && method === "POST") {
       const body = await readMotionJson(req, 5_000);
       if (typeof body.presetId !== "string" || typeof body.targetLayerId !== "string")

@@ -62,6 +62,24 @@ describe("Compound Motion presets: HTTP, CLI, slash and prompt director", () => 
     expect((await send(payload)).status).toBe(409);
     expect((await getMotionProject(root, project.id)).revision).toBe(2);
   });
+  it("previews a compound preset without saving a revision", async () => {
+    const project = await createMotionProject(root, "Preview only");
+    const path = base + "/api/motion/projects/" + project.id + "/presets/preview";
+    const send = (body: unknown) => fetch(path, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const body = { presetId: "neon-impact", targetLayerId: project.composition.layers[0].id,
+      baseRevision: project.revision, durationFrames: 65, intensity: 1.2 };
+    const result = await send(body);
+    expect(result.status).toBe(200);
+    const preview = await result.json() as any;
+    expect(preview.composition.layers[0].tracks.length).toBeGreaterThan(0);
+    expect(preview.composition.layers.length).toBeGreaterThan(project.composition.layers.length);
+    expect((await getMotionProject(root, project.id)).revision).toBe(1);
+    expect((await send({ ...body, baseRevision: 999 })).status).toBe(409);
+    expect((await send({ ...body, intensity: 999 })).status).toBe(400);
+  });
   it("supports CLI listing and applying a preset using the same transactional service", async () => {
     const project = await createMotionProject(root, "Compound CLI");
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
