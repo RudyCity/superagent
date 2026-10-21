@@ -68,13 +68,17 @@ describe("AI Motion Director prompt -> editable scene -> detached video", () => 
   it("turns an Indonesian brief into H264 MP4, then revises only requested text", async () => {
     if (!await probeFfmpeg()) return;
     const workspace = await fixture();
-    const planner = vi.fn().mockResolvedValueOnce(plan).mockResolvedValueOnce({
+    const planner = vi.fn().mockResolvedValueOnce({ ...plan, motion: "slide-up", transition: "crossfade" }).mockResolvedValueOnce({
       edits: [{ type: "set-text", layerId: "scene-1-title", text: "Cepat dan mudah!" }],
     });
     const generated = await generateMotionFromPrompt(workspace,
       "Buat video promosi Laris modern dengan teks animasi", { width: 160, planner });
     expect(generated.outline).toEqual(["Laris makin cepat", "Mulai sekarang!"]);
     expect(generated.project.revision).toBe(2);
+    expect(generated.quality.passed).toBe(true);
+    expect(generated.quality.samples).toHaveLength(2);
+    expect(generated.project.composition.layers.find(layer => layer.id === "scene-1-title")?.tracks
+      .some(track => track.property === "y")).toBe(true);
     const first = await waitCompleted(workspace, generated.job.id);
     expect(first.status).toBe("completed");
     expect(first.artifact?.bytes).toBeGreaterThan(1000);
@@ -83,6 +87,7 @@ describe("AI Motion Director prompt -> editable scene -> detached video", () => 
     const revised = await reviseMotionFromPrompt(workspace, generated.project.id,
       "Ubah judul terakhir menjadi Cepat dan mudah", { width: 160, planner });
     expect(revised.project.revision).toBe(3);
+    expect(revised.quality.passed).toBe(true);
     expect(revised.project.composition.layers.find(layer => layer.id === "scene-1-title"))
       .toMatchObject({ text: "Cepat dan mudah!" });
     expect(revised.project.composition.layers.find(layer => layer.id === "scene-0-title"))

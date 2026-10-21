@@ -13,6 +13,7 @@ import { motionStorageMaintenance } from "./jobs/storageMaintenance.js";
 import { inspectMotionQueueRecovery } from "./jobs/queueRecovery.js";
 import { inspectMotionSupervisor } from "./jobs/motionSupervisor.js";
 import { generateMotionFromPrompt, reviseMotionFromPrompt } from "./director/directorService.js";
+import { inspectMotionQuality } from "./director/motionQuality.js";
 import { importMotionAsset, readMotionAsset } from "./assets/motionAssets.js";
 import { importMotionAudio, readMotionAudio } from "./assets/motionAudio.js";
 import { decodeMotionMediaBase64 } from "./assets/motionInput.js";
@@ -67,6 +68,7 @@ export async function handleMotionHttpRoute(
   const method = req.method ?? "GET";
   const project = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})$/);
   const edits = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/edits$/);
+  const quality = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/quality$/);
   const render = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/render$/);
   const job = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})$/);
   const cancel = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/cancel$/);
@@ -127,6 +129,8 @@ export async function handleMotionHttpRoute(
       json(res, ctx, 201, await createMotionProject(workspace, body.name));
     } else if (project && method === "GET") {
       json(res, ctx, 200, await getMotionProject(workspace, project[1]));
+    } else if (quality && method === "GET") {
+      json(res, ctx, 200, inspectMotionQuality(await getMotionProject(workspace, quality[1])));
     } else if (edits && method === "POST") {
       const body = await readMotionJson(req);
       if (!Number.isSafeInteger(body.baseRevision) || !Array.isArray(body.edits)) throw new Error("baseRevision and edits are required");

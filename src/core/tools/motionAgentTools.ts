@@ -1,6 +1,8 @@
 import type { Tool } from "./types.js";
 import { generateMotionFromPrompt, reviseMotionFromPrompt } from "../motion/director/directorService.js";
 import { getMotionJob } from "../motion/jobs/motionJobs.js";
+import { getMotionProject } from "../motion/motionService.js";
+import { inspectMotionQuality } from "../motion/director/motionQuality.js";
 
 const promptParameters = { type: "object", properties: {
   prompt: { type: "string", description: "Describe the short motion graphic in Indonesian or English. 1-2000 characters." },
@@ -44,8 +46,13 @@ export const motionStatusTool: Tool = {
   }, required: ["jobId"] },
   async execute(args, cwd) {
     const job = await getMotionJob(cwd, args.jobId as string);
+    const current = await getMotionProject(cwd, job.projectId);
     return JSON.stringify({ status: job.status, motionId: job.projectId, revision: job.revision,
       progressFrames: job.framesCompleted, totalFrames: job.profile.frameCount,
-      ...(job.artifact ? { artifact: job.artifact } : {}), ...(job.error ? { error: job.error } : {}) });
+      ...(job.artifact ? { artifact: job.artifact } : {}), ...(job.error ? { error: job.error } : {}),
+      ...(current.revision === job.revision
+        ? { quality: inspectMotionQuality(current) }
+        : { qualityNote: "Job is pinned to an older revision; quality report requires the original snapshot" }),
+    });
   },
 };

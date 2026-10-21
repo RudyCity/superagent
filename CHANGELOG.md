@@ -1,3 +1,11 @@
+## [Unreleased] - Motion Director creative presets and deterministic QA (2026-10-21)
+### Added
+- Safe slide-left, slide-up, tilt and fade AI-directed scene presets, with cut and crossfade transitions using Motion v1 tracks.
+- Canvas-measured title auto-fit and high-contrast foreground text for bright or dark backgrounds.
+- Deterministic scene midpoint QA, readability/contrast warnings and read-only workspace-scoped quality endpoint.
+### Note
+- No video-vision AI QA, music/TTS/footage or packaged desktop end-to-end verification in this slice.
+
 ## [Unreleased] - AI Motion Director initial prompt-first slice (2026-10-21)
 ### Added
 - AI planner creating validated text/shape scene briefs with editable Motion project and detached H264 MP4 render.

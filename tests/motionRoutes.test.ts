@@ -100,6 +100,14 @@ describe("Motion HTTP and artifact transport", () => {
     });
     expect(make.status).toBe(201);
     const created = await make.json();
+    const quality = await request("/api/motion/projects/" + created.id + "/quality");
+    expect(quality.status).toBe(200);
+    expect((await quality.json())).toMatchObject({ passed: true, issues: [{
+      code: "no-director-scenes", severity: "warning",
+    }] });
+    expect((await request("/api/motion/projects/" + created.id + "/quality", {
+      method: "POST",
+    })).status).toBe(404);
     const inspect = await request("/api/motion/projects/" + created.id);
     expect((await inspect.json()).revision).toBe(1);
     const edit = async (baseRevision: number) => request("/api/motion/projects/" + created.id + "/edits", {

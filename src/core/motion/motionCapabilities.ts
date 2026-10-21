@@ -21,5 +21,8 @@ export const MOTION_CAPABILITIES = Object.freeze({
   optInFifoSupervisor: true,
   aiPromptDirector: "short-text-motion-preview",
   aiSemanticRevision: true,
+  aiMotionPresets: ["slide-left", "slide-up", "tilt", "fade"],
+  aiTransitions: ["crossfade", "cut"],
+  deterministicQualityLint: true,
   automaticCrashRecovery: false,
 });
