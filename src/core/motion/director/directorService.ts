@@ -4,16 +4,16 @@ import { createMotionProject, getMotionProject, updateMotionProject } from "../p
 import { startDetachedMotionJob, type MotionJob } from "../jobs/motionJobs.js";
 import { validateMotionEdits } from "../schema/validation.js";
 import type { MotionEdit, MotionProject } from "../schema/types.js";
-import { compilePresetComposition, MOTION_PRESETS, type MotionPreset, type MotionTransition } from "./creativePresets.js";
+import { compilePresetComposition, MOTION_ART_DIRECTIONS, MOTION_PRESETS, type MotionArtDirection, type MotionPreset, type MotionTransition } from "./creativePresets.js";
 import { inspectMotionQuality, type MotionQualityReport } from "./motionQuality.js";
 import { resolveDirectorMedia, embedDirectorMedia, revisionMediaEdits, directorMediaLimitations, type MotionDirectorMediaSelection } from "./directorMedia.js";
 import { synthesizeLocalVoiceover, validateNarrationRequest, localVoiceoverReady, type NarrationRequest } from "./localVoiceover.js";
 
 export type MotionAspectRatio = "16:9" | "1:1" | "9:16";
-export interface MotionDirectorScene { headline: string; subtitle?: string; accent: string; motion?: MotionPreset; narration?: string }
+export interface MotionDirectorScene { headline: string; subtitle?: string; accent: string; motion?: MotionPreset; narration?: string; layout?: "left" | "center" | "right" }
 export interface MotionDirectorPlan {
   name: string; durationSeconds: number; background: string; scenes: MotionDirectorScene[];
-  motion?: MotionPreset; transition?: MotionTransition; aspectRatio?: MotionAspectRatio;
+  motion?: MotionPreset; transition?: MotionTransition; aspectRatio?: MotionAspectRatio; artDirection?: MotionArtDirection;
 }
 export interface MotionDirectorResult {
   project: MotionProject; job: MotionJob; outline: string[]; limitations: string[];
@@ -36,19 +36,21 @@ function widthOf(value: unknown): number {
   return Number(n);
 }
 export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {
-  if (!object(raw) || !only(raw, ["name", "durationSeconds", "background", "scenes", "motion", "transition", "aspectRatio"]) ||
+  if (!object(raw) || !only(raw, ["name", "durationSeconds", "background", "scenes", "motion", "transition", "aspectRatio", "artDirection"]) ||
     typeof raw.name !== "string" || !raw.name.trim() || raw.name.length > 160 ||
     !Number.isInteger(raw.durationSeconds) || Number(raw.durationSeconds) < 2 ||
     Number(raw.durationSeconds) > 20 ||
     typeof raw.background !== "string" || !hex.test(raw.background) ||
     (raw.motion !== undefined && !MOTION_PRESETS.includes(raw.motion as MotionPreset)) ||
+    (raw.artDirection !== undefined && !MOTION_ART_DIRECTIONS.includes(raw.artDirection as MotionArtDirection)) ||
     (raw.transition !== undefined && !["cut", "crossfade"].includes(String(raw.transition))) ||
     (raw.aspectRatio !== undefined && !["16:9", "1:1", "9:16"].includes(String(raw.aspectRatio))) ||
     !Array.isArray(raw.scenes) || raw.scenes.length < 1 || raw.scenes.length > 3)
     throw new Error("Motion Director returned an invalid or unsupported storyboard");
   const scenes: MotionDirectorScene[] = raw.scenes.map((scene: unknown) => {
-    if (!object(scene) || !only(scene, ["headline", "subtitle", "accent", "motion", "narration"]) ||
+    if (!object(scene) || !only(scene, ["headline", "subtitle", "accent", "motion", "narration", "layout"]) ||
       (scene.motion !== undefined && !MOTION_PRESETS.includes(scene.motion as MotionPreset)) ||
+      (scene.layout !== undefined && !["left", "center", "right"].includes(String(scene.layout))) ||
       (scene.narration !== undefined && (typeof scene.narration !== "string" || scene.narration.length > 100)) ||
       typeof scene.headline !== "string" || !scene.headline.trim() || scene.headline.length > 100 ||
       (scene.subtitle !== undefined && (typeof scene.subtitle !== "string" || scene.subtitle.length > 100)) ||
@@ -56,12 +58,26 @@ export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {
       throw new Error("Motion Director returned an invalid storyboard scene");
     return { headline: scene.headline.trim(), ...(scene.subtitle ? { subtitle: scene.subtitle.trim() } : {}), accent: scene.accent,
       ...(scene.motion !== undefined ? { motion: scene.motion as MotionPreset } : {}),
+       ...(scene.layout !== undefined ? { layout: scene.layout as MotionDirectorScene["layout"] } : {}),
       ...(scene.narration ? { narration: scene.narration.trim() } : {}) };
   });
   return { name: raw.name.trim(), durationSeconds: Number(raw.durationSeconds), background: raw.background, scenes,
     ...(raw.motion !== undefined ? { motion: raw.motion as MotionPreset } : {}),
+    ...(raw.artDirection !== undefined ? { artDirection: raw.artDirection as MotionArtDirection } : {}),
     ...(raw.transition !== undefined ? { transition: raw.transition as MotionTransition } : {}),
     ...(raw.aspectRatio !== undefined ? { aspectRatio: raw.aspectRatio as MotionAspectRatio } : {}) };
+}
+/**
+ * A specific style request in the brief wins over a model suggestion.
+ * For underspecified briefs, new prompt-to-video work gets a deliberate visual
+ * direction; old programmatic compositions without artDirection stay unchanged.
+ */
+export function chooseMotionArtDirection(prompt: string, planned?: MotionArtDirection): MotionArtDirection {
+  if (/\b(neon|cyberpunk|futurist\w*|sci[ -]?fi|glowing)\b/i.test(prompt)) return "neon";
+  if (/\b(brutalis\w*|bold|geometric\w*|geometris|tegas)\b/i.test(prompt)) return "brutalist";
+  if (/\b(minimal\w*|clean|simple|sederhana|elegan\w*)\b/i.test(prompt)) return "minimal";
+  if (/\b(editorial|magazine|majalah|typograph\w*|tipografi\w*)\b/i.test(prompt)) return "editorial";
+  return planned ?? "editorial";
 }
 export function compileDirectorPlan(raw: MotionDirectorPlan): MotionProject["composition"] {
   return compilePresetComposition(validateDirectorPlan(raw));
@@ -85,10 +101,12 @@ export const motionPlanner: MotionPlanner = async (system, user, signal) => {
 const planSystem = [
   "You are the planning AI inside SuperAgent Motion Director.",
   "Return ONLY strict JSON, exactly: {name:string, durationSeconds:integer 2..20, background:hexColor,",
-  "scenes: array of 1..3 {headline:string <=100 chars, subtitle?:string <=100 chars, accent:hexColor, motion?:preset}}.",
-  "Optional global motion and scene motion presets: slide-left, slide-up, tilt, fade, pop-left, pop-up.",
+  "scenes: array of 1..3 {headline:string <=100 chars, subtitle?:string <=100 chars, accent:hexColor, motion?:preset, layout?:left|center|right}}.",
+  "Optional global motion and scene motion presets: slide-left, slide-up, slide-right, drop-in, tilt, swing, fade, pop-left, pop-up.",
   "Optional per-scene narration: short spoken script <=100 characters, only produced as audio if user enables offline Piper.",
   "Optional transition: crossfade or cut (default crossfade). Match creative style requested in user brief.",
+  "Always choose artDirection: minimal (refined restrained), editorial (asymmetric typography), neon (futuristic accents), brutalist (bold geometry).",
+  "Choose an intentional artDirection and vary per-scene left/center/right layouts, pacing and headlines to suit the brief.",
   "Optional aspectRatio: 16:9 (landscape default), 1:1 (square), 9:16 (portrait), choose per user brief.",
   "Write appealing concise scene copy for the user's requested video, in their language.",
   "Use very short text so captions fit 1920x1080 without wrapping. Hex colors #RRGGBB.",
@@ -143,7 +161,8 @@ export async function generateMotionFromPrompt(workspace: string, prompt: string
     { voiceoverText: narrationText, voiceoverGain: options.voiceoverGain }, options.signal);
   const composedMedia = { ...media, ...(voiceover ? { voiceover } : {}) };
   const composition = embedDirectorMedia(
-    compileDirectorPlan({ ...plan, aspectRatio: options.aspectRatio ?? plan.aspectRatio }), composedMedia);
+    compileDirectorPlan({ ...plan, artDirection: chooseMotionArtDirection(user, plan.artDirection),
+      aspectRatio: options.aspectRatio ?? plan.aspectRatio }), composedMedia);
   const project = await createMotionProject(workspace, plan.name);
   const updated = await updateMotionProject(workspace, project.id, project.revision,
     [{ type: "replace-composition", composition }]);
@@ -189,3 +208,5 @@ export async function reviseMotionFromPrompt(workspace: string, motionId: string
     layer => layer.kind === "text").map(layer => layer.text), limitations: directorMediaLimitations(composedMedia,
       updated.composition.durationFrames / 30), quality };
 }
+
+
