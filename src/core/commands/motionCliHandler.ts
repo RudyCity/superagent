@@ -14,8 +14,8 @@ import type { MotionEdit } from "../motion/schema/types.js";
 import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation, enqueueSupervisedMotionJob } from "../motion/jobs/motionJobs.js";
 
 const usage = `Motion Studio (developer preview)
-  superagent motion generate --prompt "Animated promo" [--width 640] [--image-asset ASSET_ID] [--audio-asset AUDIO_ID] [--audio-gain 1] [--workspace PATH] [--json]
-  superagent motion revise MOTION_ID --prompt "Shorter title" [--width 640] [--image-asset ASSET_ID] [--audio-asset AUDIO_ID] [--audio-gain 1] [--workspace PATH] [--json]
+  superagent motion generate --prompt "Animated promo" [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
+  superagent motion revise MOTION_ID --prompt "Shorter title" [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
   superagent motion new --name "Title" [--workspace PATH] [--json]
   superagent motion list [--workspace PATH] [--json]
   superagent motion inspect PROJECT_ID [--workspace PATH] [--json]
@@ -49,7 +49,7 @@ function argumentsOf(args: string[]): { action: string; positionals: string[]; o
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
   const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--image-asset", "--audio-asset", "--audio-gain", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", ...boolean]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -67,6 +67,11 @@ function argumentsOf(args: string[]): { action: string; positionals: string[]; o
 function opt(opts: Map<string, string | true>, name: string): string | undefined {
   const value = opts.get(name);
   return typeof value === "string" ? value : undefined;
+}
+function optionalBoolean(raw: string | undefined, description: string): boolean | undefined {
+  if (raw === undefined) return undefined;
+  if (raw !== "true" && raw !== "false") throw new Error(description + " must be true or false");
+  return raw === "true";
 }
 function nonnegativeInteger(raw: string | undefined, description: string): number {
   const n = Number(raw);
@@ -150,6 +155,10 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
       emit(await generateMotionFromPrompt(workspace, prompt, { width,
         imageAssetId: opt(opts, "--image-asset"),
+        sceneImageAssetIds: opt(opts, "--scene-images")?.split(",").map(item => item.trim()),
+        audioLoop: optionalBoolean(opt(opts, "--audio-loop"), "--audio-loop"),
+        voiceoverText: opt(opts, "--voiceover-text"),
+        voiceoverGain: opt(opts, "--voiceover-gain") === undefined ? undefined : Number(opt(opts, "--voiceover-gain")),
         audioAssetId: opt(opts, "--audio-asset"),
         audioGain: opt(opts, "--audio-gain") === undefined ? undefined : Number(opt(opts, "--audio-gain")) }), json); return 0;
     }
@@ -159,6 +168,10 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
       emit(await reviseMotionFromPrompt(workspace, positionals[0], prompt, { width,
         imageAssetId: opt(opts, "--image-asset"),
+        sceneImageAssetIds: opt(opts, "--scene-images")?.split(",").map(item => item.trim()),
+        audioLoop: optionalBoolean(opt(opts, "--audio-loop"), "--audio-loop"),
+        voiceoverText: opt(opts, "--voiceover-text"),
+        voiceoverGain: opt(opts, "--voiceover-gain") === undefined ? undefined : Number(opt(opts, "--voiceover-gain")),
         audioAssetId: opt(opts, "--audio-asset"),
         audioGain: opt(opts, "--audio-gain") === undefined ? undefined : Number(opt(opts, "--audio-gain")) }), json); return 0;
     }

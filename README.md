@@ -791,3 +791,23 @@ Motion Director can now use existing workspace-uploaded assets: PNG/JPEG/WebP im
     superagent motion generate --prompt "Create a product promo with my supplied logo and music" --image-asset asset-SHA256 --audio-asset audio-SHA256 --audio-gain 0.7 --width 640 --workspace .
 
 The output positions one attached image above the text area and mixes the supplied WAV in the MP4; edits remain reversible with ordinary project revisions. Short tracks do not automatically loop. Only user-provided local media is used: image generation, soundtrack synthesis and TTS are not implemented.
+
+### Motion Director B3: scene product images, soundtrack loop, offline narration
+
+With an updated SuperAgent daemon and T-Line Desktop, you can attach up to three product images to the AI Motion prompt. For 2–3 images, the images map by order to the generated storyboard scenes (request the same number of scenes in the prompt). They fade in and out with scene animation and remain editable image layers. A single legacy image/logo attachment continues to work.
+
+Turn on Loop WAV to video end in the AI prompt or audio mixer to repeat a short uploaded PCM16 WAV for the MP4's full duration, with its fade-out at the end of the video. The audio track schema stores the optional loop flag so the editor preview and FFmpeg export agree.
+
+For optional **offline voice-over**, an operator must separately install a compatible Piper executable and local voice model (including its model JSON configuration) and set:
+
+    SUPERAGENT_MOTION_PIPER_BIN=C:\path\to\piper.exe
+    SUPERAGENT_MOTION_PIPER_MODEL=C:\path\to\voice.onnx
+
+Restart the SuperAgent server process after setting these environment variables. When the binary and model are present, T-Line exposes the narration transcript and gain controls. Narration is synthesized locally into a bounded PCM16 WAV and mixed as an additional audio track. If Piper is absent or incompatible, voice-over is unavailable; no silent placeholder, automatic download or cloud fallback is created. **Piper voice quality and live binary-to-MP4 narration were not certified in this development session.**
+
+CLI examples after pre-uploading image/audio files to the Motion workspace:
+
+    superagent motion generate --prompt "Create a three-scene launch motion" --scene-images asset-HASH1,asset-HASH2,asset-HASH3 --audio-asset audio-HASH --audio-loop true --width 640 --workspace .
+    superagent motion generate --prompt "Create a narrated promo" --voiceover-text "Welcome to our product launch" --width 640 --workspace .
+
+The hash IDs above are placeholders, not valid usable IDs. Existing 1MB image and 2MB/30s WAV limits, max 3 scene images and 4 combined audio tracks apply. This is still a developer preview rather than a full video footage/TTS editor.

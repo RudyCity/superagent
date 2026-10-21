@@ -110,3 +110,92 @@ describe("Motion Director user-supplied workspace image + WAV integration", () =
     expect(reencoded.artifact?.sha256).not.toBe(encoded.artifact?.sha256);
   }, 85000);
 });
+
+describe("Motion Director B3 scene images, audio loop and optional Piper", () => {
+  it("renders a 3-scene MP4 with distinct images and WAV loop through the full video", async () => {
+    if (!await probeFfmpeg()) return;
+    const home = await workspace();
+    const images = await Promise.all(["#a62731", "#168c4e", "#1246a2"].map(async hex =>
+      importMotionAsset(home, imageBytes(hex))));
+    const soundtrack = await importMotionAudio(home, wavBytes(0.25));
+    const storyboard: MotionDirectorPlan = { ...plan, durationSeconds: 3,
+      scenes: [
+        { headline: "Produk A", accent: "#FCA53A" },
+        { headline: "Produk B", accent: "#21CECA" },
+        { headline: "Produk C", accent: "#FCA53A" },
+      ],
+    };
+    const response = await generateMotionFromPrompt(home, "Buat video 3 produk dan musik berulang", {
+      planner: async () => storyboard, width: 160,
+      sceneImageAssetIds: images.map(item => item.id),
+      audioAssetId: soundtrack.id, audioLoop: true,
+    });
+    expect(response.project.composition.audioTracks).toMatchObject([{ loop: true }]);
+    expect(response.limitations.join(" ")).not.toMatch(/shorter than/);
+    expect(response.project.composition.layers.filter(item =>
+      item.id.startsWith("director-media-scene-")).map(item => item.id)).toEqual([
+      "director-media-scene-0", "director-media-scene-1", "director-media-scene-2",
+    ]);
+    const { evaluateFrame } = await import("../src/core/motion/timeline/evaluateFrame.js");
+    for (let i = 0; i < 3; i++) {
+      const frame = evaluateFrame(response.project, i * 30 + 15);
+      const visible = frame.layers.filter(layer => layer.layer.kind === "image" && layer.values.opacity >= 0.6);
+      expect(visible.map(layer => layer.layer.id)).toContain("director-media-scene-" + i);
+    }
+    const job = await completed(home, response.job.id);
+    expect(job.status, job.error).toBe("completed");
+    expect(job.artifact?.bytes).toBeGreaterThan(1000);
+    const { spawnSync } = await import("node:child_process");
+    const probe = spawnSync("ffprobe", ["-v", "error", "-select_streams", "a:0", "-show_entries",
+      "stream=duration", "-of", "default=noprint_wrappers=1:nokey=1", job.artifact!.path], { encoding: "utf8" });
+    expect(probe.status).toBe(0);
+    expect(Number(probe.stdout.trim())).toBeGreaterThan(2.5);
+    const revised = await reviseMotionFromPrompt(home, response.project.id, "Swap the images for the first two scenes", {
+      planner: async () => ({ edits: [{ type: "set-text", layerId: "scene-0-title", text: "Produk A baru" }] }),
+      sceneImageAssetIds: [images[2].id, images[1].id], width: 160,
+    });
+    expect(revised.project.composition.layers.filter(item => item.id.startsWith("director-media-scene-"))).toHaveLength(2);
+    expect(revised.project.composition.layers.find(item => item.id === "director-media-scene-0"))
+      .toMatchObject({ assetId: images[2].id });
+    expect((await completed(home, revised.job.id)).status).toBe("completed");
+  }, 85000);
+
+  it("rejects mismatched scene count, foreign images and invalid audio loop before publishing edits", async () => {
+    const home = await workspace();
+    const other = await workspace();
+    const first = await importMotionAsset(home, imageBytes("#e7a210"));
+    const second = await importMotionAsset(other, imageBytes("#09cdef"));
+    const planner = vi.fn().mockResolvedValue(plan);
+    await expect(generateMotionFromPrompt(home, "2 images", {
+      sceneImageAssetIds: [first.id, second.id], planner,
+    })).rejects.toThrow();
+    await expect(generateMotionFromPrompt(home, "3 images to 2 scenes", {
+      sceneImageAssetIds: [first.id, first.id, first.id], planner,
+    })).rejects.toThrow(/scene image count/);
+    await expect(generateMotionFromPrompt(home, "Invalid loop", { audioLoop: true, planner }))
+      .rejects.toThrow(/audio loop/);
+    expect(await listMotionProjects(home)).toHaveLength(0);
+  });
+
+  it("fails closed when local voice-over is unconfigured or transcript is unsafe", async () => {
+    const home = await workspace();
+    vi.stubEnv("SUPERAGENT_MOTION_PIPER_BIN", "");
+    vi.stubEnv("SUPERAGENT_MOTION_PIPER_MODEL", "");
+    try {
+      const planner = vi.fn();
+      await expect(generateMotionFromPrompt(home, "Narrate", {
+        voiceoverText: "Halo, selamat datang", planner,
+      })).rejects.toMatchObject({ statusCode: 503 });
+      await expect(generateMotionFromPrompt(home, "Narrate", {
+        voiceoverText: "x".repeat(221), planner,
+      })).rejects.toThrow(/transcript/);
+      await expect(generateMotionFromPrompt(home, "Narrate", {
+        voiceoverGain: 0.5, planner,
+      })).rejects.toThrow(/transcript/);
+      expect(planner).not.toHaveBeenCalled();
+      expect(await listMotionProjects(home)).toHaveLength(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});

@@ -79,11 +79,29 @@ describe("Motion HTTP and artifact transport", () => {
       body: JSON.stringify({ prompt: "Video dengan musik", audioGain: 1.7 }),
     });
     expect(invalidGain.status).toBe(400);
+    const invalidSceneImages = await request("/api/motion/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "3 products", sceneImageAssetIds: ["invalid-id"] }),
+    });
+    expect(invalidSceneImages.status).toBe(400);
+    const invalidAudioLoop = await request("/api/motion/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Loop WAV", audioLoop: true }),
+    });
+    expect(invalidAudioLoop.status).toBe(400);
+    const voiceoverUnavailable = await request("/api/motion/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Local narration", voiceoverText: "Halo semua" }),
+    });
+    if (!process.env.SUPERAGENT_MOTION_PIPER_BIN) expect(voiceoverUnavailable.status).toBe(503);
     const result = await request("/api/motion");
     expect(result.status).toBe(200);
     const info = await result.json();
     expect(info.apiVersion).toBe(1);
     expect(info.capabilities.renderWidthMax).toBe(1920);
+    expect(info.capabilities.aiSceneImagesMax).toBe(3);
+    expect(info.capabilities.aiAudioLoop).toBe(true);
+    expect(typeof info.capabilities.localVoiceoverConfigured).toBe("boolean");
     expect(info.capabilities.nativeTLineEditor).toBe("external-not-verified");
     const recovery = await request("/api/motion/queue-recovery");
     expect(recovery.status).toBe(200);

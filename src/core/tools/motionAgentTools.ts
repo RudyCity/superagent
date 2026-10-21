@@ -7,6 +7,10 @@ import { inspectMotionQuality } from "../motion/director/motionQuality.js";
 const promptParameters = { type: "object", properties: {
   prompt: { type: "string", description: "Describe the short motion graphic in Indonesian or English. 1-2000 characters." },
   width: { type: "integer", description: "Output width in pixels (even number 160-1920, default 640)." },
+  sceneImageAssetIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3, description: "Optional one to three pre-uploaded image IDs, assigned in order to storyboard scenes. Cannot combine with imageAssetId." },
+  audioLoop: { type: "boolean", description: "Repeat a selected WAV soundtrack to the video's end." },
+  voiceoverText: { type: "string", description: "Optional 1–220 character spoken narration, only if local Piper voice engine is configured." },
+  voiceoverGain: { type: "number", description: "Optional TTS volume gain 0-2, requires voiceoverText." },
   imageAssetId: { type: "string", description: "Optional ID of an already uploaded workspace Motion image/logo asset (asset-<sha256>)." },
   audioAssetId: { type: "string", description: "Optional ID of an already uploaded PCM16 WAV workspace asset (audio-<sha256>)." },
   audioGain: { type: "number", description: "Optional audio gain from 0 to 2, only with audioAssetId." },
@@ -20,6 +24,10 @@ export const motionGenerateTool: Tool = {
     const result = await generateMotionFromPrompt(cwd, args.prompt as string,
       { width: args.width as number | undefined, signal,
         imageAssetId: args.imageAssetId as string | undefined,
+        sceneImageAssetIds: args.sceneImageAssetIds as string[] | undefined,
+        audioLoop: args.audioLoop as boolean | undefined,
+        voiceoverText: args.voiceoverText as string | undefined,
+        voiceoverGain: args.voiceoverGain as number | undefined,
         audioAssetId: args.audioAssetId as string | undefined,
         audioGain: args.audioGain as number | undefined });
     return JSON.stringify({ motionId: result.project.id, revision: result.project.revision,
@@ -39,6 +47,10 @@ export const motionReviseTool: Tool = {
     const result = await reviseMotionFromPrompt(cwd, args.motionId as string, args.prompt as string,
       { width: args.width as number | undefined, signal,
         imageAssetId: args.imageAssetId as string | undefined,
+        sceneImageAssetIds: args.sceneImageAssetIds as string[] | undefined,
+        audioLoop: args.audioLoop as boolean | undefined,
+        voiceoverText: args.voiceoverText as string | undefined,
+        voiceoverGain: args.voiceoverGain as number | undefined,
         audioAssetId: args.audioAssetId as string | undefined,
         audioGain: args.audioGain as number | undefined });
     return JSON.stringify({ motionId: result.project.id, revision: result.project.revision,

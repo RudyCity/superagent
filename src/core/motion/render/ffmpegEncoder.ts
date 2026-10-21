@@ -41,6 +41,7 @@ interface MotionAudioInput {
   seconds: number;
   fadeInFrames: number;
   fadeOutFrames: number;
+  loop: boolean;
 }
 /** Safe numeric graph assembled only from schema-validated audio metadata. */
 function encodingArgs(profile: RenderProfile, file: string, tracks: MotionAudioInput[] = []): string[] {
@@ -51,14 +52,15 @@ function encodingArgs(profile: RenderProfile, file: string, tracks: MotionAudioI
     "-f", "rawvideo", "-pixel_format", "rgba",
     "-video_size", `${profile.width}x${profile.height}`,
     "-framerate", profile.fps, "-i", "pipe:0",
-    ...tracks.flatMap(track => ["-i", track.path]),
+    ...tracks.flatMap(track => [...(track.loop ? ["-stream_loop", "-1"] : []), "-i", track.path]),
   ];
   if (tracks.length) {
     const filters = tracks.map((track, index) => {
       const offsetMs = Math.round(track.startFrame * den / num * 1000);
       const fadeIn = Math.min(track.seconds, track.fadeInFrames * den / num);
-      const fadeOut = Math.min(track.seconds, track.fadeOutFrames * den / num);
-      const out = track.seconds - fadeOut;
+      const fadeOut = Math.min(track.loop ? Math.max(0, duration - offsetMs / 1000) : track.seconds, track.fadeOutFrames * den / num);
+      const effectiveSeconds = track.loop ? Math.max(0, duration - offsetMs / 1000) : track.seconds;
+      const out = Math.max(0, effectiveSeconds - fadeOut);
       return `[${index + 1}:a:0]volume=${track.volume}` +
         (fadeIn ? `,afade=t=in:st=0:d=${fadeIn}` : "") +
         (fadeOut ? `,afade=t=out:st=${out}:d=${fadeOut}` : "") +
@@ -102,6 +104,7 @@ export async function encodeMotionMp4(
     seconds: inspectMotionWav(await readMotionAudio(options.workspace!, track.assetId)).seconds,
     fadeInFrames: track.fadeInFrames ?? 0,
     fadeOutFrames: track.fadeOutFrames ?? 0,
+    loop: track.loop === true,
   })));
   // Canvas is optional for non-render commands and should not slow terminal startup.
   const { createMotionFrameRenderer } = await import("./canvasFrames.js");

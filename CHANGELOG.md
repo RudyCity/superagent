@@ -1,3 +1,11 @@
+## [Unreleased] - Motion Director B3 media timeline (2026-10-21)
+### Added
+- Ordered 1–3 product scene images with corresponding editable scene-timed opacity transitions.
+- Optional looping PCM16 WAV tracks with frame-synced editor preview and bounded FFmpeg export.
+- Operator-configured, offline local Piper narration adapter with validated WAV storage, request bounds, capability gating and 503 fail-closed response.
+### Note
+- Real Piper engine not installed/validated, no cloud voice provider and no audio/image asset generation. Packaged Tauri + live model E2E still pending.
+
 ## [Unreleased] - Motion Director workspace media attachments (2026-10-21)
 ### Added
 - Verified workspace image/logo and WAV audio attachment to prompt-driven create/revise via agent tools, CLI, MCP and HTTP.

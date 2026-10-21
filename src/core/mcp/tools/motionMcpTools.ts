@@ -22,6 +22,9 @@ export const MOTION_MCP_TOOL_DEFS = [
       workspace: { type: "string" }, projectId: { type: "string" },
       prompt: { type: "string" }, width: { type: "integer", minimum: 160, maximum: 1920 },
       imageAssetId: { type: "string" }, audioAssetId: { type: "string" },
+      sceneImageAssetIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
+      audioLoop: { type: "boolean" },
+      voiceoverText: { type: "string", maxLength: 220 }, voiceoverGain: { type: "number", minimum: 0, maximum: 2 },
       audioGain: { type: "number", minimum: 0, maximum: 2 },
     }, required: ["prompt"] },
   },
@@ -32,6 +35,9 @@ export const MOTION_MCP_TOOL_DEFS = [
       workspace: { type: "string" }, projectId: { type: "string" }, motionId: { type: "string" },
       prompt: { type: "string" }, width: { type: "integer", minimum: 160, maximum: 1920 },
       imageAssetId: { type: "string" }, audioAssetId: { type: "string" },
+      sceneImageAssetIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
+      audioLoop: { type: "boolean" },
+      voiceoverText: { type: "string", maxLength: 220 }, voiceoverGain: { type: "number", minimum: 0, maximum: 2 },
       audioGain: { type: "number", minimum: 0, maximum: 2 },
     }, required: ["prompt", "motionId"] },
   },
@@ -184,6 +190,10 @@ export async function dispatchMotionMcpTool(
         result = await generateMotionFromPrompt(authorizedWorkspace, String(args.prompt ?? ""), {
           width: args.width === undefined ? undefined : Number(args.width),
           imageAssetId: args.imageAssetId as string | undefined,
+          sceneImageAssetIds: args.sceneImageAssetIds as string[] | undefined,
+          audioLoop: args.audioLoop as boolean | undefined,
+          voiceoverText: args.voiceoverText as string | undefined,
+          voiceoverGain: args.voiceoverGain as number | undefined,
           audioAssetId: args.audioAssetId as string | undefined,
           audioGain: args.audioGain as number | undefined,
         }); break;
@@ -191,6 +201,10 @@ export async function dispatchMotionMcpTool(
         result = await reviseMotionFromPrompt(authorizedWorkspace, motionId, String(args.prompt ?? ""), {
           width: args.width === undefined ? undefined : Number(args.width),
           imageAssetId: args.imageAssetId as string | undefined,
+          sceneImageAssetIds: args.sceneImageAssetIds as string[] | undefined,
+          audioLoop: args.audioLoop as boolean | undefined,
+          voiceoverText: args.voiceoverText as string | undefined,
+          voiceoverGain: args.voiceoverGain as number | undefined,
           audioAssetId: args.audioAssetId as string | undefined,
           audioGain: args.audioGain as number | undefined,
         }); break;

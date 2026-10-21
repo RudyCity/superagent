@@ -59,10 +59,11 @@ export function validateMotionTrack(raw: unknown, durationFrames: number, at = "
 export function validateMotionAudio(raw: unknown, durationFrames: number): string[] {
   if (!record(raw)) return ["audio: expected object"];
   const errors: string[] = [];
-  allowedKeys(raw, ["assetId", "startFrame", "volume", "fadeInFrames", "fadeOutFrames"], "audio", errors);
+  allowedKeys(raw, ["assetId", "startFrame", "volume", "fadeInFrames", "fadeOutFrames", "loop"], "audio", errors);
   if (typeof raw.assetId !== "string" || !/^audio-[a-f0-9]{64}$/.test(raw.assetId)) errors.push("audio: invalid assetId");
   if (!integer(raw.startFrame, 0, durationFrames - 1)) errors.push("audio: invalid startFrame");
   if (!finite(raw.volume, 0, 2)) errors.push("audio: invalid volume");
+  if (raw.loop !== undefined && typeof raw.loop !== "boolean") errors.push("audio: invalid loop");
   if (raw.fadeInFrames !== undefined && !integer(raw.fadeInFrames, 0, durationFrames)) errors.push("audio: invalid fadeInFrames");
   if (raw.fadeOutFrames !== undefined && !integer(raw.fadeOutFrames, 0, durationFrames)) errors.push("audio: invalid fadeOutFrames");
   return errors;

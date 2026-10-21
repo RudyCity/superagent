@@ -14,6 +14,7 @@ import { inspectMotionQueueRecovery } from "./jobs/queueRecovery.js";
 import { inspectMotionSupervisor } from "./jobs/motionSupervisor.js";
 import { generateMotionFromPrompt, reviseMotionFromPrompt } from "./director/directorService.js";
 import { inspectMotionQuality } from "./director/motionQuality.js";
+import { localVoiceoverReady } from "./director/localVoiceover.js";
 import { importMotionAsset, readMotionAsset } from "./assets/motionAssets.js";
 import { importMotionAudio, readMotionAudio } from "./assets/motionAudio.js";
 import { decodeMotionMediaBase64 } from "./assets/motionInput.js";
@@ -79,7 +80,7 @@ export async function handleMotionHttpRoute(
   const waveform = pathname.match(/^\/api\/motion\/audio\/(audio-[a-f0-9]{64})\/waveform$/);
   try {
     if (pathname === "/api/motion" && method === "GET") {
-      json(res, ctx, 200, { apiVersion: 1, video: "h264-mp4", detachedJobs: true, studio: false, capabilities: MOTION_CAPABILITIES });
+      json(res, ctx, 200, { apiVersion: 1, video: "h264-mp4", detachedJobs: true, studio: false, capabilities: { ...MOTION_CAPABILITIES, localVoiceoverConfigured: await localVoiceoverReady() } });
     } else if (pathname === "/api/motion/assets" && method === "POST") {
       const body = await readMotionJson(req, 1_600_000);
       json(res, ctx, 201, await importMotionAsset(workspace, decodeMotionMediaBase64(body.base64, 1024 * 1024)));
@@ -113,8 +114,12 @@ export async function handleMotionHttpRoute(
       const result = await generateMotionFromPrompt(workspace, body.prompt as string, {
         width: body.width as number | undefined,
         imageAssetId: body.imageAssetId as string | undefined,
+        sceneImageAssetIds: body.sceneImageAssetIds as string[] | undefined,
         audioAssetId: body.audioAssetId as string | undefined,
         audioGain: body.audioGain as number | undefined,
+        audioLoop: body.audioLoop as boolean | undefined,
+        voiceoverText: body.voiceoverText as string | undefined,
+        voiceoverGain: body.voiceoverGain as number | undefined,
       });
       json(res, ctx, 202, result);
     } else if (pathname.match(/^\/api\/motion\/projects\/motion-[a-f0-9]{20}\/revise$/) && method === "POST") {
@@ -123,8 +128,12 @@ export async function handleMotionHttpRoute(
       const result = await reviseMotionFromPrompt(workspace, motionId, body.prompt as string, {
         width: body.width as number | undefined,
         imageAssetId: body.imageAssetId as string | undefined,
+        sceneImageAssetIds: body.sceneImageAssetIds as string[] | undefined,
         audioAssetId: body.audioAssetId as string | undefined,
         audioGain: body.audioGain as number | undefined,
+        audioLoop: body.audioLoop as boolean | undefined,
+        voiceoverText: body.voiceoverText as string | undefined,
+        voiceoverGain: body.voiceoverGain as number | undefined,
       });
       json(res, ctx, 202, result);
     } else if (pathname === "/api/motion/projects" && method === "GET") {

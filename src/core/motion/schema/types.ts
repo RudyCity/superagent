@@ -48,6 +48,7 @@ export interface MotionAudioTrack {
   volume: number;
   fadeInFrames?: number;
   fadeOutFrames?: number;
+  loop?: boolean;
 }
 
 export interface MotionProject {
