@@ -57,7 +57,17 @@ try {
     } catch { await Bun.sleep(150); }
   }
   if (!status) throw new Error('Bun server did not listen on isolated port. ' + output);
-  console.log('BUN_SERVER_SMOKE_OK port=ephemeral response=' + status);
+  const discovery = JSON.parse(await fs.readFile(path.join(home, 'config', 'server-info-' + port + '.json'), 'utf8'));
+  if (discovery.port !== port || !/^[0-9a-f]{48}$/i.test(discovery.authToken)) {
+    throw new Error('Expected isolated server credentials in per-port discovery file');
+  }
+  const authorized = await fetch('http://127.0.0.1:' + port + '/api/ping', {
+    headers: { Authorization: 'Bearer ' + discovery.authToken },
+    signal: AbortSignal.timeout(2000),
+  });
+  if (authorized.status !== 200) throw new Error('Authenticated server ping was rejected');
+  if (output.includes(discovery.authToken)) throw new Error('Server leaked its bearer credential to process output');
+  console.log('BUN_SERVER_SMOKE_OK port=ephemeral unauthorized=' + status + ' authorized=200 token=redacted');
 } finally {
   if (server) {
     try { server.kill(); } catch {}

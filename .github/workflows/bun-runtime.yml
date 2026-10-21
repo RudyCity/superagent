@@ -1,0 +1,36 @@
+name: Bun Runtime Validation
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  runtime:
+    name: Bun runtime
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run runtime:acceptance
+      - run: bun run perf:bun
+      - run: bun x vitest run tests/bunMcpRegistration.test.ts tests/serverAuth.test.ts tests/ProcessPool.test.ts tests/processMailbox.test.ts
+  security:
+    name: Dependency high-critical release gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run security:bun

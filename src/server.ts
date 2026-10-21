@@ -911,16 +911,27 @@ export async function runServer(port: number, silent = false, defaultClientMode:
         authToken: serverAuthToken,
         startedAt: Date.now()
       }, null, 2);
-      fs.writeFileSync(serverInfoPath, infoPayload, "utf-8");
-      fs.writeFileSync(portServerInfoPath, infoPayload, "utf-8");
+      // Atomic replace with best-effort owner-only mode; clients must
+      // never observe a partially written token during restart.
+      for (const destination of [serverInfoPath, portServerInfoPath]) {
+        const pending = destination + "." + process.pid + ".tmp";
+        try {
+          fs.writeFileSync(pending, infoPayload, { encoding: "utf-8", mode: 0o600 });
+          fs.renameSync(pending, destination);
+          try { fs.chmodSync(destination, 0o600); } catch { /* Windows ACL may differ */ }
+        } finally {
+          try { fs.rmSync(pending, { force: true }); } catch {}
+        }
+      }
     } catch {}
-    logToSuperAgentServerFile(`[SERVER] Auth token: ${serverAuthToken}`);
+    // Never expose bearer credentials in persisted diagnostic logs.
+    logToSuperAgentServerFile('[SERVER] Auth token initialized (redacted).');
     if (!silent) {
       console.log(`\n🚀 SuperAgent Server v${getSuperAgentVersion()} is running at http://localhost:${port}`);
       console.log(`💡 Mode: REST API & Server-Sent Events (SSE)`);
       console.log(`🎯 Default Client Mode: ${serverDefaultClientMode}`);
       console.log(`📂 Current Workspace: ${lastActiveWorkspace}`);
-      console.log(`[SERVER] Auth token: ${serverAuthToken}`);
+      console.log('[SERVER] Auth token saved to protected server-info (redacted).');
       console.log(`💡 Clients must send this token via "Authorization: Bearer <token>", "x-auth-token" header, or "?token=" query parameter (for SSE).\n`);
     }
   });

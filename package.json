@@ -27,7 +27,10 @@
     "wiki:validate": "bun .agents/skills/codebase-wiki-generator/scripts/validate-wiki-links.cjs --wiki-dir docs/wiki",
     "runtime:smoke": "bun scripts/bun-runtime-smoke.ts",
     "verify:runtime": "bun run build && bun run runtime:smoke",
-    "runtime:acceptance": "bun scripts/bun-acceptance.ts"
+    "runtime:acceptance": "bun scripts/bun-acceptance.ts",
+    "perf:bun": "bun scripts/bench-bun-runtime.ts",
+    "security:bun": "bun scripts/check-bun-security.ts",
+    "integration:tline": "bun scripts/bun-tline-bridge-smoke.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.2",

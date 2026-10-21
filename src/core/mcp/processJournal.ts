@@ -342,9 +342,10 @@ export function registerCurrentProcess(mode: "single" | "multi" | "server" | "mc
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       const remaining = loadActiveProcesses().filter((p) => p.pid !== pid);
       saveActiveProcesses(remaining);
-      import("../ipc/processMailbox.js").then(({ cleanupProcessMailbox }) => {
-        cleanupProcessMailbox(pid);
-      }).catch(() => {});
+      // Process exit cannot await an asynchronous import. Delete only
+      // this PID's mailbox; never an unrelated instance.
+      const ownMailbox = path.join(getRootConfigDir(), "ipc", pid + ".json");
+      try { fs.rmSync(ownMailbox, { force: true }); } catch {}
     } catch {}
   };
 
