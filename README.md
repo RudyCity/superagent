@@ -783,3 +783,11 @@ Equivalent slash commands: /motion generate and /motion revise. The native agent
 The AI Director plans 2–20s motion graphics made only from text/colored rectangles and basic transformations. It does not create music, spoken dialogue, complex effects, stock imagery, generated photos, or video footage. Prompts are compiled into validated declarative scene operations, never executable AI-generated code. Production-grade visual QA, connected model-provider certification and packaged Tauri E2E remain open.
 
 Motion Director now supports optional model-selected motion presets: slide-left, slide-up, tilt and fade, with cut or crossfade transitions. Its output includes deterministic frame-sampled quality checks of titles, contrast and overflow. Inspect any Motion project via the authenticated GET /api/motion/projects/MOTION_ID/quality route. These checks are not AI visual critique, do not automatically create third-party media and do not certify professional typography. T-Line displays a read-only quality report beside the editable motion scene after generation or manual edits.
+
+### Prompt-based Motion with workspace images and WAV
+
+Motion Director can now use existing workspace-uploaded assets: PNG/JPEG/WebP image/logo (max 1 MB) and canonical PCM16 WAV soundtrack (max 2 MB). In T-Line Motion Studio, attach the image and/or WAV directly beside the AI Motion prompt; the UI uploads them to the workspace before generation and supports prompt-based revisions. CLI and agent/MCP/HTTP generate/revise take optional imageAssetId, audioAssetId and audioGain fields, using verified content hashes rather than filesystem paths. CLI example after upload:
+
+    superagent motion generate --prompt "Create a product promo with my supplied logo and music" --image-asset asset-SHA256 --audio-asset audio-SHA256 --audio-gain 0.7 --width 640 --workspace .
+
+The output positions one attached image above the text area and mixes the supplied WAV in the MP4; edits remain reversible with ordinary project revisions. Short tracks do not automatically loop. Only user-provided local media is used: image generation, soundtrack synthesis and TTS are not implemented.

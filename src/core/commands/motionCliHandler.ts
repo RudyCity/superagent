@@ -14,8 +14,8 @@ import type { MotionEdit } from "../motion/schema/types.js";
 import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation, enqueueSupervisedMotionJob } from "../motion/jobs/motionJobs.js";
 
 const usage = `Motion Studio (developer preview)
-  superagent motion generate --prompt "Animated promo" [--width 640] [--workspace PATH] [--json]
-  superagent motion revise MOTION_ID --prompt "Shorter title" [--width 640] [--workspace PATH] [--json]
+  superagent motion generate --prompt "Animated promo" [--width 640] [--image-asset ASSET_ID] [--audio-asset AUDIO_ID] [--audio-gain 1] [--workspace PATH] [--json]
+  superagent motion revise MOTION_ID --prompt "Shorter title" [--width 640] [--image-asset ASSET_ID] [--audio-asset AUDIO_ID] [--audio-gain 1] [--workspace PATH] [--json]
   superagent motion new --name "Title" [--workspace PATH] [--json]
   superagent motion list [--workspace PATH] [--json]
   superagent motion inspect PROJECT_ID [--workspace PATH] [--json]
@@ -49,7 +49,7 @@ function argumentsOf(args: string[]): { action: string; positionals: string[]; o
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
   const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", ...boolean]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--image-asset", "--audio-asset", "--audio-gain", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -148,13 +148,19 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const prompt = opt(opts, "--prompt");
       if (!prompt || positionals.length) throw new Error("generate requires --prompt and no project ID");
       const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
-      emit(await generateMotionFromPrompt(workspace, prompt, { width }), json); return 0;
+      emit(await generateMotionFromPrompt(workspace, prompt, { width,
+        imageAssetId: opt(opts, "--image-asset"),
+        audioAssetId: opt(opts, "--audio-asset"),
+        audioGain: opt(opts, "--audio-gain") === undefined ? undefined : Number(opt(opts, "--audio-gain")) }), json); return 0;
     }
     if (action === "revise") {
       const prompt = opt(opts, "--prompt");
       if (!prompt || positionals.length !== 1) throw new Error("revise requires MOTION_ID and --prompt");
       const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
-      emit(await reviseMotionFromPrompt(workspace, positionals[0], prompt, { width }), json); return 0;
+      emit(await reviseMotionFromPrompt(workspace, positionals[0], prompt, { width,
+        imageAssetId: opt(opts, "--image-asset"),
+        audioAssetId: opt(opts, "--audio-asset"),
+        audioGain: opt(opts, "--audio-gain") === undefined ? undefined : Number(opt(opts, "--audio-gain")) }), json); return 0;
     }
     if (action === "new") {
       const name = opt(opts, "--name");

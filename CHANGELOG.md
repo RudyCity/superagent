@@ -1,3 +1,11 @@
+## [Unreleased] - Motion Director workspace media attachments (2026-10-21)
+### Added
+- Verified workspace image/logo and WAV audio attachment to prompt-driven create/revise via agent tools, CLI, MCP and HTTP.
+- Editable image layer with WAV gain/fades and existing MP4 AAC mixer; revision-safe image replacement and multi-track audio append.
+- Same-workspace content hash checks and real multimedia FFmpeg regression tests; capability detection in T-Line.
+### Limits
+- No media generation, music synthesis, TTS, soundtrack looping or packaged desktop E2E certification.
+
 ## [Unreleased] - Motion Director creative presets and deterministic QA (2026-10-21)
 ### Added
 - Safe slide-left, slide-up, tilt and fade AI-directed scene presets, with cut and crossfade transitions using Motion v1 tracks.

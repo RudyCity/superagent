@@ -21,6 +21,8 @@ export const MOTION_MCP_TOOL_DEFS = [
     inputSchema: { type: "object", properties: {
       workspace: { type: "string" }, projectId: { type: "string" },
       prompt: { type: "string" }, width: { type: "integer", minimum: 160, maximum: 1920 },
+      imageAssetId: { type: "string" }, audioAssetId: { type: "string" },
+      audioGain: { type: "number", minimum: 0, maximum: 2 },
     }, required: ["prompt"] },
   },
   {
@@ -29,6 +31,8 @@ export const MOTION_MCP_TOOL_DEFS = [
     inputSchema: { type: "object", properties: {
       workspace: { type: "string" }, projectId: { type: "string" }, motionId: { type: "string" },
       prompt: { type: "string" }, width: { type: "integer", minimum: 160, maximum: 1920 },
+      imageAssetId: { type: "string" }, audioAssetId: { type: "string" },
+      audioGain: { type: "number", minimum: 0, maximum: 2 },
     }, required: ["prompt", "motionId"] },
   },
   {
@@ -179,10 +183,16 @@ export async function dispatchMotionMcpTool(
       case "superagent_motion_generate":
         result = await generateMotionFromPrompt(authorizedWorkspace, String(args.prompt ?? ""), {
           width: args.width === undefined ? undefined : Number(args.width),
+          imageAssetId: args.imageAssetId as string | undefined,
+          audioAssetId: args.audioAssetId as string | undefined,
+          audioGain: args.audioGain as number | undefined,
         }); break;
       case "superagent_motion_revise":
         result = await reviseMotionFromPrompt(authorizedWorkspace, motionId, String(args.prompt ?? ""), {
           width: args.width === undefined ? undefined : Number(args.width),
+          imageAssetId: args.imageAssetId as string | undefined,
+          audioAssetId: args.audioAssetId as string | undefined,
+          audioGain: args.audioGain as number | undefined,
         }); break;
       case "superagent_motion_list":
         result = await listMotionProjects(authorizedWorkspace); break;

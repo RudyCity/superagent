@@ -7,15 +7,21 @@ import { inspectMotionQuality } from "../motion/director/motionQuality.js";
 const promptParameters = { type: "object", properties: {
   prompt: { type: "string", description: "Describe the short motion graphic in Indonesian or English. 1-2000 characters." },
   width: { type: "integer", description: "Output width in pixels (even number 160-1920, default 640)." },
+  imageAssetId: { type: "string", description: "Optional ID of an already uploaded workspace Motion image/logo asset (asset-<sha256>)." },
+  audioAssetId: { type: "string", description: "Optional ID of an already uploaded PCM16 WAV workspace asset (audio-<sha256>)." },
+  audioGain: { type: "number", description: "Optional audio gain from 0 to 2, only with audioAssetId." },
 }, required: ["prompt"] };
 
 export const motionGenerateTool: Tool = {
   name: "motion_generate",
-  description: "Create an editable Motion Studio scene and render MP4 from a normal natural-language prompt with the SuperAgent AI planner. No project ID, JSON, or manual supervisor required. Supports short text/shape motion only, not image generation, TTS or music.",
+  description: "Create an editable Motion Studio scene and render MP4 from a normal natural-language prompt with the SuperAgent AI planner. No project ID, JSON, or manual supervisor required. Supports attached workspace image and WAV audio assets, but not automated image/music generation or TTS.",
   parameters: promptParameters,
   async execute(args, cwd, signal) {
     const result = await generateMotionFromPrompt(cwd, args.prompt as string,
-      { width: args.width as number | undefined, signal });
+      { width: args.width as number | undefined, signal,
+        imageAssetId: args.imageAssetId as string | undefined,
+        audioAssetId: args.audioAssetId as string | undefined,
+        audioGain: args.audioGain as number | undefined });
     return JSON.stringify({ motionId: result.project.id, revision: result.project.revision,
       jobId: result.job.id, jobStatus: result.job.status, outline: result.outline,
       limitations: result.limitations,
@@ -31,7 +37,10 @@ export const motionReviseTool: Tool = {
   }, required: ["motionId", "prompt"] },
   async execute(args, cwd, signal) {
     const result = await reviseMotionFromPrompt(cwd, args.motionId as string, args.prompt as string,
-      { width: args.width as number | undefined, signal });
+      { width: args.width as number | undefined, signal,
+        imageAssetId: args.imageAssetId as string | undefined,
+        audioAssetId: args.audioAssetId as string | undefined,
+        audioGain: args.audioGain as number | undefined });
     return JSON.stringify({ motionId: result.project.id, revision: result.project.revision,
       jobId: result.job.id, jobStatus: result.job.status, outline: result.outline, limitations: result.limitations });
   },

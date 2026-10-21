@@ -67,6 +67,18 @@ describe("Motion HTTP and artifact transport", () => {
       body: JSON.stringify({ prompt: "x".repeat(2500) }),
     });
     expect(invalidRevision.status).toBe(400);
+    const missingAsset = await request("/api/motion/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: "Buat promo dengan gambar saya", imageAssetId: "asset-" + "e".repeat(64),
+      }),
+    });
+    expect(missingAsset.status).toBe(404);
+    const invalidGain = await request("/api/motion/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Video dengan musik", audioGain: 1.7 }),
+    });
+    expect(invalidGain.status).toBe(400);
     const result = await request("/api/motion");
     expect(result.status).toBe(200);
     const info = await result.json();

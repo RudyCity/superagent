@@ -21,6 +21,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   optInFifoSupervisor: true,
   aiPromptDirector: "short-text-motion-preview",
   aiSemanticRevision: true,
+  aiWorkspaceMedia: "uploaded-image-wav",
   aiMotionPresets: ["slide-left", "slide-up", "tilt", "fade"],
   aiTransitions: ["crossfade", "cut"],
   deterministicQualityLint: true,

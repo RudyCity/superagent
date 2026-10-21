@@ -587,3 +587,17 @@ A new inspectMotionQuality function in src/core/motion/director/motionQuality.ts
 New tests exercise preset tracks, scene boundaries, crossfade overlap, light-background readability, invalid model presets, QA issue detection and a real detached H264 MP4 render with a slide-up/crossfade scene. These features are backward compatible with prior text-based Motion projects and T-Line manual editor.
 
 Open next: real audio mix/generation and media asset selection, more dynamic typography effects, shared render/preview font embedding, persistent storyboard provenance, automated authentic screenshot-based quality review and packaged Tauri connected-provider E2E.
+
+## 22. Phase B2 — Workspace media attachments for AI Motion Director (2026-10-21)
+
+AI Director create/revise now accept optional pre-imported Motion asset IDs (imageAssetId, audioAssetId and audioGain 0..2) in CLI, native agent tools, MCP and HTTP. They refer exclusively to existing SHA-256 content-addressed, size-bounded image and PCM16 WAV files in the selected authorized workspace; malformed, absent, foreign, unsafe and corrupt references fail before model invocation or project creation. No arbitrary user paths, URL fetches or model-supplied executable media were added.
+
+When generating, a user-selected image/logo is scaled into a safe upper-right card area above the title. Existing SVG preview, T-Line canvas and pinned FFmpeg image render can display it without introducing any new layer type. An attached WAV is added as a clip at frame 0 with bounded volume and fade in/out; original FFmpeg mixer exports the MP4 with encoded AAC. The Director explicitly warns about WAV files shorter than the video because it does not loop soundtrack automatically.
+
+On revision, a new attached image replaces the Director image layer, while an attached WAV is appended to existing clips (max 4), all in one revision-guarded transaction together with allowlisted semantic edits. Image/audio IDs and ownership are rechecked before any mutation, and old unrelated user media remains intact. An attached image is currently one shared branding image, not a separate chosen photo for each scene.
+
+The SuperAgent capabilities handshake exposes aiWorkspaceMedia=uploaded-image-wav for the new T-Line prompt controls. T-Line uploads image and WAV through the existing authenticated workspace proxy independently of project creation, shows attached filenames and audio gain, forwards only hashed IDs to generate/revise and clears the selection upon success. Without updated server capability, the attachment controls are disabled. No service tokens are exposed to the frontend.
+
+Dedicated multimedia tests generate a real FFmpeg MP4 with image+WAV, verify audio/image are part of the revisioned project, then render a second MP4 with replacement image and appended WAV. Tests reject foreign/fake IDs and invalid audio gain without invoking the planner. HTTP and frontend tests cover routing and UI attachment lifecycle.
+
+Still missing: AI-generated music/TTS, auto license asset search, advanced transitions, multiple scene media selection, looped music and packaged Tauri/live-provider production E2E.

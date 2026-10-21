@@ -112,6 +112,9 @@ export async function handleMotionHttpRoute(
       const body = await readMotionJson(req, 12_000);
       const result = await generateMotionFromPrompt(workspace, body.prompt as string, {
         width: body.width as number | undefined,
+        imageAssetId: body.imageAssetId as string | undefined,
+        audioAssetId: body.audioAssetId as string | undefined,
+        audioGain: body.audioGain as number | undefined,
       });
       json(res, ctx, 202, result);
     } else if (pathname.match(/^\/api\/motion\/projects\/motion-[a-f0-9]{20}\/revise$/) && method === "POST") {
@@ -119,6 +122,9 @@ export async function handleMotionHttpRoute(
       const motionId = pathname.split("/")[4];
       const result = await reviseMotionFromPrompt(workspace, motionId, body.prompt as string, {
         width: body.width as number | undefined,
+        imageAssetId: body.imageAssetId as string | undefined,
+        audioAssetId: body.audioAssetId as string | undefined,
+        audioGain: body.audioGain as number | undefined,
       });
       json(res, ctx, 202, result);
     } else if (pathname === "/api/motion/projects" && method === "GET") {
