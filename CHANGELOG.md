@@ -1,79 +1,38 @@
-## [Unreleased] - Motion Studio vision reviewer, scene captions and rounded UI (2026-10-21)
+## [1.14.9] - 2026-10-21
 ### Added
-- Optional actual-frame multimodal AI visual review using a configured vision-capable model, with strict bounded feedback and explicit 503 fallback.
-- Workspace-authenticated one-pass visual review-and-repair using CAS-protected existing semantic edit operations and subsequent MP4 render, with concurrency guard.
-- Authored-scene timing based non-overlapping SubRip sidecar exports and rectangular cornerRadius rendering parity across SVG/Canvas.
-### Release note
-- Developer preview only: no unverified live provider/Tauri/Piper claims, no full footage/transcription/multiround visual QA or automatic process recovery.
+- Motion Studio Vision Reviewer & Auto-Repair:
+  - Optional actual-frame multimodal AI visual review using a configured vision-capable model, with strict bounded feedback and explicit 503 fallback.
+  - Workspace-authenticated one-pass visual review-and-repair using CAS-protected existing semantic edit operations and subsequent MP4 render, with concurrency guard.
+  - Authored-scene timing based non-overlapping SubRip sidecar exports and rectangular cornerRadius rendering parity across SVG/Canvas.
+- Motion Director Capabilities & Layouts:
+  - Allowlisted easeOutBack pop animations and adaptive 16:9, 1:1, 9:16 motion compositions.
+  - Authenticated, bounded Canvas frame PNG snapshots for visual review from T-Line.
+  - Optional scene-derived Piper narration and role-aware FFmpeg music ducking under voice.
+- Media Timeline & Attachments:
+  - Ordered 1–3 product scene images with corresponding editable scene-timed opacity transitions.
+  - Optional looping PCM16 WAV tracks with frame-synced editor preview and bounded FFmpeg export.
+  - Operator-configured, offline local Piper narration adapter with validated WAV storage, request bounds, capability gating and 503 fail-closed response.
+  - Verified workspace image/logo and WAV audio attachment to prompt-driven create/revise via agent tools, CLI, MCP and HTTP.
+  - Editable image layer with WAV gain/fades and existing MP4 AAC mixer; revision-safe image replacement and multi-track audio append.
+  - Same-workspace content hash checks and real multimedia FFmpeg regression tests; capability detection in T-Line.
+- Creative Presets & Deterministic QA:
+  - Safe slide-left, slide-up, tilt and fade AI-directed scene presets, with cut and crossfade transitions using Motion v1 tracks.
+  - Canvas-measured title auto-fit and high-contrast foreground text for bright or dark backgrounds.
+  - Deterministic scene midpoint QA, readability/contrast warnings and read-only workspace-scoped quality endpoint.
+- AI Motion Director Prompt-First Workflow:
+  - AI planner creating validated text/shape scene briefs with editable Motion project and detached H264 MP4 render.
+  - Native motion_generate, motion_revise and motion_status tools; CLI, slash, HTTP and dangerous MCP generate/revise endpoints.
+  - Native T-Line prompt-first interface, revision requests, capability handshake and workspace-authorized proxy.
+- Supervisor, Recovery & Maintenance:
+  - Persisted supervised render jobs and a foreground FIFO worker supervisor with exclusive workspace ownership, bounded renderer slots and read-only status.
+  - Pre-dispatch cancellation of supervised queued jobs without leaving stale project claims.
+  - Read-only queued-job recovery diagnostics with age/claim/snapshot verification and explicit operator-approved re-dispatch of orphaned queued jobs.
+  - Safe read-only Motion storage reports and guarded manual pruning of old failed/cancelled/interrupted records; completed videos, active locks and suspicious artifacts are preserved.
+  - Added workspace-contained Motion CLI and interactive /motion media imports (image/WAV) plus validated, revision-checked JSON edit transactions.
 
-## [Unreleased] - Motion Director B4-F partial capabilities (2026-10-21)
-### Added
-- Optional scene-derived Piper narration and role-aware FFmpeg music ducking under voice.
-- Allowlisted easeOutBack pop animations and adaptive 16:9, 1:1, 9:16 motion compositions.
-- Authenticated, bounded Canvas frame PNG snapshots for visual review from T-Line.
-### Release caveat
-- This does not deliver full professional engine, multimodal AI visual repair, video footage editing, self-healing workers or packaged Tauri certification.
-
-## [Unreleased] - Motion Director B3 media timeline (2026-10-21)
-### Added
-- Ordered 1–3 product scene images with corresponding editable scene-timed opacity transitions.
-- Optional looping PCM16 WAV tracks with frame-synced editor preview and bounded FFmpeg export.
-- Operator-configured, offline local Piper narration adapter with validated WAV storage, request bounds, capability gating and 503 fail-closed response.
-### Note
-- Real Piper engine not installed/validated, no cloud voice provider and no audio/image asset generation. Packaged Tauri + live model E2E still pending.
-
-## [Unreleased] - Motion Director workspace media attachments (2026-10-21)
-### Added
-- Verified workspace image/logo and WAV audio attachment to prompt-driven create/revise via agent tools, CLI, MCP and HTTP.
-- Editable image layer with WAV gain/fades and existing MP4 AAC mixer; revision-safe image replacement and multi-track audio append.
-- Same-workspace content hash checks and real multimedia FFmpeg regression tests; capability detection in T-Line.
-### Limits
-- No media generation, music synthesis, TTS, soundtrack looping or packaged desktop E2E certification.
-
-## [Unreleased] - Motion Director creative presets and deterministic QA (2026-10-21)
-### Added
-- Safe slide-left, slide-up, tilt and fade AI-directed scene presets, with cut and crossfade transitions using Motion v1 tracks.
-- Canvas-measured title auto-fit and high-contrast foreground text for bright or dark backgrounds.
-- Deterministic scene midpoint QA, readability/contrast warnings and read-only workspace-scoped quality endpoint.
-### Note
-- No video-vision AI QA, music/TTS/footage or packaged desktop end-to-end verification in this slice.
-
-## [Unreleased] - AI Motion Director initial prompt-first slice (2026-10-21)
-### Added
-- AI planner creating validated text/shape scene briefs with editable Motion project and detached H264 MP4 render.
-- Native motion_generate, motion_revise and motion_status tools; CLI, slash, HTTP and dangerous MCP generate/revise endpoints.
-- Native T-Line prompt-first interface, revision requests, capability handshake and workspace-authorized proxy.
-### Limits
-- Developer preview: no full creative effects, footage, TTS/music, visual QA or certified live model/Tauri end-to-end.
-
-## [Unreleased] - Motion Studio opt-in FIFO supervisor (2026-10-21)
-### Added
-- Persisted supervised render jobs and a foreground FIFO worker supervisor with exclusive workspace ownership, bounded renderer slots and read-only status.
-- CLI supervisor once/watch, opt-in supervised render, supervised HTTP/MCP render and safe supervisor diagnostics; T-Line opt-in FIFO checkbox and status.
-- Atomic pre-dispatch cancellation of supervised queued jobs without leaving stale project claims.
-### Safety
-- Existing immediate render behavior is unchanged. Supervisor locks fail closed after crash, and running render processes are never automatically restarted or killed.
-
-## [Unreleased] - Motion Studio orphan-queue recovery (2026-10-21)
-### Added
-- Read-only queued-job recovery diagnostics with age/claim/snapshot verification and explicit operator-approved re-dispatch of orphaned queued jobs. Concurrent dispatchers use an exclusive handoff lock; uncertain launches stay fail-closed.
-- CLI, slash, HTTP and safe MCP diagnostics; T-Line displays eligible/blocked candidates through authenticated read-only proxy.
-- No automatic takeover of live workers, no PID-based slot reclamation, and no changes to Hermes runtime sessions.
-
-## [Unreleased] - Motion Studio render maintenance (2026-10-21)
-### Added
-- Safe read-only Motion storage reports and guarded manual pruning of old failed/cancelled/interrupted records; completed videos, active locks and suspicious artifacts are preserved.
-- Read-only storage diagnostics over HTTP and MCP. T-Line Desktop displays render disk usage and supports 640/1280/1920px output selection.
-- Motion maintenance regression tests and T-Line proxy/editor cross-repository tests; no active Hermes agents or MCP servers were restarted.
-
-## [Unreleased] - Motion Studio audit remediation (2026-10-21)
-### Added
-- Added workspace-contained Motion CLI and interactive `/motion` media imports (image/WAV) plus validated, revision-checked JSON edit transactions.
-- Added two dangerous/write-scoped MCP Motion media-import tools; standardized HTTP/MCP base64 handling and raised Motion exports to capped 1920px output.
-- Added explicit Motion capability metadata without claiming an independently deployed browser editor or certified T-Line installation.
 ### Tests
 - SuperAgent 12 Motion suites / 51 tests passed, including real 1920x1080 H.264 artifact validation.
-- T-Line native editor 28 targeted frontend tests and 6 backend proxy tests passed in their intended configurations. Packaged Tauri live E2E remains outstanding.
+- Motion maintenance regression tests and T-Line proxy/editor cross-repository tests passed.
 
 ## [1.14.8] - 2026-10-20
 ### Documentation

@@ -23,6 +23,7 @@ scratch/
 .prompt-*
 *remote-agent.json
 .superagent-r/
+.superagent/
 
 # Screenshots
 *screenshot_*.png
