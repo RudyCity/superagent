@@ -101,8 +101,8 @@ describe("Motion Studio detached worker boundaries", () => {
     if (!(await probeFfmpeg())) return;
     const { root, project } = await fixture();
     const result = spawnSync(
-      process.execPath,
-      ["--import", "tsx", "src/cli.tsx", "motion", "render", project.id, "--width", "160", "--detach", "--workspace", root, "--json"],
+      process.env.BUN_BIN || (process.platform === "win32" ? "bun.exe" : "bun"),
+      ["src/cli.tsx", "motion", "render", project.id, "--width", "160", "--detach", "--workspace", root, "--json"],
       { encoding: "utf8", timeout: 20000 },
     );
     expect(result.status, result.stderr).toBe(0);

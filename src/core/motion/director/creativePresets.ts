@@ -1,6 +1,8 @@
 import { createCanvas } from "@napi-rs/canvas";
 import type { MotionProject, MotionTrack, RectLayer, TextLayer } from "../schema/types.js";
 import type { MotionDirectorPlan, MotionDirectorScene } from "./directorService.js";
+import { effectRegistry } from "../effects/index.js";
+import { evaluateTrack } from "../timeline/evaluateFrame.js";
 
 /** Intentional visual systems; no arbitrary user CSS, SVG, or executable effects. */
 export const MOTION_ART_DIRECTIONS = ["minimal", "editorial", "neon", "brutalist"] as const;
@@ -175,10 +177,92 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
     if (plan.artDirection) addDecoration(layers, scene, style, index, plan.scenes.length, dimensions, anchor, visible);
     layers.push({ id: "scene-" + index + "-accent", kind: "rect", x: anchor.x, y: anchor.y - 37,
       width: 164, height: 9, rotation: 0, opacity: 1, fill: scene.accent, tracks: [visible] });
+
+    let titleTracks = entry(motion, start, end, anchor.x, anchor.y);
+    let titleOpacity = visible;
+    const effectId = scene.effect ?? plan.effect;
+    if (effectId && effectRegistry.has(effectId)) {
+      const dummyProject: MotionProject = {
+        schemaVersion: 1,
+        id: "temp",
+        workspaceRoot: "/",
+        name: "temp",
+        revision: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        composition: {
+          width: dimensions.width,
+          height: dimensions.height,
+          fps: { numerator: 30, denominator: 1 },
+          durationFrames: count,
+          background: plan.background,
+          layers: [],
+        },
+      };
+      const titleLayer: TextLayer = {
+        id: "scene-" + index + "-title",
+        kind: "text",
+        text: scene.headline,
+        x: anchor.x,
+        y: anchor.y,
+        width: anchor.width,
+        height: anchor.titleSize + 24,
+        rotation: 0,
+        opacity: 1,
+        fill: foreground,
+        fontSize: anchor.titleSize,
+        fontFamily: "Arial",
+        tracks: [visible],
+      };
+      const definition = effectRegistry.get(effectId)!;
+      const affectsTitle = definition.targetKinds.includes("text");
+      const effResult = effectRegistry.apply(effectId, {
+        project: dummyProject,
+        targetLayer: affectsTitle ? titleLayer : undefined,
+        targetLayerId: affectsTitle ? titleLayer.id : undefined,
+        sceneIndex: index,
+        startFrame: start,
+        endFrame: end,
+        durationFrames: end - start + 1,
+        compositionWidth: dimensions.width,
+        compositionHeight: dimensions.height,
+        fps: 30,
+        aspectRatio: plan.aspectRatio ?? "16:9",
+        accentColor: scene.accent,
+        backgroundColor: plan.background,
+      });
+      if (effResult.tracks && effResult.tracks.length > 0 && affectsTitle) {
+        titleTracks = effResult.tracks.filter(t => t.property !== "opacity");
+        const effectOpacity = effResult.tracks.find(t => t.property === "opacity");
+        if (effectOpacity) {
+          // Merge the effect envelope with the scene's visibility curve.
+          titleOpacity = { property: "opacity", keyframes: Array.from({ length: count }, (_, frame) => ({
+            frame, value: Math.max(0, Math.min(1,
+              evaluateTrack(visible, frame) * evaluateTrack(effectOpacity, frame))),
+          })) };
+        }
+      }
+      if (effResult.newLayers && effResult.newLayers.length > 0) {
+        for (const nl of effResult.newLayers) {
+          nl.id = `scene-${index}-${nl.id}`;
+          const layerOpacity = nl.tracks.find(t => t.property === "opacity");
+          const baseOpacity = nl.opacity;
+          // Prevent new overlays from leaking outside their scene boundaries.
+          const clipped: MotionTrack = { property: "opacity", keyframes: Array.from({ length: count }, (_, frame) => ({
+            frame, value: Math.max(0, Math.min(1, evaluateTrack(visible, frame) *
+              (layerOpacity ? evaluateTrack(layerOpacity, frame) : baseOpacity))),
+          })) };
+          nl.tracks = [...nl.tracks.filter(t => t.property !== "opacity"), clipped];
+          if (definition.category === "background") layers.unshift(nl);
+          else layers.push(nl);
+        }
+      }
+    }
+
     layers.push({ id: "scene-" + index + "-title", kind: "text", text: scene.headline,
       x: anchor.x, y: anchor.y, width: anchor.width, height: anchor.titleSize + 24,
       rotation: 0, opacity: 1, fill: foreground, fontSize: anchor.titleSize, fontFamily: "Arial",
-      tracks: [visible, ...entry(motion, start, end, anchor.x, anchor.y)] });
+      tracks: [titleOpacity, ...titleTracks] });
     if (scene.subtitle) {
       layers.push({ id: "scene-" + index + "-subtitle", kind: "text", text: scene.subtitle,
         x: anchor.x + 4, y: anchor.y + (dimensions.height > dimensions.width ? 144 : 161),
@@ -191,4 +275,3 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
   return { width: dimensions.width, height: dimensions.height, fps: { numerator: 30, denominator: 1 },
     durationFrames: count, background: plan.background, layers };
 }
-

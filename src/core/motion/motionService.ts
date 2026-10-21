@@ -5,9 +5,28 @@ import type { MotionEdit, MotionProject } from "./schema/types.js";
 import { createMotionProject, getMotionProject, listMotionProjects, motionStorageDir, updateMotionProject } from "./project/projectStore.js";
 import { renderMotionSvg } from "./runtime/frameSvg.js";
 import { resolveMotionAssets } from "./assets/motionAssets.js";
+import type { EffectApplication } from "./effects/types.js";
 
 export { createMotionProject, getMotionProject, listMotionProjects, updateMotionProject };
-export type { MotionProject, MotionEdit };
+export type { MotionProject, MotionEdit, EffectApplication };
+
+/**
+ * Apply a declarative effect from the Motion Studio Effects Engine to a project
+ * using optimistic locking and compare-and-swap revisions.
+ */
+export async function applyEffectToProject(
+  workspace: string,
+  projectId: string,
+  baseRevision: number,
+  application: EffectApplication,
+): Promise<MotionProject> {
+  const current = await getMotionProject(workspace, projectId);
+  const { effectRegistry } = await import("./effects/registry.js");
+  const updated = effectRegistry.applyToProject(current, application);
+  return updateMotionProject(workspace, projectId, baseRevision, [
+    { type: "replace-composition", composition: updated.composition },
+  ]);
+}
 
 /**
  * Phase 1 preview export: writes a deterministic safe SVG under the selected

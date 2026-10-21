@@ -41,15 +41,18 @@ const usage = `Motion Studio (developer preview)
   superagent motion recover JOB_ID --ack-stale [--workspace PATH] [--json]
   superagent motion cancel JOB_ID [--workspace PATH] [--json]
   superagent motion doctor [--json]
+  superagent motion effects [--category CATEGORY] [--search QUERY] [--workspace PATH] [--json]
+  superagent motion effect-info EFFECT_ID [--workspace PATH] [--json]
+  superagent motion apply-effect PROJECT_ID --base-revision N --effect EFFECT_ID [--layer LAYER_ID] [--params-json JSON] [--start-frame N] [--duration-frames N] [--workspace PATH] [--json]
 
-MP4 preview uses installed FFmpeg. --detach launches a separate Node worker;
+MP4 preview uses installed FFmpeg. --detach launches a separate Bun worker;
 recovery is diagnostic/read-only unless the operator explicitly runs recover --ack-stale.`;
 
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
   const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", ...boolean]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--effect", "--params-json", "--start-frame", "--duration-frames", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -96,6 +99,58 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
     if (action === "doctor") {
       const available = await probeFfmpeg();
       emit({ ...MOTION_CAPABILITIES, mp4: available, ffmpegAvailable: available, renderJobs: "foreground-and-detached-local" }, json);
+      return 0;
+    }
+    if (action === "effects") {
+      const { effectRegistry, EFFECT_CATEGORIES } = await import("../motion/effects/index.js");
+      const category = opt(opts, "--category");
+      const search = opt(opts, "--search");
+      const items = effectRegistry.getCatalog({ category: category as any, query: search });
+      if (json) {
+        emit({ count: items.length, total: effectRegistry.count(), categories: EFFECT_CATEGORIES, effects: items }, true);
+      } else {
+        const lines = items.map(e => `[${e.category}] ${e.id} - ${e.name}`);
+        emit(items.length ? `${lines.join("\n")}\n\nTotal: ${items.length} effects` : "No effects found.", false);
+      }
+      return 0;
+    }
+    if (action === "effect-info") {
+      if (positionals.length !== 1) throw new Error("effect-info requires EFFECT_ID");
+      const effectId = positionals[0];
+      const { effectRegistry } = await import("../motion/effects/index.js");
+      const eff = effectRegistry.get(effectId);
+      if (!eff) throw new Error("Effect not found: " + effectId);
+      const catalogItem = effectRegistry.getCatalog().find(e => e.id === effectId);
+      emit(catalogItem ?? eff, json);
+      return 0;
+    }
+    if (action === "apply-effect") {
+      if (positionals.length !== 1) throw new Error("apply-effect requires PROJECT_ID");
+      const projectId = positionals[0];
+      const baseRevision = nonnegativeInteger(opt(opts, "--base-revision"), "--base-revision");
+      const effectId = opt(opts, "--effect");
+      if (!effectId) throw new Error("apply-effect requires --effect EFFECT_ID");
+      const targetLayerId = opt(opts, "--layer");
+      const paramsJson = opt(opts, "--params-json");
+      let params: Record<string, unknown> | undefined;
+      if (paramsJson) {
+        const parsed = JSON.parse(paramsJson);
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+          throw new Error("--params-json must be a JSON object");
+        }
+        params = parsed as Record<string, unknown>;
+      }
+      const startFrame = opt(opts, "--start-frame") === undefined ? undefined : nonnegativeInteger(opt(opts, "--start-frame"), "--start-frame");
+      const durationFrames = opt(opts, "--duration-frames") === undefined ? undefined : nonnegativeInteger(opt(opts, "--duration-frames"), "--duration-frames");
+      const { applyEffectToProject } = await import("../motion/motionService.js");
+      const updated = await applyEffectToProject(workspace, projectId, baseRevision, {
+        effectId,
+        targetLayerId,
+        params,
+        startFrame,
+        durationFrames,
+      });
+      emit({ id: updated.id, revision: updated.revision, effectApplied: effectId }, json);
       return 0;
     }
     if (action === "supervisor-status") {

@@ -36,4 +36,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   boundedModelVisionRepair: "one-review-one-revision",
   exportSceneCaptionsSrt: true,
   automaticCrashRecovery: false,
+  effectsEngine: true,
+  effectsCount: 224,
+  effectsCatalog: true,
 });

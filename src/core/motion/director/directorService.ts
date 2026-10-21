@@ -8,19 +8,45 @@ import { compilePresetComposition, MOTION_ART_DIRECTIONS, MOTION_PRESETS, type M
 import { inspectMotionQuality, type MotionQualityReport } from "./motionQuality.js";
 import { resolveDirectorMedia, embedDirectorMedia, revisionMediaEdits, directorMediaLimitations, type MotionDirectorMediaSelection } from "./directorMedia.js";
 import { synthesizeLocalVoiceover, validateNarrationRequest, localVoiceoverReady, type NarrationRequest } from "./localVoiceover.js";
+import { effectRegistry, EFFECT_CATEGORIES } from "../effects/index.js";
 
 export type MotionAspectRatio = "16:9" | "1:1" | "9:16";
-export interface MotionDirectorScene { headline: string; subtitle?: string; accent: string; motion?: MotionPreset; narration?: string; layout?: "left" | "center" | "right" }
+export interface MotionDirectorScene {
+  headline: string;
+  subtitle?: string;
+  accent: string;
+  motion?: MotionPreset;
+  effect?: string;
+  narration?: string;
+  layout?: "left" | "center" | "right";
+}
 export interface MotionDirectorPlan {
-  name: string; durationSeconds: number; background: string; scenes: MotionDirectorScene[];
-  motion?: MotionPreset; transition?: MotionTransition; aspectRatio?: MotionAspectRatio; artDirection?: MotionArtDirection;
+  name: string;
+  durationSeconds: number;
+  background: string;
+  scenes: MotionDirectorScene[];
+  motion?: MotionPreset;
+  effect?: string;
+  transition?: MotionTransition;
+  aspectRatio?: MotionAspectRatio;
+  artDirection?: MotionArtDirection;
 }
 export interface MotionDirectorResult {
-  project: MotionProject; job: MotionJob; outline: string[]; limitations: string[];
+  project: MotionProject;
+  job: MotionJob;
+  outline: string[];
+  limitations: string[];
   quality: MotionQualityReport;
 }
 export type MotionPlanner = (system: string, user: string, signal?: AbortSignal) => Promise<unknown>;
-export type MotionDirectorOptions = MotionDirectorMediaSelection & NarrationRequest & { width?: number; aspectRatio?: MotionAspectRatio; autoNarrateScenes?: boolean; expectedRevision?: number; signal?: AbortSignal; planner?: MotionPlanner };
+export type MotionDirectorOptions = MotionDirectorMediaSelection & NarrationRequest & {
+  width?: number;
+  aspectRatio?: MotionAspectRatio;
+  autoNarrateScenes?: boolean;
+  expectedRevision?: number;
+  signal?: AbortSignal;
+  planner?: MotionPlanner;
+};
 const hex = /^#[0-9a-fA-F]{6}$/;
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const only = (obj: Record<string, unknown>, keys: string[]) => Object.keys(obj).every(k => keys.includes(k));
@@ -36,36 +62,49 @@ function widthOf(value: unknown): number {
   return Number(n);
 }
 export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {
-  if (!object(raw) || !only(raw, ["name", "durationSeconds", "background", "scenes", "motion", "transition", "aspectRatio", "artDirection"]) ||
+  if (!object(raw) || !only(raw, ["name", "durationSeconds", "background", "scenes", "motion", "effect", "transition", "aspectRatio", "artDirection"]) ||
     typeof raw.name !== "string" || !raw.name.trim() || raw.name.length > 160 ||
     !Number.isInteger(raw.durationSeconds) || Number(raw.durationSeconds) < 2 ||
     Number(raw.durationSeconds) > 20 ||
     typeof raw.background !== "string" || !hex.test(raw.background) ||
     (raw.motion !== undefined && !MOTION_PRESETS.includes(raw.motion as MotionPreset)) ||
+    (raw.effect !== undefined && (typeof raw.effect !== "string" || !effectRegistry.has(raw.effect))) ||
     (raw.artDirection !== undefined && !MOTION_ART_DIRECTIONS.includes(raw.artDirection as MotionArtDirection)) ||
     (raw.transition !== undefined && !["cut", "crossfade"].includes(String(raw.transition))) ||
     (raw.aspectRatio !== undefined && !["16:9", "1:1", "9:16"].includes(String(raw.aspectRatio))) ||
     !Array.isArray(raw.scenes) || raw.scenes.length < 1 || raw.scenes.length > 3)
     throw new Error("Motion Director returned an invalid or unsupported storyboard");
   const scenes: MotionDirectorScene[] = raw.scenes.map((scene: unknown) => {
-    if (!object(scene) || !only(scene, ["headline", "subtitle", "accent", "motion", "narration", "layout"]) ||
+    if (!object(scene) || !only(scene, ["headline", "subtitle", "accent", "motion", "effect", "narration", "layout"]) ||
       (scene.motion !== undefined && !MOTION_PRESETS.includes(scene.motion as MotionPreset)) ||
+      (scene.effect !== undefined && (typeof scene.effect !== "string" || !effectRegistry.has(scene.effect))) ||
       (scene.layout !== undefined && !["left", "center", "right"].includes(String(scene.layout))) ||
       (scene.narration !== undefined && (typeof scene.narration !== "string" || scene.narration.length > 100)) ||
       typeof scene.headline !== "string" || !scene.headline.trim() || scene.headline.length > 100 ||
       (scene.subtitle !== undefined && (typeof scene.subtitle !== "string" || scene.subtitle.length > 100)) ||
       typeof scene.accent !== "string" || !hex.test(scene.accent))
       throw new Error("Motion Director returned an invalid storyboard scene");
-    return { headline: scene.headline.trim(), ...(scene.subtitle ? { subtitle: scene.subtitle.trim() } : {}), accent: scene.accent,
+    return {
+      headline: scene.headline.trim(),
+      ...(scene.subtitle ? { subtitle: scene.subtitle.trim() } : {}),
+      accent: scene.accent,
       ...(scene.motion !== undefined ? { motion: scene.motion as MotionPreset } : {}),
-       ...(scene.layout !== undefined ? { layout: scene.layout as MotionDirectorScene["layout"] } : {}),
-      ...(scene.narration ? { narration: scene.narration.trim() } : {}) };
+      ...(scene.effect !== undefined ? { effect: scene.effect } : {}),
+      ...(scene.layout !== undefined ? { layout: scene.layout as MotionDirectorScene["layout"] } : {}),
+      ...(scene.narration ? { narration: scene.narration.trim() } : {}),
+    };
   });
-  return { name: raw.name.trim(), durationSeconds: Number(raw.durationSeconds), background: raw.background, scenes,
+  return {
+    name: raw.name.trim(),
+    durationSeconds: Number(raw.durationSeconds),
+    background: raw.background,
+    scenes,
     ...(raw.motion !== undefined ? { motion: raw.motion as MotionPreset } : {}),
+    ...(raw.effect !== undefined ? { effect: raw.effect } : {}),
     ...(raw.artDirection !== undefined ? { artDirection: raw.artDirection as MotionArtDirection } : {}),
     ...(raw.transition !== undefined ? { transition: raw.transition as MotionTransition } : {}),
-    ...(raw.aspectRatio !== undefined ? { aspectRatio: raw.aspectRatio as MotionAspectRatio } : {}) };
+    ...(raw.aspectRatio !== undefined ? { aspectRatio: raw.aspectRatio as MotionAspectRatio } : {}),
+  };
 }
 /**
  * A specific style request in the brief wins over a model suggestion.
@@ -98,11 +137,14 @@ export const motionPlanner: MotionPlanner = async (system, user, signal) => {
   try { return JSON.parse(value) as unknown; }
   catch { throw new Error("Motion Director did not return valid JSON"); }
 };
+const plannerEffectsGuide = EFFECT_CATEGORIES.map(category =>
+  category + ": " + effectRegistry.list({ category }).map(effect => effect.id).join(", ")).join("\n");
 const planSystem = [
   "You are the planning AI inside SuperAgent Motion Director.",
   "Return ONLY strict JSON, exactly: {name:string, durationSeconds:integer 2..20, background:hexColor,",
-  "scenes: array of 1..3 {headline:string <=100 chars, subtitle?:string <=100 chars, accent:hexColor, motion?:preset, layout?:left|center|right}}.",
+  "scenes: array of 1..3 {headline:string <=100 chars, subtitle?:string <=100 chars, accent:hexColor, motion?:preset, effect?:effectId, layout?:left|center|right}}.",
   "Optional global motion and scene motion presets: slide-left, slide-up, slide-right, drop-in, tilt, swing, fade, pop-left, pop-up.",
+  "Optional effect ID from Motion Effects Catalog; use only an exact ID listed below.",
   "Optional per-scene narration: short spoken script <=100 characters, only produced as audio if user enables offline Piper.",
   "Optional transition: crossfade or cut (default crossfade). Match creative style requested in user brief.",
   "Always choose artDirection: minimal (refined restrained), editorial (asymmetric typography), neon (futuristic accents), brutalist (bold geometry).",
@@ -110,8 +152,9 @@ const planSystem = [
   "Optional aspectRatio: 16:9 (landscape default), 1:1 (square), 9:16 (portrait), choose per user brief.",
   "Write appealing concise scene copy for the user's requested video, in their language.",
   "Use very short text so captions fit 1920x1080 without wrapping. Hex colors #RRGGBB.",
-  "Motion engine supports text, colored rectangles, fades, spring-like overshoot entrances, horizontal/vertical slides and gentle tilt. No other effects.",
+  "Motion supports catalog-validated entrance, exit, kinetic typography, camera, transition, background and accent effects on safe scene primitives. No executable scripts or shader APIs.",
   "Never invent supplied assets, logos, music, TTS, video footage, or unsupported effects.",
+  "Available safe effects by category (use exact IDs; one per scene):", plannerEffectsGuide,
   "Return no markdown, paths, URLs, scripts or extra keys."
 ].join("\n");
 const reviseSystem = [
@@ -208,5 +251,3 @@ export async function reviseMotionFromPrompt(workspace: string, motionId: string
     layer => layer.kind === "text").map(layer => layer.text), limitations: directorMediaLimitations(composedMedia,
       updated.composition.durationFrames / 30), quality };
 }
-
-

@@ -22,6 +22,7 @@ import { importMotionAsset, readMotionAsset } from "./assets/motionAssets.js";
 import { importMotionAudio, readMotionAudio } from "./assets/motionAudio.js";
 import { decodeMotionMediaBase64 } from "./assets/motionInput.js";
 import { summarizeMotionWav } from "./assets/motionWaveform.js";
+import { effectRegistry, EFFECT_CATEGORIES, type EffectCategory } from "./effects/index.js";
 
 export interface MotionHttpContext {
   resolveWorkspacePath: (req: IncomingMessage) => string | null;
@@ -86,6 +87,10 @@ export async function handleMotionHttpRoute(
   const asset = pathname.match(/^\/api\/motion\/assets\/(asset-[a-f0-9]{64})$/);
   const audio = pathname.match(/^\/api\/motion\/audio\/(audio-[a-f0-9]{64})$/);
   const waveform = pathname.match(/^\/api\/motion\/audio\/(audio-[a-f0-9]{64})\/waveform$/);
+  const effectsList = pathname === "/api/motion/effects";
+  const effectItem = pathname.match(/^\/api\/motion\/effects\/([a-z][a-z0-9-]{1,63})$/);
+  const projectEffects = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects$/);
+
   try {
     if (pathname === "/api/motion" && method === "GET") {
       json(res, ctx, 200, { apiVersion: 1, video: "h264-mp4", detachedJobs: true, studio: false, capabilities: { ...MOTION_CAPABILITIES, localVoiceoverConfigured: await localVoiceoverReady() } });
@@ -117,6 +122,50 @@ export async function handleMotionHttpRoute(
         "ETag": '"' + audio[1].slice(6) + '"',
       });
       res.end(method === "HEAD" ? undefined : bytes);
+    } else if (effectsList && method === "GET") {
+      const category = _url.searchParams.get("category");
+      const query = _url.searchParams.get("q") ?? _url.searchParams.get("query") ?? undefined;
+      const targetKind = _url.searchParams.get("targetKind");
+      const tag = _url.searchParams.get("tag") ?? undefined;
+      if (category && !EFFECT_CATEGORIES.includes(category as EffectCategory)) throw new Error("Invalid Motion effect category");
+      if (targetKind && !["text", "rect", "image", "scene"].includes(targetKind)) throw new Error("Invalid Motion targetKind");
+      if ((query && query.length > 120) || (tag && tag.length > 64)) throw new Error("Motion effect filter too long");
+      const pageNumber = (key: string, fallback: number, max: number): number => {
+        const value = _url.searchParams.get(key);
+        if (value === null) return fallback;
+        const n = Number(value);
+        if (!Number.isSafeInteger(n) || n < 0 || n > max || (key === "limit" && n === 0)) {
+          throw new Error("Invalid Motion effect " + key);
+        }
+        return n;
+      };
+      const offset = pageNumber("offset", 0, 1_000_000);
+      const limit = pageNumber("limit", 100, 100);
+      const filtered = effectRegistry.getCatalog({
+        category: category as EffectCategory | undefined,
+        query,
+        targetKind: targetKind as "text" | "rect" | "image" | "scene" | undefined,
+        tag,
+      });
+      const page = filtered.slice(offset, offset + limit);
+      json(res, ctx, 200, {
+        effects: page,
+        count: page.length,
+        total: effectRegistry.count(),
+        filteredTotal: filtered.length,
+        offset,
+        limit,
+        hasMore: offset + limit < filtered.length,
+        categories: EFFECT_CATEGORIES,
+      });
+    } else if (effectItem && method === "GET") {
+      const eff = effectRegistry.get(effectItem[1]);
+      if (!eff) {
+        json(res, ctx, 404, { error: "Effect not found" });
+      } else {
+        const item = effectRegistry.getCatalog().find(e => e.id === effectItem[1]);
+        json(res, ctx, 200, item);
+      }
     } else if (pathname === "/api/motion/generate" && method === "POST") {
       const body = await readMotionJson(req, 12_000);
       const result = await generateMotionFromPrompt(workspace, body.prompt as string, {
@@ -154,6 +203,30 @@ export async function handleMotionHttpRoute(
       json(res, ctx, 201, await createMotionProject(workspace, body.name));
     } else if (project && method === "GET") {
       json(res, ctx, 200, await getMotionProject(workspace, project[1]));
+    } else if (projectEffects && method === "POST") {
+      const body = await readMotionJson(req);
+      if (typeof body.effectId !== "string") throw new Error("effectId is required");
+      if (!Number.isSafeInteger(body.baseRevision)) throw new Error("baseRevision is required");
+      if (body.targetLayerId !== undefined && typeof body.targetLayerId !== "string")
+        throw new Error("targetLayerId must be a string");
+      if (body.params !== undefined && (!body.params || typeof body.params !== "object" || Array.isArray(body.params)))
+        throw new Error("Effect params must be a JSON object");
+      if (body.startFrame !== undefined && !Number.isSafeInteger(body.startFrame))
+        throw new Error("Effect startFrame must be an integer");
+      if (body.durationFrames !== undefined && !Number.isSafeInteger(body.durationFrames))
+        throw new Error("Effect durationFrames must be an integer");
+      const current = await getMotionProject(workspace, projectEffects[1]);
+      const updatedProject = effectRegistry.applyToProject(current, {
+        effectId: body.effectId,
+        targetLayerId: typeof body.targetLayerId === "string" ? body.targetLayerId : undefined,
+        params: typeof body.params === "object" && body.params ? (body.params as Record<string, unknown>) : undefined,
+        startFrame: Number.isSafeInteger(body.startFrame) ? (body.startFrame as number) : undefined,
+        durationFrames: Number.isSafeInteger(body.durationFrames) ? (body.durationFrames as number) : undefined,
+      });
+      const updated = await updateMotionProject(workspace, projectEffects[1], body.baseRevision as number, [
+        { type: "replace-composition", composition: updatedProject.composition },
+      ]);
+      json(res, ctx, 200, updated);
     } else if (frameSnapshot && method === "GET") {
       const projectSnapshot = await getMotionProject(workspace, frameSnapshot[1]);
       const image = await renderMotionFrameSnapshot(workspace, projectSnapshot, Number(frameSnapshot[2]));

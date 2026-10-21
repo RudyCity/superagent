@@ -23,6 +23,9 @@ const help = [
   "  /motion supervisor-status (read-only)",
   "  /motion queue <project-id> [even-output-width] (requires separate supervisor process)",
   "  /motion doctor",
+  "  /motion effects [category]",
+  "  /motion effect <effect-id>",
+  "  /motion apply-effect <project-id> <base-revision> <effect-id> [layer-id] [params-json]",
   "Interactive renders are foreground; scriptable CLI supports detached rendering.",
 ].join("\n");
 
@@ -89,6 +92,41 @@ export const motionCommand: SlashCommand = {
         const result = await reviseMotionFromPrompt(workspace, id, prompt);
         emit(ctx, "AI Motion " + result.project.id + " r" + result.project.revision +
           " rendering: " + result.job.id);
+        return;
+      }
+      if (action === "effects") {
+        const { effectRegistry } = await import("../motion/effects/index.js");
+        const category = id as any;
+        const items = effectRegistry.getCatalog({ category });
+        emit(ctx, items.length ? items.map(e => `[${e.category}] ${e.id} - ${e.name}`).join("\n") + `\n\nTotal: ${items.length} effects` : "No effects found.");
+        return;
+      }
+      if (action === "effect") {
+        if (!id) throw new Error("Usage: /motion effect <effect-id>");
+        const { effectRegistry } = await import("../motion/effects/index.js");
+        const item = effectRegistry.getCatalog().find(e => e.id === id);
+        if (!item) throw new Error("Effect not found: " + id);
+        emit(ctx, JSON.stringify(item, null, 2));
+        return;
+      }
+      if (action === "apply-effect") {
+        if (!id || !third || !fourth) throw new Error("Usage: /motion apply-effect <project-id> <base-revision> <effect-id> [layer-id] [params-json]");
+        const baseRevision = parseInteger(third, "base-revision");
+        const effectId = fourth;
+        const targetLayerId = rest[0];
+        const paramsJson = rest.slice(1).join(" ");
+        let params: Record<string, unknown> | undefined;
+        if (paramsJson) {
+          params = JSON.parse(paramsJson);
+        }
+        const service = await import("../motion/motionService.js");
+        const current = await service.getMotionProject(workspace, id);
+        const { effectRegistry } = await import("../motion/effects/index.js");
+        const updated = effectRegistry.applyToProject(current, { effectId, targetLayerId, params });
+        const result = await service.updateMotionProject(workspace, id, baseRevision, [
+          { type: "replace-composition", composition: updated.composition },
+        ]);
+        emit(ctx, "Applied effect " + effectId + " to project " + result.id + " (revision " + result.revision + ")");
         return;
       }
       if (action === "doctor") {
