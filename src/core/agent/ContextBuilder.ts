@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { type CoreMessage } from "ai";
 import { getSettings, getContextWindowLimit, getModelConnectionDetailsForTier, loadAgentSkills, getConfig } from "../config.js";
-import { contentToString, type Message } from "../conversation.js";
+import { getCurrentSkillQuery, getModeGuidance, getToolDiscoveryGuidance, getExecutionGuidance, shouldIncludePlanningContext } from "./SystemPromptPolicy.js";
 // NOTE: `backgroundTasks` and `isTaskInWorkspace` are imported
 // DYNAMICALLY inside `buildContext` to break the circular dependency cycle:
 //   tools/index.ts → subagentTools.ts → agent.ts → ContextBuilder.ts → tools.js
@@ -37,11 +37,7 @@ export class ContextBuilder {
     let baseSystemPrompt = (agent as any).customSystemPrompt || (agent as any).config.systemPrompt || "";
 
     const allMessages = agent.conversation.getMessages();
-    const recentUserMessages: Message[] = [];
-    for (let i = allMessages.length - 1; i >= 0 && recentUserMessages.length < 3; i--) {
-      if (allMessages[i].role === "user") recentUserMessages.unshift(allMessages[i]);
-    }
-    const queryStr = recentUserMessages.map(m => contentToString(m.content)).join(" ");
+    const queryStr = getCurrentSkillQuery(allMessages);
 
     const guidelinesText = (agent as any).buildGuidelinesText(queryStr);
 
@@ -66,11 +62,7 @@ export class ContextBuilder {
       } catch {}
     }
 
-    const goalModeAddendum = isGoalMode
-      ? `\n\n🎯 GOAL MODE: "${agent.goalMode}"\nDo NOT stop until goal is FULLY achieved. Self-verify (build+test), fix errors, use subagents aggressively. End with "GOAL_COMPLETE:" or "GOAL_PARTIAL:" summary.\n`
-      : "";
-
-
+    const goalModeAddendum = isGoalMode ? String.fromCharCode(10) + 'GOAL: ' + agent.goalMode : "";
 
     try {
       await (agent as any).prepopulateRmemoryContext();
@@ -187,8 +179,6 @@ export class ContextBuilder {
       }
     } catch {}
 
-    const singleModeSubagentDirective = agent.tier === "single" ? `\n\n# SINGLE MODE SUBAGENT DISPATCH\n- Perform atomic operations directly. Spawn subagents for: broad research (researcher), multi-file changes (coder), feature review (reviewer), security audits (security-engineer), browser automation (chrome-agent), or independent parallel subtasks.\n- Run build+test after code changes. Report completion only when 100% pass with a structured completion conclusion.` : "";
-
     let activeSystemPrompt = baseSystemPrompt;
     if (agent.workspaceCache) {
       try {
@@ -240,7 +230,7 @@ export class ContextBuilder {
           const raw = fs.readFileSync(sharedMemPath, "utf-8");
           const memories = JSON.parse(raw);
           if (Array.isArray(memories) && memories.length > 0) {
-            const currentWorkspace = path.resolve(process.cwd());
+            const currentWorkspace = path.resolve(agent.worktreePath || agent.workingDirectory || process.cwd());
             
             const globalMemories = memories
               .filter((m: any) => m.scope === "global")
@@ -354,15 +344,7 @@ export class ContextBuilder {
       }
     }
 
-    const MODE_INSTRUCTIONS: Record<string, string> = {
-      ask: `- Q&A mode. Use read/search tools (read, glob, grep, ripgrep_search) immediately to inspect codebase content when answering questions. File modification and mutating shell commands are disabled in this mode. IMPORTANT: If the user request actually requires editing files, running terminal commands, creating a plan, or fixing bugs (e.g. because the classifier mistakenly selected ask mode), or if the user asks to switch mode, you MUST immediately call the 'switch_mode' tool (e.g. switch_mode({ mode: 'implement' })) to switch mode and unlock all tools. Never claim you cannot change mode yourself.`,
-      research: `- Read-only research mode. Use search/read tools to explore codebase. Do NOT modify files or run mutating commands. Call 'switch_mode' (e.g. mode: 'implement') if the task requires writing code or making edits.`,
-      plan: `- Propose implementation plan via 'manage_plan'. Do NOT edit source files before user approval. Call 'switch_mode' once ready to implement.`,
-      implement: `- Implement code changes. Full toolset enabled (file modifications, shell commands, builds, tests). Plan mandatory only for complex/risky changes. On completion, provide a structured conclusion before listing file changes.`,
-      debug: `- Investigate and fix bugs. Debug via terminal execution first. Trace root cause. Run build or test on new/updated files at END of repair process. Conclude with a structured fix summary.`,
-      review: `- Code quality/security review. No file edits unless requested. Output issues with severity and file/line refs.`,
-    };
-    const activeModeNotice = `\n# ACTIVE MODE: '${activeMode}'\n${MODE_INSTRUCTIONS[activeMode] || ""}\n- Mode Switching: You have the 'switch_mode' tool. If your current mode restricts tools you need, call 'switch_mode' immediately to transition into 'implement', 'debug', 'plan', or 'research'.\n`;
+    const activeModeNotice = getModeGuidance(activeMode, authorizedToolDefs.some((t: any) => t.name === "switch_mode"));
 
     let toolRestrictionNotice = "";
     if (!hasShell) {
@@ -435,19 +417,15 @@ export class ContextBuilder {
       { id: "developer-hook", content: devHookNotice, maxTokens: 150 },
       { id: "selfdev-lessons", content: selfdevLessonsText, maxTokens: 400 },
     ], systemContextBudget);
-    const toolDiscoveryInstruction = agent.tier === "master" || agent.tier === "single" || agent.tier === "superagent"
-      ? `\n# TOOL DISCOVERY & EXECUTION PROTOCOL\n- EXPOSURE GATE: Only \`list_tools\` and \`describe_tool\` schemas are visible initially.\n- DIRECT DESCRIBE (FAST PATH): If you already know the tool name(s) you need (e.g. \`read\`, \`write_to_file\`, \`replace_file_content\`, \`run_command\`, \`git_action\`, \`inspect_port\`), DO NOT call \`list_tools\`. Immediately call \`describe_tool\` with \`names: ["tool1", "tool2", ...]\` in ONE turn to unlock their full schemas.\n- NO UNDESCRIBED TOOL CALLS: You CANNOT invoke any tool before describing it via \`describe_tool\`. Attempting to call an undescribed tool will immediately fail with "Attempted to call tool <name>". Always call \`describe_tool\` first.\n- BATCH ARGS FORMAT: File operations strictly require multi-batch arrays in arguments even for 1 file: \`read\` requires \`filePaths: ["path"]\` (a native JSON array of path strings \`["file1", "file2"]\`, NEVER a stringified array or single string), \`write_to_file\` requires \`files: [{ filePath, content }]\`, \`replace_file_content\` requires \`edits: [{ filePath, targetContent, replacementContent, startLine, endLine }]\`.
-- MULTI READ PRIORITY: Always batch inspect files using multi-file array \`read(filePaths: ["file1", "file2", ...])\` in a single turn. Batch reads execute concurrently in parallel (up to 6 workers). Never execute serial one-by-one reads across separate turns.\n- CATALOG SEARCH (\`list_tools\`): \`list_tools\` is a keyword catalog filter, NOT a semantic or natural language search engine.\n  * Omit \`query\` (\`list_tools({})\`) to browse the entire available tool catalog and one-line summaries.\n  * Or pass a single short capability keyword (e.g. \`query: "git"\`, \`query: "chrome"\`, \`query: "port"\`).\n  * FORBIDDEN: Passing natural language questions, user prompt sentences, conversational phrases, or semantic queries to \`list_tools\`.\n- PERSISTENCE: Described tools remain exposed in your schema for subsequent turns; do not re-describe them unnecessarily.\n- Discovery does NOT grant permission. Use only tools in the returned catalog and rely on normal approval and execution rules. Always call canonical names \`list_tools\` and \`describe_tool\`.`
-      : "";
-    const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}${toolDiscoveryInstruction}\n\nEXECUTION CONTEXT:\n- Step limit: ${maxIterationsStr} iterations. Be efficient.\n- Spawn subagents in parallel for independent tasks (>3 files, >2 domains, broad research).\n${singleModeSubagentDirective}${goalModeAddendum}${budgetedSystemContext.text ? `\n${budgetedSystemContext.text}` : ""}`;
-
+    const toolDiscoveryInstruction = getToolDiscoveryGuidance(agent.tier, authorizedToolDefs.map((t: any) => t.name), activeMode);
+    const executionDirective = getExecutionGuidance(maxIterationsStr, hasSubagents && !skipHeavyContext, isGoalMode);
+    const systemPrompt = [activeSystemPrompt, toolRestrictionNotice, runtimeCapabilitiesText, activeModeNotice,
+      toolDiscoveryInstruction, executionDirective, goalModeAddendum, budgetedSystemContext.text]
+      .filter(Boolean).join("\n");
     const stepsRemaining = maxIterations === Infinity ? Infinity : (maxIterations - 1);
     const stepNotice = stepsRemaining <= 5
       ? `\n- Current Step: 1 of ${maxIterations} (WARNING: Only ${stepsRemaining} steps remaining!)`
       : "";
-    const modelInstance = agent.getModel();
-    const modelName = modelInstance ? modelInstance.modelId : "";
-
 
     let workspaceStateText = "";
     if (agent.tier !== "subagent") {
@@ -487,8 +465,9 @@ export class ContextBuilder {
       } catch {}
     }
 
-    const effectivePlanStateNotice = classifierSkipPlan ? "" : planStateNotice;
-    const effectivePlanStateAddendum = classifierSkipPlan ? "" : planStateAddendum;
+    const hasPlanningContext = shouldIncludePlanningContext(category, agent.planState, !!agent.currentClassification?.isDestructive, isGoalMode);
+    const effectivePlanStateNotice = classifierSkipPlan || !hasPlanningContext ? "" : planStateNotice;
+    const effectivePlanStateAddendum = classifierSkipPlan || !hasPlanningContext ? "" : planStateAddendum;
 
     const budgetedDynamicContext = buildBudgetedPromptContext([
       { id: "workspace-boundary", content: workspaceBoundaryNotice, maxTokens: 250 },
@@ -499,9 +478,16 @@ export class ContextBuilder {
       { id: "scratchpad", content: scratchpadText ? `SCRATCHPAD:\n${scratchpadText}` : "", maxTokens: 300 },
       { id: "task-reset", content: followUpTaskAddendum, maxTokens: 100 },
     ], Math.max(0, dynamicContextBudget - 20));
-    const dynamicContext = `\n\n<system_context_do_not_echo_or_repeat>\n${budgetedDynamicContext.text}\n</system_context_do_not_echo_or_repeat>`;
+    const dynamicContext = budgetedDynamicContext.text
+      ? `
+
+<system_context_do_not_echo_or_repeat>
+${budgetedDynamicContext.text}
+</system_context_do_not_echo_or_repeat>`
+      : "";
 
     const injectDynamicContext = (msgs: CoreMessage[]) => {
+      if (!dynamicContext) return;
       if (msgs.length > 0) {
         // Find the actual last user message (skip any non-user or system context blocks)
         let targetMsg: CoreMessage | undefined;
