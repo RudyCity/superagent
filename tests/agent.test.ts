@@ -561,6 +561,7 @@ describe("Agent loop task outcome classification", () => {
   it.each([
     { name: "ordinary final answer", planState: "IDLE" as const, iteration: { shouldBreak: true, goalStatus: "incomplete" as const }, expected: "completed" },
     { name: "pending plan approval", planState: "PLANNING_PENDING" as const, iteration: { shouldBreak: true, goalStatus: "incomplete" as const }, expected: "incomplete" },
+    { name: "stalled checklist", planState: "IDLE" as const, iteration: { shouldBreak: true, goalStatus: "incomplete" as const, taskIncomplete: true }, expected: "incomplete" },
     { name: "advisor terminal error", planState: "IDLE" as const, iteration: { shouldBreak: true, goalStatus: "error" as const }, expected: "incomplete" },
   ])("classifies $name as $expected", async ({ planState, iteration, expected }) => {
     const { LoopIterationProcessor } = await import("../src/core/agent/LoopIterationProcessor.js");

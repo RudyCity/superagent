@@ -105,6 +105,8 @@ export class Agent {
   public lastSpeed: number | null = null;
   public goalMode: string | null = null;
   public goalMaxIterations: number = DEFAULT_GOAL_MAX_ITERATIONS;
+  /** Bounds automatic text-only loop continuations per user turn. */
+  public textOnlyContinuationNudges = 0;
   public wasRunningBeforeAbort = false;
   public isPaused = false;
   public allowSessionOutOfBounds = false;
@@ -786,6 +788,7 @@ export class Agent {
 
 
   private async runAgentLoop(): Promise<"completed" | "incomplete"> {
+    this.textOnlyContinuationNudges = 0;
     this.advisor.reset();
     // Sync advisor thresholds/flags from live config so runtime changes take effect
     this.advisor.syncSettings(getSettings());
@@ -822,7 +825,7 @@ export class Agent {
         if (iteration.shouldBreak) {
           goalStatus = iteration.goalStatus ?? "incomplete";
           const terminalError = goalStatus === "error" || goalStatus === "aborted";
-          completion = !terminalError && !signal?.aborted && this.planState !== "PLANNING_PENDING"
+          completion = !terminalError && !iteration.taskIncomplete && !signal?.aborted && this.planState !== "PLANNING_PENDING"
             && (!isGoalMode || goalStatus === "complete")
             ? "completed"
             : "incomplete";

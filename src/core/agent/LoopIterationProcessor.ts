@@ -22,6 +22,7 @@ import {
   extractErrorStatusCode,
 } from "./AgentUtils.js";
 import { cleanThinkingTags } from "./FastPath.js";
+import { isInformationalRequest, isAutoSeededSingleTask, MAX_TEXT_ONLY_CONTINUATIONS } from "./ChecklistContinuationGuard.js";
 
 async function handleUnavailableTool(
   rawMsg: string,
@@ -70,7 +71,7 @@ export class LoopIterationProcessor {
     i: number,
     maxIterations: number,
     signal?: AbortSignal
-  ): Promise<{ shouldBreak: boolean; goalStatus?: "complete" | "aborted" | "error" | "incomplete" }> {
+  ): Promise<{ shouldBreak: boolean; goalStatus?: "complete" | "aborted" | "error" | "incomplete"; taskIncomplete?: boolean }> {
     const {
       finalSystemPrompt: builderSystemPrompt,
       messages: builderMessages,
@@ -828,6 +829,9 @@ export class LoopIterationProcessor {
 
     if (toolCalls.length === 0) {
       const goalComplete = isGoalCompleteResponse(textContent);
+      const latestUserMessage = [...agent.getConversationMessages()].reverse().find((message) => message.role === "user");
+      const latestUserText = latestUserMessage ? contentToString(latestUserMessage.content) : "";
+      const isInformational = !agent.goalMode && isInformationalRequest(latestUserText, agent.currentClassification?.category);
       const currentCwd = (agent.tier === "superagent" && agent.worktreePath)
         ? agent.worktreePath
         : agent.workingDirectory;
@@ -841,17 +845,16 @@ export class LoopIterationProcessor {
 
       if (textContent.trim()) {
         const isEarlyIteration = i < 3;
-        const category = agent.currentClassification?.category || "complex_task";
         const hasActionNarration = /\b(let me|i will|i'll|going to|will check|will search|will look|will inspect|will find|checking|searching|inspecting|examining|scanning|investigating|mencari|memeriksa|mengecek|saya akan|mari kita|mari periksa|sedang mencari)\b/i.test(textContent);
-        const skipPlanningCategories = ["conversation", "question"];
         const isPlanningText =
           isEarlyIteration &&
-          (!skipPlanningCategories.includes(category) || hasActionNarration) &&
+          !isInformational && hasActionNarration &&
           textContent.trim().length > 0 &&
           textContent.trim().length < 600 &&
           !/\?$/.test(textContent.trim());
 
-        if (isPlanningText && !(agent.goalMode && goalComplete)) {
+        if (isPlanningText && !(agent.goalMode && goalComplete) && agent.textOnlyContinuationNudges < MAX_TEXT_ONLY_CONTINUATIONS) {
+          agent.textOnlyContinuationNudges++;
           agent.writeToLogFile(
             "INFO",
             `Text-only response on iteration ${i} (action/planning narration). Auto-continuing with nudge.`
@@ -874,10 +877,20 @@ export class LoopIterationProcessor {
             const taskContent = fs.readFileSync(taskPath, "utf-8");
             const tasks = parseChecklistTasks(taskContent);
             const pendingItems = tasks.filter((t) => t.status === " " || t.status === "/");
-            const category = agent.currentClassification?.category || "complex_task";
-            const isUserQuestion = category === "question" || /\?$/.test(textContent.trim());
+            const isUserQuestion = isInformational || isAutoSeededSingleTask(taskContent, latestUserText);
 
-            if (pendingItems.length > 0 && !isUserQuestion && i < (agent.goalMaxIterations || getSettings().maxIterations || 100)) {
+            if (pendingItems.length > 0 && !isUserQuestion && !(agent.goalMode && goalComplete)) {
+              if (agent.textOnlyContinuationNudges >= MAX_TEXT_ONLY_CONTINUATIONS || i >= maxIterations - 1) {
+                agent.writeToLogFile("WARN", `Stopping checklist auto-continuation after ${agent.textOnlyContinuationNudges} text-only nudges at iteration ${i}; checklist is still unfinished.`);
+                agent.onEvent({ type: "text", content: `
+
+⚠️ Auto-continue dihentikan karena checklist belum selesai dan tidak ada progres. Periksa tugas atau lanjutkan secara manual.
+` });
+                agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
+                await agent.saveHistory();
+                return { shouldBreak: true, goalStatus: "incomplete", taskIncomplete: true };
+              }
+              agent.textOnlyContinuationNudges++;
               agent.writeToLogFile(
                 "INFO",
                 `Text-only response on iteration ${i} with ${pendingItems.length} unfinished task(s) on checklist. Auto-continuing with task checklist nudge.`

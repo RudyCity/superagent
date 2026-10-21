@@ -228,6 +228,57 @@ describe("discovery lifecycle across Agent tasks", () => {
       agent.dispose();
     }
   });
+
+  it("does not auto-repeat a completed answer when a motion-tools question is misclassified", async () => {
+    const { agent, schemaCalls } = await configureAgent(() => "misclassified request");
+    vi.spyOn(RequestProcessor, "processRequest").mockImplementation(async (currentAgent, input) => {
+      currentAgent.currentClassification = {
+        category: "complex_task",
+        confidence: "high",
+        reason: "Intent classifier incorrectly marked a question as a task",
+        heuristicOnly: true,
+        classificationTokens: 0,
+      };
+      currentAgent.conversation.addUserMessage(input);
+      return true;
+    });
+
+    try {
+      await agent.sendMessage("oke ada tols motion gak?");
+      expect(schemaCalls).toHaveLength(1);
+      expect(agent.textOnlyContinuationNudges).toBe(0);
+    } finally {
+      agent.dispose();
+    }
+  });
+
+  it("stops checklist nudges on genuine unfinished subtasks instead of looping to max iterations", async () => {
+    const { agent, schemaCalls } = await configureAgent(() => "explicit work");
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const fixturePath = path.join(os.tmpdir(), "superagent-checklist-nudge-" + process.pid + ".md");
+    fs.writeFileSync(fixturePath, [
+      "# Tasks",
+      "",
+      "- [/] implement motion feature",
+      "- [ ] run tests",
+      "",
+    ].join(String.fromCharCode(10)));
+    vi.spyOn(agent, "getTaskFilePath").mockReturnValue(fixturePath);
+
+    try {
+      await agent.sendMessage("implement motion feature");
+      expect(schemaCalls).toHaveLength(3);
+      expect(agent.textOnlyContinuationNudges).toBe(2);
+      const messages = agent.getConversationMessages();
+      expect(messages.filter((message) => message.role === "system" &&
+        String(message.content).includes("unfinished task"))).toHaveLength(2);
+    } finally {
+      agent.dispose();
+      fs.rmSync(fixturePath, { force: true });
+    }
+  });
 });
 
 describe("discovery does not bypass dangerous-command approval", () => {
