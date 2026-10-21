@@ -52,7 +52,7 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 
 ### Installation
 
-Requires [Bun](https://bun.sh) (v1.0 or later) or Node.js.
+Requires **[Bun](https://bun.sh) 1.4.2 or newer**. SuperAgent CLI, API server, MCP, daemon/background workers, build and test orchestration use Bun; Node.js is not required for SuperAgent-owned runtimes. External third-party tools configured by users may have their own runtime requirements.
 
 ```bash
 # Clone the repository
@@ -60,8 +60,9 @@ git clone https://github.com/RudyCity/superagent.git
 cd superagent
 
 # Install dependencies & build
-bun install
+bun install --frozen-lockfile
 bun run build
+bun run runtime:smoke  # isolated Bun CLI, process pool, SQLite and RMemory check
 
 # Register globally (optional)
 bun install -g .

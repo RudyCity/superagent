@@ -31,18 +31,18 @@ export async function ensureTunnelClientInstalled(onProgress?: DownloadProgressC
       return;
     }
 
-    await logSetupDebug("tunnel-client not found. Attempting automatic installation via npm install -g @openai/tunnel-client...");
+    await logSetupDebug("tunnel-client not found. Attempting automatic installation via bun add -g @openai/tunnel-client...");
     if (onProgress) {
       onProgress(0, 0, "downloading");
     }
 
     try {
-      await execa("npm", ["install", "-g", "@openai/tunnel-client"], {
+      await execa(process.versions.bun ? process.execPath : "bun", ["add", "-g", "@openai/tunnel-client"], {
         stdio: "ignore",
         timeout: 45000,
       });
-    } catch (npmErr: any) {
-      await logSetupDebug(`npm install -g @openai/tunnel-client exited with: ${npmErr?.message || npmErr}`);
+    } catch (bunErr: any) {
+      await logSetupDebug(`bun add -g @openai/tunnel-client exited with: ${bunErr?.message || bunErr}`);
     }
 
     clearTunnelClientCache();

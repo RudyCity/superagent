@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 /**
  * watch-and-sync.cjs
@@ -10,12 +10,12 @@
  * watcher instances so only exactly ONE watcher process is running at all times.
  * 
  * Usage:
- *   node watch-and-sync.cjs [--config <file>] [--wiki-dir <dir>] [--debounce <ms>] [--stop]
+ *   bun watch-and-sync.cjs [--config <file>] [--wiki-dir <dir>] [--debounce <ms>] [--stop]
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 
 const rootDir = process.cwd();
 const lockFilePath = path.join(rootDir, '.wiki-watcher.pid');
@@ -40,7 +40,7 @@ for (let i = 0; i < args.length; i++) {
     console.log(`
 Multi-Workspace Real-Time Wiki Auto-Sync Watcher Daemon
 Usage:
-  node watch-and-sync.cjs [options]
+  bun watch-and-sync.cjs [options]
 
 Options:
   --config, -c <file>      Path to wiki-config.json (default: docs/wiki/wiki-config.json)
@@ -227,7 +227,7 @@ function triggerSync() {
   
   try {
     const filesParam = filesList.slice(0, 20).join(',');
-    execSync(`node "${syncerScript}" --config "${resolvedConfigPath}" --wiki-dir "${wikiDir}" --files "${filesParam}"`, {
+    execFileSync(process.execPath, [syncerScript, "--config", resolvedConfigPath, "--wiki-dir", wikiDir, "--files", filesParam], {
       cwd: rootDir,
       stdio: 'inherit'
     });
@@ -308,7 +308,7 @@ for (const ws of workspaces) {
 // Initial sync on start
 console.log(`\n🚀 Performing initial multi-workspace sync check on startup...`);
 try {
-  execSync(`node "${syncerScript}" --config "${resolvedConfigPath}" --wiki-dir "${wikiDir}" --git-diff`, {
+  execFileSync(process.execPath, [syncerScript, "--config", resolvedConfigPath, "--wiki-dir", wikiDir, "--git-diff"], {
     cwd: rootDir,
     stdio: 'inherit'
   });

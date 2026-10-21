@@ -24,6 +24,15 @@ export function getAgyMcpConfigPath(): string {
   return path.join(os.homedir(), ".gemini", "config", "mcp_config.json");
 }
 
+/** Build a Bun-native MCP stdio server entry without performing any file I/O. */
+export function buildSuperagentMcpEntry(cliPath: string, executable: string = (process.versions.bun ? process.execPath : "bun")) {
+  return {
+    command: executable,
+    args: [cliPath.replace(/\\/g, "/"), "--mcp"],
+    env: { NODE_ENV: "production" },
+  };
+}
+
 /**
  * Register or update the Superagent MCP Server definition in the Antigravity configuration.
  */
@@ -58,13 +67,7 @@ export function registerToAgyConfig(customCliPath?: string): { success: boolean;
   // Normalize path with forward slashes for cross-platform compatibility in JSON
   const normalizedCliPath = cliPath.replace(/\\/g, "/");
 
-  config.mcpServers["superagent"] = {
-    command: "node",
-    args: [normalizedCliPath, "--mcp"],
-    env: {
-      NODE_ENV: "production",
-    },
-  };
+  config.mcpServers["superagent"] = buildSuperagentMcpEntry(normalizedCliPath);
 
   try {
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");

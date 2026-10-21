@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 /**
  * validate-wiki-links.cjs
@@ -8,7 +8,7 @@
  * 3. Mermaid code block syntax delimiters.
  * 
  * Usage:
- *   node validate-wiki-links.cjs [--wiki-dir <dir>]
+ *   bun validate-wiki-links.cjs [--wiki-dir <dir>]
  */
 
 const fs = require('fs');
@@ -24,7 +24,7 @@ for (let i = 0; i < args.length; i++) {
     console.log(`
 Wiki Link and Integrity Validator
 Usage:
-  node validate-wiki-links.cjs [options]
+  bun validate-wiki-links.cjs [options]
 
 Options:
   --wiki-dir, -w <dir>   Directory containing wiki markdown files (default: docs/wiki)

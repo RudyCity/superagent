@@ -489,8 +489,9 @@ export async function spawnPreparedMotionWorker(workspace: string, id: string): 
   const isSourceRuntime = moduleUrl.endsWith(".ts");
   const suffix = isSourceRuntime ? ".ts" : ".js";
   const worker = fileURLToPath(new URL("./motionWorkerEntry" + suffix, import.meta.url));
-  const runtimeArgs = isSourceRuntime ? ["--import", "tsx"] : [];
-  const child = spawn(process.execPath, [...runtimeArgs, worker, job.workspaceRoot, job.id], {
+  // Bun executes TypeScript workers natively. No Node tsx hook is necessary.
+  const executable = process.versions.bun ? process.execPath : "bun";
+  const child = spawn(executable, [worker, job.workspaceRoot, job.id], {
     detached: true, stdio: "ignore", windowsHide: true,
     env: { ...process.env, SUPERAGENT_MOTION_WORKER: "1" },
   });
@@ -501,7 +502,7 @@ export async function spawnPreparedMotionWorker(workspace: string, id: string): 
   child.unref();
 }
 /**
- * Launch a detached Node worker against an already-persisted immutable job.
+ * Launch a detached Bun worker against an already-persisted immutable job.
  * A successful spawn is not a completion guarantee; inspect status for outcome.
  */
 export async function startDetachedMotionJob(

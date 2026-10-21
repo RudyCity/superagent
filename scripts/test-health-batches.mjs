@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -68,7 +68,7 @@ function initialize() {
 
 function runBatch(batchIndex) {
   const manifest = loadJson(manifestPath, null);
-  if (!manifest) throw new Error("Run init first: node scripts/test-health-batches.mjs init");
+  if (!manifest) throw new Error("Run init first: bun scripts/test-health-batches.mjs init");
   if (!Number.isInteger(batchIndex) || batchIndex < 0 || batchIndex >= manifest.batches.length) {
     throw new Error("Batch index out of range. Valid range: 0.." + (manifest.batches.length - 1));
   }

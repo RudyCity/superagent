@@ -205,7 +205,7 @@ export async function createInstantProject(
       main: "dist/index.js",
       scripts: {
         build: "tsc",
-        start: "node dist/index.js",
+        start: "bun dist/index.js",
         test: 'echo "No test specified" && exit 0',
       },
     };
@@ -215,7 +215,7 @@ export async function createInstantProject(
       "utf-8"
     );
 
-    const readme = `# ${trimmedName}\n\n${options.description || "Minimal TypeScript project workspace created with Superagent."}\n\n## Getting Started\n\n\`\`\`bash\nnpm install\nnpm run build\nnpm start\n\`\`\`\n`;
+    const readme = `# ${trimmedName}\n\n${options.description || "Minimal TypeScript project workspace created with Superagent."}\n\n## Getting Started\n\n\`\`\`bash\nbun install\nbun run build\nbun run start\n\`\`\`\n`;
     fs.writeFileSync(path.join(targetDir, "README.md"), readme, "utf-8");
 
     const gitignore = `node_modules/\ndist/\n.env\n.DS_Store\n*.log\n`;
@@ -238,7 +238,7 @@ export async function createInstantProject(
       type: "module",
       main: "src/index.js",
       scripts: {
-        start: "node src/index.js",
+        start: "bun src/index.js",
         test: 'echo "Error: no test specified" && exit 1',
       },
     };

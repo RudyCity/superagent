@@ -211,6 +211,10 @@ export function findTunnelClientBinary(customPath?: string): string | null {
     return superagentBin;
   }
 
+  // Bun global CLI shims can be absent from IDE inherited PATH.
+  const bunGlobal = path.join(os.homedir(), ".bun", "bin", binaryName);
+  if (fs.existsSync(bunGlobal)) return bunGlobal;
+
   // Check PATH via which / where
   try {
     const cmd = isWin ? `where.exe ${binaryName}` : `which ${binaryName}`;

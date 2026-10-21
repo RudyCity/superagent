@@ -7,24 +7,26 @@
     "superagent": "./dist/cli.js"
   },
   "scripts": {
-    "dev": "tsx --max-old-space-size=4096 src/cli.tsx",
-    "prebuild": "node -e \"const p=require('./package.json');console.log('Building ' + p.name + '@' + p.version)\"",
+    "dev": "bun src/cli.tsx",
+    "prebuild": "bun -e \"const p=require('./package.json');console.log('Building '+p.name+'@'+p.version+' with Bun '+Bun.version)\"",
     "build": "tsc",
-    "sync-mcp": "tsx scripts/syncMcpSchemas.ts",
-    "postbuild": "tsx scripts/syncMcpSchemas.ts",
-    "start": "node --max-old-space-size=4096 dist/cli.js",
-    "test": "vitest run",
-    "test:unit": "vitest run --exclude \"**/*integration*\" --exclude \"**/*e2e*\"",
-    "test:integration": "vitest run tests/*integration*.test.ts",
-    "verify:extension-js": "node scripts/verify-extension-js.mjs",
+    "sync-mcp": "bun scripts/syncMcpSchemas.ts",
+    "postbuild": "bun scripts/syncMcpSchemas.ts",
+    "start": "bun dist/cli.js",
+    "test": "bun --bun x vitest run",
+    "test:unit": "bun --bun x vitest run --exclude \"**/*integration*\" --exclude \"**/*e2e*\"",
+    "test:integration": "bun --bun x vitest run tests/*integration*.test.ts",
+    "verify:extension-js": "bun scripts/verify-extension-js.mjs",
     "verify:all": "bun run build && bun run verify:extension-js && bun run test",
     "ext:css": "tailwindcss -i chrome-extension/sidepanel.src.css -o chrome-extension/sidepanel.css",
     "ext:css:watch": "tailwindcss -i chrome-extension/sidepanel.src.css -o chrome-extension/sidepanel.css --watch",
     "postinstall": "bun x patch-package",
     "wiki:serve": "bun --bun x serve docs/wiki -p 3333",
-    "wiki:sync": "node .agents/skills/codebase-wiki-generator/scripts/sync-wiki-on-change.cjs",
-    "wiki:watch": "node .agents/skills/codebase-wiki-generator/scripts/watch-and-sync.cjs",
-    "wiki:validate": "node .agents/skills/codebase-wiki-generator/scripts/validate-wiki-links.cjs --wiki-dir docs/wiki"
+    "wiki:sync": "bun .agents/skills/codebase-wiki-generator/scripts/sync-wiki-on-change.cjs",
+    "wiki:watch": "bun .agents/skills/codebase-wiki-generator/scripts/watch-and-sync.cjs",
+    "wiki:validate": "bun .agents/skills/codebase-wiki-generator/scripts/validate-wiki-links.cjs --wiki-dir docs/wiki",
+    "runtime:smoke": "bun scripts/bun-runtime-smoke.ts",
+    "verify:runtime": "bun run build && bun run runtime:smoke"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.2",
@@ -65,5 +67,8 @@
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "vitest": "^4.1.8"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
   }
 }

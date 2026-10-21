@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 /**
  * sync-wiki-on-change.cjs
@@ -8,7 +8,7 @@
  * Package topologies, Index timestamps, and Vector RAG chunks).
  * 
  * Usage:
- *   node sync-wiki-on-change.cjs [--config <file>] [--wiki-dir <dir>] [--files <file1,file2,...>] [--git-diff]
+ *   bun sync-wiki-on-change.cjs [--config <file>] [--wiki-dir <dir>] [--files <file1,file2,...>] [--git-diff]
  */
 
 const fs = require('fs');
@@ -35,7 +35,7 @@ for (let i = 0; i < args.length; i++) {
     console.log(`
 Multi-Workspace Incremental Wiki Synchronizer
 Usage:
-  node sync-wiki-on-change.cjs [options]
+  bun sync-wiki-on-change.cjs [options]
 
 Options:
   --config, -c <file>       Path to wiki-config.json (default: docs/wiki/wiki-config.json)

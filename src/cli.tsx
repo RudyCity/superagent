@@ -1,4 +1,14 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
+
+// SuperAgent is Bun-native. Do not silently start under Node, where the
+// memory/worker pipeline may use incompatible SQLite and loader behavior.
+const bunRuntimeVersion = process.versions.bun;
+const bunParts = bunRuntimeVersion?.split(".").map(Number) ?? [];
+if (!bunRuntimeVersion || bunParts[0] < 1 ||
+    (bunParts[0] === 1 && (bunParts[1] < 4 || (bunParts[1] === 4 && bunParts[2] < 2)))) {
+  console.error("SuperAgent requires Bun 1.4.2 or newer. Start with: bun dist/cli.js");
+  process.exit(1);
+}
 
 // Emergency terminal cleanup for uncaught crashes in the CLI
 const emergencyRestoreTerminal = () => {

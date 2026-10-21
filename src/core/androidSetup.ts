@@ -501,7 +501,7 @@ async function buildRmemoryDist(projectRoot: string): Promise<void> {
   }
 
   await logSetupDebug("Building r-memory (tsc) to produce dist/ entrypoint and types...");
-  await execa("npx", ["tsc"], { cwd: pkgDir });
+  await execa(process.versions.bun ? process.execPath : "bun", ["x", "tsc"], { cwd: pkgDir });
   await logSetupDebug("r-memory build finished.");
 }
 
@@ -533,24 +533,9 @@ export async function ensureRmemoryInstalled(onProgress?: DownloadProgressCallba
       console.log("\n⚡ [SYSTEM] r-memory package not found. Installing from repository... Please wait.");
     }
 
-    let hasBun = false;
-    try {
-      await execa(process.platform === "win32" ? "where.exe" : "which", ["bun"]);
-      hasBun = true;
-    } catch {
-      hasBun = false;
-    }
-    await logSetupDebug(`Package manager detection: ${hasBun ? "Bun" : "npm"} will be used.`);
-
-    await logSetupDebug(`Resolved project root path: ${projectRoot}`);
-
-    if (hasBun) {
-      await logSetupDebug("Executing: bun add git+https://github.com/RudyCity/r-memory.git");
-      await execa("bun", ["add", "git+https://github.com/RudyCity/r-memory.git"], { cwd: projectRoot });
-    } else {
-      await logSetupDebug("Executing: npm install git+https://github.com/RudyCity/r-memory.git");
-      await execa("npm", ["install", "git+https://github.com/RudyCity/r-memory.git"], { cwd: projectRoot });
-    }
+    const bunCommand = process.versions.bun ? process.execPath : "bun";
+    await logSetupDebug("Installing r-memory with Bun (Git repository)");
+    await execa(bunCommand, ["add", "git+https://github.com/RudyCity/r-memory.git"], { cwd: projectRoot });
 
     // Fresh installs ship without dist/ too — build immediately.
     await buildRmemoryDist(projectRoot);

@@ -11,10 +11,10 @@ import { clearSystemCheckCache } from "../src/core/config/systemCache.js";
 import * as openaiTunnelModule from "../src/core/mcp/openaiTunnelClient.js";
 import { execa } from "execa";
 
-// Never execute a real global npm install from a unit test. Installation
+// Never execute a real global Bun package install from a unit test. Installation
 // can hang on network/registry contention and has system-wide side effects.
 vi.mock("execa", () => ({
-  execa: vi.fn(async () => { throw new Error("synthetic offline npm failure"); }),
+  execa: vi.fn(async () => { throw new Error("synthetic offline Bun failure"); }),
 }));
 
 describe("tunnelClientSetup", () => {
@@ -64,7 +64,7 @@ describe("tunnelClientSetup", () => {
     expect(stageReported).toBe("done");
   });
 
-  it("gracefully attempts npm install when not available and finishes without uncaught error", async () => {
+  it("gracefully attempts Bun global installation when not available and finishes without uncaught error", async () => {
     vi.spyOn(openaiTunnelModule, "findTunnelClientBinary").mockReturnValue(null);
 
     let stageReported = "";
@@ -74,7 +74,9 @@ describe("tunnelClientSetup", () => {
 
     expect(stageReported).toBe("done");
     expect(execa).toHaveBeenCalledOnce();
-    expect(execa).toHaveBeenCalledWith("npm", ["install", "-g", "@openai/tunnel-client"], {
+    expect(execa).toHaveBeenCalledWith(
+      process.versions.bun ? process.execPath : "bun",
+      ["add", "-g", "@openai/tunnel-client"], {
       stdio: "ignore", timeout: 45000,
     });
   });

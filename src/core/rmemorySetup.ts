@@ -25,18 +25,8 @@ const __dirname = path.dirname(__filename);
 /** Project root: go up from dist/core/ or src/core/ */
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 
-// Detect if Bun is available globally
-let hasBunCached: boolean | null = null;
-function checkHasBun(): boolean {
-  if (hasBunCached !== null) return hasBunCached;
-  try {
-    execSync("bun --version", { stdio: "ignore" });
-    hasBunCached = true;
-  } catch {
-    hasBunCached = false;
-  }
-  return hasBunCached;
-}
+// Reuse the running Bun executable, including installed Bun on Windows.
+const runtimeBun = (): string => process.versions.bun ? process.execPath : "bun";
 
 /**
  * Spawns the RMemory Gateway process completely silently in the background.
@@ -59,11 +49,8 @@ export function spawnRmemoryGateway(options: {
     MEMORY_RMEMORY_GATEWAY_PORT: "8420",
   };
 
-  const useBun = checkHasBun();
-  const cmd = useBun ? "bun" : process.execPath;
-  const args = useBun
-    ? ["src/gateway/server.ts"]
-    : ["--import", "tsx", "src/gateway/server.ts"];
+  const cmd = runtimeBun();
+  const args = ["src/gateway/server.ts"];
 
   return spawn(cmd, args, {
     cwd: options.gatewayDir,
@@ -88,13 +75,8 @@ export async function runRmemorySetup(): Promise<void> {
         ? path.join(PROJECT_ROOT, "src", "cli.tsx")
         : path.join(PROJECT_ROOT, "dist", "cli.js");
 
-      const useBun = checkHasBun();
-      const cmd = useBun ? "bun" : process.execPath;
-      const args = useBun
-        ? [entryFile, "--sync-history-only"]
-        : (isTsx
-            ? ["--import", "tsx", entryFile, "--sync-history-only"]
-            : [entryFile, "--sync-history-only"]);
+      const cmd = runtimeBun();
+      const args = [entryFile, "--sync-history-only"];
 
       const logDir = path.join(os.homedir(), ".superagent-r", "logs");
       if (!fs.existsSync(logDir)) {

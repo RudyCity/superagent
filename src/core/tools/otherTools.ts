@@ -337,7 +337,7 @@ export const screenshotTool: Tool = {
 
 export const playwrightScreenshotTool: Tool = {
   name: "playwright_screenshot",
-  description: "Capture a web page screenshot using Playwright CLI (npx playwright screenshot). Supports custom viewports, full page scroll, browser engine, wait timeout, color scheme, and element selectors.",
+  description: "Capture a web page screenshot using Playwright CLI (bun x playwright screenshot). Supports custom viewports, full page scroll, browser engine, wait timeout, color scheme, and element selectors.",
   parameters: {
     type: "object",
     properties: {
@@ -434,9 +434,10 @@ export const playwrightScreenshotTool: Tool = {
 
     cmdArgs.push(targetUrl, targetOutputPath);
 
+    const bunCommand = process.versions.bun ? process.execPath : "bun";
     try {
       await fs.mkdir(path.dirname(targetOutputPath), { recursive: true });
-      await execa("npx", cmdArgs, { cwd, cancelSignal: signal });
+      await execa(bunCommand, ["x", ...cmdArgs], { cwd, cancelSignal: signal });
       return `Playwright screenshot successfully captured and saved to: ${targetOutputPath}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -448,8 +449,8 @@ export const playwrightScreenshotTool: Tool = {
       ) {
         try {
           const browserType = (args.browser as string)?.trim() || "chromium";
-          await execa("npx", ["playwright", "install", browserType], { cwd, cancelSignal: signal });
-          await execa("npx", cmdArgs, { cwd, cancelSignal: signal });
+          await execa(bunCommand, ["x", "playwright", "install", browserType], { cwd, cancelSignal: signal });
+          await execa(bunCommand, ["x", ...cmdArgs], { cwd, cancelSignal: signal });
           return `Playwright screenshot successfully captured and saved to: ${targetOutputPath}`;
         } catch (installErr: unknown) {
           const installMessage = installErr instanceof Error ? installErr.message : String(installErr);

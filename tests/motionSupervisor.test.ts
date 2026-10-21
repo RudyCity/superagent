@@ -103,7 +103,11 @@ describe("Motion opt-in durable FIFO supervisor", () => {
     const { root, dir } = await fixture();
     expect(() => runMotionSupervisorWatch(root, { intervalMs: 1 })).toThrow(/intervalMs/);
     const controller = new AbortController();
-    const running = runMotionSupervisorWatch(root, { intervalMs: 500, signal: controller.signal });
+    let cycleObserved = false;
+    const running = runMotionSupervisorWatch(root, {
+      intervalMs: 500, signal: controller.signal,
+      onCycle: () => { cycleObserved = true; },
+    });
     let seen = false;
     for (let n = 0; n < 30; n++) {
       seen = (await fs.readdir(dir)).includes(".supervisor.lock");
@@ -112,6 +116,13 @@ describe("Motion opt-in durable FIFO supervisor", () => {
     }
     expect(seen).toBe(true);
     await expect(runMotionSupervisorOnce(root)).rejects.toThrow(/already claimed/);
+    // Bun may schedule the abort before the first awaited tick finishes.
+    // Wait for an actual completed cycle instead of assuming lock acquisition
+    // implies that one already completed.
+    for (let n = 0; n < 100 && !cycleObserved; n++) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    expect(cycleObserved).toBe(true);
     controller.abort();
     expect((await running).cycles).toBeGreaterThan(0);
     expect(await fs.readdir(dir)).not.toContain(".supervisor.lock");
