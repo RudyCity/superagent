@@ -1,6 +1,11 @@
 import { Message } from "../conversation.js";
 import { TokenTracker } from "./TokenTracker.js";
 
+/** Recognizes both normal and emergency rolling summaries, including legacy labels. */
+export function isCompactionSummaryText(value: string): boolean {
+  return /\[(?:System Conversation Summary|Emergency Summary - Context Pruned)/.test(value);
+}
+
 export interface CompactionContext {
   messages: Message[];
   tokenBudget: number;

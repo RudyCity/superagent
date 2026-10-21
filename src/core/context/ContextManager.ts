@@ -15,6 +15,7 @@ import { BudgetedPruningStrategy } from "./strategies/BudgetedPruningStrategy.js
 import { SemanticAnalyzer } from "./SemanticAnalyzer.js";
 import { CompactionHistory } from "./CompactionHistory.js";
 import { getSettings } from "../config/jsonConfig.js";
+import { isCompactionSummaryText } from "./CompactionStrategy.js";
 
 export type ContextState =
   | "IDLE"
@@ -153,10 +154,21 @@ export class ContextManager {
    * Scan messages and automatically pin those containing critical planning metadata
    */
   public autoPinKeyMessages(messages: Message[]): void {
-    // Clean up any previously pinned summary messages if present
+    // A previous turn's active request is no longer the active request.
+    // Keep explicit pins and enduring plans; rotate only automatic current pins.
     for (const [id, pinnedMsg] of this.pinnedMessages.entries()) {
-      if (pinnedMsg.content.includes("[System Conversation Summary]")) {
+      if (isCompactionSummaryText(pinnedMsg.content) || pinnedMsg.tag === "auto-current") {
         this.pinnedMessages.delete(id);
+      }
+    }
+    let activeUserIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      const body = contentToString(msg.content);
+      if (msg.role === "user" && !isCompactionSummaryText(body) &&
+          !body.startsWith("[RMemory Agent Memory Context]")) {
+        activeUserIndex = i;
+        break;
       }
     }
 
@@ -166,7 +178,7 @@ export class ContextManager {
 
       // Pin the initial user request, task checklists, and implementation plans
       // (Do NOT pin conversation summaries, tool results, or casual references)
-      const isInitialUserMsg = msg.role === "user" && i === 0 && !content.includes("[System Conversation Summary]");
+      const isInitialUserMsg = msg.role === "user" && i === 0 && !isCompactionSummaryText(content);
       const isPlanOrTaskDoc =
         (msg.role === "user" || msg.role === "system") &&
         (content.startsWith("# Implementation Plan") ||
@@ -175,7 +187,7 @@ export class ContextManager {
           content.includes("\n# Implementation Plan") ||
           content.includes("\n# Tasks"));
 
-      if (isInitialUserMsg || isPlanOrTaskDoc) {
+      if (isInitialUserMsg || isPlanOrTaskDoc || i === activeUserIndex) {
         const contentPrefix = content.slice(0, 64);
         const stableId = `${msg.role}:${msg.timestamp}:${contentPrefix}`;
         
@@ -187,7 +199,7 @@ export class ContextManager {
             timestamp: msg.timestamp,
             pinnedAt: Date.now(),
             originalIndex: i,
-            tag: "auto-plan"
+            tag: i === activeUserIndex && !isInitialUserMsg && !isPlanOrTaskDoc ? "auto-current" : "auto-plan"
           });
         }
       }
@@ -200,6 +212,11 @@ export class ContextManager {
     abortSignal?: AbortSignal,
     options?: Partial<CompactionOptions>
   ): Promise<CompactionResult> {
+    if (abortSignal?.aborted) {
+      const error = new Error("Compaction cancelled");
+      error.name = "AbortError";
+      throw error;
+    }
     this.setState("CHECKING");
     this.autoPinKeyMessages(messages);
 
@@ -231,6 +248,11 @@ export class ContextManager {
         abortSignal: options?.abortSignal ?? abortSignal,
         modelName: options?.modelName ?? this.config.model,
       });
+      if (abortSignal?.aborted) {
+        const error = new Error("Compaction cancelled");
+        error.name = "AbortError";
+        throw error;
+      }
 
       this.setState("VALIDATING");
       this.validateResult(result);
@@ -276,7 +298,9 @@ export class ContextManager {
     } catch (error) {
       this.setState("FAILED");
       this.emit("compaction:fail", error);
-
+      // Cancellation is an explicit user action, not a compaction failure:
+      // never overwrite the conversation via a recovery strategy after abort.
+      if (abortSignal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
       return this.recover(messages, error as Error);
     } finally {
       this.setState("IDLE");

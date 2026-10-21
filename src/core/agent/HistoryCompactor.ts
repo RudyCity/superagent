@@ -113,13 +113,17 @@ export class HistoryCompactor {
     // ("smart compact") instead of heuristic fallback. Previously only injected
     // when a signal was present, so RequestProcessor/FastPath auto-compact
     // (no signal) silently fell back to heuristic pruning.
-    await agent.conversation.updateContextManagerLLM(agent.getModel(), signal);
     const messages = agent.conversation.getMessages();
     const decision = contextManager.shouldCompact(messages);
-
-    if (!decision.shouldCompact && !force && !tokenBudget) {
-      return;
+    // Hot path: do not resolve models or reset strategy state when there is
+    // nothing to compact. Byte limits are handled by forced compaction.
+    if (!decision.shouldCompact && !force && !tokenBudget && !byteBudget) return;
+    if (signal?.aborted) {
+      const error = new Error("Compaction aborted");
+      error.name = "AbortError";
+      throw error;
     }
+    await agent.conversation.updateContextManagerLLM(agent.getModel(), signal);
 
     try {
       agent.writeToLogFile(
@@ -148,6 +152,11 @@ export class HistoryCompactor {
 
       const result = await contextManager.compact(messages, strategy, signal, compactionOptions);
 
+      if (signal?.aborted) {
+        const error = new Error("Compaction aborted");
+        error.name = "AbortError";
+        throw error;
+      }
       agent.conversation.replaceMessages(result.messages);
       await agent.saveHistory();
 
@@ -156,6 +165,7 @@ export class HistoryCompactor {
         `Compaction completed: ${result.metadata.strategy} strategy, ${result.metadata.messagesBefore || 0} -> ${result.metadata.messagesAfter || 0} messages`
       );
     } catch (error) {
+      if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
       console.error("ContextManager compaction failed:", error);
       agent.writeToLogFile("ERROR", `ContextManager compaction failed: ${(error as Error).message}`);
       await this.legacyCompactHistory(agent, signal, force, tokenBudget, byteBudget);

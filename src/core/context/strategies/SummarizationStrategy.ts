@@ -5,6 +5,7 @@ import {
   CompactionOptions,
   CompactionCost,
   estimateTokensCached,
+  isCompactionSummaryText,
 } from "../CompactionStrategy.js";
 import { Message, contentToString } from "../../conversation.js";
 import { generateText } from "ai";
@@ -40,15 +41,20 @@ export class SummarizationStrategy implements CompactionStrategy {
     const tokenBudget = options.tokenBudget || 0;
     const abortSignal = options.abortSignal ?? this.config?.abortSignal;
 
-    const filteredMessages = messages.filter(
-      (m) => !contentToString(m.content).includes("[System Conversation Summary]")
+    // Roll old summaries into the next summary exactly once (even if they
+    // occurred within the "recent" window). Never lose or stack them.
+    const previousSummaries = messages.filter((m) =>
+      isCompactionSummaryText(contentToString(m.content))
+    );
+    const filteredMessages = messages.filter((m) =>
+      !isCompactionSummaryText(contentToString(m.content))
     );
 
     let keepIndex = Math.max(0, filteredMessages.length - preserveRecent);
     while (keepIndex < filteredMessages.length && filteredMessages[keepIndex]?.role === "tool") {
       keepIndex++;
     }
-    let toSummarize = filteredMessages.slice(0, keepIndex);
+    let toSummarize = [...previousSummaries, ...filteredMessages.slice(0, keepIndex)];
     let toKeep = filteredMessages.slice(keepIndex);
 
     // Enforce token budget: reduce preserved messages if they exceed budget
@@ -73,12 +79,24 @@ export class SummarizationStrategy implements CompactionStrategy {
       toSummarize.push(moved);
     }
 
+    // Under emergency budgets the recent active question can be moved to the
+    // summarization pile. Keep a bounded copy so execution can still resume.
+    const latestUser = [...messages].reverse().find((m) =>
+      m.role === "user" && !isCompactionSummaryText(contentToString(m.content))
+    );
+    if (latestUser && !toKeep.some((m) => m === latestUser)) {
+      toKeep.push({ role: "user", content: contentToString(latestUser.content).slice(0, 1200), timestamp: latestUser.timestamp });
+    }
+
     let summary: string;
     let usedFallback = false;
-    if (this.config?.model) {
+    if (toSummarize.length === 0) {
+      summary = "No earlier messages needed summarization.";
+    } else if (this.config?.model) {
       try {
         summary = await this.generateLLMSummary(toSummarize, abortSignal);
-      } catch {
+      } catch (error) {
+        if (abortSignal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
         summary = this.createHeuristicSummary(toSummarize);
         usedFallback = true;
       }
@@ -220,6 +238,15 @@ ${truncated}`;
     const parts: string[] = [
       `Conversation had ${messages.length} messages (${userMessages.length} user, ${assistantMessages.length} assistant).`,
     ];
+    const previous = messages.filter((m) => isCompactionSummaryText(contentToString(m.content)));
+    if (previous.length) {
+      parts.push("Earlier compacted context: " +
+        previous.slice(-2).map((m) => contentToString(m.content).slice(0, 1000)).join(" | "));
+    }
+    const actualRequests = userMessages.filter((m) => !isCompactionSummaryText(contentToString(m.content)));
+    if (actualRequests.length) {
+      parts.push("Last user request: " + contentToString(actualRequests[actualRequests.length - 1].content).slice(0, 600));
+    }
 
     if (fileMatches.length > 0) {
       parts.push(`Files referenced: ${fileMatches.join(", ")}.`);

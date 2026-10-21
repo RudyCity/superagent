@@ -5,6 +5,7 @@ import {
   CompactionOptions,
   CompactionCost,
   estimateTokensCached,
+  isCompactionSummaryText,
 } from "../CompactionStrategy.js";
 import { Message, contentToString } from "../../conversation.js";
 import { SemanticAnalyzer } from "../SemanticAnalyzer.js";
@@ -39,17 +40,11 @@ export class PruningStrategy implements CompactionStrategy {
     let toPrune = messages.slice(0, keepIndex);
     let toKeep = messages.slice(keepIndex);
 
-    // Importance-based pre-sort: when budget forces pruning, drop lowest-importance
-    // older messages first instead of pure FIFO. Preserve recent + tool-result pairs.
-    if (tokenBudget > 0 || byteBudget > 0) {
-      const analyzer = new SemanticAnalyzer();
-      const scored = toKeep.map((m, i) => ({ m, i, score: analyzer.scoreImportance(m) }));
-      // Keep highest-score messages; only re-order the prunable tail (older half).
-      const tailStart = Math.floor(scored.length / 2);
-      const head = scored.slice(0, tailStart);
-      const tail = scored.slice(tailStart).sort((a, b) => b.score - a.score);
-      toKeep = [...head, ...tail].map((s) => s.m);
-    }
+    // Keep chronological order. Sorting by "importance" used to reorder tool
+    // calls/results and could make context look like actions happened out of order.
+    // Copy kept messages before truncation so a failed compaction never changes
+    // the source transcript (including its nested tool results).
+    toKeep = toKeep.map((msg) => structuredClone(msg));
 
     // Enforce token budget: reduce preserved messages if they exceed budget
     if (tokenBudget > 0) {
@@ -112,6 +107,16 @@ export class PruningStrategy implements CompactionStrategy {
       toPrune.push(moved);
     }
 
+    // Keep the current user objective even if tight budgets evict its original
+    // turn. Preserve a bounded copy rather than losing the task completely.
+    const latestUser = [...messages].reverse().find((msg) =>
+      msg.role === "user" && !isCompactionSummaryText(contentToString(msg.content))
+    );
+    if (latestUser && !toKeep.some((msg) => msg.role === "user" && msg.timestamp === latestUser.timestamp)) {
+      const activeText = contentToString(latestUser.content).slice(0, 1200);
+      toKeep.push({ role: "user", content: activeText, timestamp: latestUser.timestamp });
+    }
+
     const emergencySummary = this.createEmergencySummary(toPrune);
 
     const summaryMessage: Message = {
@@ -145,41 +150,39 @@ export class PruningStrategy implements CompactionStrategy {
   }
 
   private createEmergencySummary(messages: Message[]): string {
-    const userMessages = messages.filter((m) => m.role === "user");
-
-    const fileMatches = messages
-      .flatMap((m) => contentToString(m.content).match(/[\w.-]+(?:\/|\\)[\w.-]+(?:\.\w+)?/g) || [])
-      .filter((v, i, a) => a.indexOf(v) === i && !v.includes("node_modules") && !v.includes(".git"))
-      .slice(0, 15);
-
-    const changedFiles = fileMatches.filter(f => /edit|write|replace|modify|patch/i.test(JSON.stringify(messages).toLowerCase()));
-    const readFiles = fileMatches.filter(f => !changedFiles.includes(f));
-
-    let decisionsText = "Continued codebase auditing and alignment.";
-    let testsText = "not-run (pruned history)";
-    let blockersText = "none";
-
-    try {
-      const analyzer = new SemanticAnalyzer();
-      const keyPoints = analyzer.extractKeyPoints(messages);
-      if (keyPoints.length > 0) {
-        decisionsText = keyPoints.filter(kp => kp.type === "decision").map(kp => kp.content).slice(0, 3).join(", ") || decisionsText;
-        blockersText = keyPoints.filter(kp => kp.type === "error").map(kp => kp.content).slice(0, 2).join(", ") || blockersText;
+    const userMessages = messages.filter((m) => m.role === "user" &&
+      !isCompactionSummaryText(contentToString(m.content)));
+    const filePaths = new Set<string>();
+    const tools = new Set<string>();
+    const failures: string[] = [];
+    const previousSummaries: string[] = [];
+    for (const message of messages) {
+      const body = contentToString(message.content);
+      if (/\[(?:System Conversation Summary|Emergency Summary - Context Pruned)/.test(body)) {
+        previousSummaries.push(body.slice(0, 700));
       }
-    } catch {}
-
-    const lastUserMsg = userMessages.length > 0 ? contentToString(userMessages[userMessages.length - 1].content).substring(0, 120) : "Continue";
-
-    return `Objective: Audit and refine coding assistant prompts and orchestration behaviors (pruned history had ${messages.length} messages)
-Current mode: implement
-User intent: ${lastUserMsg}
-Files read: ${readFiles.join(", ") || "none"}
-Files changed: ${changedFiles.join(", ") || "none"}
-Decisions: ${decisionsText}
-Tests/build: ${testsText}
-Blockers: ${blockersText}
-Next safe action: Proceed with testing and validation of recent prompt modifications
-Confidence: static-only`;
+      for (const file of body.match(/[\w.-]+(?:\/|\\)[\w.-]+(?:\.\w+)?/g) || []) {
+        if (!file.includes("node_modules") && !file.includes(".git")) filePaths.add(file);
+        if (filePaths.size >= 12) break;
+      }
+      for (const call of message.toolCalls || []) tools.add(call.name);
+      for (const result of message.toolResults || []) {
+        if (result.isError) failures.push(result.name + ": " + result.result.slice(0, 160));
+      }
+    }
+    const latestIntent = userMessages.length
+      ? contentToString(userMessages[userMessages.length - 1].content).slice(0, 500)
+      : "No previous user request retained";
+    const parts = [
+      "Older context pruned: " + messages.length + " messages.",
+      "Last user request from pruned portion: " + latestIntent,
+      "Referenced files: " + (Array.from(filePaths).join(", ") || "none recorded"),
+      "Executed tools: " + (Array.from(tools).slice(0, 15).join(", ") || "none recorded"),
+      "Tool errors: " + (failures.slice(-3).join(" | ") || "none recorded"),
+    ];
+    if (previousSummaries.length) parts.push("Previous compaction notes: " + previousSummaries.slice(-2).join(" | "));
+    parts.push("Treat unverified statuses as unknown; consult task files and tool logs for completion evidence.");
+    return parts.join("\n");
   }
 }
 

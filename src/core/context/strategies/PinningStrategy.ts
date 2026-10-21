@@ -5,6 +5,7 @@ import {
   CompactionOptions,
   CompactionCost,
   estimateTokensCached,
+  isCompactionSummaryText,
 } from "../CompactionStrategy.js";
 import { Message, contentToString } from "../../conversation.js";
 import { SemanticAnalyzer } from "../SemanticAnalyzer.js";
@@ -48,8 +49,10 @@ export class PinningStrategy implements CompactionStrategy {
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
       const textContent = contentToString(msg.content);
-      // Skip old conversation summaries so they are not retained as duplicate pinned/unpinned items
-      if (textContent.includes("[System Conversation Summary]")) {
+      // Old compaction summaries are unpinned historical input. They must
+      // participate in the next summary rather than disappearing entirely.
+      if (isCompactionSummaryText(textContent)) {
+        unpinned.push(msg);
         continue;
       }
       const contentPrefix = textContent.slice(0, 64);
@@ -69,7 +72,7 @@ export class PinningStrategy implements CompactionStrategy {
       const msg = messages[i];
       if (msg.role === "user") {
         const text = contentToString(msg.content);
-        if (!text.includes("[System Conversation Summary]")) {
+        if (!isCompactionSummaryText(text)) {
           latestUserMsgIndex = i;
           break;
         }
@@ -90,6 +93,17 @@ export class PinningStrategy implements CompactionStrategy {
     }
     let toSummarize = unpinned.slice(0, keepIndex);
     let toKeep = unpinned.slice(keepIndex);
+    // Even if a previous summary falls within the recent window, roll it
+    // forward instead of leaving a second summary in the resulting transcript.
+    const oldSummaries = toKeep.filter((m) =>
+      isCompactionSummaryText(contentToString(m.content))
+    );
+    if (oldSummaries.length) {
+      toSummarize = [...oldSummaries, ...toSummarize];
+      toKeep = toKeep.filter((m) =>
+        !isCompactionSummaryText(contentToString(m.content))
+      );
+    }
 
     // Enforce token budget: reduce preserved unpinned and redundant pinned messages if they exceed budget
     if (tokenBudget > 0) {
@@ -147,7 +161,8 @@ export class PinningStrategy implements CompactionStrategy {
       try {
         summary = await this.generateLLMSummary(toSummarize, abortSignal);
         usedLLM = true;
-      } catch {
+      } catch (error) {
+        if (abortSignal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
         summary = this.buildPruneSummary(toSummarize);
         usedFallback = true;
       }
@@ -170,16 +185,12 @@ export class PinningStrategy implements CompactionStrategy {
       timestamp: Date.now(),
     };
 
-    // Reconstruct: summary first, then pinned messages in original order, then recent unpinned
-    const result: Message[] = [summaryMessage];
-
-    // Insert pinned messages in their original order
-    for (const p of pinned) {
-      result.push(p.msg);
-    }
-
-    // Add recent unpinned messages
-    result.push(...toKeep);
+    // Reconstruct in original chronology. Pinning the latest user message can
+    // otherwise move it before older tool results and mislead the next model turn.
+    const sourceIndex = new Map(messages.map((message, index) => [message, index]));
+    const chronological = [...pinned.map((p) => p.msg), ...toKeep]
+      .sort((a, b) => (sourceIndex.get(a) ?? 0) - (sourceIndex.get(b) ?? 0));
+    const result: Message[] = [summaryMessage, ...chronological];
 
     return {
       messages: result,
@@ -299,6 +310,20 @@ ${truncated}`;
     const parts: string[] = [
       `[Pruned ${messages.length} unpinned messages from context.]`,
     ];
+    const previousSummaries = messages.filter((m) =>
+      isCompactionSummaryText(contentToString(m.content))
+    );
+    if (previousSummaries.length) {
+      parts.push("Earlier compacted decisions and work: " +
+        previousSummaries.slice(-2).map((m) => contentToString(m.content).slice(0, 1200)).join(" | "));
+    }
+    const userRequests = messages.filter((m) =>
+      m.role === "user" && !isCompactionSummaryText(contentToString(m.content))
+    );
+    if (userRequests.length) {
+      parts.push("Previous user request: " +
+        contentToString(userRequests[userRequests.length - 1].content).slice(0, 600));
+    }
     if (filePaths.size > 0)
       parts.push(`Files referenced: ${[...filePaths].slice(0, 8).join(", ")}.`);
     if (toolNames.size > 0)

@@ -613,27 +613,32 @@ export class Conversation {
   }
 
   pruneToTokenLimit(maxTokens: number): void {
-    let currentTokens = this.getTokenEstimate();
-    if (currentTokens <= maxTokens) return;
+    if (this.getTokenEstimate() <= maxTokens) return;
 
-    while (this.messages.length > 2 && currentTokens > maxTokens) {
-      const first = this.messages[0];
-      const firstTokens = this.getMessageTokenEstimate(first);
+    // Protect the latest genuine user request during emergency truncation.
+    // The previous FIFO implementation could delete it after many subsequent
+    // assistant/tool messages, leaving the agent with no current objective.
+    const activeRequest = [...this.messages].reverse().find((m) =>
+      m.role === "user" &&
+      !/\[(?:System Conversation Summary|Emergency Summary - Context Pruned)/.test(contentToString(m.content)) &&
+      !contentToString(m.content).startsWith("[RMemory Agent Memory Context]")
+    );
 
-      if (first.role === "assistant" && first.toolCalls && first.toolCalls.length > 0) {
-        this.messages.shift();
-        currentTokens -= firstTokens;
-
-        if (this.messages.length > 0 && this.messages[0].role === "tool") {
-          const second = this.messages[0];
-          const secondTokens = this.getMessageTokenEstimate(second);
-          this.messages.shift();
-          currentTokens -= secondTokens;
-        }
-      } else {
-        this.messages.shift();
-        currentTokens -= firstTokens;
+    while (this.messages.length > 2 && this.getTokenEstimate() > maxTokens) {
+      // Keep the final two messages and the active request. Drop the oldest
+      // unprotected turn, including its immediately-following tool result.
+      const index = this.messages.findIndex((m, i) =>
+        i < this.messages.length - 2 && m !== activeRequest
+      );
+      if (index < 0) break;
+      const removed = this.messages.splice(index, 1)[0];
+      if (removed.role === "assistant" && removed.toolCalls?.length &&
+          this.messages[index]?.role === "tool" && this.messages[index] !== activeRequest) {
+        this.messages.splice(index, 1);
       }
+      // Recalculate the full token estimate: getMessageTokenEstimate excludes
+      // tool arguments/results in the legacy path, so delta subtraction could
+      // incorrectly report that we were under budget.
     }
   }
 
