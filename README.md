@@ -718,6 +718,8 @@ Endpoint mode for manual tests: `--mcp-auth oauth` (OAuth 2.1 + PKCE). Static-be
 
 Motion Studio stores revision-checked scenes and media inside the selected **local workspace**. The native editor is delivered by the separate T-Line Desktop project; no independent browser Studio or live packaged-Tauri integration is implied by the backend API.
 
+**T-Line startup compatibility (October 2026):** The T-Line desktop launcher and T-Line Express backend must be updated together to support the nonce-HMAC identity handshake introduced in T-Line main commit 9745b01. The desktop intentionally refuses to attach to older or unidentified services on port 5779 rather than killing another process. This handshake is *not* a SuperAgent Motion API endpoint. See [T-Line startup / Motion Studio handoff](docs/plans/2026-10-21-t-line-startup-motion-handoff.md) for version coordination, safe migration and remaining installed-app gates.
+
 ```bash
 superagent motion doctor --json
 superagent motion new --name "Launch video" --workspace . --json
