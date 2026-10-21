@@ -15,6 +15,8 @@ import { inspectMotionSupervisor } from "./jobs/motionSupervisor.js";
 import { generateMotionFromPrompt, reviseMotionFromPrompt } from "./director/directorService.js";
 import { inspectMotionQuality } from "./director/motionQuality.js";
 import { renderMotionFrameSnapshot } from "./director/motionFrameSnapshot.js";
+import { inspectMotionVision, autoRepairMotionVision, withMotionVisionLease } from "./director/motionVisionReview.js";
+import { motionSceneSrt } from "./director/motionCaptions.js";
 import { localVoiceoverReady } from "./director/localVoiceover.js";
 import { importMotionAsset, readMotionAsset } from "./assets/motionAssets.js";
 import { importMotionAudio, readMotionAudio } from "./assets/motionAudio.js";
@@ -45,6 +47,7 @@ async function readMotionJson(req: IncomingMessage, maxSize = 1_000_000): Promis
 function routeError(error: unknown): { status: number; message: string } {
   const message = error instanceof Error ? error.message : String(error);
   const status = (error as { statusCode?: number })?.statusCode;
+  if (status === 409) return { status: 409, message };
   if (status === 413) return { status: 413, message };
   if (status === 503) return { status: 503, message };
   if (error instanceof MotionRevisionConflict) return { status: 409, message };
@@ -71,6 +74,9 @@ export async function handleMotionHttpRoute(
   const project = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})$/);
   const edits = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/edits$/);
   const quality = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/quality$/);
+  const visionReview = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/vision-review$/);
+  const visionRepair = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/vision-repair$/);
+  const captions = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/captions\.srt$/);
   const frameSnapshot = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/frames\/(\d{1,6})\.png$/);
   const render = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/render$/);
   const job = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})$/);
@@ -156,6 +162,29 @@ export async function handleMotionHttpRoute(
         "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
       });
       res.end(image);
+    } else if (captions && method === "GET") {
+      const body = Buffer.from(motionSceneSrt(await getMotionProject(workspace, captions[1])), "utf8");
+      res.writeHead(200, {
+        "Content-Type": "application/x-subrip; charset=utf-8",
+        "Content-Length": String(body.length),
+        "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": 'attachment; filename="motion-captions.srt"',
+      });
+      res.end(body);
+    } else if (visionReview && method === "POST") {
+      await readMotionJson(req, 1024);
+      const response = await withMotionVisionLease(workspace, visionReview[1], async () =>
+        inspectMotionVision(workspace, await getMotionProject(workspace, visionReview[1])));
+      json(res, ctx, 200, response);
+    } else if (visionRepair && method === "POST") {
+      const body = await readMotionJson(req, 1024);
+      if (body.width !== undefined && !Number.isSafeInteger(body.width)) throw new Error("Invalid Motion render width");
+      if (!Number.isSafeInteger(body.baseRevision)) throw new Error("Invalid Motion expected revision");
+      const response = await withMotionVisionLease(workspace, visionRepair[1], () =>
+        autoRepairMotionVision(workspace, visionRepair[1], {
+          baseRevision: body.baseRevision as number, width: body.width as number | undefined,
+        }));
+      json(res, ctx, response.changed ? 202 : 200, response);
     } else if (quality && method === "GET") {
       json(res, ctx, 200, inspectMotionQuality(await getMotionProject(workspace, quality[1])));
     } else if (edits && method === "POST") {

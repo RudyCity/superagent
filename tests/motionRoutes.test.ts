@@ -138,6 +138,31 @@ describe("Motion HTTP and artifact transport", () => {
     expect((await request("/api/motion/projects/" + created.id + "/quality", {
       method: "POST",
     })).status).toBe(404);
+    const caption = await request("/api/motion/projects/" + created.id + "/captions.srt");
+    expect(caption.status).toBe(200);
+    expect(caption.headers.get("content-type")).toContain("application/x-subrip");
+    expect((await caption.text()).length).toBe(0);
+    expect((await request("/api/motion/projects/" + created.id + "/captions.srt", {
+      method: "POST",
+    })).status).toBe(404);
+    expect((await request("/api/motion/projects/" + created.id + "/captions.srt", {
+      headers: { "x-workspace-path": "/foreign" },
+    })).status).toBe(403);
+    const badVisionReview = await request("/api/motion/projects/" + "motion-" + "a".repeat(20) +
+      "/vision-review", { method: "POST", body: "{}" });
+    expect(badVisionReview.status).toBe(404);
+    expect((await request("/api/motion/projects/" + created.id + "/vision-review", {
+      method: "GET",
+    })).status).toBe(404);
+    expect((await request("/api/motion/projects/" + created.id + "/vision-review", {
+      method: "POST", body: "{}", headers: { "x-workspace-path": "/foreign" },
+    })).status).toBe(403);
+    expect((await request("/api/motion/projects/" + created.id + "/vision-repair", {
+      method: "POST", body: JSON.stringify({ baseRevision: "invalid" }),
+    })).status).toBe(400);
+    expect((await request("/api/motion/projects/" + created.id + "/vision-repair", {
+      method: "GET",
+    })).status).toBe(404);
     const frame = await request("/api/motion/projects/" + created.id + "/frames/0.png");
     expect(frame.status).toBe(200);
     expect(frame.headers.get("content-type")).toBe("image/png");

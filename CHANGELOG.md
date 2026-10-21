@@ -1,3 +1,11 @@
+## [Unreleased] - Motion Studio vision reviewer, scene captions and rounded UI (2026-10-21)
+### Added
+- Optional actual-frame multimodal AI visual review using a configured vision-capable model, with strict bounded feedback and explicit 503 fallback.
+- Workspace-authenticated one-pass visual review-and-repair using CAS-protected existing semantic edit operations and subsequent MP4 render, with concurrency guard.
+- Authored-scene timing based non-overlapping SubRip sidecar exports and rectangular cornerRadius rendering parity across SVG/Canvas.
+### Release note
+- Developer preview only: no unverified live provider/Tauri/Piper claims, no full footage/transcription/multiround visual QA or automatic process recovery.
+
 ## [Unreleased] - Motion Director B4-F partial capabilities (2026-10-21)
 ### Added
 - Optional scene-derived Piper narration and role-aware FFmpeg music ducking under voice.

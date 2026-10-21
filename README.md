@@ -817,3 +817,11 @@ The hash IDs above are placeholders, not valid usable IDs. Existing 1MB image an
 Generate editable 16:9, 1:1 or 9:16 video (e.g. superagent motion generate --prompt "Promo produk portrait" --aspect-ratio 9:16 --width 640 --workspace .). Model-approved animation presets include pop-up/pop-left easing with position overshoot. The T-Line quality panel can request authenticated frame PNGs rendered with the exact same Canvas scene pipeline as the MP4. These are human inspection aids, not automatic AI/vision approval.
 
 With an operator-installed Piper executable and model, new video prompts can choose automatic narration from the storyboard scene text; validated music and voiceover tracks are mixed by FFmpeg with music sidechain ducking. Without Piper, voice synthesis is unavailable and fails explicitly. Automatic footage creation, online soundtrack generation, licensed asset search, long-form editing and production-ready Tauri/Piper end-to-end tests remain out of scope.
+
+### Motion Studio sampled AI vision and SubRip captions
+
+On an updated SuperAgent service with a vision-capable model, the T-Line Motion quality panel offers AI Vision Review (an explicit image-model call), Review & auto-improve once (one permitted model review plus at most one declarative revision and new MP4), and Export scene subtitles (.srt). Without an image-capable model the vision operation fails with a clear 503. These are authenticated, workspace-scoped service requests, not unauthenticated public model APIs.
+
+Captions describe authored scene headlines and subtitles with non-overlapping cue times. They do not transcribe voiceover WAV audio. Rounded rectangle layers now accept an optional, bounded cornerRadius matching SVG and Canvas/MP4 output, editable from T-Line's inspector. One-pass visual repair is an opt-in helper and can change scene text/layout: inspect the resulting motion before publishing.
+
+Video footage, closed captions automatically transcribed from audio, genuine multi-pass vision production scoring, packaged desktop provider E2E, autonomous safe crash recovery and full professional motion effects remain release gates.

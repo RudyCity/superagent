@@ -32,5 +32,8 @@ export const MOTION_CAPABILITIES = Object.freeze({
   aiMusicVoiceDucking: true,
   deterministicQualityLint: true,
   authenticatedFrameSnapshots: true,
+  sampledModelVisionReview: "on-demand-vision-model-required",
+  boundedModelVisionRepair: "one-review-one-revision",
+  exportSceneCaptionsSrt: true,
   automaticCrashRecovery: false,
 });

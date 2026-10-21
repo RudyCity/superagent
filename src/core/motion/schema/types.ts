@@ -35,6 +35,7 @@ export interface TextLayer extends BaseLayer {
 }
 export interface RectLayer extends BaseLayer {
   kind: "rect";
+  cornerRadius?: number;
 }
 export interface ImageLayer extends BaseLayer {
   kind: "image";

@@ -28,7 +28,11 @@ export function createMotionFrameRenderer(project: MotionProject, width: number,
       ctx.globalAlpha = values.opacity;
       ctx.fillStyle = layer.fill;
       if (layer.kind === "rect") {
-        ctx.fillRect(values.x, values.y, layer.width, layer.height);
+        if (layer.cornerRadius && layer.cornerRadius > 0) {
+          ctx.beginPath();
+          ctx.roundRect(values.x, values.y, layer.width, layer.height, layer.cornerRadius);
+          ctx.fill();
+        } else ctx.fillRect(values.x, values.y, layer.width, layer.height);
       } else if (layer.kind === "image") {
         const image = images.get(layer.assetId);
         if (!image) throw new Error("Motion image asset missing from pinned renderer");

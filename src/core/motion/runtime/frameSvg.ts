@@ -23,7 +23,7 @@ export function renderMotionSvg(project: MotionProject, frame: number, images = 
     const cy = number(values.y + layer.height / 2);
     const transform = `rotate(${number(values.rotation)} ${cx} ${cy})`;
     if (layer.kind === "rect") {
-      parts.push(`<rect x="${x}" y="${y}" width="${number(layer.width)}" height="${number(layer.height)}" fill="${layer.fill}" opacity="${opacity}" transform="${transform}"/>`);
+      parts.push(`<rect x="${x}" y="${y}" width="${number(layer.width)}" height="${number(layer.height)}" rx="${number(layer.cornerRadius ?? 0)}" fill="${layer.fill}" opacity="${opacity}" transform="${transform}"/>`);
     } else if (layer.kind === "image") {
       const href = images.get(layer.assetId);
       if (!href || !/^data:image\/png;base64,[a-zA-Z0-9+/=]+$/.test(href)) throw new Error("Motion image preview requires a validated PNG asset");

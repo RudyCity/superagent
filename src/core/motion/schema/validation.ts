@@ -112,8 +112,15 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
         const kind = layer.kind;
         const common = ["id", "kind", "x", "y", "width", "height", "rotation", "opacity", "fill", "tracks"];
         allowedKeys(layer, kind === "text" ? [...common, "text", "fontSize", "fontFamily"] :
-          kind === "image" ? [...common, "assetId"] : common, at, errors);
+          kind === "image" ? [...common, "assetId"] :
+          kind === "rect" ? [...common, "cornerRadius"] : common, at, errors);
         if (kind !== "text" && kind !== "rect" && kind !== "image") errors.push(at + ": unsupported layer kind");
+        if (kind === "rect" && layer.cornerRadius !== undefined &&
+            (!finite(layer.cornerRadius, 0, 4096) ||
+              !finite(layer.width, 1, 100000) || !finite(layer.height, 1, 100000) ||
+              Number(layer.cornerRadius) > Math.min(Number(layer.width), Number(layer.height)) / 2)) {
+          errors.push(at + ": invalid cornerRadius");
+        }
         if (kind === "image" && (typeof layer.assetId !== "string" || !/^asset-[a-f0-9]{64}$/.test(layer.assetId))) {
           errors.push(at + ": invalid image assetId");
         }
