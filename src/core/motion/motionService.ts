@@ -6,9 +6,10 @@ import { createMotionProject, getMotionProject, listMotionProjects, motionStorag
 import { renderMotionSvg } from "./runtime/frameSvg.js";
 import { resolveMotionAssets } from "./assets/motionAssets.js";
 import type { EffectApplication } from "./effects/types.js";
+import { applyCompoundPreset, type CompoundPresetApplication } from "./effects/compoundPresets.js";
 
 export { createMotionProject, getMotionProject, listMotionProjects, updateMotionProject };
-export type { MotionProject, MotionEdit, EffectApplication };
+export type { MotionProject, MotionEdit, EffectApplication, CompoundPresetApplication };
 
 /**
  * Apply a declarative effect from the Motion Studio Effects Engine to a project
@@ -23,6 +24,18 @@ export async function applyEffectToProject(
   const current = await getMotionProject(workspace, projectId);
   const { effectRegistry } = await import("./effects/registry.js");
   const updated = effectRegistry.applyToProject(current, application);
+  return updateMotionProject(workspace, projectId, baseRevision, [
+    { type: "replace-composition", composition: updated.composition },
+  ]);
+}
+
+/** Apply a multi-phase compound effect as one optimistic revision transaction. */
+export async function applyCompoundPresetToProject(
+  workspace: string, projectId: string, baseRevision: number,
+  application: CompoundPresetApplication,
+): Promise<MotionProject> {
+  const current = await getMotionProject(workspace, projectId);
+  const updated = applyCompoundPreset(current, application);
   return updateMotionProject(workspace, projectId, baseRevision, [
     { type: "replace-composition", composition: updated.composition },
   ]);

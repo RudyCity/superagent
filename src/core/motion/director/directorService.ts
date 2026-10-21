@@ -9,6 +9,7 @@ import { inspectMotionQuality, type MotionQualityReport } from "./motionQuality.
 import { resolveDirectorMedia, embedDirectorMedia, revisionMediaEdits, directorMediaLimitations, type MotionDirectorMediaSelection } from "./directorMedia.js";
 import { synthesizeLocalVoiceover, validateNarrationRequest, localVoiceoverReady, type NarrationRequest } from "./localVoiceover.js";
 import { effectRegistry, EFFECT_CATEGORIES } from "../effects/index.js";
+import { getCompoundPreset, listCompoundPresets } from "../effects/compoundPresets.js";
 
 export type MotionAspectRatio = "16:9" | "1:1" | "9:16";
 export interface MotionDirectorScene {
@@ -17,6 +18,7 @@ export interface MotionDirectorScene {
   accent: string;
   motion?: MotionPreset;
   effect?: string;
+  preset?: string;
   narration?: string;
   layout?: "left" | "center" | "right";
 }
@@ -27,6 +29,7 @@ export interface MotionDirectorPlan {
   scenes: MotionDirectorScene[];
   motion?: MotionPreset;
   effect?: string;
+  preset?: string;
   transition?: MotionTransition;
   aspectRatio?: MotionAspectRatio;
   artDirection?: MotionArtDirection;
@@ -62,22 +65,24 @@ function widthOf(value: unknown): number {
   return Number(n);
 }
 export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {
-  if (!object(raw) || !only(raw, ["name", "durationSeconds", "background", "scenes", "motion", "effect", "transition", "aspectRatio", "artDirection"]) ||
+  if (!object(raw) || !only(raw, ["name", "durationSeconds", "background", "scenes", "motion", "effect", "preset", "transition", "aspectRatio", "artDirection"]) ||
     typeof raw.name !== "string" || !raw.name.trim() || raw.name.length > 160 ||
     !Number.isInteger(raw.durationSeconds) || Number(raw.durationSeconds) < 2 ||
     Number(raw.durationSeconds) > 20 ||
     typeof raw.background !== "string" || !hex.test(raw.background) ||
     (raw.motion !== undefined && !MOTION_PRESETS.includes(raw.motion as MotionPreset)) ||
     (raw.effect !== undefined && (typeof raw.effect !== "string" || !effectRegistry.has(raw.effect))) ||
+    (raw.preset !== undefined && (typeof raw.preset !== "string" || !getCompoundPreset(raw.preset))) ||
     (raw.artDirection !== undefined && !MOTION_ART_DIRECTIONS.includes(raw.artDirection as MotionArtDirection)) ||
     (raw.transition !== undefined && !["cut", "crossfade"].includes(String(raw.transition))) ||
     (raw.aspectRatio !== undefined && !["16:9", "1:1", "9:16"].includes(String(raw.aspectRatio))) ||
     !Array.isArray(raw.scenes) || raw.scenes.length < 1 || raw.scenes.length > 3)
     throw new Error("Motion Director returned an invalid or unsupported storyboard");
   const scenes: MotionDirectorScene[] = raw.scenes.map((scene: unknown) => {
-    if (!object(scene) || !only(scene, ["headline", "subtitle", "accent", "motion", "effect", "narration", "layout"]) ||
+    if (!object(scene) || !only(scene, ["headline", "subtitle", "accent", "motion", "effect", "preset", "narration", "layout"]) ||
       (scene.motion !== undefined && !MOTION_PRESETS.includes(scene.motion as MotionPreset)) ||
       (scene.effect !== undefined && (typeof scene.effect !== "string" || !effectRegistry.has(scene.effect))) ||
+      (scene.preset !== undefined && (typeof scene.preset !== "string" || !getCompoundPreset(scene.preset))) ||
       (scene.layout !== undefined && !["left", "center", "right"].includes(String(scene.layout))) ||
       (scene.narration !== undefined && (typeof scene.narration !== "string" || scene.narration.length > 100)) ||
       typeof scene.headline !== "string" || !scene.headline.trim() || scene.headline.length > 100 ||
@@ -90,6 +95,7 @@ export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {
       accent: scene.accent,
       ...(scene.motion !== undefined ? { motion: scene.motion as MotionPreset } : {}),
       ...(scene.effect !== undefined ? { effect: scene.effect } : {}),
+      ...(scene.preset !== undefined ? { preset: scene.preset } : {}),
       ...(scene.layout !== undefined ? { layout: scene.layout as MotionDirectorScene["layout"] } : {}),
       ...(scene.narration ? { narration: scene.narration.trim() } : {}),
     };
@@ -101,6 +107,7 @@ export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {
     scenes,
     ...(raw.motion !== undefined ? { motion: raw.motion as MotionPreset } : {}),
     ...(raw.effect !== undefined ? { effect: raw.effect } : {}),
+    ...(raw.preset !== undefined ? { preset: raw.preset } : {}),
     ...(raw.artDirection !== undefined ? { artDirection: raw.artDirection as MotionArtDirection } : {}),
     ...(raw.transition !== undefined ? { transition: raw.transition as MotionTransition } : {}),
     ...(raw.aspectRatio !== undefined ? { aspectRatio: raw.aspectRatio as MotionAspectRatio } : {}),
@@ -139,12 +146,15 @@ export const motionPlanner: MotionPlanner = async (system, user, signal) => {
 };
 const plannerEffectsGuide = EFFECT_CATEGORIES.map(category =>
   category + ": " + effectRegistry.list({ category }).map(effect => effect.id).join(", ")).join("\n");
+const plannerPresetGuide = listCompoundPresets().map(preset =>
+  preset.id + " (" + preset.tags.join(", ") + ")").join("; ");
 const planSystem = [
   "You are the planning AI inside SuperAgent Motion Director.",
   "Return ONLY strict JSON, exactly: {name:string, durationSeconds:integer 2..20, background:hexColor,",
-  "scenes: array of 1..3 {headline:string <=100 chars, subtitle?:string <=100 chars, accent:hexColor, motion?:preset, effect?:effectId, layout?:left|center|right}}.",
+  "scenes: array of 1..3 {headline:string <=100 chars, subtitle?:string <=100 chars, accent:hexColor, motion?:motionPreset, effect?:effectId, preset?:compoundPresetId, layout?:left|center|right}}.",
   "Optional global motion and scene motion presets: slide-left, slide-up, slide-right, drop-in, tilt, swing, fade, pop-left, pop-up.",
   "Optional effect ID from Motion Effects Catalog; use only an exact ID listed below.",
+  "For complete scene motion, prefer optional preset: a compound preset ID from the catalog below.",
   "Optional per-scene narration: short spoken script <=100 characters, only produced as audio if user enables offline Piper.",
   "Optional transition: crossfade or cut (default crossfade). Match creative style requested in user brief.",
   "Always choose artDirection: minimal (refined restrained), editorial (asymmetric typography), neon (futuristic accents), brutalist (bold geometry).",
@@ -155,6 +165,7 @@ const planSystem = [
   "Motion supports catalog-validated entrance, exit, kinetic typography, camera, transition, background and accent effects on safe scene primitives. No executable scripts or shader APIs.",
   "Never invent supplied assets, logos, music, TTS, video footage, or unsupported effects.",
   "Available safe effects by category (use exact IDs; one per scene):", plannerEffectsGuide,
+  "Available compound presets (choose at most one preset per scene):", plannerPresetGuide,
   "Return no markdown, paths, URLs, scripts or extra keys."
 ].join("\n");
 const reviseSystem = [

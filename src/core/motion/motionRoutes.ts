@@ -3,7 +3,8 @@ import fs from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { createMotionProject, getMotionProject, listMotionProjects, updateMotionProject } from "./motionService.js";
+import { createMotionProject, getMotionProject, listMotionProjects, updateMotionProject, applyCompoundPresetToProject } from "./motionService.js";
+import { getCompoundPreset, listCompoundPresets } from "./effects/compoundPresets.js";
 import { getMotionJob, getMotionSchedulerStatus, inspectMotionJob, listMotionJobs, motionJobDir, requestMotionCancellation, startDetachedMotionJob, enqueueSupervisedMotionJob } from "./jobs/motionJobs.js";
 import { MotionRevisionConflict } from "./project/revisions.js";
 import { MotionValidationError } from "./schema/validation.js";
@@ -87,6 +88,9 @@ export async function handleMotionHttpRoute(
   const asset = pathname.match(/^\/api\/motion\/assets\/(asset-[a-f0-9]{64})$/);
   const audio = pathname.match(/^\/api\/motion\/audio\/(audio-[a-f0-9]{64})$/);
   const waveform = pathname.match(/^\/api\/motion\/audio\/(audio-[a-f0-9]{64})\/waveform$/);
+  const compoundPresetsList = pathname === "/api/motion/presets";
+  const compoundPresetItem = pathname.match(/^\/api\/motion\/presets\/([a-z][a-z0-9-]{1,63})$/);
+  const projectCompoundPresets = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/presets$/);
   const effectsList = pathname === "/api/motion/effects";
   const effectItem = pathname.match(/^\/api\/motion\/effects\/([a-z][a-z0-9-]{1,63})$/);
   const projectEffects = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects$/);
@@ -122,6 +126,15 @@ export async function handleMotionHttpRoute(
         "ETag": '"' + audio[1].slice(6) + '"',
       });
       res.end(method === "HEAD" ? undefined : bytes);
+    } else if (compoundPresetsList && method === "GET") {
+      const query = _url.searchParams.get("q") ?? undefined;
+      if (query && query.length > 120) throw new Error("Invalid compound preset query length");
+      const items = listCompoundPresets(query);
+      json(res, ctx, 200, { presets: items, count: items.length });
+    } else if (compoundPresetItem && method === "GET") {
+      const preset = getCompoundPreset(compoundPresetItem[1]);
+      if (!preset) json(res, ctx, 404, { error: "Compound preset not found" });
+      else json(res, ctx, 200, preset);
     } else if (effectsList && method === "GET") {
       const category = _url.searchParams.get("category");
       const query = _url.searchParams.get("q") ?? _url.searchParams.get("query") ?? undefined;
@@ -203,6 +216,25 @@ export async function handleMotionHttpRoute(
       json(res, ctx, 201, await createMotionProject(workspace, body.name));
     } else if (project && method === "GET") {
       json(res, ctx, 200, await getMotionProject(workspace, project[1]));
+    } else if (projectCompoundPresets && method === "POST") {
+      const body = await readMotionJson(req, 5_000);
+      if (typeof body.presetId !== "string" || typeof body.targetLayerId !== "string")
+        throw new Error("presetId and targetLayerId must be strings");
+      if (!Number.isSafeInteger(body.baseRevision)) throw new Error("baseRevision must be a safe integer");
+      if (body.startFrame !== undefined && !Number.isSafeInteger(body.startFrame))
+        throw new Error("startFrame must be a safe integer");
+      if (body.durationFrames !== undefined && !Number.isSafeInteger(body.durationFrames))
+        throw new Error("durationFrames must be a safe integer");
+      if (body.intensity !== undefined && (typeof body.intensity !== "number" ||
+          !Number.isFinite(body.intensity))) throw new Error("Invalid preset intensity");
+      const updated = await applyCompoundPresetToProject(workspace, projectCompoundPresets[1],
+        body.baseRevision as number, {
+          presetId: body.presetId, targetLayerId: body.targetLayerId,
+          startFrame: body.startFrame as number | undefined,
+          durationFrames: body.durationFrames as number | undefined,
+          intensity: body.intensity as number | undefined,
+        });
+      json(res, ctx, 200, updated);
     } else if (projectEffects && method === "POST") {
       const body = await readMotionJson(req);
       if (typeof body.effectId !== "string") throw new Error("effectId is required");

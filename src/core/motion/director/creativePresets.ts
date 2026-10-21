@@ -2,6 +2,7 @@ import { createCanvas } from "@napi-rs/canvas";
 import type { MotionProject, MotionTrack, RectLayer, TextLayer } from "../schema/types.js";
 import type { MotionDirectorPlan, MotionDirectorScene } from "./directorService.js";
 import { effectRegistry } from "../effects/index.js";
+import { applyCompoundPreset } from "../effects/compoundPresets.js";
 import { evaluateTrack } from "../timeline/evaluateFrame.js";
 
 /** Intentional visual systems; no arbitrary user CSS, SVG, or executable effects. */
@@ -272,6 +273,27 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
           anchor.y + (dimensions.height > dimensions.width ? 144 : 161))] });
     }
   });
-  return { width: dimensions.width, height: dimensions.height, fps: { numerator: 30, denominator: 1 },
-    durationFrames: count, background: plan.background, layers };
+  const initial: Composition = {
+    width: dimensions.width, height: dimensions.height, fps: { numerator: 30, denominator: 1 },
+    durationFrames: count, background: plan.background, layers,
+  };
+  if (!plan.preset && !plan.scenes.some(scene => scene.preset)) return initial;
+  let draft: MotionProject = {
+    schemaVersion: 1, id: "motion-director-preset-temp", workspaceRoot: "/preset",
+    name: plan.name, revision: 1,
+    createdAt: "2026-10-22T00:00:00.000Z", updatedAt: "2026-10-22T00:00:00.000Z",
+    composition: initial,
+  };
+  for (const [index, scene] of plan.scenes.entries()) {
+    const presetId = scene.preset ?? plan.preset;
+    if (!presetId) continue;
+    const startFrame = Math.floor(index * count / plan.scenes.length);
+    const last = Math.floor((index + 1) * count / plan.scenes.length) - 1;
+    if (last - startFrame + 1 < 12) throw new Error("Compound preset scene must span at least 12 frames");
+    draft = applyCompoundPreset(draft, {
+      presetId, targetLayerId: "scene-" + index + "-title",
+      startFrame, durationFrames: Math.min(420, last - startFrame + 1),
+    });
+  }
+  return draft.composition;
 }

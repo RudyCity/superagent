@@ -43,6 +43,9 @@ const usage = `Motion Studio (developer preview)
   superagent motion doctor [--json]
   superagent motion effects [--category CATEGORY] [--search QUERY] [--workspace PATH] [--json]
   superagent motion effect-info EFFECT_ID [--workspace PATH] [--json]
+  superagent motion presets [--search QUERY] [--json]
+  superagent motion preset-info PRESET_ID [--json]
+  superagent motion apply-preset PROJECT_ID --base-revision N --preset PRESET_ID --layer TEXT_LAYER_ID [--start-frame N] [--duration-frames N] [--intensity 1] [--json]
   superagent motion apply-effect PROJECT_ID --base-revision N --effect EFFECT_ID [--layer LAYER_ID] [--params-json JSON] [--start-frame N] [--duration-frames N] [--workspace PATH] [--json]
 
 MP4 preview uses installed FFmpeg. --detach launches a separate Bun worker;
@@ -52,7 +55,7 @@ function argumentsOf(args: string[]): { action: string; positionals: string[]; o
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
   const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--effect", "--params-json", "--start-frame", "--duration-frames", ...boolean]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -112,6 +115,40 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
         const lines = items.map(e => `[${e.category}] ${e.id} - ${e.name}`);
         emit(items.length ? `${lines.join("\n")}\n\nTotal: ${items.length} effects` : "No effects found.", false);
       }
+      return 0;
+    }
+    if (action === "presets") {
+      const { listCompoundPresets } = await import("../motion/effects/compoundPresets.js");
+      const items = listCompoundPresets(opt(opts, "--search"));
+      emit(json ? { count: items.length, presets: items } : items.map(item =>
+        item.id + " - " + item.name + ": " + item.description).join("\n"), json);
+      return 0;
+    }
+    if (action === "preset-info") {
+      if (positionals.length !== 1) throw new Error("preset-info requires PRESET_ID");
+      const { getCompoundPreset } = await import("../motion/effects/compoundPresets.js");
+      const preset = getCompoundPreset(positionals[0]);
+      if (!preset) throw new Error("Unknown compound preset: " + positionals[0]);
+      emit(preset, json);
+      return 0;
+    }
+    if (action === "apply-preset") {
+      if (positionals.length !== 1) throw new Error("apply-preset requires PROJECT_ID");
+      const baseRevision = nonnegativeInteger(opt(opts, "--base-revision"), "--base-revision");
+      const presetId = opt(opts, "--preset");
+      const targetLayerId = opt(opts, "--layer");
+      if (!presetId || !targetLayerId) throw new Error("apply-preset requires --preset and --layer");
+      const parseOptional = (name: string) => opt(opts, name) === undefined ? undefined :
+        nonnegativeInteger(opt(opts, name), name);
+      const intensityRaw = opt(opts, "--intensity");
+      const intensity = intensityRaw === undefined ? undefined : Number(intensityRaw);
+      if (intensityRaw !== undefined && !Number.isFinite(intensity)) throw new Error("Invalid --intensity");
+      const { applyCompoundPresetToProject } = await import("../motion/motionService.js");
+      const updated = await applyCompoundPresetToProject(workspace, positionals[0], baseRevision, {
+        presetId, targetLayerId, startFrame: parseOptional("--start-frame"),
+        durationFrames: parseOptional("--duration-frames"), intensity,
+      });
+      emit({ id: updated.id, revision: updated.revision, presetApplied: presetId }, json);
       return 0;
     }
     if (action === "effect-info") {

@@ -25,6 +25,9 @@ const help = [
   "  /motion doctor",
   "  /motion effects [category]",
   "  /motion effect <effect-id>",
+  "  /motion presets [search]",
+  "  /motion preset <preset-id>",
+  "  /motion apply-preset <project-id> <base-revision> <preset-id> <text-layer-id>",
   "  /motion apply-effect <project-id> <base-revision> <effect-id> [layer-id] [params-json]",
   "Interactive renders are foreground; scriptable CLI supports detached rendering.",
 ].join("\n");
@@ -107,6 +110,31 @@ export const motionCommand: SlashCommand = {
         const item = effectRegistry.getCatalog().find(e => e.id === id);
         if (!item) throw new Error("Effect not found: " + id);
         emit(ctx, JSON.stringify(item, null, 2));
+        return;
+      }
+      if (action === "presets") {
+        const { listCompoundPresets } = await import("../motion/effects/compoundPresets.js");
+        const items = listCompoundPresets(tokens.slice(1).join(" "));
+        emit(ctx, items.length ? items.map(item => item.id + " - " + item.name).join("\n") : "No matching compound presets.");
+        return;
+      }
+      if (action === "preset") {
+        if (!id) throw new Error("Usage: /motion preset <preset-id>");
+        const { getCompoundPreset } = await import("../motion/effects/compoundPresets.js");
+        const preset = getCompoundPreset(id);
+        if (!preset) throw new Error("Unknown compound preset: " + id);
+        emit(ctx, JSON.stringify(preset, null, 2));
+        return;
+      }
+      if (action === "apply-preset") {
+        if (!id || !third || !fourth || !rest[0])
+          throw new Error("Usage: /motion apply-preset <project-id> <base-revision> <preset-id> <text-layer-id>");
+        const baseRevision = parseInteger(third, "base-revision");
+        const { applyCompoundPresetToProject } = await import("../motion/motionService.js");
+        const result = await applyCompoundPresetToProject(workspace, id, baseRevision, {
+          presetId: fourth, targetLayerId: rest[0],
+        });
+        emit(ctx, "Applied compound preset " + fourth + " to " + result.id + " (revision " + result.revision + ")");
         return;
       }
       if (action === "apply-effect") {
