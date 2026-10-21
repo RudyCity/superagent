@@ -16,6 +16,7 @@ import { SemanticAnalyzer } from "./SemanticAnalyzer.js";
 import { CompactionHistory } from "./CompactionHistory.js";
 import { getSettings } from "../config/jsonConfig.js";
 import { isCompactionSummaryText } from "./CompactionStrategy.js";
+import { ContextContinuityStore, validateCompaction, benchmarkCompaction } from "./ContextContinuity.js";
 
 export type ContextState =
   | "IDLE"
@@ -75,9 +76,12 @@ export class ContextManager {
   private budgetedPruningStrategy: BudgetedPruningStrategy;
   private config: ContextManagerConfig;
   private pinnedMessages: Map<string, PinnedMessage> = new Map();
+  private readonly continuity: ContextContinuityStore;
+  private lastQualityScore = 100;
 
   constructor(config: ContextManagerConfig) {
     this.config = config;
+    this.continuity = new ContextContinuityStore(config.historyFilePath);
     this.tokenTracker = new TokenTracker(config.model);
     this.semanticAnalyzer = new SemanticAnalyzer();
     this.history = new CompactionHistory();
@@ -112,6 +116,10 @@ export class ContextManager {
     });
   }
 
+  getContinuity(): ContextContinuityStore { return this.continuity; }
+  getQualityScore(): number { return this.lastQualityScore; }
+  getAdaptiveThreshold(): number { return this.calculateThreshold(); }
+
   setLLMModel(model: any, abortSignal?: AbortSignal): void {
     for (const s of this.strategies) {
       if (s.name === "summarization" && typeof (s as any).setConfig === "function") {
@@ -129,7 +137,8 @@ export class ContextManager {
   shouldCompact(messages: Message[]): CompactionDecision {
     const breakdown = this.tokenTracker.estimateTokensForAll(messages);
     const totalTokens = breakdown.total;
-    const threshold = this.calculateThreshold();
+    const toolHeavy = messages.some((m) => m.toolResults?.some((t) => t.result.length > 16000));
+    const threshold = Math.floor(this.calculateThreshold() * (toolHeavy ? 0.85 : 1));
 
     if (totalTokens < threshold * 0.8) {
       return { shouldCompact: false, reason: "below-threshold" };
@@ -217,6 +226,7 @@ export class ContextManager {
       error.name = "AbortError";
       throw error;
     }
+    const startedAt = Date.now();
     this.setState("CHECKING");
     this.autoPinKeyMessages(messages);
 
@@ -256,12 +266,18 @@ export class ContextManager {
 
       this.setState("VALIDATING");
       this.validateResult(result);
+      const quality = validateCompaction(messages, result.messages);
+      this.lastQualityScore = quality.score;
+      if (!quality.passed) throw new Error("Compaction quality gate failed: " + quality.missing.join(", "));
+      result.metadata.quality = quality;
+      result.metadata.checkpoint = this.continuity.preview(messages).checkpoint;
 
       const tokensBefore = this.tokenTracker.estimateTokensForAll(messages).total;
       const tokensAfter = this.tokenTracker.estimateTokensForAll(
         result.messages
       ).total;
 
+      this.continuity.capture(messages, tokensBefore);
       await this.history.record({
         id: this.generateId(),
         timestamp: Date.now(),
@@ -274,6 +290,7 @@ export class ContextManager {
         reason: "threshold",
       });
 
+      this.continuity.record(selectedStrategy.name, Date.now() - startedAt, tokensBefore, tokensAfter, quality.score, !!result.metadata.usedFallback);
       this.setState("IDLE");
       // Emit with rich payload so UI/agents can show "compacted X → Y tokens
       // via <strategy>" without re-querying internal state.
@@ -297,11 +314,18 @@ export class ContextManager {
       return result;
     } catch (error) {
       this.setState("FAILED");
+      this.continuity.failure();
       this.emit("compaction:fail", error);
       // Cancellation is an explicit user action, not a compaction failure:
       // never overwrite the conversation via a recovery strategy after abort.
       if (abortSignal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
-      return this.recover(messages, error as Error);
+      const recovered = await this.recover(messages, error as Error);
+      const quality = validateCompaction(messages, recovered.messages);
+      if (!quality.passed) throw new Error("Recovery quality gate failed: " + quality.missing.join(", "));
+      recovered.metadata.quality = quality;
+      this.lastQualityScore = quality.score;
+      this.continuity.capture(messages, this.estimateTokensForAll(messages).total);
+      return recovered;
     } finally {
       this.setState("IDLE");
     }
@@ -466,7 +490,10 @@ export class ContextManager {
       customLimit = getSettings().contextWindowLimit;
     } catch {}
     const maxInMemoryWorkingLimit = customLimit > 0 ? customLimit : 128000;
-    return Math.min(calculated, maxInMemoryWorkingLimit);
+    // Tool-heavy sessions have disproportionately large JSON payloads; compact
+    // earlier to retain a useful response/payload reserve without model retries.
+    const reserve = this.continuity.getMetrics().latest?.fallback ? 0.9 : 1;
+    return Math.max(1000, Math.floor(Math.min(calculated, maxInMemoryWorkingLimit) * reserve));
   }
 
   private selectStrategy(messages: Message[]): CompactionStrategy {

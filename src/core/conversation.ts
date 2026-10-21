@@ -18,6 +18,7 @@ import type { ContextManager, ContextManagerConfig, PinnedMessage } from "./cont
 import { getActivePreset, saveSessionPreset } from "./config/jsonConfig.js";
 import { cleanAssistantResponse } from "../utils/text.js";
 import { saveSessionToDb, loadSessionFromDb } from "./storage/historyDb.js";
+import { compactToolResult } from "./context/ContextContinuity.js";
 
 export type TextPart = { type: "text"; text: string };
 export type ImagePart = { type: "image"; image: string; mimeType: string }; // image is base64 string
@@ -473,32 +474,8 @@ export class Conversation {
    * compaction for very long sessions.
    */
   stripOldToolResults(keepCycles = 2): void {
-    /** Max lines to keep in the preview snippet */
-    const PREVIEW_LINES = 20;
-    /** Hard character cap for the preview snippet */
-    const PREVIEW_CHARS = 800;
     /** Max chars to keep from error results */
     const ERROR_CHARS = 300;
-
-    /**
-     * Produce a trimmed preview of a successful tool result.
-     * Returns the first PREVIEW_LINES lines, capped at PREVIEW_CHARS,
-     * with a suffix indicating how much was omitted.
-     */
-    const makePreview = (result: string): string => {
-      if (result.length <= PREVIEW_CHARS) return result;
-      const lines = result.split(/\r?\n/);
-      const previewLines = lines.slice(0, PREVIEW_LINES);
-      let preview = previewLines.join("\n");
-      if (preview.length > PREVIEW_CHARS) {
-        preview = preview.slice(0, PREVIEW_CHARS);
-      }
-      const omittedLines = lines.length - previewLines.length;
-      const suffix = omittedLines > 0
-        ? `\n... [truncated — ${omittedLines} more line(s) omitted for token efficiency]`
-        : `\n... [truncated — content too long, omitted for token efficiency]`;
-      return preview + suffix;
-    };
 
     const truncateResult = (tr: ToolResult): ToolResult => {
       if (tr.result.includes("[truncated —") || tr.result.includes("[Error truncated]")) {
@@ -510,7 +487,7 @@ export class Conversation {
           : tr.result;
         return { ...tr, result: trimmed };
       }
-      return { ...tr, result: makePreview(tr.result) };
+      return { ...tr, result: compactToolResult(tr.result, tr.name, false, 800) };
     };
 
     let toolMessagesSeen = 0;

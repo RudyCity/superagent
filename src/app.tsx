@@ -2909,12 +2909,14 @@ export function App({
       const msgAfter = payload.messagesAfter ?? 0;
       const reducedPct = before > 0 ? Math.round((saved / before) * 100) : 0;
       const usedFallback = (payload.metadata as any)?.usedFallback === true;
+      const qScore = (payload.metadata as any)?.quality?.score;
+      const qNote = typeof qScore === "number" ? `, quality ${qScore}/100` : "";
       const fallbackNote = usedFallback
         ? " (⚠️ heuristic fallback — lower quality, LLM unavailable)"
         : "";
       addLine({
         type: "system",
-        content: `🧹 Context auto-compacted via "${strategy}": ${msgBefore}→${msgAfter} messages, ${before.toLocaleString()}→${after.toLocaleString()} tokens (saved ${saved.toLocaleString()} / ${reducedPct}%)${fallbackNote}`,
+        content: `🧹 Context auto-compacted via "${strategy}": ${msgBefore}→${msgAfter} messages, ${before.toLocaleString()}→${after.toLocaleString()} tokens (saved ${saved.toLocaleString()} / ${reducedPct}%${qNote})${fallbackNote}`,
         timestamp: Date.now(),
       });
     };
