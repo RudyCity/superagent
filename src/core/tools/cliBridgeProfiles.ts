@@ -115,7 +115,7 @@ export function builtinProfiles(): Record<string, CliProfile> {
     },
     agy: {
       alias: "agy",
-      defaultArgs: ["--dangerously-skip-permissions"],
+      defaultArgs: ["--mode", "accept-edits"],
       resumeFlag: "continue",
       resumeArgStyle: "value",
       skillsArg: "add-dir",

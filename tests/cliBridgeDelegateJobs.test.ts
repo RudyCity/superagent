@@ -392,7 +392,7 @@ describe("CLI Bridge background delegation jobs", () => {
     const b = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-recovery-B-"));
     try {
       const started = await delegateJobs.startDelegateJob({
-        ...options('setTimeout(() => console.log("finished"), 1700)', 5000),
+        ...options('setInterval(() => console.log("still-running"), 1000)', 10000),
         cwd: a, workspaceRoot: a,
       });
       const owned = await delegateJobs.getDelegateJob(started.jobId);

@@ -98,6 +98,7 @@ import {
 import { resolveExpectedArtifacts, artifactClaimIdentity } from "./cliBridgeArtifactEvidence.js";
 import { inspectCrossProcessArtifactClaim } from "./cliBridgeCrossProcessClaims.js";
 import { projectCliDelegate } from "../channels/unifiedChannelTask.js";
+import { listCliBridgeCapacity } from "./cliBridgeCapacity.js";
 
 // ─── Tool definition ─────────────────────────────────────────────────────
 
@@ -111,6 +112,9 @@ const ACTIONS = [
   "delegate.cancel",
   "delegate.claims",
   "delegate.recovery",
+  "delegate.slots",
+  "delegate.retry",
+  "delegate.health",
   "session.create",
   "session.send",
   "session.list",
@@ -132,7 +136,7 @@ export const cliBridgeTool: Tool = {
   description:
     "Delegate a task to an external AI CLI assistant (Codex, Claude Code, AGY, or any custom binary). " +
     "Three modes: (1) `delegate` for short synchronous tasks, (2) `delegate.start` plus `delegate.get`/`delegate.tail`/`delegate.cancel` for long-running background jobs and bounded parallel work, (3) `session.*` for interactive multi-turn sessions. " +
-    "Use `list` to discover installed CLIs, `delegate` for all autonomous coding/analysis tasks, and `session.create`+`session.send`+`session.kill` only when interactive step-by-step TUI dialog is required. " +
+    "Use `list` to discover installed CLIs, `delegate` for short jobs, `delegate.start` or `delegate` with wait=false for long jobs, and `session.*` for interactive dialogs. " +
     "Long-running MCP support: delegate.start returns a background job id; delegate.jobs lists jobs; delegate.get and delegate.tail poll progress/output; delegate.cancel requests cancellation; delegate.claims inspects bounded output locks read-only; delegate.recovery inspects last recorded owner/child PID signals without reattaching or stopping processes. Multiple jobs can run concurrently. " +
     "Use delegate for short tasks and delegate.start for builds or lengthy edits so the MCP request does not have to remain open. " +
     "v1.5.17: `session.create` can auto-send an initial prompt the moment the session is ready, " +
@@ -193,6 +197,13 @@ export const cliBridgeTool: Tool = {
           "prompt is auto-sent once the session is ready. Use this when you want to " +
           "create a session AND fire its first prompt in a single call.",
       },
+      permissionMode: {
+        type: "string",
+        enum: ["accept-edits", "plan", "auto", "full-auto"],
+        description: "AGY default is accept-edits; full-auto explicitly enables unrestricted CLI permissions.",
+      },
+      wait: { type: "boolean", description: "For delegate only, false starts a pollable background job." },
+      idempotencyKey: { type: "string", description: "Avoid duplicate background dispatch." },
       sessionId: {
         type: "string",
         description: "Target session id (for session.send / session.kill / session.get).",
@@ -388,6 +399,39 @@ export const cliBridgeTool: Tool = {
 
         case "delegate.recovery":
           return await handleDelegateRecovery(String(args.jobId ?? "").trim(), cwd);
+        case "delegate.slots": {
+          const cap = Math.min(12, Math.max(1, Number.parseInt(process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS ?? "4", 10) || 4));
+          const slots = await listCliBridgeCapacity(cap);
+          return "CLI Bridge host-wide capacity (occupied slots may require manual recovery):\n" +
+            slots.map(slot => "  " + slot.index + ": " + (slot.occupied ? "occupied" : "available")).join("\n");
+        }
+        case "delegate.health": {
+          const current = (await listDelegateJobs()).filter(job => delegateJobVisibleToWorkspace(job, cwd));
+          const active = current.filter(job => ["starting", "running", "cancelling"].includes(job.status));
+          const silent = active.filter(job => Date.now() - (job.lastOutputAt ?? job.startedAt) > 60_000);
+          const stalledOwners = active.filter(job => Date.now() - (job.heartbeatAt ?? job.startedAt) > 60_000);
+          return ["CLI Bridge project job health:",
+            "Jobs retained: " + current.length,
+            "Active: " + active.length,
+            "Silent >60s (not proof of a hang): " + silent.length,
+            "Missing owner heartbeat >60s: " + stalledOwners.length,
+            "Completion unverified: " + current.filter(job => job.completionState === "unverified").length,
+            ...active.map(job => "- " + job.jobId + " | " + job.status +
+              " | stage=" + (job.currentStage ?? "no progress event") +
+              " | output=" + job.outputBytes + " bytes"),
+          ].join("\n");
+        }
+        case "delegate.retry": {
+          const id = String(args.jobId ?? "").trim();
+          const previous = id ? await getDelegateJob(id) : null;
+          if (!previous || !delegateJobVisibleToWorkspace(previous, cwd))
+            return "Error: delegation job not found in the authorized workspace.";
+          if (["starting", "running", "cancelling"].includes(previous.status))
+            return "Error: original delegation is still active; refusing duplicate work.";
+          if (typeof args.prompt !== "string" || !args.prompt.trim())
+            return "Error: delegate.retry requires a fresh explicit prompt; previous prompts are not stored.";
+          return handleDelegate({ ...args, cli: previous.cliAlias, __background: true }, cwd, signal);
+        }
 
         case "session.create":
           return await handleSessionCreate(args, cwd);
@@ -532,8 +576,19 @@ async function handleDelegate(
     return `Error: CLI '${cliAlias}' is not available. Run action=list to see what's installed.`;
   }
 
+  if (args.args !== undefined && (!Array.isArray(args.args) || args.args.some(value => typeof value !== "string"))) {
+    return "Error: args must be an array of CLI flag strings.";
+  }
   const extraArgs = (args.args as string[] | undefined) ?? [];
-  const isBackground = args.__background === true;
+  // A false wait flag is a real background invocation, not an ignored MCP hint.
+  const isBackground = args.__background === true || (args.wait === false && args.__background !== false);
+  const mode = args.permissionMode === undefined ? "accept-edits" : String(args.permissionMode);
+  if (!["accept-edits", "plan", "auto", "full-auto"].includes(mode)) {
+    return "Error: invalid permissionMode (accept-edits, plan, auto, full-auto).";
+  }
+  if (desc.alias === "agy" && extraArgs.some(a => a === "--dangerously-skip-permissions" || a === "--mode" || a.startsWith("--mode="))) {
+    return "Error: AGY permission flags must be selected through permissionMode.";
+  }
   if (args.expectedArtifacts !== undefined && !isBackground) {
     return "Error: expectedArtifacts currently requires action=delegate.start; blocking delegate has no artifact proof gate.";
   }
@@ -608,11 +663,16 @@ async function handleDelegate(
   const composedPrompt = applyPromptTemplate(tpl, { system: fullSystemPrompt ?? "", prompt });
 
   // Resolve default args and prompt subcommands for 1-shot execution:
-  const defaultFlags = profile?.defaultArgs ?? desc.defaultArgs ?? [];
+  const defaultFlags = desc.alias === "agy"
+    ? (profile?.defaultArgs ?? desc.defaultArgs ?? []).filter(flag =>
+        flag !== "--dangerously-skip-permissions" && flag !== "--mode" && flag !== "accept-edits" &&
+        flag !== "plan" && flag !== "auto")
+    : (profile?.defaultArgs ?? desc.defaultArgs ?? []);
   const promptSub = profile?.promptSubcommand ?? desc.promptSubcommand ?? [];
-  const autoFlags = desc.alias === "agy" && !extraArgs.includes("--dangerously-skip-permissions")
+  // Full autonomy is an explicit per-invocation opt-in. Default is accept-edits.
+  const autoFlags = desc.alias !== "agy" ? [] : mode === "full-auto"
     ? ["--dangerously-skip-permissions"]
-    : [];
+    : ["--mode", mode];
   
   // Note: promptSub (e.g. -p or --print) MUST be placed at the end so it immediately precedes the prompt
   // Do NOT dedupe skillsArgs via Set as it strips repeated flags like `--add-dir`.
@@ -624,7 +684,11 @@ async function handleDelegate(
       baseFlags.push(f);
     }
   }
-  const combinedArgs = [...baseFlags, ...skillsArgs, ...extraArgs, ...promptSub];
+  // AGY emits incremental NDJSON progress when print mode enables stream-json.
+  const outputFlags = desc.alias === "agy" && isBackground && !extraArgs.includes("--output-format")
+    ? ["--output-format", "stream-json"]
+    : [];
+  const combinedArgs = [...baseFlags, ...skillsArgs, ...extraArgs, ...outputFlags, ...promptSub];
 
   if (isBackground) {
     if (signal?.aborted) {
@@ -639,6 +703,7 @@ async function handleDelegate(
       cwd: delegateCwd,
       workspaceRoot: canonicalCliWorkspace(cwd),
       expectedArtifacts: args.expectedArtifacts as string[] | undefined,
+      idempotencyKey: typeof args.idempotencyKey === "string" ? args.idempotencyKey : undefined,
       args: [...combinedArgs, composedPrompt],
       timeoutMs: timeoutMs ?? 30 * 60 * 1000,
     });
@@ -779,10 +844,21 @@ async function handleDelegateGet(jobId: string, callerWorkspace: string): Promis
       [item.path, item.state, item.sha256 ? "sha256=" + item.sha256 : "", item.bytes === undefined ? "" : "bytes=" + item.bytes].filter(Boolean).join(" ")
     ).join("; ") || "(none)"),
     "CLI: " + job.cliAlias + " | PID: " + (job.pid ?? "-") + " | Exit: " + (job.exitCode ?? "-"),
+    "Capacity slot: " + (job.capacitySlot ?? "unknown"),
+    "Idempotency key: " + (job.idempotencyKey ?? "(none)"),
     "Started: " + new Date(job.startedAt).toISOString(),
     "Duration: " + (job.durationMs ?? (Date.now() - job.startedAt)) + "ms" + (job.timedOut ? " (timed out)" : ""),
     "Timeout: " + job.timeoutMs + "ms",
     "Output bytes: " + job.outputBytes,
+    "Current stage: " + (job.currentStage ?? "(no structured progress yet)"),
+    "Progress events: " + (job.activityEvents ?? 0),
+    "Last progress: " + (job.lastProgressAt ? new Date(job.lastProgressAt).toISOString() : "(none)"),
+    "Bridge heartbeat: " + (job.heartbeatAt ? new Date(job.heartbeatAt).toISOString() : "(not recorded)"),
+    "Heartbeat age: " + (job.heartbeatAt ? Math.max(0, Date.now() - job.heartbeatAt) + "ms" : "unknown"),
+    "Last CLI output: " + (job.lastOutputAt ? new Date(job.lastOutputAt).toISOString() : "(no output yet)"),
+    "Silent for: " + Math.max(0, Date.now() - (job.lastOutputAt ?? job.startedAt)) + "ms" +
+      (job.status === "running" && Date.now() - (job.lastOutputAt ?? job.startedAt) > 60_000
+        ? " (no CLI output; not proof of a hang)" : ""),
     "Working directory: " + job.cwd,
     "Log: " + job.logPath,
     job.error ? "Error: " + job.error : "",
@@ -866,6 +942,15 @@ async function handleSessionCreate(
     : undefined;
 
   const interactive = args.interactive === true;
+  if (args.args !== undefined && (!Array.isArray(args.args) || args.args.some(value => typeof value !== "string"))) {
+    return "Error: session args must be an array of strings.";
+  }
+  const mode = args.permissionMode === undefined ? "accept-edits" : String(args.permissionMode);
+  if (!["accept-edits", "plan", "auto", "full-auto"].includes(mode))
+    return "Error: invalid permissionMode.";
+  if (desc.alias === "agy" && ((args.args as string[] | undefined) ?? []).some(flag =>
+    flag === "--dangerously-skip-permissions" || flag === "--mode" || flag.startsWith("--mode=")))
+    return "Error: AGY permission flags must be selected through permissionMode.";
   const profileArgv = profile
     ? buildSessionArgv(profile, {
         skills: skillResolution.paths,
@@ -874,6 +959,16 @@ async function handleSessionCreate(
       })
     : ((args.args as string[] | undefined) ?? []);
 
+  if (desc.alias === "agy") {
+    // Profiles may be user-overridden; always enforce the invocation's safe policy.
+    for (let i = profileArgv.length - 1; i >= 0; i--) {
+      if (profileArgv[i] === "--dangerously-skip-permissions") profileArgv.splice(i, 1);
+      else if (profileArgv[i] === "--mode") profileArgv.splice(i, 2);
+      else if (profileArgv[i].startsWith("--mode=")) profileArgv.splice(i, 1);
+    }
+    if (mode === "full-auto") profileArgv.unshift("--dangerously-skip-permissions");
+    else profileArgv.unshift("--mode", mode);
+  }
   const envOverrides = (args.env as Record<string, string> | undefined) ?? undefined;
   const sessionEnv = profile
     ? buildSessionEnv(profile, envOverrides)
@@ -918,7 +1013,7 @@ async function handleSessionCreate(
     `  profile:    ${s.profileAlias ?? "(none)"}`,
     `  cwd:        ${s.cwd}`,
     `  skills:     ${JSON.stringify(s.skills ?? [])}`,
-    `  system:     ${s.systemPrompt ? JSON.stringify(s.systemPrompt) : "(none)"}`,
+    `  system:     ${s.systemPrompt ? "(" + s.systemPrompt.length + " chars; redacted)" : "(none)"}`,
     `  log:        ${s.logPath}`,
   ];
   if (s.unresolvedSkills && s.unresolvedSkills.length > 0) {

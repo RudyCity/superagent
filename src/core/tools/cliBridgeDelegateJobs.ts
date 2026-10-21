@@ -20,6 +20,8 @@ import { persistJobShard, loadJobShards, loadLegacyJobs, writeCompatibilityJobsS
 import { classifyDelegateRecovery, type DelegateRecoveryDiagnostic } from "./cliBridgeRecovery.js";
 import { readProcessStartIdentity } from "./cliBridgeProcessIdentity.js";
 import { getTlineCreatorForJob } from "../channels/tlineJobCreator.js";
+import { readBoundedLogTail, redactCliBridgeOutput, summarizedPrompt } from "./cliBridgeObservability.js";
+import { acquireCliBridgeCapacity, releaseCliBridgeCapacity, type CliBridgeCapacityLease } from "./cliBridgeCapacity.js";
 
 export type DelegateJobStatus =
   | "starting" | "running" | "cancelling" | "succeeded" | "failed" | "timed_out" | "cancelled" | "interrupted" | "verification_failed";
@@ -33,6 +35,9 @@ export interface DelegateJob {
   workspaceRoot?: string;
   /** Caller-declared artifact paths; never inferred from model output. */
   expectedArtifacts?: string[];
+  idempotencyKey?: string;
+  promptDigest?: string;
+  capacitySlot?: number;
   /** Exit zero alone means unverified process completion. */
   completionState?: "pending" | "artifacts_verified" | "unverified" | "artifact_verification_failed" | "failed" | "timed_out" | "cancelled" | "interrupted";
   artifactEvidence?: ArtifactEvidence[];
@@ -47,6 +52,13 @@ export interface DelegateJob {
   status: DelegateJobStatus;
   startedAt: number;
   updatedAt: number;
+  /** Bridge-owner liveness, not evidence of AI progress. */
+  heartbeatAt?: number;
+  /** Timestamp of latest CLI stdout/stderr. */
+  lastOutputAt?: number;
+  lastProgressAt?: number;
+  activityEvents?: number;
+  currentStage?: string;
   endedAt?: number;
   durationMs?: number;
   exitCode: number | null;
@@ -64,6 +76,7 @@ export interface StartDelegateJobOptions {
   cwd: string;
   workspaceRoot?: string;
   expectedArtifacts?: string[];
+  idempotencyKey?: string;
   args: string[];
   timeoutMs: number;
   env?: NodeJS.ProcessEnv;
@@ -81,6 +94,9 @@ const runners = new Map<string, Promise<void>>();
 const logQueues = new Map<string, Promise<void>>();
 const cancellationRequested = new Set<string>();
 const killTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const heartbeatTimers = new Map<string, ReturnType<typeof setInterval>>();
+const capacityLeases = new Map<string, CliBridgeCapacityLease>();
+const progressFragments = new Map<string, string>();
 /** In-process claims prevent simultaneous jobs from claiming the same output. */
 const artifactClaims = new Map<string, string>();
 const artifactBaselines = new Map<string, ArtifactBaseline[]>();
@@ -171,10 +187,34 @@ function queueLog(jobId: string, logPath: string, chunk: string): void {
   void next.catch(() => {});
 }
 function updateOutput(job: DelegateJob, chunk: Buffer | string): void {
-  const output = chunk.toString();
+  const raw = chunk.toString();
+  if (job.cliAlias === "agy") {
+    const merged = (progressFragments.get(job.jobId) ?? "") + raw;
+    const parts = merged.split(/\r?\n/);
+    progressFragments.set(job.jobId, parts.pop()?.slice(-4096) ?? "");
+    for (const part of parts) {
+      if (part.length > 65536 || !part.trimStart().startsWith("{")) continue;
+      try {
+        const record = JSON.parse(part) as Record<string, any>;
+        if (!["init", "step_update", "result"].includes(record.event)) continue;
+        job.activityEvents = (job.activityEvents ?? 0) + 1;
+        job.lastProgressAt = Date.now();
+        if (record.event === "init") job.currentStage = "AGY initialized";
+        else if (record.event === "result") job.currentStage = "AGY returned final result";
+        else {
+          const step = record.step_update;
+          const type = String(step?.step_type ?? "step").slice(0, 64).replace(/[^a-zA-Z0-9_-]/g, "");
+          const state = String(step?.state ?? "progress").slice(0, 24).replace(/[^a-zA-Z0-9_-]/g, "");
+          job.currentStage = type + ": " + state;
+        }
+      } catch { /* other CLI output is not trusted JSON progress */ }
+    }
+  }
+  const output = redactCliBridgeOutput(raw);
   job.outputTail = `${job.outputTail}${output}`.slice(-MAX_OUTPUT_TAIL_CHARS);
   job.outputBytes += Buffer.byteLength(output, "utf8");
   job.updatedAt = Date.now();
+  job.lastOutputAt = job.updatedAt;
   queueLog(job.jobId, job.logPath, output);
 }
 function killProcessTree(jobId: string, proc: any): void {
@@ -244,10 +284,22 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
         : job.status === "timed_out" ? "timed_out" : "failed";
     }
     try {
+      const lease = capacityLeases.get(job.jobId);
+      if (lease) {
+        await releaseCliBridgeCapacity(lease);
+        capacityLeases.delete(job.jobId);
+      }
+    } catch (error) {
+      job.error = [job.error, "Capacity slot cleanup needs operator review: " + (error instanceof Error ? error.message : String(error))].filter(Boolean).join("; ");
+    }
+    try {
       await releaseArtifactClaims(job.jobId);
     } catch (error) {
       job.error = [job.error, "Artifact lock cleanup needs operator review: " + (error instanceof Error ? error.message : String(error))].filter(Boolean).join("; ");
     }
+    const pulse = heartbeatTimers.get(job.jobId);
+    if (pulse) clearInterval(pulse);
+    heartbeatTimers.delete(job.jobId);
     const timer = killTimers.get(job.jobId);
     if (timer) clearTimeout(timer);
     killTimers.delete(job.jobId);
@@ -256,6 +308,7 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
     job.durationMs = job.endedAt - job.startedAt;
     job.pid = null;
     processes.delete(job.jobId);
+    progressFragments.delete(job.jobId);
     cancellationRequested.delete(job.jobId);
     await (logQueues.get(job.jobId) ?? Promise.resolve()).catch(() => {});
     logQueues.delete(job.jobId);
@@ -277,6 +330,21 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   if (!Number.isFinite(opts.timeoutMs) || opts.timeoutMs < 1_000 || opts.timeoutMs > 7_200_000) {
     throw new Error("Background delegation timeoutMs must be between 1000 and 7200000 (2 hours).");
   }
+  if (opts.idempotencyKey !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,119}$/.test(opts.idempotencyKey)) {
+    throw new Error("CLI Bridge idempotencyKey must be 1–120 safe characters.");
+  }
+  const digest = summarizedPrompt(opts.prompt);
+  if (opts.idempotencyKey) {
+    await refreshJobShards();
+    const existing = [...jobs.values()].find(job => job.idempotencyKey === opts.idempotencyKey &&
+      job.workspaceRoot === (opts.workspaceRoot ?? opts.cwd));
+    if (existing) {
+      if (existing.cliAlias !== opts.cliAlias || existing.promptDigest !== digest) {
+        throw new Error("Idempotency key already belongs to another CLI/prompt in this workspace.");
+      }
+      return { ...existing }; // do not rerun an already dispatched request
+    }
+  }
   const cap = maxConcurrentJobs();
   const count = activeJobCount();
   if (count >= cap) throw new Error(`CLI Bridge concurrency limit reached (${count}/${cap}). Wait for a job to finish or cancel one, then retry.`);
@@ -295,10 +363,12 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
     workspaceRoot: opts.workspaceRoot ?? opts.cwd,
     ...(creator ? { creator } : {}),
     expectedArtifacts: opts.expectedArtifacts?.slice(),
+    idempotencyKey: opts.idempotencyKey,
+    promptDigest: digest,
     completionState: "pending",
     pid: null,
     ownerPid: process.pid,
-    status: "starting", startedAt, updatedAt: startedAt, exitCode: null, timedOut: false, timeoutMs: opts.timeoutMs,
+    status: "starting", startedAt, updatedAt: startedAt, heartbeatAt: startedAt, exitCode: null, timedOut: false, timeoutMs: opts.timeoutMs,
     outputTail: "", outputBytes: 0, logPath,
   };
 
@@ -318,12 +388,17 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
       jobCrossProcessClaims.set(jobId, await acquireCrossProcessArtifactClaims(claimKeys, jobId));
       artifactBaselines.set(jobId, await snapshotExpectedArtifacts(artifactFiles, job.workspaceRoot ?? job.cwd));
     }
+    const lease = await acquireCliBridgeCapacity(cap, jobId);
+    capacityLeases.set(jobId, lease);
+    job.capacitySlot = lease.index;
     await fs.mkdir(logDir, { recursive: true });
     await fs.writeFile(logPath, `[CLI Bridge job ${jobId}]\nCLI: ${opts.cliAlias}\nWorking directory: ${opts.cwd}\nTimeout: ${opts.timeoutMs}ms\n--- output ---\n`, "utf8");
     await persistJobs();
   } catch (error) {
     job.status = "failed";
     job.completionState = "failed";
+    const lease = capacityLeases.get(jobId);
+    if (lease) { await releaseCliBridgeCapacity(lease).catch(() => {}); capacityLeases.delete(jobId); }
     await releaseArtifactClaims(jobId).catch(() => {});
     job.error = error instanceof Error ? error.message : String(error);
     job.endedAt = Date.now();
@@ -343,6 +418,8 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   } catch (error) {
     job.status = "failed";
     job.completionState = "failed";
+    const lease = capacityLeases.get(jobId);
+    if (lease) { await releaseCliBridgeCapacity(lease).catch(() => {}); capacityLeases.delete(jobId); }
     await releaseArtifactClaims(jobId).catch(() => {});
     job.error = error instanceof Error ? error.message : String(error);
     job.endedAt = Date.now();
@@ -361,6 +438,14 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   proc.stdout?.on("data", (chunk: Buffer | string) => { if (!proc.all) updateOutput(job, chunk); });
   const runner = finishJob(job, proc, opts.timeoutMs);
   runners.set(jobId, runner);
+  // Heartbeat proves only that the SuperAgent bridge owner is alive.
+  const pulse = setInterval(() => {
+    if (!activeStatus(job.status)) return;
+    job.heartbeatAt = Date.now();
+    void persistJobs().catch(() => {});
+  }, 20_000);
+  pulse.unref?.();
+  heartbeatTimers.set(jobId, pulse);
 
   // Start birth identity probing only after output listeners and the exit
   // finalizer are registered. The OS probe may take seconds on Windows; never
@@ -405,8 +490,7 @@ export async function tailDelegateJob(jobId: string, limit = 200): Promise<{ job
   if (!job) return null;
   const safeLimit = Math.max(1, Math.min(2_000, Math.floor(limit) || 200));
   try {
-    const contents = await fs.readFile(job.logPath, "utf8");
-    return { job: { ...job }, output: contents.split(/\r?\n/).slice(-safeLimit).join("\n") };
+    return { job: { ...job }, output: await readBoundedLogTail(job.logPath, safeLimit) };
   } catch {
     return { job: { ...job }, output: job.outputTail || "(no output captured yet)" };
   }
@@ -452,9 +536,14 @@ export async function __resetDelegateJobsForTests(): Promise<void> {
   await Promise.allSettled([...runners.values()]);
   for (const timer of killTimers.values()) clearTimeout(timer);
   const ownedForCleanup = [...ownedJobIds];
+  for (const pulse of heartbeatTimers.values()) clearInterval(pulse);
+  heartbeatTimers.clear();
+  progressFragments.clear();
   jobs.clear(); processes.clear(); runners.clear(); logQueues.clear(); cancellationRequested.clear(); killTimers.clear();
   ownedJobIds.clear();
   await Promise.allSettled([...jobCrossProcessClaims.keys()].map(releaseArtifactClaims));
+  await Promise.allSettled([...capacityLeases.values()].map(releaseCliBridgeCapacity));
+  capacityLeases.clear();
   artifactClaims.clear(); artifactBaselines.clear(); jobClaims.clear(); jobCrossProcessClaims.clear();
   initializePromise = undefined;
   persistQueue = Promise.resolve();

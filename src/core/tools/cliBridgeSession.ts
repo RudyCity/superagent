@@ -32,6 +32,7 @@ import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
 import crypto from "crypto";
+import { summarizedPrompt, redactCliBridgeOutput } from "./cliBridgeObservability.js";
 import { getRootConfigDir } from "../config/paths.js";
 import { appendActiveToolOutput } from "./state.js";
 import {
@@ -369,7 +370,7 @@ export function stripAnsi(s: string): string {
 async function appendToLog(logPath: string, prefix: string, chunk: string): Promise<void> {
   try {
     const timestamp = new Date().toISOString();
-    const cleanChunk = stripAnsi(chunk);
+    const cleanChunk = redactCliBridgeOutput(stripAnsi(chunk));
     if (!cleanChunk) return;
     const lines = cleanChunk.split(/\r?\n/);
     const tagged = lines
@@ -548,7 +549,7 @@ export async function runDelegate(opts: {
   const logPath = path.join(logDir, `delegate-${Date.now()}-${crypto.randomBytes(3).toString("hex")}.log`);
 
   await appendToLog(logPath, "meta", `cli=${opts.cliAlias} binary=${opts.binary}\n`);
-  await appendToLog(logPath, "meta", `prompt (${opts.prompt.length} chars):\n${opts.prompt}\n---\n`);
+  await appendToLog(logPath, "meta", summarizedPrompt(opts.prompt) + "\n---\n");
 
   const argv = [
     ...((opts.extraArgs ?? []) as string[]),
@@ -593,18 +594,18 @@ export async function runDelegate(opts: {
 
   proc.all?.on("data", async (data: Buffer | string) => {
     const raw = data.toString();
-    const clean = stripAnsi(raw);
+    const clean = redactCliBridgeOutput(stripAnsi(raw));
     stdoutBuf = appendLines(stdoutBuf, clean, MAX_BUFFER_LINES);
-    appendActiveToolOutput(raw);
-    await appendToLog(logPath, "stdout", raw);
+    appendActiveToolOutput(clean);
+    await appendToLog(logPath, "stdout", clean);
   });
 
   try {
     const result = await proc;
     if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
     if (result.timedOut) timedOut = true;
-    const finalOutput = stripAnsi((result.all ?? stdoutBuf).toString()).trim();
-    const finalStderr = stripAnsi(result.stderr ?? "").trim();
+    const finalOutput = redactCliBridgeOutput(stripAnsi((result.all ?? stdoutBuf).toString())).trim();
+    const finalStderr = redactCliBridgeOutput(stripAnsi(result.stderr ?? "")).trim();
     await appendToLog(
       logPath,
       "exit",
@@ -622,8 +623,8 @@ export async function runDelegate(opts: {
   } catch (err) {
     if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
     const msg = err instanceof Error ? err.message : String(err);
-    const finalOutput = stripAnsi(stdoutBuf).trim();
-    const finalStderr = stripAnsi(stderrBuf || msg).trim();
+    const finalOutput = redactCliBridgeOutput(stripAnsi(stdoutBuf)).trim();
+    const finalStderr = redactCliBridgeOutput(stripAnsi(stderrBuf || msg)).trim();
     await appendToLog(
       logPath,
       "error",

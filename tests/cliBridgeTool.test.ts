@@ -434,8 +434,8 @@ describe("cli_bridge v1.5.15 — profiles, skills, interactive, resume, export",
     const { getProfile, buildSessionArgv } = await import("../src/core/tools/cliBridgeProfiles.js");
     const agy = getProfile("agy")!;
     const argv = buildSessionArgv(agy, { skills: ["/a", "/b"], extraArgs: ["--effort", "high"] });
-    // For AGY: defaultArg --dangerously-skip-permissions is prepended; --add-dir is repeated; --effort high comes from extraArgs.
-    expect(argv).toEqual(["--dangerously-skip-permissions", "--add-dir", "/a", "--add-dir", "/b", "--effort", "high"]);
+    // AGY uses safe accept-edits by default; skills stay repeatable.
+    expect(argv).toEqual(["--mode", "accept-edits", "--add-dir", "/a", "--add-dir", "/b", "--effort", "high"]);
 
     const codex = getProfile("codex")!;
     const argv2 = buildSessionArgv(codex, { skills: ["/a", "/b"] });
@@ -685,7 +685,8 @@ describe("cli_bridge v1.5.16 — system prompt, skill registry, auto-detect, tem
       process.cwd()
     );
     expect(r).toMatch(/Session created: (clb_[\w]+)/);
-    expect(r).toMatch(/system:.*reviewer/);
+    expect(r).toMatch(/system:.*redacted/);
+    expect(r).not.toContain("Reply in JSON only");
     const sessionId = r.match(/Session created: (clb_[\w]+)/)![1];
     const s = getSession(sessionId);
     expect(s?.systemPrompt).toBe("You are a reviewer. Reply in JSON only.");
@@ -1262,4 +1263,3 @@ describe("cli_bridge v1.5.32 — delegate skills, flag ordering, stdin EOF, and 
     await cliBridgeTool.execute({ action: "session.kill", sessionId }, process.cwd());
   }, 30_000);
 });
-
