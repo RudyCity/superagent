@@ -138,6 +138,16 @@ describe("Motion HTTP and artifact transport", () => {
     expect((await request("/api/motion/projects/" + created.id + "/quality", {
       method: "POST",
     })).status).toBe(404);
+    const frame = await request("/api/motion/projects/" + created.id + "/frames/0.png");
+    expect(frame.status).toBe(200);
+    expect(frame.headers.get("content-type")).toBe("image/png");
+    const png = Buffer.from(await frame.arrayBuffer());
+    expect(png.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))).toBe(true);
+    expect((await request("/api/motion/projects/" + created.id + "/frames/999999.png")).status).toBe(400);
+    expect((await request("/api/motion/projects/" + created.id + "/frames/0.png", { method: "POST" })).status).toBe(404);
+    expect((await request("/api/motion/projects/" + created.id + "/frames/0.png", {
+      headers: { "x-workspace-path": "/not-authorized" },
+    })).status).toBe(403);
     const inspect = await request("/api/motion/projects/" + created.id);
     expect((await inspect.json()).revision).toBe(1);
     const edit = async (baseRevision: number) => request("/api/motion/projects/" + created.id + "/edits", {

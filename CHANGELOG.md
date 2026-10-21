@@ -1,3 +1,11 @@
+## [Unreleased] - Motion Director B4-F partial capabilities (2026-10-21)
+### Added
+- Optional scene-derived Piper narration and role-aware FFmpeg music ducking under voice.
+- Allowlisted easeOutBack pop animations and adaptive 16:9, 1:1, 9:16 motion compositions.
+- Authenticated, bounded Canvas frame PNG snapshots for visual review from T-Line.
+### Release caveat
+- This does not deliver full professional engine, multimodal AI visual repair, video footage editing, self-healing workers or packaged Tauri certification.
+
 ## [Unreleased] - Motion Director B3 media timeline (2026-10-21)
 ### Added
 - Ordered 1–3 product scene images with corresponding editable scene-timed opacity transitions.

@@ -66,13 +66,20 @@ Promise<VerifiedDirectorMedia> {
 export function imageLayer(
   media: NonNullable<VerifiedDirectorMedia["image"]>,
   scene?: { index: number; opacityTracks: MotionProject["composition"]["layers"][number]["tracks"] },
+  aspect?: { width: number; height: number },
 ): MotionProject["composition"]["layers"][number] {
-  const ratio = Math.min(570 / media.width, 330 / media.height);
+  const tall = aspect !== undefined && aspect.height > aspect.width;
+  const square = aspect !== undefined && aspect.height === aspect.width;
+  const limitWidth = tall ? 850 : square ? 400 : 570;
+  const limitHeight = tall ? 650 : 330;
+  const ratio = Math.min(limitWidth / media.width, limitHeight / media.height);
   const width = Math.max(1, Math.round(media.width * ratio));
   const height = Math.max(1, Math.round(media.height * ratio));
   return {
     kind: "image", id: scene ? "director-media-scene-" + scene.index : "director-media-image", assetId: media.id,
-    x: Math.round(1920 - 148 - width), y: Math.round(80 + (330 - height) / 2),
+    x: tall ? Math.round((aspect!.width - width) / 2) :
+      Math.round((aspect?.width ?? 1920) - (square ? 90 : 148) - width),
+    y: Math.round((tall ? 200 : 80) + (limitHeight - height) / 2),
     width, height, rotation: 0, opacity: 1, fill: "#FFFFFF",
     tracks: scene ? structuredClone(scene.opacityTracks) : [{ property: "opacity", keyframes: [
       { frame: 0, value: 0, easing: "easeInOut" }, { frame: 10, value: 1, easing: "easeInOut" },
@@ -83,7 +90,8 @@ function audioClip(audio: NonNullable<VerifiedDirectorMedia["audio"]>, durationF
   return { assetId: audio.id, startFrame: 0, volume: audio.gain,
     fadeInFrames: Math.min(10, durationFrames),
     fadeOutFrames: Math.min(12, Math.round(audio.seconds * 30)),
-    ...(audio.loop ? { loop: true } : {}) };
+    ...(audio.loop ? { loop: true } : {}),
+    role: "music" };
 }
 export function sceneImageLayers(
   composition: MotionProject["composition"], sceneImages: NonNullable<VerifiedDirectorMedia["sceneImages"]>,
@@ -98,7 +106,8 @@ export function sceneImageLayers(
     if (!title.tracks.some(track => track.property === "opacity")) {
       throw new Error("Invalid Motion Director missing scene opacity timing");
     }
-    return imageLayer(media, { index: i, opacityTracks: title.tracks.filter(track => track.property === "opacity") });
+    return imageLayer(media, { index: i, opacityTracks: title.tracks.filter(track => track.property === "opacity") },
+      { width: composition.width, height: composition.height });
   });
 }
 export function embedDirectorMedia(
@@ -108,9 +117,9 @@ export function embedDirectorMedia(
     ...composition,
     ...(verified.audio || verified.voiceover ? { audioTracks: [
       ...(verified.audio ? [audioClip(verified.audio, composition.durationFrames)] : []),
-      ...(verified.voiceover ? [audioClip({ ...verified.voiceover, loop: false }, composition.durationFrames)] : []),
+      ...(verified.voiceover ? [{ ...audioClip({ ...verified.voiceover, loop: false }, composition.durationFrames), role: "voiceover" as const }] : []),
     ] } : {}),
-    layers: [...(verified.image ? [imageLayer(verified.image)] : []),
+    layers: [...(verified.image ? [imageLayer(verified.image, undefined, { width: composition.width, height: composition.height })] : []),
       ...(verified.sceneImages ? sceneImageLayers(composition, verified.sceneImages) : []),
       ...composition.layers],
   };
@@ -125,7 +134,9 @@ export function revisionMediaEdits(
         edits.push({ type: "remove-layer", layerId: layer.id });
       }
     }
-    const images = verified.image ? [imageLayer(verified.image)] :
+    const images = verified.image ? [imageLayer(verified.image, undefined, {
+      width: project.composition.width, height: project.composition.height,
+    })] :
       sceneImageLayers(project.composition, verified.sceneImages!);
     for (let i = 0; i < images.length; i++) edits.push({ type: "add-layer", layer: images[i], index: i });
   }
@@ -134,7 +145,7 @@ export function revisionMediaEdits(
       (project.composition.audio ? [project.composition.audio] : []);
     const incoming = [
       ...(verified.audio ? [audioClip(verified.audio, project.composition.durationFrames)] : []),
-      ...(verified.voiceover ? [audioClip({ ...verified.voiceover, loop: false }, project.composition.durationFrames)] : []),
+      ...(verified.voiceover ? [{ ...audioClip({ ...verified.voiceover, loop: false }, project.composition.durationFrames), role: "voiceover" as const }] : []),
     ];
     if (clips.length + incoming.length > 4) throw new Error("Motion Director audio mixer already has four clips");
     edits.push({ type: "set-audio-tracks", audioTracks: [...clips, ...incoming] });

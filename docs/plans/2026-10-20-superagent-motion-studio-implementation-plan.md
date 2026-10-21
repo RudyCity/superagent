@@ -615,3 +615,16 @@ The capability endpoint asynchronously checks that the operator-configured binar
 Scope caveats: **the connected Windows development host has FFmpeg and passes real image/audio MP4 render tests, but a real Piper binary and compatible local voice model were not present/configured in this session**. End-to-end TTS synthesis and licensed Indonesian voice quality therefore remain unverified; only its integration/validation/fail-closed behavior are tested. Auto voice script generation, per-scene voice timing, smart ducking, soundtrack licensing, AI image/TTS generation from external services and packaged Tauri + live AI model E2E remain later milestones. Scene images are in order rather than dynamically selected by vision AI.
 
 Backwards compatibility: existing imageAssetId and plain audioTracks without loop remain valid. New CLI options include --scene-images ID1,ID2,ID3, --audio-loop true, --voiceover-text and --voiceover-gain; native tool and MCP/HTTP options are optional and share authorization.
+
+## 24. B4–F partial implementation and remaining release gates (2026-10-21)
+
+This is a measured increment across multiple milestones, NOT full completion or production certification.
+
+- B4: Validated per-scene narration copy, optional autoNarrateScenes on new generation using the operator-installed Piper offline engine (fallback scene headlines, 220-character limit), role-tagged music/voiceover WAV tracks, and FFmpeg sidechain compression to duck music beneath voice. True local Piper audio quality and exact scene-timed speech are unverified.
+- B5: Allowlisted positional easeOutBack easing (never opacity), pop-up/pop-left presets, matching Canvas/MP4 and T-Line preview and timeline authoring. Physics simulation, paths, masks, templates and typography certification remain open.
+- C: Authorized and size-bounded GET /api/motion/projects/MOTION_ID/frames/FRAME.png returns the exact Canvas-rendered raster used for MP4 and verified workspace imagery, for human visual review in T-Line. Automated multimodal vision critique and its revision loop are NOT implemented.
+- D: Real composition aspect options 16:9 (1920x1080), 1:1 (1080x1080), 9:16 (1080x1920), with adaptive text and image placement and editor aspect selection. Video footage ingestion, long-form editing, subtitles and licensed media sourcing remain open.
+- E: Strict validation for easing, roles and dimensions; FFmpeg regression for music ducking + loop; actual PNG raster and HTTP auth tests. Durable worker recovery, 100-render stability, cross-OS font parity and production benchmarks remain open.
+- F: The T-Line authenticated proxy and client provide the aspect selector, frame PNG review, opt-in narration, and matching easing with feature-capability gating. Packaged Tauri/WebView2 live integration and cross-platform rollout are NOT yet certified.
+
+Neither live service was restarted. The configured live AI model and Piper TTS, installed Tauri app, actual cross-surface authorized smoke, font/codec distribution and full media sandbox security benchmarks still require evidence. Preserve existing sessions, project locks and unrelated untracked files. The feature remains Developer Preview.

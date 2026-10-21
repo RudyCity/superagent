@@ -5,7 +5,7 @@
 export const MOTION_SCHEMA_VERSION = 1 as const;
 
 export type MotionProperty = "x" | "y" | "opacity" | "rotation";
-export type MotionEasing = "linear" | "step" | "easeInOut";
+export type MotionEasing = "linear" | "step" | "easeInOut" | "easeOutBack";
 
 export interface MotionKeyframe {
   frame: number;
@@ -49,6 +49,7 @@ export interface MotionAudioTrack {
   fadeInFrames?: number;
   fadeOutFrames?: number;
   loop?: boolean;
+  role?: "music" | "voiceover";
 }
 
 export interface MotionProject {

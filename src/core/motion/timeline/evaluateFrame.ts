@@ -3,6 +3,7 @@ import { validateMotionProject } from "../schema/validation.js";
 
 function ease(t: number, kind: string): number {
   if (kind === "step") return 0;
+  if (kind === "easeOutBack") { const u = t - 1; return 1 + 2.70158 * u * u * u + 1.70158 * u * u; }
   return kind === "easeInOut" ? t * t * (3 - 2 * t) : t;
 }
 export function evaluateTrack(track: MotionTrack, frame: number): number {

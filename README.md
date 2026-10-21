@@ -811,3 +811,9 @@ CLI examples after pre-uploading image/audio files to the Motion workspace:
     superagent motion generate --prompt "Create a narrated promo" --voiceover-text "Welcome to our product launch" --width 640 --workspace .
 
 The hash IDs above are placeholders, not valid usable IDs. Existing 1MB image and 2MB/30s WAV limits, max 3 scene images and 4 combined audio tracks apply. This is still a developer preview rather than a full video footage/TTS editor.
+
+### Motion Studio expanded previews (developer preview)
+
+Generate editable 16:9, 1:1 or 9:16 video (e.g. superagent motion generate --prompt "Promo produk portrait" --aspect-ratio 9:16 --width 640 --workspace .). Model-approved animation presets include pop-up/pop-left easing with position overshoot. The T-Line quality panel can request authenticated frame PNGs rendered with the exact same Canvas scene pipeline as the MP4. These are human inspection aids, not automatic AI/vision approval.
+
+With an operator-installed Piper executable and model, new video prompts can choose automatic narration from the storyboard scene text; validated music and voiceover tracks are mixed by FFmpeg with music sidechain ducking. Without Piper, voice synthesis is unavailable and fails explicitly. Automatic footage creation, online soundtrack generation, licensed asset search, long-form editing and production-ready Tauri/Piper end-to-end tests remain out of scope.

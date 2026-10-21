@@ -14,6 +14,7 @@ import { inspectMotionQueueRecovery } from "./jobs/queueRecovery.js";
 import { inspectMotionSupervisor } from "./jobs/motionSupervisor.js";
 import { generateMotionFromPrompt, reviseMotionFromPrompt } from "./director/directorService.js";
 import { inspectMotionQuality } from "./director/motionQuality.js";
+import { renderMotionFrameSnapshot } from "./director/motionFrameSnapshot.js";
 import { localVoiceoverReady } from "./director/localVoiceover.js";
 import { importMotionAsset, readMotionAsset } from "./assets/motionAssets.js";
 import { importMotionAudio, readMotionAudio } from "./assets/motionAudio.js";
@@ -70,6 +71,7 @@ export async function handleMotionHttpRoute(
   const project = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})$/);
   const edits = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/edits$/);
   const quality = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/quality$/);
+  const frameSnapshot = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/frames\/(\d{1,6})\.png$/);
   const render = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/render$/);
   const job = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})$/);
   const cancel = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/cancel$/);
@@ -113,11 +115,13 @@ export async function handleMotionHttpRoute(
       const body = await readMotionJson(req, 12_000);
       const result = await generateMotionFromPrompt(workspace, body.prompt as string, {
         width: body.width as number | undefined,
+        aspectRatio: body.aspectRatio as "16:9" | "1:1" | "9:16" | undefined,
         imageAssetId: body.imageAssetId as string | undefined,
         sceneImageAssetIds: body.sceneImageAssetIds as string[] | undefined,
         audioAssetId: body.audioAssetId as string | undefined,
         audioGain: body.audioGain as number | undefined,
         audioLoop: body.audioLoop as boolean | undefined,
+        autoNarrateScenes: body.autoNarrateScenes as boolean | undefined,
         voiceoverText: body.voiceoverText as string | undefined,
         voiceoverGain: body.voiceoverGain as number | undefined,
       });
@@ -144,6 +148,14 @@ export async function handleMotionHttpRoute(
       json(res, ctx, 201, await createMotionProject(workspace, body.name));
     } else if (project && method === "GET") {
       json(res, ctx, 200, await getMotionProject(workspace, project[1]));
+    } else if (frameSnapshot && method === "GET") {
+      const projectSnapshot = await getMotionProject(workspace, frameSnapshot[1]);
+      const image = await renderMotionFrameSnapshot(workspace, projectSnapshot, Number(frameSnapshot[2]));
+      res.writeHead(200, {
+        "Content-Type": "image/png", "Content-Length": String(image.length),
+        "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+      });
+      res.end(image);
     } else if (quality && method === "GET") {
       json(res, ctx, 200, inspectMotionQuality(await getMotionProject(workspace, quality[1])));
     } else if (edits && method === "POST") {

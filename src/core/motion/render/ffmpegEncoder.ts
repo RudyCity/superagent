@@ -42,6 +42,7 @@ interface MotionAudioInput {
   fadeInFrames: number;
   fadeOutFrames: number;
   loop: boolean;
+  role?: "music" | "voiceover";
 }
 /** Safe numeric graph assembled only from schema-validated audio metadata. */
 function encodingArgs(profile: RenderProfile, file: string, tracks: MotionAudioInput[] = []): string[] {
@@ -66,11 +67,18 @@ function encodingArgs(profile: RenderProfile, file: string, tracks: MotionAudioI
         (fadeOut ? `,afade=t=out:st=${out}:d=${fadeOut}` : "") +
         `,adelay=${offsetMs}:all=1,apad,atrim=duration=${duration},asetpts=PTS-STARTPTS[a${index}]`;
     });
-    const mixed = tracks.length === 1
-      ? "[a0]"
-      : tracks.map((_, index) => `[a${index}]`).join("") +
-        `amix=inputs=${tracks.length}:duration=longest:normalize=0,atrim=duration=${duration}[mixed]`;
-    args.push("-filter_complex", filters.join(";") + (tracks.length > 1 ? ";" + mixed : ""),
+    const musicIndex = tracks.findIndex(track => track.role === "music");
+    const voiceIndex = tracks.findIndex(track => track.role === "voiceover");
+    const duck = tracks.length > 1 && musicIndex >= 0 && voiceIndex >= 0;
+    const duckGraph = duck ? [
+      `[a${voiceIndex}]asplit=2[voice-duck-side][voice-mix]`,
+      `[a${musicIndex}][voice-duck-side]sidechaincompress=threshold=0.02:ratio=8:attack=20:release=250[ducked-music]`,
+    ] : [];
+    const sources = tracks.map((_, index) => duck && index === musicIndex ? "[ducked-music]" :
+      duck && index === voiceIndex ? "[voice-mix]" : `[a${index}]`);
+    const mixed = tracks.length === 1 ? "[a0]" :
+      sources.join("") + `amix=inputs=${tracks.length}:duration=longest:normalize=0,atrim=duration=${duration}[mixed]`;
+    args.push("-filter_complex", [...filters, ...duckGraph, ...(tracks.length > 1 ? [mixed] : [])].join(";"),
       "-map", "0:v:0", "-map", tracks.length === 1 ? "[a0]" : "[mixed]",
       "-c:a", "aac", "-b:a", "128k");
   } else args.push("-an");
@@ -105,6 +113,7 @@ export async function encodeMotionMp4(
     fadeInFrames: track.fadeInFrames ?? 0,
     fadeOutFrames: track.fadeOutFrames ?? 0,
     loop: track.loop === true,
+    role: track.role,
   })));
   // Canvas is optional for non-render commands and should not slow terminal startup.
   const { createMotionFrameRenderer } = await import("./canvasFrames.js");

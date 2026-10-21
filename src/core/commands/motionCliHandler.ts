@@ -49,7 +49,7 @@ function argumentsOf(args: string[]): { action: string; positionals: string[]; o
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
   const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", ...boolean]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -154,9 +154,11 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       if (!prompt || positionals.length) throw new Error("generate requires --prompt and no project ID");
       const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
       emit(await generateMotionFromPrompt(workspace, prompt, { width,
+        aspectRatio: opt(opts, "--aspect-ratio") as "16:9" | "1:1" | "9:16" | undefined,
         imageAssetId: opt(opts, "--image-asset"),
         sceneImageAssetIds: opt(opts, "--scene-images")?.split(",").map(item => item.trim()),
         audioLoop: optionalBoolean(opt(opts, "--audio-loop"), "--audio-loop"),
+        autoNarrateScenes: optionalBoolean(opt(opts, "--auto-narrate"), "--auto-narrate"),
         voiceoverText: opt(opts, "--voiceover-text"),
         voiceoverGain: opt(opts, "--voiceover-gain") === undefined ? undefined : Number(opt(opts, "--voiceover-gain")),
         audioAssetId: opt(opts, "--audio-asset"),

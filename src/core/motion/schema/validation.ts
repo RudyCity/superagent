@@ -11,7 +11,7 @@ export class MotionValidationError extends Error {
 const color = /^#[0-9a-fA-F]{6}$/;
 const id = /^[a-z][a-z0-9-]{1,63}$/;
 const propertyNames = new Set(["x", "y", "opacity", "rotation"]);
-const easingNames = new Set(["linear", "step", "easeInOut"]);
+const easingNames = new Set(["linear", "step", "easeInOut", "easeOutBack"]);
 const fontNames = new Set(["Arial", "Helvetica", "Georgia", "Verdana", "sans-serif", "serif", "monospace"]);
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -52,6 +52,7 @@ export function validateMotionTrack(raw: unknown, durationFrames: number, at = "
     const range = raw.property === "opacity" ? [0, 1] : raw.property === "rotation" ? [-36000, 36000] : [-100000, 100000];
     if (!finite(keyframe.value, range[0], range[1])) errors.push(location + ": invalid value");
     if (keyframe.easing !== undefined && !easingNames.has(String(keyframe.easing))) errors.push(location + ": invalid easing");
+    if (keyframe.easing === "easeOutBack" && raw.property === "opacity") errors.push(location + ": overshoot easing cannot affect opacity");
   });
   return errors;
 }
@@ -59,11 +60,12 @@ export function validateMotionTrack(raw: unknown, durationFrames: number, at = "
 export function validateMotionAudio(raw: unknown, durationFrames: number): string[] {
   if (!record(raw)) return ["audio: expected object"];
   const errors: string[] = [];
-  allowedKeys(raw, ["assetId", "startFrame", "volume", "fadeInFrames", "fadeOutFrames", "loop"], "audio", errors);
+  allowedKeys(raw, ["assetId", "startFrame", "volume", "fadeInFrames", "fadeOutFrames", "loop", "role"], "audio", errors);
   if (typeof raw.assetId !== "string" || !/^audio-[a-f0-9]{64}$/.test(raw.assetId)) errors.push("audio: invalid assetId");
   if (!integer(raw.startFrame, 0, durationFrames - 1)) errors.push("audio: invalid startFrame");
   if (!finite(raw.volume, 0, 2)) errors.push("audio: invalid volume");
   if (raw.loop !== undefined && typeof raw.loop !== "boolean") errors.push("audio: invalid loop");
+  if (raw.role !== undefined && raw.role !== "music" && raw.role !== "voiceover") errors.push("audio: invalid role");
   if (raw.fadeInFrames !== undefined && !integer(raw.fadeInFrames, 0, durationFrames)) errors.push("audio: invalid fadeInFrames");
   if (raw.fadeOutFrames !== undefined && !integer(raw.fadeOutFrames, 0, durationFrames)) errors.push("audio: invalid fadeOutFrames");
   return errors;

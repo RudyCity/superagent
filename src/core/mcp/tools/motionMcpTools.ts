@@ -21,9 +21,11 @@ export const MOTION_MCP_TOOL_DEFS = [
     inputSchema: { type: "object", properties: {
       workspace: { type: "string" }, projectId: { type: "string" },
       prompt: { type: "string" }, width: { type: "integer", minimum: 160, maximum: 1920 },
+      aspectRatio: { type: "string", enum: ["16:9", "1:1", "9:16"] },
       imageAssetId: { type: "string" }, audioAssetId: { type: "string" },
       sceneImageAssetIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
       audioLoop: { type: "boolean" },
+      autoNarrateScenes: { type: "boolean" },
       voiceoverText: { type: "string", maxLength: 220 }, voiceoverGain: { type: "number", minimum: 0, maximum: 2 },
       audioGain: { type: "number", minimum: 0, maximum: 2 },
     }, required: ["prompt"] },
@@ -189,9 +191,11 @@ export async function dispatchMotionMcpTool(
       case "superagent_motion_generate":
         result = await generateMotionFromPrompt(authorizedWorkspace, String(args.prompt ?? ""), {
           width: args.width === undefined ? undefined : Number(args.width),
+          aspectRatio: args.aspectRatio as "16:9" | "1:1" | "9:16" | undefined,
           imageAssetId: args.imageAssetId as string | undefined,
           sceneImageAssetIds: args.sceneImageAssetIds as string[] | undefined,
           audioLoop: args.audioLoop as boolean | undefined,
+          autoNarrateScenes: args.autoNarrateScenes as boolean | undefined,
           voiceoverText: args.voiceoverText as string | undefined,
           voiceoverGain: args.voiceoverGain as number | undefined,
           audioAssetId: args.audioAssetId as string | undefined,

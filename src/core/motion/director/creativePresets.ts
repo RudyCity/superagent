@@ -2,7 +2,7 @@ import { createCanvas } from "@napi-rs/canvas";
 import type { MotionProject, MotionTrack } from "../schema/types.js";
 import type { MotionDirectorPlan, MotionDirectorScene } from "./directorService.js";
 
-export const MOTION_PRESETS = ["slide-left", "slide-up", "tilt", "fade"] as const;
+export const MOTION_PRESETS = ["slide-left", "slide-up", "tilt", "fade", "pop-left", "pop-up"] as const;
 export type MotionPreset = typeof MOTION_PRESETS[number];
 export type MotionTransition = "crossfade" | "cut";
 
@@ -38,12 +38,12 @@ function fade(start: number, end: number, total: number, transition: MotionTrans
 }
 function entry(preset: MotionPreset, start: number, end: number, x: number, y: number): MotionTrack[] {
   const arrival = Math.min(end, start + 13);
-  if (preset === "slide-left") return [{ property: "x", keyframes: [
-    { frame: start, value: x + 105, easing: "easeInOut" },
+  if (preset === "slide-left" || preset === "pop-left") return [{ property: "x", keyframes: [
+    { frame: start, value: x + (preset === "pop-left" ? 150 : 105), easing: preset === "pop-left" ? "easeOutBack" : "easeInOut" },
     { frame: arrival, value: x, easing: "easeInOut" },
   ] }];
-  if (preset === "slide-up") return [{ property: "y", keyframes: [
-    { frame: start, value: y + 90, easing: "easeInOut" },
+  if (preset === "slide-up" || preset === "pop-up") return [{ property: "y", keyframes: [
+    { frame: start, value: y + (preset === "pop-up" ? 150 : 90), easing: preset === "pop-up" ? "easeOutBack" : "easeInOut" },
     { frame: arrival, value: y, easing: "easeInOut" },
   ] }];
   if (preset === "tilt") return [{ property: "rotation", keyframes: [
@@ -63,6 +63,13 @@ function fitFont(text: string, maxWidth: number, base: number): number {
 }
 /** Compiles modern, safe Motion v1 tracks: no new layer kinds, script execution, or remote media. */
 export function compilePresetComposition(plan: MotionDirectorPlan): MotionProject["composition"] {
+  const dimensions = plan.aspectRatio === "9:16" ? { width: 1080, height: 1920 } :
+    plan.aspectRatio === "1:1" ? { width: 1080, height: 1080 } : { width: 1920, height: 1080 };
+  const tall = dimensions.height > dimensions.width;
+  const square = dimensions.height === dimensions.width;
+  const copyX = tall ? 90 : square ? 100 : 148;
+  const copyY = tall ? 1080 : square ? 540 : 444;
+  const copyWidth = tall ? 900 : square ? 880 : 1600;
   const count = plan.durationSeconds * 30;
   const transition = plan.transition ?? "crossfade";
   const layers: MotionProject["composition"]["layers"] = [];
@@ -75,21 +82,19 @@ export function compilePresetComposition(plan: MotionDirectorPlan): MotionProjec
     const end = Math.min(count - 1, endBase + (index < plan.scenes.length - 1 ? overlap : 0));
     const motion = scene.motion ?? plan.motion ?? "slide-left";
     const visible = fade(start, end, count, transition);
-    const copyX = 148;
-    const copyY = 444;
-    layers.push({ id: "scene-" + index + "-accent", kind: "rect", x: 148, y: 407,
+    layers.push({ id: "scene-" + index + "-accent", kind: "rect", x: copyX, y: copyY - 37,
       width: 164, height: 9, rotation: 0, opacity: 1, fill: scene.accent, tracks: [visible] });
     layers.push({ id: "scene-" + index + "-title", kind: "text", text: scene.headline,
-      x: copyX, y: copyY, width: 1600, height: 118, rotation: 0, opacity: 1,
-      fill: foreground, fontSize: fitFont(scene.headline, 1590, 78), fontFamily: "Arial",
+      x: copyX, y: copyY, width: copyWidth, height: 118, rotation: 0, opacity: 1,
+      fill: foreground, fontSize: fitFont(scene.headline, copyWidth - 10, 78), fontFamily: "Arial",
       tracks: [visible, ...entry(motion, start, end, copyX, copyY)] });
     if (scene.subtitle) {
       layers.push({ id: "scene-" + index + "-subtitle", kind: "text", text: scene.subtitle,
-        x: copyX + 4, y: 605, width: 1590, height: 76, rotation: 0, opacity: 1,
-        fill: scene.accent, fontSize: fitFont(scene.subtitle, 1580, 39), fontFamily: "Arial",
-        tracks: [visible, ...entry(motion, start, end, copyX + 4, 605)] });
+        x: copyX + 4, y: copyY + 161, width: copyWidth - 10, height: 76, rotation: 0, opacity: 1,
+        fill: scene.accent, fontSize: fitFont(scene.subtitle, copyWidth - 20, 39), fontFamily: "Arial",
+        tracks: [visible, ...entry(motion, start, end, copyX + 4, copyY + 161)] });
     }
   });
-  return { width: 1920, height: 1080, fps: { numerator: 30, denominator: 1 },
+  return { width: dimensions.width, height: dimensions.height, fps: { numerator: 30, denominator: 1 },
     durationFrames: count, background: plan.background, layers };
 }

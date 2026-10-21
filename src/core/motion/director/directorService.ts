@@ -9,17 +9,18 @@ import { inspectMotionQuality, type MotionQualityReport } from "./motionQuality.
 import { resolveDirectorMedia, embedDirectorMedia, revisionMediaEdits, directorMediaLimitations, type MotionDirectorMediaSelection } from "./directorMedia.js";
 import { synthesizeLocalVoiceover, validateNarrationRequest, localVoiceoverReady, type NarrationRequest } from "./localVoiceover.js";
 
-export interface MotionDirectorScene { headline: string; subtitle?: string; accent: string; motion?: MotionPreset }
+export type MotionAspectRatio = "16:9" | "1:1" | "9:16";
+export interface MotionDirectorScene { headline: string; subtitle?: string; accent: string; motion?: MotionPreset; narration?: string }
 export interface MotionDirectorPlan {
   name: string; durationSeconds: number; background: string; scenes: MotionDirectorScene[];
-  motion?: MotionPreset; transition?: MotionTransition;
+  motion?: MotionPreset; transition?: MotionTransition; aspectRatio?: MotionAspectRatio;
 }
 export interface MotionDirectorResult {
   project: MotionProject; job: MotionJob; outline: string[]; limitations: string[];
   quality: MotionQualityReport;
 }
 export type MotionPlanner = (system: string, user: string, signal?: AbortSignal) => Promise<unknown>;
-export type MotionDirectorOptions = MotionDirectorMediaSelection & NarrationRequest & { width?: number; signal?: AbortSignal; planner?: MotionPlanner };
+export type MotionDirectorOptions = MotionDirectorMediaSelection & NarrationRequest & { width?: number; aspectRatio?: MotionAspectRatio; autoNarrateScenes?: boolean; signal?: AbortSignal; planner?: MotionPlanner };
 const hex = /^#[0-9a-fA-F]{6}$/;
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const only = (obj: Record<string, unknown>, keys: string[]) => Object.keys(obj).every(k => keys.includes(k));
@@ -35,28 +36,32 @@ function widthOf(value: unknown): number {
   return Number(n);
 }
 export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {
-  if (!object(raw) || !only(raw, ["name", "durationSeconds", "background", "scenes", "motion", "transition"]) ||
+  if (!object(raw) || !only(raw, ["name", "durationSeconds", "background", "scenes", "motion", "transition", "aspectRatio"]) ||
     typeof raw.name !== "string" || !raw.name.trim() || raw.name.length > 160 ||
     !Number.isInteger(raw.durationSeconds) || Number(raw.durationSeconds) < 2 ||
     Number(raw.durationSeconds) > 20 ||
     typeof raw.background !== "string" || !hex.test(raw.background) ||
     (raw.motion !== undefined && !MOTION_PRESETS.includes(raw.motion as MotionPreset)) ||
     (raw.transition !== undefined && !["cut", "crossfade"].includes(String(raw.transition))) ||
+    (raw.aspectRatio !== undefined && !["16:9", "1:1", "9:16"].includes(String(raw.aspectRatio))) ||
     !Array.isArray(raw.scenes) || raw.scenes.length < 1 || raw.scenes.length > 3)
     throw new Error("Motion Director returned an invalid or unsupported storyboard");
   const scenes: MotionDirectorScene[] = raw.scenes.map((scene: unknown) => {
-    if (!object(scene) || !only(scene, ["headline", "subtitle", "accent", "motion"]) ||
+    if (!object(scene) || !only(scene, ["headline", "subtitle", "accent", "motion", "narration"]) ||
       (scene.motion !== undefined && !MOTION_PRESETS.includes(scene.motion as MotionPreset)) ||
+      (scene.narration !== undefined && (typeof scene.narration !== "string" || scene.narration.length > 100)) ||
       typeof scene.headline !== "string" || !scene.headline.trim() || scene.headline.length > 100 ||
       (scene.subtitle !== undefined && (typeof scene.subtitle !== "string" || scene.subtitle.length > 100)) ||
       typeof scene.accent !== "string" || !hex.test(scene.accent))
       throw new Error("Motion Director returned an invalid storyboard scene");
     return { headline: scene.headline.trim(), ...(scene.subtitle ? { subtitle: scene.subtitle.trim() } : {}), accent: scene.accent,
-      ...(scene.motion !== undefined ? { motion: scene.motion as MotionPreset } : {}) };
+      ...(scene.motion !== undefined ? { motion: scene.motion as MotionPreset } : {}),
+      ...(scene.narration ? { narration: scene.narration.trim() } : {}) };
   });
   return { name: raw.name.trim(), durationSeconds: Number(raw.durationSeconds), background: raw.background, scenes,
     ...(raw.motion !== undefined ? { motion: raw.motion as MotionPreset } : {}),
-    ...(raw.transition !== undefined ? { transition: raw.transition as MotionTransition } : {}) };
+    ...(raw.transition !== undefined ? { transition: raw.transition as MotionTransition } : {}),
+    ...(raw.aspectRatio !== undefined ? { aspectRatio: raw.aspectRatio as MotionAspectRatio } : {}) };
 }
 export function compileDirectorPlan(raw: MotionDirectorPlan): MotionProject["composition"] {
   return compilePresetComposition(validateDirectorPlan(raw));
@@ -81,11 +86,13 @@ const planSystem = [
   "You are the planning AI inside SuperAgent Motion Director.",
   "Return ONLY strict JSON, exactly: {name:string, durationSeconds:integer 2..20, background:hexColor,",
   "scenes: array of 1..3 {headline:string <=100 chars, subtitle?:string <=100 chars, accent:hexColor, motion?:preset}}.",
-  "Optional global motion and scene motion presets: slide-left, slide-up, tilt, fade.",
+  "Optional global motion and scene motion presets: slide-left, slide-up, tilt, fade, pop-left, pop-up.",
+  "Optional per-scene narration: short spoken script <=100 characters, only produced as audio if user enables offline Piper.",
   "Optional transition: crossfade or cut (default crossfade). Match creative style requested in user brief.",
+  "Optional aspectRatio: 16:9 (landscape default), 1:1 (square), 9:16 (portrait), choose per user brief.",
   "Write appealing concise scene copy for the user's requested video, in their language.",
   "Use very short text so captions fit 1920x1080 without wrapping. Hex colors #RRGGBB.",
-  "Motion engine supports text, colored rectangles, fades, horizontal/vertical slides and gentle tilt. No other effects.",
+  "Motion engine supports text, colored rectangles, fades, spring-like overshoot entrances, horizontal/vertical slides and gentle tilt. No other effects.",
   "Never invent supplied assets, logos, music, TTS, video footage, or unsupported effects.",
   "Return no markdown, paths, URLs, scripts or extra keys."
 ].join("\n");
@@ -114,17 +121,29 @@ export async function generateMotionFromPrompt(workspace: string, prompt: string
   options: MotionDirectorOptions = {}): Promise<MotionDirectorResult> {
   const user = brief(prompt);
   const width = widthOf(options.width);
+  if (options.autoNarrateScenes !== undefined && typeof options.autoNarrateScenes !== "boolean") {
+    throw new Error("Invalid automatic narration mode");
+  }
+  if (options.autoNarrateScenes && options.voiceoverText) throw new Error("Choose manual or automatic narration, not both");
+  if (options.aspectRatio !== undefined && !["16:9","1:1","9:16"].includes(options.aspectRatio)) {
+    throw new Error("Unsupported Motion aspect ratio");
+  }
   validateNarrationRequest(options);
-  if (options.voiceoverText && !(await localVoiceoverReady())) {
+  if ((options.voiceoverText || options.autoNarrateScenes) && !(await localVoiceoverReady())) {
     throw Object.assign(new Error("Local voice-over unavailable: configure Piper executable and voice model"), { statusCode: 503 });
   }
   const media = await resolveDirectorMedia(workspace, options);
   const plan = validateDirectorPlan(await (options.planner ?? motionPlanner)(planSystem,
     user + (media.image ? "\nUser attached a workspace-verified image/logo for the video." : "") +
     (media.audio ? "\nUser attached a workspace-verified WAV soundtrack." : ""), options.signal));
-  const voiceover = await synthesizeLocalVoiceover(workspace, options, options.signal);
+  const narrationText = options.autoNarrateScenes ?
+    plan.scenes.map(scene => scene.narration || scene.headline).join(". ") : options.voiceoverText;
+  if (narrationText && narrationText.length > 220) throw new Error("Automatic narration exceeds 220 characters; shorten scene scripts");
+  const voiceover = await synthesizeLocalVoiceover(workspace,
+    { voiceoverText: narrationText, voiceoverGain: options.voiceoverGain }, options.signal);
   const composedMedia = { ...media, ...(voiceover ? { voiceover } : {}) };
-  const composition = embedDirectorMedia(compileDirectorPlan(plan), composedMedia);
+  const composition = embedDirectorMedia(
+    compileDirectorPlan({ ...plan, aspectRatio: options.aspectRatio ?? plan.aspectRatio }), composedMedia);
   const project = await createMotionProject(workspace, plan.name);
   const updated = await updateMotionProject(workspace, project.id, project.revision,
     [{ type: "replace-composition", composition }]);
@@ -137,7 +156,11 @@ export async function generateMotionFromPrompt(workspace: string, prompt: string
 export async function reviseMotionFromPrompt(workspace: string, motionId: string, prompt: string,
   options: MotionDirectorOptions = {}): Promise<MotionDirectorResult> {
   const user = brief(prompt);
+  if (options.autoNarrateScenes !== undefined) throw new Error("Automatic scene narration is available only for new motion generation");
   const width = widthOf(options.width);
+  if (options.aspectRatio !== undefined && !["16:9","1:1","9:16"].includes(options.aspectRatio)) {
+    throw new Error("Unsupported Motion aspect ratio");
+  }
   validateNarrationRequest(options);
   if (options.voiceoverText && !(await localVoiceoverReady())) {
     throw Object.assign(new Error("Local voice-over unavailable: configure Piper executable and voice model"), { statusCode: 503 });
