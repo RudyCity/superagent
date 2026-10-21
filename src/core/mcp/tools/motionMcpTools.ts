@@ -11,9 +11,26 @@ import { decodeMotionMediaBase64 } from "../../motion/assets/motionInput.js";
 import { motionStorageMaintenance } from "../../motion/jobs/storageMaintenance.js";
 import { inspectMotionQueueRecovery } from "../../motion/jobs/queueRecovery.js";
 import { inspectMotionSupervisor } from "../../motion/jobs/motionSupervisor.js";
+import { generateMotionFromPrompt, reviseMotionFromPrompt } from "../../motion/director/directorService.js";
 import type { McpToolResult } from "../types.js";
 
 export const MOTION_MCP_TOOL_DEFS = [
+  {
+    name: "superagent_motion_generate",
+    description: "Generate a short editable motion scene and MP4 render from a natural-language prompt through SuperAgent AI Motion Director. Dangerous workspace write+execute action.",
+    inputSchema: { type: "object", properties: {
+      workspace: { type: "string" }, projectId: { type: "string" },
+      prompt: { type: "string" }, width: { type: "integer", minimum: 160, maximum: 1920 },
+    }, required: ["prompt"] },
+  },
+  {
+    name: "superagent_motion_revise",
+    description: "Semantically revise an existing Motion scene by conversational prompt, then render new MP4. Dangerous workspace write+execute action.",
+    inputSchema: { type: "object", properties: {
+      workspace: { type: "string" }, projectId: { type: "string" }, motionId: { type: "string" },
+      prompt: { type: "string" }, width: { type: "integer", minimum: 160, maximum: 1920 },
+    }, required: ["prompt", "motionId"] },
+  },
   {
     name: "superagent_motion_list",
     description: "List Motion Studio projects in an authorized local workspace.",
@@ -126,6 +143,8 @@ export const MOTION_MCP_TOOL_DEFS = [
 ];
 
 export const MOTION_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
+  superagent_motion_generate: "dangerous",
+  superagent_motion_revise: "dangerous",
   superagent_motion_list: "safe",
   superagent_motion_inspect: "safe",
   superagent_motion_jobs: "safe",
@@ -157,6 +176,14 @@ export async function dispatchMotionMcpTool(
   try {
     let result: unknown;
     switch (name) {
+      case "superagent_motion_generate":
+        result = await generateMotionFromPrompt(authorizedWorkspace, String(args.prompt ?? ""), {
+          width: args.width === undefined ? undefined : Number(args.width),
+        }); break;
+      case "superagent_motion_revise":
+        result = await reviseMotionFromPrompt(authorizedWorkspace, motionId, String(args.prompt ?? ""), {
+          width: args.width === undefined ? undefined : Number(args.width),
+        }); break;
       case "superagent_motion_list":
         result = await listMotionProjects(authorizedWorkspace); break;
       case "superagent_motion_inspect":

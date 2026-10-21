@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { Tool } from "./types.js";
+import { motionGenerateTool, motionReviseTool, motionStatusTool } from "./motionAgentTools.js";
 import { registerSubagentType } from "./state.js";
 import {
   masterToolset,
@@ -212,6 +213,9 @@ import { switchModeTool } from "./modeTools.js";
 
 
 export const allTools: Tool[] = [
+  motionGenerateTool,
+  motionReviseTool,
+  motionStatusTool,
   switchModeTool,
   runHeadlessBrowserTool,
   simulateVirtualCursorTool,

@@ -6,6 +6,7 @@ import { importMotionAsset } from "../motion/assets/motionAssets.js";
 import { importMotionAudio } from "../motion/assets/motionAudio.js";
 import { readMotionWorkspaceInput } from "../motion/assets/motionInput.js";
 import { MOTION_CAPABILITIES } from "../motion/motionCapabilities.js";
+import { generateMotionFromPrompt, reviseMotionFromPrompt } from "../motion/director/directorService.js";
 import { motionStorageMaintenance } from "../motion/jobs/storageMaintenance.js";
 import { inspectMotionSupervisor, runMotionSupervisorOnce, runMotionSupervisorWatch } from "../motion/jobs/motionSupervisor.js";
 import { inspectMotionQueueRecovery, dispatchOrphanedMotionQueue } from "../motion/jobs/queueRecovery.js";
@@ -13,6 +14,8 @@ import type { MotionEdit } from "../motion/schema/types.js";
 import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation, enqueueSupervisedMotionJob } from "../motion/jobs/motionJobs.js";
 
 const usage = `Motion Studio (developer preview)
+  superagent motion generate --prompt "Animated promo" [--width 640] [--workspace PATH] [--json]
+  superagent motion revise MOTION_ID --prompt "Shorter title" [--width 640] [--workspace PATH] [--json]
   superagent motion new --name "Title" [--workspace PATH] [--json]
   superagent motion list [--workspace PATH] [--json]
   superagent motion inspect PROJECT_ID [--workspace PATH] [--json]
@@ -46,7 +49,7 @@ function argumentsOf(args: string[]): { action: string; positionals: string[]; o
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
   const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", ...boolean]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -140,6 +143,18 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const days = opt(opts, "--days") === undefined ? 7 : nonnegativeInteger(opt(opts, "--days"), "--days");
       emit(await motionStorageMaintenance(workspace, { minAgeDays: days, apply: action === "prune" }), json);
       return 0;
+    }
+    if (action === "generate") {
+      const prompt = opt(opts, "--prompt");
+      if (!prompt || positionals.length) throw new Error("generate requires --prompt and no project ID");
+      const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
+      emit(await generateMotionFromPrompt(workspace, prompt, { width }), json); return 0;
+    }
+    if (action === "revise") {
+      const prompt = opt(opts, "--prompt");
+      if (!prompt || positionals.length !== 1) throw new Error("revise requires MOTION_ID and --prompt");
+      const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
+      emit(await reviseMotionFromPrompt(workspace, positionals[0], prompt, { width }), json); return 0;
     }
     if (action === "new") {
       const name = opt(opts, "--name");

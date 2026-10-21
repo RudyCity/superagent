@@ -19,5 +19,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   confirmedFailedJobCleanup: true,
   operatorQueuedJobRedispatch: true,
   optInFifoSupervisor: true,
+  aiPromptDirector: "short-text-motion-preview",
+  aiSemanticRevision: true,
   automaticCrashRecovery: false,
 });

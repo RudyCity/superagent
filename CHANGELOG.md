@@ -1,3 +1,11 @@
+## [Unreleased] - AI Motion Director initial prompt-first slice (2026-10-21)
+### Added
+- AI planner creating validated text/shape scene briefs with editable Motion project and detached H264 MP4 render.
+- Native motion_generate, motion_revise and motion_status tools; CLI, slash, HTTP and dangerous MCP generate/revise endpoints.
+- Native T-Line prompt-first interface, revision requests, capability handshake and workspace-authorized proxy.
+### Limits
+- Developer preview: no full creative effects, footage, TTS/music, visual QA or certified live model/Tauri end-to-end.
+
 ## [Unreleased] - Motion Studio opt-in FIFO supervisor (2026-10-21)
 ### Added
 - Persisted supervised render jobs and a foreground FIFO worker supervisor with exclusive workspace ownership, bounded renderer slots and read-only status.

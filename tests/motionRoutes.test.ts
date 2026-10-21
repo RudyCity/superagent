@@ -53,6 +53,20 @@ describe("Motion HTTP and artifact transport", () => {
   it("keeps routes behind the existing server authentication gate", async () => {
     const { request, url } = await fixture();
     expect((await fetch(url + "/api/motion")).status).toBe(401);
+    expect((await fetch(url + "/api/motion/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Promo Laris" }),
+    })).status).toBe(401);
+    const invalidPrompt = await request("/api/motion/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "" }),
+    });
+    expect(invalidPrompt.status).toBe(400);
+    const invalidRevision = await request("/api/motion/projects/motion-" + "a".repeat(20) + "/revise", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "x".repeat(2500) }),
+    });
+    expect(invalidRevision.status).toBe(400);
     const result = await request("/api/motion");
     expect(result.status).toBe(200);
     const info = await result.json();

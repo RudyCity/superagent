@@ -27,16 +27,18 @@ const invoke = async (handler: any, name: string, args: Record<string, unknown> 
   handler({ method: "tools/call", params: { name, arguments: args } });
 
 describe("Motion MCP integration", () => {
-  it("exposes all fourteen tools with classification and explicit project capabilities", async () => {
+  it("exposes all sixteen tools with classification and explicit project capabilities", async () => {
     const server = createSuperagentMcpServer();
     const list = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
     const names = (await list({ method: "tools/list", params: {} })).tools.map((entry: any) => entry.name);
-    expect(names.filter((name: string) => name.startsWith("superagent_motion_"))).toHaveLength(14);
+    expect(names.filter((name: string) => name.startsWith("superagent_motion_"))).toHaveLength(16);
     expect(getProjectCapabilityForTool("superagent_motion_create")).toBe("write");
     expect(getProjectCapabilityForTool("superagent_motion_edit")).toBe("write");
     expect(getProjectCapabilityForTool("superagent_motion_import_image")).toBe("write");
     expect(getProjectCapabilityForTool("superagent_motion_import_audio")).toBe("write");
     expect(getProjectCapabilityForTool("superagent_motion_render")).toBe("execute");
+    expect(getProjectCapabilityForTool("superagent_motion_generate")).toBe("execute");
+    expect(getProjectCapabilityForTool("superagent_motion_revise")).toBe("execute");
     expect(getProjectCapabilityForTool("superagent_motion_cancel")).toBe("execute");
     expect(getProjectCapabilityForTool("superagent_motion_status")).toBe("read");
     expect(getProjectCapabilityForTool("superagent_motion_storage")).toBe("read");

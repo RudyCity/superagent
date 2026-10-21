@@ -3,6 +3,8 @@ import { registry } from "./registry.js";
 
 const help = [
   "Motion Studio (developer preview)",
+  "  /motion generate <brief>",
+  "  /motion revise <motion-id> <change request>",
   "  /motion new <title>",
   "  /motion list",
   "  /motion inspect <project-id>",
@@ -70,6 +72,24 @@ export const motionCommand: SlashCommand = {
         const { enqueueSupervisedMotionJob } = await import("../motion/jobs/motionJobs.js");
         const job = await enqueueSupervisedMotionJob(workspace, id, { width });
         emit(ctx, "Motion job queued for FIFO supervisor: " + job.id + ". Start the CLI supervisor in a separate terminal."); return;
+      }
+      if (action === "generate") {
+        const prompt = tokens.slice(1).join(" ").trim();
+        if (!prompt) throw new Error("Usage: /motion generate <brief>");
+        const { generateMotionFromPrompt } = await import("../motion/director/directorService.js");
+        const result = await generateMotionFromPrompt(workspace, prompt);
+        emit(ctx, "AI Motion " + result.project.id + " r" + result.project.revision +
+          " rendering: " + result.job.id);
+        return;
+      }
+      if (action === "revise") {
+        const prompt = tokens.slice(2).join(" ").trim();
+        if (!id || !prompt) throw new Error("Usage: /motion revise <motion-id> <change>");
+        const { reviseMotionFromPrompt } = await import("../motion/director/directorService.js");
+        const result = await reviseMotionFromPrompt(workspace, id, prompt);
+        emit(ctx, "AI Motion " + result.project.id + " r" + result.project.revision +
+          " rendering: " + result.job.id);
+        return;
       }
       if (action === "doctor") {
         const { probeFfmpeg } = await import("../motion/render/ffmpegEncoder.js");

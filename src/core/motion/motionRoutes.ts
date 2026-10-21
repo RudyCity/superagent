@@ -12,6 +12,7 @@ import { MOTION_CAPABILITIES } from "./motionCapabilities.js";
 import { motionStorageMaintenance } from "./jobs/storageMaintenance.js";
 import { inspectMotionQueueRecovery } from "./jobs/queueRecovery.js";
 import { inspectMotionSupervisor } from "./jobs/motionSupervisor.js";
+import { generateMotionFromPrompt, reviseMotionFromPrompt } from "./director/directorService.js";
 import { importMotionAsset, readMotionAsset } from "./assets/motionAssets.js";
 import { importMotionAudio, readMotionAudio } from "./assets/motionAudio.js";
 import { decodeMotionMediaBase64 } from "./assets/motionInput.js";
@@ -42,11 +43,12 @@ function routeError(error: unknown): { status: number; message: string } {
   const message = error instanceof Error ? error.message : String(error);
   const status = (error as { statusCode?: number })?.statusCode;
   if (status === 413) return { status: 413, message };
+  if (status === 503) return { status: 503, message };
   if (error instanceof MotionRevisionConflict) return { status: 409, message };
   if (error instanceof MotionValidationError || error instanceof RangeError || error instanceof SyntaxError) return { status: 400, message };
   if (/locked|already has an active|unreconciled render/.test(message)) return { status: 409, message };
   if (/ENOENT|not found/i.test(message)) return { status: 404, message: "Motion resource not found" };
-  if (/Invalid Motion|invalid|unsupported|must be|requires|expected|outside|workspace|local only/i.test(message)) {
+  if (/Invalid Motion|invalid|unsupported|must be|must contain|requires|expected|outside|workspace|local only/i.test(message)) {
     return { status: 400, message };
   }
   return { status: 500, message: "Motion request failed" };
@@ -104,6 +106,19 @@ export async function handleMotionHttpRoute(
         "ETag": '"' + audio[1].slice(6) + '"',
       });
       res.end(method === "HEAD" ? undefined : bytes);
+    } else if (pathname === "/api/motion/generate" && method === "POST") {
+      const body = await readMotionJson(req, 12_000);
+      const result = await generateMotionFromPrompt(workspace, body.prompt as string, {
+        width: body.width as number | undefined,
+      });
+      json(res, ctx, 202, result);
+    } else if (pathname.match(/^\/api\/motion\/projects\/motion-[a-f0-9]{20}\/revise$/) && method === "POST") {
+      const body = await readMotionJson(req, 12_000);
+      const motionId = pathname.split("/")[4];
+      const result = await reviseMotionFromPrompt(workspace, motionId, body.prompt as string, {
+        width: body.width as number | undefined,
+      });
+      json(res, ctx, 202, result);
     } else if (pathname === "/api/motion/projects" && method === "GET") {
       json(res, ctx, 200, await listMotionProjects(workspace));
     } else if (pathname === "/api/motion/projects" && method === "POST") {

@@ -769,3 +769,15 @@ Alternatively dispatch a single batch and exit:
     superagent motion supervisor --once --workspace . --json
 
 This explicit opt-in supervisor respects the shared 1–4 renderer capacity and immutable source/asset verification; it does not kill active workers or automatically reclaim leader/worker locks after crashes. It is NOT unattended restart of crashed video encoders. Operators must inspect stale ownership before manual recovery. Queued supervised jobs without worker claims can be cancelled immediately.
+
+### Prompt-first AI Motion Director (developer preview)
+
+Create a short editable text-and-shape motion graphic using the active configured SuperAgent AI model:
+
+    superagent motion generate --prompt "Buat motion promo Laris 10 detik, gaya modern gelap" --width 640 --workspace . --json
+    superagent motion revise MOTION_ID --prompt "Buat judul terakhir lebih singkat" --width 640 --workspace . --json
+    superagent motion status JOB_ID --workspace . --json
+
+Equivalent slash commands: /motion generate and /motion revise. The native agent also has motion_generate, motion_revise and motion_status. MCP clients can call superagent_motion_generate/revise when authorized for write+execute. T-Line Motion Studio has a prompt/revision input and reuses its authenticated render progress/preview; manual timeline editing remains available.
+
+The AI Director plans 2–20s motion graphics made only from text/colored rectangles and basic transformations. It does not create music, spoken dialogue, complex effects, stock imagery, generated photos, or video footage. Prompts are compiled into validated declarative scene operations, never executable AI-generated code. Production-grade visual QA, connected model-provider certification and packaged Tauri E2E remain open.
