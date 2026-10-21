@@ -30,3 +30,14 @@ export function isAutoSeededSingleTask(taskContent: string, latestUserText: stri
   const expected = ["# Tasks", "", "- [/] " + text].join(newline);
   return taskContent.replaceAll(String.fromCharCode(13), "").trim() === expected;
 }
+
+
+/**
+ * Auto-continue system nudges are scoped to one execution turn. Keeping them
+ * across user messages pollutes later prompts and can restart a resolved loop.
+ */
+export function isTransientContinuationNudge(role: string, content: string): boolean {
+  if (role !== "system") return false;
+  return content.startsWith("[SYS] Continue immediately. Use the available tools to perform the search") ||
+    (content.startsWith("[SYS] You have ") && content.includes("unfinished task(s) remaining on the checklist:"));
+}

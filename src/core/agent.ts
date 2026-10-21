@@ -40,6 +40,7 @@ import { RequestProcessor } from "./agent/RequestProcessor.js";
 import { ContextBuilder } from "./agent/ContextBuilder.js";
 import { isRetryableError as isRetryableErrorHelper, parsePayloadLimitBytes as parsePayloadLimitBytesHelper, answerQuestionAsMaster as answerQuestionAsMasterHelper, getAgentActiveModelName } from "./agent/AgentUtils.js";
 import { LoopIterationProcessor } from "./agent/LoopIterationProcessor.js";
+import { LoopProgressGuard } from "./agent/LoopProgressGuard.js";
 import { checkPlanStructure } from "./agent/PlanValidator.js";
 import { MessageBuilder } from "./agent/MessageBuilder.js";
 import { HistoryCompactor } from "./agent/HistoryCompactor.js";
@@ -107,6 +108,8 @@ export class Agent {
   public goalMaxIterations: number = DEFAULT_GOAL_MAX_ITERATIONS;
   /** Bounds automatic text-only loop continuations per user turn. */
   public textOnlyContinuationNudges = 0;
+  /** Prevent runaway duplicate tool calls, even when RealtimeAdvisor is disabled. */
+  public readonly loopProgressGuard = new LoopProgressGuard();
   public wasRunningBeforeAbort = false;
   public isPaused = false;
   public allowSessionOutOfBounds = false;
@@ -789,6 +792,7 @@ export class Agent {
 
   private async runAgentLoop(): Promise<"completed" | "incomplete"> {
     this.textOnlyContinuationNudges = 0;
+    this.loopProgressGuard.reset();
     this.advisor.reset();
     // Sync advisor thresholds/flags from live config so runtime changes take effect
     this.advisor.syncSettings(getSettings());
@@ -885,15 +889,20 @@ export class Agent {
           if (messages.length > 0) {
             const lastUserIdx = messages.map(m => m.role).lastIndexOf("user");
             const sessionMsgs = lastUserIdx >= 0 ? messages.slice(lastUserIdx) : messages;
-            this.writeToLogFile("INFO", "Generating execution summary for log...");
-            const sumSignal = AbortSignal.timeout(5000);
-            HistoryCompactor.summarizeMessages(this, sessionMsgs, sumSignal)
-              .then(summary => {
-                this.writeToLogFile("SUMMARY", summary);
-              })
-              .catch(sumErr => {
-                this.writeToLogFile("WARN", `Failed to generate execution summary for log: ${sumErr.message}`);
-              });
+            const toolWork = sessionMsgs.some(message => message.role === "tool" || !!message.toolCalls?.length);
+            const multipleAnswers = sessionMsgs.filter(message => message.role === "assistant").length > 1;
+            // Skip the redundant LLM summary for a short text-only answer.
+            if (toolWork || multipleAnswers) {
+              this.writeToLogFile("INFO", "Generating execution summary for log...");
+              const sumSignal = AbortSignal.timeout(5000);
+              HistoryCompactor.summarizeMessages(this, sessionMsgs, sumSignal)
+                .then(summary => {
+                  this.writeToLogFile("SUMMARY", summary);
+                })
+                .catch(sumErr => {
+                  this.writeToLogFile("WARN", `Failed to generate execution summary for log: ${sumErr.message}`);
+                });
+            }
           }
         } catch (sumErr: any) {
           this.writeToLogFile("WARN", `Failed to generate execution summary for log: ${sumErr.message}`);

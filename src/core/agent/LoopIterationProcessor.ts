@@ -835,14 +835,6 @@ export class LoopIterationProcessor {
       const currentCwd = (agent.tier === "superagent" && agent.worktreePath)
         ? agent.worktreePath
         : agent.workingDirectory;
-      const endSnapshot = await captureGitSnapshot(currentCwd);
-      const gitSummary = getGitDiffSummary(agent.gitStartSnapshot, endSnapshot);
-      if (gitSummary) {
-        const summaryHeader = (textContent.trim() ? "\n\n" : "") + "Changes summary:\n" + gitSummary;
-        textContent += summaryHeader;
-        agent.onEvent({ type: "text", content: summaryHeader });
-      }
-
       if (textContent.trim()) {
         const isEarlyIteration = i < 3;
         const hasActionNarration = /\b(let me|i will|i'll|going to|will check|will search|will look|will inspect|will find|checking|searching|inspecting|examining|scanning|investigating|mencari|memeriksa|mengecek|saya akan|mari kita|mari periksa|sedang mencari)\b/i.test(textContent);
@@ -912,6 +904,15 @@ Do NOT stop, give up, or return conversational greetings. Immediately execute th
           agent.writeToLogFile("WARN", `Checklist enforcement check failed: ${checklistErr.message}`);
         }
 
+        // Git status/diff is only needed for the final answer, not every
+        // intermediate planning or checklist continuation.
+        const endSnapshot = await captureGitSnapshot(currentCwd);
+        const gitSummary = getGitDiffSummary(agent.gitStartSnapshot, endSnapshot);
+        if (gitSummary) {
+          const summaryHeader = "\n\nChanges summary:\n" + gitSummary;
+          textContent += summaryHeader;
+          agent.onEvent({ type: "text", content: summaryHeader });
+        }
         agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
         await agent.saveHistory();
       } else {
@@ -946,6 +947,25 @@ Do NOT stop, give up, or return conversational greetings. Immediately execute th
       timestamp: Date.now(),
     });
     await agent.saveHistory();
+
+    // Run the hard progress boundary before optional advisor analysis.
+    // It also detects unchanged status polling, which advisor deliberately excludes.
+    const loopDecision = agent.loopProgressGuard.recordToolStep(toolCalls, toolResults);
+    if (loopDecision.action === "stop") {
+      const reason = loopDecision.reason === "alternating_tools"
+        ? "alternating tool calls"
+        : "repeated identical tool calls and results";
+      const message = `Loop guard stopped after ${loopDecision.repeated} unchanged steps (${reason}). Work may be incomplete; use /resume after reviewing the last output.`;
+      agent.writeToLogFile("WARN", `LOOP_GUARD: ${message}`);
+      agent.onEvent({ type: "text", content: `
+
+⚠️ ${message}
+` });
+      return { shouldBreak: true, goalStatus: "incomplete", taskIncomplete: true };
+    }
+    if (loopDecision.backoffMs > 0) {
+      await agent.delayWithCountdown(1, loopDecision.backoffMs, signal);
+    }
 
     if (getSettings().enableAdvisor ?? true) {
       const advisorResult = agent.advisor.evaluateStep(toolCalls, toolResults, agent.tier);

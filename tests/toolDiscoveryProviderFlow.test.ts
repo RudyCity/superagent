@@ -132,7 +132,7 @@ describe("discovery lifecycle across Agent tasks", () => {
     vi.restoreAllMocks();
   });
 
-  async function configureAgent(inputReason: (input: string) => string) {
+  async function configureAgent(inputReason: (input: string) => string, maxIterations = 5) {
     const originalSettings = configModule.getSettings();
     vi.spyOn(configModule, "getConfig").mockReturnValue({
       provider: "openai",
@@ -147,7 +147,7 @@ describe("discovery lifecycle across Agent tasks", () => {
       forcePromptBasedToolCalling: false,
       concurrencyLimit: 2,
       enableAdvisor: false,
-      maxIterations: 5,
+      maxIterations,
     } as any);
     vi.spyOn(rmemoryModule, "isRmemoryActive").mockResolvedValue(false);
 
@@ -224,6 +224,31 @@ describe("discovery lifecycle across Agent tasks", () => {
       expect(schemaCalls).toHaveLength(1);
       expect(schemaCalls[0]).toContain("inspect_fixture");
       expect(agent.isToolDiscovered("inspect_fixture")).toBe(true);
+    } finally {
+      agent.dispose();
+    }
+  });
+
+  it("stops unchanged tool calls with the optional advisor disabled", async () => {
+    const { agent } = await configureAgent(() => "tool execution", 12);
+    const tools = await agent.getActiveTools();
+    await tools.find((tool) => tool.name === "describe_tool")!.execute(
+      { tool: "inspect_fixture" },
+      process.cwd(),
+    );
+    let modelCalls = 0;
+    const output: string[] = [];
+    agent.onEvent = (event) => {
+      if (event.type === "text") output.push(event.content);
+    };
+    vi.mocked(streamText).mockImplementation(() =>
+      nativeToolCall("inspect_fixture", { value: "same" }, "repeat-" + (++modelCalls))
+    );
+
+    try {
+      await agent.sendMessage("Inspect the same fixture repeatedly");
+      expect(modelCalls).toBe(6);
+      expect(output.some((message) => message.includes("Loop guard stopped"))).toBe(true);
     } finally {
       agent.dispose();
     }

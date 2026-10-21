@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isInformationalRequest,
   isAutoSeededSingleTask,
+  isTransientContinuationNudge,
   MAX_TEXT_ONLY_CONTINUATIONS,
 } from "../src/core/agent/ChecklistContinuationGuard.js";
 
@@ -24,6 +25,14 @@ describe("checklist continuation guard", () => {
   it("caps text-only continuations", () => {
     expect(MAX_TEXT_ONLY_CONTINUATIONS).toBeGreaterThan(0);
     expect(MAX_TEXT_ONLY_CONTINUATIONS).toBeLessThanOrEqual(3);
+  });
+
+  it("removes only turn-scoped auto-continuation prompts", () => {
+    expect(isTransientContinuationNudge("system", "[SYS] Continue immediately. Use the available tools to perform the search, inspection, or actions you described and provide the result.")).toBe(true);
+    expect(isTransientContinuationNudge("system", "[SYS] You have 1 unfinished task(s) remaining on the checklist:\n1. [ ] install package")).toBe(true);
+    expect(isTransientContinuationNudge("user", "[SYS] Continue immediately. Use the available tools to perform the search")).toBe(false);
+    expect(isTransientContinuationNudge("system", "ADVISOR WARNING: repeated tools")).toBe(false);
+    expect(isTransientContinuationNudge("system", "Project update")).toBe(false);
   });
 
   it("identifies only the synthetic single-message task", () => {

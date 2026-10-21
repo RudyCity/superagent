@@ -3,6 +3,7 @@ import { getSettings, getModelInstanceForTier } from "../config.js";
 import { allTasksCompleted, archiveCompletedTasks } from "../taskChecklist.js";
 import { captureGitSnapshot } from "./GitUtils.js";
 import { contentToString } from "../conversation.js";
+import { isTransientContinuationNudge } from "./ChecklistContinuationGuard.js";
 import type { Agent } from "../agent.js";
 
 import { analyzePromptIntent, translationBadgeEmitter } from "../promptClarification.js";
@@ -15,8 +16,16 @@ export class RequestProcessor {
     const currentCwd = (agent.tier === "superagent" && agent.worktreePath)
       ? agent.worktreePath
       : agent.workingDirectory;
-    (agent as any).gitStartSnapshot = await captureGitSnapshot(currentCwd);
-
+    // Remove turn-scoped self-nudges before classification or context-building.
+    // Preserve all user messages, tool results, and advisor diagnostics.
+    const previousMessages = agent.conversation.getMessages();
+    const durableMessages = previousMessages.filter((message) =>
+      !isTransientContinuationNudge(message.role, contentToString(message.content))
+    );
+    if (durableMessages.length !== previousMessages.length) {
+      agent.conversation.replaceMessages(durableMessages);
+      agent.writeToLogFile("INFO", `Discarded ${previousMessages.length - durableMessages.length} stale loop continuation nudges.`);
+    }
     if (!(agent as any).__badgeListenerAttached) {
       const onBadge = (badge: any) => {
         agent.writeToLogFile("INFO", `[🌐 Desktop Badge UI] [${badge.detectedLanguage.toUpperCase()}] "${badge.originalPrompt}" -> "${badge.translatedPrompt}"`);
@@ -302,6 +311,9 @@ Reply with EXACTLY "chat", "yes", or "no" ONLY.`;
     agent.writeToLogFile("INFO", `Agent execution started (tier: ${agent.tier}, depth: ${agent.delegationDepth}, isMultiAgent: ${agent.isMultiAgent}, workingDirectory: ${agent.workingDirectory}, worktreePath: ${agent.worktreePath})`);
     agent.writeToLogFile("USER", typeof userInput === "string" ? userInput : "[multimodal message]");
 
+    // Conversational fast-path returns above without any repo work.
+    // Snapshot only for a full execution loop that could modify files.
+    (agent as any).gitStartSnapshot = await captureGitSnapshot(currentCwd);
     agent.conversation.addUserMessage(userInput);
     await agent.compactHistoryIfNeeded();
     await agent.saveHistory();
