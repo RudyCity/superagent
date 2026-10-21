@@ -36,3 +36,6 @@ __pycache__/
 *.pyc
 tests/tmp_new_path_test/
 
+
+# Local Gumroad export assets (not versioned)
+gumroad_assets/
