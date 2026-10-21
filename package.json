@@ -26,7 +26,8 @@
     "wiki:watch": "bun .agents/skills/codebase-wiki-generator/scripts/watch-and-sync.cjs",
     "wiki:validate": "bun .agents/skills/codebase-wiki-generator/scripts/validate-wiki-links.cjs --wiki-dir docs/wiki",
     "runtime:smoke": "bun scripts/bun-runtime-smoke.ts",
-    "verify:runtime": "bun run build && bun run runtime:smoke"
+    "verify:runtime": "bun run build && bun run runtime:smoke",
+    "runtime:acceptance": "bun scripts/bun-acceptance.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.2",
