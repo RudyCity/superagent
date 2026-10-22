@@ -36,6 +36,34 @@ export const TELEGRAM_SUGGESTIONS = [
 ];
 
 /** Persistent MCP tool-catalog mode selection; shared with dashboard autocomplete. */
+/** User-facing SuperAgent Studio entry points. Internal file IDs remain motion-* for compatibility. */
+export const STUDIO_SUGGESTIONS = [
+  "/studio help",
+  "/studio generate",
+  "/studio new",
+  "/studio list",
+  "/studio inspect",
+  "/studio effects",
+  "/studio presets",
+  "/studio apply-effect",
+  "/studio apply-preset",
+  "/studio import-image",
+  "/studio import-audio",
+  "/studio edit",
+  "/studio edit-json",
+  "/studio frame",
+  "/studio render",
+  "/studio jobs",
+  "/studio status",
+  "/studio recovery",
+  "/studio cancel",
+  "/studio queue-recovery",
+  "/studio storage",
+  "/studio supervisor-status",
+  "/studio queue",
+  "/studio doctor",
+] as const;
+
 export const MCP_USE_SUGGESTIONS = [
   "/mcp use gateway",
   "/mcp use full",

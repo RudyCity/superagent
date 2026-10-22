@@ -2,33 +2,33 @@ import type { SlashCommand, SlashCommandContext } from "./types.js";
 import { registry } from "./registry.js";
 
 const help = [
-  "SuperAgent Visuals (developer preview)",
-  "  /motion generate <brief>",
-  "  /motion revise <motion-id> <change request>",
-  "  /motion new <title>",
-  "  /motion list",
-  "  /motion inspect <project-id>",
-  "  /motion edit <project-id> <base-revision> <layer-id> <text>",
-  '  /motion edit-json <project-id> <base-revision> [{"type":"set-property",...}]',
-  "  /motion import-image <relative-file-path>",
-  "  /motion import-audio <relative-file-path>",
-  "  /motion frame <project-id> <frame>",
-  "  /motion render <project-id> [even-output-width]",
-  "  /motion jobs",
-  "  /motion status <job-id>",
-  "  /motion recovery <job-id> (read-only)",
-  "  /motion cancel <job-id>",
-  "  /motion storage [days] (read-only)",
-  "  /motion queue-recovery (read-only)",
-  "  /motion supervisor-status (read-only)",
-  "  /motion queue <project-id> [even-output-width] (requires separate supervisor process)",
-  "  /motion doctor",
-  "  /motion effects [category]",
-  "  /motion effect <effect-id>",
-  "  /motion presets [search]",
-  "  /motion preset <preset-id>",
-  "  /motion apply-preset <project-id> <base-revision> <preset-id> <text-layer-id>",
-  "  /motion apply-effect <project-id> <base-revision> <effect-id> [layer-id] [params-json]",
+  "SuperAgent Studio (developer preview)",
+  "  /studio generate <brief>",
+  "  /studio revise <motion-id> <change request>",
+  "  /studio new <title>",
+  "  /studio list",
+  "  /studio inspect <project-id>",
+  "  /studio edit <project-id> <base-revision> <layer-id> <text>",
+  '  /studio edit-json <project-id> <base-revision> [{"type":"set-property",...}]',
+  "  /studio import-image <relative-file-path>",
+  "  /studio import-audio <relative-file-path>",
+  "  /studio frame <project-id> <frame>",
+  "  /studio render <project-id> [even-output-width]",
+  "  /studio jobs",
+  "  /studio status <job-id>",
+  "  /studio recovery <job-id> (read-only)",
+  "  /studio cancel <job-id>",
+  "  /studio storage [days] (read-only)",
+  "  /studio queue-recovery (read-only)",
+  "  /studio supervisor-status (read-only)",
+  "  /studio queue <project-id> [even-output-width] (requires separate supervisor process)",
+  "  /studio doctor",
+  "  /studio effects [category]",
+  "  /studio effect <effect-id>",
+  "  /studio presets [search]",
+  "  /studio preset <preset-id>",
+  "  /studio apply-preset <project-id> <base-revision> <preset-id> <text-layer-id>",
+  "  /studio apply-effect <project-id> <base-revision> <effect-id> [layer-id] [params-json]",
   "Interactive renders are foreground; scriptable CLI supports detached rendering.",
 ].join("\n");
 
@@ -45,8 +45,8 @@ function parseInteger(input: string | undefined, name: string): number {
 }
 
 export const motionCommand: SlashCommand = {
-  name: "motion",
-  description: "Create, edit and render SuperAgent Visuals video previews in the active workspace",
+  name: "studio",
+  description: "Create, edit and render SuperAgent Studio visuals in the active workspace",
   async execute(input, ctx) {
     const tokens = input.trim().split(/\s+/).filter(Boolean);
     const [action = "help", id, third, fourth, ...rest] = tokens;
@@ -73,7 +73,7 @@ export const motionCommand: SlashCommand = {
         emit(ctx, JSON.stringify(await inspectMotionSupervisor(workspace), null, 2)); return;
       }
       if (action === "queue") {
-        if (!id) throw new Error("Usage: /motion queue <project-id> [even-output-width]");
+        if (!id) throw new Error("Usage: /studio queue <project-id> [even-output-width]");
         const width = third === undefined ? undefined : parseInteger(third, "width");
         const { enqueueSupervisedMotionJob } = await import("../motion/jobs/motionJobs.js");
         const job = await enqueueSupervisedMotionJob(workspace, id, { width });
@@ -81,7 +81,7 @@ export const motionCommand: SlashCommand = {
       }
       if (action === "generate") {
         const prompt = tokens.slice(1).join(" ").trim();
-        if (!prompt) throw new Error("Usage: /motion generate <brief>");
+        if (!prompt) throw new Error("Usage: /studio generate <brief>");
         const { generateMotionFromPrompt } = await import("../motion/director/directorService.js");
         const result = await generateMotionFromPrompt(workspace, prompt);
         emit(ctx, "AI Motion " + result.project.id + " r" + result.project.revision +
@@ -90,7 +90,7 @@ export const motionCommand: SlashCommand = {
       }
       if (action === "revise") {
         const prompt = tokens.slice(2).join(" ").trim();
-        if (!id || !prompt) throw new Error("Usage: /motion revise <motion-id> <change>");
+        if (!id || !prompt) throw new Error("Usage: /studio revise <motion-id> <change>");
         const { reviseMotionFromPrompt } = await import("../motion/director/directorService.js");
         const result = await reviseMotionFromPrompt(workspace, id, prompt);
         emit(ctx, "AI Motion " + result.project.id + " r" + result.project.revision +
@@ -105,7 +105,7 @@ export const motionCommand: SlashCommand = {
         return;
       }
       if (action === "effect") {
-        if (!id) throw new Error("Usage: /motion effect <effect-id>");
+        if (!id) throw new Error("Usage: /studio effect <effect-id>");
         const { effectRegistry } = await import("../motion/effects/index.js");
         const item = effectRegistry.getCatalog().find(e => e.id === id);
         if (!item) throw new Error("Effect not found: " + id);
@@ -119,7 +119,7 @@ export const motionCommand: SlashCommand = {
         return;
       }
       if (action === "preset") {
-        if (!id) throw new Error("Usage: /motion preset <preset-id>");
+        if (!id) throw new Error("Usage: /studio preset <preset-id>");
         const { getCompoundPreset } = await import("../motion/effects/compoundPresets.js");
         const preset = getCompoundPreset(id);
         if (!preset) throw new Error("Unknown compound preset: " + id);
@@ -128,7 +128,7 @@ export const motionCommand: SlashCommand = {
       }
       if (action === "apply-preset") {
         if (!id || !third || !fourth || !rest[0])
-          throw new Error("Usage: /motion apply-preset <project-id> <base-revision> <preset-id> <text-layer-id>");
+          throw new Error("Usage: /studio apply-preset <project-id> <base-revision> <preset-id> <text-layer-id>");
         const baseRevision = parseInteger(third, "base-revision");
         const { applyCompoundPresetToProject } = await import("../motion/motionService.js");
         const result = await applyCompoundPresetToProject(workspace, id, baseRevision, {
@@ -138,7 +138,7 @@ export const motionCommand: SlashCommand = {
         return;
       }
       if (action === "apply-effect") {
-        if (!id || !third || !fourth) throw new Error("Usage: /motion apply-effect <project-id> <base-revision> <effect-id> [layer-id] [params-json]");
+        if (!id || !third || !fourth) throw new Error("Usage: /studio apply-effect <project-id> <base-revision> <effect-id> [layer-id] [params-json]");
         const baseRevision = parseInteger(third, "base-revision");
         const effectId = fourth;
         const targetLayerId = rest[0];
@@ -160,12 +160,12 @@ export const motionCommand: SlashCommand = {
       if (action === "doctor") {
         const { probeFfmpeg } = await import("../motion/render/ffmpegEncoder.js");
         const available = await probeFfmpeg();
-        emit(ctx, "SuperAgent Visuals: " + (available ? "FFmpeg available; MP4 previews enabled" : "FFmpeg unavailable; SVG previews only"));
+        emit(ctx, "SuperAgent Studio: " + (available ? "FFmpeg available; MP4 previews enabled" : "FFmpeg unavailable; SVG previews only"));
         return;
       }
       if (action === "import-image" || action === "import-audio") {
         const filename = tokens.slice(1).join(" ").trim();
-        if (!filename) throw new Error("Usage: /motion " + action + " <relative-file-path>");
+        if (!filename) throw new Error("Usage: /studio " + action + " <relative-file-path>");
         const { readMotionWorkspaceInput } = await import("../motion/assets/motionInput.js");
         const data = await readMotionWorkspaceInput(workspace, filename, action === "import-image" ? 1024 * 1024 : 2 * 1024 * 1024);
         const result = action === "import-image"
@@ -175,7 +175,7 @@ export const motionCommand: SlashCommand = {
         return;
       }
       if (action === "edit-json") {
-        if (!id || !third || !fourth) throw new Error("Usage: /motion edit-json <project-id> <base-revision> <json-array>");
+        if (!id || !third || !fourth) throw new Error("Usage: /studio edit-json <project-id> <base-revision> <json-array>");
         const baseRevision = parseInteger(third, "base-revision");
         const raw = [fourth, ...rest].join(" ");
         if (raw.length > 256 * 1024) throw new Error("Motion JSON transaction exceeds 256 KB");
@@ -190,23 +190,23 @@ export const motionCommand: SlashCommand = {
         const service = await import("../motion/motionService.js");
         if (action === "new") {
           const name = tokens.slice(1).join(" ").trim();
-          if (!name) throw new Error("Usage: /motion new <title>");
+          if (!name) throw new Error("Usage: /studio new <title>");
           const result = await service.createMotionProject(workspace, name);
           emit(ctx, "Created motion project " + result.id + " (revision " + result.revision + ")");
         } else if (action === "list") {
           const result = await service.listMotionProjects(workspace);
           emit(ctx, result.length ? result.map(item => item.id + " (r" + item.revision + ") " + item.name).join("\n") : "No motion projects in current workspace.");
         } else if (action === "inspect") {
-          if (!id) throw new Error("Usage: /motion inspect <project-id>");
+          if (!id) throw new Error("Usage: /studio inspect <project-id>");
           const result = await service.getMotionProject(workspace, id);
           emit(ctx, JSON.stringify({ id: result.id, name: result.name, revision: result.revision, composition: result.composition }, null, 2));
         } else if (action === "frame") {
-          if (!id) throw new Error("Usage: /motion frame <project-id> <frame>");
+          if (!id) throw new Error("Usage: /studio frame <project-id> <frame>");
           const frame = parseInteger(third, "frame");
           const result = await service.writeMotionPreview(workspace, id, frame);
           emit(ctx, "Motion SVG preview: " + result.path + " (SHA-256 " + result.sha256 + ")");
         } else {
-          if (!id || !fourth || !rest.length) throw new Error("Usage: /motion edit <project-id> <base-revision> <layer-id> <text>");
+          if (!id || !fourth || !rest.length) throw new Error("Usage: /studio edit <project-id> <base-revision> <layer-id> <text>");
           const baseRevision = parseInteger(third, "base-revision");
           const result = await service.updateMotionProject(workspace, id, baseRevision, [
             { type: "set-text", layerId: fourth, text: rest.join(" ") },
@@ -220,18 +220,18 @@ export const motionCommand: SlashCommand = {
         const result = await jobs.listMotionJobs(workspace);
         emit(ctx, result.length ? result.map(job => job.id + " " + job.status + " " + job.framesCompleted + "/" + job.profile.frameCount).join("\n") : "No motion render jobs.");
       } else if (action === "recovery") {
-        if (!id) throw new Error("Usage: /motion recovery <job-id>");
+        if (!id) throw new Error("Usage: /studio recovery <job-id>");
         emit(ctx, JSON.stringify(await jobs.inspectMotionJob(workspace, id), null, 2));
       } else if (action === "status") {
-        if (!id) throw new Error("Usage: /motion status <job-id>");
+        if (!id) throw new Error("Usage: /studio status <job-id>");
         const result = await jobs.getMotionJob(workspace, id);
         emit(ctx, JSON.stringify(result, null, 2));
       } else if (action === "cancel") {
-        if (!id) throw new Error("Usage: /motion cancel <job-id>");
+        if (!id) throw new Error("Usage: /studio cancel <job-id>");
         const result = await jobs.requestMotionCancellation(workspace, id);
         emit(ctx, result.cancellationRequested ? "Cancellation requested for " + id : "Job already finished: " + id);
       } else if (action === "render") {
-        if (!id) throw new Error("Usage: /motion render <project-id> [even-output-width]");
+        if (!id) throw new Error("Usage: /studio render <project-id> [even-output-width]");
         const width = third === undefined ? undefined : parseInteger(third, "width");
         emit(ctx, "Starting local Motion MP4 render. This terminal command completes when encoding finishes.");
         const job = await jobs.renderMotionJob(workspace, id, { width });
@@ -240,7 +240,7 @@ export const motionCommand: SlashCommand = {
         emit(ctx, help, true);
       }
     } catch (error) {
-      emit(ctx, "SuperAgent Visuals: " + (error instanceof Error ? error.message : String(error)), true);
+      emit(ctx, "SuperAgent Studio: " + (error instanceof Error ? error.message : String(error)), true);
     }
   },
 };

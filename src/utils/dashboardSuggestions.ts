@@ -10,6 +10,7 @@ import {
   TELEGRAM_SUGGESTIONS,
   MCP_TUNNEL_SUGGESTIONS,
   MCP_USE_SUGGESTIONS,
+  STUDIO_SUGGESTIONS,
   SERVER_TUNNEL_SUGGESTIONS,
 } from "../core/commands/commandCatalog.js";
 
@@ -337,6 +338,10 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         ? presets.map(p => `/mp-${p.name}`)
         : ["/mp-fast", "/mp-default", "/mp-balanced"];
       return filterSuggestions(presetSuggestions, query);
+    }
+
+    if (mainCommand === "/studio") {
+      return filterSuggestions([...STUDIO_SUGGESTIONS], query);
     }
 
     if (mainCommand === "/status") {
@@ -874,6 +879,9 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
 
 export function getSuggestionDescriptions(): Record<string, string> {
   const desc: Record<string, string> = { ...BUILTIN_DESCRIPTIONS };
+  for (const suggestion of STUDIO_SUGGESTIONS) {
+    desc[suggestion] = "SuperAgent Studio — " + suggestion.replace("/studio ", "");
+  }
   // Auto-populate descriptions from registry for any command without a manual entry
   for (const cmd of registry.getAll()) {
     const key = `/${cmd.name}`;

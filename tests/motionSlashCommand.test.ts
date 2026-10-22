@@ -23,9 +23,9 @@ afterEach(async () => {
   await Promise.all(workspaces.splice(0).map(root => fs.rm(root, { recursive: true, force: true })));
 });
 
-describe("Interactive Motion Studio slash command", () => {
+describe("Interactive SuperAgent Studio slash command", () => {
   it("registers a discoverable command and operates on the active workspace", async () => {
-    expect(registry.get("motion")).toBe(motionCommand);
+    expect(registry.get("studio")).toBe(motionCommand);
     const { ctx, messages, root } = await context();
     await motionCommand.execute("new Example Product Launch", ctx);
     expect(messages[0].content).toContain("Created motion project");
@@ -71,7 +71,7 @@ describe("Interactive Motion Studio slash command", () => {
     const { ctx, messages } = await context();
     await motionCommand.execute("help", ctx);
     await motionCommand.execute("edit missing 0 title", ctx);
-    expect(messages[0].content).toContain("/motion render");
+    expect(messages[0].content).toContain("/studio render");
     expect(messages[1].type).toBe("error");
     expect(messages[1].content).toContain("Usage");
     await motionCommand.execute("jobs", ctx);

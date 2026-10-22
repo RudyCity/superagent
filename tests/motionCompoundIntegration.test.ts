@@ -94,7 +94,7 @@ describe("Compound Motion presets: HTTP, CLI, slash and prompt director", () => 
       expect((await getMotionProject(root, project.id)).revision).toBe(2);
     } finally { log.mockRestore(); }
   });
-  it("supports /motion preset discovery and apply command", async () => {
+  it("supports /studio preset discovery and apply command", async () => {
     const project = await createMotionProject(root, "Compound Slash");
     const entries: ChatLine[] = [];
     const ctx = { agent: { workingDirectory: root }, addLine: (l: ChatLine) => entries.push(l) } as SlashCommandContext;

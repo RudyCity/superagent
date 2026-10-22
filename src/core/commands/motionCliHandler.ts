@@ -13,40 +13,40 @@ import { inspectMotionQueueRecovery, dispatchOrphanedMotionQueue } from "../moti
 import type { MotionEdit } from "../motion/schema/types.js";
 import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation, enqueueSupervisedMotionJob } from "../motion/jobs/motionJobs.js";
 
-const usage = `SuperAgent Visuals (developer preview)
-  superagent motion generate --prompt "Animated promo" [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
-  superagent motion revise MOTION_ID --prompt "Shorter title" [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
-  superagent motion new --name "Title" [--workspace PATH] [--json]
-  superagent motion list [--workspace PATH] [--json]
-  superagent motion inspect PROJECT_ID [--workspace PATH] [--json]
-  superagent motion edit PROJECT_ID --base-revision N --layer LAYER_ID --text "Title"
-  superagent motion edit PROJECT_ID --base-revision N --edits-json '[{"type":"set-property",...}]'
-  superagent motion edit PROJECT_ID --base-revision N --edits-file workspace/path/edits.json
-  superagent motion import-image --file workspace/path/image.png [--workspace PATH] [--json]
-  superagent motion import-audio --file workspace/path/clip.wav [--workspace PATH] [--json]
-  superagent motion frame PROJECT_ID --frame N [--workspace PATH] [--json]
-  superagent motion render PROJECT_ID [--width EVEN_NUMBER] [--detach] [--workspace PATH] [--json]
-  superagent motion jobs [--workspace PATH] [--json]
-  superagent motion scheduler [--workspace PATH] [--json]
-  superagent motion render PROJECT_ID --width 640 --supervised [--workspace PATH] [--json]
-  superagent motion supervisor-status [--workspace PATH] [--json]
-  superagent motion supervisor --once [--workspace PATH] [--json]
-  superagent motion supervisor --watch [--interval-ms 2000] [--workspace PATH] [--json]
-  superagent motion queue-recovery [--min-age-seconds 30] [--workspace PATH] [--json]
-  superagent motion dispatch-queue --apply [--min-age-seconds 30] [--limit 4] [--workspace PATH] [--json]
-  superagent motion storage [--days 7] [--workspace PATH] [--json]
-  superagent motion prune [--days 7] --apply [--workspace PATH] [--json]
-  superagent motion status JOB_ID [--workspace PATH] [--json]
-  superagent motion recovery JOB_ID [--workspace PATH] [--json]
-  superagent motion recover JOB_ID --ack-stale [--workspace PATH] [--json]
-  superagent motion cancel JOB_ID [--workspace PATH] [--json]
-  superagent motion doctor [--json]
-  superagent motion effects [--category CATEGORY] [--search QUERY] [--workspace PATH] [--json]
-  superagent motion effect-info EFFECT_ID [--workspace PATH] [--json]
-  superagent motion presets [--search QUERY] [--json]
-  superagent motion preset-info PRESET_ID [--json]
-  superagent motion apply-preset PROJECT_ID --base-revision N --preset PRESET_ID --layer TEXT_LAYER_ID [--start-frame N] [--duration-frames N] [--intensity 1] [--json]
-  superagent motion apply-effect PROJECT_ID --base-revision N --effect EFFECT_ID [--layer LAYER_ID] [--params-json JSON] [--start-frame N] [--duration-frames N] [--workspace PATH] [--json]
+const usage = `SuperAgent Studio (developer preview)
+  superagent studio generate --prompt "Animated promo" [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
+  superagent studio revise MOTION_ID --prompt "Shorter title" [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
+  superagent studio new --name "Title" [--workspace PATH] [--json]
+  superagent studio list [--workspace PATH] [--json]
+  superagent studio inspect PROJECT_ID [--workspace PATH] [--json]
+  superagent studio edit PROJECT_ID --base-revision N --layer LAYER_ID --text "Title"
+  superagent studio edit PROJECT_ID --base-revision N --edits-json '[{"type":"set-property",...}]'
+  superagent studio edit PROJECT_ID --base-revision N --edits-file workspace/path/edits.json
+  superagent studio import-image --file workspace/path/image.png [--workspace PATH] [--json]
+  superagent studio import-audio --file workspace/path/clip.wav [--workspace PATH] [--json]
+  superagent studio frame PROJECT_ID --frame N [--workspace PATH] [--json]
+  superagent studio render PROJECT_ID [--width EVEN_NUMBER] [--detach] [--workspace PATH] [--json]
+  superagent studio jobs [--workspace PATH] [--json]
+  superagent studio scheduler [--workspace PATH] [--json]
+  superagent studio render PROJECT_ID --width 640 --supervised [--workspace PATH] [--json]
+  superagent studio supervisor-status [--workspace PATH] [--json]
+  superagent studio supervisor --once [--workspace PATH] [--json]
+  superagent studio supervisor --watch [--interval-ms 2000] [--workspace PATH] [--json]
+  superagent studio queue-recovery [--min-age-seconds 30] [--workspace PATH] [--json]
+  superagent studio dispatch-queue --apply [--min-age-seconds 30] [--limit 4] [--workspace PATH] [--json]
+  superagent studio storage [--days 7] [--workspace PATH] [--json]
+  superagent studio prune [--days 7] --apply [--workspace PATH] [--json]
+  superagent studio status JOB_ID [--workspace PATH] [--json]
+  superagent studio recovery JOB_ID [--workspace PATH] [--json]
+  superagent studio recover JOB_ID --ack-stale [--workspace PATH] [--json]
+  superagent studio cancel JOB_ID [--workspace PATH] [--json]
+  superagent studio doctor [--json]
+  superagent studio effects [--category CATEGORY] [--search QUERY] [--workspace PATH] [--json]
+  superagent studio effect-info EFFECT_ID [--workspace PATH] [--json]
+  superagent studio presets [--search QUERY] [--json]
+  superagent studio preset-info PRESET_ID [--json]
+  superagent studio apply-preset PROJECT_ID --base-revision N --preset PRESET_ID --layer TEXT_LAYER_ID [--start-frame N] [--duration-frames N] [--intensity 1] [--json]
+  superagent studio apply-effect PROJECT_ID --base-revision N --effect EFFECT_ID [--layer LAYER_ID] [--params-json JSON] [--start-frame N] [--duration-frames N] [--workspace PATH] [--json]
 
 MP4 preview uses installed FFmpeg. --detach launches a separate Bun worker;
 recovery is diagnostic/read-only unless the operator explicitly runs recover --ack-stale.`;
@@ -374,7 +374,7 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (json) emit({ error: message }, true);
-    else console.error("SuperAgent Visuals: " + message);
+    else console.error("SuperAgent Studio: " + message);
     if (error instanceof MotionRevisionConflict) return 3;
     if (error instanceof MotionValidationError || error instanceof RangeError || error instanceof Error) return 2;
     return 1;

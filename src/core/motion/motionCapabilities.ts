@@ -1,7 +1,7 @@
 /** Backend capabilities only. An installed/running T-Line frontend is a separate deployment. */
 export const MOTION_CAPABILITIES = Object.freeze({
   schemaVersion: 1,
-  productDisplayName: "SuperAgent Visuals",
+  productDisplayName: "SuperAgent Studio",
   templateSourcePolicy: "superagent-authored-only",
   externalMotionTemplateImport: false,
   releaseChannel: "developer-preview",
