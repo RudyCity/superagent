@@ -10,11 +10,12 @@
  * feature objects. Float64 is intentional for exact Rudy/Bun score parity.
  */
 import {
-  extractSenopatiV2SparseFeatures, SENOPATI_V2_HEADS, SenopatiV2Shadow,
+  extractSenopatiV2SparseFeatures, SENOPATI_V2_HEADS,
   type SenopatiV2SparsePayload, type SenopatiV2ShadowPrediction,
   type SenopatiV2ShadowLabels,
 } from "./senopatiV2Shadow.js";
 import { guardSenopatiV2Shadow } from "./senopatiV2Safety.js";
+import { validateSenopatiV2CompactCandidate } from "./senopatiV2CandidateValidation.js";
 
 type Head = keyof typeof SENOPATI_V2_HEADS;
 const HEAD_ORDER: Head[] = ["domain", "intent", "action", "risk", "approval"];
@@ -32,9 +33,9 @@ export class SenopatiV2CompactShadow {
   private readonly recordCount: number;
 
   constructor(payload: SenopatiV2SparsePayload) {
-    // Reference constructor independently validates bounded records, keys,
-    // values, label orders and candidate-only status, then can be discarded.
-    new SenopatiV2Shadow(payload);
+    // Validate reference-equivalent invariants directly without materializing
+    // a throwaway reference model during loading.
+    validateSenopatiV2CompactCandidate(payload);
     const count = payload.records.length;
     this.recordCount = count;
     const frequencies = new Map<string, number>();
