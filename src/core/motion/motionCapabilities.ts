@@ -42,6 +42,8 @@ export const MOTION_CAPABILITIES = Object.freeze({
   motionBrandKit: true,
   motionTemplateLibrary: true,
   motionTemplateCount: 6,
+  motionBatchAspectVariants: true,
+  motionBatchAspectVariantsMax: 3,
   effectsEngine: true,
   effectsCount: 224,
   effectsCatalog: true,

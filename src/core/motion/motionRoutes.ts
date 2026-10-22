@@ -29,6 +29,7 @@ import { changeMotionEffectStack, type MotionStackOperation } from "./effects/ef
 import { resizeMotionComposition, type MotionOutputAspect } from "./motionResize.js";
 import { getMotionBrandKit, saveMotionBrandKit, type MotionBrandKitInput } from "./motionBrandKit.js";
 import { compileMotionTemplate, listMotionTemplates } from "./motionTemplates.js";
+import { createMotionBatchVariants } from "./motionBatchVariants.js";
 
 export interface MotionHttpContext {
   resolveWorkspacePath: (req: IncomingMessage) => string | null;
@@ -100,6 +101,7 @@ export async function handleMotionHttpRoute(
   const brandKitRoute = pathname === "/api/motion/brand-kit";
   const templatesList = pathname === "/api/motion/templates";
   const projectTemplateRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/templates(?:\/(preview))?$/);
+  const batchVariants = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/variants$/);
   const effectsList = pathname === "/api/motion/effects";
   const effectItem = pathname.match(/^\/api\/motion\/effects\/([a-z][a-z0-9-]{1,63})$/);
   const projectEffects = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects$/);
@@ -249,6 +251,15 @@ export async function handleMotionHttpRoute(
         body.baseRevision as number, body.revision as number));
     } else if (project && method === "GET") {
       json(res, ctx, 200, await getMotionProject(workspace, project[1]));
+    } else if (batchVariants && method === "POST") {
+      const body = await readMotionJson(req, 2000);
+      if (!Number.isSafeInteger(body.baseRevision) || !Array.isArray(body.aspectRatios) ||
+          (body.width !== undefined && !Number.isSafeInteger(body.width)))
+        throw new MotionValidationError(["Invalid Motion batch variant request"]);
+      const result = await createMotionBatchVariants(workspace, batchVariants[1],
+        body.baseRevision as number, body.aspectRatios as Array<"16:9" | "1:1" | "9:16">,
+        { width: body.width as number | undefined });
+      json(res, ctx, 202, result);
     } else if (projectTemplateRoute && method === "POST") {
       const body = await readMotionJson(req, 5_000);
       if (!Number.isSafeInteger(body.baseRevision) || typeof body.templateId !== "string" ||
