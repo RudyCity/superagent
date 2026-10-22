@@ -103,7 +103,9 @@ describe("ContextManager", () => {
       });
     }
 
-    await manager.compact(messages);
+    const prepared = await manager.compact(messages);
+    expect(manager.getHistory()).toHaveLength(0);
+    await manager.confirmPersistedCompaction(prepared);
 
     const history = manager.getHistory();
     expect(history.length).toBe(1);
@@ -129,8 +131,10 @@ describe("ContextManager", () => {
       });
     }
 
-    await manager.compact(messages);
+    const prepared = await manager.compact(messages);
     expect(events).toContain("start");
+    expect(events).not.toContain("complete");
+    await manager.confirmPersistedCompaction(prepared);
     expect(events).toContain("complete");
   });
 
@@ -274,7 +278,9 @@ describe("ContextManager compaction event payload", () => {
     const events: any[] = [];
     manager.on("compaction:complete", (p) => events.push(p));
 
-    await manager.compact(messages);
+    const prepared = await manager.compact(messages);
+    expect(events).toHaveLength(0);
+    await manager.confirmPersistedCompaction(prepared);
 
     expect(events.length).toBeGreaterThanOrEqual(1);
     const ev = events[events.length - 1];
