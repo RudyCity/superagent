@@ -2,6 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { afterEach,describe,expect,it } from "vitest";
 import { createShadowRegistry,loadShadowRegistry } from "../src/core/senopatiV2CandidateRegistry.js";
 import { compiledCachePath, decodeCompiledShadowCache,encodeCompiledShadowCache,writeCompiledShadowCache } from "../src/core/senopatiV2CompactCache.js";
@@ -155,6 +157,68 @@ describe("Senopati V2 compiled compact cache, shadow-only",()=>{
     fs.appendFileSync(f.policyPath," ");
     expect(()=>loadShadowRegistry(f.registryPath,"compact-cached",{cacheRoot:f.cacheRoot})).toThrow(/hash mismatch/);
   });
+  it("prevents stale-lock takeover, then safely reuses an unchanged compiled cache",()=>{
+    const f=fixture();
+    fs.mkdirSync(f.cacheRoot,{recursive:true});
+    const lock=f.cachePath+".compile.lock";
+    fs.mkdirSync(lock);
+    expect(()=>writeCompiledShadowCache(f.model,f.registry.model.sha256,
+      f.registry.policy.sha256,f.cacheRoot)).toThrow(/lock/);
+    expect(fs.existsSync(lock)).toBe(true); // do not remove another process lock
+    fs.rmdirSync(lock);
+    const cache=writeCompiledShadowCache(f.model,f.registry.model.sha256,
+      f.registry.policy.sha256,f.cacheRoot);
+    const before=fs.statSync(cache).mtimeMs;
+    const repeated=writeCompiledShadowCache(f.model,f.registry.model.sha256,
+      f.registry.policy.sha256,f.cacheRoot);
+    expect(repeated).toBe(cache);
+    expect(fs.statSync(cache).mtimeMs).toBe(before);
+    expect(fs.existsSync(lock)).toBe(false);
+  });
+  it("refuses changed cache without explicit repair; repairs with atomic publication and no stray files",()=>{
+    const f=fixture();
+    const original=writeCompiledShadowCache(f.model,f.registry.model.sha256,
+      f.registry.policy.sha256,f.cacheRoot);
+    const corruption=fs.readFileSync(original);
+    corruption[corruption.length-38]^=0x11;
+    fs.writeFileSync(original,corruption);
+    expect(()=>writeCompiledShadowCache(f.model,f.registry.model.sha256,
+      f.registry.policy.sha256,f.cacheRoot)).toThrow(/--repair/);
+    expect(fs.readFileSync(original)).toEqual(corruption);
+    const status=loadShadowRegistry(f.registryPath,"compact-cached",{cacheRoot:f.cacheRoot});
+    expect(status.cacheStatus).toBe("invalid_fallback_reference");
+    const repaired=writeCompiledShadowCache(f.model,f.registry.model.sha256,
+      f.registry.policy.sha256,f.cacheRoot,{repair:true});
+    expect(repaired).toBe(original);
+    expect(loadShadowRegistry(f.registryPath,"compact-cached",{cacheRoot:f.cacheRoot}).cacheStatus).toBe("hit");
+    expect(fs.readdirSync(f.cacheRoot)).toEqual([path.basename(original)]);
+  });
+  it("multiple Bun processes compiling the same candidate never publish partial files",async()=>{
+    const f=fixture();
+    const helper=fileURLToPath(new URL("./senopati_v2/compile-cache-race-worker.ts",import.meta.url));
+    const work=()=>new Promise<{code:number|null,stderr:string,stdout:string}>((resolve,reject)=>{
+      const child=spawn(process.execPath,[helper,
+        f.modelPath,f.registry.model.sha256,f.registry.policy.sha256,f.cacheRoot],{
+        cwd:process.cwd(),windowsHide:true,stdio:["ignore","pipe","pipe"],
+      });
+      let stdout="",stderr="";
+      child.stdout.on("data",chunk=>stdout+=chunk.toString());
+      child.stderr.on("data",chunk=>stderr+=chunk.toString());
+      child.on("error",reject);
+      child.on("close",code=>resolve({code,stdout,stderr}));
+    });
+    const results=await Promise.all(Array.from({length:4},()=>work()));
+    expect(results.some(r=>r.code===0)).toBe(true);
+    for(const r of results){
+      if(r.code!==0)expect(r.stderr).toMatch(/already running or stale lock/);
+    }
+    expect(fs.existsSync(f.cachePath)).toBe(true);
+    expect(fs.readdirSync(f.cacheRoot)).toEqual([path.basename(f.cachePath)]);
+    expect(loadShadowRegistry(f.registryPath,"compact-cached",{cacheRoot:f.cacheRoot}).cacheStatus).toBe("hit");
+    const reference=loadShadowRegistry(f.registryPath,"reference").model;
+    const model=loadShadowRegistry(f.registryPath,"compact-cached",{cacheRoot:f.cacheRoot}).model;
+    expect(model.predictGuarded("iya","PLANNING_PENDING")).toEqual(reference.predictGuarded("iya","PLANNING_PENDING"));
+  },20000);
   it("rejects forged production flags before looking at a cache",()=>{
     const f=fixture();
     writeCompiledShadowCache(f.model,f.registry.model.sha256,f.registry.policy.sha256,f.cacheRoot);

@@ -7,7 +7,7 @@
  * Format: 8 byte magic + 4 byte LE header length + UTF-8 JSON header +
  * little-endian typed-array sections + SHA-256 digest of all preceding bytes.
  */
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { SenopatiV2CompactShadow } from "./senopatiV2CompactShadow.js";
@@ -172,23 +172,79 @@ export function decodeCompiledShadowCache(
 }
 
 /**
- * Cache creation is an explicit user command. Cache lookup never writes.
- * Atomic temp+rename ensures interrupted writes are not considered valid.
+ * Explicit cache compiler writer. File creation is atomic and cache readers
+ * never consult the lock. A locked compiler fails instead of overwriting the
+ * running compiler's data. Stale locks require a deliberate human inspection.
+ *
+ * Repair, when explicitly requested, temporarily renames corrupt content out
+ * of the well-known path. Concurrent readers then fail closed to reference
+ * until the newly validated cache becomes visible.
  */
 export function writeCompiledShadowCache(
   model:SenopatiV2CompactShadow,modelHash:string,policyHash:string,
-  root=path.resolve("build","superagent","cache")
+  root=path.resolve("build","superagent","cache"),
+  options:{repair?:boolean}={}
 ):string {
   const filename=compiledCachePath(modelHash,policyHash,root);
   const bytes=encodeCompiledShadowCache(model,modelHash,policyHash);
-  fs.mkdirSync(path.dirname(filename),{recursive:true});
-  const tmp=filename+`.tmp-${process.pid}-${Date.now()}`;
+  fs.mkdirSync(path.dirname(filename),{recursive:true,mode:0o700});
+  const lock=filename+".compile.lock";
+  // Atomic cross-process lock acquisition. Do not automatically remove a
+  // pre-existing lock: it might belong to another compiler or a crashed run.
   try{
-    fs.writeFileSync(tmp,bytes,{flag:"wx"});
-    // User explicitly requested cache rebuild; replace stale or corrupt binary.
-    fs.renameSync(tmp,filename);
-  }finally{
-    if(fs.existsSync(tmp))fs.unlinkSync(tmp);
+    fs.mkdirSync(lock,{mode:0o700});
+  }catch(e){
+    const code=(e as NodeJS.ErrnoException).code;
+    if(code==="EEXIST")throw new Error("Cache compilation already running or stale lock present: "+lock);
+    throw e;
   }
-  return filename;
+  const tag=process.pid+"-"+randomBytes(8).toString("hex");
+  const tmp=filename+".tmp-"+tag;
+  const backup=filename+".previous-"+tag;
+  let fd:number|undefined;
+  let movedOld=false;
+  try{
+    if(fs.existsSync(filename)){
+      const stats=fs.lstatSync(filename);
+      if(!stats.isFile()||stats.isSymbolicLink())throw new Error("Cache path is not a regular file");
+      if(stats.size<=MAX_CACHE_BYTES){
+        const existing=fs.readFileSync(filename);
+        if(existing.equals(bytes)){
+          // Idempotent; preserve cache inode and avoid forcing reload.
+          return filename;
+        }
+      }
+      if(!options.repair)throw new Error(
+        "Existing compiled cache differs from pinned candidate; use explicit --repair after inspecting it");
+    }
+    fd=fs.openSync(tmp,"wx",0o600);
+    fs.writeFileSync(fd,bytes);
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd=undefined;
+    if(fs.existsSync(filename)){
+      fs.renameSync(filename,backup);
+      movedOld=true;
+    }
+    // Same-directory hard link atomically publishes the fully flushed cache;
+    // EEXIST prevents overwrite if a different external writer races us.
+    fs.linkSync(tmp,filename);
+    if(movedOld){
+      fs.unlinkSync(backup);
+      movedOld=false;
+    }
+    return filename;
+  }catch(e){
+    // Restore prior cache if publish failed, without deleting another writer's
+    // new final path. A missing cache simply triggers safe reference fallback.
+    if(movedOld&&!fs.existsSync(filename)){
+      try{fs.renameSync(backup,filename);movedOld=false;}catch{}
+    }
+    throw e;
+  }finally{
+    if(fd!==undefined)fs.closeSync(fd);
+    if(fs.existsSync(tmp))fs.unlinkSync(tmp);
+    // The lock was acquired by THIS call and is safe to remove here.
+    fs.rmdirSync(lock);
+  }
 }

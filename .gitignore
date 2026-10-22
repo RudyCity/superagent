@@ -40,3 +40,9 @@ tests/tmp_new_path_test/
 
 # Local Gumroad export assets (not versioned)
 gumroad_assets/
+
+
+# Senopati experimental hash-pinned model cache and local benchmark outputs
+/build/superagent/cache/
+/build/superagent/benchmarks/
+/build/superagent/registry/
