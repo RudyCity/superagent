@@ -357,7 +357,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(controlChromeCdpTool.name).toBe("control_chrome_cdp");
     const cmds = (controlChromeCdpTool.parameters as any).properties.command.enum as string[];
     expect(cmds).toEqual([
-      "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "new_tab", "close_tab", "activate", "navigate", "evaluate",
+      "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate",
       "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key",
       "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets",
       "extract_links", "click", "type", "wait_for",
@@ -719,6 +719,72 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     } finally {
       const released = await controlChromeCdpTool.execute({ command: "release_target", targetId: "T1", agentId: owner, sessionToken });
       expect(released).toContain("released target");
+    }
+  });
+
+  test("shared tab commands enforce observer and contributor roles end to end", async () => {
+    const owner = "owner-" + process.pid;
+    const guest = "observer-" + process.pid;
+    const writer = "writer-" + process.pid;
+    const claim = JSON.parse(String(await controlChromeCdpTool.execute({
+      command: "claim_target", agentId: owner, targetId: "T1",
+    })));
+    const ownerToken = claim.sessionToken;
+    try {
+      const shared = JSON.parse(String(await controlChromeCdpTool.execute({
+        command: "share_target", agentId: owner, sessionToken: ownerToken, targetId: "T1",
+      })));
+      expect(shared.session.mode).toBe("shared");
+
+      async function join(agentId: string, role: "observer" | "contributor") {
+        const invite = JSON.parse(String(await controlChromeCdpTool.execute({
+          command: "invite_agent", targetId: "T1", agentId: owner, sessionToken: ownerToken,
+          memberId: agentId, role,
+        })));
+        expect(invite.invitationToken).toBeTruthy();
+        const joined = JSON.parse(String(await controlChromeCdpTool.execute({
+          command: "join_target", agentId, targetId: "T1", inviteId: invite.inviteId,
+          invitationToken: invite.invitationToken,
+        })));
+        return joined.sessionToken as string;
+      }
+
+      const observerToken = await join(guest, "observer");
+      const writerToken = await join(writer, "contributor");
+
+      const snap = String(await controlChromeCdpTool.execute({
+        command: "shared_snapshot", targetId: "T1", agentId: guest, sessionToken: observerToken,
+      }));
+      expect(snap).toContain("snapshot of");
+      const deniedWrite = String(await controlChromeCdpTool.execute({
+        command: "evaluate", targetId: "T1", agentId: guest, sessionToken: observerToken,
+        payload: { expression: "document.body.dataset.changed = true" },
+      }));
+      expect(deniedWrite).toContain("observer cannot modify");
+      const deniedClose = String(await controlChromeCdpTool.execute({
+        command: "close_tab", targetId: "T1", agentId: writer, sessionToken: writerToken,
+      }));
+      expect(deniedClose).toContain("sessionToken");
+      const acceptedWrite = String(await controlChromeCdpTool.execute({
+        command: "evaluate", targetId: "T1", agentId: writer, sessionToken: writerToken,
+        payload: { expression: "1+1" },
+      }));
+      expect(acceptedWrite).toContain("evaluate result");
+      const participants = JSON.parse(String(await controlChromeCdpTool.execute({
+        command: "session_participants", targetId: "T1", agentId: guest, sessionToken: observerToken,
+      })));
+      expect(participants.session.participants).toHaveLength(3);
+      expect(JSON.stringify(participants)).not.toContain(writerToken);
+      const isolated = JSON.parse(String(await controlChromeCdpTool.execute({
+        command: "stop_sharing", targetId: "T1", agentId: owner, sessionToken: ownerToken,
+      })));
+      expect(isolated.session.mode).toBe("isolated");
+      const revoked = String(await controlChromeCdpTool.execute({
+        command: "shared_snapshot", targetId: "T1", agentId: guest, sessionToken: observerToken,
+      }));
+      expect(revoked).toContain("sessionToken");
+    } finally {
+      await controlChromeCdpTool.execute({ command: "release_target", targetId: "T1", agentId: owner, sessionToken: ownerToken });
     }
   });
 

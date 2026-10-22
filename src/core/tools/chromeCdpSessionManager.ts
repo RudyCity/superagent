@@ -23,7 +23,7 @@ const browserLifecycleScope = new AsyncLocalStorage<boolean>();
 const PRIORITY_AGING_MS = 12_000;
 const auditPath = () => join(dir(), "events.jsonl");
 const validAgent = (value: string) => {
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,95}$/.test(value)) throw new Error("Invalid CDP agentId.");
+  if (["__proto__", "constructor", "prototype"].includes(value) || !/^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,95}$/.test(value)) throw new Error("Invalid CDP agentId.");
 };
 function validate(port: number, targetId: string) {
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid CDP port.");
@@ -33,12 +33,20 @@ async function audit(event: string, key: string, actor?: string): Promise<void> 
   await mkdir(dir(), { recursive: true });
   await appendFile(auditPath(), JSON.stringify({ time: new Date().toISOString(), event, key: key.slice(0, 16), actor: actor || "legacy" }) + "\n").catch(() => {});
 }
+export type CdpParticipantRole = "observer" | "contributor";
+type CdpMember = { role: CdpParticipantRole; tokenHash: string; joinedAt: number };
+type CdpInvitation = { agentId: string; role: CdpParticipantRole; tokenHash: string; expiresAt: number };
 export type CdpSession = {
   key: string; port: number; targetId: string; agentId: string;
   claimedAt: number; expiresAt: number; tokenHash: string; generation: string;
+  mode?: "shared"; members?: Record<string, CdpMember>; invitations?: Record<string, CdpInvitation>;
 };
-export type CdpClaim = Omit<CdpSession, "tokenHash"> & { sessionToken: string };
-export type CdpAccess = { agentId?: string; sessionToken?: string; waitMs?: number; priority?: number; signal?: AbortSignal };
+export type CdpPublicSession = Omit<CdpSession, "tokenHash" | "members" | "invitations" | "mode"> & {
+  mode: "isolated" | "shared";
+  participants: Array<{ agentId: string; role: "owner" | CdpParticipantRole; joinedAt: number }>;
+};
+export type CdpClaim = CdpPublicSession & { sessionToken: string };
+export type CdpAccess = { agentId?: string; sessionToken?: string; waitMs?: number; priority?: number; signal?: AbortSignal; ownerOnly?: boolean; sharedOnly?: boolean };
 async function load(key: string): Promise<CdpSession | null> {
   try {
     const data = JSON.parse(await readFile(fileFor(key), "utf8"));
@@ -151,15 +159,17 @@ async function guarded<T>(port: number, targetId: string, opts: CdpAccess, fn: (
   const done = await lock(key, opts);
   try { return await fn(key); } finally { await done(); }
 }
-function auth(session: CdpSession, access: CdpAccess): void {
-  if (session.expiresAt <= Date.now()) return;
-  const supplied = access.sessionToken || "";
-  const expected = Buffer.from(session.tokenHash, "hex");
-  const actual = Buffer.from(sha(supplied), "hex");
-  if (!supplied || !access.agentId || access.agentId !== session.agentId ||
-      expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
-    throw new Error("CDP target claimed: valid agentId AND sessionToken required.");
-  }
+function validCapability(supplied: string | undefined, hash: string): boolean {
+  if (!supplied || !/^[a-f0-9]{64}$/.test(hash)) return false;
+  return timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(sha(supplied), "hex"));
+}
+function auth(session: CdpSession, access: CdpAccess): "owner" | CdpParticipantRole {
+  if (session.expiresAt <= Date.now()) throw new Error("CDP session expired.");
+  if (!access.agentId) throw new Error("CDP target claimed: valid agentId AND sessionToken required.");
+  if (session.agentId === access.agentId && validCapability(access.sessionToken, session.tokenHash)) return "owner";
+  const member = session.mode === "shared" ? session.members?.[access.agentId] : undefined;
+  if (!access.ownerOnly && member && validCapability(access.sessionToken, member.tokenHash)) return member.role;
+  throw new Error("CDP target claimed: valid agentId AND sessionToken required.");
 }
 const issue = () => randomBytes(32).toString("base64url");
 export async function claimCdpTarget(port: number, targetId: string, agentId: string, sessionToken?: string): Promise<CdpClaim> {
@@ -167,7 +177,7 @@ export async function claimCdpTarget(port: number, targetId: string, agentId: st
   return withBrowserLifecycleMutex(() => guarded(port, targetId, {}, async key => {
     const previous = await load(key);
     if (previous && previous.expiresAt > Date.now()) {
-      auth(previous, { agentId, sessionToken });
+      auth(previous, { agentId, sessionToken, ownerOnly: true });
       const next = { ...previous, expiresAt: Date.now() + TTL_MS };
       await save(next);
       await audit("renew", key, agentId);
@@ -188,14 +198,24 @@ export async function releaseCdpTarget(port: number, targetId: string, agentId: 
   validAgent(agentId);
   await guarded(port, targetId, {}, async key => {
     const session = await load(key);
-    if (session && session.expiresAt > Date.now()) auth(session, { agentId, sessionToken });
+    if (session && session.expiresAt > Date.now()) auth(session, { agentId, sessionToken, ownerOnly: true });
     await rm(fileFor(key), { force: true });
     await audit("release", key, agentId);
   });
 }
-function publicSession(session: CdpSession): Omit<CdpSession, "tokenHash"> {
-  const { tokenHash: _hash, ...value } = session;
-  return value;
+function publicSession(session: CdpSession): CdpPublicSession {
+  return {
+    key: session.key, port: session.port, targetId: session.targetId,
+    agentId: session.agentId, claimedAt: session.claimedAt,
+    expiresAt: session.expiresAt, generation: session.generation,
+    mode: session.mode === "shared" ? "shared" : "isolated",
+    participants: [
+      { agentId: session.agentId, role: "owner", joinedAt: session.claimedAt },
+      ...(session.mode === "shared" ? Object.entries(session.members || {}).map(([agentId, member]) => ({
+        agentId, role: member.role, joinedAt: member.joinedAt,
+      })) : []),
+    ],
+  };
 }
 /** Rebind an active, credential-authenticated lease to a specifically selected new tab.
  * Chrome may replace targetId after a renderer/browser restart; we never pick an
@@ -211,7 +231,7 @@ export async function rebindCdpTarget(
   return withBrowserLifecycleMutex(() => guarded(port, previousTargetId, {}, async oldKey => {
     const previous = await load(oldKey);
     if (!previous || previous.expiresAt <= Date.now()) throw new Error("Old CDP lease has expired. Claim the new target explicitly.");
-    auth(previous, { agentId, sessionToken });
+    auth(previous, { agentId, sessionToken, ownerOnly: true });
     const next = await claimCdpTarget(port, nextTargetId, agentId);
     await rm(fileFor(oldKey), { force: true });
     await audit("rebind", oldKey, agentId);
@@ -219,7 +239,128 @@ export async function rebindCdpTarget(
   }));
 }
 
-export async function listCdpSessions(): Promise<Array<Omit<CdpSession, "tokenHash">>> {
+/** Sharing is opt-in. Disabling sharing revokes all member and invite capabilities. */
+export async function setCdpSharing(
+  port: number, targetId: string, agentId: string, sessionToken: string, enabled: boolean,
+): Promise<CdpPublicSession> {
+  validAgent(agentId);
+  return guarded(port, targetId, {}, async key => {
+    const s = await load(key);
+    if (!s) throw new Error("Claim the CDP target before sharing.");
+    auth(s, { agentId, sessionToken, ownerOnly: true });
+    const next: CdpSession = enabled
+      ? { ...s, mode: "shared", members: s.members || {}, invitations: s.invitations || {} }
+      : { ...s, mode: undefined, members: undefined, invitations: undefined };
+    await save(next);
+    await audit(enabled ? "share_enabled" : "share_disabled", key, agentId);
+    return publicSession(next);
+  });
+}
+/** Owner-issued, single-use invitation credential for a named agent. */
+export async function inviteCdpAgent(
+  port: number, targetId: string, ownerId: string, ownerToken: string,
+  memberId: string, role: CdpParticipantRole,
+): Promise<{ inviteId: string; invitationToken: string; expiresAt: number; agentId: string; role: CdpParticipantRole }> {
+  validAgent(ownerId); validAgent(memberId);
+  if (role !== "observer" && role !== "contributor") throw new Error("Invalid shared tab role.");
+  return guarded(port, targetId, {}, async key => {
+    const s = await load(key);
+    if (!s) throw new Error("CDP tab not claimed.");
+    auth(s, { agentId: ownerId, sessionToken: ownerToken, ownerOnly: true });
+    if (s.mode !== "shared") throw new Error("Enable shared mode first.");
+    if (memberId === s.agentId || s.members?.[memberId]) throw new Error("Agent already owns or joined the tab.");
+    s.invitations = Object.fromEntries(Object.entries(s.invitations || {}).filter(([, item]) => item.expiresAt > Date.now()));
+    if (Object.keys(s.members || {}).length >= 12 || Object.keys(s.invitations || {}).length >= 12)
+      throw new Error("Shared tab participant/invitation limit reached.");
+    const invitationToken = issue(), inviteId = randomUUID();
+    const expiresAt = Math.min(s.expiresAt, Date.now() + 120_000);
+    s.invitations = { ...(s.invitations || {}), [inviteId]: { agentId: memberId, role, tokenHash: sha(invitationToken), expiresAt } };
+    await save(s);
+    await audit("invite_" + role, key, ownerId);
+    return { inviteId, invitationToken, expiresAt, agentId: memberId, role };
+  });
+}
+export async function joinCdpTarget(
+  port: number, targetId: string, agentId: string, inviteId: string, invitationToken: string,
+): Promise<CdpClaim & { role: CdpParticipantRole }> {
+  validAgent(agentId);
+  return guarded(port, targetId, {}, async key => {
+    const s = await load(key);
+    if (!s || s.mode !== "shared" || s.expiresAt <= Date.now()) throw new Error("No active shared CDP session.");
+    const invitation = s.invitations?.[inviteId];
+    if (!invitation || invitation.agentId !== agentId || invitation.expiresAt <= Date.now() ||
+        !validCapability(invitationToken, invitation.tokenHash)) throw new Error("Invalid or expired shared tab invitation.");
+    if (s.members?.[agentId]) throw new Error("Agent already joined this tab.");
+    const memberToken = issue();
+    s.members = { ...(s.members || {}), [agentId]: { role: invitation.role, tokenHash: sha(memberToken), joinedAt: Date.now() } };
+    delete s.invitations![inviteId];
+    await save(s);
+    await audit("join_" + invitation.role, key, agentId);
+    return { ...publicSession(s), sessionToken: memberToken, role: invitation.role };
+  });
+}
+
+export async function leaveCdpTarget(port: number, targetId: string, agentId: string, sessionToken: string): Promise<void> {
+  validAgent(agentId);
+  await guarded(port, targetId, {}, async key => {
+    const s = await load(key);
+    if (!s || s.mode !== "shared" || !s.members?.[agentId]) throw new Error("Agent is not a shared tab participant.");
+    auth(s, { agentId, sessionToken });
+    delete s.members[agentId];
+    await save(s);
+    await audit("leave", key, agentId);
+  });
+}
+export async function revokeCdpAgent(
+  port: number, targetId: string, ownerId: string, ownerToken: string, memberId: string,
+): Promise<CdpPublicSession> {
+  validAgent(memberId);
+  return guarded(port, targetId, {}, async key => {
+    const s = await load(key);
+    if (!s || s.mode !== "shared") throw new Error("No active shared CDP session.");
+    auth(s, { agentId: ownerId, sessionToken: ownerToken, ownerOnly: true });
+    if (!s.members?.[memberId]) throw new Error("Agent is not joined.");
+    delete s.members[memberId];
+    await save(s);
+    await audit("revoke", key, ownerId);
+    return publicSession(s);
+  });
+}
+/** Promote a joined contributor without leaking their credential to the old owner.
+ * The old owner's token is invalidated immediately under the tab lock. */
+export async function handoverCdpTarget(
+  port: number, targetId: string, ownerId: string, ownerToken: string, memberId: string,
+): Promise<CdpPublicSession> {
+  validAgent(memberId);
+  return guarded(port, targetId, {}, async key => {
+    const s = await load(key);
+    if (!s || s.mode !== "shared") throw new Error("No active shared CDP session.");
+    auth(s, { agentId: ownerId, sessionToken: ownerToken, ownerOnly: true });
+    const target = s.members?.[memberId];
+    if (!target || target.role !== "contributor") throw new Error("Handover requires a joined contributor.");
+    delete s.members![memberId];
+    s.agentId = memberId; s.tokenHash = target.tokenHash;
+    // Invitations from the former owner must not survive transfer of authority.
+    s.invitations = {};
+    s.claimedAt = Date.now(); s.generation = randomUUID();
+    await save(s);
+    await audit("handover", key, ownerId);
+    return publicSession(s);
+  });
+}
+export async function getCdpParticipation(
+  port: number, targetId: string, agentId: string, sessionToken: string,
+): Promise<CdpPublicSession> {
+  validAgent(agentId);
+  return guarded(port, targetId, {}, async key => {
+    const s = await load(key);
+    if (!s || s.expiresAt <= Date.now()) throw new Error("CDP session not active.");
+    auth(s, { agentId, sessionToken });
+    return publicSession(s);
+  });
+}
+
+export async function listCdpSessions(): Promise<CdpPublicSession[]> {
   try {
     const entries = await readdir(join(dir(), "owners"));
     const sessions = await Promise.all(entries.filter(e => /^[a-f0-9]{64}\.json$/.test(e)).map(e => load(e.slice(0, -5))));
@@ -231,7 +372,10 @@ export async function withCdpTargetRead<T>(port: number, targetId: string, opts:
     const current = await load(key);
     if (current && current.expiresAt > Date.now()) {
       auth(current, opts);
+      if (opts.sharedOnly && current.mode !== "shared") throw new Error("Shared snapshot requires shared mode.");
       await save({ ...current, expiresAt: Date.now() + TTL_MS });
+    } else if (opts.sharedOnly) {
+      throw new Error("Shared snapshot requires an active shared tab claim.");
     }
     return fn();
   });
@@ -243,7 +387,11 @@ export async function withCdpTargetWrite<T>(
   return guarded(port, targetId, { ...options, agentId }, async key => {
     const current = await load(key);
     if (current && current.expiresAt > Date.now()) {
-      auth(current, { ...options, agentId });
+      const role = auth(current, { ...options, agentId });
+      if (role === "observer") {
+        await audit("write_denied_observer", key, agentId);
+        throw new Error("CDP observer cannot modify tab.");
+      }
       await save({ ...current, expiresAt: Date.now() + TTL_MS });
     } else if (agentId) {
       // Mutations never silently create a session; claim first.
@@ -257,7 +405,7 @@ export async function withCdpTargetWrite<T>(
   });
 }
 export async function cdpCoordinatorStatus(port?: number): Promise<{
-  sessions: Array<Omit<CdpSession, "tokenHash">>;
+  sessions: CdpPublicSession[];
   queue: Array<{ key: string; queued: number; locked: boolean; oldestWaitMs: number; port?: number; targetId?: string }>;
   summary: { activeAgents: number; activeTabs: number; queued: number; busyTargets: number; extensionBlocked: boolean };
 }> {
