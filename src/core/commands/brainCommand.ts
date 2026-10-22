@@ -1,4 +1,5 @@
 import { registry } from "./registry.js";
+import { BRAIN_SUGGESTIONS } from "./commandCatalog.js";
 import crypto from "node:crypto";
 import type { SlashCommand } from "./types.js";
 import {
@@ -176,11 +177,28 @@ export const brainCommand: SlashCommand = {
           }, cwd));
           break;
         }
+        case "help":
+        case "--help":
+        case "-h":
         default:
-          say("Usage: /brain create [sessionId] | inspect | list | files | metrics | resume [sessionId] | search <query> | annotate <artifacts/file> <summary> | promote <jobId> [filename] | remember <artifacts/file> | storage [sessionId] | retention [7|30|90] | clean <sessionId> | clean.confirm <sessionId> <challenge>\n" +
-              "/brain task.create <title> | task.list | task.reconcile | artifact.recover | task.claim <taskId> [agentId] | task.resume <taskId> | task.checkpoint <taskId> <agentId> <note> | task.transfer <taskId> <from> <to> | task.complete <taskId> [agentId]\n" +
-              "/brain delegate.start <agy|claude|codex> <prompt> | jobs | get <jobId> | tail <jobId> | cancel <jobId>\n" +
-              "Alias: /scratch. All delegated files remain in the current session scratch until explicitly published.");
+          say([
+            "Brain session commands (alias: /scratch):",
+            ...BRAIN_SUGGESTIONS.map(option => "  " + option),
+            "",
+            "Arguments: create [sessionId]; inspect/files/storage/resume [sessionId]; search <query>;",
+            "  annotate <artifacts/file> <summary>; promote <jobId> [outputFilename];",
+            "  remember <artifacts/file>; retention [7|30|90]; clean <sessionId>;",
+            "  clean.confirm <sessionId> <challenge>;",
+            "  task.create <title>; task.claim <taskId> [agentId]; task.resume <taskId>;",
+            "  task.checkpoint <taskId> <agentId> <note>; task.transfer <taskId> <from> <to>;",
+            "  task.complete <taskId> [agentId]; delegate.start <agy|claude|codex> <prompt>;",
+            "  get/tail/cancel <jobId>.",
+            "",
+            "task.reconcile checks persisted job status; artifact.recover replays the journal safely.",
+            "MCP-only: task.credential.rotate/revoke/status, delegate.promote.batch, task.reconcile.all.",
+            "Desktop: use the T-Line Brain Explorer to manage credentials and task artifacts.",
+            "Cleanup requires an explicit confirmation. Artifacts stay in Brain until published.",
+          ].join("\n"));
       }
     } catch (error: any) { say(error?.message || String(error), true); }
   },

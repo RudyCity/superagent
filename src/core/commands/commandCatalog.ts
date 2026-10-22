@@ -64,6 +64,68 @@ export const STUDIO_SUGGESTIONS = [
   "/studio doctor",
 ] as const;
 
+/** All advertised /brain and /scratch subcommands must be backed by brainCommand.ts.
+ * MCP-only task.credential.* and delegate.promote.batch are intentionally absent
+ * here: listing them as slash commands would imply execution support.
+ */
+export const BRAIN_SUGGESTIONS = [
+  "/brain help",
+  "/brain create",
+  "/brain list",
+  "/brain inspect",
+  "/brain files",
+  "/brain metrics",
+  "/brain storage",
+  "/brain retention",
+  "/brain resume",
+  "/brain search",
+  "/brain annotate",
+  "/brain promote",
+  "/brain remember",
+  "/brain clean",
+  "/brain clean.confirm",
+  "/brain task.create",
+  "/brain task.list",
+  "/brain task.claim",
+  "/brain task.resume",
+  "/brain task.checkpoint",
+  "/brain task.transfer",
+  "/brain task.complete",
+  "/brain task.reconcile",
+  "/brain artifact.recover",
+  "/brain delegate.start agy",
+  "/brain delegate.start claude",
+  "/brain delegate.start codex",
+  "/brain jobs",
+  "/brain get",
+  "/brain tail",
+  "/brain cancel",
+] as const;
+
+export const BRAIN_SUGGESTION_DESCRIPTIONS: Record<string,string> = {
+  "/brain help": "Display all Brain CLI actions, including nested task, job and recovery operations.",
+  "/brain task.reconcile": "Reconcile persisted CLI Bridge jobs safely; never retry work implicitly.",
+  "/brain artifact.recover": "Recover an interrupted journaled artifact batch without deleting unrelated files.",
+  "/brain task.create": "Create a session-scoped multi-agent task.",
+  "/brain task.list": "List tasks for the current Brain session.",
+  "/brain task.claim": "Claim task ownership for an agent ID (local CLI operator).",
+  "/brain task.resume": "Read saved task checkpoints and handoffs.",
+  "/brain task.checkpoint": "Save a bounded task checkpoint.",
+  "/brain task.transfer": "Transfer task ownership to another member.",
+  "/brain task.complete": "Mark an explicitly claimed task completed.",
+  "/brain delegate.start agy": "Start an AGY delegation in a newly isolated Brain task scratch.",
+  "/brain delegate.start claude": "Start a Claude delegation in a newly isolated Brain task scratch.",
+  "/brain delegate.start codex": "Start a Codex delegation in a newly isolated Brain task scratch.",
+  "/brain jobs": "List persisted delegated CLI jobs.",
+  "/brain get": "Inspect a delegated job by ID.",
+  "/brain tail": "Show recent output of a delegated job.",
+  "/brain cancel": "Request cancellation of a delegated job.",
+  "/brain clean": "Prepare a guarded scratch cleanup challenge; no immediate deletion.",
+  "/brain clean.confirm": "Confirm an existing cleanup challenge explicitly.",
+  "/brain promote": "Promote one verified output artifact from a delegation.",
+  "/brain remember": "Explicitly save a verified artifact candidate to project RMemory.",
+};
+
 export const MCP_USE_SUGGESTIONS = [
   "/mcp use gateway",
   "/mcp use full",

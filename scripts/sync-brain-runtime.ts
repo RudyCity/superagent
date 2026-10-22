@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { BRAIN_SUGGESTIONS, BRAIN_SUGGESTION_DESCRIPTIONS } from "../src/core/commands/commandCatalog.js";
 
 const superRoot = path.resolve(import.meta.dir, "..");
 const tline = path.resolve(import.meta.dir, "../../t-line/backend/src");
@@ -73,8 +74,25 @@ for (const item of modules) {
     fs.writeFileSync(destination,generated);
   }
 }
+const suggestionPath = path.resolve(tline, "../../frontend/src/generated/brainCommandSuggestions.json");
+const suggestionData = JSON.stringify({
+  schemaVersion: 1,
+  commands: BRAIN_SUGGESTIONS.map(command => ({
+    command,
+    description: BRAIN_SUGGESTION_DESCRIPTIONS[command] || "Session Brain — " + command.slice("/brain ".length),
+  })),
+}, null, 2) + "\n";
+const suggestionHash = crypto.createHash("sha256").update(suggestionData).digest("hex");
+if (check) {
+  if (!fs.existsSync(suggestionPath) || fs.readFileSync(suggestionPath, "utf8").replace(/\r\n/g, "\n") !== suggestionData) {
+    throw new Error("T-Line Brain command suggestions are out of sync with Core.");
+  }
+} else {
+  fs.mkdirSync(path.dirname(suggestionPath), {recursive:true});
+  fs.writeFileSync(suggestionPath,suggestionData);
+}
 const manifestPath = path.join(tline, "brain-runtime-manifest.json");
-const manifest = JSON.stringify({schemaVersion:1, files:hashes}, null, 2) + "\n";
+const manifest = JSON.stringify({schemaVersion:1, files:hashes, commandSuggestionsSha256:suggestionHash}, null, 2) + "\n";
 if (check) {
   if (!fs.existsSync(manifestPath) || fs.readFileSync(manifestPath,"utf8").replace(/\r\n/g,"\n") !== manifest) {
     throw new Error("T-Line Brain manifest is out of sync.");

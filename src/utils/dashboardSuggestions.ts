@@ -12,6 +12,8 @@ import {
   MCP_USE_SUGGESTIONS,
   STUDIO_SUGGESTIONS,
   SERVER_TUNNEL_SUGGESTIONS,
+  BRAIN_SUGGESTIONS,
+  BRAIN_SUGGESTION_DESCRIPTIONS,
 } from "../core/commands/commandCatalog.js";
 
 const DASHBOARD_DISABLED_COMMANDS = new Set(["/goal"]);
@@ -338,6 +340,12 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         ? presets.map(p => `/mp-${p.name}`)
         : ["/mp-fast", "/mp-default", "/mp-balanced"];
       return filterSuggestions(presetSuggestions, query);
+    }
+
+    if (mainCommand === "/brain" || mainCommand === "/scratch") {
+      const candidates = BRAIN_SUGGESTIONS.map(cmd =>
+        mainCommand === "/scratch" ? cmd.replace(/^\/brain/, "/scratch") : cmd);
+      return filterSuggestions(candidates, query);
     }
 
     if (mainCommand === "/studio") {
@@ -879,6 +887,16 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
 
 export function getSuggestionDescriptions(): Record<string, string> {
   const desc: Record<string, string> = { ...BUILTIN_DESCRIPTIONS };
+  for (const [suggestion, description] of Object.entries(BRAIN_SUGGESTION_DESCRIPTIONS)) {
+    desc[suggestion] = description;
+    desc[suggestion.replace(/^\/brain/, "/scratch")] = description;
+  }
+  for (const suggestion of BRAIN_SUGGESTIONS) {
+    if (!desc[suggestion]) {
+      desc[suggestion] = "Session Brain — " + suggestion.slice("/brain ".length);
+      desc[suggestion.replace(/^\/brain/, "/scratch")] = desc[suggestion];
+    }
+  }
   for (const suggestion of STUDIO_SUGGESTIONS) {
     desc[suggestion] = "SuperAgent Studio — " + suggestion.replace("/studio ", "");
   }

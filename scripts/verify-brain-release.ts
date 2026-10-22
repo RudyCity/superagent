@@ -18,6 +18,7 @@ run(root, ["run", "build"]);
 run(root, ["--bun", "x", "vitest", "run",
   "tests/brainWorkspace.test.ts",
   "tests/brainTasks.test.ts",
+  "tests/brainCommandDiscovery.test.ts",
   "tests/brainArtifactTransaction.test.ts",
   "tests/brainAgentCredentials.test.ts",
   "tests/brainTaskRecovery.test.ts",
@@ -43,6 +44,7 @@ if (withTline) {
   run(tline, ["--bun", "x", "vitest", "run", "backend/tests/brainExplorerRoutes.test.ts"]);
   run(path.join(tline, "frontend"), ["--bun", "x", "vitest", "run", "--config", "vite.config.ts",
     "src/components/__tests__/SuperAgentBrainExplorer.test.tsx",
-    "src/components/__tests__/SuperAgentBrainTaskPanel.test.tsx"]);
+    "src/components/__tests__/SuperAgentBrainTaskPanel.test.tsx",
+    "src/components/__tests__/SuperAgentCliParity.test.ts"]);
 }
 console.log("PASS: offline Brain release checks. Live tunnel OAuth and installed desktop acceptance remain separate.");
