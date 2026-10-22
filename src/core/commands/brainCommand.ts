@@ -12,6 +12,7 @@ import { brainStorageUsage, previewBrainRetention, prepareBrainCleanup, confirmB
 import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainRMemoryCandidate } from "../brain/brainIndex.js";
 import { promoteBrainDelegation } from "../brain/brainDelegationArtifacts.js";
 import { verifyBrainProject } from "../brain/brainProvenance.js";
+import { createBrainTask, listBrainTasks, claimBrainTask, checkpointBrainTask, transferBrainTask, updateBrainTask, resumeBrainTask, recordBrainTaskDelegation } from "../brain/brainTasks.js";
 
 export const brainCommand: SlashCommand = {
   name: "brain",
@@ -41,6 +42,34 @@ export const brainCommand: SlashCommand = {
         case "show":
         case "inspect": say(inspectBrainSession(owner, explicitSessionId || currentSessionId)); break;
         case "files": say(listBrainFiles(owner, explicitSessionId || currentSessionId)); break;
+        case "task.list": say(listBrainTasks(owner, currentSessionId)); break;
+        case "task.create": {
+          if (!currentSessionId) throw new Error("No current Brain session.");
+          const title = tokens.slice(1).join(" ");
+          say(createBrainTask(owner, currentSessionId, title, ["main", "agy", "claude"]));
+          break;
+        }
+        case "task.claim": {
+          say(claimBrainTask(owner, currentSessionId, tokens[1] || "", tokens[2] || "main"));
+          break;
+        }
+        case "task.resume": {
+          say(resumeBrainTask(owner, currentSessionId, tokens[1] || ""));
+          break;
+        }
+        case "task.checkpoint": {
+          const taskId=tokens[1] || "", agent=tokens[2] || "main", note=tokens.slice(3).join(" ");
+          say(checkpointBrainTask(owner, currentSessionId, taskId, agent, note, "", []));
+          break;
+        }
+        case "task.transfer": {
+          say(transferBrainTask(owner, currentSessionId, tokens[1] || "", tokens[2] || "", tokens[3] || ""));
+          break;
+        }
+        case "task.complete": {
+          say(updateBrainTask(owner, currentSessionId, tokens[1] || "", tokens[2] || "main", "completed"));
+          break;
+        }
         case "resume": say(brainResumeContext(owner, explicitSessionId || currentSessionId)); break;
         case "search": say(searchBrainArtifacts(owner, tokens.slice(1).join(" "))); break;
         case "annotate": {
@@ -104,11 +133,18 @@ export const brainCommand: SlashCommand = {
           }
           if (prompt.length > 15000) throw new Error("Prompt is too long (15000 character maximum).");
           createBrainSession(owner, currentSessionId);
-          const cwd = getBrainScratchPath(owner, currentSessionId);
-          say(await cliBridgeTool.execute({
+          // A delegated CLI begins a resumable owner-scoped Brain task automatically.
+          // Its scratch is independent of the Git repository and other agents.
+          const task = createBrainTask(owner, currentSessionId, prompt.slice(0, 120), ["main", cli]);
+          const claimed = claimBrainTask(owner, currentSessionId, task.taskId, cli);
+          const cwd = claimed.scratchPath;
+          const delegated = await cliBridgeTool.execute({
             action: "delegate.start", cli, prompt, skillAutoDetect: false,
             injectArtifacts: false, permissionMode: "accept-edits",
-          }, cwd));
+          }, cwd);
+          const jobMatch=String(delegated).match(/clj_\d+_[a-f0-9]{8,32}/);
+          if(jobMatch)recordBrainTaskDelegation(owner,currentSessionId,task.taskId,cli,cli,jobMatch[0]);
+          say({ taskId: task.taskId, scratchPath: cwd, delegate: delegated });
           break;
         }
         case "jobs":
@@ -130,6 +166,7 @@ export const brainCommand: SlashCommand = {
         }
         default:
           say("Usage: /brain create [sessionId] | inspect | list | files | metrics | resume [sessionId] | search <query> | annotate <artifacts/file> <summary> | promote <jobId> [filename] | remember <artifacts/file> | storage [sessionId] | retention [7|30|90] | clean <sessionId> | clean.confirm <sessionId> <challenge>\n" +
+              "/brain task.create <title> | task.list | task.claim <taskId> [agentId] | task.resume <taskId> | task.checkpoint <taskId> <agentId> <note> | task.transfer <taskId> <from> <to> | task.complete <taskId> [agentId]\n" +
               "/brain delegate.start <agy|claude|codex> <prompt> | jobs | get <jobId> | tail <jobId> | cancel <jobId>\n" +
               "Alias: /scratch. All delegated files remain in the current session scratch until explicitly published.");
       }

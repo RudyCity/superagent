@@ -23,6 +23,7 @@ import { beginBrainTransfer, inspectBrainTransfer, appendBrainTransfer, finishBr
 import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainRMemoryCandidate } from "../../brain/brainIndex.js";
 import { promoteBrainDelegation } from "../../brain/brainDelegationArtifacts.js";
 import { recordBrainEvent, summarizeBrainEvents } from "../../brain/brainObservability.js";
+import { createBrainTask, listBrainTasks, inspectBrainTask, claimBrainTask, transferBrainTask, updateBrainTask, checkpointBrainTask, handoffBrainArtifact, resumeBrainTask, recordBrainTaskDelegation } from "../../brain/brainTasks.js";
 
 export const BRAIN_MCP_TOOL_DEFS = [
   {
@@ -38,6 +39,8 @@ export const BRAIN_MCP_TOOL_DEFS = [
           "transfer.begin", "transfer.status", "transfer.append", "transfer.finish", "transfer.abort", "transfer.gc",
           "artifact.annotate", "artifact.search", "session.resume", "memory.candidate", "delegate.promote",
           "delegate.start", "delegate.get", "delegate.tail", "delegate.cancel", "delegate.jobs",
+          "task.create", "task.list", "task.get", "task.claim", "task.status", "task.checkpoint",
+          "task.handoff", "task.transfer", "task.resume", "task.delegate.start", "task.autostart",
         ] },
         sessionId: { type: "string", description: "Optional owner-scoped Brain ID; omit to use this MCP connection's Brain." },
         filePath: { type: "string", description: "Relative file under scratch/, artifacts/ or evidence/." },
@@ -59,6 +62,15 @@ export const BRAIN_MCP_TOOL_DEFS = [
         summary: { type: "string", maxLength: 800 },
         tags: { type: "array", maxItems: 10, items: { type: "string" } },
         query: { type: "string", maxLength: 160 },
+        title: { type: "string", maxLength: 160 },
+        taskId: { type: "string" },
+        agentId: { type: "string" },
+        agentIds: { type: "array", maxItems: 12, items: { type: "string" } },
+        toAgent: { type: "string" },
+        status: { type: "string", enum: ["running", "blocked", "completed", "cancelled"] },
+        note: { type: "string", maxLength: 1000 },
+        nextStep: { type: "string", maxLength: 500 },
+        artifactPaths: { type: "array", maxItems: 10, items: { type: "string" } },
       },
       required: ["action"],
     },
@@ -156,6 +168,59 @@ async function dispatchBrainMcpToolInternal(
     if (!args.sessionId && connectionSessionId &&
         !["list", "retention.preview", "metrics"].includes(action)) {
       createBrainSession(principal, connectionSessionId);
+    }
+    if (action.startsWith("task.")) {
+      if (action === "task.autostart") {
+        const cli=String(args.cli || "");
+        const prompt=args.prompt;
+        if(!["agy","claude","codex"].includes(cli)||typeof prompt!=="string"||!prompt.trim()||prompt.length>15000)
+          throw new Error("Auto-task delegation needs a CLI and non-empty prompt.");
+        const task=createBrainTask(principal,id,prompt.trim().slice(0,120),["main",cli]);
+        const {scratchPath}=claimBrainTask(principal,id,task.taskId,cli);
+        const output=await cliBridgeTool.execute({
+          action:"delegate.start",cli,prompt,skillAutoDetect:false,injectArtifacts:false,
+          permissionMode:"accept-edits",
+          ...(Array.isArray(args.expectedArtifacts)?{expectedArtifacts:args.expectedArtifacts}:{}),
+          ...(args.timeoutMs!==undefined?{timeoutMs:args.timeoutMs}:{})
+        },scratchPath);
+        const match=String(output).match(/clj_\d+_[a-f0-9]{8,32}/);
+        if(match)recordBrainTaskDelegation(principal,id,task.taskId,cli,cli,match[0]);
+        return result({taskId:task.taskId,scratchPath,delegate:output});
+      }
+      const taskId = String(args.taskId || "");
+      const agentId = String(args.agentId || "");
+      switch (action) {
+        case "task.create": return result(createBrainTask(principal, id, String(args.title || ""), Array.isArray(args.agentIds) ? args.agentIds as string[] : ["main"]));
+        case "task.list": return result(listBrainTasks(principal, id));
+        case "task.get": return result(inspectBrainTask(principal, id, taskId));
+        case "task.resume": return result(resumeBrainTask(principal, id, taskId));
+        case "task.claim": return result(claimBrainTask(principal, id, taskId, agentId));
+        case "task.status": return result(updateBrainTask(principal, id, taskId, agentId, String(args.status || "") as "running"|"blocked"|"completed"|"cancelled"));
+        case "task.checkpoint": return result(checkpointBrainTask(principal, id, taskId, agentId,
+          String(args.note || ""), String(args.nextStep || ""), Array.isArray(args.artifactPaths) ? args.artifactPaths as string[] : []));
+        case "task.handoff": return result(handoffBrainArtifact(principal, id, taskId, agentId, String(args.toAgent || ""), String(args.filePath || "")));
+        case "task.transfer": return result(transferBrainTask(principal, id, taskId, agentId, String(args.toAgent || "")));
+        case "task.delegate.start": {
+          const task = inspectBrainTask(principal, id, taskId);
+          if (task.assignedTo !== agentId || task.status !== "running") throw new Error("Delegate requires an actively claimed agent task.");
+          const cli = String(args.cli || "");
+          const prompt = args.prompt;
+          if (!["agy","claude","codex"].includes(cli) || typeof prompt !== "string" || !prompt.trim() || prompt.length > 15000) throw new Error("Invalid agent CLI or task prompt.");
+          const scratch = path.join(getBrainScratchPath(principal,id), "agents", agentId, taskId);
+          const canonical = fs.realpathSync(scratch);
+          assertNoSymlink(requireExistingDir(principal,id), canonical);
+          const delegate=await cliBridgeTool.execute({
+            action: "delegate.start", cli, prompt, permissionMode: "accept-edits",
+            skillAutoDetect: false, injectArtifacts: false,
+            ...(Array.isArray(args.expectedArtifacts) ? { expectedArtifacts: args.expectedArtifacts } : {}),
+            ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
+          }, canonical);
+          const matched=String(delegate).match(/clj_\d+_[a-f0-9]{8,32}/);
+          if(matched)recordBrainTaskDelegation(principal,id,taskId,agentId,cli,matched[0]);
+          return result({taskId,agentId,scratchPath:canonical,delegate});
+        }
+      }
+      throw new Error("Unsupported Brain task action.");
     }
     if (action in delegateActions) {
       if (!id) throw new Error("Brain sessionId required for delegation.");
