@@ -15,7 +15,8 @@ export const DEFAULT_CONFIG: GlobalModelConfig = {
     maxHistoryVisible: 3,
     maxProcsVisible: 3,
     forcePromptBasedToolCalling: false,
-    enableRmemory: false,
+    // RMemory defaults ON. An explicit per-user OFF still takes precedence.
+    enableRmemory: true,
     rmemoryEmbeddingProvider: "local",
     rmemoryEmbeddingModel: "Xenova/all-MiniLM-L6-v2",
     rmemoryEmbeddingDimensions: 384,

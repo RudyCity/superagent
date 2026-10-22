@@ -4,6 +4,7 @@ import path from "path";
 import os from "os";
 import { 
   loadModelConfig, 
+  saveModelConfig,
   addProvider, 
   getProviders, 
   getActivePreset, 
@@ -50,6 +51,40 @@ describe("JSON-based model-config.json storage", () => {
     expect(config.providers.length).toBeGreaterThan(0);
     expect(config.presets.multi.length).toBeGreaterThan(0);
     expect(config.presets.single.length).toBeGreaterThan(0);
+  });
+
+  it("defaults RMemory ON on new installs, with local embeddings", () => {
+    const config = loadModelConfig();
+    expect(config.settings?.enableRmemory).toBe(true);
+    expect(getSettings().enableRmemory).toBe(true);
+    expect(getSettings().rmemoryEmbeddingProvider).toBe("local");
+  });
+
+  it("defaults missing legacy RMemory settings ON without rewriting an opt-out", () => {
+    const config = loadModelConfig();
+    delete config.settings!.enableRmemory;
+    saveModelConfig(config);
+    clearModelConfigCache();
+
+    expect(getSettings().enableRmemory).toBe(true);
+    updateSettings({ rateLimitRpm: 70 });
+    clearModelConfigCache();
+    expect(getSettings().enableRmemory).toBe(true);
+  });
+
+  it("preserves explicit RMemory OFF across reloads and unrelated setting changes", () => {
+    updateSettings({ enableRmemory: false });
+    clearModelConfigCache();
+    expect(loadModelConfig().settings?.enableRmemory).toBe(false);
+    expect(getSettings().enableRmemory).toBe(false);
+
+    updateSettings({ concurrencyLimit: 2 });
+    clearModelConfigCache();
+    expect(getSettings().enableRmemory).toBe(false);
+
+    updateSettings({ enableRmemory: true });
+    clearModelConfigCache();
+    expect(getSettings().enableRmemory).toBe(true);
   });
 
   it("should add and retrieve multiple provider profiles", () => {
