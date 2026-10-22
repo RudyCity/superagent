@@ -9,7 +9,12 @@ SuperAgent Brain now has one canonical owner-scoped task runtime in `src/core/br
 - The standard two-repository release check passes with 37 SuperAgent Brain/MCP tests, 12 T-Line backend tests, 5 T-Line UI tests and successful Bun builds.
 - A remote service check observed active OAuth-protected tunnels, including the SuperAgent workspace. This is status metadata, **not** authentication through the deployed public tunnel.
 - The previous Claude acceptance job ID could not be found in the currently authorized workspace. CLI Bridge health found 0 active jobs. This does not prove the earlier Claude execution succeeded; do not resurrect or clean other sessions.
-- A real AGY delegated Brain proof passed during the earlier phase. This phase adds source-tested task-aware delegation; do not claim a newly installed desktop or live-tunnel test based on mock unit tests.
+- A real AGY delegated Brain proof passed during the earlier phase. This phase also verified the new one-step `task.autostart` end-to-end through the MCP dispatch adapter and a REAL AGY CLI on the host (not a mocked task):
+  - Session `live_task_4457a0ba406a`
+  - Task `task_323293407c748dfc0b8a`
+  - Job `clj_1792656800835_27ea9c4e`
+  - AGY produced the expected `proof.txt` in its isolated agent scratch; verified-artifact state was confirmed; `task.resume` recovered the persisted task/job reference.
+  - Repeat with `bun scripts/brain-live-task-acceptance.ts`. This may consume LLM credits and should not run automatically in CI.
 - No shared active MCP tunnel was restarted, and no installed T-Line desktop process was modified.
 
 ### P1 — Automatic Brain lifecycle and collaboration
