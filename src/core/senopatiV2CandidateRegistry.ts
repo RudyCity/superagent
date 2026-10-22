@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { SenopatiV2Shadow } from "./senopatiV2Shadow.js";
+import { SenopatiV2IndexedShadow } from "./senopatiV2IndexedShadow.js";
 import { validateSelectiveProfile, type SelectivePolicyProfile } from "./senopatiV2SelectiveDecision.js";
 
 export interface SenopatiV2CandidateRegistry {
@@ -35,9 +36,9 @@ export function createShadowRegistry(modelPath: string, policyPath: string): Sen
     policy:{path:path.resolve(policyPath),sha256:digest(policyBuffer)},
   };
 }
-export function loadShadowRegistry(filename: string): {
+export function loadShadowRegistry(filename: string, engine: "reference" | "indexed" = "reference"): {
   registry: SenopatiV2CandidateRegistry;
-  model: SenopatiV2Shadow;
+  model: SenopatiV2Shadow | SenopatiV2IndexedShadow;
   policy: SelectivePolicyProfile;
 } {
   const raw = JSON.parse(readBounded(filename,1*1024*1024).toString("utf8")) as SenopatiV2CandidateRegistry;
@@ -52,7 +53,11 @@ export function loadShadowRegistry(filename: string): {
   const p=readBounded(raw.policy.path,5*1024*1024);
   if (digest(m)!==raw.model.sha256 || digest(p)!==raw.policy.sha256)
     throw new Error("Candidate registry hash mismatch: do not use altered artifact");
-  const model = new SenopatiV2Shadow(JSON.parse(m.toString("utf8")));
+  if (engine !== "reference" && engine !== "indexed") throw new Error("Unknown shadow inference engine");
+  const modelPayload = JSON.parse(m.toString("utf8"));
+  const model = engine === "indexed"
+    ? new SenopatiV2IndexedShadow(modelPayload)
+    : new SenopatiV2Shadow(modelPayload);
   const policy = JSON.parse(p.toString("utf8")) as SelectivePolicyProfile;
   validateSelectiveProfile(policy);
   return {registry:raw,model,policy};

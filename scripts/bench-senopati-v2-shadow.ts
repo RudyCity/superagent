@@ -16,14 +16,31 @@ function opt(name:string, required=true):string | undefined {
   return args[n+1];
 }
 const registryFile=opt("--registry")!, inputFile=opt("--dataset")!, outfile=opt("--out",false);
+const engine=opt("--engine",false) ?? "reference";
+if (engine!=="reference" && engine!=="indexed") throw new Error("Unknown --engine");
 const start=performance.now();
-const {model,policy,registry}=loadShadowRegistry(registryFile);
+const {model,policy,registry}=loadShadowRegistry(registryFile,engine);
+const compared=engine==="indexed" ? loadShadowRegistry(registryFile,"reference").model : null;
 const coldStartMs=performance.now()-start;
 const data=fs.readFileSync(inputFile,"utf8").split(/\r?\n/).filter(Boolean).map(x=>JSON.parse(x));
 if (data.length<50 || data.length>10_000)
   throw new Error("Require 50–10,000 representative benchmark cases");
 for (const row of data) if (typeof row.text!=="string" || typeof row.context!=="string")
   throw new Error("Benchmark request missing text/context");
+for (const row of data) {
+  if (compared) {
+    const expected=compared.predictGuarded(row.text,row.context);
+    const actual=model.predictGuarded(row.text,row.context);
+    if(JSON.stringify(actual.labels)!==JSON.stringify(expected.labels)){
+      throw new Error("Indexed inference changed reference head labels; aborting benchmark");
+    }
+    for(const head of Object.keys(expected.relativeScores) as Array<keyof typeof expected.relativeScores>) {
+      if(Math.abs(actual.relativeScores[head]-expected.relativeScores[head])>1e-9) {
+        throw new Error("Indexed relative score parity exceeded tolerance: "+head);
+      }
+    }
+  }
+}
 for (const row of data.slice(0,Math.min(10,data.length))) {
   const result=assessSelectiveShadow(model.predictGuarded(row.text,row.context),policy);
   if (result.authorizesExecution!==false || result.eligibleForAutomaticToolRouting!==false)
@@ -48,7 +65,9 @@ function percentile(p:number):number {
 }
 const duration=samples.reduce((a,b)=>a+b,0);
 const report={
-  schema:1,status:"SHADOW_BENCHMARK_ONLY",releaseAuthorized:false,
+  schema:1,status:"SHADOW_BENCHMARK_ONLY",engine,
+  referenceParityVerified: compared!==null,
+  releaseAuthorized:false,
   toolExecutionAuthorized:false,automaticRoutingEnabled:false,
   registrySha256:{model:registry.model.sha256,policy:registry.policy.sha256},
   cases:total,coldStartMs,
