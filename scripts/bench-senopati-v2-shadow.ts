@@ -17,10 +17,10 @@ function opt(name:string, required=true):string | undefined {
 }
 const registryFile=opt("--registry")!, inputFile=opt("--dataset")!, outfile=opt("--out",false);
 const engine=opt("--engine",false) ?? "reference";
-if (engine!=="reference" && engine!=="indexed") throw new Error("Unknown --engine");
+if (engine!=="reference" && engine!=="indexed" && engine!=="compact") throw new Error("Unknown --engine");
 const start=performance.now();
 const {model,policy,registry}=loadShadowRegistry(registryFile,engine);
-const compared=engine==="indexed" ? loadShadowRegistry(registryFile,"reference").model : null;
+const compared=engine!=="reference" ? loadShadowRegistry(registryFile,"reference").model : null;
 const coldStartMs=performance.now()-start;
 const data=fs.readFileSync(inputFile,"utf8").split(/\r?\n/).filter(Boolean).map(x=>JSON.parse(x));
 if (data.length<50 || data.length>10_000)
@@ -32,11 +32,11 @@ for (const row of data) {
     const expected=compared.predictGuarded(row.text,row.context);
     const actual=model.predictGuarded(row.text,row.context);
     if(JSON.stringify(actual.labels)!==JSON.stringify(expected.labels)){
-      throw new Error("Indexed inference changed reference head labels; aborting benchmark");
+      throw new Error("Non-reference inference changed reference head labels; aborting benchmark");
     }
     for(const head of Object.keys(expected.relativeScores) as Array<keyof typeof expected.relativeScores>) {
       if(Math.abs(actual.relativeScores[head]-expected.relativeScores[head])>1e-9) {
-        throw new Error("Indexed relative score parity exceeded tolerance: "+head);
+        throw new Error("Non-reference relative score parity exceeded tolerance: "+head);
       }
     }
   }
@@ -77,7 +77,7 @@ const report={
   memory:{heapStartBytes:memStart,heapEndBytes:process.memoryUsage().heapUsed},
   abstain:abstain,headAdvisoryAccept:headAccepted,
   confidenceCalibrated:false,independentBlindEvidence:false,
-  note:"Local machine benchmark only, no accuracy or safety certification. Inputs not retained."
+  note:"Local machine benchmark only, no accuracy or safety certification. Inputs not retained. Non-reference engines load a reference copy for pre-benchmark parity, so heap and cold start are not isolated engine-only measurements; use worker benchmark for heap comparison."
 };
 console.log(JSON.stringify(report,null,2));
 if(outfile) {

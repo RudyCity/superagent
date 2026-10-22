@@ -1,4 +1,6 @@
-/** Exhaustive guarded AND raw decision parity for a verified hash-pinned shadow candidate. */
+/** Exhaustive guarded AND raw decision parity for a hash-pinned shadow candidate.
+ * Add --compact to test memory-optimized typed-array postings instead of the original index.
+ */
 import fs from "node:fs";
 import { loadShadowRegistry } from "../src/core/senopatiV2CandidateRegistry.js";
 const argv=process.argv.slice(2);
@@ -9,7 +11,8 @@ const sets:string[]=[];
 for(let i=0;i<argv.length;i++)if(argv[i]==="--dataset"&&argv[i+1])sets.push(argv[i+1]);
 if(!sets.length)throw new Error("At least one explicit JSONL dataset required");
 const reference=loadShadowRegistry(registry,"reference").model;
-const indexed=loadShadowRegistry(registry,"indexed").model;
+const selection=argv.includes("--compact")?"compact":"indexed";
+const indexed=loadShadowRegistry(registry,selection).model;
 const heads=["domain","intent","action","risk","approval"] as const;
 let rows=0,comparisons=0,largestDifference=0;
 for(const filename of sets){
@@ -33,5 +36,5 @@ for(const filename of sets){
   }
   console.log(`PARITY DATASET ${filename}: ${items.length} cases`);
 }
-console.log(`PASS: indexed/ref ${comparisons}/${comparisons} raw+guarded head decisions across ${rows} cases; max absolute relative score delta ${largestDifference}`);
-console.log("Indexed is research-only and never authorizes tools.");
+console.log(`PASS: ${selection}/reference ${comparisons}/${comparisons} raw+guarded head decisions across ${rows} cases; max absolute relative score delta ${largestDifference}`);
+console.log(selection+" is research-only and never authorizes tools.");
