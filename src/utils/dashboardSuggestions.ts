@@ -9,6 +9,7 @@ import {
   MUSE_TUNNEL_SUGGESTIONS,
   TELEGRAM_SUGGESTIONS,
   MCP_TUNNEL_SUGGESTIONS,
+  MCP_USE_SUGGESTIONS,
   SERVER_TUNNEL_SUGGESTIONS,
 } from "../core/commands/commandCatalog.js";
 
@@ -77,6 +78,10 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/mcp add": "Register an external MCP server.",
   "/mcp remove": "Remove a configured MCP server.",
   "/mcp reload": "Reload MCP server configurations.",
+  "/mcp use": "Display or select MCP tool exposure mode for newly started servers.",
+  "/mcp use gateway": "Use compact MCP gateway with search, describe, execute, and status.",
+  "/mcp use full": "Use the complete authorized MCP tools catalog (default).",
+  "/mcp use status": "Show active and saved MCP tool exposure settings.",
   "/mcp tunnel": "Manage provider-specific MCP tunnel lifecycle.",
   "/mcp tunnel providers": "List supported MCP tunnel providers and their requirements.",
   "/mcp tunnel list": "List active MCP server tunnels and endpoints.",
@@ -393,6 +398,12 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
 
     if (mainCommand === "/mcp") {
       const sub = parts[1]?.toLowerCase();
+      // Keep tool-catalog mode suggestions within /mcp use rather than mixing
+      // unrelated tunnel commands. Handles /mcp use, /mcp use <partial>,
+      // and trailing spaces for T-Line Tab cycling.
+      if (sub === "use") {
+        return filterSuggestions([...MCP_USE_SUGGESTIONS], query);
+      }
       if (sub === "tunnel") {
         const action = parts[2]?.toLowerCase();
         if (action === "start") {
@@ -446,6 +457,8 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         "/mcp add-http",
         "/mcp remove",
         "/mcp reload",
+        "/mcp use",
+        ...MCP_USE_SUGGESTIONS,
         "/mcp tunnel",
         ...MCP_TUNNEL_SUGGESTIONS,
       ];

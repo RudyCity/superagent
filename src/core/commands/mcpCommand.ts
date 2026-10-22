@@ -6,11 +6,18 @@ import { registry } from "./registry.js";
 
 export const mcpCommand: SlashCommand = {
   name: "mcp",
-  description: "Manage MCP (Model Context Protocol) servers. Subcommands: list, add, remove, reload",
+  description: "Manage MCP servers and tunnels. Subcommands: list, add, remove, reload, use gateway|full, tunnel",
   async execute(args, ctx) {
     const now = Date.now();
     const parts = args.trim().split(/\s+/).filter(Boolean);
     const subcommand = parts[0]?.toLowerCase();
+
+    if (subcommand === "use") {
+      const { mcpToolExposureCommand } = await import("../mcp/mcpToolExposure.js");
+      const result = mcpToolExposureCommand(parts.slice(1));
+      ctx.addLine({ type: result.success ? "system" : "error", content: result.message, timestamp: Date.now() });
+      return;
+    }
 
     if (!subcommand || subcommand === "list") {
       const config = loadModelConfig();
@@ -529,7 +536,7 @@ export const mcpCommand: SlashCommand = {
 
     ctx.addLine({
       type: "error",
-      content: `Unknown subcommand "${subcommand}". Available subcommands: list, add, remove, reload, tunnel`,
+      content: `Unknown subcommand "${subcommand}". Available subcommands: list, add, remove, reload, use gateway|full, tunnel`,
       timestamp: now,
     });
   },

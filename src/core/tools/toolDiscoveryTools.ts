@@ -123,10 +123,60 @@ export interface DiscoveryDef {
  * Extracted so mode-aware wrappers can list a filtered toolset
  * instead of the static catalog.
  */
+const INTENT_SYNONYMS: Record<string, string[]> = {
+  audit: ["inspect", "review", "search", "test", "scan", "check"],
+  inspect: ["read", "view", "list", "search", "grep"],
+  fix: ["edit", "patch", "replace", "write", "modify"],
+  build: ["compile", "test", "run", "command"],
+  test: ["run", "command", "execute", "verify"],
+  commit: ["git", "stage", "repository"],
+  browse: ["chrome", "browser", "cdp", "web"],
+  remember: ["memory", "rmemory", "history"],
+  project: ["workspace", "file", "repository"],
+  deploy: ["git", "ssh", "terminal", "process"],
+  perbaiki: ["edit", "patch", "replace", "write", "fix"],
+  ubah: ["edit", "replace", "write", "patch"],
+  cek: ["inspect", "read", "search", "grep", "test"],
+  cari: ["search", "find", "grep", "glob"],
+  jalankan: ["run", "command", "execute", "process"],
+  uji: ["test", "run", "verify", "command"],
+  baca: ["read", "view", "file"],
+  simpan: ["write", "save", "memory"],
+  memori: ["rmemory", "memory", "history"],
+};
+
+/** Low-cost intent matching against only the authorized catalog. */
+export function rankToolsForIntent(defs: DiscoveryDef[], intent: string, limit = 8): DiscoveryDef[] {
+  const tokens = [...new Set(intent.toLowerCase().match(/[a-z0-9_]+/g) || [])]
+    .filter((word) => word.length > 2).slice(0, 16);
+  if (!tokens.length) return [];
+  return defs.map((def) => {
+    const name = def.name.toLowerCase().replace(/[_-]/g, " ");
+    const description = def.description.toLowerCase();
+    let score = 0;
+    for (const token of tokens) {
+      if (name.split(/\s+/).includes(token)) score += 12;
+      else if (name.includes(token)) score += 8;
+      else if (description.includes(token)) score += 3;
+      for (const synonym of INTENT_SYNONYMS[token] || []) {
+        if (name.includes(synonym)) score += 5;
+        else if (description.includes(synonym)) score += 1;
+      }
+    }
+    return { def, score };
+  }).filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || a.def.name.localeCompare(b.def.name))
+    .slice(0, Math.max(1, Math.min(20, Math.floor(limit))))
+    .map(({ def }) => def);
+}
+
 export async function runListTools(defs: DiscoveryDef[], args: unknown): Promise<string> {
   const rawQuery = (args as any)?.query ?? (args as any)?.q ?? (args as any)?.filter ?? (args as any)?.keyword ?? "";
   const q = String(rawQuery).toLowerCase().trim();
-  const filtered = q
+  const intent = typeof (args as any)?.intent === "string" ? (args as any).intent.trim().slice(0, 500) : "";
+  const wantedLimit = Number((args as any)?.limit);
+  const boundedLimit = Number.isFinite(wantedLimit) && wantedLimit > 0 ? Math.min(20, Math.floor(wantedLimit)) : 8;
+  const filtered = intent ? rankToolsForIntent(defs, intent, boundedLimit) : q
     ? defs
         .map((d) => {
           const nameScore = fuzzyScore(q, d.name);
@@ -163,10 +213,12 @@ export async function runListTools(defs: DiscoveryDef[], args: unknown): Promise
         .sort((a, b) => b.score - a.score)
         .map((x) => x.def)
     : defs;
-  if (filtered.length === 0) {
-    return `No tools match query "${rawQuery}".`;
+  const presented = !intent && Number.isFinite(wantedLimit) && wantedLimit > 0
+    ? filtered.slice(0, boundedLimit) : filtered;
+  if (presented.length === 0) {
+    return `No tools match ${intent ? "intent" : "query"} "${intent || rawQuery}".`;
   }
-  return filtered
+  return presented
     .map((d) => {
       const firstLine = d.description.split("\n")[0].trim();
       const shortDesc = firstLine.length > 70 ? firstLine.slice(0, 67) + "..." : firstLine;
@@ -183,7 +235,7 @@ export async function runListTools(defs: DiscoveryDef[], args: unknown): Promise
 export const listToolsTool: Tool = {
   name: "list_tools",
   description:
-    "List available tool names with one-line descriptions. Use this to discover capabilities. Provide an optional short keyword query to filter (e.g. 'git', 'chrome', 'port'). Omit query to list all tools. NEVER pass natural language questions or conversational task descriptions. To unlock and inspect tool schemas before execution, use describe_tool.",
+    "List authorized tools with one-line descriptions. Use query for one short keyword or intent for a natural-language task; intent ranks up to 8 matches by default. Call describe_tool to unlock full schemas.",
   parameters: {
     type: "object",
     properties: {
@@ -191,6 +243,14 @@ export const listToolsTool: Tool = {
         type: "string",
         description:
           "Single short keyword or tool name to filter (e.g. 'git', 'chrome', 'port', 'clibrdg'). Omit to list all tools. Do NOT pass natural language questions, sentences, or user prompt text.",
+      },
+      intent: {
+        type: "string",
+        description: "Natural-language task intent for lightweight capability ranking, e.g. 'audit checkout and commit'. Returns a short ranked list. Does not grant tool permissions.",
+      },
+      limit: {
+        type: "number", minimum: 1, maximum: 20,
+        description: "Maximum tools to show (1-20); intent defaults to 8.",
       },
     },
     required: [],

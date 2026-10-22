@@ -281,6 +281,8 @@ export interface McpHttpServerOptions {
    */
   bearerToken?: string;
   allowDangerous: boolean;
+  /** Optional compact stable MCP gateway catalog for clients with static tool schemas. */
+  toolExposure?: "full" | "gateway";
   auditLogPath?: string;
   /** Auth mode: "static-bearer" (default) or "oauth". See ADR-006. */
   authMode?: McpAuthMode;
@@ -558,6 +560,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         };
         const sessionAudit = (info: McpAuditInfo) => audit({ ...info, sessionHash: sessionCtx.sessionHash });
         const newServer = createSuperagentMcpServer({
+          toolExposure: opts.toolExposure,
           allowedTools,
           onToolCall: sessionAudit,
           authMode,
@@ -614,6 +617,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
       };
       const sessionAudit = (info: McpAuditInfo) => audit({ ...info, sessionHash: sessionCtx.sessionHash });
       const statelessServer = createSuperagentMcpServer({
+        toolExposure: opts.toolExposure,
         allowedTools,
         onToolCall: sessionAudit,
         authMode,

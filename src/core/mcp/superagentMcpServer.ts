@@ -178,6 +178,16 @@ function toResolvedProjectContext(target: ResolvedProjectTarget | null): Resolve
 import { PROJECT_REGISTRY_TOOL_NAMES, WORKSPACE_SCOPED_MCP_TOOLS } from "./mcpWorkspacePolicy.js";
 import { BRAIN_MCP_TOOL_DEFS, dispatchBrainMcpTool, dispatchBrainPublishMcpTool } from "./tools/brainMcpTools.js";
 import { MOTION_MCP_TOOL_DEFS, dispatchMotionMcpTool } from "./tools/motionMcpTools.js";
+import {
+  MCP_GATEWAY_TOOL_DEFS,
+  MCP_GATEWAY_TOOL_NAMES,
+  getGatewayVisibleCatalog,
+  searchGatewayTools,
+  describeGatewayTool,
+  validateGatewayExecuteTarget,
+  gatewayTextResult,
+} from "./mcpToolGateway.js";
+import { getMcpToolExposure } from "./mcpToolExposure.js";
 import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, PRIVILEGED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
 import type { McpServerOptions } from "./mcpToolPolicy.js";
 export type { McpServerOptions } from "./mcpToolPolicy.js";
@@ -520,6 +530,7 @@ export const MCP_TOOL_DEFINITIONS = [
     ...MOTION_MCP_TOOL_DEFS,
 ];
 
+    ...MCP_GATEWAY_TOOL_DEFS,
 const activeMcpServerInstances = new Set<Server>();
 
 export async function notifyMcpToolsListChanged(): Promise<void> {
@@ -535,7 +546,7 @@ export async function notifyMcpToolsListChanged(): Promise<void> {
 
 
 export function createSuperagentMcpServer(options: McpServerOptions = {}): Server {
-  const { allowedTools, onToolCall, authMode = "static-bearer", allowDangerous, getIdentity, workspace } = options;
+  const { allowedTools, onToolCall, authMode = "static-bearer", allowDangerous, getIdentity, workspace, toolExposure = getMcpToolExposure().mode } = options;
   const version = getSuperAgentVersion();
   const server = new Server(
     {
@@ -563,7 +574,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   // Register Standard MCP Resources & Prompts
   registerResourcesAndPrompts(server, { authMode, getIdentity });
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
+  const getAuthorizedMcpTools = () => {
     const allTools = MCP_TOOL_DEFINITIONS;
     // Allowlist: hide non-allowed tools from MCP clients.
     // If allowDangerous is true OR CLI YOLO mode is active ("scoped" | "full"),
@@ -591,6 +602,14 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     );
     const annotated = tools.map((t) => ({
       ...t,
+    return tools;
+  };
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const authorized = getAuthorizedMcpTools();
+    const tools = toolExposure === "gateway"
+      ? authorized.filter((tool) => Object.values(MCP_GATEWAY_TOOL_NAMES).includes(tool.name as any))
+      : authorized;
       annotations: getToolAnnotations(t.name),
       _meta: { securitySchemes: getToolSecuritySchemes(t.name, authMode) },
     }));
@@ -935,7 +954,7 @@ function extractMcpResultText(result: unknown): string {
 }
 
   // Allowlist + audit + YOLO boundary wrapper around the dispatcher above.
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const handleMcpCall = async (request: any): Promise<any> => {
     const toolName = String((request.params as any)?.name || "");
     const rawArgs = (request.params as any)?.arguments || {};
     const yoloState = getYoloModeState();
@@ -1101,7 +1120,10 @@ function extractMcpResultText(result: unknown): string {
     // If Full YOLO is active, system-wide access is permitted.
     // If Scoped YOLO is active (or allowDangerous without full YOLO), enforce scope boundary!
     const chainToolsRequireDedicatedBoundary = toolName === "superagent_manage_workspace_chain" || toolName === "superagent_cross_workspace_exec";
-    if (isDangerous && !isFullYoloMode() && !chainToolsRequireDedicatedBoundary && toolName !== "superagent_brain") {
+    // Gateway calls do not carry the target paths in their own schema.
+    // The recursively dispatched target call enforces the original YOLO boundary.
+    if (isDangerous && toolName !== MCP_GATEWAY_TOOL_NAMES.execute
+      && !isFullYoloMode() && !chainToolsRequireDedicatedBoundary && toolName !== "superagent_brain") {
       const remoteSshTarget = /^ssh:/i.test(effectiveWs);
       const capability = getProjectCapabilityForTool(toolName, rawArgs);
       const boundaryIdentity = getIdentity?.();
@@ -1140,7 +1162,32 @@ function extractMcpResultText(result: unknown): string {
     }
     const startedAt = Date.now();
     try {
-      const result: any = await dispatchMcpToolCall(request, auditContext);
+      const authorizedTools = getAuthorizedMcpTools();
+      let result: any;
+      if (toolName === MCP_GATEWAY_TOOL_NAMES.search) {
+        result = gatewayTextResult({ tools: searchGatewayTools(authorizedTools, rawArgs) });
+      } else if (toolName === MCP_GATEWAY_TOOL_NAMES.describe) {
+        const found = describeGatewayTool(authorizedTools, rawArgs.name);
+        result = found ? gatewayTextResult(found)
+          : { content: [{ type: "text", text: "Tool unavailable or not authorized." }], isError: true };
+      } else if (toolName === MCP_GATEWAY_TOOL_NAMES.status) {
+        result = gatewayTextResult({
+          mode: toolExposure,
+          visibleToolCount: getGatewayVisibleCatalog(authorizedTools).length,
+          gatewayTools: authorizedTools.filter((tool) =>
+            Object.values(MCP_GATEWAY_TOOL_NAMES).includes(tool.name as any)).map((tool) => tool.name),
+        });
+      } else if (toolName === MCP_GATEWAY_TOOL_NAMES.execute) {
+        const target = validateGatewayExecuteTarget(authorizedTools, rawArgs);
+        result = !target
+          ? { content: [{ type: "text", text: "Target tool unavailable, unauthorized, or arguments invalid." }], isError: true }
+          : await handleMcpCall({
+              ...request,
+              params: { ...request.params, name: target.name, arguments: target.arguments },
+            });
+      } else {
+        result = await dispatchMcpToolCall(request, auditContext);
+      }
       const failed = !!(result && typeof result === "object" && (result as any).isError);
       const durationMs = Date.now() - startedAt;
       const outputText = extractMcpResultText(result);
@@ -1179,7 +1226,8 @@ function extractMcpResultText(result: unknown): string {
       });
       throw err;
     }
-  });
+  };
+  server.setRequestHandler(CallToolRequestSchema, handleMcpCall);
 
   return server;
 }

@@ -10,6 +10,7 @@ Commands:
   add <name> <command> [args...]        Add an MCP server configuration
   add-http <name> <url> [--oauth]       Add a remote Streamable HTTP MCP server
   remove, rm <name>                     Remove an MCP server configuration
+  use [gateway|full|status]              Select persistent MCP tool exposure for new sessions
   register                              Register Superagent as an MCP server to Antigravity (AGY)
   tunnel <start|stop|restart|list|status|doctor|providers|config>  Manage MCP tunnels and OpenAI credentials
 
@@ -18,6 +19,9 @@ Examples:
    superagent mcp add everything npx -y @modelcontextprotocol/server-everything
    superagent mcp add-http google https://mcp.example.com/mcp --oauth
    superagent mcp remove everything
+   superagent mcp use gateway
+   superagent mcp use full
+   superagent mcp use status
    superagent mcp register
    superagent mcp tunnel providers
    superagent mcp tunnel start --provider cloudflare
@@ -35,6 +39,14 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
   if (!subcommand || subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
     printMcpHelp();
     process.exit(0);
+  }
+
+  if (subcommand === "use") {
+    const { mcpToolExposureCommand } = await import("../mcp/mcpToolExposure.js");
+    const result = mcpToolExposureCommand(args.slice(1));
+    (result.success ? console.log : console.error)(result.message);
+    process.exit(result.success ? 0 : 1);
+    return;
   }
 
   if (subcommand === "list" || subcommand === "ls") {

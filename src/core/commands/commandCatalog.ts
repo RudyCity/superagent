@@ -35,6 +35,13 @@ export const TELEGRAM_SUGGESTIONS = [
   "/telegram fallback stop",
 ];
 
+/** Persistent MCP tool-catalog mode selection; shared with dashboard autocomplete. */
+export const MCP_USE_SUGGESTIONS = [
+  "/mcp use gateway",
+  "/mcp use full",
+  "/mcp use status",
+] as const;
+
 export const MCP_TUNNEL_SUGGESTIONS = [
   "/mcp tunnel providers",
   "/mcp tunnel config status",

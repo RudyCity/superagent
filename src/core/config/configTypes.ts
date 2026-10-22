@@ -87,6 +87,8 @@ export interface McpServerConfigBase {
   id?: string;
   name?: string;
   disabled?: boolean;
+  /** Reconnect unexpectedly lost servers (default: enabled, except OAuth unless explicitly true). */
+  autoReconnect?: boolean;
 }
 
 export interface StdioMcpServerConfig extends McpServerConfigBase {

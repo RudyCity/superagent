@@ -2,9 +2,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
+import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { loadModelConfig } from "../config/jsonConfig.js";
 import type { HttpMcpServerConfig, McpServerConfig, StdioMcpServerConfig } from "../config/configTypes.js";
 import type { Tool } from "../tools/types.js";
+import { bumpToolRegistryVersion } from "../tools/toolRegistryVersion.js";
+import { McpReconnectController } from "./mcpReconnectController.js";
+import { mcpToolMetrics } from "./mcpToolMetrics.js";
 import { killProcessTree } from "../tools/helpers.js";
 import {
   getRemoteMcpOAuthCallbackPort,
@@ -52,8 +56,28 @@ export interface ConnectedMcpServer {
 }
 
 export const connectedServers = new Map<string, ConnectedMcpServer>();
+export function getMcpConnectionDiagnostics(name: string): {
+  attempts: number; nextDelayMs: number | null; status: string; toolCount: number;
+} {
+  const serverName = name.trim().toLowerCase();
+  const record = connectedServers.get(serverName);
+  const retry = reconnectController.state(serverName);
+  return { ...retry, status: record?.status || "unconfigured", toolCount: record?.tools.length || 0 };
+}
+
 let loadedMcpTools: Tool[] = [];
 const registeredMcpToolNames = new Set<string>();
+const remoteToolOwners = new WeakMap<Tool, ConnectedMcpServer>();
+const reconnectController = new McpReconnectController();
+const reconnectingServers = new Map<string, Promise<ConnectedMcpServer | undefined>>();
+let shuttingDown = false;
+let lifecycleEpoch = 0;
+let registryQueue: Promise<unknown> = Promise.resolve();
+function withRegistryLock<T>(operation: () => Promise<T>): Promise<T> {
+  const pending = registryQueue.then(operation, operation);
+  registryQueue = pending.then(() => undefined, () => undefined);
+  return pending;
+}
 
 function isHttpMcpServerConfig(config: McpServerConfig): config is HttpMcpServerConfig {
   return config.transport === "http" || config.transport === "streamable-http";
@@ -99,11 +123,17 @@ function buildHttpHeaders(config: HttpMcpServerConfig): Record<string, string> {
 }
 
 function mapRemoteTools(serverName: string, client: Client, tools: Array<{name: string; description?: string; inputSchema?: unknown}>): Tool[] {
-  return tools.map((tool) => ({
+  return tools.map((tool) => {
+    const mapped: Tool = {
     name: serverName + "_" + tool.name,
     description: tool.description || "MCP Tool from server " + serverName + ": " + tool.name,
     parameters: (tool.inputSchema || {}) as Record<string, unknown>,
     execute: async (args: Record<string, unknown>) => {
+      const startedAt = Date.now();
+      if (!loadedMcpTools.includes(mapped) || connectedServers.get(serverName)?.status !== "connected") {
+        mcpToolMetrics.record(mapped.name, Date.now() - startedAt, true);
+        return "Error: MCP tool is no longer available. Rediscover tools.";
+      }
       try {
         const response = await withTimeout(
           client.callTool({
@@ -113,33 +143,61 @@ function mapRemoteTools(serverName: string, client: Client, tools: Array<{name: 
           MCP_TOOL_CALL_TIMEOUT_MS,
           `MCP tool "${tool.name}" on server "${serverName}" timed out after ${MCP_TOOL_CALL_TIMEOUT_MS / 1000}s`
         );
-        if (response && Array.isArray(response.content)) {
-          return response.content.map((item: any) => {
-            if (item.type === "text") return item.text;
-            if (item.type === "image") return "[Image Content (" + (item.mimeType || "image/png") + ")]";
-            return JSON.stringify(item);
-          }).join("\n");
-        }
-        return JSON.stringify(response);
+        mcpToolMetrics.record(mapped.name, Date.now() - startedAt, Boolean(response.isError));
+        const rendered = Array.isArray(response.content)
+          ? response.content.map((item: any) => {
+              if (item.type === "text") return item.text;
+              if (item.type === "image") return "[Image Content (" + (item.mimeType || "image/png") + "); binary data unavailable in text-only tool adapter]";
+              return JSON.stringify(item);
+            }).join("\n")
+          : "";
+        // Preserve structured results alongside text.
+        const structured = response.structuredContent === undefined
+          ? "" : JSON.stringify(response.structuredContent);
+        const result = [rendered, structured].filter(Boolean).join("\n");
+        return response.isError ? "MCP tool error: " + result : result || JSON.stringify(response);
       } catch (err: any) {
-        return `Error executing MCP tool "${tool.name}": ${err?.message || String(err)}`;
+        mcpToolMetrics.record(mapped.name, Date.now() - startedAt, true);
+        return `Error executing MCP tool "${tool.name}": ${safeMcpError(err)}`;
       }
     },
-  }));
+    };
+    return mapped;
+  });
 }
 
-async function registerLoadedMcpTools(): Promise<void> {
+async function listAllRemoteTools(client: Client): Promise<Array<{ name: string; description?: string; inputSchema?: unknown }>> {
+  const tools: Array<{ name: string; description?: string; inputSchema?: unknown }> = [];
+  const names = new Set<string>();
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < 50; page++) {
+    const result = await withTimeout(client.listTools(cursor ? { cursor } : undefined),
+      MCP_LIST_TOOLS_TIMEOUT_MS, "MCP listTools timed out");
+    for (const tool of result.tools || []) {
+      if (names.has(tool.name)) continue;
+      names.add(tool.name);
+      tools.push(tool);
+    }
+    if (!result.nextCursor) return tools;
+    if (cursors.has(result.nextCursor)) throw new Error("MCP tools/list cursor cycle");
+    cursors.add(result.nextCursor);
+    cursor = result.nextCursor;
+  }
+  throw new Error("MCP tools/list exceeded 50 pages");
+}
+
+async function registerLoadedMcpToolsUnlocked(): Promise<void> {
   const pending = loadedMcpTools.filter((tool) => !registeredMcpToolNames.has(tool.name));
   if (pending.length === 0) return;
 
   const {
     allTools,
-    masterToolset,
     superagentToolset,
-    defaultSubagentToolset,
-    subagentToolsets,
+    chromeExtensionToolset,
   } = await import("../tools/index.js");
 
+  let added = false;
   for (const tool of pending) {
     // Do not duplicate a name if an earlier partially-completed init registered it.
     const name = tool.name;
@@ -148,15 +206,43 @@ async function registerLoadedMcpTools(): Promise<void> {
         list.push(tool);
       }
     };
-    addIfMissing(allTools);
-    addIfMissing(masterToolset);
-    addIfMissing(superagentToolset);
-    addIfMissing(defaultSubagentToolset);
-    for (const key of Object.keys(subagentToolsets)) {
-      if (Array.isArray(subagentToolsets[key])) addIfMissing(subagentToolsets[key]);
+    // Never shadow a built-in tool or another server's registered tool.
+    if (allTools.some((existing) => existing.name === name && existing !== tool)) {
+      registeredMcpToolNames.add(name);
+      continue;
     }
+    addIfMissing(allTools);
+    addIfMissing(superagentToolset);
+    addIfMissing(chromeExtensionToolset);
     registeredMcpToolNames.add(name);
+    added = true;
   }
+  if (added) bumpToolRegistryVersion();
+}
+
+async function registerLoadedMcpTools(): Promise<void> {
+  return withRegistryLock(registerLoadedMcpToolsUnlocked);
+}
+
+/** Retire only tools owned by this transport, never an unrelated or built-in tool. */
+async function retireRemoteToolsUnlocked(record: ConnectedMcpServer): Promise<void> {
+  const stale = new Set(loadedMcpTools.filter((tool) => remoteToolOwners.get(tool) === record));
+  if (!stale.size) { record.tools = []; return; }
+  const { allTools, superagentToolset, chromeExtensionToolset } = await import("../tools/index.js");
+  let removed = false;
+  for (const list of [allTools, superagentToolset, chromeExtensionToolset]) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (stale.has(list[i])) { list.splice(i, 1); removed = true; }
+    }
+  }
+  loadedMcpTools = loadedMcpTools.filter((tool) => !stale.has(tool));
+  for (const tool of stale) registeredMcpToolNames.delete(tool.name);
+  record.tools = [];
+  if (removed) bumpToolRegistryVersion();
+}
+
+function retireRemoteTools(record: ConnectedMcpServer): Promise<void> {
+  return withRegistryLock(() => retireRemoteToolsUnlocked(record));
 }
 
 function rememberDiscoveredTools(record: ConnectedMcpServer, tools: Array<{name: string; description?: string; inputSchema?: unknown}>): void {
@@ -166,9 +252,109 @@ function rememberDiscoveredTools(record: ConnectedMcpServer, tools: Array<{name:
     if (!currentNames.has(tool.name)) {
       record.tools.push(tool.name);
       currentNames.add(tool.name);
+      remoteToolOwners.set(tool, record);
       loadedMcpTools.push(tool);
     }
   }
+}
+
+/** Hot-refresh one server under the shared registry lock (without restarting others). */
+export async function refreshMcpServerTools(name: string): Promise<boolean> {
+  const record = connectedServers.get(name.toLowerCase());
+  if (!record || record.status !== "connected") return false;
+  const definitions = await listAllRemoteTools(record.client);
+  return withRegistryLock(async () => {
+    if (shuttingDown || connectedServers.get(record.name) !== record || record.status !== "connected") return false;
+    const next = mapRemoteTools(record.name, record.client, definitions);
+    const previous = loadedMcpTools.filter((tool) => remoteToolOwners.get(tool) === record);
+    const signature = (tools: Tool[]) => JSON.stringify(tools.map(
+      ({ name, description, parameters }) => [name, description, parameters]));
+    if (signature(previous) === signature(next)) return false;
+    await retireRemoteToolsUnlocked(record);
+    rememberDiscoveredTools(record, definitions);
+    await registerLoadedMcpToolsUnlocked();
+    return true;
+  });
+}
+
+function installMcpToolChangeHandler(record: ConnectedMcpServer): void {
+  let queue = Promise.resolve();
+  record.client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+    queue = queue.then(async () => {
+      if (connectedServers.get(record.name) === record && record.status === "connected") {
+        await refreshMcpServerTools(record.name);
+      }
+    }).catch((error) => {
+      record.error = "MCP tool refresh failed: " + safeMcpError(error);
+    });
+    return queue;
+  });
+}
+
+/** Drop disconnected tools immediately from subsequent model iterations. */
+function markMcpDisconnected(record: ConnectedMcpServer, reason: string): void {
+  if (shuttingDown || connectedServers.get(record.name) !== record) return;
+  record.status = "disconnected";
+  record.error = reason;
+  void retireRemoteTools(record).then(() => {
+    if (connectedServers.get(record.name) === record) scheduleMcpReconnect(record.name);
+  }).catch(() => undefined);
+}
+
+function scheduleMcpReconnect(name: string): void {
+  if (shuttingDown) return;
+  const config = configuredServerEntries(loadModelConfig().mcpServers)
+    .find(([candidate]) => candidate.toLowerCase() === name)?.[1];
+  // OAuth requires explicit opt-in: never repeatedly open login browsers in the background.
+  if (!config || config.disabled || config.autoReconnect === false ||
+      (isHttpMcpServerConfig(config) && isOAuthEnabled(config) && config.autoReconnect !== true)) return;
+  reconnectController.schedule(name, async () => {
+    if (shuttingDown) return true;
+    if (connectedServers.get(name)?.status === "connected") return true;
+    const next = await reconnectMcpServer(name);
+    return next?.status === "connected";
+  });
+}
+
+/** Reconnect only the named MCP client; avoid a global restart or competing attempts. */
+export async function reconnectMcpServer(rawName: string): Promise<ConnectedMcpServer | undefined> {
+  const name = rawName.trim().toLowerCase();
+  const inflight = reconnectingServers.get(name);
+  if (inflight) return inflight;
+  const operation = (async () => {
+    const epoch = lifecycleEpoch;
+    if (shuttingDown) return undefined;
+    const config = configuredServerEntries(loadModelConfig().mcpServers)
+      .find(([candidate]) => candidate.toLowerCase() === name)?.[1];
+    if (!config || config.disabled) return undefined;
+    const previous = connectedServers.get(name);
+    if (previous) {
+      connectedServers.delete(name);
+      await retireRemoteTools(previous);
+      try { await previous.cleanup?.(); } catch {}
+      try { await previous.transport?.close(); } catch {}
+    }
+    if (shuttingDown || lifecycleEpoch !== epoch) return undefined;
+    const client = new Client({ name: "superagent-client", version: "1.0.0" }, { capabilities: {} });
+    if (isHttpMcpServerConfig(config)) await connectHttpServer(name, config, client);
+    else await connectStdioServer(name, config as StdioMcpServerConfig, client);
+    if (shuttingDown || lifecycleEpoch !== epoch) {
+      const stale = connectedServers.get(name);
+      if (stale?.client === client) {
+        connectedServers.delete(name);
+        await retireRemoteTools(stale);
+        try { await stale.transport?.close(); } catch {}
+      }
+      return undefined;
+    }
+    await registerLoadedMcpTools();
+    const next = connectedServers.get(name);
+    if (next?.status === "connected") reconnectController.reset(name);
+    return next;
+  })();
+  reconnectingServers.set(name, operation);
+  try { return await operation; }
+  finally { if (reconnectingServers.get(name) === operation) reconnectingServers.delete(name); }
 }
 
 /**
@@ -177,6 +363,7 @@ function rememberDiscoveredTools(record: ConnectedMcpServer, tools: Array<{name:
  */
 export async function initMcpServers(): Promise<void> {
   await closeMcpServers();
+  shuttingDown = false;
 
   const config = loadModelConfig();
   const serverEntries = configuredServerEntries(config.mcpServers);
@@ -241,12 +428,10 @@ async function connectStdioServer(
   connectedServers.set(serverName, connectionRecord);
 
   transport.onclose = () => {
-    connectionRecord.status = "disconnected";
-    if (!connectionRecord.error) connectionRecord.error = "MCP server process exited.";
+    markMcpDisconnected(connectionRecord, "MCP server process exited.");
   };
   transport.onerror = (error: Error) => {
-    connectionRecord.status = "disconnected";
-    connectionRecord.error = safeMcpError(error);
+    markMcpDisconnected(connectionRecord, safeMcpError(error));
   };
 
   let stderrBuffer = "";
@@ -256,8 +441,9 @@ async function connectStdioServer(
   });
 
   try {
+    installMcpToolChangeHandler(connectionRecord);
     await withTimeout(client.connect(transport), MCP_CONNECT_TIMEOUT_MS, `MCP stdio connection timed out for server "${serverName}"`);
-    const toolsResult = await withTimeout(client.listTools(), MCP_LIST_TOOLS_TIMEOUT_MS, `MCP listTools timed out for server "${serverName}"`);
+    const toolsResult = { tools: await listAllRemoteTools(client) };
     rememberDiscoveredTools(connectionRecord, toolsResult.tools || []);
     connectionRecord.status = "connected";
     connectionRecord.error = undefined;
@@ -371,8 +557,7 @@ async function connectHttpServer(
   };
   connectedServers.set(serverName, connectionRecord);
   transport.onclose = () => {
-    connectionRecord.status = "disconnected";
-    if (!connectionRecord.error) connectionRecord.error = "Remote MCP connection closed.";
+    markMcpDisconnected(connectionRecord, "Remote MCP connection closed.");
   };
   transport.onerror = (error: Error) => {
     connectionRecord.error = safeMcpError(error);
@@ -386,8 +571,9 @@ async function connectHttpServer(
   };
 
   try {
+    installMcpToolChangeHandler(connectionRecord);
     await withTimeout(client.connect(transport), MCP_CONNECT_TIMEOUT_MS, `MCP HTTP connection timed out for server "${serverName}"`);
-    const toolsResult = await withTimeout(client.listTools(), MCP_LIST_TOOLS_TIMEOUT_MS, `MCP listTools timed out for server "${serverName}"`);
+    const toolsResult = { tools: await listAllRemoteTools(client) };
     rememberDiscoveredTools(connectionRecord, toolsResult.tools || []);
     connectionRecord.status = "connected";
     connectionRecord.error = undefined;
@@ -455,8 +641,9 @@ async function finishRemoteOAuthAuthorization(
     });
     record.client = authorizedClient;
     record.transport = authorizedTransport;
+    installMcpToolChangeHandler(record);
     await withTimeout(authorizedClient.connect(authorizedTransport), MCP_CONNECT_TIMEOUT_MS, "Connect timed out");
-    const result = await withTimeout(authorizedClient.listTools(), MCP_LIST_TOOLS_TIMEOUT_MS, "listTools timed out");
+    const result = { tools: await listAllRemoteTools(authorizedClient) };
     rememberDiscoveredTools(record, result.tools || []);
     record.status = "connected";
     record.error = undefined;
@@ -482,7 +669,12 @@ async function finishRemoteOAuthAuthorization(
  * every toolset. Credentials remain encrypted for future runs.
  */
 export async function closeMcpServers(): Promise<void> {
-  for (const srv of connectedServers.values()) {
+  shuttingDown = true;
+  lifecycleEpoch += 1;
+  reconnectController.cancelAll();
+  const records = Array.from(connectedServers.values());
+  connectedServers.clear();
+  for (const srv of records) {
     try {
       if (srv.cleanup) {
         await withTimeout(srv.cleanup(), MCP_CLEANUP_TIMEOUT_MS, "cleanup timeout");
@@ -504,32 +696,23 @@ export async function closeMcpServers(): Promise<void> {
       // Ignore disconnect errors.
     }
   }
-  connectedServers.clear();
-
-  if (loadedMcpTools.length > 0) {
-    const {
-      allTools,
-      masterToolset,
-      superagentToolset,
-      defaultSubagentToolset,
-      subagentToolsets,
-    } = await import("../tools/index.js");
-    const toRemoveNames = new Set(loadedMcpTools.map((tool) => tool.name));
-    const filterArray = (arr: any[]) => {
-      for (let i = arr.length - 1; i >= 0; i--) {
-        const item = arr[i];
-        const name = typeof item === "string" ? item : item?.name;
-        if (name && toRemoveNames.has(name)) arr.splice(i, 1);
+  await withRegistryLock(async () => {
+    if (loadedMcpTools.length === 0) return;
+    const { allTools, masterToolset, superagentToolset, chromeExtensionToolset,
+      defaultSubagentToolset, subagentToolsets } = await import("../tools/index.js");
+    const stale = new Set(loadedMcpTools);
+    const filterArray = (list: Tool[]) => {
+      for (let i = list.length - 1; i >= 0; i--) {
+        // Never remove built-in tools with coincidentally matching remote names.
+        if (stale.has(list[i])) list.splice(i, 1);
       }
     };
-    filterArray(allTools);
-    filterArray(masterToolset);
-    filterArray(superagentToolset);
-    filterArray(defaultSubagentToolset);
-    for (const key of Object.keys(subagentToolsets)) {
-      if (Array.isArray(subagentToolsets[key])) filterArray(subagentToolsets[key]);
+    for (const list of [allTools, masterToolset, superagentToolset,
+      chromeExtensionToolset, defaultSubagentToolset, ...Object.values(subagentToolsets)]) {
+      if (Array.isArray(list)) filterArray(list);
     }
     loadedMcpTools = [];
     registeredMcpToolNames.clear();
-  }
+    bumpToolRegistryVersion();
+  });
 }

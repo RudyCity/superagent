@@ -7,6 +7,7 @@ import os from "os";
 vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
   Client: class {
     connect = vi.fn().mockResolvedValue(undefined);
+    setNotificationHandler = vi.fn();
     listTools = vi.fn().mockResolvedValue({
       tools: [{
         name: "echo",

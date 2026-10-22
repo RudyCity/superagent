@@ -321,6 +321,9 @@ function validateMcpServerConfig(
   if (input.disabled !== undefined && !isBoolean(input.disabled)) {
     errors.push(`${path}.disabled: boolean required`);
   }
+  if (input.autoReconnect !== undefined && !isBoolean(input.autoReconnect)) {
+    errors.push(`${path}.autoReconnect: boolean required`);
+  }
   if (errors.length) return fail(errors);
   // Normalize legacy stdio entries at the JSON boundary so downstream code
   // can narrow the union on an explicit discriminator.

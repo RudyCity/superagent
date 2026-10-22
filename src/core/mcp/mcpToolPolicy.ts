@@ -39,7 +39,11 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   superagent_server_health: "safe",
   superagent_get_remote_status: "safe",
   superagent_export_session: "safe",
+  superagent_tool_search: "safe",
+  superagent_tool_describe: "safe",
+  superagent_tool_status: "safe",
   // ---- dangerous: mutation / execution / control ----
+  superagent_tool_execute: "dangerous",
   superagent_exec_command: "dangerous",
   superagent_write_file: "dangerous",
   superagent_write_files: "dangerous",
@@ -187,5 +191,7 @@ export interface McpServerOptions {
   getIdentity?: () => { mode: "static-bearer" | "oauth"; subject: string; scopes?: string[]; credentialHash?: string } | null;
   /** Optional workspace root for YOLO scope validation. Defaults to process.cwd(). */
   workspace?: string;
+  /** Full: all authorized tools (default); gateway: stable discovery + execution endpoints only. */
+  toolExposure?: "full" | "gateway";
 }
 

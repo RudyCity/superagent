@@ -99,6 +99,18 @@ describe("validateModelConfig (H7)", () => {
     expect(r.ok).toBe(false);
   });
 
+  it("accepts boolean autoReconnect and rejects non-boolean MCP reconnect settings", async () => {
+    const { validateModelConfig } = await import("../src/core/config/configSchema.js");
+    const valid = validateModelConfig({
+      mcpServers: { server: { transport: "stdio", command: "bun", autoReconnect: false } },
+    });
+    expect(valid.ok).toBe(true);
+    const invalid = validateModelConfig({
+      mcpServers: { server: { transport: "stdio", command: "bun", autoReconnect: "yes" } },
+    });
+    expect(invalid.ok).toBe(false);
+  });
+
   it("accepts a config with mcpServers array of valid entries", async () => {
     const { validateModelConfig } = await import(
       "../src/core/config/configSchema.js"

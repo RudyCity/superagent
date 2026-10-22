@@ -1,6 +1,7 @@
 import { Tool } from "./types.js";
 import { loadModelConfig, saveModelConfig } from "../config/jsonConfig.js";
-import { initMcpServers, connectedServers } from "../mcp/McpManager.js";
+import { initMcpServers, refreshMcpServerTools, reconnectMcpServer, connectedServers, getMcpConnectionDiagnostics } from "../mcp/McpManager.js";
+import { mcpToolMetrics } from "../mcp/mcpToolMetrics.js";
 
 export const manageMcpTool: Tool = {
   name: "manage_mcp",
@@ -10,8 +11,8 @@ export const manageMcpTool: Tool = {
     properties: {
       action: {
         type: "string",
-        enum: ["list", "add", "remove", "reload"],
-        description: "The action to perform: 'list' configured servers and status; 'add' a new server; 'remove' a server; 'reload' connections.",
+        enum: ["list", "add", "remove", "reload", "refresh", "reconnect", "stats"],
+        description: "The action to perform: 'list' configured servers and status; 'add' a new server; 'remove' a server; 'reload' all connections, or 'refresh' tools in-place, or 'reconnect' one server.",
       },
       name: {
         type: "string",
@@ -44,6 +45,10 @@ export const manageMcpTool: Tool = {
         items: { type: "string" },
         description: "Arguments to pass to the MCP server command. Optional for 'add'.",
       },
+      autoReconnect: {
+        type: "boolean",
+        description: "Reconnect after unexpected disconnect (default on; OAuth requires explicit opt-in).",
+      },
       env: {
         type: "object",
         additionalProperties: { type: "string" },
@@ -71,6 +76,9 @@ export const manageMcpTool: Tool = {
         const status = conn ? conn.status : "disconnected";
         const error = conn?.error ? ` (Error: ${conn.error})` : "";
         result += `- [${srvName}] | Status: ${status}${error}\n`;
+        const retry = getMcpConnectionDiagnostics(srvName);
+        if (retry.attempts > 0) result += `  Reconnect: attempt ${retry.attempts}; next delay: ${retry.nextDelayMs ?? "none"} ms
+`;
         if (!("command" in srvConfig)) {
           result += "  Transport: " + srvConfig.transport + "\n";
           result += "  URL: " + srvConfig.url + "\n";
@@ -106,6 +114,7 @@ export const manageMcpTool: Tool = {
           url,
           headersFromEnv: (args.headersFromEnv as Record<string, string>) || {},
           oauth: Boolean(args.oauth),
+          autoReconnect: typeof args.autoReconnect === "boolean" ? args.autoReconnect : undefined,
         };
       } else {
         if (!args.command) return "Error: 'command' is required for stdio MCP servers.";
@@ -114,6 +123,7 @@ export const manageMcpTool: Tool = {
           command: args.command as string,
           args: (args.args as string[]) || [],
           env: (args.env as Record<string, string>) || {},
+          autoReconnect: typeof args.autoReconnect === "boolean" ? args.autoReconnect : undefined,
         };
       }
       saveModelConfig(config);
@@ -137,6 +147,38 @@ export const manageMcpTool: Tool = {
       saveModelConfig(config);
       await initMcpServers();
       return `Successfully removed MCP server "${name}" and refreshed toolsets.`;
+    }
+
+    if (action === "stats") {
+      const metrics = mcpToolMetrics.snapshot(name || undefined).slice(0, 40);
+      if (!metrics.length) return "No MCP tool execution metrics recorded.";
+      return metrics.map((metric) =>
+        `${metric.tool}: calls=${metric.calls} failures=${metric.failures} avgMs=${Math.round(metric.totalDurationMs / metric.calls)} lastMs=${metric.lastDurationMs}`
+      ).join("\n");
+    }
+
+    if (action === "refresh") {
+      if (!name) return "Error: 'name' is required to refresh a single MCP server.";
+      const server = connectedServers.get(name.toLowerCase());
+      if (!server || server.status !== "connected") return `Error: MCP server "${name}" is not connected.`;
+      try {
+        const changed = await refreshMcpServerTools(name);
+        return `MCP server "${name}" tools ${changed ? "refreshed" : "already up to date"}; total: ${server.tools.length}.`;
+      } catch {
+        return `Error refreshing MCP server "${name}". Inspect MCP connection status for diagnostics.`;
+      }
+    }
+
+    if (action === "reconnect") {
+      if (!name) return "Error: 'name' is required to reconnect an MCP server.";
+      try {
+        const server = await reconnectMcpServer(name);
+        return server?.status === "connected"
+          ? `MCP server "${name}" reconnected; tools: ${server.tools.length}.`
+          : `MCP server "${name}" did not reconnect. Check the configuration and status.`;
+      } catch {
+        return `MCP server "${name}" reconnect failed. Check status for diagnostics.`;
+      }
     }
 
     if (action === "reload") {

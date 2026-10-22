@@ -32,7 +32,7 @@ export function getToolDiscoveryGuidance(tier: string, toolNames: string[], mode
   if (!["master", "single", "superagent"].includes(tier) || !toolNames.includes("describe_tool")) return "";
   if (mode === "ask") return ["# TOOL ACCESS", "- If evidence needs tools, describe_tool known names first." + (toolNames.includes("list_tools") ? " Use list_tools with one keyword only if names are unknown." : "") + " Only authorized tools; avoid unnecessary calls."].join(String.fromCharCode(10));
   const listNotice = toolNames.includes("list_tools")
-    ? "\n- For unknown tool names, call list_tools with one keyword (or no query), never a sentence."
+    ? "\n- For unknown capabilities, call list_tools({intent: task_summary}) for a short ranked list. Use query for one keyword or omit it for the catalog."
     : "";
   return "\n# TOOL DISCOVERY"
     + "\n- Call describe_tool({names:[\"tool1\",\"tool2\"]}) once for known tools. Invoke only authorized/described tools; discovery is not permission."
