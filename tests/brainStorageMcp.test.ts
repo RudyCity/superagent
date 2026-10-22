@@ -133,6 +133,28 @@ describe("SuperAgent MCP Brain storage parity", () => {
     expect((await call(principal, "cleanup.prepare", { sessionId: "old_session" })).preview.files).toBe(1);
   });
 
+  it("blocks scratch cleanup while an AGY job writes in nested task scratch", async () => {
+    const config = root();
+    const owner = "oauth:nested-owner";
+    const session = createBrainSession(owner, "nested_session");
+    const nested = path.join(session.scratchPath, "agents", "agy", "task_0123456789abcdefabcd");
+    fs.mkdirSync(nested, { recursive:true });
+    const other = path.join(session.path, "scratch-sibling");
+    fs.mkdirSync(other);
+    const shard = path.join(config, "cli-bridge", "delegations", "jobs.d");
+    const stamp = "1792638000000-0000000001-0123456789abcdef.json";
+    const nestedId = "clj_1792638000000_abcd1234";
+    const siblingId = "clj_1792638000000_aabb1122";
+    for (const [id,cwd] of [[nestedId,nested],[siblingId,other]]) {
+      const dir=path.join(shard,id);
+      fs.mkdirSync(dir,{recursive:true});
+      fs.writeFileSync(path.join(dir,stamp),JSON.stringify({jobId:id,cwd,status:"running"}));
+    }
+    expect((await call(owner,"cleanup.prepare",{sessionId:"nested_session"})).error).toMatch(/delegation/i);
+    fs.writeFileSync(path.join(shard,nestedId,stamp),JSON.stringify({jobId:nestedId,cwd:nested,status:"succeeded"}));
+    expect((await call(owner,"cleanup.prepare",{sessionId:"nested_session"})).preview).toBeTruthy();
+  });
+
   it("binds binary publish to owner/root/file/hash, refuses foreign token, overwrite, and replay", async () => {
     const r = root();
     const principal = "oauth:publish-a";

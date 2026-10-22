@@ -1,0 +1,40 @@
+import { afterEach,describe,it,expect } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { registerProject } from "../src/core/project/projectRegistry.js";
+import { createBrainSession } from "../src/core/brain/brainWorkspace.js";
+import { bindBrainProject } from "../src/core/brain/brainProvenance.js";
+import { createBrainTask,claimBrainTask,checkpointBrainTask } from "../src/core/brain/brainTasks.js";
+import { brainTaskContinuity } from "../src/core/brain/brainTaskContinuity.js";
+const dirs:string[]=[];
+afterEach(()=>{delete process.env.SUPERAGENT_CONFIG_DIR;for(const r of dirs.splice(0))fs.rmSync(r,{recursive:true,force:true})});
+describe("Brain checkpoint project isolation",()=>{
+ it("reuses bounded checkpoints from same project and excludes foreign project records",()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"brain-context-"));dirs.push(root);
+  process.env.SUPERAGENT_CONFIG_DIR=root;
+  const a=path.join(root,"workspaceA"),b=path.join(root,"workspaceB");
+  fs.mkdirSync(a);fs.mkdirSync(b);
+  registerProject({id:"ctx_a",name:"Project A",type:"local",root:a});
+  registerProject({id:"ctx_b",name:"Project B",type:"local",root:b});
+  const principal="local-cli";
+  const add=(sessionId:string,workingDir:string,note:string)=>{
+    createBrainSession(principal,sessionId);
+    bindBrainProject(principal,sessionId,workingDir);
+    const task=createBrainTask(principal,sessionId,note,["agy"]);
+    claimBrainTask(principal,sessionId,task.taskId,"agy");
+    checkpointBrainTask(principal,sessionId,task.taskId,"agy",note,"Review output");
+  };
+  add("projectA_previous",a,"A private checkpoint");
+  add("projectB_previous",b,"B private checkpoint");
+  createBrainSession(principal,"projectA_active");
+  bindBrainProject(principal,"projectA_active",a);
+  const results=brainTaskContinuity(principal,"projectA_active",a);
+  expect(results).toHaveLength(1);
+  expect(results[0].summary).toBe("A private checkpoint");
+  expect(JSON.stringify(results)).not.toContain("B private checkpoint");
+  expect(brainTaskContinuity(principal,"projectA_active",b)).toEqual([]);
+  createBrainSession(principal,"detached_session");
+  expect(brainTaskContinuity(principal,"detached_session",a)).toEqual([]);
+ });
+});

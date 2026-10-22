@@ -18,6 +18,8 @@ run(root, ["run", "build"]);
 run(root, ["--bun", "x", "vitest", "run",
   "tests/brainWorkspace.test.ts",
   "tests/brainTasks.test.ts",
+  "tests/brainTaskReconciler.test.ts",
+  "tests/brainTaskContinuity.test.ts",
   "tests/brainObservability.test.ts",
   "tests/brainReliability.test.ts",
   "tests/brainProvenance.test.ts",

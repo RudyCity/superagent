@@ -125,6 +125,8 @@ export function hasActiveBrainDelegation(configRoot: string, dir: string): boole
   if (!fs.existsSync(root)) return false;
   const scratch = path.join(dir, 'scratch');
   const canonicalScratch = fs.realpathSync.native(scratch);
+  const normalize = (value: string) => process.platform === 'win32' ? value.toLowerCase() : value;
+  const scratchPrefix = normalize(canonicalScratch.endsWith(path.sep) ? canonicalScratch : canonicalScratch + path.sep);
   const folders = fs.readdirSync(root, { withFileTypes: true });
   // Fail closed on unexpectedly huge or uninspectable delegation indexes.
   if (folders.length > 5000) throw new Error('Delegation index requires maintenance.');
@@ -143,7 +145,8 @@ export function hasActiveBrainDelegation(configRoot: string, dir: string): boole
         if (job?.jobId !== entry.name || typeof job?.cwd !== 'string' || typeof job?.status !== 'string') continue;
         if (!fs.existsSync(job.cwd)) continue;
         const canonicalCwd = fs.realpathSync.native(job.cwd);
-        if (process.platform === 'win32' ? canonicalCwd.toLowerCase() !== canonicalScratch.toLowerCase() : canonicalCwd !== canonicalScratch) break;
+        const normalizedCwd = normalize(canonicalCwd);
+        if (normalizedCwd !== normalize(canonicalScratch) && !normalizedCwd.startsWith(scratchPrefix)) break;
         if (['starting', 'running', 'cancelling'].includes(job.status)) return true;
         break;
       } catch { /* Check previous committed snapshot. */ }

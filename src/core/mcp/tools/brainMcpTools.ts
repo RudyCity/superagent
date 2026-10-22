@@ -24,6 +24,9 @@ import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainR
 import { promoteBrainDelegation } from "../../brain/brainDelegationArtifacts.js";
 import { recordBrainEvent, summarizeBrainEvents } from "../../brain/brainObservability.js";
 import { createBrainTask, listBrainTasks, inspectBrainTask, claimBrainTask, transferBrainTask, updateBrainTask, checkpointBrainTask, handoffBrainArtifact, resumeBrainTask, recordBrainTaskDelegation } from "../../brain/brainTasks.js";
+import { authorizeBrainTaskAgent, issueBrainTaskAgentCredentials } from "../../brain/brainAgentCredentials.js";
+import { reconcileBrainTask } from "../../brain/brainTaskReconciler.js";
+import { getDelegateJob } from "../../tools/cliBridgeDelegateJobs.js";
 
 export const BRAIN_MCP_TOOL_DEFS = [
   {
@@ -40,7 +43,8 @@ export const BRAIN_MCP_TOOL_DEFS = [
           "artifact.annotate", "artifact.search", "session.resume", "memory.candidate", "delegate.promote",
           "delegate.start", "delegate.get", "delegate.tail", "delegate.cancel", "delegate.jobs",
           "task.create", "task.list", "task.get", "task.claim", "task.status", "task.checkpoint",
-          "task.handoff", "task.transfer", "task.resume", "task.delegate.start", "task.autostart",
+          "task.handoff", "task.transfer", "task.resume", "task.reconcile", "task.delegate.start", "task.autostart",
+          "task.retry", "task.cancel.request",
         ] },
         sessionId: { type: "string", description: "Optional owner-scoped Brain ID; omit to use this MCP connection's Brain." },
         filePath: { type: "string", description: "Relative file under scratch/, artifacts/ or evidence/." },
@@ -54,6 +58,7 @@ export const BRAIN_MCP_TOOL_DEFS = [
         cli: { type: "string", enum: ["agy", "claude", "codex"] },
         prompt: { type: "string", maxLength: 15000 },
         jobId: { type: "string" },
+        sourceArtifactPath: { type: "string", description: "Optional verified delegate output path to select when a job produced multiple artifacts." },
         expectedArtifacts: { type: "array", maxItems: 12, items: { type: "string" } },
         timeoutMs: { type: "number", minimum: 1000, maximum: 7200000 },
         transferId: { type: "string" },
@@ -65,6 +70,7 @@ export const BRAIN_MCP_TOOL_DEFS = [
         title: { type: "string", maxLength: 160 },
         taskId: { type: "string" },
         agentId: { type: "string" },
+        agentCredential: { type: "string", description: "One-time-issued task-scoped credential for mutating a specific agent's task; never include it in prompts, logs or checkpoints." },
         agentIds: { type: "array", maxItems: 12, items: { type: "string" } },
         toAgent: { type: "string" },
         status: { type: "string", enum: ["running", "blocked", "completed", "cancelled"] },
@@ -171,11 +177,13 @@ async function dispatchBrainMcpToolInternal(
     }
     if (action.startsWith("task.")) {
       if (action === "task.autostart") {
+        createBrainSession(principal,id);
         const cli=String(args.cli || "");
         const prompt=args.prompt;
         if(!["agy","claude","codex"].includes(cli)||typeof prompt!=="string"||!prompt.trim()||prompt.length>15000)
           throw new Error("Auto-task delegation needs a CLI and non-empty prompt.");
         const task=createBrainTask(principal,id,prompt.trim().slice(0,120),["main",cli]);
+        const credentials=issueBrainTaskAgentCredentials(principal,id,task.taskId);
         const {scratchPath}=claimBrainTask(principal,id,task.taskId,cli);
         const output=await cliBridgeTool.execute({
           action:"delegate.start",cli,prompt,skillAutoDetect:false,injectArtifacts:false,
@@ -185,21 +193,74 @@ async function dispatchBrainMcpToolInternal(
         },scratchPath);
         const match=String(output).match(/clj_\d+_[a-f0-9]{8,32}/);
         if(match)recordBrainTaskDelegation(principal,id,task.taskId,cli,cli,match[0]);
-        return result({taskId:task.taskId,scratchPath,delegate:output});
+        return result({taskId:task.taskId,scratchPath,delegate:output,agentCredential:credentials[cli]});
       }
       const taskId = String(args.taskId || "");
       const agentId = String(args.agentId || "");
+      if (!["task.create","task.list","task.get","task.resume","task.reconcile"].includes(action)) {
+        authorizeBrainTaskAgent(principal,id,taskId,agentId,args.agentCredential);
+      }
       switch (action) {
-        case "task.create": return result(createBrainTask(principal, id, String(args.title || ""), Array.isArray(args.agentIds) ? args.agentIds as string[] : ["main"]));
+        case "task.create": {
+          const task=createBrainTask(principal, id, String(args.title || ""), Array.isArray(args.agentIds) ? args.agentIds as string[] : ["main"]);
+          return result({ ...task, credentials:issueBrainTaskAgentCredentials(principal,id,task.taskId) });
+        }
         case "task.list": return result(listBrainTasks(principal, id));
         case "task.get": return result(inspectBrainTask(principal, id, taskId));
-        case "task.resume": return result(resumeBrainTask(principal, id, taskId));
+        case "task.reconcile": return result(await reconcileBrainTask(principal,id,taskId));
+        case "task.resume": {
+          const reconciliation=await reconcileBrainTask(principal,id,taskId);
+          return result({...resumeBrainTask(principal,id,taskId),reconciliation});
+        }
         case "task.claim": return result(claimBrainTask(principal, id, taskId, agentId));
-        case "task.status": return result(updateBrainTask(principal, id, taskId, agentId, String(args.status || "") as "running"|"blocked"|"completed"|"cancelled"));
+        case "task.status": {
+          const next=String(args.status||"");
+          if(["completed","cancelled"].includes(next)) {
+            const latest=inspectBrainTask(principal,id,taskId).delegationJobs?.at(-1);
+            if(latest) {
+              const active=await getDelegateJob(latest.jobId);
+              if(!active) throw new Error("Delegation status unavailable; reconcile before finalizing.");
+              if(["starting","running","cancelling"].includes(active.status)) {
+                throw new Error("Cannot finish a task while its CLI Bridge delegation is active; cancel or reconcile first.");
+              }
+            }
+          }
+          return result(updateBrainTask(principal,id,taskId,agentId,next as "running"|"blocked"|"completed"|"cancelled"));
+        }
         case "task.checkpoint": return result(checkpointBrainTask(principal, id, taskId, agentId,
           String(args.note || ""), String(args.nextStep || ""), Array.isArray(args.artifactPaths) ? args.artifactPaths as string[] : []));
         case "task.handoff": return result(handoffBrainArtifact(principal, id, taskId, agentId, String(args.toAgent || ""), String(args.filePath || "")));
         case "task.transfer": return result(transferBrainTask(principal, id, taskId, agentId, String(args.toAgent || "")));
+        case "task.cancel.request": {
+          const task=inspectBrainTask(principal,id,taskId);
+          const last=task.delegationJobs?.at(-1);
+          if(task.assignedTo!==agentId || !last || last.agentId!==agentId) throw new Error("No authorized active task delegation.");
+          const job=await getDelegateJob(last.jobId);
+          if(!job || !["starting","running","cancelling"].includes(job.status)) throw new Error("Delegation is not active.");
+          const expected=path.join(getBrainScratchPath(principal,id),"agents",agentId,taskId);
+          if(fs.realpathSync.native(job.cwd)!==fs.realpathSync.native(expected)) throw new Error("Delegation cwd does not match the claimed task.");
+          return result(await cliBridgeTool.execute({action:"delegate.cancel",jobId:last.jobId},expected));
+        }
+        case "task.retry": {
+          const task=inspectBrainTask(principal,id,taskId);
+          const last=task.delegationJobs?.at(-1);
+          const cli=String(args.cli||"");
+          const prompt=args.prompt;
+          if(task.assignedTo!==agentId || task.status!=="blocked" || !last || last.agentId!==agentId) throw new Error("Only a blocked task's owner may retry.");
+          if(!["agy","claude","codex"].includes(cli) || typeof prompt!=="string" || !prompt.trim() || prompt.length>15000) throw new Error("Retry needs a valid CLI and a new prompt.");
+          const previous=await getDelegateJob(last.jobId);
+          if(!previous) throw new Error("Previous job status unavailable; operator recovery is required before retry.");
+          if(["starting","running","cancelling"].includes(previous.status)) throw new Error("Previous delegation is still active.");
+          const scratch=path.join(getBrainScratchPath(principal,id),"agents",agentId,taskId);
+          const jobResponse=await cliBridgeTool.execute({action:"delegate.start",cli,prompt,skillAutoDetect:false,injectArtifacts:false,permissionMode:"accept-edits",
+            ...(Array.isArray(args.expectedArtifacts)?{expectedArtifacts:args.expectedArtifacts}:{}),
+            ...(args.timeoutMs!==undefined?{timeoutMs:args.timeoutMs}:{})},scratch);
+          const match=String(jobResponse).match(/clj_\d+_[a-f0-9]{8,32}/);
+          if(!match) throw new Error("Retry delegation did not return an accepted job ID.");
+          updateBrainTask(principal,id,taskId,agentId,"running");
+          recordBrainTaskDelegation(principal,id,taskId,agentId,cli,match[0]);
+          return result({taskId,jobId:match[0],retry:true});
+        }
         case "task.delegate.start": {
           const task = inspectBrainTask(principal, id, taskId);
           if (task.assignedTo !== agentId || task.status !== "running") throw new Error("Delegate requires an actively claimed agent task.");
@@ -271,7 +332,7 @@ async function dispatchBrainMcpToolInternal(
       case "artifact.search": return result(searchBrainArtifacts(principal, String(args.query || "")));
       case "session.resume": return result(brainResumeContext(principal, id));
       case "memory.candidate": return result(brainRMemoryCandidate(principal, id, String(args.filePath || "")));
-      case "delegate.promote": return result(await promoteBrainDelegation(principal, id, String(args.jobId || ""), typeof args.filename === "string" ? args.filename : undefined));
+      case "delegate.promote": return result(await promoteBrainDelegation(principal, id, String(args.jobId || ""), typeof args.filename === "string" ? args.filename : undefined, typeof args.sourceArtifactPath==="string"?args.sourceArtifactPath:undefined));
       default: throw new Error("Unsupported brain action.");
     }
   } catch (error: any) {
