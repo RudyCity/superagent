@@ -5,19 +5,25 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
 const superRoot = path.resolve(import.meta.dir, "..");
 const tline = path.resolve(import.meta.dir, "../../t-line/backend/src");
 const modules = [
+  { source: "brainSessionLock.ts", imports: [] },
   { source: "brainStorageManager.ts", imports: [
       ["import { getRootConfigDir } from '../config/paths.js';\nimport { inspectBrainSession, listBrainSessions } from './brainWorkspace.js';",
        "import { getRootConfigDir, inspectBrainSession, listBrainSessions } from './brainRuntimeCompat';"],
+      ["import { withBrainSessionLock } from './brainSessionLock.js';",
+       "import { withBrainSessionLock } from './brainSessionLock';"],
     ]},
   { source: "brainTransfers.ts", imports: [
       ["import { inspectBrainSession } from \"./brainWorkspace.js\";", "import { inspectBrainSession } from \"./brainRuntimeCompat\";"],
       ["import { getRootConfigDir } from \"../config/paths.js\";", "import { getRootConfigDir } from \"./brainRuntimeCompat\";"],
       ["import { brainStorageUsage, validateDestination, assertNoSymlink } from \"./brainStorageManager.js\";",
        "import { brainStorageUsage, validateDestination, assertNoSymlink } from \"./brainStorageManager\";"],
+      ["import { withBrainSessionLock } from \"./brainSessionLock.js\";",
+       "import { withBrainSessionLock } from \"./brainSessionLock\";"],
     ]},
   { source: "brainIndex.ts", imports: [
       ["import { getRootConfigDir } from \"../config/paths.js\";", "import { getRootConfigDir } from \"./brainRuntimeCompat\";"],
@@ -28,6 +34,7 @@ const modules = [
     ]},
 ];
 const check = process.argv.includes("--check");
+const hashes: Record<string,string> = {};
 for (const item of modules) {
   const canonical = path.join(superRoot, "src", "core", "brain", item.source);
   const destination = path.join(tline, item.source);
@@ -42,6 +49,7 @@ for (const item of modules) {
   const generated =
     `// GENERATED FROM SuperAgent src/core/brain/${item.source}; DO NOT EDIT.\n` +
     "// Regenerate using bun scripts/sync-brain-runtime.ts\n" + body;
+  hashes[item.source] = crypto.createHash("sha256").update(generated).digest("hex");
   if (check) {
     if (!fs.existsSync(destination) ||
       fs.readFileSync(destination,"utf8").replace(/\r\n/g,"\n") !== generated) {
@@ -52,4 +60,11 @@ for (const item of modules) {
     fs.writeFileSync(destination,generated);
   }
 }
+const manifestPath = path.join(tline, "brain-runtime-manifest.json");
+const manifest = JSON.stringify({schemaVersion:1, files:hashes}, null, 2) + "\n";
+if (check) {
+  if (!fs.existsSync(manifestPath) || fs.readFileSync(manifestPath,"utf8").replace(/\r\n/g,"\n") !== manifest) {
+    throw new Error("T-Line Brain manifest is out of sync.");
+  }
+} else fs.writeFileSync(manifestPath, manifest);
 console.log(check ? "T-Line Brain Core runtime synchronized." : "Generated T-Line Brain Core storage, transfers, and index.");

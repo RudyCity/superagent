@@ -6,6 +6,7 @@ import {
   createBrainSession, inspectBrainSession, listBrainSessions, listBrainFiles,
   writeBrainFile, readBrainFile, cleanBrainScratch,
 } from "../src/core/brain/brainWorkspace.js";
+import { prepareBrainCleanup, confirmBrainCleanup } from "../src/core/brain/brainStorageManager.js";
 
 const roots: string[] = [];
 function tempRoot() { const root = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-brain-")); roots.push(root); return root; }
@@ -52,7 +53,11 @@ describe("SuperAgent session Brain", () => {
     writeBrainFile("oauth:a", "clean", "scratch/temp.txt", "scratch", false, root);
     writeBrainFile("oauth:a", "clean", "artifacts/result.txt", "keep", false, root);
     expect(() => cleanBrainScratch("oauth:a", "clean", "wrong", root)).toThrow();
-    cleanBrainScratch("oauth:a", "clean", "clean", root);
+    expect(() => cleanBrainScratch("oauth:a", "clean", "clean", root)).toThrow(/disabled/);
+    const dir = inspectBrainSession("oauth:a", "clean", root).path;
+    const authorization = "Bearer operator_testing_token_for_brain";
+    const preview = prepareBrainCleanup(authorization, "clean", dir, root);
+    confirmBrainCleanup(authorization, "clean", preview.challenge, dir, root);
     expect(readBrainFile("oauth:a", "clean", "artifacts/result.txt", root)).toBe("keep");
     expect(listBrainFiles("oauth:a", "clean", root).map(x => x.path)).toEqual(["artifacts/result.txt"]);
   });

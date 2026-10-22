@@ -19,6 +19,29 @@ export interface BrainRecord {
   bytes: number;
 }
 type Index = { schemaVersion: 1; records: BrainRecord[] };
+const verificationCache = new Map<string, { sha256: string; checkedAt: number }>();
+const MAX_SEARCH_HASH_BYTES = 40 * 1024 * 1024;
+function verifyIndexedFile(fullPath: string, expected: string, stat: fs.Stats): { valid: boolean; hashedBytes: number } {
+  const key = fullPath + ":" + stat.size + ":" + stat.mtimeMs + ":" + stat.ctimeMs;
+  const prior = verificationCache.get(key);
+  if (prior && Date.now() - prior.checkedAt < 30000) return { valid: prior.sha256 === expected, hashedBytes: 0 };
+  const hash = crypto.createHash("sha256");
+  const buffer = Buffer.allocUnsafe(64 * 1024);
+  const fd = fs.openSync(fullPath, "r");
+  try {
+    let position = 0;
+    while (position < stat.size) {
+      const bytes = fs.readSync(fd, buffer, 0, Math.min(buffer.length, stat.size - position), position);
+      if (!bytes) throw new Error("Unexpected EOF while verifying Brain artifact.");
+      hash.update(buffer.subarray(0, bytes));
+      position += bytes;
+    }
+  } finally { fs.closeSync(fd); }
+  const digest = hash.digest("hex");
+  if (verificationCache.size >= 128) verificationCache.delete(verificationCache.keys().next().value!);
+  verificationCache.set(key, { sha256: digest, checkedAt: Date.now() });
+  return { valid: digest === expected, hashedBytes: stat.size };
+}
 function paths(owner: string, id: string, root = getRootConfigDir()) {
   const dir = inspectBrainSession(owner, id, root).path;
   const index = path.join(dir, "artifact-index.json");
@@ -69,6 +92,7 @@ export function searchBrainArtifacts(owner: string, query: string, root = getRoo
   const term = query.trim().toLowerCase();
   if (!term) return [];
   const found: Array<BrainRecord & { sessionId: string; verified: boolean }> = [];
+  let hashBudget = MAX_SEARCH_HASH_BYTES;
   for (const session of listBrainSessions(owner, root)) {
     try {
       const { dir, index } = paths(owner, session.sessionId, root);
@@ -80,8 +104,10 @@ export function searchBrainArtifacts(owner: string, query: string, root = getRoo
         if (!fs.existsSync(file)) continue;
         const stat = fs.lstatSync(file);
         if (!stat.isFile() || stat.nlink !== 1 || stat.size !== record.bytes) continue;
-        const currentSha = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
-        if (currentSha !== record.sha256) continue;
+        if (stat.size > hashBudget) continue;
+        const verification = verifyIndexedFile(file, record.sha256, stat);
+        hashBudget -= verification.hashedBytes;
+        if (!verification.valid) continue;
         found.push({ ...record, sessionId: session.sessionId, verified: true });
         if (found.length >= 50) return found;
       }

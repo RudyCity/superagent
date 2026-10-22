@@ -19,7 +19,7 @@ import {
 } from "../../brain/brainStorageManager.js";
 import { getRootConfigDir } from "../../config/paths.js";
 import { cliBridgeTool } from "../../tools/cliBridgeTool.js";
-import { beginBrainTransfer, inspectBrainTransfer, appendBrainTransfer, finishBrainTransfer, abortBrainTransfer } from "../../brain/brainTransfers.js";
+import { beginBrainTransfer, inspectBrainTransfer, appendBrainTransfer, finishBrainTransfer, abortBrainTransfer, cleanupBrainTransfers } from "../../brain/brainTransfers.js";
 import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainRMemoryCandidate } from "../../brain/brainIndex.js";
 import { promoteBrainDelegation } from "../../brain/brainDelegationArtifacts.js";
 
@@ -34,7 +34,7 @@ export const BRAIN_MCP_TOOL_DEFS = [
           "create", "current", "inspect", "list", "files", "read", "write",
           "storage", "retention.preview", "cleanup.prepare", "cleanup.confirm",
           "artifact.import", "artifact.read", "cleanup",
-          "transfer.begin", "transfer.status", "transfer.append", "transfer.finish", "transfer.abort",
+          "transfer.begin", "transfer.status", "transfer.append", "transfer.finish", "transfer.abort", "transfer.gc",
           "artifact.annotate", "artifact.search", "session.resume", "memory.candidate", "delegate.promote",
           "delegate.start", "delegate.get", "delegate.tail", "delegate.cancel", "delegate.jobs",
         ] },
@@ -199,6 +199,7 @@ export async function dispatchBrainMcpTool(
       case "transfer.append": return result(appendBrainTransfer(principal, id, String(args.transferId || ""), Number(args.offset), args.base64));
       case "transfer.finish": return result(finishBrainTransfer(principal, id, String(args.transferId || "")));
       case "transfer.abort": return result(abortBrainTransfer(principal, id, String(args.transferId || "")));
+      case "transfer.gc": return result(cleanupBrainTransfers(principal, id));
       case "artifact.annotate": return result(annotateBrainArtifact(principal, id, String(args.filePath || ""), String(args.summary || ""), args.tags as string[] | undefined));
       case "artifact.search": return result(searchBrainArtifacts(principal, String(args.query || "")));
       case "session.resume": return result(brainResumeContext(principal, id));

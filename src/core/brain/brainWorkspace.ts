@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { getRootConfigDir } from "../config/paths.js";
+import { withBrainSessionLock } from "./brainSessionLock.js";
 
 export type BrainArea = "scratch" | "artifacts" | "evidence";
 export interface BrainManifest {
@@ -150,6 +151,7 @@ export function writeBrainFile(
     throw new Error("Brain file exceeds 256 KiB text write limit.");
   }
   const { dir } = existingSession(owner, sessionId, configRoot);
+  return withBrainSessionLock(dir, () => {
   const target = path.join(dir, safeRelativeFile(relativePath));
   rejectSymlinkComponents(dir, target);
   if (!overwrite && fs.existsSync(target)) throw new Error("Brain file exists; set overwrite=true.");
@@ -168,6 +170,7 @@ export function writeBrainFile(
     if (fs.existsSync(temp)) fs.unlinkSync(temp);
   }
   return { sessionId, relativePath: relativePath.replace(/\\/g, "/"), bytes: Buffer.byteLength(content, "utf8") };
+  });
 }
 
 export function getBrainScratchPath(owner: string, sessionId: string, configRoot = getRootConfigDir()): string {
@@ -187,6 +190,8 @@ export function publishBrainArtifact(
   owner: string, sessionId: string, filePath: string, projectRoot: string,
   destinationPath: string, configRoot = getRootConfigDir(),
 ) {
+  throw new Error("Direct publish disabled. Use superagent_brain_publish prepare/confirm with project authorization.");
+  /* Legacy body intentionally unreachable.
   if (!filePath.startsWith("artifacts/")) throw new Error("Only artifacts/ files may be published.");
   const source = path.join(existingSession(owner, sessionId, configRoot).dir, safeRelativeFile(filePath));
   rejectSymlinkComponents(sessionDir(owner, sessionId, configRoot), source);
@@ -217,15 +222,10 @@ export function publishBrainArtifact(
   fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
   const hash = crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex");
   return { sessionId, filePath, destinationPath, bytes: stat.size, sha256: hash, published: true };
+  */
 }
 
-export function cleanBrainScratch(owner: string, sessionId: string, confirmation: string, configRoot = getRootConfigDir()) {
-  if (confirmation !== sessionId) throw new Error("Confirm cleanup with the exact sessionId.");
-  const { dir } = existingSession(owner, sessionId, configRoot);
-  const scratch = path.join(dir, "scratch");
-  rejectSymlinkComponents(dir, scratch);
-  // Artifacts/evidence and the manifest intentionally survive cleanup.
-  fs.rmSync(scratch, { recursive: true, force: true });
-  fs.mkdirSync(scratch, { mode: 0o700 });
-  return { sessionId, cleaned: "scratch", retained: ["artifacts", "evidence", "manifest.json"] };
+/** Legacy one-step cleanup is disabled. All clients must use two-stage approval. */
+export function cleanBrainScratch(_owner: string, _sessionId: string, _confirmation: string, _configRoot = getRootConfigDir()): never {
+  throw new Error("Direct cleanup disabled. Use cleanup.prepare and cleanup.confirm.");
 }

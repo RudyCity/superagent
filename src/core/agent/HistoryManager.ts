@@ -4,6 +4,7 @@ import { getRMemoryClient, getRMemoryProjectId, getRMemorySessionKey, isRmemoryA
 import { contentToString } from "../conversation.js";
 import type { Agent } from "../agent.js";
 import { createBrainSession } from "../brain/brainWorkspace.js";
+import { bindBrainProject } from "../brain/brainProvenance.js";
 
 function bindBrainToSession(agent: Agent): void {
   // Only owner-facing conversation sessions allocate a persistent Brain.
@@ -13,6 +14,7 @@ function bindBrainToSession(agent: Agent): void {
   if (!agent.sessionId) return;
   try {
     createBrainSession("local-cli", agent.sessionId);
+    bindBrainProject("local-cli", agent.sessionId, agent.workingDirectory);
   } catch (error) {
     agent.writeToLogFile("WARN", `Brain workspace initialization failed: ${error instanceof Error ? error.message : String(error)}`);
   }

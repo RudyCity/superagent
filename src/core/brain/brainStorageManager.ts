@@ -7,6 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { getRootConfigDir } from '../config/paths.js';
 import { inspectBrainSession, listBrainSessions } from './brainWorkspace.js';
+import { withBrainSessionLock } from './brainSessionLock.js';
 
 const MAX_SCAN_ENTRIES = 5000;
 const MAX_BINARY_BYTES = 20 * 1024 * 1024;
@@ -171,6 +172,7 @@ export function confirmBrainCleanup(authorization: unknown, sessionId: string, c
   challengeStore.delete(challenge); // One-time regardless of validation outcome.
   if (!entry || entry.action !== 'clean-scratch' || entry.owner !== claimOwner(authorization) ||
       entry.sessionId !== sessionId || Date.now() >= entry.expiresAt) throw new Error('Invalid or expired Brain cleanup confirmation.');
+  return withBrainSessionLock(dir, () => {
   if (hasActiveBrainDelegation(configRoot, dir)) throw new Error('Delegation began while cleanup was pending.');
   const scratch = scanBrainArea(dir, 'scratch');
   if (scratch.fingerprint !== entry.fingerprint) throw new Error('Brain scratch changed since preview; refresh required.');
@@ -180,6 +182,7 @@ export function confirmBrainCleanup(authorization: unknown, sessionId: string, c
   fs.rmSync(directory, { recursive: true, force: true });
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   return { success: true, sessionId, reclaimedBytes: entry.bytes, retained: ['artifacts/', 'evidence/', 'manifest.json'] };
+  });
 }
 
 const IMPORT_EXTENSIONS = new Set([
@@ -190,13 +193,27 @@ export function importBrainBinaryArtifact(dir: string, fileName: string, content
   if (!Buffer.isBuffer(content) || content.length === 0 || content.length > 5 * 1024 * 1024) {
     throw new Error('Binary import must be 1 byte–5 MiB.');
   }
+  return withBrainSessionLock(dir, () => {
   const relative = validateDestination('artifacts/' + fileName);
   if (fileName.includes('/') || fileName.includes('\\') ||
     !IMPORT_EXTENSIONS.has(path.extname(fileName).toLowerCase())) throw new Error('Unsupported artifact filename or type.');
   const destination = path.join(dir, relative);
   assertNoSymlink(dir, destination);
   const storage = brainStorageUsage(dir);
-  if (storage.totalBytes + content.length > 50 * 1024 * 1024) throw new Error('Brain storage quota exceeded (50 MiB).');
+  const reservationDir = path.join(dir, '.transfers');
+  let reserved = 0;
+  if (fs.existsSync(reservationDir)) {
+    for (const entry of fs.readdirSync(reservationDir)) {
+      if (!/^btx_[a-f0-9]{32}\.json$/.test(entry)) continue;
+      const meta = path.join(reservationDir, entry);
+      assertNoSymlink(dir, meta);
+      const transfer = JSON.parse(fs.readFileSync(meta, 'utf8'));
+      if (!Number.isSafeInteger(transfer.totalBytes) || transfer.totalBytes < 1 ||
+        transfer.totalBytes > MAX_BINARY_BYTES) throw new Error('Invalid Brain storage reservation.');
+      reserved += transfer.totalBytes;
+    }
+  }
+  if (storage.totalBytes + reserved + content.length > 50 * 1024 * 1024) throw new Error('Brain storage quota exceeded (50 MiB).');
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   assertNoSymlink(dir, destination);
   const fd = fs.openSync(destination, 'wx', 0o600);
@@ -205,6 +222,7 @@ export function importBrainBinaryArtifact(dir: string, fileName: string, content
   fs.closeSync(fd);
   return { success: true, filePath: 'artifacts/' + fileName, bytes: content.length,
     sha256: crypto.createHash('sha256').update(content).digest('hex') };
+  });
 }
 
 export function prepareBrainPublish(
@@ -246,6 +264,7 @@ export function confirmBrainPublish(
   if (!authorized) throw new Error('Registered project access was revoked.');
   const canonicalRoot = fs.realpathSync.native(projectRoot);
   if (canonicalRoot !== entry.projectRoot) throw new Error('Project root changed since preview.');
+  return withBrainSessionLock(dir, () => {
   const source = path.join(dir, validateDestination(entry.filePath!));
   assertNoSymlink(dir, source);
   const stat = fs.lstatSync(source);
@@ -265,4 +284,5 @@ export function confirmBrainPublish(
   catch (error) { fs.closeSync(fd); try { fs.unlinkSync(target); } catch {} throw error; }
   fs.closeSync(fd);
   return { success: true, sessionId, destinationPath: entry.destinationPath, bytes: bytes.length, sha256: entry.fingerprint };
+  });
 }

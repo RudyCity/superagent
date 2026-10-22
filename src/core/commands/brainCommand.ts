@@ -9,6 +9,7 @@ import { cliBridgeTool } from "../tools/cliBridgeTool.js";
 import { brainStorageUsage, previewBrainRetention, prepareBrainCleanup, confirmBrainCleanup } from "../brain/brainStorageManager.js";
 import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainRMemoryCandidate } from "../brain/brainIndex.js";
 import { promoteBrainDelegation } from "../brain/brainDelegationArtifacts.js";
+import { verifyBrainProject } from "../brain/brainProvenance.js";
 
 export const brainCommand: SlashCommand = {
   name: "brain",
@@ -54,6 +55,7 @@ export const brainCommand: SlashCommand = {
         case "remember": {
           if (!currentSessionId || !tokens[1]) throw new Error("Usage: /brain remember <artifacts/file> (current session, explicit RMemory write)");
           const candidate = brainRMemoryCandidate(owner, currentSessionId, tokens[1]);
+          const project = verifyBrainProject(owner, currentSessionId, ctx.agent?.workingDirectory || process.cwd());
           const { rmemorySaveTool } = await import("../tools/rmemoryTools.js");
           const result = await rmemorySaveTool.execute({
             id: candidate.assertionKey,
@@ -62,7 +64,7 @@ export const brainCommand: SlashCommand = {
             scope: "project",
             assertionKey: candidate.assertionKey,
             retentionClass: candidate.retentionClass,
-          }, ctx.agent?.workingDirectory || process.cwd());
+          }, project.canonicalRoot);
           say(result);
           break;
         }
