@@ -55,6 +55,23 @@ describe("Motion effects catalog HTTP contract", () => {
     expect((await fetch(urlBase + "/api/motion/effects?offset=-1")).status).toBe(400);
     expect((await fetch(urlBase + "/api/motion/effects?targetKind=bogus")).status).toBe(400);
   });
+  it("returns a validated, nonpersistent effect preview and rejects stale revisions", async () => {
+    const project = await createMotionProject(workspace, "Single effect preview");
+    const endpoint = urlBase + "/api/motion/projects/" + project.id + "/effects/preview";
+    const send = (body: object) => fetch(endpoint, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const args = { effectId: "entrance-slide-left", targetLayerId: project.composition.layers[0].id, baseRevision: 1, durationFrames: 30 };
+    const ok = await send(args);
+    expect(ok.status).toBe(200);
+    const body = await ok.json() as any;
+    expect(body.composition.layers[0].tracks.length).toBeGreaterThan(0);
+    expect(body.revision).toBe(1);
+    expect((await getMotionProject(workspace, project.id)).composition).toEqual(project.composition);
+    expect((await send({ ...args, baseRevision: 999 })).status).toBe(409);
+    expect((await send({ ...args, params: { unsupported: true } })).status).toBe(400);
+    expect((await send({ ...args, startFrame: "0" })).status).toBe(400);
+  });
   it("applies effects with revision control and rejects unknown/invalid parameters without mutations", async () => {
     const project = await createMotionProject(workspace, "HTTP effects project");
     const endpoint = urlBase + "/api/motion/projects/" + project.id + "/effects";

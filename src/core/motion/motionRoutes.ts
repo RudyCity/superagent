@@ -95,6 +95,7 @@ export async function handleMotionHttpRoute(
   const effectsList = pathname === "/api/motion/effects";
   const effectItem = pathname.match(/^\/api\/motion\/effects\/([a-z][a-z0-9-]{1,63})$/);
   const projectEffects = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects$/);
+  const previewEffect = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects\/preview$/);
 
   try {
     if (pathname === "/api/motion" && method === "GET") {
@@ -260,6 +261,30 @@ export async function handleMotionHttpRoute(
           intensity: body.intensity as number | undefined,
         });
       json(res, ctx, 200, updated);
+    } else if (previewEffect && method === "POST") {
+      const body = await readMotionJson(req, 5_000);
+      if (typeof body.effectId !== "string") throw new Error("effectId is required");
+      if (!Number.isSafeInteger(body.baseRevision)) throw new Error("baseRevision must be a safe integer");
+      if (body.targetLayerId !== undefined && typeof body.targetLayerId !== "string")
+        throw new Error("targetLayerId must be a string");
+      if (body.params !== undefined && (!body.params || typeof body.params !== "object" || Array.isArray(body.params)))
+        throw new Error("Effect params must be an object");
+      if (body.startFrame !== undefined && !Number.isSafeInteger(body.startFrame))
+        throw new Error("Effect startFrame must be an integer");
+      if (body.durationFrames !== undefined && !Number.isSafeInteger(body.durationFrames))
+        throw new Error("Effect durationFrames must be an integer");
+      const current = await getMotionProject(workspace, previewEffect[1]);
+      if (current.revision !== body.baseRevision) {
+        json(res, ctx, 409, { error: "Motion revision conflict; reload before preview" });
+      } else {
+        const preview = effectRegistry.applyToProject(current, {
+          effectId: body.effectId, targetLayerId: body.targetLayerId as string | undefined,
+          params: body.params as Record<string, unknown> | undefined,
+          startFrame: body.startFrame as number | undefined,
+          durationFrames: body.durationFrames as number | undefined,
+        });
+        json(res, ctx, 200, preview);
+      }
     } else if (projectEffects && method === "POST") {
       const body = await readMotionJson(req);
       if (typeof body.effectId !== "string") throw new Error("effectId is required");
