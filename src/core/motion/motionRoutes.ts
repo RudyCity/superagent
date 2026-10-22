@@ -30,6 +30,9 @@ import { resizeMotionComposition, type MotionOutputAspect } from "./motionResize
 import { getMotionBrandKit, saveMotionBrandKit, type MotionBrandKitInput } from "./motionBrandKit.js";
 import { compileMotionTemplate, listMotionTemplates } from "./motionTemplates.js";
 import { createMotionBatchVariants } from "./motionBatchVariants.js";
+import { compileMotionBeatSync } from "./motionBeatSync.js";
+import { convertMotionJobArtifact } from "./motionExportFormats.js";
+import { applyMotionEdits } from "./project/revisions.js";
 
 export interface MotionHttpContext {
   resolveWorkspacePath: (req: IncomingMessage) => string | null;
@@ -91,6 +94,7 @@ export async function handleMotionHttpRoute(
   const cancel = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/cancel$/);
   const recovery = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/recovery$/);
   const artifact = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/artifact$/);
+  const extraExport = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/exports\/(gif|webm)$/);
   const asset = pathname.match(/^\/api\/motion\/assets\/(asset-[a-f0-9]{64})$/);
   const audio = pathname.match(/^\/api\/motion\/audio\/(audio-[a-f0-9]{64})$/);
   const waveform = pathname.match(/^\/api\/motion\/audio\/(audio-[a-f0-9]{64})\/waveform$/);
@@ -102,6 +106,7 @@ export async function handleMotionHttpRoute(
   const templatesList = pathname === "/api/motion/templates";
   const projectTemplateRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/templates(?:\/(preview))?$/);
   const batchVariants = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/variants$/);
+  const beatSync = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/beat-sync(?:\/(preview))?$/);
   const effectsList = pathname === "/api/motion/effects";
   const effectItem = pathname.match(/^\/api\/motion\/effects\/([a-z][a-z0-9-]{1,63})$/);
   const projectEffects = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects$/);
@@ -251,6 +256,26 @@ export async function handleMotionHttpRoute(
         body.baseRevision as number, body.revision as number));
     } else if (project && method === "GET") {
       json(res, ctx, 200, await getMotionProject(workspace, project[1]));
+    } else if (beatSync && method === "POST") {
+      const body = await readMotionJson(req, 2000);
+      if (!Number.isSafeInteger(body.baseRevision) || typeof body.targetLayerId !== "string" ||
+          (body.audioTrackIndex !== undefined && !Number.isSafeInteger(body.audioTrackIndex)) ||
+          (body.intensity !== undefined && (typeof body.intensity !== "number" || !Number.isFinite(body.intensity))))
+        throw new MotionValidationError(["Invalid Motion audio beat-sync request"]);
+      const current = await getMotionProject(workspace, beatSync[1]);
+      if (current.revision !== body.baseRevision) {
+        json(res, ctx, 409, { error: "Motion revision conflict; reload before beat sync" });
+      } else {
+        const { edits, onsetFrames, analysis } = await compileMotionBeatSync(workspace, current, {
+          targetLayerId: body.targetLayerId as string,
+          audioTrackIndex: body.audioTrackIndex as number | undefined,
+          intensity: body.intensity as number | undefined,
+        });
+        const next = beatSync[2] === "preview"
+          ? { ...current, composition: applyMotionEdits(current, current.revision, edits).composition }
+          : await updateMotionProject(workspace, beatSync[1], current.revision, edits);
+        json(res, ctx, 200, { project: next, onsetFrames, analysis });
+      }
     } else if (batchVariants && method === "POST") {
       const body = await readMotionJson(req, 2000);
       if (!Number.isSafeInteger(body.baseRevision) || !Array.isArray(body.aspectRatios) ||
@@ -467,6 +492,17 @@ export async function handleMotionHttpRoute(
       json(res, ctx, 200, await inspectMotionJob(workspace, recovery[1]));
     } else if (cancel && method === "POST") {
       json(res, ctx, 202, await requestMotionCancellation(workspace, cancel[1]));
+    } else if (extraExport && method === "GET") {
+      const format = extraExport[2] as "gif" | "webm";
+      const data = await convertMotionJobArtifact(workspace, extraExport[1], format);
+      res.writeHead(200, {
+        "Content-Type": format === "gif" ? "image/gif" : "video/webm",
+        "Content-Length": String(data.length),
+        "Content-Disposition": 'attachment; filename="' + extraExport[1] + '.' + format + '"',
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      });
+      res.end(data);
     } else if (artifact && (method === "GET" || method === "HEAD")) {
       await streamMotionArtifact(req, res, workspace, artifact[1]);
     } else {
