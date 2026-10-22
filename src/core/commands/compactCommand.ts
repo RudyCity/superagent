@@ -1,7 +1,8 @@
 import { registry } from "./registry.js";
 import { SlashCommand, getDefaultModel } from "./types.js";
 import { getContextWindowLimit, getEffectiveMasterModel } from "../config.js";
-import { benchmarkCompaction, hierarchyForCheckpoint } from "../context/ContextContinuity.js";
+import { benchmarkCompaction, hierarchyForCheckpoint, formatCheckpointMemory } from "../context/ContextContinuity.js";
+import { readArchivedToolOutput } from "../context/ToolEvidence.js";
 import { PruningStrategy } from "../context/strategies/PruningStrategy.js";
 
 /**
@@ -32,6 +33,31 @@ export const compactCommand: SlashCommand = {
     const estimated = cm.estimateTokensForAll(messages).total;
     const checkpoint = store.preview(messages).checkpoint;
 
+    if (action === "memory") {
+      const committed = store.getCommittedCheckpoint();
+      add(committed
+        ? formatCheckpointMemory(committed, 3500) +
+          "\nMemory tiers: working/session checkpoint is local; project candidate decisions require explicit review in RMemory."
+        : "No persisted session checkpoint yet. Use /compact preview for current working context.");
+      return;
+    }
+    if (action === "tool") {
+      const id = tokens[1] || "";
+      const offset = Number(tokens[2] || "0");
+      if (!id || !Number.isSafeInteger(offset) || offset < 0) {
+        add("Usage: /compact tool <archive-id> [offset]", true);
+        return;
+      }
+      const historyPath = agent.getCurrentHistoryFilePath?.();
+      const page = historyPath ? readArchivedToolOutput(historyPath, id, offset) : undefined;
+      if (!page) { add("No matching tool output in current session archive.", true); return; }
+      add(["Archived tool: " + page.name, "Characters: " + offset + "–" +
+        (offset + page.text.length) + " / " + page.totalChars,
+        page.text,
+        page.nextOffset !== null ? "Next: /compact tool " + id + " " + page.nextOffset : "End of archived output",
+      ].join("\n"));
+      return;
+    }
     if (action === "preview") {
       const layers = hierarchyForCheckpoint(checkpoint);
       add([
@@ -160,7 +186,7 @@ export const compactCommand: SlashCommand = {
       return;
     }
     if (action !== "status") {
-      add("Usage: /compact [status|preview|now|snapshots|undo [id]|benchmark]", true);
+      add("Usage: /compact [status|preview|memory|tool <id> [offset]|now|snapshots|undo [id]|benchmark]", true);
       return;
     }
     const metrics = store.getMetrics();
@@ -177,7 +203,7 @@ export const compactCommand: SlashCommand = {
       "  Last continuity quality: " + (last?.quality ?? "n/a"),
       "  Last heuristic fallback: " + (last?.fallback ? "yes" : "no"),
       "  Undo snapshots: " + store.listSnapshots().length,
-      "  Commands: /compact preview | now | snapshots | undo | benchmark",
+      "  Commands: /compact preview | memory | tool <id> | now | snapshots | undo | benchmark",
     ].join("\n"));
   },
 };

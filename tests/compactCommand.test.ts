@@ -50,6 +50,9 @@ describe("/compact CLI controls", () => {
     expect(lines.at(-1)).toContain("Compaction completed");
     expect(saveHistory).toHaveBeenCalledTimes(1);
     expect(cm.getContinuity().listSnapshots()).toHaveLength(1);
+    await compactCommand.execute("memory", ctx);
+    expect(lines.at(-1)).toContain("Finish webhook validation");
+    expect(lines.at(-1)).toContain("explicit review");
     expect(conversation.getMessages().length).toBeLessThan(initial.length);
 
     await compactCommand.execute("snapshots", ctx);
@@ -78,6 +81,10 @@ describe("/compact CLI controls", () => {
     const { cm, lines, ctx } = fixture();
     await compactCommand.execute("undo nope", ctx);
     expect(lines.at(-1)).toContain("No matching snapshot");
+    await compactCommand.execute("tool invalid-id", ctx);
+    expect(lines.at(-1)).toContain("No matching tool output");
+    await compactCommand.execute("tool", ctx);
+    expect(lines.at(-1)).toContain("Usage: /compact tool");
     await compactCommand.execute("delete-all", ctx);
     expect(lines.at(-1)).toContain("Usage: /compact");
     cm.dispose();

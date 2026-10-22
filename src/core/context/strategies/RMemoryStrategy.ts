@@ -10,6 +10,7 @@ import { getSettings } from "../../config.js";
 import { SummarizationStrategy } from "./SummarizationStrategy.js";
 import { getRMemoryClient, getRMemoryProjectId, getRMemorySessionKey, isRmemoryActiveSync } from "../../rmemoryUtil.js";
 import { assessMemoryFreshness, detectScopedMemoryConflicts } from "../../memoryLifecycle.js";
+import { ContextContinuityStore, formatCheckpointMemory, activeUserRequest } from "../ContextContinuity.js";
 
 export interface RMemoryConfig {
   model?: any;
@@ -32,7 +33,10 @@ export class RMemoryStrategy implements CompactionStrategy {
   }
 
   setConfig(config: RMemoryConfig): void {
-    this.config = config;
+    // Model changes must not erase canonical project and session identity.
+    // Otherwise recall silently falls back to process.cwd() and cross-session
+    // checkpoints cannot be recovered after an LLM provider switch.
+    this.config = { ...this.config, ...config };
   }
 
   canHandle(context: CompactionContext): boolean {
@@ -150,6 +154,14 @@ export class RMemoryStrategy implements CompactionStrategy {
 
       // 3. Format the recalled memories
       const formattedMemories: string[] = [];
+      // Session checkpoint is separate from project memories: no automatic promotion.
+      // It is resolved by the same history-path identity as the snapshot store.
+      if (this.config?.historyFilePath) {
+        const committed = new ContextContinuityStore(this.config.historyFilePath).getCommittedCheckpoint();
+        if (committed && committed.goal && activeUserRequest(messages).startsWith(committed.goal.slice(0, 80))) {
+          formattedMemories.push(formatCheckpointMemory(committed, 1600));
+        }
+      }
 
       if (personaContent) {
         formattedMemories.push("<user-persona>");

@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import type { Message } from "../conversation.js";
 import { contentToString } from "../conversation.js";
 import { isCompactionSummaryText } from "./CompactionStrategy.js";
+import { formatToolEvidence } from "./ToolEvidence.js";
 
 export interface ContextCheckpoint {
   version: 1;
@@ -168,6 +169,7 @@ export class ContextContinuityStore {
   private snapshots: CompactionSnapshot[] = [];
   private metrics: CompactionMetrics = { count: 0, tokensSaved: 0, totalDurationMs: 0, failures: 0 };
   private readonly diskPath?: string;
+  private committedCheckpoint?: ContextCheckpoint;
   constructor(historyFilePath?: string) {
     if (historyFilePath && path.isAbsolute(historyFilePath)) {
       this.diskPath = historyFilePath + ".compaction.gz";
@@ -182,12 +184,13 @@ export class ContextContinuityStore {
       if (data.version !== 1 || !Array.isArray(data.snapshots)) return;
       this.snapshots = data.snapshots.slice(-KEEP_SNAPSHOTS);
       if (data.metrics?.count >= 0) this.metrics = data.metrics;
+      if (data.checkpoint?.version === 1) this.committedCheckpoint = data.checkpoint;
     } catch { /* missing or corrupted snapshots do not block the agent */ }
   }
   private save(): void {
     if (!this.diskPath) return;
     try {
-      const data = gzipSync(Buffer.from(JSON.stringify({ version: 1, snapshots: this.snapshots, metrics: this.metrics })));
+      const data = gzipSync(Buffer.from(JSON.stringify({ version: 1, snapshots: this.snapshots, metrics: this.metrics, checkpoint: this.committedCheckpoint })));
       if (data.byteLength > MAX_STORE_BYTES) return;
       fs.mkdirSync(path.dirname(this.diskPath), { recursive: true, mode: 0o700 });
       const temp = this.diskPath + "." + process.pid + ".tmp";
@@ -235,7 +238,14 @@ export class ContextContinuityStore {
     const found = snapshotId ? this.snapshots.find((s) => s.id === snapshotId) : this.snapshots.at(-1);
     return found ? structuredClone(found.messages) : undefined;
   }
-  latestCheckpoint(): ContextCheckpoint | undefined { return this.snapshots.at(-1)?.checkpoint; }
+  latestCheckpoint(): ContextCheckpoint | undefined { return this.committedCheckpoint ?? this.snapshots.at(-1)?.checkpoint; }
+  getCommittedCheckpoint(): ContextCheckpoint | undefined {
+    return this.committedCheckpoint ? structuredClone(this.committedCheckpoint) : undefined;
+  }
+  commitCheckpoint(checkpoint: ContextCheckpoint): void {
+    this.committedCheckpoint = structuredClone(checkpoint);
+    this.save();
+  }
   getMetrics(): CompactionMetrics { return structuredClone(this.metrics); }
   record(strategy: string, durationMs: number, before: number, after: number, quality: number, fallback: boolean): void {
     this.metrics.count++;
@@ -260,17 +270,8 @@ export function benchmarkCompaction(source: Message[], transformed: Message[]): 
 }
 
 /** Tool-result retention based on changed state and actionable evidence, not fixed prefixes. */
-export function compactToolResult(output: string, name: string, isError: boolean, maxChars = 900): string {
-  if (output.length <= maxChars) return output;
-  const lines = output.split(/\r?\n/);
-  const evidence = lines.filter((line) =>
-    /(?:error|failed|exception|passed|succeeded|changed|modified|written|created|updated|warning|exit code|commit|https?:\/\/)/i.test(line)
-  );
-  const head = lines.slice(0, 5), tail = lines.slice(-3);
-  const selected = [...new Set([...head, ...evidence.slice(-14), ...tail])].join("\n");
-  const trimmed = selected.slice(0, maxChars);
-  return trimmed + "\n[truncated — compacted " + name + (isError ? " error" : " result") +
-    ": " + output.length + " original chars; inspect session/tool logs for full output]";
+export function compactToolResult(output: string, name: string, isError: boolean, maxChars = 900, archiveId?: string): string {
+  return formatToolEvidence(output, name, isError, maxChars, archiveId);
 }
 
 /** Names the three retention tiers without inventing persistent memories. */
@@ -280,4 +281,20 @@ export function hierarchyForCheckpoint(checkpoint: ContextCheckpoint) {
     session: { decisions: checkpoint.decisions, completed: checkpoint.completed, files: checkpoint.files, verification: checkpoint.verification },
     project: { candidateDecisions: checkpoint.decisions, persistence: "Review before promoting to project/RMemory" },
   };
+}
+
+/** Current session evidence only. Candidate project decisions remain unapproved. */
+export function formatCheckpointMemory(checkpoint: ContextCheckpoint, maxChars = 1600): string {
+  const section = (label: string, items: string[], max = 6) =>
+    items.length ? label + ": " + items.slice(0, max).join(" | ") : "";
+  return [
+    "[Compaction checkpoint: current session, evidence only; do not treat as approved project memory]",
+    checkpoint.goal ? "Active goal: " + checkpoint.goal : "",
+    section("Pending", checkpoint.pending),
+    section("Decisions", checkpoint.decisions),
+    section("Blockers", checkpoint.blockers, 3),
+    section("Verified evidence", checkpoint.verification, 3),
+    section("Changed/reference files", checkpoint.files, 6),
+    "Project memory candidates require explicit review.",
+  ].filter(Boolean).join("\n").slice(0, maxChars);
 }

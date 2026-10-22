@@ -11,8 +11,8 @@ A **quality gate** runs before replacing the conversation. A compacted result th
 ### Memory hierarchy
 
 - **Working memory**: active goal, pending tasks, blockers. These must be available on the active turn.
-- **Session memory**: checkpointed decisions, completed work, referenced files, and verified outcomes. A compressed session snapshot can be restored.
-- **Project memory**: *candidate* durable decisions, subject to explicit review. RMemory already handles project/global memory; this feature does **not** automatically promote unverified text into project memory.
+- **Session memory**: after the transcript is **successfully saved**, the checkpoint is separately persisted in the per-session continuity sidecar, alongside snapshot metadata. Use `/compact memory` to inspect it. `RMemoryStrategy` may load this checkpoint as **current-session evidence only** when the active goal still matches; changing the provider retains project/session identity.
+- **Project memory**: candidate durable decisions, subject to **explicit review**. RMemory already handles project/global records. The checkpoint is **not** automatically promoted to a project or global atomic memory. No external embedding request is required to read a local checkpoint.
 
 ### Snapshot and recovery
 
@@ -22,7 +22,9 @@ On a CLI/T-Line restart or a resumed session referencing the same history file, 
 
 ### Adaptive compaction and result retention
 
-The normal model-aware context threshold remains. When a conversation has an individual tool result over 16,000 characters, its compaction threshold is reduced to 85%; after heuristic fallback it receives an additional reserve. Large, aged tool outputs now retain the first lines, actionable error/success/changed-state lines, and final lines, plus a marker directing agents to session/tool logs for complete evidence. The complete tool output should remain available via original logs if that tool provides logging.
+The model-aware threshold remains; a tool result over 16,000 characters triggers an earlier threshold (85%), and emergency fallback reserves additional headroom. Aged outputs now use **typed evidence extraction**: known JSON keys such as `status`, `code`, `error`, `file`, and `count`; diagnostic lines, paths, and final exit output in text. Credentials/secret-like keys are excluded from previews. This is an evidence extraction heuristic, **not** a semantic LLM verifier.
+
+Before truncating an aged result, the original is copied to the local, session-scoped SQLite `compaction_tool_archive` (only when its UTF-8 size is at most **512 KiB**). A marker in the shortened result includes the archive ID only after a successful archive write. Inspect pages explicitly with `/compact tool <archive-id> [offset]`. Archive scope hashes the **full normalized history path**, so same-named sessions in different workspaces cannot read each other's originals. Retention: at most **40 archives per session**, maximum **30 days**. Old/oversized results may not have an archived original; the preview says so. The SQLite DB can contain sensitive output—protect it with the same precautions as regular transcripts; no project-directory dump or auto-upload is created.
 
 ### Observability and validation
 
@@ -49,6 +51,8 @@ Run `bun scripts/bench-compaction.ts` for human-readable output or `bun scripts/
 - Automatic project memory promotion is intentionally excluded until user review.
 - Old summaries are rolled forward into newer summaries, rather than silently dropped.
 - Snapshot records can include sensitive conversation data; do not upload sidecars to public repositories.
-- Undo reverts the conversation transcript, not filesystem edits, payment actions, terminal processes or external calls.
+- Undo reverts the conversation transcript, not filesystem edits, payment actions, terminal processes or external calls; safe undo requires a matching saved transcript checksum. `--force` must be an explicit decision.
+- Compaction records, token-saved metrics, and completion events are confirmed **after session history saving**, not when summarization merely finishes.
+- Compaction quality checks explicit decisions, pending checklists, blockers, and current goal; they are evidence checks, not proof that the next LLM answer will be correct.
 - Snapshot size caps may prevent rollback of extremely large contexts. The `/compact snapshots` command is the source of truth for availability.
 - Tests should cover CLI restore, multi-round compaction, persistence, permission checks and catastrophic-failure recovery. Regression tests are maintained in `tests/contextContinuity.test.ts` and existing compaction suites.

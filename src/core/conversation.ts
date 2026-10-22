@@ -19,6 +19,7 @@ import { getActivePreset, saveSessionPreset } from "./config/jsonConfig.js";
 import { cleanAssistantResponse } from "../utils/text.js";
 import { saveSessionToDb, loadSessionFromDb } from "./storage/historyDb.js";
 import { compactToolResult, transcriptDigest } from "./context/ContextContinuity.js";
+import { archiveToolOutput } from "./context/ToolEvidence.js";
 
 export type TextPart = { type: "text"; text: string };
 export type ImagePart = { type: "image"; image: string; mimeType: string }; // image is base64 string
@@ -67,6 +68,7 @@ export class Conversation {
   private contextManager: ContextManager | null = null;
   private contextConfig: ContextManagerConfig | null = null;
   private compactLocked = false;
+  private sessionHistoryFilePath: string | null = null;
   public lastCapturedTimestamp = 0;
   /** Pinned messages loaded from file, waiting for ContextManager to be initialized */
   private pendingPinnedMessages: PinnedMessage[] | null = null;
@@ -126,6 +128,7 @@ export class Conversation {
    * and for deriving plan/task/walkthrough file paths. SQLite is the sole transcript storage.
    */
   async saveToFile(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED", workingDirectory?: string): Promise<void> {
+    this.sessionHistoryFilePath = filePath;
     try {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, "", "utf-8");
@@ -246,6 +249,7 @@ export class Conversation {
    * and for deriving plan/task/walkthrough file paths. SQLite is the sole transcript storage.
    */
   saveToFileSync(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED", workingDirectory?: string): void {
+    this.sessionHistoryFilePath = filePath;
     try {
       fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
       fsSync.writeFileSync(filePath, "", "utf-8");
@@ -367,6 +371,7 @@ export class Conversation {
 
   async loadFromFile(filePath: string): Promise<void> {
     if (this.compactLocked) throw new Error("Cannot change sessions during compaction");
+    this.sessionHistoryFilePath = filePath;
     this.pendingPinnedMessages = null;
     try {
       const sid = path.basename(filePath, ".json");
@@ -503,13 +508,12 @@ export class Conversation {
       if (tr.result.includes("[truncated —") || tr.result.includes("[Error truncated]")) {
         return tr;
       }
-      if (tr.isError) {
-        const trimmed = tr.result.length > ERROR_CHARS
-          ? `${tr.result.substring(0, ERROR_CHARS)}... [Error truncated]`
-          : tr.result;
-        return { ...tr, result: trimmed };
-      }
-      return { ...tr, result: compactToolResult(tr.result, tr.name, false, 800) };
+      if (tr.result.length <= (tr.isError ? ERROR_CHARS : 800)) return tr;
+      const archiveId = this.sessionHistoryFilePath
+        ? archiveToolOutput(this.sessionHistoryFilePath, tr.result, tr.name, !!tr.isError)
+        : undefined;
+      return { ...tr, result: compactToolResult(tr.result, tr.name, !!tr.isError,
+        tr.isError ? 450 : 800, archiveId) };
     };
 
     let toolMessagesSeen = 0;

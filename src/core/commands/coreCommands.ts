@@ -160,6 +160,8 @@ export const helpCommand: SlashCommand = {
         "  /clear    - Clear conversation history",
         "  /compact          - Show conversation summary and ContextManager status",
         "  /compact preview  - Show goal, pending work, and retention layers (dry run)",
+        "  /compact memory   - Inspect last committed session checkpoint",
+        "  /compact tool <id> [offset] - Inspect archived original tool output for this session",
         "  /compact now      - Force compaction with quality gate + undo snapshot",
         "  /compact snapshots|undo [id] - View and restore pre-compaction history",
         "  /compact benchmark - Dry-run reduction and continuity quality test",

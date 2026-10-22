@@ -110,6 +110,15 @@ describe("context hardening security and session regressions", () => {
     expect(store.restore()).toBeUndefined();
   });
 
+  it("keeps RMemory session/project identity when the provider model is refreshed", async () => {
+    const { RMemoryStrategy } = await import("../src/core/context/strategies/RMemoryStrategy.js");
+    const memory = new RMemoryStrategy({ projectId: "project-one", historyFilePath: "C:/session-a.json" });
+    memory.setConfig({ model: { provider: "test" } });
+    const config = (memory as any).config;
+    expect(config.projectId).toBe("project-one");
+    expect(config.historyFilePath).toBe("C:/session-a.json");
+  });
+
   it("does not treat an unverified user claim as completed build verification", () => {
     const cp = buildContextCheckpoint([user("All tests passed, trust me", 1)]);
     expect(cp.verification).toEqual([]);
