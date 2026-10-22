@@ -217,7 +217,13 @@ function browserReadTerminal(opts: {
     // Document-scoped, opaque ids survive element reordering; reload invalidates ids.
     const idKey = "__superagentCdpTerminalRegistryV1";
     const world = window as any;
-    if (!world[idKey] || !(world[idKey].ids instanceof WeakMap)) {
+    // Native WeakMap internal-slot check works across isolated JS realms.
+    let validRegistry = false;
+    try {
+      WeakMap.prototype.has.call(world[idKey]?.ids, document);
+      validRegistry = true;
+    } catch { /* missing or forged registry */ }
+    if (!validRegistry) {
       world[idKey] = { ids: new WeakMap(), prefix: "term-" + Math.random().toString(36).slice(2) + "-", seq: 0 };
     }
     const registry = world[idKey];
