@@ -52,7 +52,7 @@
     "mammoth": "^1.12.0",
     "onnxruntime-node": "^1.14.0",
     "pdf-parse": "^2.4.5",
-    "r-memory": "git+https://github.com/RudyCity/r-memory.git#f47393c5dde3",
+    "r-memory": "git+https://github.com/RudyCity/r-memory.git#2b5de65a1aa8ece0998e3411c07a22c2b41b2713",
     "react": "^18.3.1",
     "ssh2": "^1.17.0",
     "ssh2-sftp-client": "^12.1.1",
@@ -88,9 +88,11 @@
     "jsondiffpatch": "0.7.6",
     "sharp": "0.35.5"
   },
+  "trustedDependencies": [
+    "r-memory"
+  ],
   "patchedDependencies": {
     "ink-text-input@6.0.0": "patches/ink-text-input@6.0.0.patch",
-    "mammoth@1.12.0": "patches/mammoth@1.12.0.patch",
-    "r-memory@github:RudyCity/r-memory#f47393c": "patches/r-memory@github%3ARudyCity%2Fr-memory#f47393c.patch"
+    "mammoth@1.12.0": "patches/mammoth@1.12.0.patch"
   }
 }

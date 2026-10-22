@@ -24,7 +24,7 @@
         "mammoth": "^1.12.0",
         "onnxruntime-node": "^1.14.0",
         "pdf-parse": "^2.4.5",
-        "r-memory": "git+https://github.com/RudyCity/r-memory.git#f47393c5dde3",
+        "r-memory": "git+https://github.com/RudyCity/r-memory.git#2b5de65a1aa8ece0998e3411c07a22c2b41b2713",
         "react": "^18.3.1",
         "ssh2": "^1.17.0",
         "ssh2-sftp-client": "^12.1.1",
@@ -46,9 +46,11 @@
       },
     },
   },
+  "trustedDependencies": [
+    "r-memory",
+  ],
   "patchedDependencies": {
     "ink-text-input@6.0.0": "patches/ink-text-input@6.0.0.patch",
-    "r-memory@github:RudyCity/r-memory#f47393c": "patches/r-memory@github%3ARudyCity%2Fr-memory#f47393c.patch",
     "mammoth@1.12.0": "patches/mammoth@1.12.0.patch",
   },
   "overrides": {
@@ -787,7 +789,7 @@
 
     "qs": ["qs@6.15.3", "", { "dependencies": { "es-define-property": "^1.0.1", "side-channel": "^1.1.1" } }, "sha512-O9gl3zCl5h5blw1KGUzQKhA5oUXSl8rwUIM5o0S3nCXMliSvy5Dzx7/DJcI+SwgICv+IneSZwhBh1oSyEHA71A=="],
 
-    "r-memory": ["r-memory@github:RudyCity/r-memory#f47393c", { "dependencies": { "@huggingface/transformers": "^3.0.0-alpha.19", "better-sqlite3": "^11.1.2", "dotenv": "^16.4.5", "mammoth": "^1.8.0", "pdf-parse": "^1.1.1", "sharp": "^0.33.4", "sqlite-vec": "^0.1.1-alpha.3", "xlsx": "^0.18.5" } }, "RudyCity-r-memory-f47393c", "sha512-yQEUfXBV2dTK8mAom/aA69X8x/pfGFV0kmal707XKCpRgPnVoTts4WsDLBCbMVgiEsWXEdLKLyDWUtYB/ukbXw=="],
+    "r-memory": ["r-memory@github:RudyCity/r-memory#2b5de65", { "dependencies": { "@huggingface/transformers": "^3.0.0-alpha.19", "better-sqlite3": "^11.1.2", "dotenv": "^16.4.5", "mammoth": "^1.8.0", "pdf-parse": "^1.1.1", "sharp": "^0.33.4", "sqlite-vec": "^0.1.1-alpha.3", "xlsx": "^0.18.5" } }, "RudyCity-r-memory-2b5de65", "sha512-xa/RsRTDXJpJxIMEZibz18oxmywbftEJ6lXLkud9fHD9v/lUn/l9igjTpyucafpBa3gBEppnSQ5g5rWJfCwnvw=="],
 
     "range-parser": ["range-parser@1.3.0", "", {}, "sha512-hek2mFQpPuI4E1BBKrSto+BU3e3x4xuarsbiwr3+lf7p44juvFMV0XFWQAP3xUyqXA4RrXLIoaSUGbSt056ZMw=="],
 
