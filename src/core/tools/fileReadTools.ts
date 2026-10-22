@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
 import fg from "fast-glob";
+import { validateGlobPattern } from "./globPatternGuard.js";
 import { execa } from "execa";
 import { Tool } from "./types.js";
 import { normalizePath, resolveFilePathFromArgs, getImageMimeType, isLocalConfigOrSessionPath } from "./pathHelpers.js";
@@ -209,7 +210,7 @@ export const globTool: Tool = {
       sshLogger.toolUse("glob", "routing glob tool to SSH remote", { meta: { pattern: args.pattern } });
       return await sshGlobToolExecute(args.pattern as string, signal);
     }
-    const pattern = args.pattern as string;
+    const pattern = validateGlobPattern(args.pattern);
     const searchPath = args.path
       ? path.resolve(cwd, args.path as string)
       : cwd;
@@ -333,6 +334,7 @@ export const grepTool: Tool = {
       const results: string[] = [];
       const showNodePrefix = targetNodes.length > 1;
 
+      const safeInclude = validateGlobPattern("**/" + include);
       for (const node of targetNodes) {
         let files: string[] | null = null;
         const isSearchPathFile = fsSync.existsSync(node.searchPath) && fsSync.statSync(node.searchPath).isFile();
