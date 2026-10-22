@@ -46,7 +46,8 @@ import { discoverDesktopTargets } from "./chromeCdpDesktop.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { claimCdpTarget, listCdpSessions, releaseCdpTarget, withCdpTargetWrite, withCdpTargetRead, cdpCoordinatorStatus, rebindCdpTarget,
   setCdpSharing, inviteCdpAgent, joinCdpTarget, leaveCdpTarget, revokeCdpAgent, handoverCdpTarget, getCdpParticipation,
-  type CdpParticipantRole } from "./chromeCdpSessionManager.js";
+  type CdpParticipantRole, heartbeatCdpSession, getCdpExecutionState } from "./chromeCdpSessionManager.js";
+import { classifyCdpCommand } from "./chromeCdpCommandPolicy.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -56,7 +57,7 @@ let resolvedHost: string | null = null;
 const terminalCdpConfig = new AsyncLocalStorage<{ port: number }>();
 const cdpAgentContext = new AsyncLocalStorage<{ agentId?: string; sessionToken?: string }>();
 const snapshotKey = (targetId: string) =>
-  `${cdpPort()}:${cdpAgentContext.getStore()?.agentId || "legacy"}:${targetId}`;
+  `${cdpPort()}:${cdpAgentContext.getStore()?.agentId || "legacy"}:${targetId}:${getCdpExecutionState()?.revision ?? 0}`;
 
 
 function cdpHost(): string {
@@ -521,7 +522,7 @@ export const controlChromeCdpTool: Tool = {
         type: "string",
         enum: [
           "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status",
-          "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
+          "heartbeat_session", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
           "select_option", "check_form", "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
           "get_cookies", "inspect_media_devices", "mock_display_media", "handle_screen_share", "move_cursor", "show_cursor", "hide_cursor", "get_cursor",
           "drag_and_drop", "drag", "emulate_device", ...CDP_AUDIT_COMMANDS, ...CDP_DIAGNOSTIC_COMMANDS,
@@ -584,11 +585,14 @@ export const controlChromeCdpTool: Tool = {
       agentId: { type: "string", description: "Stable agent identity for CDP tab ownership." },
       sessionToken: { type: "string", description: "Secret capability returned by claim_target. Required for actions on claimed tabs." },
       previousTargetId: { type: "string", description: "recover_target: previous owned tab ID; targetId is the explicitly selected replacement tab ID." },
+      recoverByUrl: { type: "boolean", description: "Recover only when exactly one Chrome tab has expectedUrl; no ambiguous takeover." },
+      expectedUrl: { type: "string", description: "Recover target only when actual target URL matches exactly." },
       memberId: { type: "string", description: "invite_agent/revoke_agent/handover_target: named participant agentId." },
       role: { type: "string", enum: ["observer", "contributor"], description: "invite_agent participant permission." },
       inviteId: { type: "string", description: "join_target: invitation identifier issued by owner." },
       invitationToken: { type: "string", description: "join_target: one-time secret invitation capability; never log." },
       priority: { type: "number", description: "Optional queue priority 0 (highest) through 9 (lowest), default 5." },
+      expectedRevision: { type: "number", description: "Optimistic tab revision. Reject stale writes." },
       queue_wait_ms: { type: "number", description: "Maximum time to wait in the per-tab queue (0-120000ms)." },
       includeImageData: { type: "boolean", description: "Include screenshot data inline; disabled by default." }, includeValues: { type: "boolean", description: "Expose sensitive cookie values; disabled by default." }, includeBase64: { type: "boolean", description: "Include bounded PDF base64; disabled by default." },
  max_chars: { type: "number", description: "Bounded page/audit report output." }, max_links: { type: "number", description: "Maximum links returned by read_page." }, limit: { type: "number", description: "Maximum debug events returned (1-300)." }
@@ -616,7 +620,7 @@ export const controlChromeCdpTool: Tool = {
       }
     }
     const convenienceKeys = [
-      "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
+      "expectedRevision", "recoverByUrl", "expectedUrl", "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
       "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
       "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];
@@ -626,9 +630,14 @@ export const controlChromeCdpTool: Tool = {
     const targetId = args.targetId ? String(args.targetId) : payload.targetId ? String(payload.targetId) : undefined;
     const agentId = args.agentId !== undefined ? args.agentId : payload.agentId;
     const sessionToken = args.sessionToken !== undefined ? args.sessionToken : payload.sessionToken;
+    const revisionArg = payload.expectedRevision ?? args.expectedRevision;
+    const expectedRevision = revisionArg === undefined ? undefined : Number(revisionArg);
+    if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0))
+      return "control_chrome_cdp failed: expectedRevision must be a nonnegative integer.";
     const opts = { sessionToken: sessionToken === undefined ? undefined : String(sessionToken),
       priority: Number(payload.priority ?? args.priority ?? 5),
-      waitMs: Number(payload.queue_wait_ms ?? args.queue_wait_ms ?? 8000) };
+      waitMs: Number(payload.queue_wait_ms ?? args.queue_wait_ms ?? 8000),
+      expectedRevision };
 
     if (payload.debug_port !== undefined) {
       const port = Number(payload.debug_port);
@@ -645,15 +654,8 @@ export const controlChromeCdpTool: Tool = {
       if (agent && ["handle_screen_share", "accept_screen_share", "dismiss_screen_share"].includes(command)) {
         return "control_chrome_cdp failed: global screen-share prompts cannot be safely controlled by an agent-scoped CDP session.";
       }
-      const writes = new Set([
-        "close_tab", "activate", "navigate", "evaluate", "verify_action", "click", "type",
-        "write_terminal", "send_terminal_key", "execute_terminal", "handle_dialog",
-        "inspect_media_devices", "media_devices", "mock_display_media", "mock_screen_share",
-        "bypass_screen_share", "move_cursor", "move_mouse", "show_cursor", "hide_cursor",
-        "drag_and_drop", "drag", "drag_drop", "emulate_device", "set_device", "set_viewport",
-        "emulate_viewport", "select_option", "select_dropdown", "pick_option",
-      ]);
-      if (writes.has(command)) {
+      const category = classifyCdpCommand(command, payload);
+      if (category === "write") {
         try {
           const selected = await pickTarget(targetId, false, !!agent);
           const result = await withCdpTargetWrite(cdpPort(), selected.id, agent, () =>
@@ -676,7 +678,7 @@ export const controlChromeCdpTool: Tool = {
         "list_targets", "claim_target", "recover_session", "recover_target", "release_target",
         "list_sessions", "coordinator_status", "discover_desktop_targets", "new_tab",
         "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent",
-        "handover_target", "session_participants",
+        "handover_target", "session_participants", "heartbeat_session",
       ]);
       if (!targetId && !agent && !openRead.has(command) &&
           (await listCdpSessions()).some(s => s.port === cdpPort())) {
@@ -695,12 +697,13 @@ export const controlChromeCdpTool: Tool = {
     }
     try {
       if (["share_target", "stop_sharing", "invite_agent", "join_target", "leave_target",
-           "revoke_agent", "handover_target", "session_participants"].includes(command)) {
+           "revoke_agent", "handover_target", "session_participants", "heartbeat_session"].includes(command)) {
         if (!targetId || !agentId) throw new Error("Shared tab command requires targetId and agentId.");
         const ownerId = String(agentId);
         const token = opts.sessionToken || "";
         const memberId = String(args.memberId || payload.memberId || "");
         switch (command) {
+          case "heartbeat_session": return JSON.stringify(await heartbeatCdpSession(cdpPort(), targetId, ownerId, token));
           case "share_target": return JSON.stringify({ status: "shared", session: await setCdpSharing(cdpPort(), targetId, ownerId, token, true) });
           case "stop_sharing": return JSON.stringify({ status: "isolated", session: await setCdpSharing(cdpPort(), targetId, ownerId, token, false) });
           case "invite_agent": return JSON.stringify(await inviteCdpAgent(cdpPort(), targetId, ownerId, token, memberId, String(args.role || payload.role || "") as CdpParticipantRole));
@@ -714,12 +717,28 @@ export const controlChromeCdpTool: Tool = {
       }
       if (command === "recover_target") {
         const previousTargetId = String(args.previousTargetId || payload.previousTargetId || "");
-        if (!targetId || !previousTargetId || !agentId || !opts.sessionToken) {
-          return "control_chrome_cdp failed: recover_target requires previousTargetId, targetId, agentId and sessionToken.";
+        const expectedUrl = String(args.expectedUrl || payload.expectedUrl || "");
+        const recoverByUrl = args.recoverByUrl === true || payload.recoverByUrl === true;
+        if (!previousTargetId || !agentId || !opts.sessionToken || (!targetId && !recoverByUrl)) {
+          return "control_chrome_cdp failed: recover_target requires previousTargetId, agentId, sessionToken and explicit targetId or recoverByUrl with exact expectedUrl.";
         }
-        const selected = await pickTarget(targetId, false, true);
+        let selected;
+        if (!targetId && recoverByUrl) {
+          if (!expectedUrl) throw new Error("recoverByUrl requires exact expectedUrl.");
+          const pages = await listPageTargets();
+          const matching = pages.filter(t => t.url === expectedUrl);
+          if (matching.length !== 1) throw new Error("Recovery target ambiguous or missing: expected one exact URL match.");
+          selected = matching[0];
+        } else {
+          selected = await pickTarget(targetId, false, true);
+          if (expectedUrl && selected.url !== expectedUrl)
+            throw new Error("Recovery target URL mismatch; refusing unsafe rebind.");
+        }
         const next = await rebindCdpTarget(cdpPort(), previousTargetId, selected.id, String(agentId), opts.sessionToken);
-        return JSON.stringify({ status: "rebound", ...next });
+        return JSON.stringify({
+          status: "rebound", verification: targetId ? "explicit_target" : "unique_exact_url",
+          participantsReinviteRequired: true, ...next,
+        });
       }
       if (["claim_target", "recover_session", "release_target"].includes(command)) {
         if (!targetId || !agentId) return "control_chrome_cdp failed: targetId and agentId are required.";
@@ -902,6 +921,7 @@ export const controlChromeCdpTool: Tool = {
           const contextHeader = formatContextHeader(pageOverview);
           const snapshotResult =
             `control_chrome_cdp: snapshot of ${title} - ${entries.length} interactive element(s)` +
+            (getCdpExecutionState()?.mode === "shared" ? ` [tabRevision=${getCdpExecutionState()?.revision ?? 0}]` : "") +
             (compact ? " (compact)" : "") +
             (isLimited ? ` (limited to ${maxElements})` : "") +
             `.\n` +

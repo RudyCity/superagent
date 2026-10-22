@@ -4,11 +4,13 @@
  */
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { watch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile, appendFile } from "node:fs/promises";
 
 const TTL_MS = 5 * 60_000;
+const MEMBER_TTL_MS = 2 * 60_000;
 const STALE_MS = 120_000;
 const dir = () => process.env.SUPERAGENT_CDP_SESSION_DIR || join(homedir(), ".superagent-r", "cdp-sessions");
 const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
@@ -20,7 +22,10 @@ const queueFor = (key: string) => join(dir(), "queues", key);
 const BROWSER_LIFECYCLE_KEY = sha("browser-lifecycle-global-v1");
 const browserBridgeScope = new AsyncLocalStorage<boolean>();
 const browserLifecycleScope = new AsyncLocalStorage<boolean>();
+const cdpExecutionScope = new AsyncLocalStorage<{ revision: number; mode: "isolated" | "shared" }>();
+export const getCdpExecutionState = () => cdpExecutionScope.getStore();
 const PRIORITY_AGING_MS = 12_000;
+const MAX_QUEUE_ENTRIES = 128;
 const auditPath = () => join(dir(), "events.jsonl");
 const validAgent = (value: string) => {
   if (["__proto__", "constructor", "prototype"].includes(value) || !/^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,95}$/.test(value)) throw new Error("Invalid CDP agentId.");
@@ -34,19 +39,19 @@ async function audit(event: string, key: string, actor?: string): Promise<void> 
   await appendFile(auditPath(), JSON.stringify({ time: new Date().toISOString(), event, key: key.slice(0, 16), actor: actor || "legacy" }) + "\n").catch(() => {});
 }
 export type CdpParticipantRole = "observer" | "contributor";
-type CdpMember = { role: CdpParticipantRole; tokenHash: string; joinedAt: number };
+type CdpMember = { role: CdpParticipantRole; tokenHash: string; joinedAt: number; expiresAt?: number };
 type CdpInvitation = { agentId: string; role: CdpParticipantRole; tokenHash: string; expiresAt: number };
 export type CdpSession = {
   key: string; port: number; targetId: string; agentId: string;
   claimedAt: number; expiresAt: number; tokenHash: string; generation: string;
-  mode?: "shared"; members?: Record<string, CdpMember>; invitations?: Record<string, CdpInvitation>;
+  mode?: "shared"; members?: Record<string, CdpMember>; invitations?: Record<string, CdpInvitation>; revision?: number;
 };
 export type CdpPublicSession = Omit<CdpSession, "tokenHash" | "members" | "invitations" | "mode"> & {
-  mode: "isolated" | "shared";
+  mode: "isolated" | "shared"; revision: number;
   participants: Array<{ agentId: string; role: "owner" | CdpParticipantRole; joinedAt: number }>;
 };
 export type CdpClaim = CdpPublicSession & { sessionToken: string };
-export type CdpAccess = { agentId?: string; sessionToken?: string; waitMs?: number; priority?: number; signal?: AbortSignal; ownerOnly?: boolean; sharedOnly?: boolean };
+export type CdpAccess = { agentId?: string; sessionToken?: string; waitMs?: number; priority?: number; signal?: AbortSignal; ownerOnly?: boolean; sharedOnly?: boolean; expectedRevision?: number };
 async function load(key: string): Promise<CdpSession | null> {
   try {
     const data = JSON.parse(await readFile(fileFor(key), "utf8"));
@@ -75,8 +80,16 @@ async function lock(key: string, opts: CdpAccess = {}): Promise<() => Promise<vo
   const deadline = Date.now() + boundedWait;
   const priority = Math.max(0, Math.min(9, Math.floor(Number(opts.priority ?? 5) || 0)));
   const request = join(queueFor(key), token + ".json");
+  if ((await readdir(queueFor(key))).length >= MAX_QUEUE_ENTRIES)
+    throw new Error("CDP target queue capacity reached.");
   // Files are named randomly; priority ordering relies on persisted timestamp.
   await writeFile(request, JSON.stringify({ token, priority, at: Date.now(), pid: process.pid }), { flag: "wx" });
+  // Filesystem events wake queued agents when another process releases its
+  // request. Bounded fallback handles dropped fs.watch events on Windows.
+  let watcher: FSWatcher | undefined;
+  let wake: (() => void) | undefined;
+  try { watcher = watch(queueFor(key), () => wake?.()); watcher.on("error", () => {}); }
+  catch { /* fallback to bounded polling */ }
   try {
     while (true) {
       if (opts.signal?.aborted) throw new Error("CDP action cancelled.");
@@ -149,9 +162,25 @@ async function lock(key: string, opts: CdpAccess = {}): Promise<() => Promise<vo
         }
       }
       if (Date.now() >= deadline) throw new Error("CDP target busy: timed out in target queue.");
-      await delay(65);
+      await new Promise<void>(resolve => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          opts.signal?.removeEventListener("abort", finish);
+          if (wake === finish) wake = undefined;
+          resolve();
+        };
+        const timer = setTimeout(finish, Math.min(200, Math.max(1, deadline - Date.now())));
+        wake = finish;
+        opts.signal?.addEventListener("abort", finish, { once: true });
+      });
     }
-  } finally { await rm(request, { force: true }).catch(() => {}); }
+  } finally {
+    watcher?.close();
+    await rm(request, { force: true }).catch(() => {});
+  }
 }
 async function guarded<T>(port: number, targetId: string, opts: CdpAccess, fn: (key: string) => Promise<T>) {
   validate(port, targetId);
@@ -168,7 +197,7 @@ function auth(session: CdpSession, access: CdpAccess): "owner" | CdpParticipantR
   if (!access.agentId) throw new Error("CDP target claimed: valid agentId AND sessionToken required.");
   if (session.agentId === access.agentId && validCapability(access.sessionToken, session.tokenHash)) return "owner";
   const member = session.mode === "shared" ? session.members?.[access.agentId] : undefined;
-  if (!access.ownerOnly && member && validCapability(access.sessionToken, member.tokenHash)) return member.role;
+  if (!access.ownerOnly && member && (member.expiresAt ?? session.expiresAt) > Date.now() && validCapability(access.sessionToken, member.tokenHash)) return member.role;
   throw new Error("CDP target claimed: valid agentId AND sessionToken required.");
 }
 const issue = () => randomBytes(32).toString("base64url");
@@ -187,7 +216,7 @@ export async function claimCdpTarget(port: number, targetId: string, agentId: st
     const now = Date.now();
     const session: CdpSession = {
       key, port, targetId, agentId, claimedAt: now, expiresAt: now + TTL_MS,
-      tokenHash: sha(token), generation: randomUUID(),
+      tokenHash: sha(token), generation: randomUUID(), revision: 0,
     };
     await save(session);
     await audit(previous ? "reclaim_expired" : "claim", key, agentId);
@@ -208,12 +237,12 @@ function publicSession(session: CdpSession): CdpPublicSession {
     key: session.key, port: session.port, targetId: session.targetId,
     agentId: session.agentId, claimedAt: session.claimedAt,
     expiresAt: session.expiresAt, generation: session.generation,
-    mode: session.mode === "shared" ? "shared" : "isolated",
+    mode: session.mode === "shared" ? "shared" : "isolated", revision: session.revision ?? 0,
     participants: [
       { agentId: session.agentId, role: "owner", joinedAt: session.claimedAt },
-      ...(session.mode === "shared" ? Object.entries(session.members || {}).map(([agentId, member]) => ({
-        agentId, role: member.role, joinedAt: member.joinedAt,
-      })) : []),
+      ...(session.mode === "shared" ? Object.entries(session.members || {})
+        .filter(([, member]) => (member.expiresAt ?? session.expiresAt) > Date.now())
+        .map(([agentId, member]) => ({ agentId, role: member.role, joinedAt: member.joinedAt })) : []),
     ],
   };
 }
@@ -292,7 +321,7 @@ export async function joinCdpTarget(
         !validCapability(invitationToken, invitation.tokenHash)) throw new Error("Invalid or expired shared tab invitation.");
     if (s.members?.[agentId]) throw new Error("Agent already joined this tab.");
     const memberToken = issue();
-    s.members = { ...(s.members || {}), [agentId]: { role: invitation.role, tokenHash: sha(memberToken), joinedAt: Date.now() } };
+    s.members = { ...(s.members || {}), [agentId]: { role: invitation.role, tokenHash: sha(memberToken), joinedAt: Date.now(), expiresAt: Math.min(s.expiresAt, Date.now() + MEMBER_TTL_MS) } };
     delete s.invitations![inviteId];
     await save(s);
     await audit("join_" + invitation.role, key, agentId);
@@ -348,6 +377,26 @@ export async function handoverCdpTarget(
     return publicSession(s);
   });
 }
+/** Explicit short-lived heartbeat. A guest renews only their own membership. */
+export async function heartbeatCdpSession(
+  port: number, targetId: string, agentId: string, sessionToken: string,
+): Promise<{ agentId: string; role: "owner" | CdpParticipantRole; expiresAt: number }> {
+  validAgent(agentId);
+  return guarded(port, targetId, {}, async key => {
+    const s = await load(key);
+    if (!s) throw new Error("CDP claim required.");
+    const role = auth(s, { agentId, sessionToken });
+    if (role === "owner") {
+      s.expiresAt = Date.now() + TTL_MS;
+    } else {
+      const member = s.members![agentId];
+      member.expiresAt = Math.min(s.expiresAt, Date.now() + MEMBER_TTL_MS);
+    }
+    await save(s);
+    await audit("heartbeat_" + role, key, agentId);
+    return { agentId, role, expiresAt: role === "owner" ? s.expiresAt : s.members![agentId].expiresAt! };
+  });
+}
 export async function getCdpParticipation(
   port: number, targetId: string, agentId: string, sessionToken: string,
 ): Promise<CdpPublicSession> {
@@ -371,13 +420,13 @@ export async function withCdpTargetRead<T>(port: number, targetId: string, opts:
   return guarded(port, targetId, opts, async key => {
     const current = await load(key);
     if (current && current.expiresAt > Date.now()) {
-      auth(current, opts);
+      const role = auth(current, opts);
       if (opts.sharedOnly && current.mode !== "shared") throw new Error("Shared snapshot requires shared mode.");
-      await save({ ...current, expiresAt: Date.now() + TTL_MS });
-    } else if (opts.sharedOnly) {
-      throw new Error("Shared snapshot requires an active shared tab claim.");
+      if (role === "owner") await save({ ...current, expiresAt: Date.now() + TTL_MS });
+    } else if (current || opts.sharedOnly || opts.agentId) {
+      throw new Error("CDP read denied: expired or unclaimed tab; claim target explicitly.");
     }
-    return fn();
+    return cdpExecutionScope.run({ revision: current?.revision ?? 0, mode: current?.mode === "shared" ? "shared" : "isolated" }, fn);
   });
 }
 export async function withCdpTargetWrite<T>(
@@ -392,13 +441,22 @@ export async function withCdpTargetWrite<T>(
         await audit("write_denied_observer", key, agentId);
         throw new Error("CDP observer cannot modify tab.");
       }
-      await save({ ...current, expiresAt: Date.now() + TTL_MS });
-    } else if (agentId) {
+      if (options.expectedRevision !== undefined && (current.revision ?? 0) !== options.expectedRevision)
+        throw new Error("CDP stale revision: refresh snapshot and retry.");
+      if (role === "owner") await save({ ...current, expiresAt: Date.now() + TTL_MS });
+    } else if (agentId || current) {
       // Mutations never silently create a session; claim first.
       throw new Error("No active CDP claim for agent. Run claim_target.");
     }
     try {
-      const result = await fn();
+      const result = await cdpExecutionScope.run({
+        revision: current?.revision ?? 0, mode: current?.mode === "shared" ? "shared" : "isolated",
+      }, fn);
+      if (current && current.expiresAt > Date.now()) {
+        const after = await load(key);
+        if (after && after.generation === current.generation)
+          await save({ ...after, revision: (after.revision ?? 0) + 1 });
+      }
       await audit("write_success", key, agentId);
       return result;
     } catch (e) { await audit("write_failed", key, agentId); throw e; }
@@ -442,7 +500,7 @@ export async function cdpCoordinatorStatus(port?: number): Promise<{
   return {
     sessions, queue,
     summary: {
-      activeAgents: new Set(sessions.map(s => s.agentId)).size,
+      activeAgents: new Set(sessions.flatMap(s => s.participants.map(p => p.agentId))).size,
       activeTabs: sessions.length,
       queued: queue.reduce((total, item) => total + item.queued, 0),
       busyTargets: queue.filter(item => item.locked).length,

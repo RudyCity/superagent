@@ -9,6 +9,7 @@ import * as path from "path";
 import { existsSync, unlinkSync, readdirSync } from "fs";
 import { controlChromeCdpTool, _cdpTestHooks } from "../src/core/tools/chromeCdpTools.js";
 import { controlChromeVisionTool } from "../src/core/tools/chromeVisionTools.js";
+import { claimCdpTarget, listCdpSessions } from "../src/core/tools/chromeCdpSessionManager.js";
 
 describe("control_chrome_cdp (mock CDP server)", () => {
   let httpServer: Server;
@@ -357,7 +358,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(controlChromeCdpTool.name).toBe("control_chrome_cdp");
     const cmds = (controlChromeCdpTool.parameters as any).properties.command.enum as string[];
     expect(cmds).toEqual([
-      "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate",
+      "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "heartbeat_session", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate",
       "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key",
       "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets",
       "extract_links", "click", "type", "wait_for",
@@ -720,6 +721,26 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       const released = await controlChromeCdpTool.execute({ command: "release_target", targetId: "T1", agentId: owner, sessionToken });
       expect(released).toContain("released target");
     }
+  });
+
+  test("recovery matches one exact URL and rejects wrong destination", async () => {
+    const old = await claimCdpTarget(httpPort, "BEFORE_RESTART", "recover-owner");
+    const reject = String(await controlChromeCdpTool.execute({
+      command: "recover_target", previousTargetId: "BEFORE_RESTART", agentId: "recover-owner",
+      sessionToken: old.sessionToken, recoverByUrl: true, expectedUrl: "https://wrong.example/",
+    }));
+    expect(reject).toContain("ambiguous or missing");
+    const success = JSON.parse(String(await controlChromeCdpTool.execute({
+      command: "recover_target", previousTargetId: "BEFORE_RESTART", agentId: "recover-owner",
+      sessionToken: old.sessionToken, recoverByUrl: true, expectedUrl: "https://example.com/",
+    })));
+    expect(success).toMatchObject({ status: "rebound", verification: "unique_exact_url", targetId: "T1",
+      participantsReinviteRequired: true });
+    expect((await listCdpSessions()).find(s => s.targetId === "BEFORE_RESTART")).toBeUndefined();
+    const released = await controlChromeCdpTool.execute({
+      command: "release_target", targetId: "T1", agentId: "recover-owner", sessionToken: success.sessionToken,
+    });
+    expect(released).toContain("released target");
   });
 
   test("shared tab commands enforce observer and contributor roles end to end", async () => {

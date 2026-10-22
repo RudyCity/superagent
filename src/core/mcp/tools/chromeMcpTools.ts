@@ -147,7 +147,7 @@ export const CHROME_MCP_TOOL_DEFS = [
         command: {
           type: "string",
           enum: [
-            "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status",
+            "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "heartbeat_session",
             "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target",
             "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate",
             "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "execute_terminal", "watch_terminal", "list_terminal_sessions", "monitor_terminal_agents", "clear_terminal_sessions", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
@@ -198,10 +198,13 @@ export const CHROME_MCP_TOOL_DEFS = [
         agentId: { type: "string", description: "Stable multi-agent owner ID." },
         sessionToken: { type: "string", description: "Secret token returned by claim_target; mandatory to access a claimed tab." },
         previousTargetId: { type: "string", description: "recover_target: old targetId whose lease will be moved to the selected replacement tab." },
+        recoverByUrl: { type: "boolean", description: "Require exactly one exact URL candidate when recovering an owner session." },
+        expectedUrl: { type: "string", description: "Exact URL verification string; treated as sensitive diagnostic data." },
         memberId: { type: "string", description: "invite_agent/revoke_agent/handover_target: target member ID." },
         role: { type: "string", enum: ["observer", "contributor"], description: "invite_agent: access granted by the owner." },
         inviteId: { type: "string", description: "join_target: one-time invitation ID." },
         invitationToken: { type: "string", description: "join_target: secret invitation capability; never log." },
+        expectedRevision: { type: "number", description: "Reject action if tab revision changed. Used for multi-agent optimistic concurrency." },
         queue_wait_ms: { type: "number", description: "Bounded queue wait (0-120000ms) for same-tab operations." },
         priority: { type: "number", description: "Queue priority 0 (highest) through 9 (lowest)." },
       },

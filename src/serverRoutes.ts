@@ -594,6 +594,58 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Explicitly scoped browser sharing API for authenticated T-Line clients.
+  // No arbitrary CDP action execution through this endpoint.
+  if (pathname === "/api/browser/shared-control") {
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { error: "POST required." });
+      return true;
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    let body: Record<string, unknown>;
+    try {
+      const raw = await readBody(req);
+      if (raw.length > 2500) throw new Error("Request too large.");
+      body = JSON.parse(raw);
+      if (!body || Array.isArray(body) || typeof body !== "object") throw new Error("Invalid body.");
+    } catch {
+      sendJSON(res, 400, { error: "Invalid browser sharing request." });
+      return true;
+    }
+    try {
+      const {
+        setCdpSharing, inviteCdpAgent, revokeCdpAgent, handoverCdpTarget, getCdpParticipation,
+      } = await import("./core/tools/chromeCdpSessionManager.js");
+      const action = String(body.action || "");
+      const port = Number(body.port || 9222);
+      const targetId = String(body.targetId || "");
+      const agentId = String(body.agentId || "");
+      const token = String(body.sessionToken || "");
+      const memberId = String(body.memberId || "");
+      // Never echo the owner's token, including when invalid.
+      if (!token || token.length > 160) throw new Error("Owner capability required.");
+      let result: unknown;
+      switch (action) {
+        case "share": result = await setCdpSharing(port, targetId, agentId, token, true); break;
+        case "stop": result = await setCdpSharing(port, targetId, agentId, token, false); break;
+        case "invite":
+          result = await inviteCdpAgent(port, targetId, agentId, token, memberId,
+            String(body.role || "") as "observer" | "contributor");
+          break;
+        case "revoke": result = await revokeCdpAgent(port, targetId, agentId, token, memberId); break;
+        case "handover": result = await handoverCdpTarget(port, targetId, agentId, token, memberId); break;
+        case "participants": result = await getCdpParticipation(port, targetId, agentId, token); break;
+        default: sendJSON(res, 400, { error: "Unknown browser sharing action." }); return true;
+      }
+      sendJSON(res, 200, { success: true, result });
+    } catch (e: any) {
+      const message = e instanceof Error ? e.message : "Browser sharing request denied.";
+      sendJSON(res, 403, { success: false, error: message.slice(0, 250) });
+    }
+    return true;
+  }
+
   // Get chat history
   if (pathname === "/api/history" && req.method === "GET") {
     let targetSessionId = parsedUrl.searchParams.get("sessionId") || parsedUrl.searchParams.get("id");

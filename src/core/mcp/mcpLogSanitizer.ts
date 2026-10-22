@@ -12,7 +12,7 @@
 export const REDACTED = "[REDACTED]";
 
 const SENSITIVE_KEY_RE =
-  /authorization|token|secret|password|passwd|pwd|api[-_ ]?key|cookie|credential|private[-_ ]?key|bearer|session/i;
+  /authorization|token|secret|password|passwd|pwd|api[-_ ]?key|expectedurl|cookie|credential|private[-_ ]?key|bearer|session/i;
 
 const MAX_STRING_LENGTH = 500;
 const MAX_ARRAY_ITEMS = 50;
