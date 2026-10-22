@@ -5,6 +5,7 @@ import path from "path";
 import os from "os";
 import http from "http";
 import { setBrowserControlHandler, browserControlHandler } from "./browserMacroTools.js";
+import { assertNoExternalBrowserMutation } from "./chromeCdpSessionManager.js";
 import { getRootConfigDir, ensureGlobalConfigDir } from "../config/paths.js";
 
 const DEFAULT_REMOTE_WS_PORT = 9223;
@@ -523,6 +524,9 @@ export async function sendRemoteCommand(
   value?: string,
   instanceId?: string
 ): Promise<string> {
+  // The extension targets active UI tabs, not verified CDP target IDs.
+  // Deny direct bridge calls as well as browser macro wrappers.
+  await assertNoExternalBrowserMutation();
   // Rate limiting check (max 30 requests / sec)
   const now = Date.now();
   if (now - lastWindowReset > 1000) {

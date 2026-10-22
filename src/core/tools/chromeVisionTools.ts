@@ -24,6 +24,9 @@ import { spawn } from "child_process";
 import { existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { withCdpTargetWrite, withCdpTargetRead } from "./chromeCdpSessionManager.js";
+import { createHash } from "node:crypto";
 
 function cdpHost(): string {
   return process.env.SUPERAGENT_CDP_HOST || "127.0.0.1";
@@ -171,10 +174,25 @@ export interface VisionElement {
   domSelector?: string;
 }
 
-// Module-level perception cache for fast ID-based click/type workflows
-let cachedPerceivedTarget: CdpTarget | null = null;
-let cachedPerceivedElements: VisionElement[] = [];
-let cachedPerceivedScreenshot: string = "";
+// Perception must never bleed between agents or Chrome targets.
+const visionAgentContext = new AsyncLocalStorage<{ agentId?: string; sessionToken?: string }>();
+type VisionCache = { target: CdpTarget; elements: VisionElement[]; screenshot: string; at: number };
+const visionCaches = new Map<string, VisionCache>();
+let legacyLastTargetId: string | undefined;
+const visionKey = (target: CdpTarget) =>
+  `${cdpPort()}:${visionAgentContext.getStore()?.agentId || "legacy"}:${target.id}`;
+const cachedVision = (target: CdpTarget): VisionCache | undefined => {
+  const cached = visionCaches.get(visionKey(target));
+  if (!cached || Date.now() - cached.at > 120_000 || cached.target.url !== target.url) return undefined;
+  return cached;
+};
+function rememberVision(target: CdpTarget, elements: VisionElement[], screenshot: string): void {
+  const key = visionKey(target);
+  visionCaches.delete(key);
+  visionCaches.set(key, { target, elements, screenshot, at: Date.now() });
+  if (!visionAgentContext.getStore()?.agentId) legacyLastTargetId = target.id;
+  while (visionCaches.size > 32) visionCaches.delete(visionCaches.keys().next().value!);
+}
 
 function httpGetJson(host: string, port: number, path: string): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -263,6 +281,9 @@ async function pickTarget(targetId?: string): Promise<CdpTarget> {
     const t = pages.find((p) => p.id === targetId || p.id.startsWith(targetId));
     if (!t) throw new Error(`No tab matches targetId '${targetId}'.`);
     return t;
+  }
+  if (visionAgentContext.getStore()?.agentId && pages.length > 1) {
+    throw new Error("Multiple CDP tabs: specify targetId for agent-scoped vision operations.");
   }
   return pages[0];
 }
@@ -387,10 +408,7 @@ async function runPerception(target: CdpTarget, threshold = 0.35, annotate = tru
     });
   }
 
-  // Update memory cache
-  cachedPerceivedTarget = target;
-  cachedPerceivedElements = elements;
-  cachedPerceivedScreenshot = rawScreenshot;
+  rememberVision(target, elements, rawScreenshot);
 
   return {
     elements,
@@ -421,18 +439,19 @@ async function cmdClickId(payload: any): Promise<string> {
     throw new Error("click_id requires payload {\"id\": <number>}. Run perceive_page first to get element IDs.");
   }
 
-  let target = cachedPerceivedTarget;
-  if (!target || !cachedPerceivedElements.length) {
-    target = await pickTarget(payload?.targetId);
-    await runPerception(target, 0.35, true);
-  }
-
-  const el = cachedPerceivedElements.find((e) => e.id === id);
+  const target = await pickTarget(payload?.targetId || (!visionAgentContext.getStore()?.agentId ? legacyLastTargetId : undefined));
+  if (!cachedVision(target)) await runPerception(target, 0.35, true);
+  const cache = cachedVision(target)!;
+  const el = cache.elements.find((e) => e.id === id);
   if (!el) {
-    const available = cachedPerceivedElements.map((e) => `[${e.id}] ${e.label}`).slice(0, 15).join(", ");
+    const available = cache.elements.map((e) => `[${e.id}] ${e.label}`).slice(0, 15).join(", ");
     throw new Error(`Element ID [${id}] not found in perceived page. Available: ${available || "(none)"}. Run perceive_page to refresh.`);
   }
 
+  if (createHash("sha256").update(await captureScreenshot(target)).digest("hex") !==
+      createHash("sha256").update(cache.screenshot).digest("hex")) {
+    throw new Error("Visual state changed since perceive_page. Refresh perception before interacting with a numbered element.");
+  }
   const [cx, cy] = el.center;
   await clickAt(target!, cx, cy, Boolean(payload?.smooth || payload?.human));
   const textHint = el.text ? ` ("${el.text}")` : "";
@@ -444,7 +463,7 @@ async function cmdClickId(payload: any): Promise<string> {
     const newScreenshot = await captureScreenshot(target!);
     try {
       const diffRes: any = await httpPostJson(visionHost(), visionPort(), "/diff", {
-        image_before: cachedPerceivedScreenshot,
+        image_before: cache.screenshot,
         image_after: newScreenshot,
       });
       diffFeedback = ` | Visual State Verification: ${diffRes.changed ? "CHANGED (UI responded, diff ratio " + diffRes.diff_ratio + ")" : "NO VISUAL CHANGE DETECTED"}`;
@@ -461,18 +480,19 @@ async function cmdTypeId(payload: any): Promise<string> {
     throw new Error("type_id requires payload {\"id\": <number>, \"text\": \"...\"}. Run perceive_page first to get element IDs.");
   }
 
-  let target = cachedPerceivedTarget;
-  if (!target || !cachedPerceivedElements.length) {
-    target = await pickTarget(payload?.targetId);
-    await runPerception(target, 0.35, true);
-  }
-
-  const el = cachedPerceivedElements.find((e) => e.id === id);
+  const target = await pickTarget(payload?.targetId || (!visionAgentContext.getStore()?.agentId ? legacyLastTargetId : undefined));
+  if (!cachedVision(target)) await runPerception(target, 0.35, true);
+  const cache = cachedVision(target)!;
+  const el = cache.elements.find((e) => e.id === id);
   if (!el) {
-    const available = cachedPerceivedElements.map((e) => `[${e.id}] ${e.label}`).slice(0, 15).join(", ");
+    const available = cache.elements.map((e) => `[${e.id}] ${e.label}`).slice(0, 15).join(", ");
     throw new Error(`Element ID [${id}] not found in perceived page. Available: ${available || "(none)"}.`);
   }
 
+  if (createHash("sha256").update(await captureScreenshot(target)).digest("hex") !==
+      createHash("sha256").update(cache.screenshot).digest("hex")) {
+    throw new Error("Visual state changed since perceive_page. Refresh perception before interacting with a numbered element.");
+  }
   const [cx, cy] = el.center;
   await clickAt(target!, cx, cy, Boolean(payload?.smooth || payload?.human));
   await new Promise((r) => setTimeout(r, 200));
@@ -484,13 +504,14 @@ async function cmdTypeId(payload: any): Promise<string> {
 
 async function cmdVerifyVisualState(payload: any): Promise<string> {
   const target = await pickTarget(payload?.targetId);
-  if (!cachedPerceivedScreenshot) {
-    throw new Error("No previous perceived screenshot found in memory. Run perceive_page first.");
+  const cache = cachedVision(target);
+  if (!cache) {
+    throw new Error("No fresh agent-scoped perception for this tab. Run perceive_page with the same targetId/agentId.");
   }
 
   const freshScreenshot = await captureScreenshot(target);
   const diffRes: any = await httpPostJson(visionHost(), visionPort(), "/diff", {
-    image_before: cachedPerceivedScreenshot,
+    image_before: cache.screenshot,
     image_after: freshScreenshot,
   });
 
@@ -639,7 +660,7 @@ async function cmdStatus(): Promise<string> {
     `- Vision daemon (port ${visionPort()}): ${serviceUp ? "running" : "stopped (auto-starts on demand)"}`,
     `- Model: racineai/UI-DETR-1 (~535MB RF-DETR Medium)`,
     `- Endpoints: /detect, /perceive (SoM tags), /diff (visual state verification)`,
-    `- Cached Perceived Elements: ${cachedPerceivedElements.length}`,
+    `- Cached Perception Sessions: ${visionCaches.size}`,
     `- Python runtime: ${pythonCmd || "not found in PATH"}`,
   ];
   return lines.join("\n");
@@ -697,11 +718,14 @@ export const controlChromeVisionTool: Tool = {
     let payload: any = {};
     if (args?.payload) {
       try {
-        payload = JSON.parse(args.payload);
+        payload = typeof args.payload === "string" ? JSON.parse(args.payload) : { ...args.payload };
       } catch {
         throw new Error("'payload' must be a valid JSON string.");
       }
     }
+    if (args.agentId !== undefined && payload.agentId === undefined) payload.agentId = args.agentId;
+    if (args.targetId !== undefined && payload.targetId === undefined) payload.targetId = args.targetId;
+    const execute = async (): Promise<string> => {
     switch (command) {
       case "perceive_page":
       case "parse_screenshot":
@@ -726,6 +750,23 @@ export const controlChromeVisionTool: Tool = {
         throw new Error(
           `Unknown vision command '${command}'. Use perceive_page, click_id, type_id, verify_visual_state, audit_layout, click_label, type_label, status, or setup.`
         );
+    }
+    };
+    const agentId = payload.agentId === undefined ? undefined : String(payload.agentId);
+    const sessionToken = payload.sessionToken === undefined ? undefined : String(payload.sessionToken);
+    return visionAgentContext.run({ agentId, sessionToken }, async () => {
+      if (["click_id", "type_id", "click_label", "type_label"].includes(command)) {
+        const target = await pickTarget(payload.targetId || (!agentId ? legacyLastTargetId : undefined));
+        return withCdpTargetWrite(cdpPort(), target.id, agentId, () =>
+          executeWithTarget(target.id), { sessionToken });
+      }
+      if (["status", "setup"].includes(command)) return execute();
+      const target = await pickTarget(payload.targetId);
+      return withCdpTargetRead(cdpPort(), target.id, { agentId, sessionToken }, () => executeWithTarget(target.id));
+    });
+    async function executeWithTarget(targetId: string): Promise<string> {
+      payload.targetId = targetId;
+      return execute();
     }
   },
 };

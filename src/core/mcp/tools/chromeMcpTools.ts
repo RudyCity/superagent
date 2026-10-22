@@ -41,12 +41,13 @@ export async function handleControlChromeCdp(args: any): Promise<McpToolResult> 
 
 export async function handleControlChromeVision(args: any): Promise<McpToolResult> {
   try {
-    let payloadStr = args?.payload;
-    if (payloadStr && typeof payloadStr === "object") {
-      payloadStr = JSON.stringify(payloadStr);
-    }
+    const visionPayload: Record<string, unknown> =
+      typeof args?.payload === "string" ? JSON.parse(args.payload || "{}") : { ...(args?.payload || {}) };
+    if (args?.agentId !== undefined && visionPayload.agentId === undefined) visionPayload.agentId = args.agentId;
+    if (args?.targetId !== undefined && visionPayload.targetId === undefined) visionPayload.targetId = args.targetId;
+    if (args?.sessionToken !== undefined && visionPayload.sessionToken === undefined) visionPayload.sessionToken = args.sessionToken;
     const res = await controlChromeVisionTool.execute(
-      { command: args?.command, payload: payloadStr },
+      { command: args?.command, payload: JSON.stringify(visionPayload) },
       resolveMcpWorkspace(args?.workspace).path
     );
     return toResult(res);
@@ -135,7 +136,7 @@ export const CHROME_MCP_TOOL_DEFS = [
     name: "superagent_chrome_cdp",
     description:
       "Automate real Google Chrome browser directly via Chrome DevTools Protocol (CDP port 9222). " +
-      "Commands: list_targets, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, read_terminal, read_terminal_delta, write_terminal, send_terminal_key, execute_terminal, watch_terminal, list_terminal_sessions, monitor_terminal_agents, clear_terminal_sessions, recover_terminal, discover_desktop_targets, " +
+      "Commands: list_targets, claim_target, release_target, recover_session, list_sessions, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, read_terminal, read_terminal_delta, write_terminal, send_terminal_key, execute_terminal, watch_terminal, list_terminal_sessions, monitor_terminal_agents, clear_terminal_sessions, recover_terminal, discover_desktop_targets, " +
       "extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, " +
       "get_cookies, inspect_media_devices, move_cursor, drag_and_drop, emulate_device. " +
       "Supports device/viewport emulation (mobile, tablet, desktop, reset), human-like Bézier cursor movement, " +
@@ -146,7 +147,7 @@ export const CHROME_MCP_TOOL_DEFS = [
         command: {
           type: "string",
           enum: [
-            "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate",
+            "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "new_tab", "close_tab", "activate", "navigate", "evaluate",
             "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "execute_terminal", "watch_terminal", "list_terminal_sessions", "monitor_terminal_agents", "clear_terminal_sessions", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
             "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
             "get_cookies", "inspect_media_devices", "media_devices", "move_cursor",
@@ -191,7 +192,12 @@ export const CHROME_MCP_TOOL_DEFS = [
         screenshot: { type: "boolean", description: "Capture screenshot alongside action." },
         outputPath: { type: "string", description: "Path to save screenshot file." },
         fullPage: { type: "boolean", description: "Capture full scrollable page." },
-        targetId: { type: "string", description: "Optional specific Chrome tab target ID." },
+        targetId: { type: "string", description: "Specific Chrome tab target ID; required for agent-scoped mutations with multiple tabs." },
+        agentId: { type: "string", description: "Stable multi-agent owner ID." },
+        sessionToken: { type: "string", description: "Secret token returned by claim_target; mandatory to access a claimed tab." },
+        previousTargetId: { type: "string", description: "recover_target: old targetId whose lease will be moved to the selected replacement tab." },
+        queue_wait_ms: { type: "number", description: "Bounded queue wait (0-120000ms) for same-tab operations." },
+        priority: { type: "number", description: "Queue priority 0 (highest) through 9 (lowest)." },
       },
       required: ["command"],
     },
@@ -217,8 +223,11 @@ export const CHROME_MCP_TOOL_DEFS = [
         payload: {
           type: "string",
           description:
-            "JSON payload. perceive_page: {\"threshold\": 0.35}. click_id: {\"id\": 1, \"verify\": true}. type_id: {\"id\": 2, \"text\": \"val\"}.",
+            "JSON payload. Pass agentId and targetId for multi-agent isolation; perceive_page before click_id/type_id.",
         },
+        targetId: { type: "string", description: "Chrome CDP target ID. Required for agent-scoped vision operations with multiple tabs." },
+        agentId: { type: "string", description: "Stable agent ID shared with superagent_chrome_cdp." },
+        sessionToken: { type: "string", description: "Capability returned by claim_target, required on a claimed tab." },
       },
       required: ["command"],
     },

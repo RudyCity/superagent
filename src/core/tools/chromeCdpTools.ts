@@ -44,6 +44,7 @@ import { executeCdpTerminalCommand } from "./chromeCdpTerminalCommands.js";
 import { discoverDesktopTargets } from "./chromeCdpDesktop.js";
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { claimCdpTarget, listCdpSessions, releaseCdpTarget, withCdpTargetWrite, withCdpTargetRead, cdpCoordinatorStatus, rebindCdpTarget } from "./chromeCdpSessionManager.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -51,6 +52,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
  */
 let resolvedHost: string | null = null;
 const terminalCdpConfig = new AsyncLocalStorage<{ port: number }>();
+const cdpAgentContext = new AsyncLocalStorage<{ agentId?: string; sessionToken?: string }>();
+const snapshotKey = (targetId: string) =>
+  `${cdpPort()}:${cdpAgentContext.getStore()?.agentId || "legacy"}:${targetId}`;
 
 
 function cdpHost(): string {
@@ -288,7 +292,7 @@ async function listPageTargets(): Promise<CdpTarget[]> {
   return targets.filter((t: any) => t && (t.type === "page" || t.type === "webview") && t.webSocketDebuggerUrl);
 }
 
-async function pickTarget(targetId?: string, autoActivate = true, requireExplicitWhenMultiple = false): Promise<CdpTarget> {
+async function pickTarget(targetId?: string, autoActivate = false, requireExplicitWhenMultiple = false): Promise<CdpTarget> {
   let pages = await listPageTargets();
   if (pages.length === 0) {
     try {
@@ -302,7 +306,7 @@ async function pickTarget(targetId?: string, autoActivate = true, requireExplici
     throw new Error("No page targets found on the Chrome remote-debugging endpoint. Open a tab in Chrome and retry.");
   }
   pruneCdpConnections(pages.map((p) => p.webSocketDebuggerUrl));
-  if (requireExplicitWhenMultiple && !targetId && pages.length > 1) {
+  if ((requireExplicitWhenMultiple || !!cdpAgentContext.getStore()?.agentId) && !targetId && pages.length > 1) {
     throw new Error("Multiple Chrome/Electron CDP targets found. Specify targetId from list_targets before sending terminal input.");
   }
   const target = targetId ? pages.find((p) => p.id === targetId) : pages[0];
@@ -366,7 +370,19 @@ function pruneCdpConnections(liveUrls: string[]): void {
   }
 }
 
+const cdpConnectionOpenings = new Map<string, Promise<CdpConnection>>();
 async function getCdpConnection(target: CdpTarget): Promise<CdpConnection> {
+  const key = target.webSocketDebuggerUrl + "|" + cdpHost();
+  const pending = cdpConnectionOpenings.get(key);
+  if (pending) return pending;
+  const opening = openCdpConnection(target);
+  cdpConnectionOpenings.set(key, opening);
+  try { return await opening; }
+  finally {
+    if (cdpConnectionOpenings.get(key) === opening) cdpConnectionOpenings.delete(key);
+  }
+}
+async function openCdpConnection(target: CdpTarget): Promise<CdpConnection> {
   let url = target.webSocketDebuggerUrl;
   if (resolvedHost === "::1" && url.includes("://127.0.0.1:")) {
     url = url.replace("://127.0.0.1:", "://[::1]:");
@@ -502,7 +518,7 @@ export const controlChromeCdpTool: Tool = {
       command: {
         type: "string",
         enum: [
-          "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
+          "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
           "select_option", "check_form", "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
           "get_cookies", "inspect_media_devices", "mock_display_media", "handle_screen_share", "move_cursor", "show_cursor", "hide_cursor", "get_cursor",
           "drag_and_drop", "drag", "emulate_device", ...CDP_AUDIT_COMMANDS, ...CDP_DIAGNOSTIC_COMMANDS,
@@ -561,7 +577,12 @@ export const controlChromeCdpTool: Tool = {
       y: { type: "number", description: "Optional y coordinate for cursor movement or positioning." },
       steps: { type: "number", description: "Optional step count for cursor trajectory interpolation." },
       visualCursor: { type: "boolean", description: "Optional flag to display an animated virtual pointer overlay in the DOM." },
-      targetId: { type: "string", description: "Optional CDP target id. Automatically defaults to the active tab." },
+      targetId: { type: "string", description: "Optional CDP target id. Pass explicitly when multiple agents control tabs." },
+      agentId: { type: "string", description: "Stable agent identity for CDP tab ownership." },
+      sessionToken: { type: "string", description: "Secret capability returned by claim_target. Required for actions on claimed tabs." },
+      previousTargetId: { type: "string", description: "recover_target: previous owned tab ID; targetId is the explicitly selected replacement tab ID." },
+      priority: { type: "number", description: "Optional queue priority 0 (highest) through 9 (lowest), default 5." },
+      queue_wait_ms: { type: "number", description: "Maximum time to wait in the per-tab queue (0-120000ms)." },
       includeImageData: { type: "boolean", description: "Include screenshot data inline; disabled by default." }, includeValues: { type: "boolean", description: "Expose sensitive cookie values; disabled by default." }, includeBase64: { type: "boolean", description: "Include bounded PDF base64; disabled by default." },
  max_chars: { type: "number", description: "Bounded page/audit report output." }, max_links: { type: "number", description: "Maximum links returned by read_page." }, limit: { type: "number", description: "Maximum debug events returned (1-300)." }
     },
@@ -596,6 +617,11 @@ export const controlChromeCdpTool: Tool = {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
     }
     const targetId = args.targetId ? String(args.targetId) : payload.targetId ? String(payload.targetId) : undefined;
+    const agentId = args.agentId !== undefined ? args.agentId : payload.agentId;
+    const sessionToken = args.sessionToken !== undefined ? args.sessionToken : payload.sessionToken;
+    const opts = { sessionToken: sessionToken === undefined ? undefined : String(sessionToken),
+      priority: Number(payload.priority ?? args.priority ?? 5),
+      waitMs: Number(payload.queue_wait_ms ?? args.queue_wait_ms ?? 8000) };
 
     if (payload.debug_port !== undefined) {
       const port = Number(payload.debug_port);
@@ -607,7 +633,78 @@ export const controlChromeCdpTool: Tool = {
       return terminalCdpConfig.run({ port }, () =>
         controlChromeCdpTool.execute({ ...args, debug_port: undefined, payload: withoutPort }, {} as any));
     }
+    if (!cdpAgentContext.getStore()) {
+      const agent = agentId === undefined ? undefined : String(agentId);
+      if (agent && ["handle_screen_share", "accept_screen_share", "dismiss_screen_share"].includes(command)) {
+        return "control_chrome_cdp failed: global screen-share prompts cannot be safely controlled by an agent-scoped CDP session.";
+      }
+      const writes = new Set([
+        "close_tab", "activate", "navigate", "evaluate", "verify_action", "click", "type",
+        "write_terminal", "send_terminal_key", "execute_terminal", "handle_dialog",
+        "inspect_media_devices", "media_devices", "mock_display_media", "mock_screen_share",
+        "bypass_screen_share", "move_cursor", "move_mouse", "show_cursor", "hide_cursor",
+        "drag_and_drop", "drag", "drag_drop", "emulate_device", "set_device", "set_viewport",
+        "emulate_viewport", "select_option", "select_dropdown", "pick_option",
+      ]);
+      if (writes.has(command)) {
+        try {
+          const selected = await pickTarget(targetId, false, !!agent);
+          const result = await withCdpTargetWrite(cdpPort(), selected.id, agent, () =>
+            cdpAgentContext.run({ agentId: agent, sessionToken: opts.sessionToken }, () =>
+              controlChromeCdpTool.execute({ ...args, targetId: selected.id, payload }, {} as any)), opts);
+          if (command === "close_tab" && agent && typeof result === "string" &&
+              result.startsWith("control_chrome_cdp: closed tab")) {
+            await releaseCdpTarget(cdpPort(), selected.id, agent, opts.sessionToken);
+          }
+          return result;
+        } catch (error: any) {
+          return "control_chrome_cdp failed: " + error.message;
+        }
+      }
+      if (command === "get_cookies" && (await listCdpSessions()).some(s => s.port === cdpPort())) {
+        return "control_chrome_cdp failed: cookies are unavailable while multi-agent CDP sessions exist (browser-context scope).";
+      }
+      const openRead = new Set([
+        "list_targets", "claim_target", "recover_session", "recover_target", "release_target",
+        "list_sessions", "coordinator_status", "discover_desktop_targets", "new_tab",
+      ]);
+      if (!targetId && !agent && !openRead.has(command) &&
+          (await listCdpSessions()).some(s => s.port === cdpPort())) {
+        return "control_chrome_cdp failed: specify targetId for all operations while multi-agent sessions are active.";
+      }
+      if (!openRead.has(command) && (targetId || agent)) {
+        try {
+          const selected = await pickTarget(targetId, false, !!agent);
+          return await withCdpTargetRead(cdpPort(), selected.id, { ...opts, agentId: agent }, () =>
+            cdpAgentContext.run({ agentId: agent, sessionToken: opts.sessionToken }, () =>
+              controlChromeCdpTool.execute({ ...args, targetId: selected.id, payload }, {} as any)));
+        } catch (error: any) { return "control_chrome_cdp failed: " + error.message; }
+      }
+      return cdpAgentContext.run({ agentId: agent, sessionToken: opts.sessionToken }, () =>
+        controlChromeCdpTool.execute({ ...args, payload }, {} as any));
+    }
     try {
+      if (command === "recover_target") {
+        const previousTargetId = String(args.previousTargetId || payload.previousTargetId || "");
+        if (!targetId || !previousTargetId || !agentId || !opts.sessionToken) {
+          return "control_chrome_cdp failed: recover_target requires previousTargetId, targetId, agentId and sessionToken.";
+        }
+        const selected = await pickTarget(targetId, false, true);
+        const next = await rebindCdpTarget(cdpPort(), previousTargetId, selected.id, String(agentId), opts.sessionToken);
+        return JSON.stringify({ status: "rebound", ...next });
+      }
+      if (["claim_target", "recover_session", "release_target"].includes(command)) {
+        if (!targetId || !agentId) return "control_chrome_cdp failed: targetId and agentId are required.";
+        const selected = await pickTarget(targetId, false, true);
+        if (command === "release_target") {
+          await releaseCdpTarget(cdpPort(), selected.id, String(agentId), opts.sessionToken);
+          return `control_chrome_cdp: released target ${selected.id} for agent ${agentId}`;
+        }
+        const session = await claimCdpTarget(cdpPort(), selected.id, String(agentId), opts.sessionToken);
+        return JSON.stringify({ status: command === "recover_session" ? "recovered" : "claimed", ...session });
+      }
+      if (command === "list_sessions") return JSON.stringify({ sessions: await listCdpSessions() });
+      if (command === "coordinator_status") return JSON.stringify(await cdpCoordinatorStatus(cdpPort()));
       if (command === "discover_desktop_targets") {
         return JSON.stringify(await discoverDesktopTargets(
           String(payload.debug_ports || process.env.SUPERAGENT_ELECTRON_CDP_PORTS || cdpPort())));
@@ -633,7 +730,8 @@ export const controlChromeCdpTool: Tool = {
           const path = `/json/new?${encodeURIComponent(url)}`;
           const res: any = await httpPutJson(path);
           const newId = res && res.id ? res.id : undefined;
-          if (newId) httpPutJson(`/json/activate/${newId}`).catch(() => {});
+          const issued = newId && agentId ? await claimCdpTarget(cdpPort(), newId, String(agentId)) : undefined;
+          if (issued) return JSON.stringify({ status: "opened", url, targetId: newId, agentId, sessionToken: issued.sessionToken });
           return `control_chrome_cdp: opened new tab '${url}'${newId ? ` (targetId: ${newId})` : ""}`;
         }
         case "close_tab": {
@@ -677,8 +775,8 @@ export const controlChromeCdpTool: Tool = {
                 fresh = (sVal as any).elements;
                 pageOverview = sVal as any;
               }
-              snapshotPrevStore.set(target.id, snapshotStore.get(target.id) ?? []);
-              snapshotStore.set(target.id, fresh);
+              snapshotPrevStore.set(snapshotKey(target.id), snapshotStore.get(snapshotKey(target.id)) ?? []);
+              snapshotStore.set(snapshotKey(target.id), fresh);
               const maxElements = 35;
               const entries = fresh.slice(0, maxElements);
               const contextHeader = formatContextHeader(pageOverview);
@@ -757,9 +855,9 @@ export const controlChromeCdpTool: Tool = {
             }
           }
 
-          const prev: SnapshotEntry[] = snapshotStore.get(target.id) ?? [];
-          snapshotPrevStore.set(target.id, prev);
-          snapshotStore.set(target.id, fresh);
+          const prev: SnapshotEntry[] = snapshotStore.get(snapshotKey(target.id)) ?? [];
+          snapshotPrevStore.set(snapshotKey(target.id), prev);
+          snapshotStore.set(snapshotKey(target.id), fresh);
           const entries = fresh.slice(0, maxElements);
           const title = `'${truncate(target.title, 60)}'`;
 
@@ -833,7 +931,7 @@ export const controlChromeCdpTool: Tool = {
         }
         case "click": {
           const target = await pickTarget(targetId);
-          const resolved = resolveActionSelector(payload, target.id);
+          const resolved = resolveActionSelector(payload, snapshotKey(target.id));
           if ("error" in resolved) return resolved.error;
           const clickWaitMs = parseTimeoutMs(payload.timeout_ms, 10000);
           if (clickWaitMs > 0) {
@@ -886,7 +984,7 @@ export const controlChromeCdpTool: Tool = {
           }
           const clear = payload.clear === undefined ? true : Boolean(payload.clear);
           const target = await pickTarget(targetId);
-          const resolved = resolveActionSelector(payload, target.id);
+          const resolved = resolveActionSelector(payload, snapshotKey(target.id));
           if ("error" in resolved) return resolved.error;
           const typeWaitMs = parseTimeoutMs(payload.timeout_ms, 10000);
           if (typeWaitMs > 0) {

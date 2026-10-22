@@ -2,6 +2,9 @@ import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import { createServer, Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { AddressInfo } from "net";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as path from "path";
 import { existsSync, unlinkSync, readdirSync } from "fs";
 import { controlChromeCdpTool, _cdpTestHooks } from "../src/core/tools/chromeCdpTools.js";
@@ -16,6 +19,8 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   let blackholePort = 0;
   let savedPort: string | undefined;
   let savedTimeout: string | undefined;
+  let savedSessionDir: string | undefined;
+  let testSessionDir = "";
   let snapshotReturnsEmpty = false;
   let snapshotChanged = false;
   let captureDomStateReturnsForm = false;
@@ -30,6 +35,9 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   const mockElements = [{ index: 0, tag: "button", text: "Login", selector: "button" }, { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' }];
 
   beforeAll(async () => {
+    savedSessionDir = process.env.SUPERAGENT_CDP_SESSION_DIR;
+    testSessionDir = await mkdtemp(join(tmpdir(), "superagent-cdp-tools-test-"));
+    process.env.SUPERAGENT_CDP_SESSION_DIR = testSessionDir;
     // 1. answering WS server (mock CDP target endpoint)
     wss = new WebSocketServer({ host: "127.0.0.1", port: 0 });
     await new Promise<void>((r) => wss.on("listening", () => r()));
@@ -326,6 +334,9 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     if (savedTimeout === undefined) delete process.env.SUPERAGENT_CDP_TIMEOUT_MS;
     else process.env.SUPERAGENT_CDP_TIMEOUT_MS = savedTimeout;
     _cdpTestHooks.closeAll();
+    if (savedSessionDir === undefined) delete process.env.SUPERAGENT_CDP_SESSION_DIR;
+    else process.env.SUPERAGENT_CDP_SESSION_DIR = savedSessionDir;
+    await rm(testSessionDir, { recursive: true, force: true });
     wss.close();
     blackhole.close();
     await new Promise<void>((r) => httpServer.close(() => r()));
@@ -346,7 +357,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(controlChromeCdpTool.name).toBe("control_chrome_cdp");
     const cmds = (controlChromeCdpTool.parameters as any).properties.command.enum as string[];
     expect(cmds).toEqual([
-      "list_targets", "new_tab", "close_tab", "activate", "navigate", "evaluate",
+      "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "new_tab", "close_tab", "activate", "navigate", "evaluate",
       "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key",
       "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets",
       "extract_links", "click", "type", "wait_for",
@@ -680,6 +691,35 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     await controlChromeCdpTool.execute({ command: "get_cookies" });
     await controlChromeCdpTool.execute({ command: "screenshot" });
     expect(_cdpTestHooks.connectionCount()).toBe(1);
+  });
+
+  test("multi-agent CDP claims block cross-agent mutations and enforce explicit target selection", async () => {
+    const owner = "laris-qa-" + process.pid;
+    const rival = "gumroad-qa-" + process.pid;
+    const claim = await controlChromeCdpTool.execute({ command: "claim_target", targetId: "T1", agentId: owner });
+    expect(claim).toContain('"status":"claimed"');
+    const sessionToken = JSON.parse(String(claim)).sessionToken as string;
+    try {
+      const sessions = await controlChromeCdpTool.execute({ command: "list_sessions" });
+      expect(sessions).toContain(owner);
+      const denied = await controlChromeCdpTool.execute({
+        command: "evaluate", targetId: "T1", agentId: rival, payload: { expression: "1+1" },
+      });
+      expect(denied).toContain("sessionToken");
+      const leaked = await controlChromeCdpTool.execute({ command: "read_page", targetId: "T1" });
+      expect(leaked).toContain("sessionToken");
+      const cookies = await controlChromeCdpTool.execute({ command: "get_cookies" });
+      expect(cookies).toContain("unavailable while multi-agent");
+      const missingTarget = await controlChromeCdpTool.execute({ command: "snapshot", agentId: owner });
+      expect(missingTarget).toContain("Multiple Chrome/Electron CDP targets");
+      const snapshot = await controlChromeCdpTool.execute({ command: "snapshot", targetId: "T1", agentId: owner, sessionToken });
+      expect(snapshot).toContain("snapshot of");
+      const refresh = await controlChromeCdpTool.execute({ command: "recover_session", targetId: "T1", agentId: owner, sessionToken });
+      expect(refresh).toContain('"status":"recovered"');
+    } finally {
+      const released = await controlChromeCdpTool.execute({ command: "release_target", targetId: "T1", agentId: owner, sessionToken });
+      expect(released).toContain("released target");
+    }
   });
 
   test("new_tab opens a new page and returns targetId", async () => {

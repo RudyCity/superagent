@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { Tool } from "./types.js";
+import { assertNoExternalBrowserMutation } from "./chromeCdpSessionManager.js";
 // PERF: `remoteChromeBridge` is heavy (pulls in `ws` + http server).
 // Lazy-import the single symbol we use so just *loading* this file
 // (which happens whenever any tool list is materialized) doesn't
@@ -26,7 +27,12 @@ import {
 export let browserControlHandler: ((action: string, target: string, value?: string, instanceId?: string) => Promise<string>) | null = null;
 
 export function setBrowserControlHandler(handler: typeof browserControlHandler) {
-  browserControlHandler = handler;
+  browserControlHandler = handler ? async (...args) => {
+    // Extension/remote bridge cannot prove CDP target identity or lease.
+    // Fail closed while CDP session ownership is active.
+    await assertNoExternalBrowserMutation();
+    return handler(...args);
+  } : null;
 }
 
 export const controlBrowserTabTool: Tool = {

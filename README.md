@@ -25,6 +25,12 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 
 ---
 
+### Chrome CDP Multi-Agent Gateway
+
+SuperAgent CLI and MCP can coordinate multiple Bun agents across Chrome tabs with an atomic cross-process queue, secret session capabilities, read/write ownership checks, and session recovery. Use `superagent_chrome_cdp` with `claim_target`, then send the returned `sessionToken`, `agentId`, and `targetId` on every CDP/vision operation. Check `coordinator_status` for active sessions and queue pressure, and `release_target` when finished. The Chrome Extension bridge intentionally blocks actions while a CDP claim is active; separate profiles are required for separate browser logins.
+
+Complete workflow and limitations: [Multi-agent Chrome CDP sessions](docs/plans/2026-10-22-multi-agent-chrome-cdp-sessions.md).
+
 ## ✨ Key Features
 
 - **🎯 Single Agent Mode (Primary)**: Seamless pair programming with live terminal execution, intelligent tool usage, and subagent delegation.
