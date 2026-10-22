@@ -4,8 +4,8 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import http from "http";
-import { setBrowserControlHandler, browserControlHandler } from "./browserMacroTools.js";
-import { assertNoExternalBrowserMutation } from "./chromeCdpSessionManager.js";
+import { setBrowserControlHandler, browserControlHandler, getBrowserControlHandlerSource } from "./browserMacroTools.js";
+import { withBrowserBridgeOperation } from "./chromeCdpSessionManager.js";
 import { getRootConfigDir, ensureGlobalConfigDir } from "../config/paths.js";
 
 const DEFAULT_REMOTE_WS_PORT = 9223;
@@ -376,7 +376,7 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
             }
             connectedClients.add(ws);
             clientMetadataMap.set(ws, { connectedAt: Date.now(), commandCount: 0 });
-            if (!browserControlHandler || browserControlHandler === sendRemoteCommand) {
+            if (!browserControlHandler || getBrowserControlHandlerSource() === sendRemoteCommand) {
               setBrowserControlHandler(sendRemoteCommand);
             }
             logBridgeEvent("Client Connected (handshake OK)", `Active clients: ${connectedClients.size}`);
@@ -519,14 +519,13 @@ setupExitHooks();
  * Sends a command to the connected Superagent Remote Chrome Extension via WebSocket.
  */
 export async function sendRemoteCommand(
-  action: string,
-  target: string,
-  value?: string,
-  instanceId?: string
+  action: string, target: string, value?: string, instanceId?: string
 ): Promise<string> {
-  // The extension targets active UI tabs, not verified CDP target IDs.
-  // Deny direct bridge calls as well as browser macro wrappers.
-  await assertNoExternalBrowserMutation();
+  return withBrowserBridgeOperation(() => sendRemoteCommandUnsafe(action, target, value, instanceId));
+}
+async function sendRemoteCommandUnsafe(
+  action: string, target: string, value?: string, instanceId?: string
+): Promise<string> {
   // Rate limiting check (max 30 requests / sec)
   const now = Date.now();
   if (now - lastWindowReset > 1000) {

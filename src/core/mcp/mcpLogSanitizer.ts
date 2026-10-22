@@ -34,9 +34,23 @@ export function sanitizeValue(value: unknown, depth = 0, seen: WeakSet<object> =
 function sanitizeInner(value: unknown, depth: number, seen: WeakSet<object>): unknown {
   if (value === null || value === undefined) return value;
   if (typeof value === "string") {
-    return value.length > MAX_STRING_LENGTH
-      ? value.slice(0, 200) + `...[truncated ${value.length} chars]`
-      : value;
+    // Tool payloads are commonly JSON encoded inside a string, so an ordinary
+    // object-key redactor otherwise misses embedded sessionToken credentials.
+    const trimmed = value.trim();
+    if (trimmed.length <= 64_000 && (trimmed.startsWith("{") || trimmed.startsWith("["))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === "object") {
+          return JSON.stringify(sanitizeInner(parsed, depth + 1, seen));
+        }
+      } catch { /* arbitrary text, not a JSON tool payload */ }
+    }
+    const safe = value
+      .replace(/(Bearer\s+)[a-zA-Z0-9._~+\/-]+/gi, "$1[REDACTED]")
+      .replace(/((?:sessionToken|api[_-]?key|authorization|password)\s*[:=]\s*["']?)[^\s"'&,}]+/gi, "$1[REDACTED]");
+    return safe.length > MAX_STRING_LENGTH
+      ? safe.slice(0, 200) + `...[truncated ${safe.length} chars]`
+      : safe;
   }
   if (typeof value !== "object") return value;
   if (depth > MAX_DEPTH) return REDACTED;

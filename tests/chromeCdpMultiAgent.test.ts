@@ -3,10 +3,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import { setBrowserControlHandler, browserControlHandler } from "../src/core/tools/browserMacroTools.js";
+import { setBrowserControlHandler, browserControlHandler, getBrowserControlHandlerSource } from "../src/core/tools/browserMacroTools.js";
 import {
   claimCdpTarget, listCdpSessions, releaseCdpTarget, withCdpTargetWrite,
-  withCdpTargetRead, cdpCoordinatorStatus, assertNoExternalBrowserMutation, rebindCdpTarget,
+  withCdpTargetRead, cdpCoordinatorStatus, assertNoExternalBrowserMutation, rebindCdpTarget, withBrowserLifecycleOperation, withBrowserBridgeOperation,
 } from "../src/core/tools/chromeCdpSessionManager.js";
 
 describe("Chrome CDP multi-agent capability and queue coordinator", () => {
@@ -190,6 +190,62 @@ describe("Chrome CDP multi-agent capability and queue coordinator", () => {
     } finally {
       setBrowserControlHandler(null);
     }
+  });
+
+  test("lifecycle shutdown fails closed and cannot race against a new claim", async () => {
+    const current = await claimCdpTarget(9222, "LOCKED", "agent-a");
+    await expect(withBrowserLifecycleOperation(async () => "kill-browser")).rejects.toThrow(/blocked/);
+    await releaseCdpTarget(9222, "LOCKED", "agent-a", current.sessionToken);
+    let openGate!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>(resolve => { openGate = resolve; });
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    const lifecycle = withBrowserLifecycleOperation(async () => {
+      started();
+      await gate;
+    });
+    await entered;
+    let claimFinished = false;
+    const pending = claimCdpTarget(9222, "NEXT", "agent-b").then(value => {
+      claimFinished = true;
+      return value;
+    });
+    await new Promise(resolve => setTimeout(resolve, 80));
+    expect(claimFinished).toBe(false);
+    openGate();
+    await lifecycle;
+    const issued = await pending;
+    expect(issued.agentId).toBe("agent-b");
+  });
+
+  test("extension bridge operations are serialized against CDP claims", async () => {
+    let resume!: () => void;
+    let entered!: () => void;
+    const hold = new Promise<void>(resolve => { resume = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const extension = withBrowserBridgeOperation(async () => {
+      entered();
+      await hold;
+      return "extension_done";
+    });
+    await started;
+    let owner: Awaited<ReturnType<typeof claimCdpTarget>> | undefined;
+    const claim = claimCdpTarget(9222, "AFTER_EXTENSION", "agent-a").then(x => { owner = x; return x; });
+    await new Promise(resolve => setTimeout(resolve, 75));
+    expect(owner).toBeUndefined();
+    resume();
+    expect(await extension).toBe("extension_done");
+    expect((await claim).agentId).toBe("agent-a");
+    await expect(withBrowserBridgeOperation(async () => "unsafe")).rejects.toThrow(/blocked/);
+  });
+
+  test("handler mode identity remains intact after wrapping", async () => {
+    const sidepanel = async () => "sidepanel";
+    setBrowserControlHandler(sidepanel);
+    expect(getBrowserControlHandlerSource()).toBe(sidepanel);
+    expect(browserControlHandler).not.toBe(sidepanel);
+    setBrowserControlHandler(null);
+    expect(getBrowserControlHandlerSource()).toBeNull();
   });
 
 });

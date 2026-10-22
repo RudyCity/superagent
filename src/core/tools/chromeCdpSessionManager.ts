@@ -3,6 +3,7 @@
  * credential-backed leases; no browser data or plaintext capabilities on disk.
  */
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile, appendFile } from "node:fs/promises";
@@ -16,6 +17,10 @@ const keyFor = (port: number, targetId: string) => sha(port + ":" + targetId);
 const fileFor = (key: string) => join(dir(), "owners", key + ".json");
 const lockFor = (key: string) => join(dir(), "locks", key + ".lock");
 const queueFor = (key: string) => join(dir(), "queues", key);
+const BROWSER_LIFECYCLE_KEY = sha("browser-lifecycle-global-v1");
+const browserBridgeScope = new AsyncLocalStorage<boolean>();
+const browserLifecycleScope = new AsyncLocalStorage<boolean>();
+const PRIORITY_AGING_MS = 12_000;
 const auditPath = () => join(dir(), "events.jsonl");
 const validAgent = (value: string) => {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,95}$/.test(value)) throw new Error("Invalid CDP agentId.");
@@ -83,7 +88,10 @@ async function lock(key: string, opts: CdpAccess = {}): Promise<() => Promise<vo
           return pending;
         } catch { return null; }
       }));
-      const first = waiting.filter(Boolean).sort((a, b) => a.priority - b.priority || a.at - b.at || a.token.localeCompare(b.token))[0];
+      const effectivePriority = (item: any) =>
+        Math.max(0, item.priority - Math.floor(Math.max(0, Date.now() - item.at) / PRIORITY_AGING_MS));
+      const first = waiting.filter(Boolean).sort((a, b) =>
+        effectivePriority(a) - effectivePriority(b) || a.at - b.at || a.token.localeCompare(b.token))[0];
       if (first?.token === token) {
         const path = lockFor(key);
         try {
@@ -133,7 +141,7 @@ async function lock(key: string, opts: CdpAccess = {}): Promise<() => Promise<vo
         }
       }
       if (Date.now() >= deadline) throw new Error("CDP target busy: timed out in target queue.");
-      await delay(40);
+      await delay(65);
     }
   } finally { await rm(request, { force: true }).catch(() => {}); }
 }
@@ -156,7 +164,7 @@ function auth(session: CdpSession, access: CdpAccess): void {
 const issue = () => randomBytes(32).toString("base64url");
 export async function claimCdpTarget(port: number, targetId: string, agentId: string, sessionToken?: string): Promise<CdpClaim> {
   validAgent(agentId);
-  return guarded(port, targetId, {}, async key => {
+  return withBrowserLifecycleMutex(() => guarded(port, targetId, {}, async key => {
     const previous = await load(key);
     if (previous && previous.expiresAt > Date.now()) {
       auth(previous, { agentId, sessionToken });
@@ -174,7 +182,7 @@ export async function claimCdpTarget(port: number, targetId: string, agentId: st
     await save(session);
     await audit(previous ? "reclaim_expired" : "claim", key, agentId);
     return { ...publicSession(session), sessionToken: token };
-  });
+  }));
 }
 export async function releaseCdpTarget(port: number, targetId: string, agentId: string, sessionToken?: string): Promise<void> {
   validAgent(agentId);
@@ -200,7 +208,7 @@ export async function rebindCdpTarget(
   validate(port, nextTargetId);
   validAgent(agentId);
   if (previousTargetId === nextTargetId) throw new Error("New target must differ from the previous target.");
-  return guarded(port, previousTargetId, {}, async oldKey => {
+  return withBrowserLifecycleMutex(() => guarded(port, previousTargetId, {}, async oldKey => {
     const previous = await load(oldKey);
     if (!previous || previous.expiresAt <= Date.now()) throw new Error("Old CDP lease has expired. Claim the new target explicitly.");
     auth(previous, { agentId, sessionToken });
@@ -208,7 +216,7 @@ export async function rebindCdpTarget(
     await rm(fileFor(oldKey), { force: true });
     await audit("rebind", oldKey, agentId);
     return next;
-  });
+  }));
 }
 
 export async function listCdpSessions(): Promise<Array<Omit<CdpSession, "tokenHash">>> {
@@ -249,18 +257,77 @@ export async function withCdpTargetWrite<T>(
   });
 }
 export async function cdpCoordinatorStatus(port?: number): Promise<{
-  sessions: Array<Omit<CdpSession, "tokenHash">>; queue: Array<{ key: string; queued: number; locked: boolean }>;
+  sessions: Array<Omit<CdpSession, "tokenHash">>;
+  queue: Array<{ key: string; queued: number; locked: boolean; oldestWaitMs: number; port?: number; targetId?: string }>;
+  summary: { activeAgents: number; activeTabs: number; queued: number; busyTargets: number; extensionBlocked: boolean };
 }> {
   const sessions = (await listCdpSessions()).filter(s => port === undefined || s.port === port);
-  const queue: Array<{ key: string; queued: number; locked: boolean }> = [];
+  const queue: Array<{ key: string; queued: number; locked: boolean; oldestWaitMs: number; port?: number; targetId?: string }> = [];
+  const now = Date.now();
   try {
     for (const key of await readdir(join(dir(), "queues"))) {
-      const queued = (await readdir(queueFor(key))).filter(x => x.endsWith(".json")).length;
+      if (!/^[a-f0-9]{64}$/.test(key)) continue;
+      let files: string[];
+      try { files = (await readdir(queueFor(key))).filter(x => x.endsWith(".json")).slice(0, 512); }
+      catch { continue; }
+      let queued = 0, earliest = now;
+      for (const name of files) {
+        try {
+          const request = JSON.parse(await readFile(join(queueFor(key), name), "utf8"));
+          if (typeof request.at === "number" && request.at <= now && now - request.at <= 120_000) {
+            queued++;
+            earliest = Math.min(earliest, request.at);
+          }
+        } catch { /* concurrent cleanup */ }
+      }
       const locked = await stat(lockFor(key)).then(() => true).catch(() => false);
-      if (queued || locked) queue.push({ key: key.slice(0, 16), queued, locked });
+      if (!queued && !locked) continue;
+      const owner = sessions.find(s => s.key === key);
+      // Hashes do not disclose private tab URLs or agent capabilities.
+      queue.push({
+        key: key.slice(0, 16), queued, locked,
+        oldestWaitMs: queued ? now - earliest : 0,
+        ...(owner ? { port: owner.port, targetId: owner.targetId } : {}),
+      });
     }
   } catch (e: any) { if (e.code !== "ENOENT") throw e; }
-  return { sessions, queue };
+  return {
+    sessions, queue,
+    summary: {
+      activeAgents: new Set(sessions.map(s => s.agentId)).size,
+      activeTabs: sessions.length,
+      queued: queue.reduce((total, item) => total + item.queued, 0),
+      busyTargets: queue.filter(item => item.locked).length,
+      extensionBlocked: sessions.length > 0,
+    },
+  };
+}
+
+/** Hold a global coordination lock across profile/window shutdown. New claims are
+ * serialized against the destructive operation, preventing check-then-kill races. */
+async function withBrowserLifecycleMutex<T>(fn: () => Promise<T>): Promise<T> {
+  if (browserLifecycleScope.getStore()) return fn();
+  const release = await lock(BROWSER_LIFECYCLE_KEY);
+  try { return await browserLifecycleScope.run(true, fn); }
+  finally { await release(); }
+}
+/** Coordinate extension calls with CDP claims without guessing Chrome extension
+ * tab identity. Internal wrapper re-entry reuses the already acquired gate. */
+export async function withBrowserBridgeOperation<T>(fn: () => Promise<T>): Promise<T> {
+  if (browserBridgeScope.getStore()) {
+    await assertNoExternalBrowserMutation();
+    return fn();
+  }
+  return withBrowserLifecycleMutex(async () => browserBridgeScope.run(true, async () => {
+    await assertNoExternalBrowserMutation();
+    return fn();
+  }));
+}
+export async function withBrowserLifecycleOperation<T>(fn: () => Promise<T>): Promise<T> {
+  return withBrowserLifecycleMutex(async () => {
+    await assertNoExternalBrowserMutation();
+    return fn();
+  });
 }
 export async function assertNoExternalBrowserMutation(): Promise<void> {
   if ((await listCdpSessions()).length > 0) {

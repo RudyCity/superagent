@@ -82,6 +82,30 @@ describe("summarizeArgs", () => {
   });
 });
 
+describe("embedded MCP token protection", () => {
+
+  it("never logs CDP session secrets nested inside a JSON-string payload", () => {
+    const leaked = "my-cdp-secret-token-value-987";
+    const args = {
+      command: "control_chrome_vision",
+      payload: JSON.stringify({ targetId: "TAB_1", agentId: "agent", sessionToken: leaked,
+        nested: { password: "another-secret" } }),
+    };
+    const result = summarizeArgs(args);
+    expect(result).not.toContain(leaked);
+    expect(result).not.toContain("another-secret");
+    expect(result).toContain("TAB_1");
+    expect(result).toContain(REDACTED);
+  });
+
+  it("redacts bearer values embedded in plain log strings", () => {
+    const result = summarizeArgs({ command: "curl -H 'Authorization: Bearer abc123secret' https://example.test/" });
+    expect(result).not.toContain("abc123secret");
+    expect(result).toContain("curl");
+  });
+
+});
+
 describe("argShape", () => {
   it("describes shape without values", () => {
     const shape = argShape({ command: "echo hi", nested: { a: 1 }, list: [1, 2] });

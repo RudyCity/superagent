@@ -26,6 +26,7 @@ async function getRemoteBridge(): Promise<RemoteBridge> {
 }
 type BrowserMacro = {
   browserControlHandler: ((action: string, payload: any, tabId?: any, instanceId?: string) => Promise<any>) | null;
+  getBrowserControlHandlerSource: () => ((action: string, payload: any, tabId?: any, instanceId?: string) => Promise<any>) | null;
 };
 let _browserMacro: BrowserMacro | null = null;
 async function getBrowserMacro(): Promise<BrowserMacro> {
@@ -159,7 +160,7 @@ export const getActiveBrowserTabsTool: Tool = {
     }
     // Fail fast: when the remote bridge is listening but no extension client is
     // attached, sending would burn the whole timeout budget — report immediately.
-    if (browserControlHandler === bridge.sendRemoteCommand && !bridge.isRemoteChromeConnected()) {
+    if ((await getBrowserMacro()).getBrowserControlHandlerSource() === bridge.sendRemoteCommand && !bridge.isRemoteChromeConnected()) {
       return "No active browser control connection. The Superagent Chrome Extension must be installed and connected on the target Chrome browser (remote bridge is listening but no extension client is attached). Ensure `superagent --server` is running.";
     }
 
@@ -183,7 +184,7 @@ export const chromeExtensionStatusTool: Tool = {
     const { browserControlHandler } = await getBrowserMacro();
     const { ensureRemoteChromeBridge, isRemoteChromeConnected, getRemoteChromeClientMetadata, sendRemoteCommand } = await getRemoteBridge();
     // Check if sidepanel UI client mode is active
-    const isSidepanelClient = Boolean(browserControlHandler && browserControlHandler !== sendRemoteCommand);
+    const isSidepanelClient = Boolean(browserControlHandler && (await getBrowserMacro()).getBrowserControlHandlerSource() !== sendRemoteCommand);
 
     if (isSidepanelClient) {
       try {

@@ -4,6 +4,7 @@ import { promisify } from "util";
 import { Tool } from "./types.js";
 import { detectChromeProfiles } from "./chromeProfileTools.js";
 import { runPsEncoded } from "./chromeCommon.js";
+import { assertNoExternalBrowserMutation, withBrowserLifecycleOperation } from "./chromeCdpSessionManager.js";
 
 const execAsync = promisify(exec);
 
@@ -454,22 +455,30 @@ export const closeChromeProfileTool: Tool = {
     if (victims.length === 0) {
       return `No running Chrome browser found for profile "${target}". Nothing was closed.`;
     }
+    try { await assertNoExternalBrowserMutation(); } catch (error: any) { return `Chrome profile close refused: ${error.message}`; }
     const killed: number[] = [];
     const failed: string[] = [];
     // Windows enumerated BEFORE termination: the honest blast-radius figure.
     const windowCount = victims.reduce((n, b) => n + b.windows.length, 0);
-    for (const b of victims) {
-      try {
-        // b.pid comes from our own scan: always a plain integer, safe for shell.
-        if (os.platform() === "win32") {
-          await execAsync(`taskkill /F /PID ${b.pid}`, { timeout: 10000 });
-        } else {
-          await execAsync(`kill ${b.pid}`, { timeout: 10000 });
+    try {
+      await withBrowserLifecycleOperation(async () => {
+        for (const b of victims) {
+          try {
+            // A global lifecycle lock prevents new claims until all process
+            // termination calls have returned (no check-then-kill race).
+            if (os.platform() === "win32") {
+              await execAsync(`taskkill /F /PID ${b.pid}`, { timeout: 10000 });
+            } else {
+              await execAsync(`kill ${b.pid}`, { timeout: 10000 });
+            }
+            killed.push(b.pid);
+          } catch (err: any) {
+            failed.push(`PID ${b.pid}: ${err?.message || String(err)}`);
+          }
         }
-        killed.push(b.pid);
-      } catch (err: any) {
-        failed.push(`PID ${b.pid}: ${err?.message || String(err)}`);
-      }
+      });
+    } catch (error: any) {
+      return `Chrome profile close refused: ${error.message}`;
     }
     const parts = [
       `Closed Chrome profile "${target}": ${killed.length} process(es) terminated${
@@ -600,7 +609,7 @@ export const closeChromeWindowTool: Tool = {
       target = hits[0];
     }
     try {
-      await sendWmClose(target.window.hwnd);
+      await withBrowserLifecycleOperation(() => sendWmClose(target.window.hwnd));
     } catch (err: any) {
       return `Failed to close window "${target.window.title}" (HWND ${target.window.hwnd}): ${err?.message || String(err)}`;
     }

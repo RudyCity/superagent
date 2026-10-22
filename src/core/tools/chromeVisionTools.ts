@@ -433,6 +433,41 @@ async function cmdPerceivePage(payload: any): Promise<string> {
   );
 }
 
+/**
+ * A screenshot may change because of a caret, animation or timer. When the
+ * visual frame differs, allow interaction only if a unique stable DOM selector
+ * still resolves to the same target within a small geometric tolerance.
+ * Never blindly reuse stale coordinates.
+ */
+async function freshVisionPoint(target: CdpTarget, el: VisionElement, screenshot: string): Promise<[number, number]> {
+  const current = await captureScreenshot(target);
+  if (createHash("sha256").update(current).digest("hex") ===
+      createHash("sha256").update(screenshot).digest("hex")) return el.center;
+  if (!el.domSelector) {
+    throw new Error("Visual state changed; target lacks a stable selector. Run perceive_page again.");
+  }
+  const expression = `(() => {
+    const selector = ${JSON.stringify(el.domSelector)};
+    const matched = document.querySelectorAll(selector);
+    if (matched.length !== 1) return null;
+    const node = matched[0], rect = node.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+    const onTop = document.elementFromPoint(x, y);
+    if (onTop !== node && !node.contains(onTop)) return null;
+    return { x, y };
+  })()`;
+  const result = await cdpSend(target.webSocketDebuggerUrl, "Runtime.evaluate", {
+    expression, returnByValue: true,
+  }).catch(() => null);
+  const point = result?.result?.value;
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y) ||
+      Math.hypot(point.x - el.center[0], point.y - el.center[1]) > 24) {
+    throw new Error("Visual element moved or no longer matches its unique DOM selector. Re-run perceive_page.");
+  }
+  return [point.x, point.y];
+}
+
 async function cmdClickId(payload: any): Promise<string> {
   const id = Number(payload?.id);
   if (!id || isNaN(id)) {
@@ -448,11 +483,7 @@ async function cmdClickId(payload: any): Promise<string> {
     throw new Error(`Element ID [${id}] not found in perceived page. Available: ${available || "(none)"}. Run perceive_page to refresh.`);
   }
 
-  if (createHash("sha256").update(await captureScreenshot(target)).digest("hex") !==
-      createHash("sha256").update(cache.screenshot).digest("hex")) {
-    throw new Error("Visual state changed since perceive_page. Refresh perception before interacting with a numbered element.");
-  }
-  const [cx, cy] = el.center;
+  const [cx, cy] = await freshVisionPoint(target, el, cache.screenshot);
   await clickAt(target!, cx, cy, Boolean(payload?.smooth || payload?.human));
   const textHint = el.text ? ` ("${el.text}")` : "";
 
@@ -489,11 +520,7 @@ async function cmdTypeId(payload: any): Promise<string> {
     throw new Error(`Element ID [${id}] not found in perceived page. Available: ${available || "(none)"}.`);
   }
 
-  if (createHash("sha256").update(await captureScreenshot(target)).digest("hex") !==
-      createHash("sha256").update(cache.screenshot).digest("hex")) {
-    throw new Error("Visual state changed since perceive_page. Refresh perception before interacting with a numbered element.");
-  }
-  const [cx, cy] = el.center;
+  const [cx, cy] = await freshVisionPoint(target, el, cache.screenshot);
   await clickAt(target!, cx, cy, Boolean(payload?.smooth || payload?.human));
   await new Promise((r) => setTimeout(r, 200));
   await typeText(target!, text);
