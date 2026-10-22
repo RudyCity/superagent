@@ -46,3 +46,6 @@ gumroad_assets/
 /build/superagent/cache/
 /build/superagent/benchmarks/
 /build/superagent/registry/
+
+# Senopati quality audit and reviewer packet artifacts (may include example texts)
+/build/superagent/quality/
