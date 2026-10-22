@@ -188,7 +188,7 @@ export function loadDynamicHooks(): Tool[] {
             const toolName = config.name.trim();
             const toolDescription = config.description.trim();
             const toolParameters = config.parameters || { type: "object", properties: {}, required: [] };
-            const runCmd = config.command ? config.command.trim() : "node index.js";
+            const runCmd = config.command ? config.command.trim() : "bun index.js";
 
             // Register custom slash commands configured in this hook
             const slashCommands = config.slash_commands || config.slashCommands;
@@ -196,7 +196,7 @@ export function loadDynamicHooks(): Tool[] {
               for (const cmdConfig of slashCommands) {
                 if (!cmdConfig.name) continue;
                 const cmdName = cmdConfig.name.trim();
-                const cmdRunCmd = cmdConfig.command || "node index.js";
+                const cmdRunCmd = cmdConfig.command || "bun index.js";
                 const cmdDesc = cmdConfig.description || `Custom slash command for hook ${toolName}`;
                 const cmdAliases = cmdConfig.aliases || [];
 

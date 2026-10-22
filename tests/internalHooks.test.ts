@@ -47,6 +47,9 @@ describe("Internal Hooks Feature", () => {
     // Verify content of hook.json
     const hookJson = JSON.parse(await fs.readFile(path.join(hookDir, "hook.json"), "utf-8"));
     expect(hookJson.name).toBe("test-hook");
+    expect(hookJson.command).toBe("bun index.js");
+    const generatedPackage = JSON.parse(await fs.readFile(path.join(hookDir, "package.json"), "utf-8"));
+    expect(generatedPackage.scripts.dev).toBe("bun index.js");
   }, 15000);
 
   it("should dynamically load initialized hooks as tools", async () => {

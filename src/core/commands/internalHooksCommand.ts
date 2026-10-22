@@ -125,7 +125,7 @@ export const internalHooksCommand: SlashCommand = {
             },
             required: ["exampleParam"]
           },
-          command: "node index.js"
+          command: "bun index.js"
         };
 
         const packageJson = {
@@ -133,7 +133,7 @@ export const internalHooksCommand: SlashCommand = {
           version: "1.0.0",
           type: "module",
           scripts: {
-            dev: "node index.js"
+            dev: "bun index.js"
           }
         };
 
