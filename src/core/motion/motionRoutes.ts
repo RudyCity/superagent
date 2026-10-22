@@ -35,6 +35,7 @@ import { createMotionBatchVariants } from "./motionBatchVariants.js";
 import { compileMotionBeatSync } from "./motionBeatSync.js";
 import { convertMotionJobArtifact } from "./motionExportFormats.js";
 import { compileMotionParticles } from "./motionParticles.js";
+import { compileMotionTypography } from "./motionTypography.js";
 import { applyMotionEdits } from "./project/revisions.js";
 
 export interface MotionHttpContext {
@@ -111,6 +112,7 @@ export async function handleMotionHttpRoute(
   const batchVariants = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/variants$/);
   const beatSync = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/beat-sync(?:\/(preview))?$/);
   const particleRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/particles(?:\/(preview))?$/);
+  const typographyRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/typography(?:\/(preview))?$/);
   const effectsList = pathname === "/api/motion/effects";
   const effectItem = pathname.match(/^\/api\/motion\/effects\/([a-z][a-z0-9-]{1,63})$/);
   const projectEffects = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects$/);
@@ -277,6 +279,27 @@ export async function handleMotionHttpRoute(
         body.baseRevision as number, body.revision as number));
     } else if (project && method === "GET") {
       json(res, ctx, 200, await getMotionProject(workspace, project[1]));
+    } else if (typographyRoute && method === "POST") {
+      const body = await readMotionJson(req, 2000);
+      if (!Number.isSafeInteger(body.baseRevision) || typeof body.targetLayerId !== "string" ||
+          typeof body.style !== "string" ||
+          (body.startFrame !== undefined && !Number.isSafeInteger(body.startFrame)) ||
+          (body.durationFrames !== undefined && !Number.isSafeInteger(body.durationFrames)))
+        throw new MotionValidationError(["Invalid typography request"]);
+      const current = await getMotionProject(workspace, typographyRoute[1]);
+      if (current.revision !== body.baseRevision) {
+        json(res, ctx, 409, { error: "Motion revision conflict; reload before typography animation" });
+      } else {
+        const composition = compileMotionTypography(current, {
+          targetLayerId: body.targetLayerId,
+          style: body.style as "letter-reveal" | "word-rise",
+          startFrame: body.startFrame as number | undefined,
+          durationFrames: body.durationFrames as number | undefined,
+        });
+        if (typographyRoute[2] === "preview") json(res, ctx, 200, { ...current, composition });
+        else json(res, ctx, 200, await updateMotionProject(workspace, typographyRoute[1],
+          current.revision, [{ type: "replace-composition", composition }]));
+      }
     } else if (particleRoute && method === "POST") {
       const body = await readMotionJson(req, 2000);
       if (!Number.isSafeInteger(body.baseRevision) || typeof body.kind !== "string" ||

@@ -52,6 +52,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   motionExtraExportFormats: ["gif", "webm"],
   motionExtraExportLimitSeconds: 20,
   motionCpuParticleOverlays: true,
+  motionAdvancedTypography: ["letter-reveal", "word-rise"],
   motionCpuParticleStyles: ["confetti", "sparks", "snow"],
   effectsEngine: true,
   effectsCount: 224,
