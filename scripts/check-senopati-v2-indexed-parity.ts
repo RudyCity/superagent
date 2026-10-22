@@ -11,8 +11,9 @@ const sets:string[]=[];
 for(let i=0;i<argv.length;i++)if(argv[i]==="--dataset"&&argv[i+1])sets.push(argv[i+1]);
 if(!sets.length)throw new Error("At least one explicit JSONL dataset required");
 const reference=loadShadowRegistry(registry,"reference").model;
-const selection=argv.includes("--compact")?"compact":"indexed";
-const indexed=loadShadowRegistry(registry,selection).model;
+const engines: Array<"indexed"|"compact"> = argv.includes("--all")
+  ? ["indexed","compact"] : [argv.includes("--compact") ? "compact" : "indexed"];
+const optimizedEngines=engines.map(name=>({name,model:loadShadowRegistry(registry,name).model}));
 const heads=["domain","intent","action","risk","approval"] as const;
 let rows=0,comparisons=0,largestDifference=0;
 for(const filename of sets){
@@ -22,19 +23,24 @@ for(const filename of sets){
     const context=typeof sample.context==="string"?sample.context:"";
     for(const guarded of [false,true]){
       const r=guarded?reference.predictGuarded(sample.text,context):reference.predict(sample.text,context);
-      const i=guarded?indexed.predictGuarded(sample.text,context):indexed.predict(sample.text,context);
-      if(r.authorizesExecution!==false||i.authorizesExecution!==false)throw new Error("Unexpected execution authority");
-      for(const head of heads){
-        comparisons++;
-        if(r.labels[head]!==i.labels[head])throw new Error(`Indexed label parity failed for row ${sample.id}, head ${head}`);
-        const diff=Math.abs(r.relativeScores[head]-i.relativeScores[head]);
-        if(diff>largestDifference)largestDifference=diff;
-        if(!Number.isFinite(diff)||diff>1e-9)throw new Error(`Indexed score parity failed for row ${sample.id}, head ${head}`);
+      const optimized=optimizedEngines.map(({name,model})=>[
+        name, guarded?model.predictGuarded(sample.text,context):model.predict(sample.text,context)
+      ] as const);
+      if(r.authorizesExecution!==false)throw new Error("Unexpected reference execution authority");
+      for(const [engineName,result] of optimized){
+        if(result.authorizesExecution!==false)throw new Error("Unexpected execution authority");
+        for(const head of heads){
+          comparisons++;
+          if(r.labels[head]!==result.labels[head])throw new Error(`${engineName} label parity failed for row ${sample.id}, head ${head}`);
+          const diff=Math.abs(r.relativeScores[head]-result.relativeScores[head]);
+          if(diff>largestDifference)largestDifference=diff;
+          if(!Number.isFinite(diff)||diff>1e-9)throw new Error(`${engineName} score parity failed for row ${sample.id}, head ${head}`);
+        }
       }
     }
     rows++;
   }
   console.log(`PARITY DATASET ${filename}: ${items.length} cases`);
 }
-console.log(`PASS: ${selection}/reference ${comparisons}/${comparisons} raw+guarded head decisions across ${rows} cases; max absolute relative score delta ${largestDifference}`);
-console.log(selection+" is research-only and never authorizes tools.");
+console.log(`PASS: ${engines.join("+")}/reference ${comparisons}/${comparisons} raw+guarded head decisions across ${rows} cases; max absolute relative score delta ${largestDifference}`);
+console.log(engines.join("+")+" is research-only and never authorizes tools.");

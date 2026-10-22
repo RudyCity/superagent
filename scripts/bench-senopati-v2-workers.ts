@@ -16,6 +16,7 @@ interface Setup {
 interface Result {
   workerId:number;processed:number;totalMs:number;loadMs:number;
   abstained:number;badDecisions:number;heapUsedBytes:number;
+  externalBytes:number;arrayBuffersBytes:number;
 }
 async function workerMain(input:Setup) {
   const loadStart=performance.now();
@@ -38,7 +39,9 @@ async function workerMain(input:Setup) {
   }
   const result:Result={
     workerId:input.workerId,processed,totalMs:performance.now()-begin,loadMs,
-    abstained,badDecisions,heapUsedBytes:process.memoryUsage().heapUsed
+    abstained,badDecisions,heapUsedBytes:process.memoryUsage().heapUsed,
+    externalBytes:process.memoryUsage().external,
+    arrayBuffersBytes:process.memoryUsage().arrayBuffers
   };
   parentPort?.postMessage(result);
 }
@@ -91,7 +94,8 @@ if (!isMainThread){
     wallClockMs,throughputPerSec:1000*processed/wallClockMs,
     workersInfo:details.map(x=>({
       workerId:x.workerId,processed:x.processed,computeMs:x.totalMs,
-      loadMs:x.loadMs,heapUsedBytes:x.heapUsedBytes
+      loadMs:x.loadMs,heapUsedBytes:x.heapUsedBytes,
+      externalBytes:x.externalBytes,arrayBuffersBytes:x.arrayBuffersBytes
     })),
     releaseAuthorized:false,eligibleForAutomaticToolRouting:false,
     accuracyCertified:false,independentBlindEvidence:false,

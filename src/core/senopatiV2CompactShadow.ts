@@ -1,139 +1,173 @@
 /**
- * Senopati V2 compact inverted index (experiment, not production).
- * Stores feature postings in contiguous typed arrays and labels in 5 Uint8 arrays.
- * No duplicated per-record JS feature objects remain after initialization.
- * Feature-order dot accumulation + corpus-order tie breaking preserve Rudy parity.
+ * Compact typed-array Senopati V2 sparse shadow implementation.
+ *
+ * This is an opt-in observational engine. It retains the reference algorithm's
+ * feature traversal / row order / tie breaking and performs no tool routing.
+ *
+ * The only persistent high-cardinality structures are a feature dictionary
+ * (posting offsets) and three typed arrays: posting row IDs, posting weights,
+ * and per-row norm / head label IDs. It does not retain a copy of record
+ * feature objects. Float64 is intentional for exact Rudy/Bun score parity.
  */
-import { extractSenopatiV2SparseFeatures, SENOPATI_V2_HEADS, SenopatiV2Shadow,
-  type SenopatiV2SparsePayload, type SenopatiV2ShadowPrediction, type SenopatiV2ShadowLabels } from "./senopatiV2Shadow.js";
+import {
+  extractSenopatiV2SparseFeatures, SENOPATI_V2_HEADS, SenopatiV2Shadow,
+  type SenopatiV2SparsePayload, type SenopatiV2ShadowPrediction,
+  type SenopatiV2ShadowLabels,
+} from "./senopatiV2Shadow.js";
 import { guardSenopatiV2Shadow } from "./senopatiV2Safety.js";
 
-type Head=keyof typeof SENOPATI_V2_HEADS;
-const HEADS:Head[]=["domain","intent","action","risk","approval"];
-type PostingSpan={start:number;end:number};
+type Head = keyof typeof SENOPATI_V2_HEADS;
+const HEAD_ORDER: Head[] = ["domain", "intent", "action", "risk", "approval"];
+const MAX_FEATURE_POSTINGS = 1_000_000;
+const MAX_MESSAGE_LENGTH = 8192;
+const MAX_CONTEXT_LENGTH = 512;
 
 export class SenopatiV2CompactShadow {
-  private readonly spans: Map<string,PostingSpan>;
-  private readonly ids:Uint16Array;
-  private readonly weights:Float64Array;
-  private readonly norms:Float64Array;
-  private readonly labelIds:Record<Head,Uint8Array>;
-  private readonly count:number;
+  private readonly featureIds: Map<string, number>;
+  private readonly starts: Uint32Array;
+  private readonly rowIds: Uint16Array;
+  private readonly weights: Float64Array;
+  private readonly norms: Float64Array;
+  private readonly labels: Uint8Array;
+  private readonly recordCount: number;
 
-  constructor(payload:SenopatiV2SparsePayload){
-    // Enforce the same candidate-only schema, feature and label bounds as reference.
+  constructor(payload: SenopatiV2SparsePayload) {
+    // Reference constructor independently validates bounded records, keys,
+    // values, label orders and candidate-only status, then can be discarded.
     new SenopatiV2Shadow(payload);
-    this.count=payload.records.length;
-    this.norms=new Float64Array(this.count);
-    this.labelIds={} as Record<Head,Uint8Array>;
-    for(const head of HEADS)this.labelIds[head]=new Uint8Array(this.count);
-
-    const counts=new Map<string,number>();
-    let edges=0;
-    for(const row of payload.records){
-      for(const feature of Object.keys(row.features)){
-        edges++;
-        if(edges>1_000_000)throw new Error("Compact index feature budget exceeded");
-        counts.set(feature,(counts.get(feature)??0)+1);
+    const count = payload.records.length;
+    this.recordCount = count;
+    const frequencies = new Map<string, number>();
+    this.norms = new Float64Array(count);
+    this.labels = new Uint8Array(count * HEAD_ORDER.length);
+    let postings = 0;
+    for (let rowId = 0; rowId < count; rowId++) {
+      const row = payload.records[rowId];
+      let normSquared = 0;
+      for (const [feature, value] of Object.entries(row.features)) {
+        postings++;
+        if (postings > MAX_FEATURE_POSTINGS) throw new Error("Compact shadow feature budget exceeded");
+        normSquared += value * value;
+        frequencies.set(feature, (frequencies.get(feature) ?? 0) + 1);
+      }
+      this.norms[rowId] = Math.sqrt(normSquared);
+      for (let h = 0; h < HEAD_ORDER.length; h++) {
+        const head = HEAD_ORDER[h];
+        const labelIndex = (SENOPATI_V2_HEADS[head] as readonly string[]).indexOf(row[head]);
+        if (labelIndex < 0) throw new Error("Unknown candidate label");
+        this.labels[rowId * HEAD_ORDER.length + h] = labelIndex;
       }
     }
-
-    this.spans=new Map();
-    let start=0;
-    for(const [feature,count] of counts){
-      this.spans.set(feature,{start,end:start+count});
-      start+=count;
+    this.rowIds = new Uint16Array(postings);
+    this.weights = new Float64Array(postings);
+    // A feature dictionary now stores a small integer instead of an array
+    // or JS object containing an offset pair for every feature.
+    this.featureIds = new Map<string, number>();
+    this.starts = new Uint32Array(frequencies.size + 1);
+    let ordinal = 0;
+    for (const [feature, length] of frequencies) {
+      this.featureIds.set(feature, ordinal);
+      this.starts[ordinal + 1] = this.starts[ordinal] + length;
+      ordinal++;
     }
-    this.ids=new Uint16Array(edges);
-    this.weights=new Float64Array(edges);
-    // Fill pointers are temporary; not held by the completed model.
-    const offsets=new Map<string,number>();
-    for(const [feature,span] of this.spans)offsets.set(feature,span.start);
-    for(let rowId=0;rowId<this.count;rowId++){
-      const row=payload.records[rowId];
-      let squared=0;
-      for(const [feature,value] of Object.entries(row.features)){
-        squared+=value*value;
-        const offset=offsets.get(feature);
-        if(offset===undefined)throw new Error("Compact feature unexpectedly missing");
-        this.ids[offset]=rowId;
-        this.weights[offset]=value;
-        offsets.set(feature,offset+1);
-      }
-      this.norms[rowId]=Math.sqrt(squared);
-      for(const head of HEADS){
-        const label=(SENOPATI_V2_HEADS[head] as readonly string[]).indexOf(row[head]);
-        if(label<0)throw new Error("Unrecognized compact head label "+head);
-        this.labelIds[head][rowId]=label;
+    const cursor = this.starts.slice(0, frequencies.size);
+    for (let rowId = 0; rowId < count; rowId++) {
+      for (const [feature, weight] of Object.entries(payload.records[rowId].features)) {
+        const featureId = this.featureIds.get(feature);
+        if (featureId === undefined) throw new Error("Missing posting feature ID");
+        const pos = cursor[featureId]++;
+        this.rowIds[pos] = rowId;
+        this.weights[pos] = weight;
       }
     }
-    // Incoming payload and temporary offsets/maps can be GC'd by caller.
+    // Do not retain payload, counts, or mutable cursors.
   }
 
-  predict(text:string,context=""):SenopatiV2ShadowPrediction{
-    if(typeof text!=="string"||typeof context!=="string"||
-       text.length>8192||context.length>512)
+  predict(text: string, context = ""): SenopatiV2ShadowPrediction {
+    if (typeof text !== "string" || typeof context !== "string" ||
+        text.length > MAX_MESSAGE_LENGTH || context.length > MAX_CONTEXT_LENGTH) {
       throw new Error("Compact shadow input exceeds bounded size");
-    const input=context?`context ${context} message ${text}`:`message ${text}`;
-    const features=extractSenopatiV2SparseFeatures(input);
-    const terms=Object.entries(features);
-    let querySquared=0;
-    // Typed arrays are per-call: safe for overlapping async/worker usage.
-    const dots=new Float64Array(this.count);
-    const visited=new Uint8Array(this.count);
-    const touched:number[]=[];
-    // Iterate query features in their original Rudy insertion order.
-    for(const [feature,weight] of terms){
-      querySquared+=weight*weight;
-      const span=this.spans.get(feature);
-      if(!span)continue;
-      for(let offset=span.start;offset<span.end;offset++){
-        const id=this.ids[offset];
-        if(visited[id]===0){visited[id]=1;touched.push(id);}
-        dots[id]+=weight*this.weights[offset];
+    }
+    const input = context ? `context ${context} message ${text}` : `message ${text}`;
+    const query = extractSenopatiV2SparseFeatures(input);
+    // Iterate query terms in reference insertion order: identical Float64
+    // accumulation and exact scores. No per-record feature objects retained.
+    const dots = new Float64Array(this.recordCount);
+    const touched = new Uint8Array(this.recordCount);
+    const qTerms = Object.entries(query);
+    let normSquared = 0;
+    for (const [feature, qWeight] of qTerms) {
+      normSquared += qWeight * qWeight;
+      const featureId = this.featureIds.get(feature);
+      if (featureId === undefined) continue;
+      for (let pos = this.starts[featureId]; pos < this.starts[featureId + 1]; pos++) {
+        const rowId = this.rowIds[pos];
+        touched[rowId] = 1;
+        dots[rowId] += qWeight * this.weights[pos];
       }
     }
-    touched.sort((a,b)=>a-b);
-    const queryNorm=Math.sqrt(querySquared);
-    const top=Object.fromEntries(HEADS.map(head=>[
-      head,Object.fromEntries(SENOPATI_V2_HEADS[head].map(label=>[label,[0,0]]))
-    ])) as Record<Head,Record<string,number[]>>;
-    for(const id of touched){
-      const similarity=dots[id]/Math.max(0.00001,queryNorm*this.norms[id]);
-      if(similarity<=0)continue;
-      for(const head of HEADS){
-        const label=SENOPATI_V2_HEADS[head][this.labelIds[head][id]];
-        const maxima=top[head][label];
-        if(similarity>maxima[0]){
-          maxima[1]=maxima[0];
-          maxima[0]=similarity;
-        }else if(similarity>maxima[1])maxima[1]=similarity;
+    const qNorm = Math.sqrt(normSquared);
+    const best = HEAD_ORDER.map(head =>
+      (SENOPATI_V2_HEADS[head] as readonly string[]).map(() => [0, 0]));
+    // Iteration in ascending original row order is mandatory for strict
+    // tie-breaking parity and for the second-largest class match.
+    for (let rowId = 0; rowId < this.recordCount; rowId++) {
+      if (!touched[rowId]) continue;
+      const sim = dots[rowId] / Math.max(0.00001, qNorm * this.norms[rowId]);
+      if (sim <= 0) continue;
+      for (let h = 0; h < HEAD_ORDER.length; h++) {
+        const pair = best[h][this.labels[rowId * HEAD_ORDER.length + h]];
+        if (sim > pair[0]) {
+          pair[1] = pair[0];
+          pair[0] = sim;
+        } else if (sim > pair[1]) {
+          pair[1] = sim;
+        }
       }
     }
-    const labels={} as SenopatiV2ShadowLabels;
-    const relativeScores={} as Record<Head,number>;
-    for(const head of HEADS){
-      let bestLabel:string=SENOPATI_V2_HEADS[head][0];
-      let bestScore=-1,total=0;
-      for(const label of SENOPATI_V2_HEADS[head]){
-        const pair=top[head][label];
-        const score=pair[0]+pair[1]*0.25;
-        total+=Math.max(0,score);
-        if(score>bestScore){bestScore=score;bestLabel=label;}
+    const labels = {} as SenopatiV2ShadowLabels;
+    const relativeScores = {} as Record<Head, number>;
+    for (let h = 0; h < HEAD_ORDER.length; h++) {
+      const head = HEAD_ORDER[h];
+      let bestIndex = 0;
+      let bestScore = -1;
+      let total = 0;
+      for (let i = 0; i < best[h].length; i++) {
+        const pair = best[h][i];
+        const score = pair[0] + pair[1] * 0.25;
+        total += Math.max(0, score);
+        if (score > bestScore) {
+          bestIndex = i;
+          bestScore = score;
+        }
       }
-      (labels as Record<string,string>)[head]=bestLabel;
-      relativeScores[head]=total>0?Math.max(0,bestScore)/total:1/SENOPATI_V2_HEADS[head].length;
+      (labels as Record<string, string>)[head] = SENOPATI_V2_HEADS[head][bestIndex];
+      relativeScores[head] = total > 0
+        ? Math.max(0, bestScore) / total
+        : 1 / SENOPATI_V2_HEADS[head].length;
     }
-    return {labels,relativeScores,source:"senopati-v2-sparse-shadow",authorizesExecution:false};
-  }
-  predictGuarded(text:string,context=""):SenopatiV2ShadowPrediction{
-    return guardSenopatiV2Shadow(this.predict(text,context),text,context);
-  }
-  get stats(){
     return {
-      records:this.count,features:this.spans.size,postings:this.ids.length,
-      numericBytes:this.ids.byteLength+this.weights.byteLength+this.norms.byteLength+
-        HEADS.reduce((sum,head)=>sum+this.labelIds[head].byteLength,0),
+      labels, relativeScores,
+      source: "senopati-v2-sparse-shadow", authorizesExecution: false,
+    };
+  }
+
+  predictGuarded(text: string, context = ""): SenopatiV2ShadowPrediction {
+    return guardSenopatiV2Shadow(this.predict(text, context), text, context);
+  }
+
+  get stats() {
+    return {
+      records: this.recordCount,
+      features: this.featureIds.size,
+      postings: this.rowIds.length,
+      typedArrayBytes: this.rowIds.byteLength + this.weights.byteLength +
+        this.norms.byteLength + this.labels.byteLength +
+        this.starts.byteLength,
+      // Backward compatibility for the compact stats API introduced earlier.
+      numericBytes: this.rowIds.byteLength + this.weights.byteLength +
+        this.norms.byteLength + this.labels.byteLength +
+        this.starts.byteLength,
     };
   }
 }
