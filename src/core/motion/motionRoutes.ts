@@ -4,6 +4,7 @@ import { createReadStream } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { createMotionProject, getMotionProject, listMotionProjects, updateMotionProject, applyCompoundPresetToProject } from "./motionService.js";
+import { listMotionProjectHistory, restoreMotionProjectHistory } from "./project/projectStore.js";
 import { getCompoundPreset, listCompoundPresets } from "./effects/compoundPresets.js";
 import { getMotionJob, getMotionSchedulerStatus, inspectMotionJob, listMotionJobs, motionJobDir, requestMotionCancellation, startDetachedMotionJob, enqueueSupervisedMotionJob } from "./jobs/motionJobs.js";
 import { MotionRevisionConflict } from "./project/revisions.js";
@@ -100,6 +101,8 @@ export async function handleMotionHttpRoute(
   const previewEffect = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects\/preview$/);
   const stackRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effect-stack(?:\/(preview))?$/);
   const resizeRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/resize(?:\/(preview))?$/);
+  const projectHistory = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/history$/);
+  const restoreHistory = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/history\/restore$/);
 
   try {
     if (pathname === "/api/motion" && method === "GET") {
@@ -220,6 +223,14 @@ export async function handleMotionHttpRoute(
       const body = await readMotionJson(req);
       if (typeof body.name !== "string") throw new Error("name must be a string");
       json(res, ctx, 201, await createMotionProject(workspace, body.name));
+    } else if (projectHistory && method === "GET") {
+      json(res, ctx, 200, { snapshots: await listMotionProjectHistory(workspace, projectHistory[1]) });
+    } else if (restoreHistory && method === "POST") {
+      const body = await readMotionJson(req, 2000);
+      if (!Number.isSafeInteger(body.baseRevision) || !Number.isSafeInteger(body.revision))
+        throw new MotionValidationError(["baseRevision and revision must be integers"]);
+      json(res, ctx, 200, await restoreMotionProjectHistory(workspace, restoreHistory[1],
+        body.baseRevision as number, body.revision as number));
     } else if (project && method === "GET") {
       json(res, ctx, 200, await getMotionProject(workspace, project[1]));
     } else if (previewCompoundPreset && method === "POST") {
