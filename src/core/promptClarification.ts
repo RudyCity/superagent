@@ -6,18 +6,18 @@ import path from "path";
 import os from "os";
 import { EventEmitter } from "events";
 
-// Lazy-loaded @xenova/transformers pipeline for ONNX translation (< 100MB RAM)
+// Lazy-loaded Transformers.js v3 pipeline (shared with RMemory; Bun-native runtime).
 let translationPipelinePromise: Promise<any> | null = null;
 
 /**
  * Initializes and warms up the ONNX translation model (Xenova/opus-mt-id-en INT8).
- * Runs lazily in the background on startup with low memory footprint (<100MB RAM).
+ * Loads on demand; falls back gracefully when the local model is unavailable.
  */
 export async function initONNXTranslationPipeline(): Promise<any> {
   if (!translationPipelinePromise) {
     translationPipelinePromise = (async () => {
       try {
-        const { pipeline, env } = await import("@xenova/transformers");
+        const { pipeline, env } = await import("@huggingface/transformers");
         // Disable local model download checks if offline, set low concurrency
         env.allowRemoteModels = true;
         env.useBrowserCache = false;
@@ -29,10 +29,9 @@ export async function initONNXTranslationPipeline(): Promise<any> {
         }
         
         const translator = await pipeline("translation", "Xenova/opus-mt-id-en", {
-          quantized: true,
-          session_options: {
-            logSeverityLevel: 3,
-          },
+          // Transformers.js v3 uses dtype rather than v2's quantized flag.
+          dtype: "q8",
+          device: "cpu",
         } as any);
         return translator;
       } catch (error) {

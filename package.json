@@ -30,10 +30,10 @@
     "runtime:acceptance": "bun scripts/bun-acceptance.ts",
     "perf:bun": "bun scripts/bench-bun-runtime.ts",
     "security:bun": "bun scripts/check-bun-security.ts",
-    "integration:tline": "bun scripts/bun-tline-bridge-smoke.ts"
+    "integration:tline": "bun scripts/bun-tline-bridge-smoke.ts",
+    "compat:bun": "bun scripts/bun-dependency-compat-smoke.ts"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^1.0.2",
     "@ai-sdk/anthropic": "^1.2.12",
     "@ai-sdk/azure": "^1.3.25",
     "@ai-sdk/deepseek": "^0.2.16",
@@ -43,8 +43,9 @@
     "@ai-sdk/openai": "^1.3.23",
     "@ai-sdk/xai": "^1.2.18",
     "@e965/xlsx": "^0.20.3",
-    "@modelcontextprotocol/sdk": "^1.4.0",
-    "@xenova/transformers": "^2.17.2",
+    "@huggingface/transformers": "^3.8.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@napi-rs/canvas": "^1.0.2",
     "ai": "^4.3.16",
     "execa": "^9.5.2",
     "fast-glob": "^3.3.3",
@@ -74,5 +75,18 @@
   },
   "engines": {
     "bun": ">=1.4.2"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "0.9.12",
+    "fast-uri": "3.1.7",
+    "proxy-addr": "2.0.8",
+    "source-map-js": "1.2.2",
+    "tar": "7.5.22",
+    "ip-address": "10.7.4",
+    "nanoid": "3.3.18",
+    "vite": "8.3.5",
+    "xlsx": "npm:@e965/xlsx@0.20.3",
+    "jsondiffpatch": "0.7.6",
+    "sharp": "0.35.5"
   }
 }

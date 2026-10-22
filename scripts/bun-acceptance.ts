@@ -10,7 +10,7 @@ const root = path.resolve(import.meta.dir, '..');
 const bun = process.execPath;
 if (!process.versions.bun) throw new Error('SuperAgent runtime acceptance must be executed with Bun');
 
-for (const script of ['scripts/bun-runtime-smoke.ts', 'scripts/bun-server-smoke.ts', 'scripts/bun-lifecycle-smoke.ts']) {
+for (const script of ['scripts/bun-runtime-smoke.ts', 'scripts/bun-server-smoke.ts', 'scripts/bun-lifecycle-smoke.ts', 'scripts/bun-dependency-compat-smoke.ts']) {
   const result = spawnSync(bun, [path.join(root, script)], {
     cwd: root, encoding: 'utf8', timeout: 45000,
     env: { ...process.env },
