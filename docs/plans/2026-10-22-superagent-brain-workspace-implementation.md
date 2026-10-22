@@ -1,55 +1,75 @@
-# SuperAgent Brain Workspace — implemented increments (2026-10-22)
+# SuperAgent Brain Workspace — Core, MCP, CLI and T-Line (2026-10-22)
 
-## Intent
-A session-local working area under `~/.superagent-r/brain/`, analogous to Antigravity's Brain + Scratch. Research, generated scripts, experiments and temporary artifacts need not be written into the current Git repository. Brain supplements existing SQLite history and RMemory; it does not replace either.
+## Architecture and ownership
+Brain is independent of Git repositories and RMemory. History SQLite remains the canonical chat history store; RMemory is the semantic memory layer. Brain holds session-scoped temporary files, artifacts and evidence:
 
-## Current storage
-```text
-~/.superagent-r/brain/
-  <principal-hash>/
-    <session-id>/
-      manifest.json
-      scratch/
-        scripts/
-        experiments/
-        temporary/
-      artifacts/
-      evidence/
 ```
-Principals are separated by authenticated OAuth identity, static bearer credential hash, or local CLI owner. Path traversal, filesystem links, hidden/dot paths and overwrites are guarded.
+~/.superagent-r/brain/<principal-sha256-prefix>/<session-id>/
+  manifest.json
+  scratch/
+  artifacts/
+  evidence/
+```
+
+Core files:
+- `src/core/brain/brainWorkspace.ts`: owner/session-scoped directory lifecycle and bounded text files.
+- `src/core/brain/brainStorageManager.ts`: storage scans, retention dry-run, one-use cleanup and publication challenges, bounded binary import, active-delegation checks, symlink/path guards. Its directory-oriented routines are reused by the MCP and CLI frontends.
+- `src/core/mcp/tools/brainMcpTools.ts`: MCP argument validation, authenticated principal mapping, chunked binary export, and safe dispatch.
+- `src/core/commands/brainCommand.ts`: local CLI interface.
+
+T-Line currently has its own desktop backend adapter (`backend/src/brainStorageManager.ts` in the T-Line repository) with equivalent storage operations and extra local-workspace registration checks. The two implementations are not yet physically linked as a single distributed package. No MCP OAuth identity is silently remapped to T-Line's local operator.
+
+## MCP tools
+Both tools are classified **dangerous** and must be enabled by the server; OAuth callers need `mcp:tools:write`. All Brain actions remain scoped to the authenticated principal. If `sessionId` is omitted, the MCP connection-scoped Brain ID is used. Preserve that ID to resume across reconnects.
+
+### `superagent_brain`
+```json
+{"action":"current"}
+{"action":"storage","sessionId":"session_abc"}
+{"action":"retention.preview","days":30}
+{"action":"artifact.import","sessionId":"session_abc","filename":"report.pdf","base64":"JVBERi0..."}
+{"action":"artifact.read","sessionId":"session_abc","filePath":"artifacts/report.pdf","offset":0}
+{"action":"cleanup.prepare","sessionId":"session_abc"}
+{"action":"cleanup.confirm","sessionId":"session_abc","challenge":"<token-from-prepare>"}
+```
+Also supports `create|list|inspect|files|read|write` and `delegate.start|get|tail|cancel|jobs`. Old MCP `cleanup` is rejected: it may not bypass the two-stage confirmation.
+
+**Import** accepts canonical Base64 with a decoded size limit of 5 MiB and an extension allowlist. Upload is create-only and session storage is bounded to 50 MiB for binary imports. Large Base64 tool payloads can hit limits of a specific MCP transport; callers should keep requests smaller when possible.
+
+**Binary read** returns Base64 chunks up to 256 KiB per call, with `offset`, `nextOffset`, `length`, `totalBytes` and `done`. Maximum artifact size is 20 MiB. Only artifacts/ and evidence/ are supported.
+
+**Storage** returns per-area bytes and file counts. **Retention** is informational for 7, 30, or 90 days only. It never deletes in the background.
+
+**Cleanup** uses a single-use challenge valid for 60 seconds, bound to the caller and session; scratch content must match the preview and no persisted CLI delegation may still be active. Only scratch is removed. Artifacts and evidence survive.
+
+### `superagent_brain_publish`
+```json
+{"action":"prepare","projectId":"laris-app","sessionId":"session_abc","filePath":"artifacts/report.pdf","destinationPath":"docs/report.pdf"}
+{"action":"confirm","projectId":"laris-app","sessionId":"session_abc","challenge":"<token-from-prepare>"}
+```
+Only enabled **registered local** projects can be selected. Existing workspace routing and project **write** grants are checked for both prepare and confirm, including OAuth write-scope constraints. The 60-second challenge binds caller, session, file hash, destination and canonical project root, and can only be used once. File size is capped at 20 MiB; existing destinations, symlinks, absolute paths and traversal are rejected. **The old single-step MCP publish call is retired.**
 
 ## CLI
-`/brain` and `/scratch` are aliases:
-- `/brain create` and `/brain inspect` operate on the current agent history session.
-- `/brain files`, `/brain list`, `/brain clean <sessionId>`.
-- `/brain delegate.start agy <prompt>` (also claude or codex), `/brain jobs`, `/brain get <jobId>`, `/brain tail <jobId>`, `/brain cancel <jobId>`.
-- The delegated CLI uses the current session Brain scratch as cwd. The CLI has its normal OS-level capabilities; cwd is **not** a process sandbox.
+```text
+/brain create
+/brain storage [sessionId]
+/brain retention [7|30|90]
+/brain clean <sessionId>                         # preview + one-time challenge
+/brain clean.confirm <sessionId> <challenge>    # explicitly clean scratch
+/brain delegate.start agy <prompt>
+/brain jobs
+```
+`/scratch` is an alias. Background delegations use session Brain scratch as cwd, not the repository. A cwd is **not** a process sandbox.
 
-## MCP
-- `superagent_brain` supports `current|create|list|inspect|files|read|write|cleanup` plus `delegate.start|delegate.jobs|delegate.get|delegate.tail|delegate.cancel`.
-- A missing `sessionId` selects an ID scoped to the MCP server/transport instance. It remains stable for that instance. For cross-connection resume, preserve the returned `sessionId` and supply it explicitly.
-- `delegate.start` uses CLI Bridge in background mode; output jobs and locks are scoped to the Brain scratch path. AGY defaults to `accept-edits`, not `full-auto`.
-- `superagent_brain_publish` requires `projectId`, `sessionId`, an `artifacts/` source path and a project-relative destination path. Standard MCP project routing + the **write** capability authorize the destination. Only registered local projects are supported, and publishing cannot overwrite an existing file.
-- Both tools are classified dangerous in MCP: callers need the enabled dangerous-tool policy and, in OAuth mode, `mcp:tools:write`. Project grants and other protected-file policies are not bypassed.
-
-## Agent lifecycle and /goal
-- Owner-facing single/master agent sessions automatically create or rebind their Brain on history load, resume, save, and clear. This does not change the agent's working directory or its Git project.
-- ContextBuilder includes a concise session scratch path and prefers non-project drafts there.
-- `/goal` writes the goal scratchpad to `scratch/scratchpad.md` inside its Brain, not `<project>/scratch`. ContextBuilder reads the same session file.
-- Subagents do not silently acquire the owner's Brain identity.
-
-## Limits and security
-- File write/read tool: text only, 256 KiB each; aggregate session files up to 10 MiB for these API writes. CLI-delegated files are subject to CLI Bridge's distinct output/artifact verification policy, not these API write quotas.
-- `cleanup` deletes only scratch and requires the exact session ID; artifacts and evidence survive.
-- Publish reads files at most 256 KiB and refuses existing paths. Direct shell processes are **not** isolated by a container: an authorized CLI may possess wider OS privileges. Use CLI permission modes or a real sandbox before executing untrusted instructions.
-- `superagent_brain` is not automatically exposed until an MCP server is restarted/reconnected against the new build.
-- Per-connection MCP auto Brain is not guaranteed to equal a provider's ChatGPT conversation ID. Persistence across reconnects uses explicit session IDs.
-
-## Validation
+## Verification
 ```sh
 bun run build
-bun --bun x vitest run tests/brainWorkspace.test.ts tests/brainMcp.test.ts tests/brainHistoryLifecycle.test.ts tests/mcpProjectAccessPolicy.test.ts tests/mcpServer.test.ts
+bun --bun x vitest run tests/brainWorkspace.test.ts tests/brainStorageMcp.test.ts tests/brainMcp.test.ts tests/brainHistoryLifecycle.test.ts tests/mcpServer.test.ts
 ```
+The T-Line repository has separate frontend/backend Brain Explorer and Storage Manager tests.
 
-## Further enhancements
-T-Line desktop visualization of Brain files and delegation jobs; richer binary artifact storage/import/export; limited retention preview and cleanup with explicit approval; audit trail for publish; live AGY/Claude integration smoke tests and restart/reconnect verification. None is claimed complete here.
+## Still outstanding
+- Restart/reconnect the running SuperAgent MCP tunnel or process to expose the new action schemas; builds alone do not update a live connection.
+- Desktop and real remote MCP end-to-end smoke tests with user identity grants have not yet been performed.
+- Binary *upload streaming/chunks* is not available: import currently takes one Base64 payload, while downloads are chunked.
+- T-Line and Core share contracts/semantics but are still separately deployed implementations; factor an independently versioned shared package or use an authenticated SuperAgent core service if single-source deployment is required.

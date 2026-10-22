@@ -102,14 +102,23 @@ describe("Brain MCP OAuth identity scope", () => {
       projectId, sessionId: "publish_session", filePath: "artifacts/report.md",
       destinationPath: "reports/report.md",
     };
-    const blocked = await invoke("superagent_brain_publish", publishArgs);
+    const blocked = await invoke("superagent_brain_publish", { ...publishArgs, action: "prepare" });
     expect(blocked.isError).toBe(true);
     expect(fs.existsSync(path.join(target, "reports", "report.md"))).toBe(false);
     grantProjectAccess(identity, projectId, ["write"]);
-    expect((await invoke("superagent_brain_publish", publishArgs)).isError).not.toBe(true);
+    const prepared = await invoke("superagent_brain_publish", { ...publishArgs, action: "prepare" });
+    expect(prepared.isError).not.toBe(true);
+    const challenge = JSON.parse(prepared.content[0].text).challenge;
+    expect(typeof challenge).toBe("string");
+    expect(fs.existsSync(path.join(target, "reports", "report.md"))).toBe(false);
+    const confirmed = await invoke("superagent_brain_publish", {
+      projectId, sessionId: "publish_session", action: "confirm", challenge,
+    });
+    expect(confirmed.isError).not.toBe(true);
     expect(fs.readFileSync(path.join(target, "reports", "report.md"), "utf8")).toBe("# Tested");
-    expect((await invoke("superagent_brain_publish", publishArgs)).isError).toBe(true);
-    expect((await invoke("superagent_brain_publish", { ...publishArgs, destinationPath: "../outside.md" })).isError).toBe(true);
+    expect((await invoke("superagent_brain_publish", { projectId, sessionId: "publish_session", action: "confirm", challenge })).isError).toBe(true);
+    expect((await invoke("superagent_brain_publish", { ...publishArgs, action: "prepare" })).isError).toBe(true);
+    expect((await invoke("superagent_brain_publish", { ...publishArgs, action: "prepare", destinationPath: "../outside.md" })).isError).toBe(true);
     await server.close();
     removeProject(projectId);
     setYoloMode(false);

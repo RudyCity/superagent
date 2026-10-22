@@ -1,10 +1,12 @@
 import { registry } from "./registry.js";
+import crypto from "node:crypto";
 import type { SlashCommand } from "./types.js";
 import {
   createBrainSession, inspectBrainSession, listBrainSessions, listBrainFiles,
-  cleanBrainScratch, getBrainScratchPath,
+  getBrainScratchPath,
 } from "../brain/brainWorkspace.js";
 import { cliBridgeTool } from "../tools/cliBridgeTool.js";
+import { brainStorageUsage, previewBrainRetention, prepareBrainCleanup, confirmBrainCleanup } from "../brain/brainStorageManager.js";
 
 export const brainCommand: SlashCommand = {
   name: "brain",
@@ -14,6 +16,7 @@ export const brainCommand: SlashCommand = {
     const tokens = input.trim().split(/\s+/).filter(Boolean);
     const action = tokens[0] || "inspect";
     const owner = "local-cli";
+    const ownerToken = "Bearer " + crypto.createHash("sha256").update("brain-cli:" + owner).digest("hex");
     const currentSessionId = ctx.agent?.getSessionId() || "";
     const explicitSessionId = tokens[1] || "";
     const say = (content: unknown, error = false) => ctx.addLine({
@@ -32,9 +35,27 @@ export const brainCommand: SlashCommand = {
         case "show":
         case "inspect": say(inspectBrainSession(owner, explicitSessionId || currentSessionId)); break;
         case "files": say(listBrainFiles(owner, explicitSessionId || currentSessionId)); break;
+        case "storage": {
+          const id = explicitSessionId || currentSessionId;
+          say({ sessionId: id, ...brainStorageUsage(inspectBrainSession(owner, id).path) });
+          break;
+        }
+        case "retention": {
+          say(previewBrainRetention(owner, explicitSessionId ? Number(explicitSessionId) : 30));
+          break;
+        }
         case "clean": {
-          if (!explicitSessionId) throw new Error("Usage: /brain clean <sessionId> (explicit confirmation required)");
-          say(cleanBrainScratch(owner, explicitSessionId, explicitSessionId));
+          const id = explicitSessionId || currentSessionId;
+          if (!id) throw new Error("Usage: /brain clean <sessionId>");
+          const preview = prepareBrainCleanup(ownerToken, id, inspectBrainSession(owner, id).path);
+          say({ ...preview, instruction: "/brain clean.confirm " + id + " " + preview.challenge });
+          break;
+        }
+        case "clean.confirm": {
+          const id = explicitSessionId;
+          const challenge = tokens[2] || "";
+          if (!id || !challenge) throw new Error("Usage: /brain clean.confirm <sessionId> <challenge>");
+          say(confirmBrainCleanup(ownerToken, id, challenge, inspectBrainSession(owner, id).path));
           break;
         }
         case "delegate":
@@ -72,7 +93,7 @@ export const brainCommand: SlashCommand = {
           break;
         }
         default:
-          say("Usage: /brain create [sessionId] | inspect | list | files | clean <sessionId>\n" +
+          say("Usage: /brain create [sessionId] | inspect | list | files | storage [sessionId] | retention [7|30|90] | clean <sessionId> | clean.confirm <sessionId> <challenge>\n" +
               "/brain delegate.start <agy|claude|codex> <prompt> | jobs | get <jobId> | tail <jobId> | cancel <jobId>\n" +
               "Alias: /scratch. All delegated files remain in the current session scratch until explicitly published.");
       }
