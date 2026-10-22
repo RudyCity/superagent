@@ -14,7 +14,9 @@ import { MOTION_CAPABILITIES } from "./motionCapabilities.js";
 import { motionStorageMaintenance } from "./jobs/storageMaintenance.js";
 import { inspectMotionQueueRecovery } from "./jobs/queueRecovery.js";
 import { inspectMotionSupervisor } from "./jobs/motionSupervisor.js";
-import { generateMotionFromPrompt, reviseMotionFromPrompt } from "./director/directorService.js";
+import { generateMotionFromPrompt, reviseMotionFromPrompt,
+  planMotionStoryboardFromPrompt, previewApprovedMotionStoryboard,
+  renderApprovedMotionStoryboard } from "./director/directorService.js";
 import { inspectMotionQuality } from "./director/motionQuality.js";
 import { renderMotionFrameSnapshot } from "./director/motionFrameSnapshot.js";
 import { inspectMotionVision, autoRepairMotionVision, withMotionVisionLease } from "./director/motionVisionReview.js";
@@ -32,6 +34,7 @@ import { compileMotionTemplate, listMotionTemplates } from "./motionTemplates.js
 import { createMotionBatchVariants } from "./motionBatchVariants.js";
 import { compileMotionBeatSync } from "./motionBeatSync.js";
 import { convertMotionJobArtifact } from "./motionExportFormats.js";
+import { compileMotionParticles } from "./motionParticles.js";
 import { applyMotionEdits } from "./project/revisions.js";
 
 export interface MotionHttpContext {
@@ -107,6 +110,7 @@ export async function handleMotionHttpRoute(
   const projectTemplateRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/templates(?:\/(preview))?$/);
   const batchVariants = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/variants$/);
   const beatSync = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/beat-sync(?:\/(preview))?$/);
+  const particleRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/particles(?:\/(preview))?$/);
   const effectsList = pathname === "/api/motion/effects";
   const effectItem = pathname.match(/^\/api\/motion\/effects\/([a-z][a-z0-9-]{1,63})$/);
   const projectEffects = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects$/);
@@ -211,6 +215,23 @@ export async function handleMotionHttpRoute(
         const item = effectRegistry.getCatalog().find(e => e.id === effectItem[1]);
         json(res, ctx, 200, item);
       }
+    } else if (pathname === "/api/motion/storyboard/plan" && method === "POST") {
+      const body = await readMotionJson(req, 5000);
+      if (typeof body.prompt !== "string" || !body.prompt.trim() || body.prompt.length > 2000)
+        throw new MotionValidationError(["Storyboard prompt must contain 1–2000 characters"]);
+      const plan = await planMotionStoryboardFromPrompt(body.prompt);
+      json(res, ctx, 200, { plan, preview: await previewApprovedMotionStoryboard(workspace, plan) });
+    } else if (pathname === "/api/motion/storyboard/preview" && method === "POST") {
+      const body = await readMotionJson(req, 10_000);
+      json(res, ctx, 200, { preview: await previewApprovedMotionStoryboard(workspace, body.plan) });
+    } else if (pathname === "/api/motion/storyboard/render" && method === "POST") {
+      const body = await readMotionJson(req, 10_000);
+      if (body.width !== undefined && !Number.isSafeInteger(body.width))
+        throw new MotionValidationError(["Storyboard render width must be an integer"]);
+      const result = await renderApprovedMotionStoryboard(workspace, body.plan, {
+        width: body.width as number | undefined,
+      });
+      json(res, ctx, 202, result);
     } else if (pathname === "/api/motion/generate" && method === "POST") {
       const body = await readMotionJson(req, 12_000);
       const result = await generateMotionFromPrompt(workspace, body.prompt as string, {
@@ -256,6 +277,25 @@ export async function handleMotionHttpRoute(
         body.baseRevision as number, body.revision as number));
     } else if (project && method === "GET") {
       json(res, ctx, 200, await getMotionProject(workspace, project[1]));
+    } else if (particleRoute && method === "POST") {
+      const body = await readMotionJson(req, 2000);
+      if (!Number.isSafeInteger(body.baseRevision) || typeof body.kind !== "string" ||
+          (body.count !== undefined && !Number.isSafeInteger(body.count)) ||
+          (body.color !== undefined && typeof body.color !== "string"))
+        throw new MotionValidationError(["Invalid Motion particle overlay request"]);
+      const current = await getMotionProject(workspace, particleRoute[1]);
+      if (current.revision !== body.baseRevision) {
+        json(res, ctx, 409, { error: "Motion revision conflict; reload before applying particles" });
+      } else {
+        const composition = compileMotionParticles(current, {
+          kind: body.kind as "confetti" | "sparks" | "snow",
+          count: body.count as number | undefined,
+          color: body.color as string | undefined,
+        });
+        if (particleRoute[2] === "preview") json(res, ctx, 200, { ...current, composition });
+        else json(res, ctx, 200, await updateMotionProject(workspace, particleRoute[1],
+          current.revision, [{ type: "replace-composition", composition }]));
+      }
     } else if (beatSync && method === "POST") {
       const body = await readMotionJson(req, 2000);
       if (!Number.isSafeInteger(body.baseRevision) || typeof body.targetLayerId !== "string" ||

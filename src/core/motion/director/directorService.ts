@@ -1,4 +1,6 @@
 import { generateText } from "ai";
+import { motionWorkspaceRoot } from "../project/projectStore.js";
+import { validateMotionProject } from "../schema/validation.js";
 import { getModelInstanceForTier } from "../../config/models.js";
 import { createMotionProject, getMotionProject, updateMotionProject } from "../project/projectStore.js";
 import { startDetachedMotionJob, type MotionJob } from "../jobs/motionJobs.js";
@@ -261,4 +263,69 @@ export async function reviseMotionFromPrompt(workspace: string, motionId: string
   return { project: updated, job, outline: updated.composition.layers.filter(
     layer => layer.kind === "text").map(layer => layer.text), limitations: directorMediaLimitations(composedMedia,
       updated.composition.durationFrames / 30), quality };
+}
+
+/**
+ * AI Motion Director 2.0: planning and approval are deliberately decoupled
+ * from persistence and rendering. A storyboard is untrusted model content
+ * until validated by the same compiler used by ordinary prompt-to-video.
+ */
+export async function planMotionStoryboardFromPrompt(
+  prompt: string,
+  options: { planner?: MotionPlanner; signal?: AbortSignal } = {},
+): Promise<MotionDirectorPlan> {
+  const user = brief(prompt);
+  const raw = await (options.planner ?? motionPlanner)(planSystem, user, options.signal);
+  const draft = validateDirectorPlan(raw);
+  return validateDirectorPlan({
+    ...draft, artDirection: chooseMotionArtDirection(user, draft.artDirection),
+  });
+}
+export async function previewApprovedMotionStoryboard(
+  workspace: string, raw: unknown,
+): Promise<MotionProject> {
+  const plan = validateDirectorPlan(raw);
+  const composition = compileDirectorPlan(plan);
+  const now = new Date().toISOString();
+  const project: MotionProject = {
+    schemaVersion: 1,
+    id: "motion-00000000000000000000",
+    workspaceRoot: await motionWorkspaceRoot(workspace),
+    name: plan.name, revision: 1, createdAt: now, updatedAt: now,
+    composition,
+  };
+  validateMotionProject(project);
+  return project;
+}
+export async function renderApprovedMotionStoryboard(
+  workspace: string, raw: unknown,
+  options: { width?: number; renderer?: (ws: string, id: string, opts: { width: number }) => Promise<MotionJob> } = {},
+): Promise<MotionDirectorResult> {
+  const width = widthOf(options.width);
+  const plan = validateDirectorPlan(raw);
+  const composition = compileDirectorPlan(plan);
+  // Validate the full plan before writing a project.
+  const draft: MotionProject = {
+    schemaVersion: 1,
+    id: "motion-00000000000000000000",
+    workspaceRoot: await motionWorkspaceRoot(workspace),
+    name: plan.name, revision: 1,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    composition,
+  };
+  validateMotionProject(draft);
+  const quality = inspectMotionQuality(draft);
+  if (!quality.passed) throw new Error("Motion approved storyboard failed quality validation");
+  const project = await createMotionProject(workspace, plan.name);
+  const updated = await updateMotionProject(workspace, project.id, project.revision,
+    [{ type: "replace-composition", composition }]);
+  const job = await (options.renderer ?? startDetachedMotionJob)(workspace, updated.id, { width });
+  return {
+    project: updated, job, quality,
+    outline: plan.scenes.map(scene => scene.headline),
+    limitations: [
+      "This approved storyboard renderer has no external footage, logo or voiceover inputs.",
+      "Use the editor to attach workspace-owned audio and images after generation.",
+    ],
+  };
 }
