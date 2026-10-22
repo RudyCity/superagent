@@ -120,6 +120,7 @@ export async function handleListChromeProfiles(args: any): Promise<McpToolResult
 }
 
 export const CHROME_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
+  superagent_browser_gateway: "dangerous",
   superagent_chrome_cdp: "dangerous",
   superagent_control_chrome_cdp: "dangerous",
   superagent_chrome_vision: "dangerous",
@@ -132,6 +133,35 @@ export const CHROME_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous
 };
 
 export const CHROME_MCP_TOOL_DEFS = [
+  {
+    name: "superagent_browser_gateway",
+    description: "Cross-IDE Chrome CDP gateway for Codex, Antigravity, and SuperAgent MCP clients. " +
+      "Client identity is derived from the authenticated MCP connection, not from agentId arguments. " +
+      "Actions: identity, discover, claim, share, request_attach, pending, approve_attach, deny_attach, " +
+      "poll_attach, execute, events, wait_events, heartbeat, leave, release, policy. " +
+      "Owner-approved invitations are encrypted to requesting MCP session. " +
+      "Gateway-only enforcement is opt-in via SUPERAGENT_CDP_GATEWAY_ONLY=1.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: [
+          "identity", "discover", "claim", "share", "request_attach", "pending", "approve_attach", "deny_attach",
+          "poll_attach", "execute", "events", "wait_events", "heartbeat", "leave", "release", "policy",
+        ] },
+        port: { type: "number", description: "Local Chrome CDP debugging port, default 9222." },
+        targetId: { type: "string", description: "Explicit target ID from discover." },
+        role: { type: "string", enum: ["observer", "contributor"], description: "Requested access role." },
+        requestId: { type: "string", description: "Opaque identifier for attach approval/poll; no secret tokens." },
+        enabled: { type: "boolean", description: "Enable or disable sharing as owner." },
+        command: { type: "string", description: "execute: allowlisted CDP page action." },
+        payload: { type: "object", description: "execute: selected action arguments. No client identity fields." },
+        expectedRevision: { type: "number", description: "Required for shared write actions; obtained from discovery/snapshot." },
+        cursor: { type: "number", description: "Byte cursor for per-tab collaboration events." },
+        waitMs: { type: "number", description: "wait_events: long-poll timeout (max 10s)." },
+      },
+      required: ["action"],
+    },
+  },
   {
     name: "superagent_chrome_cdp",
     description:

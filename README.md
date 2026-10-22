@@ -871,3 +871,9 @@ On an updated SuperAgent service with a vision-capable model, the T-Line Motion 
 Captions describe authored scene headlines and subtitles with non-overlapping cue times. They do not transcribe voiceover WAV audio. Rounded rectangle layers now accept an optional, bounded cornerRadius matching SVG and Canvas/MP4 output, editable from T-Line's inspector. One-pass visual repair is an opt-in helper and can change scene text/layout: inspect the resulting motion before publishing.
 
 Video footage, closed captions automatically transcribed from audio, genuine multi-pass vision production scoring, packaged desktop provider E2E, autonomous safe crash recovery and full professional motion effects remain release gates.
+
+### Cross-IDE CDP Gateway for Codex, Antigravity and SuperAgent
+
+The dangerous MCP tool `superagent_browser_gateway` coordinates separate initialized MCP clients on one Chrome browser across tabs and processes. It assigns an ephemeral actor ID per connection, discovers Chrome targets with coordinator leases, uses owner-approved encrypted one-time invitations for cross-IDE attach, and serializes shared-tab writes with `expectedRevision`. Clients can poll `events` / `wait_events` without accessing tokens. Use `superagent_tool_search` and `superagent_tool_execute` in compact Gateway mode or call `superagent_browser_gateway` directly in Full mode. Reconnect the MCP client after upgrading.
+
+Set `SUPERAGENT_CDP_GATEWAY_ONLY=1` **on the MCP server** to deny direct legacy MCP CDP/Vision commands and require the shared gateway. This cannot stop an independent application from connecting directly to Chrome's debugging socket; keep Chrome CDP bound to loopback, restrict OS/network access, and configure every participating IDE to use the gateway. Full workflow, security model and test instructions: `docs/plans/2026-10-23-cross-ide-cdp-gateway-implementation.md`.

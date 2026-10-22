@@ -287,6 +287,13 @@ function wsGetJson(path: string): Promise<any> {
   });
 }
 
+/** Public browser locator for the cross-IDE CDP coordinator.
+ * The MCP gateway requires a loopback-only CDP host before calling. */
+export async function discoverCdpPages(port: number): Promise<Array<{ targetId: string; title: string; url: string }>> {
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid CDP port.");
+  return terminalCdpConfig.run({ port }, async () => (await listPageTargets()).slice(0, 100)
+    .map(t => ({ targetId: t.id, title: t.title.slice(0, 160), url: t.url.slice(0, 2048) })));
+}
 async function listPageTargets(): Promise<CdpTarget[]> {
   const targets: any = await httpGetJson("/json/list");
   if (!Array.isArray(targets)) {

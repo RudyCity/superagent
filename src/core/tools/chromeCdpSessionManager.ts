@@ -416,6 +416,13 @@ export async function listCdpSessions(): Promise<CdpPublicSession[]> {
     return sessions.filter((s): s is CdpSession => !!s && s.expiresAt > Date.now()).map(publicSession);
   } catch (e: any) { if (e.code === "ENOENT") return []; throw e; }
 }
+/** Serialize pending cross-IDE approvals across independent Bun/MCP processes.
+ * The lock uses the existing cross-process filesystem queue and never grants CDP access itself. */
+export async function withCdpGatewayRegistryLock<T>(fn: () => Promise<T>): Promise<T> {
+  const done = await lock(sha("cross-ide-cdp-registry-v1"), { waitMs: 12000 });
+  try { return await fn(); } finally { await done(); }
+}
+export const cdpGatewayRoot = () => join(dir(), "gateway");
 export async function withCdpTargetRead<T>(port: number, targetId: string, opts: CdpAccess, fn: () => Promise<T>): Promise<T> {
   return guarded(port, targetId, opts, async key => {
     const current = await load(key);

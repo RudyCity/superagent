@@ -13,6 +13,7 @@ import os from "os";
 import crypto from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { summarizeArgs } from "./mcpLogSanitizer.js";
+import { CrossIdeCdpGateway } from "../tools/crossIdeCdpGateway.js";
 import { emitMcpActivity } from "./mcpActivityBus.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -528,9 +529,8 @@ export const MCP_TOOL_DEFINITIONS = [
     ...BRAIN_MCP_TOOL_DEFS,
     ...WORKSPACE_CHAIN_MCP_TOOL_DEFS,
     ...MOTION_MCP_TOOL_DEFS,
-];
-
     ...MCP_GATEWAY_TOOL_DEFS,
+];
 const activeMcpServerInstances = new Set<Server>();
 
 export async function notifyMcpToolsListChanged(): Promise<void> {
@@ -600,8 +600,6 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         && (MCP_TOOL_CLASSIFICATION[t.name] !== "dangerous" || canDiscoverDangerous)
         && (!PRIVILEGED_MCP_TOOLS.has(t.name) || canDiscoverAdmin)
     );
-    const annotated = tools.map((t) => ({
-      ...t,
     return tools;
   };
 
@@ -610,6 +608,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     const tools = toolExposure === "gateway"
       ? authorized.filter((tool) => Object.values(MCP_GATEWAY_TOOL_NAMES).includes(tool.name as any))
       : authorized;
+    const annotated = tools.map((t) => ({
+      ...t,
       annotations: getToolAnnotations(t.name),
       _meta: { securitySchemes: getToolSecuritySchemes(t.name, authMode) },
     }));
@@ -622,6 +622,12 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   let activeProjectGrantRequired = false;
   // Stable for this server/transport session; never derived from a project cwd.
   const connectionBrainSessionId = crypto.randomUUID();
+  // Immutable actor ID scoped to this initialized MCP transport.
+  // The clientInfo label is self-reported, never a permission grant.
+  const crossIdeGateway = new CrossIdeCdpGateway({
+    sessionId: connectionBrainSessionId,
+    clientLabel: process.env.SUPERAGENT_CDP_IDE_LABEL,
+  });
   const dispatchMcpToolCall = async (request: any, auditContext?: McpRequestAuditContext) => {
     const { name, arguments: args = {} } = request.params;
     if (!isFullYoloMode() && isSensitiveEnvFileAccess({ name, args })) {
@@ -711,6 +717,19 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(args)}`);
 
       try {
+        if (name === "superagent_browser_gateway") {
+          const claimedClientName = server.getClientVersion()?.name;
+          crossIdeGateway.setClientLabel(claimedClientName || process.env.SUPERAGENT_CDP_IDE_LABEL);
+          const result = await crossIdeGateway.invoke(args);
+          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        }
+        // MCP-level enforcement; independent raw Chrome CDP sockets cannot be firewalled here.
+        if (process.env.SUPERAGENT_CDP_GATEWAY_ONLY === "1" &&
+            ["superagent_chrome_cdp", "superagent_control_chrome_cdp",
+             "superagent_chrome_vision", "superagent_control_chrome_vision"].includes(name)) {
+          return { content: [{ type: "text", text:
+            "Direct MCP Chrome commands are disabled in gateway-only mode. Use superagent_browser_gateway." }], isError: true };
+        }
         const providerContext = toResolvedProjectContext(resolvedProjectTarget);
         if (name === "superagent_check_project_health") {
           if (!providerContext) throw new Error("Project health is currently supported for registered local and standalone SSH projects only.");
