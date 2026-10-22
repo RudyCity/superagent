@@ -90,7 +90,8 @@ export async function convertMotionJobArtifact(
   for await (const chunk of createReadStream(source)) hash.update(chunk);
   if (hash.digest("hex") !== job.artifact.sha256) throw new Error("Motion export source checksum mismatch");
   const lock = workspace + ":" + jobId;
-  if (transcodes.has(lock) || transcodes.size >= 2) throw new Error("Motion export converter busy");
+  if (transcodes.has(lock) || transcodes.size >= 2) throw Object.assign(
+    new Error("Motion export converter busy; retry after the current conversion"), { statusCode: 503 });
   transcodes.add(lock);
   try {
     return await transcodeMotionPreview(source, format, { durationSeconds: duration });
