@@ -45,14 +45,14 @@ export const MOTION_MCP_TOOL_DEFS = [
   },
   {
     name: "superagent_motion_list",
-    description: "List Motion Studio projects in an authorized local workspace.",
+    description: "List SuperAgent Visuals projects in an authorized local workspace.",
     inputSchema: { type: "object", properties: {
       workspace: { type: "string" }, projectId: { type: "string", description: "Registered workspace project routing ID (not a Motion scene ID)." },
     } },
   },
   {
     name: "superagent_motion_inspect",
-    description: "Inspect a Motion Studio scene revision by motionId within an authorized workspace.",
+    description: "Inspect a SuperAgent Visuals scene revision by motionId within an authorized workspace.",
     inputSchema: { type: "object", properties: {
       workspace: { type: "string" }, projectId: { type: "string" },
       motionId: { type: "string" },
@@ -60,7 +60,7 @@ export const MOTION_MCP_TOOL_DEFS = [
   },
   {
     name: "superagent_motion_create",
-    description: "Create a Motion Studio project. Requires workspace write access and dangerous-tool opt-in.",
+    description: "Create a SuperAgent Visuals project. Requires workspace write access and dangerous-tool opt-in.",
     inputSchema: { type: "object", properties: {
       workspace: { type: "string" }, projectId: { type: "string" },
       name: { type: "string" },
@@ -248,7 +248,7 @@ export async function dispatchMotionMcpTool(
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   } catch (error) {
     return {
-      content: [{ type: "text", text: "Motion Studio: " + (error instanceof Error ? error.message : String(error)) }],
+      content: [{ type: "text", text: "SuperAgent Visuals: " + (error instanceof Error ? error.message : String(error)) }],
       isError: true,
     };
   }

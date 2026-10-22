@@ -13,7 +13,7 @@ import { inspectMotionQueueRecovery, dispatchOrphanedMotionQueue } from "../moti
 import type { MotionEdit } from "../motion/schema/types.js";
 import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation, enqueueSupervisedMotionJob } from "../motion/jobs/motionJobs.js";
 
-const usage = `Motion Studio (developer preview)
+const usage = `SuperAgent Visuals (developer preview)
   superagent motion generate --prompt "Animated promo" [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
   superagent motion revise MOTION_ID --prompt "Shorter title" [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
   superagent motion new --name "Title" [--workspace PATH] [--json]
@@ -374,7 +374,7 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (json) emit({ error: message }, true);
-    else console.error("Motion Studio: " + message);
+    else console.error("SuperAgent Visuals: " + message);
     if (error instanceof MotionRevisionConflict) return 3;
     if (error instanceof MotionValidationError || error instanceof RangeError || error instanceof Error) return 2;
     return 1;

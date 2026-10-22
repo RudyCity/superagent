@@ -2,7 +2,7 @@ import type { SlashCommand, SlashCommandContext } from "./types.js";
 import { registry } from "./registry.js";
 
 const help = [
-  "Motion Studio (developer preview)",
+  "SuperAgent Visuals (developer preview)",
   "  /motion generate <brief>",
   "  /motion revise <motion-id> <change request>",
   "  /motion new <title>",
@@ -46,7 +46,7 @@ function parseInteger(input: string | undefined, name: string): number {
 
 export const motionCommand: SlashCommand = {
   name: "motion",
-  description: "Create, edit and render Motion Studio video previews in the active workspace",
+  description: "Create, edit and render SuperAgent Visuals video previews in the active workspace",
   async execute(input, ctx) {
     const tokens = input.trim().split(/\s+/).filter(Boolean);
     const [action = "help", id, third, fourth, ...rest] = tokens;
@@ -160,7 +160,7 @@ export const motionCommand: SlashCommand = {
       if (action === "doctor") {
         const { probeFfmpeg } = await import("../motion/render/ffmpegEncoder.js");
         const available = await probeFfmpeg();
-        emit(ctx, "Motion Studio: " + (available ? "FFmpeg available; MP4 previews enabled" : "FFmpeg unavailable; SVG previews only"));
+        emit(ctx, "SuperAgent Visuals: " + (available ? "FFmpeg available; MP4 previews enabled" : "FFmpeg unavailable; SVG previews only"));
         return;
       }
       if (action === "import-image" || action === "import-audio") {
@@ -240,7 +240,7 @@ export const motionCommand: SlashCommand = {
         emit(ctx, help, true);
       }
     } catch (error) {
-      emit(ctx, "Motion Studio: " + (error instanceof Error ? error.message : String(error)), true);
+      emit(ctx, "SuperAgent Visuals: " + (error instanceof Error ? error.message : String(error)), true);
     }
   },
 };

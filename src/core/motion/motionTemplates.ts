@@ -15,8 +15,8 @@ const templates: readonly TemplateDefinition[] = [
   { id: "customer-quote", name: "Customer Quote", category: "Testimonials", description: "Quiet quote reveal with understated accent block", align: "center", tone: "calm" },
   { id: "tech-update", name: "Tech Update", category: "Technology", description: "Right-aligned headline, progress accent and kinetic highlights", align: "right", tone: "clean" },
 ];
-export function listMotionTemplates(): TemplateDefinition[] {
-  return templates.map(item => ({ ...item }));
+export function listMotionTemplates(): Array<TemplateDefinition & { origin: "superagent-original" }> {
+  return templates.map(item => ({ ...item, origin: "superagent-original" }));
 }
 export interface MotionTemplateInput {
   templateId: string;

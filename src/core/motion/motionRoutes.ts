@@ -82,7 +82,7 @@ export async function handleMotionHttpRoute(
   if (!(pathname === "/api/motion" || pathname.startsWith("/api/motion/"))) return false;
   const workspace = ctx.resolveWorkspacePath(req);
   if (!workspace || /^(ssh|chain):/i.test(workspace)) {
-    json(res, ctx, 403, { error: "Motion Studio requires an authorized local workspace" });
+    json(res, ctx, 403, { error: "SuperAgent Visuals requires an authorized local workspace" });
     return true;
   }
   const method = req.method ?? "GET";
