@@ -91,8 +91,8 @@ const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: Chrome automation suite.
   - Extension & Process: control_browser_tab (:9223), launch_chrome_profile, list_running_chrome, close_chrome_profile.
   - DIRECT_ACTION: Drive browser directly to finish workflows. Never output a manual how-to guide.`;
 
-const SCRATCH_AND_TRANSFER_RULE = `- SCRATCH_WORKSPACE: Free read/write access to local session directory (derived from process.env.SUPERAGENT_SESSION_PATH) without permission prompt. Safe for helper/scratch files in both local and SSH mode.
-- SSH_TRANSFER: In SSH mode, use transfer_ssh_file (upload/download) to copy files between local session directory and remote workspace. Standard file tools bypass SSH routing when targeting local config/session paths.
+const SCRATCH_AND_TRANSFER_RULE = `- BRAIN_WORKSPACE: For drafts, research, experiments and detached non-project tasks, use the session-specific Brain scratch directory communicated by the runtime (under ~/.superagent-r/brain/). Do not create scratch/ inside the repository. Normal file/tool permission checks still apply; Brain is not a shell sandbox or a grant to access other projects.
+- SSH_TRANSFER: In SSH mode, transfer files only through authorized local-session/remote-workspace routes. Do not assume all ~/.superagent-r content is freely writable or transferable.
 - SSH_WORKSPACE_SKILLS: In SSH workspace mode, you MUST identify all relevant skills and read/use their instructions from the available skills before planning or executing tasks.`;
 
 const CLI_BRIDGE_RULE = `- CLI_BRIDGE: Delegate tasks to external AI CLI assistants (Codex, Claude Code, AGY, or custom binaries).
