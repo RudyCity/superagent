@@ -424,19 +424,21 @@ export const goalCommand: SlashCommand = {
       timestamp: now,
     });
     
-    // Write goal to scratchpad
+    // Keep task notes in the session Brain, never create a scratch/ folder in a project.
     try {
-      const fsPromises = await import("fs/promises");
-      const pathModule = await import("path");
-      const scratchDir = pathModule.resolve(process.cwd(), "scratch");
-      await fsPromises.mkdir(scratchDir, { recursive: true });
-      const scratchPath = pathModule.join(scratchDir, "scratchpad.md");
+      const { createBrainSession, readBrainFile, writeBrainFile } = await import("../brain/brainWorkspace.js");
+      const sessionId = ctx.agent.getSessionId();
+      if (!sessionId) throw new Error("Chat session has not been initialized.");
+      createBrainSession("local-cli", sessionId);
       let existing = "";
-      try { existing = await fsPromises.readFile(scratchPath, "utf-8"); } catch {}
+      try { existing = readBrainFile("local-cli", sessionId, "scratch/scratchpad.md"); }
+      catch (error: any) { if (error?.code !== "ENOENT") throw error; }
       const goalBlock = `\n\n## 🎯 ACTIVE GOAL (set ${new Date(now).toISOString()})\n${args}\n`;
       const cleaned = existing.replace(/\n\n## 🎯 ACTIVE GOAL[\s\S]*?(?=\n\n##|$)/g, "");
-      await fsPromises.writeFile(scratchPath, cleaned + goalBlock, "utf-8");
-    } catch {}
+      writeBrainFile("local-cli", sessionId, "scratch/scratchpad.md", cleaned + goalBlock, true);
+    } catch (error: any) {
+      ctx.addLine({ type: "error", content: `Failed to save goal scratchpad: ${error?.message || String(error)}`, timestamp: Date.now() });
+    }
 
     ctx.setIsProcessing?.(true);
     ctx.agent.sendMessage(

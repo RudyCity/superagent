@@ -53,13 +53,24 @@ export class ContextBuilder {
     }
 
     let scratchpadText = "";
-    if (category !== "conversation") {
+    let brainWorkspaceNotice = "";
+    if (agent.tier === "single" || agent.tier === "master") {
       try {
-        const scratchpadPath = path.resolve(agent.workingDirectory, "scratch", "scratchpad.md");
-        if (fs.existsSync(scratchpadPath)) {
-          scratchpadText = fs.readFileSync(scratchpadPath, "utf-8");
+        const { createBrainSession, readBrainFile } = await import("../brain/brainWorkspace.js");
+        const sessionId = agent.getSessionId();
+        if (sessionId) {
+          const brain = createBrainSession("local-cli", sessionId);
+          brainWorkspaceNotice = `BRAIN_WORKSPACE: Session scratch is ${brain.scratchPath}. For research, drafts and other non-project tasks, prefer this independent scratch over creating files in the Git repository. Final project edits still require the normal authorized project/workspace tools. This path is a working directory, NOT a security sandbox.`;
+          if (category !== "conversation") {
+            try { scratchpadText = readBrainFile("local-cli", sessionId, "scratch/scratchpad.md"); }
+            catch (error: any) {
+              if (error?.code !== "ENOENT") throw error;
+            }
+          }
         }
-      } catch {}
+      } catch (error: any) {
+        agent.writeToLogFile("WARN", `Brain context unavailable: ${error?.message || String(error)}`);
+      }
     }
 
     const goalModeAddendum = isGoalMode ? String.fromCharCode(10) + 'GOAL: ' + agent.goalMode : "";
@@ -420,7 +431,7 @@ export class ContextBuilder {
     const toolDiscoveryInstruction = getToolDiscoveryGuidance(agent.tier, authorizedToolDefs.map((t: any) => t.name), activeMode);
     const executionDirective = getExecutionGuidance(maxIterationsStr, hasSubagents && !skipHeavyContext, isGoalMode);
     const systemPrompt = [activeSystemPrompt, toolRestrictionNotice, runtimeCapabilitiesText, activeModeNotice,
-      toolDiscoveryInstruction, executionDirective, goalModeAddendum, budgetedSystemContext.text]
+      toolDiscoveryInstruction, executionDirective, goalModeAddendum, brainWorkspaceNotice, budgetedSystemContext.text]
       .filter(Boolean).join("\n");
     const stepsRemaining = maxIterations === Infinity ? Infinity : (maxIterations - 1);
     const stepNotice = stepsRemaining <= 5

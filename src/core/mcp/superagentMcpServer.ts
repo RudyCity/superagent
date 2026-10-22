@@ -176,7 +176,7 @@ function toResolvedProjectContext(target: ResolvedProjectTarget | null): Resolve
   };
 }
 import { PROJECT_REGISTRY_TOOL_NAMES, WORKSPACE_SCOPED_MCP_TOOLS } from "./mcpWorkspacePolicy.js";
-import { BRAIN_MCP_TOOL_DEFS, dispatchBrainMcpTool } from "./tools/brainMcpTools.js";
+import { BRAIN_MCP_TOOL_DEFS, dispatchBrainMcpTool, dispatchBrainPublishMcpTool } from "./tools/brainMcpTools.js";
 import { MOTION_MCP_TOOL_DEFS, dispatchMotionMcpTool } from "./tools/motionMcpTools.js";
 import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, PRIVILEGED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
 import type { McpServerOptions } from "./mcpToolPolicy.js";
@@ -601,6 +601,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   let activeWorkspace = scopedWorkspaceAnchor;
   let activeProjectId: string | null = null;
   let activeProjectGrantRequired = false;
+  // Stable for this server/transport session; never derived from a project cwd.
+  const connectionBrainSessionId = crypto.randomUUID();
   const dispatchMcpToolCall = async (request: any, auditContext?: McpRequestAuditContext) => {
     const { name, arguments: args = {} } = request.params;
     if (!isFullYoloMode() && isSensitiveEnvFileAccess({ name, args })) {
@@ -870,7 +872,22 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
                 ? "bearer:" + identity.credentialHash
                 : identity ? "" : authMode === "oauth" ? "" : "local-stdio";
             if (!principal) throw new Error("Authenticated identity required for brain.");
-            return dispatchBrainMcpTool(name, args, principal)!;
+            return dispatchBrainMcpTool(name, args, principal, connectionBrainSessionId)!;
+          }
+          if (name === "superagent_brain_publish") {
+            const identity = getIdentity?.();
+            const principal = identity?.mode === "oauth"
+              ? "oauth:" + identity.subject
+              : identity?.mode === "static-bearer" && identity.credentialHash
+                ? "bearer:" + identity.credentialHash
+                : identity ? "" : authMode === "oauth" ? "" : "local-stdio";
+            if (!principal) throw new Error("Authenticated identity required for brain publication.");
+            if (resolvedProjectTarget?.project?.type !== "local" ||
+                resolvedProjectTarget.project.enabled !== true ||
+                !resolvedProjectTarget.project.root) {
+              throw new Error("An enabled registered local project is required to publish Brain artifacts.");
+            }
+            return dispatchBrainPublishMcpTool(name, args, principal, resolvedProjectTarget.project.root)!;
           }
           const motionRes = await dispatchMotionMcpTool(name, args, targetWorkspace);
           if (motionRes) return motionRes;

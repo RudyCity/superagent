@@ -4,6 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
+import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
+import { grantProjectAccess } from "../src/core/project/projectAccessPolicy.js";
+import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -12,6 +15,25 @@ afterEach(() => {
 });
 
 describe("Brain MCP OAuth identity scope", () => {
+  it("reuses a transport-scoped Brain when no sessionId is provided", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "brain-transport-")); roots.push(root);
+    process.env.SUPERAGENT_CONFIG_DIR = root;
+    const server = createSuperagentMcpServer({
+      authMode: "oauth", allowDangerous: true,
+      getIdentity: () => ({ mode: "oauth", subject: "session-owner", scopes: ["mcp:tools", "mcp:tools:write"] }),
+    });
+    const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const invoke = (action: string, extra: Record<string, unknown> = {}) => call({
+      method: "tools/call", params: { name: "superagent_brain", arguments: { action, ...extra } },
+    });
+    const current = JSON.parse((await invoke("current")).content[0].text);
+    expect(current.sessionId).toBeTruthy();
+    const written = await invoke("write", { filePath: "scratch/note.txt", content: "transport" });
+    expect(written.isError).not.toBe(true);
+    expect(JSON.parse((await invoke("inspect")).content[0].text).sessionId).toBe(current.sessionId);
+    expect(JSON.parse((await invoke("read", { filePath: "scratch/note.txt" })).content[0].text).content).toBe("transport");
+    await server.close();
+  });
   it("publishes brain definition and respects read-only token permissions", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "brain-oauth-")); roots.push(root);
     process.env.SUPERAGENT_CONFIG_DIR = root;
@@ -49,5 +71,47 @@ describe("Brain MCP OAuth identity scope", () => {
     expect((await invoke("inspect")).isError).toBe(true);
     expect((await invoke("read", { filePath: "artifacts/report.txt" })).isError).toBe(true);
     await server.close();
+  });
+
+  it("publishes only after project write grant, without overwriting existing files", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "brain-publish-")); roots.push(root);
+    process.env.SUPERAGENT_CONFIG_DIR = root;
+    const nestedWorkspace = path.join(root, "anchor", "nested");
+    const target = path.join(root, "target");
+    fs.mkdirSync(nestedWorkspace, { recursive: true });
+    fs.mkdirSync(target, { recursive: true });
+    const projectId = "brain-publish-test";
+    registerProject({ id: projectId, type: "local", name: "Publish target", root: target });
+    setFullYoloMode(false);
+    setYoloMode(false);
+    const identity = { mode: "oauth" as const, subject: "publish-user", scopes: ["mcp:tools", "mcp:tools:write"] };
+    const server = createSuperagentMcpServer({
+      authMode: "oauth", allowDangerous: true, workspace: nestedWorkspace,
+      getIdentity: () => identity,
+    });
+    const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const invoke = (name: string, args: Record<string, unknown>) => call({
+      method: "tools/call", params: { name, arguments: args },
+    });
+    expect((await invoke("superagent_brain", { action: "create", sessionId: "publish_session" })).isError).not.toBe(true);
+    expect((await invoke("superagent_brain", {
+      action: "write", sessionId: "publish_session",
+      filePath: "artifacts/report.md", content: "# Tested",
+    })).isError).not.toBe(true);
+    const publishArgs = {
+      projectId, sessionId: "publish_session", filePath: "artifacts/report.md",
+      destinationPath: "reports/report.md",
+    };
+    const blocked = await invoke("superagent_brain_publish", publishArgs);
+    expect(blocked.isError).toBe(true);
+    expect(fs.existsSync(path.join(target, "reports", "report.md"))).toBe(false);
+    grantProjectAccess(identity, projectId, ["write"]);
+    expect((await invoke("superagent_brain_publish", publishArgs)).isError).not.toBe(true);
+    expect(fs.readFileSync(path.join(target, "reports", "report.md"), "utf8")).toBe("# Tested");
+    expect((await invoke("superagent_brain_publish", publishArgs)).isError).toBe(true);
+    expect((await invoke("superagent_brain_publish", { ...publishArgs, destinationPath: "../outside.md" })).isError).toBe(true);
+    await server.close();
+    removeProject(projectId);
+    setYoloMode(false);
   });
 });

@@ -5,6 +5,7 @@ export const PROJECT_REGISTRY_TOOL_NAMES = new Set([
 ]);
 
 export const WORKSPACE_SCOPED_MCP_TOOLS = new Set([
+  "superagent_brain_publish",
   "superagent_daemon_status", "superagent_daemon_inspect_run",
   "superagent_get_workspace", "superagent_check_project_health", "superagent_exec_command", "superagent_cli_bridge", "superagent_read_file", "superagent_write_file",
   "superagent_read_files", "superagent_write_files", "superagent_unlock_file", "superagent_list_files",

@@ -3,6 +3,20 @@ import { clearHistoryCache, getSettings, getCurrentWorkspaceIdentifier } from ".
 import { getRMemoryClient, getRMemoryProjectId, getRMemorySessionKey, isRmemoryActive } from "../rmemoryUtil.js";
 import { contentToString } from "../conversation.js";
 import type { Agent } from "../agent.js";
+import { createBrainSession } from "../brain/brainWorkspace.js";
+
+function bindBrainToSession(agent: Agent): void {
+  // Only owner-facing conversation sessions allocate a persistent Brain.
+  // Subagents continue to use their delegated workspace and cannot create
+  // a new owner namespace implicitly.
+  if (agent.tier !== "master" && agent.tier !== "single") return;
+  if (!agent.sessionId) return;
+  try {
+    createBrainSession("local-cli", agent.sessionId);
+  } catch (error) {
+    agent.writeToLogFile("WARN", `Brain workspace initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 
 export class HistoryManager {
   public static async loadHistory(agent: Agent, autoResume: boolean | string = false): Promise<void> {
@@ -12,6 +26,7 @@ export class HistoryManager {
       process.env.SUPERAGENT_SESSION_PATH = resolved;
     }
     agent.sessionId = path.basename(resolved, ".json");
+    bindBrainToSession(agent);
     if (agent.tier === "master" || agent.tier === "single") {
       try {
         const { updateProcessActivity } = await import("../tools/state.js");
@@ -35,6 +50,7 @@ export class HistoryManager {
       process.env.SUPERAGENT_SESSION_PATH = filePath;
     }
     agent.sessionId = path.basename(filePath, ".json");
+    bindBrainToSession(agent);
     if (agent.tier === "master" || agent.tier === "single") {
       try {
         const { updateProcessActivity } = await import("../tools/state.js");
@@ -58,6 +74,7 @@ export class HistoryManager {
       process.env.SUPERAGENT_SESSION_PATH = historyPath;
     }
     agent.sessionId = path.basename(historyPath, ".json");
+    bindBrainToSession(agent);
 
     try {
       await this.syncConversationToRmemory(agent);
@@ -80,6 +97,7 @@ export class HistoryManager {
       process.env.SUPERAGENT_SESSION_PATH = historyPath;
     }
     agent.sessionId = path.basename(historyPath, ".json");
+    bindBrainToSession(agent);
 
     const wsIdentifier = getCurrentWorkspaceIdentifier(agent.workingDirectory);
     agent.conversation.saveToFileSync(historyPath, agent.planState, wsIdentifier);
@@ -98,6 +116,7 @@ export class HistoryManager {
       process.env.SUPERAGENT_SESSION_PATH = resolved;
     }
     agent.sessionId = path.basename(resolved, ".json");
+    bindBrainToSession(agent);
     if (agent.tier === "master" || agent.tier === "single") {
       try {
         const { updateProcessActivity } = await import("../tools/state.js");

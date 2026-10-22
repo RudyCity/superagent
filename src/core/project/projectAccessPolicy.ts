@@ -171,6 +171,7 @@ export function revokeProjectAccess(
 }
 
 export function getProjectCapabilityForTool(toolName: string, args: Record<string, unknown> = {}): ProjectAccessCapability {
+  if (toolName === "superagent_brain_publish") return "write";
   if (toolName === "superagent_exec_command" || toolName === "superagent_office_cli" || toolName === "superagent_cli_bridge") return "execute";
   if (toolName === "superagent_motion_render" || toolName === "superagent_motion_generate" ||
       toolName === "superagent_motion_revise" || toolName === "superagent_motion_cancel") return "execute";

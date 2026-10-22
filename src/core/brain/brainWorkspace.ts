@@ -170,6 +170,55 @@ export function writeBrainFile(
   return { sessionId, relativePath: relativePath.replace(/\\/g, "/"), bytes: Buffer.byteLength(content, "utf8") };
 }
 
+export function getBrainScratchPath(owner: string, sessionId: string, configRoot = getRootConfigDir()): string {
+  const { dir } = existingSession(owner, sessionId, configRoot);
+  const scratch = path.join(dir, "scratch");
+  rejectSymlinkComponents(dir, scratch);
+  if (!fs.existsSync(scratch)) fs.mkdirSync(scratch, { recursive: true, mode: 0o700 });
+  return scratch;
+}
+
+/**
+ * Explicitly publish a *text* artifact to an already-authorized local project.
+ * Access checks belong to the invoking MCP workspace/project policy.
+ * Never overwrite an existing project file or follow a symlink destination.
+ */
+export function publishBrainArtifact(
+  owner: string, sessionId: string, filePath: string, projectRoot: string,
+  destinationPath: string, configRoot = getRootConfigDir(),
+) {
+  if (!filePath.startsWith("artifacts/")) throw new Error("Only artifacts/ files may be published.");
+  const source = path.join(existingSession(owner, sessionId, configRoot).dir, safeRelativeFile(filePath));
+  rejectSymlinkComponents(sessionDir(owner, sessionId, configRoot), source);
+  if (!fs.statSync(source).isFile()) throw new Error("Artifact source must be a regular file.");
+  const stat = fs.statSync(source);
+  if (stat.size > MAX_FILE_BYTES) throw new Error("Artifact exceeds publish limit.");
+  if (!destinationPath || destinationPath.length > 240 ||
+    path.isAbsolute(destinationPath) || /^[a-zA-Z]:/.test(destinationPath) ||
+    destinationPath.includes("\\") || destinationPath.includes("\0")) {
+    throw new Error("Invalid publish destination.");
+  }
+  const parts = destinationPath.split("/");
+  if (parts.length > 8 || parts.some(p => !p || p === "." || p === ".." ||
+    p.startsWith(".") || p.endsWith(".") || /[:<>|?*"\\]/.test(p) ||
+    /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(p))) {
+    throw new Error("Unsafe publish destination.");
+  }
+  if (!fs.existsSync(projectRoot) || !fs.statSync(projectRoot).isDirectory()) {
+    throw new Error("Project root not available.");
+  }
+  // The resolved root may itself be registered via a symlink; honor its canonical
+  // boundary but never traverse symlinks *inside* the destination hierarchy.
+  const realRoot = fs.realpathSync(projectRoot);
+  const target = path.join(realRoot, ...parts);
+  rejectSymlinkComponents(realRoot, target);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  rejectSymlinkComponents(realRoot, target);
+  fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
+  const hash = crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex");
+  return { sessionId, filePath, destinationPath, bytes: stat.size, sha256: hash, published: true };
+}
+
 export function cleanBrainScratch(owner: string, sessionId: string, confirmation: string, configRoot = getRootConfigDir()) {
   if (confirmation !== sessionId) throw new Error("Confirm cleanup with the exact sessionId.");
   const { dir } = existingSession(owner, sessionId, configRoot);
