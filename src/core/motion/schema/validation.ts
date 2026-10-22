@@ -87,7 +87,47 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
   if (!record(c)) {
     errors.push("composition is required");
   } else {
-    allowedKeys(c, ["width", "height", "fps", "durationFrames", "background", "layers", "audio", "audioTracks"], "composition", errors);
+    allowedKeys(c, ["width", "height", "fps", "durationFrames", "background", "layers", "audio", "audioTracks", "effectStack", "stackBase"], "composition", errors);
+    if (c.effectStack !== undefined || c.stackBase !== undefined) {
+      if (!Array.isArray(c.effectStack) || !record(c.stackBase)) {
+        errors.push("effectStack and stackBase must both be present");
+      } else {
+        if (c.effectStack.length > 24) errors.push("effectStack must have at most 24 entries");
+        const seen = new Set<string>();
+        c.effectStack.forEach((value: unknown, i: number) => {
+          const at = "effectStack[" + i + "]";
+          if (!record(value)) { errors.push(at + ": expected object"); return; }
+          allowedKeys(value, ["id", "effectId", "enabled", "targetLayerId", "params", "startFrame", "durationFrames"], at, errors);
+          if (!string(value.id, 64) || !id.test(value.id) || seen.has(value.id)) errors.push(at + ": invalid/duplicate stack entry id");
+          else seen.add(value.id);
+          if (!string(value.effectId, 64) || !id.test(value.effectId)) errors.push(at + ": invalid effectId");
+          if (typeof value.enabled !== "boolean") errors.push(at + ": enabled must be boolean");
+          if (value.targetLayerId !== undefined && (!string(value.targetLayerId, 64) || !id.test(value.targetLayerId))) errors.push(at + ": invalid targetLayerId");
+          if (value.startFrame !== undefined && !integer(value.startFrame, 0, Number(c.durationFrames) - 1)) errors.push(at + ": invalid start frame");
+          if (value.durationFrames !== undefined && !integer(value.durationFrames, 1, Number(c.durationFrames))) errors.push(at + ": invalid duration");
+          if (value.params !== undefined) {
+            if (!record(value.params) || Object.keys(value.params).length > 32) errors.push(at + ": invalid params");
+            else for (const [key, val] of Object.entries(value.params)) {
+              if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(key) || key.length > 64 || !(typeof val === "boolean" ||
+                  (typeof val === "number" && Number.isFinite(val)) ||
+                  (typeof val === "string" && val.length <= 256 && !/[<>]/.test(val)))) errors.push(at + ": invalid parameter " + key);
+            }
+          }
+        });
+        const rawBase = c.stackBase;
+        if (record(rawBase)) {
+          if (rawBase.effectStack !== undefined || rawBase.stackBase !== undefined) errors.push("stackBase cannot nest stacks");
+          if (rawBase.width !== c.width || rawBase.height !== c.height ||
+              rawBase.durationFrames !== c.durationFrames || JSON.stringify(rawBase.fps) !== JSON.stringify(c.fps)) {
+            errors.push("stackBase dimensions, duration and fps must match composition");
+          }
+          try { validateMotionProject({ ...raw, composition: rawBase }); }
+          catch (cause) {
+            errors.push("stackBase: " + (cause instanceof Error ? cause.message : String(cause)));
+          }
+        }
+      }
+    }
     if (!integer(c.width, 16, 8192) || !integer(c.height, 16, 8192)) errors.push("invalid dimensions");
     if (!integer(c.durationFrames, 1, 216000)) errors.push("durationFrames must be 1-216000");
     if (typeof c.background !== "string" || !color.test(c.background)) errors.push("invalid background color");

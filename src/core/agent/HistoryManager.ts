@@ -19,6 +19,7 @@ export class HistoryManager {
       } catch {}
     }
     await agent.conversation.loadFromFile(resolved);
+    await agent.conversation.rebindContextManagerForSession(resolved);
     if (agent.conversation.loadedPlanState) {
       agent.planState = agent.conversation.loadedPlanState;
       // Reset stale APPROVED state if plan file no longer exists on disk (deleted between sessions).
@@ -41,6 +42,7 @@ export class HistoryManager {
       } catch {}
     }
     await agent.conversation.loadFromFile(filePath);
+    await agent.conversation.rebindContextManagerForSession(filePath);
     if (agent.conversation.loadedPlanState) {
       agent.planState = agent.conversation.loadedPlanState;
     }
@@ -116,7 +118,12 @@ export class HistoryManager {
     const lastCaptured = agent.conversation.lastCapturedTimestamp || 0;
 
     const newMessages = messages
-      .filter((m) => (m.role === "user" || m.role === "assistant") && m.timestamp > lastCaptured)
+      .filter((m) =>
+        (m.role === "user" || m.role === "assistant") &&
+        m.timestamp > lastCaptured &&
+        !contentToString(m.content).includes("[System Conversation Summary]") &&
+        !contentToString(m.content).includes("[Emergency Summary - Context Pruned]")
+      )
       .map((m) => {
         const rawContent = contentToString(m.content).trim();
         const content = rawContent.length > 0

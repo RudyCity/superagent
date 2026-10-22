@@ -43,7 +43,10 @@ export class HistoryCompactor {
     await agent.compactHistoryIfNeeded(signal, true, targetBudget);
 
     if (agent.conversation.getTokenEstimate() > targetBudget) {
-      agent.conversation.pruneToTokenLimit(targetBudget);
+      await this.legacyCompactHistory(agent, signal, true, targetBudget);
+      if (agent.conversation.getTokenEstimate() > targetBudget) {
+        throw new Error("Context remains above token limit after validated compaction");
+      }
     }
 
     const messages = (agent as any).buildMessages(supportsNativeTools);
@@ -123,9 +126,12 @@ export class HistoryCompactor {
       error.name = "AbortError";
       throw error;
     }
-    await agent.conversation.updateContextManagerLLM(agent.getModel(), signal);
+    const releaseLock = agent.conversation.tryAcquireCompactionLock();
+    if (!releaseLock) return;
+    const originalDigest = agent.conversation.getTranscriptDigest();
 
     try {
+      await agent.conversation.updateContextManagerLLM(agent.getModel(), signal);
       agent.writeToLogFile(
         "INFO",
         `Context compaction triggered: ${force ? "forced-413" : (tokenBudget ? "forced-token-limit" : decision.reason)} (strategy: ${force ? "pruning" : (decision.recommendedStrategy?.name || "auto")})`
@@ -157,8 +163,27 @@ export class HistoryCompactor {
         error.name = "AbortError";
         throw error;
       }
+      if (agent.conversation.getTranscriptDigest() !== originalDigest) {
+        const stale = new Error("Conversation changed during compaction; refusing stale result");
+        stale.name = "CompactionStaleError";
+        throw stale;
+      }
+      const before = agent.conversation.getMessages();
       agent.conversation.replaceMessages(result.messages);
-      await agent.saveHistory();
+      try {
+        await agent.saveHistory();
+      } catch (saveError) {
+        if (agent.conversation.getTranscriptDigest() ===
+            (await import("../context/ContextContinuity.js")).transcriptDigest(result.messages)) {
+          agent.conversation.replaceMessages(before);
+        }
+        throw saveError;
+      }
+      if (result.metadata.snapshotId) {
+        agent.conversation.getContextManager()?.getContinuity()
+          .markCommitted(result.metadata.snapshotId, result.messages);
+      }
+      await contextManager.confirmPersistedCompaction(result);
 
       agent.writeToLogFile(
         "INFO",
@@ -166,9 +191,11 @@ export class HistoryCompactor {
       );
     } catch (error) {
       if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
-      console.error("ContextManager compaction failed:", error);
-      agent.writeToLogFile("ERROR", `ContextManager compaction failed: ${(error as Error).message}`);
-      await this.legacyCompactHistory(agent, signal, force, tokenBudget, byteBudget);
+      console.error("ContextManager compaction rejected:", error);
+      agent.writeToLogFile("ERROR", "ContextManager compaction rejected: " + (error as Error).message);
+      throw error;
+    } finally {
+      releaseLock();
     }
   }
 
@@ -179,32 +206,39 @@ export class HistoryCompactor {
     tokenBudget?: number,
     byteBudget?: number
   ): Promise<void> {
-    const activeModelName = getAgentActiveModelName(agent);
-    const modelLimit = getContextWindowLimit(activeModelName);
-    const maxHistoryTokens = tokenBudget ?? Math.floor(modelLimit * (force ? 0.3 : 0.5));
-
-    if (force || tokenBudget || agent.conversation.getTokenEstimate() > maxHistoryTokens) {
-      const allMsgs = agent.conversation.getMessages();
-      if (allMsgs.length > 20) {
-        const toSummarize = allMsgs.slice(0, 20);
-        try {
-          if (force) {
-            agent.conversation.pruneToTokenLimit(maxHistoryTokens);
-            await agent.saveHistory();
-          } else {
-            const summary = await this.summarizeMessages(agent, toSummarize, signal);
-            agent.conversation.replaceOldMessagesWithSummary(20, summary);
-            await agent.saveHistory();
-          }
-        } catch (err) {
-          console.error("Failed to summarize and compact conversation history:", err);
-          agent.conversation.pruneToTokenLimit(maxHistoryTokens);
-          await agent.saveHistory();
-        }
-      } else {
-        agent.conversation.pruneToTokenLimit(maxHistoryTokens);
-        await agent.saveHistory();
+    const { PruningStrategy } = await import("../context/strategies/PruningStrategy.js");
+    const { preserveContextFacts, validateCompaction, transcriptDigest } =
+      await import("../context/ContextContinuity.js");
+    const model = getAgentActiveModelName(agent);
+    const budget = tokenBudget ?? Math.floor(getContextWindowLimit(model) * (force ? 0.3 : 0.5));
+    if (!force && !tokenBudget && !byteBudget && agent.conversation.getTokenEstimate() <= budget) return;
+    const releaseLock = agent.conversation.tryAcquireCompactionLock();
+    if (!releaseLock) return;
+    try {
+      if (signal?.aborted) throw Object.assign(new Error("Compaction cancelled"), { name: "AbortError" });
+      const before = agent.conversation.getMessages();
+      const digest = transcriptDigest(before);
+      const compacted = await new PruningStrategy().execute(before, {
+        tokenBudget: budget, byteBudget, preserveRecent: 12, abortSignal: signal, modelName: model,
+      });
+      const retained = preserveContextFacts(before, compacted.messages);
+      const quality = validateCompaction(before, retained);
+      if (!quality.passed) throw new Error("Legacy compaction quality failed: " + quality.missing.join(", "));
+      if (signal?.aborted) throw Object.assign(new Error("Compaction cancelled"), { name: "AbortError" });
+      if (agent.conversation.getTranscriptDigest() !== digest) {
+        throw Object.assign(new Error("Conversation changed during compaction"), { name: "CompactionStaleError" });
       }
+      agent.conversation.replaceMessages(retained);
+      try {
+        await agent.saveHistory();
+      } catch (error) {
+        if (agent.conversation.getTranscriptDigest() === transcriptDigest(retained)) {
+          agent.conversation.replaceMessages(before);
+        }
+        throw error;
+      }
+    } finally {
+      releaseLock();
     }
   }
 

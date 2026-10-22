@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Message } from "../src/core/conversation.js";
 import { ContextManager } from "../src/core/context/ContextManager.js";
 import { compactCommand } from "../src/core/commands/compactCommand.js";
+import { transcriptDigest } from "../src/core/context/ContextContinuity.js";
 
 function fixture() {
   let messages: Message[] = [
@@ -13,9 +14,17 @@ function fixture() {
     { role: "user", content: "Finish webhook validation", timestamp: 99 },
   ];
   const cm = new ContextManager({ model: "test", contextWindowLimit: 10000 });
+  let locked = false;
   const conversation = {
     getMessages: () => messages,
     replaceMessages: (next: Message[]) => { messages = [...next]; },
+    getTranscriptDigest: () => transcriptDigest(messages),
+    isCompactionLocked: () => locked,
+    tryAcquireCompactionLock: () => {
+      if (locked) return null;
+      locked = true;
+      return () => { locked = false; };
+    },
     getContextManager: () => cm,
     getCompactSummary: () => "Current history summary",
   };

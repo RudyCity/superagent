@@ -33,6 +33,7 @@ export interface CompactionSnapshot {
   beforeTokens: number;
   messages: Message[];
   checkpoint: ContextCheckpoint;
+  compactedDigest?: string;
 }
 
 export interface CompactionMetrics {
@@ -69,14 +70,14 @@ export function buildContextCheckpoint(messages: Message[]): ContextCheckpoint {
   for (const m of messages) {
     const text = contentToString(m.content);
     if (isCompactionSummaryText(text)) sessionSummary = limitText(text, MAX_SUMMARY_CHARS);
-    for (const file of text.match(/(?:[\w.-]+[\\/])+[\w.-]+/g) || []) {
+    for (const file of text.slice(0, 4096).match(/(?:[\w.-]{1,96}[\/]){1,12}[\w.-]{1,96}/g) || []) {
       if (files.size < 24 && !file.includes("node_modules") && !file.includes(".git")) files.add(file);
     }
     for (const tc of m.toolCalls || []) tools.add(tc.name);
     for (const tr of m.toolResults || []) {
       if (tr.isError && blockers.length < 8) blockers.push(limitText(tr.name + ": " + tr.result));
     }
-    for (const line of text.split("\n").slice(0, 100)) {
+    for (const line of text.slice(0, 32_000).split("\n").slice(0, 100)) {
       const l = line.trim();
       if (!l || l.length > 1400) continue;
       if (/^(?:[-*] )?(?:decision|keputusan|diputuskan)\s*:/i.test(l) && decisions.length < 12) decisions.push(limitText(l));
@@ -91,7 +92,16 @@ export function buildContextCheckpoint(messages: Message[]): ContextCheckpoint {
     files: [...files], tools: [...tools].slice(0, 30), verification, sessionSummary };
 }
 
-/** Validate continuity of the live objective before replacing the source transcript. */
+/**
+ * Explicit decisions/checklists/blockers must survive, not just the last user turn.
+ * Normalization allows harmless formatting changes while avoiding fabricated status.
+ */
+function carriesFact(text: string, fact: string): boolean {
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const needle = normalize(fact);
+  return needle.length === 0 || normalize(text).includes(needle);
+}
+
 export function validateCompaction(source: Message[], target: Message[]): CompactionQuality {
   const missing: string[] = [], warnings: string[] = [];
   if (!target.length) missing.push("empty-result");
@@ -100,21 +110,60 @@ export function validateCompaction(source: Message[], target: Message[]): Compac
   if (current && !after.includes(current.slice(0, Math.min(current.length, USER_PREFIX_CHARS)))) {
     missing.push("active-user-goal");
   }
+  const checkpoint = buildContextCheckpoint(source);
+  const required = [
+    ["decisions", checkpoint.decisions],
+    ["pending-tasks", checkpoint.pending],
+    ["blockers", checkpoint.blockers],
+  ] as const;
+  for (const [category, facts] of required) {
+    if (facts.some((fact) => !carriesFact(after, fact))) missing.push(category);
+  }
+  if (checkpoint.verification.some((fact) => !carriesFact(after, fact))) warnings.push("verification-evidence");
   const summaryBefore = source.filter((m) => isCompactionSummaryText(contentToString(m.content)));
   if (summaryBefore.length && !after.includes("System Conversation Summary") &&
-    !after.includes("Emergency Summary") && !target.some((m) => contentToString(m.content).includes(summaryBefore.at(-1)!.content as string))) {
-    warnings.push("prior-summary-not-visible");
+      !after.includes("Emergency Summary")) warnings.push("prior-summary-not-visible");
+  const seenCalls = new Set<string>();
+  let orphans = 0;
+  for (const message of target) {
+    for (const call of message.toolCalls || []) seenCalls.add(call.id);
+    if (message.role === "tool" && message.toolResults?.some((result) => !seenCalls.has(result.toolCallId))) orphans++;
   }
-  const orphanedTools = target.filter((m, i) => m.role === "tool" &&
-    !target.slice(0, i).some((prev) => prev.role === "assistant" && prev.toolCalls?.some(
-      (call) => m.toolResults?.some((result) => result.toolCallId === call.id)
-    )));
-  if (orphanedTools.length) warnings.push("orphaned-tool-results:" + orphanedTools.length);
-  const score = Math.max(0, 100 - missing.length * 65 - warnings.length * 12);
+  if (orphans) missing.push("orphaned-tool-results");
+  const score = Math.max(0, 100 - missing.length * 35 - warnings.length * 10);
   return { passed: missing.length === 0, score, missing, warnings };
 }
 
+/** Preserve critical known facts before pruning results are allowed into the live transcript.
+ * These are extracted from already observed messages, not generated as new "successes".
+ */
+export function preserveContextFacts(source: Message[], target: Message[]): Message[] {
+  const checkpoint = buildContextCheckpoint(source);
+  const all = target.map((m) => contentToString(m.content)).join("\n");
+  const facts = [
+    ...checkpoint.decisions,
+    ...checkpoint.pending,
+    ...checkpoint.blockers,
+  ].filter((fact) => !carriesFact(all, fact)).slice(0, 32);
+  if (facts.length === 0) return target;
+  const annotation = "\n### Preserved facts from older context (verify against source logs)\n" +
+    facts.map((fact) => "- " + fact).join("\n");
+  const existingSummaryIndex = target.findIndex((m) => isCompactionSummaryText(contentToString(m.content)));
+  const cloned = [...target];
+  if (existingSummaryIndex >= 0) {
+    const old = cloned[existingSummaryIndex];
+    cloned[existingSummaryIndex] = { ...old, content: contentToString(old.content) + annotation };
+  } else {
+    cloned.unshift({ role: "user", content: "[System Conversation Summary]:\n" + annotation, timestamp: Date.now() });
+  }
+  return cloned;
+}
+
 /** Status for CLI and monitoring without requiring a second LLM request. */
+export function transcriptDigest(messages: Message[]): string {
+  return createHash("sha256").update(JSON.stringify(messages)).digest("hex");
+}
+
 export class ContextContinuityStore {
   private snapshots: CompactionSnapshot[] = [];
   private metrics: CompactionMetrics = { count: 0, tokensSaved: 0, totalDurationMs: 0, failures: 0 };
@@ -128,7 +177,8 @@ export class ContextContinuityStore {
   private load(): void {
     if (!this.diskPath) return;
     try {
-      const data = JSON.parse(gunzipSync(fs.readFileSync(this.diskPath)).toString("utf8"));
+      if (fs.statSync(this.diskPath).size > MAX_STORE_BYTES) return;
+      const data = JSON.parse(gunzipSync(fs.readFileSync(this.diskPath), { maxOutputLength: MAX_SNAPSHOT_BYTES * KEEP_SNAPSHOTS + 1024 * 1024 }).toString("utf8"));
       if (data.version !== 1 || !Array.isArray(data.snapshots)) return;
       this.snapshots = data.snapshots.slice(-KEEP_SNAPSHOTS);
       if (data.metrics?.count >= 0) this.metrics = data.metrics;
@@ -139,7 +189,7 @@ export class ContextContinuityStore {
     try {
       const data = gzipSync(Buffer.from(JSON.stringify({ version: 1, snapshots: this.snapshots, metrics: this.metrics })));
       if (data.byteLength > MAX_STORE_BYTES) return;
-      fs.mkdirSync(path.dirname(this.diskPath), { recursive: true });
+      fs.mkdirSync(path.dirname(this.diskPath), { recursive: true, mode: 0o700 });
       const temp = this.diskPath + "." + process.pid + ".tmp";
       fs.writeFileSync(temp, data, { mode: 0o600 });
       fs.renameSync(temp, this.diskPath);
@@ -147,14 +197,14 @@ export class ContextContinuityStore {
   }
   capture(messages: Message[], beforeTokens: number): CompactionSnapshot {
     const checkpoint = buildContextCheckpoint(messages);
+    const bytes = Buffer.byteLength(JSON.stringify(messages));
+    const id = "compact-" + Date.now() + "-" + createHash("sha256").update(JSON.stringify(checkpoint)).digest("hex").slice(0, 10);
     const snapshot: CompactionSnapshot = {
-      id: "compact-" + Date.now() + "-" + createHash("sha256").update(JSON.stringify(checkpoint)).digest("hex").slice(0, 10),
-      createdAt: Date.now(), beforeTokens,
-      messages: structuredClone(messages),
+      id, createdAt: Date.now(), beforeTokens,
+      messages: bytes <= MAX_SNAPSHOT_BYTES ? structuredClone(messages) : [],
       checkpoint,
     };
-    // Do not persist pathological snapshots; preserve one recoverable copy in memory.
-    if (Buffer.byteLength(JSON.stringify(snapshot)) <= MAX_SNAPSHOT_BYTES) {
+    if (bytes <= MAX_SNAPSHOT_BYTES) {
       this.snapshots.push(snapshot);
       this.snapshots = this.snapshots.slice(-KEEP_SNAPSHOTS);
       this.save();
@@ -168,6 +218,18 @@ export class ContextContinuityStore {
   }
   listSnapshots(): Array<{ id: string; createdAt: number; messages: number; goal: string }> {
     return this.snapshots.map((s) => ({ id: s.id, createdAt: s.createdAt, messages: s.messages.length, goal: limitText(s.checkpoint.goal, 80) }));
+  }
+  markCommitted(snapshotId: string, compacted: Message[]): void {
+    const found = this.snapshots.find((s) => s.id === snapshotId);
+    if (found) { found.compactedDigest = transcriptDigest(compacted); this.save(); }
+  }
+  canUndo(snapshotId: string | undefined, current: Message[]): boolean {
+    const found = snapshotId ? this.snapshots.find((s) => s.id === snapshotId) : this.snapshots.at(-1);
+    return !!found && !!found.compactedDigest && found.compactedDigest === transcriptDigest(current);
+  }
+  discard(snapshotId: string): void {
+    this.snapshots = this.snapshots.filter((s) => s.id !== snapshotId);
+    this.save();
   }
   restore(snapshotId?: string): Message[] | undefined {
     const found = snapshotId ? this.snapshots.find((s) => s.id === snapshotId) : this.snapshots.at(-1);

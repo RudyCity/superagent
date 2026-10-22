@@ -24,6 +24,7 @@ import { importMotionAudio, readMotionAudio } from "./assets/motionAudio.js";
 import { decodeMotionMediaBase64 } from "./assets/motionInput.js";
 import { summarizeMotionWav } from "./assets/motionWaveform.js";
 import { effectRegistry, EFFECT_CATEGORIES, type EffectCategory } from "./effects/index.js";
+import { changeMotionEffectStack, type MotionStackOperation } from "./effects/effectStack.js";
 
 export interface MotionHttpContext {
   resolveWorkspacePath: (req: IncomingMessage) => string | null;
@@ -96,6 +97,7 @@ export async function handleMotionHttpRoute(
   const effectItem = pathname.match(/^\/api\/motion\/effects\/([a-z][a-z0-9-]{1,63})$/);
   const projectEffects = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects$/);
   const previewEffect = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects\/preview$/);
+  const stackRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effect-stack(?:\/(preview))?$/);
 
   try {
     if (pathname === "/api/motion" && method === "GET") {
@@ -261,6 +263,24 @@ export async function handleMotionHttpRoute(
           intensity: body.intensity as number | undefined,
         });
       json(res, ctx, 200, updated);
+    } else if (stackRoute && method === "POST") {
+      const body = await readMotionJson(req, 10_000);
+      if (!Number.isSafeInteger(body.baseRevision)) throw new MotionValidationError(["baseRevision is required"]);
+      const action = body.action;
+      const raw = body.operation;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw) || !["add", "remove", "toggle", "move", "update"].includes(String(action))) {
+        throw new MotionValidationError(["Invalid effect stack operation"]);
+      }
+      const op = { ...raw, type: action } as MotionStackOperation;
+      const current = await getMotionProject(workspace, stackRoute[1]);
+      if (current.revision !== body.baseRevision) {
+        json(res, ctx, 409, { error: "Motion revision conflict; reload project before editing the stack" });
+      } else {
+        const composition = changeMotionEffectStack(current, op);
+        if (stackRoute[2] === "preview") json(res, ctx, 200, { ...current, composition });
+        else json(res, ctx, 200, await updateMotionProject(workspace, stackRoute[1],
+          body.baseRevision as number, [{ type: "replace-composition", composition }]));
+      }
     } else if (previewEffect && method === "POST") {
       const body = await readMotionJson(req, 5_000);
       if (typeof body.effectId !== "string") throw new Error("effectId is required");

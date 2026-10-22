@@ -1,3 +1,23 @@
+## [1.14.10] - 2026-10-22
+### Added
+- Motion Studio Non-destructive Effect Stack & Revisions (`src/core/motion/effects/effectStack.ts`, `src/core/motion/motionRoutes.ts`, `src/core/motion/project/revisions.ts`, `src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`):
+  - Added non-destructive, declarative effect stack compilation (`compileMotionEffectStack`) retaining the original composition (`stackBase`) so individual effects can be added, updated, toggled, reordered, or removed without mutating underlying source tracks.
+  - Added `/api/motion/projects/:id/effect-stack` and `/api/motion/projects/:id/effect-stack/preview` POST endpoints for atomic stack mutations and non-persisted preview rendering with revision CAS validation.
+  - Exposed `nondestructiveEffectStack: true`, `nondestructiveStackMax: 24`, and `stackSourcePreserved: true` in `MOTION_CAPABILITIES`.
+  - Added strict schema and parameter validation for effect stack entries, operations, and nested base safety.
+- Context Continuity, Hardened Compaction & Snapshot Security (`src/core/context/ContextContinuity.ts`, `src/core/context/ContextManager.ts`, `src/core/agent/HistoryCompactor.ts`, `src/core/commands/compactCommand.ts`, `src/core/conversation.ts`, `src/core/agent/HistoryManager.ts`, `scripts/bench-compaction-session.ts`):
+  - Added reentrant-safe compaction locking (`tryAcquireCompactionLock`, `isCompactionLocked`) in `Conversation` to prevent overlapping or concurrent compaction operations.
+  - Implemented two-phase compaction persistence confirmation (`confirmPersistedCompaction`), ensuring compaction metrics, history recording, and workspace summary updates only commit after durable session disk writes succeed.
+  - Added transcript digest comparison (`getTranscriptDigest`, `transcriptDigest`) to detect mid-compaction transcript drift and rollback safely on save failure.
+  - Preserved critical decisions, pending tasks, and blockers across compactions via `preserveContextFacts` and quality gates in `validateCompaction`.
+  - Bound undo and recovery snapshots strictly to the active session file via `rebindContextManagerForSession`, preventing cross-session snapshot leakage.
+  - Added snapshot verification with digest matching (`canUndo`) and discard support in `ContextContinuityStore`.
+  - Filtered system conversation summaries from memory ingestion in `HistoryManager`.
+  - Added `scripts/bench-compaction-session.ts` for local offline compaction benchmarking without network calls.
+
+### Tests
+- Added unit and regression test suites in `tests/motionEffectStack.test.ts`, `tests/motionEffectsHttp.test.ts`, `tests/contextHardening.test.ts`, `tests/contextContinuity.test.ts`, and `tests/compactCommand.test.ts`.
+
 ## [1.14.9] - 2026-10-21
 ### Added
 - Motion Studio Vision Reviewer & Auto-Repair:

@@ -53,6 +53,29 @@ export interface MotionAudioTrack {
   role?: "music" | "voiceover";
 }
 
+export interface MotionStackEntry {
+  id: string;
+  effectId: string;
+  enabled: boolean;
+  targetLayerId?: string;
+  params?: Record<string, string | number | boolean>;
+  startFrame?: number;
+  durationFrames?: number;
+}
+export interface MotionComposition {
+  width: number;
+  height: number;
+  fps: { numerator: number; denominator: number };
+  durationFrames: number;
+  background: string;
+  audio?: MotionAudioTrack;
+  audioTracks?: MotionAudioTrack[];
+  layers: MotionLayer[];
+  /** Declarative stack; rendered layers are the compiled result. */
+  effectStack?: MotionStackEntry[];
+  /** Original composition before applying the stack, used to rebuild safely. */
+  stackBase?: Omit<MotionComposition, "effectStack" | "stackBase">;
+}
 export interface MotionProject {
   schemaVersion: typeof MOTION_SCHEMA_VERSION;
   id: string;
@@ -61,16 +84,7 @@ export interface MotionProject {
   revision: number;
   createdAt: string;
   updatedAt: string;
-  composition: {
-    width: number;
-    height: number;
-    fps: { numerator: number; denominator: number };
-    durationFrames: number;
-    background: string;
-    audio?: MotionAudioTrack; // read-compatible legacy single-track scenes
-    audioTracks?: MotionAudioTrack[];
-    layers: MotionLayer[];
-  };
+  composition: MotionComposition;
 }
 export type MotionEdit =
   | { type: "set-text"; layerId: string; text: string }

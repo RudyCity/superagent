@@ -60,18 +60,39 @@ export const compactCommand: SlashCommand = {
       return;
     }
     if (action === "undo") {
-      if (cm.getState() !== "IDLE") {
-        add("Cannot undo while ContextManager is " + cm.getState() + ".", true);
+      if (cm.getState() !== "IDLE" || conversation.isCompactionLocked()) {
+        add("Cannot undo while compaction is in progress.", true);
         return;
       }
-      const restored = store.restore(tokens[1]);
+      const id = tokens[1] === "--force" ? undefined : tokens[1];
+      const explicitForce = tokens.includes("--force");
+      const restored = store.restore(id);
       if (!restored) {
         add("No matching snapshot. Use /compact snapshots to view available IDs.", true);
         return;
       }
-      conversation.replaceMessages(restored);
-      await agent.saveHistory();
-      add("Restored " + restored.length + " messages from compaction snapshot. Review the current goal before continuing.");
+      if (!explicitForce && !store.canUndo(id, messages)) {
+        add("Undo refused: new work was added or snapshot was not committed. " +
+          "Use /compact undo [id] --force only if you intentionally want to discard newer conversation turns.", true);
+        return;
+      }
+      const release = conversation.tryAcquireCompactionLock();
+      if (!release) { add("Compaction currently locked.", true); return; }
+      const original = conversation.getMessages();
+      try {
+        conversation.replaceMessages(restored);
+        try {
+          await agent.saveHistory();
+        } catch (error) {
+          conversation.replaceMessages(original);
+          throw error;
+        }
+        add("Restored " + restored.length + " messages from compaction snapshot. Review the current goal before continuing.");
+      } catch (error) {
+        add("Undo failed: " + (error instanceof Error ? error.message : String(error)), true);
+      } finally {
+        release();
+      }
       return;
     }
     if (action === "benchmark") {
@@ -94,16 +115,34 @@ export const compactCommand: SlashCommand = {
       return;
     }
     if (action === "now") {
-      if (cm.getState() !== "IDLE") {
-        add("Cannot compact: ContextManager is " + cm.getState() + ".", true);
+      if (cm.getState() !== "IDLE" || conversation.isCompactionLocked()) {
+        add("Cannot compact while another compaction is active.", true);
         return;
       }
       if (messages.length < 10) { add("Not enough messages to compact (minimum 10 messages).", true); return; }
+      const release = conversation.tryAcquireCompactionLock();
+      if (!release) { add("Compaction currently locked.", true); return; }
       add("Forcing context compaction (quality validation + undo snapshot enabled)...");
+      const originalDigest = conversation.getTranscriptDigest();
       try {
         const result = await cm.compact(messages);
+        if (conversation.getTranscriptDigest() !== originalDigest) {
+          add("Compaction rejected: conversation changed during processing.", true);
+          return;
+        }
+        const before = conversation.getMessages();
         conversation.replaceMessages(result.messages);
-        await agent.saveHistory();
+        try {
+          await agent.saveHistory();
+        } catch (saveError) {
+          if (conversation.getTranscriptDigest() ===
+            (await import("../context/ContextContinuity.js")).transcriptDigest(result.messages)) {
+            conversation.replaceMessages(before);
+          }
+          throw saveError;
+        }
+        if (result.metadata.snapshotId) store.markCommitted(result.metadata.snapshotId, result.messages);
+        await cm.confirmPersistedCompaction(result);
         const after = cm.estimateTokensForAll(result.messages).total;
         add([
           "Compaction completed.",
@@ -112,9 +151,11 @@ export const compactCommand: SlashCommand = {
           "  Tokens: " + estimated.toLocaleString() + " -> " + after.toLocaleString(),
           "  Continuity score: " + (result.metadata.quality?.score ?? cm.getQualityScore()) + "/100",
           "  Undo: /compact undo",
-        ].join("\n"));
+        ].join(String.fromCharCode(10)));
       } catch (error) {
         add("Compaction failed: " + (error instanceof Error ? error.message : String(error)), true);
+      } finally {
+        release();
       }
       return;
     }

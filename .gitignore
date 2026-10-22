@@ -15,6 +15,7 @@ Notepad++/
 
 
 # Scratch/audit artifacts
+.tmp-*
 *.log
 .goal-baseline/
 goal-*.diff

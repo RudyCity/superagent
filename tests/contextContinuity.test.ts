@@ -5,7 +5,7 @@ import path from "node:path";
 import type { Message } from "../src/core/conversation.js";
 import {
   ContextContinuityStore, activeUserRequest, buildContextCheckpoint,
-  validateCompaction, benchmarkCompaction, compactToolResult, hierarchyForCheckpoint,
+  validateCompaction, preserveContextFacts, benchmarkCompaction, compactToolResult, hierarchyForCheckpoint,
 } from "../src/core/context/ContextContinuity.js";
 import { ContextManager } from "../src/core/context/ContextManager.js";
 
@@ -48,13 +48,15 @@ describe("ContextContinuityStore", () => {
   });
 
   it("rejects a result that loses current goal and accepts condensed history preserving it", () => {
-    expect(validateCompaction(data, [user("unrelated", 8)])).toMatchObject({
-      passed: false, missing: ["active-user-goal"],
-    });
-    expect(validateCompaction(data, [
+    const missing = validateCompaction(data, [user("unrelated", 8)]);
+    expect(missing.passed).toBe(false);
+    expect(missing.missing).toContain("active-user-goal");
+    expect(missing.missing).toContain("decisions");
+    const target = preserveContextFacts(data, [
       user("[System Conversation Summary]: previous context", 8),
       user("Fix the webhook retry", 9),
-    ])).toMatchObject({ passed: true, score: 100 });
+    ]);
+    expect(validateCompaction(data, target)).toMatchObject({ passed: true });
   });
 
   it("persists compressed undo snapshots and restores them across a new manager instance", () => {
@@ -109,7 +111,8 @@ describe("ContextContinuityStore", () => {
 
   it("provides deterministic benchmark data with no source modifications", () => {
     const source = structuredClone(data);
-    const report = benchmarkCompaction(data, [user("Fix the webhook retry", 9)]);
+    const report = benchmarkCompaction(data,
+      preserveContextFacts(data, [user("Fix the webhook retry", 9)]));
     expect(report.reductionPct).toBeGreaterThan(0);
     expect(report.quality.passed).toBe(true);
     expect(report.checkpointFields).toBeGreaterThanOrEqual(10);
@@ -125,6 +128,7 @@ describe("ContextContinuityStore", () => {
     ];
     const result = await cm.compact(messages);
     expect(result.metadata.quality?.passed).toBe(true);
+    await cm.confirmPersistedCompaction(result);
     expect(cm.getContinuity().getMetrics().count).toBe(1);
     expect(cm.getContinuity().restore()).toEqual(messages);
     expect(cm.getQualityScore()).toBeGreaterThanOrEqual(80);

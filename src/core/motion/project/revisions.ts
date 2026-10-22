@@ -1,5 +1,6 @@
 import type { MotionEdit, MotionProject, MotionTrack } from "../schema/types.js";
 import { validateMotionEdits, validateMotionProject } from "../schema/validation.js";
+import { compileMotionEffectStack } from "../effects/effectStack.js";
 
 export class MotionRevisionConflict extends Error {
   constructor(public readonly expected: number, public readonly actual: number) {
@@ -13,6 +14,17 @@ export function applyMotionEdits(project: MotionProject, baseRevision: number, o
   validateMotionProject(project);
   if (baseRevision !== project.revision) throw new MotionRevisionConflict(baseRevision, project.revision);
   validateMotionEdits(operations, project.composition.durationFrames);
+  // Edit the preserved source and rebuild instead of mutating the baked
+  // render output. Replace-composition intentionally restores an exact snapshot.
+  if (project.composition.effectStack && project.composition.stackBase &&
+      operations.every(op => op.type !== "replace-composition")) {
+    const sourceProject: MotionProject = { ...structuredClone(project),
+      composition: structuredClone(project.composition.stackBase) };
+    const editedSource = applyMotionEdits(sourceProject, baseRevision, operations);
+    editedSource.composition = compileMotionEffectStack(editedSource, project.composition.effectStack);
+    validateMotionProject(editedSource);
+    return editedSource;
+  }
   const next: MotionProject = structuredClone(project);
   for (const operation of operations) {
     if (operation.type === "set-audio-tracks") {

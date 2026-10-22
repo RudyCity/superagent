@@ -18,7 +18,7 @@ import type { ContextManager, ContextManagerConfig, PinnedMessage } from "./cont
 import { getActivePreset, saveSessionPreset } from "./config/jsonConfig.js";
 import { cleanAssistantResponse } from "../utils/text.js";
 import { saveSessionToDb, loadSessionFromDb } from "./storage/historyDb.js";
-import { compactToolResult } from "./context/ContextContinuity.js";
+import { compactToolResult, transcriptDigest } from "./context/ContextContinuity.js";
 
 export type TextPart = { type: "text"; text: string };
 export type ImagePart = { type: "image"; image: string; mimeType: string }; // image is base64 string
@@ -65,12 +65,16 @@ export class Conversation {
   private maxHistory = 200;
   public loadedPlanState?: "IDLE" | "PLANNING_PENDING" | "APPROVED";
   private contextManager: ContextManager | null = null;
+  private contextConfig: ContextManagerConfig | null = null;
+  private compactLocked = false;
   public lastCapturedTimestamp = 0;
   /** Pinned messages loaded from file, waiting for ContextManager to be initialized */
   private pendingPinnedMessages: PinnedMessage[] | null = null;
 
   async initContextManager(config: ContextManagerConfig): Promise<void> {
     const { ContextManager: CM } = await import("./context/index.js");
+    this.contextManager?.dispose();
+    this.contextConfig = { ...config };
     this.contextManager = new CM(config);
 
     // Restore any pinned messages that were loaded from file before ContextManager existed
@@ -79,6 +83,22 @@ export class Conversation {
       this.pendingPinnedMessages = null;
     }
   }
+
+  /** Reconnect snapshots and pin state to the resumed session, never the prior one. */
+  async rebindContextManagerForSession(filePath: string): Promise<void> {
+    if (this.contextConfig) {
+      await this.initContextManager({ ...this.contextConfig, historyFilePath: filePath });
+    }
+  }
+
+  tryAcquireCompactionLock(): (() => void) | null {
+    if (this.compactLocked) return null;
+    this.compactLocked = true;
+    let released = false;
+    return () => { if (!released) { this.compactLocked = false; released = true; } };
+  }
+  isCompactionLocked(): boolean { return this.compactLocked; }
+  getTranscriptDigest(): string { return transcriptDigest(this.messages); }
 
   async updateContextManagerLLM(model: any, abortSignal?: AbortSignal): Promise<void> {
     if (!this.contextManager) return;
@@ -346,6 +366,8 @@ export class Conversation {
   }
 
   async loadFromFile(filePath: string): Promise<void> {
+    if (this.compactLocked) throw new Error("Cannot change sessions during compaction");
+    this.pendingPinnedMessages = null;
     try {
       const sid = path.basename(filePath, ".json");
       const dbResult = loadSessionFromDb(sid);

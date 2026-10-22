@@ -16,7 +16,7 @@ import { SemanticAnalyzer } from "./SemanticAnalyzer.js";
 import { CompactionHistory } from "./CompactionHistory.js";
 import { getSettings } from "../config/jsonConfig.js";
 import { isCompactionSummaryText } from "./CompactionStrategy.js";
-import { ContextContinuityStore, validateCompaction, benchmarkCompaction } from "./ContextContinuity.js";
+import { ContextContinuityStore, validateCompaction, preserveContextFacts } from "./ContextContinuity.js";
 
 export type ContextState =
   | "IDLE"
@@ -226,6 +226,11 @@ export class ContextManager {
       error.name = "AbortError";
       throw error;
     }
+    if (this.state !== "IDLE") {
+      const error = new Error("Compaction already in progress");
+      error.name = "CompactionBusyError";
+      throw error;
+    }
     const startedAt = Date.now();
     this.setState("CHECKING");
     this.autoPinKeyMessages(messages);
@@ -266,6 +271,10 @@ export class ContextManager {
 
       this.setState("VALIDATING");
       this.validateResult(result);
+      result.messages = preserveContextFacts(messages, result.messages);
+      // Feed the same verified context forward to workspace/session summarization.
+      const annotated = result.messages.find((m) => isCompactionSummaryText(contentToString(m.content)));
+      if (annotated) result.metadata.summary = contentToString(annotated.content).slice(0, 8000);
       const quality = validateCompaction(messages, result.messages);
       this.lastQualityScore = quality.score;
       if (!quality.passed) throw new Error("Compaction quality gate failed: " + quality.missing.join(", "));
@@ -277,40 +286,26 @@ export class ContextManager {
         result.messages
       ).total;
 
-      this.continuity.capture(messages, tokensBefore);
-      await this.history.record({
-        id: this.generateId(),
-        timestamp: Date.now(),
-        strategy: selectedStrategy.name,
-        messagesBefore: messages.length,
-        messagesAfter: result.messages.length,
-        tokensBefore,
-        tokensAfter,
-        summary: result.metadata.summary,
-        reason: "threshold",
-      });
-
-      this.continuity.record(selectedStrategy.name, Date.now() - startedAt, tokensBefore, tokensAfter, quality.score, !!result.metadata.usedFallback);
+      const snapshot = this.continuity.capture(messages, tokensBefore);
+      result.metadata.snapshotId = snapshot.messages.length ? snapshot.id : undefined;
+      result.metadata.pendingPersistence = {
+        event: {
+          id: this.generateId(),
+          timestamp: Date.now(),
+          strategy: selectedStrategy.name,
+          messagesBefore: messages.length,
+          messagesAfter: result.messages.length,
+          tokensBefore,
+          tokensAfter,
+          summary: result.metadata.summary,
+          reason: "threshold",
+        },
+        durationMs: Date.now() - startedAt,
+        quality: quality.score,
+        fallback: !!result.metadata.usedFallback,
+      };
+      // The caller must persist the new transcript before confirming this event.
       this.setState("IDLE");
-      // Emit with rich payload so UI/agents can show "compacted X → Y tokens
-      // via <strategy>" without re-querying internal state.
-      this.emit("compaction:complete", {
-        strategy: selectedStrategy.name,
-        tokensBefore,
-        tokensAfter,
-        messagesBefore: messages.length,
-        messagesAfter: result.messages.length,
-        metadata: result.metadata,
-      });
-
-      if (result.metadata.summary) {
-        import("../workspaceSummary.js")
-          .then(({ saveWorkspaceSummary }) => {
-            saveWorkspaceSummary({ summary: result.metadata.summary });
-          })
-          .catch(() => {});
-      }
-
       return result;
     } catch (error) {
       this.setState("FAILED");
@@ -319,15 +314,49 @@ export class ContextManager {
       // Cancellation is an explicit user action, not a compaction failure:
       // never overwrite the conversation via a recovery strategy after abort.
       if (abortSignal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+      if ((error instanceof Error && error.name === "CompactionBusyError")) throw error;
       const recovered = await this.recover(messages, error as Error);
+      recovered.messages = preserveContextFacts(messages, recovered.messages);
       const quality = validateCompaction(messages, recovered.messages);
       if (!quality.passed) throw new Error("Recovery quality gate failed: " + quality.missing.join(", "));
       recovered.metadata.quality = quality;
       this.lastQualityScore = quality.score;
-      this.continuity.capture(messages, this.estimateTokensForAll(messages).total);
+      const snapshot = this.continuity.capture(messages, this.estimateTokensForAll(messages).total);
+      recovered.metadata.snapshotId = snapshot.messages.length ? snapshot.id : undefined;
+      recovered.metadata.pendingPersistence = {
+        event: {
+          id: this.generateId(), timestamp: Date.now(), strategy: recovered.metadata.strategy,
+          messagesBefore: messages.length, messagesAfter: recovered.messages.length,
+          tokensBefore: this.estimateTokensForAll(messages).total,
+          tokensAfter: this.estimateTokensForAll(recovered.messages).total,
+          summary: recovered.metadata.summary, reason: "emergency",
+        },
+        durationMs: Date.now() - startedAt, quality: quality.score, fallback: true,
+      };
       return recovered;
     } finally {
       this.setState("IDLE");
+    }
+  }
+
+  /** A result is only successful after the caller has durably saved the session. */
+  async confirmPersistedCompaction(result: CompactionResult): Promise<void> {
+    const pending = result.metadata.pendingPersistence;
+    if (!pending) return;
+    delete result.metadata.pendingPersistence;
+    await this.history.record(pending.event);
+    const { event } = pending;
+    this.continuity.record(event.strategy, pending.durationMs,
+      event.tokensBefore, event.tokensAfter, pending.quality, pending.fallback);
+    this.emit("compaction:complete", {
+      strategy: event.strategy, tokensBefore: event.tokensBefore,
+      tokensAfter: event.tokensAfter, messagesBefore: event.messagesBefore,
+      messagesAfter: event.messagesAfter, metadata: result.metadata,
+    });
+    if (event.summary) {
+      import("../workspaceSummary.js")
+        .then(({ saveWorkspaceSummary }) => saveWorkspaceSummary({ summary: event.summary }))
+        .catch(() => {});
     }
   }
 

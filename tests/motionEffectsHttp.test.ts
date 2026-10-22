@@ -72,6 +72,35 @@ describe("Motion effects catalog HTTP contract", () => {
     expect((await send({ ...args, params: { unsupported: true } })).status).toBe(400);
     expect((await send({ ...args, startFrame: "0" })).status).toBe(400);
   });
+  it("manages a transactional non-destructive stack and previews without persistence", async () => {
+    const project = await createMotionProject(workspace, "HTTP stack API");
+    const endpoint = urlBase + "/api/motion/projects/" + project.id + "/effect-stack";
+    const entry = { id: "fx-fade", effectId: "entrance-fade-in", targetLayerId: "title",
+      enabled: true, durationFrames: 35 };
+    const send = async (action: string, operation: object, baseRevision: number, preview = false) =>
+      fetch(endpoint + (preview ? "/preview" : ""), { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, operation, baseRevision }),
+      });
+    const simulated = await send("add", { entry }, 1, true);
+    expect(simulated.status).toBe(200);
+    expect((await simulated.json() as any).composition.effectStack).toHaveLength(1);
+    expect((await getMotionProject(workspace, project.id)).revision).toBe(1);
+    const saved = await send("add", { entry }, 1);
+    expect(saved.status).toBe(200);
+    const added = await saved.json() as any;
+    expect(added.revision).toBe(2);
+    expect(added.composition.effectStack).toHaveLength(1);
+    expect(added.composition.stackBase.layers).toEqual(project.composition.layers);
+    expect((await send("add", { entry }, 1)).status).toBe(409);
+    const disabled = await send("toggle", { id: entry.id, enabled: false }, 2);
+    expect(disabled.status).toBe(200);
+    const body = await disabled.json() as any;
+    expect(body.composition.layers).toEqual(project.composition.layers);
+    const removed = await send("remove", { id: entry.id }, 3);
+    expect(removed.status).toBe(200);
+    expect((await removed.json() as any).composition.effectStack).toHaveLength(0);
+  });
   it("applies effects with revision control and rejects unknown/invalid parameters without mutations", async () => {
     const project = await createMotionProject(workspace, "HTTP effects project");
     const endpoint = urlBase + "/api/motion/projects/" + project.id + "/effects";

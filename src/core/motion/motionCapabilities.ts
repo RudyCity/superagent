@@ -43,4 +43,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   compoundPresetsCount: 16,
   compoundPresetApply: "text-layer-revisioned",
   compoundPresetEditorUi: false,
+  nondestructiveEffectStack: true,
+  nondestructiveStackMax: 24,
+  stackSourcePreserved: true,
 });
