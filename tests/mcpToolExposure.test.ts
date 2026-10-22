@@ -35,15 +35,39 @@ afterEach(() => {
 });
 
 describe("mcp use gateway/full", () => {
-  it("defaults to full, persists mode in config root and accepts status", () => {
-    expect(readSavedMcpToolExposure()).toBe("full");
+  it("defaults to gateway, persists explicit selections and accepts status", () => {
+    expect(readSavedMcpToolExposure()).toBe("gateway");
+    expect(getMcpToolExposure()).toEqual({ mode: "gateway", source: "default" });
     expect(mcpToolExposureCommand(["gateway"]).success).toBe(true);
     expect(readSavedMcpToolExposure()).toBe("gateway");
     expect(JSON.parse(fs.readFileSync(getMcpToolExposurePath(), "utf8"))).toEqual({ mode: "gateway", version: 1 });
     expect(mcpToolExposureCommand(["status"]).message).toContain("gateway");
     expect(mcpToolExposureCommand(["full"]).success).toBe(true);
     expect(readSavedMcpToolExposure()).toBe("full");
+    expect(getMcpToolExposure()).toEqual({ mode: "full", source: "saved" });
     expect(fs.readdirSync(tempDir).some((entry) => entry.endsWith(".tmp"))).toBe(false);
+  });
+
+  it("falls back to gateway for malformed or missing stored configuration", () => {
+    const path = getMcpToolExposurePath();
+    fs.writeFileSync(path, "{not-json");
+    expect(readSavedMcpToolExposure()).toBe("gateway");
+    fs.writeFileSync(path, JSON.stringify({ mode: "old-mode" }));
+    expect(readSavedMcpToolExposure()).toBe("gateway");
+    fs.unlinkSync(path);
+    expect(readSavedMcpToolExposure()).toBe("gateway");
+  });
+
+  it("initializes new MCP servers in gateway mode without any saved setting", async () => {
+    const server = createSuperagentMcpServer();
+    try {
+      const handler = (server as any)._requestHandlers.get("tools/list");
+      const tools = (await handler({ method: "tools/list", params: {} })).tools.map((tool: any) => tool.name) as string[];
+      expect(tools).toEqual(expect.arrayContaining(Object.values(MCP_GATEWAY_TOOL_NAMES)));
+      expect(tools).not.toContain("superagent_get_workspace");
+    } finally {
+      await server.close();
+    }
   });
 
   it("rejects invalid modes without changing saved configuration", () => {

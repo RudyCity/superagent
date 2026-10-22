@@ -21,6 +21,7 @@ describe("MCP gateway Streamable HTTP integration", () => {
         MCP_GATEWAY_TOOL_NAMES.search,
         MCP_GATEWAY_TOOL_NAMES.describe,
         MCP_GATEWAY_TOOL_NAMES.status,
+        MCP_GATEWAY_TOOL_NAMES.execute,
       ].sort());
       const search = await client.callTool({
         name: MCP_GATEWAY_TOOL_NAMES.search,
@@ -36,10 +37,16 @@ describe("MCP gateway Streamable HTTP integration", () => {
         arguments: { name: "superagent_get_workspace" },
       });
       expect(JSON.stringify(description.content)).toContain("inputSchema");
-      await expect(client.callTool({
+      const safe = await client.callTool({
         name: MCP_GATEWAY_TOOL_NAMES.execute,
         arguments: { name: "superagent_get_workspace", arguments: {} },
-      })).rejects.toThrow(/allowlist/i);
+      });
+      expect(safe.isError).not.toBe(true);
+      const unsafe = await client.callTool({
+        name: MCP_GATEWAY_TOOL_NAMES.execute,
+        arguments: { name: "superagent_exec_command", arguments: { command: "echo blocked" } },
+      });
+      expect(unsafe.isError).toBe(true);
     } finally {
       await client.close().catch(() => undefined);
       await server.close();

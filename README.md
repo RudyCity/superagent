@@ -395,18 +395,16 @@ MCP servers and provider-specific tunnels live under `/mcp tunnel` or `superagen
 /mcp tunnel stop
 ```
 
-**Superagent REST/SSE exposure**
-
 #### Adaptive MCP Tools: discovery, gateway mode and reconnect
 
-SuperAgent supports two external MCP tool-catalog modes. **Full** (default) exposes its authorized standalone tool list for existing clients. **Gateway** exposes a stable set of just four tools: `superagent_tool_search`, `superagent_tool_describe`, `superagent_tool_execute`, and `superagent_tool_status` (the execute tool appears only when dangerous/write capabilities are explicitly authorized). A gateway client searches by keyword or natural-language *intent*, retrieves one tool schema, then invokes the tool through its **original authorization and workspace checks**. Intent ranking is lightweight lexical matching, **not embedding-based semantic search**.
+SuperAgent supports two external MCP tool-catalog modes. **Gateway** (default) exposes a stable set of four tools for new sessions. **Full** is an explicit compatibility option that exposes the authorized standalone tool list for existing clients. Gateway provides: `superagent_tool_search`, `superagent_tool_describe`, `superagent_tool_execute`, and `superagent_tool_status` (all four endpoints are available in read-only sessions; the execute gateway rechecks permissions for each underlying target). A gateway client searches by keyword or natural-language *intent*, retrieves one tool schema, then invokes the tool through its **original authorization and workspace checks**. Intent ranking is lightweight lexical matching, **not embedding-based semantic search**.
 
-Choose the mode using the CLI or the interactive TUI:
+New installations need no setup for Gateway. Choose a mode explicitly with the CLI or interactive TUI:
 
 ```bash
-superagent mcp use gateway     # Save compact discovery mode for new MCP connections
+superagent mcp use gateway     # Select the default compact discovery mode explicitly
 superagent mcp use status      # Check saved setting and environment override
-superagent mcp use full        # Restore the original/full tool catalog
+superagent mcp use full        # Opt in to the original/full tool catalog
 ```
 
 ```text
@@ -417,7 +415,7 @@ superagent mcp use full        # Restore the original/full tool catalog
 
 In the interactive terminal (including T-Line), typing `/mcp use` shows contextual suggestions for `gateway`, `full`, and `status`. Partial inputs such as `/mcp use g` autocomplete via `Tab`; tunnel suggestions remain under `/mcp tunnel`.
 
-The selected mode persists in `~/.superagent-r/mcp-tool-exposure.json` (Windows: `%USERPROFILE%\.superagent-r\mcp-tool-exposure.json`), separate from providers and workspaces. Set `SUPERAGENT_MCP_TOOL_EXPOSURE=gateway` or `full` to override the saved setting for the current process. **Restart/reconnect the owning MCP server or tunnel after changing mode**; existing MCP sessions are not switched or terminated automatically. Other processes can continue in their existing mode until restarted.
+If no mode has been saved, Gateway is selected automatically. An existing explicit `full` selection is preserved until changed to Gateway. The selected mode persists in `~/.superagent-r/mcp-tool-exposure.json` (Windows: `%USERPROFILE%\.superagent-r\mcp-tool-exposure.json`), separate from providers and workspaces. Set `SUPERAGENT_MCP_TOOL_EXPOSURE=gateway` or `full` to override the saved setting for the current process. **Restart/reconnect the owning MCP server or tunnel after changing mode**; existing MCP sessions are not switched or terminated automatically. Other processes can continue in their existing mode until restarted.
 
 Gateway calls in authorized sessions:
 
@@ -428,11 +426,13 @@ Gateway calls in authorized sessions:
 {"name":"superagent_tool_status","arguments":{}}
 ```
 
-**Security:** Search and describe show only currently authorized capabilities; revoked OAuth scopes, tool allowlists, disabled tools, project permissions, and Scoped/Full YOLO boundaries are enforced on execution too. Tool execution through the gateway requires the same dangerous/write authorization as other dangerous endpoints: a read-only OAuth token cannot call `superagent_tool_execute`, even for a read-only target. To execute safe tools without that grant, select **full** mode and invoke the safe tool directly.
+**Security:** Search and describe show only currently authorized capabilities; revoked OAuth scopes, tool allowlists, disabled tools, project permissions, and Scoped/Full YOLO boundaries are enforced on execution too. Read-only OAuth credentials can use `superagent_tool_execute` for safe/read-only targets. Dangerous targets still require the original write scope, tool allowlist, and project/YOLO boundaries; enabling Gateway never grants additional permissions. The gateway execute endpoint advertises potentially mutating annotations to clients because it can dispatch write-authorized targets.
 
 **Dynamic outbound MCP clients:** `manage_mcp({action:"refresh",name:"server"})` refreshes just one catalog; `manage_mcp({action:"reconnect",name:"server"})` reconnects only that server; `manage_mcp({action:"stats",name:"server"})` returns bounded call counts, failures, and durations without saving arguments or response payloads. Disconnected servers revoke stale tool handles, with bounded automatic reconnection (OAuth automatic reconnect requires explicit opt-in). These are **internal agent tools**, not the same as the four externally exposed gateway methods.
 
 See [Adaptive MCP Tool Runtime implementation details](docs/plans/2026-10-22-adaptive-mcp-tool-runtime-implementation.md) for limitations, tests, and the next semantic-search phase.
+
+**Superagent REST/SSE exposure**
 
 REST/SSE exposure is separate from Muse WSS and MCP. It is managed through `/server tunnel`, typically on local port 7888.
 

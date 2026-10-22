@@ -1,7 +1,7 @@
 # Adaptive MCP Tool Runtime — Implementation Tracker
 Date: 2026-10-22
 Workspace: SuperAgent T3 (main)
-Status: P0 registry + connection recovery hardening implemented; P1 lexical intent discovery and opt-in compact MCP gateway implemented; P2 lightweight execution metrics started. Embedding-based semantic ranking remains future work.
+Status: P0 registry + connection recovery hardening implemented; P1 lexical intent discovery and default compact MCP gateway implemented (full is an explicit compatibility mode); P2 lightweight execution metrics started. Embedding-based semantic ranking remains future work.
 
 ## Shipped in this change
 - MCP tool registry changes bump `toolRegistryVersion` so existing Agents invalidate cached catalogs.
@@ -32,15 +32,15 @@ manage_mcp({ action: "refresh", name: "context7" });
 manage_mcp({ action: "stats", name: "context7" });
 ```
 
-## 2026-10-22 continuation: opt-in compact MCP gateway
+## 2026-10-22 continuation: default compact MCP gateway
 - New external MCP gateway tools:
   - `superagent_tool_search`: bounded keyword / natural-language lexical capability search over the **current authorized** catalog.
   - `superagent_tool_describe`: full input schema of one currently authorized target.
   - `superagent_tool_execute`: explicitly permission-gated target invocation; reuses the **same** MCP call handler, including OAuth scopes, project grants, safety guards, allowlist and activity audit. Nested gateway execution is blocked.
   - `superagent_tool_status`: restricted gateway status (exposes no hidden tool names).
 - Enable compact MCP catalog with `superagent mcp use gateway` or `/mcp use gateway` (saved to `~/.superagent-r/mcp-tool-exposure.json`), `SUPERAGENT_MCP_TOOL_EXPOSURE=gateway` (environment override), or `createSuperagentMcpServer({toolExposure:"gateway"})` / `startMcpHttpServer({...,toolExposure:"gateway"})`. Restart the MCP server for new sessions to pick up the selected mode.
-- Full catalog remains the default to preserve existing MCP clients. With gateway mode, `tools/list` only returns authorized gateway endpoints.
-- In read-only sessions the execution tool is intentionally absent: read-only OAuth tokens and static bearer endpoints without `allowDangerous` cannot use gateway execution. In write-authorized sessions all four endpoints are listed.
+- Gateway is the default when no explicit saved mode or environment override exists. Explicitly saved `full` and `SUPERAGENT_MCP_TOOL_EXPOSURE=full` remain supported. In gateway mode `tools/list` returns only the four authorized gateway endpoints.
+- Gateway execute is available in read-only sessions but can dispatch only authorized safe targets. The target's original checks enforce write/admin scopes and dangerous-tool allowlists. Gateway execute is marked potentially mutating for MCP client approvals.
 - The gateway does **not** implement privilege elevation; clients still need appropriate OAuth scopes, workspace permissions, and dangerous-tool approval.
 - Dashboard/T-Line autocomplete: `/mcp use` branches to a dedicated `MCP_USE_SUGGESTIONS` list (`gateway`, `full`, `status`). Keyword and trailing-space matching, case-insensitive Tab completion, and separation from `/mcp tunnel` are verified by `tests/mcpUseSuggestions.test.ts`.
 - Keyword/intent ranking is **lexical with synonyms**, not embedding-based semantic retrieval yet.
@@ -52,7 +52,7 @@ manage_mcp({ action: "stats", name: "context7" });
 {"name":"superagent_tool_describe","arguments":{"name":"superagent_get_workspace"}}
 {"name":"superagent_tool_execute","arguments":{"name":"superagent_get_workspace","arguments":{}}}
 ```
-For read-only operation, use the full MCP catalog to call a standalone safe tool, or use an explicitly write-authorized gateway session; gateway execute never elevates privileges.
+Read-only clients can execute authorized safe targets through the gateway; write/admin operations require their original privileges and gateway execution never elevates permissions.
 
 ## Verification
 - Test coverage: `tests/mcpRemoteClient.test.ts`, `tests/mcpIntentDiscovery.test.ts`, `tests/mcp.test.ts` and discovery/provider/system prompt test suites.

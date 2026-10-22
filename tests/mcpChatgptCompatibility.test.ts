@@ -8,7 +8,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
 import crypto from "node:crypto";
-import { createSuperagentMcpServer, getToolAnnotations, getToolSecuritySchemes } from "../src/core/mcp/superagentMcpServer.js";
+import { createSuperagentMcpServer as createMcpServer, getToolAnnotations, getToolSecuritySchemes } from "../src/core/mcp/superagentMcpServer.js";
+// Legacy standalone-tool tests explicitly opt into full catalog mode.
+const createSuperagentMcpServer = (options: Parameters<typeof createMcpServer>[0] = {}) =>
+  createMcpServer({ ...options, toolExposure: "full" });
 import {
   startMcpHttpServer,
   generateMcpBearerToken,
@@ -95,7 +98,7 @@ describe("auth-protected tools do not execute without identity", () => {
 
   beforeAll(async () => {
     token = generateMcpBearerToken();
-    handle = await startMcpHttpServer({ port: 0, bearerToken: token, allowDangerous: false });
+    handle = await startMcpHttpServer({ toolExposure: "full", port: 0, bearerToken: token, allowDangerous: false });
   }, 30000);
 
   afterAll(async () => {
@@ -161,7 +164,7 @@ describe("oauth end-to-end: discovery -> PKCE -> MCP session", () => {
     const { generateBootstrapCode } = await import("../src/core/mcp/mcpOAuthRoutes.js");
     const bc = generateBootstrapCode();
     bootstrapCode = bc.code;
-    handle = await startMcpHttpServer({
+    handle = await startMcpHttpServer({ toolExposure: "full",
       port: 0,
       allowDangerous: false,
       authMode: "oauth",

@@ -42,8 +42,10 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   superagent_tool_search: "safe",
   superagent_tool_describe: "safe",
   superagent_tool_status: "safe",
+  // The gateway router is safe to invoke: it re-authorizes the selected
+  // target and cannot elevate scopes or bypass the HTTP tool allowlist.
+  superagent_tool_execute: "safe",
   // ---- dangerous: mutation / execution / control ----
-  superagent_tool_execute: "dangerous",
   superagent_exec_command: "dangerous",
   superagent_write_file: "dangerous",
   superagent_write_files: "dangerous",
@@ -120,6 +122,12 @@ export interface McpToolAnnotations {
 
 /** Behavior annotations derived from the safe/dangerous classification. */
 export function getToolAnnotations(toolName: string): McpToolAnnotations | undefined {
+  // The router can delegate to a mutating tool. Do not misrepresent it as
+  // read-only in client approval UIs even though its entrypoint only needs
+  // read scope; the target call enforces write/admin permissions as needed.
+  if (toolName === "superagent_tool_execute") {
+    return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
+  }
   const level = MCP_TOOL_CLASSIFICATION[toolName];
   if (level === "safe") {
     return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -191,7 +199,7 @@ export interface McpServerOptions {
   getIdentity?: () => { mode: "static-bearer" | "oauth"; subject: string; scopes?: string[]; credentialHash?: string } | null;
   /** Optional workspace root for YOLO scope validation. Defaults to process.cwd(). */
   workspace?: string;
-  /** Full: all authorized tools (default); gateway: stable discovery + execution endpoints only. */
+  /** Gateway (default): compact discovery and authorized execution; full: standalone tools. */
   toolExposure?: "full" | "gateway";
 }
 

@@ -16,17 +16,22 @@ export function getMcpToolExposurePath(): string {
 export function readSavedMcpToolExposure(): McpToolExposure {
   try {
     const value: unknown = JSON.parse(fs.readFileSync(getMcpToolExposurePath(), "utf8"));
+    // An explicit full selection remains valid after a version upgrade.
+    // Missing/invalid configuration starts in the safer compact gateway mode.
     return typeof value === "object" && value !== null &&
-      (value as Record<string, unknown>).mode === "gateway" ? "gateway" : "full";
+      (value as Record<string, unknown>).mode === "full" ? "full" : "gateway";
   } catch {
-    return "full";
+    return "gateway";
   }
 }
 
-export function getMcpToolExposure(): { mode: McpToolExposure; source: "env" | "saved" } {
+export function getMcpToolExposure(): { mode: McpToolExposure; source: "env" | "saved" | "default" } {
   const override = process.env.SUPERAGENT_MCP_TOOL_EXPOSURE?.trim().toLowerCase();
   if (override === "gateway" || override === "full") return { mode: override, source: "env" };
-  return { mode: readSavedMcpToolExposure(), source: "saved" };
+  return {
+    mode: readSavedMcpToolExposure(),
+    source: fs.existsSync(getMcpToolExposurePath()) ? "saved" : "default",
+  };
 }
 
 /**
@@ -51,7 +56,7 @@ export function mcpToolExposureCommand(args: string[]): { success: boolean; mess
     const active = getMcpToolExposure();
     return {
       success: true,
-      message: `MCP tool exposure: ${active.mode} (${active.source}). Saved default: ${readSavedMcpToolExposure()}.\nUse 'mcp use gateway' or 'mcp use full' to switch for newly started MCP sessions.`,
+      message: `MCP tool exposure: ${active.mode} (${active.source}). Default: gateway; stored selection: ${fs.existsSync(getMcpToolExposurePath()) ? readSavedMcpToolExposure() : "none"}.\nUse 'mcp use gateway' or 'mcp use full' to switch for newly started MCP sessions.`,
     };
   }
   const mode = args[0]?.trim().toLowerCase();

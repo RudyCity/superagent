@@ -31,7 +31,7 @@ export const MCP_GATEWAY_TOOL_DEFS = [
   },
   {
     name: MCP_GATEWAY_TOOL_NAMES.execute,
-    description: "Invoke one authorized MCP tool using its exact name and arguments. Every call is rechecked against the original tool's permission, OAuth, and workspace policy. Requires dangerous tool authorization.",
+    description: "Invoke one authorized MCP tool using its exact name and arguments. Every call is rechecked against the original tool's permission, OAuth, and workspace policy. Safe/read-only targets work with read credentials; mutation targets still require write permission and an authorized tool allowance.",
     inputSchema: {
       type: "object",
       properties: {

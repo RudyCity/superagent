@@ -39,7 +39,11 @@ describe("static MCP gateway catalog", () => {
       MCP_GATEWAY_TOOL_NAMES.describe,
       MCP_GATEWAY_TOOL_NAMES.status,
     ]));
-    expect(advertised).not.toContain(MCP_GATEWAY_TOOL_NAMES.execute);
+    expect(advertised).toContain(MCP_GATEWAY_TOOL_NAMES.execute);
+    const executionTool = (await list(server)).find((tool) => tool.name === MCP_GATEWAY_TOOL_NAMES.execute) as any;
+    expect(executionTool.annotations?.readOnlyHint).toBe(false);
+    expect(executionTool.annotations?.destructiveHint).toBe(true);
+    expect(executionTool._meta.securitySchemes[0].scopes).toContain("mcp:tools");
     expect(advertised).not.toContain("superagent_read_files");
 
     const search = parseResult(await invoke(server, MCP_GATEWAY_TOOL_NAMES.search, { query: "project", limit: 20 }));
@@ -57,20 +61,25 @@ describe("static MCP gateway catalog", () => {
     const status = parseResult(await invoke(server, MCP_GATEWAY_TOOL_NAMES.status));
     expect(status.mode).toBe("gateway");
     expect(status.visibleToolCount).toBeGreaterThan(0);
-    expect(status.gatewayTools).not.toContain(MCP_GATEWAY_TOOL_NAMES.execute);
+    expect(status.gatewayTools).toContain(MCP_GATEWAY_TOOL_NAMES.execute);
     await server.close();
   });
 
-  it("rejects OAuth read-only execution even of a safe underlying tool", async () => {
+  it("allows OAuth read-only execution of safe targets but not write targets", async () => {
     const server = createSuperagentMcpServer({
       toolExposure: "gateway",
       authMode: "oauth",
       allowDangerous: true,
       getIdentity: () => ({ mode: "oauth", subject: "read-only", scopes: ["mcp:tools"] }),
     });
-    await expect(invoke(server, MCP_GATEWAY_TOOL_NAMES.execute, {
+    const safeResult = await invoke(server, MCP_GATEWAY_TOOL_NAMES.execute, {
       name: "superagent_server_health", arguments: {},
-    })).rejects.toThrow(/mcp:tools:write/);
+    });
+    expect(safeResult.isError).not.toBe(true);
+    const denied = await invoke(server, MCP_GATEWAY_TOOL_NAMES.execute, {
+      name: "superagent_exec_command", arguments: { command: "echo forbidden" },
+    });
+    expect(denied.isError).toBe(true);
     await server.close();
   });
 
@@ -120,9 +129,10 @@ describe("static MCP gateway catalog", () => {
     expect(afterRevoke.tools).toEqual([]);
     const noSchema = await invoke(server, MCP_GATEWAY_TOOL_NAMES.describe, { name: "superagent_grant_project_access" });
     expect(noSchema.isError).toBe(true);
-    await expect(invoke(server, MCP_GATEWAY_TOOL_NAMES.execute, {
+    const denied = await invoke(server, MCP_GATEWAY_TOOL_NAMES.execute, {
       name: "superagent_grant_project_access", arguments: {},
-    })).rejects.toThrow(/mcp:tools:write/);
+    });
+    expect(denied.isError).toBe(true);
     await server.close();
   });
 

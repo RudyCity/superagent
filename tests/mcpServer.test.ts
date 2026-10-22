@@ -4,7 +4,10 @@ import path from "path";
 import { execFileSync } from "node:child_process";
 import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 import os from "os";
-import { createSuperagentMcpServer, MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, MCP_TOOL_DEFINITIONS } from "../src/core/mcp/superagentMcpServer.js";
+import { createSuperagentMcpServer as createMcpServer, MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, MCP_TOOL_DEFINITIONS } from "../src/core/mcp/superagentMcpServer.js";
+// These assertions exercise legacy direct-tool compatibility, not the new gateway default.
+const createSuperagentMcpServer = (options: Parameters<typeof createMcpServer>[0] = {}) =>
+  createMcpServer({ ...options, toolExposure: "full" });
 import { getDefaultSafeTools } from "../src/core/mcp/mcpHttpTransport.js";
 import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
 import {

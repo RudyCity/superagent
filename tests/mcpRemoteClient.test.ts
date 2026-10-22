@@ -20,10 +20,13 @@ describe("outgoing remote Streamable HTTP MCP client", () => {
   beforeEach(async () => {
     state.config = { mcpServers: {} };
     token = generateMcpBearerToken();
+    // This fixture verifies the outbound client's ability to discover actual
+    // remote standalone tools, so opt into the legacy full MCP catalog.
     server = await startMcpHttpServer({
       port: 0,
       bearerToken: token,
       allowDangerous: false,
+      toolExposure: "full",
     });
     vi.stubEnv("SUPERAGENT_TEST_REMOTE_MCP_AUTH", "Bearer " + token);
     const manager = await import("../src/core/mcp/McpManager.js");

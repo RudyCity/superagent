@@ -80,7 +80,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/mcp reload": "Reload MCP server configurations.",
   "/mcp use": "Display or select MCP tool exposure mode for newly started servers.",
   "/mcp use gateway": "Use compact MCP gateway with search, describe, execute, and status.",
-  "/mcp use full": "Use the complete authorized MCP tools catalog (default).",
+  "/mcp use full": "Use the complete authorized MCP tools catalog (compatibility option).",
   "/mcp use status": "Show active and saved MCP tool exposure settings.",
   "/mcp tunnel": "Manage provider-specific MCP tunnel lifecycle.",
   "/mcp tunnel providers": "List supported MCP tunnel providers and their requirements.",
