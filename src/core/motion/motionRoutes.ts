@@ -27,6 +27,8 @@ import { summarizeMotionWav } from "./assets/motionWaveform.js";
 import { effectRegistry, EFFECT_CATEGORIES, type EffectCategory } from "./effects/index.js";
 import { changeMotionEffectStack, type MotionStackOperation } from "./effects/effectStack.js";
 import { resizeMotionComposition, type MotionOutputAspect } from "./motionResize.js";
+import { getMotionBrandKit, saveMotionBrandKit, type MotionBrandKitInput } from "./motionBrandKit.js";
+import { compileMotionTemplate, listMotionTemplates } from "./motionTemplates.js";
 
 export interface MotionHttpContext {
   resolveWorkspacePath: (req: IncomingMessage) => string | null;
@@ -95,6 +97,9 @@ export async function handleMotionHttpRoute(
   const compoundPresetItem = pathname.match(/^\/api\/motion\/presets\/([a-z][a-z0-9-]{1,63})$/);
   const projectCompoundPresets = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/presets$/);
   const previewCompoundPreset = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/presets\/preview$/);
+  const brandKitRoute = pathname === "/api/motion/brand-kit";
+  const templatesList = pathname === "/api/motion/templates";
+  const projectTemplateRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/templates(?:\/(preview))?$/);
   const effectsList = pathname === "/api/motion/effects";
   const effectItem = pathname.match(/^\/api\/motion\/effects\/([a-z][a-z0-9-]{1,63})$/);
   const projectEffects = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects$/);
@@ -135,6 +140,17 @@ export async function handleMotionHttpRoute(
         "ETag": '"' + audio[1].slice(6) + '"',
       });
       res.end(method === "HEAD" ? undefined : bytes);
+    } else if (brandKitRoute && method === "GET") {
+      json(res, ctx, 200, await getMotionBrandKit(workspace));
+    } else if (brandKitRoute && method === "POST") {
+      const body = await readMotionJson(req, 5_000);
+      if (!Number.isSafeInteger(body.baseRevision) || !body.brand ||
+          typeof body.brand !== "object" || Array.isArray(body.brand))
+        throw new MotionValidationError(["Brand Kit baseRevision and brand are required"]);
+      json(res, ctx, 200, await saveMotionBrandKit(workspace, body.baseRevision as number,
+        body.brand as MotionBrandKitInput));
+    } else if (templatesList && method === "GET") {
+      json(res, ctx, 200, { templates: listMotionTemplates() });
     } else if (compoundPresetsList && method === "GET") {
       const query = _url.searchParams.get("q") ?? undefined;
       if (query && query.length > 120) throw new Error("Invalid compound preset query length");
@@ -233,6 +249,27 @@ export async function handleMotionHttpRoute(
         body.baseRevision as number, body.revision as number));
     } else if (project && method === "GET") {
       json(res, ctx, 200, await getMotionProject(workspace, project[1]));
+    } else if (projectTemplateRoute && method === "POST") {
+      const body = await readMotionJson(req, 5_000);
+      if (!Number.isSafeInteger(body.baseRevision) || typeof body.templateId !== "string" ||
+          (body.headline !== undefined && typeof body.headline !== "string") ||
+          (body.subtitle !== undefined && typeof body.subtitle !== "string"))
+        throw new MotionValidationError(["Invalid Motion template request"]);
+      const current = await getMotionProject(workspace, projectTemplateRoute[1]);
+      if (current.revision !== body.baseRevision) {
+        json(res, ctx, 409, { error: "Motion revision conflict; reload before applying template" });
+      } else {
+        const composition = compileMotionTemplate(current, await getMotionBrandKit(workspace), {
+          templateId: body.templateId, headline: body.headline as string | undefined,
+          subtitle: body.subtitle as string | undefined,
+        });
+        if (projectTemplateRoute[2] === "preview") {
+          json(res, ctx, 200, { ...current, composition });
+        } else {
+          json(res, ctx, 200, await updateMotionProject(workspace, projectTemplateRoute[1],
+            body.baseRevision as number, [{ type: "replace-composition", composition }]));
+        }
+      }
     } else if (previewCompoundPreset && method === "POST") {
       const body = await readMotionJson(req, 5_000);
       if (typeof body.presetId !== "string" || typeof body.targetLayerId !== "string")
