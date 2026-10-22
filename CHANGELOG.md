@@ -1,3 +1,9 @@
+## [1.14.11] - 2026-10-22
+### Fixed
+- Fixed CLI runtime bootstrap when launched via global Node.js / npm wrappers (`src/cli.tsx`):
+  - Added automatic transparent handoff to Bun when `superagent` is invoked under Node.js (such as global npm link or Windows `.cmd`/`.ps1` shims).
+  - Preserved the Bun-native requirement while preventing false-positive startup crashes (`SuperAgent requires Bun 1.4.2 or newer`) in arbitrary workspace directories when Bun is installed on PATH.
+
 ## [1.14.10] - 2026-10-22
 ### Added
 - Motion Studio Non-destructive Effect Stack & Revisions (`src/core/motion/effects/effectStack.ts`, `src/core/motion/motionRoutes.ts`, `src/core/motion/project/revisions.ts`, `src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`):

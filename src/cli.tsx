@@ -1,11 +1,36 @@
 #!/usr/bin/env bun
 
+import { spawnSync } from "node:child_process";
+
 // SuperAgent is Bun-native. Do not silently start under Node, where the
 // memory/worker pipeline may use incompatible SQLite and loader behavior.
-const bunRuntimeVersion = process.versions.bun;
-const bunParts = bunRuntimeVersion?.split(".").map(Number) ?? [];
-if (!bunRuntimeVersion || bunParts[0] < 1 ||
-    (bunParts[0] === 1 && (bunParts[1] < 4 || (bunParts[1] === 4 && bunParts[2] < 2)))) {
+const bunRuntimeVersion = (process.versions as any)?.bun;
+const bunParts = (bunRuntimeVersion?.split(".").map(Number) ?? []) as number[];
+const isAdequateBun = Boolean(
+  bunRuntimeVersion &&
+  (bunParts[0] > 1 || (bunParts[0] === 1 && (bunParts[1] > 4 || (bunParts[1] === 4 && bunParts[2] >= 2))))
+);
+
+if (!isAdequateBun) {
+  if (!bunRuntimeVersion) {
+    // Invoked under Node (e.g. global npm link or Windows superagent.cmd / superagent.ps1 shim).
+    // Transparently hand off execution to Bun if available on PATH.
+    try {
+      const targetScript = process.argv[1];
+      const result = spawnSync("bun", [targetScript, ...process.argv.slice(2)], {
+        stdio: "inherit",
+        env: process.env,
+      });
+      if (result.error && (result.error as any).code === "ENOENT") {
+        console.error("SuperAgent requires Bun 1.4.2 or newer, but 'bun' was not found in your PATH.");
+        console.error("Please install Bun from https://bun.sh and ensure it is available in PATH.");
+        process.exit(1);
+      }
+      process.exit(result.status ?? (result.signal ? 1 : 0));
+    } catch {
+      // Fall through to error output below
+    }
+  }
   console.error("SuperAgent requires Bun 1.4.2 or newer. Start with: bun dist/cli.js");
   process.exit(1);
 }
