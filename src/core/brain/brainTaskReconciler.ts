@@ -5,7 +5,7 @@
  */
 import { getDelegateJob } from "../tools/cliBridgeDelegateJobs.js";
 import { inspectBrainTask, checkpointBrainTask, updateBrainTask } from "./brainTasks.js";
-import { promoteBrainDelegation } from "./brainDelegationArtifacts.js";
+import { promoteBrainDelegationBatch } from "./brainDelegationArtifacts.js";
 
 export async function reconcileBrainTask(owner:string,sessionId:string,taskId:string) {
   const task=inspectBrainTask(owner,sessionId,taskId);
@@ -25,14 +25,8 @@ export async function reconcileBrainTask(owner:string,sessionId:string,taskId:st
     try {
       const evidence=job.artifactEvidence;
       if(!Array.isArray(evidence)||!evidence.length||evidence.length>10)throw new Error("Invalid verified artifact manifest.");
-      const paths:string[]=[];
-      for(let index=0;index<evidence.length;index++) {
-        const record=evidence[index];
-        if(typeof record?.path!=="string")throw new Error("Missing artifact path.");
-        const name=evidence.length>1 ? index+"-"+last.jobId.slice(-8)+"-"+record.path.replace(/\\/g,"/").split("/").at(-1) : undefined;
-        const artifact=await promoteBrainDelegation(owner,sessionId,last.jobId,name,evidence.length>1?record.path:undefined);
-        paths.push(artifact.filePath);
-      }
+      const promoted=await promoteBrainDelegationBatch(owner,sessionId,last.jobId);
+      const paths=promoted.files.map(file=>file.filePath);
       if(task.status==="running") checkpointBrainTask(owner,sessionId,taskId,last.agentId,
         "Verified "+paths.length+" delegated artifact(s).","Review results before publishing.",paths);
       const updated=updateBrainTask(owner,sessionId,taskId,last.agentId,"completed");

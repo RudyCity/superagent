@@ -21,11 +21,13 @@ import { getRootConfigDir } from "../../config/paths.js";
 import { cliBridgeTool } from "../../tools/cliBridgeTool.js";
 import { beginBrainTransfer, inspectBrainTransfer, appendBrainTransfer, finishBrainTransfer, abortBrainTransfer, cleanupBrainTransfers } from "../../brain/brainTransfers.js";
 import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainRMemoryCandidate } from "../../brain/brainIndex.js";
-import { promoteBrainDelegation } from "../../brain/brainDelegationArtifacts.js";
+import { promoteBrainDelegation, promoteBrainDelegationBatch } from "../../brain/brainDelegationArtifacts.js";
+import { recoverBrainArtifactPromotion } from "../../brain/brainArtifactTransaction.js";
 import { recordBrainEvent, summarizeBrainEvents } from "../../brain/brainObservability.js";
 import { createBrainTask, listBrainTasks, inspectBrainTask, claimBrainTask, transferBrainTask, updateBrainTask, checkpointBrainTask, handoffBrainArtifact, resumeBrainTask, recordBrainTaskDelegation } from "../../brain/brainTasks.js";
-import { authorizeBrainTaskAgent, issueBrainTaskAgentCredentials } from "../../brain/brainAgentCredentials.js";
+import { authorizeBrainTaskAgent, issueBrainTaskAgentCredentials, rotateBrainTaskAgentCredential, revokeBrainTaskAgentCredential, brainTaskCapabilityStatus } from "../../brain/brainAgentCredentials.js";
 import { reconcileBrainTask } from "../../brain/brainTaskReconciler.js";
+import { reconcileBrainSessionJobs } from "../../brain/brainTaskRecovery.js";
 import { getDelegateJob } from "../../tools/cliBridgeDelegateJobs.js";
 
 export const BRAIN_MCP_TOOL_DEFS = [
@@ -40,11 +42,11 @@ export const BRAIN_MCP_TOOL_DEFS = [
           "storage", "metrics", "retention.preview", "cleanup.prepare", "cleanup.confirm",
           "artifact.import", "artifact.read", "cleanup",
           "transfer.begin", "transfer.status", "transfer.append", "transfer.finish", "transfer.abort", "transfer.gc",
-          "artifact.annotate", "artifact.search", "session.resume", "memory.candidate", "delegate.promote",
+          "artifact.annotate", "artifact.search", "session.resume", "memory.candidate", "delegate.promote", "delegate.promote.batch", "artifact.recover",
           "delegate.start", "delegate.get", "delegate.tail", "delegate.cancel", "delegate.jobs",
           "task.create", "task.list", "task.get", "task.claim", "task.status", "task.checkpoint",
           "task.handoff", "task.transfer", "task.resume", "task.reconcile", "task.delegate.start", "task.autostart",
-          "task.retry", "task.cancel.request",
+          "task.retry", "task.cancel.request", "task.credential.rotate", "task.credential.revoke", "task.credential.status", "task.reconcile.all",
         ] },
         sessionId: { type: "string", description: "Optional owner-scoped Brain ID; omit to use this MCP connection's Brain." },
         filePath: { type: "string", description: "Relative file under scratch/, artifacts/ or evidence/." },
@@ -197,7 +199,7 @@ async function dispatchBrainMcpToolInternal(
       }
       const taskId = String(args.taskId || "");
       const agentId = String(args.agentId || "");
-      if (!["task.create","task.list","task.get","task.resume","task.reconcile"].includes(action)) {
+      if (!["task.create","task.list","task.get","task.resume","task.reconcile","task.reconcile.all","task.credential.status"].includes(action)) {
         authorizeBrainTaskAgent(principal,id,taskId,agentId,args.agentCredential);
       }
       switch (action) {
@@ -207,6 +209,10 @@ async function dispatchBrainMcpToolInternal(
         }
         case "task.list": return result(listBrainTasks(principal, id));
         case "task.get": return result(inspectBrainTask(principal, id, taskId));
+        case "task.credential.status": return result(brainTaskCapabilityStatus(principal,id,taskId));
+        case "task.credential.rotate": return result(rotateBrainTaskAgentCredential(principal,id,taskId,agentId,{currentCredential:String(args.agentCredential||"")}));
+        case "task.credential.revoke": return result(revokeBrainTaskAgentCredential(principal,id,taskId,agentId,{currentCredential:String(args.agentCredential||"")}));
+        case "task.reconcile.all": return result(await reconcileBrainSessionJobs(principal,id));
         case "task.reconcile": return result(await reconcileBrainTask(principal,id,taskId));
         case "task.resume": {
           const reconciliation=await reconcileBrainTask(principal,id,taskId);
@@ -333,6 +339,8 @@ async function dispatchBrainMcpToolInternal(
       case "session.resume": return result(brainResumeContext(principal, id));
       case "memory.candidate": return result(brainRMemoryCandidate(principal, id, String(args.filePath || "")));
       case "delegate.promote": return result(await promoteBrainDelegation(principal, id, String(args.jobId || ""), typeof args.filename === "string" ? args.filename : undefined, typeof args.sourceArtifactPath==="string"?args.sourceArtifactPath:undefined));
+      case "delegate.promote.batch": return result(await promoteBrainDelegationBatch(principal,id,String(args.jobId||"")));
+      case "artifact.recover": return result(recoverBrainArtifactPromotion(principal,id));
       default: throw new Error("Unsupported brain action.");
     }
   } catch (error: any) {

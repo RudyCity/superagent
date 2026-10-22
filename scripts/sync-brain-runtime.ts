@@ -12,6 +12,12 @@ const tline = path.resolve(import.meta.dir, "../../t-line/backend/src");
 const modules = [
   { source: "brainSessionLock.ts", imports: [] },
   { source: "brainObservability.ts", imports: [] },
+  { source: "brainAgentCredentials.ts", imports: [
+      ["import { inspectBrainSession } from \"./brainWorkspace.js\";", "import { inspectBrainSession } from \"./brainRuntimeCompat\";"],
+      ["import { inspectBrainTask } from \"./brainTasks.js\";", "import { inspectBrainTask } from \"./brainTasks\";"],
+      ["import { assertNoSymlink } from \"./brainStorageManager.js\";", "import { assertNoSymlink } from \"./brainStorageManager\";"],
+      ["import { withBrainSessionLock } from \"./brainSessionLock.js\";", "import { withBrainSessionLock } from \"./brainSessionLock\";"],
+    ] },
   { source: "brainTasks.ts", imports: [
       ["import { inspectBrainSession } from \"./brainWorkspace.js\";", "import { inspectBrainSession } from \"./brainRuntimeCompat\";"],
       ["import { assertNoSymlink, validateDestination } from \"./brainStorageManager.js\";", "import { assertNoSymlink, validateDestination } from \"./brainStorageManager\";"],

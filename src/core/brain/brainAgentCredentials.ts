@@ -1,8 +1,8 @@
 /**
- * Task-scoped, one-time-issued capability credentials for remotely operating
- * a logical Brain agent. Owner OAuth authenticates the tenant; this separate
- * capability proves authorization to act as one member of one specific task.
- * Operator-owned CLI/T-Line do not consume these MCP-only bearer capabilities.
+ * Owner-scoped, short-lived Brain task agent capabilities.
+ * Caller receives plaintext only on issue/rotation. Disk stores hashes only.
+ * MCP remote rotations/revocations require proof of the CURRENT credential;
+ * trusted local operator routes may explicitly administer credentials.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -11,48 +11,110 @@ import { inspectBrainSession } from "./brainWorkspace.js";
 import { inspectBrainTask } from "./brainTasks.js";
 import { assertNoSymlink } from "./brainStorageManager.js";
 import { withBrainSessionLock } from "./brainSessionLock.js";
-
 const TASK = /^task_[a-f0-9]{20}$/;
-type CredentialRecord = { schemaVersion: 1; agentHashes: Record<string,string>; createdAt: string };
-function location(owner: string, sessionId: string, taskId: string) {
-  if (!TASK.test(taskId)) throw new Error("Invalid Brain task.");
-  const dir = inspectBrainSession(owner, sessionId).path;
-  const filename = path.join(dir, ".tasks", taskId + ".capabilities.json");
-  assertNoSymlink(dir, filename);
-  return { dir, filename };
+const TOKEN = /^bag_[a-f0-9]{64}$/;
+const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_TTL_MS = 7 * DEFAULT_TTL_MS;
+type StoredAgent = { hash: string; issuedAt: number; expiresAt: number; revokedAt?: number; generation: number };
+type RecordV2 = { schemaVersion: 2; agents: Record<string,StoredAgent>; updatedAt: number };
+type RecordV1 = { schemaVersion: 1; agentHashes: Record<string,string>; createdAt: string };
+function location(owner:string,sessionId:string,taskId:string,configRoot?:string) {
+  if(!TASK.test(taskId))throw new Error("Invalid Brain task.");
+  const dir=inspectBrainSession(owner,sessionId,configRoot).path;
+  const file=path.join(dir,".tasks",taskId+".capabilities.json");
+  assertNoSymlink(dir,file);
+  return {dir,file};
 }
-export function issueBrainTaskAgentCredentials(owner: string, sessionId: string, taskId: string) {
-  const { dir, filename } = location(owner, sessionId, taskId);
-  return withBrainSessionLock(dir, () => {
-    const task = inspectBrainTask(owner, sessionId, taskId);
-    const credentials:Record<string,string> = {};
-    const hashes:Record<string,string> = {};
-    for (const agent of task.agents) {
-      const credential = "bag_" + crypto.randomBytes(32).toString("hex");
-      credentials[agent] = credential;
-      hashes[agent] = crypto.createHash("sha256").update(credential).digest("hex");
+function newToken(){return "bag_"+crypto.randomBytes(32).toString("hex");}
+function sha(value:string){return crypto.createHash("sha256").update(value).digest("hex");}
+function ttl(value:number){if(!Number.isSafeInteger(value)||value<60000||value>MAX_TTL_MS)throw new Error("Invalid agent credential TTL.");return value;}
+function read(file:string):RecordV2{
+  const st=fs.lstatSync(file);
+  if(!st.isFile()||st.isSymbolicLink()||st.nlink!==1||st.size>12000)throw new Error("Unsafe Brain capability store.");
+  const raw=JSON.parse(fs.readFileSync(file,"utf8")) as RecordV1|RecordV2;
+  if(raw.schemaVersion===2){
+    if(!raw.agents||typeof raw.agents!=="object"||Array.isArray(raw.agents))throw new Error("Invalid capability record.");
+    return raw;
+  }
+  if(raw.schemaVersion===1){
+    // Legacy records are migrated on the next rotation or revoke. Their
+    // finite expiration is based on the original creation timestamp.
+    const at=Date.parse(raw.createdAt);
+    if(!Number.isFinite(at)||!raw.agentHashes||typeof raw.agentHashes!=="object")throw new Error("Invalid legacy capability.");
+    const agents:Record<string,StoredAgent>={};
+    for(const [agent,hash] of Object.entries(raw.agentHashes)){
+      if(!/^[a-f0-9]{64}$/.test(hash))throw new Error("Invalid legacy credential hash.");
+      agents[agent]={hash,issuedAt:at,expiresAt:at+DEFAULT_TTL_MS,generation:1};
     }
-    const data:CredentialRecord = { schemaVersion:1, agentHashes:hashes, createdAt:new Date().toISOString() };
-    // No overwrite: issue once to the authenticated creator, never read secrets back.
-    fs.writeFileSync(filename, JSON.stringify(data), { flag: "wx", mode:0o600 });
-    return credentials;
+    return {schemaVersion:2,agents,updatedAt:at};
+  }
+  throw new Error("Unrecognized credential store.");
+}
+function persist(file:string,record:RecordV2){
+  const tmp=file+"."+crypto.randomBytes(8).toString("hex")+".tmp";
+  try {fs.writeFileSync(tmp,JSON.stringify(record),{flag:"wx",mode:0o600});fs.renameSync(tmp,file);}
+  finally{if(fs.existsSync(tmp))fs.unlinkSync(tmp);}
+}
+export function issueBrainTaskAgentCredentials(owner:string,sessionId:string,taskId:string,ttlMs=DEFAULT_TTL_MS,configRoot?:string){
+  const duration=ttl(ttlMs),{dir,file}=location(owner,sessionId,taskId,configRoot);
+  return withBrainSessionLock(dir,()=>{
+    const task=inspectBrainTask(owner,sessionId,taskId,configRoot);
+    const issuedAt=Date.now(),tokens:Record<string,string>={},agents:Record<string,StoredAgent>={};
+    for(const agent of task.agents){
+      const token=newToken();tokens[agent]=token;
+      agents[agent]={hash:sha(token),issuedAt,expiresAt:issuedAt+duration,generation:1};
+    }
+    fs.writeFileSync(file,JSON.stringify({schemaVersion:2,agents,updatedAt:issuedAt}),{flag:"wx",mode:0o600});
+    return tokens;
   });
 }
-export function authorizeBrainTaskAgent(owner:string,sessionId:string,taskId:string,agentId:string,credential:unknown) {
-  if(typeof agentId!=="string"||typeof credential!=="string"||!/^bag_[a-f0-9]{64}$/.test(credential)) {
-    throw new Error("Brain task agent capability is required.");
-  }
-  const { filename } = location(owner,sessionId,taskId);
-  if(!fs.existsSync(filename)) throw new Error("Brain task has no MCP agent capabilities; use local operator controls.");
-  const stat=fs.lstatSync(filename);
-  if(!stat.isFile()||stat.nlink!==1||stat.size>8192)throw new Error("Invalid Brain capability store.");
-  const entry=JSON.parse(fs.readFileSync(filename,"utf8")) as CredentialRecord;
-  if(entry.schemaVersion!==1||!entry.agentHashes || typeof entry.agentHashes!=="object")throw new Error("Invalid Brain capability records.");
-  const expected=entry.agentHashes[agentId];
-  if(typeof expected!=="string" || !/^[a-f0-9]{64}$/.test(expected))throw new Error("Brain task agent is not authorized.");
-  const actual=crypto.createHash("sha256").update(credential).digest("hex");
-  if(!crypto.timingSafeEqual(Buffer.from(actual,"hex"),Buffer.from(expected,"hex"))) {
-    throw new Error("Brain task agent capability mismatch.");
-  }
-  return true;
+function requireValid(agentId:string,token:unknown,record:RecordV2):StoredAgent {
+  if(typeof agentId!=="string"||typeof token!=="string"||!TOKEN.test(token))throw new Error("Brain task agent capability is required.");
+  const agent=record.agents[agentId];
+  if(!agent||!/^[a-f0-9]{64}$/.test(agent.hash))throw new Error("Brain task agent is not authorized.");
+  if(agent.revokedAt)throw new Error("Brain task agent capability revoked.");
+  if(!Number.isSafeInteger(agent.expiresAt)||Date.now()>=agent.expiresAt)throw new Error("Brain task agent capability expired.");
+  if(!crypto.timingSafeEqual(Buffer.from(sha(token),"hex"),Buffer.from(agent.hash,"hex")))throw new Error("Brain task agent capability mismatch.");
+  return agent;
+}
+export function authorizeBrainTaskAgent(owner:string,sessionId:string,taskId:string,agentId:string,token:unknown,configRoot?:string){
+  const {file}=location(owner,sessionId,taskId,configRoot);
+  if(!fs.existsSync(file))throw new Error("Brain task has no MCP agent capabilities; use local operator controls.");
+  requireValid(agentId,token,read(file));return true;
+}
+export function brainTaskCapabilityStatus(owner:string,sessionId:string,taskId:string,configRoot?:string){
+  const {file}=location(owner,sessionId,taskId,configRoot);
+  const record=read(file);
+  return Object.entries(record.agents).map(([agentId,value])=>({
+    agentId,expiresAt:new Date(value.expiresAt).toISOString(),
+    generation:value.generation,revoked:!!value.revokedAt,expired:Date.now()>=value.expiresAt,
+  }));
+}
+export function rotateBrainTaskAgentCredential(
+ owner:string,sessionId:string,taskId:string,agentId:string,
+ options:{currentCredential?:string;operatorApproved?:boolean;ttlMs?:number}={},configRoot?:string,
+){
+  const {dir,file}=location(owner,sessionId,taskId,configRoot),duration=ttl(options.ttlMs??DEFAULT_TTL_MS);
+  return withBrainSessionLock(dir,()=>{
+    const data=read(file),existing=data.agents[agentId];
+    if(!existing)throw new Error("Agent is not a member of this Brain task.");
+    if(!options.operatorApproved)requireValid(agentId,options.currentCredential,data);
+    const token=newToken(),now=Date.now();
+    data.agents[agentId]={hash:sha(token),issuedAt:now,expiresAt:now+duration,generation:existing.generation+1};
+    data.updatedAt=now;persist(file,data);
+    return {agentId,agentCredential:token,expiresAt:new Date(now+duration).toISOString(),generation:data.agents[agentId].generation};
+  });
+}
+export function revokeBrainTaskAgentCredential(
+ owner:string,sessionId:string,taskId:string,agentId:string,
+ options:{currentCredential?:string;operatorApproved?:boolean}={},configRoot?:string,
+){
+  const {dir,file}=location(owner,sessionId,taskId,configRoot);
+  return withBrainSessionLock(dir,()=>{
+    const data=read(file),existing=data.agents[agentId];
+    if(!existing)throw new Error("Agent is not a member of this Brain task.");
+    if(!options.operatorApproved)requireValid(agentId,options.currentCredential,data);
+    existing.revokedAt=Date.now();data.updatedAt=existing.revokedAt;persist(file,data);
+    return {agentId,revoked:true};
+  });
 }

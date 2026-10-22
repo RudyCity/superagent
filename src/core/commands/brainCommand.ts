@@ -11,6 +11,8 @@ import { getRootConfigDir } from "../config/paths.js";
 import { brainStorageUsage, previewBrainRetention, prepareBrainCleanup, confirmBrainCleanup } from "../brain/brainStorageManager.js";
 import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainRMemoryCandidate } from "../brain/brainIndex.js";
 import { promoteBrainDelegation } from "../brain/brainDelegationArtifacts.js";
+import { recoverBrainArtifactPromotion } from "../brain/brainArtifactTransaction.js";
+import { reconcileBrainSessionJobs } from "../brain/brainTaskRecovery.js";
 import { verifyBrainProject } from "../brain/brainProvenance.js";
 import { createBrainTask, listBrainTasks, claimBrainTask, checkpointBrainTask, transferBrainTask, updateBrainTask, resumeBrainTask, recordBrainTaskDelegation } from "../brain/brainTasks.js";
 
@@ -43,6 +45,16 @@ export const brainCommand: SlashCommand = {
         case "inspect": say(inspectBrainSession(owner, explicitSessionId || currentSessionId)); break;
         case "files": say(listBrainFiles(owner, explicitSessionId || currentSessionId)); break;
         case "task.list": say(listBrainTasks(owner, currentSessionId)); break;
+        case "task.reconcile": {
+          if(!currentSessionId)throw new Error("No active Brain session.");
+          say(await reconcileBrainSessionJobs(owner,currentSessionId));
+          break;
+        }
+        case "artifact.recover": {
+          if(!currentSessionId)throw new Error("No active Brain session.");
+          say(recoverBrainArtifactPromotion(owner,currentSessionId));
+          break;
+        }
         case "task.create": {
           if (!currentSessionId) throw new Error("No current Brain session.");
           const title = tokens.slice(1).join(" ");
@@ -166,7 +178,7 @@ export const brainCommand: SlashCommand = {
         }
         default:
           say("Usage: /brain create [sessionId] | inspect | list | files | metrics | resume [sessionId] | search <query> | annotate <artifacts/file> <summary> | promote <jobId> [filename] | remember <artifacts/file> | storage [sessionId] | retention [7|30|90] | clean <sessionId> | clean.confirm <sessionId> <challenge>\n" +
-              "/brain task.create <title> | task.list | task.claim <taskId> [agentId] | task.resume <taskId> | task.checkpoint <taskId> <agentId> <note> | task.transfer <taskId> <from> <to> | task.complete <taskId> [agentId]\n" +
+              "/brain task.create <title> | task.list | task.reconcile | artifact.recover | task.claim <taskId> [agentId] | task.resume <taskId> | task.checkpoint <taskId> <agentId> <note> | task.transfer <taskId> <from> <to> | task.complete <taskId> [agentId]\n" +
               "/brain delegate.start <agy|claude|codex> <prompt> | jobs | get <jobId> | tail <jobId> | cancel <jobId>\n" +
               "Alias: /scratch. All delegated files remain in the current session scratch until explicitly published.");
       }

@@ -15,6 +15,12 @@ function bindBrainToSession(agent: Agent): void {
   try {
     createBrainSession("local-cli", agent.sessionId);
     bindBrainProject("local-cli", agent.sessionId, agent.workingDirectory);
+    // Reconcile a bounded set of persisted Bridge jobs when the session
+    // reopens; never retry or spawn a new delegation implicitly.
+    const id=agent.sessionId;
+    void import("../brain/brainTaskRecovery.js").then(module=>{
+      module.recoverBrainSessionOnResume("local-cli",id);
+    }).catch(()=>{});
   } catch (error) {
     agent.writeToLogFile("WARN", `Brain workspace initialization failed: ${error instanceof Error ? error.message : String(error)}`);
   }
