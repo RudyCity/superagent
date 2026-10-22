@@ -121,8 +121,12 @@ async function setupBridge() {
       ws.on("close", () => { handshakeDone = true; clearTimeout(handshakeTimer); });
       ws.on("message", (raw: Buffer | string) => {
         if (!handshakeDone) return;
-        // After handshake, accept any frame as a benign echo.
-        try { ws.send(raw); } catch {}
+        // The handshake listener changes state before sibling listeners run
+        // for that same frame. Never echo handshake credentials back.
+        try {
+          if (JSON.parse(raw.toString())?.type === HANDSHAKE_TYPE) return;
+          ws.send(raw);
+        } catch { /* malformed post-auth frames are ignored */ }
       });
     });
     wss.on("listening", () => resolve());
