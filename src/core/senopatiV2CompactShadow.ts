@@ -16,6 +16,7 @@ import {
 } from "./senopatiV2Shadow.js";
 import { guardSenopatiV2Shadow } from "./senopatiV2Safety.js";
 import { validateSenopatiV2CompactCandidate } from "./senopatiV2CandidateValidation.js";
+import type { SenopatiV2CompactSnapshot } from "./senopatiV2CompactSnapshot.js";
 
 type Head = keyof typeof SENOPATI_V2_HEADS;
 const HEAD_ORDER: Head[] = ["domain", "intent", "action", "risk", "approval"];
@@ -82,6 +83,40 @@ export class SenopatiV2CompactShadow {
       }
     }
     // Do not retain payload, counts, or mutable cursors.
+  }
+
+  /**
+   * Returns copies of compiled arrays for an explicit, hash-bound cache build.
+   * Does not contain the original JSON record-feature objects.
+   */
+  toCompiledSnapshot(): SenopatiV2CompactSnapshot {
+    return {
+      features: [...this.featureIds.keys()],
+      starts: this.starts.slice(),
+      rowIds: this.rowIds.slice(),
+      weights: this.weights.slice(),
+      norms: this.norms.slice(),
+      labels: this.labels.slice(),
+      records: this.recordCount,
+    };
+  }
+
+  /**
+   * Call ONLY after external checksum, schema, array and registry SHA validation.
+   * Retains own arrays and never shares untrusted mutable buffer memory.
+   */
+  static fromTrustedCompiledSnapshot(s: SenopatiV2CompactSnapshot): SenopatiV2CompactShadow {
+    const instance = Object.create(SenopatiV2CompactShadow.prototype) as SenopatiV2CompactShadow;
+    Object.assign(instance, {
+      featureIds: new Map(s.features.map((feature, i) => [feature, i])),
+      starts: s.starts.slice(),
+      rowIds: s.rowIds.slice(),
+      weights: s.weights.slice(),
+      norms: s.norms.slice(),
+      labels: s.labels.slice(),
+      recordCount: s.records,
+    });
+    return instance;
   }
 
   predict(text: string, context = ""): SenopatiV2ShadowPrediction {

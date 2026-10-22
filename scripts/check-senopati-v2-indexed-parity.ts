@@ -11,9 +11,15 @@ const sets:string[]=[];
 for(let i=0;i<argv.length;i++)if(argv[i]==="--dataset"&&argv[i+1])sets.push(argv[i+1]);
 if(!sets.length)throw new Error("At least one explicit JSONL dataset required");
 const reference=loadShadowRegistry(registry,"reference").model;
-const engines: Array<"indexed"|"compact"> = argv.includes("--all")
+const engines: Array<"indexed"|"compact"|"compact-cached"> = argv.includes("--all")
   ? ["indexed","compact"] : [argv.includes("--compact") ? "compact" : "indexed"];
-const optimizedEngines=engines.map(name=>({name,model:loadShadowRegistry(registry,name).model}));
+if (argv.includes("--cached")) engines.push("compact-cached");
+const optimizedEngines=engines.map(name=>{
+  const loaded=loadShadowRegistry(registry,name);
+  if(name==="compact-cached" && loaded.cacheStatus!=="hit")
+    throw new Error("Cached parity requires a real compiled-cache hit, not a reference fallback");
+  return {name,model:loaded.model};
+});
 const heads=["domain","intent","action","risk","approval"] as const;
 let rows=0,comparisons=0,largestDifference=0;
 for(const filename of sets){

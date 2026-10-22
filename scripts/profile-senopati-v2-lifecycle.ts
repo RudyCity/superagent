@@ -14,8 +14,8 @@ import { performance } from "node:perf_hooks";
 import { loadShadowRegistry } from "../src/core/senopatiV2CandidateRegistry.js";
 import { assessSelectiveShadow } from "../src/core/senopatiV2SelectiveDecision.js";
 
-type Engine = "reference" | "indexed" | "compact";
-const ENGINES: Engine[] = ["reference","indexed","compact"];
+type Engine = "reference" | "indexed" | "compact" | "compact-cached";
+const ENGINES: Engine[] = ["reference","indexed","compact","compact-cached"];
 function getArg(name:string, fallback?:string):string {
   const i=process.argv.indexOf(name);
   if(i<0){
@@ -49,7 +49,7 @@ async function child(){
   const heterogeneous=process.argv.includes("--heterogeneous");
   const before=markPhase("before_load");
   const started=performance.now();
-  const {model,policy}=loadShadowRegistry(registry,engine);
+  const {model,policy,cacheStatus}=loadShadowRegistry(registry,engine);
   const loadMs=performance.now()-started;
   const afterLoad=markPhase("after_load");
   const dataStat=fs.statSync(dataset);
@@ -106,7 +106,7 @@ async function child(){
   for(const p of allPhases)maxSampledRss=Math.max(maxSampledRss,p.rssBytes);
   const peakResource=process.resourceUsage().maxRSS;
   const result={
-    engine,processed,heterogeneous,allAbstained:true,automaticRoutingEnabled:false,
+    engine,cacheStatus,processed,heterogeneous,allAbstained:true,automaticRoutingEnabled:false,
     loadingMs:loadMs,computeMs:elapsedMs,throughputPerSec:processed/(elapsedMs/1000),
     resourceMaxRssRaw:peakResource,
     // Node/Bun process.resourceUsage reports maxRSS in KiB on this Win64 environment.
@@ -161,6 +161,7 @@ async function main(){
     const afterGcHeap=rows.filter(r=>r.explicitGcRequested).map(r=>r.phases.find((p:{name:string})=>p.name==="after_explicit_gc").heapUsedBytes).sort((a,b)=>a-b);
     return {
       engine,runs:rows.length,
+      cacheStatuses:rows.map(r=>r.cacheStatus),
       medianLoadedHeapMiB:loadedHeap[Math.floor(loadedHeap.length/2)]/1048576,
       medianAfterGcHeapMiB:afterGcHeap.length?afterGcHeap[Math.floor(afterGcHeap.length/2)]/1048576:null,
       medianExplicitGcMs:gcSamples.length?gcSamples[Math.floor(gcSamples.length/2)]:null,
