@@ -16,6 +16,8 @@ const mockState = vi.hoisted(() => ({
   addMemoryCalls: 0,
   lastAddedMemory: null as null | Record<string, unknown>,
   records: new Map<string, Record<string, any>>(),
+  failSecondConversationOnce: false,
+  conversationWrites: 0,
 }));
 
 vi.mock("../src/core/config/jsonConfig.js", () => ({
@@ -39,6 +41,9 @@ vi.mock("@huggingface/transformers", () => ({
 
 vi.mock("r-memory", () => {
   class MockRMemory {
+    public provider = {
+      embedTexts: async (texts: string[]) => texts.map(() => Array(384).fill(0.25)),
+    };
     public db = {
       getAll: () => Array.from(mockState.records.values()),
       getById: (id: string) => mockState.records.get(id) || null,
@@ -55,6 +60,13 @@ vi.mock("r-memory", () => {
 
     async addMemory(memory: Record<string, any>) {
       mockState.addMemoryCalls += 1;
+      if (String(memory.id).startsWith("conv_")) {
+        mockState.conversationWrites += 1;
+        if (mockState.failSecondConversationOnce && mockState.conversationWrites === 2) {
+          mockState.failSecondConversationOnce = false;
+          throw new Error("simulated failure after first committed message");
+        }
+      }
       mockState.lastAddedMemory = memory;
       mockState.records.set(String(memory.id), memory);
     }
@@ -93,6 +105,82 @@ describe("RMemory initialization recovery", () => {
     mockState.addMemoryCalls = 0;
     mockState.lastAddedMemory = null;
     mockState.records.clear();
+    mockState.conversationWrites = 0;
+    mockState.failSecondConversationOnce = false;
+  });
+
+  it("redacts credentials before they enter atomic memory and conversation vectors", async () => {
+    const { getRMemoryClient, resetRMemoryInstance } = await import("../src/core/rmemoryUtil.js");
+    resetRMemoryInstance();
+    mockState.constructorFailsOnce = false;
+    const client = getRMemoryClient();
+    const secret = "sk-proj-abcdefghijklmnop";
+    await client.updateAtomic({ id: "secret-test", content: "[global] secret is " + secret,
+      metadata: { scope: "global", type: "memory" } });
+    await client.addConversation({ session_id: "secrets", projectId: "p_a", messages: [
+      { role: "user", content: "my secret: " + secret, timestamp: "2026-10-22T00:00:00.000Z" },
+    ] });
+    const saved = [...mockState.records.values()].filter((v: any) =>
+      v.id === "secret-test" || v.metadata?.session === "secrets");
+    expect(saved).toHaveLength(2);
+    expect(saved.every((v: any) => !v.content.includes(secret))).toBe(true);
+    expect(saved.every((v: any) => v.content.includes("[REDACTED]"))).toBe(true);
+  });
+
+  it("initializes a single vector index for simultaneous memory callers", async () => {
+    const { getRMemoryClient, resetRMemoryInstance } = await import("../src/core/rmemoryUtil.js");
+    resetRMemoryInstance();
+    mockState.constructorFailsOnce = false;
+    const client = getRMemoryClient();
+    await Promise.all([
+      client.updateAtomic({ id: "parallel-a", content: "first", metadata: { scope: "global", type: "memory" } }),
+      client.updateAtomic({ id: "parallel-b", content: "second", metadata: { scope: "global", type: "memory" } }),
+      client.updateAtomic({ id: "parallel-c", content: "third", metadata: { scope: "global", type: "memory" } }),
+    ]);
+    expect(mockState.constructorCalls).toBe(1);
+    expect(mockState.records.has("parallel-a")).toBe(true);
+    expect(mockState.records.has("parallel-b")).toBe(true);
+    expect(mockState.records.has("parallel-c")).toBe(true);
+  });
+
+  it("deduplicates conversation writes across retries and isolates project scopes without a gateway key", async () => {
+    const { getRMemoryClient, resetRMemoryInstance } = await import("../src/core/rmemoryUtil.js");
+    resetRMemoryInstance();
+    mockState.constructorFailsOnce = false;
+    mockSettings.rmemoryGatewayApiKey = "";
+    const client = getRMemoryClient();
+    const messages = [
+      { role: "user" as const, content: "same user question", timestamp: "2026-10-22T00:00:00.000Z" },
+      { role: "assistant" as const, content: "answer", timestamp: "2026-10-22T00:00:01.000Z" },
+    ];
+    const first = await client.addConversation({ session_id: "session-A", projectId: "p_a", messages });
+    const second = await client.addConversation({ session_id: "session-A", projectId: "p_a", messages });
+    expect(first.accepted_ids).toEqual(second.accepted_ids);
+    expect(mockState.conversationWrites).toBe(2);
+    expect(first.total_count).toBe(2);
+    const other = await client.addConversation({ session_id: "session-A", projectId: "p_b", messages });
+    expect(other.accepted_ids[0]).not.toEqual(first.accepted_ids[0]);
+    expect(mockState.conversationWrites).toBe(4);
+  });
+
+  it("resumes a partly failed conversation batch without duplicating committed messages", async () => {
+    const { getRMemoryClient, resetRMemoryInstance } = await import("../src/core/rmemoryUtil.js");
+    resetRMemoryInstance();
+    mockState.constructorFailsOnce = false;
+    const client = getRMemoryClient();
+    mockState.failSecondConversationOnce = true;
+    const args = {
+      session_id: "session-partial",
+      projectId: "p_partial",
+      messages: [
+        { role: "user" as const, content: "first", timestamp: "2026-10-22T00:00:00.000Z" },
+        { role: "assistant" as const, content: "second", timestamp: "2026-10-22T00:00:01.000Z" },
+      ],
+    };
+    await expect(client.addConversation(args)).rejects.toThrow(/simulated failure/);
+    const afterRetry = await client.addConversation(args);
+    expect(afterRetry.accepted_ids).toHaveLength(2);
+    expect(Array.from(mockState.records.values()).filter((r) => r.metadata?.session === "session-partial")).toHaveLength(2);
   });
 
   it("inspects, exports and deletes atomic memories without crossing project scope", async () => {

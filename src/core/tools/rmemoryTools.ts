@@ -3,6 +3,11 @@ import { Tool } from "./types.js";
 import { getRMemoryClient, getRMemoryDiagnostics, getRMemoryProjectId } from "../rmemoryUtil.js";
 import { createMemoryRecordMetadata } from "../memoryRecord.js";
 import { assessMemoryFreshness, previewMemoryRetention, detectScopedMemoryConflicts } from "../memoryLifecycle.js";
+import { getMemoryPerformanceSnapshot } from "../memoryTelemetry.js";
+import { listMemoryArchiveBackups, scanMemoryArchive } from "../memoryArchiveRecovery.js";
+import { suggestMemoryCandidates } from "../memoryIntelligence.js";
+import path from "node:path";
+import os from "node:os";
 
 // Helper to get MemoryClient using the active global settings
 function getClient() {
@@ -73,7 +78,7 @@ export const rmemoryStatusTool: Tool = {
   parameters: { type: "object", properties: {}, required: [] },
   async execute() {
     try {
-      return JSON.stringify(getRMemoryDiagnostics(), null, 2);
+      return JSON.stringify({ ...getRMemoryDiagnostics(), performance: getMemoryPerformanceSnapshot() }, null, 2);
     } catch {
       return JSON.stringify({
         initializationState: "degraded",
@@ -275,7 +280,7 @@ export const rmemoryConversationSearchTool: Tool = {
       },
       projectOnly: {
         type: "boolean",
-        description: "Defaults to true and restricts search to the active workspace project. Set false only when you explicitly need conversation history across projects.",
+        description: "Project-only search is mandatory. Cross-project history is not exposed by this tool; change to an authorized workspace to search it.",
       },
     },
     required: ["query"],
@@ -283,20 +288,20 @@ export const rmemoryConversationSearchTool: Tool = {
   async execute(args, cwd) {
     const query = String(args.query || "");
     const limit = Number(args.limit) || 5;
-    const projectOnly = args.projectOnly !== false;
+    if (args.projectOnly === false) {
+      return "Cross-project conversation search is denied. Select an authorized workspace and search within that project.";
+    }
     const projectId = getRMemoryProjectId(cwd);
     const client = getClient();
 
     try {
-      const res = await client.searchConversation({ query, limit: limit * 2, ...(projectOnly ? { projectId } : {}) });
+      const res = await client.searchConversation({ query, limit: limit * 2, projectId });
       if (!res.messages || res.messages.length === 0) {
         return "No matching conversation history found.";
       }
 
       let messages = res.messages;
-      if (projectOnly) {
-        messages = messages.filter((message) => message.project_id === projectId);
-      }
+      messages = messages.filter((message) => message.project_id === projectId);
 
       messages = messages.slice(0, limit);
       if (messages.length === 0) {
@@ -780,5 +785,82 @@ Evidence check: ${summary.validationStatus}`, ["Yes", "No"]); }
       const saved = await client.updateAtomic({ id, content, metadata });
       return JSON.stringify({ status: "saved_candidate", id: saved.id, scope: "project", projectId, validationStatus: "candidate", updatedAt: saved.updated_at, evidenceCount: evidence.length, message: "Saved as candidate/unverified. Use rmemory_review to verify it explicitly." }, null, 2);
     } catch (err) { return `Task summary workflow failed: ${formatError(err)}. No overwrite or automatic promotion was performed.`; }
+  },
+};
+
+/**
+ * Archive recovery requires a conscious owner action and never deletes backup
+ * files. Preview is read-only, apply is bounded, scoped and conflict-safe.
+ */
+export const rmemoryArchiveRecoveryTool: Tool = {
+  name: "rmemory_archive_recovery",
+  description: "List/preview old RMemory embedding-model archives, or selectively re-embed eligible atomic memories with interactive owner confirmation. Original backups remain untouched.",
+  parameters: { type: "object", properties: {
+    action: { type: "string", enum: ["list", "preview", "apply"] },
+    archive: { type: "string", description: "Backup name from list, e.g. backup-1234-1792600000000." },
+    fingerprint: { type: "string", description: "Required exact fingerprint from preview for apply." },
+    limit: { type: "number", description: "Records per reviewed batch, maximum 250." },
+  }, required: ["action"] },
+  async execute(args, cwd) {
+    const { agentLocalStorage } = await import("../agent.js");
+    const actor = agentLocalStorage.getStore();
+    if (!canManagePersistentMemory(actor?.tier)) return "Error: archive recovery requires owner-level agent privileges.";
+    const archiveRoot = path.join(os.homedir(), ".superagent-r", "rmemory");
+    const projectId = getRMemoryProjectId(cwd);
+    try {
+      if (args.action === "list") return JSON.stringify({
+        archives: listMemoryArchiveBackups(archiveRoot), mode: "read_only",
+      }, null, 2);
+      if (typeof args.archive !== "string" || !args.archive)
+        return "Error: select an archive from the list first.";
+      const limit = Math.max(1, Math.min(250, Math.floor(Number(args.limit) || 50)));
+      const preview = scanMemoryArchive(archiveRoot, args.archive, projectId, limit);
+      const summary = {
+        archive: preview.archive, modelName: preview.modelName, dimensions: preview.dimensions,
+        total: preview.total, eligible: preview.eligible, ambiguous: preview.ambiguous,
+        inBatch: preview.candidates.length, fingerprint: preview.fingerprint,
+        items: preview.candidates.map(c => ({ id: c.id, scope: c.metadata.scope,
+          contentPreview: c.content.slice(0, 180) })),
+      };
+      if (args.action !== "apply") return JSON.stringify({ mode: "preview_only", ...summary }, null, 2);
+      if (args.fingerprint !== preview.fingerprint)
+        return "Error: preview fingerprint missing or changed. Re-run preview; nothing was written.";
+      const ask = (actor as any)?.onQuestion;
+      if (typeof ask !== "function") return "Error: interactive owner confirmation required; nothing changed.";
+      const answer = await ask(`Re-embed up to ${preview.candidates.length} scoped atomic memories from archive ${preview.archive}? The original backup stays intact; existing IDs will not be overwritten.`, ["Yes", "No"]);
+      if (answer !== "Yes") return "Archive recovery cancelled; no records changed.";
+      const client = getClient();
+      let inserted = 0, existing = 0, failed = 0;
+      for (const item of preview.candidates) {
+        try {
+          const scope = item.metadata.scope as "project" | "global";
+          const logicalId = item.metadata.logicalId
+            || (scope === "project" && item.id.startsWith(projectId + ":") ? item.id.slice(projectId.length + 1) : item.id);
+          if (await client.inspectAtomic({ id: logicalId, scope, projectId })) { existing++; continue; }
+          await client.updateAtomic({ id: logicalId, content: item.content,
+            metadata: { ...item.metadata, recoverySource: "archived-index", recoveryArchive: preview.archive } });
+          inserted++;
+        } catch { failed++; }
+      }
+      return JSON.stringify({ mode: "applied", archive: preview.archive,
+        inserted, existing, failed, backupPreserved: true, remaining: Math.max(0, preview.eligible - preview.candidates.length) }, null, 2);
+    } catch (error) {
+      return "Archive recovery failed safely: " + formatError(error);
+    }
+  },
+};
+
+
+/** Read-only, owner-reviewable memory suggestions; never auto-promotes writes. */
+export const rmemorySuggestTool: Tool = {
+  name: "rmemory_suggest",
+  description: "Extract up to 8 conservative candidate facts, decisions and preferences from explicit text. Preview only; cannot save or verify memories automatically.",
+  parameters: { type: "object", properties: {
+    text: { type: "string", description: "Text supplied for candidate extraction." },
+    limit: { type: "number", description: "Maximum suggestions (default 8)." },
+  }, required: ["text"] },
+  async execute(args) {
+    return JSON.stringify({ mode: "preview_only", requiresOwnerReview: true,
+      candidates: suggestMemoryCandidates(String(args.text || "").slice(0, 12000), Number(args.limit) || 8) }, null, 2);
   },
 };

@@ -65,8 +65,13 @@ describe("checkAndPerformDbMigration", () => {
     // Perform migration to 768 dims (e.g. nomic model)
     checkAndPerformDbMigration(testDir, "nomic-ai/nomic-embed-text-v1.5", 768);
 
-    // Dummy DB file should be wiped
+    // Active index is replaced, but the original index must survive in backup.
     expect(fs.existsSync(dbFile)).toBe(false);
+    const archived = path.join(testDir, ".index-backups");
+    const backup = path.join(archived, fs.readdirSync(archived)[0]);
+    expect(fs.readFileSync(path.join(backup, "vectors.db"), "utf-8")).toBe("dummy db content");
+    expect(JSON.parse(fs.readFileSync(path.join(backup, "metadata.json"), "utf-8")).modelName)
+      .toBe("Xenova/all-MiniLM-L6-v2");
     expect(fs.readFileSync(personaFile, "utf-8")).toBe("Keep user persona");
     expect(fs.readFileSync(path.join(scenariosDir, "style.md"), "utf-8")).toBe("Keep scenario");
     expect(fs.readFileSync(notesFile, "utf-8")).toBe("Keep unknown files");
@@ -110,6 +115,10 @@ describe("checkAndPerformDbMigration", () => {
 
     expect(fs.readFileSync(dbFile, "utf-8")).toBe("healthy replacement index");
     expect(JSON.parse(fs.readFileSync(metadataPath, "utf-8"))).toEqual({ modelName: "new-model", dimensions: 768 });
+    const archived = path.join(testDir, ".index-backups");
+    const backup = path.join(archived, fs.readdirSync(archived)[0]);
+    expect(fs.readFileSync(path.join(backup, "vectors.db"), "utf-8")).toBe("old vector index");
+    expect(JSON.parse(fs.readFileSync(path.join(backup, "metadata.json"), "utf-8"))).toEqual({ modelName: "old-model", dimensions: 384 });
   });
 
   it("should preserve DB files when model and dimensions match", () => {
@@ -160,6 +169,24 @@ describe("checkAndPerformDbMigration", () => {
     }
 
     expect(() => resolveScenarioPath(dataDir, "scene_blocks/linked.md")).toThrow();
+  });
+
+  it("reuses vector embeddings across batch duplicates and single-query lookups", async () => {
+    const provider = new OptimizedLocalTextEmbeddingProvider({ modelName: "Xenova/all-MiniLM-L6-v2" });
+    const extractor = vi.fn(async (inputs: string[] | string) => {
+      const list = Array.isArray(inputs) ? inputs : [inputs];
+      return { data: new Float32Array(list.length * provider.dimensions).fill(0.5), dispose: vi.fn() };
+    });
+    const load = vi.spyOn(provider as any, "getExtractor").mockResolvedValue(extractor);
+    const first = await provider.embedTexts(["cache-test-one-1022", "cache-test-one-1022", "cache-test-two-1022"]);
+    expect(first).toHaveLength(3);
+    expect(first[0]).toEqual(first[1]);
+    expect(extractor).toHaveBeenCalledTimes(1);
+    expect(extractor.mock.calls[0][0]).toHaveLength(2);
+    const again = await provider.embedText("cache-test-one-1022");
+    expect(again).toEqual(first[0]);
+    expect(extractor).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledTimes(1);
   });
 
   it("propagates embedding failures instead of returning substitute vectors and can retry", async () => {

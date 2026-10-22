@@ -11,6 +11,8 @@ import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import { fileURLToPath } from "url";
 import { spawnRmemoryGateway } from "../rmemorySetup.js";
+import { getRMemoryDiagnostics } from "../rmemoryUtil.js";
+import { getMemoryPerformanceSnapshot } from "../memoryTelemetry.js";
 import { execa } from "execa";
 import net from "net";
 
@@ -207,14 +209,16 @@ export const settingsCommand: SlashCommand = {
         `│ • Classifier Threshold: ${s.classifierConfidenceThreshold ?? "high"}`,
         `│ • Advisor Active      : ${s.enableAdvisor !== false ? "ENABLED" : "DISABLED"}  warn=${s.advisorWarningThreshold ?? 3}  pause=${s.advisorPauseThreshold ?? 5}  error=${s.advisorErrorThreshold ?? 5}  adaptive=${s.advisorAdaptiveScaling !== false ? "on" : "off"}  pattern=${s.advisorPatternMemory !== false ? "on" : "off"}`,
         `│ • RMemory Active     : ${s.enableRmemory ? "ENABLED" : "DISABLED"}`,
-        `│ • RMemory Provider   : ${s.rmemoryEmbeddingProvider || "local"}`,
-        `│ • RMemory Model      : ${s.rmemoryEmbeddingProvider === "local" ? "nomic-embed-text-v1.5" : (s.rmemoryEmbeddingModel || "text-embedding-3-small")} (${s.rmemoryEmbeddingProvider === "local" ? 768 : (s.rmemoryEmbeddingDimensions || 1536)} dims)`,
+        `│ • RMemory Provider   : ${getRMemoryDiagnostics().provider}`,
+        `│ • RMemory Model      : ${getRMemoryDiagnostics().modelName} (${getRMemoryDiagnostics().dimensions} dims)`,
         "│ ",
         "│ SYSTEM SERVICES STATUS",
         `│ • SuperAgent Server  : ${isServerOnline ? "ONLINE" : "OFFLINE"} (port 7888)`,
         `│ • Chrome Remote WSS  : ${isChromeBridgeOnline ? "ONLINE" : "OFFLINE"} (port 9223)${chromeConnected ? ` [CONNECTED${chromeMeta}]` : ""}`,
-        `│ • RMemory Gateway    : ${s.enableRmemory ? "ONLINE" : "OFFLINE"} (Transcript Memory Database)`,
-        `│ • Local Embedding    : ${s.enableRmemory ? "ONLINE" : "OFFLINE"} (nomic-embed-text-v1.5 via Transformers.js)`,
+        `│ • RMemory Index      : ${!s.enableRmemory ? "DISABLED" : getRMemoryDiagnostics().degraded ? "DEGRADED" : getRMemoryDiagnostics().indexReady ? "ONLINE" : "NOT INITIALIZED"} (Local storage)`,
+        `│ • Embedding Model    : ${getRMemoryDiagnostics().modelName} (${getRMemoryDiagnostics().provider})`,
+        `│ • RMemory Queries    : ${getMemoryPerformanceSnapshot().searches} (p95 ${getMemoryPerformanceSnapshot().latencyMs.p95 ?? "-"} ms)`,
+        `│ • RMemory Cache Hits : ${getMemoryPerformanceSnapshot().cacheHits} (dedup ${getMemoryPerformanceSnapshot().skippedDuplicates})`,
         `│ • Local Router       : ${s.classifierEnabled !== false ? "ONLINE" : "OFFLINE"} (Senopati System-1 Native ONNX)`,
         "│ ",
         ...sessionLines,

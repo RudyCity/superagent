@@ -125,7 +125,10 @@ describe("Hermes skill learning through real MemoryClient adapter (offline fixtu
     expect(searchB.items).toHaveLength(0);
     const recall = filterEligibleMemoryRecords(searchA.items, { projectId: projectIdA });
     expect(recall.items).toHaveLength(0);
-    expect(recall.withheldCount).toBe(1);
+    // v2 now withholds unsafe memories before top-K, so downstream governance
+    // sees an already-clean result, not the quarantined raw candidate.
+    expect(searchA.items).toHaveLength(0);
+    expect(recall.withheldCount).toBe(0);
   });
 
   it("preserves owner review and prevents duplicate writes through the adapter", async () => {
@@ -163,7 +166,7 @@ describe("Hermes skill learning through real MemoryClient adapter (offline fixtu
     expect(await client.inspectAtomic({ id: result.memoryId!, scope: "project", projectId: getRMemoryProjectId(workA) })).toBeNull();
   });
 
-  it("fails closed without a gateway key without modifying stored data", async () => {
+  it("permits local memory storage without requiring an unrelated HTTP gateway key", async () => {
     state.key = "";
     const { getRMemoryClient } = await import("../src/core/rmemoryUtil.js");
     const noKeyClient = getRMemoryClient();
@@ -171,7 +174,7 @@ describe("Hermes skill learning through real MemoryClient adapter (offline fixtu
     await expect(bridgeRepeatedSkillFailures({
       workspacePath: workA, jobId: "job-smoke", pinnedSkillVersion: version,
       runs: failures(workA), client: noKeyClient,
-    })).rejects.toThrow(/API key is not configured/i);
-    expect(state.writes).toBe(previousWrites);
+    })).resolves.toMatchObject({ status: "created" });
+    expect(state.writes).toBe(previousWrites + 1);
   });
 });

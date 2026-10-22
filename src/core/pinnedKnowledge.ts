@@ -384,9 +384,9 @@ export async function searchKnowledge(
   const settings = getSettings();
   if (settings.enableRmemory) {
     try {
-      const { getRMemoryClient } = await import("./rmemoryUtil.js");
+      const { getRMemoryClient, getRMemoryProjectId } = await import("./rmemoryUtil.js");
       const client = getRMemoryClient(3000);
-      const searchRes = await client.searchAtomic({ query, limit: limit * 2 });
+      const searchRes = await client.searchAtomic({ query, limit: limit * 2, projectId: getRMemoryProjectId(options?.workingDirectory || process.cwd()) });
       const items = searchRes.items || [];
       const matchedIds = items
         .filter((item) => item.id.startsWith("pinned-knowledge-"))

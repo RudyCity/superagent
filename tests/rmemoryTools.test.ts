@@ -95,6 +95,26 @@ describe("RMemory Tools", () => {
     expect(JSON.stringify(result)).not.toMatch(/api.?key|Bearer|C:\\\\|\/home\//i);
   });
 
+  it("denies unapproved cross-project conversation searches without touching the client", async () => {
+    const blocked = await rmemoryConversationSearchTool.execute(
+      { query: "private history", projectOnly: false }, "C:/workspace/project-a");
+    expect(blocked).toContain("denied");
+    expect(mockSearchConversation).not.toHaveBeenCalled();
+  });
+
+  it("rejects leaked foreign project rows even if search backend returns them", async () => {
+    const workingDir = "C:/workspace/project-a";
+    const projectId = rmemoryUtilModule.getRMemoryProjectId(workingDir);
+    mockSearchConversation.mockResolvedValue({ messages: [
+      { content: "foreign secret", role: "user", project_id: "p_some_other" },
+      { content: "my history", role: "user", project_id: projectId, timestamp: new Date().toISOString() },
+    ] });
+    const result = await rmemoryConversationSearchTool.execute({ query: "history" }, workingDir);
+    expect(result).toContain("my history");
+    expect(result).not.toContain("foreign secret");
+    expect(mockSearchConversation).toHaveBeenCalledWith(expect.objectContaining({ projectId }));
+  });
+
   it("defaults legacy memory migration to a read-only preview for an authorized agent", async () => {
     const { agentLocalStorage } = await import("../src/core/agent.js");
     mockMigrateLegacyAtomicMemories.mockResolvedValue({ dryRun: true, scanned: 4, candidates: 1, migrated: 0, skipped: 0, failed: 0, items: [{ id: "legacy-note", scope: "project", status: "would_migrate" }] });

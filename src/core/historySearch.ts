@@ -173,9 +173,10 @@ export async function searchHistory(
       onDebug("[DEBUG] RMemory is active. Performing semantic history search.");
     }
     try {
-      const { getRMemoryClient } = await import("./rmemoryUtil.js");
+      const { getRMemoryClient, getRMemoryProjectId, getRMemorySessionKey } = await import("./rmemoryUtil.js");
       const client = getRMemoryClient(3000);
-      const res = await client.searchConversation({ query, limit: 30 });
+      // crossSession broadens sessions within the workspace, not project authorization.
+      const res = await client.searchConversation({ query, limit: 30, projectId: getRMemoryProjectId(process.cwd()) });
       const messages = res.messages || [];
       if (messages.length > 0) {
         const grouped = new Map<string, typeof messages>();
@@ -189,7 +190,9 @@ export async function searchHistory(
         }
 
         const sessions = listHistorySessions(isMulti, crossSession);
-        const sessionMap = new Map(sessions.map(s => [s.id, s]));
+        const sessionMap = new Map(sessions.flatMap(s => [
+          [s.id, s], [getRMemorySessionKey(s.filePath), s],
+        ] as const));
 
         const lines: string[] = [
           "----------------------------------------------------------------------",
@@ -485,71 +488,119 @@ export async function searchHistory(
 }
 
 export async function syncAllHistoryToRMemory(): Promise<void> {
-  const settings = getSettings();
-  if (!settings.enableRmemory) return;
+  if (!getSettings().enableRmemory) return;
+  const { getRMemoryClient, getRMemoryProjectId, getRMemorySessionKey } = await import("./rmemoryUtil.js");
+  const { getRootConfigDir } = await import("./config/paths.js");
+  const { loadSessionFromDb } = await import("./storage/historyDb.js");
+  const { createHash } = await import("node:crypto");
+  const { redactMemorySecrets } = await import("./memoryLifecycle.js");
+  const rmemoryDir = path.join(getRootConfigDir(), "rmemory");
+  fs.mkdirSync(rmemoryDir, { recursive: true });
+  const registryPath = path.join(rmemoryDir, "synced_sessions.json");
+  const lockPath = path.join(rmemoryDir, "history-sync.lock");
+
+  // Independent CLI instances may start at the same time. Only one backfill
+  // runs at once; the next startup can resume where the previous one stopped.
+  let lockFd: number | undefined;
+  try {
+    lockFd = fs.openSync(lockPath, "wx", 0o600);
+    fs.writeSync(lockFd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+  } catch (error: any) {
+    if (error?.code !== "EEXIST") throw error;
+    try {
+      const owner = JSON.parse(fs.readFileSync(lockPath, "utf8")) as { pid?: number };
+      if (typeof owner.pid === "number" && owner.pid > 0) {
+        try { process.kill(owner.pid, 0); return; }
+        catch (err: any) { if (err?.code !== "ESRCH") return; }
+      } else { return; }
+      fs.unlinkSync(lockPath);
+      lockFd = fs.openSync(lockPath, "wx", 0o600);
+      fs.writeSync(lockFd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+    } catch {
+      // A crashed process can leave an empty/malformed lock before writing PID.
+      // Only recover an old abandoned lock; never reclaim a fresh unknown owner.
+      try {
+        if (Date.now() - fs.statSync(lockPath).mtimeMs < 30 * 60 * 1000) return;
+        fs.unlinkSync(lockPath);
+        lockFd = fs.openSync(lockPath, "wx", 0o600);
+        fs.writeSync(lockFd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+      } catch { return; }
+    }
+  }
 
   try {
-    const { getRMemoryClient } = await import("./rmemoryUtil.js");
-    const { getRootConfigDir } = await import("./config/paths.js");
-    const client = getRMemoryClient(5000);
-
-    const rmemoryDir = path.join(getRootConfigDir(), "rmemory");
-    if (!fs.existsSync(rmemoryDir)) {
-      fs.mkdirSync(rmemoryDir, { recursive: true });
-    }
-    const registryPath = path.join(rmemoryDir, "synced_sessions.json");
-    let syncedIds: string[] = [];
+    let registry: { version: number; sessions: Record<string, string>; cursors: Record<string, { count: number; prefixHash: string }> } =
+      { version: 2, sessions: {}, cursors: {} };
     if (fs.existsSync(registryPath)) {
       try {
-        const raw = fs.readFileSync(registryPath, "utf-8");
-        syncedIds = JSON.parse(raw);
-        if (!Array.isArray(syncedIds)) syncedIds = [];
-      } catch {
-        syncedIds = [];
-      }
+        const parsed: unknown = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed) &&
+            (parsed as any).version === 2 && (parsed as any).sessions &&
+            typeof (parsed as any).sessions === "object" && !Array.isArray((parsed as any).sessions)) {
+          registry = { version: 2, sessions: (parsed as any).sessions,
+            cursors: (parsed as any).cursors && typeof (parsed as any).cursors === "object" &&
+              !Array.isArray((parsed as any).cursors) ? (parsed as any).cursors : {} };
+        }
+        // Legacy arrays only marked entire sessions; reindex with scoped IDs.
+      } catch { console.warn("[RMemory] Registry unreadable; rechecking sessions idempotently."); }
     }
-
-    const singleSessions = listHistorySessions(false, true);
-    const multiSessions = listHistorySessions(true, true);
-    const allSessions = [...singleSessions, ...multiSessions];
-
-    let changed = false;
-    for (const session of allSessions) {
-      if (syncedIds.includes(session.id)) continue;
-
+    const client = getRMemoryClient(5000);
+    let importedSessions = 0;
+    let unchangedSessions = 0;
+    let unsafeScopeSessions = 0;
+    let failedSessions = 0;
+    const sessions = new Map([...listHistorySessions(false, true), ...listHistorySessions(true, true)]
+      .map((session) => [session.id, session] as const));
+    for (const session of sessions.values()) {
       try {
-        const { loadSessionFromDb } = await import("./storage/historyDb.js");
-        const dbRes = loadSessionFromDb(session.id);
-        const messages = dbRes.messages || [];
-
-        const filteredMsgs = messages
-          .filter((m) => (m.role === "user" || m.role === "assistant"))
+        const stored = loadSessionFromDb(session.id);
+        if (!stored.session?.workingDirectory) {
+          unsafeScopeSessions++;
+          console.warn(`[RMemory] Skipping session ${session.id}: missing working directory; scope cannot be proven.`);
+          continue;
+        }
+        const projectId = getRMemoryProjectId(stored.session.workingDirectory);
+        const sessionId = getRMemorySessionKey(stored.session.filePath || session.filePath || null);
+        const filtered = (stored.messages || [])
+          .filter((m) => m.role === "user" || m.role === "assistant")
           .map((m) => {
             const content = typeof m.content === "string" ? m.content.trim() : String(m.content || "");
             return {
               role: m.role as "user" | "assistant",
-              content: content.length > 0 ? content : "[empty message]",
-              timestamp: new Date(m.timestamp || Date.now()).toISOString(),
+              content: content || "[empty message]",
+              timestamp: new Date(m.timestamp || 0).toISOString(),
             };
           });
-
-        if (filteredMsgs.length > 0) {
-          await client.addConversation({
-            session_id: session.id,
-            messages: filteredMsgs,
-          });
-        }
-        syncedIds.push(session.id);
-        changed = true;
-      } catch (err) {
-        // Skip
+        // Fingerprint contents, not just session ID or message count; edits
+        // and newly appended messages must be imported on a later startup.
+        const key = `${projectId}:${session.id}`;
+        const fingerprint = createHash("sha256").update(JSON.stringify([sessionId, filtered])).digest("hex");
+        if (registry.sessions[key] === fingerprint) { unchangedSessions++; continue; }
+        const previousCursor = registry.cursors[key];
+        const prefixHash = (items: typeof filtered) => createHash("sha256").update(JSON.stringify(items)).digest("hex");
+        const appendedOnly = previousCursor && Number.isInteger(previousCursor.count) &&
+          previousCursor.count >= 0 && previousCursor.count <= filtered.length &&
+          previousCursor.prefixHash === prefixHash(filtered.slice(0, previousCursor.count));
+        const toImport = appendedOnly ? filtered.slice(previousCursor.count) : filtered;
+        // Historical edits are fully rechecked, while pure appends only send
+        // the delta; deterministic message IDs make interrupted batches safe.
+        if (toImport.length > 0) await client.addConversation({ session_id: sessionId, projectId, messages: toImport });
+        registry.sessions[key] = fingerprint;
+        registry.cursors[key] = { count: filtered.length, prefixHash: prefixHash(filtered) };
+        const temp = `${registryPath}.${process.pid}.tmp`;
+        fs.writeFileSync(temp, JSON.stringify(registry), { encoding: "utf8", mode: 0o600 });
+        fs.renameSync(temp, registryPath);
+        importedSessions++;
+      } catch (error) {
+        failedSessions++;
+        console.warn(`[RMemory] History sync failed for ${session.id}: ${redactMemorySecrets(error instanceof Error ? error.message : String(error)).slice(0, 300)}`);
       }
     }
-
-    if (changed) {
-      fs.writeFileSync(registryPath, JSON.stringify(syncedIds, null, 2), "utf-8");
+    console.info(`[RMemory] History backfill: imported=${importedSessions}, unchanged=${unchangedSessions}, unscoped=${unsafeScopeSessions}, errors=${failedSessions}`);
+  } finally {
+    if (lockFd !== undefined) {
+      fs.closeSync(lockFd);
+      try { fs.unlinkSync(lockPath); } catch {}
     }
-  } catch (err) {
-    console.error("Failed to sync history sessions to RMemory:", err);
   }
 }

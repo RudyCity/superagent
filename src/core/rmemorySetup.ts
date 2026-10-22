@@ -1,12 +1,10 @@
 /**
  * rmemorySetup.ts — Auto-detect and run RMemory Gateway on startup.
  *
- * Checks if the RMemory Gateway is enabled in settings and running.
- * If enabled but offline, automatically clones, installs, and starts the
- * gateway in the background.
+ * Starts scoped resumable history sync when memory is enabled; it does not
+ * clone, install, or initialize a gateway.
  *
- * Called from cli.tsx at startup. Fully asynchronous and non-blocking to ensure
- * instant CLI startup.
+ * Called asynchronously during CLI startup.
  */
 
 import { getSettings, getEffectiveMasterModel } from "./config.js";
@@ -63,8 +61,7 @@ export function spawnRmemoryGateway(options: {
 }
 
 /**
- * Check and start the RMemory Gateway if enabled and offline.
- * Non-blocking: runs asynchronously in the background.
+ * Start an optional detached, lock-protected RMemory history backfill.
  */
 export async function runRmemorySetup(): Promise<void> {
   const { getSettings } = await import("./config.js");
@@ -78,6 +75,22 @@ export async function runRmemorySetup(): Promise<void> {
       const cmd = runtimeBun();
       const args = [entryFile, "--sync-history-only"];
 
+      // Avoid spawning duplicate Bun processes; the child also checks the
+      // exclusive lock to cover concurrent parent startup.
+      const lockPath = path.join(os.homedir(), ".superagent-r", "rmemory", "history-sync.lock");
+      if (fs.existsSync(lockPath)) {
+        try {
+          const owner = JSON.parse(fs.readFileSync(lockPath, "utf8")) as { pid?: number };
+          if (typeof owner.pid !== "number" || owner.pid <= 0) return;
+          try { process.kill(owner.pid, 0); return; }
+          catch (error: any) { if (error?.code !== "ESRCH") return; }
+        } catch {
+          // A fresh malformed lock may still be getting written by its owner.
+          try { if (Date.now() - fs.statSync(lockPath).mtimeMs < 30 * 60 * 1000) return; }
+          catch { return; }
+        }
+        // An old/dead owner's lock is recovered by the child, not the parent.
+      }
       const logDir = path.join(os.homedir(), ".superagent-r", "logs");
       if (!fs.existsSync(logDir)) {
         fs.mkdirSync(logDir, { recursive: true });
@@ -96,6 +109,8 @@ export async function runRmemorySetup(): Promise<void> {
         },
       });
       child.unref();
+      fs.closeSync(outLog);
+      fs.closeSync(errLog);
     } catch (err) {
       console.error("Failed to spawn background history sync process:", err);
     }

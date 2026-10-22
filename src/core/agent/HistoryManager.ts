@@ -139,7 +139,7 @@ export class HistoryManager {
     const newMessages = messages
       .filter((m) =>
         (m.role === "user" || m.role === "assistant") &&
-        m.timestamp > lastCaptured &&
+        m.timestamp >= lastCaptured &&
         !contentToString(m.content).includes("[System Conversation Summary]") &&
         !contentToString(m.content).includes("[Emergency Summary - Context Pruned]")
       )

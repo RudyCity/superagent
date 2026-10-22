@@ -115,6 +115,8 @@ import {
   rmemoryMemoryReviewTool,
   rmemoryRetentionReviewTool,
   rmemoryTaskSummaryTool,
+  rmemoryArchiveRecoveryTool,
+  rmemorySuggestTool,
 } from "./rmemoryTools.js";
 
 import { manageMcpTool } from "./mcpTools.js";
@@ -204,6 +206,8 @@ export const masterToolset: Tool[] = [
   rmemoryMemoryReviewTool,
   rmemoryRetentionReviewTool,
   rmemoryTaskSummaryTool,
+  rmemoryArchiveRecoveryTool,
+  rmemorySuggestTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
   // ── Lock visibility (read-only stats; unlock/cross-workspace tools
@@ -295,6 +299,8 @@ export const superagentToolset: Tool[] = [
   rmemoryMemoryReviewTool,
   rmemoryRetentionReviewTool,
   rmemoryTaskSummaryTool,
+  rmemoryArchiveRecoveryTool,
+  rmemorySuggestTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
   getLockStatsTool,

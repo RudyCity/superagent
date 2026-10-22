@@ -9,6 +9,7 @@ if (!console.Console) {
 }
 
 import * as jsonConfigModule from "../src/core/config/jsonConfig.js";
+import * as rmemoryUtilModule from "../src/core/rmemoryUtil.js";
 
 let mockSettings = {
   enableRmemory: false,
@@ -45,24 +46,38 @@ describe("useRmemoryStatus Hook", () => {
     }
   };
 
-  it("should return online when enableRmemory is true, and disabled when false", async () => {
+  it("distinguishes disabled, uninitialized, healthy and degraded memory indexes", async () => {
     let hookStatus = "";
     const TestComponent = () => {
       hookStatus = useRmemoryStatus();
       return null;
     };
 
-    mockSettings.enableRmemory = false;
-    let renderResult = render(React.createElement(TestComponent));
+    const health = vi.spyOn(rmemoryUtilModule, "getRMemoryDiagnostics");
+    const snapshot = (enabled: boolean, indexReady: boolean, degraded = false) => ({
+      enabled, indexReady, degraded, provider: "local" as const,
+      modelName: "test-model", dimensions: 384, initializationState: "ready" as const,
+      migrationStatus: "current" as const, retryAvailable: degraded, error: null,
+    });
+    health.mockReturnValue(snapshot(false, false));
+    let view = render(React.createElement(TestComponent));
     await waitForCondition(() => hookStatus === "disabled");
-    expect(hookStatus).toBe("disabled");
-    renderResult.unmount();
+    view.unmount();
 
-    mockSettings.enableRmemory = true;
-    renderResult = render(React.createElement(TestComponent));
+    health.mockReturnValue(snapshot(true, false));
+    view = render(React.createElement(TestComponent));
+    await waitForCondition(() => hookStatus === "checking");
+    view.unmount();
+
+    health.mockReturnValue(snapshot(true, true));
+    view = render(React.createElement(TestComponent));
     await waitForCondition(() => hookStatus === "online");
-    expect(hookStatus).toBe("online");
-    renderResult.unmount();
+    view.unmount();
+
+    health.mockReturnValue(snapshot(true, false, true));
+    view = render(React.createElement(TestComponent));
+    await waitForCondition(() => hookStatus === "offline");
+    view.unmount();
   });
 });
 

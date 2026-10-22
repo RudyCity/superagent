@@ -94,6 +94,8 @@ import {
   rmemoryMemoryReviewTool,
   rmemoryRetentionReviewTool,
   rmemoryTaskSummaryTool,
+  rmemoryArchiveRecoveryTool,
+  rmemorySuggestTool,
 } from "./rmemoryTools.js";
 
 import { manageMcpTool } from "./mcpTools.js";
@@ -304,6 +306,8 @@ export const allTools: Tool[] = [
   rmemoryMemoryReviewTool,
   rmemoryRetentionReviewTool,
   rmemoryTaskSummaryTool,
+  rmemoryArchiveRecoveryTool,
+  rmemorySuggestTool,
   saveSharedMemoryTool,
   readSharedMemoryTool,
   unlockFileTool,

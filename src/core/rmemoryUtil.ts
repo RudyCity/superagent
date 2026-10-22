@@ -6,10 +6,36 @@ import path from "path";
 import os from "os";
 import { getNormalizedProjectPath } from "./tools/helpers.js";
 import { createMemoryRecordMetadata, isMemoryRecordMetadata } from "./memoryRecord.js";
+import { fuseScopedMemoryHits } from "./memoryRetrieval.js";
+import { redactMemorySecrets } from "./memoryLifecycle.js";
+import { recordMemorySearchPerformance, recordMemoryIngestion } from "./memoryTelemetry.js";
 
 const globalDataDir = path.join(os.homedir(), ".superagent-r", "rmemory");
 
 export const DEFAULT_LOCAL_EMBEDDING_MODEL = "Xenova/all-MiniLM-L6-v2";
+// Sharing the in-flight model load prevents duplicate ~100 MB ONNX instances.
+const sharedEmbeddingExtractors = new Map<string, Promise<any>>();
+const MAX_SHARED_EMBEDDING_MODELS = 2;
+// Only vector arrays are cached (query/source text is represented by SHA-256).
+// Bounded LRU so long-running CLIs cannot accumulate unlimited embeddings.
+const embeddingVectorCache = new Map<string, number[]>();
+const MAX_EMBEDDING_VECTOR_CACHE = 512;
+function rememberEmbeddingVector(key: string, vector: number[]): void {
+  if (embeddingVectorCache.has(key)) embeddingVectorCache.delete(key);
+  embeddingVectorCache.set(key, vector.slice());
+  if (embeddingVectorCache.size > MAX_EMBEDDING_VECTOR_CACHE) {
+    const oldest = embeddingVectorCache.keys().next().value;
+    if (oldest) embeddingVectorCache.delete(oldest);
+  }
+}
+function getCachedEmbeddingVector(key: string): number[] | undefined {
+  const vector = embeddingVectorCache.get(key);
+  if (!vector) return undefined;
+  embeddingVectorCache.delete(key);
+  embeddingVectorCache.set(key, vector);
+  return vector.slice();
+}
+
 
 export type RMemoryMigrationStatus = "not_checked" | "current" | "migrated" | "failed";
 
@@ -128,7 +154,7 @@ export class OptimizedLocalTextEmbeddingProvider {
     return prefix + text;
   }
 
-  private async getExtractor() {
+  private async initializeExtractor() {
     if (!this.extractor) {
       try {
         const { pipeline, env } = await import("@huggingface/transformers");
@@ -212,15 +238,46 @@ export class OptimizedLocalTextEmbeddingProvider {
     return this.extractor;
   }
 
+  private embeddingCacheKey(text: string): string {
+    return createHash("sha256").update([this.modelName, this.dtype, this.device, text].join(" ")).digest("hex");
+  }
+
+  private async getExtractor(): Promise<any> {
+    if (this.extractor) return this.extractor;
+    // Tests use independent mocked pipelines and must not leak model state.
+    if (process.env.NODE_ENV === "test") return this.initializeExtractor();
+    const key = [this.modelName, this.dtype, this.device].join(":");
+    let current = sharedEmbeddingExtractors.get(key);
+    if (!current) {
+      current = this.initializeExtractor().catch(error => {
+        if (sharedEmbeddingExtractors.get(key) === current) sharedEmbeddingExtractors.delete(key);
+        throw error;
+      });
+      sharedEmbeddingExtractors.set(key, current);
+      if (sharedEmbeddingExtractors.size > MAX_SHARED_EMBEDDING_MODELS) {
+        const oldest = sharedEmbeddingExtractors.keys().next().value;
+        if (oldest && oldest !== key) sharedEmbeddingExtractors.delete(oldest);
+      }
+    }
+    this.extractor = await current;
+    return this.extractor;
+  }
+
   async embedText(text: string, type?: "query" | "passage"): Promise<number[]> {
     try {
       const formattedText = this.formatText(text, type);
+      const cacheKey = this.embeddingCacheKey(formattedText);
+      const cached = getCachedEmbeddingVector(cacheKey);
+      if (cached) return cached;
       const extractor = await this.getExtractor();
       const output = await extractor(formattedText, {
         pooling: "mean",
         normalize: true,
       });
       const result = Array.from(output.data) as number[];
+      if (result.length === this.dimensions && result.every(Number.isFinite)) {
+        rememberEmbeddingVector(cacheKey, result);
+      }
       if (output && typeof output.dispose === "function") {
         try {
           output.dispose();
@@ -235,31 +292,40 @@ export class OptimizedLocalTextEmbeddingProvider {
 
   async embedTexts(texts: string[], type?: "query" | "passage"): Promise<number[][]> {
     if (texts.length === 0) return [];
-    const results: number[][] = [];
-    const BATCH_SIZE = 8;
-    const extractor = await this.getExtractor();
-    
-    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-      const batch = texts.slice(i, i + BATCH_SIZE);
-      const formattedTexts = batch.map(t => this.formatText(t, type));
-      const output = await extractor(formattedTexts, {
-        pooling: "mean",
-        normalize: true,
-      });
-      const dims = this.dimensions;
-      const data = output.data;
-      for (let j = 0; j < batch.length; j++) {
-        const start = j * dims;
-        const end = start + dims;
-        results.push(Array.from(data.subarray(start, end)));
-      }
-      if (output && typeof output.dispose === "function") {
+    const formatted = texts.map(text => this.formatText(text, type));
+    const results: Array<number[] | undefined> = Array(texts.length).fill(undefined);
+    const misses = new Map<string, { text: string; positions: number[] }>();
+    for (let i = 0; i < texts.length; i++) {
+      const key = this.embeddingCacheKey(formatted[i]);
+      const cached = getCachedEmbeddingVector(key);
+      if (cached) { results[i] = cached; continue; }
+      const existing = misses.get(key);
+      if (existing) existing.positions.push(i);
+      else misses.set(key, { text: formatted[i], positions: [i] });
+    }
+    if (misses.size > 0) {
+      const extractor = await this.getExtractor();
+      const unique = [...misses.entries()];
+      for (let start = 0; start < unique.length; start += 8) {
+        const batch = unique.slice(start, start + 8);
+        const output = await extractor(batch.map(([, entry]) => entry.text), { pooling: "mean", normalize: true });
         try {
-          output.dispose();
-        } catch {}
+          if (!output.data || output.data.length !== batch.length * this.dimensions)
+            throw new Error("Embedding response dimensions do not match the request.");
+          for (let i = 0; i < batch.length; i++) {
+            const [key, entry] = batch[i];
+            const vector = Array.from(output.data.subarray(i * this.dimensions, (i + 1) * this.dimensions)) as number[];
+            if (!vector.every(Number.isFinite)) throw new Error("Embedding returned a non-finite vector.");
+            rememberEmbeddingVector(key, vector);
+            for (const position of entry.positions) results[position] = vector.slice();
+          }
+        } finally {
+          try { output.dispose?.(); } catch {}
+        }
       }
     }
-    return results;
+    if (results.some(vector => !vector)) throw new Error("Embedding results are incomplete.");
+    return results as number[][];
   }
 
   async embedImage(image: string | Buffer | Uint8Array): Promise<number[]> {
@@ -352,7 +418,7 @@ export function checkAndPerformDbMigration(
     "vectors.db", "vectors.db-wal", "vectors.db-shm", "vectors.db-journal",
     "skills.db", "skills.db-wal", "skills.db-shm", "skills.db-journal",
   ]);
-  const backupDir = path.join(path.dirname(targetDir), "." + path.basename(targetDir) + "-index-backup-" + process.pid + "-" + Date.now());
+  const backupDir = path.join(targetDir, ".index-backups", "backup-" + process.pid + "-" + Date.now());
   const movedArtifacts: string[] = [];
 
   if (migrateNeeded) {
@@ -384,9 +450,22 @@ export function checkAndPerformDbMigration(
     }
     fs.renameSync(tempMetadataPath, metadataPath);
     if (!options.deferCommit) {
-      // Treat backup cleanup as post-commit best-effort, never as a rollback trigger.
-      if (previousMetadataMoved) { try { fs.rmSync(previousMetadataPath, { force: true }); } catch {} }
-      if (movedArtifacts.length > 0) { try { fs.rmSync(backupDir, { recursive: true, force: true }); } catch {} }
+      // A successful embedding-model switch must NEVER delete the old index.
+      // Retain it outside the live directory, with its original model metadata.
+      if (previousMetadataMoved) {
+        // Archiving old metadata is best-effort after committing the new one:
+        // a rename failure must not destroy or silently rollback the old DB.
+        try {
+          if (movedArtifacts.length > 0) {
+            fs.mkdirSync(backupDir, { recursive: true });
+            fs.renameSync(previousMetadataPath, path.join(backupDir, "metadata.json"));
+          } else {
+            fs.rmSync(previousMetadataPath, { force: true });
+          }
+        } catch (error) {
+          console.warn("[RMemory] Previous metadata remains at its .previous path; backup recovery is still possible:", error);
+        }
+      }
     }
   } catch (err) {
     try { fs.rmSync(tempMetadataPath, { force: true }); } catch {}
@@ -410,11 +489,19 @@ export function checkAndPerformDbMigration(
       if (settled) return;
       settled = true;
       if (previousMetadataMoved) {
-        try { fs.rmSync(previousMetadataPath, { force: true }); } catch {}
+        try {
+          if (movedArtifacts.length > 0) {
+            fs.mkdirSync(backupDir, { recursive: true });
+            fs.renameSync(previousMetadataPath, path.join(backupDir, "metadata.json"));
+          } else {
+            fs.rmSync(previousMetadataPath, { force: true });
+          }
+        } catch (error) {
+          console.warn("[RMemory] Old index retained but previous metadata archiving needs inspection:", error);
+        }
       }
-      if (movedArtifacts.length > 0) {
-        try { fs.rmSync(backupDir, { recursive: true, force: true }); } catch {}
-      }
+      // Keep the old index as a recoverable versioned backup. Never unlink it
+      // automatically: embedding model changes cannot safely re-embed old data.
     },
     rollback() {
       if (settled) return;
@@ -444,6 +531,7 @@ export function checkAndPerformDbMigration(
 }
 
 let rMemoryInstance: any = null;
+let rMemoryInitializationInFlight: Promise<any> | null = null;
 let cachedRMemoryModelName: string = "";
 let cachedRMemoryDimensions: number = 0;
 let rMemoryInitFailed = false;
@@ -452,9 +540,48 @@ let hasLoggedInitError = false;
 let rMemoryMigrationStatus: RMemoryMigrationStatus = "not_checked";
 let rMemoryLastSafeError: string | null = null;
 
-async function getRMemory(): Promise<any> {
+/**
+ * Exclusively owns the SQLite index bootstrap while dimensions/migration are
+ * checked. Single-flight protects one process; this lock protects multiple
+ * concurrently starting Bun CLIs sharing ~/.superagent-r/rmemory.
+ */
+async function acquireRMemoryInitLock(): Promise<() => void> {
+  fs.mkdirSync(globalDataDir, { recursive: true });
+  const lockPath = path.join(globalDataDir, ".index-init.lock");
+  for (let attempt = 0; attempt < 150; attempt++) {
+    try {
+      const fd = fs.openSync(lockPath, "wx", 0o600);
+      try { fs.writeSync(fd, JSON.stringify({ pid: process.pid, startedAt: Date.now() })); }
+      catch (error) { fs.closeSync(fd); fs.unlinkSync(lockPath); throw error; }
+      return () => {
+        fs.closeSync(fd);
+        try { fs.unlinkSync(lockPath); } catch {}
+      };
+    } catch (error: any) {
+      if (error?.code !== "EEXIST") throw error;
+      try {
+        const owner = JSON.parse(fs.readFileSync(lockPath, "utf8")) as { pid?: number };
+        if (typeof owner.pid === "number" && owner.pid > 0) {
+          try { process.kill(owner.pid, 0); }
+          catch (err: any) {
+            if (err?.code === "ESRCH") { fs.unlinkSync(lockPath); continue; }
+          }
+        } else if (Date.now() - fs.statSync(lockPath).mtimeMs > 30 * 60_000) {
+          fs.unlinkSync(lockPath); continue;
+        }
+      } catch {
+        // A fresh or ambiguous lock is never removed by an unrelated process.
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  throw new Error("RMemory index bootstrap is locked by another process; retry after its initialization completes.");
+}
+
+async function initializeRMemoryInstance(): Promise<any> {
   let pendingMigration: RMemoryMigrationTransaction | undefined;
   let pendingCandidate: any = null;
+  let releaseInitLock: (() => void) | undefined;
   if (rMemoryInitFailed) {
     throw rMemoryInitError || new Error("RMemory initialization previously failed.");
   }
@@ -521,9 +648,7 @@ async function getRMemory(): Promise<any> {
     }
 
     if (!rMemoryInstance) {
-      if (!fs.existsSync(globalDataDir)) {
-        fs.mkdirSync(globalDataDir, { recursive: true });
-      }
+      releaseInitLock = await acquireRMemoryInitLock();
       const dbPath = path.join(globalDataDir, "vectors.db");
       
       pendingMigration = checkAndPerformDbMigration(globalDataDir, currentModelName, currentDimensions, { deferCommit: true });
@@ -569,9 +694,24 @@ async function getRMemory(): Promise<any> {
       console.warn(`[WARN] RMemory failed to initialize (will be disabled for this session): ${err.message || String(err)}`);
     }
     throw err;
+  } finally {
+    releaseInitLock?.();
   }
 }
 
+// The bootstrap path (prepopulate) queries memories, persona and scenarios in
+// parallel. Serialize initialization so these concurrent readers cannot race
+// each other into migrating/creating the same SQLite index.
+async function getRMemory(): Promise<any> {
+  if (rMemoryInitializationInFlight) return rMemoryInitializationInFlight;
+  const inFlight = initializeRMemoryInstance();
+  rMemoryInitializationInFlight = inFlight;
+  try {
+    return await inFlight;
+  } finally {
+    if (rMemoryInitializationInFlight === inFlight) rMemoryInitializationInFlight = null;
+  }
+}
 
 export class MemoryClient {
   private endpoint: string;
@@ -594,7 +734,7 @@ export class MemoryClient {
   async addConversation(options: {
     session_id: string;
     projectId?: string;
-    messages: { role: "user" | "assistant" | "system"; content: string; timestamp?: string }[];
+    messages: { role: "user" | "assistant" | "system"; content: string; timestamp?: string; messageId?: string }[];
   }): Promise<{ accepted_ids: string[]; total_count: number }> {
     const rMemory = await getRMemory();
     const accepted_ids: string[] = [];
@@ -608,48 +748,72 @@ export class MemoryClient {
       };
     }
 
-    // Pre-process messages to truncate excessively long content and avoid OOM / ONNX allocation failures on CPU
-    const texts = options.messages.map(msg => {
+    // Stable IDs make ingestion idempotent even after partial failures or retries.
+    // Existing records are checked *before* running expensive embedding.
+    const pending: Array<{ id: string; text: string; message: (typeof options.messages)[number]; timestamp: string }> = [];
+    for (const msg of options.messages) {
+      const timestamp = msg.timestamp || new Date().toISOString();
+      const identity = msg.messageId || `${msg.role}\0${timestamp}\0${msg.content}`;
+      const id = "conv_" + createHash("sha256")
+        .update(`${options.projectId || "legacy"}\0${options.session_id}\0${identity}`).digest("hex");
       const content = msg.content || "";
-      return content.length > 8000 ? content.substring(0, 8000) + "... [truncated]" : content;
-    });
-
-    // Chunk text embedding generation to keep concurrent batch size small (max 8)
-    const BATCH_SIZE = 8;
-    const embeddings: number[][] = [];
-    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-      const batch = texts.slice(i, i + BATCH_SIZE);
-      let batchEmbeddings: number[][];
-      if (rMemory.provider && typeof rMemory.provider.embedTexts === "function") {
-        batchEmbeddings = await rMemory.provider.embedTexts(batch, "passage");
-      } else {
-        batchEmbeddings = await Promise.all(
-          batch.map(text => rMemory.provider.embedText(text, "passage"))
-        );
+      // Redact BEFORE embedding and storing: no plaintext secrets reach vectors.
+      const text = redactMemorySecrets(content.length > 8000 ? content.substring(0, 8000) + "... [truncated]" : content);
+      const existing = typeof rMemory.db?.getById === "function" ? rMemory.db.getById(id) : null;
+      if (existing) {
+        if (existing.content !== text || existing.metadata?.session !== options.session_id ||
+            existing.metadata?.projectId !== options.projectId || existing.metadata?.role !== msg.role) {
+          throw new Error("RMemory conversation ID collision or conflicting metadata; refusing overwrite.");
+        }
+        accepted_ids.push(id);
+        continue;
       }
-      embeddings.push(...batchEmbeddings);
+      pending.push({ id, text, message: msg, timestamp });
     }
-
-    for (let i = 0; i < options.messages.length; i++) {
-      const msg = options.messages[i];
-      const id = Math.random().toString(36).substring(7);
-      await rMemory.addMemory({
-        id,
-        content: texts[i],
-        embedding: embeddings[i],
-        metadata: {
-          type: "message",
-          session: options.session_id,
-          ...(options.projectId ? { scope: "project", projectId: options.projectId } : {}),
-          role: msg.role,
-          timestamp: msg.timestamp || new Date().toISOString(),
-        },
-      });
-      accepted_ids.push(id);
+    // Bound *total* in-memory vectors, not merely the batch creation size.
+    // Persist each batch before embedding the next; deterministic IDs make
+    // recovery safe even if a later batch fails or the process crashes.
+    const BATCH_SIZE = 8;
+    for (let i = 0; i < pending.length; i += BATCH_SIZE) {
+      const batch = pending.slice(i, i + BATCH_SIZE);
+      const batchTexts = batch.map(({ text }) => text);
+      const embeddings: number[][] = rMemory.provider?.embedTexts
+        ? await rMemory.provider.embedTexts(batchTexts, "passage")
+        : await Promise.all(batchTexts.map(text => rMemory.provider.embedText(text, "passage")));
+      if (embeddings.length !== batch.length) {
+        throw new Error("RMemory embedding batch returned an inconsistent number of vectors.");
+      }
+      for (let j = 0; j < batch.length; j++) {
+        const { message: msg, id, timestamp, text } = batch[j];
+        // Parallel importers may have committed this row while embedding.
+        const existing = typeof rMemory.db?.getById === "function" ? rMemory.db.getById(id) : null;
+        if (existing) {
+          if (existing.content !== text || existing.metadata?.projectId !== options.projectId ||
+              existing.metadata?.session !== options.session_id || existing.metadata?.role !== msg.role) {
+            throw new Error("RMemory conversation ID collision or conflicting metadata; refusing overwrite.");
+          }
+          accepted_ids.push(id);
+          continue;
+        }
+        await rMemory.addMemory({
+          id,
+          content: text,
+          embedding: embeddings[j],
+          metadata: {
+            type: "message",
+            session: options.session_id,
+            ...(options.projectId ? { scope: "project", projectId: options.projectId } : {}),
+            role: msg.role,
+            timestamp,
+          },
+        });
+        accepted_ids.push(id);
+      }
     }
 
     // @ts-ignore
     const count = rMemory.db.getAll({ session: options.session_id }).length;
+    recordMemoryIngestion(pending.length, options.messages.length - pending.length);
 
     return {
       accepted_ids,
@@ -662,18 +826,20 @@ export class MemoryClient {
     limit?: number;
     projectId?: string;
   }): Promise<{ messages: { role: string; content: string; timestamp: string; session_id?: string; project_id?: string }[] }> {
+    if (!options.projectId) throw new Error("Conversation search requires an authorized project scope.");
     const rMemory = await getRMemory();
-    const limit = options.limit ?? 5;
-    
+    const limit = Math.max(1, Math.min(50, Math.floor(Number(options.limit) || 5)));
     const results = await rMemory.query({
-      query: options.query,
+      query: options.query.slice(0, 1000),
       limit,
       hybrid: true,
-      filter: options.projectId ? { type: "message", projectId: options.projectId } : { type: "message" },
+      filter: { type: "message", scope: "project", projectId: options.projectId },
     });
 
     const messages = results
-      .filter((r: any) => r.memory.metadata && r.memory.metadata.role)
+      .filter((r: any) => r.memory?.metadata?.type === "message" &&
+        r.memory?.metadata?.scope === "project" && r.memory?.metadata?.projectId === options.projectId &&
+        r.memory?.metadata?.role)
       .map((r: any) => ({
         role: r.memory.metadata.role,
         content: r.memory.content,
@@ -691,36 +857,21 @@ export class MemoryClient {
     projectId?: string;
   }): Promise<{ items: { id: string; content: string; type: string; score: number; metadata?: Record<string, any> }[] }> {
     const rMemory = await getRMemory();
-    const limit = options.limit ?? 5;
-    let results: any[];
-    if (options.projectId) {
-      const [projectResults, globalResults, legacyResults] = await Promise.all([
-        rMemory.query({ query: options.query, limit, hybrid: true, filter: { scope: "project", projectId: options.projectId } }),
-        rMemory.query({ query: options.query, limit, hybrid: true, filter: { scope: "global" } }),
-        rMemory.query({ query: options.query, limit: Math.max(limit * 4, 20), hybrid: true, filter: { type: "memory" } }),
-      ]);
-      const safeLegacyResults = legacyResults.filter((r: any) => {
-        const metadata = r.memory?.metadata || {};
-        const content = String(r.memory?.content || "");
-        if (metadata.scope) return false;
-        return content.startsWith("[global]") || content.startsWith(`[project:${options.projectId}]`);
-      });
-      const byId = new Map<string, any>();
-      for (const result of [...projectResults, ...globalResults, ...safeLegacyResults]) {
-        const id = String(result.memory?.id || "");
-        if (id && !byId.has(id)) byId.set(id, result);
-      }
-      results = Array.from(byId.values()).sort((a, b) => (a.distance ?? 1) - (b.distance ?? 1)).slice(0, limit);
-    } else {
-      results = await rMemory.query({ query: options.query, limit, hybrid: true });
+    const limit = Math.max(1, Math.min(50, Math.floor(Number(options.limit) || 5)));
+    const query = String(options.query || "").slice(0, 1000);
+    if (!options.projectId) {
+      throw new Error("Structured memory search requires a canonical project scope.");
     }
-    const items = results.filter((r: any) => r.memory?.metadata?.type !== "memory_revision").map((r: any) => ({
-      id: r.memory.id,
-      content: r.memory.content,
-      type: r.memory.metadata?.memoryType || r.memory.metadata?.type || "memory",
-      score: r.score ?? (1.0 - r.distance),
-      metadata: r.memory.metadata,
-    }));
+    const candidateLimit = Math.max(limit * 4, 20);
+    const startedAt = Date.now();
+    const [projectResults, globalResults, legacyResults] = await Promise.all([
+      rMemory.query({ query, limit: candidateLimit, hybrid: true, filter: { scope: "project", projectId: options.projectId } }),
+      rMemory.query({ query, limit: candidateLimit, hybrid: true, filter: { scope: "global" } }),
+      rMemory.query({ query, limit: candidateLimit, hybrid: true, filter: { type: "memory" } }),
+    ]);
+    const items = fuseScopedMemoryHits(
+      [projectResults, globalResults, legacyResults], options.projectId, limit);
+    recordMemorySearchPerformance(Date.now() - startedAt, items.length);
     return { items };
   }
 
@@ -740,9 +891,9 @@ export class MemoryClient {
     }
 
     const content = options.content || "";
-    const truncatedContent = content.length > 8000
+    const truncatedContent = redactMemorySecrets(content.length > 8000
       ? content.substring(0, 8000) + "... [truncated]"
-      : content;
+      : content);
     const now = new Date().toISOString();
     const suppliedMetadata = options.metadata || {};
     const metadata: Record<string, any> = {
@@ -1516,36 +1667,22 @@ ${JSON.stringify(record.metadata || {})}`).digest("hex");
   }
 }
 
-const RMEMORY_GATEWAY_KEY_MISSING_ERROR =
-  "rmemory gateway API key is not configured. Set it via /settings.";
-
 export function getRMemoryClient(timeoutMs = 3000): MemoryClient {
   const settings = getSettings();
   const endpoint = settings.rmemoryGatewayUrl || "http://127.0.0.1:8420";
   const apiKey = settings.rmemoryGatewayApiKey || "";
   const serviceId = settings.rmemoryServiceId || "default";
 
-  const client = new MemoryClient({
+  // MemoryClient reads/writes the local index, not the HTTP gateway.
+  // A missing gateway token must never prevent local memory operations.
+  return new MemoryClient({
     endpoint,
     apiKey,
     serviceId,
     timeout: timeoutMs,
   });
 
-  if (!apiKey.trim()) {
-    return new Proxy(client, {
-      get(target, prop, receiver) {
-        const value = Reflect.get(target, prop, receiver);
-        if (typeof value === "function") {
-          return (...callArgs: unknown[]) =>
-            Promise.reject(new Error(RMEMORY_GATEWAY_KEY_MISSING_ERROR));
-        }
-        return value;
-      },
-    }) as MemoryClient;
-  }
 
-  return client;
 }
 
 /** Canonical versioned identity shared by memory writes, search, and automatic recall. */
