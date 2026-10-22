@@ -111,7 +111,11 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
     await foreign.text();
     const check = await post(a,rpc(2,"tools/list"),sidA);
     expect(check.status).toBe(200);
-    expect(check.body).toContain("superagent_read_files");
+    expect(check.body).toContain("superagent_tool_search");
+    const discovered = await post(a, rpc(10, "tools/call", {
+      name: "superagent_tool_search", arguments: { query: "superagent_read_files" },
+    }), sidA);
+    expect(discovered.body).toContain("superagent_read_files");
     const own = await fetch(endpoint() + "/mcp",{method:"DELETE",headers:headers(a,sidA)});
     expect(own.status).toBe(200);
     await own.text();
@@ -130,8 +134,16 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
     await deniedDelete.text();
     const readerSession = await initialize(reader);
     const readList = await post(reader,rpc(5,"tools/list"),readerSession);
-    expect(readList.body).toContain("superagent_read_files");
+    expect(readList.body).toContain("superagent_tool_search");
     expect(readList.body).not.toContain('"name":"superagent_write_files"');
+    const discoveredReader = await post(reader, rpc(51, "tools/call", {
+      name: "superagent_tool_search", arguments: { query: "superagent_read_files" },
+    }), readerSession);
+    expect(discoveredReader.body).toContain("superagent_read_files");
+    const hiddenWriter = await post(reader, rpc(52, "tools/call", {
+      name: "superagent_tool_search", arguments: { query: "superagent_write_files" },
+    }), readerSession);
+    expect(hiddenWriter.body).not.toContain('"name":"superagent_write_files"');
     const target = path.join(root,"must-not-write.txt");
     const denied = await post(reader,rpc(6,"tools/call", {
       name:"superagent_write_files",
@@ -200,10 +212,18 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
     const listWriter = await post(writer, rpc(21, "tools/list"), writerSession);
     expect(listWriter.status).toBe(200);
     expect(listWriter.body).not.toContain('"name":"superagent_grant_project_access"');
-    expect(listWriter.body).toContain('"name":"superagent_write_files"');
+    expect(listWriter.body).toContain('"name":"superagent_tool_search"');
+    const writerSearch = await post(writer, rpc(211, "tools/call", {
+      name: "superagent_tool_search", arguments: { query: "superagent_write_files" },
+    }), writerSession);
+    expect(writerSearch.body).toContain("superagent_write_files");
     const listAdmin = await post(admin, rpc(22, "tools/list"), adminSession);
     expect(listAdmin.status).toBe(200);
-    expect(listAdmin.body).toContain('"name":"superagent_grant_project_access"');
+    expect(listAdmin.body).toContain('"name":"superagent_tool_search"');
+    const adminSearch = await post(admin, rpc(221, "tools/call", {
+      name: "superagent_tool_search", arguments: { query: "superagent_grant_project_access" },
+    }), adminSession);
+    expect(adminSearch.body).toContain("superagent_grant_project_access");
     const denied = await post(writer, rpc(23, "tools/call", {
       name: "superagent_grant_project_access",
       arguments: { projectId: "nonexistent", capabilities: ["read"] },

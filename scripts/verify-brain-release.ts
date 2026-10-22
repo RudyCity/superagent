@@ -17,6 +17,7 @@ const run = (cwd: string, args: string[]) => {
 run(root, ["run", "build"]);
 run(root, ["--bun", "x", "vitest", "run",
   "tests/brainWorkspace.test.ts",
+  "tests/brainObservability.test.ts",
   "tests/brainReliability.test.ts",
   "tests/brainProvenance.test.ts",
   "tests/brainStreamingIndex.test.ts",

@@ -22,6 +22,7 @@ import { cliBridgeTool } from "../../tools/cliBridgeTool.js";
 import { beginBrainTransfer, inspectBrainTransfer, appendBrainTransfer, finishBrainTransfer, abortBrainTransfer, cleanupBrainTransfers } from "../../brain/brainTransfers.js";
 import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainRMemoryCandidate } from "../../brain/brainIndex.js";
 import { promoteBrainDelegation } from "../../brain/brainDelegationArtifacts.js";
+import { recordBrainEvent, summarizeBrainEvents } from "../../brain/brainObservability.js";
 
 export const BRAIN_MCP_TOOL_DEFS = [
   {
@@ -32,7 +33,7 @@ export const BRAIN_MCP_TOOL_DEFS = [
       properties: {
         action: { type: "string", enum: [
           "create", "current", "inspect", "list", "files", "read", "write",
-          "storage", "retention.preview", "cleanup.prepare", "cleanup.confirm",
+          "storage", "metrics", "retention.preview", "cleanup.prepare", "cleanup.confirm",
           "artifact.import", "artifact.read", "cleanup",
           "transfer.begin", "transfer.status", "transfer.append", "transfer.finish", "transfer.abort", "transfer.gc",
           "artifact.annotate", "artifact.search", "session.resume", "memory.candidate", "delegate.promote",
@@ -145,7 +146,7 @@ function importArtifact(principal: string, id: string, filename: unknown, encode
   return importBrainBinaryArtifact(requireExistingDir(principal, id), filename, bytes);
 }
 
-export async function dispatchBrainMcpTool(
+async function dispatchBrainMcpToolInternal(
   name: string, args: Record<string, unknown>, principal: string, connectionSessionId?: string,
 ): Promise<McpToolResult | null> {
   if (name !== "superagent_brain") return null;
@@ -153,7 +154,7 @@ export async function dispatchBrainMcpTool(
     const action = String(args.action || "");
     const id = String(args.sessionId || connectionSessionId || "");
     if (!args.sessionId && connectionSessionId &&
-        !["list", "retention.preview"].includes(action)) {
+        !["list", "retention.preview", "metrics"].includes(action)) {
       createBrainSession(principal, connectionSessionId);
     }
     if (action in delegateActions) {
@@ -188,6 +189,7 @@ export async function dispatchBrainMcpTool(
       case "read": return result({ sessionId: id, filePath: args.filePath, content: readBrainFile(principal, id, String(args.filePath || "")) });
       case "write": return result(writeBrainFile(principal, id, String(args.filePath || ""), args.content as string, args.overwrite === true));
       case "storage": return result({ sessionId: id, ...brainStorageUsage(requireExistingDir(principal, id)) });
+      case "metrics": return result(summarizeBrainEvents(principal, configRoot));
       case "retention.preview": return result(previewBrainRetention(principal, args.days === undefined ? 30 : Number(args.days)));
       case "cleanup": throw new Error("Direct cleanup retired for MCP; use cleanup.prepare then cleanup.confirm.");
       case "cleanup.prepare": return result(prepareBrainCleanup(owner, id, requireExistingDir(principal, id), configRoot));
@@ -212,7 +214,23 @@ export async function dispatchBrainMcpTool(
   }
 }
 
-export function dispatchBrainPublishMcpTool(
+export async function dispatchBrainMcpTool(
+  name: string, args: Record<string, unknown>, principal: string, connectionSessionId?: string,
+): Promise<McpToolResult | null> {
+  const action = String(args.action || "");
+  const started = Date.now();
+  let response: McpToolResult | null = null;
+  try {
+    response = await dispatchBrainMcpToolInternal(name, args, principal, connectionSessionId);
+    return response;
+  } finally {
+    if (name === "superagent_brain") {
+      recordBrainEvent(principal, action, response?.isError ? "error" : "ok", Date.now() - started, getRootConfigDir());
+    }
+  }
+}
+
+function dispatchBrainPublishMcpToolInternal(
   name: string, args: Record<string, unknown>, principal: string, projectRoot?: string,
 ): McpToolResult | null {
   if (name !== "superagent_brain_publish") return null;
@@ -233,4 +251,16 @@ export function dispatchBrainPublishMcpTool(
   } catch (error: any) {
     return result(error?.message || String(error), true);
   }
+}
+
+export function dispatchBrainPublishMcpTool(
+  name: string, args: Record<string, unknown>, principal: string, projectRoot?: string,
+): McpToolResult | null {
+  const started = Date.now();
+  const response = dispatchBrainPublishMcpToolInternal(name, args, principal, projectRoot);
+  if (name === "superagent_brain_publish") {
+    recordBrainEvent(principal, "publish." + String(args.action || ""),
+      response?.isError ? "error" : "ok", Date.now() - started, getRootConfigDir());
+  }
+  return response;
 }

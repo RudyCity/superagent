@@ -11,6 +11,7 @@ const superRoot = path.resolve(import.meta.dir, "..");
 const tline = path.resolve(import.meta.dir, "../../t-line/backend/src");
 const modules = [
   { source: "brainSessionLock.ts", imports: [] },
+  { source: "brainObservability.ts", imports: [] },
   { source: "brainStorageManager.ts", imports: [
       ["import { getRootConfigDir } from '../config/paths.js';\nimport { inspectBrainSession, listBrainSessions } from './brainWorkspace.js';",
        "import { getRootConfigDir, inspectBrainSession, listBrainSessions } from './brainRuntimeCompat';"],

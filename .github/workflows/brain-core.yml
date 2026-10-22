@@ -1,0 +1,32 @@
+name: Brain Core Release Gate
+on:
+  push:
+    paths:
+      - "src/core/brain/**"
+      - "src/core/mcp/tools/brainMcpTools.ts"
+      - "src/core/commands/brainCommand.ts"
+      - "tests/brain*.test.ts"
+      - ".github/workflows/brain-core.yml"
+  pull_request:
+    paths:
+      - "src/core/brain/**"
+      - "src/core/mcp/tools/brainMcpTools.ts"
+      - "src/core/commands/brainCommand.ts"
+      - "tests/brain*.test.ts"
+      - ".github/workflows/brain-core.yml"
+  workflow_dispatch:
+jobs:
+  brain:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun --bun x vitest run tests/brainWorkspace.test.ts tests/brainObservability.test.ts tests/brainReliability.test.ts tests/brainProvenance.test.ts tests/brainStreamingIndex.test.ts tests/brainStorageMcp.test.ts tests/brainMcp.test.ts tests/brainDelegationPromotion.test.ts tests/brainHistoryLifecycle.test.ts tests/mcpOAuthHttpE2E.test.ts

@@ -31,6 +31,18 @@ afterEach(() => {
   for (const r of roots.splice(0)) fs.rmSync(r, { recursive: true, force: true });
 });
 describe("SuperAgent MCP Brain storage parity", () => {
+  it("exposes owner-scoped operation metrics without leaking another principal", async () => {
+    root();
+    await call("oauth:metric-owner", "create");
+    await call("oauth:metric-owner", "artifact.import", { filename: "tiny.pdf", base64: Buffer.from("tiny").toString("base64") });
+    await call("oauth:metric-owner", "artifact.import", { filename: "tiny.pdf", base64: Buffer.from("tiny").toString("base64") });
+    const metrics = await call("oauth:metric-owner", "metrics");
+    expect(metrics.events).toBe(2);
+    expect(metrics.failures).toBe(1);
+    expect(metrics.types.find((item: any) => item.event === "artifact.import").failures).toBe(1);
+    expect((await call("oauth:other", "metrics")).events).toBe(0);
+    expect(JSON.stringify(metrics)).not.toContain("tiny.pdf");
+  });
   it("returns owner-scoped usage and imports/downloads a binary in bounded chunks", async () => {
     root();
     const principal = "oauth:alice";

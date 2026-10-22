@@ -6,6 +6,8 @@ import {
   getBrainScratchPath,
 } from "../brain/brainWorkspace.js";
 import { cliBridgeTool } from "../tools/cliBridgeTool.js";
+import { summarizeBrainEvents } from "../brain/brainObservability.js";
+import { getRootConfigDir } from "../config/paths.js";
 import { brainStorageUsage, previewBrainRetention, prepareBrainCleanup, confirmBrainCleanup } from "../brain/brainStorageManager.js";
 import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainRMemoryCandidate } from "../brain/brainIndex.js";
 import { promoteBrainDelegation } from "../brain/brainDelegationArtifacts.js";
@@ -35,6 +37,7 @@ export const brainCommand: SlashCommand = {
           break;
         }
         case "list": say(listBrainSessions(owner)); break;
+        case "metrics": say(summarizeBrainEvents(owner, getRootConfigDir())); break;
         case "show":
         case "inspect": say(inspectBrainSession(owner, explicitSessionId || currentSessionId)); break;
         case "files": say(listBrainFiles(owner, explicitSessionId || currentSessionId)); break;
@@ -126,7 +129,7 @@ export const brainCommand: SlashCommand = {
           break;
         }
         default:
-          say("Usage: /brain create [sessionId] | inspect | list | files | resume [sessionId] | search <query> | annotate <artifacts/file> <summary> | promote <jobId> [filename] | remember <artifacts/file> | storage [sessionId] | retention [7|30|90] | clean <sessionId> | clean.confirm <sessionId> <challenge>\n" +
+          say("Usage: /brain create [sessionId] | inspect | list | files | metrics | resume [sessionId] | search <query> | annotate <artifacts/file> <summary> | promote <jobId> [filename] | remember <artifacts/file> | storage [sessionId] | retention [7|30|90] | clean <sessionId> | clean.confirm <sessionId> <challenge>\n" +
               "/brain delegate.start <agy|claude|codex> <prompt> | jobs | get <jobId> | tail <jobId> | cancel <jobId>\n" +
               "Alias: /scratch. All delegated files remain in the current session scratch until explicitly published.");
       }

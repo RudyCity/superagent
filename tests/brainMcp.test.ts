@@ -48,7 +48,13 @@ describe("Brain MCP OAuth identity scope", () => {
     const call = handlers.get(CallToolRequestSchema.shape.method.value);
     await expect(call({ method: "tools/call", params: { name: "superagent_brain", arguments: { action: "create", sessionId: "one" } } })).rejects.toThrow(/mcp:tools:write/);
     scopes = ["mcp:tools", "mcp:tools:write"];
-    expect((await list({ method: "tools/list", params: {} })).tools.some((t: any) => t.name === "superagent_brain")).toBe(true);
+    // The default compact gateway advertises discoverable tools, not the full catalog.
+    const advertised = (await list({ method: "tools/list", params: {} })).tools;
+    expect(advertised.some((t: any) => t.name === "superagent_tool_search")).toBe(true);
+    const discovered = await call({ method: "tools/call", params: {
+      name: "superagent_tool_search", arguments: { query: "superagent_brain" },
+    } });
+    expect(JSON.stringify(discovered)).toContain("superagent_brain");
     const created = await call({ method: "tools/call", params: { name: "superagent_brain", arguments: { action: "create", sessionId: "one" } } });
     expect(created.isError).not.toBe(true);
     await server.close();
