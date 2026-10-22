@@ -176,6 +176,7 @@ function toResolvedProjectContext(target: ResolvedProjectTarget | null): Resolve
   };
 }
 import { PROJECT_REGISTRY_TOOL_NAMES, WORKSPACE_SCOPED_MCP_TOOLS } from "./mcpWorkspacePolicy.js";
+import { BRAIN_MCP_TOOL_DEFS, dispatchBrainMcpTool } from "./tools/brainMcpTools.js";
 import { MOTION_MCP_TOOL_DEFS, dispatchMotionMcpTool } from "./tools/motionMcpTools.js";
 import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, PRIVILEGED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
 import type { McpServerOptions } from "./mcpToolPolicy.js";
@@ -514,6 +515,7 @@ export const MCP_TOOL_DEFINITIONS = [
     ...NETWORK_CONTENT_MCP_TOOL_DEFS,
     ...REMOTE_AGENT_MCP_TOOL_DEFS,
     ...PROJECT_MCP_TOOL_DEFS,
+    ...BRAIN_MCP_TOOL_DEFS,
     ...WORKSPACE_CHAIN_MCP_TOOL_DEFS,
     ...MOTION_MCP_TOOL_DEFS,
 ];
@@ -860,6 +862,16 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
             && !hasProjectAccess(identityForProjectAccess, targetProjectId, "write")) {
             return { content: [{ type: "text", text: "Motion rendering also requires project write capability." }], isError: true };
           }
+          if (name === "superagent_brain") {
+            const identity = getIdentity?.();
+            const principal = identity?.mode === "oauth"
+              ? "oauth:" + identity.subject
+              : identity?.mode === "static-bearer" && identity.credentialHash
+                ? "bearer:" + identity.credentialHash
+                : identity ? "" : authMode === "oauth" ? "" : "local-stdio";
+            if (!principal) throw new Error("Authenticated identity required for brain.");
+            return dispatchBrainMcpTool(name, args, principal)!;
+          }
           const motionRes = await dispatchMotionMcpTool(name, args, targetWorkspace);
           if (motionRes) return motionRes;
           const projectRes = await dispatchProjectMcpTool(name, args, identity?.subject ? identity : null);
@@ -1072,7 +1084,7 @@ function extractMcpResultText(result: unknown): string {
     // If Full YOLO is active, system-wide access is permitted.
     // If Scoped YOLO is active (or allowDangerous without full YOLO), enforce scope boundary!
     const chainToolsRequireDedicatedBoundary = toolName === "superagent_manage_workspace_chain" || toolName === "superagent_cross_workspace_exec";
-    if (isDangerous && !isFullYoloMode() && !chainToolsRequireDedicatedBoundary) {
+    if (isDangerous && !isFullYoloMode() && !chainToolsRequireDedicatedBoundary && toolName !== "superagent_brain") {
       const remoteSshTarget = /^ssh:/i.test(effectiveWs);
       const capability = getProjectCapabilityForTool(toolName, rawArgs);
       const boundaryIdentity = getIdentity?.();

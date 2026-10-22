@@ -199,6 +199,8 @@ export const helpCommand: SlashCommand = {
         "              Usage: /daemon [start|stop|status|list|add|remove|run]",
         "  /skills   - List installed agent skills and templates (/skills [list|synthesize])",
         "  /install  - Install a skill from skills.sh (e.g. /install vercel-labs/skills/find-skills)",
+        "  /brain    - Manage isolated session scratch and artifacts (alias: /scratch)",
+        "              Usage: /brain create | list | inspect | files | clean <sessionId>",
         "  /memory   - Manage and inspect RMemory long-term memory",
         "              Usage: /memory [status|sync|search <query>|add <key> <val> [type]|delete <key> [project|global]|list-scenes|read-scene <path>|read-persona]",
         "              Project scope is the default; memory search is limited to the active project plus global preferences.",
