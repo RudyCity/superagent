@@ -8,6 +8,7 @@ import { SENOPATI_V2_HEADS, type SenopatiV2ShadowPrediction } from "./senopatiV2
 import { inferSelectiveApproval } from "./senopatiV2ApprovalSelective.js";
 import type { SelectivePolicyProfile } from "./senopatiV2SelectiveDecision.js";
 import { assessSelectiveShadow } from "./senopatiV2SelectiveDecision.js";
+import { observeExperimentalRisk } from "./senopatiV2RiskResearch.js";
 
 export type AuditedHead = "intent" | "risk" | "approval";
 export type AuditCase = {
@@ -87,7 +88,7 @@ export interface QualityAuditResult {
   provenance:{unverified:boolean;independentBlindEvidence:false;humanAdjudicationVerified:false;releaseAuthorized:false};
   overlap:{exactTrainingMatches:number;duplicateAmongEvaluation:number;groupOverlapWithTraining:number;overlapIds:string[];duplicateIds:string[];groupOverlapIds:string[]};
   byHead:Record<string,Record<string,unknown>>;
-  safetyEvents:{rawFalseAffirm:number;guardedFalseAffirm:number;selectiveFalseAffirm:number;rawDestructiveFalseNegative:number;guardedDestructiveFalseNegative:number;rawSensitiveMiss:number;guardedSensitiveMiss:number};
+  safetyEvents:{rawFalseAffirm:number;guardedFalseAffirm:number;selectiveFalseAffirm:number;rawDestructiveFalseNegative:number;guardedDestructiveFalseNegative:number;rawSensitiveMiss:number;guardedSensitiveMiss:number;experimentalSensitiveMiss:number;experimentalDestructiveFalseNegative:number;experimentalRiskFalsePositive:number;experimentalNewFalsePositive:number;experimentalRiskEscalations:number};
   advisory:{[head:string]:{accepted:number;errorsAmongAccepted:number;acceptanceRate:number;observedErrorRate:number}};
   triage:Array<{id:string;head:AuditedHead;reason:string;actual:string;raw:string;guarded:string;selective?:string;severity:number;sourceCategory:string;trainingOverlap:boolean}>;
   groupDiagnostics:{groups:number;repeatedGroups:number};
@@ -110,7 +111,8 @@ export function auditSenopatiV2(
     const values=SENOPATI_V2_HEADS[head];
     matrices[head]={
       raw:confusion(values),guarded:confusion(values),
-      ...(head==="approval"?{selective:confusion(values)}:{})
+      ...(head==="approval"?{selective:confusion(values)}:{}),
+      ...(head==="risk"?{experimental:confusion(values)}:{})
     };
   }
   const advisory:QualityAuditResult["advisory"]={};
@@ -119,6 +121,8 @@ export function auditSenopatiV2(
     rawFalseAffirm:0,guardedFalseAffirm:0,selectiveFalseAffirm:0,
     rawDestructiveFalseNegative:0,guardedDestructiveFalseNegative:0,
     rawSensitiveMiss:0,guardedSensitiveMiss:0,
+    experimentalSensitiveMiss:0,experimentalDestructiveFalseNegative:0,
+    experimentalRiskFalsePositive:0,experimentalNewFalsePositive:0,experimentalRiskEscalations:0,
   };
   const overlaps:string[]=[],duplicates:string[]=[],groupOverlaps:string[]=[],triage:QualityAuditResult["triage"]=[];
   const seenInputs=new Set<string>(),groups=new Map<string,number>();
@@ -155,6 +159,13 @@ export function auditSenopatiV2(
         if(g==="affirm"&&truth!=="affirm")events.guardedFalseAffirm++;
       }
       if(head==="risk"){
+        const experimental=observeExperimentalRisk(item.text,guarded.labels.risk);
+        matrices.risk.experimental[truth][experimental.label]++;
+        if(experimental.escalated)events.experimentalRiskEscalations++;
+        if(truth==="safe"&&experimental.label!=="safe")events.experimentalRiskFalsePositive++;
+        if(truth==="safe"&&experimental.escalated)events.experimentalNewFalsePositive++;
+        if(truth==="sensitive"&&experimental.label==="safe")events.experimentalSensitiveMiss++;
+        if(truth==="destructive"&&experimental.label!=="destructive")events.experimentalDestructiveFalseNegative++;
         if(truth==="destructive"&&p!=="destructive")events.rawDestructiveFalseNegative++;
         if(truth==="destructive"&&g!=="destructive")events.guardedDestructiveFalseNegative++;
         if(truth==="sensitive"&&p==="safe")events.rawSensitiveMiss++;

@@ -21,6 +21,7 @@ function report():QualityAuditResult {
       rawFalseAffirm:0,guardedFalseAffirm:0,selectiveFalseAffirm:0,
       rawDestructiveFalseNegative:0,guardedDestructiveFalseNegative:0,
       rawSensitiveMiss:0,guardedSensitiveMiss:0,
+      experimentalSensitiveMiss:0,experimentalDestructiveFalseNegative:0,experimentalRiskFalsePositive:0,experimentalNewFalsePositive:0,experimentalRiskEscalations:0,
     },
     advisory:{},triage:[],groupDiagnostics:{groups:0,repeatedGroups:0}
   };
