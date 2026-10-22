@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import fg from "fast-glob";
+
 
 const root = process.cwd();
 const runDir = path.join(os.tmpdir(), "superagent-test-health-20261014");
@@ -27,18 +27,14 @@ function stripAnsi(value) {
 }
 
 function inventory() {
-  return fg.sync([
-    "tests/**/*.test.ts"
-  ], {
-    cwd: root,
-    onlyFiles: true,
-    dot: false,
-    ignore: [
-      "**/node_modules/**", "**/.git/**", "**/dist/**", "**/coverage/**",
-      "**/.turbo/**", "**/.next/**", "**/out/**", "**/release/**",
-      "**/.test-results/**", "**/test-results/**"
-    ]
-  }).sort((a, b) => a.localeCompare(b));
+  // Bun-native scanning; do not reintroduce fast-glob/braces into test tooling.
+  const glob = new Bun.Glob("tests/**/*.test.ts");
+  const ignored = new Set(["node_modules", ".git", "dist", "coverage", ".turbo",
+    ".next", "out", "release", ".test-results", "test-results"]);
+  return [...glob.scanSync({cwd: root, onlyFiles: true, dot: false})]
+    .map(file => file.split(path.sep).join("/"))
+    .filter(file => !file.split("/").some(part => ignored.has(part)))
+    .sort((a, b) => a.localeCompare(b));
 }
 
 function initialize() {
@@ -76,7 +72,7 @@ function runBatch(batchIndex) {
   const timeoutMs = Number(getArg("timeout-ms", "85000"));
   const start = Date.now();
   console.log("Running batch " + batchIndex + "/" + (manifest.batches.length - 1) + " (" + files.length + " files)");
-  const output = spawnSync("bun", ["x", "vitest", "run", "--reporter=dot", ...files], {
+  const output = spawnSync(process.execPath, ["--bun", "x", "vitest", "run", "--reporter=dot", ...files], {
     cwd: root,
     encoding: "utf8",
     timeout: timeoutMs,

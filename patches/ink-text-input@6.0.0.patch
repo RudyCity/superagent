@@ -1,7 +1,7 @@
-diff --git a/node_modules/ink-text-input/build/index.js b/node_modules/ink-text-input/build/index.js
-index ada7cdc..410c6e2 100644
---- a/node_modules/ink-text-input/build/index.js
-+++ b/node_modules/ink-text-input/build/index.js
+diff --git a/build/index.js b/build/index.js
+index ada7cdcac9d6893879753f769fb07a8e234fdc15..410c6e2695886d0ee9dcedd593f3b04883dfdafe 100644
+--- a/build/index.js
++++ b/build/index.js
 @@ -13,7 +13,7 @@ function TextInput({ value: originalValue, placeholder = '', focus = true, mask,
                  return previousState;
              }

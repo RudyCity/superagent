@@ -1,85 +1,58 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import fs from "fs";
-import path from "path";
-import os from "os";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import { grepTool } from "../src/core/tools/systemTools.js";
-import * as workspaceDiscovery from "../src/core/workspaceDiscovery.js";
-import * as fgModule from "fast-glob";
-import * as fsPromisesModule from "fs/promises";
+import { getWorkspaceCachePath } from "../src/core/workspaceDiscovery.js";
+import * as fsPromisesModule from "node:fs/promises";
 
-describe("grepTool Cache Interception", () => {
+describe("Bun grepTool Cache Interception", () => {
   let testWorkspaceDir: string;
   let testConfigDir: string;
   let originalConfigDirEnv: string | undefined;
-  let fgSpy: any;
-  let readFileSpy: any;
 
   beforeEach(() => {
     originalConfigDirEnv = process.env.SUPERAGENT_CONFIG_DIR;
     testWorkspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "sa-grep-test-ws-"));
     testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "sa-grep-test-cfg-"));
     process.env.SUPERAGENT_CONFIG_DIR = testConfigDir;
+    fs.writeFileSync(path.join(testWorkspaceDir, "disk-file-1.ts"), "matching query from disk");
+    fs.writeFileSync(path.join(testWorkspaceDir, "disk-file-2.ts"), "unrelated text");
 
-    vi.restoreAllMocks();
-
-    fgSpy = vi.spyOn(fgModule, "default").mockResolvedValue(["disk-file-1.ts", "disk-file-2.ts"]);
-    (fgSpy as any).isMatch = fgModule.default.isMatch;
-
-    readFileSpy = vi.spyOn(fsPromisesModule.default, "readFile").mockImplementation((async (filePath: any) => {
-      if (String(filePath).includes("index.ts")) {
-        return "console.log('hello matching query');";
-      }
-      return "some other content";
-    }) as any);
+    // The cache intentionally contains a virtual (not-on-disk) file.
+    vi.spyOn(fsPromisesModule.default, "readFile").mockImplementation(async (filePath: any) => {
+      if (String(filePath).includes("index.ts")) return "console.log('hello matching query');";
+      return fs.readFileSync(String(filePath), "utf8");
+    });
   });
 
   afterEach(() => {
-    process.env.SUPERAGENT_CONFIG_DIR = originalConfigDirEnv;
-    try {
-      fs.rmSync(testWorkspaceDir, { recursive: true, force: true });
-      fs.rmSync(testConfigDir, { recursive: true, force: true });
-    } catch {}
+    vi.restoreAllMocks();
+    if (originalConfigDirEnv === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+    else process.env.SUPERAGENT_CONFIG_DIR = originalConfigDirEnv;
+    fs.rmSync(testWorkspaceDir, { recursive: true, force: true });
+    fs.rmSync(testConfigDir, { recursive: true, force: true });
   });
 
-  it("should bypass disk globbing and search cache files when cache exists", async () => {
-    const mockCache = {
+  it("prefers cached paths over disk files", async () => {
+    const cache = {
       workspaceDir: testWorkspaceDir,
       fingerprint: "abcde-123",
       fileList: ["src/index.ts", "src/utils.ts", "package.json", "README.md"],
       files: {},
       lastScanTime: Date.now()
     };
-
-    const cachePath = workspaceDiscovery.getWorkspaceCachePath(testWorkspaceDir);
-    fs.writeFileSync(cachePath, JSON.stringify(mockCache), "utf-8");
-
-    const result = await grepTool.execute(
-      { pattern: "matching query", include: "*.ts" },
-      testWorkspaceDir,
-      new AbortController().signal
-    );
-
-    // It should find the matching text in src/index.ts (which we mocked in fs/promises)
+    fs.writeFileSync(getWorkspaceCachePath(testWorkspaceDir), JSON.stringify(cache));
+    const result = await grepTool.execute({ pattern: "matching query", include: "*.ts" },
+      testWorkspaceDir, new AbortController().signal);
     expect(result).toContain("src/index.ts:1: console.log('hello matching query');");
     expect(result).not.toContain("disk-file-1.ts");
-
-    // Verify fast-glob on disk was bypassed (mock was not called)
-    expect(fgSpy).not.toHaveBeenCalled();
   });
 
-  it("should fall back to disk globbing when no cache exists", async () => {
-    const result = await grepTool.execute(
-      { pattern: "matching query", include: "*.ts" },
-      testWorkspaceDir,
-      new AbortController().signal
-    );
-
-    // Disk globbing fallback mock returns ["disk-file-1.ts", "disk-file-2.ts"].
-    // Since we mocked readFile to return "some other content" for non-index files,
-    // they won't match "matching query" so the result should be "No matches found." or error.
-    expect(result).toContain("No matches found.");
-
-    // Verify fast-glob on disk was executed
-    expect(fgSpy).toHaveBeenCalled();
+  it("scans actual disk files with Bun.Glob when cache is absent", async () => {
+    const result = await grepTool.execute({ pattern: "matching query", include: "*.ts" },
+      testWorkspaceDir, new AbortController().signal);
+    expect(result).toContain("disk-file-1.ts:1: matching query from disk");
+    expect(result).not.toContain("disk-file-2.ts");
   });
 });

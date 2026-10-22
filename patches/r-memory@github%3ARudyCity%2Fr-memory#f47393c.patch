@@ -1,36 +1,8 @@
-diff --git a/node_modules/r-memory/.bun-tag b/node_modules/r-memory/.bun-tag
+diff --git a/node_modules/r-memory/dist/database/sqlite.d.ts b/dist/database/sqlite.d.ts
 new file mode 100644
-index 0000000..08f03eb
+index 0000000000000000000000000000000000000000..30f28f59bfec5bd9b4e77d1a241eb11b75503032
 --- /dev/null
-+++ b/node_modules/r-memory/.bun-tag
-@@ -0,0 +1 @@
-+RudyCity-r-memory-c8c94ea
-\ No newline at end of file
-diff --git a/node_modules/r-memory/.gitignore b/node_modules/r-memory/.gitignore
-new file mode 100644
-index 0000000..bb1e205
---- /dev/null
-+++ b/node_modules/r-memory/.gitignore
-@@ -0,0 +1,14 @@
-+node_modules/
-+dist/
-+.env
-+*.db
-+*.sqlite
-+*.sqlite3
-+.cache/
-+.models/
-+.idea/
-+.vscode/
-+npm-debug.log*
-+yarn-debug.log*
-+yarn-error.log*
-+.DS_Store
-diff --git a/node_modules/r-memory/dist/database/sqlite.d.ts b/node_modules/r-memory/dist/database/sqlite.d.ts
-new file mode 100644
-index 0000000..30f28f5
---- /dev/null
-+++ b/node_modules/r-memory/dist/database/sqlite.d.ts
++++ b/dist/database/sqlite.d.ts
 @@ -0,0 +1,25 @@
 +import type { Memory, QueryResult, DatabaseAdapter } from '../types.js';
 +export declare class SQLiteAdapter implements DatabaseAdapter {
@@ -57,11 +29,11 @@ index 0000000..30f28f5
 +    close(): void;
 +    getIsVectorExtensionLoaded(): boolean;
 +}
-diff --git a/node_modules/r-memory/dist/database/sqlite.js b/node_modules/r-memory/dist/database/sqlite.js
+diff --git a/node_modules/r-memory/dist/database/sqlite.js b/dist/database/sqlite.js
 new file mode 100644
-index 0000000..cf17544
+index 0000000000000000000000000000000000000000..cf1754430cdef4e7afc0a10e232c8bb5c5645987
 --- /dev/null
-+++ b/node_modules/r-memory/dist/database/sqlite.js
++++ b/dist/database/sqlite.js
 @@ -0,0 +1,641 @@
 +let Database;
 +if (typeof Bun !== 'undefined') {
@@ -704,11 +676,11 @@ index 0000000..cf17544
 +        return this.isVectorExtensionLoaded;
 +    }
 +}
-diff --git a/node_modules/r-memory/dist/embeddings/local.d.ts b/node_modules/r-memory/dist/embeddings/local.d.ts
+diff --git a/node_modules/r-memory/dist/embeddings/local.d.ts b/dist/embeddings/local.d.ts
 new file mode 100644
-index 0000000..fa0d6fe
+index 0000000000000000000000000000000000000000..fa0d6fe42daa9e5e7c435559da99045a36f89b14
 --- /dev/null
-+++ b/node_modules/r-memory/dist/embeddings/local.d.ts
++++ b/dist/embeddings/local.d.ts
 @@ -0,0 +1,30 @@
 +import type { EmbeddingProvider, LocalEmbeddingConfig } from '../types.js';
 +export declare class LocalTextEmbeddingProvider implements EmbeddingProvider {
@@ -740,11 +712,11 @@ index 0000000..fa0d6fe
 +    embedImage(imageInput: string | Buffer | Uint8Array): Promise<number[]>;
 +    private normalize;
 +}
-diff --git a/node_modules/r-memory/dist/embeddings/local.js b/node_modules/r-memory/dist/embeddings/local.js
+diff --git a/node_modules/r-memory/dist/embeddings/local.js b/dist/embeddings/local.js
 new file mode 100644
-index 0000000..854931f
+index 0000000000000000000000000000000000000000..854931f51bdfcdb251508f68b14838a7a66200d5
 --- /dev/null
-+++ b/node_modules/r-memory/dist/embeddings/local.js
++++ b/dist/embeddings/local.js
 @@ -0,0 +1,156 @@
 +// Lazy load transformers.js to avoid loading it if only OpenAI-compatible is used
 +let transformersModule = null;
@@ -902,11 +874,11 @@ index 0000000..854931f
 +        return vector.map(x => x / magnitude);
 +    }
 +}
-diff --git a/node_modules/r-memory/dist/embeddings/openai.d.ts b/node_modules/r-memory/dist/embeddings/openai.d.ts
+diff --git a/node_modules/r-memory/dist/embeddings/openai.d.ts b/dist/embeddings/openai.d.ts
 new file mode 100644
-index 0000000..3cd1b07
+index 0000000000000000000000000000000000000000..3cd1b07dc1f7082fbdb6856b932d1c2ec2624a80
 --- /dev/null
-+++ b/node_modules/r-memory/dist/embeddings/openai.d.ts
++++ b/dist/embeddings/openai.d.ts
 @@ -0,0 +1,20 @@
 +import type { EmbeddingProvider } from '../types.js';
 +export interface OpenAIEmbeddingConfig {
@@ -928,11 +900,11 @@ index 0000000..3cd1b07
 +    embedImage(image: string | Buffer | Uint8Array): Promise<number[]>;
 +    private normalize;
 +}
-diff --git a/node_modules/r-memory/dist/embeddings/openai.js b/node_modules/r-memory/dist/embeddings/openai.js
+diff --git a/node_modules/r-memory/dist/embeddings/openai.js b/dist/embeddings/openai.js
 new file mode 100644
-index 0000000..33388aa
+index 0000000000000000000000000000000000000000..33388aac1b1e8488616e18d005b3c4559da38370
 --- /dev/null
-+++ b/node_modules/r-memory/dist/embeddings/openai.js
++++ b/dist/embeddings/openai.js
 @@ -0,0 +1,105 @@
 +export class OpenAIEmbeddingProvider {
 +    dimensions;
@@ -1039,11 +1011,11 @@ index 0000000..33388aa
 +        return vector.map(x => x / magnitude);
 +    }
 +}
-diff --git a/node_modules/r-memory/dist/index.d.ts b/node_modules/r-memory/dist/index.d.ts
+diff --git a/node_modules/r-memory/dist/index.d.ts b/dist/index.d.ts
 new file mode 100644
-index 0000000..08717e9
+index 0000000000000000000000000000000000000000..08717e91079aced442f030c122f4239e16ccdb86
 --- /dev/null
-+++ b/node_modules/r-memory/dist/index.d.ts
++++ b/dist/index.d.ts
 @@ -0,0 +1,83 @@
 +import type { Memory, QueryResult, EmbeddingProvider, RMemoryConfig, QueryOptions, DocumentIngestOptions, ConsolidateOptions } from './types.js';
 +import { extractTextFromPDF, extractTextFromDocx, extractTextFromXlsx, chunkText, chunkTextParentChild } from './utils/document.js';
@@ -1128,11 +1100,11 @@ index 0000000..08717e9
 +     */
 +    isVectorExtensionLoaded(): boolean;
 +}
-diff --git a/node_modules/r-memory/dist/index.js b/node_modules/r-memory/dist/index.js
+diff --git a/node_modules/r-memory/dist/index.js b/dist/index.js
 new file mode 100644
-index 0000000..6d9388d
+index 0000000000000000000000000000000000000000..6d9388d19e5d7b5e9716abf4585df6ee1d0ac4fb
 --- /dev/null
-+++ b/node_modules/r-memory/dist/index.js
++++ b/dist/index.js
 @@ -0,0 +1,359 @@
 +import { randomUUID } from 'node:crypto';
 +import { readFileSync } from 'node:fs';
@@ -1493,11 +1465,11 @@ index 0000000..6d9388d
 +        return this.db.getIsVectorExtensionLoaded();
 +    }
 +}
-diff --git a/node_modules/r-memory/dist/types.d.ts b/node_modules/r-memory/dist/types.d.ts
+diff --git a/node_modules/r-memory/dist/types.d.ts b/dist/types.d.ts
 new file mode 100644
-index 0000000..6d4efca
+index 0000000000000000000000000000000000000000..6d4efcafa0ecdbef0a696ab5f6dfad80a2dbdda2
 --- /dev/null
-+++ b/node_modules/r-memory/dist/types.d.ts
++++ b/dist/types.d.ts
 @@ -0,0 +1,63 @@
 +export interface Memory {
 +    id: string;
@@ -1562,18 +1534,18 @@ index 0000000..6d4efca
 +    getCache(queryEmbedding: number[], threshold: number): string | null;
 +    clearCache(): void;
 +}
-diff --git a/node_modules/r-memory/dist/types.js b/node_modules/r-memory/dist/types.js
+diff --git a/node_modules/r-memory/dist/types.js b/dist/types.js
 new file mode 100644
-index 0000000..cb0ff5c
+index 0000000000000000000000000000000000000000..cb0ff5c3b541f646105198ee23ac0fc3d805023e
 --- /dev/null
-+++ b/node_modules/r-memory/dist/types.js
++++ b/dist/types.js
 @@ -0,0 +1 @@
 +export {};
-diff --git a/node_modules/r-memory/dist/utils/document.d.ts b/node_modules/r-memory/dist/utils/document.d.ts
+diff --git a/node_modules/r-memory/dist/utils/document.d.ts b/dist/utils/document.d.ts
 new file mode 100644
-index 0000000..d059ca5
+index 0000000000000000000000000000000000000000..d059ca5e43c72ee2fb9052f45747165dc6b80629
 --- /dev/null
-+++ b/node_modules/r-memory/dist/utils/document.d.ts
++++ b/dist/utils/document.d.ts
 @@ -0,0 +1,29 @@
 +/**
 + * Extracts raw text from a PDF document buffer.
@@ -1604,11 +1576,11 @@ index 0000000..d059ca5
 + * Useful for Parent-Child retrieval.
 + */
 +export declare function chunkTextParentChild(text: string, parentSize?: number, parentOverlap?: number, childSize?: number, childOverlap?: number): ParentChildChunks[];
-diff --git a/node_modules/r-memory/dist/utils/document.js b/node_modules/r-memory/dist/utils/document.js
+diff --git a/node_modules/r-memory/dist/utils/document.js b/dist/utils/document.js
 new file mode 100644
-index 0000000..3fe5ac6
+index 0000000000000000000000000000000000000000..3fe5ac6037ad99376c36f259ea0b4220e646bd80
 --- /dev/null
-+++ b/node_modules/r-memory/dist/utils/document.js
++++ b/dist/utils/document.js
 @@ -0,0 +1,83 @@
 +import pdf from 'pdf-parse';
 +import mammoth from 'mammoth';

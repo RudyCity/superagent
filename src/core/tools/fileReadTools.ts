@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
-import fg from "fast-glob";
+import { scanWorkspaceGlob, createWorkspaceGlobMatcher } from "./nativeGlob.js";
 import { validateGlobPattern } from "./globPatternGuard.js";
 import { execa } from "execa";
 import { Tool } from "./types.js";
@@ -224,10 +224,7 @@ export const globTool: Tool = {
           const cacheContent = fsSync.readFileSync(cachePath, "utf-8");
           const cache = JSON.parse(cacheContent);
           if (cache && Array.isArray(cache.fileList)) {
-            const picomatchModule = await import("picomatch") as any;
-            const picomatch = picomatchModule.default;
-            const isMatch = picomatch(pattern);
-            files = cache.fileList.filter((file: string) => isMatch(file));
+            files = cache.fileList.filter(createWorkspaceGlobMatcher(pattern));
           }
         }
       } catch (cacheErr) {
@@ -235,12 +232,7 @@ export const globTool: Tool = {
       }
 
       if (files === null) {
-        files = await fg(pattern, {
-          cwd: searchPath,
-          absolute: false,
-          onlyFiles: true,
-          ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
-        });
+        files = await scanWorkspaceGlob(pattern, searchPath);
       }
 
       if (files.length === 0) return "No files found.";
@@ -347,10 +339,7 @@ export const grepTool: Tool = {
               const cacheContent = fsSync.readFileSync(cachePath, "utf-8");
               const cache = JSON.parse(cacheContent);
               if (cache && Array.isArray(cache.fileList)) {
-                const picomatchModule = await import("picomatch") as any;
-                const picomatch = picomatchModule.default;
-                const isMatch = picomatch(`**/${include}`);
-                const matchedFiles = cache.fileList.filter((file: string) => isMatch(file));
+                const matchedFiles = cache.fileList.filter(createWorkspaceGlobMatcher(safeInclude));
                 files = matchedFiles.map((file: string) => path.resolve(node.searchPath, file));
               }
             }
@@ -359,12 +348,7 @@ export const grepTool: Tool = {
           }
 
           if (files === null) {
-            files = await fg(`**/${include}`, {
-              cwd: node.searchPath,
-              absolute: true,
-              onlyFiles: true,
-              ignore: ["**/node_modules/**", "**/dist/**", "**/.git/**"],
-            });
+            files = await scanWorkspaceGlob(safeInclude, node.searchPath, true);
           }
         }
 

@@ -18,9 +18,8 @@
     "test:integration": "bun --bun x vitest run tests/*integration*.test.ts",
     "verify:extension-js": "bun scripts/verify-extension-js.mjs",
     "verify:all": "bun run build && bun run verify:extension-js && bun run test",
-    "ext:css": "tailwindcss -i chrome-extension/sidepanel.src.css -o chrome-extension/sidepanel.css",
-    "ext:css:watch": "tailwindcss -i chrome-extension/sidepanel.src.css -o chrome-extension/sidepanel.css --watch",
-    "postinstall": "bun x patch-package",
+    "ext:css": "bun scripts/build-extension-css.ts",
+    "ext:css:watch": "bun scripts/build-extension-css.ts --watch",
     "wiki:serve": "bun --bun x serve docs/wiki -p 3333",
     "wiki:sync": "bun .agents/skills/codebase-wiki-generator/scripts/sync-wiki-on-change.cjs",
     "wiki:watch": "bun .agents/skills/codebase-wiki-generator/scripts/watch-and-sync.cjs",
@@ -48,7 +47,6 @@
     "@napi-rs/canvas": "^1.0.2",
     "ai": "^4.3.16",
     "execa": "^9.5.2",
-    "fast-glob": "^3.3.3",
     "ink": "^5.2.0",
     "ink-text-input": "^6.0.0",
     "mammoth": "^1.12.0",
@@ -62,7 +60,6 @@
     "ws": "^8.18.1"
   },
   "devDependencies": {
-    "@tailwindcss/cli": "^4.3.2",
     "@types/node": "^22.15.2",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^18.3.20",
@@ -71,7 +68,9 @@
     "@types/ws": "^8.18.1",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "@tailwindcss/node": "4.3.3",
+    "@tailwindcss/oxide": "4.3.3"
   },
   "engines": {
     "bun": ">=1.4.2"
@@ -88,5 +87,10 @@
     "xlsx": "npm:@e965/xlsx@0.20.3",
     "jsondiffpatch": "0.7.6",
     "sharp": "0.35.5"
+  },
+  "patchedDependencies": {
+    "ink-text-input@6.0.0": "patches/ink-text-input@6.0.0.patch",
+    "mammoth@1.12.0": "patches/mammoth@1.12.0.patch",
+    "r-memory@github:RudyCity/r-memory#f47393c": "patches/r-memory@github%3ARudyCity%2Fr-memory#f47393c.patch"
   }
 }
