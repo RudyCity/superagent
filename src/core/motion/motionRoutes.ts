@@ -25,6 +25,7 @@ import { decodeMotionMediaBase64 } from "./assets/motionInput.js";
 import { summarizeMotionWav } from "./assets/motionWaveform.js";
 import { effectRegistry, EFFECT_CATEGORIES, type EffectCategory } from "./effects/index.js";
 import { changeMotionEffectStack, type MotionStackOperation } from "./effects/effectStack.js";
+import { resizeMotionComposition, type MotionOutputAspect } from "./motionResize.js";
 
 export interface MotionHttpContext {
   resolveWorkspacePath: (req: IncomingMessage) => string | null;
@@ -98,6 +99,7 @@ export async function handleMotionHttpRoute(
   const projectEffects = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects$/);
   const previewEffect = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects\/preview$/);
   const stackRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effect-stack(?:\/(preview))?$/);
+  const resizeRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/resize(?:\/(preview))?$/);
 
   try {
     if (pathname === "/api/motion" && method === "GET") {
@@ -263,6 +265,22 @@ export async function handleMotionHttpRoute(
           intensity: body.intensity as number | undefined,
         });
       json(res, ctx, 200, updated);
+    } else if (resizeRoute && method === "POST") {
+      const body = await readMotionJson(req, 2000);
+      if (!Number.isSafeInteger(body.baseRevision) ||
+          !["16:9", "1:1", "9:16"].includes(String(body.aspectRatio)) ||
+          (body.width !== undefined && !Number.isSafeInteger(body.width)))
+        throw new MotionValidationError(["Invalid Motion resize request"]);
+      const current = await getMotionProject(workspace, resizeRoute[1]);
+      if (current.revision !== body.baseRevision) {
+        json(res, ctx, 409, { error: "Motion revision conflict; reload before resizing" });
+      } else {
+        const composition = resizeMotionComposition(current, body.aspectRatio as MotionOutputAspect,
+          body.width as number | undefined);
+        if (resizeRoute[2] === "preview") json(res, ctx, 200, { ...current, composition });
+        else json(res, ctx, 200, await updateMotionProject(workspace, resizeRoute[1],
+          body.baseRevision as number, [{ type: "replace-composition", composition }]));
+      }
     } else if (stackRoute && method === "POST") {
       const body = await readMotionJson(req, 10_000);
       if (!Number.isSafeInteger(body.baseRevision)) throw new MotionValidationError(["baseRevision is required"]);
