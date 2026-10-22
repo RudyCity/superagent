@@ -64,6 +64,8 @@ export function scanBrainArea(dir: string, area: 'scratch' | 'artifacts' | 'evid
         bytes += stat.size;
         latestModified = Math.max(latestModified, stat.mtimeMs);
         fingerprint.update(path.relative(directory, full) + ':' + stat.size + ':' + stat.mtimeMs + ':' + stat.ctimeMs + '\n');
+      } else {
+        throw new Error('Unsupported Brain filesystem entry; refusing storage operation.');
       }
     }
   };
@@ -199,7 +201,8 @@ export function importBrainBinaryArtifact(dir: string, fileName: string, content
   assertNoSymlink(dir, destination);
   const fd = fs.openSync(destination, 'wx', 0o600);
   try { fs.writeFileSync(fd, content); }
-  finally { fs.closeSync(fd); }
+  catch (error) { fs.closeSync(fd); try { fs.unlinkSync(destination); } catch {} throw error; }
+  fs.closeSync(fd);
   return { success: true, filePath: 'artifacts/' + fileName, bytes: content.length,
     sha256: crypto.createHash('sha256').update(content).digest('hex') };
 }
@@ -246,14 +249,20 @@ export function confirmBrainPublish(
   const source = path.join(dir, validateDestination(entry.filePath!));
   assertNoSymlink(dir, source);
   const stat = fs.lstatSync(source);
-  if (!stat.isFile() || stat.nlink > 1 || stat.size > MAX_BINARY_BYTES ||
-    crypto.createHash('sha256').update(fs.readFileSync(source)).digest('hex') !== entry.fingerprint) {
+  if (!stat.isFile() || stat.nlink > 1 || stat.size > MAX_BINARY_BYTES) throw new Error('Artifact changed since preview.');
+  // Capture one immutable payload. Never hash one version and then copy a second
+  // version if another process edits the source during publication.
+  const bytes = fs.readFileSync(source);
+  if (bytes.length !== entry.bytes || crypto.createHash('sha256').update(bytes).digest('hex') !== entry.fingerprint) {
     throw new Error('Artifact changed since preview.');
   }
   const target = path.join(canonicalRoot, validateDestination(entry.destinationPath!));
   assertNoSymlink(canonicalRoot, target);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   assertNoSymlink(canonicalRoot, target);
-  fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL);
-  return { success: true, sessionId, destinationPath: entry.destinationPath, bytes: stat.size, sha256: entry.fingerprint };
+  const fd = fs.openSync(target, 'wx', 0o600);
+  try { fs.writeFileSync(fd, bytes); fs.fsyncSync(fd); }
+  catch (error) { fs.closeSync(fd); try { fs.unlinkSync(target); } catch {} throw error; }
+  fs.closeSync(fd);
+  return { success: true, sessionId, destinationPath: entry.destinationPath, bytes: bytes.length, sha256: entry.fingerprint };
 }

@@ -7,6 +7,8 @@ import {
 } from "../brain/brainWorkspace.js";
 import { cliBridgeTool } from "../tools/cliBridgeTool.js";
 import { brainStorageUsage, previewBrainRetention, prepareBrainCleanup, confirmBrainCleanup } from "../brain/brainStorageManager.js";
+import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainRMemoryCandidate } from "../brain/brainIndex.js";
+import { promoteBrainDelegation } from "../brain/brainDelegationArtifacts.js";
 
 export const brainCommand: SlashCommand = {
   name: "brain",
@@ -35,6 +37,35 @@ export const brainCommand: SlashCommand = {
         case "show":
         case "inspect": say(inspectBrainSession(owner, explicitSessionId || currentSessionId)); break;
         case "files": say(listBrainFiles(owner, explicitSessionId || currentSessionId)); break;
+        case "resume": say(brainResumeContext(owner, explicitSessionId || currentSessionId)); break;
+        case "search": say(searchBrainArtifacts(owner, tokens.slice(1).join(" "))); break;
+        case "annotate": {
+          const file = tokens[1] || "";
+          const summary = tokens.slice(2).join(" ");
+          if (!currentSessionId || !file || !summary) throw new Error("Usage: /brain annotate <artifacts/file> <summary> (current session)");
+          say(annotateBrainArtifact(owner, currentSessionId, file, summary));
+          break;
+        }
+        case "promote": {
+          if (!currentSessionId || !tokens[1]) throw new Error("Usage: /brain promote <delegateJobId> [outputFilename]");
+          say(await promoteBrainDelegation(owner, currentSessionId, tokens[1], tokens[2]));
+          break;
+        }
+        case "remember": {
+          if (!currentSessionId || !tokens[1]) throw new Error("Usage: /brain remember <artifacts/file> (current session, explicit RMemory write)");
+          const candidate = brainRMemoryCandidate(owner, currentSessionId, tokens[1]);
+          const { rmemorySaveTool } = await import("../tools/rmemoryTools.js");
+          const result = await rmemorySaveTool.execute({
+            id: candidate.assertionKey,
+            content: candidate.content,
+            type: "task-summary",
+            scope: "project",
+            assertionKey: candidate.assertionKey,
+            retentionClass: candidate.retentionClass,
+          }, ctx.agent?.workingDirectory || process.cwd());
+          say(result);
+          break;
+        }
         case "storage": {
           const id = explicitSessionId || currentSessionId;
           say({ sessionId: id, ...brainStorageUsage(inspectBrainSession(owner, id).path) });
@@ -93,7 +124,7 @@ export const brainCommand: SlashCommand = {
           break;
         }
         default:
-          say("Usage: /brain create [sessionId] | inspect | list | files | storage [sessionId] | retention [7|30|90] | clean <sessionId> | clean.confirm <sessionId> <challenge>\n" +
+          say("Usage: /brain create [sessionId] | inspect | list | files | resume [sessionId] | search <query> | annotate <artifacts/file> <summary> | promote <jobId> [filename] | remember <artifacts/file> | storage [sessionId] | retention [7|30|90] | clean <sessionId> | clean.confirm <sessionId> <challenge>\n" +
               "/brain delegate.start <agy|claude|codex> <prompt> | jobs | get <jobId> | tail <jobId> | cancel <jobId>\n" +
               "Alias: /scratch. All delegated files remain in the current session scratch until explicitly published.");
       }

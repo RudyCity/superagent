@@ -146,6 +146,52 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
     expect(fs.readFileSync(path.join(root,"audit.jsonl"),"utf8")).not.toContain("DENIED_SENTINEL");
   }, 35000);
 
+  it("enforces Brain ownership, OAuth write scope, and persistent session resume over real HTTP MCP", async () => {
+    const configRoot = fs.mkdtempSync(path.join(root, "brain-e2e-"));
+    const previous = process.env.SUPERAGENT_CONFIG_DIR;
+    process.env.SUPERAGENT_CONFIG_DIR = configRoot;
+    try {
+      const alice = await issue("client-a", ["mcp:tools", "mcp:tools:write"]);
+      const bob = await issue("client-b", ["mcp:tools", "mcp:tools:write"]);
+      const reader = await issue("client-a", ["mcp:tools"]);
+      const aliceSession = await initialize(alice);
+      const bobSession = await initialize(bob);
+      const readerSession = await initialize(reader);
+      const readerList = await post(reader, rpc(65, "tools/list"), readerSession);
+      expect(readerList.body).not.toContain('"name":"superagent_brain"');
+      const readDenied = await post(reader, rpc(66, "tools/call", {
+        name: "superagent_brain", arguments: { action: "create", sessionId: "sess_http_owner" },
+      }), readerSession);
+      expect(readDenied.body).toContain("mcp:tools:write");
+      const created = await post(alice, rpc(67, "tools/call", {
+        name: "superagent_brain", arguments: { action: "create", sessionId: "sess_http_owner" },
+      }), aliceSession);
+      expect(created.status).toBe(200);
+      expect(created.body).toContain("sess_http_owner");
+      const stored = await post(alice, rpc(68, "tools/call", {
+        name: "superagent_brain", arguments: {
+          action: "write", sessionId: "sess_http_owner",
+          filePath: "artifacts/result.txt", content: "ALICE_ONLY_SENTINEL",
+        },
+      }), aliceSession);
+      expect(stored.body).not.toContain("isError\\\":true");
+      const leaked = await post(bob, rpc(69, "tools/call", {
+        name: "superagent_brain", arguments: {
+          action: "read", sessionId: "sess_http_owner", filePath: "artifacts/result.txt",
+        },
+      }), bobSession);
+      expect(leaked.body).not.toContain("ALICE_ONLY_SENTINEL");
+      const resumed = await post(alice, rpc(70, "tools/call", {
+        name: "superagent_brain", arguments: { action: "session.resume", sessionId: "sess_http_owner" },
+      }), aliceSession);
+      expect(resumed.body).toContain("artifacts/result.txt");
+      expect(fs.existsSync(path.join(configRoot, "brain"))).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+      else process.env.SUPERAGENT_CONFIG_DIR = previous;
+    }
+  }, 30000);
+
   it("requires separately consented admin scope for project access management over HTTP", async () => {
     const writer = await issue("client-a", ["mcp:tools", "mcp:tools:write"]);
     const admin = await issue("client-b", ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"]);

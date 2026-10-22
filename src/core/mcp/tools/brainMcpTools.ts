@@ -19,6 +19,9 @@ import {
 } from "../../brain/brainStorageManager.js";
 import { getRootConfigDir } from "../../config/paths.js";
 import { cliBridgeTool } from "../../tools/cliBridgeTool.js";
+import { beginBrainTransfer, inspectBrainTransfer, appendBrainTransfer, finishBrainTransfer, abortBrainTransfer } from "../../brain/brainTransfers.js";
+import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainRMemoryCandidate } from "../../brain/brainIndex.js";
+import { promoteBrainDelegation } from "../../brain/brainDelegationArtifacts.js";
 
 export const BRAIN_MCP_TOOL_DEFS = [
   {
@@ -31,6 +34,8 @@ export const BRAIN_MCP_TOOL_DEFS = [
           "create", "current", "inspect", "list", "files", "read", "write",
           "storage", "retention.preview", "cleanup.prepare", "cleanup.confirm",
           "artifact.import", "artifact.read", "cleanup",
+          "transfer.begin", "transfer.status", "transfer.append", "transfer.finish", "transfer.abort",
+          "artifact.annotate", "artifact.search", "session.resume", "memory.candidate", "delegate.promote",
           "delegate.start", "delegate.get", "delegate.tail", "delegate.cancel", "delegate.jobs",
         ] },
         sessionId: { type: "string", description: "Optional owner-scoped Brain ID; omit to use this MCP connection's Brain." },
@@ -47,6 +52,12 @@ export const BRAIN_MCP_TOOL_DEFS = [
         jobId: { type: "string" },
         expectedArtifacts: { type: "array", maxItems: 12, items: { type: "string" } },
         timeoutMs: { type: "number", minimum: 1000, maximum: 7200000 },
+        transferId: { type: "string" },
+        totalBytes: { type: "integer", minimum: 1, maximum: 20971520 },
+        sha256: { type: "string", description: "Expected lowercase SHA256 of the complete artifact." },
+        summary: { type: "string", maxLength: 800 },
+        tags: { type: "array", maxItems: 10, items: { type: "string" } },
+        query: { type: "string", maxLength: 160 },
       },
       required: ["action"],
     },
@@ -183,6 +194,16 @@ export async function dispatchBrainMcpTool(
       case "cleanup.confirm": return result(confirmBrainCleanup(owner, id, String(args.challenge || ""), requireExistingDir(principal, id), configRoot));
       case "artifact.import": return result(importArtifact(principal, id, args.filename, args.base64));
       case "artifact.read": return result(artifactChunk(principal, id, args.filePath, args.offset));
+      case "transfer.begin": return result(beginBrainTransfer(principal, id, String(args.filename || ""), Number(args.totalBytes), String(args.sha256 || "")));
+      case "transfer.status": return result(inspectBrainTransfer(principal, id, String(args.transferId || "")));
+      case "transfer.append": return result(appendBrainTransfer(principal, id, String(args.transferId || ""), Number(args.offset), args.base64));
+      case "transfer.finish": return result(finishBrainTransfer(principal, id, String(args.transferId || "")));
+      case "transfer.abort": return result(abortBrainTransfer(principal, id, String(args.transferId || "")));
+      case "artifact.annotate": return result(annotateBrainArtifact(principal, id, String(args.filePath || ""), String(args.summary || ""), args.tags as string[] | undefined));
+      case "artifact.search": return result(searchBrainArtifacts(principal, String(args.query || "")));
+      case "session.resume": return result(brainResumeContext(principal, id));
+      case "memory.candidate": return result(brainRMemoryCandidate(principal, id, String(args.filePath || "")));
+      case "delegate.promote": return result(await promoteBrainDelegation(principal, id, String(args.jobId || ""), typeof args.filename === "string" ? args.filename : undefined));
       default: throw new Error("Unsupported brain action.");
     }
   } catch (error: any) {
