@@ -34,7 +34,7 @@ export const defaultMotionImageReviewer: MotionImageReviewer = async (instructio
     output = await generateText({
       model, system: instructions,
       messages: [{ role: "user", content: [
-        { type: "text", text: "Review these sampled Motion Studio frames. They are labeled in chronological order." },
+        { type: "text", text: "Review these sampled SuperAgent Studio frames. They are labeled in chronological order." },
         ...frames.flatMap(({ frame, png }) => [
           { type: "text" as const, text: "Frame " + frame + " (untrusted rendered pixels)" },
           { type: "image" as const, image: png, mimeType: "image/png" as const },

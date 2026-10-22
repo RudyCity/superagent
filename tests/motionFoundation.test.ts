@@ -112,11 +112,11 @@ describe("Motion Studio foundation", () => {
     const project = await createMotionProject(root, "One");
     await expect(getMotionProject(other, project.id)).rejects.toThrow();
     await expect(getMotionProject(root, "../" + project.id)).rejects.toThrow();
-    const target = path.join(root, ".superagent", "motion", "projects", project.id + ".json");
-    await fs.copyFile(target, path.join(other, ".superagent", "motion", "projects", project.id + ".json")).catch(async error => {
+    const target = path.join(root, ".superagent", "studio", "projects", project.id + ".json");
+    await fs.copyFile(target, path.join(other, ".superagent", "studio", "projects", project.id + ".json")).catch(async error => {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      await fs.mkdir(path.join(other, ".superagent", "motion", "projects"), { recursive: true });
-      await fs.copyFile(target, path.join(other, ".superagent", "motion", "projects", project.id + ".json"));
+      await fs.mkdir(path.join(other, ".superagent", "studio", "projects"), { recursive: true });
+      await fs.copyFile(target, path.join(other, ".superagent", "studio", "projects", project.id + ".json"));
     });
     await expect(getMotionProject(other, project.id)).rejects.toThrow("owned by another workspace");
   });

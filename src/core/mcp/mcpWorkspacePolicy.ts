@@ -1,3 +1,5 @@
+import { MOTION_MCP_TOOL_NAMES } from "./tools/motionMcpTools.js";
+
 export const PROJECT_REGISTRY_TOOL_NAMES = new Set([
   "superagent_list_projects", "superagent_get_project", "superagent_register_project",
   "superagent_update_project", "superagent_remove_project",
@@ -17,4 +19,5 @@ export const WORKSPACE_SCOPED_MCP_TOOLS = new Set([
   "superagent_motion_generate", "superagent_motion_revise", "superagent_motion_list", "superagent_motion_inspect", "superagent_motion_create", "superagent_motion_edit",
   "superagent_motion_import_image", "superagent_motion_import_audio",
   "superagent_motion_render", "superagent_motion_jobs", "superagent_motion_storage", "superagent_motion_queue_recovery", "superagent_motion_supervisor", "superagent_motion_status", "superagent_motion_recovery", "superagent_motion_cancel",
+  ...MOTION_MCP_TOOL_NAMES,
 ]);

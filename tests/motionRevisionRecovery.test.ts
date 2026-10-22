@@ -27,7 +27,7 @@ describe("durable Motion revision recovery", () => {
       expect(restored.composition).toEqual(created.composition);
       expect((await getMotionProject(dir, id)).revision).toBe(4);
       expect((await listMotionProjectHistory(dir, id)).map(item => item.revision)).toEqual([3, 2, 1]);
-      const original = await fs.readFile(path.join(dir, ".superagent", "motion", "projects",
+      const original = await fs.readFile(path.join(dir, ".superagent", "studio", "projects",
         id + ".history", "r0000000001.json"), "utf8");
       expect(JSON.parse(original).composition).toEqual(created.composition);
     } finally { await fs.rm(dir, { recursive: true, force: true }); }
@@ -47,7 +47,7 @@ describe("durable Motion revision recovery", () => {
       expect(history.at(-1)?.revision).toBe(4);
       await expect(restoreMotionProjectHistory(dir, project.id, 24, 1))
         .rejects.toThrow();
-      const dirHistory = path.join(dir, ".superagent", "motion", "projects", project.id + ".history");
+      const dirHistory = path.join(dir, ".superagent", "studio", "projects", project.id + ".history");
       await fs.writeFile(path.join(dirHistory, "r0000000023.json"), "invalid", "utf8");
       expect((await listMotionProjectHistory(dir, project.id)).some(item => item.revision === 23)).toBe(false);
       await expect(restoreMotionProjectHistory(dir, project.id, 24, 23)).rejects.toThrow();

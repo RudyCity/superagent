@@ -79,48 +79,52 @@ function routeError(error: unknown): { status: number; message: string } {
 export async function handleMotionHttpRoute(
   req: IncomingMessage, res: ServerResponse, pathname: string, _url: URL, ctx: MotionHttpContext,
 ): Promise<boolean> {
+  // Studio is canonical; old /api/motion URLs remain readable for existing clients.
+  if (pathname === "/api/studio" || pathname.startsWith("/api/studio/")) {
+    pathname = "/api/motion" + pathname.slice("/api/studio".length);
+  }
   if (!(pathname === "/api/motion" || pathname.startsWith("/api/motion/"))) return false;
   const workspace = ctx.resolveWorkspacePath(req);
   if (!workspace || /^(ssh|chain):/i.test(workspace)) {
-    json(res, ctx, 403, { error: "SuperAgent Visuals requires an authorized local workspace" });
+    json(res, ctx, 403, { error: "SuperAgent Studio requires an authorized local workspace" });
     return true;
   }
   const method = req.method ?? "GET";
-  const project = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})$/);
-  const edits = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/edits$/);
-  const quality = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/quality$/);
-  const visionReview = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/vision-review$/);
-  const visionRepair = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/vision-repair$/);
-  const captions = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/captions\.srt$/);
-  const frameSnapshot = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/frames\/(\d{1,6})\.png$/);
-  const render = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/render$/);
-  const job = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})$/);
-  const cancel = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/cancel$/);
-  const recovery = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/recovery$/);
-  const artifact = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/artifact$/);
-  const extraExport = pathname.match(/^\/api\/motion\/jobs\/(motionjob-[a-f0-9]{24})\/exports\/(gif|webm)$/);
+  const project = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})$/);
+  const edits = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/edits$/);
+  const quality = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/quality$/);
+  const visionReview = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/vision-review$/);
+  const visionRepair = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/vision-repair$/);
+  const captions = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/captions\.srt$/);
+  const frameSnapshot = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/frames\/(\d{1,6})\.png$/);
+  const render = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/render$/);
+  const job = pathname.match(/^\/api\/motion\/jobs\/((?:studiojob|motionjob)-[a-f0-9]{24})$/);
+  const cancel = pathname.match(/^\/api\/motion\/jobs\/((?:studiojob|motionjob)-[a-f0-9]{24})\/cancel$/);
+  const recovery = pathname.match(/^\/api\/motion\/jobs\/((?:studiojob|motionjob)-[a-f0-9]{24})\/recovery$/);
+  const artifact = pathname.match(/^\/api\/motion\/jobs\/((?:studiojob|motionjob)-[a-f0-9]{24})\/artifact$/);
+  const extraExport = pathname.match(/^\/api\/motion\/jobs\/((?:studiojob|motionjob)-[a-f0-9]{24})\/exports\/(gif|webm)$/);
   const asset = pathname.match(/^\/api\/motion\/assets\/(asset-[a-f0-9]{64})$/);
   const audio = pathname.match(/^\/api\/motion\/audio\/(audio-[a-f0-9]{64})$/);
   const waveform = pathname.match(/^\/api\/motion\/audio\/(audio-[a-f0-9]{64})\/waveform$/);
   const compoundPresetsList = pathname === "/api/motion/presets";
   const compoundPresetItem = pathname.match(/^\/api\/motion\/presets\/([a-z][a-z0-9-]{1,63})$/);
-  const projectCompoundPresets = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/presets$/);
-  const previewCompoundPreset = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/presets\/preview$/);
+  const projectCompoundPresets = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/presets$/);
+  const previewCompoundPreset = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/presets\/preview$/);
   const brandKitRoute = pathname === "/api/motion/brand-kit";
   const templatesList = pathname === "/api/motion/templates";
-  const projectTemplateRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/templates(?:\/(preview))?$/);
-  const batchVariants = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/variants$/);
-  const beatSync = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/beat-sync(?:\/(preview))?$/);
-  const particleRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/particles(?:\/(preview))?$/);
-  const typographyRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/typography(?:\/(preview))?$/);
+  const projectTemplateRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/templates(?:\/(preview))?$/);
+  const batchVariants = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/variants$/);
+  const beatSync = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/beat-sync(?:\/(preview))?$/);
+  const particleRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/particles(?:\/(preview))?$/);
+  const typographyRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/typography(?:\/(preview))?$/);
   const effectsList = pathname === "/api/motion/effects";
   const effectItem = pathname.match(/^\/api\/motion\/effects\/([a-z][a-z0-9-]{1,63})$/);
-  const projectEffects = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects$/);
-  const previewEffect = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effects\/preview$/);
-  const stackRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/effect-stack(?:\/(preview))?$/);
-  const resizeRoute = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/resize(?:\/(preview))?$/);
-  const projectHistory = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/history$/);
-  const restoreHistory = pathname.match(/^\/api\/motion\/projects\/(motion-[a-f0-9]{20})\/history\/restore$/);
+  const projectEffects = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/effects$/);
+  const previewEffect = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/effects\/preview$/);
+  const stackRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/effect-stack(?:\/(preview))?$/);
+  const resizeRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/resize(?:\/(preview))?$/);
+  const projectHistory = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/history$/);
+  const restoreHistory = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/history\/restore$/);
 
   try {
     if (pathname === "/api/motion" && method === "GET") {
@@ -249,7 +253,7 @@ export async function handleMotionHttpRoute(
         voiceoverGain: body.voiceoverGain as number | undefined,
       });
       json(res, ctx, 202, result);
-    } else if (pathname.match(/^\/api\/motion\/projects\/motion-[a-f0-9]{20}\/revise$/) && method === "POST") {
+    } else if (pathname.match(/^\/api\/motion\/projects\/(?:studio|motion)-[a-f0-9]{20}\/revise$/) && method === "POST") {
       const body = await readMotionJson(req, 12_000);
       const motionId = pathname.split("/")[4];
       const result = await reviseMotionFromPrompt(workspace, motionId, body.prompt as string, {

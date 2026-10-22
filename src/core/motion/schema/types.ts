@@ -1,5 +1,5 @@
 /**
- * Declarative Motion Studio schema v1. Browser-safe: no filesystem or process dependencies.
+ * Declarative SuperAgent Studio schema v1. Browser-safe: no filesystem or process dependencies.
  * No arbitrary JavaScript, external URLs, fonts or plugins are permitted in a scene.
  */
 export const MOTION_SCHEMA_VERSION = 1 as const;

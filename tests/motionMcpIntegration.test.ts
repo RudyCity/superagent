@@ -28,10 +28,18 @@ const invoke = async (handler: any, name: string, args: Record<string, unknown> 
 
 describe("Motion MCP integration", () => {
   it("exposes all sixteen tools with classification and explicit project capabilities", async () => {
-    const server = createSuperagentMcpServer();
+    const server = createSuperagentMcpServer({ toolExposure: "full", allowDangerous: true });
     const list = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
     const names = (await list({ method: "tools/list", params: {} })).tools.map((entry: any) => entry.name);
     expect(names.filter((name: string) => name.startsWith("superagent_motion_"))).toHaveLength(16);
+    expect(names.filter((name: string) => name.startsWith("superagent_studio_"))).toHaveLength(16);
+    expect(getProjectCapabilityForTool("superagent_studio_render")).toBe("execute");
+    expect(getProjectCapabilityForTool("superagent_studio_generate")).toBe("execute");
+    expect(getProjectCapabilityForTool("superagent_studio_revise")).toBe("execute");
+    expect(getProjectCapabilityForTool("superagent_studio_create")).toBe("write");
+    expect(getProjectCapabilityForTool("superagent_studio_edit")).toBe("write");
+    expect(getProjectCapabilityForTool("superagent_studio_import_image")).toBe("write");
+    expect(getProjectCapabilityForTool("superagent_studio_status")).toBe("read");
     expect(getProjectCapabilityForTool("superagent_motion_create")).toBe("write");
     expect(getProjectCapabilityForTool("superagent_motion_edit")).toBe("write");
     expect(getProjectCapabilityForTool("superagent_motion_import_image")).toBe("write");
@@ -50,11 +58,11 @@ describe("Motion MCP integration", () => {
     const root = await fixture();
     const server = createSuperagentMcpServer({ workspace: root, allowDangerous: true });
     const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
-    const created = await invoke(call, "superagent_motion_create", { name: "Demo Studio" });
+    const created = await invoke(call, "superagent_studio_create", { name: "Demo Studio" });
     expect(created.isError, created.content?.[0]?.text).toBeFalsy();
     const project = JSON.parse(created.content[0].text);
     expect(project.workspaceRoot).toBe(await fs.realpath(root));
-    const inspect = await invoke(call, "superagent_motion_inspect", { motionId: project.id });
+    const inspect = await invoke(call, "superagent_studio_inspect", { studioId: project.id });
     expect(JSON.parse(inspect.content[0].text).revision).toBe(1);
     const edit = await invoke(call, "superagent_motion_edit", {
       motionId: project.id, baseRevision: 1,

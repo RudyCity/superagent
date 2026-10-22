@@ -41,6 +41,7 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio recover JOB_ID --ack-stale [--workspace PATH] [--json]
   superagent studio cancel JOB_ID [--workspace PATH] [--json]
   superagent studio doctor [--json]
+  superagent studio migrate [--workspace PATH] [--apply] [--json]
   superagent studio effects [--category CATEGORY] [--search QUERY] [--workspace PATH] [--json]
   superagent studio effect-info EFFECT_ID [--workspace PATH] [--json]
   superagent studio presets [--search QUERY] [--json]
@@ -97,6 +98,18 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
     const workspace = opt(opts, "--workspace") ?? opt(opts, "-w") ?? process.cwd();
     if (opts.has("--help") || opts.has("-h") || action === "help" || !action) {
       console.log(usage);
+      return 0;
+    }
+    if (action === "migrate") {
+      const { inspectStudioStorageMigration, migrateStudioStorage } =
+        await import("../motion/project/projectStore.js");
+      const before = await inspectStudioStorageMigration(workspace);
+      if (opts.has("--apply")) {
+        const result = await migrateStudioStorage(workspace);
+        emit({ ...result, preview: before }, json);
+      } else {
+        emit({ ...before, dryRun: true, applyInstruction: "superagent studio migrate --apply --workspace PATH" }, json);
+      }
       return 0;
     }
     if (action === "doctor") {

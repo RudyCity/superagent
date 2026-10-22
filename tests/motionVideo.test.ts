@@ -15,7 +15,7 @@ async function fixture(frames = 30) {
   project.composition.durationFrames = frames;
   const last = project.composition.layers[0].tracks[0].keyframes[1];
   last.frame = Math.min(last.frame, frames - 1);
-  const projectFile = path.join(root, ".superagent", "motion", "projects", project.id + ".json");
+  const projectFile = path.join(root, ".superagent", "studio", "projects", project.id + ".json");
   await fs.writeFile(projectFile, JSON.stringify(project));
   return { root, project };
 }
@@ -54,7 +54,7 @@ describe("Motion MP4 rendering and durable job records", () => {
     const { root, project } = await fixture(30);
     project.composition.durationFrames = 1;
     project.composition.layers[0].tracks = [];
-    await fs.writeFile(path.join(root, ".superagent", "motion", "projects", project.id + ".json"), JSON.stringify(project));
+    await fs.writeFile(path.join(root, ".superagent", "studio", "projects", project.id + ".json"), JSON.stringify(project));
     const job = await renderMotionJob(root, project.id, { width: 1920 });
     expect(job.status, job.error).toBe("completed");
     expect(job.profile).toMatchObject({ width: 1920, height: 1080, frameCount: 1 });
@@ -68,7 +68,7 @@ describe("Motion MP4 rendering and durable job records", () => {
     expect(job.artifact).toBeUndefined();
     expect((await getMotionJob(root, job.id)).status).toBe("failed");
     expect((await listMotionJobs(root))).toHaveLength(1);
-    const dir = path.join(root, ".superagent", "motion", "renders");
+    const dir = path.join(root, ".superagent", "studio", "renders");
     expect(await fs.readdir(dir)).toEqual([]);
   });
 

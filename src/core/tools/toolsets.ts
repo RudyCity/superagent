@@ -7,7 +7,7 @@
  */
 
 import { Tool } from "./types.js";
-import { motionGenerateTool, motionReviseTool, motionStatusTool } from "./motionAgentTools.js";
+import { studioGenerateTool, studioReviseTool, studioStatusTool, motionGenerateTool, motionReviseTool, motionStatusTool } from "./motionAgentTools.js";
 import {
   readTool,
 
@@ -234,6 +234,9 @@ export const ORCHESTRATION_TOOL_NAMES: ReadonlySet<string> = new Set(
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────
 // Full development toolset. Scoped to own worktree at runtime via permission layer.
 export const superagentToolset: Tool[] = [
+  studioGenerateTool,
+  studioReviseTool,
+  studioStatusTool,
   motionGenerateTool,
   motionReviseTool,
   motionStatusTool,

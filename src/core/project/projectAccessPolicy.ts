@@ -171,6 +171,8 @@ export function revokeProjectAccess(
 }
 
 export function getProjectCapabilityForTool(toolName: string, args: Record<string, unknown> = {}): ProjectAccessCapability {
+  // Canonical Studio MCP names must receive the SAME write/execute permissions as legacy Motion tools.
+  toolName = toolName.replace(/^superagent_studio_/, "superagent_motion_");
   if (toolName === "superagent_brain_publish") return "write";
   if (toolName === "superagent_exec_command" || toolName === "superagent_office_cli" || toolName === "superagent_cli_bridge") return "execute";
   if (toolName === "superagent_motion_render" || toolName === "superagent_motion_generate" ||

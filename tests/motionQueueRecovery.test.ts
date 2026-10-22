@@ -13,7 +13,7 @@ async function fixture() {
   roots.push(root);
   const project = await createMotionProject(root, "Persisted work");
   // Render one frame for worker spawn test without invalidating the source keyframes.
-  const saved = path.join(root, ".superagent", "motion", "projects", project.id + ".json");
+  const saved = path.join(root, ".superagent", "studio", "projects", project.id + ".json");
   project.composition.durationFrames = 1;
   project.composition.layers[0].tracks = [];
   await fs.writeFile(saved, JSON.stringify(project));

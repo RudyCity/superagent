@@ -3,7 +3,7 @@ import type { MotionEdit, MotionKeyframe, MotionProject, MotionTrack } from "./t
 
 export class MotionValidationError extends Error {
   constructor(public readonly diagnostics: string[]) {
-    super("Invalid SuperAgent Visuals data: " + diagnostics.join("; "));
+    super("Invalid SuperAgent Studio data: " + diagnostics.join("; "));
     this.name = "MotionValidationError";
   }
 }

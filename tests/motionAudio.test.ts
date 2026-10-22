@@ -59,7 +59,7 @@ describe("Motion WAV workspace asset and output", () => {
     expect((await readMotionAudio(root, stored.id)).equals(wav())).toBe(true);
     await expect(readMotionAudio(await workspace(), stored.id)).rejects.toThrow();
     await expect(readMotionAudio(root, "../escape")).rejects.toThrow("Invalid Motion audio ID");
-    await fs.writeFile(path.join(root, ".superagent", "motion", "audio", stored.id + ".wav"), wav(0.5));
+    await fs.writeFile(path.join(root, ".superagent", "studio", "audio", stored.id + ".wav"), wav(0.5));
     await expect(readMotionAudio(root, stored.id)).rejects.toThrow("checksum");
   });
   it("uses a revision-guarded audio track and rejects missing/corrupt references", async () => {

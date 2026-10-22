@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { getMotionProject, motionStorageDir, motionWorkspaceRoot } from "../project/projectStore.js";
+import { getMotionProject, motionStorageDir, motionWorkspaceRoot, studioStorageRoot } from "../project/projectStore.js";
 import { encodeMotionMp4, deriveRenderProfile, type RenderProfile } from "../render/ffmpegEncoder.js";
 import { validateMotionProject } from "../schema/validation.js";
 import { resolveMotionAssets } from "../assets/motionAssets.js";
@@ -31,7 +31,7 @@ export interface MotionJob {
   artifact?: { path: string; bytes: number; sha256: string };
   error?: string;
 }
-const idPattern = /^motionjob-[0-9a-f]{24}$/;
+const idPattern = /^(?:studiojob|motionjob)-[0-9a-f]{24}$/;
 const activeStatuses = new Set<MotionJobStatus>(["queued", "preparing", "rendering", "validating"]);
 const terminalStatuses = new Set<MotionJobStatus>(["completed", "failed", "cancelled", "interrupted"]);
 function assertJobId(id: string): void {
@@ -50,7 +50,7 @@ function jobFile(dir: string, id: string): string { assertJobId(id); return path
 function sourceFile(dir: string, id: string): string { assertJobId(id); return path.join(dir, id + ".source.json"); }
 function cancelFile(dir: string, id: string): string { assertJobId(id); return path.join(dir, id + ".cancel"); }
 function projectClaim(dir: string, projectId: string): string {
-  if (!/^motion-[0-9a-f]{20}$/.test(projectId)) throw new Error("Invalid Motion project id");
+  if (!/^(?:studio|motion)-[0-9a-f]{20}$/.test(projectId)) throw new Error("Invalid Motion project id");
   return path.join(dir, projectId + ".render.lock");
 }
 async function ownedRegularFile(file: string, maxBytes: number): Promise<Buffer> {
@@ -79,7 +79,7 @@ async function persist(job: MotionJob, dir: string, initial = false): Promise<vo
 }
 function validateJobShape(job: MotionJob, id: string, workspaceRoot: string): void {
   if (job.schemaVersion !== 1 || job.id !== id || job.workspaceRoot !== workspaceRoot ||
-    typeof job.projectId !== "string" || !/^motion-[0-9a-f]{20}$/.test(job.projectId) ||
+    typeof job.projectId !== "string" || !/^(?:studio|motion)-[0-9a-f]{20}$/.test(job.projectId) ||
     !Number.isSafeInteger(job.revision) || job.revision < 1 ||
     !Number.isSafeInteger(job.framesCompleted) || job.framesCompleted < 0 ||
     ![...activeStatuses, ...terminalStatuses].includes(job.status) ||
@@ -92,6 +92,14 @@ export async function getMotionJob(workspace: string, id: string): Promise<Motio
   const dir = await motionJobDir(root, "jobs");
   const job = JSON.parse((await ownedRegularFile(jobFile(dir, id), 100_000)).toString("utf8")) as MotionJob;
   validateJobShape(job, id, root);
+  // Completed legacy manifests store absolute MP4 paths. A same-volume
+  // Studio namespace migration preserves bytes but changes their prefix.
+  if (job.artifact && path.basename(await studioStorageRoot(root)) === "studio") {
+    const oldArtifact = path.join(root, ".superagent", "motion", "renders", id + ".mp4");
+    if (job.artifact.path === oldArtifact) {
+      job.artifact.path = path.join(root, ".superagent", "studio", "renders", id + ".mp4");
+    }
+  }
   return job;
 }
 export async function getMotionSchedulerStatus(workspace: string) {
@@ -285,7 +293,7 @@ export async function prepareMotionJob(
   const dir = await motionJobDir(workspace, "jobs");
   return withMotionQueueAdmission(dir, async () => {
     await assertMotionQueueCapacity(dir);
-    const id = "motionjob-" + crypto.randomBytes(12).toString("hex");
+    const id = "studiojob-" + crypto.randomBytes(12).toString("hex");
   const claim = projectClaim(dir, project.id);
   const lock = await fs.open(claim, "wx", 0o600).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "EEXIST") throw new Error("Motion project already has an active or unreconciled render");

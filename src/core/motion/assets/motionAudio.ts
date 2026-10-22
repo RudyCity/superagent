@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
-import { motionWorkspaceRoot } from "../project/projectStore.js";
+import { studioStorageRoot } from "../project/projectStore.js";
 import type { MotionProject } from "../schema/types.js";
 
 const AUDIO_ID = /^audio-[a-f0-9]{64}$/;
@@ -10,8 +10,8 @@ export function assertAudioId(id: string): void {
   if (!AUDIO_ID.test(id)) throw new Error("Invalid Motion audio ID");
 }
 async function audioDirectory(workspace: string, create: boolean): Promise<string> {
-  let current = await motionWorkspaceRoot(workspace);
-  for (const segment of [".superagent", "motion", "audio"]) {
+  let current = await studioStorageRoot(workspace, create);
+  for (const segment of ["audio"]) {
     current = path.join(current, segment);
     if (create) {
       try { await fs.mkdir(current, { mode: 0o700 }); }

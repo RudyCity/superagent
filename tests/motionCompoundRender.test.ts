@@ -36,7 +36,7 @@ describe("Compound Motion H.264 and SVG rendering", () => {
       expect(svg).toContain("#");
     }
     if (!(await probeFfmpeg())) return;
-    const filename = path.join(root, ".superagent", "motion", "projects", original.id + ".json");
+    const filename = path.join(root, ".superagent", "studio", "projects", original.id + ".json");
     await fs.writeFile(filename, JSON.stringify(composed), "utf8");
     const result = await renderMotionJob(root, original.id, { width: 160 });
     expect(result.status).toBe("completed");

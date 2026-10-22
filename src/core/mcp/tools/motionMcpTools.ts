@@ -14,7 +14,7 @@ import { inspectMotionSupervisor } from "../../motion/jobs/motionSupervisor.js";
 import { generateMotionFromPrompt, reviseMotionFromPrompt } from "../../motion/director/directorService.js";
 import type { McpToolResult } from "../types.js";
 
-export const MOTION_MCP_TOOL_DEFS = [
+const LEGACY_MOTION_MCP_TOOL_DEFS = [
   {
     name: "superagent_motion_generate",
     description: "Generate a short editable motion scene and MP4 render from a natural-language prompt through SuperAgent AI Motion Director. Dangerous workspace write+execute action.",
@@ -45,14 +45,14 @@ export const MOTION_MCP_TOOL_DEFS = [
   },
   {
     name: "superagent_motion_list",
-    description: "List SuperAgent Visuals projects in an authorized local workspace.",
+    description: "List SuperAgent Studio projects in an authorized local workspace.",
     inputSchema: { type: "object", properties: {
       workspace: { type: "string" }, projectId: { type: "string", description: "Registered workspace project routing ID (not a Motion scene ID)." },
     } },
   },
   {
     name: "superagent_motion_inspect",
-    description: "Inspect a SuperAgent Visuals scene revision by motionId within an authorized workspace.",
+    description: "Inspect a SuperAgent Studio scene revision by motionId within an authorized workspace.",
     inputSchema: { type: "object", properties: {
       workspace: { type: "string" }, projectId: { type: "string" },
       motionId: { type: "string" },
@@ -60,7 +60,7 @@ export const MOTION_MCP_TOOL_DEFS = [
   },
   {
     name: "superagent_motion_create",
-    description: "Create a SuperAgent Visuals project. Requires workspace write access and dangerous-tool opt-in.",
+    description: "Create a SuperAgent Studio project. Requires workspace write access and dangerous-tool opt-in.",
     inputSchema: { type: "object", properties: {
       workspace: { type: "string" }, projectId: { type: "string" },
       name: { type: "string" },
@@ -154,7 +154,7 @@ export const MOTION_MCP_TOOL_DEFS = [
   },
 ];
 
-export const MOTION_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
+export const LEGACY_MOTION_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
   superagent_motion_generate: "dangerous",
   superagent_motion_revise: "dangerous",
   superagent_motion_list: "safe",
@@ -173,6 +173,35 @@ export const MOTION_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous
   superagent_motion_cancel: "dangerous",
 };
 
+/**
+ * Advertise Studio as the canonical tool domain while keeping the historical
+ * names for already-connected MCP clients. Both use identical authorization.
+ */
+export const MOTION_MCP_TOOL_DEFS = [
+  ...LEGACY_MOTION_MCP_TOOL_DEFS,
+  ...LEGACY_MOTION_MCP_TOOL_DEFS.map(tool => {
+    const schema = tool.inputSchema as {
+      type: string; properties: Record<string, unknown>; required?: string[];
+    };
+    const { motionId, ...properties } = schema.properties;
+    return {
+      ...tool,
+      name: tool.name.replace("superagent_motion_", "superagent_studio_"),
+      description: tool.description.replace(/Motion Studio|SuperAgent Visuals|Motion render/g, "SuperAgent Studio"),
+      inputSchema: motionId
+        ? { ...schema, properties: { ...properties, studioId: motionId },
+            required: schema.required?.map(key => key === "motionId" ? "studioId" : key) }
+        : schema,
+    };
+  }),
+];
+
+export const MOTION_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
+  ...LEGACY_MOTION_MCP_TOOL_CLASSIFICATIONS,
+  ...Object.fromEntries(Object.entries(LEGACY_MOTION_MCP_TOOL_CLASSIFICATIONS)
+    .map(([name, kind]) => [name.replace("superagent_motion_", "superagent_studio_"), kind])),
+};
+
 export const MOTION_MCP_TOOL_NAMES = new Set(Object.keys(MOTION_MCP_TOOL_CLASSIFICATIONS));
 
 /**
@@ -183,11 +212,12 @@ export async function dispatchMotionMcpTool(
   name: string, args: Record<string, unknown>, authorizedWorkspace: string,
 ): Promise<McpToolResult | null> {
   if (!MOTION_MCP_TOOL_NAMES.has(name)) return null;
-  const motionId = typeof args.motionId === "string" ? args.motionId : "";
+  const legacyAction = name.replace("superagent_studio_", "superagent_motion_");
+  const motionId = typeof args.studioId === "string" ? args.studioId : typeof args.motionId === "string" ? args.motionId : "";
   const jobId = typeof args.jobId === "string" ? args.jobId : "";
   try {
     let result: unknown;
-    switch (name) {
+    switch (legacyAction) {
       case "superagent_motion_generate":
         result = await generateMotionFromPrompt(authorizedWorkspace, String(args.prompt ?? ""), {
           width: args.width === undefined ? undefined : Number(args.width),
@@ -248,7 +278,7 @@ export async function dispatchMotionMcpTool(
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   } catch (error) {
     return {
-      content: [{ type: "text", text: "SuperAgent Visuals: " + (error instanceof Error ? error.message : String(error)) }],
+      content: [{ type: "text", text: "SuperAgent Studio: " + (error instanceof Error ? error.message : String(error)) }],
       isError: true,
     };
   }

@@ -5,7 +5,7 @@ import { getMotionJob, listMotionJobs, motionJobDir, spawnPreparedMotionWorker, 
 import { withMotionQueueAdmission } from "./renderScheduler.js";
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
-const idPattern = /^motionjob-[a-f0-9]{24}$/;
+const idPattern = /^(?:studiojob|motionjob)-[a-f0-9]{24}$/;
 export type QueuedRecoveryItem = { jobId: string; createdAt: string; state: "eligible" | "blocked"; reason?: string };
 export type QueuedRecoveryReport = {
   minAgeSeconds: number;

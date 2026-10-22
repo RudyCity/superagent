@@ -164,7 +164,7 @@ export async function handleServerRoute(
   } = ctx;
 
   // Motion API reuses the existing /api authorization and validated workspace gate.
-  if (pathname === "/api/motion" || pathname.startsWith("/api/motion/")) {
+  if (pathname === "/api/studio" || pathname.startsWith("/api/studio/") || pathname === "/api/motion" || pathname.startsWith("/api/motion/")) {
     const { handleMotionHttpRoute } = await import("./core/motion/motionRoutes.js");
     return handleMotionHttpRoute(req, res, pathname, parsedUrl, { resolveWorkspacePath, sendJSON });
   }
@@ -3538,4 +3538,3 @@ export async function handleServerRoute(
 
   return false;
 }
-

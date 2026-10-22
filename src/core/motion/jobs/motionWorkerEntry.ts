@@ -5,7 +5,7 @@
 import { runPreparedMotionJob } from "./motionJobs.js";
 
 const [workspace, jobId] = process.argv.slice(2);
-if (!workspace || !/^motionjob-[0-9a-f]{24}$/.test(jobId ?? "")) {
+if (!workspace || !/^(?:studiojob|motionjob)-[0-9a-f]{24}$/.test(jobId ?? "")) {
   process.exitCode = 2;
 } else {
   const controller = new AbortController();

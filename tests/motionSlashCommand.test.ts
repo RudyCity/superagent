@@ -29,7 +29,7 @@ describe("Interactive SuperAgent Studio slash command", () => {
     const { ctx, messages, root } = await context();
     await motionCommand.execute("new Example Product Launch", ctx);
     expect(messages[0].content).toContain("Created motion project");
-    const id = messages[0].content.match(/motion-[0-9a-f]{20}/)?.[0];
+    const id = messages[0].content.match(/(?:studio|motion)-[0-9a-f]{20}/)?.[0];
     expect(id).toBeDefined();
     await motionCommand.execute("list", ctx);
     expect(messages[1].content).toContain(id);
@@ -37,7 +37,7 @@ describe("Interactive SuperAgent Studio slash command", () => {
     expect(messages[2].content).toContain("revision 2");
     await motionCommand.execute("frame " + id + " 24", ctx);
     expect(messages[3].content).toContain("Motion SVG preview:");
-    const entries = await fs.readdir(path.join(root, ".superagent", "motion", "previews"));
+    const entries = await fs.readdir(path.join(root, ".superagent", "studio", "previews"));
     expect(entries).toHaveLength(1);
   });
 
@@ -50,7 +50,7 @@ describe("Interactive SuperAgent Studio slash command", () => {
     const assetId = messages[0].content.match(/asset-[a-f0-9]{64}/)?.[0];
     expect(assetId).toBeDefined();
     await motionCommand.execute("new Json Studio", ctx);
-    const id = messages[1].content.match(/motion-[a-f0-9]{20}/)?.[0];
+    const id = messages[1].content.match(/(?:studio|motion)-[a-f0-9]{20}/)?.[0];
     expect(id).toBeDefined();
     const edits = [
       { type: "set-property", layerId: "title", property: "x", value: 64 },

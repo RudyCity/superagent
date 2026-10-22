@@ -18,7 +18,7 @@ async function fixture(frames = 30) {
   project.composition.durationFrames = frames;
   const keyframe = project.composition.layers[0].tracks[0].keyframes[1];
   keyframe.frame = Math.min(24, frames - 1);
-  const file = path.join(root, ".superagent", "motion", "projects", project.id + ".json");
+  const file = path.join(root, ".superagent", "studio", "projects", project.id + ".json");
   await fs.writeFile(file, JSON.stringify(project));
   return { root, project, file };
 }
@@ -36,7 +36,7 @@ describe("Motion Studio detached worker boundaries", () => {
     current.composition.layers[0].text = "Changed after queue";
     await fs.writeFile(file, JSON.stringify(current));
     await expect(prepareMotionJob(root, project.id, { width: 160 })).rejects.toThrow("active or unreconciled render");
-    const jobsDir = path.join(root, ".superagent", "motion", "jobs");
+    const jobsDir = path.join(root, ".superagent", "studio", "jobs");
     await fs.writeFile(path.join(jobsDir, job.id + ".runner.lock"), "external runner");
     await expect(runPreparedMotionJob(root, job.id)).rejects.toThrow("claimed by a worker");
     await fs.rm(path.join(jobsDir, job.id + ".runner.lock"));
@@ -54,7 +54,7 @@ describe("Motion Studio detached worker boundaries", () => {
   it("refuses a modified source snapshot and never publishes an untrusted video", async () => {
     const { root, project } = await fixture();
     const job = await prepareMotionJob(root, project.id, { width: 160 });
-    const source = path.join(root, ".superagent", "motion", "jobs", job.id + ".source.json");
+    const source = path.join(root, ".superagent", "studio", "jobs", job.id + ".source.json");
     const content = JSON.parse(await fs.readFile(source, "utf8"));
     content.composition.layers[0].text = "Tampered snapshot";
     await fs.writeFile(source, JSON.stringify(content));
@@ -80,7 +80,7 @@ describe("Motion Studio detached worker boundaries", () => {
     const { root, project } = await fixture();
     const job = await prepareMotionJob(root, project.id, { width: 160 });
     await expect(reconcileStaleMotionJob(root, job.id)).rejects.toThrow("too recent");
-    const dir = path.join(root, ".superagent", "motion", "jobs");
+    const dir = path.join(root, ".superagent", "studio", "jobs");
     const file = path.join(dir, job.id + ".json");
     const old = { ...job, updatedAt: new Date(Date.now() - 180_000).toISOString() };
     await fs.writeFile(file, JSON.stringify(old));

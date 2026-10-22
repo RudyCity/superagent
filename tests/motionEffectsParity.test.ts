@@ -211,7 +211,7 @@ describe("Motion Studio Effects Engine - H.264 MP4 Export", () => {
       params: { color: "#38BDF8", thickness: 4 },
     });
 
-    const projectFile = path.join(ws, ".superagent", "motion", "projects", project.id + ".json");
+    const projectFile = path.join(ws, ".superagent", "studio", "projects", project.id + ".json");
     await fs.writeFile(projectFile, JSON.stringify(withAccent, null, 2), "utf8");
 
     const job = await renderMotionJob(ws, project.id, { width: 160 });
@@ -257,7 +257,7 @@ describe("Motion Studio Effects Engine - CLI Command Integration", () => {
     expect(codeApply).toBe(0);
 
     // 4. Verify updated project file
-    const projectFile = path.join(ws, ".superagent", "motion", "projects", project.id + ".json");
+    const projectFile = path.join(ws, ".superagent", "studio", "projects", project.id + ".json");
     const updatedContent = JSON.parse(await fs.readFile(projectFile, "utf8"));
     expect(updatedContent.revision).toBe(2);
     expect(updatedContent.composition.layers.length).toBeGreaterThan(1);

@@ -10,13 +10,13 @@ import { probeFfmpeg } from "../src/core/motion/render/ffmpegEncoder.js";
 
 const roots: string[] = [];
 const previous = process.env.SUPERAGENT_MOTION_MAX_RENDERERS;
-const idPattern = /^motionjob-[a-f0-9]{24}$/;
+const idPattern = /^(?:studiojob|motionjob)-[a-f0-9]{24}$/;
 async function fixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "motion-supervisor-"));
   roots.push(root);
   const create = async (name: string) => {
     const project = await createMotionProject(root, name);
-    const file = path.join(root, ".superagent", "motion", "projects", project.id + ".json");
+    const file = path.join(root, ".superagent", "studio", "projects", project.id + ".json");
     project.composition.durationFrames = 1;
     project.composition.layers[0].tracks = [];
     await fs.writeFile(file, JSON.stringify(project));

@@ -106,7 +106,7 @@ export async function inspectMotionSupervisor(workspace: string): Promise<Motion
       }
       const raw: unknown = JSON.parse(await fs.readFile(file, "utf8"));
       if (!raw || typeof raw !== "object" ||
-        !/^motionjob-[a-f0-9]{24}$/.test(String((raw as { jobId?: string }).jobId))) {
+        !/^(?:studiojob|motionjob)-[a-f0-9]{24}$/.test(String((raw as { jobId?: string }).jobId))) {
         blockedReason = "Unverifiable render-slot ownership"; break;
       }
       occupying.add((raw as { jobId: string }).jobId);

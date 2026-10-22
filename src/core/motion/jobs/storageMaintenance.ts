@@ -4,7 +4,7 @@ import { getMotionJob, listMotionJobs, motionJobDir } from "./motionJobs.js";
 import { inspectMotionSlots } from "./renderScheduler.js";
 
 const terminalPrunable = new Set(["failed", "cancelled", "interrupted"]);
-const jobName = /^motionjob-[a-f0-9]{24}$/;
+const jobName = /^(?:studiojob|motionjob)-[a-f0-9]{24}$/;
 export interface MotionStorageReport {
   jobs: { total: number; queued: number; running: number; completed: number; failed: number; cancelled: number; interrupted: number };
   completedArtifactBytes: number;

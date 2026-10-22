@@ -50,16 +50,16 @@ describe("Motion immutable workspace asset store", () => {
     await expect(importMotionAsset(root, Buffer.alloc(1024 * 1024 + 1)))
       .rejects.toThrow("upload size");
     const imported = await importMotionAsset(root, sample());
-    const location = path.join(root, ".superagent", "motion", "assets", imported.id + ".png");
+    const location = path.join(root, ".superagent", "studio", "assets", imported.id + ".png");
     await fs.writeFile(location, Buffer.from("malicious"));
     await expect(readMotionAsset(root, imported.id)).rejects.toThrow("Invalid Motion asset file");
   });
   it("rejects symlinked workspace asset storage", async () => {
     const root = await workspace();
     const outside = await workspace();
-    await fs.mkdir(path.join(root, ".superagent", "motion"), { recursive: true });
+    await fs.mkdir(path.join(root, ".superagent", "studio"), { recursive: true });
     try {
-      await fs.symlink(outside, path.join(root, ".superagent", "motion", "assets"),
+      await fs.symlink(outside, path.join(root, ".superagent", "studio", "assets"),
         process.platform === "win32" ? "junction" : "dir");
     } catch (error) {
       if (process.platform === "win32" && (error as NodeJS.ErrnoException).code === "EPERM") return;
@@ -99,7 +99,7 @@ describe("Motion immutable workspace asset store", () => {
     const job = await renderMotionJob(root, edited.id, { width: 160 });
     expect(job.status).toBe("completed");
     expect(job.artifact?.bytes).toBeGreaterThan(200);
-    const location = path.join(root, ".superagent", "motion", "assets", image.id + ".png");
+    const location = path.join(root, ".superagent", "studio", "assets", image.id + ".png");
     await fs.writeFile(location, Buffer.from("bad-data"));
     await expect(renderMotionJob(root, edited.id, { width: 160 })).rejects.toThrow();
   }, 30000);

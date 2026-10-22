@@ -39,7 +39,7 @@ export async function assertMotionQueueCapacity(dir: string): Promise<void> {
   const files = await fs.readdir(dir);
   let queued = 0;
   for (const file of files) {
-    if (!/^motionjob-[a-f0-9]{24}\.json$/.test(file)) continue;
+    if (!/^(?:studiojob|motionjob)-[a-f0-9]{24}\.json$/.test(file)) continue;
     try {
       const stat = await fs.lstat(path.join(dir, file));
       if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 100_000) continue;
@@ -56,7 +56,7 @@ export interface MotionSlot {
 export async function acquireMotionRenderSlot(
   dir: string, jobId: string, options: { signal?: AbortSignal; cancelled?: () => Promise<boolean>; maxWaitMs?: number } = {},
 ): Promise<MotionSlot> {
-  if (!/^motionjob-[a-f0-9]{24}$/.test(jobId)) throw new Error("Invalid Motion job id");
+  if (!/^(?:studiojob|motionjob)-[a-f0-9]{24}$/.test(jobId)) throw new Error("Invalid Motion job id");
   const max = motionConcurrentSlots();
   const waitMs = options.maxWaitMs ?? 900_000;
   if (!Number.isSafeInteger(waitMs) || waitMs < 0 || waitMs > 900_000) throw new Error("Invalid Motion slot wait limit");

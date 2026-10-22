@@ -67,7 +67,7 @@ describe("Motion storage maintenance safety", () => {
     const third = await fixture();
     if (await probeFfmpeg()) {
       // A completed render must never appear as a prune candidate even if arbitrarily old.
-      const source = path.join(third.root, ".superagent", "motion", "projects", third.project.id + ".json");
+      const source = path.join(third.root, ".superagent", "studio", "projects", third.project.id + ".json");
       const composition = structuredClone(third.project);
       composition.composition.durationFrames = 1;
       composition.composition.layers[0].tracks = [];

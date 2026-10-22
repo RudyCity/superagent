@@ -20,7 +20,7 @@ const promptParameters = { type: "object", properties: {
 
 export const motionGenerateTool: Tool = {
   name: "motion_generate",
-  description: "Create an editable SuperAgent Visuals scene and render MP4 from a normal natural-language prompt with the SuperAgent AI planner. No project ID, JSON, or manual supervisor required. Supports attached workspace image and WAV audio assets, but not automated image/music generation or TTS.",
+  description: "Create an editable SuperAgent Studio scene and render MP4 from a normal natural-language prompt with the SuperAgent AI planner. No project ID, JSON, or manual supervisor required. Supports attached workspace image and WAV audio assets, but not automated image/music generation or TTS.",
   parameters: promptParameters,
   async execute(args, cwd, signal) {
     const result = await generateMotionFromPrompt(cwd, args.prompt as string,
@@ -42,10 +42,10 @@ export const motionGenerateTool: Tool = {
 };
 export const motionReviseTool: Tool = {
   name: "motion_revise",
-  description: "Modify an existing SuperAgent Visuals project from a conversational change request, preserving unrelated scene content, then start its revised MP4 render. Requires Motion project ID from previous generation.",
+  description: "Modify an existing SuperAgent Studio project from a conversational change request, preserving unrelated scene content, then start its revised MP4 render. Requires Motion project ID from previous generation.",
   parameters: { type: "object", properties: {
     ...promptParameters.properties,
-    motionId: { type: "string", description: "Existing editable SuperAgent Visuals project ID." },
+    motionId: { type: "string", description: "Existing editable SuperAgent Studio project ID." },
   }, required: ["motionId", "prompt"] },
   async execute(args, cwd, signal) {
     const result = await reviseMotionFromPrompt(cwd, args.motionId as string, args.prompt as string,
@@ -65,7 +65,7 @@ export const motionReviseTool: Tool = {
 /** Query finished artifacts without shell commands or raw MCP arguments. */
 export const motionStatusTool: Tool = {
   name: "motion_status",
-  description: "Read SuperAgent Visuals render progress and final MP4 artifact path from a job ID returned by motion_generate or motion_revise. Read-only.",
+  description: "Read SuperAgent Studio render progress and final MP4 artifact path from a job ID returned by motion_generate or motion_revise. Read-only.",
   parameters: { type: "object", properties: {
     jobId: { type: "string", description: "Motion render job ID." },
   }, required: ["jobId"] },
@@ -79,5 +79,45 @@ export const motionStatusTool: Tool = {
         ? { quality: inspectMotionQuality(current) }
         : { qualityNote: "Job is pinned to an older revision; quality report requires the original snapshot" }),
     });
+  },
+};
+
+/** Canonical Studio agent tools, retaining historical motion_* aliases. */
+export const studioGenerateTool: Tool = {
+  ...motionGenerateTool,
+  name: "studio_generate",
+  description: motionGenerateTool.description.replace("motion", "Studio"),
+  async execute(args, cwd, signal) {
+    const raw = await motionGenerateTool.execute(args, cwd, signal);
+    const result = JSON.parse(String(raw));
+    return JSON.stringify({ ...result, studioId: result.motionId,
+      nextStep: "Inspect with studio_status; revise with studio_revise" });
+  },
+};
+
+export const studioReviseTool: Tool = {
+  ...motionReviseTool,
+  name: "studio_revise",
+  parameters: {
+    ...motionReviseTool.parameters,
+    properties: {
+      ...promptParameters.properties,
+      studioId: { type: "string", description: "Existing SuperAgent Studio project ID" },
+    },
+    required: ["studioId", "prompt"],
+  },
+  async execute(args, cwd, signal) {
+    return motionReviseTool.execute({ ...args, motionId: args.studioId }, cwd, signal);
+  },
+};
+
+export const studioStatusTool: Tool = {
+  ...motionStatusTool,
+  name: "studio_status",
+  description: "Read SuperAgent Studio render progress and final video artifact for a Studio job",
+  async execute(args, cwd, signal) {
+    const raw = await motionStatusTool.execute(args, cwd, signal);
+    const result = JSON.parse(String(raw));
+    return JSON.stringify({ ...result, studioId: result.motionId });
   },
 };

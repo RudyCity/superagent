@@ -12,7 +12,7 @@ export { createMotionProject, getMotionProject, listMotionProjects, updateMotion
 export type { MotionProject, MotionEdit, EffectApplication, CompoundPresetApplication };
 
 /**
- * Apply a declarative effect from the Motion Studio Effects Engine to a project
+ * Apply a declarative effect from the SuperAgent Studio Effects Engine to a project
  * using optimistic locking and compare-and-swap revisions.
  */
 export async function applyEffectToProject(

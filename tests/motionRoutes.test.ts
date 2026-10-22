@@ -268,7 +268,7 @@ describe("Motion HTTP and artifact transport", () => {
     const { root, request } = await fixture();
     const project = await createMotionProject(root, "Streaming");
     project.composition.durationFrames = 30;
-    await fs.writeFile(path.join(root, ".superagent", "motion", "projects", project.id + ".json"), JSON.stringify(project));
+    await fs.writeFile(path.join(root, ".superagent", "studio", "projects", project.id + ".json"), JSON.stringify(project));
     const job = await renderMotionJob(root, project.id, { width: 160 });
     expect(job.status).toBe("completed");
     const endpoint = "/api/motion/jobs/" + job.id + "/artifact";

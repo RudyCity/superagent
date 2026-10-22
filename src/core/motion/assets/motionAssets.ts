@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import { motionWorkspaceRoot } from "../project/projectStore.js";
+import { studioStorageRoot } from "../project/projectStore.js";
 import type { MotionProject } from "../schema/types.js";
 
 const ASSET_RE = /^asset-[a-f0-9]{64}$/;
@@ -12,9 +12,8 @@ export function assertMotionAssetId(id: string): void {
   if (!ASSET_RE.test(id)) throw new Error("Invalid Motion asset ID");
 }
 async function assetDirectory(workspace: string, create = false): Promise<string> {
-  const root = await motionWorkspaceRoot(workspace);
-  let current = root;
-  for (const part of [".superagent", "motion", "assets"]) {
+  let current = await studioStorageRoot(workspace, create);
+  for (const part of ["assets"]) {
     current = path.join(current, part);
     if (create) {
       try { await fs.mkdir(current, { mode: 0o700 }); }

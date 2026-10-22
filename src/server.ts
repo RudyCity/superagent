@@ -268,7 +268,7 @@ export function resolveWorkspacePath(req: http.IncomingMessage): string | null {
     const resolved = path.resolve(supplied);
     const validRoots = getValidWorkspaceRoots();
     if (!validRoots.some((root) => isPathInsideOrEqual(root, resolved))
-      || (parsedUrl.pathname.startsWith("/api/motion") && !isCanonicalMotionWorkspaceAllowed(resolved, validRoots))) {
+      || ((parsedUrl.pathname.startsWith("/api/studio") || parsedUrl.pathname.startsWith("/api/motion")) && !isCanonicalMotionWorkspaceAllowed(resolved, validRoots))) {
       logToSuperAgentServerFile(`[Security] Rejected workspace path outside trusted real roots: ${resolved}`);
       return null;
     }

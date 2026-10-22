@@ -878,7 +878,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           const identity = getIdentity?.();
           // Rendering writes an artifact and executes a worker: explicitly require
           // both capabilities when an MCP project grant (not local scope) is used.
-          if (["superagent_motion_render", "superagent_motion_generate", "superagent_motion_revise"].includes(name) && targetProjectId && identityForProjectAccess?.subject
+          if (["superagent_motion_render", "superagent_motion_generate", "superagent_motion_revise", "superagent_studio_render", "superagent_studio_generate", "superagent_studio_revise"].includes(name) && targetProjectId && identityForProjectAccess?.subject
             && !isPathWithinYoloScope(targetWorkspace, scopedWorkspaceAnchor)
             && !hasProjectAccess(identityForProjectAccess, targetProjectId, "write")) {
             return { content: [{ type: "text", text: "Motion rendering also requires project write capability." }], isError: true };

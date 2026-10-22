@@ -9,42 +9,172 @@ import { resolveMotionAudioTracks } from "../assets/motionAudio.js";
 import type { MotionEdit } from "../schema/types.js";
 
 const idPattern = /^[a-z][a-z0-9-]{1,63}$/;
-const dirParts = [".superagent", "motion", "projects"];
 const HISTORY_LIMIT = 20;
 
-/** Local workspaces only in this first implementation. Never follow symlinked storage roots. */
+/**
+ * Canonical Studio storage is .superagent/studio.
+ * Workspaces containing only the historical .superagent/motion tree retain
+ * that tree until an explicit, operator-controlled migration.
+ * A workspace with both directories is ambiguous and must fail closed.
+ */
 export async function motionWorkspaceRoot(workspace: string): Promise<string> {
   if (!workspace || workspace.startsWith("ssh:") || workspace.startsWith("chain:")) {
-    throw new Error("Motion Studio currently supports local workspaces only");
+    throw new Error("SuperAgent Studio currently supports local workspaces only");
   }
   const resolved = await fs.realpath(path.resolve(workspace));
   const stat = await fs.stat(resolved);
-  if (!stat.isDirectory()) throw new Error("Motion workspace is not a directory");
+  if (!stat.isDirectory()) throw new Error("Studio workspace is not a directory");
   return resolved;
 }
-export async function motionStorageDir(workspace: string, create = false): Promise<string> {
-  let current = await motionWorkspaceRoot(workspace);
-  for (const part of dirParts) {
-    current = path.join(current, part);
-    if (create) {
-      try { await fs.mkdir(current, { mode: 0o700 }); }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+
+async function safeDirectory(dir: string, create: boolean): Promise<boolean> {
+  if (create) {
+    try { await fs.mkdir(dir, { mode: 0o700 }); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+  }
+  const st = await fs.lstat(dir).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (!st) return false;
+  if (!st.isDirectory() || st.isSymbolicLink())
+    throw new Error("Unsafe Studio storage directory (not a real directory)");
+  return true;
+}
+
+export async function studioStorageRoot(workspace: string, create = false): Promise<string> {
+  const home = path.join(await motionWorkspaceRoot(workspace), ".superagent");
+  const hasHome = await safeDirectory(home, create);
+  if (!hasHome) return path.join(home, "studio");
+  const studio = path.join(home, "studio");
+  const legacy = path.join(home, "motion");
+  const [hasStudio, hasLegacy] = await Promise.all([
+    safeDirectory(studio, false), safeDirectory(legacy, false),
+  ]);
+  if (hasStudio && hasLegacy) throw new Error(
+    "Both Studio and legacy Motion storage exist; resolve the conflict manually before using either");
+  const selected = hasLegacy ? legacy : studio;
+  if (create) await safeDirectory(selected, true);
+  return selected;
+}
+
+/**
+ * Dry-run inventory for moving all Studio-owned media and project data.
+ * Refuses a live render queue, render claims, ambiguous namespaces or unsafe
+ * links; actual migration requires an explicit CLI --apply.
+ */
+export async function inspectStudioStorageMigration(workspace: string): Promise<{
+  state: "already-studio" | "legacy" | "empty" | "conflict";
+  from: string; to: string; blockers: string[];
+}> {
+  const home = path.join(await motionWorkspaceRoot(workspace), ".superagent");
+  const oldDir = path.join(home, "motion");
+  const newDir = path.join(home, "studio");
+  if (!(await safeDirectory(home, false))) {
+    return { state: "empty", from: oldDir, to: newDir, blockers: [] };
+  }
+  const [oldExists, newExists] = await Promise.all([
+    safeDirectory(oldDir, false), safeDirectory(newDir, false),
+  ]);
+  if (oldExists && newExists)
+    return { state: "conflict", from: oldDir, to: newDir, blockers: ["Both namespace directories exist"] };
+  if (!oldExists)
+    return { state: newExists ? "already-studio" : "empty", from: oldDir, to: newDir, blockers: [] };
+  const blockers: string[] = [];
+  // Inspect every existing storage branch without following symlinks.
+  // Moving an opaque symlink can expose files from outside the workspace
+  // after cutover, so refuse *all* link/special-file entries.
+  const pending: Array<{ directory: string; depth: number }> = [{ directory: oldDir, depth: 0 }];
+  let checked = 0;
+  while (pending.length > 0) {
+    const { directory, depth } = pending.pop()!;
+    if (depth > 12) {
+      blockers.push("Legacy Studio storage tree exceeds supported inspection depth");
+      break;
+    }
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      if (++checked > 50_000) {
+        blockers.push("Legacy Studio storage tree exceeds safe inspection budget");
+        pending.length = 0;
+        break;
+      }
+      const file = path.join(directory, entry.name);
+      const stat = await fs.lstat(file);
+      const relative = path.relative(oldDir, file);
+      if (stat.isSymbolicLink() || (!stat.isDirectory() && !stat.isFile())) {
+        blockers.push("Unsafe Studio storage entry: " + relative);
+      } else if (entry.name.endsWith(".lock") || entry.name.endsWith(".cancel") ||
+                 entry.name.endsWith(".partial.mp4")) {
+        blockers.push("Unresolved Studio storage claim or partial render: " + relative);
+      } else if (stat.isDirectory()) {
+        pending.push({ directory: file, depth: depth + 1 });
       }
     }
-    const stat = await fs.lstat(current).catch((error: NodeJS.ErrnoException) => {
-      if (!create && error.code === "ENOENT") return null;
-      throw error;
-    });
-    if (stat === null) return current;
-    if (!stat.isDirectory() || stat.isSymbolicLink()) {
-      throw new Error("Motion Studio storage path must be a real directory");
+  }
+  const jobs = path.join(oldDir, "jobs");
+  if (await safeDirectory(jobs, false)) {
+    for (const name of await fs.readdir(jobs)) {
+      if (name.endsWith(".lock") || name.endsWith(".cancel")) {
+        blockers.push("Render queue contains lock or cancellation claim: " + name);
+        continue;
+      }
+      if (!/^(?:studiojob|motionjob)-[a-f0-9]{24}\.json$/.test(name)) continue;
+      try {
+        const file = path.join(jobs, name);
+        const st = await fs.lstat(file);
+        if (!st.isFile() || st.isSymbolicLink() || st.size > 100_000)
+          throw new Error("Unsafe job record");
+        const job: unknown = JSON.parse(await fs.readFile(file, "utf8"));
+        if (!job || typeof job !== "object" ||
+            !["completed", "failed", "cancelled", "interrupted"].includes(
+              String((job as { status?: unknown }).status))) {
+          blockers.push("Non-terminal or unverified render job: " + name);
+        }
+      } catch {
+        blockers.push("Invalid or unreadable render job: " + name);
+      }
     }
   }
-  return current;
+  return { state: "legacy", from: oldDir, to: newDir, blockers };
+}
+
+/** Atomic same-volume namespace cutover, explicitly operator triggered.
+ * Keep project/job IDs unchanged, preserving external references.
+ */
+export async function migrateStudioStorage(workspace: string): Promise<{
+  migrated: boolean; from: string; to: string;
+}> {
+  const root = await motionWorkspaceRoot(workspace);
+  const home = path.join(root, ".superagent");
+  if (!(await safeDirectory(home, false))) {
+    return { migrated: false, from: path.join(home, "motion"), to: path.join(home, "studio") };
+  }
+  const lockName = path.join(home, ".studio-migration.lock");
+  const lock = await fs.open(lockName, "wx", 0o600).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "EEXIST") throw new Error("Studio storage migration already locked");
+    throw error;
+  });
+  try {
+    const scan = await inspectStudioStorageMigration(root);
+    if (scan.state === "conflict" || scan.blockers.length)
+      throw new Error("Studio storage migration blocked: " + scan.blockers.join("; "));
+    if (scan.state !== "legacy") return { migrated: false, from: scan.from, to: scan.to };
+    await fs.rename(scan.from, scan.to);
+    return { migrated: true, from: scan.from, to: scan.to };
+  } finally {
+    await lock.close();
+    await fs.rm(lockName, { force: true });
+  }
+}
+
+export async function motionStorageDir(workspace: string, create = false): Promise<string> {
+  const root = await studioStorageRoot(workspace, create);
+  const dir = path.join(root, "projects");
+  await safeDirectory(dir, create);
+  return dir;
 }
 function assertId(projectId: string): void {
-  if (!idPattern.test(projectId)) throw new Error("Invalid Motion Studio project id");
+  if (!idPattern.test(projectId)) throw new Error("Invalid SuperAgent Studio project id");
 }
 async function projectFile(workspace: string, projectId: string): Promise<string> {
   assertId(projectId);
@@ -88,7 +218,7 @@ export async function listMotionProjects(workspace: string): Promise<{ id: strin
 export async function createMotionProject(workspace: string, name: string): Promise<MotionProject> {
   if (typeof name !== "string" || !name.trim() || name.length > 160) throw new Error("Motion project name must be 1-160 characters");
   const root = await motionWorkspaceRoot(workspace);
-  const id = "motion-" + crypto.randomBytes(10).toString("hex");
+  const id = "studio-" + crypto.randomBytes(10).toString("hex");
   const now = new Date().toISOString();
   const project: MotionProject = {
     schemaVersion: 1, id, workspaceRoot: root, name: name.trim(), revision: 1,
