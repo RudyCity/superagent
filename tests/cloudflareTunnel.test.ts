@@ -59,11 +59,16 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
   });
 
   describe("Binary Detection & State File Persistence", () => {
-    it("should find the cloudflared binary on the host system", async () => {
+    it("should report a cloudflared binary only when one is installed", async () => {
       const binary = await findCloudflaredBinary();
-      expect(binary).toBeDefined();
-      expect(typeof binary).toBe("string");
-      expect(binary).toMatch(/cloudflared/i);
+      // CI is deliberately not given tunnel credentials or an executable.
+      // Not-installed is a supported state; never infer an available tunnel.
+      if (binary) {
+        expect(typeof binary).toBe("string");
+        expect(binary).toMatch(/cloudflared/i);
+      } else {
+        expect(binary).toBeNull();
+      }
     });
 
     it("should persist and read tunnel metadata safely", () => {

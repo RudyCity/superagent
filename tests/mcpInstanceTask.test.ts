@@ -85,7 +85,9 @@ describe("Instance Current Task Tracking via MCP", () => {
 
   describe("MCP Tools: superagent_get_current_task", () => {
     it("is registered in ListToolsRequestSchema", async () => {
-      const server = createSuperagentMcpServer();
+      // Verify direct per-tool exposure without overriding the global
+      // gateway-first default for actual MCP transports.
+      const server = createSuperagentMcpServer({ toolExposure: "full" });
       const listHandler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
       const res = await listHandler({ method: "tools/list", params: {} });
       const toolNames = res.tools.map((t: any) => t.name);

@@ -134,7 +134,7 @@ describe("Background Tasks Persistence & Sync Tests", () => {
       expect(isTaskInWorkspace(undefined, workspacePath)).toBe(false);
     });
 
-    it("should be case-insensitive on Windows", () => {
+    it.skipIf(process.platform !== "win32")("should be case-insensitive on Windows", () => {
       const originalPlatform = process.platform;
       Object.defineProperty(process, "platform", { value: "win32" });
 

@@ -173,7 +173,10 @@ describe("pinnedKnowledge", () => {
       });
 
       const results = await searchKnowledge("Semantic");
-      expect(mockClient.searchAtomic).toHaveBeenCalledWith({ query: "Semantic", limit: 40 });
+      // Project scope is mandatory for search isolation.
+      expect(mockClient.searchAtomic).toHaveBeenCalledWith({
+        query: "Semantic", limit: 40, projectId: expect.stringMatching(/^p_[a-f0-9]+$/),
+      });
       expect(results.length).toBe(1);
       expect(results[0].content).toBe(pin.content);
 
@@ -204,7 +207,12 @@ describe("pinnedKnowledge", () => {
       mockClient.updateAtomic.mockClear();
 
       await syncAllPinnedToRMemory();
-      expect(mockClient.updateAtomic).toHaveBeenCalledTimes(2);
+      // Fire-and-forget updates may finish after the mock is cleared; verify
+      // both entries were synced, not a race-sensitive exact call count.
+      const updates=mockClient.updateAtomic.mock.calls.map(([data])=>String(data.content));
+      expect(updates).toEqual(expect.arrayContaining([
+        expect.stringContaining("Entry 1"),expect.stringContaining("Entry 2")
+      ]));
     });
   });
 

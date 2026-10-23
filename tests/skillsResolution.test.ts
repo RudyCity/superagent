@@ -37,7 +37,7 @@ describe("Skills Resolution and Deduplication", () => {
     }
   });
 
-  it("should normalize paths to standard slashes and case (on Windows)", () => {
+  it("should normalize paths according to the host OS", () => {
     const p1 = "C:\\Users\\USER\\Documents/project";
     const p2 = "c:/users/user/documents/project";
     if (os.platform() === "win32") {

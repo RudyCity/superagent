@@ -268,7 +268,7 @@ describe("close_chrome_window validation", () => {
     expect(res).toContain("Provide hwnd");
   });
 
-  test("closeChromeWindowTool refuses an unknown hwnd without closing anything", async () => {
+  test.skipIf(process.platform !== "win32")("closeChromeWindowTool refuses an unknown hwnd without closing anything", async () => {
     const res = await closeChromeWindowTool.execute(
       { hwnd: 999999999 },
       process.cwd()
@@ -277,7 +277,7 @@ describe("close_chrome_window validation", () => {
     expect(res).toContain("Nothing was closed");
   });
 
-  test("closeChromeWindowTool refuses an ambiguous title without closing anything", async () => {
+  test.skipIf(process.platform !== "win32")("closeChromeWindowTool refuses an ambiguous title without closing anything", async () => {
     const res = await closeChromeWindowTool.execute(
       { titleSubstring: "Google Chrome" },
       process.cwd()

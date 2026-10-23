@@ -554,6 +554,11 @@ export function isToolCallOutOfBounds(
           continue;
         }
         const p = match[1];
+        // Sensitive config files must be checked BEFORE generic temporary
+        // directory exceptions. Linux CI uses temp config roots under /tmp.
+        if (normalizeAndCheckSubpath(resolveNormalizedPath(p), path.join(rootConfig, "model-config.json"))) {
+          return true;
+        }
         if (p.startsWith("/dev/") || p === "/dev/null" || p.startsWith("/bin/") || p.startsWith("/usr/bin/") || p.startsWith("/tmp/")) {
           continue;
         }

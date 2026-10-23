@@ -59,10 +59,17 @@ describe("chromeProfileTools", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("listChromeProfilesTool execute returns formatted markdown table", async () => {
-    const result = await listChromeProfilesTool.execute({});
-    expect(typeof result).toBe("string");
-    expect(result).toContain("Chrome Profiles");
+  test("listChromeProfilesTool renders profiles from an isolated user-data fixture", async () => {
+    const dir=fs.mkdtempSync(path.join(os.tmpdir(),"chrome-profiles-list-"));
+    try {
+      fs.writeFileSync(path.join(dir,"Local State"),JSON.stringify({
+        profile:{info_cache:{Default:{name:"Fixture Chrome Profile",user_name:"fixture@example.invalid"}}}
+      }));
+      const result=await listChromeProfilesTool.execute({customUserDataPath:dir});
+      expect(typeof result).toBe("string");
+      expect(result).toContain("Chrome Profiles");
+      expect(result).toContain("Fixture Chrome Profile");
+    } finally {fs.rmSync(dir,{recursive:true,force:true});}
   });
 
   test("launchChromeProfileTool constructs valid launch command response", async () => {

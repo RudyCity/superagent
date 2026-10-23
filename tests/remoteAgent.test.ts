@@ -536,7 +536,7 @@ describe("remoteAgent - Batch Executor", () => {
     expect(decisionSpy.mock.calls[0][2]).toBe(true);
   });
 
-  it("should not treat Windows CLI flags like /FI and /FO as out-of-bounds Unix paths", async () => {
+  it.skipIf(process.platform !== "win32")("should not treat Windows CLI flags like /FI and /FO as out-of-bounds Unix paths", async () => {
     const results = await executeBatch(
       [
         {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stripSgrMouseSequences } from "../src/app.js";
+import { stripSgrMouseSequences } from "../src/utils/text.js";
 
 describe("stripSgrMouseSequences", () => {
   it("removes SGR mouse sequences with and without ESC", () => {

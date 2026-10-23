@@ -122,7 +122,7 @@ describe("mcpHttpTransport", () => {
       token = generateMcpBearerToken();
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-http-"));
       auditPath = path.join(dir, "audit.log");
-      handle = await startMcpHttpServer({ port: 0, bearerToken: token, allowDangerous: false, auditLogPath: auditPath });
+      handle = await startMcpHttpServer({ port: 0, bearerToken: token, allowDangerous: false, toolExposure: "full", auditLogPath: auditPath });
     }, 30000);
 
     afterAll(async () => {
@@ -237,7 +237,7 @@ describe("mcpHttpTransport", () => {
 
     beforeAll(async () => {
       token = generateMcpBearerToken();
-      handle = await startMcpHttpServer({ port: 0, bearerToken: token, allowDangerous: true });
+      handle = await startMcpHttpServer({ port: 0, bearerToken: token, allowDangerous: true, toolExposure: "full" });
     }, 30000);
 
     afterAll(async () => {

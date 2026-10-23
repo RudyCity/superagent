@@ -575,15 +575,17 @@ export const closeChromeWindowTool: Tool = {
     hwnd?: number;
     titleSubstring?: string;
   }) => {
-    if (os.platform() !== "win32") {
-      return "close_chrome_window is only supported on Windows.";
-    }
     const sub = (titleSubstring || "").trim();
+    // Validate untrusted arguments independently of host OS, before any scan
+    // or window-control attempt.
     if (hwnd === undefined && !sub) {
       return "Provide hwnd (from list_running_chrome) or titleSubstring.";
     }
     if (hwnd !== undefined && (!Number.isInteger(hwnd) || hwnd <= 0)) {
       return `Invalid hwnd "${hwnd}": must be a positive integer from list_running_chrome.`;
+    }
+    if (os.platform() !== "win32") {
+      return "close_chrome_window is only supported on Windows.";
     }
     const scanned = await safeScanChromeBrowsers("windows");
     if ("error" in scanned) return scanned.error;
