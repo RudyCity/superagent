@@ -1,3 +1,27 @@
+## [1.14.12] - 2026-10-23
+### Added
+- Motion Studio Bundled OFL Fonts & Canvas Renderer (`src/core/motion/assets/fonts/`, `src/core/motion/assets/motionFonts.ts`, `src/core/motion/schema/fontCatalog.ts`, `src/core/motion/render/canvasFrames.ts`, `src/core/motion/motionBrandKit.ts`):
+  - Bundled 14 Latin OFL fonts (Inter, Space Grotesk, Montserrat, Poppins, Oswald, Anton, Bebas Neue, Archivo Black, Bungee, Playfair Display, Merriweather, JetBrains Mono, Caveat, Press Start 2P) with OFL-1.1 licensing under `src/core/motion/assets/fonts/`.
+  - Registered font assets via `registerMotionFonts()` with `@napi-rs/canvas` for offline typography fidelity in motion frame rendering and brand kit styles.
+  - Added font catalog schemas and offline verification smoke script (`scripts/verify-bundled-fonts.ts`).
+- Senopati v2 Shadow Pipeline & Parity Verification (`scripts/run-senopati-v2-shadow.ts`, `scripts/check-senopati-v2-parity.ts`, `tests/senopatiV2Shadow.test.ts`, `tests/senopatiV2Safety.test.ts`):
+  - Implemented Senopati v2 shadow runner and automated parity checker against baseline models.
+  - Added synthetic shadow artifact read-only tests and safety constraints.
+- General Assistant Identity & Intent Routing (`src/core/assistantIdentity.ts`, `src/core/assistantRouting.ts`, `src/core/agent/ApprovalIntent.ts`):
+  - Added assistant identity configuration and prompt domain scoping.
+  - Implemented explicit approval intent handling for high-risk operations.
+- Grok MCP Compatibility & Doctor (`scripts/grok-mcp-doctor.ts`, `tests/mcpOutputRecovery.test.ts`):
+  - Added Grok MCP diagnostic tooling and automatic recovery for chunked or truncated MCP output.
+- Command Output Paging & CLI Bridge Observability (`src/core/tools/commandOutputPaging.ts`, `src/core/tools/cliBridgeObservability.ts`, `src/core/tools/cliBridgeDelegateJobs.ts`):
+  - Implemented command output paging for large terminal buffers.
+  - Added delegate job tracking and observability for CLI Bridge.
+- Bun Global Launcher Repair Tooling (`scripts/repair-bun-global-launcher.ts`):
+  - Added diagnostic and repair tooling for global Bun executable shims on Windows and Unix environments.
+
+### Fixed
+- Enforced strict plan approval requirements and stabilized CI merge/compact regressions (`src/core/agent/RequestProcessor.ts`, `tests/compactCommand.test.ts`, `tests/masterAgent.test.ts`).
+- Hardened temporary config guards and stabilized cross-platform path resolution in Chrome process and profile tools (`src/core/permissions.ts`, `src/core/tools/chromeProcessTools.ts`).
+
 ## [1.14.11] - 2026-10-22
 ### Fixed
 - Fixed CLI runtime bootstrap when launched via global Node.js / npm wrappers (`src/cli.tsx`):
