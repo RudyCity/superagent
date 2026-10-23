@@ -44,6 +44,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   sampledModelVisionReview: "on-demand-vision-model-required",
   boundedModelVisionRepair: "one-review-one-revision",
   exportSceneCaptionsSrt: true,
+  burnInCaptions: true,
   automaticCrashRecovery: "committed-scene-revision-history",
   motionRevisionHistory: true,
   motionRevisionHistoryLimit: 20,

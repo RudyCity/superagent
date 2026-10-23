@@ -35,6 +35,7 @@ export interface MotionDirectorPlan {
   transition?: MotionTransition;
   aspectRatio?: MotionAspectRatio;
   artDirection?: MotionArtDirection;
+  burnCaptions?: boolean;
 }
 export interface MotionDirectorResult {
   project: MotionProject;
@@ -47,6 +48,7 @@ export type MotionPlanner = (system: string, user: string, signal?: AbortSignal)
 export type MotionDirectorOptions = MotionDirectorMediaSelection & NarrationRequest & {
   width?: number;
   aspectRatio?: MotionAspectRatio;
+  burnCaptions?: boolean;
   autoNarrateScenes?: boolean;
   expectedRevision?: number;
   signal?: AbortSignal;
@@ -67,7 +69,7 @@ function widthOf(value: unknown): number {
   return Number(n);
 }
 export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {
-  if (!object(raw) || !only(raw, ["name", "durationSeconds", "background", "scenes", "motion", "effect", "preset", "transition", "aspectRatio", "artDirection"]) ||
+  if (!object(raw) || !only(raw, ["name", "durationSeconds", "background", "scenes", "motion", "effect", "preset", "transition", "aspectRatio", "artDirection", "burnCaptions"]) ||
     typeof raw.name !== "string" || !raw.name.trim() || raw.name.length > 160 ||
     !Number.isInteger(raw.durationSeconds) || Number(raw.durationSeconds) < 2 ||
     Number(raw.durationSeconds) > 20 ||
@@ -78,6 +80,7 @@ export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {
     (raw.artDirection !== undefined && !MOTION_ART_DIRECTIONS.includes(raw.artDirection as MotionArtDirection)) ||
     (raw.transition !== undefined && !MOTION_TRANSITIONS.includes(raw.transition as MotionTransition)) ||
     (raw.aspectRatio !== undefined && !["16:9", "1:1", "9:16"].includes(String(raw.aspectRatio))) ||
+    (raw.burnCaptions !== undefined && typeof raw.burnCaptions !== "boolean") ||
     !Array.isArray(raw.scenes) || raw.scenes.length < 1 || raw.scenes.length > 3)
     throw new Error("Motion Director returned an invalid or unsupported storyboard");
   const scenes: MotionDirectorScene[] = raw.scenes.map((scene: unknown) => {
@@ -113,6 +116,7 @@ export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {
     ...(raw.artDirection !== undefined ? { artDirection: raw.artDirection as MotionArtDirection } : {}),
     ...(raw.transition !== undefined ? { transition: raw.transition as MotionTransition } : {}),
     ...(raw.aspectRatio !== undefined ? { aspectRatio: raw.aspectRatio as MotionAspectRatio } : {}),
+    ...(raw.burnCaptions !== undefined ? { burnCaptions: Boolean(raw.burnCaptions) } : {}),
   };
 }
 /**
@@ -264,7 +268,8 @@ export async function generateMotionFromPrompt(workspace: string, prompt: string
   const composedMedia = { ...media, ...(voiceover ? { voiceover } : {}) };
   const composition = embedDirectorMedia(
     compileDirectorPlan({ ...plan, artDirection: chooseMotionArtDirection(user, plan.artDirection),
-      aspectRatio: options.aspectRatio ?? plan.aspectRatio }), composedMedia);
+      aspectRatio: options.aspectRatio ?? plan.aspectRatio,
+      burnCaptions: options.burnCaptions ?? plan.burnCaptions }), composedMedia);
   const project = await createMotionProject(workspace, plan.name);
   const updated = await updateMotionProject(workspace, project.id, project.revision,
     [{ type: "replace-composition", composition }]);

@@ -52,6 +52,10 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio preset-info PRESET_ID [--json]
   superagent studio apply-preset PROJECT_ID --base-revision N --preset PRESET_ID --layer TEXT_LAYER_ID [--start-frame N] [--duration-frames N] [--intensity 1] [--json]
   superagent studio apply-effect PROJECT_ID --base-revision N --effect EFFECT_ID [--layer LAYER_ID] [--params-json JSON] [--start-frame N] [--duration-frames N] [--workspace PATH] [--json]
+  superagent studio templates [--json]
+  superagent studio apply-template PROJECT_ID TEMPLATE_ID --base-revision N [--headline "H"] [--subtitle "S"] [--workspace PATH] [--json]
+  superagent studio batch-variants PROJECT_ID --base-revision N [--ratios "16:9,9:16,1:1"] [--width 640] [--workspace PATH] [--json]
+  superagent studio beat-sync PROJECT_ID --base-revision N --target-layer LAYER_ID [--audio-track 0] [--intensity 0.35] [--workspace PATH] [--json]
 
 MP4 preview uses installed FFmpeg. --detach launches a separate Bun worker;
 recovery is diagnostic/read-only unless the operator explicitly runs recover --ack-stale.`;
@@ -59,8 +63,8 @@ recovery is diagnostic/read-only unless the operator explicitly runs recover --a
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", ...boolean]);
+  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--help", "-h"]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -207,6 +211,66 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       emit({ id: updated.id, revision: updated.revision, effectApplied: effectId }, json);
       return 0;
     }
+    if (action === "templates") {
+      if (positionals.length) throw new Error("templates does not accept positional arguments");
+      const { listMotionTemplates } = await import("../motion/motionTemplates.js");
+      emit(listMotionTemplates(), json);
+      return 0;
+    }
+    if (action === "apply-template") {
+      if (positionals.length !== 2) throw new Error("apply-template requires PROJECT_ID and TEMPLATE_ID");
+      const [projectId, templateId] = positionals;
+      const baseRevText = opt(opts, "--base-revision");
+      if (!baseRevText) throw new Error("apply-template requires --base-revision N");
+      const baseRevision = nonnegativeInteger(baseRevText, "--base-revision");
+      const { compileMotionTemplate } = await import("../motion/motionTemplates.js");
+      const { getMotionBrandKit } = await import("../motion/motionBrandKit.js");
+      const project = await getMotionProject(workspace, projectId);
+      const brand = await getMotionBrandKit(workspace);
+      const composition = compileMotionTemplate(project, brand, {
+        templateId,
+        headline: opt(opts, "--headline"),
+        subtitle: opt(opts, "--subtitle"),
+      });
+      const updated = await updateMotionProject(workspace, projectId, baseRevision, [
+        { type: "replace-composition", composition },
+      ]);
+      emit({ id: updated.id, revision: updated.revision, templateApplied: templateId }, json);
+      return 0;
+    }
+    if (action === "batch-variants") {
+      if (positionals.length !== 1) throw new Error("batch-variants requires exactly one project ID");
+      const baseRevText = opt(opts, "--base-revision");
+      if (!baseRevText) throw new Error("batch-variants requires --base-revision N");
+      const baseRevision = nonnegativeInteger(baseRevText, "--base-revision");
+      const ratiosText = opt(opts, "--ratios") || "16:9,9:16,1:1";
+      const aspectRatios = ratiosText.split(",").map(r => r.trim() as any);
+      const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
+      const { createMotionBatchVariants } = await import("../motion/motionBatchVariants.js");
+      const result = await createMotionBatchVariants(workspace, positionals[0], baseRevision, aspectRatios, { width });
+      emit(result, json);
+      return 0;
+    }
+    if (action === "beat-sync") {
+      if (positionals.length !== 1) throw new Error("beat-sync requires exactly one project ID");
+      const baseRevText = opt(opts, "--base-revision");
+      if (!baseRevText) throw new Error("beat-sync requires --base-revision N");
+      const baseRevision = nonnegativeInteger(baseRevText, "--base-revision");
+      const targetLayerId = opt(opts, "--target-layer");
+      if (!targetLayerId) throw new Error("beat-sync requires --target-layer LAYER_ID");
+      const audioTrack = opt(opts, "--audio-track") === undefined ? undefined : nonnegativeInteger(opt(opts, "--audio-track"), "--audio-track");
+      const intensity = opt(opts, "--intensity") === undefined ? undefined : Number(opt(opts, "--intensity"));
+      const { compileMotionBeatSync } = await import("../motion/motionBeatSync.js");
+      const project = await getMotionProject(workspace, positionals[0]);
+      const { edits, onsetFrames, analysis } = await compileMotionBeatSync(workspace, project, {
+        targetLayerId,
+        audioTrackIndex: audioTrack,
+        intensity,
+      });
+      const updated = await updateMotionProject(workspace, project.id, baseRevision, edits);
+      emit({ id: updated.id, revision: updated.revision, onsetFrames, analysis }, json);
+      return 0;
+    }
     if (action === "supervisor-status") {
       if (positionals.length || opts.has("--once") || opts.has("--watch")) throw new Error("supervisor-status is read-only and accepts no positional arguments");
       emit(await inspectMotionSupervisor(workspace), json); return 0;
@@ -280,6 +344,7 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
       const result = await generateMotionFromPrompt(workspace, prompt, { width,
         aspectRatio: opt(opts, "--aspect-ratio") as "16:9" | "1:1" | "9:16" | undefined,
+        burnCaptions: opts.has("--burn-captions") ? true : undefined,
         imageAssetId: opt(opts, "--image-asset"),
         sceneImageAssetIds: opt(opts, "--scene-images")?.split(",").map(item => item.trim()),
         audioLoop: optionalBoolean(opt(opts, "--audio-loop"), "--audio-loop"),
@@ -307,6 +372,7 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       if (!prompt || positionals.length !== 1) throw new Error("revise requires MOTION_ID and --prompt");
       const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
       const result = await reviseMotionFromPrompt(workspace, positionals[0], prompt, { width,
+        burnCaptions: opts.has("--burn-captions") ? true : undefined,
         imageAssetId: opt(opts, "--image-asset"),
         sceneImageAssetIds: opt(opts, "--scene-images")?.split(",").map(item => item.trim()),
         audioLoop: optionalBoolean(opt(opts, "--audio-loop"), "--audio-loop"),

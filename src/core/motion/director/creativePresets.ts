@@ -439,6 +439,56 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
           anchor.y + (dimensions.height > dimensions.width ? 144 : 161))] });
     }
 
+    if (plan.burnCaptions) {
+      const captionText = scene.narration ?? (scene.subtitle ? `${scene.headline} — ${scene.subtitle}` : scene.headline);
+      const captionSize = Math.max(22, Math.min(32, Math.round(dimensions.width * 0.026)));
+      const captionY = dimensions.height - (dimensions.height > dimensions.width ? 220 : 120);
+      const estimatedWidth = Math.min(dimensions.width - 120, Math.round(captionText.length * captionSize * 0.58) + 60);
+      const captionX = Math.round((dimensions.width - estimatedWidth) / 2);
+
+      layers.push({
+        id: `scene-${index}-caption-backdrop`,
+        kind: "rect",
+        x: captionX,
+        y: captionY - 8,
+        width: estimatedWidth,
+        height: captionSize + 26,
+        rotation: 0,
+        opacity: 0.85,
+        fill: "#0B0F19",
+        tracks: [visible],
+      });
+
+      layers.push({
+        id: `scene-${index}-caption-accent`,
+        kind: "rect",
+        x: captionX + 16,
+        y: captionY + captionSize + 14,
+        width: estimatedWidth - 32,
+        height: 3,
+        rotation: 0,
+        opacity: 0.9,
+        fill: scene.accent,
+        tracks: [visible],
+      });
+
+      layers.push({
+        id: `scene-${index}-caption-text`,
+        kind: "text",
+        text: captionText,
+        x: captionX + 20,
+        y: captionY,
+        width: estimatedWidth - 40,
+        height: captionSize + 18,
+        rotation: 0,
+        opacity: 1,
+        fill: "#FFFFFF",
+        fontSize: captionSize,
+        fontFamily: "Arial",
+        tracks: [visible],
+      });
+    }
+
     const thisSceneLayers = layers.slice(sceneStartIndex);
     applySceneTransition(thisSceneLayers, transition, start, end, index, plan.scenes.length, dimensions, scene.accent, count, layers);
   });

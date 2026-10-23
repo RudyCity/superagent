@@ -1,3 +1,15 @@
+## [1.14.20] - 2026-10-23
+### Added
+- Motion Studio Burn-in Animated Captions / Subtitle Overlay (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `src/core/motion/motionCapabilities.ts`, `tests/motionCliParity.test.ts`):
+  - Added `--burn-captions` option to `superagent studio generate` and `revise`.
+  - Automatically compiles high-contrast bottom-centered subtitle layers (semi-transparent `#0B0F19` backdrop pill, dynamic accent underline, and `#FFFFFF` typography) synchronized with scene timecodes and Piper narration across 16:9, 1:1, and 9:16 aspect ratios.
+  - Added `burnInCaptions: true` to `MOTION_CAPABILITIES`.
+- Complete Motion CLI Authoring Parity (`src/core/commands/motionCliHandler.ts`, `tests/motionCliParity.test.ts`):
+  - Added `superagent studio templates` to inspect the 6 built-in Motion design templates.
+  - Added `superagent studio apply-template PROJECT_ID TEMPLATE_ID --base-revision N [--headline] [--subtitle]` to apply curated designs with brand kit integration.
+  - Added `superagent studio batch-variants PROJECT_ID --base-revision N [--ratios 16:9,9:16,1:1]` to generate multi-format deliverables for social media (YouTube landscape, TikTok vertical, Instagram square).
+  - Added `superagent studio beat-sync PROJECT_ID --base-revision N --target-layer LAYER_ID [--audio-track 0] [--intensity 0.35]` to auto-align layer opacity/motion keyframes to music transient energy peaks.
+
 ## [1.14.19] - 2026-10-23
 ### Added
 - Motion Director Offline Heuristic Storyboard Generator (`src/core/motion/director/directorService.ts`, `tests/motionHeuristicDirector.test.ts`):
