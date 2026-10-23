@@ -1,3 +1,5 @@
+> **ARSIP HISTORIS — TRAINING SUDAH DIPINDAH KE CIKA.** Perintah TypeScript experiment yang tertulis di bawah tidak lagi tersedia di repository SuperAgent. Jalankan `rudy superagent/pipelines/experiment_intent_v3.rdy prepare` lalu `rudy superagent/pipelines/experiment_intent_v3.rdy run` dari `G:\project\cika`. Lihat `docs/plans/2026-10-23-senopati-v3-training-moved-to-cika.md`. Angka pada dokumen lama adalah hasil eksperimen sebelumnya; pipeline native Rudy merupakan reimplementasi dengan grid baru, bukan hasil yang identik.
+
 # Senopati V3 intent discriminative research — frozen group plan (2026-10-23)
 
 **Decision: REJECTED_ON_GROUP_TEST.** This work is a development-only experiment; no model weights were exported, no runtime classifier was activated, and the current ToolExecutor/production ONNX remains untouched.
