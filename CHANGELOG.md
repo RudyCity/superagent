@@ -1,3 +1,8 @@
+## [1.14.13] - 2026-10-23
+### Changed
+- Response Formatting Rules (`.agents/AGENTS.md`):
+  - Updated AI response formatting guideline to allow and encourage clean, readable GitHub-flavored markdown formatting (headings, bold text, code blocks, lists, and tables) instead of restricting output to plain unadorned text.
+
 ## [1.14.12] - 2026-10-23
 ### Added
 - Motion Studio Bundled OFL Fonts & Canvas Renderer (`src/core/motion/assets/fonts/`, `src/core/motion/assets/motionFonts.ts`, `src/core/motion/schema/fontCatalog.ts`, `src/core/motion/render/canvasFrames.ts`, `src/core/motion/motionBrandKit.ts`):
