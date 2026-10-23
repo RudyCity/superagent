@@ -729,6 +729,8 @@ Batch artifact promotion verifies all source hashes and writes a recoverable tra
 
 **Documentation drift protection:** `bun scripts/check-brain-docs.ts` validates Markdown command examples, installation code fences, Brain links and referenced Bun scripts during the Brain release gate. The T-Line counterpart `bun scripts/check-brain-docs.cjs` independently checks desktop startup commands and source layout. This does not perform OAuth login or launch a desktop app.
 
+**Phase 7 launch recovery:** `/brain task.launch.inspect <taskId>` lists verified CLI Bridge evidence for an unresolved delegation. If exactly one matching job exists, `/brain task.launch.recover <taskId> <jobId> CONFIRM` attaches it without spawning another process. When evidence is missing or ambiguous, the reservation stays locked. Remote MCP actions `task.launch.inspect` and `task.launch.recover` require the task owner's recovery credential; `task.credential.audit` shows a redacted, bounded change log. See [Phase 7 runtime acceptance](docs/audits/2026-10-23-brain-phase-7-runtime-acceptance.md).
+
 **Verification and remaining live gates:**
 
 ```bash

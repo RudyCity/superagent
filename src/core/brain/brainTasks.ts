@@ -106,6 +106,44 @@ export function claimBrainTask(owner:string,sessionId:string,taskId:string,agent
   return {task:t, scratchPath:scratch};
  });
 }
+function assertRecordedDelegationsTerminal(c:ReturnType<typeof ctx>,t:BrainTask,next:TaskStatus,root:string) {
+ const refs=t.delegationJobs??[];
+ if(!refs.length)return;
+ const shardRoot=path.join(root,"cli-bridge","delegations","jobs.d");
+ assertNoSymlink(root,shardRoot);
+ for(const ref of refs) {
+  const shard=path.join(shardRoot,ref.jobId);
+  assertNoSymlink(root,shard);
+  if(!fs.existsSync(shard))throw new Error("Delegation snapshot unavailable; operator review required.");
+  const files=fs.readdirSync(shard).filter(name=>/^\d{13}-\d{10}-[a-f0-9]{16}\.json$/.test(name)).sort().reverse().slice(0,8);
+  let latest:any=null;
+  for(const filename of files) {
+   const file=path.join(shard,filename);assertNoSymlink(root,file);
+   const stat=fs.lstatSync(file);
+   if(!stat.isFile()||stat.nlink!==1||stat.size>65536)throw new Error("Invalid delegated job snapshot.");
+   try {
+    const data=JSON.parse(fs.readFileSync(file,"utf8"));
+    if(data.jobId===ref.jobId&&typeof data.status==="string"&&typeof data.cwd==="string"){latest=data;break;}
+   }catch{ /* another committed snapshot may exist */ }
+  }
+  if(!latest)throw new Error("Delegation terminal evidence missing; operator review required.");
+  const expected=path.join(c.dir,"scratch","agents",ref.agentId,t.taskId);
+  assertNoSymlink(c.dir,expected);
+  if(!fs.existsSync(expected)||!fs.existsSync(latest.cwd)||
+    (process.platform==="win32"?fs.realpathSync.native(expected).toLowerCase():fs.realpathSync.native(expected)) !==
+    (process.platform==="win32"?fs.realpathSync.native(latest.cwd).toLowerCase():fs.realpathSync.native(latest.cwd)))
+    throw new Error("Delegation snapshot cwd mismatch.");
+  if(["starting","running","cancelling"].includes(latest.status))
+    throw new Error("Delegation still active; task cannot finish.");
+  if(latest.status==="interrupted"||latest.status==="verification_failed")
+    throw new Error("Delegation requires operator review.");
+  if(next==="cancelled"&&latest.status!=="cancelled"&&latest.status!=="timed_out"&&latest.status!=="failed")
+    throw new Error("Delegation cancellation not verified.");
+  if(next==="completed"&&ref===refs[refs.length-1]&&
+    (latest.status!=="succeeded"||latest.completionState!=="artifacts_verified"))
+    throw new Error("Task cannot complete without verified CLI artifact evidence.");
+ }
+}
 export function updateBrainTask(owner:string,sessionId:string,taskId:string,agentId:string,
  status:TaskStatus,root=getRootConfigDir()) {
  const c=ctx(owner,sessionId,root),agent=checkedAgent(agentId);
@@ -116,8 +154,14 @@ export function updateBrainTask(owner:string,sessionId:string,taskId:string,agen
   if(t.status==="completed"||t.status==="cancelled")throw new Error("Task already terminal.");
   // Shared invariant across CLI, MCP and T-Line: do not terminate a task
   // while any CLI Bridge child is still writing to this Brain session.
-  if((status==="completed"||status==="cancelled")&&hasActiveBrainDelegation(root,c.dir))
-    throw new Error("Cannot finalize Brain task while a delegated job is active.");
+  if(status==="completed"||status==="cancelled"){
+    const pending=path.join(c.folder,t.taskId+".launch.json");
+    assertNoSymlink(c.dir,pending);
+    if(fs.existsSync(pending))throw new Error("Cannot finalize a task with unresolved CLI launch reservation.");
+    if(hasActiveBrainDelegation(root,c.dir))
+      throw new Error("Cannot finalize Brain task while a delegated job is active.");
+    assertRecordedDelegationsTerminal(c,t,status,root);
+  }
   t.status=status;t.updatedAt=new Date().toISOString();
   if(status==="completed"||status==="cancelled")t.assignedTo=null;
   save(c,t);return t;
@@ -130,6 +174,9 @@ export function transferBrainTask(owner:string,sessionId:string,taskId:string,
  return withBrainSessionLock(c.dir,()=>{
   const t=load(c,checkedTask(taskId));ensureMember(t,from);ensureMember(t,to);
   if(t.status!=="running"||t.assignedTo!==from)throw new Error("Only the current agent can transfer an active task.");
+  const pending=path.join(c.folder,t.taskId+".launch.json");
+  assertNoSymlink(c.dir,pending);
+  if(fs.existsSync(pending))throw new Error("Cannot transfer task with unresolved launch reservation.");
   t.assignedTo=to;t.updatedAt=new Date().toISOString();save(c,t);
   const scratch=path.join(c.dir,"scratch","agents",to,t.taskId);
   assertNoSymlink(c.dir,scratch);fs.mkdirSync(scratch,{recursive:true,mode:0o700});
@@ -187,7 +234,8 @@ export function reserveBrainTaskLaunch(owner:string,sessionId:string,taskId:stri
   const file=path.join(c.folder,t.taskId+".launch.json");
   assertNoSymlink(c.dir,file);
   const token=crypto.randomBytes(16).toString("hex");
-  fs.writeFileSync(file,JSON.stringify({agentId:agent,token,createdAt:Date.now()}),
+  fs.writeFileSync(file,JSON.stringify({agentId:agent,token,createdAt:Date.now(),
+    idempotencyKey:"brain:"+t.taskId+":"+token}),
    {flag:"wx",mode:0o600});
   return token;
  });

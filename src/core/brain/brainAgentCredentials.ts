@@ -16,7 +16,15 @@ const TOKEN = /^bag_[a-f0-9]{64}$/;
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_TTL_MS = 7 * DEFAULT_TTL_MS;
 type StoredAgent = { hash: string; issuedAt: number; expiresAt: number; revokedAt?: number; generation: number };
-type RecordV2 = { schemaVersion: 2; agents: Record<string,StoredAgent>; updatedAt: number; ownerRecoveryHash?:string };
+type CredentialAudit = {at:number;action:string;agentId:string;generation:number};
+type RecordV2 = { schemaVersion: 2; agents: Record<string,StoredAgent>; updatedAt: number; ownerRecoveryHash?:string; audit?:CredentialAudit[] };
+function appendAudit(data:RecordV2,action:string,agentId:string,generation:number,at=Date.now()){
+ data.audit=[...(data.audit||[]).slice(-63),{at,action,agentId,generation}];
+}
+export function brainTaskCredentialAudit(owner:string,sessionId:string,taskId:string,configRoot?:string){
+ const {file}=location(owner,sessionId,taskId,configRoot);
+ return (read(file).audit||[]).map(entry=>({...entry,at:new Date(entry.at).toISOString()}));
+}
 type RecordV1 = { schemaVersion: 1; agentHashes: Record<string,string>; createdAt: string };
 function location(owner:string,sessionId:string,taskId:string,configRoot?:string) {
   if(!TASK.test(taskId))throw new Error("Invalid Brain task.");
@@ -64,7 +72,8 @@ export function issueBrainTaskAgentCredentials(owner:string,sessionId:string,tas
       const token=newToken();tokens[agent]=token;
       agents[agent]={hash:sha(token),issuedAt,expiresAt:issuedAt+duration,generation:1};
     }
-    fs.writeFileSync(file,JSON.stringify({schemaVersion:2,agents,updatedAt:issuedAt}),{flag:"wx",mode:0o600});
+    fs.writeFileSync(file,JSON.stringify({schemaVersion:2,agents,updatedAt:issuedAt,
+      audit:task.agents.map(agentId=>({at:issuedAt,action:"issued",agentId,generation:1}))}),{flag:"wx",mode:0o600});
     return tokens;
   });
 }
@@ -77,9 +86,18 @@ export function issueBrainTaskRecoveryCredential(owner:string,sessionId:string,t
   const data=read(file);
   if(data.ownerRecoveryHash)throw new Error("Owner recovery credential has already been issued.");
   const token=newToken();data.ownerRecoveryHash=sha(token);
-  data.updatedAt=Date.now();persist(file,data);
+  data.updatedAt=Date.now();appendAudit(data,"owner-recovery-issued","owner",1,data.updatedAt);persist(file,data);
   return token;
  });
+}
+export function authorizeBrainTaskOwnerRecovery(owner:string,sessionId:string,taskId:string,
+ token:unknown,configRoot?:string){
+ const {file}=location(owner,sessionId,taskId,configRoot);
+ const record=read(file);
+ if(typeof token!=="string"||!TOKEN.test(token)||!record.ownerRecoveryHash||
+    !crypto.timingSafeEqual(Buffer.from(sha(token),"hex"),Buffer.from(record.ownerRecoveryHash,"hex")))
+   throw new Error("Valid owner recovery credential required.");
+ return true;
 }
 /** Recover an expired or revoked agent without trusting that agent's old token.
  * Requires a *different* owner-held one-time recovery secret. Old recovery
@@ -99,6 +117,7 @@ export function recoverBrainTaskAgentCredential(owner:string,sessionId:string,ta
   data.agents[agentId]={hash:sha(token),issuedAt:now,expiresAt:now+DEFAULT_TTL_MS,
     generation:existing.generation+1};
   data.ownerRecoveryHash=sha(nextRecoveryCredential);data.updatedAt=now;
+  appendAudit(data,"owner-recovered",agentId,existing.generation+1,now);
   persist(file,data);
   return {agentId,agentCredential:token,ownerRecoveryCredential:nextRecoveryCredential,
     expiresAt:new Date(now+DEFAULT_TTL_MS).toISOString(),generation:existing.generation+1};
@@ -137,7 +156,7 @@ export function rotateBrainTaskAgentCredential(
     if(!options.operatorApproved)requireValid(agentId,options.currentCredential,data);
     const token=newToken(),now=Date.now();
     data.agents[agentId]={hash:sha(token),issuedAt:now,expiresAt:now+duration,generation:existing.generation+1};
-    data.updatedAt=now;persist(file,data);
+    data.updatedAt=now;appendAudit(data,"rotated",agentId,existing.generation+1,now);persist(file,data);
     return {agentId,agentCredential:token,expiresAt:new Date(now+duration).toISOString(),generation:data.agents[agentId].generation};
   });
 }
@@ -150,7 +169,8 @@ export function revokeBrainTaskAgentCredential(
     const data=read(file),existing=data.agents[agentId];
     if(!existing)throw new Error("Agent is not a member of this Brain task.");
     if(!options.operatorApproved)requireValid(agentId,options.currentCredential,data);
-    existing.revokedAt=Date.now();data.updatedAt=existing.revokedAt;persist(file,data);
+    existing.revokedAt=Date.now();data.updatedAt=existing.revokedAt;
+    appendAudit(data,"revoked",agentId,existing.generation,data.updatedAt);persist(file,data);
     return {agentId,revoked:true};
   });
 }

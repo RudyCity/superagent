@@ -14,6 +14,7 @@ import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainR
 import { promoteBrainDelegation } from "../brain/brainDelegationArtifacts.js";
 import { recoverBrainArtifactPromotion } from "../brain/brainArtifactTransaction.js";
 import { reconcileBrainSessionJobs } from "../brain/brainTaskRecovery.js";
+import { inspectBrainTaskLaunch, recoverBrainTaskLaunch } from "../brain/brainLaunchRecovery.js";
 import { verifyBrainProject } from "../brain/brainProvenance.js";
 import { createBrainTask, listBrainTasks, claimBrainTask, checkpointBrainTask, transferBrainTask, updateBrainTask, resumeBrainTask, recordBrainTaskDelegation, reserveBrainTaskLaunch, finishBrainTaskLaunch } from "../brain/brainTasks.js";
 
@@ -46,6 +47,15 @@ export const brainCommand: SlashCommand = {
         case "inspect": say(inspectBrainSession(owner, explicitSessionId || currentSessionId)); break;
         case "files": say(listBrainFiles(owner, explicitSessionId || currentSessionId)); break;
         case "task.list": say(listBrainTasks(owner, currentSessionId)); break;
+        case "task.launch.inspect": {
+          say(inspectBrainTaskLaunch(owner,currentSessionId,tokens[1]||""));
+          break;
+        }
+        case "task.launch.recover": {
+          if(tokens[3]!=="CONFIRM")throw new Error("Usage: /brain task.launch.recover <taskId> <jobId> CONFIRM");
+          say(recoverBrainTaskLaunch(owner,currentSessionId,tokens[1]||"",tokens[2]||"",true));
+          break;
+        }
         case "task.reconcile": {
           if(!currentSessionId)throw new Error("No active Brain session.");
           say(await reconcileBrainSessionJobs(owner,currentSessionId));
@@ -155,6 +165,7 @@ export const brainCommand: SlashCommand = {
           const delegated = await cliBridgeTool.execute({
             action: "delegate.start", cli, prompt, skillAutoDetect: false,
             injectArtifacts: false, permissionMode: "accept-edits",
+            idempotencyKey:"brain:"+task.taskId+":"+launch,
           }, cwd);
           const jobMatch=String(delegated).match(/clj_\d+_[a-f0-9]{8,32}/);
           if(!jobMatch)throw new Error("CLI Bridge acknowledgement missing; reservation retained for review.");
@@ -195,10 +206,12 @@ export const brainCommand: SlashCommand = {
             "  task.create <title>; task.claim <taskId> [agentId]; task.resume <taskId>;",
             "  task.checkpoint <taskId> <agentId> <note>; task.transfer <taskId> <from> <to>;",
             "  task.complete <taskId> [agentId]; delegate.start <agy|claude|codex> <prompt>;",
+            "  task.launch.inspect <taskId>; task.launch.recover <taskId> <jobId> CONFIRM;",
             "  get/tail/cancel <jobId>.",
             "",
             "task.reconcile checks persisted job status; artifact.recover replays the journal safely.",
-            "MCP-only: task.credential.rotate/revoke/status, delegate.promote.batch, task.reconcile.all.",
+            "MCP-only: task.credential.rotate/revoke/status/recover, delegate.promote.batch, task.reconcile.all.",
+            "MCP owner-only: task.launch.inspect/recover require the owner recovery capability.",
             "Desktop: use the T-Line Brain Explorer to manage credentials and task artifacts.",
             "Cleanup requires an explicit confirmation. Artifacts stay in Brain until published.",
           ].join("\n"));

@@ -25,6 +25,12 @@ const modules = [
       ["import { withBrainSessionLock } from \"./brainSessionLock.js\";", "import { withBrainSessionLock } from \"./brainSessionLock\";"],
       ["import { getRootConfigDir } from \"../config/paths.js\";", "import { getRootConfigDir } from \"./brainRuntimeCompat\";"],
     ] },
+  { source: "brainLaunchRecovery.ts", imports: [
+      ["import { getRootConfigDir } from \"../config/paths.js\";", "import { getRootConfigDir } from \"./brainRuntimeCompat\";"],
+      ["import { inspectBrainSession } from \"./brainWorkspace.js\";", "import { inspectBrainSession } from \"./brainRuntimeCompat\";"],
+      ["import { assertNoSymlink } from \"./brainStorageManager.js\";", "import { assertNoSymlink } from \"./brainStorageManager\";"],
+      ["import { inspectBrainTask, recordBrainTaskDelegation, updateBrainTask, finishBrainTaskLaunch } from \"./brainTasks.js\";", "import { inspectBrainTask, recordBrainTaskDelegation, updateBrainTask, finishBrainTaskLaunch } from \"./brainTasks\";"],
+    ] },
   { source: "brainStorageManager.ts", imports: [
       ["import { getRootConfigDir } from '../config/paths.js';\nimport { inspectBrainSession, listBrainSessions } from './brainWorkspace.js';",
        "import { getRootConfigDir, inspectBrainSession, listBrainSessions } from './brainRuntimeCompat';"],

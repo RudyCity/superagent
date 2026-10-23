@@ -18,6 +18,10 @@ function fixture() {
  const {scratchPath}=claimBrainTask(owner,sessionId,task.taskId,"agy");
  const jobId="clj_1792638000000_abcd1234";
  recordBrainTaskDelegation(owner,sessionId,task.taskId,"agy","agy",jobId);
+ const shard=path.join(config,"cli-bridge","delegations","jobs.d",jobId);
+ fs.mkdirSync(shard,{recursive:true});
+ fs.writeFileSync(path.join(shard,"1792638000000-0000000001-0123456789abcdef.json"),
+   JSON.stringify({jobId,cwd:scratchPath,status:"succeeded",completionState:"artifacts_verified"}));
  return {config,session,owner,sessionId,task,scratchPath,jobId};
 }
 afterEach(()=>{mockGetJob.mockReset();delete process.env.SUPERAGENT_CONFIG_DIR;for(const r of roots.splice(0))fs.rmSync(r,{force:true,recursive:true})});

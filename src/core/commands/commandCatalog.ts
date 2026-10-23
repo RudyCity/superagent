@@ -92,6 +92,8 @@ export const BRAIN_SUGGESTIONS = [
   "/brain task.transfer",
   "/brain task.complete",
   "/brain task.reconcile",
+  "/brain task.launch.inspect",
+  "/brain task.launch.recover",
   "/brain artifact.recover",
   "/brain delegate.start agy",
   "/brain delegate.start claude",
@@ -105,6 +107,8 @@ export const BRAIN_SUGGESTIONS = [
 export const BRAIN_SUGGESTION_DESCRIPTIONS: Record<string,string> = {
   "/brain help": "Display all Brain CLI actions, including nested task, job and recovery operations.",
   "/brain task.reconcile": "Reconcile persisted CLI Bridge jobs safely; never retry work implicitly.",
+  "/brain task.launch.inspect": "Inspect a reserved CLI launch and find only evidence-matched Bridge jobs.",
+  "/brain task.launch.recover": "Attach a verified job with explicit operator confirmation. Never retries.",
   "/brain artifact.recover": "Recover an interrupted journaled artifact batch without deleting unrelated files.",
   "/brain task.create": "Create a session-scoped multi-agent task.",
   "/brain task.list": "List tasks for the current Brain session.",

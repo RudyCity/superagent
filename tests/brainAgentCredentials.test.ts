@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {createBrainSession} from "../src/core/brain/brainWorkspace.js";
 import {createBrainTask} from "../src/core/brain/brainTasks.js";
-import {issueBrainTaskAgentCredentials,authorizeBrainTaskAgent,rotateBrainTaskAgentCredential,revokeBrainTaskAgentCredential,brainTaskCapabilityStatus,issueBrainTaskRecoveryCredential,recoverBrainTaskAgentCredential} from "../src/core/brain/brainAgentCredentials.js";
+import {issueBrainTaskAgentCredentials,authorizeBrainTaskAgent,rotateBrainTaskAgentCredential,revokeBrainTaskAgentCredential,brainTaskCapabilityStatus,issueBrainTaskRecoveryCredential,recoverBrainTaskAgentCredential,brainTaskCredentialAudit} from "../src/core/brain/brainAgentCredentials.js";
 const roots:string[]=[];
 afterEach(()=>{delete process.env.SUPERAGENT_CONFIG_DIR;for(const p of roots.splice(0))fs.rmSync(p,{recursive:true,force:true});});
 function fixture(){
@@ -29,6 +29,10 @@ describe("Brain credential lifecycle",()=>{
   expect(()=>authorizeBrainTaskAgent(owner,sessionId,taskId,"agy",members.agy)).toThrow(/mismatch/i);
   const again=recoverBrainTaskAgentCredential(owner,sessionId,taskId,"agy",recovered.ownerRecoveryCredential);
   expect(again.generation).toBe(3);
+  const actions=brainTaskCredentialAudit(owner,sessionId,taskId);
+  expect(actions.some(x=>x.action==="issued")).toBe(true);
+  expect(actions.filter(x=>x.action==="owner-recovered")).toHaveLength(2);
+  expect(JSON.stringify(actions)).not.toContain(recovery);
   const store=JSON.stringify(fs.readdirSync(root,{recursive:true}));
   expect(store).not.toContain(recovery);
  });

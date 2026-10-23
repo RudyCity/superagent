@@ -25,9 +25,10 @@ import { promoteBrainDelegation, promoteBrainDelegationBatch } from "../../brain
 import { recoverBrainArtifactPromotion } from "../../brain/brainArtifactTransaction.js";
 import { recordBrainEvent, summarizeBrainEvents } from "../../brain/brainObservability.js";
 import { createBrainTask, listBrainTasks, inspectBrainTask, claimBrainTask, transferBrainTask, updateBrainTask, checkpointBrainTask, handoffBrainArtifact, resumeBrainTask, recordBrainTaskDelegation, reserveBrainTaskLaunch, finishBrainTaskLaunch } from "../../brain/brainTasks.js";
-import { authorizeBrainTaskAgent, issueBrainTaskAgentCredentials, rotateBrainTaskAgentCredential, revokeBrainTaskAgentCredential, brainTaskCapabilityStatus, issueBrainTaskRecoveryCredential, recoverBrainTaskAgentCredential } from "../../brain/brainAgentCredentials.js";
+import { authorizeBrainTaskAgent, issueBrainTaskAgentCredentials, rotateBrainTaskAgentCredential, revokeBrainTaskAgentCredential, brainTaskCapabilityStatus, issueBrainTaskRecoveryCredential, recoverBrainTaskAgentCredential, authorizeBrainTaskOwnerRecovery, brainTaskCredentialAudit } from "../../brain/brainAgentCredentials.js";
 import { reconcileBrainTask } from "../../brain/brainTaskReconciler.js";
 import { reconcileBrainSessionJobs } from "../../brain/brainTaskRecovery.js";
+import { inspectBrainTaskLaunch, recoverBrainTaskLaunch } from "../../brain/brainLaunchRecovery.js";
 import { getDelegateJob } from "../../tools/cliBridgeDelegateJobs.js";
 
 export const BRAIN_MCP_TOOL_DEFS = [
@@ -46,7 +47,7 @@ export const BRAIN_MCP_TOOL_DEFS = [
           "delegate.start", "delegate.get", "delegate.tail", "delegate.cancel", "delegate.jobs",
           "task.create", "task.list", "task.get", "task.claim", "task.status", "task.checkpoint",
           "task.handoff", "task.transfer", "task.resume", "task.reconcile", "task.delegate.start", "task.autostart",
-          "task.retry", "task.cancel.request", "task.credential.rotate", "task.credential.revoke", "task.credential.status", "task.credential.recover", "task.reconcile.all",
+          "task.retry", "task.cancel.request", "task.credential.rotate", "task.credential.revoke", "task.credential.status", "task.credential.audit", "task.credential.recover", "task.launch.inspect", "task.launch.recover", "task.reconcile.all",
         ] },
         sessionId: { type: "string", description: "Optional owner-scoped Brain ID; omit to use this MCP connection's Brain." },
         filePath: { type: "string", description: "Relative file under scratch/, artifacts/ or evidence/." },
@@ -74,6 +75,7 @@ export const BRAIN_MCP_TOOL_DEFS = [
         agentId: { type: "string" },
         agentCredential: { type: "string", description: "One-time-issued task-scoped credential for mutating a specific agent's task; never include it in prompts, logs or checkpoints." },
         ownerRecoveryCredential: { type: "string", description: "Owner-only, single-use secret for restoring an agent credential. Never send to delegated agents." },
+        confirm: { type: "boolean", description: "Explicit confirmation required for evidence-bound launch recovery; never retries a job." },
         agentIds: { type: "array", maxItems: 12, items: { type: "string" } },
         toAgent: { type: "string" },
         status: { type: "string", enum: ["running", "blocked", "completed", "cancelled"] },
@@ -192,7 +194,7 @@ async function dispatchBrainMcpToolInternal(
         const launch=reserveBrainTaskLaunch(principal,id,task.taskId,cli);
         const output=await cliBridgeTool.execute({
           action:"delegate.start",cli,prompt,skillAutoDetect:false,injectArtifacts:false,
-          permissionMode:"accept-edits",
+          permissionMode:"accept-edits",idempotencyKey:"brain:"+task.taskId+":"+launch,
           ...(Array.isArray(args.expectedArtifacts)?{expectedArtifacts:args.expectedArtifacts}:{}),
           ...(args.timeoutMs!==undefined?{timeoutMs:args.timeoutMs}:{})
         },scratchPath);
@@ -204,7 +206,9 @@ async function dispatchBrainMcpToolInternal(
       }
       const taskId = String(args.taskId || "");
       const agentId = String(args.agentId || "");
-      if (!["task.create","task.list","task.get","task.resume","task.reconcile","task.reconcile.all","task.credential.status","task.credential.recover"].includes(action)) {
+      if (action==="task.launch.inspect"||action==="task.launch.recover")
+        authorizeBrainTaskOwnerRecovery(principal,id,taskId,args.ownerRecoveryCredential);
+      if (!["task.create","task.list","task.get","task.resume","task.reconcile","task.reconcile.all","task.credential.status","task.credential.audit","task.credential.recover","task.launch.inspect","task.launch.recover"].includes(action)) {
         authorizeBrainTaskAgent(principal,id,taskId,agentId,args.agentCredential);
       }
       switch (action) {
@@ -216,6 +220,9 @@ async function dispatchBrainMcpToolInternal(
         }
         case "task.list": return result(listBrainTasks(principal, id));
         case "task.get": return result(inspectBrainTask(principal, id, taskId));
+        case "task.launch.inspect": return result(inspectBrainTaskLaunch(principal,id,taskId));
+        case "task.launch.recover": return result(recoverBrainTaskLaunch(principal,id,taskId,String(args.jobId||""),args.confirm===true));
+        case "task.credential.audit": return result(brainTaskCredentialAudit(principal,id,taskId));
         case "task.credential.status": return result(brainTaskCapabilityStatus(principal,id,taskId));
         case "task.credential.recover": return result(recoverBrainTaskAgentCredential(principal,id,taskId,agentId,args.ownerRecoveryCredential));
         case "task.credential.rotate": return result(rotateBrainTaskAgentCredential(principal,id,taskId,agentId,{currentCredential:String(args.agentCredential||"")}));
@@ -268,6 +275,7 @@ async function dispatchBrainMcpToolInternal(
           const scratch=path.join(getBrainScratchPath(principal,id),"agents",agentId,taskId);
           const launch=reserveBrainTaskLaunch(principal,id,taskId,agentId,true);
           const jobResponse=await cliBridgeTool.execute({action:"delegate.start",cli,prompt,skillAutoDetect:false,injectArtifacts:false,permissionMode:"accept-edits",
+            idempotencyKey:"brain:"+taskId+":"+launch,
             ...(Array.isArray(args.expectedArtifacts)?{expectedArtifacts:args.expectedArtifacts}:{}),
             ...(args.timeoutMs!==undefined?{timeoutMs:args.timeoutMs}:{})},scratch);
           const match=String(jobResponse).match(/clj_\d+_[a-f0-9]{8,32}/);
@@ -290,6 +298,7 @@ async function dispatchBrainMcpToolInternal(
           const delegate=await cliBridgeTool.execute({
             action: "delegate.start", cli, prompt, permissionMode: "accept-edits",
             skillAutoDetect: false, injectArtifacts: false,
+            idempotencyKey:"brain:"+taskId+":"+launch,
             ...(Array.isArray(args.expectedArtifacts) ? { expectedArtifacts: args.expectedArtifacts } : {}),
             ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
           }, canonical);
