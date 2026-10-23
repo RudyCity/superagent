@@ -631,14 +631,14 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   });
   const dispatchMcpToolCall = async (request: any, auditContext?: McpRequestAuditContext) => {
     const { name, arguments: args = {} } = request.params;
-    if (!isFullYoloMode() && isSensitiveEnvFileAccess({ name, args })) {
-      if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "protected_path"; }
-      return { content: [{ type: "text", text: "MCP access to .env files is blocked unless Full YOLO is enabled locally. Project grants do not override this sensitive-file guard." }], isError: true };
     const earlyBlockedRoot = blockedYoloToolCall(args, activeWorkspace);
     if (earlyBlockedRoot) {
       if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "yolo_path_blocked"; }
       return { content: [{ type: "text", text: `Access denied by YOLO blocklist: ${earlyBlockedRoot}` }], isError: true };
     }
+    if (!isFullYoloMode() && isSensitiveEnvFileAccess({ name, args })) {
+      if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "protected_path"; }
+      return { content: [{ type: "text", text: "MCP access to .env files is blocked unless Full YOLO is enabled locally. Project grants do not override this sensitive-file guard." }], isError: true };
     }
     if (typeof args.projectId === "string" && !WORKSPACE_SCOPED_MCP_TOOLS.has(name)
       && name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name)) {
