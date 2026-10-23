@@ -727,6 +727,8 @@ A delegated CLI runs under `scratch/agents/<agent>/<taskId>/`. Multiple logical 
 
 Batch artifact promotion verifies all source hashes and writes a recoverable transaction journal. Promotion is create-only, quota-checked, and can roll back an interrupted batch; it is **not** an atomic snapshot for external filesystem readers at every instant. RMemory updates remain explicit, never automatic based solely on task text.
 
+**Documentation drift protection:** `bun scripts/check-brain-docs.ts` validates Markdown command examples, installation code fences, Brain links and referenced Bun scripts during the Brain release gate. The T-Line counterpart `bun scripts/check-brain-docs.cjs` independently checks desktop startup commands and source layout. This does not perform OAuth login or launch a desktop app.
+
 **Verification and remaining live gates:**
 
 ```bash

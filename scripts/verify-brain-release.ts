@@ -14,6 +14,7 @@ const run = (cwd: string, args: string[]) => {
   const result = spawnSync("bun", args, { cwd, shell: process.platform === "win32", stdio: "inherit" });
   if (result.status !== 0) throw new Error("Brain release check failed: " + args.join(" "));
 };
+run(root, ["scripts/check-brain-docs.ts"]);
 run(root, ["run", "build"]);
 run(root, ["--bun", "x", "vitest", "run",
   "tests/brainWorkspace.test.ts",
@@ -38,6 +39,7 @@ if (withTline) {
     throw new Error("T-Line sibling repository required for --with-tline.");
   }
   run(root, ["scripts/sync-brain-runtime.ts", "--check"]);
+  run(tline, ["scripts/check-brain-docs.cjs"]);
   run(tline, ["scripts/check-brain-runtime.cjs"]);
   run(tline, ["run", "build:backend"]);
   run(tline, ["run", "build:frontend"]);

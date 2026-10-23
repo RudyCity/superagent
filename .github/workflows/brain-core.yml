@@ -2,13 +2,25 @@ name: Brain Core Release Gate
 on:
   push:
     paths:
+      - "README.md"
+      - "scripts/check-brain-docs.ts"
+      - "scripts/verify-brain-release.ts"
       - "src/core/brain/**"
       - "src/core/mcp/tools/brainMcpTools.ts"
       - "src/core/commands/brainCommand.ts"
+      - "README.md"
+      - "scripts/check-brain-docs.ts"
+      - "src/core/commands/commandCatalog.ts"
+      - "src/utils/dashboardSuggestions.ts"
       - "tests/brain*.test.ts"
       - ".github/workflows/brain-core.yml"
   pull_request:
     paths:
+      - "README.md"
+      - "scripts/check-brain-docs.ts"
+      - "scripts/verify-brain-release.ts"
+      - "src/core/commands/commandCatalog.ts"
+      - "src/utils/dashboardSuggestions.ts"
       - "src/core/brain/**"
       - "src/core/mcp/tools/brainMcpTools.ts"
       - "src/core/commands/brainCommand.ts"
@@ -28,5 +40,6 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
+      - run: bun scripts/check-brain-docs.ts
       - run: bun run build
       - run: bun --bun x vitest run tests/brainWorkspace.test.ts tests/brainTasks.test.ts tests/brainCommandDiscovery.test.ts tests/brainArtifactTransaction.test.ts tests/brainAgentCredentials.test.ts tests/brainTaskRecovery.test.ts tests/brainTaskReconciler.test.ts tests/brainTaskContinuity.test.ts tests/brainObservability.test.ts tests/brainReliability.test.ts tests/brainProvenance.test.ts tests/brainStreamingIndex.test.ts tests/brainStorageMcp.test.ts tests/brainMcp.test.ts tests/brainDelegationPromotion.test.ts tests/brainHistoryLifecycle.test.ts tests/mcpOAuthHttpE2E.test.ts
