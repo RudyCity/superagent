@@ -38,6 +38,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
   it("SAFE mode (YOLO off, allowDangerous false) hides dangerous tools from ListTools", async () => {
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools,
       workspace: testWorkspace,
     });
@@ -59,6 +60,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
   it("SAFE mode blocks execution of dangerous tools with informative error", async () => {
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools,
       workspace: testWorkspace,
     });
@@ -89,6 +91,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
   it("activating Scoped YOLO dynamically exposes dangerous tools in tools/list", async () => {
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools,
       workspace: testWorkspace,
     });
@@ -113,6 +116,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
   it("Scoped YOLO allows file write within workspace boundary", async () => {
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools,
       workspace: testWorkspace,
     });
@@ -140,6 +144,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
   it("Scoped YOLO blocks file write targeting model-config.json", async () => {
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools,
       workspace: testWorkspace,
     });
@@ -171,6 +176,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
   it("Scoped YOLO blocks file write targeting out-of-bounds paths", async () => {
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools,
       workspace: testWorkspace,
     });
@@ -204,6 +210,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
   it("Scoped YOLO blocks system-destructive commands", async () => {
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools,
       workspace: testWorkspace,
     });
@@ -234,6 +241,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
   it("Full YOLO mode permits system-wide access without scope restrictions", async () => {
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools,
       workspace: testWorkspace,
     });
@@ -261,6 +269,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
   it("turning YOLO mode off immediately re-locks dangerous tools", async () => {
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools,
       workspace: testWorkspace,
     });
@@ -302,6 +311,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
   it("server advertises tools.listChanged capability", () => {
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools,
       workspace: testWorkspace,
     });
@@ -311,6 +321,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
   it("OAuth read-only scope cannot write even after Full YOLO is enabled", async () => {
     const auditEvents: any[] = [];
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools,
       workspace: testWorkspace,
       authMode: "oauth",
@@ -341,6 +352,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
       null,
     ]) {
       const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
         workspace: testWorkspace, authMode: "oauth", allowDangerous: true,
         getIdentity: () => identity,
       });
@@ -356,6 +368,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
   it("OAuth tokens without tool scopes do not discover or invoke read-only tools", async () => {
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools, workspace: testWorkspace, authMode: "oauth",
       getIdentity: () => ({ mode: "oauth", subject: "no-grants", scopes: [] }),
     });
@@ -372,6 +385,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
     let scopes = ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"];
     const events: any[] = [];
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       workspace: testWorkspace, authMode: "oauth", allowDangerous: true,
       getIdentity: () => ({ mode: "oauth", subject: "admin-client", scopes }),
       onToolCall: event => events.push(event),
@@ -403,6 +417,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
   it("OAuth discovery updates when the same client loses write scope", async () => {
     let scopes = ["mcp:tools", "mcp:tools:write"];
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools, authMode: "oauth", allowDangerous: true,
       workspace: testWorkspace,
       getIdentity: () => ({ mode: "oauth", subject: "mutable-client", scopes }),
@@ -426,6 +441,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
 
   it("OAuth write scope grants mutation only when dangerous tools are unlocked", async () => {
     const server = createSuperagentMcpServer({
+      toolExposure: "full", // Test direct-tool policy; production defaults to gateway.
       allowedTools: safeTools,
       workspace: testWorkspace,
       authMode: "oauth",

@@ -71,6 +71,9 @@ describe("Hermes Phase 4 read-only process creation identity", () => {
       }
     }
     const first = await childFingerprint();
+    // Linux /proc starttime is quantized in clock ticks; separate processes
+    // started within one tick can share the same timestamp component.
+    if (process.platform === "linux") await new Promise(resolve => setTimeout(resolve, 30));
     const second = await childFingerprint();
     if (first && second) expect(first).not.toBe(second);
   }, 18_000);

@@ -139,14 +139,14 @@ describe("Operational Mode Switching Feature", () => {
       expect(mockAgent.activeModeOverride).toBe("debug");
     });
 
-    it("should recognize 'aku izinkan untuk edit' as confirmation in PLANNING_PENDING", async () => {
+    it("does not treat generic editing permission as approval of a pending plan", async () => {
       mockAgent.planState = "PLANNING_PENDING";
       vi.spyOn(mockAgent, "hasRealPlanContent").mockReturnValue(true);
 
       await RequestProcessor.processRequest(mockAgent, "aku izinkan untuk edit");
-      expect(mockAgent.planState).toBe("APPROVED");
-      expect(mockAgent.simpleTaskApproved).toBe(true);
-      expect(mockAgent.activeModeOverride).toBe("implement");
+      expect(mockAgent.planState).toBe("PLANNING_PENDING");
+      expect(mockAgent.simpleTaskApproved).not.toBe(true);
+      // This utterance does not match the explicit plan-approval grammar.
     });
   });
 
@@ -205,9 +205,9 @@ describe("Operational Mode Switching Feature", () => {
       };
 
       const ctx = await ContextBuilder.buildContext(mockAgent);
-      expect(ctx.finalSystemPrompt).toContain("# ACTIVE MODE: 'ask'");
+      expect(ctx.finalSystemPrompt).toContain("# ACTIVE MODE: ask");
       expect(ctx.finalSystemPrompt).toContain("switch_mode");
-      expect(ctx.finalSystemPrompt).toContain("Never claim you cannot change mode yourself");
+      expect(ctx.finalSystemPrompt).toContain("Do not edit or execute mutating commands.");
     });
 
     it("should respect activeModeOverride in ContextBuilder", async () => {
@@ -222,7 +222,7 @@ describe("Operational Mode Switching Feature", () => {
       mockAgent.activeModeOverride = "implement";
 
       const ctx = await ContextBuilder.buildContext(mockAgent);
-      expect(ctx.finalSystemPrompt).toContain("# ACTIVE MODE: 'implement'");
+      expect(ctx.finalSystemPrompt).toContain("# ACTIVE MODE: implement");
       // The default tool-discovery contract keeps only list/describe schemas visible until requested.
       expect(ctx.filteredToolDefs.some((t: any) => t.name === "write_to_file")).toBe(false);
       const discoveryTools = await mockAgent.getActiveTools();

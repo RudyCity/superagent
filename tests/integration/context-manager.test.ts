@@ -53,6 +53,9 @@ describe("ContextManager Integration", () => {
     }
 
     const result1 = await manager.compact(messages);
+    expect(manager.getHistory()).toHaveLength(0); // not yet persisted
+    // Simulate the owning conversation persisting the replacement transcript.
+    await manager.confirmPersistedCompaction(result1);
     messages = result1.messages;
 
     for (let i = 100; i < 200; i++) {
@@ -64,6 +67,7 @@ describe("ContextManager Integration", () => {
     }
 
     const result2 = await manager.compact(messages);
+    await manager.confirmPersistedCompaction(result2);
 
     const history = manager.getHistory();
     expect(history.length).toBe(2);
@@ -188,10 +192,9 @@ describe("ContextManager Integration", () => {
         });
       }
 
-      await manager.compact(messages);
-      messages = manager.getHistory().slice(-1)[0]
-        ? messages.slice(-20)
-        : messages;
+      const result = await manager.compact(messages);
+      await manager.confirmPersistedCompaction(result);
+      messages = result.messages;
     }
 
     const history = manager.getHistory();
@@ -299,14 +302,18 @@ describe("ContextManager Integration", () => {
       });
     }
 
-    // Start two compactions concurrently
-    const [result1, result2] = await Promise.all([
+    // Two concurrent writers must NOT both rewrite the same transcript.
+    // The current lifecycle rejects the second writer as busy rather
+    // than permitting a stale compaction to race the first.
+    const outcomes = await Promise.allSettled([
       manager.compact(messages),
       manager.compact(messages),
     ]);
-
-    expect(result1.messages.length).toBeGreaterThan(0);
-    expect(result2.messages.length).toBeGreaterThan(0);
+    expect(outcomes.filter(x => x.status === "fulfilled")).toHaveLength(1);
+    const refused = outcomes.find(x => x.status === "rejected") as PromiseRejectedResult;
+    expect(refused.reason?.name).toBe("CompactionBusyError");
+    const successful = outcomes.find(x => x.status === "fulfilled") as PromiseFulfilledResult<any>;
+    expect(successful.value.messages.length).toBeGreaterThan(0);
   });
 
   it("should work with all three strategies", async () => {

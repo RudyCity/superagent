@@ -26,8 +26,17 @@ beforeAll(async () => {
   origin = "http://127.0.0.1:" + address.port;
 });
 afterAll(async () => {
-  server.closeAllConnections();
-  await new Promise<void>((done, reject) => server.close(e => e ? reject(e) : done()));
+  if (server.listening) {
+    server.closeAllConnections();
+    try {
+      await new Promise<void>((done, reject) => server.close(e => {
+        if (!e || /server is not running/i.test(String(e))) done();
+        else reject(e);
+      }));
+    } catch (error) {
+      if (!/server is not running/i.test(String(error))) throw error;
+    }
+  }
   await fs.rm(workspace, { recursive: true, force: true });
 });
 

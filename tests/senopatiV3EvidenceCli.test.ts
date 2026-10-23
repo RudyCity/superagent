@@ -10,6 +10,8 @@ const cli=fileURLToPath(new URL("../scripts/senopati-v3-evidence.ts",import.meta
 const signer=fileURLToPath(new URL("../scripts/sign-senopati-v3-review.ts",import.meta.url));
 const cleanup:string[]=[];
 const fixture=()=>{
+  // A fresh CI checkout does not contain the generated build/quality folder.
+  fs.mkdirSync(root,{recursive:true});
   const dir=fs.mkdtempSync(path.join(root,"cli-smoke-"));cleanup.push(dir);
   const secure=fs.mkdtempSync(path.join(os.tmpdir(),"senopati-reviewer-"));cleanup.push(secure);
   const source=path.join(dir,"external.jsonl");

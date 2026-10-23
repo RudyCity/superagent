@@ -121,23 +121,28 @@ describe("HTTP RMemory project-scope boundary", () => {
 
 
   it("keeps same-key shared memories isolated by canonical project and quarantines ambiguous legacy rows", async () => {
-    await invoke("POST", "/api/memory", { key: "same-key", value: "Private fact from project A", scope: "project" }, "", "D:/repos/project-a");
-    await invoke("POST", "/api/memory", { key: "same-key", value: "Private fact from project B", scope: "project" }, "", "D:/repos/project-b");
-    await invoke("POST", "/api/memory", { key: "global-key", value: "Global preference", scope: "global" }, "", "D:/repos/project-a");
+    // Use distinct real directories: on Linux a Windows drive path is relative
+    // to this repository and resolves to the same enclosing .git project.
+    const projectA = path.join(testConfigDir, "project-a");
+    const projectB = path.join(testConfigDir, "project-b");
+    fs.mkdirSync(projectA);fs.mkdirSync(projectB);
+    await invoke("POST", "/api/memory", { key: "same-key", value: "Private fact from project A", scope: "project" }, "", projectA);
+    await invoke("POST", "/api/memory", { key: "same-key", value: "Private fact from project B", scope: "project" }, "", projectB);
+    await invoke("POST", "/api/memory", { key: "global-key", value: "Global preference", scope: "global" }, "", projectA);
 
     const sharedFile = path.join(testConfigDir, "shared-memory.json");
     const saved = JSON.parse(fs.readFileSync(sharedFile, "utf8"));
     saved.push({ key: "legacy-unknown", value: "Must not leak into all projects", source: "legacy", timestamp: Date.now(), scope: "project" });
     fs.writeFileSync(sharedFile, JSON.stringify(saved, null, 2));
 
-    const projectA = await invoke("GET", "/api/memory", {}, "", "D:/repos/project-a");
-    const projectB = await invoke("GET", "/api/memory", {}, "", "D:/repos/project-b");
-    expect(projectA.response.body.sharedMemory.map((item: any) => item.value)).toContain("Private fact from project A");
-    expect(projectA.response.body.sharedMemory.map((item: any) => item.value)).not.toContain("Private fact from project B");
-    expect(projectA.response.body.sharedMemory.map((item: any) => item.key)).not.toContain("legacy-unknown");
-    expect(projectA.response.body.sharedMemory.map((item: any) => item.key)).toContain("global-key");
-    expect(projectB.response.body.sharedMemory.map((item: any) => item.value)).toContain("Private fact from project B");
-    expect(projectB.response.body.sharedMemory.map((item: any) => item.value)).not.toContain("Private fact from project A");
+    const resultA = await invoke("GET", "/api/memory", {}, "", projectA);
+    const resultB = await invoke("GET", "/api/memory", {}, "", projectB);
+    expect(resultA.response.body.sharedMemory.map((item: any) => item.value)).toContain("Private fact from project A");
+    expect(resultA.response.body.sharedMemory.map((item: any) => item.value)).not.toContain("Private fact from project B");
+    expect(resultA.response.body.sharedMemory.map((item: any) => item.key)).not.toContain("legacy-unknown");
+    expect(resultA.response.body.sharedMemory.map((item: any) => item.key)).toContain("global-key");
+    expect(resultB.response.body.sharedMemory.map((item: any) => item.value)).toContain("Private fact from project B");
+    expect(resultB.response.body.sharedMemory.map((item: any) => item.value)).not.toContain("Private fact from project A");
   });
 
   it("uses preview, confirmation and updatedAt for HTTP revision writes", async () => {

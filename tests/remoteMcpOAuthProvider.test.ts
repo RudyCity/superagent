@@ -138,6 +138,8 @@ describe("remote MCP OAuth client integration", () => {
       port: serverPort,
       allowDangerous: false,
       authMode: "oauth",
+      // Explicitly exercise legacy direct-tool discovery; production remains gateway-first.
+      toolExposure: "full",
       oauth: { publicBaseUrl, bootstrapCodeHash: bootstrap.codeHash },
     });
 

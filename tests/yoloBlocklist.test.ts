@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { test, expect } from "vitest";
 import { editYoloBlocks, blockedYoloPath, blockedYoloToolCall, listYoloBlocks } from "../src/core/yoloBlocklist.js";
 
 test("drive and descendants blocked with component boundary", () => {

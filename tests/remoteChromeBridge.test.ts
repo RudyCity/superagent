@@ -1,5 +1,6 @@
-import { describe, test, expect, afterEach } from "vitest";
+import { describe, test, expect, afterEach, vi } from "vitest";
 import { WebSocket } from "ws";
+import { withBrowserBridgeOperation } from "../src/core/tools/chromeCdpSessionManager.js";
 import {
   ensureRemoteChromeBridge,
   sendRemoteCommand,
@@ -67,12 +68,23 @@ describe("remoteChromeBridge comprehensive test suite", () => {
     );
     await new Promise((res) => setTimeout(res, 100));
 
+    await vi.waitFor(() => expect(isRemoteChromeConnected()).toBe(true), {timeout:2000});
+    // Closing before the globally serialized operation is dispatched tests a
+    // different contract ("not connected"). Wait for the actual request.
+    const delivered = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Bridge request was not dispatched")), 3000);
+      client.on("message", (payload) => {
+        try {
+          if (JSON.parse(payload.toString()).action === "navigate") {
+            clearTimeout(timer);resolve();
+          }
+        } catch {}
+      });
+    });
     const commandPromise = sendRemoteCommand("navigate", "https://example.com");
-
-    // Close client immediately before responding to trigger instant rejection
+    await delivered;
     client.close();
-
-    await expect(commandPromise).rejects.toThrow("disconnected");
+    await expect(commandPromise).rejects.toThrow(/disconnect/i);
   });
 
   test("enforces command rate limit when exceeding max requests per second", async () => {
@@ -87,6 +99,7 @@ describe("remoteChromeBridge comprehensive test suite", () => {
     );
     await new Promise((res) => setTimeout(res, 100));
 
+    await vi.waitFor(() => expect(isRemoteChromeConnected()).toBe(true), {timeout:2000});
     // Respond immediately to requests so they resolve quickly
     client.on("message", (raw) => {
       const data = JSON.parse(raw.toString());
@@ -99,13 +112,15 @@ describe("remoteChromeBridge comprehensive test suite", () => {
       );
     });
 
-    const promises: Promise<string>[] = [];
-    for (let i = 0; i < 35; i++) {
-      promises.push(sendRemoteCommand("ping", "target"));
-    }
-
-    const results = await Promise.allSettled(promises);
-    const rateLimited = results.filter((r) => r.status === "rejected");
+    // A top-level burst is serialized by the browser lifecycle mutex and may
+    // not exceed 30/s. Inside an already-authorized bridge operation, send
+    // the actual concurrent burst to verify the rate limiter itself.
+    const results = await withBrowserBridgeOperation(async () => {
+      const promises: Promise<string>[] = [];
+      for (let i = 0; i < 35; i++) promises.push(sendRemoteCommand("ping", "target"));
+      return Promise.allSettled(promises);
+    });
+    const rateLimited = results.filter((r) => r.status === "rejected" && /rate limit/i.test(String((r as PromiseRejectedResult).reason)));
     expect(rateLimited.length).toBeGreaterThan(0);
 
     client.close();
