@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.14.17",
+  "version": "1.14.18",
   "description": "Terminal-native general-purpose AI assistant for research, writing, productivity, automation and software development",
   "type": "module",
   "bin": {
@@ -32,7 +32,8 @@
     "integration:tline": "bun scripts/bun-tline-bridge-smoke.ts",
     "compat:bun": "bun scripts/bun-dependency-compat-smoke.ts",
     "doctor:launcher": "bun scripts/repair-bun-global-launcher.ts",
-    "repair:launcher": "bun scripts/repair-bun-global-launcher.ts --apply"
+    "repair:launcher": "bun scripts/repair-bun-global-launcher.ts --apply",
+    "setup:piper": "bun scripts/setup-piper.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",

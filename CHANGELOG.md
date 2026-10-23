@@ -1,3 +1,11 @@
+## [1.14.18] - 2026-10-23
+### Added
+- Motion Studio Offline Piper TTS Local Voiceover Engine (`scripts/setup-piper.ts`, `src/core/motion/director/localVoiceover.ts`, `package.json`, `tests/motionLocalVoiceover.test.ts`):
+  - Added automated installation and verification script (`bun run setup:piper`) to download the Windows x64 Piper standalone binary and the Indonesian neural ONNX voice model (`id_ID-news_tts-medium.onnx`).
+  - Integrated persistent configuration via `~/.superagent-r/model-config.json` (`motionPiperBin` and `motionPiperModel`), following the project's zero `process.env` rule.
+  - Added comprehensive test suite (`tests/motionLocalVoiceover.test.ts`) covering narration request bounds, unconfigured states, model detection, and end-to-end WAV speech synthesis + registration into the motion audio registry.
+  - Enabled full offline voiceover and auto-narration in AI Director via `--voiceover-text` and `--auto-narrate`.
+
 ## [1.14.17] - 2026-10-23
 ### Added
 - Motion Studio Dynamic Scene Transitions (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `src/core/motion/motionCapabilities.ts`, `tests/motionCreativePresets.test.ts`):
