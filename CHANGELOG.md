@@ -1,3 +1,20 @@
+## [1.14.14] - 2026-10-23
+### Added
+- Motion Studio Multiline & Auto-Wrap Text Engine (`src/core/motion/layout/textLayout.ts`, `src/core/motion/render/canvasFrames.ts`, `src/core/motion/runtime/frameSvg.ts`):
+  - Created shared declarative text layout utility (`splitTextLines`) supporting explicit newlines (`\n`) and bounded container word wrapping.
+  - Upgraded `@napi-rs/canvas` frame renderer to iterate through multiline text with calculated proportional line heights.
+  - Upgraded SVG preview renderer to generate compliant `<tspan>` tags for multiline layouts, preserving 100% byte-for-byte fidelity for single-line text layers.
+- Motion Studio Audio Auto-Transcoding Pipeline (`src/core/motion/assets/motionAudio.ts`, `src/core/motion/motionCapabilities.ts`):
+  - Added transparent FFmpeg-driven audio transcoding (`transcodeAudioToCanonicalWav`) during asset import, allowing direct upload of MP3, AAC, M4A, OGG, and non-canonical WAV audio up to 30 seconds into canonical 24kHz mono PCM16 WAV.
+  - Updated `MOTION_CAPABILITIES.audioImport` to advertise `["pcm16-wav", "mp3", "aac", "ogg"]`.
+- Motion Studio Resilient Queue Admission & Stale Lock Eviction (`src/core/motion/jobs/renderScheduler.ts`, `tests/motionStudioOptimizations.test.ts`):
+  - Added self-healing stale lock eviction in `withMotionQueueAdmission`: automatically detects and safely evicts abandoned `.admission.lock` files older than 10 seconds, preventing queue deadlocks from ungracefully terminated worker processes.
+
+### Fixed
+- JSON-Only Configuration Compliance for Piper TTS & Motion Scheduler (`src/core/motion/director/localVoiceover.ts`, `src/core/motion/jobs/renderScheduler.ts`, `src/core/config/configTypes.ts`, `src/core/config/jsonConfig.ts`, `src/core/config/configSchema.ts`):
+  - Added `motionPiperBin`, `motionPiperModel`, and `motionMaxRenderers` to `SystemSettings` schema in `model-config.json`.
+  - Migrated `localVoiceover.ts` and `renderScheduler.ts` to prioritize settings from `getSettings()` over environment variables, eliminating the architectural rule violation while preserving backward compatibility for legacy test stubs.
+
 ## [1.14.13] - 2026-10-23
 ### Changed
 - Response Formatting Rules (`.agents/AGENTS.md`):

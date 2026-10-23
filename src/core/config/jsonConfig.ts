@@ -741,6 +741,9 @@ export function getSettings(): SystemSettings {
     advisorAdaptiveScaling: s.advisorAdaptiveScaling ?? true,
     advisorPatternMemory: s.advisorPatternMemory ?? true,
     singleAgentMode: s.singleAgentMode,
+    motionPiperBin: s.motionPiperBin,
+    motionPiperModel: s.motionPiperModel,
+    motionMaxRenderers: s.motionMaxRenderers,
   };
 }
 

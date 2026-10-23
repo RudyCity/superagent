@@ -11,7 +11,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   localWorkspaceOnly: true,
   layerKinds: ["text", "rect", "image"],
   imageImport: ["png", "jpeg", "webp"],
-  audioImport: ["pcm16-wav"],
+  audioImport: ["pcm16-wav", "mp3", "aac", "ogg"],
   audioTracksMax: 4,
   renderFormats: ["h264-mp4"],
   renderWidthMax: 1920,

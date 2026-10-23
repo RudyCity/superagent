@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { MotionJob } from "./motionJobs.js";
+import { getSettings } from "../../config/jsonConfig.js";
 
 /**
  * Multi-process filesystem admission. The lock files intentionally fail closed:
@@ -9,9 +10,15 @@ import type { MotionJob } from "./motionJobs.js";
  */
 export const MOTION_QUEUE_LIMIT = 12;
 export function motionConcurrentSlots(): number {
-  const value = Number(process.env.SUPERAGENT_MOTION_MAX_RENDERERS ?? "2");
+  let settingsVal: number | undefined;
+  try {
+    settingsVal = getSettings().motionMaxRenderers;
+  } catch { /* fallback */ }
+  const envVal = process.env.SUPERAGENT_MOTION_MAX_RENDERERS;
+  const raw = settingsVal !== undefined ? String(settingsVal) : (envVal ?? "2");
+  const value = Number(raw);
   if (!Number.isSafeInteger(value) || value < 1 || value > 4) {
-    throw new Error("SUPERAGENT_MOTION_MAX_RENDERERS must be an integer from 1 to 4");
+    throw new Error("motionMaxRenderers must be an integer from 1 to 4");
   }
   return value;
 }
@@ -21,18 +28,31 @@ function slotFile(dir: string, slot: number) { return path.join(dir, ".render-sl
 
 export async function withMotionQueueAdmission<T>(dir: string, operation: () => Promise<T>): Promise<T> {
   let lock: Awaited<ReturnType<typeof fs.open>> | undefined;
+  const lockFile = admissionFile(dir);
   for (let attempt = 0; attempt < 80; attempt++) {
-    try { lock = await fs.open(admissionFile(dir), "wx", 0o600); break; }
+    try { lock = await fs.open(lockFile, "wx", 0o600); break; }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      // Stale lock self-healing: if an admission lock has been held for > 10,000ms by an ungracefully
+      // killed process, inspect its modification time and safely evict it.
+      if (attempt === 30 || attempt === 60) {
+        try {
+          const stat = await fs.lstat(lockFile);
+          if (stat.isFile() && !stat.isSymbolicLink() && Date.now() - stat.mtimeMs > 10_000) {
+            await fs.rm(lockFile, { force: true });
+          }
+        } catch { /* ignore concurrent unlinks */ }
+      }
       await sleep(50);
     }
   }
   if (!lock) throw new Error("Motion queue admission lock is busy; manual inspection may be required");
   try { return await operation(); }
   finally {
-    await lock.close();
-    await fs.rm(admissionFile(dir), { force: true });
+    if (lock) {
+      await lock.close().catch(() => {});
+      await fs.rm(lockFile, { force: true }).catch(() => {});
+    }
   }
 }
 export async function assertMotionQueueCapacity(dir: string): Promise<void> {

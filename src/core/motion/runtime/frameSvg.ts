@@ -1,5 +1,6 @@
 import type { MotionProject } from "../schema/types.js";
 import { evaluateFrame } from "../timeline/evaluateFrame.js";
+import { splitTextLines } from "../layout/textLayout.js";
 
 function escapeXml(raw: string): string {
   return raw.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[char] ?? char);
@@ -30,7 +31,17 @@ export function renderMotionSvg(project: MotionProject, frame: number, images = 
       parts.push(`<image x="${x}" y="${y}" width="${number(layer.width)}" height="${number(layer.height)}" href="${href}" opacity="${opacity}" preserveAspectRatio="none" transform="${transform}"/>`);
     } else {
       const baseline = number(values.y + layer.fontSize);
-      parts.push(`<text x="${x}" y="${baseline}" fill="${layer.fill}" opacity="${opacity}" font-family="${escapeXml(layer.fontFamily)}" font-size="${number(layer.fontSize)}" transform="${transform}">${escapeXml(layer.text)}</text>`);
+      const lines = splitTextLines(layer.text, layer.width > 0 ? layer.width : undefined, s => s.length * layer.fontSize * 0.48);
+      if (lines.length <= 1) {
+        parts.push(`<text x="${x}" y="${baseline}" fill="${layer.fill}" opacity="${opacity}" font-family="${escapeXml(layer.fontFamily)}" font-size="${number(layer.fontSize)}" transform="${transform}">${escapeXml(layer.text)}</text>`);
+      } else {
+        const lineHeight = Math.round(layer.fontSize * 1.25);
+        const tspans = lines.map((line, idx) => {
+          const dy = idx === 0 ? "0" : number(lineHeight);
+          return `<tspan x="${x}" dy="${dy}">${escapeXml(line)}</tspan>`;
+        }).join("");
+        parts.push(`<text x="${x}" y="${baseline}" fill="${layer.fill}" opacity="${opacity}" font-family="${escapeXml(layer.fontFamily)}" font-size="${number(layer.fontSize)}" transform="${transform}">${tspans}</text>`);
+      }
     }
   }
   parts.push("</svg>");

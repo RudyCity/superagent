@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { spawn } from "node:child_process";
 import { studioStorageRoot } from "../project/projectStore.js";
 import type { MotionProject } from "../schema/types.js";
+import { probeFfmpeg } from "../render/ffmpegEncoder.js";
 
 const AUDIO_ID = /^audio-[a-f0-9]{64}$/;
 const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
@@ -49,17 +51,77 @@ export function inspectMotionWav(bytes: Buffer): { sampleRate: number; channels:
   if (seconds <= 0 || seconds > 30) throw new Error("Motion audio duration must be at most 30 seconds");
   return { sampleRate, channels, seconds };
 }
+
+/**
+ * Transcodes arbitrary audio (e.g. MP3, AAC, OGG, or non-canonical WAV) into
+ * canonical 24kHz mono PCM16 WAV suitable for SuperAgent Studio storage and ducking.
+ */
+export async function transcodeAudioToCanonicalWav(source: Buffer, ffmpeg = "ffmpeg"): Promise<Buffer> {
+  if (!Buffer.isBuffer(source) || source.length === 0 || source.length > 30 * 1024 * 1024) {
+    throw new Error("Invalid source audio buffer (max 30 MB input)");
+  }
+  if (!(await probeFfmpeg(ffmpeg))) {
+    throw new Error("FFmpeg not available for audio transcoding");
+  }
+  return new Promise<Buffer>((resolve, reject) => {
+    // 24kHz mono PCM16: 48,000 bytes/sec, so 30s = ~1.44 MB (fits cleanly within 2 MB limit)
+    const child = spawn(ffmpeg, [
+      "-hide_banner",
+      "-loglevel", "error",
+      "-i", "pipe:0",
+      "-t", "30",
+      "-acodec", "pcm_s16le",
+      "-ar", "24000",
+      "-ac", "1",
+      "-f", "wav",
+      "pipe:1",
+    ], {
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    const chunks: Buffer[] = [];
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-500); });
+    child.on("error", reject);
+    child.on("close", code => {
+      if (code !== 0) {
+        reject(new Error(`FFmpeg audio transcoding failed (code ${code}): ${stderr}`));
+      } else {
+        resolve(Buffer.concat(chunks));
+      }
+    });
+    child.stdin.on("error", () => {});
+    child.stdin.end(source);
+  });
+}
+
 export async function importMotionAudio(workspace: string, source: Buffer) {
-  const metadata = inspectMotionWav(source);
-  const id = "audio-" + crypto.createHash("sha256").update(source).digest("hex");
+  let canonicalBytes = source;
+  let metadata: { sampleRate: number; channels: number; seconds: number };
+  try {
+    metadata = inspectMotionWav(canonicalBytes);
+  } catch (initialError) {
+    let converted: Buffer | null = null;
+    try {
+      converted = await transcodeAudioToCanonicalWav(source);
+    } catch {
+      throw initialError;
+    }
+    if (!converted) throw initialError;
+    canonicalBytes = converted;
+    metadata = inspectMotionWav(canonicalBytes);
+  }
+  const id = "audio-" + crypto.createHash("sha256").update(canonicalBytes).digest("hex");
   const file = path.join(await audioDirectory(workspace, true), id + ".wav");
-  try { await fs.writeFile(file, source, { flag: "wx", mode: 0o600 }); }
+  try { await fs.writeFile(file, canonicalBytes, { flag: "wx", mode: 0o600 }); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    if (!(await readMotionAudio(workspace, id)).equals(source)) throw new Error("Motion audio ID collision");
+    if (!(await readMotionAudio(workspace, id)).equals(canonicalBytes)) throw new Error("Motion audio ID collision");
   }
-  return { id, bytes: source.length, ...metadata };
+  return { id, bytes: canonicalBytes.length, ...metadata };
 }
+
 export async function readMotionAudio(workspace: string, id: string): Promise<Buffer> {
   assertAudioId(id);
   const file = path.join(await audioDirectory(workspace, false), id + ".wav");

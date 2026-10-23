@@ -2,6 +2,7 @@ import { createCanvas, type Image } from "@napi-rs/canvas";
 import type { MotionProject } from "../schema/types.js";
 import { evaluateFrame } from "../timeline/evaluateFrame.js";
 import { ensureMotionFontsRegistered } from "../assets/motionFonts.js";
+import { splitTextLines } from "../layout/textLayout.js";
 
 /**
  * Restricted built-in declarative canvas renderer. Does not load URLs, plugins,
@@ -43,7 +44,11 @@ export function createMotionFrameRenderer(project: MotionProject, width: number,
       } else {
         ctx.textBaseline = "alphabetic";
         ctx.font = `${layer.fontSize}px "${layer.fontFamily}"`;
-        ctx.fillText(layer.text, values.x, values.y + layer.fontSize);
+        const lines = splitTextLines(layer.text, layer.width > 0 ? layer.width : undefined, s => ctx.measureText(s).width);
+        const lineHeight = Math.round(layer.fontSize * 1.25);
+        for (let i = 0; i < lines.length; i++) {
+          ctx.fillText(lines[i], values.x, values.y + layer.fontSize + (i * lineHeight));
+        }
       }
       ctx.restore();
     }

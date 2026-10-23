@@ -80,6 +80,12 @@ export interface SystemSettings {
    * — migrated to JSON config in v1.5.0 (audit finding H4).
    */
   singleAgentMode?: boolean;
+  /** Offline Piper TTS binary path for Superagent Studio voiceover */
+  motionPiperBin?: string;
+  /** Offline Piper TTS ONNX model path for Superagent Studio voiceover */
+  motionPiperModel?: string;
+  /** Max concurrent renderers for Superagent Studio queue (default: 2, max: 4) */
+  motionMaxRenderers?: number;
 }
 
 export interface McpServerConfigBase {

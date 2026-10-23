@@ -3,17 +3,34 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { importMotionAudio } from "../assets/motionAudio.js";
+import { getSettings } from "../../config/jsonConfig.js";
 
 /** Optional offline Piper TTS. Executable and voice model paths are administrator-owned env config. */
+/** Resolves Piper TTS config prioritizing JSON settings over environment variables. */
+export function getPiperConfig(): { binary: string; model: string } | null {
+  try {
+    const settings = getSettings();
+    const binary = settings.motionPiperBin?.trim() || process.env.SUPERAGENT_MOTION_PIPER_BIN?.trim();
+    const model = settings.motionPiperModel?.trim() || process.env.SUPERAGENT_MOTION_PIPER_MODEL?.trim();
+    if (binary && model) return { binary, model };
+  } catch {
+    const binary = process.env.SUPERAGENT_MOTION_PIPER_BIN?.trim();
+    const model = process.env.SUPERAGENT_MOTION_PIPER_MODEL?.trim();
+    if (binary && model) return { binary, model };
+  }
+  return null;
+}
+
 export function localVoiceoverConfigured(): boolean {
-  return !!process.env.SUPERAGENT_MOTION_PIPER_BIN?.trim() && !!process.env.SUPERAGENT_MOTION_PIPER_MODEL?.trim();
+  return getPiperConfig() !== null;
 }
 export async function localVoiceoverReady(): Promise<boolean> {
-  if (!localVoiceoverConfigured()) return false;
+  const config = getPiperConfig();
+  if (!config) return false;
   try {
     const [binary, model] = await Promise.all([
-      fs.stat(path.resolve(process.env.SUPERAGENT_MOTION_PIPER_BIN!)),
-      fs.stat(path.resolve(process.env.SUPERAGENT_MOTION_PIPER_MODEL!)),
+      fs.stat(path.resolve(config.binary)),
+      fs.stat(path.resolve(config.model)),
     ]);
     return binary.isFile() && model.isFile();
   } catch { return false; }
@@ -36,13 +53,14 @@ export async function synthesizeLocalVoiceover(
 ): Promise<{ id: string; seconds: number; gain: number } | undefined> {
   validateNarrationRequest(request);
   if (request.voiceoverText === undefined) return undefined;
-  if (!localVoiceoverConfigured()) {
-    throw Object.assign(new Error("Local voice-over unavailable: configure SUPERAGENT_MOTION_PIPER_BIN and SUPERAGENT_MOTION_PIPER_MODEL"), {
+  const config = getPiperConfig();
+  if (!config) {
+    throw Object.assign(new Error("Local voice-over unavailable: configure motionPiperBin and motionPiperModel in settings or SUPERAGENT_MOTION_PIPER_BIN and SUPERAGENT_MOTION_PIPER_MODEL"), {
       statusCode: 503,
     });
   }
-  const binary = path.resolve(process.env.SUPERAGENT_MOTION_PIPER_BIN!);
-  const model = path.resolve(process.env.SUPERAGENT_MOTION_PIPER_MODEL!);
+  const binary = path.resolve(config.binary);
+  const model = path.resolve(config.model);
   const [executable, voiceModel] = await Promise.all([fs.stat(binary), fs.stat(model)]).catch(() => {
     throw Object.assign(new Error("Local voice-over executable or model file is missing"), { statusCode: 503 });
   });

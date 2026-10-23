@@ -230,7 +230,7 @@ function validateSettings(input: unknown): ValidationResult<SystemSettings> {
     "concurrencyLimit", "rateLimitRpm", "rateLimitCapacity", "simpleTaskFileThreshold",
     "maxChecklistVisible", "maxHistoryVisible", "maxProcsVisible",
     "rmemoryEmbeddingDimensions", "advisorWarningThreshold", "advisorPauseThreshold",
-    "advisorErrorThreshold", "contextWindowLimit", "maxIterations",
+    "advisorErrorThreshold", "contextWindowLimit", "maxIterations", "motionMaxRenderers",
   ] as const;
   for (const f of numFields) {
     if ((input as any)[f] !== undefined && !isNumber((input as any)[f])) {
