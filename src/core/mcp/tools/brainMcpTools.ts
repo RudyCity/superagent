@@ -24,8 +24,8 @@ import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainR
 import { promoteBrainDelegation, promoteBrainDelegationBatch } from "../../brain/brainDelegationArtifacts.js";
 import { recoverBrainArtifactPromotion } from "../../brain/brainArtifactTransaction.js";
 import { recordBrainEvent, summarizeBrainEvents } from "../../brain/brainObservability.js";
-import { createBrainTask, listBrainTasks, inspectBrainTask, claimBrainTask, transferBrainTask, updateBrainTask, checkpointBrainTask, handoffBrainArtifact, resumeBrainTask, recordBrainTaskDelegation } from "../../brain/brainTasks.js";
-import { authorizeBrainTaskAgent, issueBrainTaskAgentCredentials, rotateBrainTaskAgentCredential, revokeBrainTaskAgentCredential, brainTaskCapabilityStatus } from "../../brain/brainAgentCredentials.js";
+import { createBrainTask, listBrainTasks, inspectBrainTask, claimBrainTask, transferBrainTask, updateBrainTask, checkpointBrainTask, handoffBrainArtifact, resumeBrainTask, recordBrainTaskDelegation, reserveBrainTaskLaunch, finishBrainTaskLaunch } from "../../brain/brainTasks.js";
+import { authorizeBrainTaskAgent, issueBrainTaskAgentCredentials, rotateBrainTaskAgentCredential, revokeBrainTaskAgentCredential, brainTaskCapabilityStatus, issueBrainTaskRecoveryCredential, recoverBrainTaskAgentCredential } from "../../brain/brainAgentCredentials.js";
 import { reconcileBrainTask } from "../../brain/brainTaskReconciler.js";
 import { reconcileBrainSessionJobs } from "../../brain/brainTaskRecovery.js";
 import { getDelegateJob } from "../../tools/cliBridgeDelegateJobs.js";
@@ -46,7 +46,7 @@ export const BRAIN_MCP_TOOL_DEFS = [
           "delegate.start", "delegate.get", "delegate.tail", "delegate.cancel", "delegate.jobs",
           "task.create", "task.list", "task.get", "task.claim", "task.status", "task.checkpoint",
           "task.handoff", "task.transfer", "task.resume", "task.reconcile", "task.delegate.start", "task.autostart",
-          "task.retry", "task.cancel.request", "task.credential.rotate", "task.credential.revoke", "task.credential.status", "task.reconcile.all",
+          "task.retry", "task.cancel.request", "task.credential.rotate", "task.credential.revoke", "task.credential.status", "task.credential.recover", "task.reconcile.all",
         ] },
         sessionId: { type: "string", description: "Optional owner-scoped Brain ID; omit to use this MCP connection's Brain." },
         filePath: { type: "string", description: "Relative file under scratch/, artifacts/ or evidence/." },
@@ -73,6 +73,7 @@ export const BRAIN_MCP_TOOL_DEFS = [
         taskId: { type: "string" },
         agentId: { type: "string" },
         agentCredential: { type: "string", description: "One-time-issued task-scoped credential for mutating a specific agent's task; never include it in prompts, logs or checkpoints." },
+        ownerRecoveryCredential: { type: "string", description: "Owner-only, single-use secret for restoring an agent credential. Never send to delegated agents." },
         agentIds: { type: "array", maxItems: 12, items: { type: "string" } },
         toAgent: { type: "string" },
         status: { type: "string", enum: ["running", "blocked", "completed", "cancelled"] },
@@ -186,7 +187,9 @@ async function dispatchBrainMcpToolInternal(
           throw new Error("Auto-task delegation needs a CLI and non-empty prompt.");
         const task=createBrainTask(principal,id,prompt.trim().slice(0,120),["main",cli]);
         const credentials=issueBrainTaskAgentCredentials(principal,id,task.taskId);
+        const ownerRecoveryCredential=issueBrainTaskRecoveryCredential(principal,id,task.taskId);
         const {scratchPath}=claimBrainTask(principal,id,task.taskId,cli);
+        const launch=reserveBrainTaskLaunch(principal,id,task.taskId,cli);
         const output=await cliBridgeTool.execute({
           action:"delegate.start",cli,prompt,skillAutoDetect:false,injectArtifacts:false,
           permissionMode:"accept-edits",
@@ -194,22 +197,27 @@ async function dispatchBrainMcpToolInternal(
           ...(args.timeoutMs!==undefined?{timeoutMs:args.timeoutMs}:{})
         },scratchPath);
         const match=String(output).match(/clj_\d+_[a-f0-9]{8,32}/);
-        if(match)recordBrainTaskDelegation(principal,id,task.taskId,cli,cli,match[0]);
-        return result({taskId:task.taskId,scratchPath,delegate:output,agentCredential:credentials[cli]});
+        if(!match)throw new Error("Delegation acknowledgement missing; launch reservation retained for operator review.");
+        recordBrainTaskDelegation(principal,id,task.taskId,cli,cli,match[0]);
+        finishBrainTaskLaunch(principal,id,task.taskId,cli,launch,match[0]);
+        return result({taskId:task.taskId,scratchPath,delegate:output,agentCredential:credentials[cli],ownerRecoveryCredential});
       }
       const taskId = String(args.taskId || "");
       const agentId = String(args.agentId || "");
-      if (!["task.create","task.list","task.get","task.resume","task.reconcile","task.reconcile.all","task.credential.status"].includes(action)) {
+      if (!["task.create","task.list","task.get","task.resume","task.reconcile","task.reconcile.all","task.credential.status","task.credential.recover"].includes(action)) {
         authorizeBrainTaskAgent(principal,id,taskId,agentId,args.agentCredential);
       }
       switch (action) {
         case "task.create": {
           const task=createBrainTask(principal, id, String(args.title || ""), Array.isArray(args.agentIds) ? args.agentIds as string[] : ["main"]);
-          return result({ ...task, credentials:issueBrainTaskAgentCredentials(principal,id,task.taskId) });
+          const credentials=issueBrainTaskAgentCredentials(principal,id,task.taskId);
+          const ownerRecoveryCredential=issueBrainTaskRecoveryCredential(principal,id,task.taskId);
+          return result({ ...task, credentials, ownerRecoveryCredential });
         }
         case "task.list": return result(listBrainTasks(principal, id));
         case "task.get": return result(inspectBrainTask(principal, id, taskId));
         case "task.credential.status": return result(brainTaskCapabilityStatus(principal,id,taskId));
+        case "task.credential.recover": return result(recoverBrainTaskAgentCredential(principal,id,taskId,agentId,args.ownerRecoveryCredential));
         case "task.credential.rotate": return result(rotateBrainTaskAgentCredential(principal,id,taskId,agentId,{currentCredential:String(args.agentCredential||"")}));
         case "task.credential.revoke": return result(revokeBrainTaskAgentCredential(principal,id,taskId,agentId,{currentCredential:String(args.agentCredential||"")}));
         case "task.reconcile.all": return result(await reconcileBrainSessionJobs(principal,id));
@@ -258,6 +266,7 @@ async function dispatchBrainMcpToolInternal(
           if(!previous) throw new Error("Previous job status unavailable; operator recovery is required before retry.");
           if(["starting","running","cancelling"].includes(previous.status)) throw new Error("Previous delegation is still active.");
           const scratch=path.join(getBrainScratchPath(principal,id),"agents",agentId,taskId);
+          const launch=reserveBrainTaskLaunch(principal,id,taskId,agentId,true);
           const jobResponse=await cliBridgeTool.execute({action:"delegate.start",cli,prompt,skillAutoDetect:false,injectArtifacts:false,permissionMode:"accept-edits",
             ...(Array.isArray(args.expectedArtifacts)?{expectedArtifacts:args.expectedArtifacts}:{}),
             ...(args.timeoutMs!==undefined?{timeoutMs:args.timeoutMs}:{})},scratch);
@@ -265,6 +274,7 @@ async function dispatchBrainMcpToolInternal(
           if(!match) throw new Error("Retry delegation did not return an accepted job ID.");
           updateBrainTask(principal,id,taskId,agentId,"running");
           recordBrainTaskDelegation(principal,id,taskId,agentId,cli,match[0]);
+          finishBrainTaskLaunch(principal,id,taskId,agentId,launch,match[0]);
           return result({taskId,jobId:match[0],retry:true});
         }
         case "task.delegate.start": {
@@ -276,6 +286,7 @@ async function dispatchBrainMcpToolInternal(
           const scratch = path.join(getBrainScratchPath(principal,id), "agents", agentId, taskId);
           const canonical = fs.realpathSync(scratch);
           assertNoSymlink(requireExistingDir(principal,id), canonical);
+          const launch=reserveBrainTaskLaunch(principal,id,taskId,agentId);
           const delegate=await cliBridgeTool.execute({
             action: "delegate.start", cli, prompt, permissionMode: "accept-edits",
             skillAutoDetect: false, injectArtifacts: false,
@@ -283,7 +294,9 @@ async function dispatchBrainMcpToolInternal(
             ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
           }, canonical);
           const matched=String(delegate).match(/clj_\d+_[a-f0-9]{8,32}/);
-          if(matched)recordBrainTaskDelegation(principal,id,taskId,agentId,cli,matched[0]);
+          if(!matched)throw new Error("Delegation acknowledgement missing; launch reservation retained.");
+          recordBrainTaskDelegation(principal,id,taskId,agentId,cli,matched[0]);
+          finishBrainTaskLaunch(principal,id,taskId,agentId,launch,matched[0]);
           return result({taskId,agentId,scratchPath:canonical,delegate});
         }
       }

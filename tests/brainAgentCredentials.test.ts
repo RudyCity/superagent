@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {createBrainSession} from "../src/core/brain/brainWorkspace.js";
 import {createBrainTask} from "../src/core/brain/brainTasks.js";
-import {issueBrainTaskAgentCredentials,authorizeBrainTaskAgent,rotateBrainTaskAgentCredential,revokeBrainTaskAgentCredential,brainTaskCapabilityStatus} from "../src/core/brain/brainAgentCredentials.js";
+import {issueBrainTaskAgentCredentials,authorizeBrainTaskAgent,rotateBrainTaskAgentCredential,revokeBrainTaskAgentCredential,brainTaskCapabilityStatus,issueBrainTaskRecoveryCredential,recoverBrainTaskAgentCredential} from "../src/core/brain/brainAgentCredentials.js";
 const roots:string[]=[];
 afterEach(()=>{delete process.env.SUPERAGENT_CONFIG_DIR;for(const p of roots.splice(0))fs.rmSync(p,{recursive:true,force:true});});
 function fixture(){
@@ -16,6 +16,22 @@ function fixture(){
  return {root,owner,sessionId,taskId:task.taskId};
 }
 describe("Brain credential lifecycle",()=>{
+ it("restores expired or revoked agent access only with a separate rotating owner recovery secret",()=>{
+  const {owner,sessionId,taskId,root}=fixture();
+  const members=issueBrainTaskAgentCredentials(owner,sessionId,taskId,60000);
+  const recovery=issueBrainTaskRecoveryCredential(owner,sessionId,taskId);
+  expect(()=>issueBrainTaskRecoveryCredential(owner,sessionId,taskId)).toThrow(/already/);
+  expect(()=>recoverBrainTaskAgentCredential(owner,sessionId,taskId,"agy",members.claude)).toThrow(/owner recovery/i);
+  revokeBrainTaskAgentCredential(owner,sessionId,taskId,"agy",{currentCredential:members.agy});
+  const recovered=recoverBrainTaskAgentCredential(owner,sessionId,taskId,"agy",recovery);
+  expect(authorizeBrainTaskAgent(owner,sessionId,taskId,"agy",recovered.agentCredential)).toBe(true);
+  expect(()=>recoverBrainTaskAgentCredential(owner,sessionId,taskId,"agy",recovery)).toThrow(/owner recovery/i);
+  expect(()=>authorizeBrainTaskAgent(owner,sessionId,taskId,"agy",members.agy)).toThrow(/mismatch/i);
+  const again=recoverBrainTaskAgentCredential(owner,sessionId,taskId,"agy",recovered.ownerRecoveryCredential);
+  expect(again.generation).toBe(3);
+  const store=JSON.stringify(fs.readdirSync(root,{recursive:true}));
+  expect(store).not.toContain(recovery);
+ });
  it("expires, rotates and revokes without retaining plaintext secrets",()=>{
    const {root,owner,sessionId,taskId}=fixture();
    const issued=issueBrainTaskAgentCredentials(owner,sessionId,taskId,60000);

@@ -15,7 +15,7 @@ import { promoteBrainDelegation } from "../brain/brainDelegationArtifacts.js";
 import { recoverBrainArtifactPromotion } from "../brain/brainArtifactTransaction.js";
 import { reconcileBrainSessionJobs } from "../brain/brainTaskRecovery.js";
 import { verifyBrainProject } from "../brain/brainProvenance.js";
-import { createBrainTask, listBrainTasks, claimBrainTask, checkpointBrainTask, transferBrainTask, updateBrainTask, resumeBrainTask, recordBrainTaskDelegation } from "../brain/brainTasks.js";
+import { createBrainTask, listBrainTasks, claimBrainTask, checkpointBrainTask, transferBrainTask, updateBrainTask, resumeBrainTask, recordBrainTaskDelegation, reserveBrainTaskLaunch, finishBrainTaskLaunch } from "../brain/brainTasks.js";
 
 export const brainCommand: SlashCommand = {
   name: "brain",
@@ -151,12 +151,15 @@ export const brainCommand: SlashCommand = {
           const task = createBrainTask(owner, currentSessionId, prompt.slice(0, 120), ["main", cli]);
           const claimed = claimBrainTask(owner, currentSessionId, task.taskId, cli);
           const cwd = claimed.scratchPath;
+          const launch = reserveBrainTaskLaunch(owner,currentSessionId,task.taskId,cli);
           const delegated = await cliBridgeTool.execute({
             action: "delegate.start", cli, prompt, skillAutoDetect: false,
             injectArtifacts: false, permissionMode: "accept-edits",
           }, cwd);
           const jobMatch=String(delegated).match(/clj_\d+_[a-f0-9]{8,32}/);
-          if(jobMatch)recordBrainTaskDelegation(owner,currentSessionId,task.taskId,cli,cli,jobMatch[0]);
+          if(!jobMatch)throw new Error("CLI Bridge acknowledgement missing; reservation retained for review.");
+          recordBrainTaskDelegation(owner,currentSessionId,task.taskId,cli,cli,jobMatch[0]);
+          finishBrainTaskLaunch(owner,currentSessionId,task.taskId,cli,launch,jobMatch[0]);
           say({ taskId: task.taskId, scratchPath: cwd, delegate: delegated });
           break;
         }

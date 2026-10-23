@@ -25,6 +25,25 @@ const call=async(principal:string,action:string,more:Record<string,unknown>={})=
  catch{return answer!.content[0].text;}
 };
 describe("Brain task coordination and MCP security",()=>{
+ it("recovers a revoked MCP agent only with the owner-held rotating secret",async()=>{
+  init();createBrainSession("owner:recover","session_alpha");
+  const t=await call("owner:recover","task.create",{title:"Recover agent",agentIds:["agy"]});
+  expect(t.ownerRecoveryCredential).toMatch(/^bag_[a-f0-9]{64}$/);
+  expect((await call("owner:recover","task.credential.recover",{taskId:t.taskId,agentId:"agy",
+    ownerRecoveryCredential:t.credentials.agy})).error).toMatch(/owner recovery/i);
+  expect((await call("owner:recover","task.credential.revoke",{taskId:t.taskId,agentId:"agy",
+    agentCredential:t.credentials.agy})).revoked).toBe(true);
+  const recovered=await call("owner:recover","task.credential.recover",{
+    taskId:t.taskId,agentId:"agy",ownerRecoveryCredential:t.ownerRecoveryCredential
+  });
+  expect(recovered.agentCredential).toMatch(/^bag_[a-f0-9]{64}$/);
+  expect(recovered.ownerRecoveryCredential).toMatch(/^bag_[a-f0-9]{64}$/);
+  expect((await call("owner:recover","task.credential.recover",{taskId:t.taskId,agentId:"agy",
+    ownerRecoveryCredential:t.ownerRecoveryCredential})).error).toMatch(/owner recovery/i);
+  const result=await call("owner:recover","task.claim",{taskId:t.taskId,agentId:"agy",agentCredential:recovered.agentCredential});
+  expect(result.task.assignedTo).toBe("agy");
+  expect(JSON.stringify(await call("owner:recover","task.get",{taskId:t.taskId}))).not.toContain(recovered.ownerRecoveryCredential);
+ });
  it("creates exclusive task ownership, checkpoints and durable restart/resume",()=>{
   init();const session=createBrainSession("owner:one","session_alpha");
   const task=createBrainTask("owner:one","session_alpha","Review generated results",["agy","claude"]);

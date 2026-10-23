@@ -21,6 +21,47 @@ const MAX_BATCH_BYTES = 50 * 1024 * 1024;
 const MAX_ITEMS = 10;
 type Item = { name: string; staging: string; sha256: string; bytes: number };
 type Journal = { schemaVersion: 1; state: "prepared" | "committed"; jobId: string; items: Item[] };
+type Receipt = { schemaVersion: 1; jobId: string; files: Array<{filePath:string;sha256:string;bytes:number}> };
+function receiptFile(dir:string,jobId:string) {
+  if(!/^clj_\d+_[a-f0-9]{8,32}$/.test(jobId))throw new Error("Invalid Brain promotion receipt ID.");
+  const file=path.join(dir,".promotion","receipts",jobId+".json");
+  assertNoSymlink(dir,file);
+  return file;
+}
+function readReceipt(dir:string,jobId:string):Receipt|null {
+  const file=receiptFile(dir,jobId);
+  if(!fs.existsSync(file))return null;
+  const st=fs.lstatSync(file);
+  if(!st.isFile()||st.nlink!==1||st.size>8192)throw new Error("Invalid Brain promotion receipt.");
+  const entry=JSON.parse(fs.readFileSync(file,"utf8")) as Receipt;
+  if(entry.schemaVersion!==1||entry.jobId!==jobId||!Array.isArray(entry.files)||entry.files.length<1||entry.files.length>10)
+    throw new Error("Invalid Brain promotion receipt.");
+  for(const item of entry.files) {
+    if(!item||typeof item.filePath!=="string"||!item.filePath.startsWith("artifacts/")||
+      validateDestination(item.filePath)!==path.join("artifacts",path.basename(item.filePath))||
+      !/^[a-f0-9]{64}$/.test(item.sha256)||!Number.isSafeInteger(item.bytes))
+      throw new Error("Invalid Brain promotion receipt entry.");
+    const filename=path.join(dir,validateDestination(item.filePath));
+    assertNoSymlink(dir,filename);
+    const data=fs.readFileSync(filename);
+    if(data.length!==item.bytes||crypto.createHash("sha256").update(data).digest("hex")!==item.sha256)
+      throw new Error("Brain promotion receipt does not match committed artifacts.");
+  }
+  return entry;
+}
+function writeReceipt(dir:string,data:Journal) {
+  const file=receiptFile(dir,data.jobId);
+  const files=data.items.map(item=>({filePath:"artifacts/"+item.name,sha256:item.sha256,bytes:item.bytes}));
+  const previous=readReceipt(dir,data.jobId);
+  if(previous) {
+    if(JSON.stringify(previous.files)!==JSON.stringify(files))throw new Error("Conflicting Brain promotion receipt.");
+    return;
+  }
+  fs.mkdirSync(path.dirname(file),{recursive:true,mode:0o700});
+  const value:Receipt={schemaVersion:1,jobId:data.jobId,files};
+  fs.writeFileSync(file,JSON.stringify(value),{flag:"wx",mode:0o600});
+  readReceipt(dir,data.jobId);
+}
 export type PromotionOptions = {
   selectedSource?: string;
   outputName?: string;
@@ -70,6 +111,7 @@ function recoverLocked(dir: string) {
     throw new Error("Unsafe Brain promotion journal; operator review required.");
   }
   for (const item of data.items) validateEntry(item);
+  if(data.state==="committed")writeReceipt(dir,data);
   // Never delete arbitrary files: roll back only hardlinks that can be proven
   // to be the same inode as this journal's staging file.
   for (const item of data.items) {
@@ -158,6 +200,13 @@ export async function promoteBrainDelegationBatch(owner: string, sessionId: stri
   }
   return withBrainSessionLock(dir, () => {
     recoverLocked(dir);
+    const receipt=readReceipt(dir,jobId);
+    if(receipt) {
+      const expectedFiles=expected.map(item=>({filePath:"artifacts/"+item.name,sha256:item.sha256,bytes:item.bytes.length}));
+      if(JSON.stringify(receipt.files)!==JSON.stringify(expectedFiles))
+        throw new Error("Delegation was already promoted with a different artifact selection.");
+      return {sessionId,jobId,files:receipt.files,sourceVerified:true,replayed:true};
+    }
     const amount = expected.reduce((sum, item) => sum + item.bytes.length, 0);
     if (brainStorageUsage(dir).totalBytes + reservedBytes(dir) + amount > MAX_BATCH_BYTES) throw new Error("Brain batch promotion quota exceeded.");
     const folder = promotionRoot(dir);

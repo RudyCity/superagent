@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { inspectBrainSession } from "./brainWorkspace.js";
-import { assertNoSymlink, validateDestination } from "./brainStorageManager.js";
+import { assertNoSymlink, validateDestination, brainStorageUsage, hasActiveBrainDelegation } from "./brainStorageManager.js";
 import { withBrainSessionLock } from "./brainSessionLock.js";
 import { getRootConfigDir } from "../config/paths.js";
 
@@ -114,6 +114,10 @@ export function updateBrainTask(owner:string,sessionId:string,taskId:string,agen
   const t=load(c,checkedTask(taskId));ensureMember(t,agent);
   if(t.assignedTo!==agent)throw new Error("Only the claiming agent may update task state.");
   if(t.status==="completed"||t.status==="cancelled")throw new Error("Task already terminal.");
+  // Shared invariant across CLI, MCP and T-Line: do not terminate a task
+  // while any CLI Bridge child is still writing to this Brain session.
+  if((status==="completed"||status==="cancelled")&&hasActiveBrainDelegation(root,c.dir))
+    throw new Error("Cannot finalize Brain task while a delegated job is active.");
   t.status=status;t.updatedAt=new Date().toISOString();
   if(status==="completed"||status==="cancelled")t.assignedTo=null;
   save(c,t);return t;
@@ -167,6 +171,42 @@ export function recordBrainTaskDelegation(owner:string,sessionId:string,taskId:s
   return {taskId,jobId,agentId:agent,cli};
  });
 }
+/** Durable launch reservation serializes task-owned CLI starts across processes.
+ * If the CLI accepted a job but the response was lost, leave the reservation
+ * intact until explicit operator reconciliation; never silently spawn again.
+ */
+export function reserveBrainTaskLaunch(owner:string,sessionId:string,taskId:string,
+ agentId:string,allowRetry=false,root=getRootConfigDir()) {
+ const c=ctx(owner,sessionId,root),agent=checkedAgent(agentId);
+ return withBrainSessionLock(c.dir,()=>{
+  const t=load(c,checkedTask(taskId));ensureMember(t,agent);
+  if(t.assignedTo!==agent||t.status!==(allowRetry?"blocked":"running"))
+   throw new Error("Task must be claimed in the expected state before delegation.");
+  if(!allowRetry&&(t.delegationJobs?.length??0)>0)
+   throw new Error("Task already has a delegation; retry must be explicit.");
+  const file=path.join(c.folder,t.taskId+".launch.json");
+  assertNoSymlink(c.dir,file);
+  const token=crypto.randomBytes(16).toString("hex");
+  fs.writeFileSync(file,JSON.stringify({agentId:agent,token,createdAt:Date.now()}),
+   {flag:"wx",mode:0o600});
+  return token;
+ });
+}
+export function finishBrainTaskLaunch(owner:string,sessionId:string,taskId:string,
+ agentId:string,token:string,jobId:string,root=getRootConfigDir()) {
+ const c=ctx(owner,sessionId,root),agent=checkedAgent(agentId);
+ return withBrainSessionLock(c.dir,()=>{
+  const file=path.join(c.folder,checkedTask(taskId)+".launch.json");
+  assertNoSymlink(c.dir,file);
+  const launch=JSON.parse(fs.readFileSync(file,"utf8"));
+  const task=load(c,taskId);
+  if(launch.token!==token||launch.agentId!==agent||
+     !task.delegationJobs?.some(entry=>entry.jobId===jobId&&entry.agentId===agent))
+   throw new Error("Brain delegation launch cannot be finalized.");
+  fs.unlinkSync(file);
+  return {taskId,jobId,launchFinalized:true};
+ });
+}
 export function handoffBrainArtifact(owner:string,sessionId:string,taskId:string,
  fromAgent:string,toAgent:string,artifactPath:string,root=getRootConfigDir()) {
  const c=ctx(owner,sessionId,root),from=checkedAgent(fromAgent),to=checkedAgent(toAgent);
@@ -186,10 +226,30 @@ export function handoffBrainArtifact(owner:string,sessionId:string,taskId:string
   const contents=fs.readFileSync(source);
   if(contents.length!==stat.size)throw new Error("Artifact changed during handoff.");
   const sha256=crypto.createHash("sha256").update(contents).digest("hex");
-  fs.writeFileSync(destination,contents,{flag:"wx",mode:0o600});
+  const reservations=path.join(c.dir,".transfers");
+  let reserved=0;
+  assertNoSymlink(c.dir,reservations);
+  if(fs.existsSync(reservations))for(const entry of fs.readdirSync(reservations)) {
+    if(!/^btx_[a-f0-9]{32}\.json$/.test(entry))continue;
+    const meta=path.join(reservations,entry);assertNoSymlink(c.dir,meta);
+    const data=JSON.parse(fs.readFileSync(meta,"utf8"));
+    if(!Number.isSafeInteger(data.totalBytes)||data.totalBytes<1||data.totalBytes>20*1024*1024)throw new Error("Invalid Brain transfer reservation.");
+    reserved+=data.totalBytes;
+  }
+  if(brainStorageUsage(c.dir).totalBytes+reserved+contents.length>50*1024*1024)
+    throw new Error("Brain storage quota exceeded by task handoff.");
   const record:Handoff={at:new Date().toISOString(),from,to,artifact:artifactPath,
    inbox:path.relative(c.dir,destination).replace(/\\/g,"/"),sha256,bytes:contents.length};
-  t.handoffs.push(record);t.updatedAt=record.at;save(c,t);
+  t.handoffs.push(record);t.updatedAt=record.at;
+  if(JSON.stringify(t,null,2).length>60000)throw new Error("Brain handoff metadata exceeds task limit.");
+  try {
+    const fd=fs.openSync(destination,"wx",0o600);
+    try {fs.writeFileSync(fd,contents);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
+    save(c,t);
+  }catch(error){
+    if(fs.existsSync(destination))fs.unlinkSync(destination);
+    throw error;
+  }
   return {taskId,record};
  });
 }

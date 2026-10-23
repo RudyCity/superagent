@@ -24,6 +24,33 @@ function fixture(){
  return {root,session,owner,sessionId,jobId,cwd,artifacts};
 }
 describe("Brain batch transaction and crash recovery",()=>{
+ it("returns a validated receipt rather than re-promoting an already committed job",async()=>{
+    const f=fixture();
+    const first=await promoteBrainDelegationBatch(f.owner,f.sessionId,f.jobId);
+    const second=await promoteBrainDelegationBatch(f.owner,f.sessionId,f.jobId);
+    expect(second.replayed).toBe(true);
+    expect(second.files).toEqual(first.files);
+    expect(fs.readdirSync(f.session.artifactsPath)).toHaveLength(2);
+    fs.writeFileSync(path.join(f.session.artifactsPath,"0-deadbeef-alpha.txt"),"tampered");
+    await expect(promoteBrainDelegationBatch(f.owner,f.sessionId,f.jobId)).rejects.toThrow(/receipt/i);
+ });
+ it("recovers a committed journal and reconstructs its durable receipt",async()=>{
+    const f=fixture();
+    const folder=path.join(f.session.path,".promotion");
+    fs.mkdirSync(folder);
+    const item=f.artifacts[0],staging="stage-"+"c".repeat(16)+".part";
+    const stage=path.join(folder,staging),target=path.join(f.session.artifactsPath,"alpha.txt");
+    fs.writeFileSync(stage,fs.readFileSync(path.join(f.cwd,item.path)));fs.linkSync(stage,target);
+    fs.writeFileSync(path.join(folder,"transaction.json"),JSON.stringify({
+      schemaVersion:1,state:"committed",jobId:f.jobId,
+      items:[{name:"alpha.txt",staging,sha256:item.sha256,bytes:item.bytes}]
+    }));
+    expect(recoverBrainArtifactPromotion(f.owner,f.sessionId).status).toBe("committed-cleanup");
+    expect(fs.existsSync(path.join(folder,"receipts",f.jobId+".json"))).toBe(true);
+    await expect(promoteBrainDelegationBatch(f.owner,f.sessionId,f.jobId))
+      .rejects.toThrow(/different artifact selection/);
+    expect(fs.existsSync(target)).toBe(true);
+ });
  it("prevents partial output when the second destination already exists",async()=>{
    const f=fixture();fs.writeFileSync(path.join(f.session.artifactsPath,"1-deadbeef-beta.csv"),"untouched");
    await expect(promoteBrainDelegationBatch(f.owner,f.sessionId,f.jobId)).rejects.toThrow(/exists/);

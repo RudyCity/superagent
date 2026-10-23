@@ -21,7 +21,7 @@ const modules = [
     ] },
   { source: "brainTasks.ts", imports: [
       ["import { inspectBrainSession } from \"./brainWorkspace.js\";", "import { inspectBrainSession } from \"./brainRuntimeCompat\";"],
-      ["import { assertNoSymlink, validateDestination } from \"./brainStorageManager.js\";", "import { assertNoSymlink, validateDestination } from \"./brainStorageManager\";"],
+      ["import { assertNoSymlink, validateDestination, brainStorageUsage, hasActiveBrainDelegation } from \"./brainStorageManager.js\";", "import { assertNoSymlink, validateDestination, brainStorageUsage, hasActiveBrainDelegation } from \"./brainStorageManager\";"],
       ["import { withBrainSessionLock } from \"./brainSessionLock.js\";", "import { withBrainSessionLock } from \"./brainSessionLock\";"],
       ["import { getRootConfigDir } from \"../config/paths.js\";", "import { getRootConfigDir } from \"./brainRuntimeCompat\";"],
     ] },

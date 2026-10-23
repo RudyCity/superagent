@@ -35,7 +35,9 @@ describe("Brain delegated artifact promotion", () => {
     const promoted=await promoteBrainDelegation("oauth:one","job_session","clj_1792638000000_abcdefab");
     expect(promoted.sourceVerified).toBe(true);
     expect(fs.readFileSync(path.join(owned.artifactsPath,"diagram.png"))).toEqual(Buffer.from("verified payload"));
-    await expect(promoteBrainDelegation("oauth:one","job_session","clj_1792638000000_abcdefab")).rejects.toThrow();
+    // Same verified job can be resumed after an interrupted checkpoint without
+    // attempting to publish a second copy.
+    expect((await promoteBrainDelegation("oauth:one","job_session","clj_1792638000000_abcdefab")).sha256).toBe(hash);
     fs.writeFileSync(produced,"mutated");
     await expect(promoteBrainDelegation("oauth:one","job_session","clj_1792638000000_abcdefab","different.png")).rejects.toThrow(/changed/);
     mockGetJob.mockResolvedValue({

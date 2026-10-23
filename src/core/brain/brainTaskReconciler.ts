@@ -27,8 +27,13 @@ export async function reconcileBrainTask(owner:string,sessionId:string,taskId:st
       if(!Array.isArray(evidence)||!evidence.length||evidence.length>10)throw new Error("Invalid verified artifact manifest.");
       const promoted=await promoteBrainDelegationBatch(owner,sessionId,last.jobId);
       const paths=promoted.files.map(file=>file.filePath);
-      if(task.status==="running") checkpointBrainTask(owner,sessionId,taskId,last.agentId,
-        "Verified "+paths.length+" delegated artifact(s).","Review results before publishing.",paths);
+      if(task.status==="blocked") updateBrainTask(owner,sessionId,taskId,last.agentId,"running");
+      const current=inspectBrainTask(owner,sessionId,taskId);
+      const previous=current.checkpoints.at(-1);
+      if(!previous || previous.agentId!==last.agentId ||
+         JSON.stringify(previous.artifactPaths)!==JSON.stringify(paths))
+        checkpointBrainTask(owner,sessionId,taskId,last.agentId,
+          "Verified "+paths.length+" delegated artifact(s).","Review results before publishing.",paths);
       const updated=updateBrainTask(owner,sessionId,taskId,last.agentId,"completed");
       return {taskId,updated:true,status:updated.status,jobStatus:job.status,artifactPath:paths[0],artifactPaths:paths};
     } catch(error:any) {

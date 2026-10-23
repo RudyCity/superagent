@@ -16,7 +16,7 @@ const TOKEN = /^bag_[a-f0-9]{64}$/;
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_TTL_MS = 7 * DEFAULT_TTL_MS;
 type StoredAgent = { hash: string; issuedAt: number; expiresAt: number; revokedAt?: number; generation: number };
-type RecordV2 = { schemaVersion: 2; agents: Record<string,StoredAgent>; updatedAt: number };
+type RecordV2 = { schemaVersion: 2; agents: Record<string,StoredAgent>; updatedAt: number; ownerRecoveryHash?:string };
 type RecordV1 = { schemaVersion: 1; agentHashes: Record<string,string>; createdAt: string };
 function location(owner:string,sessionId:string,taskId:string,configRoot?:string) {
   if(!TASK.test(taskId))throw new Error("Invalid Brain task.");
@@ -67,6 +67,42 @@ export function issueBrainTaskAgentCredentials(owner:string,sessionId:string,tas
     fs.writeFileSync(file,JSON.stringify({schemaVersion:2,agents,updatedAt:issuedAt}),{flag:"wx",mode:0o600});
     return tokens;
   });
+}
+/** Issue once to the owner during task creation, NEVER to delegated agents.
+ * A recovery secret is independent of agent expiry and rotated on every use.
+ */
+export function issueBrainTaskRecoveryCredential(owner:string,sessionId:string,taskId:string,configRoot?:string){
+ const {dir,file}=location(owner,sessionId,taskId,configRoot);
+ return withBrainSessionLock(dir,()=>{
+  const data=read(file);
+  if(data.ownerRecoveryHash)throw new Error("Owner recovery credential has already been issued.");
+  const token=newToken();data.ownerRecoveryHash=sha(token);
+  data.updatedAt=Date.now();persist(file,data);
+  return token;
+ });
+}
+/** Recover an expired or revoked agent without trusting that agent's old token.
+ * Requires a *different* owner-held one-time recovery secret. Old recovery
+ * secret is invalidated alongside the recovered agent credential.
+ */
+export function recoverBrainTaskAgentCredential(owner:string,sessionId:string,taskId:string,
+ agentId:string,recoveryCredential:unknown,configRoot?:string){
+ const {dir,file}=location(owner,sessionId,taskId,configRoot);
+ return withBrainSessionLock(dir,()=>{
+  const data=read(file),existing=data.agents[agentId];
+  if(!existing)throw new Error("Agent is not a member of this Brain task.");
+  if(typeof recoveryCredential!=="string"||!TOKEN.test(recoveryCredential)||
+    !data.ownerRecoveryHash||!/^[a-f0-9]{64}$/.test(data.ownerRecoveryHash)||
+    !crypto.timingSafeEqual(Buffer.from(sha(recoveryCredential),"hex"),Buffer.from(data.ownerRecoveryHash,"hex")))
+    throw new Error("Valid owner recovery credential required.");
+  const token=newToken(),nextRecoveryCredential=newToken(),now=Date.now();
+  data.agents[agentId]={hash:sha(token),issuedAt:now,expiresAt:now+DEFAULT_TTL_MS,
+    generation:existing.generation+1};
+  data.ownerRecoveryHash=sha(nextRecoveryCredential);data.updatedAt=now;
+  persist(file,data);
+  return {agentId,agentCredential:token,ownerRecoveryCredential:nextRecoveryCredential,
+    expiresAt:new Date(now+DEFAULT_TTL_MS).toISOString(),generation:existing.generation+1};
+ });
 }
 function requireValid(agentId:string,token:unknown,record:RecordV2):StoredAgent {
   if(typeof agentId!=="string"||typeof token!=="string"||!TOKEN.test(token))throw new Error("Brain task agent capability is required.");
