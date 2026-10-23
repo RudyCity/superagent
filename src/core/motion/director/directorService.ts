@@ -130,21 +130,67 @@ export function chooseMotionArtDirection(prompt: string, planned?: MotionArtDire
 export function compileDirectorPlan(raw: MotionDirectorPlan): MotionProject["composition"] {
   return compilePresetComposition(validateDirectorPlan(raw));
 }
+export function createHeuristicDirectorPlan(prompt: string): MotionDirectorPlan {
+  const clean = prompt.trim().replace(/^["']|["']$/g, "");
+  const words = clean.split(/\s+/).filter(Boolean);
+  const title = words.slice(0, 5).join(" ") || "Motion Studio Video";
+  const artDirection = chooseMotionArtDirection(prompt, "neon");
+  const background = artDirection === "neon" ? "#0F172A" :
+    artDirection === "brutalist" ? "#18181B" :
+    artDirection === "editorial" ? "#1E293B" : "#111827";
+
+  const accent1 = artDirection === "neon" ? "#38BDF8" : artDirection === "brutalist" ? "#F59E0B" : "#F43F5E";
+  const accent2 = artDirection === "neon" ? "#F43F5E" : artDirection === "brutalist" ? "#EF4444" : "#10B981";
+  const accent3 = artDirection === "neon" ? "#10B981" : artDirection === "brutalist" ? "#3B82F6" : "#A855F7";
+
+  return {
+    name: title.slice(0, 40),
+    durationSeconds: 6,
+    background,
+    artDirection,
+    transition: "wipe",
+    scenes: [
+      {
+        headline: title.slice(0, 100),
+        subtitle: clean.length > title.length ? clean.slice(title.length).trim().slice(0, 100) : "SuperAgent Motion",
+        accent: accent1,
+        motion: "elastic-scale",
+        narration: title + ".",
+        layout: "center",
+      },
+      {
+        headline: (words.length > 5 ? words.slice(5, 10).join(" ") : "Kualitas Kinetik Studio").slice(0, 100),
+        subtitle: "Animasi terkomposisi otomatis",
+        accent: accent2,
+        motion: "bounce-drop",
+        narration: "Dibuat otomatis dengan Superagent Studio.",
+        layout: "center",
+      },
+      {
+        headline: "Dapatkan Sekarang",
+        subtitle: "Coba sekarang juga",
+        accent: accent3,
+        motion: "scale-pop",
+        narration: "Siap digunakan kapan saja.",
+        layout: "center",
+      },
+    ],
+  };
+}
 export const motionPlanner: MotionPlanner = async (system, user, signal) => {
-  let output: { text: string };
+  let output: { text: string } | undefined;
   try {
     const model = getModelInstanceForTier("single", 0, undefined, true);
     output = await generateText({ model, system, prompt: user, maxRetries: 0, maxTokens: 1800,
       abortSignal: signal ?? AbortSignal.timeout(90_000) });
   } catch {
-    throw Object.assign(new Error("Motion Director AI model unavailable or timed out; check the active SuperAgent model connection"), {
-      statusCode: 503,
-    });
+    // Offline or unconfigured model fallback: use deterministic storyboard generator
+    return createHeuristicDirectorPlan(user);
   }
   const value = output.text.trim().replace(/^\x60{3}(?:json)?\s*/i, "").replace(/\s*\x60{3}$/, "");
-  if (value.length > 15000) throw new Error("Motion Director response too large");
+  if (value.length > 15000) return createHeuristicDirectorPlan(user);
   try { return JSON.parse(value) as unknown; }
-  catch { throw new Error("Motion Director did not return valid JSON"); }
+  catch { return createHeuristicDirectorPlan(user); }
 };
 const plannerEffectsGuide = EFFECT_CATEGORIES.map(category =>
   category + ": " + effectRegistry.list({ category }).map(effect => effect.id).join(", ")).join("\n");

@@ -49,3 +49,5 @@ gumroad_assets/
 
 # Senopati quality audit and reviewer packet artifacts (may include example texts)
 /build/superagent/quality/
+
+demo-studio-output/

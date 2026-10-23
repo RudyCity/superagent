@@ -1,3 +1,12 @@
+## [1.14.19] - 2026-10-23
+### Added
+- Motion Director Offline Heuristic Storyboard Generator (`src/core/motion/director/directorService.ts`, `tests/motionHeuristicDirector.test.ts`):
+  - Implemented `createHeuristicDirectorPlan` to generate structured, aesthetically calibrated 3-scene storyboards (headlines, subtitles, neon/brutalist/minimal accents, kinetic motion presets, and wipe transition) even when offline or when no external LLM provider is reachable.
+  - Added seamless fallback in `motionPlanner` to ensure `superagent studio generate` never blocks with timeout/unavailability errors.
+- Motion CLI Synchronous Render Await Flag (`src/core/commands/motionCliHandler.ts`, `scripts/generate-demo-video.ts`, `tests/motionHeuristicDirector.test.ts`):
+  - Added `--wait` flag to `superagent studio generate` and `superagent studio revise`, allowing users and scripts to synchronously await detached FFmpeg rendering and directly receive the completed video artifact.
+  - Created standalone end-to-end verification demo script (`scripts/generate-demo-video.ts`).
+
 ## [1.14.18] - 2026-10-23
 ### Added
 - Motion Studio Offline Piper TTS Local Voiceover Engine (`scripts/setup-piper.ts`, `src/core/motion/director/localVoiceover.ts`, `package.json`, `tests/motionLocalVoiceover.test.ts`):

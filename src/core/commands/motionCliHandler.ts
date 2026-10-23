@@ -16,8 +16,8 @@ import type { MotionEdit } from "../motion/schema/types.js";
 import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation, enqueueSupervisedMotionJob } from "../motion/jobs/motionJobs.js";
 
 const usage = `SuperAgent Studio (developer preview)
-  superagent studio generate --prompt "Animated promo" [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
-  superagent studio revise MOTION_ID --prompt "Shorter title" [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
+  superagent studio generate --prompt "Animated promo" [--wait] [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
+  superagent studio revise MOTION_ID --prompt "Shorter title" [--wait] [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
   superagent studio new --name "Title" [--workspace PATH] [--json]
   superagent studio list [--workspace PATH] [--json]
   superagent studio inspect PROJECT_ID [--workspace PATH] [--json]
@@ -59,7 +59,7 @@ recovery is diagnostic/read-only unless the operator explicitly runs recover --a
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--help", "-h"]);
+  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--help", "-h"]);
   const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
@@ -278,7 +278,7 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const prompt = opt(opts, "--prompt");
       if (!prompt || positionals.length) throw new Error("generate requires --prompt and no project ID");
       const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
-      emit(await generateMotionFromPrompt(workspace, prompt, { width,
+      const result = await generateMotionFromPrompt(workspace, prompt, { width,
         aspectRatio: opt(opts, "--aspect-ratio") as "16:9" | "1:1" | "9:16" | undefined,
         imageAssetId: opt(opts, "--image-asset"),
         sceneImageAssetIds: opt(opts, "--scene-images")?.split(",").map(item => item.trim()),
@@ -287,20 +287,46 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
         voiceoverText: opt(opts, "--voiceover-text"),
         voiceoverGain: opt(opts, "--voiceover-gain") === undefined ? undefined : Number(opt(opts, "--voiceover-gain")),
         audioAssetId: opt(opts, "--audio-asset"),
-        audioGain: opt(opts, "--audio-gain") === undefined ? undefined : Number(opt(opts, "--audio-gain")) }), json); return 0;
+        audioGain: opt(opts, "--audio-gain") === undefined ? undefined : Number(opt(opts, "--audio-gain")) });
+      if (opts.has("--wait")) {
+        const timeoutMs = 120_000;
+        const start = Date.now();
+        let job = result.job;
+        while (!["completed", "failed", "cancelled", "interrupted"].includes(job.status)) {
+          if (Date.now() - start > timeoutMs) throw new Error("Motion video render timed out");
+          await new Promise(resolve => setTimeout(resolve, 200));
+          job = await getMotionJob(workspace, result.job.id);
+        }
+        result.job = job;
+      }
+      emit(result, json);
+      return result.job.status === "failed" ? 1 : 0;
     }
     if (action === "revise") {
       const prompt = opt(opts, "--prompt");
       if (!prompt || positionals.length !== 1) throw new Error("revise requires MOTION_ID and --prompt");
       const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
-      emit(await reviseMotionFromPrompt(workspace, positionals[0], prompt, { width,
+      const result = await reviseMotionFromPrompt(workspace, positionals[0], prompt, { width,
         imageAssetId: opt(opts, "--image-asset"),
         sceneImageAssetIds: opt(opts, "--scene-images")?.split(",").map(item => item.trim()),
         audioLoop: optionalBoolean(opt(opts, "--audio-loop"), "--audio-loop"),
         voiceoverText: opt(opts, "--voiceover-text"),
         voiceoverGain: opt(opts, "--voiceover-gain") === undefined ? undefined : Number(opt(opts, "--voiceover-gain")),
         audioAssetId: opt(opts, "--audio-asset"),
-        audioGain: opt(opts, "--audio-gain") === undefined ? undefined : Number(opt(opts, "--audio-gain")) }), json); return 0;
+        audioGain: opt(opts, "--audio-gain") === undefined ? undefined : Number(opt(opts, "--audio-gain")) });
+      if (opts.has("--wait")) {
+        const timeoutMs = 120_000;
+        const start = Date.now();
+        let job = result.job;
+        while (!["completed", "failed", "cancelled", "interrupted"].includes(job.status)) {
+          if (Date.now() - start > timeoutMs) throw new Error("Motion video render timed out");
+          await new Promise(resolve => setTimeout(resolve, 200));
+          job = await getMotionJob(workspace, result.job.id);
+        }
+        result.job = job;
+      }
+      emit(result, json);
+      return result.job.status === "failed" ? 1 : 0;
     }
     if (action === "new") {
       const name = opt(opts, "--name");
