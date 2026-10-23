@@ -682,6 +682,62 @@ For request examples and transport details, see [Muse MCP workflows](docs/mcp/mu
 
 Selfdev is enabled by default for new configuration and collects bounded, redacted task evidence to propose operational lessons. Candidates require explicit review/approval before prompt injection. Use `superagent selfdev status`, `superagent selfdev doctor`, and `superagent selfdev metrics` to inspect it; use `superagent selfdev disable` to persistently opt out. See [Selfdev operations and safety](docs/selfdev.md) and the [Selfdev development plan](docs/plans/2026-10-14-selfdev-default-on-development-plan.md).
 
+### Brain — Autonomous Scratch, Multi-Agent Tasks and Recovery
+
+Brain stores per-session scratch files, finalized artifacts, bounded checkpoints and delegated-job references outside project worktrees under `~/.superagent-r/brain`. It works with the interactive CLI, MCP, and the [T-Line Brain Explorer](https://github.com/RudyCity/t-line); it does **not** turn scratch folders into an OS sandbox. Normal chat session persistence can initialize Brain, while `/brain delegate.start` and MCP `task.autostart` create isolated agent task scratch when delegating work.
+
+**CLI and suggestions.** Type `/brain ` or `/scratch ` to see nested autocomplete; `/brain help` lists the complete commands and argument syntax. The canonical suggestion catalog lives in `src/core/commands/commandCatalog.ts` and is synchronized into T-Line with checksums.
+
+```text
+/brain help
+/brain create [sessionId]
+/brain list
+/brain inspect
+/brain files
+/brain metrics
+/brain task.create <title>
+/brain task.list
+/brain task.claim <taskId> [agentId]
+/brain task.checkpoint <taskId> <agentId> <note>
+/brain task.transfer <taskId> <fromAgent> <toAgent>
+/brain task.resume <taskId>
+/brain task.complete <taskId> [agentId]
+/brain delegate.start agy <prompt>
+/brain delegate.start claude <prompt>
+/brain delegate.start codex <prompt>
+/brain jobs
+/brain get <jobId>
+/brain tail <jobId>
+/brain cancel <jobId>
+/brain task.reconcile
+/brain artifact.recover
+/brain search <query>
+/brain annotate <artifacts/file> <summary>
+/brain promote <jobId> [outputFilename]
+/brain remember <artifacts/file>
+/brain storage [sessionId]
+/brain retention [7|30|90]
+/brain clean <sessionId>
+/brain clean.confirm <sessionId> <challenge>
+```
+
+A delegated CLI runs under `scratch/agents/<agent>/<taskId>/`. Multiple logical collaborators use exclusive task ownership, explicit handoff, and checksum-verified artifacts; task checkpoints are recoverable across reconnects and filtered by registered project provenance. `task.reconcile` inspects existing CLI Bridge jobs and **does not** automatically rerun an uncertain or failed job. Cleanup uses a separate prepare/confirm challenge and refuses active nested delegations.
+
+**MCP:** Discover `superagent_brain` through `superagent_tool_search` in default Gateway mode. Actions include `task.autostart`, `task.create`, `task.claim`, `task.checkpoint`, `task.handoff`, `task.transfer`, `task.resume`, `task.reconcile`, `task.reconcile.all`, `task.retry`, `task.cancel.request`, `delegate.promote.batch`, `artifact.recover`, and `task.credential.status/rotate/revoke`. **These dotted MCP actions are not all executable slash commands.** Remote task mutations require the task-scoped `agentCredential`, not just a self-declared `agentId`. Credentials are hashed at rest, default to 24-hour validity, and support one-time rotation and revocation; do not put them in prompts, shared artifacts or logs.
+
+Batch artifact promotion verifies all source hashes and writes a recoverable transaction journal. Promotion is create-only, quota-checked, and can roll back an interrupted batch; it is **not** an atomic snapshot for external filesystem readers at every instant. RMemory updates remain explicit, never automatic based solely on task text.
+
+**Verification and remaining live gates:**
+
+```bash
+bun scripts/sync-brain-runtime.ts --check
+bun scripts/verify-brain-release.ts --with-tline
+```
+
+The release check builds both applications and tests Brain/MCP/backend/UI parity. A public OAuth tunnel round trip, installed T-Line GUI interaction, and real Claude delegation require separate operator-run acceptance. Do not restart an unrelated active tunnel to force those checks.
+
+Documentation: [Phase 5 task orchestration](docs/plans/2026-10-22-autonomous-brain-phase-5-implementation.md), [P0–P2 hardening](docs/plans/2026-10-22-brain-p0-p2-hardening-implementation.md), [Phase 6 reliability](docs/plans/2026-10-22-brain-phase-6-reliability-and-acceptance.md), and [command suggestions parity](docs/plans/2026-10-23-brain-command-suggestions-parity.md).
+
 ### Keyboard Shortcuts
 
 | Shortcut | Description |
