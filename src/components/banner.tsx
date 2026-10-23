@@ -59,15 +59,13 @@ export function Banner({ classifierStatus, embeddingStatus, workspacePath }: Ban
         {/* Info Column */}
         <Box flexDirection="column" justifyContent="center">
           <Box flexDirection="row" marginBottom={1} alignItems="center">
-            <Text color="red" bold>S U P E R</Text>
-            <Text color="white" bold>  A G E N T</Text>
-            <Text color="cyan" bold>  R</Text>
-            <Text color="gray"> ● </Text>
-            <Text color="yellow" bold>v{version}</Text>
+            <Text color="white" bold>SuperAgent</Text>
+            <Text color="gray"> · R</Text>
+            <Text dimColor>  v{version}</Text>
           </Box>
           <Box flexDirection="row">
             <Text dimColor>Type your query or </Text>
-            <Text bold color="cyan">/help</Text>
+            <Text color="white">/help</Text>
             <Text dimColor> to explore commands</Text>
           </Box>
         </Box>

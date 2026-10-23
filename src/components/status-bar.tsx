@@ -30,23 +30,8 @@ export interface StatusBarProps {
 }
 
 function LoadingIndicator() {
-  const [frame, setFrame] = React.useState(0);
-  const rPulseColors = ["cyan", "cyanBright", "yellow", "white", "magenta"];
-
-  React.useEffect(() => {
-    const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % 5);
-    }, 100);
-    return () => clearInterval(timer);
-  }, []);
-
-  const rColor = rPulseColors[frame % rPulseColors.length];
-
-  return (
-    <Text bold color="cyan">
-      <Text color={rColor}>[R]</Text>
-    </Text>
-  );
+  // A text status conveys activity without rapid color cycling or flashing.
+  return <Text color="cyan">● WORKING</Text>;
 }
 
 export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
@@ -82,7 +67,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
           <Text color="gray" bold>● READY</Text>
         )}
         <Text color="gray"> • </Text>
-        <Text color="cyanBright" bold wrap="truncate-end">{modelName}</Text>
+        <Text color="white" wrap="truncate-end">{modelName}</Text>
         {presetName && (
           <>
             <Text color="gray"> • </Text>
@@ -98,7 +83,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
         {activeChainName && (
           <>
             <Text color="gray"> • </Text>
-            <Text color="magentaBright" bold wrap="truncate-end">🔗 Chain: {activeChainName}{activeChainNodeCount ? ` (${activeChainNodeCount} nodes)` : ""}</Text>
+            <Text color="gray" wrap="truncate-end">🔗 Chain: {activeChainName}{activeChainNodeCount ? ` (${activeChainNodeCount} nodes)` : ""}</Text>
           </>
         )}
         {fullYoloMode ? (
