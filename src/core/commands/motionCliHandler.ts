@@ -57,6 +57,7 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio batch-variants PROJECT_ID --base-revision N [--ratios "16:9,9:16,1:1"] [--width 640] [--workspace PATH] [--json]
   superagent studio beat-sync PROJECT_ID --base-revision N --target-layer LAYER_ID [--audio-track 0] [--intensity 0.35] [--workspace PATH] [--json]
   superagent studio preview PROJECT_ID [--open] [--workspace PATH] [--json]
+  superagent studio export-bundle PROJECT_ID [--workspace PATH] [--json]
 
 MP4 preview uses installed FFmpeg. --detach launches a separate Bun worker;
 recovery is diagnostic/read-only unless the operator explicitly runs recover --ack-stale.`;
@@ -505,6 +506,12 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
         opened,
         hasRenderedVideo: Boolean(latestJob?.status === "completed"),
       }, json);
+      return 0;
+    }
+    if (action === "export-bundle") {
+      const { exportMotionDeliverablesBundle } = await import("../motion/motionBundleExport.js");
+      const manifest = await exportMotionDeliverablesBundle(workspace, projectId);
+      emit(manifest, json);
       return 0;
     }
     if (action === "frame") {

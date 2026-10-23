@@ -1,3 +1,22 @@
+## [1.14.22] - 2026-10-23
+### Added
+- T-Line Desktop Integration & Real-time Studio Event Bus (`src/core/motion/motionEvents.ts`, `src/core/channels/tlineCapabilities.ts`, `src/core/motion/motionRoutes.ts`, `src/core/motion/motionCapabilities.ts`, `tests/motionTlineDeliverables.test.ts`):
+  - Created bounded workspace event bus (`emitMotionStudioEvent`, `subscribeMotionStudioEvents`) tracking project lifecycle (`project.created`, `project.updated`, `project.deleted`) and render job transitions (`job.queued`, `job.started`, `job.progress`, `job.completed`, `job.failed`).
+  - Added Server-Sent Events (SSE) streaming endpoint `GET /api/motion/events` for real-time live desktop client sync without aggressive polling.
+  - Added `GET /api/motion/tline-bridge` reporting active stream subscribers and bridge status.
+  - Registered studio endpoints (`studio.status`, `studio.projects`, `studio.bundle`, `studio.events`) in the desktop capability manifest (`TLINE_HTTP_ACTIONS`, `TLINE_STREAM_ACTIONS`).
+  - Advertised `tlineStudioBridge: true` and `studioLiveEventStream: true` in `MOTION_CAPABILITIES`.
+- Video Media Engine Trimming & Speed Ramping (`src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/render/canvasFrames.ts`, `tests/motionTlineDeliverables.test.ts`):
+  - Extended `VideoLayer` schema with `trimOutSeconds` and `speedMultiplier` (0.1x slo-mo to 10.0x hyperlapse).
+  - Enforced strict range boundaries (`trimInSeconds < trimOutSeconds`, finite speed multipliers).
+  - Integrated dynamic frame index mapping and looping in declarative canvas frame renderer (`createMotionFrameRenderer`).
+  - Advertised `videoTrimming: true` and `videoSpeedRamping: true` in `MOTION_CAPABILITIES`.
+- All-in-One Deliverables Export Bundle (`src/core/motion/motionBundleExport.ts`, `src/core/motion/motionRoutes.ts`, `src/core/commands/motionCliHandler.ts`, `tests/motionTlineDeliverables.test.ts`):
+  - Created `exportMotionDeliverablesBundle` generating full deliverables package: H.264 MP4, VP9 WebM, animated GIF preview, SRT subtitles, and `manifest.json` with file paths, byte sizes, and SHA-256 checksums in `.superagent/studio/bundles/bundle-${projectId}/`.
+  - Added HTTP endpoints `POST /api/motion/projects/:id/bundle` and `GET /api/motion/projects/:id/bundle`.
+  - Added CLI command `superagent studio export-bundle PROJECT_ID [--workspace PATH] [--json]`.
+  - Advertised `deliverablesBundleExport: true` in `MOTION_CAPABILITIES`.
+
 ## [1.14.21] - 2026-10-23
 ### Added
 - Motion Studio Standalone Web Browser Player & Live Scrubber (`src/core/motion/render/motionPreviewHtml.ts`, `src/core/motion/motionRoutes.ts`, `src/core/commands/motionCliHandler.ts`, `src/core/motion/motionCapabilities.ts`, `tests/motionPreviewPlayer.test.ts`):

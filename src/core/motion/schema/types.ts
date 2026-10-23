@@ -49,6 +49,8 @@ export interface VideoLayer extends BaseLayer {
   assetId: string;
   startFrame?: number;
   trimInSeconds?: number;
+  trimOutSeconds?: number;
+  speedMultiplier?: number;
   loop?: boolean;
 }
 export type MotionLayer = TextLayer | RectLayer | ImageLayer | VideoLayer;

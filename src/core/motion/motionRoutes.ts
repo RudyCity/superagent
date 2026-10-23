@@ -38,6 +38,8 @@ import { compileMotionParticles } from "./motionParticles.js";
 import { compileMotionTypography } from "./motionTypography.js";
 import { applyMotionEdits } from "./project/revisions.js";
 import { renderMotionPlayerHtml } from "./render/motionPreviewHtml.js";
+import { subscribeMotionStudioEvents, getMotionBridgeStats } from "./motionEvents.js";
+import { exportMotionDeliverablesBundle, getMotionDeliverablesBundleManifest } from "./motionBundleExport.js";
 
 export interface MotionHttpContext {
   resolveWorkspacePath: (req: IncomingMessage) => string | null;
@@ -98,6 +100,9 @@ export async function handleMotionHttpRoute(
   const visionRepair = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/vision-repair$/);
   const captions = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/captions\.srt$/);
   const player = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/(?:player|preview)$/);
+  const eventsRoute = pathname === "/api/motion/events";
+  const tlineBridgeRoute = pathname === "/api/motion/tline-bridge";
+  const bundleRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/bundle$/);
   const frameSnapshot = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/frames\/(\d{1,6})\.png$/);
   const render = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/render$/);
   const job = pathname.match(/^\/api\/motion\/jobs\/((?:studiojob|motionjob)-[a-f0-9]{24})$/);
@@ -531,6 +536,34 @@ export async function handleMotionHttpRoute(
         "X-Content-Type-Options": "nosniff",
       });
       res.end(body);
+    } else if (eventsRoute && method === "GET") {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+      res.write("event: connected\ndata: {\"status\":\"ok\"}\n\n");
+      const unsubscribe = subscribeMotionStudioEvents(workspace, event => {
+        if (!res.destroyed && res.writable) {
+          res.write("event: motion.event\ndata: " + JSON.stringify(event) + "\n\n");
+        }
+      });
+      req.on("close", () => {
+        unsubscribe();
+      });
+    } else if (tlineBridgeRoute && method === "GET") {
+      json(res, ctx, 200, getMotionBridgeStats());
+    } else if (bundleRoute && method === "POST") {
+      const manifest = await exportMotionDeliverablesBundle(workspace, bundleRoute[1]);
+      json(res, ctx, 200, manifest);
+    } else if (bundleRoute && method === "GET") {
+      const manifest = await getMotionDeliverablesBundleManifest(workspace, bundleRoute[1]);
+      if (!manifest) {
+        json(res, ctx, 404, { error: "Deliverables bundle not found for project " + bundleRoute[1] });
+      } else {
+        json(res, ctx, 200, manifest);
+      }
     } else if (visionReview && method === "POST") {
       await readMotionJson(req, 1024);
       const response = await withMotionVisionLease(workspace, visionReview[1], async () =>

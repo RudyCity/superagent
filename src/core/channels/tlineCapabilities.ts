@@ -9,12 +9,15 @@ import { TLINE_INSPECTION_ACTIONS } from "./tlineInspection.js";
 export const TLINE_CAPABILITY_CONTRACT_VERSION = 1 as const;
 export const TLINE_HTTP_ACTIONS = [
   { id: "daemon.status", method: "GET", path: "/api/daemon/status", access: "read" },
-
   { id: "gateway.status", method: "GET", path: "/api/gateway/status", access: "read" },
+  { id: "studio.status", method: "GET", path: "/api/motion", access: "read" },
+  { id: "studio.projects", method: "GET", path: "/api/motion/projects", access: "read" },
+  { id: "studio.bundle", method: "POST", path: "/api/motion/projects/:id/bundle", access: "workspace-operator" },
 ] as const;
 
 export const TLINE_STREAM_ACTIONS = [
   { id: "tasks.events", method: "GET", path: "/api/tline/tasks/events", access: "read", transport: "sse" },
+  { id: "studio.events", method: "GET", path: "/api/motion/events", access: "read", transport: "sse" },
 ] as const;
 
 export const TLINE_OPERATOR_ACTIONS = [

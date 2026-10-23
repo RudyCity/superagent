@@ -155,13 +155,18 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
         const common = ["id", "kind", "x", "y", "width", "height", "rotation", "opacity", "fill", "tracks", "scale", "scaleX", "scaleY"];
         allowedKeys(layer, kind === "text" ? [...common, "text", "fontSize", "fontFamily"] :
           kind === "image" ? [...common, "assetId"] :
-          kind === "video" ? [...common, "assetId", "startFrame", "trimInSeconds", "loop"] :
+          kind === "video" ? [...common, "assetId", "startFrame", "trimInSeconds", "trimOutSeconds", "speedMultiplier", "loop"] :
           kind === "rect" ? [...common, "cornerRadius"] : common, at, errors);
         if (kind !== "text" && kind !== "rect" && kind !== "image" && kind !== "video") errors.push(at + ": unsupported layer kind");
         if (kind === "video") {
           if (typeof layer.assetId !== "string" || !/^(?:asset|video)-[a-f0-9]{64}$/.test(layer.assetId)) errors.push(at + ": invalid video assetId");
           if (layer.startFrame !== undefined && !integer(layer.startFrame, 0, 216000)) errors.push(at + ": invalid video startFrame");
           if (layer.trimInSeconds !== undefined && !finite(layer.trimInSeconds, 0, 3600)) errors.push(at + ": invalid video trimInSeconds");
+          if (layer.trimOutSeconds !== undefined && !finite(layer.trimOutSeconds, 0, 3600)) errors.push(at + ": invalid video trimOutSeconds");
+          if (layer.speedMultiplier !== undefined && !finite(layer.speedMultiplier, 0.1, 10)) errors.push(at + ": invalid video speedMultiplier (0.1 to 10.0)");
+          if (layer.trimInSeconds !== undefined && layer.trimOutSeconds !== undefined && Number(layer.trimInSeconds) >= Number(layer.trimOutSeconds)) {
+            errors.push(at + ": trimInSeconds must be strictly less than trimOutSeconds");
+          }
           if (layer.loop !== undefined && typeof layer.loop !== "boolean") errors.push(at + ": video loop must be boolean");
         }
         if (kind === "rect" && layer.cornerRadius !== undefined &&

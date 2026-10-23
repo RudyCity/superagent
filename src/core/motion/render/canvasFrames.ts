@@ -53,7 +53,26 @@ export function createMotionFrameRenderer(
         if (!image) throw new Error("Motion image asset missing from pinned renderer");
         ctx.drawImage(image, values.x, values.y, layer.width, layer.height);
       } else if (layer.kind === "video") {
-        const frameImage = videoFrames?.get(layer.id)?.get(frameIndex) ?? images.get(layer.assetId);
+        const layerFrames = videoFrames?.get(layer.id);
+        let sampledFrameIndex = frameIndex;
+        if (layerFrames && layerFrames.size > 0) {
+          const fps = project.composition.fps.numerator / project.composition.fps.denominator;
+          const startFrame = layer.startFrame ?? 0;
+          const relativeFrame = Math.max(0, frameIndex - startFrame);
+          const speed = layer.speedMultiplier ?? 1.0;
+          const trimInFrames = Math.round((layer.trimInSeconds ?? 0) * fps);
+          const maxFrames = layer.trimOutSeconds
+            ? Math.round(layer.trimOutSeconds * fps)
+            : Math.max(...layerFrames.keys());
+          let effectiveFrame = trimInFrames + Math.round(relativeFrame * speed);
+          if (layer.loop && maxFrames > trimInFrames) {
+            effectiveFrame = trimInFrames + ((effectiveFrame - trimInFrames) % (maxFrames - trimInFrames));
+          } else if (effectiveFrame > maxFrames) {
+            effectiveFrame = maxFrames;
+          }
+          sampledFrameIndex = effectiveFrame;
+        }
+        const frameImage = layerFrames?.get(sampledFrameIndex) ?? layerFrames?.get(frameIndex) ?? images.get(layer.assetId);
         if (frameImage) {
           ctx.drawImage(frameImage, values.x, values.y, layer.width, layer.height);
         } else {
