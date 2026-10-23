@@ -1,3 +1,16 @@
+## [1.14.17] - 2026-10-23
+### Added
+- Motion Studio Dynamic Scene Transitions (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `src/core/motion/motionCapabilities.ts`, `tests/motionCreativePresets.test.ts`):
+  - Expanded `MOTION_TRANSITIONS` to support 6 transitions: `crossfade`, `cut`, `slide-left`, `slide-right`, `wipe`, and `zoom`.
+  - Implemented `applySceneTransition` engine:
+    - `slide-left` / `slide-right`: Computes coordinated spatial entry and exit translations across scene boundaries.
+    - `zoom`: Interpolates scale down to entrance proportion and zooms up into transparency during scene exit.
+    - `wipe`: Generates an animated high-contrast sweep curtain (`RectLayer`) that sweeps across the screen between scenes.
+  - Updated `validateDirectorPlan` and AI Director prompt directives to support all transition types.
+- AI Director Scale Motion Presets (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `src/core/motion/motionCapabilities.ts`):
+  - Added 4 scale-driven motion presets: `scale-pop` (bounce pop from 0 to 1), `zoom-in` (smooth easeOut glide from 0.4 to 1), `bounce-drop` (oversized drop and settle with bounce), and `elastic-scale` (anamorphic rubber-band stretch).
+  - Updated `MOTION_CAPABILITIES.aiTransitions` and `MOTION_CAPABILITIES.aiMotionPresets`.
+
 ## [1.14.16] - 2026-10-23
 ### Added
 - Motion Studio Scale & Bounce Kinetic Effects Catalog (`src/core/motion/effects/catalog/scaleBounceEffects.ts`, `src/core/motion/effects/catalog/index.ts`, `src/core/motion/motionCapabilities.ts`):

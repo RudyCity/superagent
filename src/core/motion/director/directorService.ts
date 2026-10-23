@@ -6,7 +6,7 @@ import { createMotionProject, getMotionProject, updateMotionProject } from "../p
 import { startDetachedMotionJob, type MotionJob } from "../jobs/motionJobs.js";
 import { validateMotionEdits } from "../schema/validation.js";
 import type { MotionEdit, MotionProject } from "../schema/types.js";
-import { compilePresetComposition, MOTION_ART_DIRECTIONS, MOTION_PRESETS, type MotionArtDirection, type MotionPreset, type MotionTransition } from "./creativePresets.js";
+import { compilePresetComposition, MOTION_ART_DIRECTIONS, MOTION_PRESETS, MOTION_TRANSITIONS, type MotionArtDirection, type MotionPreset, type MotionTransition } from "./creativePresets.js";
 import { inspectMotionQuality, type MotionQualityReport } from "./motionQuality.js";
 import { resolveDirectorMedia, embedDirectorMedia, revisionMediaEdits, directorMediaLimitations, type MotionDirectorMediaSelection } from "./directorMedia.js";
 import { synthesizeLocalVoiceover, validateNarrationRequest, localVoiceoverReady, type NarrationRequest } from "./localVoiceover.js";
@@ -76,7 +76,7 @@ export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {
     (raw.effect !== undefined && (typeof raw.effect !== "string" || !effectRegistry.has(raw.effect))) ||
     (raw.preset !== undefined && (typeof raw.preset !== "string" || !getCompoundPreset(raw.preset))) ||
     (raw.artDirection !== undefined && !MOTION_ART_DIRECTIONS.includes(raw.artDirection as MotionArtDirection)) ||
-    (raw.transition !== undefined && !["cut", "crossfade"].includes(String(raw.transition))) ||
+    (raw.transition !== undefined && !MOTION_TRANSITIONS.includes(raw.transition as MotionTransition)) ||
     (raw.aspectRatio !== undefined && !["16:9", "1:1", "9:16"].includes(String(raw.aspectRatio))) ||
     !Array.isArray(raw.scenes) || raw.scenes.length < 1 || raw.scenes.length > 3)
     throw new Error("Motion Director returned an invalid or unsupported storyboard");
@@ -158,7 +158,7 @@ const planSystem = [
   "Optional effect ID from Motion Effects Catalog; use only an exact ID listed below.",
   "For complete scene motion, prefer optional preset: a compound preset ID from the catalog below.",
   "Optional per-scene narration: short spoken script <=100 characters, only produced as audio if user enables offline Piper.",
-  "Optional transition: crossfade or cut (default crossfade). Match creative style requested in user brief.",
+  "Optional transition: crossfade, cut, slide-left, slide-right, wipe, or zoom (default crossfade). Match creative style requested in user brief.",
   "Always choose artDirection: minimal (refined restrained), editorial (asymmetric typography), neon (futuristic accents), brutalist (bold geometry).",
   "Choose an intentional artDirection and vary per-scene left/center/right layouts, pacing and headlines to suit the brief.",
   "Optional aspectRatio: 16:9 (landscape default), 1:1 (square), 9:16 (portrait), choose per user brief.",

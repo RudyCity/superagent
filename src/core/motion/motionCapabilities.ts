@@ -31,8 +31,11 @@ export const MOTION_CAPABILITIES = Object.freeze({
   aiSceneImagesMax: 3,
   aiAudioLoop: true,
   localVoiceoverEngine: "piper-configured-only",
-  aiMotionPresets: ["slide-left", "slide-up", "tilt", "fade", "pop-left", "pop-up"],
-  aiTransitions: ["crossfade", "cut"],
+  aiMotionPresets: [
+    "slide-left", "slide-up", "slide-right", "drop-in", "tilt", "swing", "fade", "pop-left", "pop-up",
+    "scale-pop", "zoom-in", "bounce-drop", "elastic-scale",
+  ],
+  aiTransitions: ["crossfade", "cut", "slide-left", "slide-right", "wipe", "zoom"],
   aiAspectRatios: ["16:9", "1:1", "9:16"],
   aiAutoSceneNarration: "piper-configured-only",
   aiMusicVoiceDucking: true,

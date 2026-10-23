@@ -1,5 +1,5 @@
 import { createCanvas } from "@napi-rs/canvas";
-import type { MotionProject, MotionTrack, RectLayer, TextLayer } from "../schema/types.js";
+import type { MotionEasing, MotionProject, MotionTrack, RectLayer, TextLayer } from "../schema/types.js";
 import type { MotionDirectorPlan, MotionDirectorScene } from "./directorService.js";
 import { effectRegistry } from "../effects/index.js";
 import { applyCompoundPreset } from "../effects/compoundPresets.js";
@@ -10,9 +10,11 @@ export const MOTION_ART_DIRECTIONS = ["minimal", "editorial", "neon", "brutalist
 export type MotionArtDirection = typeof MOTION_ART_DIRECTIONS[number];
 export const MOTION_PRESETS = [
   "slide-left", "slide-up", "slide-right", "drop-in", "tilt", "swing", "fade", "pop-left", "pop-up",
+  "scale-pop", "zoom-in", "bounce-drop", "elastic-scale",
 ] as const;
 export type MotionPreset = typeof MOTION_PRESETS[number];
-export type MotionTransition = "crossfade" | "cut";
+export const MOTION_TRANSITIONS = ["crossfade", "cut", "slide-left", "slide-right", "wipe", "zoom"] as const;
+export type MotionTransition = typeof MOTION_TRANSITIONS[number];
 
 const ctx = createCanvas(1, 1).getContext("2d");
 function luminance(color: string): number {
@@ -39,8 +41,9 @@ function fade(start: number, end: number, total: number, transition: MotionTrans
   }
   const duration = end - start + 1;
   const ease = "easeInOut" as const;
-  const fadeInEnd = Math.min(end, start + Math.max(3, Math.min(9, Math.floor(duration / 4))));
-  const fadeOutStart = Math.max(fadeInEnd + 1, end - Math.max(3, Math.min(9, Math.floor(duration / 4))));
+  const ramp = transition === "wipe" ? 2 : Math.max(3, Math.min(9, Math.floor(duration / 4)));
+  const fadeInEnd = Math.min(end, start + ramp);
+  const fadeOutStart = Math.max(fadeInEnd + 1, end - ramp);
   const unique = new Map([
     [start, { frame: start, value: 0, easing: ease }],
     [fadeInEnd, { frame: fadeInEnd, value: 1, easing: ease }],
@@ -71,6 +74,42 @@ function entry(preset: MotionPreset, start: number, end: number, x: number, y: n
         easing: preset === "swing" ? "easeOutBack" : "easeInOut" },
       { frame: arrival, value: 0, easing: "easeInOut" },
     ] }];
+  }
+  if (preset === "scale-pop") {
+    return [{ property: "scale", keyframes: [
+      { frame: start, value: 0, easing: "bounce" },
+      { frame: arrival, value: 1, easing: "easeInOut" },
+    ] }];
+  }
+  if (preset === "zoom-in") {
+    return [{ property: "scale", keyframes: [
+      { frame: start, value: 0.4, easing: "easeOut" },
+      { frame: arrival, value: 1, easing: "easeInOut" },
+    ] }];
+  }
+  if (preset === "bounce-drop") {
+    return [
+      { property: "y", keyframes: [
+        { frame: start, value: y - 85, easing: "bounce" },
+        { frame: arrival, value: y, easing: "easeInOut" },
+      ] },
+      { property: "scale", keyframes: [
+        { frame: start, value: 1.5, easing: "bounce" },
+        { frame: arrival, value: 1, easing: "easeInOut" },
+      ] },
+    ];
+  }
+  if (preset === "elastic-scale") {
+    return [
+      { property: "scaleX", keyframes: [
+        { frame: start, value: 0.2, easing: "bounce" },
+        { frame: arrival, value: 1, easing: "easeInOut" },
+      ] },
+      { property: "scaleY", keyframes: [
+        { frame: start, value: 1.8, easing: "bounce" },
+        { frame: arrival, value: 1, easing: "easeInOut" },
+      ] },
+    ];
   }
   return [];
 }
@@ -157,6 +196,132 @@ function addDecoration(
     label("kicker", "NO. " + String(index + 1).padStart(2, "0"), anchor.margin, height * .13, 31);
   }
 }
+function applySceneTransition(
+  sceneLayers: Composition["layers"],
+  transition: MotionTransition,
+  start: number,
+  end: number,
+  index: number,
+  totalScenes: number,
+  dimensions: { width: number; height: number },
+  sceneAccent: string,
+  totalFrames: number,
+  allLayers: Composition["layers"],
+): void {
+  if (transition === "cut" || transition === "crossfade") return;
+
+  const transDuration = 6;
+  const isEntering = index > 0;
+  const isExiting = index < totalScenes - 1;
+
+  if (transition === "slide-left" || transition === "slide-right") {
+    const dir = transition === "slide-left" ? 1 : -1;
+    const distance = 140 * dir;
+
+    for (const layer of sceneLayers) {
+      if (layer.kind !== "text" && layer.kind !== "rect") continue;
+      const xTrack = layer.tracks.find(t => t.property === "x");
+      if (xTrack) {
+        if (isExiting) {
+          const exitStart = Math.max(start + 8, end - transDuration);
+          xTrack.keyframes.push(
+            { frame: exitStart, value: layer.x, easing: "easeInOut" },
+            { frame: end, value: layer.x - distance, easing: "easeInOut" },
+          );
+          xTrack.keyframes.sort((a, b) => a.frame - b.frame);
+        }
+      } else if (layer.tracks.length < 4) {
+        const kfs: { frame: number; value: number; easing?: MotionEasing }[] = [];
+        if (isEntering) {
+          kfs.push(
+            { frame: start, value: layer.x + distance, easing: "easeInOut" },
+            { frame: Math.min(end, start + transDuration), value: layer.x, easing: "easeInOut" },
+          );
+        }
+        if (isExiting) {
+          const exitStart = Math.max(start + 8, end - transDuration);
+          kfs.push(
+            { frame: exitStart, value: layer.x, easing: "easeInOut" },
+            { frame: end, value: layer.x - distance, easing: "easeInOut" },
+          );
+        }
+        if (kfs.length > 0) {
+          kfs.sort((a, b) => a.frame - b.frame);
+          layer.tracks.push({ property: "x", keyframes: kfs });
+        }
+      }
+    }
+  } else if (transition === "zoom") {
+    for (const layer of sceneLayers) {
+      if (layer.kind !== "text" && layer.kind !== "rect") continue;
+      const scaleTrack = layer.tracks.find(t => t.property === "scale");
+      if (scaleTrack) {
+        if (isExiting) {
+          const exitStart = Math.max(start + 8, end - transDuration);
+          scaleTrack.keyframes.push(
+            { frame: exitStart, value: 1.0, easing: "easeInOut" },
+            { frame: end, value: 1.35, easing: "easeInOut" },
+          );
+          scaleTrack.keyframes.sort((a, b) => a.frame - b.frame);
+        }
+      } else if (layer.tracks.length < 4) {
+        const kfs: { frame: number; value: number; easing?: MotionEasing }[] = [];
+        if (isEntering) {
+          kfs.push(
+            { frame: start, value: 0.65, easing: "easeOut" },
+            { frame: Math.min(end, start + transDuration), value: 1.0, easing: "easeInOut" },
+          );
+        }
+        if (isExiting) {
+          const exitStart = Math.max(start + 8, end - transDuration);
+          kfs.push(
+            { frame: exitStart, value: 1.0, easing: "easeInOut" },
+            { frame: end, value: 1.35, easing: "easeInOut" },
+          );
+        }
+        if (kfs.length > 0) {
+          kfs.sort((a, b) => a.frame - b.frame);
+          layer.tracks.push({ property: "scale", keyframes: kfs });
+        }
+      }
+    }
+  } else if (transition === "wipe") {
+    if (isExiting) {
+      const wipeStart = Math.max(start, end - 8);
+      const wipeEnd = end;
+      allLayers.push({
+        id: `scene-${index}-wipe`,
+        kind: "rect",
+        x: -dimensions.width,
+        y: 0,
+        width: dimensions.width,
+        height: dimensions.height,
+        rotation: 0,
+        opacity: 1,
+        fill: sceneAccent,
+        tracks: [
+          {
+            property: "opacity",
+            keyframes: [
+              ...(wipeStart > 0 ? [{ frame: wipeStart - 1, value: 0 }] : []),
+              { frame: wipeStart, value: 0.95 },
+              { frame: wipeEnd, value: 0.95 },
+              ...(wipeEnd < totalFrames - 1 ? [{ frame: wipeEnd + 1, value: 0 }] : []),
+            ],
+          },
+          {
+            property: "x",
+            keyframes: [
+              { frame: wipeStart, value: -dimensions.width, easing: "easeInOut" },
+              { frame: wipeEnd, value: dimensions.width, easing: "easeInOut" },
+            ],
+          },
+        ],
+      });
+    }
+  }
+}
+
 /** Compile editable, deterministic graphic design using only validated Motion v1 layer primitives. */
 export function compilePresetComposition(plan: MotionDirectorPlan): Composition {
   const dimensions = plan.aspectRatio === "9:16" ? { width: 1080, height: 1920 } :
@@ -169,12 +334,13 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
   plan.scenes.forEach((scene, index) => {
     const startBase = Math.floor(index * count / plan.scenes.length);
     const endBase = Math.floor((index + 1) * count / plan.scenes.length) - 1;
-    const overlap = transition === "crossfade" && plan.scenes.length > 1 ? 6 : 0;
+    const overlap = transition === "cut" ? 0 : 6;
     const start = Math.max(0, startBase - (index ? overlap : 0));
     const end = Math.min(count - 1, endBase + (index < plan.scenes.length - 1 ? overlap : 0));
     const motion = scene.motion ?? plan.motion ?? "slide-left";
     const visible = fade(start, end, count, transition);
     const anchor = sceneLayout(scene, style, index, dimensions.width, dimensions.height, foreground);
+    const sceneStartIndex = layers.length;
     if (plan.artDirection) addDecoration(layers, scene, style, index, plan.scenes.length, dimensions, anchor, visible);
     layers.push({ id: "scene-" + index + "-accent", kind: "rect", x: anchor.x, y: anchor.y - 37,
       width: 164, height: 9, rotation: 0, opacity: 1, fill: scene.accent, tracks: [visible] });
@@ -272,6 +438,9 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
         fontFamily: "Arial", tracks: [visible, ...entry(motion, start, end, anchor.x + 4,
           anchor.y + (dimensions.height > dimensions.width ? 144 : 161))] });
     }
+
+    const thisSceneLayers = layers.slice(sceneStartIndex);
+    applySceneTransition(thisSceneLayers, transition, start, end, index, plan.scenes.length, dimensions, scene.accent, count, layers);
   });
   const initial: Composition = {
     width: dimensions.width, height: dimensions.height, fps: { numerator: 30, denominator: 1 },

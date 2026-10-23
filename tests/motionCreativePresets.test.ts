@@ -88,9 +88,41 @@ describe("Phase B Motion Studio creative presets and deterministic quality lint"
     expect(report.samples).toHaveLength(1);
   });
   it("rejects arbitrary preset/easing fields from untrusted model output", () => {
-    expect(() => validateDirectorPlan({ ...example, transition: "ffmpeg-code" })).toThrow(/invalid|unsupported/);
-    expect(() => validateDirectorPlan({ ...example, motion: "arbitrary-js" })).toThrow(/invalid|unsupported/);
+    expect(() => validateDirectorPlan({ ...example, transition: "ffmpeg-code" as any })).toThrow(/invalid|unsupported/);
+    expect(() => validateDirectorPlan({ ...example, motion: "arbitrary-js" as any })).toThrow(/invalid|unsupported/);
     expect(() => validateDirectorPlan({ ...example,
-      scenes: [{ ...example.scenes[0], motion: "bad" }] })).toThrow(/invalid|unsupported/);
+      scenes: [{ ...example.scenes[0], motion: "bad" as any }] })).toThrow(/invalid|unsupported/);
   });
+  it.each(["scale-pop", "zoom-in", "bounce-drop", "elastic-scale"] as const)(
+    "compiles and evaluates scale preset %s with verified quality pass", preset => {
+      const plan = { ...example, motion: preset };
+      const p = project(plan);
+      expect(() => validateMotionProject(p)).not.toThrow();
+      const title = p.composition.layers.find(l => l.id === "scene-0-title")!;
+      const props = title.tracks.map(t => t.property);
+      if (preset === "scale-pop" || preset === "zoom-in") {
+        expect(props).toContain("scale");
+      } else if (preset === "bounce-drop") {
+        expect(props).toContain("y");
+        expect(props).toContain("scale");
+      } else if (preset === "elastic-scale") {
+        expect(props).toContain("scaleX");
+        expect(props).toContain("scaleY");
+      }
+      expect(inspectMotionQuality(p).passed).toBe(true);
+    },
+  );
+  it.each(["slide-left", "slide-right", "zoom", "wipe"] as const)(
+    "compiles and executes dynamic scene transition %s cleanly", transition => {
+      const plan = { ...example, transition };
+      const p = project(plan);
+      expect(() => validateMotionProject(p)).not.toThrow();
+      expect(inspectMotionQuality(p).passed).toBe(true);
+      if (transition === "wipe") {
+        expect(p.composition.layers.some(l => l.id === "scene-0-wipe")).toBe(true);
+      }
+      const midFrame = evaluateFrame(p, 60);
+      expect(midFrame.layers.length).toBeGreaterThan(0);
+    },
+  );
 });
